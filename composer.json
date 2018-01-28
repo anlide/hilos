@@ -1,0 +1,7 @@
+{
+  "name": "anlide/hilos",
+  "description": "Engine for high load sites. For angular server API or cocos server websocket.",
+  "require": {
+    "php": "^7.0"
+  }
+}
