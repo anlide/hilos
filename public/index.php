@@ -1,5 +1,5 @@
 <?php
-namespace hilos;
+namespace Hilos;
 
 class Index {
   public function handle() {

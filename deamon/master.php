@@ -1,5 +1,5 @@
 <?php
-namespace hilos\Deamon;
+namespace Hilos\Deamon;
 
 class Master {
   public function run() {

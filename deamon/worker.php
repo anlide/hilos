@@ -1,5 +1,5 @@
 <?php
-namespace hilos\Deamon;
+namespace Hilos\Deamon;
 
 class Worker {
   public function run() {
