@@ -13,5 +13,10 @@
       "homepage": "https://anlide.online",
       "role": "Developer"
     }
-  ]
+  ],
+  "autoload": {
+    "psr-4": {
+      "Hilos\\Deamon\\": "deamon/"
+    }
+  }
 }
