@@ -59,8 +59,8 @@ abstract class Master {
           }
         }
 
-        pcntl_signal(SIGTERM, 'signal_handler');
-        pcntl_signal(SIGHUP, 'signal_handler');
+        pcntl_signal(SIGTERM, 'Hilos\\Daemon\\signal_handler');
+        pcntl_signal(SIGHUP, 'Hilos\\Daemon\\signal_handler');
       }
 
       /**
