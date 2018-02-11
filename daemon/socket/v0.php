@@ -1,5 +1,5 @@
 <?php
-namespace Hilos\Deamon\Socket;
+namespace Hilos\Daemon\Socket;
 
 /**
  * @link http://tools.ietf.org/html/draft-hixie-thewebsocketprotocol-76

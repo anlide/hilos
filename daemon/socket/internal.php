@@ -1,5 +1,5 @@
 <?php
-namespace Hilos\Deamon\Socket;
+namespace Hilos\Daemon\Socket;
 
 class Internal extends Connection {
   private $failCount = 0;

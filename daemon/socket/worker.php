@@ -1,5 +1,5 @@
 <?php
-namespace Hilos\Deamon\Socket;
+namespace Hilos\Daemon\Socket;
 
 class Worker extends Connection {
   /**

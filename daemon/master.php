@@ -1,10 +1,10 @@
 <?php
-namespace Hilos\Deamon;
+namespace Hilos\Daemon;
 
-use Hilos\Deamon\Socket\Connection;
-use Hilos\Deamon\Socket\Internal;
-use Hilos\Deamon\Socket\Websocket;
-use Hilos\Deamon\Socket\Worker as SocketWorker;
+use Hilos\Daemon\Socket\Connection;
+use Hilos\Daemon\Socket\Internal;
+use Hilos\Daemon\Socket\Websocket;
+use Hilos\Daemon\Socket\Worker as SocketWorker;
 
 abstract class Master {
   const config = [
