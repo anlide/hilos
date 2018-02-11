@@ -45,7 +45,7 @@ class V13 extends Websocket {
    * @callback $cb ( )
    * @return boolean         Success.
    */
-  public function send_frame($data, $type = null, $cb = null) {
+  public function sendFrame($data, $type = null, $cb = null) {
     if (!$this->handshaked) {
       return false;
     }
@@ -63,7 +63,7 @@ class V13 extends Websocket {
     $rsv1 = 0;
     $rsv2 = 0;
     $rsv3 = 0;
-    $this->write(chr(bindec($fin . $rsv1 . $rsv2 . $rsv3 . str_pad(decbin($this->get_frame_type($type)), 4, '0', STR_PAD_LEFT))));
+    $this->write(chr(bindec($fin . $rsv1 . $rsv2 . $rsv3 . str_pad(decbin($this->getFrameType($type)), 4, '0', STR_PAD_LEFT))));
     $dataLength  = strlen($data);
     $isMasked    = false;
     $isMaskedInt = $isMasked ? 128 : 0;
@@ -104,7 +104,7 @@ class V13 extends Websocket {
    * @param string $extraHeaders Received data (no use in this class)
    * @return boolean OK?
    */
-  public function send_handshake_reply($extraHeaders = '') {
+  public function sendHandshakeReply($extraHeaders = '') {
     if (!isset($this->server['HTTP_SEC_WEBSOCKET_KEY']) || !isset($this->server['HTTP_SEC_WEBSOCKET_VERSION'])) {
       return false;
     }
@@ -139,7 +139,7 @@ class V13 extends Websocket {
    * @see http://tools.ietf.org/html/draft-ietf-hybi-thewebsocketprotocol-10#page-16
    * @return void
    */
-  public function on_read() {
+  public function onRead() {
     if ($this->closed) return;
     if ($this->state === self::STATE_PREHANDSHAKE) {
       if (!$this->handshake()) {
@@ -147,7 +147,7 @@ class V13 extends Websocket {
       }
     }
     if ($this->state === self::STATE_HANDSHAKED) {
-      while (($buflen = strlen($this->unparsed_data)) >= 2) {
+      while (($buflen = strlen($this->unparsedData)) >= 2) {
         $first = ord($this->look(1)); // first byte integer (fin, opcode)
         $firstBits = decbin($first);
         $opcode = (int)bindec(substr($firstBits, 4, 4));
@@ -211,10 +211,10 @@ class V13 extends Websocket {
             case self::CONTINUATION:
             case self::STRING:
             case self::BINARY:
-              $this->on_frame($this->framebuf, $opcodeName);
+              $this->onFrame($this->framebuf, $opcodeName);
               break;
             case self::PING:
-              $this->send_frame($this->framebuf, self::PONG);
+              $this->sendFrame($this->framebuf, self::PONG);
               break;
             case self::PONG:
               break;

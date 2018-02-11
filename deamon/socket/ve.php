@@ -10,7 +10,7 @@ class Ve extends Websocket {
    * @param string $extraHeaders Received data (no use in this class)
    * @return boolean OK?
    */
-  public function send_handshake_reply($extraHeaders = '') {
+  public function sendHandshakeReply($extraHeaders = '') {
     if (!isset($this->server['HTTP_SEC_WEBSOCKET_ORIGIN'])) {
       $this->server['HTTP_SEC_WEBSOCKET_ORIGIN'] = '';
     }
@@ -64,7 +64,7 @@ class Ve extends Websocket {
    * @callback $cb ( )
    * @return boolean         Success.
    */
-  public function send_frame($data, $type = null, $cb = null) {
+  public function sendFrame($data, $type = null, $cb = null) {
     if (!$this->handshaked) {
       return false;
     }
@@ -81,7 +81,7 @@ class Ve extends Websocket {
     }
 
     // Binary
-    $type = $this->get_frame_type($type);
+    $type = $this->getFrameType($type);
     if (($type & self::BINARY) === self::BINARY) {
       $n   = strlen($data);
       $len = '';
@@ -118,8 +118,8 @@ class Ve extends Websocket {
    * Called when new data received
    * @return void
    */
-  public function on_read() {
-    while (($buflen = strlen($this->unparsed_data)) >= 2) {
+  public function onRead() {
+    while (($buflen = strlen($this->unparsedData)) >= 2) {
       $hdr       = $this->look(10);
       $frametype = ord(substr($hdr, 0, 1));
       if (($frametype & 0x80) === 0x80) {
@@ -147,7 +147,7 @@ class Ve extends Websocket {
         }
 
         $this->drain($i + 1);
-        $this->on_frame($this->read($len), $frametype);
+        $this->onFrame($this->read($len), $frametype);
       } else {
         if (($p = $this->search("\xFF")) !== false) {
           if (self::MAX_ALLOWED_PACKET <= $p - 1) {
@@ -158,7 +158,7 @@ class Ve extends Websocket {
           $this->drain(1);
           $data = $this->read($p);
           $this->drain(1);
-          $this->on_frame($data, 'STRING');
+          $this->onFrame($data, 'STRING');
         } else {
           if (self::MAX_ALLOWED_PACKET < $buflen - 1) {
             // Too big packet

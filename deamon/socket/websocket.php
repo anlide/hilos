@@ -15,20 +15,20 @@ class Websocket extends Connection {
   const OP_PING     =  9;
   const OP_PONG     = 10;
 
-  private $current_header;
+  private $currentHeader;
 
   /**
    * Read first line of HTTP request
    * @return boolean|null Success
    */
-  protected function http_read_first_line() {
-    if (($l = $this->read_line(PHP_EOL)) === null) {
+  protected function httpReadFirstLine() {
+    if (($l = $this->readLine(PHP_EOL)) === null) {
       return null;
     }
     $e = explode(' ', $l);
     $u = isset($e[1]) ? parse_url($e[1]) : false;
     if ($u === false) {
-      $this->bad_request();
+      $this->badRequest();
       return false;
     }
     if (!isset($u['path'])) {
@@ -56,21 +56,21 @@ class Websocket extends Connection {
    * Read headers line-by-line
    * @return boolean|null Success
    */
-  protected function http_read_headers() {
-    while (($l = $this->read_line(PHP_EOL)) !== null) {
+  protected function httpReadHeaders() {
+    while (($l = $this->readLine(PHP_EOL)) !== null) {
       if ($l === '') {
         return true;
       }
       $e = explode(': ', $l);
       if (isset($e[1])) {
-        $this->current_header                = 'HTTP_' . strtoupper(strtr($e[0], ['-' => '_']));
-        $this->server[$this->current_header] = $e[1];
-      } elseif (($e[0][0] === "\t" || $e[0][0] === "\x20") && $this->current_header) {
+        $this->currentHeader                = 'HTTP_' . strtoupper(strtr($e[0], ['-' => '_']));
+        $this->server[$this->currentHeader] = $e[1];
+      } elseif (($e[0][0] === "\t" || $e[0][0] === "\x20") && $this->currentHeader) {
         // multiline header continued
-        $this->server[$this->current_header] .= $e[0];
+        $this->server[$this->currentHeader] .= $e[0];
       } else {
         // whatever client speaks is not HTTP anymore
-        $this->bad_request();
+        $this->badRequest();
         return false;
       }
     }
@@ -80,7 +80,7 @@ class Websocket extends Connection {
    * Process headers
    * @return bool
    */
-  protected function http_process_headers() {
+  protected function httpProcessHeaders() {
     $this->state = self::STATE_PREHANDSHAKE;
     if (isset($this->server['HTTP_X_REAL_IP'])) {
       $this->ip = $this->server['HTTP_X_REAL_IP'];
@@ -113,56 +113,56 @@ class Websocket extends Connection {
     // ----------------------------------------------------------
     if (isset($this->server['HTTP_SEC_WEBSOCKET_VERSION'])) { // HYBI
       if ($this->server['HTTP_SEC_WEBSOCKET_VERSION'] === '8') { // Version 8 (FF7, Chrome14)
-        $this->switch_to_protocol('V13');
+        $this->switchToProtocol('V13');
       } elseif ($this->server['HTTP_SEC_WEBSOCKET_VERSION'] === '13') { // newest protocol
-        $this->switch_to_protocol('V13');
+        $this->switchToProtocol('V13');
       } else {
         error_log(get_class($this) . '::' . __METHOD__ . " : Websocket protocol version " . $this->server['HTTP_SEC_WEBSOCKET_VERSION'] . ' is not yet supported for client "addr"');
         $this->close(self::CLOSE_PROTOCOL);
         return false;
       }
     } elseif (!isset($this->server['HTTP_SEC_WEBSOCKET_KEY1']) || !isset($this->server['HTTP_SEC_WEBSOCKET_KEY2'])) {
-      $this->switch_to_protocol('Ve');
+      $this->switchToProtocol('Ve');
     } else { // Defaulting to HIXIE (Safari5 and many non-browser clients...)
-      $this->switch_to_protocol('V0');
+      $this->switchToProtocol('V0');
     }
     // ----------------------------------------------------------
     // End of protocol discovery
     // ----------------------------------------------------------
     return true;
   }
-  private function switch_to_protocol($protocol) {
+  private function switchToProtocol($protocol) {
     $class = '\\'.$protocol;
-    $this->new_instance = new $class($this->socket, $this->index_socket);
-    $this->new_instance->state = $this->state;
-    $this->new_instance->unparsed_data = $this->unparsed_data;
-    $this->new_instance->server = $this->server;
-    $this->new_instance->cookie = $this->cookie;
-    $this->new_instance->headers = $this->headers;
-    $this->new_instance->ip = $this->ip;
-    $this->new_instance->custom = $this->custom;
+    $this->newInstance = new $class($this->socket, $this->indexSocket);
+    $this->newInstance->state = $this->state;
+    $this->newInstance->unparsedData = $this->unparsedData;
+    $this->newInstance->server = $this->server;
+    $this->newInstance->cookie = $this->cookie;
+    $this->newInstance->headers = $this->headers;
+    $this->newInstance->ip = $this->ip;
+    $this->newInstance->custom = $this->custom;
   }
   /**
    * Called when new data received.
    * @return void
    */
-  public function on_read() {
+  public function onRead() {
     if ($this->closed) return;
     if ($this->state === self::STATE_STANDBY) {
       $this->state = self::STATE_FIRSTLINE;
     }
     if ($this->state === self::STATE_FIRSTLINE) {
-      if (!$this->http_read_first_line()) {
+      if (!$this->httpReadFirstLine()) {
         return;
       }
       $this->state = self::STATE_HEADERS;
     }
 
     if ($this->state === self::STATE_HEADERS) {
-      if (!$this->http_read_headers()) {
+      if (!$this->httpReadHeaders()) {
         return;
       }
-      if (!$this->http_process_headers()) {
+      if (!$this->httpProcessHeaders()) {
         $this->close(self::CLOSE_PROTOCOL);
         return;
       }
@@ -175,10 +175,10 @@ class Websocket extends Connection {
 
   /**
    * Будте любезны в отнаследованном классе реализовать этот метод
-   * @param $extra_headers
+   * @param $extraHeaders
    * @return bool
    */
-  protected function send_handshake_reply($extra_headers) {
+  protected function sendHandshakeReply($extraHeaders) {
     return false;
   }
   /**
@@ -186,14 +186,14 @@ class Websocket extends Connection {
    * @return boolean               Handshake status
    */
   public function handshake() {
-    $extra_headers = '';
+    $extraHeaders = '';
     foreach ($this->headers as $k => $line) {
       if ($k !== 'STATUS') {
-        $extra_headers .= $line . "\r\n";
+        $extraHeaders .= $line . "\r\n";
       }
     }
 
-    if (!$this->send_handshake_reply($extra_headers)) {
+    if (!$this->sendHandshakeReply($extraHeaders)) {
       error_log(get_class($this) . '::' . __METHOD__ . ' : Handshake protocol failure for client ""'); // $this->addr
       $this->close(self::CLOSE_PROTOCOL);
       return false;
@@ -202,21 +202,15 @@ class Websocket extends Connection {
     $this->handshaked = true;
     $this->headers_sent = true;
     $this->state = static::STATE_HANDSHAKED;
-    $task_manager_master = hilos_task_manager_master::get_instance();
-    $task_manager_master->ws_open($this);
     return true;
   }
 
-  public function on_frame($data, $type) {
-    $task_manager_master = hilos_task_manager_master::get_instance();
-    $task_manager_master->ws_frame($this, $data, $type);
+  public function onFrame($data, $type) {
     return true;
   }
 
   public function close($reason = self::CLOSE_NO_STATUS) {
     if ($this->closed) return;
     parent::close($reason);
-    $task_manager_master = hilos_task_manager_master::get_instance();
-    $task_manager_master->ws_close($this, $reason);
   }
 }

@@ -16,7 +16,7 @@ class V0 extends Websocket {
    * @param string $extraHeaders Received data (no use in this class)
    * @return boolean OK?
    */
-  public function send_handshake_reply($extraHeaders = '') {
+  public function sendHandshakeReply($extraHeaders = '') {
     if (!isset($this->server['HTTP_SEC_WEBSOCKET_KEY1']) || !isset($this->server['HTTP_SEC_WEBSOCKET_KEY2'])) {
       return false;
     }
@@ -94,7 +94,7 @@ class V0 extends Websocket {
    * @callback $cb ( )
    * @return boolean         Success.
    */
-  public function send_frame($data, $type = null, $cb = null) {
+  public function sendFrame($data, $type = null, $cb = null) {
     if (!$this->handshaked) {
       return false;
     }
@@ -109,7 +109,7 @@ class V0 extends Websocket {
       }
     }
 
-    $type = $this->get_frame_type($type);
+    $type = $this->getFrameType($type);
     // Binary
     if (($type & self::BINARY) === self::BINARY) {
       $n   = strlen($data);
@@ -147,16 +147,16 @@ class V0 extends Websocket {
    * Called when new data received
    * @return void
    */
-  public function on_read() {
+  public function onRead() {
     if ($this->state === self::STATE_PREHANDSHAKE) {
-      if (strlen($this->unparsed_data) < 8) {
+      if (strlen($this->unparsedData) < 8) {
         return;
       }
-      $this->key = $this->read_unlimited();
+      $this->key = $this->readUnlimited();
       $this->handshake();
     }
     if ($this->state === self::STATE_HANDSHAKED) {
-      while (($buflen = strlen($this->unparsed_data)) >= 2) {
+      while (($buflen = strlen($this->unparsedData)) >= 2) {
         $hdr = $this->look(10);
         $frametype = ord(substr($hdr, 0, 1));
         if (($frametype & 0x80) === 0x80) {
@@ -184,7 +184,7 @@ class V0 extends Websocket {
             return;
           }
           $this->drain($i + 1);
-          $this->on_frame($this->read($len), 'BINARY');
+          $this->onFrame($this->read($len), 'BINARY');
         } else {
           if (($p = $this->search("\xFF")) !== false) {
             if (self::MAX_ALLOWED_PACKET <= $p - 1) {
@@ -195,7 +195,7 @@ class V0 extends Websocket {
             $this->drain(1);
             $data = $this->read($p);
             $this->drain(1);
-            $this->on_frame($data, 'STRING');
+            $this->onFrame($data, 'STRING');
           } else {
             if (self::MAX_ALLOWED_PACKET < $buflen - 1) {
               // Too big packet

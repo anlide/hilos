@@ -7,7 +7,7 @@ class Connection {
   const MAX_ALLOWED_PACKET = 1024 * 1024 * 8;
   const MAX_BUFFER_SIZE = 1024 * 1024;
 
-  protected $index_socket;
+  protected $indexSocket;
   protected $socket;
   protected $ip;
   protected $custom;
@@ -28,10 +28,10 @@ class Connection {
   const CLOSE_SESSION_CORRUPTED = 1014;
   const CLOSE_TLS         = 1015;
 
-  public $close_status = null;
-  private $close_abnormal_tries = 0;
+  public $closeStatus = null;
+  private $closeAbnormalTries = 0;
 
-  public static function close_reason_to_string($reason) {
+  public static function closeReasonToString($reason) {
     switch ($reason) {
       case self::CLOSE_NORMAL:
         return 'normal';
@@ -88,16 +88,14 @@ class Connection {
   protected $headers_sent = false;
 
   protected $closed = false;
-  protected $unparsed_data = '';
+  protected $unparsedData = '';
   /**
    * @var Connection|null
    */
-  protected $new_instance = null;
+  protected $newInstance = null;
 
   protected $extensions = [];
   protected $extensionsCleanRegex = '/(?:^|\W)x-webkit-/iS';
-
-  //private $index = 0;
 
   /**
    * @var integer Current state
@@ -114,20 +112,20 @@ class Connection {
    */
   const STATE_STANDBY = 0;
 
-  public function get_headers() {
+  public function getHeaders() {
     return $this->server;
   }
 
-  public function get_state() {
+  public function getState() {
     return $this->state;
   }
 
-  public function get_new_instance() {
-    return $this->new_instance;
+  public function getNewInstance() {
+    return $this->newInstance;
   }
 
-  public function get_index_socket() {
-    return $this->index_socket;
+  public function getIndexSocket() {
+    return $this->indexSocket;
   }
 
   public function closed() {
@@ -136,76 +134,76 @@ class Connection {
 
   public function close($reason = self::CLOSE_NO_STATUS) {
     if ($this->closed) return;
-    $this->close_status = $reason;
+    $this->closeStatus = $reason;
     socket_close($this->socket);
     $this->closed = true;
   }
-  public function __construct($socket, $index_socket, $ip = null, $custom = null) {
+  public function __construct($socket, $indexSocket, $ip = null, $custom = null) {
     socket_set_nonblock($socket);
     $this->socket = $socket;
-    $this->index_socket = $index_socket;
+    $this->indexSocket = $indexSocket;
     $this->ip = $ip;
     $this->custom = $custom;
   }
 
-  public function get_custom() {
+  public function getCustom() {
     return $this->custom;
   }
 
-  public function get_ip() {
+  public function getIp() {
     return $this->ip;
   }
 
-  protected function read_line($explode = "\n") {
-    $lines = explode($explode, $this->unparsed_data);
-    $first_line = $lines[0];
-    if (strlen($first_line) >= 1) {
+  protected function readLine($explode = "\n") {
+    $lines = explode($explode, $this->unparsedData);
+    $firstLine = $lines[0];
+    if (strlen($firstLine) >= 1) {
       if ($explode == "\n") {
-        if ($first_line[strlen($first_line) - 1] == "\r") {
-          $first_line = substr($first_line, 0, -1);
+        if ($firstLine[strlen($firstLine) - 1] == "\r") {
+          $firstLine = substr($firstLine, 0, -1);
         }
       }
     }
     if (count($lines) > 1) {
       unset($lines[0]);
-      $this->unparsed_data = implode($explode, $lines);
-      return $first_line;
+      $this->unparsedData = implode($explode, $lines);
+      return $firstLine;
     } else {
       return null;
     }
   }
 
-  public final function on_receive_data() {
+  public final function onReceiveData() {
     if ($this->closed) return;
     socket_clear_error($this->socket);
     $data = socket_read($this->socket, self::MAX_BUFFER_SIZE);
     if (is_string($data) && !empty($data)) {
-      $this->unparsed_data .= $data;
-      $this->close_abnormal_tries = 0;
+      $this->unparsedData .= $data;
+      $this->closeAbnormalTries = 0;
     } elseif ($this instanceof Websocket) {
       if (in_array(socket_last_error(), array(32, 104))) {
         $this->close(self::CLOSE_GOING_AWAY);
       } else {
-        if ($this->close_abnormal_tries > 10000) {
+        if ($this->closeAbnormalTries > 1000) {
           $this->close(self::CLOSE_ABNORMAL);
         }
-        $this->close_abnormal_tries++;
+        $this->closeAbnormalTries++;
       }
       return;
     }
   }
   /**
    * Called when new data received.
-   * @return void
+   * @return boolean
    */
-  public function on_read() {
-    if ($this->closed) return;
+  public function onRead() {
+    return (!$this->closed);
   }
   /**
    * Send Bad request
    * @return void
    */
-  public function bad_request() {
+  public function badRequest() {
     $this->write("400 Bad Request\r\n\r\n<html><head><title>400 Bad Request</title></head><body bgcolor=\"white\"><center><h1>400 Bad Request</h1></center></body></html>");
     $this->close(self::CLOSE_BAD_DATA);
   }
@@ -242,8 +240,8 @@ class Connection {
    */
   public function write($data) {
     if ($this->closed) return false;
-    $bytes_left = $total = strlen($data);
-    $try_count = 0;
+    $bytesLeft = $total = strlen($data);
+    $tryCount = 0;
     do {
       socket_clear_error($this->socket);
       $sended = socket_write($this->socket, $data, 65536 - 1);
@@ -263,11 +261,11 @@ class Connection {
           throw new \Exception( sprintf( "Unable to write to socket: %s", socket_strerror( socket_last_error() ) ).'|'.socket_last_error().'|' );
         }
       }
-      $bytes_left -= $sended;
+      $bytesLeft -= $sended;
       $data = substr($data, $sended);
-      $try_count++;
-      if ($try_count >= 100) throw new \Exception('socket_write more then '.$try_count.' times!');
-    } while ($bytes_left > 0);
+      $tryCount++;
+      if ($tryCount >= 100) throw new \Exception('socket_write more then ' . $tryCount . ' times!');
+    } while ($bytesLeft > 0);
     return $total;
   }
 
@@ -278,10 +276,10 @@ class Connection {
    * @return string|false
    */
   public function look($n, $o = 0) {
-    if (strlen($this->unparsed_data) <= $o) {
+    if (strlen($this->unparsedData) <= $o) {
       return '';
     }
-    return substr($this->unparsed_data, $o, $n);
+    return substr($this->unparsedData, $o, $n);
   }
   /**
    * Convert bytes into integer
@@ -306,8 +304,8 @@ class Connection {
    * @return boolean    Success
    */
   public function drain($n) {
-    $ret = substr($this->unparsed_data, 0, $n);
-    $this->unparsed_data = substr($this->unparsed_data, $n);
+    $ret = substr($this->unparsedData, 0, $n);
+    $this->unparsedData = substr($this->unparsedData, $n);
     return $ret;
   }
   /**
@@ -329,9 +327,9 @@ class Connection {
    * Reads all data from the connection's buffer
    * @return string Readed data
    */
-  public function read_unlimited() {
-    $ret = $this->unparsed_data;
-    $this->unparsed_data = '';
+  public function readUnlimited() {
+    $ret = $this->unparsedData;
+    $this->unparsedData = '';
     return $ret;
   }
   /**
@@ -342,7 +340,7 @@ class Connection {
    * @return integer        Position
    */
   public function search($what, $start = 0, $end = -1) {
-    return strpos($this->unparsed_data, $what, $start);
+    return strpos($this->unparsedData, $what, $start);
   }
   /**
    * Called when new frame received.
@@ -350,10 +348,10 @@ class Connection {
    * @param  string $type Frame's type ("STRING" OR "BINARY").
    * @return boolean      Success.
    */
-  public function on_frame($data, $type) {
+  public function onFrame($data, $type) {
     return true;
   }
-  public function send_frame($data, $type = null, $cb = null) {
+  public function sendFrame($data, $type = null, $cb = null) {
     return false;
   }
   /**
@@ -361,17 +359,17 @@ class Connection {
    * @param $type
    * @return integer
    */
-  public function get_frame_type($type) {
+  public function getFrameType($type) {
     if (is_int($type)) {
       return $type;
     }
     if ($type === null) {
       $type = 'STRING';
     }
-    $frametype = @constant(get_class($this) . '::' . $type);
-    if ($frametype === null) {
-      error_log(__METHOD__ . ' : Undefined frametype "' . $type . '"');
+    $frameType = @constant(get_class($this) . '::' . $type);
+    if ($frameType === null) {
+      error_log(__METHOD__ . ' : Undefined frameType "' . $type . '"');
     }
-    return $frametype;
+    return $frameType;
   }
 }
