@@ -132,7 +132,7 @@ class Websocket extends Connection {
     return true;
   }
   private function switchToProtocol($protocol) {
-    $class = 'Hilos\\Deamon\\Socket\\'.$protocol;
+    $class = 'Hilos\\Daemon\\Socket\\'.$protocol;
     $this->newInstance = new $class($this->socket, $this->indexSocket);
     $this->newInstance->state = $this->state;
     $this->newInstance->unparsedData = $this->unparsedData;
