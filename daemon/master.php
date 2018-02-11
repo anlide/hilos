@@ -34,31 +34,31 @@ abstract class Master {
     $this->adminEmail = $config['adminEmail'];
   }
 
-  function signal_handler($signo) {
-    switch ($signo) {
-      case SIGTERM:
-        error_log('SIGTERM');
-        // NOTE: handle stop tasks
-        self::$stopSignal = true;
-        break;
-      case SIGHUP:
-        error_log('SIGHUP');
-        // NOTE: handle restart tasks
-        self::$stopSignal = true;
-        break;
-      case SIGINT:
-        error_log('SIGINT');
-        // NOTE: handle exit tasks
-        self::$stopSignal = true;
-        break;
-    }
-  }
-
   abstract public function tick();
 
   public function run() {
     try {
       if (strtoupper(substr(PHP_OS, 0, 3)) !== 'WIN') {
+        function signal_handler($signo) {
+          switch ($signo) {
+            case SIGTERM:
+              error_log('SIGTERM');
+              // NOTE: handle stop tasks
+              self::$stopSignal = true;
+              break;
+            case SIGHUP:
+              error_log('SIGHUP');
+              // NOTE: handle restart tasks
+              self::$stopSignal = true;
+              break;
+            case SIGINT:
+              error_log('SIGINT');
+              // NOTE: handle exit tasks
+              self::$stopSignal = true;
+              break;
+          }
+        }
+
         pcntl_signal(SIGTERM, 'signal_handler');
         pcntl_signal(SIGHUP, 'signal_handler');
       }
