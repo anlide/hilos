@@ -16,7 +16,8 @@
   ],
   "autoload": {
     "psr-4": {
-      "Hilos\\Daemon\\": "daemon/"
+      "Hilos\\Daemon\\": "daemon/",
+      "Hilos\\App\\": "app/"
     }
   }
 }

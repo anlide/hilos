@@ -1,7 +1,7 @@
 <?php
-namespace Hilos;
+namespace Hilos\App;
 
-class Index {
+class Kernel {
   public function handle() {
 
   }
