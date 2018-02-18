@@ -13,17 +13,27 @@ abstract class Master {
     'wsAdminPort' => 8011,
     'serviceInternalPort' => 8005,
     'workerInternalPort' => 8008,
+    'classConnection' => Connection::class,
+    'classInternal' => Internal::class,
+    'classWebsocket' => Websocket::class,
+    'classSocketWorker' => SocketWorker::class,
   ];
 
   private static $stopSignal = false;
 
   private $sockets;
+  protected $connections;
 
   private $wsInternalPort;
   private $wsAdminPort;
   private $serviceInternalPort;
   private $workerInternalPort;
   private $adminEmail;
+
+  private $classConnection;
+  private $classInternal;
+  private $classWebsocket;
+  private $classSocketWorker;
 
   function __construct($config = []) {
     $config = array_merge(self::config, $config);
@@ -32,9 +42,13 @@ abstract class Master {
     $this->serviceInternalPort = $config['serviceInternalPort'];
     $this->workerInternalPort = $config['workerInternalPort'];
     $this->adminEmail = $config['adminEmail'];
+    $this->classConnection = $config['classConnection'];
+    $this->classInternal = $config['classInternal'];
+    $this->classWebsocket = $config['classWebsocket'];
+    $this->classSocketWorker = $config['classSocketWorker'];
   }
 
-  abstract public function tick();
+  abstract protected function tick();
 
   public function run() {
     try {
@@ -69,6 +83,7 @@ abstract class Master {
       $connections = array();
       $sockets = array();
       $this->sockets = &$sockets;
+      $this->connections = &$connections;
       $masterWs = socket_create(AF_INET, SOCK_STREAM, 0);
       socket_set_option($masterWs, SOL_SOCKET, SO_REUSEADDR, 1);
       socket_bind($masterWs, '127.0.0.1', $this->wsInternalPort);
@@ -137,7 +152,7 @@ abstract class Master {
                 $sockets[] = $socketNew;
                 $indexNewSocket = array_search($socketNew, $sockets);
                 socket_getpeername($socketNew, $ip);
-                $connections[$indexNewSocket] = new Websocket($socketNew, $indexNewSocket, $ip);
+                $connections[$indexNewSocket] = new $this->classWebsocket($socketNew, $indexNewSocket, $ip);
                 $indexSocket = $indexNewSocket;
                 $types[$indexSocket] = 'ws';
               } else {
@@ -151,7 +166,7 @@ abstract class Master {
                 $sockets[] = $socketNew;
                 $indexNewSocket = array_search($socketNew, $sockets);
                 socket_getpeername($socketNew, $ip);
-                $connections[$indexNewSocket] = new Websocket($socketNew, $indexNewSocket, $ip, 'admin');
+                $connections[$indexNewSocket] = new $this->classWebsocket($socketNew, $indexNewSocket, $ip, 'admin');
                 $indexSocket = $indexNewSocket;
                 $types[$indexSocket] = 'admin';
               } else {
@@ -164,7 +179,7 @@ abstract class Master {
               if ($socketNew = socket_accept($masterInternal)) {
                 $sockets[] = $socketNew;
                 $indexNewSocket = array_search($socketNew, $sockets);
-                $connections[$indexNewSocket] = new Internal($socketNew, $indexNewSocket);
+                $connections[$indexNewSocket] = new $this->classInternal($socketNew, $indexNewSocket);
                 $indexSocket = $indexNewSocket;
                 $types[$indexSocket] = 'in';
               } else {
@@ -177,7 +192,7 @@ abstract class Master {
               if ($socketNew = socket_accept($masterWorker)) {
                 $sockets[] = $socketNew;
                 $indexNewSocket = array_search($socketNew, $sockets);
-                $connections[$indexNewSocket] = new SocketWorker($socketNew, $indexNewSocket);
+                $connections[$indexNewSocket] = new $this->classSocketWorker($socketNew, $indexNewSocket);
                 $indexSocket = $indexNewSocket;
                 $types[$indexSocket] = 'worker';
               } else {

@@ -131,8 +131,9 @@ class Websocket extends Connection {
     // ----------------------------------------------------------
     return true;
   }
-  private function switchToProtocol($protocol) {
+  protected function switchToProtocol($protocol) {
     $class = 'Hilos\\Daemon\\Socket\\'.$protocol;
+    // TODO: implement cloning
     $this->newInstance = new $class($this->socket, $this->indexSocket);
     $this->newInstance->state = $this->state;
     $this->newInstance->unparsedData = $this->unparsedData;
