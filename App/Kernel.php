@@ -1,7 +1,9 @@
 <?php
 namespace Hilos\App;
 
+use Hilos\App\Exception\RouteInvalid;
 use Hilos\App\Router\Route;
+use Hilos\Daemon\Exception\NoRouteForRequest;
 
 class Kernel implements IKernel {
   private $routeStrings = [];
@@ -10,6 +12,10 @@ class Kernel implements IKernel {
     $this->routeStrings[] = $routeString;
   }
 
+  /**
+   * @throws NoRouteForRequest
+   * @throws RouteInvalid
+   */
   public function handle() {
     foreach ($this->routeStrings as $routeString) {
       $route = new $routeString();
@@ -30,12 +36,20 @@ class Kernel implements IKernel {
     $this->handleNoRoute();
   }
 
+  /**
+   * @param string $routeString
+   * @throws RouteInvalid
+   * @return boolean
+   */
   public function handleInvalidRoute($routeString) {
-    throw new \Exception('Provided route [' . $routeString . '] is not instance of a Hilos\App\Router\Route');
+    throw new RouteInvalid($routeString);
   }
 
+  /**
+   * @throws NoRouteForRequest
+   */
   public function handleNoRoute() {
-    throw new \Exception('No routes for request');
+    throw new NoRouteForRequest();
   }
 
   public function handleFollowException(Route $route, \Exception $e) {
