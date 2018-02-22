@@ -1,6 +1,11 @@
 <?php
 namespace Hilos\Daemon;
 
+use Hilos\Daemon\Exception\ConnectionTimeout;
+use Hilos\Daemon\Exception\InvalidInternalConnection;
+use Hilos\Daemon\Exception\NonJsonResponse;
+use Hilos\Daemon\Exception\SocketSelect;
+
 class Client {
 
   private function __construct() {}
@@ -10,12 +15,15 @@ class Client {
    * @param string $method
    * @param mixed $data
    * @return array|null
-   * @throws \Exception
+   * @throws ConnectionTimeout
+   * @throws InvalidInternalConnection
+   * @throws NonJsonResponse
+   * @throws SocketSelect
    */
   public static function sendInternalRequest($method, $data) {
     $socket = @stream_socket_client('127.0.0.1:'.'8206', $errno, $errstr, 15);
     if (!$socket) {
-      throw new \Exception('Invalid internal connection');
+      throw new InvalidInternalConnection();
     }
     stream_socket_sendto($socket, json_encode(array('method' => $method, 'data' => $data)).PHP_EOL);
     $timeLeft = time();
@@ -23,7 +31,7 @@ class Client {
       $read = array($socket);
       $write = $except = array();
       if (stream_select($read, $write, $except, 1) === false) {
-        throw new \Exception('stream_select error');
+        throw new SocketSelect();
       }
       if (!empty($read)) {
         $json = null;
@@ -36,12 +44,12 @@ class Client {
         } while ($json === null);
         fclose($socket);
         if ($json === null) {
-          throw new \Exception('Non-json response: '.$ret);
+          throw new NonJsonResponse($ret);
         }
         return $json;
       }
     }
     fclose($socket);
-    throw new \Exception('Connection timeout');
+    throw new ConnectionTimeout();
   }
 }
