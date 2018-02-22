@@ -1,7 +1,7 @@
 <?php
 namespace Hilos\Daemon\Socket;
 
-class Connection {
+abstract class Connection {
   protected static $hvaltr = ['; ' => '&', ';' => '&', ' ' => '%20'];
 
   const MAX_ALLOWED_PACKET = 1024 * 1024 * 8;
@@ -128,7 +128,7 @@ class Connection {
     return $this->indexSocket;
   }
 
-  public function closed() {
+  public function getClosed() {
     return $this->closed;
   }
 

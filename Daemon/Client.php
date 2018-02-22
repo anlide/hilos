@@ -13,7 +13,7 @@ class Client {
    * @throws \Exception
    */
   public static function sendInternalRequest($method, $data) {
-    $socket = @stream_socket_client('127.0.0.1:'.'8205', $errno, $errstr, 15);
+    $socket = @stream_socket_client('127.0.0.1:'.'8206', $errno, $errstr, 15);
     if (!$socket) {
       throw new \Exception('Invalid internal connection');
     }
@@ -36,7 +36,7 @@ class Client {
         } while ($json === null);
         fclose($socket);
         if ($json === null) {
-          throw new \Exception('Non-json response');
+          throw new \Exception('Non-json response: '.$ret);
         }
         return $json;
       }
