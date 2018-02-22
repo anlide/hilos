@@ -14,4 +14,8 @@ abstract class Server implements IServer {
     socket_set_nonblock($this->socket);
     return $this->socket;
   }
+
+  function stop() {
+    socket_close($this->socket);
+  }
 }

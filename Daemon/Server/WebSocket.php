@@ -3,6 +3,7 @@
 namespace Hilos\Daemon\Server;
 
 use Hilos\Daemon\Client\Websocket as WebsocketClient;
+use Hilos\Daemon\Exception\SocketAcceptUnable;
 
 class WebSocket extends Server {
   protected $classWebsocketClient;
@@ -16,11 +17,7 @@ class WebSocket extends Server {
     if ($socket = socket_accept($this->socket)) {
       return new $this->classWebsocketClient($socket);
     } else {
-      throw new \Exception('Unable to accept socket');
+      throw new SocketAcceptUnable('WebSocket');
     }
-  }
-
-  function stop() {
-    // TODO: Implement stop() method.
   }
 }

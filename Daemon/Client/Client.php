@@ -34,18 +34,12 @@ abstract class Client implements IClient {
   /** @var array _SERVER */
   protected $server = [];
 
-  private $closeAbnormalTries;
-
   function getSocket() {
     return $this->socket;
   }
 
   function getState() {
     return $this->state;
-  }
-
-  function getClosed() {
-    return $this->closed;
   }
 
   function getUnparsedData() {
@@ -75,24 +69,45 @@ abstract class Client implements IClient {
     return $this->closed;
   }
 
+  public function stop() {
+    $this->close(self::CLOSE_NORMAL);
+  }
+
   protected final function receiveData() {
     if ($this->closed) return;
     socket_clear_error($this->socket);
     $data = socket_read($this->socket, self::MAX_BUFFER_SIZE);
     if (is_string($data) && !empty($data)) {
       $this->unparsedData .= $data;
-      $this->closeAbnormalTries = 0;
     } elseif ($this instanceof Websocket) {
       if (in_array(socket_last_error(), array(32, 104))) {
         $this->close(self::CLOSE_GOING_AWAY);
       } else {
-        if ($this->closeAbnormalTries > 1000) {
-          $this->close(self::CLOSE_ABNORMAL);
-        }
-        $this->closeAbnormalTries++;
+        $this->close(self::CLOSE_ABNORMAL);
       }
       return;
     }
+  }
+
+  /**
+   * Searches first occurence of the string in input buffer
+   * @param  string  $what  Needle
+   * @param  integer $start Offset start
+   * @param  integer $end   Offset end
+   * @return integer        Position
+   */
+  public function search($what, $start = 0, $end = -1) {
+    return strpos($this->unparsedData, $what, $start);
+  }
+
+  /**
+   * Reads all data from the connection's buffer
+   * @return string Readed data
+   */
+  public function readUnlimited() {
+    $ret = $this->unparsedData;
+    $this->unparsedData = '';
+    return $ret;
   }
 
   /**
@@ -150,6 +165,12 @@ abstract class Client implements IClient {
       $sended = socket_write($this->socket, $data, 65536 - 1);
       if ($sended === false) {
         if (socket_strerror( socket_last_error()) == 'Resource temporarily unavailable') {
+          $tryCount++;
+          if ($tryCount >= 1000) {
+            error_log('Hilos socket write error: resource temporarily unavailable too much times');
+            $this->close(self::CLOSE_ABNORMAL);
+            return false;
+          }
           sleep(0);
           continue;
         } else {
@@ -161,13 +182,19 @@ abstract class Client implements IClient {
             $this->close(self::CLOSE_GOING_AWAY);
             return false;
           }
-          throw new \Exception( sprintf( "Unable to write to socket: %s", socket_strerror( socket_last_error() ) ).'|'.socket_last_error().'|' );
+          error_log('Hilos socket write error: ' . socket_strerror( socket_last_error()));
+          $this->close(self::CLOSE_ABNORMAL);
+          return false;
         }
       }
       $bytesLeft -= $sended;
       $data = substr($data, $sended);
       $tryCount++;
-      if ($tryCount >= 100) throw new \Exception('socket_write more then ' . $tryCount . ' times!');
+      if ($tryCount >= 100) {
+        error_log('Hilos socket write error: too much amount of tries');
+        $this->close(self::CLOSE_ABNORMAL);
+        return false;
+      }
     } while ($bytesLeft > 0);
     return $total;
   }

@@ -18,13 +18,14 @@ class WebSocket extends Client {
   const OP_PING     =  9;
   const OP_PONG     = 10;
 
+  const MAX_ALLOWED_PACKET = 1024 * 1024 * 8;
+
   private $extensions;
   private $currentHeader;
   /** @var IWebSocketProtocol */
   protected $protocol = null;
 
   protected $ip;
-  protected $cookie;
   protected $handshaked = false;
 
   function __construct($socket) {
@@ -34,6 +35,10 @@ class WebSocket extends Client {
 
   public function getHandshaked() {
     return $this->handshaked;
+  }
+
+  public function getIp() {
+    return $this->ip;
   }
 
   public function handle() {
@@ -71,15 +76,17 @@ class WebSocket extends Client {
     }
   }
 
-  public function stop() {
-    // TODO: Implement stop() method.
-  }
-
+  /**
+   * This method should be overrided and used.
+   *
+   * @param $data
+   * @param $type
+   */
   public function onFrame($data, $type) {}
 
   /**
    * Called when we're going to handshake.
-   * @return boolean               Handshake status
+   * @return boolean Handshake status
    */
   public function handshake() {
     if (!$this->protocol->sendHandshakeReply()) {

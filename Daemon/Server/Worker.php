@@ -10,12 +10,4 @@ class Worker extends Server {
   function accept() {
     // TODO: Implement accept() method.
   }
-
-  function start() {
-    // TODO: Implement start() method.
-  }
-
-  function stop() {
-    // TODO: Implement stop() method.
-  }
 }

@@ -23,9 +23,10 @@ class Internal extends Client {
     $this->onReceiveLine($line);
   }
 
+  /**
+   * This method should be overrided and used.
+   *
+   * @param $line
+   */
   public function onReceiveLine($line) {}
-
-  function stop() {
-    // TODO: Implement stop() method.
-  }
 }

@@ -28,8 +28,6 @@ class V13 extends WebSocketProtocol {
 
   protected $framebuf = '';
 
-  const MAX_ALLOWED_PACKET = 1024 * 1024 * 8;
-
   /**
    * Called when new data received
    * @see http://tools.ietf.org/html/draft-ietf-hybi-thewebsocketprotocol-10#page-16
@@ -74,7 +72,7 @@ class V13 extends WebSocketProtocol {
           $dataLength = Client::bytes2int($this->client->look(8, $p));
           $p += 8;
         }
-        if (self::MAX_ALLOWED_PACKET <= $dataLength) {
+        if (WebSocket::MAX_ALLOWED_PACKET <= $dataLength) {
           // Too big packet
           $this->client->close(WebSocket::CLOSE_TOO_BIG);
           return;
@@ -165,7 +163,7 @@ class V13 extends WebSocketProtocol {
       return false;
     }
 
-    if ($this->client->getClosed() && $type !== 'CONNCLOSE') {
+    if ($this->client->closed() && $type !== 'CONNCLOSE') {
       return false;
     }
 
