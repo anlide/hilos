@@ -19,5 +19,8 @@
       "Hilos\\Daemon\\": "Daemon/",
       "Hilos\\App\\": "App/"
     }
+  },
+  "require-dev": {
+    "phpunit/phpunit": "7"
   }
 }
