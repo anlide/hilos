@@ -12,7 +12,7 @@ abstract class OAuth implements IOAuth {
   protected $secret;
   protected $accessToken = null;
 
-  private static $instances = array();
+  protected static $instances = array();
 
   private function __clone() {}
   protected function __construct() {}
