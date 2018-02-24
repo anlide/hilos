@@ -7,7 +7,7 @@ use Hilos\Daemon\Exception\SocketSelect;
 use Hilos\Daemon\Server\IServer;
 
 abstract class Master {
-  private static $stopSignal = false;
+  protected static $stopSignal = false;
 
   protected $adminEmail;
 

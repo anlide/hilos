@@ -14,14 +14,16 @@ class Client {
   /**
    * @param string $method
    * @param mixed $data
+   * @param int $port
+   * @param string $host
    * @return array|null
    * @throws ConnectionTimeout
    * @throws InvalidInternalConnection
    * @throws NonJsonResponse
    * @throws SocketSelect
    */
-  public static function sendInternalRequest($method, $data) {
-    $socket = @stream_socket_client('127.0.0.1:'.'8206', $errno, $errstr, 15);
+  public static function sendInternalRequest($method, $data, $port = 8206, $host = '127.0.0.1') {
+    $socket = @stream_socket_client($host.':'.$port, $errno, $errstr, 15);
     if (!$socket) {
       throw new InvalidInternalConnection();
     }
@@ -31,7 +33,7 @@ class Client {
       $read = array($socket);
       $write = $except = array();
       if (stream_select($read, $write, $except, 1) === false) {
-        throw new SocketSelect();
+        throw new SocketSelect(socket_last_error() . '/ ' . socket_strerror(socket_last_error()));
       }
       if (!empty($read)) {
         $json = null;
