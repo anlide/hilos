@@ -18,6 +18,7 @@
     "psr-4": {
       "Hilos\\Daemon\\": "Daemon/",
       "Hilos\\App\\": "App/",
+      "Hilos\\Service\\": "Service/",
       "Hilos\\Tests\\": "Tests/"
     }
   },
