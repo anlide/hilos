@@ -16,4 +16,7 @@ abstract class Route implements IRoute {
     }
     return true;
   }
+  public function handleFollowException(\Exception $e) {
+    throw $e;
+  }
 }

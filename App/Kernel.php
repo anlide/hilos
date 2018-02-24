@@ -3,9 +3,11 @@ namespace Hilos\App;
 
 use Hilos\App\Exception\RouteInvalid;
 use Hilos\App\Router\Route;
-use Hilos\Daemon\Exception\NoRouteForRequest;
+use Hilos\App\Exception\NoRouteForRequest;
 
-class Kernel implements IKernel {
+abstract class Kernel implements IKernel {
+  protected $response = '';
+
   private $routeStrings = [];
 
   protected function registerRoute(string $routeString) {
@@ -26,8 +28,12 @@ class Kernel implements IKernel {
       }
       if ($route->check()) {
         try {
+          ob_start();
           $route->follow();
+          $this->response = ob_get_contents();
+          ob_end_clean();
         } catch (\Exception $e) {
+          ob_end_clean();
           $this->handleFollowException($route, $e);
         }
         return;
@@ -54,5 +60,9 @@ class Kernel implements IKernel {
 
   public function handleFollowException(Route $route, \Exception $e) {
     $route->handleFollowException($e);
+  }
+
+  public function __toString() {
+    return $this->response;
   }
 }

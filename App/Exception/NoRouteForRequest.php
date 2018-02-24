@@ -1,5 +1,5 @@
 <?php
-namespace Hilos\Daemon\Exception;
+namespace Hilos\App\Exception;
 
 class NoRouteForRequest extends \Exception implements \Throwable {
 
