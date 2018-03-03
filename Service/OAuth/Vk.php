@@ -2,6 +2,7 @@
 namespace Hilos\Service\OAuth;
 
 use Hilos\Service\Exception\OAuth\AccessTokenEmpty;
+use Hilos\Service\Exception\OAuth\AccessTokenExpired;
 use Hilos\Service\Exception\OAuth\VkNoId;
 use Hilos\Service\OAuth;
 
@@ -31,6 +32,19 @@ class Vk extends OAuth {
       'v' => '5.8'
     );
     $userInfo = json_decode(file_get_contents('https://api.vk.com/method/users.get?'.urldecode(http_build_query($paramsQuery))), true);
+    if (isset($userInfo['error'])) {
+      if (!isset($userInfo['error']['error_code'])) {
+        throw new \Exception('Vk return wrong error format: '.json_encode($userInfo['error']));
+      }
+      switch ($userInfo['error']['error_code']) {
+        case 5:
+          throw new AccessTokenExpired();
+          break;
+        default:
+          throw new \Exception('Vk auth unknown error: '.json_encode($userInfo['error']));
+          break;
+      }
+    }
     $this->parseData($userInfo);
   }
   function parseData($userInfo, $params = null) {
