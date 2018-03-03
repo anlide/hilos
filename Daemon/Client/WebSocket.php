@@ -30,7 +30,7 @@ class WebSocket extends Client {
 
   function __construct($socket) {
     $this->socket = $socket;
-    socket_getpeername($socket, $this->ip);
+    @socket_getpeername($socket, $this->ip);
   }
 
   public function getHandshaked() {
