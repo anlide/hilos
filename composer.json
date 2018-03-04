@@ -19,7 +19,8 @@
       "Hilos\\Daemon\\": "Daemon/",
       "Hilos\\App\\": "App/",
       "Hilos\\Service\\": "Service/",
-      "Hilos\\Tests\\": "Tests/"
+      "Hilos\\Tests\\": "Tests/",
+      "Hilos\\Database\\": "Database/"
     }
   },
   "require-dev": {

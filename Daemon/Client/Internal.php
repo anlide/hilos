@@ -2,7 +2,7 @@
 
 namespace Hilos\Daemon\Client;
 
-class Internal extends Client {
+abstract class Internal extends Client {
   private $failCount = 0;
 
   function __construct($socket) {
@@ -28,5 +28,5 @@ class Internal extends Client {
    *
    * @param $line
    */
-  public function onReceiveLine($line) {}
+  public abstract function onReceiveLine($line);
 }

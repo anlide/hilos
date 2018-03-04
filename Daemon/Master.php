@@ -5,6 +5,8 @@ use Hilos\Daemon\Client\IClient;
 use Hilos\Daemon\Exception\InvalidSituation;
 use Hilos\Daemon\Exception\SocketSelect;
 use Hilos\Daemon\Server\IServer;
+use Hilos\Daemon\Worker\Master as WorkerMaster;
+use Hilos\Daemon\Task\Master as TaskMaster;
 
 abstract class Master {
   protected static $stopSignal = false;
@@ -18,8 +20,38 @@ abstract class Master {
 
   protected $sockets;
 
+  /** @var WorkerMaster[] */
+  protected $workers = [];
+
+  /** @var TaskMaster[] */
+  private $tasks = [];
+
   public function registerServer(IServer $server) {
     $this->servers[] = $server;
+  }
+
+  public function taskExists($taskType, $index) {
+    $this->tasks[$taskType][$index];
+  }
+
+  public function taskAdd(TaskMaster $task) {
+    if (!isset($this->tasks[$task->getTaskType()])) {
+      $this->tasks[$task->getTaskType()] = [];
+    }
+    if (!isset($this->tasks[$task->getTaskType()][$task->getTaskIndex()])) {
+      $this->tasks[$task->getTaskType()][$task->getTaskIndex()] = $task;
+    }
+    return $this->tasks[$task->getTaskType()][$task->getTaskIndex()];
+  }
+
+  public function runWorkers($initialFile, $count = null) {
+    if ($count === null) $count = $this->getProcessorCount();
+    if ($count < 1) throw new \Exception('Invalid processors count');
+    if (!empty($this->workers)) throw new \Exception('Trying to run workers twice');
+    for ($index = 0; $index < $count; $index++) {
+      $this->workers[$index] = new WorkerMaster($index);
+      $this->workers[$index]->start($initialFile);
+    }
   }
 
   protected function tick() {}
@@ -83,6 +115,10 @@ abstract class Master {
         $server->stop();
       }
       unset($server);
+      foreach ($this->workers as &$worker) {
+        $worker->stop();
+      }
+      unset($server);
     } catch (\Exception $e) {
       error_log($e->getMessage());
       error_log($e->getTraceAsString());
@@ -127,5 +163,15 @@ abstract class Master {
 
     pcntl_signal(SIGTERM, 'Hilos\\Daemon\\signal_handler');
     pcntl_signal(SIGHUP, 'Hilos\\Daemon\\signal_handler');
+  }
+
+  protected function getProcessorCount() {
+    // TODO: implement this feature for windows correctly
+    if (strtolower(substr(PHP_OS, 0, 3)) == 'win') {
+      return 3;
+    } else {
+      exec('cat /proc/cpuinfo | grep ^processor |wc -l', $output);
+      return intval($output[0]);
+    }
   }
 }
