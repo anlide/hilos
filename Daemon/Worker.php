@@ -34,6 +34,8 @@ class Worker {
     socket_set_nonblock($master);
     $unparsedString = '';
 
+    socket_write($master, json_encode(['index_worker' => $this->indexWorker]).PHP_EOL);
+
     try {
       while (!self::$stopSignal) {
         if (strtoupper(substr(PHP_OS, 0, 3)) !== 'WIN') {
@@ -61,33 +63,33 @@ class Worker {
               if (empty($line)) continue;
               $json = json_decode($line, true);
               if ($json === false) {
-                error_log($this->hilos_microtime().'|'.$this->indexWorker . ': invalid json at line "' . $line . '"');
+                error_log($this->indexWorker . ': invalid json at line "' . $line . '"');
                 continue;
               }
               if (!isset($json['worker_action'])) {
-                error_log($this->hilos_microtime().'|'.$this->indexWorker . ': not found param worker_action at line "' . $line . '"');
+                error_log($this->indexWorker . ': not found param worker_action at line "' . $line . '"');
                 continue;
               }
               switch ($json['worker_action']) {
                 case 'task_add':
-                  $task_manager_worker->task_add($json['task_index'], $json['task_class'], $json['params']);
+                  $this->taskAdd($json['task_type'], $json['task_index']);
                   break;
                 case 'task_delete':
                   if (!isset($json['task_index'])) {
-                    error_log($this->hilos_microtime().'|'.$this->indexWorker . ': task delete "' . $json['action'] . '" missed index param');
+                    error_log($this->indexWorker . ': task delete "' . $json['action'] . '" missed index param');
                     break;
                   }
-                  $task_manager_worker->task_delete($json['task_index']);
+                  $this->taskDelete($json['task_type'], $json['task_index']);
                   break;
                 case 'task_action':
                   if (!isset($json['task_index'])) {
-                    error_log($this->hilos_microtime().'|'.$this->indexWorker . ': action "' . $json['action'] . '" missed index param');
+                    error_log($this->indexWorker . ': action "' . $json['action'] . '" missed index param');
                     break;
                   }
-                  $task_manager_worker->task_action($json['task_index'], $json['action'], $json['params']);
+                  $this->taskAction($json['task_type'], $json['task_index'], $json['action'], $json['params']);
                   break;
                 case 'task_system':
-                  $task_manager_worker->task_system($json['action'], $json['params']);
+                  $this->taskSystem($json['action'], $json['params']);
                   break;
                 default:
                   throw new \Exception('Unknow worker_action');
@@ -136,5 +138,21 @@ class Worker {
 
     pcntl_signal(SIGTERM, 'Hilos\\Daemon\\signal_handler_worker');
     pcntl_signal(SIGHUP, 'Hilos\\Daemon\\signal_handler_worker');
+  }
+
+  protected function taskAdd($type, $index) {
+    error_log('taskAdd'.$type.$index);
+  }
+
+  protected function taskDelete($type, $index) {
+    error_log('taskDelete'.$type.$index);
+  }
+
+  protected function taskAction($type, $index, $action, $params) {
+    error_log('taskAction'.$type.$index.$action.json_encode($params));
+  }
+
+  protected function taskSystem($action, $params) {
+    error_log('taskSystem'.$action.json_encode($params));
   }
 }

@@ -5,8 +5,8 @@ use Hilos\Daemon\Client\IClient;
 use Hilos\Daemon\Exception\InvalidSituation;
 use Hilos\Daemon\Exception\SocketSelect;
 use Hilos\Daemon\Server\IServer;
-use Hilos\Daemon\Worker\Master as WorkerMaster;
-use Hilos\Daemon\Task\Master as TaskMaster;
+use Hilos\Daemon\Server\Worker as ServerWorker;
+use Hilos\Daemon\Task\IMaster;
 
 abstract class Master {
   protected static $stopSignal = false;
@@ -17,41 +17,33 @@ abstract class Master {
   protected $servers;
   /** @var IClient[] */
   protected $clients;
+  /** @var ServerWorker */
+  protected $serverWorker = null;
 
   protected $sockets;
 
-  /** @var WorkerMaster[] */
-  protected $workers = [];
-
-  /** @var TaskMaster[] */
-  private $tasks = [];
-
   public function registerServer(IServer $server) {
     $this->servers[] = $server;
+    if ($server instanceof ServerWorker) {
+      if ($this->serverWorker !== null) {
+        throw new \Exception('Unable init server worker twice');
+      }
+      $this->serverWorker = $server;
+    }
   }
 
-  public function taskExists($taskType, $index) {
-    $this->tasks[$taskType][$index];
-  }
-
-  public function taskAdd(TaskMaster $task) {
-    if (!isset($this->tasks[$task->getTaskType()])) {
-      $this->tasks[$task->getTaskType()] = [];
-    }
-    if (!isset($this->tasks[$task->getTaskType()][$task->getTaskIndex()])) {
-      $this->tasks[$task->getTaskType()][$task->getTaskIndex()] = $task;
-    }
-    return $this->tasks[$task->getTaskType()][$task->getTaskIndex()];
+  public function taskAdd($task) {
+    if (!($task instanceof IMaster)) return;
+    if ($this->serverWorker === null) throw new \Exception('Server Worker not registered');
+    $this->serverWorker->addTask($task);
   }
 
   public function runWorkers($initialFile, $count = null) {
     if ($count === null) $count = $this->getProcessorCount();
+    if ($this->serverWorker === null) throw new \Exception('Server Worker not registered');
     if ($count < 1) throw new \Exception('Invalid processors count');
     if (!empty($this->workers)) throw new \Exception('Trying to run workers twice');
-    for ($index = 0; $index < $count; $index++) {
-      $this->workers[$index] = new WorkerMaster($index);
-      $this->workers[$index]->start($initialFile);
-    }
+    $this->serverWorker->runWorkers($initialFile, $count);
   }
 
   protected function tick() {}
@@ -113,10 +105,6 @@ abstract class Master {
       unset($client);
       foreach ($this->servers as &$server) {
         $server->stop();
-      }
-      unset($server);
-      foreach ($this->workers as &$worker) {
-        $worker->stop();
       }
       unset($server);
     } catch (\Exception $e) {

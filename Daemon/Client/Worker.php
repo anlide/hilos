@@ -3,22 +3,27 @@
 namespace Hilos\Daemon\Client;
 
 use Hilos\Daemon\Exception\NonJsonResponse;
+use Hilos\Daemon\Task\Master as TaskMaster;
 
 abstract class Worker extends Client {
-  /**
-   * State: first line
-   */
+  /** State: first line */
   const STATE_INDEX  = 1;
 
-  /**
-   * State: other lines
-   */
+  /** State: other lines */
   const STATE_WORK  = 2;
 
-  private $index = null;
+  private $indexWorker = null;
+
+  /** @var TaskMaster[] */
+  private $tasks = [];
+  protected $delayedSignals = [];
 
   function __construct($socket) {
     $this->socket = $socket;
+  }
+
+  public function getIndexWorker() {
+    return $this->indexWorker;
   }
 
   /**
@@ -26,6 +31,7 @@ abstract class Worker extends Client {
    */
   function handle() {
     if ($this->closed) return;
+    $this->receiveData();
     if ($this->state === self::STATE_STANDBY) {
       $this->state = self::STATE_INDEX;
     }
@@ -52,8 +58,8 @@ abstract class Worker extends Client {
       $this->state = self::CLOSE_PROTOCOL;
       return false;
     }
-    $this->index = intval($json['index_worker']);
-    $this->onConnected($this->index);
+    $this->indexWorker = intval($json['index_worker']);
+    $this->onConnected($this->indexWorker);
     return true;
   }
 
@@ -69,11 +75,32 @@ abstract class Worker extends Client {
       error_log('Invalid worker line: "' . $line . '"');
       throw new NonJsonResponse('line read error');
     }
-    $this->onReceiveJson($this->index, $json);
+    $this->onReceiveJson($this->indexWorker, $json);
     return true;
   }
 
-  public abstract function onConnected($index);
+  public function taskCount() {
+    return count($this->tasks);
+  }
 
-  public abstract function onReceiveJson($index, $json);
+  public function taskAdd(TaskMaster $task) {
+    $taskIndex = $task->getTaskIndex();
+    $taskType = $task->getTaskType();
+    if ($taskIndex === null) throw new \Exception('taskIndex is null at worker taskAdd');
+    if ($taskType === null) throw new \Exception('taskType is null at worker taskAdd');
+    if (isset($this->tasks[$taskType.'-'.$taskIndex])) return;
+    //$task->set_worker($this);
+    $this->tasks[$taskType.'-'.$taskIndex] = &$task;
+    $this->sendSignal('task_add', $taskType, $taskIndex);
+  }
+
+  private function sendSignal($workerAction, $taskType, $taskIndex) {
+    $jsonSignal = array('worker_action' => $workerAction, 'task_type' => $taskType, 'task_index' => $taskIndex);
+    $signal = json_encode($jsonSignal);
+    $this->write($signal.PHP_EOL);
+  }
+
+  protected abstract function onConnected($index);
+
+  protected abstract function onReceiveJson($index, $json);
 }

@@ -162,7 +162,7 @@ abstract class Client implements IClient {
     $tryCount = 0;
     do {
       socket_clear_error($this->socket);
-      $sended = socket_write($this->socket, $data, 65536 - 1);
+      $sended = @socket_write($this->socket, $data, 65536 - 1);
       if ($sended === false) {
         if (socket_strerror( socket_last_error()) == 'Resource temporarily unavailable') {
           $tryCount++;
@@ -179,6 +179,10 @@ abstract class Client implements IClient {
             return false;
           }
           if (socket_last_error() == 32) {
+            $this->close(self::CLOSE_GOING_AWAY);
+            return false;
+          }
+          if (socket_last_error() == 10053) {
             $this->close(self::CLOSE_GOING_AWAY);
             return false;
           }

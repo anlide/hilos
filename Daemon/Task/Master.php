@@ -2,7 +2,7 @@
 
 namespace Hilos\Daemon\Task;
 
-abstract class Master {
+abstract class Master implements IMaster {
   private $taskType = null;
   private $taskIndex = null;
 
@@ -18,4 +18,6 @@ abstract class Master {
   public function getTaskIndex() {
     return $this->taskIndex;
   }
+
+
 }
