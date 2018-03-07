@@ -27,7 +27,7 @@ class Worker extends Server {
     }
   }
 
-  public function addTask($task) {
+  public function addTask(&$task) {
     $minIndex = null;
     $minCount = null;
     foreach ($this->clients as $index => &$client) {
@@ -37,6 +37,10 @@ class Worker extends Server {
         $minIndex = $index;
         $minCount = $count;
       }
+    }
+    if ($minIndex === null) {
+      // TODO: implement delay task
+      throw new \Exception('No workers for this task!');
     }
     $this->clients[$minIndex]->taskAdd($task);
   }

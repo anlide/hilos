@@ -1,12 +1,19 @@
 <?php
 namespace Hilos\Daemon;
 
-class Worker {
+use Hilos\Daemon\Task\Worker as TaskWorker;
+
+abstract class Worker {
   protected static $stopSignal = false;
 
   private $indexWorker = null;
   protected $adminEmail = null;
   private $masterPort = null;
+  /** @var resource */
+  private $master = null;
+
+  /** @var TaskWorker[][] */
+  protected $tasks = [];
 
   protected function getIndexWorker() {
     return $this->indexWorker;
@@ -22,26 +29,32 @@ class Worker {
   }
 
   protected function tick() {
-    // TODO: process tasks here
+    foreach ($this->tasks as $type => &$tasks) {
+      foreach ($tasks as $index => &$task) {
+        $this->tasks[$type][$index]->tick();
+      }
+      unset($task);
+    }
+    unset($tasks);
   }
 
   public function run() {
 
     $this->initPcntl();
 
-    $master = socket_create(AF_INET, SOCK_STREAM, SOL_TCP);
-    socket_connect($master, '127.0.0.1', $this->masterPort);
-    socket_set_nonblock($master);
+    $this->master = socket_create(AF_INET, SOCK_STREAM, SOL_TCP);
+    socket_connect($this->master, '127.0.0.1', $this->masterPort);
+    socket_set_nonblock($this->master);
     $unparsedString = '';
 
-    socket_write($master, json_encode(['index_worker' => $this->indexWorker]).PHP_EOL);
+    $this->write(['index_worker' => $this->indexWorker]);
 
     try {
       while (!self::$stopSignal) {
         if (strtoupper(substr(PHP_OS, 0, 3)) !== 'WIN') {
           pcntl_signal_dispatch();
         }
-        $read = [$master];
+        $read = [$this->master];
         $write = $except = null;
         $numChangedStreams = @socket_select($read, $write, $except, 0, 250000);
         if ($numChangedStreams === false) {
@@ -54,7 +67,7 @@ class Worker {
             pcntl_signal_dispatch();
           }
         } else {
-          $unparsedString .= socket_read($master, 1024 * 1024 * 32);
+          $unparsedString .= socket_read($this->master, 1024 * 1024 * 32);
           $lines = explode(PHP_EOL, $unparsedString);
           if (count($lines) > 1) {
             $lines_processed = 0;
@@ -72,21 +85,41 @@ class Worker {
               }
               switch ($json['worker_action']) {
                 case 'task_add':
+                  if (!isset($json['task_type'])) {
+                    error_log($this->indexWorker . ': task add "' . $json['worker_action'] . '" missed type param');
+                    break;
+                  }
+                  if (!isset($json['task_index'])) {
+                    error_log($this->indexWorker . ': task add "' . $json['worker_action'] . '" missed index param');
+                    break;
+                  }
                   $this->taskAdd($json['task_type'], $json['task_index']);
                   break;
                 case 'task_delete':
+                  if (!isset($json['task_type'])) {
+                    error_log($this->indexWorker . ': task delete "' . $json['worker_action'] . '" missed type param');
+                    break;
+                  }
                   if (!isset($json['task_index'])) {
-                    error_log($this->indexWorker . ': task delete "' . $json['action'] . '" missed index param');
+                    error_log($this->indexWorker . ': task delete "' . $json['worker_action'] . '" missed index param');
                     break;
                   }
                   $this->taskDelete($json['task_type'], $json['task_index']);
                   break;
                 case 'task_action':
-                  if (!isset($json['task_index'])) {
-                    error_log($this->indexWorker . ': action "' . $json['action'] . '" missed index param');
+                  if (!isset($json['task_type'])) {
+                    error_log($this->indexWorker . ': task action "' . $json['worker_action'] . '" missed type param');
                     break;
                   }
-                  $this->taskAction($json['task_type'], $json['task_index'], $json['action'], $json['params']);
+                  if (!isset($json['task_index'])) {
+                    error_log($this->indexWorker . ': task action "' . $json['worker_action'] . '" missed index param');
+                    break;
+                  }
+                  if (!isset($json['action'])) {
+                    error_log($this->indexWorker . ': task action "' . $json['worker_action'] . '" missed action param');
+                    break;
+                  }
+                  $this->taskAction($json['task_type'], $json['task_index'], $json['action'], isset($json['params']) ? $json['params'] : null);
                   break;
                 case 'task_system':
                   $this->taskSystem($json['action'], $json['params']);
@@ -140,8 +173,20 @@ class Worker {
     pcntl_signal(SIGHUP, 'Hilos\\Daemon\\signal_handler_worker');
   }
 
+  protected abstract function getTaskByType($type, $index = null):TaskWorker;
+
+  protected function write($json) {
+    socket_write($this->master, json_encode($json).PHP_EOL);
+  }
+
   protected function taskAdd($type, $index) {
-    error_log('taskAdd'.$type.$index);
+    if (!isset($this->tasks[$type])) {
+      $this->tasks[$type] = [];
+    }
+    if (isset($this->tasks[$type][$index])) {
+      return;
+    }
+    $this->tasks[$type][$index] = $this->getTaskByType($type, $index);
   }
 
   protected function taskDelete($type, $index) {
@@ -149,7 +194,9 @@ class Worker {
   }
 
   protected function taskAction($type, $index, $action, $params) {
-    error_log('taskAction'.$type.$index.$action.json_encode($params));
+    if (!isset($this->tasks[$type])) return;
+    if (!isset($this->tasks[$type][$index])) return;
+    $this->tasks[$type][$index]->onAction($action, $params);
   }
 
   protected function taskSystem($action, $params) {

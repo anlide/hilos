@@ -6,7 +6,7 @@ use Hilos\Daemon\Exception\InvalidSituation;
 use Hilos\Daemon\Exception\SocketSelect;
 use Hilos\Daemon\Server\IServer;
 use Hilos\Daemon\Server\Worker as ServerWorker;
-use Hilos\Daemon\Task\IMaster;
+use Hilos\Daemon\Task\Master as TaskMaster;
 
 abstract class Master {
   protected static $stopSignal = false;
@@ -20,6 +20,9 @@ abstract class Master {
   /** @var ServerWorker */
   protected $serverWorker = null;
 
+  /** @var TaskMaster[] */
+  protected $tasks = [];
+
   protected $sockets;
 
   public function registerServer(IServer $server) {
@@ -32,10 +35,23 @@ abstract class Master {
     }
   }
 
-  public function taskAdd($task) {
-    if (!($task instanceof IMaster)) return;
+  /**
+   * @param $taskType
+   * @param $taskIndex
+   * @return TaskMaster
+   * @throws \Exception
+   */
+  protected function getTaskByType($taskType, $taskIndex) {
+    throw new \Exception('getTaskByType not implemented at final class');
+  }
+
+  public function taskGet($taskType, $taskIndex) {
     if ($this->serverWorker === null) throw new \Exception('Server Worker not registered');
-    $this->serverWorker->addTask($task);
+    if (!isset($this->tasks[$taskType . '-' . $taskIndex])) {
+      $this->tasks[$taskType . '-' . $taskIndex] = $this->getTaskByType($taskType, $taskIndex);
+      $this->serverWorker->addTask($this->tasks[$taskType . '-' . $taskIndex]);
+    }
+    return $this->tasks[$taskType . '-' . $taskIndex];
   }
 
   public function runWorkers($initialFile, $count = null) {
@@ -88,7 +104,6 @@ abstract class Master {
           if (substr($indexSocket, 0, 7) == 'client-') {
             $indexSocketClient = substr($indexSocket, 7);
             $this->handleClient($indexSocketClient);
-            unset($client);
             if ($this->clients[$indexSocketClient]->closed()) {
               $this->closeClient($indexSocketClient);
             }

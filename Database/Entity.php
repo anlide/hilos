@@ -171,7 +171,7 @@ abstract class Entity {
     return $objs[0];
   }
 
-  public static function get_empty() {
+  public static function getEmpty() {
     $class = get_called_class();
     $obj = new $class();
     return $obj;

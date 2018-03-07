@@ -15,7 +15,7 @@ abstract class Worker extends Client {
   private $indexWorker = null;
 
   /** @var TaskMaster[] */
-  private $tasks = [];
+  protected $tasks = [];
   protected $delayedSignals = [];
 
   function __construct($socket) {
@@ -83,24 +83,30 @@ abstract class Worker extends Client {
     return count($this->tasks);
   }
 
-  public function taskAdd(TaskMaster $task) {
+  public function taskAdd(TaskMaster &$task) {
     $taskIndex = $task->getTaskIndex();
     $taskType = $task->getTaskType();
     if ($taskIndex === null) throw new \Exception('taskIndex is null at worker taskAdd');
     if ($taskType === null) throw new \Exception('taskType is null at worker taskAdd');
-    if (isset($this->tasks[$taskType.'-'.$taskIndex])) return;
-    //$task->set_worker($this);
-    $this->tasks[$taskType.'-'.$taskIndex] = &$task;
+    if (isset($this->tasks[$taskType . '-' . $taskIndex])) return false;
+    $this->tasks[$taskType . '-' . $taskIndex] = $task;
     $this->sendSignal('task_add', $taskType, $taskIndex);
+    $this->tasks[$taskType . '-' . $taskIndex]->setCallbackSendToWorker(function($taskType, $taskIndex, $action, $json){
+      $this->sendSignal('task_action', $taskType, $taskIndex, $action, $json);
+    });
+    return true;
   }
 
-  private function sendSignal($workerAction, $taskType, $taskIndex) {
-    $jsonSignal = array('worker_action' => $workerAction, 'task_type' => $taskType, 'task_index' => $taskIndex);
+  private function sendSignal($workerAction, $taskType, $taskIndex, $action = null, $params = []) {
+    $jsonSignal = ['worker_action' => $workerAction, 'task_type' => $taskType, 'task_index' => $taskIndex, 'params' => $params];
+    if ($action !== null) {
+      $jsonSignal['action'] = $action;
+    }
     $signal = json_encode($jsonSignal);
     $this->write($signal.PHP_EOL);
   }
 
-  protected abstract function onConnected($index);
+  protected function onConnected($index) {}
 
-  protected abstract function onReceiveJson($index, $json);
+  protected function onReceiveJson($index, $json) {}
 }

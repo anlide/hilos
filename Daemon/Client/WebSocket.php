@@ -217,4 +217,8 @@ class WebSocket extends Client {
     $class = 'Hilos\\Daemon\\Client\\WebSocketProtocol\\'.$protocol;
     $this->protocol = new $class($this, $this->unparsedData);
   }
+
+  public function sendFrame($data, $type = null) {
+    $this->protocol->sendFrame($data, $type);
+  }
 }
