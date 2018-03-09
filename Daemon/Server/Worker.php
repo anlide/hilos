@@ -4,6 +4,7 @@ namespace Hilos\Daemon\Server;
 
 use Hilos\Daemon\Client\Worker as ClientWorker;
 use Hilos\Daemon\Exception\SocketAcceptUnable;
+use Hilos\Daemon\Task\Master as TaskMaster;
 
 class Worker extends Server {
 
@@ -12,6 +13,9 @@ class Worker extends Server {
   protected $processes = [];
   /** @var ClientWorker[] */
   protected $clients = [];
+
+  /** @var TaskMaster[] */
+  protected $delayTasks = [];
 
   function __construct($port, $classWorkerClient = ClientWorker::class) {
     $this->port = $port;
@@ -27,7 +31,7 @@ class Worker extends Server {
     }
   }
 
-  public function addTask(&$task) {
+  public function addTask(&$task, $delay = false) {
     $minIndex = null;
     $minCount = null;
     foreach ($this->clients as $index => &$client) {
@@ -39,10 +43,24 @@ class Worker extends Server {
       }
     }
     if ($minIndex === null) {
-      // TODO: implement delay task
-      throw new \Exception('No workers for this task!');
+      if (!$delay) {
+        $this->delayTasks[] = $task;
+      }
+    } else {
+      $this->clients[$minIndex]->taskAdd($task);
+      return true;
     }
-    $this->clients[$minIndex]->taskAdd($task);
+    return false;
+  }
+
+  function tick() {
+    if ((count($this->delayTasks) == 0) || (count($this->clients) == 0)) return;
+    foreach ($this->delayTasks as $index => $task) {
+      if ($this->addTask($task, true)) {
+        unset($this->delayTasks[$index]);
+      }
+    }
+    unset($task);
   }
 
   function stop() {

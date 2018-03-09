@@ -45,7 +45,7 @@ abstract class Master {
     throw new \Exception('getTaskByType not implemented at final class');
   }
 
-  public function taskGet($taskType, $taskIndex) {
+  public function taskGet($taskType, $taskIndex = null) {
     if ($this->serverWorker === null) throw new \Exception('Server Worker not registered');
     if (!isset($this->tasks[$taskType . '-' . $taskIndex])) {
       $this->tasks[$taskType . '-' . $taskIndex] = $this->getTaskByType($taskType, $taskIndex);
@@ -62,7 +62,12 @@ abstract class Master {
     $this->serverWorker->runWorkers($initialFile, $count);
   }
 
-  protected function tick() {}
+  protected function tick() {
+    foreach ($this->servers as &$server) {
+      $server->tick();
+    }
+    unset($server);
+  }
 
   public function run() {
     $sockets = [];

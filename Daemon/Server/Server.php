@@ -18,4 +18,6 @@ abstract class Server implements IServer {
   function stop() {
     socket_close($this->socket);
   }
+
+  function tick() {}
 }

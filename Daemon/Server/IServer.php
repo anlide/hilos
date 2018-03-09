@@ -16,4 +16,6 @@ interface IServer {
   public function accept();
 
   public function stop();
+
+  public function tick();
 }
