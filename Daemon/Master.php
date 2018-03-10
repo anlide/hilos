@@ -67,6 +67,10 @@ abstract class Master {
       $server->tick();
     }
     unset($server);
+    foreach ($this->clients as &$client) {
+      $client->tick();
+    }
+    unset($client);
   }
 
   public function run() {

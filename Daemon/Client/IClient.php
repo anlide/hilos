@@ -6,4 +6,5 @@ interface IClient {
   function handle();
   function stop();
   function closed();
+  function tick();
 }

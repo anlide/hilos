@@ -34,6 +34,10 @@ abstract class Client implements IClient {
   /** @var array _SERVER */
   protected $server = [];
 
+  /** @var string[] */
+  protected $delayWrite = [];
+  protected $failedStart = null;
+
   function getSocket() {
     return $this->socket;
   }
@@ -73,14 +77,31 @@ abstract class Client implements IClient {
     $this->close(self::CLOSE_NORMAL);
   }
 
+  public function tick() {
+    if (count($this->delayWrite) == 0) return;
+    if ($this->failedStart === null) $this->failedStart = time();
+    $delayWrite = $this->delayWrite;
+    $this->delayWrite = [];
+    foreach ($delayWrite as $data) {
+      $this->write($data);
+    }
+    if (count($this->delayWrite) == 0) {
+      $this->failedStart = null;
+    } else {
+      if (time() - $this->failedStart > 20) {
+        throw new \Exception('Failed to write more that 20 seconds');
+      }
+    }
+  }
+
   protected final function receiveData() {
     if ($this->closed) return;
     socket_clear_error($this->socket);
-    $data = socket_read($this->socket, self::MAX_BUFFER_SIZE);
+    $data = @socket_read($this->socket, self::MAX_BUFFER_SIZE);
     if (is_string($data) && !empty($data)) {
       $this->unparsedData .= $data;
-    } elseif ($this instanceof Websocket) {
-      if (in_array(socket_last_error(), array(32, 104))) {
+    } else {
+      if (in_array(socket_last_error(), array(32, 104, 10054))) {
         $this->close(self::CLOSE_GOING_AWAY);
       } else {
         $this->close(self::CLOSE_ABNORMAL);
@@ -93,10 +114,9 @@ abstract class Client implements IClient {
    * Searches first occurence of the string in input buffer
    * @param  string  $what  Needle
    * @param  integer $start Offset start
-   * @param  integer $end   Offset end
    * @return integer        Position
    */
-  public function search($what, $start = 0, $end = -1) {
+  public function search($what, $start = 0) {
     return strpos($this->unparsedData, $what, $start);
   }
 
@@ -164,15 +184,9 @@ abstract class Client implements IClient {
       socket_clear_error($this->socket);
       $sended = @socket_write($this->socket, $data, 65536 - 1);
       if ($sended === false) {
-        if (socket_strerror( socket_last_error()) == 'Resource temporarily unavailable') {
-          $tryCount++;
-          if ($tryCount >= 1000) {
-            error_log('Hilos socket write error: resource temporarily unavailable too much times');
-            $this->close(self::CLOSE_ABNORMAL);
-            return false;
-          }
-          sleep(0);
-          continue;
+        if ((socket_strerror(socket_last_error()) == 'Resource temporarily unavailable') || (socket_last_error() == 10035)) {
+          $this->delayWrite[] = $data;
+          return false;
         } else {
           if (socket_last_error() == 104) {
             $this->close(self::CLOSE_GOING_AWAY);
@@ -186,7 +200,7 @@ abstract class Client implements IClient {
             $this->close(self::CLOSE_GOING_AWAY);
             return false;
           }
-          error_log('Hilos socket write error: ' . socket_strerror( socket_last_error()));
+          error_log('Hilos socket write error [' . socket_last_error() . '] : ' . socket_strerror(socket_last_error()));
           $this->close(self::CLOSE_ABNORMAL);
           return false;
         }
@@ -195,8 +209,7 @@ abstract class Client implements IClient {
       $data = substr($data, $sended);
       $tryCount++;
       if ($tryCount >= 100) {
-        error_log('Hilos socket write error: too much amount of tries');
-        $this->close(self::CLOSE_ABNORMAL);
+        $this->delayWrite[] = $data;
         return false;
       }
     } while ($bytesLeft > 0);
