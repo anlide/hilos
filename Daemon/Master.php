@@ -14,9 +14,9 @@ abstract class Master {
   protected $adminEmail;
 
   /** @var IServer[] */
-  protected $servers;
+  protected $servers = [];
   /** @var IClient[] */
-  protected $clients;
+  protected $clients = [];
   /** @var ServerWorker */
   protected $serverWorker = null;
 
@@ -158,17 +158,17 @@ abstract class Master {
         case SIGTERM:
           error_log('SIGTERM');
           // NOTE: handle stop tasks
-          self::$stopSignal = true;
+          Master::$stopSignal = true;
           break;
         case SIGHUP:
           error_log('SIGHUP');
           // NOTE: handle restart tasks
-          self::$stopSignal = true;
+          Master::$stopSignal = true;
           break;
         case SIGINT:
           error_log('SIGINT');
           // NOTE: handle exit tasks
-          self::$stopSignal = true;
+          Master::$stopSignal = true;
           break;
       }
     }

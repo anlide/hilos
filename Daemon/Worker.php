@@ -154,17 +154,17 @@ abstract class Worker {
         case SIGTERM:
           error_log('SIGTERM');
           // NOTE: handle stop tasks
-          self::$stopSignal = true;
+          Worker::$stopSignal = true;
           break;
         case SIGHUP:
           error_log('SIGHUP');
           // NOTE: handle restart tasks
-          self::$stopSignal = true;
+          Worker::$stopSignal = true;
           break;
         case SIGINT:
           error_log('SIGINT');
           // NOTE: handle exit tasks
-          self::$stopSignal = true;
+          Worker::$stopSignal = true;
           break;
       }
     }
