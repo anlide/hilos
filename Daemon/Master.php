@@ -9,7 +9,7 @@ use Hilos\Daemon\Server\Worker as ServerWorker;
 use Hilos\Daemon\Task\Master as TaskMaster;
 
 abstract class Master {
-  protected static $stopSignal = false;
+  public static $stopSignal = false;
 
   protected $adminEmail;
 
