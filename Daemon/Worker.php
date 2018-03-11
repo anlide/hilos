@@ -67,7 +67,12 @@ abstract class Worker {
             pcntl_signal_dispatch();
           }
         } else {
+          socket_clear_error($this->master);
           $unparsedString .= socket_read($this->master, 1024 * 1024 * 32);
+          if (in_array(socket_last_error(), array(107))) {
+            self::$stopSignal = true;
+            continue;
+          }
           $lines = explode(PHP_EOL, $unparsedString);
           if (count($lines) > 1) {
             $lines_processed = 0;
