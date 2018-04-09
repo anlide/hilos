@@ -112,8 +112,26 @@ abstract class Entity {
   }
 
   protected function setRelatedData($row) {
+    $class = get_called_class();
     foreach($row as $column => $value) {
-      $this->$column = $value;
+      if (isset($class::_types[$column])) {
+        switch ($class::_types[$column]) {
+          case 'string':
+            $this->$column = $value;
+            break;
+          case 'integer':
+            $this->$column = ($value === null ? null : intval($value));
+            break;
+          case 'boolean':
+            $this->$column = ($value === null ? null : boolval($value));
+            break;
+          default:
+            $this->$column = $value;
+            break;
+        }
+      } else {
+        $this->$column = $value;
+      }
     }
     $this->_related = true;
   }
