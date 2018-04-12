@@ -14,7 +14,7 @@ abstract class Entity {
   ];
   */
 
-  private function __clone() {}
+  public function __clone() {}
   public function __construct() {}
 
   public function save($columns = array()) {
