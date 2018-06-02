@@ -80,9 +80,17 @@ class Worker extends Server {
     parent::stop();
     foreach ($this->processes as $index => $process) {
       proc_terminate($process, SIGTERM);
-      fclose($this->pipes[$index][0]);
-      fclose($this->pipes[$index][1]);
-      proc_close($process);
+      $status = proc_get_status($process);
+      if ($status) {
+        if (!$status['running']) {
+          fclose($this->pipes[$index][0]);
+          fclose($this->pipes[$index][1]);
+          proc_close($process);
+          unset($this->processes[$index]);
+        }
+      } else {
+        unset($this->processes[$index]);
+      }
     }
   }
 
