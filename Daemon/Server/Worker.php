@@ -33,9 +33,9 @@ class Worker extends Server {
       $descriptorspec = [
         0 => ["pipe", "r"],
         1 => ["pipe", "w"],
-        2 => ["file", 'daemon-worker.' . $index . '.error.log', "a"]
+        2 => ["file", str_replace('%0', $index, Config::env('HILOS_WORKER_LOG_ERROR_FILE')), "a"]
       ];
-      $this->processes[$index] = proc_open(Config::env('HILOS_DAEMON_LOG_FILE') . ' ' . $initialFile . ' --index ' . $index, $descriptorspec, $this->pipes, dirname($initialFile));
+      $this->processes[$index] = proc_open(Config::env('PHP_RUN_DIR') . ' ' . $initialFile . ' --index ' . $index, $descriptorspec, $this->pipes, dirname($initialFile));
       if (!is_resource($this->processes[$index])) {
         throw new \Exception('unable to create worker');
       }
