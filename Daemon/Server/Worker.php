@@ -5,6 +5,7 @@ namespace Hilos\Daemon\Server;
 use Hilos\Daemon\Client\Worker as ClientWorker;
 use Hilos\Daemon\Exception\SocketAcceptUnable;
 use Hilos\Daemon\Task\Master as TaskMaster;
+use Hilos\Service\Config;
 
 class Worker extends Server {
 
@@ -34,7 +35,7 @@ class Worker extends Server {
         1 => ["pipe", "w"],
         2 => ["file", 'daemon-worker.' . $index . '.error.log', "a"]
       ];
-      $this->processes[$index] = proc_open('php ' . $initialFile . ' --index ' . $index, $descriptorspec, $this->pipes, dirname($initialFile));
+      $this->processes[$index] = proc_open(Config::env('HILOS_DAEMON_LOG_FILE') . ' ' . $initialFile . ' --index ' . $index, $descriptorspec, $this->pipes, dirname($initialFile));
       if (!is_resource($this->processes[$index])) {
         throw new \Exception('unable to create worker');
       }
