@@ -17,6 +17,11 @@ class Worker extends Server {
   /** @var TaskMaster[] */
   protected $delayTasks = [];
 
+  /**
+   * @var null|array
+   */
+  protected $pipes = null;
+
   function __construct($port, $classWorkerClient = ClientWorker::class) {
     $this->port = $port;
     $this->classWorkerClient = $classWorkerClient;
@@ -24,7 +29,12 @@ class Worker extends Server {
 
   public function runWorkers($initialFile, $count) {
     for ($index = 0; $index < $count; $index++) {
-      $this->processes[$index] = popen('php '.$initialFile.' --index ' . $index, 'r');
+      $descriptorspec = [
+        0 => ["pipe", "r"],
+        1 => ["pipe", "w"],
+        2 => ["file", 'daemon-worker.' . $index . '.error.log', "a"]
+      ];
+      $this->processes[$index] = proc_open('php ' . $initialFile . ' --index ' . $index, $descriptorspec, $this->pipes, dirname($initialFile));
       if (!is_resource($this->processes[$index])) {
         throw new \Exception('unable to create worker');
       }
@@ -66,6 +76,8 @@ class Worker extends Server {
   function stop() {
     parent::stop();
     foreach ($this->processes as $index => $process) {
+      fclose($this->pipes[0]);
+      fclose($this->pipes[1]);
       proc_close($process);
     }
   }
