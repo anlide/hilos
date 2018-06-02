@@ -4,7 +4,7 @@ namespace Hilos\Daemon;
 use Hilos\Daemon\Task\Worker as TaskWorker;
 
 abstract class Worker {
-  protected static $stopSignal = false;
+  public static $stopSignal = false;
 
   private $indexWorker = null;
   protected $adminEmail = null;
