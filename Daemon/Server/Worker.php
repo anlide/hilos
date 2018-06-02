@@ -79,6 +79,7 @@ class Worker extends Server {
   function stop() {
     parent::stop();
     foreach ($this->processes as $index => $process) {
+      proc_terminate($process, SIGTERM);
       fclose($this->pipes[$index][0]);
       fclose($this->pipes[$index][1]);
       proc_close($process);
