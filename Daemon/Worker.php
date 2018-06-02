@@ -4,7 +4,7 @@ namespace Hilos\Daemon;
 use Hilos\Daemon\Task\Worker as TaskWorker;
 
 abstract class Worker {
-  public static $stopSignal = false;
+  protected static $stopSignal = false;
 
   private $indexWorker = null;
   protected $adminEmail = null;
@@ -22,9 +22,14 @@ abstract class Worker {
   public function __construct($masterPort) {
     $opts = getopt('', ['index:']);
     if (!isset($opts['index'])) {
-      throw new \Exception('Missed required param "index"');
+      $indexWorker = stream_get_line(STDIN, 32, PHP_EOL);
+      if (empty($indexWorker)) {
+        throw new \Exception('Missed required param "index"');
+      }
+      $this->indexWorker = intval(substr($indexWorker, 6));
+    } else {
+      $this->indexWorker = intval($opts['index']);
     }
-    $this->indexWorker = intval($opts['index']);
     $this->masterPort = $masterPort;
   }
 

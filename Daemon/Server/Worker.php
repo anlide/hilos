@@ -19,9 +19,9 @@ class Worker extends Server {
   protected $delayTasks = [];
 
   /**
-   * @var null|array
+   * @var array
    */
-  protected $pipes = null;
+  protected $pipes = [];
 
   function __construct($port, $classWorkerClient = ClientWorker::class) {
     $this->port = $port;
@@ -33,12 +33,14 @@ class Worker extends Server {
       $descriptorspec = [
         0 => ["pipe", "r"],
         1 => ["pipe", "w"],
-        2 => ["file", str_replace('%0', $index, Config::env('HILOS_WORKER_LOG_ERROR_FILE')), "a"]
+        2 => ["file", Config::env('HILOS_LOG_PATH').str_replace('%0', $index, Config::env('HILOS_WORKER_LOG_ERROR_FILE')), "a"]
       ];
-      $this->processes[$index] = proc_open(Config::env('PHP_RUN_DIR') . ' ' . $initialFile . ' --index ' . $index, $descriptorspec, $this->pipes, dirname($initialFile));
+      $this->pipes[$index] = null;
+      $this->processes[$index] = proc_open(Config::env('PHP_RUN_DIR') . ' ' . $initialFile, $descriptorspec, $this->pipes[$index], dirname($initialFile));
       if (!is_resource($this->processes[$index])) {
         throw new \Exception('unable to create worker');
       }
+      fwrite($this->pipes[$index][0], 'index-'.$index.PHP_EOL);
     }
   }
 
@@ -77,8 +79,8 @@ class Worker extends Server {
   function stop() {
     parent::stop();
     foreach ($this->processes as $index => $process) {
-      fclose($this->pipes[0]);
-      fclose($this->pipes[1]);
+      fclose($this->pipes[$index][0]);
+      fclose($this->pipes[$index][1]);
       proc_close($process);
     }
   }
