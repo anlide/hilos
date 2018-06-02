@@ -36,7 +36,9 @@ class Worker extends Server {
         2 => ["file", Config::env('HILOS_LOG_PATH').str_replace('%0', $index, Config::env('HILOS_WORKER_LOG_ERROR_FILE')), "a"]
       ];
       $this->pipes[$index] = null;
-      $this->processes[$index] = proc_open(Config::env('PHP_RUN_DIR') . ' ' . $initialFile, $descriptorspec, $this->pipes[$index], dirname($initialFile));
+      $add = '';
+      if (strtolower(substr(PHP_OS, 0, 3)) != 'win') $add = 'exec ';
+      $this->processes[$index] = proc_open($add . Config::env('PHP_RUN_DIR') . ' ' . $initialFile, $descriptorspec, $this->pipes[$index], dirname($initialFile));
       if (!is_resource($this->processes[$index])) {
         throw new \Exception('unable to create worker');
       }
