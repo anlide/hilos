@@ -13,7 +13,7 @@ class Config {
         $lineKey = trim($tmp[0]);
         $lineValue = trim($tmp[1]);
         if ($lineKey == $key) {
-          return $lineValue;
+          return strtolower($lineValue) == 'null' ? null : $lineValue;
         }
       }
     }
