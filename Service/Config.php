@@ -2,7 +2,7 @@
 namespace Hilos\Service;
 
 class Config {
-  public static function env($key) {
+  public static function env($key, $defaultValue = null) {
     $fileEnv = self::root() . '/.env';
     if (file_exists($fileEnv)) {
       $content = file_get_contents($fileEnv);
@@ -17,7 +17,7 @@ class Config {
         }
       }
     }
-    return null;
+    return $defaultValue;
   }
   public static function root() {
     return __DIR__ . '/../../../../';
