@@ -70,9 +70,11 @@ class Migration {
     foreach ($list as $index) {
       $fileName = $index.'migration-up.sql';
       $content = file_get_contents($path.'/'.$fileName);
+      print('Run migration #'.$index.' ...');
       Database::sql("INSERT INTO `migration` (`index`, `failed`) VALUES (?, true);", [$index]);
       Database::sql($content);
       Database::sql('UPDATE `migration` SET `failed` = false WHERE `index` = ?', [$index]);
+      print(' done'."\n");
     }
   }
   private static function rollback($index, $migrationList) {
@@ -83,8 +85,10 @@ class Migration {
     $path = Config::root() . 'data/migrations';
     $fileName = $index.'migration-down.sql';
     $content = file_get_contents($path.'/'.$fileName);
+    print('Rollback migration #'.$index.' ...');
     Database::sql('UPDATE `migration` SET `failed` = true WHERE `index` = ?', [$index]);
     Database::sql($content);
     Database::sql('DELETE FROM `migration` WHERE `index` = ?', [$index]);
+    print(' done'."\n");
   }
 }
