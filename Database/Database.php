@@ -108,6 +108,20 @@ class Database {
     }
   }
 
+  public static function sqlRun($sql, $params = null, $try_reconnect = true) {
+    self::sql($sql, $params, $try_reconnect);
+    $step = 0;
+    do {
+      if (!self::$connect->more_results()) {
+        break;
+      }
+      if (!self::$connect->next_result()) {
+        throw new \Exception('mysqli_multi_query with was execute with error at step statement [#'.$step.']');
+      }
+      $step++;
+    } while (true);
+  }
+
   public static function nextRows() {
     self::$connect->next_result();
     self::$result = self::$connect->store_result();

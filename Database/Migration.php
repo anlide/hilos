@@ -39,11 +39,11 @@ class Migration {
   private static function createMigrationTable() {
     $row = Database::row("SHOW TABLES LIKE 'migration';");
     if ($row === null) {
-      Database::sql('CREATE TABLE `migration` (
+      Database::sqlRun('CREATE TABLE `migration` (
   `index` int(10) UNSIGNED NOT NULL,
   `failed` tinyint(1) NOT NULL DEFAULT \'1\'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;');
-      Database::sql('ALTER TABLE `migration` ADD PRIMARY KEY(`index`);');
+      Database::sqlRun('ALTER TABLE `migration` ADD PRIMARY KEY(`index`);');
     }
   }
   private static function filterPassedList(&$list) {
@@ -71,9 +71,9 @@ class Migration {
       $fileName = $index.'migration-up.sql';
       $content = file_get_contents($path.'/'.$fileName);
       print('Run migration #'.$index.' ...');
-      Database::sql("INSERT INTO `migration` (`index`, `failed`) VALUES (?, true);", [$index]);
-      Database::sql($content);
-      Database::sql('UPDATE `migration` SET `failed` = false WHERE `index` = ?', [$index]);
+      Database::sqlRun("INSERT INTO `migration` (`index`, `failed`) VALUES (?, true);", [$index]);
+      Database::sqlRun($content);
+      Database::sqlRun('UPDATE `migration` SET `failed` = false WHERE `index` = ?', [$index]);
       print(' done'."\n");
     }
   }
@@ -86,9 +86,9 @@ class Migration {
     $fileName = $index.'migration-down.sql';
     $content = file_get_contents($path.'/'.$fileName);
     print('Rollback migration #'.$index.' ...');
-    Database::sql('UPDATE `migration` SET `failed` = true WHERE `index` = ?', [$index]);
-    Database::sql($content);
-    Database::sql('DELETE FROM `migration` WHERE `index` = ?', [$index]);
+    Database::sqlRun('UPDATE `migration` SET `failed` = true WHERE `index` = ?', [$index]);
+    Database::sqlRun($content);
+    Database::sqlRun('DELETE FROM `migration` WHERE `index` = ?', [$index]);
     print(' done'."\n");
   }
 }
