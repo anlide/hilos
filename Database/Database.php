@@ -82,6 +82,22 @@ class Database {
           $newSql .= ($param?'true':'false');
         } elseif (is_string($param)) {
           $newSql .= '"'.str_replace('"', '\"', $param).'"';
+        } elseif (is_array($param)) {
+          $newParams = [];
+          foreach ($param as $subParam) {
+            if ($subParam === null) {
+              $newParams[] = 'NULL';
+            } elseif (is_numeric($subParam)) {
+              $newParams[] = $subParam;
+            } elseif (is_bool($subParam)) {
+              $newParams[] = ($subParam?'true':'false');
+            } elseif (is_string($subParam)) {
+              $newParams[] = '"'.str_replace('"', '\"', $subParam).'"';
+            } else {
+              throw new \Exception('SQL parameter not a string or numeric or boolean', 500);
+            }
+          }
+          $newSql .= implode(',', $newParams);
         } else {
           throw new \Exception('SQL parameter not a string or numeric or boolean', 500);
         }
@@ -172,7 +188,7 @@ class Database {
     }
     return $rows;
   }
-  
+
   public static function field($sql, $params = null) {
     self::sql($sql, $params);
     if (self::$result === false) return array();
