@@ -13,6 +13,8 @@ class Database {
   private static $connect;
   /** @var \mysqli_result */
   private static $result;
+  /** @var boolean */
+  public static $debug = false;
 
   private static $host;
   private static $user;
@@ -88,6 +90,15 @@ class Database {
       $parsedSql = $newSql;
     } else {
       $parsedSql = $sql;
+    }
+    if (self::$debug) {
+      $file = 'sql.debug.log';
+      $fp = fopen($file, 'a+');
+      list($usec, $sec) = explode(" ", microtime());
+      $logString = date("Y-m-d H:i:s", $sec).'.'.str_pad(floor($usec*1000), 3, '0').': '.$parsedSql;
+      fwrite($fp, $logString."\r\n");
+      fclose($fp);
+      error_log($logString);
     }
     @mysqli_multi_query(self::$connect, $parsedSql);
     self::$result = self::$connect->store_result();
