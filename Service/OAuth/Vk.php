@@ -3,6 +3,7 @@ namespace Hilos\Service\OAuth;
 
 use Hilos\Service\Exception\OAuth\AccessTokenEmpty;
 use Hilos\Service\Exception\OAuth\AccessTokenExpired;
+use Hilos\Service\Exception\OAuth\TooManyRequestsPerSeconds;
 use Hilos\Service\Exception\OAuth\VkNoId;
 use Hilos\Service\OAuth;
 
@@ -39,6 +40,9 @@ class Vk extends OAuth {
       switch ($userInfo['error']['error_code']) {
         case 5:
           throw new AccessTokenExpired();
+          break;
+        case 6:
+          throw new TooManyRequestsPerSeconds();
           break;
         default:
           throw new \Exception('Vk auth unknown error: '.json_encode($userInfo['error']));
