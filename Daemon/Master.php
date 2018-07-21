@@ -7,9 +7,10 @@ use Hilos\Daemon\Exception\SocketSelect;
 use Hilos\Daemon\Server\IServer;
 use Hilos\Daemon\Server\Worker as ServerWorker;
 use Hilos\Daemon\Task\Master as TaskMaster;
+use Hilos\Database\Migration;
 
 abstract class Master {
-  public static $stopSignal = false;
+  protected static $stopSignal = false;
 
   protected $adminEmail;
 
@@ -140,6 +141,12 @@ abstract class Master {
         mail($this->adminEmail, 'Hilos master Exception "'.$e->getMessage().'"', $e->getTraceAsString());
       }
     }
+  }
+  public function migration() {
+    Migration::up();
+  }
+  public function migrationDown() {
+    Migration::down();
   }
   protected function acceptNewClient($indexSocketServer) {
     $this->clients[] = $this->servers[$indexSocketServer]->accept();
