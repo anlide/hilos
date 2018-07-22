@@ -90,24 +90,19 @@ abstract class Entity {
     }
   }
 
-  public function delete($safe = false) {
-    if ($safe) {
-      $this->deleted = true; // TODO: write here as safe code
-      $this->save();
+  public function delete() {
+    $class = get_called_class();
+    $_primary = $class::_primary;
+    if (!is_array($class::_primary)) {
+      Database::sql('DELETE FROM `' . $class::_table . '` WHERE `' . $_primary . '` = ?;', $this->$_primary);
     } else {
-      $class = get_called_class();
-      $_primary = $class::_primary;
-      if (!is_array($class::_primary)) {
-        Database::sql('DELETE FROM `' . $class::_table . '` WHERE `' . $_primary . '` = ?;', $this->$_primary);
-      } else {
-        $primary_str = array();
-        $values = [];
-        foreach ($class::_primary as $value) {
-          $values[] = $this->$value;
-          $primary_str[] =  '`'.$value.'` = ?';
-        }
-        Database::sql('DELETE FROM `' . $class::_table . '` WHERE '.implode(' AND ', $primary_str).';', $values);
+      $primary_str = array();
+      $values = [];
+      foreach ($class::_primary as $value) {
+        $values[] = $this->$value;
+        $primary_str[] =  '`'.$value.'` = ?';
       }
+      Database::sql('DELETE FROM `' . $class::_table . '` WHERE '.implode(' AND ', $primary_str).';', $values);
     }
   }
 
@@ -235,12 +230,6 @@ abstract class Entity {
   }
 
   public static function getAll() {
-    $class = get_called_class();
-    $tmp = $class::_columns;
-    if (in_array('deleted', $tmp)) {
-      return self::get('`deleted` = ?', false);
-    } else {
-      return self::get();
-    }
+    return self::get();
   }
 }
