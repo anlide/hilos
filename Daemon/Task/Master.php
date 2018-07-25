@@ -11,6 +11,11 @@ abstract class Master implements IMaster {
   /** @var callable */
   private $callbackSendToWorker = null;
 
+  /**
+   * Master constructor.
+   * @param string $taskType
+   * @param string|int|array|null $taskIndex
+   */
   public function __construct($taskType, $taskIndex) {
     $this->taskType = $taskType;
     $this->taskIndex = $taskIndex;
@@ -42,5 +47,9 @@ abstract class Master implements IMaster {
 
   public function getTaskIndex() {
     return $this->taskIndex;
+  }
+
+  public function getTaskIndexString() {
+    return is_array($this->taskIndex) ? implode('-', $this->taskIndex) : $this->taskIndex;
   }
 }

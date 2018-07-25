@@ -29,12 +29,12 @@ abstract class Worker {
     $this->callbackSendToTask = $callback;
   }
 
-  protected function sendToMaster($action, $json) {
+  protected function sendToMaster($action, $json = []) {
     $callbackSendToMaster = $this->callbackSendToMaster;
     $callbackSendToMaster($this->type, $this->index, $action, $json);
   }
 
-  protected function sendToTask($taskType, $taskIndex, $action, $json) {
+  protected function sendToTask($taskType, $taskIndex, $action, $json = []) {
     $callbackSendToTask = $this->callbackSendToTask;
     $callbackSendToTask($this->type, $this->index, $taskType, $taskIndex, $action, $json);
   }
@@ -46,4 +46,5 @@ abstract class Worker {
 
   public abstract function tick();
   public abstract function onAction($action, $params);
+  public abstract function callbacksInited();
 }

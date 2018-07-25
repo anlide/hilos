@@ -47,12 +47,13 @@ abstract class Master {
   }
 
   public function taskGet($taskType, $taskIndex = null) {
+    $taskIndexString = (is_array($taskIndex)) ? implode('-', $taskIndex) : $taskIndex;
     if ($this->serverWorker === null) throw new \Exception('Server Worker not registered');
-    if (!isset($this->tasks[$taskType . '-' . $taskIndex])) {
-      $this->tasks[$taskType . '-' . $taskIndex] = $this->getTaskByType($taskType, $taskIndex);
-      $this->serverWorker->addTask($this->tasks[$taskType . '-' . $taskIndex]);
+    if (!isset($this->tasks[$taskType . '-' . $taskIndexString])) {
+      $this->tasks[$taskType . '-' . $taskIndexString] = $this->getTaskByType($taskType, $taskIndex);
+      $this->serverWorker->addTask($this->tasks[$taskType . '-' . $taskIndexString]);
     }
-    return $this->tasks[$taskType . '-' . $taskIndex];
+    return $this->tasks[$taskType . '-' . $taskIndexString];
   }
 
   public function runWorkers($initialFile, $count = null) {

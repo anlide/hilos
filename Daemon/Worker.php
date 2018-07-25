@@ -189,24 +189,41 @@ abstract class Worker {
     socket_write($this->master, json_encode($json).PHP_EOL);
   }
 
+  /**
+   * @param string $type
+   * @param string|int|array|null $index
+   */
   protected function taskAdd($type, $index) {
+    $indexString = is_array($index) ? implode('-', $index) : $index;
     if (!isset($this->tasks[$type])) {
       $this->tasks[$type] = [];
     }
-    if (isset($this->tasks[$type][$index])) {
+    if (isset($this->tasks[$type][$indexString])) {
       return;
     }
-    $this->tasks[$type][$index] = $this->getTaskByType($type, $index);
+    $this->tasks[$type][$indexString] = $this->getTaskByType($type, $index);
   }
 
+  /**
+   * @param string $type
+   * @param string|int|array|null $index
+   */
   protected function taskDelete($type, $index) {
-    error_log('taskDelete'.$type.$index);
+    $indexString = is_array($index) ? implode('-', $index) : $index;
+    error_log('taskDelete'.$type.$indexString);
   }
 
+  /**
+   * @param string $type
+   * @param string|int|array|null $index
+   * @param string $action
+   * @param null|array $params
+   */
   protected function taskAction($type, $index, $action, $params) {
+    $indexString = is_array($index) ? implode('-', $index) : $index;
     if (!isset($this->tasks[$type])) return;
-    if (!isset($this->tasks[$type][$index])) return;
-    $this->tasks[$type][$index]->onAction($action, $params);
+    if (!isset($this->tasks[$type][$indexString])) return;
+    $this->tasks[$type][$indexString]->onAction($action, $params);
   }
 
   protected function taskSystem($action, $params) {

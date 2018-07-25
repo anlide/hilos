@@ -85,16 +85,36 @@ abstract class Worker extends Client {
 
   public function taskAdd(TaskMaster &$task) {
     $taskIndex = $task->getTaskIndex();
+    $taskIndexString = $task->getTaskIndexString();
     $taskType = $task->getTaskType();
     if ($taskIndex === null) throw new \Exception('taskIndex is null at worker taskAdd');
     if ($taskType === null) throw new \Exception('taskType is null at worker taskAdd');
-    if (isset($this->tasks[$taskType . '-' . $taskIndex])) return false;
-    $this->tasks[$taskType . '-' . $taskIndex] = $task;
-    $this->tasks[$taskType . '-' . $taskIndex]->setCallbackSendToWorker(function($taskType, $taskIndex, $action, $json){
+    if (isset($this->tasks[$taskType . '-' . $taskIndexString])) return false;
+    $this->tasks[$taskType . '-' . $taskIndexString] = $task;
+    $this->tasks[$taskType . '-' . $taskIndexString]->setCallbackSendToWorker(function($taskType, $taskIndex, $action, $json){
       $this->sendSignal('task_action', $taskType, $taskIndex, $action, $json);
     });
     $this->sendSignal('task_add', $taskType, $taskIndex);
     return true;
+  }
+
+  /**
+   * @param string $type
+   * @param string|int $index
+   * @return TaskMaster|null
+   */
+  public function taskGet($type, $index) {
+    if (!$this->taskExists($type, $index)) return null;
+    return $this->tasks[$type . '-' . $index];
+  }
+
+  /**
+   * @param string $type
+   * @param string|int $index
+   * @return bool
+   */
+  public function taskExists($type, $index) {
+    return isset($this->tasks[$type . '-' . $index]);
   }
 
   private function sendSignal($workerAction, $taskType, $taskIndex, $action = null, $params = []) {
@@ -108,5 +128,5 @@ abstract class Worker extends Client {
 
   protected function onConnected($index) {}
 
-  protected function onReceiveJson($index, $json) {}
+  protected function onReceiveJson($indexWorker, $json) {}
 }
