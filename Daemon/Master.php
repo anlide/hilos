@@ -10,7 +10,7 @@ use Hilos\Daemon\Task\Master as TaskMaster;
 use Hilos\Database\Migration;
 
 abstract class Master {
-  protected static $stopSignal = false;
+  public static $stopSignal = false;
 
   protected $adminEmail;
 
