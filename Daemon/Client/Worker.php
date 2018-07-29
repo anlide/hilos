@@ -91,10 +91,10 @@ abstract class Worker extends Client {
     if ($taskType === null) throw new \Exception('taskType is null at worker taskAdd');
     if (isset($this->tasks[$taskType . '-' . $taskIndexString])) return false;
     $this->tasks[$taskType . '-' . $taskIndexString] = $task;
+    $this->sendSignal('task_add', $taskType, $taskIndex);
     $this->tasks[$taskType . '-' . $taskIndexString]->setCallbackSendToWorker(function($taskType, $taskIndex, $action, $json){
       $this->sendSignal('task_action', $taskType, $taskIndex, $action, $json);
     });
-    $this->sendSignal('task_add', $taskType, $taskIndex);
     return true;
   }
 

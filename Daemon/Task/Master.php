@@ -29,7 +29,7 @@ abstract class Master implements IMaster {
     $this->delaySend = [];
   }
 
-  protected function sendToWorker($action, $json) {
+  protected function sendToWorker($action, $json = []) {
     if ($this->callbackSendToWorker === null) {
       $this->delaySend[] = [
         'action' => $action,
