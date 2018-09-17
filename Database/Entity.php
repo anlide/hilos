@@ -117,6 +117,9 @@ abstract class Entity {
           case 'integer':
             $this->$column = ($value === null ? null : intval($value));
             break;
+          case 'double':
+            $this->$column = ($value === null ? null : doubleval($value));
+            break;
           case 'boolean':
             $this->$column = ($value === null ? null : boolval($value));
             break;
