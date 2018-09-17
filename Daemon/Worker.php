@@ -4,6 +4,8 @@ namespace Hilos\Daemon;
 use Hilos\Daemon\Task\Worker as TaskWorker;
 
 abstract class Worker {
+  const WRITE_DELAY_TIMEOUT = 3;
+
   public static $stopSignal = false;
 
   private $indexWorker = null;
@@ -14,6 +16,10 @@ abstract class Worker {
 
   /** @var TaskWorker[][] */
   protected $tasks = [];
+
+  /** @var string[] */
+  protected $delayWrite = [];
+  protected $failedStart = null;
 
   protected function getIndexWorker() {
     return $this->indexWorker;
@@ -41,6 +47,29 @@ abstract class Worker {
       unset($task);
     }
     unset($tasks);
+
+    if (count($this->delayWrite) != 0) {
+      if ($this->failedStart === null) $this->failedStart = time();
+      $delayWrite = $this->delayWrite;
+      $this->delayWrite = [];
+      $crashedState = false;
+      foreach ($delayWrite as $data) {
+        if ($crashedState) {
+          $this->delayWrite[] = $data;
+        } else {
+          if ($this->writeData($data) === false) {
+            $crashedState = true;
+          }
+        }
+      }
+      if (count($this->delayWrite) == 0) {
+        $this->failedStart = null;
+      } else {
+        if (time() - $this->failedStart > self::WRITE_DELAY_TIMEOUT) {
+          throw new \Exception('Failed to write more that '.self::WRITE_DELAY_TIMEOUT.' seconds');
+        }
+      }
+    }
   }
 
   public function run() {
@@ -73,16 +102,21 @@ abstract class Worker {
           }
         } else {
           socket_clear_error($this->master);
-          $unparsedString .= socket_read($this->master, 1024 * 1024 * 32);
-          if (in_array(socket_last_error(), array(107))) {
+          $unparsedString .= @socket_read($this->master, 1024 * 1024 * 32);
+          if (in_array(socket_last_error(), [107])) {
+            self::$stopSignal = true;
+            continue;
+          } elseif (in_array(socket_last_error(), [10035])) {
+            // Nothing
+          } elseif (socket_last_error() != 0) {
+            // TODO: implement reconnect on "10053" error
+            error_log('Socket read error: '.socket_last_error());
             self::$stopSignal = true;
             continue;
           }
           $lines = explode(PHP_EOL, $unparsedString);
           if (count($lines) > 1) {
-            $lines_processed = 0;
             foreach ($lines as $line) {
-              if ($lines_processed == count($lines) - 1) break;
               if (empty($line)) continue;
               $json = json_decode($line, true);
               if ($json === false) {
@@ -138,7 +172,6 @@ abstract class Worker {
                   throw new \Exception('Unknow worker_action');
                   break;
               }
-              $lines_processed++;
             }
             $unparsedString = $lines[count($lines) - 1];
           }
@@ -186,7 +219,55 @@ abstract class Worker {
   protected abstract function getTaskByType($type, $index = null):TaskWorker;
 
   protected function write($json) {
-    socket_write($this->master, json_encode($json).PHP_EOL);
+    if (count($this->delayWrite) == 0) {
+      $this->writeData(json_encode($json) . PHP_EOL);
+    } else {
+      $this->delayWrite[] = json_encode($json) . PHP_EOL;
+    }
+  }
+
+  private function writeData($data) {
+    $bytesLeft = $total = strlen($data);
+    $tryCount = 0;
+    do {
+      socket_clear_error($this->master);
+      $sended = @socket_write($this->master, $data, 65536 - 1);
+      if ($sended === false) {
+        if ((socket_strerror(socket_last_error()) == 'Resource temporarily unavailable') || (socket_last_error() == 10035)) {
+          $this->delayWrite[] = $data;
+          return false;
+        } else {
+          $haveCriticalError = false;
+          if (socket_last_error() == 104) {
+            $haveCriticalError = true;
+          }
+          if (socket_last_error() == 32) {
+            $haveCriticalError = true;
+          }
+          if (socket_last_error() == 10053) {
+            // TODO: implement reconnect for this error
+            $haveCriticalError = true;
+          }
+          if (socket_last_error() == 10054) {
+            // TODO: implement reconnect for this error
+            $haveCriticalError = true;
+          }
+          if ($haveCriticalError) {
+            throw new \Exception('Unable to write to master ['.socket_strerror(socket_last_error()).'/'.socket_last_error().']');
+          } else {
+            error_log('Hilos socket to master write error [' . socket_last_error() . '] : ' . socket_strerror(socket_last_error()));
+          }
+        }
+      }
+      $bytesLeft -= $sended;
+      $data = substr($data, $sended);
+      $tryCount++;
+      if ($tryCount >= 100) {
+        $this->delayWrite[] = $data;
+        return false;
+      }
+    } while ($bytesLeft > 0);
+    return $total;
   }
 
   /**
@@ -221,8 +302,14 @@ abstract class Worker {
    */
   protected function taskAction($type, $index, $action, $params) {
     $indexString = is_array($index) ? implode('-', $index) : $index;
-    if (!isset($this->tasks[$type])) return;
-    if (!isset($this->tasks[$type][$indexString])) return;
+    if (!isset($this->tasks[$type])) {
+      error_log('DEBUG: taskAction: Not exists task type '.$type);
+      return;
+    }
+    if (!isset($this->tasks[$type][$indexString])) {
+      error_log('DEBUG: taskAction: Not exists task '.$type.' / '.$indexString);
+      return;
+    }
     $this->tasks[$type][$indexString]->onAction($action, $params);
   }
 

@@ -200,6 +200,10 @@ abstract class Client implements IClient {
             $this->close(self::CLOSE_GOING_AWAY);
             return false;
           }
+          if (socket_last_error() == 10054) {
+            $this->close(self::CLOSE_GOING_AWAY);
+            return false;
+          }
           error_log('Hilos socket write error [' . socket_last_error() . '] : ' . socket_strerror(socket_last_error()));
           $this->close(self::CLOSE_ABNORMAL);
           return false;

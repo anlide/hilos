@@ -12,6 +12,9 @@ abstract class Worker extends Client {
   /** State: other lines */
   const STATE_WORK  = 2;
 
+  /** State: crashed */
+  const STATE_CRASHED  = 3;
+
   private $indexWorker = null;
 
   /** @var TaskMaster[] */
@@ -54,8 +57,9 @@ abstract class Worker extends Client {
     if ($line === null) return false;
     $json = json_decode($line, true);
     if (!isset($json['index_worker'])) {
-      $this->close();
-      $this->state = self::CLOSE_PROTOCOL;
+      error_log('DEBUG: First message from work is without "index_worker": '.$line);
+      $this->close(self::CLOSE_PROTOCOL);
+      $this->state = self::STATE_CRASHED;
       return false;
     }
     $this->indexWorker = intval($json['index_worker']);
@@ -72,7 +76,7 @@ abstract class Worker extends Client {
     if ($line === null) return false;
     $json = json_decode($line, true);
     if ($json === null) {
-      error_log('Invalid worker line: "' . $line . '"');
+      error_log('DEBUG: Invalid worker line: "' . $line . '"');
       throw new NonJsonResponse('line read error');
     }
     $this->onReceiveJson($this->indexWorker, $json);

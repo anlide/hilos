@@ -26,6 +26,8 @@ abstract class Master {
 
   protected $sockets;
 
+  protected $willStartServers = [];
+
   public function registerServer(IServer $server) {
     $this->servers[] = $server;
     if ($server instanceof ServerWorker) {
@@ -56,6 +58,16 @@ abstract class Master {
     return $this->tasks[$taskType . '-' . $taskIndexString];
   }
 
+  public function taskGetsByType($taskType) {
+    $ret = [];
+    if ($this->serverWorker === null) throw new \Exception('Server Worker not registered');
+    foreach ($this->tasks as $task) {
+      if ($task->getTaskType() != $taskType) continue;
+      $ret[] = $task;
+    }
+    return $ret;
+  }
+
   public function runWorkers($initialFile, $count = null) {
     if ($count === null) $count = $this->getProcessorCount();
     if ($this->serverWorker === null) throw new \Exception('Server Worker not registered');
@@ -83,13 +95,22 @@ abstract class Master {
 
     try {
       foreach ($this->servers as $index => $server) {
-        $sockets['master-'.$index] = $server->start();
+        $socket = $server->autoStart();
+        if ($socket !== null) {
+          $sockets['master-'.$index] = $socket;
+        }
       }
       while (!self::$stopSignal) {
+        if (!empty($this->willStartServers)) {
+          foreach ($this->servers as $index => $server) {
+            if (!in_array(get_class($server), $this->willStartServers)) continue;
+            $sockets['master-'.$index] = $server->start();
+          }
+          $this->willStartServers = [];
+        }
         $read = $sockets;
         $write = $except = array();
         if ((@socket_select($read, $write, $except, 0, 1000000)) === false) {
-
           if (socket_strerror(socket_last_error()) != 'Interrupted system call') {
             if ($this->adminEmail !== null) mail($this->adminEmail, 'Hilos master socket_select error', socket_strerror(socket_last_error()));
             error_log('Hilos master socket_select error "' . socket_strerror(socket_last_error()) . '"');
@@ -117,6 +138,7 @@ abstract class Master {
             $this->handleClient($indexSocketClient);
             if ($this->clients[$indexSocketClient]->closed()) {
               $this->closeClient($indexSocketClient);
+              unset($sockets['client-'.$indexSocketClient]);
             }
           }
         }

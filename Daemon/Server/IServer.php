@@ -11,6 +11,11 @@ interface IServer {
   public function start();
 
   /**
+   * @return mixed Socket Connection Resource
+   */
+  public function autoStart();
+
+  /**
    * @return IClient
    */
   public function accept();

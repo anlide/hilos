@@ -11,6 +11,7 @@ class WebSocket extends Server {
   function __construct($port, $classWebsocketClient = WebsocketClient::class) {
     $this->port = $port;
     $this->classWebsocketClient = $classWebsocketClient;
+    $this->autoStart = false;
   }
 
   function accept() {

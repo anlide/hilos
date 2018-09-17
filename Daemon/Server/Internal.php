@@ -11,6 +11,7 @@ class Internal extends Server {
   function __construct($port, $classInternalClient = InternalClient::class) {
     $this->port = $port;
     $this->classInternalClient = $classInternalClient;
+    $this->autoStart = false;
   }
 
   function accept() {

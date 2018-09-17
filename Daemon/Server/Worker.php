@@ -26,6 +26,7 @@ class Worker extends Server {
   function __construct($port, $classWorkerClient = ClientWorker::class) {
     $this->port = $port;
     $this->classWorkerClient = $classWorkerClient;
+    $this->autoStart = true;
   }
 
   public function runWorkers($initialFile, $count) {
@@ -102,5 +103,9 @@ class Worker extends Server {
     } else {
       throw new SocketAcceptUnable('Worker');
     }
+  }
+
+  function getClientsCount() {
+    return count($this->clients);
   }
 }
