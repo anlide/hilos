@@ -48,6 +48,12 @@ abstract class Master {
     throw new \Exception('getTaskByType not implemented at final class');
   }
 
+  /**
+   * @param string $taskType
+   * @param mixed|null $taskIndex
+   * @return TaskMaster
+   * @throws \Exception
+   */
   public function taskGet($taskType, $taskIndex = null) {
     $taskIndexString = (is_array($taskIndex)) ? implode('-', $taskIndex) : $taskIndex;
     if ($this->serverWorker === null) throw new \Exception('Server Worker not registered');
