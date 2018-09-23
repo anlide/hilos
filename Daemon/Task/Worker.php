@@ -11,6 +11,8 @@ abstract class Worker {
   private $callbackSendToMaster;
   /** @var callable */
   private $callbackSendToTask;
+  /** @var callable */
+  private $callbackSelfStop;
 
   public function __construct($type, $index) {
     $this->type = $type;
@@ -29,19 +31,28 @@ abstract class Worker {
     $this->callbackSendToTask = $callback;
   }
 
+  public function setCallbackSelfStop($callback) {
+    $this->callbackSelfStop = $callback;
+  }
+
   protected function sendToMaster($action, $json = []) {
     $callbackSendToMaster = $this->callbackSendToMaster;
-    $callbackSendToMaster($this->type, $this->index, $action, $json);
+    $callbackSendToMaster($action, $json);
   }
 
   protected function sendToTask($taskType, $taskIndex, $action, $json = []) {
     $callbackSendToTask = $this->callbackSendToTask;
-    $callbackSendToTask($this->type, $this->index, $taskType, $taskIndex, $action, $json);
+    $callbackSendToTask($taskType, $taskIndex, $action, $json);
   }
 
   public function send($json) {
     $writeCallback = $this->writeCallback;
     $writeCallback($json);
+  }
+
+  protected function selfStop() {
+    $callbackSelfStop = $this->callbackSelfStop;
+    $callbackSelfStop();
   }
 
   public abstract function tick();

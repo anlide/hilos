@@ -4,7 +4,7 @@ namespace Hilos\Daemon;
 use Hilos\Daemon\Task\Worker as TaskWorker;
 
 abstract class Worker {
-  const WRITE_DELAY_TIMEOUT = 3;
+  const WRITE_DELAY_TIMEOUT = 10;
 
   public static $stopSignal = false;
 
@@ -66,14 +66,13 @@ abstract class Worker {
         $this->failedStart = null;
       } else {
         if (time() - $this->failedStart > self::WRITE_DELAY_TIMEOUT) {
-          throw new \Exception('Failed to write more that '.self::WRITE_DELAY_TIMEOUT.' seconds');
+          throw new \Exception('Failed to write more than '.self::WRITE_DELAY_TIMEOUT.' seconds');
         }
       }
     }
   }
 
   public function run() {
-
     $this->initPcntl();
 
     $this->master = socket_create(AF_INET, SOCK_STREAM, SOL_TCP);

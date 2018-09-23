@@ -6,6 +6,7 @@ abstract class Client implements IClient {
   protected static $hvaltr = ['; ' => '&', ';' => '&', ' ' => '%20'];
 
   const STATE_STANDBY = 0;
+  const WRITE_DELAY_TIMEOUT = 10;
 
   const CLOSE_NORMAL      = 1000;
   const CLOSE_GOING_AWAY  = 1001;
@@ -88,8 +89,8 @@ abstract class Client implements IClient {
     if (count($this->delayWrite) == 0) {
       $this->failedStart = null;
     } else {
-      if (time() - $this->failedStart > 20) {
-        throw new \Exception('Failed to write more that 20 seconds');
+      if (time() - $this->failedStart > self::WRITE_DELAY_TIMEOUT) {
+        throw new \Exception('Failed to write more than '.self::WRITE_DELAY_TIMEOUT.' seconds');
       }
     }
   }
