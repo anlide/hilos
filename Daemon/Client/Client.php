@@ -83,8 +83,15 @@ abstract class Client implements IClient {
     if ($this->failedStart === null) $this->failedStart = time();
     $delayWrite = $this->delayWrite;
     $this->delayWrite = [];
+    $crashedState = false;
     foreach ($delayWrite as $data) {
-      $this->write($data);
+      if ($crashedState) {
+        $this->delayWrite[] = $data;
+      } else {
+        if ($this->write($data) === false) {
+          $crashedState = true;
+        }
+      }
     }
     if (count($this->delayWrite) == 0) {
       $this->failedStart = null;
@@ -179,6 +186,10 @@ abstract class Client implements IClient {
    */
   public function write($data) {
     if ($this->closed) return false;
+    if (count($this->delayWrite) != 0) {
+      $this->delayWrite[] = $data;
+      return false;
+    }
     $bytesLeft = $total = strlen($data);
     $tryCount = 0;
     do {
