@@ -4,14 +4,24 @@ namespace Hilos\Service\OAuth;
 use Hilos\Service\Exception\OAuth\AccessTokenEmpty;
 use Hilos\Service\OAuth;
 
+/**
+ * Class Yahoo
+ * @package Hilos\Service\OAuth
+ */
 class Yahoo extends OAuth {
   function getRedirectUrl() {
     return $_SERVER['REQUEST_SCHEME'].'://'.$_SERVER['SERVER_NAME'].'/oauth/method=yahoo';
   }
+
   function getUrl() {
     $redirect_url = urlencode($this->getRedirectUrl());
     return 'https://api.login.yahoo.com/oauth2/request_auth?client_id='.$this->appId.'&response_type=code&redirect_uri='.$redirect_url;
   }
+
+  /**
+   * @param $code
+   * @throws AccessTokenEmpty
+   */
   function fetchUserData($code) {
     $authTokenUrlBase = 'https://api.login.yahoo.com/oauth2/get_token';
     $params = array(
@@ -36,6 +46,7 @@ class Yahoo extends OAuth {
     $this->accessToken = $authTokenParams['access_token'];
     $this->fetchByToken($authTokenParams['access_token'], $authTokenParams['xoauth_yahoo_guid']);
   }
+
   function fetchByToken($accessToken, $params = null) {
     $authInfoUrlBase = 'https://social.yahooapis.com/v1/user/';
     $url = $authInfoUrlBase.$params.'/profile?format=json';
@@ -51,6 +62,7 @@ class Yahoo extends OAuth {
     curl_close($authInfoCurl);
     $this->parseData(json_decode($authInfoResponse, true), $params);
   }
+
   function parseData($userInfo, $params = null) {
     $this->provider = 'yahoo';
     $this->providerKey = $params;

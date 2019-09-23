@@ -6,6 +6,10 @@ use Hilos\Daemon\Exception\InvalidInternalConnection;
 use Hilos\Daemon\Exception\NonJsonResponse;
 use Hilos\Daemon\Exception\SocketSelect;
 
+/**
+ * Class Client
+ * @package Hilos\Daemon
+ */
 class Client {
 
   private function __construct() {}

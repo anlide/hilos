@@ -2,6 +2,10 @@
 
 namespace Hilos\Daemon\Worker;
 
+/**
+ * Class Master
+ * @package Hilos\Daemon\Worker
+ */
 class Master {
   private $indexWorker;
 
@@ -12,6 +16,11 @@ class Master {
     $this->indexWorker = $indexWorker;
   }
 
+  /**
+   * @param $initialFile
+   * @param string $phpExec
+   * @throws \Exception
+   */
   public function start($initialFile, $phpExec = 'php') {
     $this->process = popen($phpExec.' '.$initialFile.' --index '.$this->indexWorker, 'r');
     if (!is_resource($this->process)) {

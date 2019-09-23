@@ -11,8 +11,10 @@ namespace Hilos\Database;
 class Database {
   /** @var \mysqli */
   private static $connect;
+
   /** @var \mysqli_result */
   private static $result;
+
   /** @var boolean */
   public static $debug = false;
 
@@ -135,6 +137,12 @@ class Database {
     }
   }
 
+  /**
+   * @param $sql
+   * @param null $params
+   * @param bool $try_reconnect
+   * @throws \Exception
+   */
   public static function sqlRun($sql, $params = null, $try_reconnect = true) {
     self::sql($sql, $params, $try_reconnect);
     $step = 0;
@@ -172,11 +180,23 @@ class Database {
     return self::$connect->insert_id;
   }
 
+  /**
+   * @param $sql
+   * @param null $params
+   * @return array|null
+   * @throws \Exception
+   */
   public static function row($sql, $params = null) {
     self::sql($sql, $params);
     return mysqli_fetch_assoc(self::$result);
   }
 
+  /**
+   * @param $sql
+   * @param null $params
+   * @return array
+   * @throws \Exception
+   */
   public static function rows($sql, $params = null) {
     self::sql($sql, $params);
     $row = true;
@@ -189,6 +209,12 @@ class Database {
     return $rows;
   }
 
+  /**
+   * @param $sql
+   * @param null $params
+   * @return array
+   * @throws \Exception
+   */
   public static function field($sql, $params = null) {
     self::sql($sql, $params);
     if (self::$result === false) return array();

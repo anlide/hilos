@@ -4,6 +4,10 @@ namespace Hilos\Daemon\Client;
 
 use Hilos\Daemon\Client\WebSocketProtocol\IWebSocketProtocol;
 
+/**
+ * Class WebSocket
+ * @package Hilos\Daemon\Client
+ */
 class WebSocket extends Client {
   const STATE_FIRSTLINE  = 1;
   const STATE_HEADERS    = 2;

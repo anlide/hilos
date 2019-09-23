@@ -10,18 +10,29 @@ use Hilos\Service\Config;
  * @package Hilos\Database
  */
 class Migration {
+  /**
+   * @throws \Exception
+   */
   public static function up() {
     print('Start migration'."\n");
     $migrationList = self::getMigrationList();
     self::filterPassedList($migrationList);
     self::passMigration($migrationList);
   }
+
+  /**
+   * @throws \Exception
+   */
   public static function down() {
     print('Start migration down'."\n");
     $migrationList = self::getMigrationList();
     $indexMax = self::getMaxPassedIndex();
     self::rollback($indexMax, $migrationList);
   }
+
+  /**
+   * @return array
+   */
   private static function getMigrationList() {
     $list = [];
     $path = Config::root() . 'data/migrations';
@@ -36,6 +47,10 @@ class Migration {
     }
     return $list;
   }
+
+  /**
+   * @throws \Exception
+   */
   private static function createMigrationTable() {
     $row = Database::row("SHOW TABLES LIKE 'migration';");
     if ($row === null) {
@@ -46,6 +61,11 @@ class Migration {
       Database::sqlRun('ALTER TABLE `migration` ADD PRIMARY KEY(`index`);');
     }
   }
+
+  /**
+   * @param $list
+   * @throws \Exception
+   */
   private static function filterPassedList(&$list) {
     self::createMigrationTable();
     $passedMigrations = Database::rows('SELECT * FROM `migration`;');
@@ -57,6 +77,11 @@ class Migration {
       unset($list[$index]);
     }
   }
+
+  /**
+   * @return array
+   * @throws \Exception
+   */
   private static function getMaxPassedIndex() {
     self::createMigrationTable();
     $countFailed = Database::field('SELECT COUNT(*) AS `count` FROM `migration` WHERE `failed` = true;');
@@ -65,6 +90,11 @@ class Migration {
     }
     return Database::field('SELECT MAX(`index`) AS `max` FROM `migration`;');
   }
+
+  /**
+   * @param $list
+   * @throws \Exception
+   */
   private static function passMigration($list) {
     $path = Config::root() . 'data/migrations';
     foreach ($list as $index) {
@@ -77,6 +107,12 @@ class Migration {
       print(' done'."\n");
     }
   }
+
+  /**
+   * @param $index
+   * @param $migrationList
+   * @throws \Exception
+   */
   private static function rollback($index, $migrationList) {
     $index = str_pad($index, 3, '0', STR_PAD_LEFT);
     if (!isset($migrationList[$index])) {

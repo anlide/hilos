@@ -4,16 +4,26 @@ namespace Hilos\Service\OAuth;
 use Hilos\Service\Exception\OAuth\AccessTokenEmpty;
 use Hilos\Service\OAuth;
 
+/**
+ * Class Ok
+ * @package Hilos\Service\OAuth
+ */
 class Ok extends OAuth {
   protected $public;
 
   function getRedirectUrl() {
     return $_SERVER['REQUEST_SCHEME'].'://'.$_SERVER['SERVER_NAME'].'/oauth/method=ok';
   }
+
   function getUrl() {
     $redirect_url = urlencode($this->getRedirectUrl());
     return 'https://connect.ok.ru/oauth/authorize?client_id='.$this->appId.'&response_type=code&redirect_uri='.$redirect_url;
   }
+
+  /**
+   * @param $code
+   * @throws AccessTokenEmpty
+   */
   function fetchUserData($code) {
     $authTokenUrl = 'https://api.odnoklassniki.ru/oauth/token.do?client_id='.$this->appId.'&client_secret='.$this->secret.'&redirect_uri='.$this->getRedirectUrl().'&grant_type=authorization_code&code='.$code;
     $authTokenCurl = curl_init($authTokenUrl);
@@ -28,6 +38,7 @@ class Ok extends OAuth {
     $this->accessToken = $authTokenParams['access_token'];
     $this->fetchByToken($authTokenParams['access_token']);
   }
+
   function fetchByToken($accessToken, $params = null) {
     $authInfoUrlBase = 'http://api.ok.ru/fb.do';
     $params = array(
@@ -44,6 +55,7 @@ class Ok extends OAuth {
     curl_close($authInfoCurl);
     $this->parseData($authInfoParams);
   }
+
   function parseData($userInfo, $params = null) {
     $this->provider = 'ok';
     $this->providerKey = $userInfo['uid'];
@@ -55,6 +67,7 @@ class Ok extends OAuth {
     }
     $this->sex = ($userInfo['gender'] == 'male');
   }
+
   public function fetchBySession($sessionKey, $sessionSecretKey) {
     $authInfoUrlBase = 'http://api.ok.ru/fb.do';
     $params = array(

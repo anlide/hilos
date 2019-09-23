@@ -10,8 +10,10 @@ use Hilos\Service\Config;
 class Worker extends Server {
 
   protected $classWorkerClient;
+
   /** @var resource[] */
   protected $processes = [];
+
   /** @var ClientWorker[] */
   protected $clients = [];
 
@@ -29,6 +31,11 @@ class Worker extends Server {
     $this->autoStart = true;
   }
 
+  /**
+   * @param $initialFile
+   * @param $count
+   * @throws \Exception
+   */
   public function runWorkers($initialFile, $count) {
     for ($index = 0; $index < $count; $index++) {
       $descriptorspec = [
@@ -47,6 +54,12 @@ class Worker extends Server {
     }
   }
 
+  /**
+   * @param $task
+   * @param bool $delay
+   * @return bool
+   * @throws \Exception
+   */
   public function addTask(&$task, $delay = false) {
     $minIndex = null;
     $minCount = null;
@@ -69,6 +82,9 @@ class Worker extends Server {
     return false;
   }
 
+  /**
+   * @throws \Exception
+   */
   function tick() {
     if ((count($this->delayTasks) == 0) || (count($this->clients) == 0)) return;
     foreach ($this->delayTasks as $index => $task) {
@@ -97,6 +113,10 @@ class Worker extends Server {
     }
   }
 
+  /**
+   * @return ClientWorker|mixed
+   * @throws SocketAcceptUnable
+   */
   function accept() {
     if ($socket = socket_accept($this->socket)) {
       return $this->clients[] = new $this->classWorkerClient($socket);

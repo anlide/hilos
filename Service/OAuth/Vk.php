@@ -7,14 +7,27 @@ use Hilos\Service\Exception\OAuth\TooManyRequestsPerSeconds;
 use Hilos\Service\Exception\OAuth\VkNoId;
 use Hilos\Service\OAuth;
 
+/**
+ * Class Vk
+ * @package Hilos\Service\OAuth
+ */
 class Vk extends OAuth {
   function getRedirectUrl() {
     return $_SERVER['REQUEST_SCHEME'].'://'.$_SERVER['SERVER_NAME'].'/oauth/method=vk';
   }
+
   function getUrl() {
     $redirect_url = urlencode($this->getRedirectUrl());
     return 'https://oauth.vk.com/authorize?client_id='.$this->appId.'&response_type=code&display=page&v=5.8&redirect_uri='.$redirect_url;
   }
+
+  /**
+   * @param $code
+   * @throws AccessTokenEmpty
+   * @throws AccessTokenExpired
+   * @throws TooManyRequestsPerSeconds
+   * @throws VkNoId
+   */
   function fetchUserData($code) {
     $authTokenUrl = 'https://oauth.vk.com/access_token?client_id='.$this->appId.'&client_secret='.$this->secret.'&redirect_uri='.$this->getRedirectUrl().'&code='.$code;
     $resp = file_get_contents($authTokenUrl);
@@ -25,6 +38,15 @@ class Vk extends OAuth {
     $this->accessToken = $data['access_token'];
     $this->fetchByToken($data['access_token'], $data['user_id']);
   }
+
+  /**
+   * @param $accessToken
+   * @param null $params
+   * @throws AccessTokenExpired
+   * @throws TooManyRequestsPerSeconds
+   * @throws VkNoId
+   * @throws \Exception
+   */
   function fetchByToken($accessToken, $params = null) {
     $paramsQuery = array(
       'uids'         => $params,
@@ -51,6 +73,12 @@ class Vk extends OAuth {
     }
     $this->parseData($userInfo);
   }
+
+  /**
+   * @param $userInfo
+   * @param null $params
+   * @throws VkNoId
+   */
   function parseData($userInfo, $params = null) {
     $this->provider = 'vk';
     if (isset($userInfo['response'][0]['id'])) {

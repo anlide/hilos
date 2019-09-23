@@ -2,6 +2,10 @@
 
 namespace Hilos\Daemon\Client;
 
+/**
+ * Class Client
+ * @package Hilos\Daemon\Client
+ */
 abstract class Client implements IClient {
   protected static $hvaltr = ['; ' => '&', ';' => '&', ' ' => '%20'];
 
@@ -78,6 +82,9 @@ abstract class Client implements IClient {
     $this->close(self::CLOSE_NORMAL);
   }
 
+  /**
+   * @throws \Exception
+   */
   public function tick() {
     if (count($this->delayWrite) == 0) return;
     if ($this->failedStart === null) $this->failedStart = time();
@@ -235,6 +242,7 @@ abstract class Client implements IClient {
   /**
    * Send Bad request
    * @return void
+   * @throws \Exception
    */
   public function badRequest() {
     $this->write("400 Bad Request\r\n\r\n<html><head><title>400 Bad Request</title></head><body bgcolor=\"white\"><h1>400 Bad Request</h1></body></html>");

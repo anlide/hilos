@@ -87,6 +87,11 @@ abstract class Worker extends Client {
     return count($this->tasks);
   }
 
+  /**
+   * @param TaskMaster $task
+   * @return bool
+   * @throws \Exception
+   */
   public function taskAdd(TaskMaster &$task) {
     $taskIndex = $task->getTaskIndex();
     $taskIndexString = $task->getTaskIndexString();

@@ -2,6 +2,10 @@
 
 namespace Hilos\Daemon\Client;
 
+/**
+ * Class Internal
+ * @package Hilos\Daemon\Client
+ */
 abstract class Internal extends Client {
   private $failCount = 0;
 

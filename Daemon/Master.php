@@ -9,6 +9,10 @@ use Hilos\Daemon\Server\Worker as ServerWorker;
 use Hilos\Daemon\Task\Master as TaskMaster;
 use Hilos\Database\Migration;
 
+/**
+ * Class Master
+ * @package Hilos\Daemon
+ */
 abstract class Master {
   public static $stopSignal = false;
 
@@ -16,8 +20,10 @@ abstract class Master {
 
   /** @var IServer[] */
   protected $servers = [];
+
   /** @var IClient[] */
   protected $clients = [];
+
   /** @var ServerWorker */
   protected $serverWorker = null;
 
@@ -28,6 +34,10 @@ abstract class Master {
 
   protected $willStartServers = [];
 
+  /**
+   * @param IServer $server
+   * @throws \Exception
+   */
   public function registerServer(IServer $server) {
     $this->servers[] = $server;
     if ($server instanceof ServerWorker) {
@@ -44,7 +54,7 @@ abstract class Master {
    * @return TaskMaster
    * @throws \Exception
    */
-  protected function getTaskByType($taskType, $taskIndex) {
+  protected function getTaskByType($taskType, $taskIndex): TaskMaster {
     throw new \Exception('getTaskByType not implemented at final class');
   }
 
@@ -64,6 +74,11 @@ abstract class Master {
     return $this->tasks[$taskType . '-' . $taskIndexString];
   }
 
+  /**
+   * @param $taskType
+   * @return array
+   * @throws \Exception
+   */
   public function taskGetsByType($taskType) {
     $ret = [];
     if ($this->serverWorker === null) throw new \Exception('Server Worker not registered');
@@ -74,6 +89,11 @@ abstract class Master {
     return $ret;
   }
 
+  /**
+   * @param $initialFile
+   * @param null $count
+   * @throws \Exception
+   */
   public function runWorkers($initialFile, $count = null) {
     if ($count === null) $count = $this->getProcessorCount();
     if ($this->serverWorker === null) throw new \Exception('Server Worker not registered');

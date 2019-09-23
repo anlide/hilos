@@ -4,14 +4,24 @@ namespace Hilos\Service\OAuth;
 use Hilos\Service\Exception\OAuth\AccessTokenEmpty;
 use Hilos\Service\OAuth;
 
+/**
+ * Class Yandex
+ * @package Hilos\Service\OAuth
+ */
 class Yandex extends OAuth {
   function getRedirectUrl() {
     return $_SERVER['REQUEST_SCHEME'].'://'.$_SERVER['SERVER_NAME'].'/oauth/method=yandex';
   }
+
   function getUrl() {
     $redirect_url = urlencode($this->getRedirectUrl());
     return 'https://oauth.yandex.ru/authorize?client_id='.$this->appId.'&response_type=code&redirect_uri='.$redirect_url;
   }
+
+  /**
+   * @param $code
+   * @throws AccessTokenEmpty
+   */
   function fetchUserData($code) {
     $authTokenUrlBase = 'https://oauth.yandex.ru/token';
     $params = array(
@@ -36,6 +46,7 @@ class Yandex extends OAuth {
     $this->accessToken = $authTokenParams['access_token'];
     $this->fetchByToken($authTokenParams['access_token']);
   }
+
   function fetchByToken($accessToken, $params = null) {
     $authInfoUrlBase = 'https://login.yandex.ru/info';
     $params = array(
@@ -52,6 +63,7 @@ class Yandex extends OAuth {
     curl_close($authInfoCurl);
     $this->parseData($authInfoParams);
   }
+
   function parseData($userInfo, $params = null) {
     $this->provider = 'yandex';
     $this->providerKey = $userInfo['id'];

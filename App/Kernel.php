@@ -5,6 +5,10 @@ use Hilos\App\Exception\RouteInvalid;
 use Hilos\App\Router\Route;
 use Hilos\App\Exception\NoRouteForRequest;
 
+/**
+ * Class Kernel
+ * @package Hilos\App
+ */
 abstract class Kernel implements IKernel {
   protected $response = '';
 
@@ -17,6 +21,7 @@ abstract class Kernel implements IKernel {
   /**
    * @throws NoRouteForRequest
    * @throws RouteInvalid
+   * @throws \Exception
    */
   public function handle() {
     foreach ($this->routeStrings as $routeString) {
@@ -58,6 +63,11 @@ abstract class Kernel implements IKernel {
     throw new NoRouteForRequest();
   }
 
+  /**
+   * @param Route $route
+   * @param \Exception $e
+   * @throws \Exception
+   */
   public function handleFollowException(Route $route, \Exception $e) {
     $route->handleFollowException($e);
   }

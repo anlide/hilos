@@ -2,15 +2,23 @@
 
 namespace Hilos\Daemon\Task;
 
+/**
+ * Class Worker
+ * @package Hilos\Daemon\Task
+ */
 abstract class Worker {
   protected $type;
   protected $index;
+
   /** @var callable */
   private $writeCallback;
+
   /** @var callable */
   private $callbackSendToMaster;
+
   /** @var callable */
   private $callbackSendToTask;
+
   /** @var callable */
   private $callbackSelfStop;
 

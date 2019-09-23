@@ -2,6 +2,10 @@
 
 namespace Hilos\Daemon\Server;
 
+/**
+ * Class Server
+ * @package Hilos\Daemon\Server
+ */
 abstract class Server implements IServer {
   protected $port;
   protected $socket = null;

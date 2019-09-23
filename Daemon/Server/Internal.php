@@ -14,6 +14,10 @@ class Internal extends Server {
     $this->autoStart = false;
   }
 
+  /**
+   * @return InternalClient|mixed
+   * @throws SocketAcceptUnable
+   */
   function accept() {
     if ($socket = socket_accept($this->socket)) {
       return new $this->classInternalClient($socket);

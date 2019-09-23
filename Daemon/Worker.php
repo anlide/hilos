@@ -3,6 +3,10 @@ namespace Hilos\Daemon;
 
 use Hilos\Daemon\Task\Worker as TaskWorker;
 
+/**
+ * Class Worker
+ * @package Hilos\Daemon
+ */
 abstract class Worker {
   const WRITE_DELAY_TIMEOUT = 10;
 
@@ -11,6 +15,7 @@ abstract class Worker {
   private $indexWorker = null;
   protected $adminEmail = null;
   private $masterPort = null;
+
   /** @var resource */
   private $master = null;
 
@@ -25,6 +30,12 @@ abstract class Worker {
     return $this->indexWorker;
   }
 
+  /**
+   * Worker constructor.
+   *
+   * @param int $masterPort
+   * @throws \Exception
+   */
   public function __construct($masterPort) {
     $opts = getopt('', ['index:']);
     if (!isset($opts['index'])) {
@@ -39,6 +50,9 @@ abstract class Worker {
     $this->masterPort = $masterPort;
   }
 
+  /**
+   * @throws \Exception
+   */
   protected function tick() {
     foreach ($this->tasks as $type => &$tasks) {
       foreach ($tasks as $index => &$task) {
@@ -72,6 +86,9 @@ abstract class Worker {
     }
   }
 
+  /**
+   * @throws \Exception
+   */
   public function run() {
     $this->initPcntl();
 
@@ -217,6 +234,10 @@ abstract class Worker {
 
   protected abstract function getTaskByType($type, $index = null):TaskWorker;
 
+  /**
+   * @param $json
+   * @throws \Exception
+   */
   protected function write($json) {
     if (count($this->delayWrite) == 0) {
       $this->writeData(json_encode($json) . PHP_EOL);
@@ -225,6 +246,11 @@ abstract class Worker {
     }
   }
 
+  /**
+   * @param $data
+   * @return bool|int
+   * @throws \Exception
+   */
   private function writeData($data) {
     $bytesLeft = $total = strlen($data);
     $tryCount = 0;

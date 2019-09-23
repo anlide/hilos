@@ -3,7 +3,13 @@
   "description": "Engine for high load sites. For angular server API or cocos server websocket.",
   "type": "framework",
   "require": {
-    "php": "^7.0"
+    "php": "^7.0",
+    "ext-sockets": "*",
+    "ext-pcntl": "*",
+    "ext-json": "*",
+    "ext-mysqli": "*",
+    "ext-openssl": "*",
+    "ext-curl": "*"
   },
   "license": "MIT",
   "authors": [

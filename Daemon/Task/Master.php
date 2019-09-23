@@ -2,6 +2,10 @@
 
 namespace Hilos\Daemon\Task;
 
+/**
+ * Class Master
+ * @package Hilos\Daemon\Task
+ */
 abstract class Master implements IMaster {
   private $taskType = null;
   private $taskIndex = null;

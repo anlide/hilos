@@ -19,6 +19,7 @@ class Config {
     }
     return $defaultValue;
   }
+
   public static function root() {
     return __DIR__ . '/../../../../';
   }

@@ -17,6 +17,11 @@ abstract class Entity {
   public function __clone() {}
   public function __construct() {}
 
+  /**
+   * @param array $columns
+   * @return bool
+   * @throws \Exception
+   */
   public function save($columns = array()) {
     if (!is_array($columns)) $columns = array($columns);
     $wasRelated = $this->_related;
@@ -29,6 +34,9 @@ abstract class Entity {
     return $wasRelated;
   }
 
+  /**
+   * @throws \Exception
+   */
   private function saveInsert() {
     $class = get_called_class();
     $tmp_params_pattern = array();
@@ -53,6 +61,10 @@ abstract class Entity {
     }
   }
 
+  /**
+   * @param array $columns
+   * @throws \Exception
+   */
   private function saveUpdate($columns = array()) {
     $class = get_called_class();
     $_primary = $class::_primary;
@@ -90,6 +102,9 @@ abstract class Entity {
     }
   }
 
+  /**
+   * @throws \Exception
+   */
   public function delete() {
     $class = get_called_class();
     $_primary = $class::_primary;
@@ -106,14 +121,14 @@ abstract class Entity {
     }
   }
 
+  /**
+   * @param $row
+   */
   protected function setRelatedData($row) {
     $class = get_called_class();
     foreach($row as $column => $value) {
       if (isset($class::_types[$column])) {
         switch ($class::_types[$column]) {
-          case 'string':
-            $this->$column = $value;
-            break;
           case 'integer':
             $this->$column = ($value === null ? null : intval($value));
             break;
@@ -123,6 +138,7 @@ abstract class Entity {
           case 'boolean':
             $this->$column = ($value === null ? null : boolval($value));
             break;
+          case 'string':
           default:
             $this->$column = $value;
             break;
@@ -193,6 +209,10 @@ abstract class Entity {
     return $obj;
   }
 
+  /**
+   * @param $name
+   * @return array|EntityCollection|mixed|null
+   */
   public function __get($name) {
     $class = get_called_class();
     $column = 'id_'.$name;
