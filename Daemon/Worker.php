@@ -9,6 +9,8 @@ use Hilos\Daemon\Task\Worker as TaskWorker;
  */
 abstract class Worker {
   const WRITE_DELAY_TIMEOUT = 10;
+  const WRITE_NON_DELAY_ATTEMPTS = 100;
+  const WRITE_BUFFER_SIZE = 65536 - 1;
 
   public static $stopSignal = false;
 
@@ -256,42 +258,32 @@ abstract class Worker {
     $tryCount = 0;
     do {
       socket_clear_error($this->master);
-      $sended = @socket_write($this->master, $data, 65536 - 1);
-      if ($sended === false) {
-        if ((socket_strerror(socket_last_error()) == 'Resource temporarily unavailable') || (socket_last_error() == 10035)) {
-          $this->delayWrite[] = $data;
-          return false;
-        } else {
-          $haveCriticalError = false;
-          if (socket_last_error() == 104) {
-            $haveCriticalError = true;
-          }
-          if (socket_last_error() == 32) {
-            $haveCriticalError = true;
-          }
-          if (socket_last_error() == 10053) {
-            // TODO: implement reconnect for this error
-            $haveCriticalError = true;
-          }
-          if (socket_last_error() == 10054) {
-            // TODO: implement reconnect for this error
-            $haveCriticalError = true;
-          }
-          if ($haveCriticalError) {
+      $sent = @socket_write($this->master, $data, self::WRITE_BUFFER_SIZE);
+      if ($sent === false) {
+        switch (socket_last_error()) {
+          case SOCKET_EAGAIN:
+          case SOCKET_EWOULDBLOCK:
+            $this->delayWrite[] = $data;
+
+            return false;
+          case SOCKET_EPIPE:
+          case SOCKET_ECONNABORTED: // TODO: implement reconnect for this error
+          case SOCKET_ECONNRESET: // TODO: implement reconnect for this error
             throw new \Exception('Unable to write to master ['.socket_strerror(socket_last_error()).'/'.socket_last_error().']');
-          } else {
+          default:
             error_log('Hilos socket to master write error [' . socket_last_error() . '] : ' . socket_strerror(socket_last_error()));
-          }
         }
       }
-      $bytesLeft -= $sended;
-      $data = substr($data, $sended);
+      $bytesLeft -= $sent;
+      $data = substr($data, $sent);
       $tryCount++;
-      if ($tryCount >= 100) {
+      if ($tryCount >= self::WRITE_NON_DELAY_ATTEMPTS) {
         $this->delayWrite[] = $data;
+
         return false;
       }
     } while ($bytesLeft > 0);
+
     return $total;
   }
 
