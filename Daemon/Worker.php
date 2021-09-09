@@ -189,7 +189,6 @@ abstract class Worker {
                   break;
                 default:
                   throw new Exception('Unknown worker_action');
-                  break;
               }
             }
             $unparsedString = $lines[count($lines) - 1];
@@ -235,7 +234,7 @@ abstract class Worker {
     pcntl_signal(SIGHUP, 'Hilos\\Daemon\\signal_handler_worker');
   }
 
-  protected abstract function getTaskByType($type, $index = null):TaskWorker;
+  protected abstract function getTaskByType($type, $index = null): ?TaskWorker;
 
   /**
    * @param $json

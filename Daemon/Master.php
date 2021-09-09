@@ -55,7 +55,7 @@ abstract class Master {
    * @return TaskMaster
    * @throws Exception
    */
-  protected function getTaskByType($taskType, $taskIndex): TaskMaster {
+  protected function getTaskByType($taskType, $taskIndex): ?TaskMaster {
     throw new Exception('getTaskByType not implemented at final class');
   }
 
