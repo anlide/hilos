@@ -20,11 +20,11 @@ abstract class Entity {
   public function __construct() {}
 
   /**
-   * @param array $columns
+   * @param array|string $columns
    * @return bool
    * @throws Exception
    */
-  public function save(array $columns = array()): bool {
+  public function save($columns = array()): bool {
     if (!is_array($columns)) $columns = array($columns);
     $wasRelated = $this->_related;
     if ($this->_related) {
