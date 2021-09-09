@@ -18,7 +18,7 @@ class Internal extends Server {
    * @return InternalClient|mixed
    * @throws SocketAcceptUnable
    */
-  function accept() {
+  function accept(): InternalClient {
     if ($socket = socket_accept($this->socket)) {
       return new $this->classInternalClient($socket);
     } else {

@@ -6,7 +6,7 @@ interface IOAuth {
   function fetchByToken($accessToken, $params = null);
   function parseData($userInfo, $params = null);
   function toArray();
-  function getUrl();
-  function getRedirectUrl();
+  function getUrl(): string;
+  function getRedirectUrl(): string;
   function getAccessToken();
 }

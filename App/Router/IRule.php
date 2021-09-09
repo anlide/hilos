@@ -5,5 +5,5 @@ interface IRule {
   /**
    * @return boolean
    */
-  function check();
+  function check(): bool;
 }

@@ -18,7 +18,7 @@ class WebSocket extends Server {
    * @return WebsocketClient|mixed
    * @throws SocketAcceptUnable
    */
-  function accept() {
+  function accept(): WebsocketClient {
     if ($socket = socket_accept($this->socket)) {
       return new $this->classWebsocketClient($socket);
     } else {

@@ -7,7 +7,7 @@ namespace Hilos\Daemon\Client;
  * @package Hilos\Daemon\Client
  */
 abstract class Internal extends Client {
-  private $failCount = 0;
+  private int $failCount = 0;
 
   function __construct($socket) {
     $this->socket = $socket;

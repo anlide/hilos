@@ -18,7 +18,7 @@ interface IKernel {
    * @param string $routeString
    * @return boolean
    */
-  function handleInvalidRoute($routeString);
+  function handleInvalidRoute(string $routeString): bool;
 
   /**
    * @param Route $route

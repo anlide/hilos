@@ -1,1 +1,0 @@
-vendor\bin\phpunit.bat --bootstrap ./vendor/autoload.php ./Tests

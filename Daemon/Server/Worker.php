@@ -2,6 +2,8 @@
 
 namespace Hilos\Daemon\Server;
 
+use Exception;
+use Hilos\Daemon\Client\IClient;
 use Hilos\Daemon\Client\Worker as ClientWorker;
 use Hilos\Daemon\Exception\SocketAcceptUnable;
 use Hilos\Daemon\Task\Master as TaskMaster;
@@ -12,18 +14,16 @@ class Worker extends Server {
   protected $classWorkerClient;
 
   /** @var resource[] */
-  protected $processes = [];
+  protected array $processes = [];
 
   /** @var ClientWorker[] */
-  protected $clients = [];
+  protected array $clients = [];
 
   /** @var TaskMaster[] */
-  protected $delayTasks = [];
+  protected array $delayTasks = [];
 
-  /**
-   * @var array
-   */
-  protected $pipes = [];
+  /** @var array */
+  protected array $pipes = [];
 
   function __construct($port, $classWorkerClient = ClientWorker::class) {
     $this->port = $port;
@@ -34,7 +34,7 @@ class Worker extends Server {
   /**
    * @param $initialFile
    * @param $count
-   * @throws \Exception
+   * @throws Exception
    */
   public function runWorkers($initialFile, $count) {
     for ($index = 0; $index < $count; $index++) {
@@ -48,7 +48,7 @@ class Worker extends Server {
       if (strtolower(substr(PHP_OS, 0, 3)) != 'win') $add = 'exec ';
       $this->processes[$index] = proc_open($add . Config::env('PHP_RUN_DIR') . ' ' . $initialFile, $descriptorspec, $this->pipes[$index], dirname($initialFile));
       if (!is_resource($this->processes[$index])) {
-        throw new \Exception('unable to create worker');
+        throw new Exception('unable to create worker');
       }
       fwrite($this->pipes[$index][0], 'index-'.$index.PHP_EOL);
     }
@@ -58,9 +58,9 @@ class Worker extends Server {
    * @param $task
    * @param bool $delay
    * @return bool
-   * @throws \Exception
+   * @throws Exception
    */
-  public function addTask(&$task, $delay = false) {
+  public function addTask(&$task, bool $delay = false): bool {
     $minIndex = null;
     $minCount = null;
     foreach ($this->clients as $index => &$client) {
@@ -83,7 +83,7 @@ class Worker extends Server {
   }
 
   /**
-   * @throws \Exception
+   * @throws Exception
    */
   function tick() {
     if ((count($this->delayTasks) == 0) || (count($this->clients) == 0)) return;
@@ -117,7 +117,7 @@ class Worker extends Server {
    * @return ClientWorker|mixed
    * @throws SocketAcceptUnable
    */
-  function accept() {
+  function accept(): IClient {
     if ($socket = socket_accept($this->socket)) {
       return $this->clients[] = new $this->classWorkerClient($socket);
     } else {
@@ -125,7 +125,7 @@ class Worker extends Server {
     }
   }
 
-  function getClientsCount() {
+  function getClientsCount(): int {
     return count($this->clients);
   }
 }

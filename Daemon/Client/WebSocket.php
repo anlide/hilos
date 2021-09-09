@@ -2,6 +2,7 @@
 
 namespace Hilos\Daemon\Client;
 
+use Exception;
 use Hilos\Daemon\Client\WebSocketProtocol\IWebSocketProtocol;
 
 /**
@@ -24,27 +25,31 @@ class WebSocket extends Client {
 
   const MAX_ALLOWED_PACKET = 1024 * 1024 * 8;
 
-  private $extensions;
-  private $currentHeader;
-  /** @var IWebSocketProtocol */
-  protected $protocol = null;
+  /** @var string[] */
+  private array $extensions;
+  private string $currentHeader;
+  /** @var IWebSocketProtocol|null */
+  protected ?IWebSocketProtocol $protocol = null;
 
-  protected $ip;
-  protected $handshaked = false;
+  protected ?string $ip;
+  protected bool $handshaked = false;
 
   function __construct($socket) {
     $this->socket = $socket;
     @socket_getpeername($socket, $this->ip);
   }
 
-  public function getHandshaked() {
+  public function getHandshaked(): bool {
     return $this->handshaked;
   }
 
-  public function getIp() {
+  public function getIp(): string {
     return $this->ip;
   }
 
+  /**
+   * @throws Exception
+   */
   public function handle() {
     if ($this->closed) return;
     $this->receiveData();
@@ -92,7 +97,7 @@ class WebSocket extends Client {
    * Called when we're going to handshake.
    * @return boolean Handshake status
    */
-  public function handshake() {
+  public function handshake(): bool {
     if (!$this->protocol->sendHandshakeReply()) {
       error_log(get_class($this) . '::' . __METHOD__ . ' : Handshake protocol failure for client "'.$this->ip.'"');
       $this->close(self::CLOSE_PROTOCOL);
@@ -106,9 +111,10 @@ class WebSocket extends Client {
 
   /**
    * Read first line of HTTP request
+   * @throws Exception
    * @return boolean|null Success
    */
-  protected function httpReadFirstLine() {
+  protected function httpReadFirstLine(): ?bool {
     if (($l = $this->readLine(PHP_EOL)) === null) {
       return null;
     }
@@ -132,18 +138,20 @@ class WebSocket extends Client {
     $srv['REQUEST_URI']        = $u['path'] . (isset($u['query']) ? '?' . $u['query'] : '');
     $srv['DOCUMENT_URI']       = $u['path'];
     $srv['PHP_SELF']           = $u['path'];
-    $srv['QUERY_STRING']       = isset($u['query']) ? $u['query'] : null;
-    $srv['SCRIPT_NAME']        = $srv['DOCUMENT_URI'] = isset($u['path']) ? $u['path'] : '/';
-    $srv['SERVER_PROTOCOL']    = isset($e[2]) ? $e[2] : 'HTTP/1.1';
+    $srv['QUERY_STRING']       = $u['query'] ?? null;
+    $srv['SCRIPT_NAME']        = $srv['DOCUMENT_URI'] = $u['path'] ?? '/';
+    $srv['SERVER_PROTOCOL']    = $e[2] ?? 'HTTP/1.1';
     $srv['REMOTE_ADDR']        = null; //$address[0];
     $srv['REMOTE_PORT']        = null; //$address[1];
     return true;
   }
+
   /**
    * Read headers line-by-line
+   * @throws Exception
    * @return boolean|null Success
    */
-  protected function httpReadHeaders() {
+  protected function httpReadHeaders(): ?bool {
     while (($l = $this->readLine(PHP_EOL)) !== null) {
       if ($l === '') {
         return true;
@@ -167,7 +175,7 @@ class WebSocket extends Client {
    * Process headers
    * @return bool
    */
-  protected function httpProcessHeaders() {
+  protected function httpProcessHeaders(): bool {
     $this->state = self::STATE_PREHANDSHAKE;
     if (isset($this->server['HTTP_X_REAL_IP'])) {
       $this->ip = $this->server['HTTP_X_REAL_IP'];

@@ -1,11 +1,13 @@
 <?php
 namespace Hilos\App\Router;
 
+use Exception;
+
 interface IRoute {
   /**
    * @return boolean
    */
-  function check();
+  function check(): bool;
 
   /**
    * @return void
@@ -13,8 +15,8 @@ interface IRoute {
   function follow();
 
   /**
-   * @param \Exception $e
+   * @param Exception $e
    * @return mixed
    */
-  function handleFollowException(\Exception $e);
+  function handleFollowException(Exception $e);
 }

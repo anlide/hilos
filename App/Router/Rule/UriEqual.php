@@ -9,13 +9,13 @@ use Hilos\App\Router\Rule;
  */
 class UriEqual extends Rule {
 
-  private $uri;
+  private string $uri;
 
   public function __construct($uri) {
     $this->uri = $uri;
   }
 
-  public function check() {
+  public function check(): bool {
     return ($_SERVER['REQUEST_URI'] == $this->uri);
   }
 }

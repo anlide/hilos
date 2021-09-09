@@ -7,9 +7,9 @@ namespace Hilos\Daemon\Worker;
  * @package Hilos\Daemon\Worker
  */
 class Master {
-  private $indexWorker;
+  private string $indexWorker;
 
-  private $pipes;
+  /** @var resource|false */
   private $process;
 
   public function __construct($indexWorker) {
@@ -21,10 +21,10 @@ class Master {
    * @param string $phpExec
    * @throws \Exception
    */
-  public function start($initialFile, $phpExec = 'php') {
+  public function start($initialFile, string $phpExec = 'php') {
     $this->process = popen($phpExec.' '.$initialFile.' --index '.$this->indexWorker, 'r');
     if (!is_resource($this->process)) {
-      throw new \Exception('unable to create worker');
+      throw new \Exception('Unable to create worker');
     }
   }
 
@@ -37,8 +37,6 @@ class Master {
   }
 
   public function stop() {
-    fclose($this->pipes[0]);
-    fclose($this->pipes[1]);
     proc_close($this->process);
   }
 }

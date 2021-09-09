@@ -9,11 +9,11 @@ use Hilos\Service\OAuth;
  * @package Hilos\Service\OAuth
  */
 class Yandex extends OAuth {
-  function getRedirectUrl() {
+  function getRedirectUrl(): string {
     return $_SERVER['REQUEST_SCHEME'].'://'.$_SERVER['SERVER_NAME'].'/oauth/method=yandex';
   }
 
-  function getUrl() {
+  function getUrl(): string {
     $redirect_url = urlencode($this->getRedirectUrl());
     return 'https://oauth.yandex.ru/authorize?client_id='.$this->appId.'&response_type=code&redirect_uri='.$redirect_url;
   }

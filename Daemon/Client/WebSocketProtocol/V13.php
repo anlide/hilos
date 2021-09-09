@@ -2,6 +2,7 @@
 
 namespace Hilos\Daemon\Client\WebSocketProtocol;
 
+use Exception;
 use Hilos\Daemon\Client\Client;
 use Hilos\Daemon\Client\WebSocket;
 
@@ -16,7 +17,7 @@ class V13 extends WebSocketProtocol {
   const CONNCLOSE    = 0x8;
   const PING         = 0x9;
   const PONG         = 0xA;
-  protected static $opcodes = [
+  protected static array $opcodes = [
     0   => 'CONTINUATION',
     0x1 => 'STRING',
     0x2 => 'BINARY',
@@ -24,14 +25,15 @@ class V13 extends WebSocketProtocol {
     0x9 => 'PING',
     0xA => 'PONG',
   ];
-  protected $outgoingCompression = 0;
+  protected int $outgoingCompression = 0;
 
-  protected $framebuf = '';
+  protected string $framebuf = '';
 
   /**
    * Called when new data received
    * @see http://tools.ietf.org/html/draft-ietf-hybi-thewebsocketprotocol-10#page-16
    * @return void
+   * @throws Exception
    */
   function handle() {
     if ($this->client->getState() === WebSocket::STATE_PREHANDSHAKE) {
@@ -45,13 +47,13 @@ class V13 extends WebSocketProtocol {
         $firstBits = decbin($first);
         $opcode = (int)bindec(substr($firstBits, 4, 4));
         if ($opcode === self::CONNCLOSE) {
-          $this->client->close(WebSocket::CLOSE_NORMAL);
+          $this->client->close(Client::CLOSE_NORMAL);
           return;
         }
-        $opcodeName = isset(static::$opcodes[$opcode]) ? static::$opcodes[$opcode] : false;
+        $opcodeName = static::$opcodes[$opcode] ?? false;
         if (!$opcodeName) {
           error_log(get_class($this) . ': Undefined opcode ' . $opcode);
-          $this->client->close(WebSocket::CLOSE_PROTOCOL);
+          $this->client->close(Client::CLOSE_PROTOCOL);
           return;
         }
         $second = ord($this->client->look(1, 1)); // second byte integer (masked, payload length)
@@ -74,7 +76,7 @@ class V13 extends WebSocketProtocol {
         }
         if (WebSocket::MAX_ALLOWED_PACKET <= $dataLength) {
           // Too big packet
-          $this->client->close(WebSocket::CLOSE_TOO_BIG);
+          $this->client->close(Client::CLOSE_TOO_BIG);
           return;
         }
         if ($isMasked) {
@@ -108,7 +110,7 @@ class V13 extends WebSocketProtocol {
             case self::PONG:
               break;
             default:
-              $this->client->close(WebSocket::CLOSE_PROTOCOL);
+              $this->client->close(Client::CLOSE_PROTOCOL);
               break;
           }
           $this->framebuf = '';
@@ -120,8 +122,9 @@ class V13 extends WebSocketProtocol {
   /**
    * Sends a handshake message reply
    * @return boolean OK?
+   * @throws Exception
    */
-  public function sendHandshakeReply() {
+  public function sendHandshakeReply(): bool {
     if (!$this->client->issetServerKey('HTTP_SEC_WEBSOCKET_KEY') || !$this->client->issetServerKey('HTTP_SEC_WEBSOCKET_VERSION')) {
       return false;
     }
@@ -157,8 +160,9 @@ class V13 extends WebSocketProtocol {
    * @param  string   $data  Frame's data.
    * @param  string   $type  Frame's type. ("STRING" OR "BINARY")
    * @return boolean         Success.
+   * @throws Exception
    */
-  public function sendFrame($data, $type = null) {
+  public function sendFrame($data, $type = null): bool {
     if (!$this->client->getHandshaked()) {
       return false;
     }
@@ -217,6 +221,7 @@ class V13 extends WebSocketProtocol {
     for ($i = 0, $l = strlen($data), $ml = strlen($mask); $i < $l; $i++) {
       $data[$i] = $data[$i] ^ $mask[$i % $ml];
     }
+
     return $data;
   }
 }

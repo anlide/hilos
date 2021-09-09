@@ -2,6 +2,7 @@
 
 namespace Hilos\Daemon\Client;
 
+use Exception;
 use Hilos\Daemon\Exception\NonJsonResponse;
 use Hilos\Daemon\Task\Master as TaskMaster;
 
@@ -18,8 +19,8 @@ abstract class Worker extends Client {
   private $indexWorker = null;
 
   /** @var TaskMaster[] */
-  protected $tasks = [];
-  protected $delayedSignals = [];
+  protected array $tasks = [];
+  protected array $delayedSignals = [];
 
   function __construct($socket) {
     $this->socket = $socket;
@@ -52,7 +53,7 @@ abstract class Worker extends Client {
   /**
    * @return bool
    */
-  private function readIndex() {
+  private function readIndex(): bool {
     $line = $this->readLine(PHP_EOL);
     if ($line === null) return false;
     $json = json_decode($line, true);
@@ -71,7 +72,7 @@ abstract class Worker extends Client {
    * @return bool
    * @throws NonJsonResponse
    */
-  private function readWork() {
+  private function readWork(): bool {
     $line = $this->readLine(PHP_EOL);
     if ($line === null) return false;
     $json = json_decode($line, true);
@@ -83,27 +84,28 @@ abstract class Worker extends Client {
     return true;
   }
 
-  public function taskCount() {
+  public function taskCount(): int {
     return count($this->tasks);
   }
 
   /**
    * @param TaskMaster $task
    * @return bool
-   * @throws \Exception
+   * @throws Exception
    */
-  public function taskAdd(TaskMaster &$task) {
+  public function taskAdd(TaskMaster &$task): bool {
     $taskIndex = $task->getTaskIndex();
     $taskIndexString = $task->getTaskIndexString();
     $taskType = $task->getTaskType();
-    if ($taskIndex === null) throw new \Exception('taskIndex is null at worker taskAdd');
-    if ($taskType === null) throw new \Exception('taskType is null at worker taskAdd');
+    if ($taskIndex === null) throw new Exception('taskIndex is null at worker taskAdd');
+    if ($taskType === null) throw new Exception('taskType is null at worker taskAdd');
     if (isset($this->tasks[$taskType . '-' . $taskIndexString])) return false;
     $this->tasks[$taskType . '-' . $taskIndexString] = $task;
     $this->sendSignal('task_add', $taskType, $taskIndex);
     $this->tasks[$taskType . '-' . $taskIndexString]->setCallbackSendToWorker(function($taskType, $taskIndex, $action, $json){
       $this->sendSignal('task_action', $taskType, $taskIndex, $action, $json);
     });
+
     return true;
   }
 
@@ -112,7 +114,7 @@ abstract class Worker extends Client {
    * @param string|int $index
    * @return TaskMaster|null
    */
-  public function taskGet($type, $index) {
+  public function taskGet(string $type, $index): ?TaskMaster {
     if (!$this->taskExists($type, $index)) return null;
     return $this->tasks[$type . '-' . $index];
   }
@@ -122,10 +124,13 @@ abstract class Worker extends Client {
    * @param string|int $index
    * @return bool
    */
-  public function taskExists($type, $index) {
+  public function taskExists(string $type, $index): bool {
     return isset($this->tasks[$type . '-' . $index]);
   }
 
+  /**
+   * @throws Exception
+   */
   private function sendSignal($workerAction, $taskType, $taskIndex, $action = null, $params = []) {
     $jsonSignal = ['worker_action' => $workerAction, 'task_type' => $taskType, 'task_index' => $taskIndex, 'params' => $params];
     if ($action !== null) {

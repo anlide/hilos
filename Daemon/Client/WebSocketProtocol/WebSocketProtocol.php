@@ -5,7 +5,7 @@ use Hilos\Daemon\Client\WebSocket;
 
 abstract class WebSocketProtocol implements IWebSocketProtocol {
   /** @var WebSocket */
-  protected $client;
+  protected WebSocket $client;
   public function __construct(&$client) {
     $this->client = $client;
   }
@@ -15,7 +15,7 @@ abstract class WebSocketProtocol implements IWebSocketProtocol {
    * @param $type
    * @return integer
    */
-  public function getFrameType($type) {
+  public function getFrameType($type): int {
     if (is_int($type)) {
       return $type;
     }

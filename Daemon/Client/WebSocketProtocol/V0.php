@@ -2,6 +2,8 @@
 
 namespace Hilos\Daemon\Client\WebSocketProtocol;
 
+use Exception;
+use Hilos\Daemon\Client\Client;
 use Hilos\Daemon\Client\WebSocket;
 
 /**
@@ -12,7 +14,7 @@ class V0 extends WebSocketProtocol {
   const STRING = 0x00;
   const BINARY = 0x80;
 
-  protected $key;
+  protected string $key;
 
   function handle() {
     if ($this->client->getState() === WebSocket::STATE_PREHANDSHAKE) {
@@ -42,7 +44,7 @@ class V0 extends WebSocketProtocol {
 
           if (WebSocket::MAX_ALLOWED_PACKET <= $len) {
             // Too big packet
-            $this->client->close(WebSocket::CLOSE_TOO_BIG);
+            $this->client->close(Client::CLOSE_TOO_BIG);
             return;
           }
 
@@ -56,7 +58,7 @@ class V0 extends WebSocketProtocol {
           if (($p = $this->client->search("\xFF")) !== false) {
             if (WebSocket::MAX_ALLOWED_PACKET <= $p - 1) {
               // Too big packet
-              $this->client->close(WebSocket::CLOSE_TOO_BIG);
+              $this->client->close(Client::CLOSE_TOO_BIG);
               return;
             }
             $this->client->drain(1);
@@ -66,7 +68,7 @@ class V0 extends WebSocketProtocol {
           } else {
             if (WebSocket::MAX_ALLOWED_PACKET < $buflen - 1) {
               // Too big packet
-              $this->client->close(WebSocket::CLOSE_TOO_BIG);
+              $this->client->close(Client::CLOSE_TOO_BIG);
               return;
             }
             // not enough data yet
@@ -77,7 +79,10 @@ class V0 extends WebSocketProtocol {
     }
   }
 
-  function sendHandshakeReply() {
+  /**
+   * @throws Exception
+   */
+  function sendHandshakeReply(): bool {
     if (!$this->client->issetServerKey('HTTP_SEC_WEBSOCKET_KEY1') || !$this->client->issetServerKey('HTTP_SEC_WEBSOCKET_KEY2')) {
       return false;
     }
@@ -103,7 +108,11 @@ class V0 extends WebSocketProtocol {
     $this->client->write("\r\n" . $final_key);
     return true;
   }
-  function sendFrame($data, $type = null) {
+
+  /**
+   * @throws Exception
+   */
+  function sendFrame($data, $type = null): bool {
     if (!$this->client->getHandshaked()) {
       return false;
     }
@@ -154,11 +163,12 @@ class V0 extends WebSocketProtocol {
    * @param string $data Data
    * @return string Result
    */
-  protected function _computeFinalKey($key1, $key2, $data) {
+  protected function _computeFinalKey(string $key1, string $key2, string $data) {
     if (strlen($data) < 8) {
       error_log(get_class($this) . '::' . __METHOD__ . ' : Invalid handshake data for client "'.$this->client->getIp().'"');
       return false;
     }
+
     return md5($this->_computeKey($key1) . $this->_computeKey($key2) . substr($data, 0, 8), true);
   }
 
@@ -167,7 +177,7 @@ class V0 extends WebSocketProtocol {
    * @param string $key Key
    * @return string Result
    */
-  protected function _computeKey($key) {
+  protected function _computeKey(string $key): string {
     $spaces = 0;
     $digits = '';
 

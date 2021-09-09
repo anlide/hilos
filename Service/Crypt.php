@@ -9,7 +9,7 @@ class Crypt {
    * @param string $encryptionKey
    * @return string
    */
-  public static function encrypt($pureString, $encryptionKey) {
+  public static function encrypt(string $pureString, string $encryptionKey): string {
     $ivlen = openssl_cipher_iv_length($cipher="AES-128-CBC");
     $iv = openssl_random_pseudo_bytes($ivlen);
     $ciphertext_raw = openssl_encrypt($pureString, $cipher, $encryptionKey, $options=OPENSSL_RAW_DATA, $iv);
@@ -23,7 +23,7 @@ class Crypt {
    * @param string $encryptionKey
    * @return string
    */
-  public static function decrypt($encryptedString, $encryptionKey) {
+  public static function decrypt(string $encryptedString, string $encryptionKey): string {
     $c = base64_decode($encryptedString);
     $ivlen = openssl_cipher_iv_length($cipher="AES-128-CBC");
     $iv = substr($c, 0, $ivlen);

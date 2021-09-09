@@ -9,11 +9,11 @@ use Hilos\Service\OAuth;
  * @package Hilos\Service\OAuth
  */
 class Yahoo extends OAuth {
-  function getRedirectUrl() {
+  function getRedirectUrl(): string {
     return $_SERVER['REQUEST_SCHEME'].'://'.$_SERVER['SERVER_NAME'].'/oauth/method=yahoo';
   }
 
-  function getUrl() {
+  function getUrl(): string {
     $redirect_url = urlencode($this->getRedirectUrl());
     return 'https://api.login.yahoo.com/oauth2/request_auth?client_id='.$this->appId.'&response_type=code&redirect_uri='.$redirect_url;
   }

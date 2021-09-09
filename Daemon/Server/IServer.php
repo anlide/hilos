@@ -18,7 +18,7 @@ interface IServer {
   /**
    * @return IClient
    */
-  public function accept();
+  public function accept(): IClient;
 
   public function stop();
 

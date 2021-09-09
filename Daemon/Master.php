@@ -1,6 +1,7 @@
 <?php
 namespace Hilos\Daemon;
 
+use Exception;
 use Hilos\Daemon\Client\IClient;
 use Hilos\Daemon\Exception\InvalidSituation;
 use Hilos\Daemon\Exception\SocketSelect;
@@ -14,35 +15,35 @@ use Hilos\Database\Migration;
  * @package Hilos\Daemon
  */
 abstract class Master {
-  public static $stopSignal = false;
+  public static bool $stopSignal = false;
 
-  protected $adminEmail;
+  protected ?string $adminEmail;
 
   /** @var IServer[] */
-  protected $servers = [];
+  protected array $servers = [];
 
   /** @var IClient[] */
-  protected $clients = [];
+  protected array $clients = [];
 
-  /** @var ServerWorker */
-  protected $serverWorker = null;
+  /** @var ServerWorker|null */
+  protected ?ServerWorker $serverWorker = null;
 
   /** @var TaskMaster[] */
-  protected $tasks = [];
+  protected array $tasks = [];
 
-  protected $sockets;
+  protected array $sockets;
 
-  protected $willStartServers = [];
+  protected array $willStartServers = [];
 
   /**
    * @param IServer $server
-   * @throws \Exception
+   * @throws Exception
    */
   public function registerServer(IServer $server) {
     $this->servers[] = $server;
     if ($server instanceof ServerWorker) {
       if ($this->serverWorker !== null) {
-        throw new \Exception('Unable init server worker twice');
+        throw new Exception('Unable init server worker twice');
       }
       $this->serverWorker = $server;
     }
@@ -52,53 +53,55 @@ abstract class Master {
    * @param $taskType
    * @param $taskIndex
    * @return TaskMaster
-   * @throws \Exception
+   * @throws Exception
    */
   protected function getTaskByType($taskType, $taskIndex): TaskMaster {
-    throw new \Exception('getTaskByType not implemented at final class');
+    throw new Exception('getTaskByType not implemented at final class');
   }
 
   /**
    * @param string $taskType
    * @param mixed|null $taskIndex
    * @return TaskMaster
-   * @throws \Exception
+   * @throws Exception
    */
-  public function taskGet($taskType, $taskIndex = null) {
+  public function taskGet(string $taskType, $taskIndex = null): TaskMaster {
     $taskIndexString = (is_array($taskIndex)) ? implode('-', $taskIndex) : $taskIndex;
-    if ($this->serverWorker === null) throw new \Exception('Server Worker not registered');
+    if ($this->serverWorker === null) throw new Exception('Server Worker not registered');
     if (!isset($this->tasks[$taskType . '-' . $taskIndexString])) {
       $this->tasks[$taskType . '-' . $taskIndexString] = $this->getTaskByType($taskType, $taskIndex);
       $this->serverWorker->addTask($this->tasks[$taskType . '-' . $taskIndexString]);
     }
+
     return $this->tasks[$taskType . '-' . $taskIndexString];
   }
 
   /**
    * @param $taskType
    * @return array
-   * @throws \Exception
+   * @throws Exception
    */
-  public function taskGetsByType($taskType) {
+  public function taskGetsByType($taskType): array {
     $ret = [];
-    if ($this->serverWorker === null) throw new \Exception('Server Worker not registered');
+    if ($this->serverWorker === null) throw new Exception('Server Worker not registered');
     foreach ($this->tasks as $task) {
       if ($task->getTaskType() != $taskType) continue;
       $ret[] = $task;
     }
+
     return $ret;
   }
 
   /**
    * @param $initialFile
    * @param null $count
-   * @throws \Exception
+   * @throws Exception
    */
   public function runWorkers($initialFile, $count = null) {
     if ($count === null) $count = $this->getProcessorCount();
-    if ($this->serverWorker === null) throw new \Exception('Server Worker not registered');
-    if ($count < 1) throw new \Exception('Invalid processors count');
-    if (!empty($this->workers)) throw new \Exception('Trying to run workers twice');
+    if ($this->serverWorker === null) throw new Exception('Server Worker not registered');
+    if ($count < 1) throw new Exception('Invalid processors count');
+    if (!empty($this->workers)) throw new Exception('Trying to run workers twice');
     $this->serverWorker->runWorkers($initialFile, $count);
   }
 
@@ -181,7 +184,7 @@ abstract class Master {
         $server->stop();
       }
       unset($server);
-    } catch (\Exception $e) {
+    } catch (Exception $e) {
       error_log($e->getMessage());
       error_log($e->getTraceAsString());
       print($e->getMessage());

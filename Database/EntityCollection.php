@@ -2,13 +2,15 @@
 
 namespace Hilos\Database;
 
+use Exception;
+
 /**
  * Class EntityCollection
  * @package Hilos\Database
  */
 class EntityCollection implements \IteratorAggregate, \ArrayAccess, \Countable, \Serializable {
   /** @var string */
-  private $class_name;
+  private string $class_name;
 
   /** @var Entity[] */
   private $items;
@@ -22,6 +24,9 @@ class EntityCollection implements \IteratorAggregate, \ArrayAccess, \Countable, 
     $this->items = $items;
   }
 
+  /**
+   * @throws Exception
+   */
   public function save() {
     foreach ($this->items as $item) {
       $item->save();
@@ -49,19 +54,19 @@ class EntityCollection implements \IteratorAggregate, \ArrayAccess, \Countable, 
     }
   }
 
-  function offsetExists($offset) {
+  function offsetExists($offset): bool {
     return array_key_exists($offset, $this->items);
   }
 
-  public function count() {
+  public function count(): int {
     return count($this->items);
   }
 
-  public function getIterator() {
+  public function getIterator(): \ArrayIterator {
     return new \ArrayIterator($this->items);
   }
 
-  public function serialize() {
+  public function serialize(): ?string {
     return serialize($this->items);
   }
 

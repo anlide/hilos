@@ -9,13 +9,13 @@ use Hilos\Service\OAuth;
  * @package Hilos\Service\OAuth
  */
 class Ok extends OAuth {
-  protected $public;
+  protected ?string $public;
 
-  function getRedirectUrl() {
+  function getRedirectUrl(): string {
     return $_SERVER['REQUEST_SCHEME'].'://'.$_SERVER['SERVER_NAME'].'/oauth/method=ok';
   }
 
-  function getUrl() {
+  function getUrl(): string {
     $redirect_url = urlencode($this->getRedirectUrl());
     return 'https://connect.ok.ru/oauth/authorize?client_id='.$this->appId.'&response_type=code&redirect_uri='.$redirect_url;
   }

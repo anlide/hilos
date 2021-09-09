@@ -2,12 +2,14 @@
 
 namespace Hilos\Daemon\Client;
 
+use Exception;
+
 /**
  * Class Client
  * @package Hilos\Daemon\Client
  */
 abstract class Client implements IClient {
-  protected static $hvaltr = ['; ' => '&', ';' => '&', ' ' => '%20'];
+  protected static array $hvaltr = ['; ' => '&', ';' => '&', ' ' => '%20'];
 
   const STATE_STANDBY = 0;
   const WRITE_DELAY_TIMEOUT = 10;
@@ -28,30 +30,31 @@ abstract class Client implements IClient {
 
   const MAX_BUFFER_SIZE = 1024 * 1024;
 
-  protected $extensionsCleanRegex = '/(?:^|\W)x-webkit-/iS';
+  protected string $extensionsCleanRegex = '/(?:^|\W)x-webkit-/iS';
 
+  /** @var resource */
   protected $socket;
-  protected $closed = false;
-  protected $state = self::STATE_STANDBY;
-  protected $unparsedData = '';
-  protected $closeStatus;
+  protected bool $closed = false;
+  protected int $state = self::STATE_STANDBY;
+  protected string $unparsedData = '';
+  protected ?int $closeStatus;
 
   /** @var array _SERVER */
-  protected $server = [];
+  protected array $server = [];
 
   /** @var string[] */
-  protected $delayWrite = [];
-  protected $failedStart = null;
+  protected array $delayWrite = [];
+  protected ?int $failedStart = null;
 
   function getSocket() {
     return $this->socket;
   }
 
-  function getState() {
+  function getState(): int {
     return $this->state;
   }
 
-  function getUnparsedData() {
+  function getUnparsedData(): string {
     return $this->unparsedData;
   }
 
@@ -63,7 +66,7 @@ abstract class Client implements IClient {
     $this->server[$key] = $value;
   }
 
-  function issetServerKey($key) {
+  function issetServerKey($key): bool {
     return isset($this->server[$key]);
   }
 
@@ -74,7 +77,7 @@ abstract class Client implements IClient {
     $this->closed = true;
   }
 
-  public function closed() {
+  public function closed(): bool {
     return $this->closed;
   }
 
@@ -83,7 +86,7 @@ abstract class Client implements IClient {
   }
 
   /**
-   * @throws \Exception
+   * @throws Exception
    */
   public function tick() {
     if (count($this->delayWrite) == 0) return;
@@ -104,7 +107,7 @@ abstract class Client implements IClient {
       $this->failedStart = null;
     } else {
       if (time() - $this->failedStart > self::WRITE_DELAY_TIMEOUT) {
-        throw new \Exception('Failed to write more than '.self::WRITE_DELAY_TIMEOUT.' seconds');
+        throw new Exception('Failed to write more than '.self::WRITE_DELAY_TIMEOUT.' seconds');
       }
     }
   }
@@ -126,12 +129,12 @@ abstract class Client implements IClient {
   }
 
   /**
-   * Searches first occurence of the string in input buffer
+   * Searches first occurrence of the string in input buffer
    * @param  string  $what  Needle
    * @param  integer $start Offset start
-   * @return integer        Position
+   * @return integer|bool   Position
    */
-  public function search($what, $start = 0) {
+  public function search(string $what, int $start = 0) {
     return strpos($this->unparsedData, $what, $start);
   }
 
@@ -139,7 +142,7 @@ abstract class Client implements IClient {
    * Reads all data from the connection's buffer
    * @return string Readed data
    */
-  public function readUnlimited() {
+  public function readUnlimited(): string {
     $ret = $this->unparsedData;
     $this->unparsedData = '';
     return $ret;
@@ -150,7 +153,7 @@ abstract class Client implements IClient {
    * @param  integer      $n Max. number of bytes to read
    * @return string|false    Readed data
    */
-  public function read($n) {
+  public function read(int $n) {
     if ($n <= 0) {
       return '';
     }
@@ -164,9 +167,9 @@ abstract class Client implements IClient {
   /**
    * Drains buffer
    * @param  integer $n Numbers of bytes to drain
-   * @return boolean    Success
+   * @return string|bool
    */
-  public function drain($n) {
+  public function drain(int $n) {
     $ret = substr($this->unparsedData, 0, $n);
     $this->unparsedData = substr($this->unparsedData, $n);
     return $ret;
@@ -178,7 +181,7 @@ abstract class Client implements IClient {
    * @param integer $o Offset
    * @return string|false
    */
-  public function look($n, $o = 0) {
+  public function look(int $n, int $o = 0) {
     if (strlen($this->unparsedData) <= $o) {
       return '';
     }
@@ -189,9 +192,9 @@ abstract class Client implements IClient {
    * Send data to the connection. Note that it just writes to buffer that flushes at every baseloop
    * @param string $data Data to send
    * @return bool|int
-   * @throws \Exception
+   * @throws Exception
    */
-  public function write($data) {
+  public function write(string $data) {
     if ($this->closed) return false;
     if (count($this->delayWrite) != 0) {
       $this->delayWrite[] = $data;
@@ -242,7 +245,7 @@ abstract class Client implements IClient {
   /**
    * Send Bad request
    * @return void
-   * @throws \Exception
+   * @throws Exception
    */
   public function badRequest() {
     $this->write("400 Bad Request\r\n\r\n<html><head><title>400 Bad Request</title></head><body bgcolor=\"white\"><h1>400 Bad Request</h1></body></html>");
@@ -269,13 +272,13 @@ abstract class Client implements IClient {
   }
 
   /**
-   * Replacement for default parse_str(), it supoorts UCS-2 like this: %uXXXX
+   * Replacement for default parse_str(), it supports UCS-2 like this: %uXXXX
    * @param  string  $s      String to parse
    * @param  array   &$var   Reference to the resulting array
    * @param  boolean $header Header-style string
    * @return void
    */
-  public static function parse_str($s, &$var, $header = false) {
+  public static function parse_str(string $s, array &$var, bool $header = false) {
     static $cb;
     if ($cb === null) {
       $cb = function ($m) {
@@ -300,7 +303,7 @@ abstract class Client implements IClient {
    * @param  boolean $l   Little endian? Default is false
    * @return integer
    */
-  public static function bytes2int($str, $l = false) {
+  public static function bytes2int(string $str, bool $l = false): int {
     if ($l) {
       $str = strrev($str);
     }

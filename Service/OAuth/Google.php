@@ -9,11 +9,11 @@ use Hilos\Service\OAuth;
  * @package Hilos\Service\OAuth
  */
 class Google extends OAuth {
-  function getRedirectUrl() {
+  function getRedirectUrl(): string {
     return $_SERVER['REQUEST_SCHEME'].'://'.$_SERVER['SERVER_NAME'].'/oauth/method=google';
   }
 
-  function getUrl() {
+  function getUrl(): string {
     $redirect_url = urlencode($this->getRedirectUrl());
     return 'https://accounts.google.com/o/oauth2/auth?client_id='.$this->appId.'&response_type=code&scope=openid&redirect_uri='.$redirect_url;
   }

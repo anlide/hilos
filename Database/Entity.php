@@ -2,8 +2,10 @@
 
 namespace Hilos\Database;
 
+use Exception;
+
 abstract class Entity {
-  private $_related = false;
+  private bool $_related = false;
 
   /*
   const _table = 'example';
@@ -20,9 +22,9 @@ abstract class Entity {
   /**
    * @param array $columns
    * @return bool
-   * @throws \Exception
+   * @throws Exception
    */
-  public function save($columns = array()) {
+  public function save(array $columns = array()): bool {
     if (!is_array($columns)) $columns = array($columns);
     $wasRelated = $this->_related;
     if ($this->_related) {
@@ -31,11 +33,12 @@ abstract class Entity {
       $this->saveInsert();
       $this->_related = true;
     }
+
     return $wasRelated;
   }
 
   /**
-   * @throws \Exception
+   * @throws Exception
    */
   private function saveInsert() {
     $class = get_called_class();
@@ -63,9 +66,9 @@ abstract class Entity {
 
   /**
    * @param array $columns
-   * @throws \Exception
+   * @throws Exception
    */
-  private function saveUpdate($columns = array()) {
+  private function saveUpdate(array $columns = array()) {
     $class = get_called_class();
     $_primary = $class::_primary;
     $values = array();
@@ -103,7 +106,7 @@ abstract class Entity {
   }
 
   /**
-   * @throws \Exception
+   * @throws Exception
    */
   public function delete() {
     $class = get_called_class();
@@ -150,11 +153,19 @@ abstract class Entity {
     $this->_related = true;
   }
 
-  public function isRelated() {
+  public function isRelated(): bool {
     return $this->_related;
   }
 
-  private static function getObjects($class, $filters = array(), $filters_param = array(), $order_by = array()) {
+  /**
+   * @param $class
+   * @param array $filters
+   * @param array $filters_param
+   * @param array $order_by
+   * @return EntityCollection
+   * @throws Exception
+   */
+  private static function getObjects($class, array $filters = array(), array $filters_param = array(), array $order_by = array()): EntityCollection {
     $objs = new EntityCollection($class);
     $order_str = '';
     if (count($order_by) > 0) {
@@ -178,15 +189,19 @@ abstract class Entity {
    * @param array|string $filters
    * @param array|string $filters_param
    * @param array|string $order_by
-   * @return array|EntityCollection
+   * @return EntityCollection
+   * @throws Exception
    */
-  public static function get($filters = array(), $filters_param = array(), $order_by = array()) {
+  public static function get($filters = array(), $filters_param = array(), $order_by = array()): EntityCollection {
     if (!is_array($filters)) $filters = array($filters);
     if (!is_array($filters_param)) $filters_param = array($filters_param);
     if (!is_array($order_by)) $order_by = array($order_by);
     return self::getObjects(get_called_class(), $filters, $filters_param, $order_by);
   }
 
+  /**
+   * @throws Exception
+   */
   public static function getById($id) {
     $class = get_called_class();
     if (!is_array($id)) {
@@ -205,13 +220,13 @@ abstract class Entity {
 
   public static function getEmpty() {
     $class = get_called_class();
-    $obj = new $class();
-    return $obj;
+    return new $class();
   }
 
   /**
    * @param $name
    * @return array|EntityCollection|mixed|null
+   * @throws Exception
    */
   public function __get($name) {
     $class = get_called_class();
@@ -252,7 +267,10 @@ abstract class Entity {
     return null;
   }
 
-  public static function getAll() {
+  /**
+   * @throws Exception
+   */
+  public static function getAll(): EntityCollection {
     return self::get();
   }
 }

@@ -7,10 +7,10 @@ namespace Hilos\Daemon\Task;
  * @package Hilos\Daemon\Task
  */
 abstract class Master implements IMaster {
-  private $taskType = null;
+  private ?string $taskType = null;
   private $taskIndex = null;
 
-  private $delaySend = [];
+  private array $delaySend = [];
 
   /** @var callable */
   private $callbackSendToWorker = null;
@@ -20,7 +20,7 @@ abstract class Master implements IMaster {
    * @param string $taskType
    * @param string|int|array|null $taskIndex
    */
-  public function __construct($taskType, $taskIndex) {
+  public function __construct(string $taskType, $taskIndex) {
     $this->taskType = $taskType;
     $this->taskIndex = $taskIndex;
   }
@@ -45,7 +45,7 @@ abstract class Master implements IMaster {
     }
   }
 
-  public function getTaskType() {
+  public function getTaskType(): ?string {
     return $this->taskType;
   }
 

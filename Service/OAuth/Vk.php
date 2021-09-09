@@ -1,6 +1,7 @@
 <?php
 namespace Hilos\Service\OAuth;
 
+use Exception;
 use Hilos\Service\Exception\OAuth\AccessTokenEmpty;
 use Hilos\Service\Exception\OAuth\AccessTokenExpired;
 use Hilos\Service\Exception\OAuth\TooManyRequestsPerSeconds;
@@ -12,11 +13,11 @@ use Hilos\Service\OAuth;
  * @package Hilos\Service\OAuth
  */
 class Vk extends OAuth {
-  function getRedirectUrl() {
+  function getRedirectUrl(): string {
     return $_SERVER['REQUEST_SCHEME'].'://'.$_SERVER['SERVER_NAME'].'/oauth/method=vk';
   }
 
-  function getUrl() {
+  function getUrl(): string {
     $redirect_url = urlencode($this->getRedirectUrl());
     return 'https://oauth.vk.com/authorize?client_id='.$this->appId.'&response_type=code&display=page&v=5.8&redirect_uri='.$redirect_url;
   }
@@ -45,7 +46,7 @@ class Vk extends OAuth {
    * @throws AccessTokenExpired
    * @throws TooManyRequestsPerSeconds
    * @throws VkNoId
-   * @throws \Exception
+   * @throws Exception
    */
   function fetchByToken($accessToken, $params = null) {
     $paramsQuery = array(
@@ -57,7 +58,7 @@ class Vk extends OAuth {
     $userInfo = json_decode(file_get_contents('https://api.vk.com/method/users.get?'.urldecode(http_build_query($paramsQuery))), true);
     if (isset($userInfo['error'])) {
       if (!isset($userInfo['error']['error_code'])) {
-        throw new \Exception('Vk return wrong error format: '.json_encode($userInfo['error']));
+        throw new Exception('Vk return wrong error format: '.json_encode($userInfo['error']));
       }
       switch ($userInfo['error']['error_code']) {
         case 5:
@@ -65,7 +66,7 @@ class Vk extends OAuth {
         case 6:
           throw new TooManyRequestsPerSeconds();
         default:
-          throw new \Exception('Vk auth unknown error: '.json_encode($userInfo['error']));
+          throw new Exception('Vk auth unknown error: '.json_encode($userInfo['error']));
       }
     }
     $this->parseData($userInfo);

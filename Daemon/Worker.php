@@ -1,6 +1,7 @@
 <?php
 namespace Hilos\Daemon;
 
+use Exception;
 use Hilos\Daemon\Task\Worker as TaskWorker;
 
 /**
@@ -12,23 +13,23 @@ abstract class Worker {
   const WRITE_NON_DELAY_ATTEMPTS = 100;
   const WRITE_BUFFER_SIZE = 65536 - 1;
 
-  public static $stopSignal = false;
+  public static bool $stopSignal = false;
 
-  private $indexWorker = null;
-  protected $adminEmail = null;
-  private $masterPort = null;
+  private ?string $indexWorker = null;
+  protected ?string $adminEmail = null;
+  private ?int $masterPort = null;
 
   /** @var resource */
   private $master = null;
 
   /** @var TaskWorker[][] */
-  protected $tasks = [];
+  protected array $tasks = [];
 
   /** @var string[] */
-  protected $delayWrite = [];
-  protected $failedStart = null;
+  protected array $delayWrite = [];
+  protected ?bool $failedStart = null;
 
-  protected function getIndexWorker() {
+  protected function getIndexWorker(): string {
     return $this->indexWorker;
   }
 
@@ -36,14 +37,14 @@ abstract class Worker {
    * Worker constructor.
    *
    * @param int $masterPort
-   * @throws \Exception
+   * @throws Exception
    */
-  public function __construct($masterPort) {
+  public function __construct(int $masterPort) {
     $opts = getopt('', ['index:']);
     if (!isset($opts['index'])) {
       $indexWorker = stream_get_line(STDIN, 32, PHP_EOL);
       if (empty($indexWorker)) {
-        throw new \Exception('Missed required param "index"');
+        throw new Exception('Missed required param "index"');
       }
       $this->indexWorker = intval(substr($indexWorker, 6));
     } else {
@@ -53,7 +54,7 @@ abstract class Worker {
   }
 
   /**
-   * @throws \Exception
+   * @throws Exception
    */
   protected function tick() {
     foreach ($this->tasks as $type => &$tasks) {
@@ -82,20 +83,20 @@ abstract class Worker {
         $this->failedStart = null;
       } else {
         if (time() - $this->failedStart > self::WRITE_DELAY_TIMEOUT) {
-          throw new \Exception('Failed to write more than '.self::WRITE_DELAY_TIMEOUT.' seconds');
+          throw new Exception('Failed to write more than '.self::WRITE_DELAY_TIMEOUT.' seconds');
         }
       }
     }
   }
 
   /**
-   * @throws \Exception
+   * @throws Exception
    */
   public function run() {
     $this->initPcntl();
 
     $this->master = socket_create(AF_INET, SOCK_STREAM, SOL_TCP);
-    socket_connect($this->master, '127.0.0.1', $this->masterPort);
+    socket_connect($this->master, '::1', $this->masterPort);
     socket_set_nonblock($this->master);
     $unparsedString = '';
 
@@ -126,8 +127,8 @@ abstract class Worker {
             continue;
           } elseif (in_array(socket_last_error(), [10035])) {
             // Nothing
-          } elseif (socket_last_error() != 0) {
             // TODO: implement reconnect on "10053" error
+          } elseif (socket_last_error() != 0) {
             error_log('Socket read error: '.socket_last_error());
             self::$stopSignal = true;
             continue;
@@ -181,13 +182,13 @@ abstract class Worker {
                     error_log($this->indexWorker . ': task action "' . $json['worker_action'] . '" missed action param');
                     break;
                   }
-                  $this->taskAction($json['task_type'], $json['task_index'], $json['action'], isset($json['params']) ? $json['params'] : null);
+                  $this->taskAction($json['task_type'], $json['task_index'], $json['action'], $json['params'] ?? null);
                   break;
                 case 'task_system':
                   $this->taskSystem($json['action'], $json['params']);
                   break;
                 default:
-                  throw new \Exception('Unknow worker_action');
+                  throw new Exception('Unknown worker_action');
                   break;
               }
             }
@@ -196,7 +197,7 @@ abstract class Worker {
         }
         $this->tick();
       }
-    } catch (\Exception $e) {
+    } catch (Exception $e) {
       error_log($e->getMessage());
       error_log($e->getTraceAsString());
       print($e->getMessage());
@@ -238,7 +239,7 @@ abstract class Worker {
 
   /**
    * @param $json
-   * @throws \Exception
+   * @throws Exception
    */
   protected function write($json) {
     if (count($this->delayWrite) == 0) {
@@ -251,7 +252,7 @@ abstract class Worker {
   /**
    * @param $data
    * @return bool|int
-   * @throws \Exception
+   * @throws Exception
    */
   private function writeData($data) {
     $bytesLeft = $total = strlen($data);
@@ -269,7 +270,7 @@ abstract class Worker {
           case SOCKET_EPIPE:
           case SOCKET_ECONNABORTED: // TODO: implement reconnect for this error
           case SOCKET_ECONNRESET: // TODO: implement reconnect for this error
-            throw new \Exception('Unable to write to master ['.socket_strerror(socket_last_error()).'/'.socket_last_error().']');
+            throw new Exception('Unable to write to master ['.socket_strerror(socket_last_error()).'/'.socket_last_error().']');
           default:
             error_log('Hilos socket to master write error [' . socket_last_error() . '] : ' . socket_strerror(socket_last_error()));
         }
@@ -291,7 +292,7 @@ abstract class Worker {
    * @param string $type
    * @param string|int|array|null $index
    */
-  protected function taskAdd($type, $index) {
+  protected function taskAdd(string $type, $index) {
     $indexString = is_array($index) ? implode('-', $index) : $index;
     if (!isset($this->tasks[$type])) {
       $this->tasks[$type] = [];
@@ -306,7 +307,7 @@ abstract class Worker {
    * @param string $type
    * @param string|int|array|null $index
    */
-  protected function taskDelete($type, $index) {
+  protected function taskDelete(string $type, $index) {
     $indexString = is_array($index) ? implode('-', $index) : $index;
     error_log('taskDelete'.$type.$indexString);
   }
@@ -317,7 +318,7 @@ abstract class Worker {
    * @param string $action
    * @param null|array $params
    */
-  protected function taskAction($type, $index, $action, $params) {
+  protected function taskAction(string $type, $index, string $action, ?array $params) {
     $indexString = is_array($index) ? implode('-', $index) : $index;
     if (!isset($this->tasks[$type])) {
       error_log('DEBUG: taskAction: Not exists task type '.$type);

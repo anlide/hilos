@@ -2,6 +2,8 @@
 
 namespace Hilos\Daemon\Client\WebSocketProtocol;
 
+use Exception;
+use Hilos\Daemon\Client\Client;
 use Hilos\Daemon\Client\WebSocket;
 
 class Ve extends WebSocketProtocol {
@@ -27,7 +29,7 @@ class Ve extends WebSocketProtocol {
 
         if (WebSocket::MAX_ALLOWED_PACKET <= $len) {
           // Too big packet
-          $this->client->close(WebSocket::CLOSE_TOO_BIG);
+          $this->client->close(Client::CLOSE_TOO_BIG);
           return;
         }
 
@@ -42,7 +44,7 @@ class Ve extends WebSocketProtocol {
         if (($p = $this->client->search("\xFF")) !== false) {
           if (WebSocket::MAX_ALLOWED_PACKET <= $p - 1) {
             // Too big packet
-            $this->client->close(WebSocket::CLOSE_TOO_BIG);
+            $this->client->close(Client::CLOSE_TOO_BIG);
             return;
           }
           $this->client->drain(1);
@@ -52,7 +54,7 @@ class Ve extends WebSocketProtocol {
         } else {
           if (WebSocket::MAX_ALLOWED_PACKET < $buflen - 1) {
             // Too big packet
-            $this->client->close(WebSocket::CLOSE_TOO_BIG);
+            $this->client->close(Client::CLOSE_TOO_BIG);
             return;
           }
         }
@@ -60,7 +62,10 @@ class Ve extends WebSocketProtocol {
     }
   }
 
-  function sendHandshakeReply() {
+  /**
+   * @throws Exception
+   */
+  function sendHandshakeReply(): bool {
     if (!$this->client->issetServerKey('HTTP_SEC_WEBSOCKET_ORIGIN')) {
       $this->client->setServerKey('HTTP_SEC_WEBSOCKET_ORIGIN', '');
     }
@@ -78,7 +83,10 @@ class Ve extends WebSocketProtocol {
     return true;
   }
 
-  function sendFrame($data, $type = null) {
+  /**
+   * @throws Exception
+   */
+  function sendFrame($data, $type = null): bool {
     if (!$this->client->getHandshaked()) {
       return false;
     }
@@ -88,7 +96,7 @@ class Ve extends WebSocketProtocol {
     }
 
     if ($type === 'CONNCLOSE') {
-      $this->client->close(WebSocket::CLOSE_NORMAL);
+      $this->client->close(Client::CLOSE_NORMAL);
       return true;
     }
 

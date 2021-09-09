@@ -1,6 +1,7 @@
 <?php
 namespace Hilos\App;
 
+use Exception;
 use Hilos\App\Exception\RouteInvalid;
 use Hilos\App\Router\Route;
 use Hilos\App\Exception\NoRouteForRequest;
@@ -10,9 +11,9 @@ use Hilos\App\Exception\NoRouteForRequest;
  * @package Hilos\App
  */
 abstract class Kernel implements IKernel {
-  protected $response = '';
+  protected string $response = '';
 
-  private $routeStrings = [];
+  private array $routeStrings = [];
 
   protected function registerRoute(string $routeString) {
     $this->routeStrings[] = $routeString;
@@ -21,7 +22,7 @@ abstract class Kernel implements IKernel {
   /**
    * @throws NoRouteForRequest
    * @throws RouteInvalid
-   * @throws \Exception
+   * @throws Exception
    */
   public function handle() {
     foreach ($this->routeStrings as $routeString) {
@@ -37,7 +38,7 @@ abstract class Kernel implements IKernel {
           $route->follow();
           $this->response = ob_get_contents();
           ob_end_clean();
-        } catch (\Exception $e) {
+        } catch (Exception $e) {
           ob_end_clean();
           $this->handleFollowException($route, $e);
         }
@@ -49,10 +50,10 @@ abstract class Kernel implements IKernel {
 
   /**
    * @param string $routeString
-   * @throws RouteInvalid
    * @return boolean
+   *@throws RouteInvalid
    */
-  public function handleInvalidRoute($routeString) {
+  public function handleInvalidRoute(string $routeString): bool {
     throw new RouteInvalid($routeString);
   }
 
@@ -65,10 +66,10 @@ abstract class Kernel implements IKernel {
 
   /**
    * @param Route $route
-   * @param \Exception $e
-   * @throws \Exception
+   * @param Exception $e
+   * @throws Exception
    */
-  public function handleFollowException(Route $route, \Exception $e) {
+  public function handleFollowException(Route $route, Exception $e) {
     $route->handleFollowException($e);
   }
 
