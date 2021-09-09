@@ -5,7 +5,7 @@ abstract class OAuth implements IOAuth {
   public $provider = null;
   public $providerKey = null;
   public $user = null;
-  public $userpic = null;
+  public $userPic = null;
   public $sex = null;
 
   protected $appId;
@@ -38,7 +38,7 @@ abstract class OAuth implements IOAuth {
       'provider' => $this->provider,
       'providerKey' => $this->providerKey,
       'user' => $this->user,
-      'userpic' => $this->userpic,
+      'userPic' => $this->userPic,
       'sex' => $this->sex,
     ];
   }

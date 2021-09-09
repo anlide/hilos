@@ -73,7 +73,7 @@ class Yandex extends OAuth {
       $this->user = $userInfo['real_name'];
     }
     if (isset($userInfo['default_avatar_id'])) {
-      $this->userpic = 'https://avatars.yandex.net/get-yapic/'.$userInfo['default_avatar_id'].'/islands-200';
+      $this->userPic = 'https://avatars.yandex.net/get-yapic/'.$userInfo['default_avatar_id'].'/islands-200';
     }
     $this->sex = ($userInfo['sex'] == 'male');
   }

@@ -62,13 +62,10 @@ class Vk extends OAuth {
       switch ($userInfo['error']['error_code']) {
         case 5:
           throw new AccessTokenExpired();
-          break;
         case 6:
           throw new TooManyRequestsPerSeconds();
-          break;
         default:
           throw new \Exception('Vk auth unknown error: '.json_encode($userInfo['error']));
-          break;
       }
     }
     $this->parseData($userInfo);
@@ -95,8 +92,8 @@ class Vk extends OAuth {
       }
     }
     if (isset($userInfo['response'][0]['photo_big'])) {
-      $this->userpic = $userInfo['response'][0]['photo_big'];
-      if (substr($this->userpic, 0, 5) != 'https') $this->userpic = null; // TODO: Закачивать картинку себе и использовать её с локального сайта
+      $this->userPic = $userInfo['response'][0]['photo_big'];
+      if (substr($this->userPic, 0, 5) != 'https') $this->userPic = null; // TODO: Закачивать картинку себе и использовать её с локального сайта
     }
     $this->sex = ($userInfo['response'][0]['sex'] == 2);
   }

@@ -63,7 +63,7 @@ class Ok extends OAuth {
       $this->user = $userInfo['name'];
     }
     if (isset($userInfo['pic_1'])) {
-      $this->userpic = $userInfo['pic_1'];
+      $this->userPic = $userInfo['pic_1'];
     }
     $this->sex = ($userInfo['gender'] == 'male');
   }

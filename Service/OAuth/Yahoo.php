@@ -70,7 +70,7 @@ class Yahoo extends OAuth {
       $this->user = $userInfo['profile']['nickname'];
     }
     if (isset($userInfo['profile']['image']['imageUrl'])) {
-      $this->userpic = $userInfo['profile']['image']['imageUrl'];
+      $this->userPic = $userInfo['profile']['image']['imageUrl'];
     }
   }
 }

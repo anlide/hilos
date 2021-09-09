@@ -56,7 +56,7 @@ class Facebook extends OAuth {
       $this->sex = ($userInfo['gender'] == 'male');
     }
     if (isset($userInfo['picture']['data']['url'])) {
-      $this->userpic = $userInfo['picture']['data']['url'];
+      $this->userPic = $userInfo['picture']['data']['url'];
     }
   }
 }

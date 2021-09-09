@@ -64,7 +64,7 @@ class Google extends OAuth {
     }
     if (isset($userInfo['image']['url'])) {
       $tmp = parse_url($userInfo['image']['url']);
-      $this->userpic = $tmp['scheme'].'://'.$tmp['host'].$tmp['path'];
+      $this->userPic = $tmp['scheme'].'://'.$tmp['host'].$tmp['path'];
     }
     $this->sex = ($userInfo['gender'] == 'male');
   }
