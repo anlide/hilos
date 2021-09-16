@@ -96,7 +96,7 @@ abstract class Worker {
     $this->initPcntl();
 
     $this->master = socket_create(AF_INET, SOCK_STREAM, SOL_TCP);
-    socket_connect($this->master, '::1', $this->masterPort);
+    socket_connect($this->master, 'localhost', $this->masterPort);
     socket_set_nonblock($this->master);
     $unparsedString = '';
 

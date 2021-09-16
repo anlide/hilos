@@ -2,6 +2,7 @@
 
 namespace Hilos\Daemon\Server;
 
+use Hilos\Daemon\Client\IClient;
 use Hilos\Daemon\Client\Internal as InternalClient;
 use Hilos\Daemon\Exception\SocketAcceptUnable;
 
@@ -18,7 +19,7 @@ class Internal extends Server {
    * @return InternalClient|mixed
    * @throws SocketAcceptUnable
    */
-  function accept(): InternalClient {
+  function accept(): IClient {
     if ($socket = socket_accept($this->socket)) {
       return new $this->classInternalClient($socket);
     } else {

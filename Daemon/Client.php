@@ -26,7 +26,7 @@ class Client {
    * @throws NonJsonResponse
    * @throws SocketSelect
    */
-  public static function sendInternalRequest(string $method, $data, int $port = 8206, string $host = '::1'): ?array {
+  public static function sendInternalRequest(string $method, $data, int $port = 8206, string $host = 'localhost'): ?array {
     $socket = @stream_socket_client($host.':'.$port, $errno, $errstr, 15);
     if (!$socket) {
       throw new InvalidInternalConnection();

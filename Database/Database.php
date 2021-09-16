@@ -43,7 +43,7 @@ class Database {
    * @throws Exception
    */
   public static function configure(
-    string $host = '::1', string $user = 'root', string $pass = '', string $dbname = 'hilos', string $port = '3306'
+    string $host = 'localhost', string $user = 'root', string $pass = '', string $dbname = 'hilos', string $port = '3306'
   ) {
     self::$host = $host;
     self::$user = $user;
