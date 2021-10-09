@@ -102,9 +102,9 @@ class Migration {
       $fileName = $index.'migration-up.sql';
       $content = file_get_contents($path.'/'.$fileName);
       print('Run migration #'.$index.' ...');
-      Database::sqlRun("INSERT INTO `migration` (`index`, `failed`) VALUES (?, true);", [$index]);
+      Database::sqlRun("INSERT INTO `migration` (`index`, `failed`) VALUES (?, true);", [intval($index)]);
       Database::sqlRun($content);
-      Database::sqlRun('UPDATE `migration` SET `failed` = false WHERE `index` = ?', [$index]);
+      Database::sqlRun('UPDATE `migration` SET `failed` = false WHERE `index` = ?;', [intval($index)]);
       print(' done'."\n");
     }
   }
@@ -123,9 +123,9 @@ class Migration {
     $fileName = $index.'migration-down.sql';
     $content = file_get_contents($path.'/'.$fileName);
     print('Rollback migration #'.$index.' ...');
-    Database::sqlRun('UPDATE `migration` SET `failed` = true WHERE `index` = ?', [$index]);
+    Database::sqlRun('UPDATE `migration` SET `failed` = true WHERE `index` = ?;', [intval($index)]);
     Database::sqlRun($content);
-    Database::sqlRun('DELETE FROM `migration` WHERE `index` = ?', [$index]);
+    Database::sqlRun('DELETE FROM `migration` WHERE `index` = ?;', [intval($index)]);
     print(' done'."\n");
   }
 }
