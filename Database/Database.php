@@ -155,7 +155,7 @@ class Database {
         break;
       }
       if (!self::$connect->next_result()) {
-        throw new Exception('mysqli_multi_query with was execute with error at step statement [#'.$step.']');
+        throw new Exception('mysqli_multi_query with was execute with error at step statement [#'.$step.'/'.self::$connect->error.']');
       }
       $step++;
     } while (true);
