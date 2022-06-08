@@ -94,15 +94,17 @@ abstract class Master {
 
   /**
    * @param $initialFile
-   * @param null $count
+   * @param int|null $count
+   * @param int $monopoly
    * @throws Exception
    */
-  public function runWorkers($initialFile, $count = null) {
+  public function runWorkers($initialFile, ?int $count = null, int $monopoly = 0) {
     if ($count === null) $count = $this->getProcessorCount();
     if ($this->serverWorker === null) throw new Exception('Server Worker not registered');
     if ($count < 1) throw new Exception('Invalid processors count');
+    if ($count <= $monopoly) throw new Exception('Mount of workers should be more then monopoly-workers');
     if (!empty($this->workers)) throw new Exception('Trying to run workers twice');
-    $this->serverWorker->runWorkers($initialFile, $count);
+    $this->serverWorker->runWorkers($initialFile, $count, $monopoly);
   }
 
   protected function tick() {

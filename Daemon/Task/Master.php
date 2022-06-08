@@ -56,4 +56,8 @@ abstract class Master implements IMaster {
   public function getTaskIndexString() {
     return is_array($this->taskIndex) ? implode('-', $this->taskIndex) : $this->taskIndex;
   }
+
+  public function isMonopoly(): bool {
+    return false;
+  }
 }

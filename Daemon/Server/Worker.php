@@ -25,6 +25,9 @@ class Worker extends Server {
   /** @var array */
   protected array $pipes = [];
 
+  /** @var int */
+  private int $monopoly = 0;
+
   function __construct($port, $classWorkerClient = ClientWorker::class) {
     $this->port = $port;
     $this->classWorkerClient = $classWorkerClient;
@@ -34,9 +37,11 @@ class Worker extends Server {
   /**
    * @param $initialFile
    * @param $count
+   * @param int $monopoly
    * @throws Exception
    */
-  public function runWorkers($initialFile, $count) {
+  public function runWorkers($initialFile, $count, int $monopoly = 0) {
+    $this->monopoly = $monopoly;
     for ($index = 0; $index < $count; $index++) {
       $descriptorspec = [
         0 => ["pipe", "r"],
@@ -63,13 +68,28 @@ class Worker extends Server {
   public function addTask(&$task, bool $delay = false): bool {
     $minIndex = null;
     $minCount = null;
+    $defaultMonopolyIndex = null;
     foreach ($this->clients as $index => &$client) {
       if ($index == 0) continue;
+      if ($client->getMonopolyStatus() === false) {
+        $defaultMonopolyIndex = $index;
+      }
       $count = $client->taskCount();
       if (($minCount === null) || ($minCount > $count)) {
         $minIndex = $index;
         $minCount = $count;
       }
+      if (($task->isMonopoly()) && ($client->getMonopolyStatus() === true) && ($count === 0)) {
+        $this->clients[$index]->taskAdd($task);
+        return true;
+      }
+    }
+    if ($task->isMonopoly()) {
+      if ($defaultMonopolyIndex === null) {
+        throw new Exception('Something went wrong -- should be default worker for monopoly tasks (i.e. wrong monopoly configuration - add monopoly workers is fast workaround). But here some bug.');
+      }
+      $this->clients[$defaultMonopolyIndex]->taskAdd($task);
+      return true;
     }
     if ($minIndex === null) {
       if (!$delay) {
@@ -114,12 +134,22 @@ class Worker extends Server {
   }
 
   /**
-   * @return ClientWorker|mixed
+   * @return ClientWorker
    * @throws SocketAcceptUnable
    */
   function accept(): IClient {
     if ($socket = socket_accept($this->socket)) {
-      return $this->clients[] = new $this->classWorkerClient($socket);
+      $newClient = new $this->classWorkerClient($socket);
+      $this->clients[] = $newClient;
+      if (count($this->clients) === 1) {
+        $newClient->setMonopolyStatus(false);
+      } elseif ($this->monopoly > 0) {
+        $newClient->setMonopolyStatus(true);
+        $this->monopoly--;
+      } else {
+        $newClient->setMonopolyStatus(null);
+      }
+      return $newClient;
     } else {
       throw new SocketAcceptUnable('Worker');
     }

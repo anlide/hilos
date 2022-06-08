@@ -22,6 +22,9 @@ abstract class Worker extends Client {
   protected array $tasks = [];
   protected array $delayedSignals = [];
 
+  /** @var null|bool */
+  private ?bool $monopolyStatus = null;
+
   function __construct($socket) {
     $this->socket = $socket;
   }
@@ -138,6 +141,20 @@ abstract class Worker extends Client {
     }
     $signal = json_encode($jsonSignal);
     $this->write($signal.PHP_EOL);
+  }
+
+  /**
+   * @param bool|null $monopolyStatus
+   */
+  public function setMonopolyStatus(?bool $monopolyStatus) {
+    $this->monopolyStatus = $monopolyStatus;
+  }
+
+  /**
+   * @return bool|null
+   */
+  public function getMonopolyStatus(): ?bool {
+    return $this->monopolyStatus;
   }
 
   protected function onConnected($index) {}
