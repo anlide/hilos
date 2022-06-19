@@ -70,12 +70,11 @@ class Worker extends Server {
     $minCount = null;
     $defaultMonopolyIndex = null;
     foreach ($this->clients as $index => &$client) {
-      if ($index == 0) continue;
       if ($client->getMonopolyStatus() === false) {
-        $defaultMonopolyIndex = $index;
+        $defaultMonopolyIndex = $minIndex = $index;
       }
       $count = $client->taskCount();
-      if (($minCount === null) || ($minCount > $count)) {
+      if ((($minCount === null) || ($minCount > $count)) && ($client->getMonopolyStatus() !== true)) {
         $minIndex = $index;
         $minCount = $count;
       }
@@ -84,6 +83,7 @@ class Worker extends Server {
         return true;
       }
     }
+    unset($client);
     if ($task->isMonopoly()) {
       if ($defaultMonopolyIndex === null) {
         throw new Exception('Something went wrong -- should be default worker for monopoly tasks (i.e. wrong monopoly configuration - add monopoly workers is fast workaround). But here some bug.');
