@@ -139,8 +139,11 @@ abstract class Worker {
           }
           $lines = explode(PHP_EOL, $unparsedString);
           if (count($lines) > 1) {
-            foreach ($lines as $line) {
-              if (empty($line)) continue;
+            foreach ($lines as $lineIndex => $line) {
+              if (empty($line)) {
+                unset($lines[$lineIndex]);
+                continue;
+              }
               $json = json_decode($line, true);
               if ($json === null) {
                 error_log($this->indexWorker . ': invalid json with lines "' . count($lines) . '"');
@@ -198,8 +201,10 @@ abstract class Worker {
                 default:
                   throw new Exception('Unknown worker_action');
               }
+              unset($lines[$lineIndex]);
+              break;
             }
-            $unparsedString = $lines[count($lines) - 1];
+            $unparsedString = implode(PHP_EOL, $lines);
           }
         }
         $this->tick();
