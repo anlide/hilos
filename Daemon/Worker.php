@@ -9,7 +9,7 @@ use Hilos\Daemon\Task\Worker as TaskWorker;
  * @package Hilos\Daemon
  */
 abstract class Worker {
-  const WRITE_DELAY_TIMEOUT = 10;
+  const WRITE_DELAY_TIMEOUT = 10; // TODO: Rename it
   const WRITE_NON_DELAY_ATTEMPTS = 100;
   const WRITE_BUFFER_SIZE = 65536 - 1;
 
@@ -83,7 +83,8 @@ abstract class Worker {
         $this->failedStart = null;
       } else {
         if (time() - $this->failedStart > self::WRITE_DELAY_TIMEOUT) {
-          throw new Exception('Failed to write more than '.self::WRITE_DELAY_TIMEOUT.' seconds');
+          error_log('Failed to write more than '.self::WRITE_DELAY_TIMEOUT.' seconds');
+          $this->failedStart = time();
         }
       }
     }
@@ -121,11 +122,14 @@ abstract class Worker {
           }
         } else {
           socket_clear_error($this->master);
-          $unparsedString .= @socket_read($this->master, 1024 * 1024 * 32);
+          do {
+            $lastRead = @socket_read($this->master, 1024 * 1024 * 32);
+            $unparsedString .= $lastRead;
+          } while (strlen($lastRead) > 0);
           if (in_array(socket_last_error(), [107])) {
             self::$stopSignal = true;
             continue;
-          } elseif (in_array(socket_last_error(), [10035])) {
+          } elseif (in_array(socket_last_error(), [11, 10035])) {
             // Nothing
             // TODO: implement reconnect on "10053" error
           } elseif (socket_last_error() != 0) {
@@ -138,6 +142,10 @@ abstract class Worker {
             foreach ($lines as $line) {
               if (empty($line)) continue;
               $json = json_decode($line, true);
+              if ($json === null) {
+                error_log($this->indexWorker . ': invalid json with lines "' . count($lines) . '"');
+                continue;
+              }
               if ($json === false) {
                 error_log($this->indexWorker . ': invalid json at line "' . $line . '"');
                 continue;
@@ -273,9 +281,10 @@ abstract class Worker {
           default:
             error_log('Hilos socket to master write error [' . socket_last_error() . '] : ' . socket_strerror(socket_last_error()));
         }
+      } else {
+        $bytesLeft -= $sent;
+        $data = substr($data, $sent);
       }
-      $bytesLeft -= $sent;
-      $data = substr($data, $sent);
       $tryCount++;
       if ($tryCount >= self::WRITE_NON_DELAY_ATTEMPTS) {
         $this->delayWrite[] = $data;

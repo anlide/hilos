@@ -28,7 +28,7 @@ abstract class Client implements IClient {
   const CLOSE_SESSION     = 1012;
   const CLOSE_TLS         = 1015;
 
-  const MAX_BUFFER_SIZE = 1024 * 1024;
+  const MAX_BUFFER_SIZE = 1024 * 1024 * 32;
 
   protected string $extensionsCleanRegex = '/(?:^|\W)x-webkit-/iS';
 
