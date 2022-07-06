@@ -29,6 +29,9 @@ abstract class Worker {
   protected array $delayWrite = [];
   protected ?bool $failedStart = null;
 
+  /** @var string[] */
+  protected array $parsedLines = [];
+
   protected function getIndexWorker(): string {
     return $this->indexWorker;
   }
@@ -157,54 +160,61 @@ abstract class Worker {
                 error_log($this->indexWorker . ': not found param worker_action at line "' . $line . '"');
                 continue;
               }
-              switch ($json['worker_action']) {
-                case 'task_add':
-                  if (!isset($json['task_type'])) {
-                    error_log($this->indexWorker . ': task add "' . $json['worker_action'] . '" missed type param');
-                    break;
-                  }
-                  if (!isset($json['task_index'])) {
-                    error_log($this->indexWorker . ': task add "' . $json['worker_action'] . '" missed index param');
-                    break;
-                  }
-                  $this->taskAdd($json['task_type'], $json['task_index']);
-                  break;
-                case 'task_delete':
-                  if (!isset($json['task_type'])) {
-                    error_log($this->indexWorker . ': task delete "' . $json['worker_action'] . '" missed type param');
-                    break;
-                  }
-                  if (!isset($json['task_index'])) {
-                    error_log($this->indexWorker . ': task delete "' . $json['worker_action'] . '" missed index param');
-                    break;
-                  }
-                  $this->taskDelete($json['task_type'], $json['task_index']);
-                  break;
-                case 'task_action':
-                  if (!isset($json['task_type'])) {
-                    error_log($this->indexWorker . ': task action "' . $json['worker_action'] . '" missed type param');
-                    break;
-                  }
-                  if (!isset($json['task_index'])) {
-                    error_log($this->indexWorker . ': task action "' . $json['worker_action'] . '" missed index param');
-                    break;
-                  }
-                  if (!isset($json['action'])) {
-                    error_log($this->indexWorker . ': task action "' . $json['worker_action'] . '" missed action param');
-                    break;
-                  }
-                  $this->taskAction($json['task_type'], $json['task_index'], $json['action'], $json['params'] ?? null);
-                  break;
-                case 'task_system':
-                  $this->taskSystem($json['action'], $json['params']);
-                  break;
-                default:
-                  throw new Exception('Unknown worker_action');
-              }
+              $this->parsedLines[] = $json;
               unset($lines[$lineIndex]);
-              break;
             }
             $unparsedString = implode(PHP_EOL, $lines);
+          }
+          $startTime = microtime(true);
+          foreach ($this->parsedLines as $lineIndex => $json) {
+            switch ($json['worker_action']) {
+              case 'task_add':
+                if (!isset($json['task_type'])) {
+                  error_log($this->indexWorker . ': task add "' . $json['worker_action'] . '" missed type param');
+                  break;
+                }
+                if (!isset($json['task_index'])) {
+                  error_log($this->indexWorker . ': task add "' . $json['worker_action'] . '" missed index param');
+                  break;
+                }
+                $this->taskAdd($json['task_type'], $json['task_index']);
+                break;
+              case 'task_delete':
+                if (!isset($json['task_type'])) {
+                  error_log($this->indexWorker . ': task delete "' . $json['worker_action'] . '" missed type param');
+                  break;
+                }
+                if (!isset($json['task_index'])) {
+                  error_log($this->indexWorker . ': task delete "' . $json['worker_action'] . '" missed index param');
+                  break;
+                }
+                $this->taskDelete($json['task_type'], $json['task_index']);
+                break;
+              case 'task_action':
+                if (!isset($json['task_type'])) {
+                  error_log($this->indexWorker . ': task action "' . $json['worker_action'] . '" missed type param');
+                  break;
+                }
+                if (!isset($json['task_index'])) {
+                  error_log($this->indexWorker . ': task action "' . $json['worker_action'] . '" missed index param');
+                  break;
+                }
+                if (!isset($json['action'])) {
+                  error_log($this->indexWorker . ': task action "' . $json['worker_action'] . '" missed action param');
+                  break;
+                }
+                $this->taskAction($json['task_type'], $json['task_index'], $json['action'], $json['params'] ?? null);
+                break;
+              case 'task_system':
+                $this->taskSystem($json['action'], $json['params']);
+                break;
+              default:
+                throw new Exception('Unknown worker_action');
+            }
+            unset($this->parsedLines[$lineIndex]);
+            if (microtime(true) - $startTime > 0.3) {
+              break;
+            }
           }
         }
         $this->tick();
