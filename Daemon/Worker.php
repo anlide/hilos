@@ -113,7 +113,7 @@ abstract class Worker {
         }
         $read = [$this->master];
         $write = $except = null;
-        $numChangedStreams = @socket_select($read, $write, $except, 0, 250000);
+        $numChangedStreams = @socket_select($read, $write, $except, 0, count($this->parsedLines) > 0 ? 0 : 250000);
         if ($numChangedStreams === false) {
           if (strtoupper(substr(PHP_OS, 0, 3)) !== 'WIN') {
             pcntl_signal_dispatch();
