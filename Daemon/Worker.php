@@ -77,7 +77,7 @@ abstract class Worker {
         if ($crashedState) {
           $this->delayWrite[] = $data;
         } else {
-          if ($this->writeData($data) === false) {
+          if ($this->writeData($data, time() - $this->failedStart > self::WRITE_DELAY_TIMEOUT) === false) {
             $crashedState = true;
           }
         }
@@ -86,7 +86,7 @@ abstract class Worker {
         $this->failedStart = null;
       } else {
         if (time() - $this->failedStart > self::WRITE_DELAY_TIMEOUT) {
-          error_log('Failed to write more than '.self::WRITE_DELAY_TIMEOUT.' seconds');
+          error_log('Failed to write more than '.self::WRITE_DELAY_TIMEOUT.' seconds / worker');
           $this->failedStart = time();
         }
       }
@@ -149,7 +149,7 @@ abstract class Worker {
               }
               $json = json_decode($line, true);
               if ($json === null) {
-                error_log($this->indexWorker . ': invalid json with lines "' . count($lines) . '"');
+                error_log($this->indexWorker . ': invalid json with lines "' . $line . '" / ' . count($lines));
                 continue;
               }
               if ($json === false) {
@@ -160,11 +160,17 @@ abstract class Worker {
                 error_log($this->indexWorker . ': not found param worker_action at line "' . $line . '"');
                 continue;
               }
+              if (!isset($json['priority'])) {
+                $json['priority'] = 0;
+              }
               $this->parsedLines[] = $json;
               unset($lines[$lineIndex]);
             }
             $unparsedString = implode(PHP_EOL, $lines);
           }
+          usort($this->parsedLines, function ($a, $b) {
+            return $a['priority'] < $b['priority'];
+          });
           $startTime = microtime(true);
           foreach ($this->parsedLines as $lineIndex => $json) {
             switch ($json['worker_action']) {
@@ -276,13 +282,16 @@ abstract class Worker {
    * @return bool|int
    * @throws Exception
    */
-  private function writeData($data) {
+  private function writeData($data, $debug = false) {
     $bytesLeft = $total = strlen($data);
     $tryCount = 0;
     do {
       socket_clear_error($this->master);
       $sent = @socket_write($this->master, $data, self::WRITE_BUFFER_SIZE);
       if ($sent === false) {
+        if ($debug) {
+          error_log('socket_last_error: '.socket_last_error());
+        }
         switch (socket_last_error()) {
           case SOCKET_EAGAIN:
           case SOCKET_EWOULDBLOCK:

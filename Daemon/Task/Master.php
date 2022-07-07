@@ -28,20 +28,21 @@ abstract class Master implements IMaster {
   public function setCallbackSendToWorker($callback) {
     $this->callbackSendToWorker = $callback;
     foreach ($this->delaySend as $delaySend) {
-      $callback($this->taskType, $this->taskIndex, $delaySend['action'], $delaySend['json']);
+      $callback($this->taskType, $this->taskIndex, $delaySend['action'], $delaySend['json'], $delaySend['priority']);
     }
     $this->delaySend = [];
   }
 
-  protected function sendToWorker($action, $json = []) {
+  protected function sendToWorker($action, $json = [], $priority = 0) {
     if ($this->callbackSendToWorker === null) {
       $this->delaySend[] = [
         'action' => $action,
         'json' => $json,
+        'priority' => $priority,
       ];
     } else {
       $callbackSendToWorker = $this->callbackSendToWorker;
-      $callbackSendToWorker($this->taskType, $this->taskIndex, $action, $json);
+      $callbackSendToWorker($this->taskType, $this->taskIndex, $action, $json, $priority);
     }
   }
 

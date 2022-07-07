@@ -107,7 +107,7 @@ abstract class Client implements IClient {
       $this->failedStart = null;
     } else {
       if (time() - $this->failedStart > self::WRITE_DELAY_TIMEOUT) {
-        throw new Exception('Failed to write more than '.self::WRITE_DELAY_TIMEOUT.' seconds');
+        throw new Exception('Failed to write more than '.self::WRITE_DELAY_TIMEOUT.' seconds / client');
       }
     }
   }
@@ -116,6 +116,9 @@ abstract class Client implements IClient {
     if ($this->closed) return;
     socket_clear_error($this->socket);
     $data = @socket_read($this->socket, self::MAX_BUFFER_SIZE);
+    if (socket_last_error() != 0) {
+      error_log('receiveData: '.socket_last_error());
+    }
     if (is_string($data) && !empty($data)) {
       $this->unparsedData .= $data;
     } else {

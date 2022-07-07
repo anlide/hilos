@@ -141,11 +141,13 @@ abstract class Master {
         }
         $read = $sockets;
         $write = $except = array();
-        if ((@socket_select($read, $write, $except, 0, 1000000)) === false) {
+        if ((@socket_select($read, $write, $except, 0, 1000)) === false) {
           if (socket_strerror(socket_last_error()) != 'Interrupted system call') {
             if ($this->adminEmail !== null) mail($this->adminEmail, 'Hilos master socket_select error', socket_strerror(socket_last_error()));
             error_log('Hilos master socket_select error "' . socket_strerror(socket_last_error()) . '"');
             throw new SocketSelect(socket_last_error() . '/ ' . socket_strerror(socket_last_error()));
+          } else {
+            error_log('socket_last_error ('.time().'): '.socket_last_error());
           }
           if (strtoupper(substr(PHP_OS, 0, 3)) !== 'WIN') {
             pcntl_signal_dispatch();

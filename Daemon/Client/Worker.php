@@ -105,8 +105,8 @@ abstract class Worker extends Client {
     if (isset($this->tasks[$taskType . '-' . $taskIndexString])) return false;
     $this->tasks[$taskType . '-' . $taskIndexString] = $task;
     $this->sendSignal('task_add', $taskType, $taskIndex);
-    $this->tasks[$taskType . '-' . $taskIndexString]->setCallbackSendToWorker(function($taskType, $taskIndex, $action, $json){
-      $this->sendSignal('task_action', $taskType, $taskIndex, $action, $json);
+    $this->tasks[$taskType . '-' . $taskIndexString]->setCallbackSendToWorker(function($taskType, $taskIndex, $action, $json, $priority){
+      $this->sendSignal('task_action', $taskType, $taskIndex, $action, $json, $priority);
     });
 
     return true;
@@ -134,10 +134,17 @@ abstract class Worker extends Client {
   /**
    * @throws Exception
    */
-  private function sendSignal($workerAction, $taskType, $taskIndex, $action = null, $params = []) {
-    $jsonSignal = ['worker_action' => $workerAction, 'task_type' => $taskType, 'task_index' => $taskIndex, 'params' => $params];
+  private function sendSignal($workerAction, $taskType, $taskIndex, $action = null, $params = [], $priority = 0) {
+    $jsonSignal = ['worker_action' => $workerAction, 'task_type' => $taskType, 'task_index' => $taskIndex];
+    $jsonSignal = ['worker_action' => $workerAction, 'task_type' => $taskType, 'task_index' => $taskIndex];
     if ($action !== null) {
       $jsonSignal['action'] = $action;
+    }
+    if ($params !== []) {
+      $jsonSignal['params'] = $params;
+    }
+    if ($priority !== 0) {
+      $jsonSignal['priority'] = $priority;
     }
     $signal = json_encode($jsonSignal);
     $this->write($signal.PHP_EOL);
