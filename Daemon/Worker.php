@@ -86,6 +86,7 @@ abstract class Worker {
         $this->failedStart = null;
       } else {
         if (time() - $this->failedStart > self::WRITE_DELAY_TIMEOUT) {
+          // TODO: Implement reconnect
           error_log('Failed to write more than '.self::WRITE_DELAY_TIMEOUT.' seconds / worker');
           $this->failedStart = time();
         }
@@ -218,6 +219,7 @@ abstract class Worker {
                 throw new Exception('Unknown worker_action');
             }
             unset($this->parsedLines[$lineIndex]);
+            unset($json['params']);
             if (microtime(true) - $startTime > 0.3) {
               break;
             }
