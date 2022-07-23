@@ -21,6 +21,7 @@ class Internal extends Server {
    */
   function accept(): IClient {
     if ($socket = socket_accept($this->socket)) {
+      socket_set_nonblock($socket);
       return new $this->classInternalClient($socket);
     } else {
       throw new SocketAcceptUnable('Internal');

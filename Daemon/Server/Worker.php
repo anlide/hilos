@@ -139,6 +139,7 @@ class Worker extends Server {
    */
   function accept(): IClient {
     if ($socket = socket_accept($this->socket)) {
+      socket_set_nonblock($socket);
       $newClient = new $this->classWorkerClient($socket);
       $this->clients[] = $newClient;
       if (count($this->clients) === 1) {

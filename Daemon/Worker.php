@@ -10,8 +10,8 @@ use Hilos\Daemon\Task\Worker as TaskWorker;
  */
 abstract class Worker {
   const WRITE_DELAY_TIMEOUT = 10; // TODO: Rename it
-  const WRITE_NON_DELAY_ATTEMPTS = 100;
-  const WRITE_BUFFER_SIZE = 65536 - 1;
+  const WRITE_NON_DELAY_ATTEMPTS = 10;
+  const MAX_BUFFER_SIZE = 1024 * 1024 * 32;
 
   public static bool $stopSignal = false;
 
@@ -109,33 +109,35 @@ abstract class Worker {
 
     try {
       while (!self::$stopSignal) {
-        if (strtoupper(substr(PHP_OS, 0, 3)) !== 'WIN') {
-          pcntl_signal_dispatch();
-        }
+        pcntl_signal_dispatch();
         $read = [$this->master];
         $write = $except = null;
         $numChangedStreams = @socket_select($read, $write, $except, 0, count($this->parsedLines) > 0 ? 0 : 250000);
         if ($numChangedStreams === false) {
-          if (strtoupper(substr(PHP_OS, 0, 3)) !== 'WIN') {
-            pcntl_signal_dispatch();
-          }
+          pcntl_signal_dispatch();
           continue;
         } elseif ($numChangedStreams === 0) {
-          if (strtoupper(substr(PHP_OS, 0, 3)) !== 'WIN') {
-            pcntl_signal_dispatch();
-          }
+          pcntl_signal_dispatch();
         } else {
+          $readAttempts = 0;
           socket_clear_error($this->master);
           do {
-            $lastRead = @socket_read($this->master, 1024 * 1024 * 32);
+            $lastRead = @socket_read($this->master, self::MAX_BUFFER_SIZE);
+            $readAttempts++;
+            if ($lastRead === false) {
+              break;
+            }
             $unparsedString .= $lastRead;
           } while (strlen($lastRead) > 0);
-          if (in_array(socket_last_error(), [107])) {
+          if (socket_last_error() == SOCKET_ENOTCONN) {
             self::$stopSignal = true;
             continue;
-          } elseif (in_array(socket_last_error(), [11, 10035])) {
-            // Nothing
-            // TODO: implement reconnect on "10053" error
+          } elseif (socket_last_error() == SOCKET_EAGAIN) {
+            if ($readAttempts == 1) {
+              error_log('Hilos connection broken: going to stop daemon');
+              self::$stopSignal = true;
+              continue;
+            }
           } elseif (socket_last_error() != 0) {
             error_log('Socket read error: '.socket_last_error());
             self::$stopSignal = true;
@@ -239,8 +241,6 @@ abstract class Worker {
   }
 
   protected function initPcntl() {
-    if (strtoupper(substr(PHP_OS, 0, 3)) == 'WIN') return;
-
     function signal_handler_worker($signo) {
       switch ($signo) {
         case SIGTERM:
@@ -289,7 +289,7 @@ abstract class Worker {
     $tryCount = 0;
     do {
       socket_clear_error($this->master);
-      $sent = @socket_write($this->master, $data, self::WRITE_BUFFER_SIZE);
+      $sent = @socket_write($this->master, $data, strlen($data));
       if ($sent === false) {
         if ($debug) {
           error_log('socket_last_error: '.socket_last_error());

@@ -136,22 +136,20 @@ abstract class Master {
           foreach ($this->servers as $index => $server) {
             if (!in_array(get_class($server), $this->willStartServers)) continue;
             $sockets['master-'.$index] = $server->start();
+            error_log('Server '.$server::class.' start');
+            var_dump('Server '.$server::class.' start');
           }
           $this->willStartServers = [];
         }
         $read = $sockets;
         $write = $except = array();
         if ((@socket_select($read, $write, $except, 0, 1000)) === false) {
-          if (socket_strerror(socket_last_error()) != 'Interrupted system call') {
+          if (socket_last_error() !== SOCKET_EWOULDBLOCK) {
             if ($this->adminEmail !== null) mail($this->adminEmail, 'Hilos master socket_select error', socket_strerror(socket_last_error()));
             error_log('Hilos master socket_select error "' . socket_strerror(socket_last_error()) . '"');
             throw new SocketSelect(socket_last_error() . '/ ' . socket_strerror(socket_last_error()));
-          } else {
-            error_log('socket_last_error ('.time().'): '.socket_last_error());
           }
-          if (strtoupper(substr(PHP_OS, 0, 3)) !== 'WIN') {
-            pcntl_signal_dispatch();
-          }
+          pcntl_signal_dispatch();
           continue;
         }
         foreach ($read as $socket) {
@@ -176,9 +174,7 @@ abstract class Master {
           }
         }
         $this->tick();
-        if (strtoupper(substr(PHP_OS, 0, 3)) !== 'WIN') {
-          pcntl_signal_dispatch();
-        }
+        pcntl_signal_dispatch();
       }
       foreach ($this->clients as &$client) {
         $client->stop();
@@ -214,8 +210,6 @@ abstract class Master {
     unset($this->clients[$indexSocketClient]);
   }
   protected function initPcntl() {
-    if (strtoupper(substr(PHP_OS, 0, 3)) == 'WIN') return;
-
     function signal_handler($signo) {
       switch ($signo) {
         case SIGTERM:

@@ -114,20 +114,33 @@ abstract class Client implements IClient {
 
   protected final function receiveData() {
     if ($this->closed) return;
+    $readAttempts = 0;
+    $disconnected = false;
     socket_clear_error($this->socket);
-    $data = @socket_read($this->socket, self::MAX_BUFFER_SIZE);
-    if (socket_last_error() != 0) {
-      error_log('receiveData: '.socket_last_error());
-    }
-    if (is_string($data) && !empty($data)) {
-      $this->unparsedData .= $data;
-    } else {
-      if (in_array(socket_last_error(), array(32, 104, 10054))) {
-        $this->close(self::CLOSE_GOING_AWAY);
-      } else {
+    do {
+      $lastRead = @socket_read($this->socket, self::MAX_BUFFER_SIZE);
+      $readAttempts++;
+      if (is_string($lastRead) && !empty($lastRead)) {
+        $this->unparsedData .= $lastRead;
+      } elseif ($readAttempts === 1) {
+        $this->close(self::CLOSE_NORMAL);
+        return;
+      } elseif ($lastRead === false) {
+        break;
+      }
+    } while (strlen($lastRead) > 0);
+    if (socket_last_error() == SOCKET_ENOTCONN) {
+      $this->close(self::CLOSE_GOING_AWAY);
+    } elseif (socket_last_error() == SOCKET_EAGAIN) {
+      if (($readAttempts == 1) && (!$disconnected)) {
         $this->close(self::CLOSE_ABNORMAL);
       }
-      return;
+    } elseif (socket_last_error() == SOCKET_EPIPE) {
+      $this->close(self::CLOSE_GOING_AWAY);
+    } elseif (socket_last_error() == SOCKET_ECONNRESET) {
+      $this->close(self::CLOSE_GOING_AWAY);
+    } elseif (socket_last_error() != 0) {
+      $this->close(self::CLOSE_ABNORMAL);
     }
   }
 
@@ -199,33 +212,28 @@ abstract class Client implements IClient {
    */
   public function write(string $data) {
     if ($this->closed) return false;
+
     if (count($this->delayWrite) != 0) {
       $this->delayWrite[] = $data;
       return false;
     }
+
     $bytesLeft = $total = strlen($data);
     $tryCount = 0;
+
     do {
       socket_clear_error($this->socket);
-      $sended = @socket_write($this->socket, $data, 65536 - 1);
+      $sended = @socket_write($this->socket, $data, strlen($data));
       if ($sended === false) {
-        if ((socket_strerror(socket_last_error()) == 'Resource temporarily unavailable') || (socket_last_error() == 10035)) {
+        if (socket_last_error() == SOCKET_EWOULDBLOCK) {
           $this->delayWrite[] = $data;
           return false;
         } else {
-          if (socket_last_error() == 104) {
+          if (socket_last_error() == SOCKET_ECONNRESET) {
             $this->close(self::CLOSE_GOING_AWAY);
             return false;
           }
-          if (socket_last_error() == 32) {
-            $this->close(self::CLOSE_GOING_AWAY);
-            return false;
-          }
-          if (socket_last_error() == 10053) {
-            $this->close(self::CLOSE_GOING_AWAY);
-            return false;
-          }
-          if (socket_last_error() == 10054) {
+          if (socket_last_error() == SOCKET_EPIPE) {
             $this->close(self::CLOSE_GOING_AWAY);
             return false;
           }
@@ -237,7 +245,7 @@ abstract class Client implements IClient {
       $bytesLeft -= $sended;
       $data = substr($data, $sended);
       $tryCount++;
-      if ($tryCount >= 100) {
+      if ($tryCount >= 10) {
         $this->delayWrite[] = $data;
         return false;
       }
