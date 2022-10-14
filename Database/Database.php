@@ -3,6 +3,7 @@
 namespace Hilos\Database;
 
 use Exception;
+use Hilos\Service\Config;
 use mysqli;
 use mysqli_result;
 
@@ -60,6 +61,10 @@ class Database {
     self::$connect = @mysqli_connect(self::$host, self::$user, self::$pass, self::$dbname, self::$port);
     if (!self::$connect){
       $error_text = 'Database not available ['.mysqli_connect_errno().'] '.mysqli_connect_error();
+      throw new Exception($error_text, mysqli_connect_errno());
+    }
+    if (mysqli_connect_errno()) {
+      $error_text = 'Database connection error ['.mysqli_connect_errno().'] '.mysqli_connect_error();
       throw new Exception($error_text, mysqli_connect_errno());
     }
     self::sql('SET NAMES `utf8`;');
@@ -122,15 +127,37 @@ class Database {
       fclose($fp);
       error_log($logString);
     }
-    @mysqli_multi_query(self::$connect, $parsedSql);
-    self::$result = self::$connect->store_result();
-    $error = mysqli_error(self::$connect);
+    try {
+      @mysqli_multi_query(self::$connect, $parsedSql);
+      self::$result = self::$connect->store_result();
+      $error = '';
+    } catch (\Exception $exception) {
+      $error = mysqli_error(self::$connect);
+    }
     if($error != ''){
       $errno = mysqli_errno(self::$connect);
       if ($errno == 2006) {
         if ($try_reconnect) {
-          self::connect();
-          self::sql($sql, $params, false);
+          $attempt = 0;
+          do {
+            try {
+              $attempt++;
+              self::connect();
+            } catch (\Exception $e) {
+              error_log('Database connection error ['.mysqli_connect_errno().'] '.mysqli_connect_error());
+              $sleepTime = intval(Config::env('HILOS_DATABASE_RECONNECT_SLEEP', 5));
+              if ($sleepTime < 1) $sleepTime = 1;
+              error_log('Mysql reconnect attempt #'.$attempt.' sleep '.$sleepTime.' seconds');
+              sleep($sleepTime);
+            }
+          } while (
+            (mysqli_connect_errno() !== 0) &&
+            (filter_var(Config::env('HILOS_DATABASE_RECONNECT_2006', false), FILTER_VALIDATE_BOOLEAN))
+          );
+          error_log('Mysql reconnected');
+          self::sql($sql, $params, filter_var(Config::env('HILOS_DATABASE_RECONNECT_2006', false), FILTER_VALIDATE_BOOLEAN));
+        } else {
+          throw new Exception('Mysql server has gone away, and give up to to reconnect!');
         }
       } elseif (($errno == 1642) || ($errno == 1643) || ($errno == 1644)) {
         $tmp = explode('|', $error);
