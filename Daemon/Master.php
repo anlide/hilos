@@ -136,8 +136,8 @@ abstract class Master {
           foreach ($this->servers as $index => $server) {
             if (!in_array(get_class($server), $this->willStartServers)) continue;
             $sockets['master-'.$index] = $server->start();
-            error_log('Server '.$server::class.' start');
-            var_dump('Server '.$server::class.' start');
+            error_log('Server '.get_class($server).' start');
+            var_dump('Server '.get_class($server).' start');
           }
           $this->willStartServers = [];
         }
