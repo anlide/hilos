@@ -144,12 +144,15 @@ abstract class Master {
         $read = $sockets;
         $write = $except = array();
         if ((@socket_select($read, $write, $except, 0, 1000)) === false) {
+          pcntl_signal_dispatch();
+          if (Master::$stopSignal) {
+            continue;
+          }
           if (socket_last_error() !== SOCKET_EWOULDBLOCK) {
             if ($this->adminEmail !== null) mail($this->adminEmail, 'Hilos master socket_select error', socket_strerror(socket_last_error()));
             error_log('Hilos master socket_select error "' . socket_strerror(socket_last_error()) . '"');
             throw new SocketSelect(socket_last_error() . '/ ' . socket_strerror(socket_last_error()));
           }
-          pcntl_signal_dispatch();
           continue;
         }
         foreach ($read as $socket) {
@@ -192,6 +195,10 @@ abstract class Master {
       if ($this->adminEmail !== null) {
         mail($this->adminEmail, 'Hilos master Exception "'.$e->getMessage().'"', $e->getTraceAsString());
       }
+      return;
+    }
+    if ($this->adminEmail !== null) {
+      mail($this->adminEmail, 'Hilos master stopped', '');
     }
   }
   public function migration() {
