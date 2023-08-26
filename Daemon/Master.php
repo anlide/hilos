@@ -144,7 +144,7 @@ abstract class Master {
         $read = $sockets;
         $write = $except = array();
         if ((@socket_select($read, $write, $except, 0, 1000)) === false) {
-          pcntl_signal_dispatch();
+          $this->dispatchPcntl();
           if (Master::$stopSignal) {
             continue;
           }
@@ -177,7 +177,7 @@ abstract class Master {
           }
         }
         $this->tick();
-        pcntl_signal_dispatch();
+        $this->dispatchPcntl();
       }
       foreach ($this->clients as &$client) {
         $client->stop();
@@ -217,6 +217,8 @@ abstract class Master {
     unset($this->clients[$indexSocketClient]);
   }
   protected function initPcntl() {
+    if ($this->isWindows()) return;
+
     function signal_handler($signo) {
       switch ($signo) {
         case SIGTERM:
@@ -240,10 +242,18 @@ abstract class Master {
     pcntl_signal(SIGTERM, 'Hilos\\Daemon\\signal_handler');
     pcntl_signal(SIGHUP, 'Hilos\\Daemon\\signal_handler');
   }
+  protected function dispatchPcntl() {
+    if ($this->isWindows()) return;
 
+    pcntl_signal_dispatch();
+  }
+
+  protected function isWindows(): bool {
+    return strtolower(substr(PHP_OS, 0, 3)) == 'win';
+  }
   protected function getProcessorCount() {
     // TODO: implement this feature for windows correctly
-    if (strtolower(substr(PHP_OS, 0, 3)) == 'win') {
+    if ($this->isWindows()) {
       return 3;
     } else {
       exec('cat /proc/cpuinfo | grep ^processor |wc -l', $output);

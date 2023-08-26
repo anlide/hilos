@@ -131,7 +131,7 @@ abstract class Client implements IClient {
     } while (strlen($lastRead) > 0);
     if (socket_last_error() == SOCKET_ENOTCONN) {
       $this->close(self::CLOSE_GOING_AWAY);
-    } elseif (socket_last_error() == SOCKET_EAGAIN) {
+    } elseif (socket_last_error() == (defined('SOCKET_EAGAIN') ? SOCKET_EAGAIN : SOCKET_EWOULDBLOCK)) {
       if (($readAttempts == 1) && (!$disconnected)) {
         $this->close(self::CLOSE_ABNORMAL);
       }
@@ -259,7 +259,7 @@ abstract class Client implements IClient {
    * @throws Exception
    */
   public function badRequest() {
-    $this->write("400 Bad Request\r\n\r\n<html><head><title>400 Bad Request</title></head><body bgcolor=\"white\"><h1>400 Bad Request</h1></body></html>");
+    $this->write("400 Bad Request\r\n\r\n<html lang='en'><head><title>400 Bad Request</title></head><body><h1>400 Bad Request</h1></body></html>");
     $this->close(self::CLOSE_BAD_DATA);
   }
 

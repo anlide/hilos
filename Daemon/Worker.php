@@ -109,15 +109,15 @@ abstract class Worker {
 
     try {
       while (!self::$stopSignal) {
-        pcntl_signal_dispatch();
+        $this->dispatchPcntl();
         $read = [$this->master];
         $write = $except = null;
         $numChangedStreams = @socket_select($read, $write, $except, 0, count($this->parsedLines) > 0 ? 0 : 250000);
         if ($numChangedStreams === false) {
-          pcntl_signal_dispatch();
+          $this->dispatchPcntl();
           continue;
         } elseif ($numChangedStreams === 0) {
-          pcntl_signal_dispatch();
+          $this->dispatchPcntl();
         } else {
           $readAttempts = 0;
           socket_clear_error($this->master);
@@ -132,7 +132,7 @@ abstract class Worker {
           if (socket_last_error() == SOCKET_ENOTCONN) {
             self::$stopSignal = true;
             continue;
-          } elseif (socket_last_error() == SOCKET_EAGAIN) {
+          } elseif (socket_last_error() == (defined('SOCKET_EAGAIN') ? SOCKET_EAGAIN : SOCKET_EWOULDBLOCK)) {
             if ($readAttempts == 1) {
               error_log('Hilos connection broken: going to stop daemon');
               self::$stopSignal = true;
@@ -241,6 +241,8 @@ abstract class Worker {
   }
 
   protected function initPcntl() {
+    if ($this->isWindows()) return;
+
     function signal_handler_worker($signo) {
       switch ($signo) {
         case SIGTERM:
@@ -263,6 +265,15 @@ abstract class Worker {
 
     pcntl_signal(SIGTERM, 'Hilos\\Daemon\\signal_handler_worker');
     pcntl_signal(SIGHUP, 'Hilos\\Daemon\\signal_handler_worker');
+  }
+  protected function dispatchPcntl() {
+    if ($this->isWindows()) return;
+
+    pcntl_signal_dispatch();
+  }
+
+  protected function isWindows(): bool {
+    return strtolower(substr(PHP_OS, 0, 3)) == 'win';
   }
 
   protected abstract function getTaskByType($type, $index = null): ?TaskWorker;
@@ -295,7 +306,7 @@ abstract class Worker {
           error_log('socket_last_error: '.socket_last_error());
         }
         switch (socket_last_error()) {
-          case SOCKET_EAGAIN:
+          case (defined('SOCKET_EAGAIN') ? SOCKET_EAGAIN : SOCKET_EWOULDBLOCK):
           case SOCKET_EWOULDBLOCK:
             $this->delayWrite[] = $data;
 

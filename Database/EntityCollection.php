@@ -8,10 +8,7 @@ use Exception;
  * Class EntityCollection
  * @package Hilos\Database
  */
-class EntityCollection implements \IteratorAggregate, \ArrayAccess, \Countable, \Serializable {
-  /** @var string */
-  private string $class_name;
-
+class EntityCollection implements \IteratorAggregate, \ArrayAccess, \Countable {
   /** @var Entity[] */
   private $items;
 
@@ -33,7 +30,7 @@ class EntityCollection implements \IteratorAggregate, \ArrayAccess, \Countable, 
     }
   }
 
-  function offsetSet($key, $value) {
+  function offsetSet(mixed $key, mixed $value): void {
     if ($key) {
       $this->items[$key] = $value;
     } else {
@@ -41,14 +38,14 @@ class EntityCollection implements \IteratorAggregate, \ArrayAccess, \Countable, 
     }
   }
 
-  function offsetGet($key) {
+  function offsetGet(mixed $key): mixed {
     if ( array_key_exists($key, $this->items) ) {
       return $this->items[$key];
     }
     return null;
   }
 
-  function offsetUnset($key) {
+  function offsetUnset(mixed $key): void {
     if ( array_key_exists($key, $this->items) ) {
       unset($this->items[$key]);
     }
