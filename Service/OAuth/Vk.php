@@ -2,9 +2,9 @@
 namespace Hilos\Service\OAuth;
 
 use Exception;
+use Hilos\Daemon\Exception\TooManyRequestsPerSeconds;
 use Hilos\Service\Exception\OAuth\AccessTokenEmpty;
 use Hilos\Service\Exception\OAuth\AccessTokenExpired;
-use Hilos\Service\Exception\OAuth\TooManyRequestsPerSeconds;
 use Hilos\Service\Exception\OAuth\VkNoId;
 use Hilos\Service\OAuth;
 
