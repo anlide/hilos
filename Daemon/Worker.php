@@ -17,6 +17,7 @@ abstract class Worker {
 
   private ?string $indexWorker = null;
   protected ?string $adminEmail = null;
+  private ?int $masterHost = null;
   private ?int $masterPort = null;
 
   /** @var resource */
@@ -40,9 +41,10 @@ abstract class Worker {
    * Worker constructor.
    *
    * @param int $masterPort
+   * @param string $masterHost
    * @throws Exception
    */
-  public function __construct(int $masterPort) {
+  public function __construct(int $masterPort = 8080, string $masterHost = 'localhost') {
     $opts = getopt('', ['index:']);
     if (!isset($opts['index'])) {
       $indexWorker = stream_get_line(STDIN, 32, PHP_EOL);
@@ -53,6 +55,7 @@ abstract class Worker {
     } else {
       $this->indexWorker = intval($opts['index']);
     }
+    $this->masterHost = $masterHost;
     $this->masterPort = $masterPort;
   }
 
@@ -101,7 +104,7 @@ abstract class Worker {
     $this->initPcntl();
 
     $this->master = socket_create(AF_INET, SOCK_STREAM, SOL_TCP);
-    socket_connect($this->master, 'localhost', $this->masterPort);
+    socket_connect($this->master, $this->masterHost, $this->masterPort);
     socket_set_nonblock($this->master);
     $unparsedString = '';
 
