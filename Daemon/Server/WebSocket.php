@@ -9,8 +9,9 @@ use Hilos\Daemon\Exception\SocketAcceptUnable;
 class WebSocket extends Server {
   protected $classWebsocketClient;
 
-  function __construct($port, $classWebsocketClient = WebsocketClient::class) {
+  function __construct($port, $host, $classWebsocketClient = WebsocketClient::class) {
     $this->port = $port;
+    $this->host = $host;
     $this->classWebsocketClient = $classWebsocketClient;
     $this->autoStart = false;
   }

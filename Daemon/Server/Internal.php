@@ -9,8 +9,9 @@ use Hilos\Daemon\Exception\SocketAcceptUnable;
 class Internal extends Server {
   protected $classInternalClient;
 
-  function __construct($port, $classInternalClient = InternalClient::class) {
+  function __construct($port, $host, $classInternalClient = InternalClient::class) {
     $this->port = $port;
+    $this->host = $host;
     $this->classInternalClient = $classInternalClient;
     $this->autoStart = false;
   }
