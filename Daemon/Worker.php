@@ -17,7 +17,7 @@ abstract class Worker {
 
   private ?string $indexWorker = null;
   protected ?string $adminEmail = null;
-  private ?int $masterHost = null;
+  private ?string $masterHost = null;
   private ?int $masterPort = null;
 
   /** @var resource */
