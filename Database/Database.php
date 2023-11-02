@@ -2,8 +2,8 @@
 
 namespace Hilos\Database;
 
-use Exception;
 use Hilos\Service\Config;
+use Hilos\Database\Exception\Sql;
 use mysqli;
 use mysqli_result;
 
@@ -41,11 +41,12 @@ class Database {
    * @param string $pass
    * @param string $dbname
    * @param string $port
-   * @throws Exception
+   * @throws Sql
    */
   public static function configure(
     string $host = 'localhost', string $user = 'root', string $pass = '', string $dbname = 'hilos', string $port = '3306'
-  ) {
+  ): void
+  {
     self::$host = $host;
     self::$user = $user;
     self::$pass = $pass;
@@ -55,17 +56,18 @@ class Database {
   }
 
   /**
-   * @throws Exception
+   * @throws Sql
    */
-  private static function connect() {
+  private static function connect(): void
+  {
     self::$connect = @mysqli_connect(self::$host, self::$user, self::$pass, self::$dbname, self::$port);
     if (!self::$connect){
       $error_text = 'Database not available ['.mysqli_connect_errno().'] '.mysqli_connect_error();
-      throw new Exception($error_text, mysqli_connect_errno());
+      throw new Sql($error_text, mysqli_connect_errno());
     }
     if (mysqli_connect_errno()) {
       $error_text = 'Database connection error ['.mysqli_connect_errno().'] '.mysqli_connect_error();
-      throw new Exception($error_text, mysqli_connect_errno());
+      throw new Sql($error_text, mysqli_connect_errno());
     }
     self::sql('SET NAMES `utf8`;');
     self::sql('SET @@session.time_zone = "+00:00";');
@@ -75,9 +77,10 @@ class Database {
    * @param $sql
    * @param null $params
    * @param bool $try_reconnect
-   * @throws Exception
+   * @throws Sql
    */
-  public static function sql($sql, $params = null, bool $try_reconnect = true) {
+  public static function sql($sql, $params = null, bool $try_reconnect = true): void
+  {
     while (@self::$connect->next_result()) self::$connect->store_result();
     if ($params !== null) {
       if (!is_array($params)) $params = array($params);
@@ -105,12 +108,12 @@ class Database {
             } elseif (is_string($subParam)) {
               $newParams[] = '"'.str_replace('"', '\"', $subParam).'"';
             } else {
-              throw new Exception('SQL parameter not a string or numeric or boolean', 500);
+              throw new Sql('SQL parameter not a string or numeric or boolean', 500);
             }
           }
           $newSql .= implode(',', $newParams);
         } else {
-          throw new Exception('SQL parameter not a string or numeric or boolean', 500);
+          throw new Sql('SQL parameter not a string or numeric or boolean', 500);
         }
         $newSql .= $notParams[$i+1];
       }
@@ -131,7 +134,7 @@ class Database {
       @mysqli_multi_query(self::$connect, $parsedSql);
       self::$result = self::$connect->store_result();
       $error = '';
-    } catch (\Exception $exception) {
+    } catch (Sql $exception) {
       $error = mysqli_error(self::$connect);
     }
     if($error != ''){
@@ -143,7 +146,7 @@ class Database {
             try {
               $attempt++;
               self::connect();
-            } catch (\Exception $e) {
+            } catch (Sql $e) {
               error_log('Database connection error ['.mysqli_connect_errno().'] '.mysqli_connect_error());
               $sleepTime = intval(Config::env('HILOS_DATABASE_RECONNECT_SLEEP', 5));
               if ($sleepTime < 1) $sleepTime = 1;
@@ -157,13 +160,13 @@ class Database {
           error_log('Mysql reconnected');
           self::sql($sql, $params, filter_var(Config::env('HILOS_DATABASE_RECONNECT_2006', false), FILTER_VALIDATE_BOOLEAN));
         } else {
-          throw new Exception('Mysql server has gone away, and give up to to reconnect!');
+          throw new Sql('Mysql server has gone away, and give up to to reconnect!');
         }
       } elseif (($errno == 1642) || ($errno == 1643) || ($errno == 1644)) {
         $tmp = explode('|', $error);
-        throw new Exception($tmp[0], $tmp[1]);
+        throw new Sql($tmp[0], $tmp[1]);
       } else {
-        throw new Exception($error.' sql ---'.$parsedSql.'---', $errno);
+        throw new Sql($error.' sql ---'.$parsedSql.'---', $errno);
       }
     }
   }
@@ -172,9 +175,10 @@ class Database {
    * @param $sql
    * @param null $params
    * @param bool $try_reconnect
-   * @throws Exception
+   * @throws Sql
    */
-  public static function sqlRun($sql, $params = null, bool $try_reconnect = true) {
+  public static function sqlRun($sql, $params = null, bool $try_reconnect = true): void
+  {
     self::sql($sql, $params, $try_reconnect);
     $step = 0;
     do {
@@ -182,7 +186,7 @@ class Database {
         break;
       }
       if (!self::$connect->next_result()) {
-        throw new Exception('mysqli_multi_query with was execute with error at step statement [#'.$step.'/'.self::$connect->error.']');
+        throw new Sql('mysqli_multi_query with was execute with error at step statement [#'.$step.'/'.self::$connect->error.']');
       }
       $step++;
     } while (true);
@@ -191,7 +195,8 @@ class Database {
   /**
    * @return array|false
    */
-  public static function nextRows() {
+  public static function nextRows(): bool|array
+  {
     self::$connect->next_result();
     self::$result = self::$connect->store_result();
     if (self::$result === false) return false;
@@ -205,12 +210,14 @@ class Database {
     return $rows;
   }
 
-  public static function count() {
+  public static function count(): bool|int|string
+  {
     if (self::$result === false) return false;
     return mysqli_num_rows(self::$result);
   }
 
-  public static function lastInsertId() {
+  public static function lastInsertId(): int|string
+  {
     return self::$connect->insert_id;
   }
 
@@ -218,7 +225,7 @@ class Database {
    * @param $sql
    * @param null $params
    * @return array|null
-   * @throws Exception
+   * @throws Sql
    */
   public static function row($sql, $params = null): ?array {
     self::sql($sql, $params);
@@ -229,7 +236,7 @@ class Database {
    * @param $sql
    * @param null $params
    * @return array
-   * @throws Exception
+   * @throws Sql
    */
   public static function rows($sql, $params = null): array {
     self::sql($sql, $params);
@@ -247,9 +254,10 @@ class Database {
    * @param $sql
    * @param null $params
    * @return array|false|null
-   * @throws Exception
+   * @throws Sql
    */
-  public static function field($sql, $params = null) {
+  public static function field($sql, $params = null): bool|array|null
+  {
     self::sql($sql, $params);
     if (self::$result === false) return array();
     $tmp = mysqli_fetch_array(self::$result);

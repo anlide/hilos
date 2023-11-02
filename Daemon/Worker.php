@@ -3,6 +3,7 @@ namespace Hilos\Daemon;
 
 use Exception;
 use Hilos\Daemon\Task\Worker as TaskWorker;
+use Hilos\Service\Config;
 
 /**
  * Class Worker
@@ -349,6 +350,11 @@ abstract class Worker {
       return;
     }
     $this->tasks[$type][$indexString] = $this->getTaskByType($type, $index);
+    if ($this->tasks[$type][$indexString]->isMonopoly()) {
+      error_log('Switch indexWorker to monopoly '.$type.'-'.$index.' / '.$this->indexWorker);
+      ini_set('error_log', \Hilos\Service\Config::env('HILOS_LOG_PATH').str_replace('%0', $type.'-'.$index, Config::env('HILOS_WORKER_LOG_ERROR_FILE')));
+      error_log('Switched indexWorker to monopoly '.$type.'-'.$index.' / '.$this->indexWorker);
+    }
   }
 
   /**

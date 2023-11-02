@@ -63,6 +63,11 @@ abstract class Worker {
     $callbackSelfStop();
   }
 
+  public function isMonopoly(): bool
+  {
+    return false;
+  }
+
   public abstract function tick();
   public abstract function onAction($action, $params);
   public abstract function callbacksInited();

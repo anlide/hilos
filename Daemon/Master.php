@@ -52,7 +52,7 @@ abstract class Master {
   /**
    * @param $taskType
    * @param $taskIndex
-   * @return TaskMaster
+   * @return ?TaskMaster
    * @throws Exception
    */
   protected function getTaskByType($taskType, $taskIndex): ?TaskMaster {
@@ -65,7 +65,7 @@ abstract class Master {
    * @return TaskMaster
    * @throws Exception
    */
-  public function taskGet(string $taskType, $taskIndex = null): TaskMaster {
+  public function taskGet(string $taskType, mixed $taskIndex = null): TaskMaster {
     $taskIndexString = (is_array($taskIndex)) ? implode('-', $taskIndex) : $taskIndex;
     if ($this->serverWorker === null) throw new Exception('Server Worker not registered');
     if (!isset($this->tasks[$taskType . '-' . $taskIndexString])) {
@@ -98,7 +98,8 @@ abstract class Master {
    * @param int $monopoly
    * @throws Exception
    */
-  public function runWorkers($initialFile, ?int $count = null, int $monopoly = 0) {
+  public function runWorkers($initialFile, ?int $count = null, int $monopoly = 0): void
+  {
     if ($count === null) $count = $this->getProcessorCount();
     if ($this->serverWorker === null) throw new Exception('Server Worker not registered');
     if ($count < 1) throw new Exception('Invalid processors count');
@@ -107,7 +108,8 @@ abstract class Master {
     $this->serverWorker->runWorkers($initialFile, $count, $monopoly);
   }
 
-  protected function tick() {
+  protected function tick(): void
+  {
     foreach ($this->servers as &$server) {
       $server->tick();
     }
@@ -188,17 +190,23 @@ abstract class Master {
       }
       unset($server);
     } catch (Exception $e) {
-      error_log($e->getMessage());
-      error_log($e->getTraceAsString());
-      print($e->getMessage());
-      print($e->getTraceAsString());
-      if ($this->adminEmail !== null) {
-        mail($this->adminEmail, 'Hilos master Exception "'.$e->getMessage().'"', $e->getTraceAsString());
-      }
+      $this->catchException($e);
       return;
     }
+    $this->onFinish();
+  }
+  protected function onFinish(): void {
     if ($this->adminEmail !== null) {
       mail($this->adminEmail, 'Hilos master stopped', '');
+    }
+  }
+  protected function catchException(Exception $e): void {
+    error_log($e->getMessage());
+    error_log($e->getTraceAsString());
+    print($e->getMessage());
+    print($e->getTraceAsString());
+    if ($this->adminEmail !== null) {
+      mail($this->adminEmail, 'Hilos master Exception "'.$e->getMessage().'"', $e->getTraceAsString());
     }
   }
   public function migration() {
@@ -242,7 +250,8 @@ abstract class Master {
     pcntl_signal(SIGTERM, 'Hilos\\Daemon\\signal_handler');
     pcntl_signal(SIGHUP, 'Hilos\\Daemon\\signal_handler');
   }
-  protected function dispatchPcntl() {
+  protected function dispatchPcntl(): void
+  {
     if ($this->isWindows()) return;
 
     pcntl_signal_dispatch();
@@ -251,7 +260,8 @@ abstract class Master {
   protected function isWindows(): bool {
     return strtolower(substr(PHP_OS, 0, 3)) == 'win';
   }
-  protected function getProcessorCount() {
+  protected function getProcessorCount(): int
+  {
     // TODO: implement this feature for windows correctly
     if ($this->isWindows()) {
       return 3;
