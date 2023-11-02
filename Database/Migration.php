@@ -1,7 +1,8 @@
 <?php
 
 namespace Hilos\Database;
-use Exception;
+
+use Hilos\Database\Exception\Sql;
 use Hilos\Service\Config;
 
 /**
@@ -12,9 +13,10 @@ use Hilos\Service\Config;
  */
 class Migration {
   /**
-   * @throws Exception
+   * @throws Sql
    */
-  public static function up() {
+  public static function up(): void
+  {
     print('Start migration'."\n");
     $migrationList = self::getMigrationList();
     self::filterPassedList($migrationList);
@@ -22,9 +24,10 @@ class Migration {
   }
 
   /**
-   * @throws Exception
+   * @throws Sql
    */
-  public static function down() {
+  public static function down(): void
+  {
     print('Start migration down'."\n");
     $migrationList = self::getMigrationList();
     $indexMax = self::getMaxPassedIndex();
@@ -50,9 +53,10 @@ class Migration {
   }
 
   /**
-   * @throws Exception
+   * @throws Sql
    */
-  private static function createMigrationTable() {
+  private static function createMigrationTable(): void
+  {
     $row = Database::row("SHOW TABLES LIKE 'migration';");
     if ($row === null) {
       Database::sqlRun('CREATE TABLE `migration` (
@@ -65,14 +69,15 @@ class Migration {
 
   /**
    * @param $list
-   * @throws Exception
+   * @throws Sql
    */
-  private static function filterPassedList(&$list) {
+  private static function filterPassedList(&$list): void
+  {
     self::createMigrationTable();
     $passedMigrations = Database::rows('SELECT * FROM `migration`;');
     foreach ($passedMigrations as $passedMigration) {
       if ($passedMigration['failed']) {
-        throw new Exception('We have migration #' . $passedMigration['index'] . ' in failed state.');
+        throw new Sql('We have migration #' . $passedMigration['index'] . ' in failed state.');
       }
       $index = str_pad($passedMigration['index'], 3, '0', STR_PAD_LEFT);
       unset($list[$index]);
@@ -81,22 +86,23 @@ class Migration {
 
   /**
    * @return array
-   * @throws Exception
+   * @throws Sql
    */
   private static function getMaxPassedIndex(): array {
     self::createMigrationTable();
     $countFailed = Database::field('SELECT COUNT(*) AS `count` FROM `migration` WHERE `failed` = true;');
     if ($countFailed > 0) {
-      throw new Exception('We have '.$countFailed.' migrations in failed state.');
+      throw new Sql('We have '.$countFailed.' migrations in failed state.');
     }
     return Database::field('SELECT MAX(`index`) AS `max` FROM `migration`;');
   }
 
   /**
    * @param $list
-   * @throws Exception
+   * @throws Sql
    */
-  private static function passMigration($list) {
+  private static function passMigration($list): void
+  {
     $path = Config::root() . 'data/migrations';
     foreach ($list as $index) {
       $fileName = $index.'migration-up.sql';
@@ -112,12 +118,13 @@ class Migration {
   /**
    * @param $index
    * @param $migrationList
-   * @throws Exception
+   * @throws Sql
    */
-  private static function rollback($index, $migrationList) {
+  private static function rollback($index, $migrationList): void
+  {
     $index = str_pad($index, 3, '0', STR_PAD_LEFT);
     if (!isset($migrationList[$index])) {
-      throw new Exception('Wrong rollback operation for migration #'.$index);
+      throw new Sql('Wrong rollback operation for migration #'.$index);
     }
     $path = Config::root() . 'data/migrations';
     $fileName = $index.'migration-down.sql';

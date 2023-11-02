@@ -2,7 +2,7 @@
 
 namespace Hilos\Database;
 
-use Exception;
+use Hilos\Database\Exception\Sql;
 
 abstract class Entity {
   private bool $_related = false;
@@ -22,7 +22,7 @@ abstract class Entity {
   /**
    * @param array|string $columns
    * @return bool
-   * @throws Exception
+   * @throws Sql
    */
   public function save($columns = array()): bool {
     if (!is_array($columns)) $columns = array($columns);
@@ -38,9 +38,10 @@ abstract class Entity {
   }
 
   /**
-   * @throws Exception
+   * @throws Sql
    */
-  private function saveInsert() {
+  private function saveInsert(): void
+  {
     $class = get_called_class();
     $tmp_params_pattern = array();
     $values = array();
@@ -66,9 +67,10 @@ abstract class Entity {
 
   /**
    * @param array $columns
-   * @throws Exception
+   * @throws Sql
    */
-  private function saveUpdate(array $columns = array()) {
+  private function saveUpdate(array $columns = array()): void
+  {
     $class = get_called_class();
     $_primary = $class::_primary;
     $values = array();
@@ -106,9 +108,10 @@ abstract class Entity {
   }
 
   /**
-   * @throws Exception
+   * @throws Sql
    */
-  public function delete() {
+  public function delete(): void
+  {
     $class = get_called_class();
     $_primary = $class::_primary;
     if (!is_array($class::_primary)) {
@@ -127,25 +130,17 @@ abstract class Entity {
   /**
    * @param $row
    */
-  protected function setRelatedData($row) {
+  protected function setRelatedData($row): void
+  {
     $class = get_called_class();
     foreach($row as $column => $value) {
       if (isset($class::_types[$column])) {
-        switch ($class::_types[$column]) {
-          case 'integer':
-            $this->$column = ($value === null ? null : intval($value));
-            break;
-          case 'double':
-            $this->$column = ($value === null ? null : doubleval($value));
-            break;
-          case 'boolean':
-            $this->$column = ($value === null ? null : boolval($value));
-            break;
-          case 'string':
-          default:
-            $this->$column = $value;
-            break;
-        }
+          $this->$column = match ($class::_types[$column]) {
+              'integer' => ($value === null ? null : intval($value)),
+              'double' => ($value === null ? null : doubleval($value)),
+              'boolean' => ($value === null ? null : boolval($value)),
+              default => $value,
+          };
       } else {
         $this->$column = $value;
       }
@@ -163,7 +158,7 @@ abstract class Entity {
    * @param array $filters_param
    * @param array $order_by
    * @return EntityCollection
-   * @throws Exception
+   * @throws Sql
    */
   private static function getObjects($class, array $filters = array(), array $filters_param = array(), array $order_by = array()): EntityCollection {
     $objs = new EntityCollection($class);
@@ -190,9 +185,9 @@ abstract class Entity {
    * @param array|string $filters_param
    * @param array|string $order_by
    * @return EntityCollection
-   * @throws Exception
+   * @throws Sql
    */
-  public static function get($filters = array(), $filters_param = array(), $order_by = array()): EntityCollection {
+  public static function get(array|string $filters = [], array|string $filters_param = [], array|string $order_by = []): EntityCollection {
     if (!is_array($filters)) $filters = array($filters);
     if (!is_array($filters_param)) $filters_param = array($filters_param);
     if (!is_array($order_by)) $order_by = array($order_by);
@@ -200,7 +195,7 @@ abstract class Entity {
   }
 
   /**
-   * @throws Exception
+   * @throws Sql
    */
   public static function getById($id) {
     $class = get_called_class();
@@ -226,7 +221,7 @@ abstract class Entity {
   /**
    * @param $name
    * @return array|EntityCollection|mixed|null
-   * @throws Exception
+   * @throws Sql
    */
   public function __get($name) {
     $class = get_called_class();
@@ -268,7 +263,7 @@ abstract class Entity {
   }
 
   /**
-   * @throws Exception
+   * @throws Sql
    */
   public static function getAll(): EntityCollection {
     return self::get();

@@ -2,7 +2,7 @@
 
 namespace Hilos\Database;
 
-use Exception;
+use Hilos\Database\Exception\Sql;
 
 /**
  * Class EntityCollection
@@ -22,7 +22,7 @@ class EntityCollection implements \IteratorAggregate, \ArrayAccess, \Countable {
   }
 
   /**
-   * @throws Exception
+   * @throws Sql
    */
   public function save() {
     foreach ($this->items as $item) {
