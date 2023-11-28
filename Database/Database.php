@@ -134,7 +134,7 @@ class Database {
       @mysqli_multi_query(self::$connect, $parsedSql);
       self::$result = self::$connect->store_result();
       $error = '';
-    } catch (Sql $exception) {
+    } catch (\Exception $exception) {
       $error = mysqli_error(self::$connect);
     }
     if($error != ''){
@@ -146,7 +146,7 @@ class Database {
             try {
               $attempt++;
               self::connect();
-            } catch (Sql $e) {
+            } catch (\Exception $e) {
               error_log('Database connection error ['.mysqli_connect_errno().'] '.mysqli_connect_error());
               $sleepTime = intval(Config::env('HILOS_DATABASE_RECONNECT_SLEEP', 5));
               if ($sleepTime < 1) $sleepTime = 1;
