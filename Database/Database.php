@@ -6,6 +6,7 @@ use Hilos\Service\Config;
 use Hilos\Database\Exception\Sql;
 use mysqli;
 use mysqli_result;
+use mysqli_sql_exception;
 
 /**
  * No any adapters. Only mysql was implemented.
@@ -134,8 +135,10 @@ class Database {
       @mysqli_multi_query(self::$connect, $parsedSql);
       self::$result = self::$connect->store_result();
       $error = '';
-    } catch (\Exception $exception) {
-      $error = mysqli_error(self::$connect);
+    } catch (mysqli_sql_exception $e) {
+      $error = $e->getMessage();
+    } finally {
+      $error = ($error === '') ? mysqli_error(self::$connect) : $error;
     }
     if($error != ''){
       $errno = mysqli_errno(self::$connect);
@@ -253,10 +256,10 @@ class Database {
   /**
    * @param $sql
    * @param null $params
-   * @return array|false|null
+   * @return bool|int|string|array|null
    * @throws Sql
    */
-  public static function field($sql, $params = null): bool|array|null
+  public static function field($sql, $params = null): bool|int|string|array|null
   {
     self::sql($sql, $params);
     if (self::$result === false) return array();

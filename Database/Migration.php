@@ -31,6 +31,7 @@ class Migration {
     print('Start migration down'."\n");
     $migrationList = self::getMigrationList();
     $indexMax = self::getMaxPassedIndex();
+    krsort($migrationList);
     self::rollback($indexMax, $migrationList);
   }
 
@@ -85,10 +86,10 @@ class Migration {
   }
 
   /**
-   * @return array
+   * @return bool|int|string|array|null
    * @throws Sql
    */
-  private static function getMaxPassedIndex(): array {
+  private static function getMaxPassedIndex(): bool|int|string|array|null {
     self::createMigrationTable();
     $countFailed = Database::field('SELECT COUNT(*) AS `count` FROM `migration` WHERE `failed` = true;');
     if ($countFailed > 0) {
