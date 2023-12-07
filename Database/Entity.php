@@ -47,7 +47,7 @@ abstract class Entity {
     $values = array();
     foreach($class::_columns as $column) {
       $tmp_params_pattern[] = '?';
-      $values[] = $this->$column;
+      $values[] = $class::_types[$column] !== 'timestamp' ? $this->$column : ($this->$column === null ? null : date('Y-m-d H:i:s', $this->$column));
     }
     Database::sql('INSERT INTO `'.$class::_table.'` (`'.implode('`, `', $class::_columns).'`) VALUES ('.implode(', ', $tmp_params_pattern).');', $values);
     $_primary = $class::_primary;
@@ -89,7 +89,7 @@ abstract class Entity {
         if ($continue) continue;
       }
       if ((empty($columns)) || (in_array($column, $columns))) {
-        $values[] = $this->$column;
+        $values[] = $class::_types[$column] !== 'timestamp' ? $this->$column : ($this->$column === null ? null : date('Y-m-d H:i:s', $this->$column));
         $updates[] = '`'.$column.'` = ?';
       }
     }
@@ -139,6 +139,7 @@ abstract class Entity {
               'integer' => ($value === null ? null : intval($value)),
               'double' => ($value === null ? null : doubleval($value)),
               'boolean' => ($value === null ? null : boolval($value)),
+              'timestamp' => ($value === null ? null : strtotime($value)),
               default => $value,
           };
       } else {
@@ -150,6 +151,11 @@ abstract class Entity {
 
   public function isRelated(): bool {
     return $this->_related;
+  }
+
+  public function flushRelated(): void {
+    $this->_related = true;
+    // TODO: Throw exception if auto_increment=true
   }
 
   /**
