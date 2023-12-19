@@ -12,12 +12,15 @@ use Hilos\Service\Config;
  * @package Hilos\Database
  */
 class Migration {
+  private static string $migrationListPath = 'data/migrations';
+  private static string $migrationName = 'main';
+
   /**
    * @throws Sql
    */
   public static function up(): void
   {
-    print('Start migration'."\n");
+    print('Start migration ['.self::$migrationName.']'."\n");
     $migrationList = self::getMigrationList();
     self::filterPassedList($migrationList);
     self::passMigration($migrationList);
@@ -28,7 +31,7 @@ class Migration {
    */
   public static function down(): void
   {
-    print('Start migration down'."\n");
+    print('Start migration down ['.self::$migrationName.']'."\n");
     $migrationList = self::getMigrationList();
     $indexMax = self::getMaxPassedIndex();
     krsort($migrationList);
@@ -36,11 +39,25 @@ class Migration {
   }
 
   /**
+   * @param $path
+   * @return void
+   */
+  public static function setMigrationListPath($path): void
+  {
+    self::$migrationListPath = $path;
+  }
+
+  public static function setMigrationName($name): void
+  {
+    self::$migrationName = $name;
+  }
+
+  /**
    * @return array
    */
   private static function getMigrationList(): array {
     $list = [];
-    $path = Config::root() . 'data/migrations';
+    $path = Config::root() . self::$migrationListPath;
     $files = scandir($path);
     foreach ($files as $file) {
       if ($file == '.') continue;
@@ -104,7 +121,7 @@ class Migration {
    */
   private static function passMigration($list): void
   {
-    $path = Config::root() . 'data/migrations';
+    $path = Config::root() . self::$migrationListPath;
     foreach ($list as $index) {
       $fileName = $index.'migration-up.sql';
       $content = file_get_contents($path.'/'.$fileName);
@@ -127,7 +144,7 @@ class Migration {
     if (!isset($migrationList[$index])) {
       throw new Sql('Wrong rollback operation for migration #'.$index);
     }
-    $path = Config::root() . 'data/migrations';
+    $path = Config::root() . self::$migrationListPath;
     $fileName = $index.'migration-down.sql';
     $content = file_get_contents($path.'/'.$fileName);
     print('Rollback migration #'.$index.' ...');
