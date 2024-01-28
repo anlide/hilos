@@ -36,6 +36,21 @@ class Database {
     if (self::$connect) mysqli_close(self::$connect);
   }
 
+  public const LOCK_TYPE_READ = 'READ';
+  public const LOCK_TYPE_READ_LOCAL = 'READ LOCAL';
+  public const LOCK_TYPE_WRITE = 'WRITE';
+  public const LOCK_TYPE_LOW_PRIORITY_WRITE = 'LOW_PRIORITY WRITE';
+  public const LOCK_TYPES = [
+    self::LOCK_TYPE_READ,
+    self::LOCK_TYPE_READ_LOCAL,
+    self::LOCK_TYPE_WRITE,
+    self::LOCK_TYPE_LOW_PRIORITY_WRITE
+  ];
+
+  public const LOCK_TABLE_PARAM_TABLE = 'table';
+  public const LOCK_TABLE_PARAM_DATABASE = 'database';
+  public const LOCK_TABLE_PARAM_TYPE = 'type';
+
   /**
    * @param string $host
    * @param string $user
@@ -265,5 +280,90 @@ class Database {
     if (self::$result === false) return array();
     $tmp = mysqli_fetch_array(self::$result);
     return $tmp[0];
+  }
+
+  /**
+   * @return void
+   * @throws Sql
+   */
+  public static function transactionStart(): void
+  {
+    self::sql('START TRANSACTION;');
+  }
+
+  /**
+   * @return void
+   * @throws Sql
+   */
+  public static function transactionCommit(): void
+  {
+    self::sql('COMMIT;');
+  }
+
+  /**
+   * @return void
+   * @throws Sql
+   */
+  public static function transactionRollback(): void
+  {
+    self::sql('ROLLBACK;');
+  }
+
+  /**
+   * Lock the tables with specified lock types.
+   *
+   * @param array $tables Array of arrays, each inner array should have 'table' key for the table name
+   *                      and optionally 'type' key for the lock type and 'database' key for the database name.
+   *
+   * @return void
+   * @throws Sql If the input is invalid.
+   */
+  public static function lockTables(array $tables): void
+  {
+    if (empty($tables)) {
+      throw new Sql('The array of tables cannot be empty.');
+    }
+
+    $lockParts = [];
+
+    foreach ($tables as $tableInfo) {
+      if (
+          !is_array($tableInfo) ||
+          !isset($tableInfo[self::LOCK_TABLE_PARAM_TABLE]) ||
+          !is_string($tableInfo[self::LOCK_TABLE_PARAM_TABLE]) ||
+          trim($tableInfo[self::LOCK_TABLE_PARAM_TABLE]) === ''
+      ) {
+        throw new Sql('Each table information must be an array with a non-empty string "table" key.');
+      }
+
+      $tableName = '`' . $tableInfo[self::LOCK_TABLE_PARAM_TABLE] . '`';
+
+      if (
+          isset($tableInfo[self::LOCK_TABLE_PARAM_DATABASE]) &&
+          is_string($tableInfo[self::LOCK_TABLE_PARAM_DATABASE]) &&
+          trim($tableInfo[self::LOCK_TABLE_PARAM_DATABASE]) !== ''
+      ) {
+        $databaseName = '`' . $tableInfo[self::LOCK_TABLE_PARAM_DATABASE] . '`.';
+        $tableName = $databaseName . $tableName;
+      }
+
+      $lockType = isset($tableInfo[self::LOCK_TABLE_PARAM_TYPE]) && in_array(strtoupper($tableInfo[self::LOCK_TABLE_PARAM_TYPE]), self::LOCK_TYPES) ?
+          strtoupper($tableInfo[self::LOCK_TABLE_PARAM_TYPE]) :
+          self::LOCK_TYPE_READ;
+
+      $lockParts[] = $tableName . ' ' . $lockType;
+    }
+
+    $sql = 'LOCK TABLES ' . implode(', ', $lockParts) . ';';
+    self::sql($sql);
+  }
+
+  /**
+   * @return void
+   * @throws Sql
+   */
+  public static function unlockTables(): void
+  {
+    self::sql('UNLOCK TABLES;');
   }
 }

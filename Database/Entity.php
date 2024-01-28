@@ -49,7 +49,8 @@ abstract class Entity {
       $tmp_params_pattern[] = '?';
       $values[] = $class::_types[$column] !== 'timestamp' ? $this->$column : ($this->$column === null ? null : date('Y-m-d H:i:s', $this->$column));
     }
-    Database::sql('INSERT INTO `'.$class::_table.'` (`'.implode('`, `', $class::_columns).'`) VALUES ('.implode(', ', $tmp_params_pattern).');', $values);
+    $table = (defined($class.'::_database') ? '`'.$class::_database.'`.' : '') . '`'.$class::_table.'`';
+    Database::sql('INSERT INTO '.$table.' (`'.implode('`, `', $class::_columns).'`) VALUES ('.implode(', ', $tmp_params_pattern).');', $values);
     $_primary = $class::_primary;
     if (!is_array($_primary) && $_primary !== null) {
       $last_insert_id = Database::lastInsertId();
@@ -94,16 +95,17 @@ abstract class Entity {
       }
     }
     if (empty($updates)) return;
+    $table = (defined($class.'::_database') ? '`'.$class::_database.'`.' : '') . '`'.$class::_table.'`';
     if (!is_array($class::_primary)) {
       $values[] = $this->$_primary;
-      Database::sql('UPDATE `'.$class::_table.'` SET '.implode(', ', $updates).' WHERE `'.$_primary.'` = ?;', $values);
+      Database::sql('UPDATE '.$table.' SET '.implode(', ', $updates).' WHERE `'.$_primary.'` = ?;', $values);
     } else {
       $primary_str = array();
       foreach ($class::_primary as $value) {
         $values[] = $this->$value;
         $primary_str[] =  '`'.$value.'` = ?';
       }
-      Database::sql('UPDATE `'.$class::_table.'` SET '.implode(', ', $updates).' WHERE '.implode(' AND ', $primary_str).';', $values);
+      Database::sql('UPDATE '.$table.' SET '.implode(', ', $updates).' WHERE '.implode(' AND ', $primary_str).';', $values);
     }
   }
 
@@ -114,8 +116,9 @@ abstract class Entity {
   {
     $class = get_called_class();
     $_primary = $class::_primary;
+    $table = (defined($class.'::_database') ? '`'.$class::_database.'`.' : '') . '`'.$class::_table.'`';
     if (!is_array($class::_primary)) {
-      Database::sql('DELETE FROM `' . $class::_table . '` WHERE `' . $_primary . '` = ?;', $this->$_primary);
+      Database::sql('DELETE FROM ' . $table . ' WHERE `' . $_primary . '` = ?;', $this->$_primary);
     } else {
       $primary_str = array();
       $values = [];
@@ -123,7 +126,7 @@ abstract class Entity {
         $values[] = $this->$value;
         $primary_str[] =  '`'.$value.'` = ?';
       }
-      Database::sql('DELETE FROM `' . $class::_table . '` WHERE '.implode(' AND ', $primary_str).';', $values);
+      Database::sql('DELETE FROM ' . $table . ' WHERE '.implode(' AND ', $primary_str).';', $values);
     }
   }
 
@@ -172,10 +175,11 @@ abstract class Entity {
     if (count($order_by) > 0) {
       $order_str = 'ORDER BY '.implode(',', $order_by);
     }
+    $table = (defined($class.'::_database') ? '`'.$class::_database.'`.' : '') . '`'.$class::_table.'`';
     if (count($filters) == 0) {
-      $rows = Database::rows('SELECT `'.implode('`, `', $class::_columns).'` FROM `'.$class::_table.'` '.$order_str.';');
+      $rows = Database::rows('SELECT `'.implode('`, `', $class::_columns).'` FROM '.$table.' '.$order_str.';');
     } else {
-      $rows = Database::rows('SELECT `'.implode('`, `', $class::_columns).'` FROM `'.$class::_table.'` WHERE '.implode(' AND ', $filters).' '.$order_str.';', $filters_param);
+      $rows = Database::rows('SELECT `'.implode('`, `', $class::_columns).'` FROM '.$table.' WHERE '.implode(' AND ', $filters).' '.$order_str.';', $filters_param);
     }
     foreach ($rows as $row) {
       /** @var $obj Entity */
