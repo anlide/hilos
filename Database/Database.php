@@ -239,7 +239,12 @@ class Database {
     return self::$connect->insert_id;
   }
 
-  /**
+    public static function affectedRows(): int|string
+    {
+        return self::$connect->affected_rows;
+    }
+
+    /**
    * @param $sql
    * @param null $params
    * @return array|null
