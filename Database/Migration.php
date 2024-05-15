@@ -55,13 +55,16 @@ class Migration {
    */
   private static function removeAllRoutines(): void
   {
+    $printCount = 0;
     $routines = Database::rows("SELECT ROUTINE_TYPE, ROUTINE_NAME FROM INFORMATION_SCHEMA.ROUTINES WHERE ROUTINE_SCHEMA = DATABASE();");
     foreach ($routines as $routine) {
       $type = $routine['ROUTINE_TYPE'];
       $name = $routine['ROUTINE_NAME'];
       $sql = 'DROP '.$type.' IF EXISTS `'.$name.'`;';
       Database::sqlRun($sql);
+      $printCount++;
     }
+    print('Removed '.$printCount.' routines.'."\r\n");
   }
 
   /**
@@ -96,6 +99,7 @@ class Migration {
     // TODO: use git history of the file to get right version
 
     $path = Config::root() . self::$routinesPath;
+    $printCount = 0;
 
     foreach ($routinesList as $routineName => $indexFile) {
       $filePath = $path . '/' . $routineName . '.sql';
@@ -105,6 +109,8 @@ class Migration {
 
         if (preg_match('~CREATE\s+(PROCEDURE|FUNCTION)\s+' . preg_quote($routineName) . '\s*~i', $content)) {
           Database::sqlRun($content);
+          print('Created routine: '.$routineName."\r\n");
+          $printCount++;
         } else {
           error_log("Routine name in file $filePath does not match the expected name $routineName."."\r\n");
         }
@@ -112,6 +118,7 @@ class Migration {
         error_log("File $filePath not found."."\r\n");
       }
     }
+    print('Created '.$printCount.' routines.'."\r\n");
   }
 
   /**
