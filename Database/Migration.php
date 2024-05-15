@@ -165,6 +165,8 @@ class Migration {
     $queries = [];
     $blocks = preg_split('/^DELIMITER\s+/im', $content);
 
+    $queries[] = array_shift($blocks);
+
     foreach ($blocks as $block) {
       if (preg_match('/(.+?)\n/s', $block, $matches)) {
         $new_delimiter = trim($matches[1]);
