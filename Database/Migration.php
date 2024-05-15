@@ -154,7 +154,12 @@ class Migration {
     print(' done'."\n");
   }
 
-  private static function runSqlWithDelimiter($content)
+  /**
+   * @param $content
+   * @return void
+   * @throws Sql
+   */
+  private static function runSqlWithDelimiter($content): void
   {
     $delimiter = $default_delimiter = ';';
     $queries = [];
