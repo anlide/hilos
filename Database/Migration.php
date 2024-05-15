@@ -127,7 +127,7 @@ class Migration {
       $content = file_get_contents($path.'/'.$fileName);
       print('Run migration #'.$index.' ...');
       Database::sqlRun("INSERT INTO `migration` (`index`, `failed`) VALUES (?, true);", [intval($index)]);
-      Database::sqlRun($content);
+      self::runSqlWithDelimiter($content);
       Database::sqlRun('UPDATE `migration` SET `failed` = false WHERE `index` = ?;', [intval($index)]);
       print(' done'."\n");
     }
@@ -149,8 +149,44 @@ class Migration {
     $content = file_get_contents($path.'/'.$fileName);
     print('Rollback migration #'.$index.' ...');
     Database::sqlRun('UPDATE `migration` SET `failed` = true WHERE `index` = ?;', [intval($index)]);
-    Database::sqlRun($content);
+    self::runSqlWithDelimiter($content);
     Database::sqlRun('DELETE FROM `migration` WHERE `index` = ?;', [intval($index)]);
     print(' done'."\n");
+  }
+
+  private static function runSqlWithDelimiter($content)
+  {
+    $delimiter = $default_delimiter = ';';
+    $queries = [];
+    $blocks = preg_split('/^DELIMITER\s+/im', $content);
+
+    foreach ($blocks as $block) {
+      if (preg_match('/(.+?)\n/s', $block, $matches)) {
+        $new_delimiter = trim($matches[1]);
+        $block = preg_replace('/^.+?\n/', '', $block, 1);
+
+        if ($new_delimiter !== $delimiter) {
+          $block_queries = explode($new_delimiter, $block);
+          foreach ($block_queries as $query) {
+            $query = trim($query);
+            if (!empty($query)) {
+              $queries[] = $query . $default_delimiter;
+            }
+          }
+          $delimiter = $new_delimiter;
+        } else {
+          $queries[] = $block;
+        }
+      } else {
+        $queries[] = $block;
+      }
+    }
+
+    foreach ($queries as $query) {
+      if (empty(trim($query))) {
+        continue;
+      }
+      Database::sqlRun($query);
+    }
   }
 }

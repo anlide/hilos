@@ -1,6 +1,6 @@
 {
   "name": "anlide/hilos",
-  "description": "Engine for high load sites. For angular server API or cocos server websocket.",
+  "description": "Engine for high load sites. For angular or vue server API or cocos server websocket.",
   "type": "framework",
   "require": {
     "php": "^8.1",
