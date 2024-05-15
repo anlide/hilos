@@ -14,6 +14,7 @@ use Hilos\Service\Config;
 class Migration {
   private static string $migrationListPath = 'data/migrations';
   private static string $migrationName = 'main';
+  private static string $routinesPath = 'data/routines';
 
   /**
    * @throws Sql
@@ -24,6 +25,11 @@ class Migration {
     $migrationList = self::getMigrationList();
     self::filterPassedList($migrationList);
     self::passMigration($migrationList);
+    if (is_dir(self::$routinesPath)) {
+      self::removeAllRoutines();
+      $routinesList = self::getRoutinesList();
+      self::passRoutines($routinesList);
+    }
   }
 
   /**
@@ -36,6 +42,76 @@ class Migration {
     $indexMax = self::getMaxPassedIndex();
     krsort($migrationList);
     self::rollback($indexMax, $migrationList);
+    if (is_dir(self::$routinesPath)) {
+      self::removeAllRoutines();
+      $routinesList = self::getRoutinesList($indexMax);
+      self::passRoutines($routinesList, $indexMax);
+    }
+  }
+
+  /**
+   * @return void
+   * @throws Sql
+   */
+  private static function removeAllRoutines(): void
+  {
+    $routines = Database::rows("SELECT ROUTINE_TYPE, ROUTINE_NAME FROM INFORMATION_SCHEMA.ROUTINES WHERE ROUTINE_SCHEMA = DATABASE();");
+    foreach ($routines as $routine) {
+      $type = $routine['ROUTINE_TYPE'];
+      $name = $routine['ROUTINE_NAME'];
+      $sql = 'DROP '.$type.' IF EXISTS `'.$name.'`;';
+      Database::sqlRun($sql);
+    }
+  }
+
+  /**
+   * @param ?int $index
+   * @return array
+   */
+  private static function getRoutinesList(?int $index = null): array
+  {
+    // TODO: use git history of the file to get right version
+
+    $list = [];
+    $path = Config::root() . self::$routinesPath;
+    $files = scandir($path);
+    foreach ($files as $file) {
+      if ($file == '.' || $file == '..') continue;
+      if (preg_match('~(.+)\.sql~', $file, $m)) {
+        $name = $m[1];
+        $list[$name] = $index;
+      }
+    }
+    return $list;
+  }
+
+  /**
+   * @param array $routinesList
+   * @param int|null $index
+   * @return void
+   * @throws Sql
+   */
+  private static function passRoutines(array $routinesList, ?int $index = null): void
+  {
+    // TODO: use git history of the file to get right version
+
+    $path = Config::root() . self::$routinesPath;
+
+    foreach ($routinesList as $routineName => $indexFile) {
+      $filePath = $path . '/' . $routineName . '.sql';
+
+      if (file_exists($filePath)) {
+        $content = file_get_contents($filePath);
+
+        if (preg_match('~CREATE\s+(PROCEDURE|FUNCTION)\s+' . preg_quote($routineName) . '\s*~i', $content)) {
+          Database::sqlRun($content);
+        } else {
+          error_log("Routine name in file $filePath does not match the expected name $routineName."."\r\n");
+        }
+      } else {
+        error_log("File $filePath not found."."\r\n");
+      }
+    }
   }
 
   /**
@@ -52,6 +128,11 @@ class Migration {
     self::$migrationName = $name;
   }
 
+  public static function SetRoutinesDir($path): void
+  {
+    self::$routinesPath = $path;
+  }
+
   /**
    * @return array
    */
@@ -60,8 +141,7 @@ class Migration {
     $path = Config::root() . self::$migrationListPath;
     $files = scandir($path);
     foreach ($files as $file) {
-      if ($file == '.') continue;
-      if ($file == '..') continue;
+      if ($file == '.' || $file == '..') continue;
       if (preg_match('~(\d+)migration\-up\.sql~', $file, $m)) {
         $index = $m[1];
         $list[$index] = $index;
