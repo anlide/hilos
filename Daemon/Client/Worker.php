@@ -132,10 +132,20 @@ abstract class Worker extends Client {
   }
 
   /**
+   * @param $action
+   * @param $params
+   * @return void
    * @throws Exception
    */
-  private function sendSignal($workerAction, $taskType, $taskIndex, $action = null, $params = [], $priority = 0) {
-    $jsonSignal = ['worker_action' => $workerAction, 'task_type' => $taskType, 'task_index' => $taskIndex];
+  public function systemSignal($taskType, $taskIndex, $action = null, $params = [])
+  {
+    $this->sendSignal('task_system', $taskType, $taskIndex, $action, $params, 9);
+  }
+
+  /**
+   * @throws Exception
+   */
+  protected function sendSignal($workerAction, $taskType, $taskIndex, $action = null, $params = [], $priority = 0) {
     $jsonSignal = ['worker_action' => $workerAction, 'task_type' => $taskType, 'task_index' => $taskIndex];
     if ($action !== null) {
       $jsonSignal['action'] = $action;

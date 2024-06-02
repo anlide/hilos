@@ -223,7 +223,7 @@ abstract class Worker {
                 $this->taskSystem($json['action'], $json['params']);
                 break;
               default:
-                throw new Exception('Unknown worker_action');
+                $this->defaultWorkerAction($json['worker_action'], $json['task_type'], $json['task_index'], $json['action'], $json['params']);
             }
             unset($this->parsedLines[$lineIndex]);
             unset($json['params']);
@@ -243,6 +243,20 @@ abstract class Worker {
         mail($this->adminEmail, 'Hilos master Exception "'.$e->getMessage().'"', $e->getTraceAsString());
       }
     }
+  }
+
+  /**
+   * @param $worker_action
+   * @param $task_type
+   * @param $task_index
+   * @param $action
+   * @param $params
+   * @return void
+   * @throws Exception
+   */
+  protected function defaultWorkerAction($worker_action, $task_type, $task_index, $action, $params): void
+  {
+    throw new Exception('Unknown worker_action');
   }
 
   protected function initPcntl() {
@@ -387,6 +401,6 @@ abstract class Worker {
   }
 
   protected function taskSystem($action, $params) {
-    error_log('taskSystem'.$action.json_encode($params));
+    throw new Exception('Unknown system action ['.$action.'] / '.json_encode($params));
   }
 }

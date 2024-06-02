@@ -22,6 +22,9 @@ abstract class Worker {
   /** @var callable */
   private $callbackSelfStop;
 
+  /** @var callable */
+  private $callbackBroadcastAllWorkers;
+
   public function __construct($type, $index) {
     $this->type = $type;
     $this->index = $index;
@@ -43,6 +46,11 @@ abstract class Worker {
     $this->callbackSelfStop = $callback;
   }
 
+  public function setCallbackBroadcastAllWorkers($callback)
+  {
+    $this->callbackBroadcastAllWorkers = $callback;
+  }
+
   protected function sendToMaster($action, $json = []) {
     $callbackSendToMaster = $this->callbackSendToMaster;
     $callbackSendToMaster($action, $json);
@@ -61,6 +69,12 @@ abstract class Worker {
   protected function selfStop() {
     $callbackSelfStop = $this->callbackSelfStop;
     $callbackSelfStop();
+  }
+
+  protected function broadcastAllworkers($action, $json)
+  {
+    $callbackBroadcastAllWorkers = $this->callbackBroadcastAllWorkers;
+    $callbackBroadcastAllWorkers($action, $json);
   }
 
   public function isMonopoly(): bool
