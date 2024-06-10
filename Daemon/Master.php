@@ -16,8 +16,13 @@ use Hilos\Database\Migration;
  */
 abstract class Master {
   public static bool $stopSignal = false;
+  public static bool $forceStop = false;
+  public static ?int $stopTime = null;
 
   protected ?string $adminEmail;
+
+  /** @var int */
+  protected int $stopTimeout = 10;
 
   /** @var IServer[] */
   protected array $servers = [];
@@ -133,7 +138,14 @@ abstract class Master {
           $sockets['master-'.$index] = $socket;
         }
       }
-      while (!self::$stopSignal) {
+      while (!self::$forceStop) {
+        if ((self::$stopTime !== null) && (time() - self::$stopTime > $this->stopTimeout)) {
+          error_log('Stop timeout');
+          break;
+        }
+        if (Master::$stopSignal) {
+          usleep(10000);
+        }
         if (!empty($this->willStartServers)) {
           foreach ($this->servers as $index => $server) {
             if (!in_array(get_class($server), $this->willStartServers)) continue;
@@ -147,12 +159,15 @@ abstract class Master {
         $write = $except = array();
         if ((@socket_select($read, $write, $except, 0, 1000)) === false) {
           $this->dispatchPcntl();
-          if (Master::$stopSignal) {
+          if (Master::$forceStop) {
             continue;
           }
-          if (socket_last_error() !== SOCKET_EWOULDBLOCK) {
-            if ($this->adminEmail !== null) mail($this->adminEmail, 'Hilos master socket_select error', socket_strerror(socket_last_error()));
-            error_log('Hilos master socket_select error "' . socket_strerror(socket_last_error()) . '"');
+          if (socket_last_error() === SOCKET_EINTR) {
+            error_log('Hilos master socket_select interrupted. Going to stop...');
+            Master::$stopSignal = true;
+          } elseif (socket_last_error() !== SOCKET_EWOULDBLOCK) {
+            if ($this->adminEmail !== null) mail($this->adminEmail, 'Hilos master socket_select error', socket_strerror(socket_last_error()).' / '.socket_last_error());
+            error_log('Hilos master socket_select error "' . socket_strerror(socket_last_error()) . '" / ' . socket_last_error());
             throw new SocketSelect(socket_last_error() . '/ ' . socket_strerror(socket_last_error()));
           }
           continue;
@@ -233,22 +248,36 @@ abstract class Master {
           error_log('SIGTERM');
           // NOTE: handle stop tasks
           Master::$stopSignal = true;
+          if (Master::$stopTime === null) {
+            Master::$stopTime = time();
+          }
           break;
         case SIGHUP:
           error_log('SIGHUP');
           // NOTE: handle restart tasks
           Master::$stopSignal = true;
+          if (Master::$stopTime === null) {
+            Master::$stopTime = time();
+          }
           break;
         case SIGINT:
           error_log('SIGINT');
           // NOTE: handle exit tasks
-          Master::$stopSignal = true;
+          if (Master::$stopTime === null) {
+            Master::$stopTime = time();
+          }
+          if (Master::$stopSignal) {
+            Master::$forceStop = true;
+          } else {
+            Master::$stopSignal = true;
+          }
           break;
       }
     }
 
     pcntl_signal(SIGTERM, 'Hilos\\Daemon\\signal_handler');
     pcntl_signal(SIGHUP, 'Hilos\\Daemon\\signal_handler');
+    pcntl_signal(SIGINT, 'Hilos\\Daemon\\signal_handler');
   }
   protected function dispatchPcntl(): void
   {
