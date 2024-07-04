@@ -76,9 +76,18 @@ abstract class Master {
     if (!isset($this->tasks[$taskType . '-' . $taskIndexString])) {
       $this->tasks[$taskType . '-' . $taskIndexString] = $this->getTaskByType($taskType, $taskIndex);
       $this->serverWorker->addTask($this->tasks[$taskType . '-' . $taskIndexString]);
+      $this->onTaskAdd($this->tasks[$taskType . '-' . $taskIndexString]);
     }
 
     return $this->tasks[$taskType . '-' . $taskIndexString];
+  }
+
+  /**
+   * @param TaskMaster $task
+   * @return void
+   */
+  protected function onTaskAdd(TaskMaster $task): void
+  {
   }
 
   /**

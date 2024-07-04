@@ -6,6 +6,7 @@ use Exception;
 use Hilos\Daemon\Client\IClient;
 use Hilos\Daemon\Client\Worker as ClientWorker;
 use Hilos\Daemon\Exception\SocketAcceptUnable;
+use Hilos\Daemon\Task\IMaster;
 use Hilos\Daemon\Task\Master as TaskMaster;
 use Hilos\Service\Config;
 
@@ -61,12 +62,12 @@ class Worker extends Server {
   }
 
   /**
-   * @param $task
+   * @param IMaster $task
    * @param bool $delay
    * @return bool
    * @throws Exception
    */
-  public function addTask(&$task, bool $delay = false): bool {
+  public function addTask(IMaster &$task, bool $delay = false): bool {
     $minIndex = null;
     $minCount = null;
     $defaultMonopolyIndex = null;
@@ -81,6 +82,7 @@ class Worker extends Server {
       }
       if (($task->isMonopoly()) && ($client->getMonopolyStatus() === true) && ($count === 0)) {
         $this->clients[$index]->taskAdd($task);
+        $task->setClient($index);
         return true;
       }
     }
@@ -90,6 +92,7 @@ class Worker extends Server {
         throw new Exception('Something went wrong -- should be default worker for monopoly tasks (i.e. wrong monopoly configuration - add monopoly workers is fast workaround). But here some bug.');
       }
       $this->clients[$defaultMonopolyIndex]->taskAdd($task);
+      $task->setClient($defaultMonopolyIndex);
       return true;
     }
     if ($minIndex === null) {
@@ -98,6 +101,7 @@ class Worker extends Server {
       }
     } else {
       $this->clients[$minIndex]->taskAdd($task);
+      $task->setClient($minIndex);
       return true;
     }
     return false;

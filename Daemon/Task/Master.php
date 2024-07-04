@@ -7,6 +7,8 @@ namespace Hilos\Daemon\Task;
  * @package Hilos\Daemon\Task
  */
 abstract class Master implements IMaster {
+  private int $client;
+
   private ?string $taskType = null;
   private $taskIndex = null;
 
@@ -56,6 +58,22 @@ abstract class Master implements IMaster {
 
   public function getTaskIndexString() {
     return is_array($this->taskIndex) ? implode('-', $this->taskIndex) : $this->taskIndex;
+  }
+
+  /**
+   * @return int
+   */
+  final public function getClient(): int
+  {
+    return $this->client;
+  }
+
+  /**
+   * @return int
+   */
+  final public function setClient(int $client): void
+  {
+    $this->client = $client;
   }
 
   public function isMonopoly(): bool {
