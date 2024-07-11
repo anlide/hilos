@@ -84,5 +84,5 @@ abstract class Worker {
 
   public abstract function tick();
   public abstract function onAction($action, $params);
-  public abstract function callbacksInited();
+  public abstract function callbacksInitiated();
 }
