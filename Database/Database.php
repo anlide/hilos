@@ -2,6 +2,7 @@
 
 namespace Hilos\Database;
 
+use Hilos\Database\Exception\SqlTimeout;
 use Hilos\Service\Config;
 use Hilos\Database\Exception\Sql;
 use mysqli;
@@ -93,10 +94,17 @@ class Database {
    * @param $sql
    * @param null $params
    * @param bool $try_reconnect
+   * @param int|null $timeout
    * @throws Sql
+   * @throws SqlTimeout
    */
-  public static function sql($sql, $params = null, bool $try_reconnect = true): void
+  public static function sql($sql, $params = null, bool $try_reconnect = true, ?int $timeout = null): void
   {
+    $originalTimeout = ini_get('mysqli.default_socket_timeout');
+    if (!is_null($timeout)) {
+      self::$connect->options(MYSQLI_OPT_CONNECT_TIMEOUT, $timeout);
+    }
+
     while (@self::$connect->next_result()) self::$connect->store_result();
     if ($params !== null) {
       if (!is_array($params)) $params = array($params);
@@ -154,6 +162,7 @@ class Database {
       $error = $e->getMessage();
     } finally {
       $error = ($error === '') ? mysqli_error(self::$connect) : $error;
+      self::$connect->options(MYSQLI_OPT_CONNECT_TIMEOUT, $originalTimeout);
     }
     if($error != ''){
       $errno = mysqli_errno(self::$connect);
@@ -183,6 +192,8 @@ class Database {
       } elseif (($errno == 1642) || ($errno == 1643) || ($errno == 1644)) {
         $tmp = explode('|', $error);
         throw new Sql($tmp[0], $tmp[1]);
+      } elseif (str_contains($error, 'timeout')) {
+        throw new SqlTimeout($error);
       } else {
         throw new Sql($error.' sql ---'.$parsedSql.'---', $errno);
       }
@@ -193,11 +204,13 @@ class Database {
    * @param $sql
    * @param null $params
    * @param bool $try_reconnect
+   * @param int|null $timeout
    * @throws Sql
+   * @throws SqlTimeout
    */
-  public static function sqlRun($sql, $params = null, bool $try_reconnect = true): void
+  public static function sqlRun($sql, $params = null, bool $try_reconnect = true, ?int $timeout = null): void
   {
-    self::sql($sql, $params, $try_reconnect);
+    self::sql($sql, $params, $try_reconnect, $timeout);
     $step = 0;
     do {
       if (!self::$connect->more_results()) {
@@ -239,12 +252,12 @@ class Database {
     return self::$connect->insert_id;
   }
 
-    public static function affectedRows(): int|string
-    {
-        return self::$connect->affected_rows;
-    }
+  public static function affectedRows(): int|string
+  {
+    return self::$connect->affected_rows;
+  }
 
-    /**
+  /**
    * @param $sql
    * @param null $params
    * @return array|null
@@ -333,10 +346,10 @@ class Database {
 
     foreach ($tables as $tableInfo) {
       if (
-          !is_array($tableInfo) ||
-          !isset($tableInfo[self::LOCK_TABLE_PARAM_TABLE]) ||
-          !is_string($tableInfo[self::LOCK_TABLE_PARAM_TABLE]) ||
-          trim($tableInfo[self::LOCK_TABLE_PARAM_TABLE]) === ''
+        !is_array($tableInfo) ||
+        !isset($tableInfo[self::LOCK_TABLE_PARAM_TABLE]) ||
+        !is_string($tableInfo[self::LOCK_TABLE_PARAM_TABLE]) ||
+        trim($tableInfo[self::LOCK_TABLE_PARAM_TABLE]) === ''
       ) {
         throw new Sql('Each table information must be an array with a non-empty string "table" key.');
       }
@@ -344,17 +357,17 @@ class Database {
       $tableName = '`' . $tableInfo[self::LOCK_TABLE_PARAM_TABLE] . '`';
 
       if (
-          isset($tableInfo[self::LOCK_TABLE_PARAM_DATABASE]) &&
-          is_string($tableInfo[self::LOCK_TABLE_PARAM_DATABASE]) &&
-          trim($tableInfo[self::LOCK_TABLE_PARAM_DATABASE]) !== ''
+        isset($tableInfo[self::LOCK_TABLE_PARAM_DATABASE]) &&
+        is_string($tableInfo[self::LOCK_TABLE_PARAM_DATABASE]) &&
+        trim($tableInfo[self::LOCK_TABLE_PARAM_DATABASE]) !== ''
       ) {
         $databaseName = '`' . $tableInfo[self::LOCK_TABLE_PARAM_DATABASE] . '`.';
         $tableName = $databaseName . $tableName;
       }
 
       $lockType = isset($tableInfo[self::LOCK_TABLE_PARAM_TYPE]) && in_array(strtoupper($tableInfo[self::LOCK_TABLE_PARAM_TYPE]), self::LOCK_TYPES) ?
-          strtoupper($tableInfo[self::LOCK_TABLE_PARAM_TYPE]) :
-          self::LOCK_TYPE_READ;
+        strtoupper($tableInfo[self::LOCK_TABLE_PARAM_TYPE]) :
+        self::LOCK_TYPE_READ;
 
       $lockParts[] = $tableName . ' ' . $lockType;
     }
