@@ -94,17 +94,11 @@ class Database {
    * @param $sql
    * @param null $params
    * @param bool $try_reconnect
-   * @param int|null $timeout
    * @throws Sql
    * @throws SqlTimeout
    */
-  public static function sql($sql, $params = null, bool $try_reconnect = true, ?int $timeout = null): void
+  public static function sql($sql, $params = null, bool $try_reconnect = true): void
   {
-    $originalTimeout = ini_get('mysqli.default_socket_timeout');
-    if (!is_null($timeout)) {
-      self::$connect->options(MYSQLI_OPT_CONNECT_TIMEOUT, $timeout);
-    }
-
     while (@self::$connect->next_result()) self::$connect->store_result();
     if ($params !== null) {
       if (!is_array($params)) $params = array($params);
@@ -162,7 +156,6 @@ class Database {
       $error = $e->getMessage();
     } finally {
       $error = ($error === '') ? mysqli_error(self::$connect) : $error;
-      self::$connect->options(MYSQLI_OPT_CONNECT_TIMEOUT, $originalTimeout);
     }
     if($error != ''){
       $errno = mysqli_errno(self::$connect);
@@ -192,7 +185,7 @@ class Database {
       } elseif (($errno == 1642) || ($errno == 1643) || ($errno == 1644)) {
         $tmp = explode('|', $error);
         throw new Sql($tmp[0], $tmp[1]);
-      } elseif (str_contains($error, 'timeout')) {
+      } elseif (str_contains($error, 'max_statement_time exceeded')) {
         throw new SqlTimeout($error);
       } else {
         throw new Sql($error.' sql ---'.$parsedSql.'---', $errno);
@@ -210,17 +203,31 @@ class Database {
    */
   public static function sqlRun($sql, $params = null, bool $try_reconnect = true, ?int $timeout = null): void
   {
-    self::sql($sql, $params, $try_reconnect, $timeout);
-    $step = 0;
-    do {
-      if (!self::$connect->more_results()) {
-        break;
+    if (!is_null($timeout)) {
+      $result = self::$connect->query('SELECT @@max_statement_time as max_statement_time;');
+      $row = $result->fetch_assoc();
+      $originalMaxStatementTime = $row['max_statement_time'];
+      unset($row, $result);
+      self::$connect->query('SET SESSION max_statement_time = ' . ($timeout) . ';');
+    }
+    try {
+      self::sql($sql, $params, $try_reconnect);
+    } finally {
+      $step = 0;
+      do {
+        if (!self::$connect->more_results()) {
+          break;
+        }
+        if (!self::$connect->next_result()) {
+          throw new Sql('mysqli_multi_query with was execute with error at step statement [#'.$step.'/'.self::$connect->error.']');
+        }
+        $step++;
+      } while (true);
+
+      if (!is_null($timeout)) {
+        self::$connect->query('SET SESSION max_statement_time = ' . $originalMaxStatementTime . ';');
       }
-      if (!self::$connect->next_result()) {
-        throw new Sql('mysqli_multi_query with was execute with error at step statement [#'.$step.'/'.self::$connect->error.']');
-      }
-      $step++;
-    } while (true);
+    }
   }
 
   /**
