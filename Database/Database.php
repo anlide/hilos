@@ -278,11 +278,12 @@ class Database {
   /**
    * @param $sql
    * @param null $params
-   * @return array
+   * @return array|bool
    * @throws Sql
    */
-  public static function rows($sql, $params = null): array {
+  public static function rows($sql, $params = null): array|bool {
     self::sql($sql, $params);
+    if (self::$result === false) return false;
     $row = true;
     $rows = array();
     while ($row) {
