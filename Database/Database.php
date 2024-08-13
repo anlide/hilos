@@ -2,12 +2,33 @@
 
 namespace Hilos\Database;
 
-use Hilos\Database\Exception\SqlTimeout;
+use Hilos\Database\Exception\SqlConnect\AccessDenied;
+use Hilos\Database\Exception\SqlConnect\CantConnectToMysqlServer;
+use Hilos\Database\Exception\SqlConnect\HostNotFound;
+use Hilos\Database\Exception\SqlConnect\ProtocolMismatch;
+use Hilos\Database\Exception\SqlConnect\SslConnectionError;
+use Hilos\Database\Exception\SqlConnect\Timeout;
+use Hilos\Database\Exception\SqlConnect\TooManyConnections;
+use Hilos\Database\Exception\SqlConnect\UnknownDatabase;
+use Hilos\Database\Exception\SqlConnection;
+use Hilos\Database\Exception\SqlParams;
+use Hilos\Database\Exception\SqlRuntime;
+use Hilos\Database\Exception\SqlRuntime\DataTooLong;
+use Hilos\Database\Exception\SqlRuntime\DeadlockDetected;
+use Hilos\Database\Exception\SqlRuntime\DivisionByZero;
+use Hilos\Database\Exception\SqlRuntime\DuplicateEntry;
+use Hilos\Database\Exception\SqlRuntime\ForeignKeyConstraint;
+use Hilos\Database\Exception\SqlRuntime\LockWaitTimeout;
+use Hilos\Database\Exception\SqlRuntime\OutOfRangeValue;
+use Hilos\Database\Exception\SqlRuntime\SyntaxError;
+use Hilos\Database\Exception\SqlRuntime\TableNotFound;
+use Hilos\Database\Exception\SqlRuntime\QueryExecutionTimeout;
+use Hilos\Database\Exception\SqlRuntime\LostConnection;
+use Hilos\Database\Exception\SqlRuntime\GoneAway;
 use Hilos\Service\Config;
 use Hilos\Database\Exception\Sql;
 use mysqli;
 use mysqli_result;
-use mysqli_sql_exception;
 
 /**
  * No any adapters. Only mysql was implemented.
@@ -20,7 +41,7 @@ class Database {
   private static mysqli $connect;
 
   /** @var mysqli_result|bool */
-  private static $result;
+  private static bool|mysqli_result $result = false;
 
   /** @var boolean */
   public static bool $debug = false;
@@ -32,8 +53,8 @@ class Database {
   private static string $port;
   private static string $sqlInit;
 
-  private function __clone(){}
-  private function __construct(){}
+  private function __clone() {}
+  private function __construct() {}
   private function __destruct() {
     if (self::$connect) mysqli_close(self::$connect);
   }
@@ -90,14 +111,23 @@ class Database {
   private static function connect(): void
   {
     self::$connect = @mysqli_connect(self::$host, self::$user, self::$pass, self::$dbname, self::$port);
-    if (!self::$connect){
-      $error_text = 'Database not available ['.mysqli_connect_errno().'] '.mysqli_connect_error();
-      throw new Sql($error_text, mysqli_connect_errno());
+    if (self::$connect === false) {
+      $error = mysqli_connect_error();
+      $errno = mysqli_connect_errno();
+
+      throw match ($errno) {
+        1045 => new AccessDenied($error, $errno),
+        2002 => new HostNotFound($error, $errno),
+        2003, 2006 => new CantConnectToMysqlServer($error, $errno),
+        1049 => new UnknownDatabase($error, $errno),
+        1040 => new TooManyConnections($error, $errno),
+        1043 => new ProtocolMismatch($error, $errno),
+        2026 => new SslConnectionError($error, $errno),
+        2054, 2055 => new Timeout($error, $errno),
+        default => new SqlConnection($error, $errno),
+      };
     }
-    if (mysqli_connect_errno()) {
-      $error_text = 'Database connection error ['.mysqli_connect_errno().'] '.mysqli_connect_error();
-      throw new Sql($error_text, mysqli_connect_errno());
-    }
+
     if (self::$sqlInit !== null) {
       $sqlParts = explode(';', self::$sqlInit);
       foreach ($sqlParts as $sqlPart) {
@@ -112,7 +142,6 @@ class Database {
    * @param null $params
    * @param bool $try_reconnect
    * @throws Sql
-   * @throws SqlTimeout
    */
   public static function sql($sql, $params = null, bool $try_reconnect = true): void
   {
@@ -128,7 +157,7 @@ class Database {
         } elseif (is_numeric($param)) {
           $newSql .= $param;
         } elseif (is_bool($param)) {
-          $newSql .= ($param?'true':'false');
+          $newSql .= ($param ? 'true' : 'false');
         } elseif (is_string($param)) {
           $newSql .= '"'.str_replace('"', '\"', $param).'"';
         } elseif (is_array($param)) {
@@ -139,18 +168,18 @@ class Database {
             } elseif (is_numeric($subParam)) {
               $newParams[] = $subParam;
             } elseif (is_bool($subParam)) {
-              $newParams[] = ($subParam?'true':'false');
+              $newParams[] = ($subParam ? 'true' : 'false');
             } elseif (is_string($subParam)) {
               $newParams[] = '"'.str_replace('"', '\"', $subParam).'"';
             } else {
-              throw new Sql('SQL parameter not a string or numeric or boolean', 500);
+              throw new SqlParams('SQL parameter not a string or numeric or boolean', 500);
             }
           }
           $newSql .= implode(',', $newParams);
         } else {
-          throw new Sql('SQL parameter not a string or numeric or boolean', 500);
+          throw new SqlParams('SQL parameter not a string or numeric or boolean', 500);
         }
-        $newSql .= $notParams[$i+1];
+        $newSql .= $notParams[$i + 1];
       }
       $parsedSql = $newSql;
     } else {
@@ -165,26 +194,44 @@ class Database {
       fclose($fp);
       error_log($logString);
     }
-    try {
-      @mysqli_multi_query(self::$connect, $parsedSql);
+    if (@mysqli_multi_query(self::$connect, $parsedSql)) {
       self::$result = self::$connect->store_result();
-      $error = '';
-    } catch (mysqli_sql_exception $e) {
-      $error = $e->getMessage();
-    } finally {
-      $error = ($error === '') ? mysqli_error(self::$connect) : $error;
+    } else {
+      self::$result = false;
     }
-    if($error != ''){
-      $errno = mysqli_errno(self::$connect);
-      if ($errno == 2006) {
+    $errno = mysqli_errno(self::$connect);
+    $error = mysqli_error(self::$connect);
+    if ($errno !== 0) {
+      try {
+        throw match ($errno) {
+          1064 => new SyntaxError($error, $errno),
+          1062 => new DuplicateEntry($error, $errno),
+          1451, 1452 => new ForeignKeyConstraint($error, $errno),
+          1146 => new TableNotFound($error, $errno),
+          1406 => new DataTooLong($error, $errno),
+          1264 => new OutOfRangeValue($error, $errno),
+          1365 => new DivisionByZero($error, $errno),
+          1213 => new DeadlockDetected($error, $errno),
+          1205 => new LockWaitTimeout($error, $errno),
+          3024 => new QueryExecutionTimeout($error, $errno),
+          2003, 2006 => new GoneAway($error, $errno),
+          2013 => new LostConnection($error, $errno),
+          default => new SqlRuntime($error, $errno),
+        };
+      } catch (GoneAway|LostConnection $exception) {
         if ($try_reconnect) {
           $attempt = 0;
           do {
             try {
               $attempt++;
+              // TODO: Move "10" to some config value
+              if ($attempt > 10) {
+                error_log('Mysql server has gone away, and give up to to reconnect!');
+                throw $exception;
+              }
               self::connect();
-            } catch (\Exception $e) {
-              error_log('Database connection error ['.mysqli_connect_errno().'] '.mysqli_connect_error());
+            } catch (SqlConnection $exceptionConnection) {
+              error_log('Database connection error ['.$exceptionConnection->getCode().'] '.$exceptionConnection->getMessage());
               $sleepTime = intval(Config::env('HILOS_DATABASE_RECONNECT_SLEEP', 5));
               if ($sleepTime < 1) $sleepTime = 1;
               error_log('Mysql reconnect attempt #'.$attempt.' sleep '.$sleepTime.' seconds');
@@ -197,15 +244,8 @@ class Database {
           error_log('Mysql reconnected');
           self::sql($sql, $params, filter_var(Config::env('HILOS_DATABASE_RECONNECT_2006', false), FILTER_VALIDATE_BOOLEAN));
         } else {
-          throw new Sql('Mysql server has gone away, and give up to to reconnect!');
+          throw $exception;
         }
-      } elseif (($errno == 1642) || ($errno == 1643) || ($errno == 1644)) {
-        $tmp = explode('|', $error);
-        throw new Sql($tmp[0], $tmp[1]);
-      } elseif (str_contains($error, 'max_statement_time exceeded')) {
-        throw new SqlTimeout($error);
-      } else {
-        throw new Sql($error.' sql ---'.$parsedSql.'---', $errno);
       }
     }
   }
@@ -216,7 +256,6 @@ class Database {
    * @param bool $try_reconnect
    * @param int|null $timeout
    * @throws Sql
-   * @throws SqlTimeout
    */
   public static function sqlRun($sql, $params = null, bool $try_reconnect = true, ?int $timeout = null): void
   {
