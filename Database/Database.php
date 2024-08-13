@@ -30,6 +30,7 @@ class Database {
   private static string $pass;
   private static string $dbname;
   private static string $port;
+  private static string $sqlInit;
 
   private function __clone(){}
   private function __construct(){}
@@ -58,10 +59,16 @@ class Database {
    * @param string $pass
    * @param string $dbname
    * @param string $port
+   * @param string|null $sqlInit
    * @throws Sql
    */
   public static function configure(
-    string $host = 'localhost', string $user = 'root', string $pass = '', string $dbname = 'hilos', string $port = '3306'
+    string $host = 'localhost',
+    string $user = 'root',
+    string $pass = '',
+    string $dbname = 'hilos',
+    string $port = '3306',
+    ?string $sqlInit = null,
   ): void
   {
     self::$host = $host;
@@ -69,6 +76,11 @@ class Database {
     self::$pass = $pass;
     self::$dbname = $dbname;
     self::$port = $port;
+    if ($sqlInit === null) {
+      self::$sqlInit = 'SET NAMES `utf8`; SET @@session.time_zone = "+00:00"';
+    } else {
+      self::$sqlInit = $sqlInit;
+    }
     self::connect();
   }
 
@@ -86,8 +98,13 @@ class Database {
       $error_text = 'Database connection error ['.mysqli_connect_errno().'] '.mysqli_connect_error();
       throw new Sql($error_text, mysqli_connect_errno());
     }
-    self::sql('SET NAMES `utf8`;');
-    self::sql('SET @@session.time_zone = "+00:00";');
+    if (self::$sqlInit !== null) {
+      $sqlParts = explode(';', self::$sqlInit);
+      foreach ($sqlParts as $sqlPart) {
+        if (trim($sqlPart) === '') continue;
+        self::sql($sqlPart.';');
+      }
+    }
   }
 
   /**
