@@ -29,6 +29,7 @@ use Hilos\Service\Config;
 use Hilos\Database\Exception\Sql;
 use mysqli;
 use mysqli_result;
+use mysqli_sql_exception;
 
 /**
  * No any adapters. Only mysql was implemented.
@@ -194,13 +195,18 @@ class Database {
       fclose($fp);
       error_log($logString);
     }
-    if (@mysqli_multi_query(self::$connect, $parsedSql)) {
-      self::$result = self::$connect->store_result();
-    } else {
-      self::$result = false;
+    try {
+      if (@mysqli_multi_query(self::$connect, $parsedSql)) {
+        self::$result = self::$connect->store_result();
+      } else {
+        self::$result = false;
+      }
+    } catch (mysqli_sql_exception) {
+    } finally {
+      $errno = mysqli_errno(self::$connect);
+      $error = mysqli_error(self::$connect);
     }
-    $errno = mysqli_errno(self::$connect);
-    $error = mysqli_error(self::$connect);
+
     if ($errno !== 0) {
       try {
         throw match ($errno) {
