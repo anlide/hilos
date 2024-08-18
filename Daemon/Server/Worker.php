@@ -3,6 +3,7 @@
 namespace Hilos\Daemon\Server;
 
 use Exception;
+use Hilos\App\Process;
 use Hilos\Daemon\Client\IClient;
 use Hilos\Daemon\Client\Worker as ClientWorker;
 use Hilos\Daemon\Exception\SocketAcceptUnable;
@@ -14,17 +15,14 @@ class Worker extends Server {
 
   protected $classWorkerClient;
 
-  /** @var resource[] */
-  protected array $processes = [];
+  /** @var Process[] */
+  private array $processes = [];
 
   /** @var ClientWorker[] */
   protected array $clients = [];
 
   /** @var TaskMaster[] */
   protected array $delayTasks = [];
-
-  /** @var array */
-  protected array $pipes = [];
 
   /** @var int */
   private int $monopoly = 0;
@@ -42,22 +40,21 @@ class Worker extends Server {
    * @param int $monopoly
    * @throws Exception
    */
-  public function runWorkers($initialFile, $count, int $monopoly = 0) {
+  public function runWorkers($initialFile, $count, int $monopoly = 0): void
+  {
     $this->monopoly = $monopoly;
     for ($index = 0; $index < $count; $index++) {
-      $descriptorspec = [
-        0 => ["pipe", "r"],
-        1 => ["pipe", "w"],
-        2 => ["file", Config::env('HILOS_LOG_PATH').str_replace('%0', $index, Config::env('HILOS_WORKER_LOG_ERROR_FILE')), "a"]
-      ];
-      $this->pipes[$index] = [];
       $add = '';
       if (strtolower(substr(PHP_OS, 0, 3)) != 'win') $add = 'exec ';
-      $this->processes[$index] = proc_open($add . Config::env('PHP_RUN_DIR') . ' ' . $initialFile, $descriptorspec, $this->pipes[$index], dirname($initialFile));
-      if (!is_resource($this->processes[$index])) {
-        throw new Exception('unable to create worker');
-      }
-      fwrite($this->pipes[$index][0], 'index-'.$index.PHP_EOL);
+      $this->processes[$index] = new Process(
+        $add . Config::env('PHP_RUN_DIR') . ' ' . $initialFile,
+        ['index-'.$index],
+        dirname($initialFile),
+        ["pipe", "r"],
+        ["pipe", "w"],
+        ["file", Config::env('HILOS_LOG_PATH').str_replace('%0', $index, Config::env('HILOS_WORKER_LOG_ERROR_FILE')), "a"],
+      );
+      $this->processes[$index]->sendInput('index-'.$index.PHP_EOL);
     }
   }
 
@@ -110,7 +107,8 @@ class Worker extends Server {
   /**
    * @throws Exception
    */
-  function tick() {
+  function tick(): void
+  {
     if ((count($this->delayTasks) == 0) || (count($this->clients) == 0)) return;
     foreach ($this->delayTasks as $index => $task) {
       if ($this->addTask($task, true)) {
@@ -118,24 +116,14 @@ class Worker extends Server {
       }
     }
     unset($task);
+    foreach ($this->processes as $process) {
+      $process->tick();
+    }
   }
 
   function stop() {
     parent::stop();
-    foreach ($this->processes as $index => $process) {
-      proc_terminate($process, SIGTERM);
-      $status = proc_get_status($process);
-      if ($status) {
-        if (!$status['running']) {
-          fclose($this->pipes[$index][0]);
-          fclose($this->pipes[$index][1]);
-          proc_close($process);
-          unset($this->processes[$index]);
-        }
-      } else {
-        unset($this->processes[$index]);
-      }
-    }
+    $this->processes = [];
   }
 
   /**

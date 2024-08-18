@@ -4,6 +4,7 @@ namespace Hilos\Daemon\Client;
 
 use Exception;
 use Hilos\Daemon\Exception\NonJsonResponse;
+use Hilos\Daemon\Task\IMaster;
 use Hilos\Daemon\Task\Master as TaskMaster;
 
 abstract class Worker extends Client {
@@ -92,11 +93,11 @@ abstract class Worker extends Client {
   }
 
   /**
-   * @param TaskMaster $task
+   * @param IMaster $task
    * @return bool
    * @throws Exception
    */
-  public function taskAdd(TaskMaster &$task): bool {
+  public function taskAdd(IMaster &$task): bool {
     $taskIndex = $task->getTaskIndex();
     $taskIndexString = $task->getTaskIndexString();
     $taskType = $task->getTaskType();
