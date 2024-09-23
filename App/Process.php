@@ -4,7 +4,6 @@ namespace Hilos\App;
 
 use Hilos\App\Exception\Process\CouldNotStart;
 use Hilos\App\Exception\Process\FailedToClosePipe;
-use Hilos\App\Exception\Process\FailedToGetProcessStatus;
 use Hilos\App\Exception\Process\FailedToReadStdOut;
 use Hilos\App\Exception\Process\FailedToSetStdErr;
 use Hilos\App\Exception\Process\FailedToSetNonBlocking;
@@ -79,13 +78,17 @@ class Process
    * Проверяет состояние процесса и читает новые данные из stdout и stderr.
    *
    * @throws FailedToReadStdOut|FailedToSetStdErr Если не удается получить статус процесса или прочитать данные из потоков.
-   * @throws FailedToGetProcessStatus
    * @throws FailedToTerminateProcess
    * @throws FailedToClosePipe
    */
   public function tick(): void
   {
     $status = $this->getStatus();
+
+    if (!$status['running']) {
+      $this->halt(); // Ensure the process is terminated if not running
+      return;
+    }
 
     $stdoutContent = stream_get_contents($this->pipes[1]);
     if ($stdoutContent === false) {
@@ -98,33 +101,22 @@ class Process
       throw new FailedToSetStdErr('Failed to read from stderr.');
     }
     $this->unreadStdErr .= $stderrContent;
-
-    if (!$status['running']) {
-      $this->halt(); // Ensure the process is terminated if not running
-    }
   }
 
   /**
    * Возвращает статус процесса.
    *
    * @return array<string, mixed> Массив со статусом процесса, включая ключи 'running', 'exitcode', и другие.
-   *
-   * @throws FailedToGetProcessStatus Если не удается получить статус процесса.
    */
   public function getStatus(): array
   {
-    $status = proc_get_status($this->process);
-    if (!isset($status['running'])) {
-      throw new FailedToGetProcessStatus('Failed to get process status.');
-    }
-    return $status;
+    return proc_get_status($this->process);
   }
 
   /**
    * Останавливает процесс безопасным способом.
    *
    * @throws FailedToTerminateProcess Если не удается завершить процесс.
-   * @throws FailedToGetProcessStatus
    */
   public function stop(): void
   {
@@ -141,7 +133,6 @@ class Process
    *
    * @throws FailedToTerminateProcess Если не удается принудительно завершить процесс.
    * @throws FailedToClosePipe
-   * @throws FailedToGetProcessStatus
    */
   public function halt(): void
   {
@@ -175,7 +166,9 @@ class Process
    */
   public function getStdOut(): string
   {
-    return $this->unreadStdOut;
+    $unreadStdOut = $this->unreadStdOut;
+    $this->unreadStdOut = '';
+    return $unreadStdOut;
   }
 
   /**
@@ -185,7 +178,9 @@ class Process
    */
   public function getStdErr(): string
   {
-    return $this->unreadStdErr;
+    $unreadStdErr = $this->unreadStdErr;
+    $this->unreadStdErr = '';
+    return $unreadStdErr;
   }
 
   /**
@@ -193,7 +188,6 @@ class Process
    *
    * @throws FailedToTerminateProcess
    * @throws FailedToClosePipe
-   * @throws FailedToGetProcessStatus
    */
   public function __destruct()
   {
