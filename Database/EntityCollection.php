@@ -10,7 +10,8 @@ use Hilos\Database\Exception\Sql;
  */
 class EntityCollection implements \IteratorAggregate, \ArrayAccess, \Countable {
   /** @var Entity[] */
-  private $items;
+  private array $items;
+  public string $class_name;
 
   public function __debugInfo() {
     return $this->items;
