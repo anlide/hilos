@@ -69,8 +69,20 @@ class Process
       throw new CouldNotStart('Could not start the process.');
     }
 
-    if (!stream_set_blocking($this->pipes[0], false) || !stream_set_blocking($this->pipes[1], false)) {
-      throw new FailedToSetNonBlocking('Failed to set non-blocking mode on streams.');
+    if (isset($this->pipes[0]) && ($this->pipes[0] !== null)) {
+      if (!stream_set_blocking($this->pipes[0], false)) {
+        throw new FailedToSetNonBlocking('Failed to set non-blocking mode stdin on streams.');
+      }
+    }
+    if (isset($this->pipes[1]) && ($this->pipes[1] !== null)) {
+      if (!stream_set_blocking($this->pipes[1], false)) {
+        throw new FailedToSetNonBlocking('Failed to set non-blocking mode stdout on streams.');
+      }
+    }
+    if (isset($this->pipes[2]) && ($this->pipes[2] !== null)) {
+      if (!stream_set_blocking($this->pipes[2], false)) {
+        throw new FailedToSetNonBlocking('Failed to set non-blocking mode stderr on streams.');
+      }
     }
   }
 
