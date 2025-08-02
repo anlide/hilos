@@ -10,7 +10,7 @@ use Hilos\Service\Config;
  * @package Hilos\Daemon
  */
 abstract class Worker {
-  const WRITE_DELAY_TIMEOUT = 10; // TODO: Rename it
+  const WRITE_DELAY_TIMEOUT = 60; // TODO: Rename it
   const WRITE_NON_DELAY_ATTEMPTS = 10;
   const MAX_BUFFER_SIZE = 1024 * 1024 * 32;
 

@@ -12,7 +12,7 @@ abstract class Client implements IClient {
   protected static array $hvaltr = ['; ' => '&', ';' => '&', ' ' => '%20'];
 
   const STATE_STANDBY = 0;
-  const WRITE_DELAY_TIMEOUT = 10;
+  const WRITE_DELAY_TIMEOUT = 60;
 
   const CLOSE_NORMAL      = 1000;
   const CLOSE_GOING_AWAY  = 1001;
