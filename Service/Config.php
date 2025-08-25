@@ -23,6 +23,6 @@ class Config {
   }
 
   public static function root(): string {
-    return __DIR__ . '/../../../../';
+    return dirname(__DIR__);
   }
 }
