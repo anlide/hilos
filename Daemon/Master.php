@@ -15,6 +15,11 @@ use Hilos\Database\Migration;
  * @package Hilos\Daemon
  */
 abstract class Master {
+  const MICROSECONDS_PER_SECOND = 1000000;
+  const TICK_INTERVAL_SECONDS = 0.1;
+  const TICK_INTERVAL_MICROSECONDS = self::TICK_INTERVAL_SECONDS * self::MICROSECONDS_PER_SECOND;
+  const STOP_SIGNAL_SLEEP_MICROSECONDS = 10000;
+
   public static bool $stopSignal = false;
   public static bool $forceStop = false;
   public static ?int $stopTime = null;
@@ -147,13 +152,17 @@ abstract class Master {
           $sockets['master-'.$index] = $socket;
         }
       }
+      $remainingTime = 0; // Initialize remaining time for first iteration
+      
       while (!self::$forceStop) {
+        $loopStartTime = microtime(true);
+        
         if ((self::$stopTime !== null) && (time() - self::$stopTime > $this->stopTimeout)) {
           error_log('Stop timeout');
           break;
         }
         if (Master::$stopSignal) {
-          usleep(10000);
+          usleep(self::STOP_SIGNAL_SLEEP_MICROSECONDS);
         }
         if (!empty($this->willStartServers)) {
           foreach ($this->servers as $index => $server) {
@@ -166,7 +175,16 @@ abstract class Master {
         }
         $read = $sockets;
         $write = $except = array();
-        if ((@socket_select($read, $write, $except, 0, 1000)) === false) {
+        
+        // Calculate timeout based on processing time
+        $timeoutMicroseconds = 0;
+        if ($remainingTime > 0) {
+          $timeoutMicroseconds = (int)($remainingTime * self::MICROSECONDS_PER_SECOND);
+        } else {
+          $timeoutMicroseconds = self::TICK_INTERVAL_MICROSECONDS;
+        }
+        
+        if ((@socket_select($read, $write, $except, 0, $timeoutMicroseconds)) === false) {
           $this->dispatchPcntl();
           if (Master::$forceStop) {
             continue;
@@ -204,6 +222,14 @@ abstract class Master {
         }
         $this->tick();
         $this->dispatchPcntl();
+        
+        // Calculate remaining time and adjust timeout for next iteration
+        $processingTime = microtime(true) - $loopStartTime;
+        if ($processingTime < self::TICK_INTERVAL_SECONDS) {
+          $remainingTime = self::TICK_INTERVAL_SECONDS - $processingTime;
+        } else {
+          $remainingTime = 0;
+        }
       }
       foreach ($this->clients as &$client) {
         $client->stop();

@@ -13,6 +13,9 @@ abstract class Worker {
   const WRITE_DELAY_TIMEOUT = 60; // TODO: Rename it
   const WRITE_NON_DELAY_ATTEMPTS = 10;
   const MAX_BUFFER_SIZE = 1024 * 1024 * 32;
+  const MICROSECONDS_PER_SECOND = 1000000;
+  const TICK_INTERVAL_SECONDS = 0.1;
+  const TICK_INTERVAL_MICROSECONDS = self::TICK_INTERVAL_SECONDS * self::MICROSECONDS_PER_SECOND;
 
   public static bool $stopSignal = false;
 
@@ -113,11 +116,26 @@ abstract class Worker {
     $this->write(['index_worker' => $this->indexWorker]);
 
     try {
+      $remainingTime = 0; // Initialize remaining time for first iteration
+      
       while (!self::$stopSignal) {
+        $loopStartTime = microtime(true);
+        
         $this->dispatchPcntl();
         $read = [$this->master];
         $write = $except = null;
-        $numChangedStreams = @socket_select($read, $write, $except, 0, count($this->parsedLines) > 0 ? 0 : 250000);
+        
+        // Calculate timeout based on processing time
+        $timeoutMicroseconds = 0;
+        if (count($this->parsedLines) == 0) {
+          if ($remainingTime > 0) {
+            $timeoutMicroseconds = (int)($remainingTime * self::MICROSECONDS_PER_SECOND);
+          } else {
+            $timeoutMicroseconds = self::TICK_INTERVAL_MICROSECONDS;
+          }
+        }
+        
+        $numChangedStreams = @socket_select($read, $write, $except, 0, $timeoutMicroseconds);
         if ($numChangedStreams === false) {
           $this->dispatchPcntl();
           continue;
@@ -228,12 +246,19 @@ abstract class Worker {
           }
           unset($this->parsedLines[$lineIndex]);
           unset($json['params']);
-          if (microtime(true) - $startTime > 0.3) {
-            error_log('Worker '.$this->indexWorker.' tick, parsed lines overflow: '.count($this->parsedLines).', delay write: '.count($this->delayWrite).', memory: '.memory_get_usage(true).', peak: '.memory_get_peak_usage(true).', load: '.sys_getloadavg()[0].';');
+          if (microtime(true) - $startTime > self::TICK_INTERVAL_SECONDS) {
             break;
           }
         }
         $this->tick();
+        
+        // Calculate remaining time and adjust timeout for next iteration
+        $processingTime = microtime(true) - $loopStartTime;
+        if ($processingTime < self::TICK_INTERVAL_SECONDS) {
+          $remainingTime = self::TICK_INTERVAL_SECONDS - $processingTime;
+        } else {
+          $remainingTime = 0;
+        }
       }
     } catch (Exception $e) {
       error_log($e->getMessage());
