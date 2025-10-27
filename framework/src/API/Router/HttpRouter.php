@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\API\Router;
 
+use Hilos\Utils\Constants\HttpConstants;
+
 /**
  * HttpRouter - Routes HTTP requests to handlers
  *
@@ -55,9 +57,9 @@ class HttpRouter
         
         if ($route === null) {
             return [
-                'status' => 404,
-                'headers' => ['Content-Type' => 'application/json'],
-                'body' => json_encode(['error' => 'Not Found']),
+                HttpConstants::RESPONSE_KEY_STATUS => HttpConstants::HTTP_NOT_FOUND,
+                HttpConstants::RESPONSE_KEY_HEADERS => [HttpConstants::HEADER_CONTENT_TYPE => HttpConstants::CONTENT_TYPE_JSON],
+                HttpConstants::RESPONSE_KEY_BODY => json_encode(['error' => 'Not Found']),
             ];
         }
 
@@ -67,9 +69,9 @@ class HttpRouter
             return $response;
         } catch (\Throwable $e) {
             return [
-                'status' => 500,
-                'headers' => ['Content-Type' => 'application/json'],
-                'body' => json_encode(['error' => 'Internal Server Error', 'message' => $e->getMessage()]),
+                HttpConstants::RESPONSE_KEY_STATUS => HttpConstants::HTTP_INTERNAL_ERROR,
+                HttpConstants::RESPONSE_KEY_HEADERS => [HttpConstants::HEADER_CONTENT_TYPE => HttpConstants::CONTENT_TYPE_JSON],
+                HttpConstants::RESPONSE_KEY_BODY => json_encode(['error' => 'Internal Server Error', 'message' => $e->getMessage()]),
             ];
         }
     }

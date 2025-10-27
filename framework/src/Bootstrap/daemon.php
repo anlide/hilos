@@ -11,6 +11,7 @@ use Hilos\Socket\Server\HttpServer;
 use Hilos\Socket\Server\WorkerServer;
 use Hilos\Utils\Constants\CliConstants;
 use Hilos\Utils\Constants\ExitCode;
+use Hilos\Utils\Constants\HttpConstants;
 use Hilos\Utils\DTO\DaemonStatusDTO;
 
 /**
@@ -55,9 +56,9 @@ try {
         );
         
         return [
-            'status' => 200,
-            'headers' => ['Content-Type' => 'application/json'],
-            'body' => $dto->toJson(),
+            HttpConstants::RESPONSE_KEY_STATUS => HttpConstants::HTTP_OK,
+            HttpConstants::RESPONSE_KEY_HEADERS => [HttpConstants::HEADER_CONTENT_TYPE => HttpConstants::CONTENT_TYPE_JSON],
+            HttpConstants::RESPONSE_KEY_BODY => $dto->toJson(),
         ];
     });
 

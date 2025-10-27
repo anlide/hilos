@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Daemon;
 
+use Hilos\API\AsyncHttpClient;
 use Hilos\Utils\Helpers\StringHelper;
 use Hilos\Utils\Constants\CliConstants;
+use Hilos\Utils\Constants\HttpConstants;
 use Hilos\Utils\DTO\DaemonStatusDTO;
 
 /**
@@ -35,29 +37,14 @@ class CliMonitorManager extends BaseManager
     /** @var float UI update interval in milliseconds (1000ms = 1 second) */
     private float $uiUpdateInterval = 1000.0;
 
+    /** @var AsyncHttpClient Async HTTP client for status requests */
+    private AsyncHttpClient $httpClient;
+
     /** @var float HTTP request delay after completion in milliseconds */
     private float $httpRequestDelay = 350.0;
 
-    /** @var float Time when HTTP request completed in milliseconds */
+    /** @var float Time when last HTTP request completed in milliseconds */
     private float $lastHttpCompletion = 0.0;
-
-    /** @var float Time when last HTTP attempt started in milliseconds */
-    private float $lastHttpAttempt = 0.0;
-
-    /** @var HttpState HTTP request state */
-    private HttpState $httpState;
-
-    /** @var resource|null HTTP socket */
-    private $httpSocket = null;
-
-    /** @var string HTTP response buffer */
-    private string $httpResponseBuffer = '';
-
-    /** @var float HTTP request start time for timeout tracking */
-    private float $httpStartTime = 0.0;
-
-    /** @var float Maximum HTTP request timeout in milliseconds */
-    private float $httpTimeout = 2000.0;
 
     /**
      * Run monitor - main method
@@ -85,22 +72,40 @@ class CliMonitorManager extends BaseManager
         $this->logMessage("Press Ctrl+C to exit");
         $this->logMessage("");
 
-        // Initialize state
-        $this->httpState = HttpState::IDLE;
+        // Initialize HTTP client
+        $host = CliConstants::MONITOR_DAEMON_HOST;
+        $port = CliConstants::HTTP_STATUS_PORT;
+        $path = CliConstants::HTTP_STATUS_PATH;
+        
+        $this->httpClient = new AsyncHttpClient($host, $port, $path);
+        $this->httpClient->setTimeout(500.0);  // 0.5 seconds timeout
         
         // Initialize timers
         $currentTimeMs = microtime(true) * 1000;
         $this->lastUiUpdate = $currentTimeMs;
-        $this->lastHttpCompletion = $currentTimeMs;
-        $this->lastHttpAttempt = 0.0; // Allow immediate first attempt
+        $this->lastHttpCompletion = $currentTimeMs - $this->httpRequestDelay; // Allow first request immediately
 
         // Main monitoring loop - 10ms ticks
         while (!$this->shouldExit) {
             $loopStartTime = microtime(true);
             $currentTimeMs = $loopStartTime * 1000;
 
-            // Process async HTTP state machine
-            $this->processHttpStateMachine($currentTimeMs);
+            // Start new HTTP request if client is ready and delay has passed
+            if (!$this->httpClient->isBusy()) {
+                $timeSinceLastRequest = $currentTimeMs - $this->lastHttpCompletion;
+                if ($timeSinceLastRequest >= $this->httpRequestDelay) {
+                    $this->httpClient->startNewRequest($currentTimeMs);
+                }
+            }
+
+            // Process async HTTP client state machine
+            $this->httpClient->tick($currentTimeMs);
+            
+            // Check for HTTP results
+            if ($this->httpClient->hasResult()) {
+                $this->processHttpResult($this->httpClient->getResult());
+                $this->lastHttpCompletion = $currentTimeMs;
+            }
 
             // Update UI every 1 second
             if (($currentTimeMs - $this->lastUiUpdate) >= $this->uiUpdateInterval) {
@@ -116,7 +121,6 @@ class CliMonitorManager extends BaseManager
         }
 
         // Cleanup
-        $this->closeHttpSocket();
         $this->logMessage("Monitoring stopped.");
     }
 
@@ -191,244 +195,26 @@ class CliMonitorManager extends BaseManager
     }
 
     /**
-     * Process HTTP state machine for async requests
+     * Process HTTP result from async client
      *
-     * @param float $currentTimeMs Current time in milliseconds
+     * @param array $result Result array with HttpConstants::RESPONSE_KEY_SUCCESS and HttpConstants::RESPONSE_KEY_BODY keys
      */
-    private function processHttpStateMachine(float $currentTimeMs): void
+    private function processHttpResult(array $result): void
     {
-        // Check for timeout in any active state
-        if ($this->httpState !== HttpState::IDLE && $this->httpStartTime > 0) {
-            if (($currentTimeMs - $this->httpStartTime) >= $this->httpTimeout) {
-                // Timeout - force completion
-                $this->completeHttpRequest(false);
-                return;
+        if ($result[HttpConstants::RESPONSE_KEY_SUCCESS] && $result[HttpConstants::RESPONSE_KEY_BODY] !== null) {
+            // Parse JSON to DTO
+            try {
+                $this->lastDaemonStatus = DaemonStatusDTO::fromJson($result[HttpConstants::RESPONSE_KEY_BODY]);
+                $this->daemonOnline = true;
+                $this->lastStatusFetchTime = microtime(true);
+            } catch (\Throwable $e) {
+                // Failed to parse DTO
+                $this->daemonOnline = false;
             }
-        }
-
-        switch ($this->httpState) {
-            case HttpState::IDLE:
-                // STRICT PROTECTION: Check both completion AND last attempt
-                // Ensure minimum 350ms between ANY attempts (success or failure)
-                $timeSinceCompletion = $currentTimeMs - $this->lastHttpCompletion;
-                $timeSinceAttempt = $currentTimeMs - $this->lastHttpAttempt;
-                
-                if ($timeSinceCompletion >= $this->httpRequestDelay && 
-                    $timeSinceAttempt >= $this->httpRequestDelay) {
-                    $this->startHttpRequest($currentTimeMs);
-                }
-                break;
-
-            case HttpState::CONNECTING:
-                $this->processHttpConnecting();
-                break;
-
-            case HttpState::SENDING:
-                $this->processHttpSending();
-                break;
-
-            case HttpState::RECEIVING:
-                $this->processHttpReceiving();
-                break;
-        }
-    }
-
-    /**
-     * Start new HTTP request
-     *
-     * @param float $currentTimeMs Current time in milliseconds
-     */
-    private function startHttpRequest(float $currentTimeMs): void
-    {
-        // Record attempt time BEFORE doing anything
-        $this->lastHttpAttempt = $currentTimeMs;
-        $this->httpStartTime = $currentTimeMs;
-
-        $host = CliConstants::MONITOR_DAEMON_HOST;
-        $port = CliConstants::HTTP_STATUS_PORT;
-
-        // Create non-blocking socket
-        $this->httpSocket = @stream_socket_client(
-            "tcp://{$host}:{$port}",
-            $errno,
-            $errstr,
-            0,
-            STREAM_CLIENT_CONNECT | STREAM_CLIENT_ASYNC_CONNECT,
-        );
-
-        if ($this->httpSocket === false) {
-            $this->completeHttpRequest(false);
-            return;
-        }
-
-        // Set non-blocking mode
-        stream_set_blocking($this->httpSocket, false);
-
-        $this->httpState = HttpState::CONNECTING;
-        $this->httpResponseBuffer = '';
-    }
-
-    /**
-     * Process connecting state
-     */
-    private function processHttpConnecting(): void
-    {
-        if ($this->httpSocket === null || !is_resource($this->httpSocket)) {
-            $this->completeHttpRequest(false);
-            return;
-        }
-
-        // Check if socket is writable (connected)
-        $read = null;
-        $write = [$this->httpSocket];
-        $except = null;
-
-        $result = @stream_select($read, $write, $except, 0, 0);
-
-        if ($result === false) {
-            $this->completeHttpRequest(false);
-            return;
-        }
-
-        if ($result > 0 && !empty($write)) {
-            // Connected! Switch to sending
-            $this->httpState = HttpState::SENDING;
-        }
-    }
-
-    /**
-     * Process sending state
-     */
-    private function processHttpSending(): void
-    {
-        if ($this->httpSocket === null || !is_resource($this->httpSocket)) {
-            $this->completeHttpRequest(false);
-            return;
-        }
-
-        $host = CliConstants::MONITOR_DAEMON_HOST;
-        $path = CliConstants::HTTP_STATUS_PATH;
-
-        $request = "GET {$path} HTTP/1.1\r\n";
-        $request .= "Host: {$host}\r\n";
-        $request .= "Connection: close\r\n";
-        $request .= "\r\n";
-
-        $written = @fwrite($this->httpSocket, $request);
-
-        if ($written === false) {
-            $this->completeHttpRequest(false);
-            return;
-        }
-
-        // Switch to receiving
-        $this->httpState = HttpState::RECEIVING;
-    }
-
-    /**
-     * Process receiving state
-     */
-    private function processHttpReceiving(): void
-    {
-        if ($this->httpSocket === null || !is_resource($this->httpSocket)) {
-            $this->completeHttpRequest(false);
-            return;
-        }
-
-        // Check if socket is readable
-        $read = [$this->httpSocket];
-        $write = null;
-        $except = null;
-
-        $result = @stream_select($read, $write, $except, 0, 0);
-
-        if ($result === false) {
-            $this->completeHttpRequest(false);
-            return;
-        }
-
-        if ($result > 0 && !empty($read)) {
-            // Read available data
-            $chunk = @fread($this->httpSocket, 8192);
-
-            if ($chunk === false) {
-                $this->completeHttpRequest(false);
-                return;
-            }
-
-            if ($chunk === '') {
-                // EOF - parse response
-                $this->parseHttpResponse();
-                return;
-            }
-
-            $this->httpResponseBuffer .= $chunk;
-        }
-
-        // Check if connection closed (only if socket is still valid)
-        if (is_resource($this->httpSocket) && @feof($this->httpSocket)) {
-            $this->parseHttpResponse();
-        }
-    }
-
-    /**
-     * Parse HTTP response
-     */
-    private function parseHttpResponse(): void
-    {
-        if (empty($this->httpResponseBuffer)) {
-            $this->completeHttpRequest(false);
-            return;
-        }
-
-        // Split headers and body
-        $parts = explode("\r\n\r\n", $this->httpResponseBuffer, 2);
-        if (count($parts) < 2) {
-            $this->completeHttpRequest(false);
-            return;
-        }
-
-        $body = $parts[1];
-
-        // Parse JSON to DTO
-        try {
-            $this->lastDaemonStatus = DaemonStatusDTO::fromJson($body);
-            $this->daemonOnline = true;
-            $this->lastStatusFetchTime = microtime(true);
-            $this->completeHttpRequest(true);
-        } catch (\Throwable $e) {
-            // Failed to parse DTO
-            $this->completeHttpRequest(false);
-        }
-    }
-
-    /**
-     * Complete HTTP request
-     *
-     * @param bool $success Whether request was successful
-     */
-    private function completeHttpRequest(bool $success): void
-    {
-        if (!$success) {
+        } else {
+            // Request failed
             $this->daemonOnline = false;
         }
-
-        $this->closeHttpSocket();
-        $this->httpState = HttpState::IDLE;
-        $this->lastHttpCompletion = microtime(true) * 1000;
-        $this->httpResponseBuffer = '';
-        $this->httpStartTime = 0.0;
-    }
-
-    /**
-     * Close HTTP socket
-     */
-    private function closeHttpSocket(): void
-    {
-        if ($this->httpSocket !== null && is_resource($this->httpSocket)) {
-            @fclose($this->httpSocket);
-        }
-        $this->httpSocket = null;
     }
 
     /**

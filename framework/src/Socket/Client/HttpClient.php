@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Socket\Client;
 
 use Hilos\API\Router\HttpRouter;
+use Hilos\Utils\Constants\HttpConstants;
 
 /**
  * HttpClient - Represents a single HTTP client connection
@@ -52,9 +53,9 @@ class HttpClient extends AbstractClient
         } else {
             // Default response
             $response = [
-                'status' => 200,
-                'headers' => ['Content-Type' => 'application/json'],
-                'body' => json_encode(['status' => 'ok']),
+                HttpConstants::RESPONSE_KEY_STATUS => HttpConstants::HTTP_OK,
+                HttpConstants::RESPONSE_KEY_HEADERS => [HttpConstants::HEADER_CONTENT_TYPE => HttpConstants::CONTENT_TYPE_JSON],
+                HttpConstants::RESPONSE_KEY_BODY => json_encode(['status' => 'ok']),
             ];
         }
 
@@ -118,14 +119,14 @@ class HttpClient extends AbstractClient
      */
     private function buildResponse(array $response): string
     {
-        $status = $response['status'] ?? 200;
+        $status = $response[HttpConstants::RESPONSE_KEY_STATUS] ?? HttpConstants::HTTP_OK;
         $statusText = $this->getStatusText($status);
-        $headers = $response['headers'] ?? [];
-        $body = $response['body'] ?? '';
+        $headers = $response[HttpConstants::RESPONSE_KEY_HEADERS] ?? [];
+        $body = $response[HttpConstants::RESPONSE_KEY_BODY] ?? '';
 
         $http = "HTTP/1.1 {$status} {$statusText}\r\n";
         
-        $headers['Content-Length'] = strlen($body);
+        $headers[HttpConstants::HEADER_CONTENT_LENGTH] = strlen($body);
         foreach ($headers as $key => $value) {
             $http .= "{$key}: {$value}\r\n";
         }
@@ -145,9 +146,9 @@ class HttpClient extends AbstractClient
     private function getStatusText(int $status): string
     {
         $statusTexts = [
-            200 => 'OK',
-            404 => 'Not Found',
-            500 => 'Internal Server Error',
+            HttpConstants::HTTP_OK => 'OK',
+            HttpConstants::HTTP_NOT_FOUND => 'Not Found',
+            HttpConstants::HTTP_INTERNAL_ERROR => 'Internal Server Error',
         ];
         return $statusTexts[$status] ?? 'Unknown';
     }

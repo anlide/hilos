@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\API\Router;
 
+use Hilos\Utils\Constants\HttpConstants;
+
 /**
  * RouteResolver - Resolves and executes route handlers
  *
@@ -46,33 +48,33 @@ class RouteResolver
     private function formatResponse($result): array
     {
         // If result is already formatted response
-        if (is_array($result) && isset($result['status'])) {
+        if (is_array($result) && isset($result[HttpConstants::RESPONSE_KEY_STATUS])) {
             return $result;
         }
 
         // If result is array, convert to JSON
         if (is_array($result)) {
             return [
-                'status' => 200,
-                'headers' => ['Content-Type' => 'application/json'],
-                'body' => json_encode($result),
+                HttpConstants::RESPONSE_KEY_STATUS => HttpConstants::HTTP_OK,
+                HttpConstants::RESPONSE_KEY_HEADERS => [HttpConstants::HEADER_CONTENT_TYPE => HttpConstants::CONTENT_TYPE_JSON],
+                HttpConstants::RESPONSE_KEY_BODY => json_encode($result),
             ];
         }
 
         // If result is string, return as plain text
         if (is_string($result)) {
             return [
-                'status' => 200,
-                'headers' => ['Content-Type' => 'text/plain'],
-                'body' => $result,
+                HttpConstants::RESPONSE_KEY_STATUS => HttpConstants::HTTP_OK,
+                HttpConstants::RESPONSE_KEY_HEADERS => [HttpConstants::HEADER_CONTENT_TYPE => HttpConstants::CONTENT_TYPE_TEXT],
+                HttpConstants::RESPONSE_KEY_BODY => $result,
             ];
         }
 
         // Default response
         return [
-            'status' => 200,
-            'headers' => ['Content-Type' => 'text/plain'],
-            'body' => '',
+            HttpConstants::RESPONSE_KEY_STATUS => HttpConstants::HTTP_OK,
+            HttpConstants::RESPONSE_KEY_HEADERS => [HttpConstants::HEADER_CONTENT_TYPE => HttpConstants::CONTENT_TYPE_TEXT],
+            HttpConstants::RESPONSE_KEY_BODY => '',
         ];
     }
 }
