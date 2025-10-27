@@ -180,7 +180,7 @@ class CliManager
      */
     private function handleUnknownCommand(): int
     {
-        echo sprintf(CliConstants::MSG_UNKNOWN_COMMAND, $this->command) . "\n";
+        echo sprintf('Unknown command: %s', $this->command) . "\n";
         $this->commands[CliCommands::HELP]->execute($this->options, $this->args);
         return ExitCode::ERROR;
     }

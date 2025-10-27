@@ -11,9 +11,13 @@ namespace Hilos\Utils\DTO;
  */
 class DaemonStatusDTO extends BaseDTO
 {
+    // Field name constants (camelCase for brevity)
+    public const string uptime = 'uptime';
+    public const string memory = 'memory';
+    public const string cpu = 'cpu';
+    public const string timestamp = 'timestamp';
+
     public function __construct(
-        public readonly bool $running,
-        public readonly int $pid,
         public readonly int $uptime,
         public readonly int $memory,
         public readonly float $cpu,
@@ -29,12 +33,10 @@ class DaemonStatusDTO extends BaseDTO
     public function toArray(): array
     {
         return [
-            'running' => $this->running,
-            'pid' => $this->pid,
-            'uptime' => $this->uptime,
-            'memory' => $this->memory,
-            'cpu' => $this->cpu,
-            'timestamp' => $this->timestamp,
+            self::uptime => $this->uptime,
+            self::memory => $this->memory,
+            self::cpu => $this->cpu,
+            self::timestamp => $this->timestamp,
         ];
     }
 
@@ -47,12 +49,10 @@ class DaemonStatusDTO extends BaseDTO
     public static function fromArray(array $data): static
     {
         return new self(
-            running: $data['running'] ?? false,
-            pid: $data['pid'] ?? 0,
-            uptime: $data['uptime'] ?? 0,
-            memory: $data['memory'] ?? 0,
-            cpu: $data['cpu'] ?? 0.0,
-            timestamp: $data['timestamp'] ?? time(),
+            uptime: $data[self::uptime] ?? 0,
+            memory: $data[self::memory] ?? 0,
+            cpu: $data[self::cpu] ?? 0.0,
+            timestamp: $data[self::timestamp] ?? time(),
         );
     }
 }

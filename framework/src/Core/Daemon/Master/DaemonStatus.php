@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Daemon\Master;
 
+use Hilos\Utils\DTO\DaemonStatusDTO;
+
 /**
  * DaemonStatus - Holds daemon status information
  *
@@ -12,28 +14,31 @@ namespace Hilos\Core\Daemon\Master;
  */
 class DaemonStatus
 {
-    /** @var bool Daemon running state */
-    private bool $running = true;
-
-    /** @var int Daemon process ID */
-    private int $pid;
-
     /** @var float Daemon start time (microtime) */
     private float $startTime;
 
     /** @var int Memory usage in bytes */
-    private int $memoryUsage = 0;
+    public int $memoryUsage = 0 {
+        get {
+            return $this->memoryUsage;
+        }
+    }
 
-    /** @var int CPU usage percentage */
-    private float $cpuUsage = 0.0;
+    /** @var float CPU usage percentage */
+    public float $cpuUsage = 0.0 {
+        get {
+            return $this->cpuUsage;
+        }
+    }
 
     /**
      * DaemonStatus constructor
+     *
+     * @param ?float $startTime Optional start time (for creating from DTO)
      */
-    public function __construct()
+    public function __construct(?float $startTime = null)
     {
-        $this->pid = getmypid();
-        $this->startTime = microtime(true);
+        $this->startTime = $startTime ?? microtime(true);
     }
 
     /**
@@ -58,70 +63,20 @@ class DaemonStatus
     }
 
     /**
-     * Get status as array
+     * Create DaemonStatus from DTO
      *
-     * @return array Status data
+     * @param DaemonStatusDTO $dto Source DTO
+     * @return self DaemonStatus instance
      */
-    public function toArray(): array
+    public static function fromDTO(DaemonStatusDTO $dto): self
     {
-        return [
-            'running' => $this->running,
-            'pid' => $this->pid,
-            'uptime' => $this->getUptime(),
-            'memory' => $this->memoryUsage,
-            'cpu' => $this->cpuUsage,
-            'timestamp' => time(),
-        ];
-    }
+        // Calculate start time from uptime
+        $startTime = microtime(true) - $dto->uptime;
 
-    /**
-     * Set running state
-     *
-     * @param bool $running Running state
-     */
-    public function setRunning(bool $running): void
-    {
-        $this->running = $running;
-    }
+        $status = new self($startTime);
+        $status->memoryUsage = $dto->memory;
+        $status->cpuUsage = $dto->cpu;
 
-    /**
-     * Check if running
-     *
-     * @return bool Running state
-     */
-    public function isRunning(): bool
-    {
-        return $this->running;
-    }
-
-    /**
-     * Get memory usage
-     *
-     * @return int Memory in bytes
-     */
-    public function getMemoryUsage(): int
-    {
-        return $this->memoryUsage;
-    }
-
-    /**
-     * Get CPU usage
-     *
-     * @return float CPU percentage
-     */
-    public function getCpuUsage(): float
-    {
-        return $this->cpuUsage;
-    }
-
-    /**
-     * Get PID
-     *
-     * @return int Process ID
-     */
-    public function getPid(): int
-    {
-        return $this->pid;
+        return $status;
     }
 }
-

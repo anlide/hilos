@@ -46,12 +46,11 @@ try {
         $status->update();
         
         // Create DTO from status
+        // Note: If daemon responds, it's running by definition
         $dto = new DaemonStatusDTO(
-            running: $status->isRunning(),
-            pid: $status->getPid(),
             uptime: $status->getUptime(),
-            memory: $status->getMemoryUsage(),
-            cpu: $status->getCpuUsage(),
+            memory: $status->memoryUsage,
+            cpu: $status->cpuUsage,
             timestamp: time(),
         );
         

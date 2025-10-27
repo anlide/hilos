@@ -139,7 +139,6 @@ class DockerManager extends BaseManager
      * Start daemon process
      *
      * @param string $script Path to daemon script
-     * @throws FailedToGetStatus If process status cannot be retrieved
      * @throws CouldNotStart If daemon process cannot be started
      * @throws FailedToSetNonBlocking If non-blocking mode cannot be set
      * @throws RuntimeException If log directory cannot be created
@@ -167,13 +166,11 @@ class DockerManager extends BaseManager
             [Process::DESCRIPTOR_FILE, CliConstants::DAEMON_ERROR_LOG_FILE, Process::PIPE_APPEND], // stderr - to error log file
         );
 
-        // Get PID for logging
-        $status = $this->process->getStatus();
-        $pid = $status['pid'];
+        // Log startup time
         $startupTime = microtime(true) - $startTime;
         $this->shouldRestart = false;
 
-        echo "Daemon started with PID: {$pid} (startup time: " . number_format($startupTime * 1000, 2) . "ms).\n";
+        echo "Daemon started (startup time: " . number_format($startupTime * 1000, 2) . "ms).\n";
     }
 
     /**

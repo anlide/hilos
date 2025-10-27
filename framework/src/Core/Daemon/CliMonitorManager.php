@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace Hilos\Core\Daemon;
 
 use Hilos\API\AsyncHttpClient;
+use Hilos\Core\Daemon\Master\DaemonStatus;
 use Hilos\Utils\Helpers\StringHelper;
 use Hilos\Utils\Constants\CliConstants;
+use Hilos\Utils\Constants\DaemonConstants;
 use Hilos\Utils\Constants\HttpConstants;
 use Hilos\Utils\DTO\DaemonStatusDTO;
 
@@ -22,29 +24,14 @@ use Hilos\Utils\DTO\DaemonStatusDTO;
  */
 class CliMonitorManager extends BaseManager
 {
-    /** @var ?DaemonStatusDTO Last daemon status from HTTP request */
-    private ?DaemonStatusDTO $lastDaemonStatus = null;
-
-    /** @var bool Whether daemon is reachable */
-    private bool $daemonOnline = false;
-
-    /** @var float Last successful status fetch timestamp */
-    private float $lastStatusFetchTime = 0.0;
-
-    /** @var float Last UI update timestamp in milliseconds */
-    private float $lastUiUpdate = 0.0;
+    /** @var ?DaemonStatus Last daemon status */
+    private ?DaemonStatus $daemonStatus = null;
 
     /** @var float UI update interval in milliseconds (1000ms = 1 second) */
     private float $uiUpdateInterval = 1000.0;
 
-    /** @var AsyncHttpClient Async HTTP client for status requests */
-    private AsyncHttpClient $httpClient;
-
     /** @var float HTTP request delay after completion in milliseconds */
     private float $httpRequestDelay = 350.0;
-
-    /** @var float Time when last HTTP request completed in milliseconds */
-    private float $lastHttpCompletion = 0.0;
 
     /**
      * Run monitor - main method
@@ -77,13 +64,15 @@ class CliMonitorManager extends BaseManager
         $port = CliConstants::HTTP_STATUS_PORT;
         $path = CliConstants::HTTP_STATUS_PATH;
         
-        $this->httpClient = new AsyncHttpClient($host, $port, $path);
-        $this->httpClient->setTimeout(500.0);  // 0.5 seconds timeout
+        $httpClient = new AsyncHttpClient($host, $port, $path);
+        $httpClient->setTimeout(400.0);  // 0.4 seconds timeout
         
         // Initialize timers
         $currentTimeMs = microtime(true) * 1000;
-        $this->lastUiUpdate = $currentTimeMs;
-        $this->lastHttpCompletion = $currentTimeMs - $this->httpRequestDelay; // Allow first request immediately
+
+        $lastUiUpdate = $currentTimeMs;
+
+        $lastHttpCompletion = $currentTimeMs - $this->httpRequestDelay; // Allow first request immediately
 
         // Main monitoring loop - 10ms ticks
         while (!$this->shouldExit) {
@@ -91,26 +80,26 @@ class CliMonitorManager extends BaseManager
             $currentTimeMs = $loopStartTime * 1000;
 
             // Start new HTTP request if client is ready and delay has passed
-            if (!$this->httpClient->isBusy()) {
-                $timeSinceLastRequest = $currentTimeMs - $this->lastHttpCompletion;
+            if (!$httpClient->isBusy()) {
+                $timeSinceLastRequest = $currentTimeMs - $lastHttpCompletion;
                 if ($timeSinceLastRequest >= $this->httpRequestDelay) {
-                    $this->httpClient->startNewRequest($currentTimeMs);
+                    $httpClient->startNewRequest($currentTimeMs);
                 }
             }
 
             // Process async HTTP client state machine
-            $this->httpClient->tick($currentTimeMs);
+            $httpClient->tick($currentTimeMs);
             
             // Check for HTTP results
-            if ($this->httpClient->hasResult()) {
-                $this->processHttpResult($this->httpClient->getResult());
-                $this->lastHttpCompletion = $currentTimeMs;
+            if ($httpClient->hasResult()) {
+                $this->processHttpResult($httpClient->getResult());
+                $lastHttpCompletion = $currentTimeMs;
             }
 
             // Update UI every 1 second
-            if (($currentTimeMs - $this->lastUiUpdate) >= $this->uiUpdateInterval) {
+            if (($currentTimeMs - $lastUiUpdate) >= $this->uiUpdateInterval) {
                 $this->updateDisplay();
-                $this->lastUiUpdate = $currentTimeMs;
+                $lastUiUpdate = $currentTimeMs;
             }
 
             // Process signals
@@ -183,11 +172,10 @@ class CliMonitorManager extends BaseManager
         echo "+------------------+---------------------+\n";
         echo "| Metric           | Value               |\n";
         echo "+------------------+---------------------+\n";
-        printf("| %-16s | %-19s |\n", "Status", $this->getDaemonStatus());
-        printf("| %-16s | %-19s |\n", "PID", $this->getDaemonPid());
-        printf("| %-16s | %-19s |\n", "Uptime", $this->getDaemonUptime());
-        printf("| %-16s | %-19s |\n", "Memory Usage", $this->getDaemonMemory());
-        printf("| %-16s | %-19s |\n", "CPU Usage", $this->getDaemonCpu());
+        printf("| %-16s | %-19s |\n", "Status", $this->getStatusValue());
+        printf("| %-16s | %-19s |\n", "Uptime", $this->getUptimeValue());
+        printf("| %-16s | %-19s |\n", "Memory Usage", $this->getMemoryValue());
+        printf("| %-16s | %-19s |\n", "CPU Usage", $this->getCpuValue());
         echo "+------------------+---------------------+\n";
 
         // Flush output buffer
@@ -202,79 +190,67 @@ class CliMonitorManager extends BaseManager
     private function processHttpResult(array $result): void
     {
         if ($result[HttpConstants::RESPONSE_KEY_SUCCESS] && $result[HttpConstants::RESPONSE_KEY_BODY] !== null) {
-            // Parse JSON to DTO
+            // Parse JSON to DTO and convert to DaemonStatus
             try {
-                $this->lastDaemonStatus = DaemonStatusDTO::fromJson($result[HttpConstants::RESPONSE_KEY_BODY]);
-                $this->daemonOnline = true;
-                $this->lastStatusFetchTime = microtime(true);
+                $dto = DaemonStatusDTO::fromJson($result[HttpConstants::RESPONSE_KEY_BODY]);
+                $this->daemonStatus = DaemonStatus::fromDTO($dto);
             } catch (\Throwable $e) {
                 // Failed to parse DTO
-                $this->daemonOnline = false;
+                $this->daemonStatus = null;
             }
         } else {
             // Request failed
-            $this->daemonOnline = false;
+            $this->daemonStatus = null;
         }
     }
 
     /**
      * Get daemon status value
      */
-    private function getDaemonStatus(): string
+    private function getStatusValue(): string
     {
-        if (!$this->daemonOnline || $this->lastDaemonStatus === null) {
-            return 'OFFLINE';
+        if ($this->daemonStatus === null) {
+            return DaemonConstants::STATUS_OFFLINE;
         }
 
-        return $this->lastDaemonStatus->running ? 'RUNNING' : 'STOPPED';
+        // If we have status, daemon is online
+        return DaemonConstants::STATUS_ONLINE;
     }
 
     /**
      * Get daemon uptime value
      */
-    private function getDaemonUptime(): string
+    private function getUptimeValue(): string
     {
-        if (!$this->daemonOnline || $this->lastDaemonStatus === null) {
-            return 'N/A';
+        if ($this->daemonStatus === null) {
+            return DaemonConstants::VALUE_NOT_AVAILABLE;
         }
 
-        return StringHelper::formatUptime($this->lastDaemonStatus->uptime);
+        return StringHelper::formatUptime($this->daemonStatus->getUptime());
     }
 
     /**
      * Get daemon memory usage
      */
-    private function getDaemonMemory(): string
+    private function getMemoryValue(): string
     {
-        if (!$this->daemonOnline || $this->lastDaemonStatus === null) {
-            return 'N/A';
+        if ($this->daemonStatus === null) {
+            return DaemonConstants::VALUE_NOT_AVAILABLE;
         }
 
-        return StringHelper::formatBytes($this->lastDaemonStatus->memory);
+        return StringHelper::formatBytes($this->daemonStatus->memoryUsage);
     }
 
     /**
      * Get daemon CPU usage
      */
-    private function getDaemonCpu(): string
+    private function getCpuValue(): string
     {
-        if (!$this->daemonOnline || $this->lastDaemonStatus === null) {
-            return 'N/A';
+        if ($this->daemonStatus === null) {
+            return DaemonConstants::VALUE_NOT_AVAILABLE;
         }
 
-        return round($this->lastDaemonStatus->cpu, 1) . '%';
-    }
-
-    /**
-     * Get daemon PID
-     */
-    private function getDaemonPid(): string
-    {
-        if (!$this->daemonOnline || $this->lastDaemonStatus === null) {
-            return 'N/A';
-        }
-
-        return (string)$this->lastDaemonStatus->pid;
+        return round($this->daemonStatus->cpuUsage, 1) . '%';
     }
 
     // Implementation of abstract methods from BaseManager
