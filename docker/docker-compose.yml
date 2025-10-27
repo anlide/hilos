@@ -1,0 +1,56 @@
+services:
+  hilos:
+    build: .
+    container_name: hilos-daemon
+    volumes:
+      - ..:/app
+      - ../data/logs:/var/log/hilos
+      - ../data/run:/var/run
+    working_dir: /app
+    environment:
+      - PHP_INI_SCAN_DIR=/usr/local/etc/php/conf.d
+    command: ["php", "framework/src/Bootstrap/docker.php"]
+    expose:
+      - "8090"
+      - "8091"
+    depends_on:
+      - hilos-mysql
+
+  hilos-mysql:
+    image: mariadb:11.4
+    container_name: hilos-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: hilos_password_2024
+      MARIADB_AUTO_UPGRADE: "1"
+      MYSQL_DATABASE: hilos_db
+      MYSQL_USER: hilos_user
+      MYSQL_PASSWORD: hilos_user_password
+    ports:
+      - "3306:3306"
+    volumes:
+      - hilos_mysql_data:/var/lib/mysql
+      - ../data/mysql/backup:/root/backup
+      - ../data/mysql/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+
+  hilos-cli:
+    build: .
+    container_name: hilos-cli
+    volumes:
+      - ..:/app
+    working_dir: /app
+    environment:
+      - TERM=xterm-256color
+    profiles:
+      - composer
+
+  hilos-monitor:
+    build: .
+    container_name: hilos-monitor
+    volumes:
+      - ..:/app
+    working_dir: /app
+    profiles:
+      - monitor
+
+volumes:
+  hilos_mysql_data:

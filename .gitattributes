@@ -1,0 +1,3 @@
+# Ensure line endings are LF in Docker
+cli text eol=lf
+*.php text eol=lf

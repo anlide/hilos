@@ -1,2 +1,19 @@
-.idea
-/vendor/
+# Log files
+data/logs/*.log
+
+# PID files
+data/run/*.pid
+
+# Runtime data
+data/run/hilos.pid
+
+# Vendor
+vendor/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
