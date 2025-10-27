@@ -56,13 +56,13 @@ class StatusCommand implements CommandInterface
      */
     private function fetchDaemonStatus(): void
     {
-        $host = CliConstants::MONITOR_DAEMON_HOST;
-        $port = CliConstants::HTTP_STATUS_PORT;
+        $host = CliConstants::getMonitorDaemonHost();
+        $port = CliConstants::getHttpStatusPort();
         $path = CliConstants::HTTP_STATUS_PATH;
 
         // Create HTTP client with longer timeout for status command
         $client = new AsyncHttpClient($host, $port, $path);
-        $client->setTimeout(800.0);  // 0.8 seconds timeout
+        $client->timeout = 800.0;  // 0.8 seconds timeout
 
         $currentTimeMs = microtime(true) * 1000;
 

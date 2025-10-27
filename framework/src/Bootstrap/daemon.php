@@ -25,14 +25,14 @@ use Hilos\Utils\DTO\DaemonStatusDTO;
 try {
     // Create HTTP server
     $httpServer = new HttpServer(
-        CliConstants::HTTP_STATUS_HOST,
-        CliConstants::HTTP_STATUS_PORT,
+        CliConstants::getHttpStatusHost(),
+        CliConstants::getHttpStatusPort(),
     );
 
     // Create Worker server
     $workerServer = new WorkerServer(
-        CliConstants::WORKER_COMM_HOST,
-        CliConstants::WORKER_COMM_PORT,
+        CliConstants::getWorkerCommHost(),
+        CliConstants::getWorkerCommPort(),
     );
 
     // Create HTTP router

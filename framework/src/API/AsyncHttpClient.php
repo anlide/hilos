@@ -28,12 +28,12 @@ use Hilos\Utils\Constants\HttpConstants;
  *
  * // In event loop:
  * $currentTimeMs = microtime(true) * 1000;
- * 
+ *
  * // Start new request when ready
  * if (!$client->isBusy()) {
  *     $client->startNewRequest($currentTimeMs);
  * }
- * 
+ *
  * // Process ongoing request
  * $client->tick($currentTimeMs);
  *
@@ -56,9 +56,13 @@ class AsyncHttpClient
     private string $path;
 
     /** @var AsyncHttpState Current state */
-    private AsyncHttpState $state;
+    private AsyncHttpState $state {
+        get {
+            return $this->state;
+        }
+    }
 
-    /** @var resource|null HTTP socket */
+    /** @var ?resource Stream socket */
     private $socket = null;
 
     /** @var string HTTP response buffer */
@@ -68,7 +72,11 @@ class AsyncHttpClient
     private float $startTime = 0.0;
 
     /** @var float Maximum HTTP request timeout in milliseconds */
-    private float $timeout = 2000.0;
+    public float $timeout = 2000.0 {
+        set {
+            $this->timeout = $value;
+        }
+    }
 
     /** @var ?string Last response body */
     private ?string $lastResponse = null;
@@ -93,17 +101,6 @@ class AsyncHttpClient
         $this->path = $path;
         $this->state = AsyncHttpState::DONE;
     }
-
-    /**
-     * Set request timeout in milliseconds
-     *
-     * @param float $timeoutMs Timeout in milliseconds
-     */
-    public function setTimeout(float $timeoutMs): void
-    {
-        $this->timeout = $timeoutMs;
-    }
-
 
     /**
      * Process state machine - call this in event loop
@@ -160,7 +157,7 @@ class AsyncHttpClient
     public function getResult(): array
     {
         $this->hasNewResult = false;
-        
+
         return [
             HttpConstants::RESPONSE_KEY_SUCCESS => $this->lastSuccess,
             HttpConstants::RESPONSE_KEY_BODY => $this->lastResponse,
@@ -178,16 +175,6 @@ class AsyncHttpClient
     }
 
     /**
-     * Get current state
-     *
-     * @return AsyncHttpState Current state
-     */
-    public function getState(): AsyncHttpState
-    {
-        return $this->state;
-    }
-
-    /**
      * Force close current connection and reset to done state
      */
     public function reset(): void
@@ -200,9 +187,9 @@ class AsyncHttpClient
 
     /**
      * Start new HTTP request
-     * 
+     *
      * Can only be called when state is DONE.
-     * 
+     *
      * @param float $currentTimeMs Current time in milliseconds
      * @return bool True if request started successfully
      */
@@ -227,13 +214,13 @@ class AsyncHttpClient
         $this->startTime = $currentTimeMs;
         $this->hasNewResult = false;
 
-        // Create non-blocking socket
+        // Use stream_socket_client with STREAM_CLIENT_ASYNC_CONNECT for non-blocking connect
         $this->socket = @stream_socket_client(
             "tcp://{$this->host}:{$this->port}",
             $errno,
             $errstr,
-            0,
-            STREAM_CLIENT_CONNECT | STREAM_CLIENT_ASYNC_CONNECT,
+            0,  // timeout = 0 for non-blocking
+            STREAM_CLIENT_CONNECT | STREAM_CLIENT_ASYNC_CONNECT
         );
 
         if ($this->socket === false) {
@@ -258,7 +245,7 @@ class AsyncHttpClient
             return;
         }
 
-        // Check if socket is writable (connected)
+        // Check if socket is writable (connected) using stream_select
         $read = null;
         $write = [$this->socket];
         $except = null;
@@ -270,6 +257,7 @@ class AsyncHttpClient
             return;
         }
 
+        // If socket is in write array, connection is ready
         if ($result > 0 && !empty($write)) {
             // Connected! Switch to sending
             $this->state = AsyncHttpState::SENDING;
@@ -312,7 +300,7 @@ class AsyncHttpClient
             return;
         }
 
-        // Check if socket is readable
+        // Check if socket is readable using stream_select
         $read = [$this->socket];
         $write = null;
         $except = null;
@@ -342,7 +330,7 @@ class AsyncHttpClient
             $this->responseBuffer .= $chunk;
         }
 
-        // Check if connection closed (only if socket is still valid)
+        // Check if connection closed
         if (is_resource($this->socket) && @feof($this->socket)) {
             $this->parseResponse();
         }
@@ -381,7 +369,7 @@ class AsyncHttpClient
     {
         $this->lastSuccess = $success;
         $this->hasNewResult = true;
-        
+
         if (!$success) {
             $this->lastResponse = null;
         }
@@ -411,5 +399,3 @@ class AsyncHttpClient
         $this->closeSocket();
     }
 }
-
-

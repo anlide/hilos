@@ -149,7 +149,7 @@ class DockerManager extends BaseManager
         $startTime = microtime(true);
 
         // Create log directories if they don't exist
-        $logDir = dirname(CliConstants::DAEMON_LOG_FILE);
+        $logDir = dirname(CliConstants::getDaemonLogFile());
         if (!is_dir($logDir)) {
             if (!mkdir($logDir, 0700, true)) {
                 throw new RuntimeException("Cannot create log directory: $logDir");
@@ -162,8 +162,8 @@ class DockerManager extends BaseManager
             [$script],
             getcwd(),
             [Process::DESCRIPTOR_PIPE, Process::PIPE_READ], // stdin
-            [Process::DESCRIPTOR_FILE, CliConstants::DAEMON_LOG_FILE, Process::PIPE_APPEND], // stdout - to log file
-            [Process::DESCRIPTOR_FILE, CliConstants::DAEMON_ERROR_LOG_FILE, Process::PIPE_APPEND], // stderr - to error log file
+            [Process::DESCRIPTOR_FILE, CliConstants::getDaemonLogFile(), Process::PIPE_APPEND], // stdout - to log file
+            [Process::DESCRIPTOR_FILE, CliConstants::getDaemonErrorLogFile(), Process::PIPE_APPEND], // stderr - to error log file
         );
 
         // Log startup time
@@ -208,7 +208,7 @@ class DockerManager extends BaseManager
      */
     protected function logError(string $message): void
     {
-        error_log($message, 3, CliConstants::DAEMON_ERROR_LOG_FILE);
+        error_log($message, 3, CliConstants::getDaemonErrorLogFile());
         error_log($message);
     }
 
@@ -217,7 +217,7 @@ class DockerManager extends BaseManager
      */
     protected function logException(string $message): void
     {
-        error_log($message, 3, CliConstants::DAEMON_ERROR_LOG_FILE);
+        error_log($message, 3, CliConstants::getDaemonErrorLogFile());
         error_log($message);
     }
 
@@ -226,7 +226,7 @@ class DockerManager extends BaseManager
      */
     protected function logShutdown(string $message): void
     {
-        error_log($message, 3, CliConstants::DAEMON_ERROR_LOG_FILE);
+        error_log($message, 3, CliConstants::getDaemonErrorLogFile());
         error_log($message);
     }
 

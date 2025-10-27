@@ -60,13 +60,13 @@ class CliMonitorManager extends BaseManager
         $this->logMessage("");
 
         // Initialize HTTP client
-        $host = CliConstants::MONITOR_DAEMON_HOST;
-        $port = CliConstants::HTTP_STATUS_PORT;
+        $host = CliConstants::getMonitorDaemonHost();
+        $port = CliConstants::getHttpStatusPort();
         $path = CliConstants::HTTP_STATUS_PATH;
-        
+
         $httpClient = new AsyncHttpClient($host, $port, $path);
-        $httpClient->setTimeout(400.0);  // 0.4 seconds timeout
-        
+        $httpClient->timeout = 400.0;  // 0.4 seconds timeout
+
         // Initialize timers
         $currentTimeMs = microtime(true) * 1000;
 
@@ -89,7 +89,7 @@ class CliMonitorManager extends BaseManager
 
             // Process async HTTP client state machine
             $httpClient->tick($currentTimeMs);
-            
+
             // Check for HTTP results
             if ($httpClient->hasResult()) {
                 $this->processHttpResult($httpClient->getResult());
