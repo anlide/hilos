@@ -28,8 +28,7 @@
         "daemon-restart": "docker-compose -f docker/docker-compose.yml restart hilos",
         "daemon-status": "docker-compose -f docker/docker-compose.yml run --rm hilos-cli php framework/src/Bootstrap/cli.php daemon:status",
         "daemon-monitor": "docker-compose -f docker/docker-compose.yml run --rm hilos-cli php framework/src/Bootstrap/cli.php daemon:monitor",
-        "cli": "docker-compose -f docker/docker-compose.yml run --rm hilos-cli php framework/src/Bootstrap/cli.php",
-        "show-help": "echo 'Hilos v2 - Available commands:' && composer run-script --list"
+        "cli": "docker-compose -f docker/docker-compose.yml run --rm hilos-cli php framework/src/Bootstrap/cli.php"
     },
     "require-dev": {
         "jetbrains/phpstorm-stubs": "^2024.3"

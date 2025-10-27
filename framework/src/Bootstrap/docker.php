@@ -6,6 +6,7 @@ use Hilos\Core\Daemon\DockerManager;
 use Hilos\Exception\Process\CouldNotStart;
 use Hilos\Exception\Process\FailedToGetStatus;
 use Hilos\Exception\Process\FailedToSetNonBlocking;
+use Hilos\Utils\Constants\ExitCode;
 
 require_once __DIR__ . '/../../../vendor/autoload.php';
 
@@ -25,16 +26,16 @@ try {
 
 } catch (CouldNotStart $e) {
     echo "Docker Watchdog could not start daemon: " . $e->getMessage() . "\n";
-    exit(1);
+    exit(ExitCode::ERROR);
 } catch (FailedToGetStatus $e) {
     echo "Docker Watchdog failed to get daemon status: " . $e->getMessage() . "\n";
-    exit(1);
+    exit(ExitCode::ERROR);
 } catch (FailedToSetNonBlocking $e) {
     echo "Docker Watchdog failed to set non-blocking mode: " . $e->getMessage() . "\n";
-    exit(1);
+    exit(ExitCode::ERROR);
 } catch (Throwable $e) {
     echo "Docker Watchdog failed: " . $e->getMessage() . "\n";
-    exit(1);
+    exit(ExitCode::ERROR);
 }
 
-exit(0);
+exit(ExitCode::SUCCESS);

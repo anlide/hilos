@@ -10,6 +10,7 @@ use Hilos\Core\Daemon\Master\DaemonStatus;
 use Hilos\Socket\Server\HttpServer;
 use Hilos\Socket\Server\WorkerServer;
 use Hilos\Utils\Constants\CliConstants;
+use Hilos\Utils\Constants\ExitCode;
 use Hilos\Utils\DTO\DaemonStatusDTO;
 
 /**
@@ -95,5 +96,5 @@ try {
 
 } catch (\Throwable $e) {
     echo "Daemon failed: " . $e->getMessage() . "\n";
-    exit(1);
+    exit(ExitCode::ERROR);
 }
