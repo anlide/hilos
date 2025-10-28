@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Utils;
 
 use Hilos\Exception\MissingEnvironmentVariable;
+use Hilos\Utils\Constants\EnvConstants;
 
 /**
  * Env - Environment variable manager
@@ -26,26 +27,29 @@ class Env
      * 3. .env.example file (if exists)
      * 4. Throw exception if not found
      *
-     * @param string $name Environment variable name
+     * @param EnvConstants|string $name Environment variable name or enum constant
      * @param ?string $default Default value if not found
      * @return string Environment variable value
      * @throws MissingEnvironmentVariable If a variable is not found anywhere
      */
-    public static function get(string $name, ?string $default = null): string
+    public static function get(EnvConstants|string $name, ?string $default = null): string
     {
+        // Extract string value from enum or string
+        $variableName = (string) $name;
+
         // Check loaded .env cache
-        if (self::$envCache !== null && isset(self::$envCache[$name])) {
-            return self::$envCache[$name];
+        if (self::$envCache !== null && isset(self::$envCache[$variableName])) {
+            return self::$envCache[$variableName];
         }
 
         // Check system environment
-        $value = getenv($name);
+        $value = getenv($variableName);
         if ($value !== false) {
             return $value;
         }
 
         // Check .env.example as fallback
-        $exampleValue = self::getFromExample($name);
+        $exampleValue = self::getFromExample($variableName);
         if ($exampleValue !== null) {
             return $exampleValue;
         }
@@ -56,7 +60,7 @@ class Env
         }
 
         // Throw exception if not found
-        throw new MissingEnvironmentVariable($name);
+        throw new MissingEnvironmentVariable($variableName);
     }
 
     /**
@@ -68,26 +72,29 @@ class Env
      * 3. .env.example file (if exists)
      * 4. Throw exception if not found
      *
-     * @param string $name Environment variable name
+     * @param EnvConstants|string $name Environment variable name or enum constant
      * @param ?int $default Default value if not found
      * @return int Environment variable value as integer
      * @throws MissingEnvironmentVariable If a variable is not found anywhere
      */
-    public static function getInt(string $name, ?int $default = null): int
+    public static function getInt(EnvConstants|string $name, ?int $default = null): int
     {
+        // Extract string value from enum or string
+        $variableName = (string) $name;
+
         // Check loaded .env cache
-        if (self::$envCache !== null && isset(self::$envCache[$name])) {
-            return (int) self::$envCache[$name];
+        if (self::$envCache !== null && isset(self::$envCache[$variableName])) {
+            return (int) self::$envCache[$variableName];
         }
 
         // Check system environment
-        $value = getenv($name);
+        $value = getenv($variableName);
         if ($value !== false) {
             return (int) $value;
         }
 
         // Check .env.example as fallback
-        $exampleValue = self::getFromExample($name);
+        $exampleValue = self::getFromExample($variableName);
         if ($exampleValue !== null) {
             return (int) $exampleValue;
         }
@@ -98,7 +105,7 @@ class Env
         }
 
         // Throw exception if not found
-        throw new MissingEnvironmentVariable($name);
+        throw new MissingEnvironmentVariable($variableName);
     }
 
     /**

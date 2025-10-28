@@ -7,7 +7,7 @@ namespace Hilos\Core\CLI\Commands;
 use Hilos\API\AsyncHttpClient;
 use Hilos\Core\Daemon\Master\DaemonStatus;
 use Hilos\Exception\MissingEnvironmentVariable;
-use Hilos\Utils\Constants\CliConstants;
+use Hilos\Utils\Constants\ApiEndpoint;
 use Hilos\Utils\Constants\DaemonConstants;
 use Hilos\Utils\Constants\EnvConstants;
 use Hilos\Utils\Constants\ExitCode;
@@ -67,10 +67,9 @@ class StatusCommand implements CommandInterface
     {
         $host = Env::get(EnvConstants::HILOS_DAEMON_HOST);
         $port = Env::getInt(EnvConstants::HTTP_STATUS_PORT);
-        $path = CliConstants::HTTP_STATUS_PATH;
 
         // Create HTTP client with longer timeout for status command
-        $client = new AsyncHttpClient($host, $port, $path);
+        $client = new AsyncHttpClient($host, $port, ApiEndpoint::STATUS);
         $client->timeout = 800.0;  // 0.8 seconds timeout
 
         $currentTimeMs = microtime(true) * 1000;

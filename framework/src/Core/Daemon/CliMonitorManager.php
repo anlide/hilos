@@ -8,7 +8,7 @@ use Hilos\API\AsyncHttpClient;
 use Hilos\Core\Daemon\Master\DaemonStatus;
 use Hilos\Exception\MissingEnvironmentVariable;
 use Hilos\Utils\Helpers\StringHelper;
-use Hilos\Utils\Constants\CliConstants;
+use Hilos\Utils\Constants\ApiEndpoint;
 use Hilos\Utils\Constants\DaemonConstants;
 use Hilos\Utils\Constants\EnvConstants;
 use Hilos\Utils\Constants\HttpConstants;
@@ -66,9 +66,8 @@ class CliMonitorManager extends BaseManager
         // Initialize HTTP client
         $host = Env::get(EnvConstants::HILOS_DAEMON_HOST);
         $port = Env::getInt(EnvConstants::HTTP_STATUS_PORT);
-        $path = CliConstants::HTTP_STATUS_PATH;
 
-        $httpClient = new AsyncHttpClient($host, $port, $path);
+        $httpClient = new AsyncHttpClient($host, $port, ApiEndpoint::STATUS);
         $httpClient->timeout = 400.0;  // 0.4 seconds timeout
 
         // Initialize timers

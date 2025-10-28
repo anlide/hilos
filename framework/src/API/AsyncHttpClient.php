@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\API;
 
+use Hilos\Utils\Constants\ApiEndpoint;
 use Hilos\Utils\Constants\HttpConstants;
 
 /**
@@ -92,13 +93,13 @@ class AsyncHttpClient
      *
      * @param string $host Target host
      * @param int $port Target port
-     * @param string $path Request path (default: '/')
+     * @param ApiEndpoint|string $path Request path or enum (default: '/')
      */
-    public function __construct(string $host, int $port, string $path = '/')
+    public function __construct(string $host, int $port, ApiEndpoint|string $path = '/')
     {
         $this->host = $host;
         $this->port = $port;
-        $this->path = $path;
+        $this->path = (string) $path;
         $this->state = AsyncHttpState::DONE;
     }
 

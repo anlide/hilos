@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Core\Daemon;
 
 use ErrorException;
-use Hilos\Utils\Constants\CliConstants;
+use Hilos\Utils\Constants\ErrorConstants;
 use Hilos\Utils\Env;
 use RuntimeException;
 use Throwable;
@@ -126,7 +126,7 @@ abstract class BaseManager
             $severityName,
             basename($file),
             $line,
-            substr($message, 0, CliConstants::ERROR_MESSAGE_MAX_LENGTH),
+            substr($message, 0, ErrorConstants::ERROR_MESSAGE_MAX_LENGTH),
         );
 
         $this->logError($logMessage);
@@ -152,8 +152,8 @@ abstract class BaseManager
             get_class($exception),
             basename($exception->getFile()),
             $exception->getLine(),
-            substr($exception->getMessage(), 0, CliConstants::ERROR_MESSAGE_MAX_LENGTH),
-            substr($exception->getTraceAsString(), 0, CliConstants::ERROR_STACK_TRACE_MAX_LENGTH),
+            substr($exception->getMessage(), 0, ErrorConstants::ERROR_MESSAGE_MAX_LENGTH),
+            substr($exception->getTraceAsString(), 0, ErrorConstants::ERROR_STACK_TRACE_MAX_LENGTH),
         );
 
         $this->logException($logMessage);
@@ -177,7 +177,7 @@ abstract class BaseManager
                 'FATAL',
                 basename($error['file']),
                 $error['line'],
-                substr($error['message'], 0, CliConstants::ERROR_MESSAGE_MAX_LENGTH),
+                substr($error['message'], 0, ErrorConstants::ERROR_MESSAGE_MAX_LENGTH),
             );
 
             $this->logShutdown($logMessage);
