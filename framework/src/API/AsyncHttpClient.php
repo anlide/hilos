@@ -99,7 +99,7 @@ class AsyncHttpClient
     {
         $this->host = $host;
         $this->port = $port;
-        $this->path = (string) $path;
+        $this->path = $path instanceof ApiEndpoint ? $path->value : $path;
         $this->state = AsyncHttpState::DONE;
     }
 

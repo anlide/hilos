@@ -35,7 +35,7 @@ class Env
     public static function get(EnvConstants|string $name, ?string $default = null): string
     {
         // Extract string value from enum or string
-        $variableName = (string) $name;
+        $variableName = $name instanceof EnvConstants ? $name->name : $name;
 
         // Check loaded .env cache
         if (self::$envCache !== null && isset(self::$envCache[$variableName])) {
@@ -80,7 +80,7 @@ class Env
     public static function getInt(EnvConstants|string $name, ?int $default = null): int
     {
         // Extract string value from enum or string
-        $variableName = (string) $name;
+        $variableName = $name instanceof EnvConstants ? $name->name : $name;
 
         // Check loaded .env cache
         if (self::$envCache !== null && isset(self::$envCache[$variableName])) {
