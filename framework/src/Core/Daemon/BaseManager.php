@@ -6,6 +6,7 @@ namespace Hilos\Core\Daemon;
 
 use ErrorException;
 use Hilos\Utils\Constants\CliConstants;
+use Hilos\Utils\Env;
 use RuntimeException;
 use Throwable;
 
@@ -45,7 +46,7 @@ abstract class BaseManager
      *
      * Registers handlers for:
      * - SIGTERM/SIGINT: Graceful shutdown
-     * - SIGHUP: Restart signal
+     * - SIGHUP: Restart signal with environment reload
      */
     protected function setupSignalHandlers(): void
     {
@@ -201,11 +202,16 @@ abstract class BaseManager
      * Restart signal handler (SIGHUP)
      *
      * Handles restart signals by logging the event,
+     * reloading environment configuration,
      * setting the exit flag and triggering restart actions.
      */
     public function handleRestart(): void
     {
         $this->logMessage($this->getManagerName() . " received restart signal");
+        
+        // Reload environment configuration
+        Env::reload();
+        
         $this->shouldExit = true;
         $this->onRestartSignal();
     }

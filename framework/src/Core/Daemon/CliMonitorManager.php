@@ -6,11 +6,14 @@ namespace Hilos\Core\Daemon;
 
 use Hilos\API\AsyncHttpClient;
 use Hilos\Core\Daemon\Master\DaemonStatus;
+use Hilos\Exception\MissingEnvironmentVariable;
 use Hilos\Utils\Helpers\StringHelper;
 use Hilos\Utils\Constants\CliConstants;
 use Hilos\Utils\Constants\DaemonConstants;
+use Hilos\Utils\Constants\EnvConstants;
 use Hilos\Utils\Constants\HttpConstants;
 use Hilos\Utils\DTO\DaemonStatusDTO;
+use Hilos\Utils\Env;
 
 /**
  * CliMonitorManager - manages real-time daemon monitoring
@@ -40,6 +43,7 @@ class CliMonitorManager extends BaseManager
      * Main loop runs at 10ms (0.01s) intervals.
      * UI updates every 1 second.
      * HTTP requests every 350ms after completion.
+     * @throws MissingEnvironmentVariable
      */
     public function run(): void
     {
@@ -60,8 +64,8 @@ class CliMonitorManager extends BaseManager
         $this->logMessage("");
 
         // Initialize HTTP client
-        $host = CliConstants::getMonitorDaemonHost();
-        $port = CliConstants::getHttpStatusPort();
+        $host = Env::get(EnvConstants::HILOS_DAEMON_HOST);
+        $port = Env::getInt(EnvConstants::HTTP_STATUS_PORT);
         $path = CliConstants::HTTP_STATUS_PATH;
 
         $httpClient = new AsyncHttpClient($host, $port, $path);

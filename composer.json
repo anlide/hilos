@@ -23,6 +23,7 @@
     },
     "scripts": {
         "install-deps": "docker-compose -f docker/docker-compose.yml run --rm hilos-cli composer install",
+        "setup-env": "docker-compose -f docker/docker-compose.yml run --rm hilos-cli php -r \"require 'vendor/autoload.php'; \\Hilos\\Utils\\Env::init(); echo '.env file initialized.';\"",
         "daemon-start": "docker-compose -f docker/docker-compose.yml up -d",
         "daemon-stop": "docker-compose -f docker/docker-compose.yml stop",
         "daemon-restart": "docker-compose -f docker/docker-compose.yml restart hilos",

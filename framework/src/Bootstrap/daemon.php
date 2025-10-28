@@ -9,10 +9,11 @@ use Hilos\Core\Daemon\DaemonManager;
 use Hilos\Core\Daemon\Master\DaemonStatus;
 use Hilos\Socket\Server\HttpServer;
 use Hilos\Socket\Server\WorkerServer;
-use Hilos\Utils\Constants\CliConstants;
+use Hilos\Utils\Constants\EnvConstants;
 use Hilos\Utils\Constants\ExitCode;
 use Hilos\Utils\Constants\HttpConstants;
 use Hilos\Utils\DTO\DaemonStatusDTO;
+use Hilos\Utils\Env;
 
 /**
  * Simple Daemon - simplified daemon implementation
@@ -22,17 +23,20 @@ use Hilos\Utils\DTO\DaemonStatusDTO;
  * Includes HTTP server for status endpoint and Worker server for worker communication.
  */
 
+// Initialize environment
+Env::init();
+
 try {
     // Create HTTP server
     $httpServer = new HttpServer(
-        CliConstants::getHttpStatusHost(),
-        CliConstants::getHttpStatusPort(),
+        Env::get(EnvConstants::HTTP_STATUS_HOST),
+        Env::getInt(EnvConstants::HTTP_STATUS_PORT),
     );
 
     // Create Worker server
     $workerServer = new WorkerServer(
-        CliConstants::getWorkerCommHost(),
-        CliConstants::getWorkerCommPort(),
+        Env::get(EnvConstants::WORKER_COMM_HOST),
+        Env::getInt(EnvConstants::WORKER_COMM_PORT),
     );
 
     // Create HTTP router

@@ -7,8 +7,12 @@ use Hilos\Exception\Process\CouldNotStart;
 use Hilos\Exception\Process\FailedToGetStatus;
 use Hilos\Exception\Process\FailedToSetNonBlocking;
 use Hilos\Utils\Constants\ExitCode;
+use Hilos\Utils\Env;
 
 require_once __DIR__ . '/../../../vendor/autoload.php';
+
+// Initialize environment
+Env::init();
 
 /**
  * Docker Watchdog - Process manager for Docker containers

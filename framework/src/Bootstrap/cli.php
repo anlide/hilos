@@ -4,8 +4,12 @@ declare(strict_types=1);
 
 use Hilos\Core\CLI\CliManager;
 use Hilos\Utils\Constants\ExitCode;
+use Hilos\Utils\Env;
 
 require_once __DIR__ . '/../../../vendor/autoload.php';
+
+// Initialize environment
+Env::init();
 
 /**
  * CLI - Entry point for CLI interface

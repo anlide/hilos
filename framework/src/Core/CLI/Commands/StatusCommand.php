@@ -6,12 +6,15 @@ namespace Hilos\Core\CLI\Commands;
 
 use Hilos\API\AsyncHttpClient;
 use Hilos\Core\Daemon\Master\DaemonStatus;
+use Hilos\Exception\MissingEnvironmentVariable;
 use Hilos\Utils\Constants\CliConstants;
 use Hilos\Utils\Constants\DaemonConstants;
+use Hilos\Utils\Constants\EnvConstants;
 use Hilos\Utils\Constants\ExitCode;
 use Hilos\Utils\Constants\HttpConstants;
 use Hilos\Utils\DTO\DaemonStatusDTO;
 use Hilos\Utils\Helpers\StringHelper;
+use Hilos\Utils\Env;
 
 /**
  * StatusCommand - Display daemon status
@@ -39,7 +42,12 @@ class StatusCommand implements CommandInterface
         echo "==================\n\n";
 
         // Fetch daemon status via HTTP
-        $this->fetchDaemonStatus();
+        try {
+            $this->fetchDaemonStatus();
+        } catch (MissingEnvironmentVariable $e) {
+            echo "Error: " . $e->getMessage() . "\n\n";
+            return ExitCode::CONFIG_ERROR;
+        }
 
         // Display status table
         $this->displayStatusTable();
@@ -53,11 +61,12 @@ class StatusCommand implements CommandInterface
      * Fetch daemon status via HTTP
      *
      * Makes synchronous HTTP request to daemon status endpoint.
+     * @throws MissingEnvironmentVariable
      */
     private function fetchDaemonStatus(): void
     {
-        $host = CliConstants::getMonitorDaemonHost();
-        $port = CliConstants::getHttpStatusPort();
+        $host = Env::get(EnvConstants::HILOS_DAEMON_HOST);
+        $port = Env::getInt(EnvConstants::HTTP_STATUS_PORT);
         $path = CliConstants::HTTP_STATUS_PATH;
 
         // Create HTTP client with longer timeout for status command

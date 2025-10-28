@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Core\Daemon;
 
 use Hilos\Core\Process;
+use Hilos\Exception\MissingEnvironmentVariable;
 use Hilos\Exception\Process\CouldNotStart;
 use Hilos\Exception\Process\FailedToClosePipe;
 use Hilos\Exception\Process\FailedToGetStatus;
@@ -12,7 +13,8 @@ use Hilos\Exception\Process\FailedToReadStdOut;
 use Hilos\Exception\Process\FailedToSetNonBlocking;
 use Hilos\Exception\Process\FailedToSetStdErr;
 use Hilos\Exception\Process\FailedToTerminateProcess;
-use Hilos\Utils\Constants\CliConstants;
+use Hilos\Utils\Constants\EnvConstants;
+use Hilos\Utils\Env;
 use RuntimeException;
 
 /**
@@ -44,6 +46,7 @@ class DockerManager extends BaseManager
      * @throws FailedToSetStdErr If stderr data cannot be read
      * @throws FailedToTerminateProcess If the process cannot be terminated
      * @throws FailedToClosePipe If pipes cannot be closed
+     * @throws MissingEnvironmentVariable
      */
     public function runDockerWatchdog(string $daemonScript = __DIR__ . '/../../Bootstrap/daemon.php'): void
     {
@@ -142,6 +145,7 @@ class DockerManager extends BaseManager
      * @throws CouldNotStart If daemon process cannot be started
      * @throws FailedToSetNonBlocking If non-blocking mode cannot be set
      * @throws RuntimeException If log directory cannot be created
+     * @throws MissingEnvironmentVariable
      */
     private function startDaemon(string $script): void
     {
@@ -149,7 +153,7 @@ class DockerManager extends BaseManager
         $startTime = microtime(true);
 
         // Create log directories if they don't exist
-        $logDir = dirname(CliConstants::getDaemonLogFile());
+        $logDir = dirname(Env::get(EnvConstants::DAEMON_LOG_FILE));
         if (!is_dir($logDir)) {
             if (!mkdir($logDir, 0700, true)) {
                 throw new RuntimeException("Cannot create log directory: $logDir");
@@ -162,8 +166,8 @@ class DockerManager extends BaseManager
             [$script],
             getcwd(),
             [Process::DESCRIPTOR_PIPE, Process::PIPE_READ], // stdin
-            [Process::DESCRIPTOR_FILE, CliConstants::getDaemonLogFile(), Process::PIPE_APPEND], // stdout - to log file
-            [Process::DESCRIPTOR_FILE, CliConstants::getDaemonErrorLogFile(), Process::PIPE_APPEND], // stderr - to error log file
+            [Process::DESCRIPTOR_FILE, Env::get(EnvConstants::DAEMON_LOG_FILE), Process::PIPE_APPEND], // stdout - to log file
+            [Process::DESCRIPTOR_FILE, Env::get(EnvConstants::DAEMON_ERROR_LOG_FILE), Process::PIPE_APPEND], // stderr - to error log file
         );
 
         // Log startup time
@@ -208,7 +212,7 @@ class DockerManager extends BaseManager
      */
     protected function logError(string $message): void
     {
-        error_log($message, 3, CliConstants::getDaemonErrorLogFile());
+        error_log($message, 3, Env::get(EnvConstants::DAEMON_ERROR_LOG_FILE));
         error_log($message);
     }
 
@@ -217,7 +221,7 @@ class DockerManager extends BaseManager
      */
     protected function logException(string $message): void
     {
-        error_log($message, 3, CliConstants::getDaemonErrorLogFile());
+        error_log($message, 3, Env::get(EnvConstants::DAEMON_ERROR_LOG_FILE));
         error_log($message);
     }
 
@@ -226,7 +230,7 @@ class DockerManager extends BaseManager
      */
     protected function logShutdown(string $message): void
     {
-        error_log($message, 3, CliConstants::getDaemonErrorLogFile());
+        error_log($message, 3, Env::get(EnvConstants::DAEMON_ERROR_LOG_FILE));
         error_log($message);
     }
 
