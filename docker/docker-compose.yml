@@ -1,4 +1,6 @@
 # Load environment variables from ../.env file
+name: hilos-main
+
 services:
   hilos:
     build: .

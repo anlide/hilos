@@ -1,0 +1,87 @@
+# Docker Compose configuration for WebSocket Test Demo Project
+# Load environment variables from .env file in project root
+
+name: hilos-websocket-test
+
+services:
+  websocket-test:
+    build: .
+    env_file:
+      - ../.env
+    container_name: websocket-test-daemon
+    volumes:
+      - ..:/app
+      # Mount framework package to /hilos for composer path repository
+      - ../../../composer.json:/hilos/composer.json:ro
+      - ../../../composer.lock:/hilos/composer.lock:ro
+      - ../../../framework:/hilos/framework:ro
+      - ../data/logs:/var/log/hilos
+      - ../data/run:/var/run
+    working_dir: /app
+    environment:
+      - PHP_INI_SCAN_DIR=/usr/local/etc/php/conf.d
+      - HTTP_STATUS_HOST=${HTTP_STATUS_HOST:-0.0.0.0}
+      - HTTP_STATUS_PORT=${HTTP_STATUS_PORT:-8090}
+      - WORKER_COMM_HOST=${WORKER_COMM_HOST:-0.0.0.0}
+      - WORKER_COMM_PORT=${WORKER_COMM_PORT:-8091}
+      # WebSocket ports (when implemented)
+      # - WEBSOCKET_HOST=${WEBSOCKET_HOST:-0.0.0.0}
+      # - WEBSOCKET_PORT=${WEBSOCKET_PORT:-8092}
+    command: ["php", "src/Bootstrap/docker.php"]
+    expose:
+      - "${HTTP_STATUS_PORT:-8090}"
+      - "${WORKER_COMM_PORT:-8091}"
+    networks:
+      hilos-demo-websocket-test-network:
+        ipv4_address: ${DOCKER_DAEMON_IP:-172.26.0.11}
+
+  websocket-test-cli:
+    build: .
+    env_file:
+      - ../.env
+    container_name: websocket-test-cli
+    volumes:
+      - ..:/app
+      # Mount framework package to /hilos for composer path repository
+      - ../../../composer.json:/hilos/composer.json:ro
+      - ../../../composer.lock:/hilos/composer.lock:ro
+      - ../../../framework:/hilos/framework:ro
+    working_dir: /app
+    environment:
+      - TERM=xterm-256color
+      - HILOS_DAEMON_HOST=${HILOS_DAEMON_HOST:-172.26.0.11}
+      - HTTP_STATUS_PORT=${HTTP_STATUS_PORT:-8090}
+      - WORKER_COMM_PORT=${WORKER_COMM_PORT:-8091}
+    profiles:
+      - composer
+    networks:
+      - hilos-demo-websocket-test-network
+
+  websocket-test-monitor:
+    build: .
+    env_file:
+      - ../.env
+    container_name: websocket-test-monitor
+    volumes:
+      - ..:/app
+      # Mount framework package to /hilos for composer path repository
+      - ../../../composer.json:/hilos/composer.json:ro
+      - ../../../composer.lock:/hilos/composer.lock:ro
+      - ../../../framework:/hilos/framework:ro
+    working_dir: /app
+    environment:
+      - HILOS_DAEMON_HOST=${HILOS_DAEMON_HOST:-172.26.0.11}
+      - HTTP_STATUS_PORT=${HTTP_STATUS_PORT:-8090}
+      - WORKER_COMM_PORT=${WORKER_COMM_PORT:-8091}
+    profiles:
+      - monitor
+    networks:
+      - hilos-demo-websocket-test-network
+
+networks:
+  hilos-demo-websocket-test-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: ${DOCKER_NETWORK_SUBNET:-172.26.0.0/16}
+

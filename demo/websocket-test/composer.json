@@ -1,0 +1,41 @@
+{
+    "name": "anlide/hilos-demo-websocket-test",
+    "description": "WebSocket test demo project for Hilos v2 framework",
+    "type": "project",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Anlide",
+            "email": "alexander.baranov@anlide.online"
+        }
+    ],
+    "repositories": [
+        {
+            "type": "path",
+            "url": "/hilos",
+            "options": {
+                "symlink": true
+            }
+        }
+    ],
+    "require": {
+        "php": ">=8.4",
+        "anlide/hilos": "^2.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "Demo\\WebSocketTest\\": "src/"
+        }
+    },
+    "scripts": {
+        "install-deps": "docker-compose -f docker/docker-compose.yml run --rm websocket-test-cli composer install",
+        "setup-env": "docker-compose -f docker/docker-compose.yml run --rm websocket-test-cli php -r \"require 'vendor/autoload.php'; \\\\Hilos\\\\Utils\\\\Env::init(); echo '.env file initialized.';\"",
+        "daemon-start": "docker-compose -f docker/docker-compose.yml up -d",
+        "daemon-stop": "docker-compose -f docker/docker-compose.yml stop",
+        "daemon-restart": "docker-compose -f docker/docker-compose.yml restart websocket-test",
+        "daemon-status": "docker-compose -f docker/docker-compose.yml run --rm websocket-test-cli php src/Bootstrap/cli.php daemon:status",
+        "daemon-monitor": "docker-compose -f docker/docker-compose.yml run --rm websocket-test-monitor php src/Bootstrap/cli.php daemon:monitor",
+        "cli": "docker-compose -f docker/docker-compose.yml run --rm websocket-test-cli php src/Bootstrap/cli.php"
+    }
+}
+
