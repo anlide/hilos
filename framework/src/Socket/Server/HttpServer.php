@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Socket\Server;
 
 use Hilos\Socket\Client\HttpClient;
+use Hilos\Socket\Client\Interface\HttpClientInterface;
 
 /**
  * HttpServer - HTTP server implementation
@@ -17,24 +18,22 @@ class HttpServer extends AbstractServer
     /**
      * Accept new connection
      *
-     * @return ?HttpClient New client or null
+     * @return ?HttpClientInterface New client or null
      */
-    public function acceptConnection(): ?HttpClient
+    public function acceptConnection(): ?HttpClientInterface
     {
-        if (!$this->isRunning) {
-            return null;
-        }
+        return parent::acceptConnection();
+    }
 
-        $clientSocket = @socket_accept($this->serverSocket);
-        if ($clientSocket === false) {
-            return null;
-        }
-
-        socket_set_nonblock($clientSocket);
-        $client = new HttpClient($clientSocket);
-        $this->clients[] = $client;
-
-        return $client;
+    /**
+     * Create HTTP client instance
+     *
+     * @param resource $socket Client socket
+     * @return HttpClientInterface Client instance
+     */
+    protected function createClient($socket): HttpClientInterface
+    {
+        return new HttpClient($socket);
     }
 
     /**

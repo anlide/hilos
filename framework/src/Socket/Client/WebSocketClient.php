@@ -4,13 +4,15 @@ declare(strict_types=1);
 
 namespace Hilos\Socket\Client;
 
+use Hilos\Socket\Client\Interface\WebSocketClientInterface;
+
 /**
  * WebSocketClient - Represents a single WebSocket connection
  *
  * Handles WebSocket protocol frame parsing and writing.
  * Created by WebSocketServer when accepting new connections.
  */
-abstract class WebSocketClient extends AbstractClient
+abstract class WebSocketClient extends AbstractClient implements WebSocketClientInterface
 {
     /** @var bool Whether WebSocket handshake is completed */
     protected bool $handshakeCompleted = false;
@@ -61,7 +63,7 @@ abstract class WebSocketClient extends AbstractClient
     private function handleHandshake(): void
     {
         // Check if we have complete HTTP request
-        if (strpos($this->readBuffer, "\r\n\r\n") === false) {
+        if (!str_contains($this->readBuffer, "\r\n\r\n")) {
             return; // Incomplete request
         }
         

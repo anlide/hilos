@@ -4,13 +4,15 @@ declare(strict_types=1);
 
 namespace Hilos\Socket\Client;
 
+use Hilos\Socket\Client\Interface\WorkerClientInterface;
+
 /**
  * WorkerClient - Represents a single worker connection
  *
  * Handles reading messages from workers and writing responses.
  * Created by WorkerServer when accepting new worker connections.
  */
-class WorkerClient extends AbstractClient
+class WorkerClient extends AbstractClient implements WorkerClientInterface
 {
     /** @var int Worker ID */
     private int $workerId = 0;

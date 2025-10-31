@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Socket\Client;
 
 use Hilos\API\Router\HttpRouter;
+use Hilos\Socket\Client\Interface\HttpClientInterface;
 use Hilos\Utils\Constants\HttpConstants;
 
 /**
@@ -13,7 +14,7 @@ use Hilos\Utils\Constants\HttpConstants;
  * Handles reading HTTP requests and writing responses for a single client.
  * Created by HttpServer when accepting new connections.
  */
-class HttpClient extends AbstractClient
+class HttpClient extends AbstractClient implements HttpClientInterface
 {
     /** @var ?HttpRouter Router for handling requests */
     private ?HttpRouter $router = null;

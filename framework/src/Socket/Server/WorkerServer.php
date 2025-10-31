@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Socket\Server;
 
+use Hilos\Socket\Client\Interface\WorkerClientInterface;
 use Hilos\Socket\Client\WorkerClient;
 
 /**
@@ -17,24 +18,22 @@ class WorkerServer extends AbstractServer
     /**
      * Accept new worker connection
      *
-     * @return ?WorkerClient New worker client or null
+     * @return ?WorkerClientInterface New worker client or null
      */
-    public function acceptConnection(): ?WorkerClient
+    public function acceptConnection(): ?WorkerClientInterface
     {
-        if (!$this->isRunning) {
-            return null;
-        }
+        return parent::acceptConnection();
+    }
 
-        $workerSocket = @socket_accept($this->serverSocket);
-        if ($workerSocket === false) {
-            return null;
-        }
-
-        socket_set_nonblock($workerSocket);
-        $worker = new WorkerClient($workerSocket);
-        $this->clients[] = $worker;
-
-        return $worker;
+    /**
+     * Create worker client instance
+     *
+     * @param resource $socket Client socket
+     * @return WorkerClientInterface Client instance
+     */
+    protected function createClient($socket): WorkerClientInterface
+    {
+        return new WorkerClient($socket);
     }
 
     /**

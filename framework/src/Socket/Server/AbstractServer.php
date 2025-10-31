@@ -120,6 +120,41 @@ abstract class AbstractServer implements ServerInterface
         }
     }
 
+    /**
+     * Accept new connection - common implementation
+     *
+     * Handles socket_accept and socket_set_nonblock.
+     * Child classes should implement createClient() to create specific client type.
+     *
+     * @return mixed New client or null
+     */
+    public function acceptConnection()
+    {
+        if (!$this->isRunning) {
+            return null;
+        }
+
+        $clientSocket = @socket_accept($this->serverSocket);
+        if ($clientSocket === false) {
+            return null;
+        }
+
+        socket_set_nonblock($clientSocket);
+        $client = $this->createClient($clientSocket);
+        $this->clients[] = $client;
+
+        return $client;
+    }
+
+    /**
+     * Create client instance from socket
+     *
+     * Must be implemented by child classes to create specific client type.
+     *
+     * @param resource $socket Client socket
+     * @return mixed Client instance
+     */
+    abstract protected function createClient($socket);
 
     /**
      * Get backlog size for listen
@@ -134,12 +169,5 @@ abstract class AbstractServer implements ServerInterface
      * @return string Server name
      */
     abstract public function getServerName(): string;
-
-    /**
-     * Accept new connection - must be implemented by child classes
-     *
-     * @return mixed New client or null
-     */
-    abstract public function acceptConnection();
 }
 

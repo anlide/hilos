@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\WebSocketTest\Core\Socket;
 
+use Hilos\Socket\Client\Interface\WebSocketClientInterface;
 use Hilos\Socket\Server\WebSocketServer;
 use Demo\WebSocketTest\Core\Socket\ChatWebSocketClient;
 
@@ -24,27 +25,30 @@ class ChatWebSocketServer extends WebSocketServer
      */
     public function acceptConnection(): ?ChatWebSocketClient
     {
-        if (!$this->isRunning) {
+        $chatClient = parent::acceptConnection();
+        if ($chatClient === null) {
             return null;
         }
 
-        $clientSocket = @socket_accept($this->serverSocket);
-        if ($clientSocket === false) {
-            return null;
-        }
-        
-        socket_set_nonblock($clientSocket);
-        $chatClient = new ChatWebSocketClient($clientSocket);
-        
         // Set callback to broadcast messages
         $chatClient->setOnMessageCallback(function(string $message) use ($chatClient) {
             $this->broadcastMessage($chatClient, $message);
         });
 
-        $this->clients[] = $chatClient;
         $this->chatClients[] = $chatClient;
         
         return $chatClient;
+    }
+
+    /**
+     * Create chat WebSocket client instance
+     *
+     * @param resource $socket Client socket
+     * @return WebSocketClientInterface Client instance
+     */
+    protected function createClient($socket): WebSocketClientInterface
+    {
+        return new ChatWebSocketClient($socket);
     }
 
     /**

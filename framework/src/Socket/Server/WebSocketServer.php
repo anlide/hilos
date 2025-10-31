@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Socket\Server;
 
+use Hilos\Socket\Client\Interface\WebSocketClientInterface;
 use Hilos\Socket\Client\WebSocketClient;
 
 /**
@@ -11,31 +12,31 @@ use Hilos\Socket\Client\WebSocketClient;
  *
  * Manages WebSocket server socket and accepts incoming connections.
  * Works with epoll in daemon main loop.
+ *
+ * This is an abstract class - child classes must implement createClient()
+ * to create concrete WebSocketClient instances.
  */
-class WebSocketServer extends AbstractServer
+abstract class WebSocketServer extends AbstractServer
 {
     /**
      * Accept new connection
      *
-     * @return ?WebSocketClient New client or null
+     * @return ?WebSocketClientInterface New client or null
      */
-    public function acceptConnection(): ?WebSocketClient
+    public function acceptConnection(): ?WebSocketClientInterface
     {
-        if (!$this->isRunning) {
-            return null;
-        }
-
-        $clientSocket = @socket_accept($this->serverSocket);
-        if ($clientSocket === false) {
-            return null;
-        }
-
-        socket_set_nonblock($clientSocket);
-        $client = new WebSocketClient($clientSocket);
-        $this->clients[] = $client;
-
-        return $client;
+        return parent::acceptConnection();
     }
+
+    /**
+     * Create WebSocket client instance
+     *
+     * Must be implemented by child classes to create concrete WebSocketClient.
+     *
+     * @param resource $socket Client socket
+     * @return WebSocketClientInterface Client instance
+     */
+    abstract protected function createClient($socket): WebSocketClientInterface;
 
     /**
      * Get backlog size for listen
