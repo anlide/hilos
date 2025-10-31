@@ -34,8 +34,8 @@ class HttpClient extends AbstractClient implements HttpClientInterface
      */
     protected function processReadBuffer(): void
     {
-        // Check if we have complete HTTP request (ends with \r\n\r\n)
-        if (strpos($this->readBuffer, "\r\n\r\n") !== false) {
+        // Check if we have complete HTTP request (ends with HTTP delimiter)
+        if (strpos($this->readBuffer, HttpConstants::HTTP_DELIMITER) !== false) {
             $this->processRequest();
         }
     }
@@ -76,7 +76,7 @@ class HttpClient extends AbstractClient implements HttpClientInterface
      */
     private function parseRequest(string $rawRequest): array
     {
-        $lines = explode("\r\n", $rawRequest);
+        $lines = explode(HttpConstants::HTTP_LINE_SEPARATOR, $rawRequest);
         $firstLine = $lines[0] ?? '';
         
         // Parse: GET /path HTTP/1.1
@@ -125,14 +125,14 @@ class HttpClient extends AbstractClient implements HttpClientInterface
         $headers = $response[HttpConstants::RESPONSE_KEY_HEADERS] ?? [];
         $body = $response[HttpConstants::RESPONSE_KEY_BODY] ?? '';
 
-        $http = "HTTP/1.1 {$status} {$statusText}\r\n";
+        $http = HttpConstants::HTTP_VERSION . " {$status} {$statusText}" . HttpConstants::HTTP_LINE_SEPARATOR;
         
         $headers[HttpConstants::HEADER_CONTENT_LENGTH] = strlen($body);
         foreach ($headers as $key => $value) {
-            $http .= "{$key}: {$value}\r\n";
+            $http .= "{$key}: {$value}" . HttpConstants::HTTP_LINE_SEPARATOR;
         }
         
-        $http .= "\r\n";
+        $http .= HttpConstants::HTTP_LINE_SEPARATOR;
         $http .= $body;
 
         return $http;
@@ -154,5 +154,12 @@ class HttpClient extends AbstractClient implements HttpClientInterface
         return $statusTexts[$status] ?? 'Unknown';
     }
 
+    /**
+     * Called when socket connection is successfully closed
+     */
+    protected function onClose(): void
+    {
+        // HTTP client cleanup if needed
+    }
 }
 

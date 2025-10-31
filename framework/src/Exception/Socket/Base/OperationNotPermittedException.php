@@ -1,0 +1,21 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Hilos\Exception\Socket\Base;
+
+use Hilos\Exception\SocketException;
+use Throwable;
+
+/**
+ * Exception thrown when operation is not permitted (EPERM)
+ */
+class OperationNotPermittedException extends SocketException implements Throwable
+{
+    public function __construct(?Throwable $previous = null)
+    {
+        $message = "Operation not permitted";
+        parent::__construct($message, 1, $previous); // EPERM
+    }
+}
+

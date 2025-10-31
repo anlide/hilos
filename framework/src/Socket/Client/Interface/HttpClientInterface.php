@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Socket\Client\Interface;
 
+use Hilos\API\Router\HttpRouter;
 use Hilos\Socket\Client\ClientInterface;
 
 /**
@@ -16,8 +17,8 @@ interface HttpClientInterface extends ClientInterface
     /**
      * Set router for handling HTTP requests
      *
-     * @param \Hilos\API\Router\HttpRouter $router Router instance
+     * @param HttpRouter $router Router instance
      */
-    public function setRouter(\Hilos\API\Router\HttpRouter $router): void;
+    public function setRouter(HttpRouter $router): void;
 }
 

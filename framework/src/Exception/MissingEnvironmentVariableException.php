@@ -10,7 +10,7 @@ use Throwable;
 /**
  * Exception thrown when a required environment variable is missing
  */
-class MissingEnvironmentVariable extends Exception implements Throwable
+class MissingEnvironmentVariableException extends Exception implements Throwable
 {
     public function __construct(string $variableName, ?Throwable $previous = null)
     {

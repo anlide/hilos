@@ -66,5 +66,8 @@ enum EnvConstants
 
     /** @var string WebSocket server port */
     case WEBSOCKET_PORT;
+
+    /** @var string Socket read buffer size in bytes */
+    case SOCKET_READ_BUFFER_SIZE;
 }
 

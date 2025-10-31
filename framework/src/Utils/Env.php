@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Utils;
 
-use Hilos\Exception\MissingEnvironmentVariable;
+use Hilos\Exception\MissingEnvironmentVariableException;
 use Hilos\Utils\Constants\EnvConstants;
 
 /**
@@ -30,7 +30,7 @@ class Env
      * @param EnvConstants|string $name Environment variable name or enum constant
      * @param ?string $default Default value if not found
      * @return string Environment variable value
-     * @throws MissingEnvironmentVariable If a variable is not found anywhere
+     * @throws MissingEnvironmentVariableException If a variable is not found anywhere
      */
     public static function get(EnvConstants|string $name, ?string $default = null): string
     {
@@ -60,7 +60,7 @@ class Env
         }
 
         // Throw exception if not found
-        throw new MissingEnvironmentVariable($variableName);
+        throw new MissingEnvironmentVariableException($variableName);
     }
 
     /**
@@ -75,7 +75,7 @@ class Env
      * @param EnvConstants|string $name Environment variable name or enum constant
      * @param ?int $default Default value if not found
      * @return int Environment variable value as integer
-     * @throws MissingEnvironmentVariable If a variable is not found anywhere
+     * @throws MissingEnvironmentVariableException If a variable is not found anywhere
      */
     public static function getInt(EnvConstants|string $name, ?int $default = null): int
     {
@@ -105,7 +105,7 @@ class Env
         }
 
         // Throw exception if not found
-        throw new MissingEnvironmentVariable($variableName);
+        throw new MissingEnvironmentVariableException($variableName);
     }
 
     /**

@@ -30,10 +30,8 @@ class ChatWebSocketServer extends WebSocketServer
             return null;
         }
 
-        // Set callback to broadcast messages
-        $chatClient->setOnMessageCallback(function(string $message) use ($chatClient) {
-            $this->broadcastMessage($chatClient, $message);
-        });
+        // Set server instance for broadcasting messages
+        $chatClient->setServer($this);
 
         $this->chatClients[] = $chatClient;
         
@@ -57,7 +55,7 @@ class ChatWebSocketServer extends WebSocketServer
      * @param ChatWebSocketClient $sender Sending client
      * @param string $message Message content
      */
-    private function broadcastMessage(ChatWebSocketClient $sender, string $message): void
+    public function broadcastMessage(ChatWebSocketClient $sender, string $message): void
     {
         foreach ($this->chatClients as $client) {
             if ($client === $sender) {

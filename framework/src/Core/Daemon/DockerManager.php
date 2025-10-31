@@ -5,14 +5,14 @@ declare(strict_types=1);
 namespace Hilos\Core\Daemon;
 
 use Hilos\Core\Process;
-use Hilos\Exception\MissingEnvironmentVariable;
-use Hilos\Exception\Process\CouldNotStart;
-use Hilos\Exception\Process\FailedToClosePipe;
-use Hilos\Exception\Process\FailedToGetStatus;
-use Hilos\Exception\Process\FailedToReadStdOut;
-use Hilos\Exception\Process\FailedToSetNonBlocking;
-use Hilos\Exception\Process\FailedToSetStdErr;
-use Hilos\Exception\Process\FailedToTerminateProcess;
+use Hilos\Exception\MissingEnvironmentVariableException;
+use Hilos\Exception\Process\CouldNotStartException;
+use Hilos\Exception\Process\FailedToClosePipeException;
+use Hilos\Exception\Process\FailedToGetStatusException;
+use Hilos\Exception\Process\FailedToReadStdOutException;
+use Hilos\Exception\Process\FailedToSetNonBlockingException;
+use Hilos\Exception\Process\FailedToSetStdErrException;
+use Hilos\Exception\Process\FailedToTerminateProcessExceptionException;
 use Hilos\Utils\Constants\EnvConstants;
 use Hilos\Utils\Env;
 use RuntimeException;
@@ -39,14 +39,14 @@ class DockerManager extends BaseManager
      *
      * @param string $daemonScript Path to daemon.php script
      * @throws RuntimeException If required, functions are not available
-     * @throws FailedToGetStatus If process status cannot be retrieved
-     * @throws CouldNotStart If daemon process cannot be started
-     * @throws FailedToSetNonBlocking If non-blocking mode cannot be set
-     * @throws FailedToReadStdOut If stdout data cannot be read
-     * @throws FailedToSetStdErr If stderr data cannot be read
-     * @throws FailedToTerminateProcess If the process cannot be terminated
-     * @throws FailedToClosePipe If pipes cannot be closed
-     * @throws MissingEnvironmentVariable
+     * @throws FailedToGetStatusException If process status cannot be retrieved
+     * @throws CouldNotStartException If daemon process cannot be started
+     * @throws FailedToSetNonBlockingException If non-blocking mode cannot be set
+     * @throws FailedToReadStdOutException If stdout data cannot be read
+     * @throws FailedToSetStdErrException If stderr data cannot be read
+     * @throws FailedToTerminateProcessExceptionException If the process cannot be terminated
+     * @throws FailedToClosePipeException If pipes cannot be closed
+     * @throws MissingEnvironmentVariableException
      */
     public function runDockerWatchdog(string $daemonScript = __DIR__ . '/../../Bootstrap/daemon.php'): void
     {
@@ -98,11 +98,11 @@ class DockerManager extends BaseManager
      * Check daemon process state
      * Handles process termination and outputs appropriate messages
      *
-     * @throws FailedToGetStatus If process status cannot be retrieved
-     * @throws FailedToReadStdOut If stdout data cannot be read
-     * @throws FailedToSetStdErr If stderr data cannot be read
-     * @throws FailedToTerminateProcess If the process cannot be terminated
-     * @throws FailedToClosePipe If pipes cannot be closed
+     * @throws FailedToGetStatusException If process status cannot be retrieved
+     * @throws FailedToReadStdOutException If stdout data cannot be read
+     * @throws FailedToSetStdErrException If stderr data cannot be read
+     * @throws FailedToTerminateProcessExceptionException If the process cannot be terminated
+     * @throws FailedToClosePipeException If pipes cannot be closed
      */
     private function tickDaemon(): void
     {
@@ -142,10 +142,10 @@ class DockerManager extends BaseManager
      * Start daemon process
      *
      * @param string $script Path to daemon script
-     * @throws CouldNotStart If daemon process cannot be started
-     * @throws FailedToSetNonBlocking If non-blocking mode cannot be set
+     * @throws CouldNotStartException If daemon process cannot be started
+     * @throws FailedToSetNonBlockingException If non-blocking mode cannot be set
      * @throws RuntimeException If log directory cannot be created
-     * @throws MissingEnvironmentVariable
+     * @throws MissingEnvironmentVariableException
      */
     private function startDaemon(string $script): void
     {
@@ -190,9 +190,9 @@ class DockerManager extends BaseManager
 
         try {
             $this->process->stop();
-        } catch (FailedToGetStatus $e) {
+        } catch (FailedToGetStatusException $e) {
             error_log('Failed to get status while stopping daemon: ' . $e->getMessage());
-        } catch (FailedToTerminateProcess $e) {
+        } catch (FailedToTerminateProcessExceptionException $e) {
             error_log('Failed to terminate daemon process: ' . $e->getMessage());
         }
     }

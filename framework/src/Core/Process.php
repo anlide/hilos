@@ -4,14 +4,14 @@ declare(strict_types=1);
 
 namespace Hilos\Core;
 
-use Hilos\Exception\Process\CouldNotStart;
-use Hilos\Exception\Process\FailedToClosePipe;
-use Hilos\Exception\Process\FailedToGetStatus;
-use Hilos\Exception\Process\FailedToReadStdOut;
-use Hilos\Exception\Process\FailedToSetStdErr;
-use Hilos\Exception\Process\FailedToSetNonBlocking;
-use Hilos\Exception\Process\FailedToTerminateProcess;
-use Hilos\Exception\Process\FailedToWriteStdIn;
+use Hilos\Exception\Process\CouldNotStartException;
+use Hilos\Exception\Process\FailedToClosePipeException;
+use Hilos\Exception\Process\FailedToGetStatusException;
+use Hilos\Exception\Process\FailedToReadStdOutException;
+use Hilos\Exception\Process\FailedToSetStdErrException;
+use Hilos\Exception\Process\FailedToSetNonBlockingException;
+use Hilos\Exception\Process\FailedToTerminateProcessExceptionException;
+use Hilos\Exception\Process\FailedToWriteStdInException;
 
 class Process
 {
@@ -64,8 +64,8 @@ class Process
      * @param array $stdOut Standard output descriptor
      * @param array $stdErr Standard error descriptor
      *
-     * @throws CouldNotStart If process cannot be started
-     * @throws FailedToSetNonBlocking If non-blocking mode cannot be set
+     * @throws CouldNotStartException If process cannot be started
+     * @throws FailedToSetNonBlockingException If non-blocking mode cannot be set
      */
     public function __construct(
         string $command,
@@ -90,22 +90,22 @@ class Process
         $this->process = proc_open($fullCommand, $descriptorSpec, $this->pipes, $cwd);
 
         if (!is_resource($this->process)) {
-            throw new CouldNotStart('Could not start the process.');
+            throw new CouldNotStartException('Could not start the process.');
         }
 
         if (isset($this->pipes[0]) && ($this->pipes[0] !== null)) {
             if (!stream_set_blocking($this->pipes[0], false)) {
-                throw new FailedToSetNonBlocking('Failed to set non-blocking mode stdin on streams.');
+                throw new FailedToSetNonBlockingException('Failed to set non-blocking mode stdin on streams.');
             }
         }
         if (isset($this->pipes[1]) && ($this->pipes[1] !== null)) {
             if (!stream_set_blocking($this->pipes[1], false)) {
-                throw new FailedToSetNonBlocking('Failed to set non-blocking mode stdout on streams.');
+                throw new FailedToSetNonBlockingException('Failed to set non-blocking mode stdout on streams.');
             }
         }
         if (isset($this->pipes[2]) && ($this->pipes[2] !== null)) {
             if (!stream_set_blocking($this->pipes[2], false)) {
-                throw new FailedToSetNonBlocking('Failed to set non-blocking mode stderr on streams.');
+                throw new FailedToSetNonBlockingException('Failed to set non-blocking mode stderr on streams.');
             }
         }
     }
@@ -148,11 +148,11 @@ class Process
     /**
      * Check process state and read new data from stdout and stderr.
      *
-     * @throws FailedToGetStatus If process status cannot be retrieved
-     * @throws FailedToReadStdOut If stdout data cannot be read
-     * @throws FailedToSetStdErr If stderr data cannot be read
-     * @throws FailedToTerminateProcess If process cannot be terminated
-     * @throws FailedToClosePipe If pipes cannot be closed
+     * @throws FailedToGetStatusException If process status cannot be retrieved
+     * @throws FailedToReadStdOutException If stdout data cannot be read
+     * @throws FailedToSetStdErrException If stderr data cannot be read
+     * @throws FailedToTerminateProcessExceptionException If process cannot be terminated
+     * @throws FailedToClosePipeException If pipes cannot be closed
      */
     public function tick(): void
     {
@@ -166,7 +166,7 @@ class Process
         if (isset($this->pipes[1]) && ($this->pipes[1] !== null)) {
             $stdoutContent = stream_get_contents($this->pipes[1]);
             if ($stdoutContent === false) {
-                throw new FailedToReadStdOut('Failed to read from stdout.');
+                throw new FailedToReadStdOutException('Failed to read from stdout.');
             }
             $this->unreadStdOut .= $stdoutContent;
         }
@@ -174,7 +174,7 @@ class Process
         if (isset($this->pipes[2]) && ($this->pipes[2] !== null)) {
             $stderrContent = stream_get_contents($this->pipes[2]);
             if ($stderrContent === false) {
-                throw new FailedToSetStdErr('Failed to read from stderr.');
+                throw new FailedToSetStdErrException('Failed to read from stderr.');
             }
             $this->unreadStdErr .= $stderrContent;
         }
@@ -184,14 +184,14 @@ class Process
      * Get process status.
      *
      * @return array<string, mixed> Array with process status, including 'running', 'exitcode', and other keys.
-     * @throws FailedToGetStatus If process status cannot be retrieved
+     * @throws FailedToGetStatusException If process status cannot be retrieved
      */
     public function getStatus(): array
     {
         /** @var array|false $status */
         $status = proc_get_status($this->process);
         if ($status === false) {
-            throw new FailedToGetStatus('Failed to get process status.');
+            throw new FailedToGetStatusException('Failed to get process status.');
         }
         return $status;
     }
@@ -199,15 +199,15 @@ class Process
     /**
      * Stop process safely.
      *
-     * @throws FailedToGetStatus If process status cannot be retrieved
-     * @throws FailedToTerminateProcess If process cannot be terminated
+     * @throws FailedToGetStatusException If process status cannot be retrieved
+     * @throws FailedToTerminateProcessExceptionException If process cannot be terminated
      */
     public function stop(): void
     {
         $status = $this->getStatus();
         if ($status[self::STATUS_RUNNING]) {
             if (!proc_terminate($this->process)) {
-                throw new FailedToTerminateProcess('Failed to terminate the process.');
+                throw new FailedToTerminateProcessExceptionException('Failed to terminate the process.');
             }
         }
     }
@@ -215,16 +215,16 @@ class Process
     /**
      * Force terminate process.
      *
-     * @throws FailedToGetStatus If process status cannot be retrieved
-     * @throws FailedToTerminateProcess If process cannot be forcefully terminated
-     * @throws FailedToClosePipe If pipes cannot be closed
+     * @throws FailedToGetStatusException If process status cannot be retrieved
+     * @throws FailedToTerminateProcessExceptionException If process cannot be forcefully terminated
+     * @throws FailedToClosePipeException If pipes cannot be closed
      */
     public function halt(): void
     {
         $status = $this->getStatus();
         if ($status[self::STATUS_RUNNING]) {
             if (!proc_terminate($this->process, 9)) { // Send SIGKILL
-                throw new FailedToTerminateProcess('Failed to forcefully terminate the process.');
+                throw new FailedToTerminateProcessExceptionException('Failed to forcefully terminate the process.');
             }
         }
         $this->closePipes();
@@ -234,12 +234,12 @@ class Process
      * Send data to child process stdin.
      *
      * @param string $input Data to send to stdin
-     * @throws FailedToWriteStdIn If data cannot be written to stdin
+     * @throws FailedToWriteStdInException If data cannot be written to stdin
      */
     public function sendInput(string $input): void
     {
         if (fwrite($this->pipes[0], $input) === false) {
-            throw new FailedToWriteStdIn('Failed to write to stdin.');
+            throw new FailedToWriteStdInException('Failed to write to stdin.');
         }
     }
 
@@ -270,9 +270,9 @@ class Process
     /**
      * Class destructor. Ensures process termination and resource cleanup.
      *
-     * @throws FailedToGetStatus If process status cannot be retrieved
-     * @throws FailedToTerminateProcess If process cannot be terminated
-     * @throws FailedToClosePipe If pipes cannot be closed
+     * @throws FailedToGetStatusException If process status cannot be retrieved
+     * @throws FailedToTerminateProcessExceptionException If process cannot be terminated
+     * @throws FailedToClosePipeException If pipes cannot be closed
      */
     public function __destruct()
     {
@@ -282,13 +282,13 @@ class Process
     /**
      * Close all open stream descriptors.
      *
-     * @throws FailedToClosePipe If any of the streams cannot be closed
+     * @throws FailedToClosePipeException If any of the streams cannot be closed
      */
     private function closePipes(): void
     {
         foreach ($this->pipes as $pipe) {
             if (is_resource($pipe) && fclose($pipe) === false) {
-                throw new FailedToClosePipe('Failed to close pipe.');
+                throw new FailedToClosePipeException('Failed to close pipe.');
             }
         }
     }

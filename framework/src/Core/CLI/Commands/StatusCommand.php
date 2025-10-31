@@ -6,7 +6,7 @@ namespace Hilos\Core\CLI\Commands;
 
 use Hilos\API\AsyncHttpClient;
 use Hilos\Core\Daemon\Master\DaemonStatus;
-use Hilos\Exception\MissingEnvironmentVariable;
+use Hilos\Exception\MissingEnvironmentVariableException;
 use Hilos\Utils\Constants\ApiEndpoint;
 use Hilos\Utils\Constants\DaemonConstants;
 use Hilos\Utils\Constants\EnvConstants;
@@ -44,7 +44,7 @@ class StatusCommand implements CommandInterface
         // Fetch daemon status via HTTP
         try {
             $this->fetchDaemonStatus();
-        } catch (MissingEnvironmentVariable $e) {
+        } catch (MissingEnvironmentVariableException $e) {
             echo "Error: " . $e->getMessage() . "\n\n";
             return ExitCode::CONFIG_ERROR;
         }
@@ -61,7 +61,7 @@ class StatusCommand implements CommandInterface
      * Fetch daemon status via HTTP
      *
      * Makes synchronous HTTP request to daemon status endpoint.
-     * @throws MissingEnvironmentVariable
+     * @throws MissingEnvironmentVariableException
      */
     private function fetchDaemonStatus(): void
     {

@@ -110,5 +110,13 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
     {
         $this->writeBuffer .= $message . "\n";
     }
+
+    /**
+     * Called when socket connection is successfully closed
+     */
+    protected function onClose(): void
+    {
+        // Worker client cleanup if needed
+    }
 }
 

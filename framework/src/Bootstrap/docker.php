@@ -3,9 +3,9 @@
 declare(strict_types=1);
 
 use Hilos\Core\Daemon\DockerManager;
-use Hilos\Exception\Process\CouldNotStart;
-use Hilos\Exception\Process\FailedToGetStatus;
-use Hilos\Exception\Process\FailedToSetNonBlocking;
+use Hilos\Exception\Process\CouldNotStartException;
+use Hilos\Exception\Process\FailedToGetStatusException;
+use Hilos\Exception\Process\FailedToSetNonBlockingException;
 use Hilos\Utils\Constants\ExitCode;
 use Hilos\Utils\Env;
 
@@ -28,13 +28,13 @@ try {
     // Start watchdog with daemon script
     $dockerManager->runDockerWatchdog(__DIR__ . '/daemon.php');
 
-} catch (CouldNotStart $e) {
+} catch (CouldNotStartException $e) {
     echo "Docker Watchdog could not start daemon: " . $e->getMessage() . "\n";
     exit(ExitCode::ERROR);
-} catch (FailedToGetStatus $e) {
+} catch (FailedToGetStatusException $e) {
     echo "Docker Watchdog failed to get daemon status: " . $e->getMessage() . "\n";
     exit(ExitCode::ERROR);
-} catch (FailedToSetNonBlocking $e) {
+} catch (FailedToSetNonBlockingException $e) {
     echo "Docker Watchdog failed to set non-blocking mode: " . $e->getMessage() . "\n";
     exit(ExitCode::ERROR);
 } catch (Throwable $e) {

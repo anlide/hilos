@@ -6,7 +6,7 @@ namespace Hilos\Core\Daemon;
 
 use Hilos\API\AsyncHttpClient;
 use Hilos\Core\Daemon\Master\DaemonStatus;
-use Hilos\Exception\MissingEnvironmentVariable;
+use Hilos\Exception\MissingEnvironmentVariableException;
 use Hilos\Utils\Helpers\StringHelper;
 use Hilos\Utils\Constants\ApiEndpoint;
 use Hilos\Utils\Constants\DaemonConstants;
@@ -43,7 +43,7 @@ class CliMonitorManager extends BaseManager
      * Main loop runs at 10ms (0.01s) intervals.
      * UI updates every 1 second.
      * HTTP requests every 350ms after completion.
-     * @throws MissingEnvironmentVariable
+     * @throws MissingEnvironmentVariableException
      */
     public function run(): void
     {
