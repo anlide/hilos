@@ -1,0 +1,85 @@
+{
+    "_readme": [
+        "This file locks the dependencies of your project to a known state",
+        "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
+        "This file is @generated automatically"
+    ],
+    "content-hash": "0807e16229568c05ef6b11674547c9df",
+    "packages": [
+        {
+            "name": "anlide/hilos",
+            "version": "2.0.0",
+            "dist": {
+                "type": "path",
+                "url": "/hilos",
+                "reference": "c3e47f1a71f3067a7594ff19b55da368d569c04d"
+            },
+            "require": {
+                "ext-pcntl": "*",
+                "ext-posix": "*",
+                "ext-sockets": "*",
+                "php": ">=8.4"
+            },
+            "require-dev": {
+                "jetbrains/phpstorm-stubs": "^2024.3"
+            },
+            "type": "library",
+            "autoload": {
+                "psr-4": {
+                    "Hilos\\": "framework/src/"
+                }
+            },
+            "scripts": {
+                "install-deps": [
+                    "docker-compose -f docker/docker-compose.yml run --rm hilos-cli composer install"
+                ],
+                "setup-env": [
+                    "docker-compose -f docker/docker-compose.yml run --rm hilos-cli php -r \"require 'vendor/autoload.php'; \\Hilos\\Utils\\Env::init(); echo '.env file initialized.';\""
+                ],
+                "daemon-start": [
+                    "docker-compose -f docker/docker-compose.yml up -d"
+                ],
+                "daemon-stop": [
+                    "docker-compose -f docker/docker-compose.yml stop"
+                ],
+                "daemon-restart": [
+                    "docker-compose -f docker/docker-compose.yml restart hilos"
+                ],
+                "daemon-status": [
+                    "docker-compose -f docker/docker-compose.yml run --rm hilos-cli php framework/src/Bootstrap/cli.php daemon:status"
+                ],
+                "daemon-monitor": [
+                    "docker-compose -f docker/docker-compose.yml run --rm hilos-cli php framework/src/Bootstrap/cli.php daemon:monitor"
+                ],
+                "cli": [
+                    "docker-compose -f docker/docker-compose.yml run --rm hilos-cli php framework/src/Bootstrap/cli.php"
+                ]
+            },
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "Anlide",
+                    "email": "alexander.baranov@anlide.online"
+                }
+            ],
+            "description": "Hilos v2 - High-performance cluster framework with lightweight daemon",
+            "transport-options": {
+                "symlink": true,
+                "relative": false
+            }
+        }
+    ],
+    "packages-dev": [],
+    "aliases": [],
+    "minimum-stability": "stable",
+    "stability-flags": {},
+    "prefer-stable": false,
+    "prefer-lowest": false,
+    "platform": {
+        "php": ">=8.4"
+    },
+    "platform-dev": {},
+    "plugin-api-version": "2.6.0"
+}

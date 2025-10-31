@@ -1,14 +1,14 @@
 # Docker Compose configuration for WebSocket Test Demo Project
 # Load environment variables from .env file in project root
 
-name: hilos-websocket-test
+name: hilos-websocket-test-dev
 
 services:
-  websocket-test:
+  websocket-test-dev:
     build: .
     env_file:
       - ../.env
-    container_name: websocket-test-daemon
+    container_name: websocket-test-daemon-dev
     volumes:
       - ..:/app
       # Mount framework package to /hilos for composer path repository
@@ -27,19 +27,19 @@ services:
       # WebSocket ports (when implemented)
       # - WEBSOCKET_HOST=${WEBSOCKET_HOST:-0.0.0.0}
       # - WEBSOCKET_PORT=${WEBSOCKET_PORT:-8092}
-    command: ["php", "src/Bootstrap/docker.php"]
+    command: ["php", "backend/Bootstrap/docker.php"]
     expose:
       - "${HTTP_STATUS_PORT:-8090}"
       - "${WORKER_COMM_PORT:-8091}"
     networks:
-      hilos-demo-websocket-test-network:
+      hilos-demo-websocket-test-dev-network:
         ipv4_address: ${DOCKER_DAEMON_IP:-172.26.0.11}
 
-  websocket-test-cli:
+  websocket-test-cli-dev:
     build: .
     env_file:
       - ../.env
-    container_name: websocket-test-cli
+    container_name: websocket-test-cli-dev
     volumes:
       - ..:/app
       # Mount framework package to /hilos for composer path repository
@@ -55,13 +55,13 @@ services:
     profiles:
       - composer
     networks:
-      - hilos-demo-websocket-test-network
+      - hilos-demo-websocket-test-dev-network
 
-  websocket-test-monitor:
+  websocket-test-monitor-dev:
     build: .
     env_file:
       - ../.env
-    container_name: websocket-test-monitor
+    container_name: websocket-test-monitor-dev
     volumes:
       - ..:/app
       # Mount framework package to /hilos for composer path repository
@@ -76,12 +76,11 @@ services:
     profiles:
       - monitor
     networks:
-      - hilos-demo-websocket-test-network
+      - hilos-demo-websocket-test-dev-network
 
 networks:
-  hilos-demo-websocket-test-network:
+  hilos-demo-websocket-test-dev-network:
     driver: bridge
     ipam:
       config:
         - subnet: ${DOCKER_NETWORK_SUBNET:-172.26.0.0/16}
-

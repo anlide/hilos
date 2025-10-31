@@ -176,6 +176,9 @@ abstract class DaemonManager extends BaseManager
     protected function onClientRead(ServerInterface $server, $client): void
     {
         $client->read();
+        
+        // Write any pending data from write buffer
+        $client->write();
 
         // Check if client should be closed
         if ($client->shouldClose()) {

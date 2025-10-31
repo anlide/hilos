@@ -20,3 +20,12 @@ vendor/
 # OS
 .DS_Store
 Thumbs.db
+
+# Editor
+*.swp
+*.swo
+*.sw?
+*.suo
+*.ntvs*
+*.njsproj
+*.sln

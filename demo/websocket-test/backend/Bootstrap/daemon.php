@@ -8,6 +8,7 @@ use Hilos\API\Router\HttpRouter;
 use Hilos\Core\Daemon\Master\DaemonStatus;
 use Hilos\Socket\Server\HttpServer;
 use Hilos\Socket\Server\WorkerServer;
+use Demo\WebSocketTest\Core\Socket\ChatWebSocketServer;
 use Hilos\Utils\Constants\EnvConstants;
 use Hilos\Utils\Constants\ExitCode;
 use Hilos\Utils\Constants\HttpConstants;
@@ -42,6 +43,12 @@ try {
         Env::getInt(EnvConstants::WORKER_COMM_PORT),
     );
 
+    // Create WebSocket server
+    $webSocketServer = new ChatWebSocketServer(
+        Env::get(EnvConstants::WEBSOCKET_HOST),
+        Env::getInt(EnvConstants::WEBSOCKET_PORT),
+    );
+
     // Create HTTP router
     $router = new HttpRouter();
 
@@ -73,6 +80,7 @@ try {
     // Register servers and router with daemon
     $daemon->registerServer($httpServer);
     $daemon->registerServer($workerServer);
+    $daemon->registerServer($webSocketServer);
     $daemon->registerHttpRouter($router);
 
     // Start daemon main loop

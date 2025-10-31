@@ -60,5 +60,11 @@ enum EnvConstants
 
     /** @var string Docker daemon IP address */
     case DOCKER_DAEMON_IP;
+
+    /** @var string WebSocket server host */
+    case WEBSOCKET_HOST;
+
+    /** @var string WebSocket server port */
+    case WEBSOCKET_PORT;
 }
 

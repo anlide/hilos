@@ -24,18 +24,18 @@
     },
     "autoload": {
         "psr-4": {
-            "Demo\\WebSocketTest\\": "src/"
+            "Demo\\WebSocketTest\\": "backend/"
         }
     },
     "scripts": {
-        "install-deps": "docker-compose -f docker/docker-compose.yml run --rm websocket-test-cli composer install",
-        "setup-env": "docker-compose -f docker/docker-compose.yml run --rm websocket-test-cli php -r \"require 'vendor/autoload.php'; \\\\Hilos\\\\Utils\\\\Env::init(); echo '.env file initialized.';\"",
-        "daemon-start": "docker-compose -f docker/docker-compose.yml up -d",
-        "daemon-stop": "docker-compose -f docker/docker-compose.yml stop",
-        "daemon-restart": "docker-compose -f docker/docker-compose.yml restart websocket-test",
-        "daemon-status": "docker-compose -f docker/docker-compose.yml run --rm websocket-test-cli php src/Bootstrap/cli.php daemon:status",
-        "daemon-monitor": "docker-compose -f docker/docker-compose.yml run --rm websocket-test-monitor php src/Bootstrap/cli.php daemon:monitor",
-        "cli": "docker-compose -f docker/docker-compose.yml run --rm websocket-test-cli php src/Bootstrap/cli.php"
+        "install-deps": "docker-compose -f docker/docker-compose.local.yml run --rm websocket-test-cli composer install",
+        "setup-env": "docker-compose -f docker/docker-compose.local.yml run --rm websocket-test-cli php -r \"require 'vendor/autoload.php'; \\\\Hilos\\\\Utils\\\\Env::init(); echo '.env file initialized.';\"",
+        "daemon-start": "docker-compose -f docker/docker-compose.local.yml up -d",
+        "daemon-stop": "docker-compose -f docker/docker-compose.local.yml stop",
+        "daemon-restart": "docker-compose -f docker/docker-compose.local.yml restart websocket-test-local",
+        "daemon-status": "docker-compose -f docker/docker-compose.local.yml run --rm websocket-test-cli-local php backend/Bootstrap/cli.php daemon:status",
+        "daemon-monitor": "docker-compose -f docker/docker-compose.local.yml run --rm websocket-test-cli-local php backend/Bootstrap/cli.php daemon:monitor",
+        "cli": "docker-compose -f docker/docker-compose.local.yml run --rm websocket-test-cli-local php backend/Bootstrap/cli.php"
     }
 }
 

@@ -1,20 +1,20 @@
-# Environment
+# Environment configuration
 .env
+.env.local
+.env.*.local
 
-# Composer
-/vendor/
-composer.lock
+# Log files
+data/logs/*.log
 
-# IDE
-.idea/
-.vscode/
-*.swp
-*.swo
+# PID files
+data/run/*.pid
 
-# Logs
-*.log
-/var/log/
+# Runtime data
+data/run/*
 
-# Runtime
-/var/run/
+# Vendor
+vendor/
 
+# Node.js
+node_modules/
+npm-debug.log*

@@ -33,26 +33,6 @@ services:
       hilos-network:
         ipv4_address: ${DOCKER_DAEMON_IP:-172.25.0.10}
 
-  hilos-mysql:
-    image: mariadb:11.4
-    env_file:
-      - ../.env
-    container_name: hilos-mysql
-    environment:
-      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-hilos_password_2024}
-      MARIADB_AUTO_UPGRADE: "1"
-      MYSQL_DATABASE: ${DB_NAME:-hilos_db}
-      MYSQL_USER: ${DB_USER:-hilos_user}
-      MYSQL_PASSWORD: ${DB_PASSWORD:-hilos_user_password}
-    ports:
-      - "${DB_PORT:-3306}:3306"
-    volumes:
-      - hilos_mysql_data:/var/lib/mysql
-      - ../data/mysql/backup:/root/backup
-      - ../data/mysql/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
-    networks:
-      - hilos-network
-
   hilos-cli:
     build: .
     env_file:

@@ -1,0 +1,85 @@
+# Docker Compose configuration for LOCAL development (Windows)
+# Frontend dev server runs locally, backend runs in Docker
+
+name: hilos-websocket-test-local
+
+services:
+  websocket-test-local:
+    build: .
+    env_file:
+      - ../.env
+    container_name: websocket-test-daemon-local
+    volumes:
+      - ..:/app
+      # Mount framework package to /hilos for composer path repository
+      - ../../../composer.json:/hilos/composer.json:ro
+      - ../../../composer.lock:/hilos/composer.lock:ro
+      - ../../../framework:/hilos/framework:ro
+      - ../data/logs:/var/log/hilos
+      - ../data/run:/var/run
+    working_dir: /app
+    environment:
+      - PHP_INI_SCAN_DIR=/usr/local/etc/php/conf.d
+      - HTTP_STATUS_HOST=${HTTP_STATUS_HOST:-0.0.0.0}
+      - HTTP_STATUS_PORT=${HTTP_STATUS_PORT:-8090}
+      - WORKER_COMM_HOST=${WORKER_COMM_HOST:-0.0.0.0}
+      - WORKER_COMM_PORT=${WORKER_COMM_PORT:-8091}
+      - WEBSOCKET_HOST=${WEBSOCKET_HOST:-0.0.0.0}
+      - WEBSOCKET_PORT=${WEBSOCKET_PORT:-8092}
+    command: ["php", "backend/Bootstrap/docker.php"]
+    ports:
+      # Expose ports to host for local frontend access
+      - "${HTTP_STATUS_PORT:-8090}:${HTTP_STATUS_PORT:-8090}"
+      - "${WORKER_COMM_PORT:-8091}:${WORKER_COMM_PORT:-8091}"
+      - "${WEBSOCKET_PORT:-8092}:${WEBSOCKET_PORT:-8092}"
+    networks:
+      hilos-demo-websocket-test-local-network:
+        ipv4_address: ${DOCKER_DAEMON_IP:-172.26.0.11}
+
+  websocket-test-cli-local:
+    build: .
+    env_file:
+      - ../.env
+    container_name: websocket-test-cli-local
+    volumes:
+      - ..:/app
+      - ../../../composer.json:/hilos/composer.json:ro
+      - ../../../composer.lock:/hilos/composer.lock:ro
+      - ../../../framework:/hilos/framework:ro
+    working_dir: /app
+    environment:
+      - TERM=xterm-256color
+      - HILOS_DAEMON_HOST=${HILOS_DAEMON_HOST:-172.26.0.11}
+      - HTTP_STATUS_PORT=${HTTP_STATUS_PORT:-8090}
+      - WORKER_COMM_PORT=${WORKER_COMM_PORT:-8091}
+    profiles:
+      - composer
+    networks:
+      - hilos-demo-websocket-test-local-network
+
+  websocket-test-monitor-local:
+    build: .
+    env_file:
+      - ../.env
+    container_name: websocket-test-monitor-local
+    volumes:
+      - ..:/app
+      - ../../../composer.json:/hilos/composer.json:ro
+      - ../../../composer.lock:/hilos/composer.lock:ro
+      - ../../../framework:/hilos/framework:ro
+    working_dir: /app
+    environment:
+      - HILOS_DAEMON_HOST=${HILOS_DAEMON_HOST:-172.26.0.11}
+      - HTTP_STATUS_PORT=${HTTP_STATUS_PORT:-8090}
+      - WORKER_COMM_PORT=${WORKER_COMM_PORT:-8091}
+    profiles:
+      - monitor
+    networks:
+      - hilos-demo-websocket-test-local-network
+
+networks:
+  hilos-demo-websocket-test-local-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: ${DOCKER_NETWORK_SUBNET:-172.26.0.0/16}

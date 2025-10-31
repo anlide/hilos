@@ -1,0 +1,102 @@
+# Docker Compose configuration for PRODUCTION (Linux)
+# Both frontend (nginx) and backend run in Docker
+
+name: hilos-websocket-test-prod
+
+services:
+  websocket-test-prod:
+    build: .
+    env_file:
+      - ../.env
+    container_name: websocket-test-daemon-prod
+    volumes:
+      - ..:/app
+      # Mount framework package to /hilos for composer path repository
+      - ../../../composer.json:/hilos/composer.json:ro
+      - ../../../composer.lock:/hilos/composer.lock:ro
+      - ../../../framework:/hilos/framework:ro
+      - ../data/logs:/var/log/hilos
+      - ../data/run:/var/run
+    working_dir: /app
+    environment:
+      - PHP_INI_SCAN_DIR=/usr/local/etc/php/conf.d
+      - HTTP_STATUS_HOST=${HTTP_STATUS_HOST:-0.0.0.0}
+      - HTTP_STATUS_PORT=${HTTP_STATUS_PORT:-8090}
+      - WORKER_COMM_HOST=${WORKER_COMM_HOST:-0.0.0.0}
+      - WORKER_COMM_PORT=${WORKER_COMM_PORT:-8091}
+      - WEBSOCKET_HOST=${WEBSOCKET_HOST:-0.0.0.0}
+      - WEBSOCKET_PORT=${WEBSOCKET_PORT:-8092}
+    command: ["php", "backend/Bootstrap/docker.php"]
+    ports:
+      # Expose WebSocket port to host for frontend access
+      - "${WEBSOCKET_PORT:-8092}:${WEBSOCKET_PORT:-8092}"
+    expose:
+      - "${HTTP_STATUS_PORT:-8090}"
+      - "${WORKER_COMM_PORT:-8091}"
+    networks:
+      hilos-demo-websocket-test-prod-network:
+        ipv4_address: ${DOCKER_DAEMON_IP:-172.26.0.11}
+    restart: unless-stopped
+
+  # Nginx for serving frontend production build
+  websocket-test-frontend-prod:
+    image: nginx:alpine
+    container_name: websocket-test-frontend-prod
+    volumes:
+      - ../frontend/dist:/usr/share/nginx/html:ro
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    ports:
+      - "${FRONTEND_PORT:-8080}:80"
+    depends_on:
+      - websocket-test-prod
+    networks:
+      - hilos-demo-websocket-test-prod-network
+    restart: unless-stopped
+
+  websocket-test-cli-prod:
+    build: .
+    env_file:
+      - ../.env
+    container_name: websocket-test-cli-prod
+    volumes:
+      - ..:/app
+      - ../../../composer.json:/hilos/composer.json:ro
+      - ../../../composer.lock:/hilos/composer.lock:ro
+      - ../../../framework:/hilos/framework:ro
+    working_dir: /app
+    environment:
+      - TERM=xterm-256color
+      - HILOS_DAEMON_HOST=${HILOS_DAEMON_HOST:-172.26.0.11}
+      - HTTP_STATUS_PORT=${HTTP_STATUS_PORT:-8090}
+      - WORKER_COMM_PORT=${WORKER_COMM_PORT:-8091}
+    profiles:
+      - composer
+    networks:
+      - hilos-demo-websocket-test-prod-network
+
+  websocket-test-monitor-prod:
+    build: .
+    env_file:
+      - ../.env
+    container_name: websocket-test-monitor-prod
+    volumes:
+      - ..:/app
+      - ../../../composer.json:/hilos/composer.json:ro
+      - ../../../composer.lock:/hilos/composer.lock:ro
+      - ../../../framework:/hilos/framework:ro
+    working_dir: /app
+    environment:
+      - HILOS_DAEMON_HOST=${HILOS_DAEMON_HOST:-172.26.0.11}
+      - HTTP_STATUS_PORT=${HTTP_STATUS_PORT:-8090}
+      - WORKER_COMM_PORT=${WORKER_COMM_PORT:-8091}
+    profiles:
+      - monitor
+    networks:
+      - hilos-demo-websocket-test-prod-network
+
+networks:
+  hilos-demo-websocket-test-prod-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: ${DOCKER_NETWORK_SUBNET:-172.26.0.0/16}
