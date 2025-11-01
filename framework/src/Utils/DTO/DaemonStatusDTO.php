@@ -16,12 +16,18 @@ class DaemonStatusDTO extends BaseDTO
     public const string memory = 'memory';
     public const string cpu = 'cpu';
     public const string timestamp = 'timestamp';
+    public const string workersRegular = 'workersRegular';
+    public const string workersMonopolistic = 'workersMonopolistic';
+    public const string workersMaxRegular = 'workersMaxRegular';
 
     public function __construct(
         public readonly int $uptime,
         public readonly int $memory,
         public readonly float $cpu,
         public readonly int $timestamp,
+        public readonly int $workersRegular = 0,
+        public readonly int $workersMonopolistic = 0,
+        public readonly int $workersMaxRegular = 0,
     ) {
     }
 
@@ -37,6 +43,9 @@ class DaemonStatusDTO extends BaseDTO
             self::memory => $this->memory,
             self::cpu => $this->cpu,
             self::timestamp => $this->timestamp,
+            self::workersRegular => $this->workersRegular,
+            self::workersMonopolistic => $this->workersMonopolistic,
+            self::workersMaxRegular => $this->workersMaxRegular,
         ];
     }
 
@@ -53,6 +62,9 @@ class DaemonStatusDTO extends BaseDTO
             memory: $data[self::memory] ?? 0,
             cpu: $data[self::cpu] ?? 0.0,
             timestamp: $data[self::timestamp] ?? time(),
+            workersRegular: $data[self::workersRegular] ?? 0,
+            workersMonopolistic: $data[self::workersMonopolistic] ?? 0,
+            workersMaxRegular: $data[self::workersMaxRegular] ?? 0,
         );
     }
 }

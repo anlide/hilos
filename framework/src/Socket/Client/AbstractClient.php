@@ -134,16 +134,18 @@ abstract class AbstractClient extends AbstractSocket implements ClientInterface
             return; // Already closed or invalid
         }
 
-        // socket_close returns void, check for errors via socket_last_error
+        // socket_close returns void
         socket_close($this->socket);
-        
+
         // Check if there was an error during close
         $this->handleSocketError(SocketOperation::CLOSE);
 
-        // Call onClose callback if socket was closed successfully (no exception thrown)
+        // Call onClose callback
         $this->onClose();
-
+        
         // Keep $this->socket for event loop cleanup - garbage collector will handle it
+        // NOTE: Socket is NOT set to null to allow getSocket() to work after close()
+        // for cleanup purposes (e.g., unregistering from event loop before destruction)
     }
 
     /**

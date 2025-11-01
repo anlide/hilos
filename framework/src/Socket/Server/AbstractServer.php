@@ -16,7 +16,7 @@ use Hilos\Socket\SocketOperation;
  */
 abstract class AbstractServer extends AbstractSocket implements ServerInterface
 {
-    /** @var array Active client connections */
+    /** @var ClientInterface[] Active client connections */
     protected array $clients = [];
 
     /** @var string Server host */
@@ -134,7 +134,7 @@ abstract class AbstractServer extends AbstractSocket implements ServerInterface
      * Handles socket_accept and socket_set_nonblock.
      * Child classes should implement onCreateClient() to create specific client type.
      *
-     * @return ClientInterface|null New client instance or null if no connection available (EWOULDBLOCK in non-blocking mode)
+     * @return ?ClientInterface New client instance or null if no connection available (EWOULDBLOCK in non-blocking mode)
      * @throws SocketException When socket operations fail
      */
     public function acceptConnection(): ?ClientInterface
@@ -213,6 +213,46 @@ abstract class AbstractServer extends AbstractSocket implements ServerInterface
      * @return ClientInterface Client instance
      */
     abstract protected function onCreateClient($socket): ClientInterface;
+
+    /**
+     * Tick method - process all clients
+     *
+     * Reads from and writes to all connected clients.
+     * Should be called regularly in main loop.
+     */
+    public function tick(): void
+    {
+        $clientsToRemove = [];
+        
+        foreach ($this->clients as $client) {
+            try {
+                // Read from client
+                $client->read();
+
+                // Write to client
+                $client->write();
+
+                // Check if client should be closed
+                if ($client->shouldClose()) {
+                    $client->close();
+                    $clientsToRemove[] = $client;
+                }
+            } catch (SocketException $e) {
+                // If client has error, close it
+                try {
+                    $client->close();
+                } catch (SocketException) {
+                    // Ignore errors during close
+                }
+                $clientsToRemove[] = $client;
+            }
+        }
+        
+        // Remove closed clients after iteration
+        foreach ($clientsToRemove as $client) {
+            $this->removeClient($client);
+        }
+    }
 
     /**
      * Get server name for logging

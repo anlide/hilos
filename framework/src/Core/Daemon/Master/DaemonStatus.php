@@ -31,6 +31,27 @@ class DaemonStatus
         }
     }
 
+    /** @var int Number of active regular workers */
+    public int $workersRegular = 0 {
+        get {
+            return $this->workersRegular;
+        }
+    }
+
+    /** @var int Number of active monopolistic workers */
+    public int $workersMonopolistic = 0 {
+        get {
+            return $this->workersMonopolistic;
+        }
+    }
+
+    /** @var int Maximum number of regular workers */
+    public int $workersMaxRegular = 0 {
+        get {
+            return $this->workersMaxRegular;
+        }
+    }
+
     /**
      * DaemonStatus constructor
      *
@@ -76,6 +97,9 @@ class DaemonStatus
         $status = new self($startTime);
         $status->memoryUsage = $dto->memory;
         $status->cpuUsage = $dto->cpu;
+        $status->workersRegular = $dto->workersRegular;
+        $status->workersMonopolistic = $dto->workersMonopolistic;
+        $status->workersMaxRegular = $dto->workersMaxRegular;
 
         return $status;
     }

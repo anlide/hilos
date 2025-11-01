@@ -38,9 +38,12 @@ try {
     );
 
     // Create Worker server
+    $workerScript = __DIR__ . '/worker.php';
     $workerServer = new WorkerServer(
         Env::get(EnvConstants::WORKER_COMM_HOST),
         Env::getInt(EnvConstants::WORKER_COMM_PORT),
+        $workerScript,
+        $projectRoot,
     );
 
     // Create WebSocket server
@@ -56,8 +59,13 @@ try {
     $status = new DaemonStatus();
 
     // Setup routes
-    $router->addRoute('GET', '/status', function($args) use ($status) {
+    $router->addRoute('GET', '/status', function($args) use ($status, $workerServer) {
         $status->update();
+        
+        // Get worker information from WorkerServer
+        $regularCount = $workerServer->getRegularWorkersCount();
+        $monopolisticCount = $workerServer->getMonopolisticWorkersCount();
+        $maxRegular = $workerServer->getMaxRegularWorkers();
         
         // Create DTO from status
         $dto = new DaemonStatusDTO(
@@ -65,6 +73,9 @@ try {
             memory: $status->memoryUsage,
             cpu: $status->cpuUsage,
             timestamp: time(),
+            workersRegular: $regularCount,
+            workersMonopolistic: $monopolisticCount,
+            workersMaxRegular: $maxRegular,
         );
         
         return [

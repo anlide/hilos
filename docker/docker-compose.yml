@@ -18,17 +18,10 @@ services:
       - HTTP_STATUS_PORT=${HTTP_STATUS_PORT:-8090}
       - WORKER_COMM_HOST=${WORKER_COMM_HOST:-0.0.0.0}
       - WORKER_COMM_PORT=${WORKER_COMM_PORT:-8091}
-      - DB_HOST=${DB_HOST:-hilos-mysql}
-      - DB_PORT=${DB_PORT:-3306}
-      - DB_NAME=${DB_NAME:-hilos_db}
-      - DB_USER=${DB_USER:-hilos_user}
-      - DB_PASSWORD=${DB_PASSWORD:-hilos_user_password}
     command: ["php", "framework/src/Bootstrap/docker.php"]
     expose:
       - "${HTTP_STATUS_PORT:-8090}"
       - "${WORKER_COMM_PORT:-8091}"
-    depends_on:
-      - hilos-mysql
     networks:
       hilos-network:
         ipv4_address: ${DOCKER_DAEMON_IP:-172.25.0.10}

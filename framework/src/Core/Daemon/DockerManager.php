@@ -33,6 +33,15 @@ class DockerManager extends BaseManager
     /** @var ?Process Shared Process variable for the class */
     private ?Process $process = null;
 
+    /** @var ?float Timestamp of last error-based restart attempt */
+    private ?float $lastErrorRestartTime = null;
+
+    /** @var ?float Timestamp when current process was started */
+    private ?float $processStartTime = null;
+
+    /** @var bool Flag to track if restart interval message was logged for current restart */
+    private bool $restartIntervalLogged = false;
+
     /**
      * Run Docker watchdog - main method
      * Starts daemon.php as daemon and monitors its health
@@ -86,12 +95,47 @@ class DockerManager extends BaseManager
     /**
      * Atomic check for daemon start necessity
      * Prevents race condition between $shouldExit and $process checks
+     * Implements minimum restart interval for error-based restarts
      *
      * @return bool True if daemon should be started
+     * @throws MissingEnvironmentVariableException
      */
     private function shouldStartDaemon(): bool
     {
-        return !$this->shouldExit && $this->process === null;
+        if ($this->shouldExit || $this->process !== null) {
+            return false;
+        }
+
+        // If this is an explicit restart signal, always allow restart
+        if ($this->shouldRestart) {
+            return true;
+        }
+
+        // For error-based restarts, check minimum interval
+        if ($this->lastErrorRestartTime !== null) {
+            $minRestartInterval = Env::getInt(EnvConstants::DAEMON_MIN_RESTART_INTERVAL, 20);
+            $timeSinceLastRestart = microtime(true) - $this->lastErrorRestartTime;
+
+            if ($timeSinceLastRestart < $minRestartInterval) {
+                // Log message only once per restart attempt
+                if (!$this->restartIntervalLogged) {
+                    $remainingWaitTime = $minRestartInterval - $timeSinceLastRestart;
+                    echo sprintf(
+                        "Skipping daemon restart: only %.2f seconds passed since last restart (minimum %d seconds required). Waiting %.2f more seconds.\n",
+                        $timeSinceLastRestart,
+                        $minRestartInterval,
+                        $remainingWaitTime
+                    );
+                    $this->restartIntervalLogged = true;
+                }
+                return false;
+            } else {
+                // Enough time has passed - reset flag for next restart attempt
+                $this->restartIntervalLogged = false;
+            }
+        }
+
+        return true;
     }
 
     /**
@@ -103,6 +147,7 @@ class DockerManager extends BaseManager
      * @throws FailedToSetStdErrException If stderr data cannot be read
      * @throws FailedToTerminateProcessExceptionException If the process cannot be terminated
      * @throws FailedToClosePipeException If pipes cannot be closed
+     * @throws MissingEnvironmentVariableException If environment variable cannot be retrieved
      */
     private function tickDaemon(): void
     {
@@ -125,6 +170,7 @@ class DockerManager extends BaseManager
         $status = $this->process->getStatus();
         if ($status[Process::STATUS_RUNNING] !== true) {
             $this->process = null;
+            $this->processStartTime = null;
 
             if ($this->shouldExit) {
                 echo "Daemon process has stopped.\n";
@@ -132,8 +178,21 @@ class DockerManager extends BaseManager
                 if ($this->shouldRestart) {
                     echo "Daemon process has stopped for restart.\n";
                 } else {
+                    // Error-based restart - record timestamp and reset logging flag
+                    $this->lastErrorRestartTime = microtime(true);
+                    $this->restartIntervalLogged = false;
                     echo "Daemon process has stopped unexpectedly.\n";
                 }
+            }
+        } elseif ($this->processStartTime !== null && $this->lastErrorRestartTime !== null) {
+            // Process is running successfully - check if it worked long enough to reset restart protection
+            $processUptime = microtime(true) - $this->processStartTime;
+            $minRestartInterval = Env::getInt(EnvConstants::DAEMON_MIN_RESTART_INTERVAL, 20);
+            
+            if ($processUptime >= $minRestartInterval) {
+                // Process has been running successfully for minimum interval - reset restart protection
+                $this->lastErrorRestartTime = null;
+                $this->restartIntervalLogged = false;
             }
         }
     }
@@ -172,6 +231,8 @@ class DockerManager extends BaseManager
 
         // Log startup time
         $startupTime = microtime(true) - $startTime;
+        $this->processStartTime = microtime(true);
+        
         $this->shouldRestart = false;
 
         echo "Daemon started (startup time: " . number_format($startupTime * 1000, 2) . "ms).\n";

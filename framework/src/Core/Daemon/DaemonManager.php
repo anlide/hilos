@@ -52,6 +52,11 @@ abstract class DaemonManager extends BaseManager
             // Process epoll events for all servers
             $this->processEventLoop();
 
+            // Tick all servers (process clients)
+            foreach ($this->servers as $server) {
+                $server->tick();
+            }
+
             // Call tick method
             $this->tick();
 
@@ -133,18 +138,32 @@ abstract class DaemonManager extends BaseManager
      */
     protected function onServerAccept(ServerInterface $server, $socket): void
     {
-        $client = $server->acceptConnection();
-        if ($client === null) {
-            return;
-        }
+        try {
+            $client = $server->acceptConnection();
+            if ($client === null) {
+                return;
+            }
 
-        // If it's HttpClient and we have a router, set it
-        if ($this->httpRouter !== null && method_exists($client, 'setRouter')) {
-            $client->setRouter($this->httpRouter);
-        }
+            // If it's HttpClient and we have a router, set it
+            if ($this->httpRouter !== null && method_exists($client, 'setRouter')) {
+                $client->setRouter($this->httpRouter);
+            }
 
-        // Register client socket in event loop
-        $this->registerClientSocket($server, $client);
+            // Register client socket in event loop
+            $this->registerClientSocket($server, $client);
+        } catch (\Throwable $e) {
+            // Log exception in server accept handler
+            $this->logException(
+                sprintf("Error in server accept handler for %s: %s in %s:%d - %s",
+                    $server->getServerName(),
+                    get_class($e),
+                    basename($e->getFile()),
+                    $e->getLine(),
+                    $e->getMessage()
+                )
+            );
+            // Don't rethrow - continue processing other connections
+        }
     }
 
     /**
@@ -175,21 +194,49 @@ abstract class DaemonManager extends BaseManager
      */
     protected function onClientRead(ServerInterface $server, $client): void
     {
-        $client->read();
-        
-        // Write any pending data from write buffer
-        $client->write();
-
-        // Check if client should be closed
-        if ($client->shouldClose()) {
-            // Get socket from client BEFORE closing (socket needed for event loop cleanup)
-            $socket = $client->getSocket();
-            if ($socket !== null) {
-                $this->eventLoop->unregister($socket);
-            }
+        try {
+            $client->read();
             
-            $client->close();
-            $server->removeClient($client);
+            // Write any pending data from write buffer
+            $client->write();
+
+            // Check if client should be closed
+            if ($client->shouldClose()) {
+                // CRITICAL: Unregister from event loop BEFORE closing socket
+                // Event loop must not reference the socket after it's closed
+                $socket = $client->getSocket();
+                if ($socket !== null) {
+                    $this->eventLoop->unregister($socket);
+                }
+                
+                // Now safe to close the socket
+                $client->close();
+                $server->removeClient($client);
+            }
+        } catch (\Throwable $e) {
+            // Log exception and close client connection on error
+            $this->logException(
+                sprintf("Error in client read handler for %s: %s in %s:%d - %s",
+                    $server->getServerName(),
+                    get_class($e),
+                    basename($e->getFile()),
+                    $e->getLine(),
+                    $e->getMessage()
+                )
+            );
+            
+            // Close and cleanup client on error
+            // CRITICAL: Unregister from event loop BEFORE closing socket
+            try {
+                $socket = $client->getSocket();
+                if ($socket !== null) {
+                    $this->eventLoop->unregister($socket);
+                }
+                $client->close();
+                $server->removeClient($client);
+            } catch (\Throwable $cleanupError) {
+                // Ignore errors during cleanup - socket may be already closed
+            }
         }
     }
 

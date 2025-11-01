@@ -35,7 +35,7 @@ class EventLoop
     /**
      * Register socket for read events
      *
-     * @param resource|Socket $socket Socket resource or Socket object
+     * @param resource|object $socket Socket resource or Socket object
      * @param callable $callback Callback function(resource $socket, int $flags)
      */
     public function registerRead($socket, callable $callback): void
@@ -47,11 +47,22 @@ class EventLoop
             $this->unregister($socket);
         }
 
+        // Wrap callback to catch exceptions (logging is handled in onClientRead/onServerAccept)
+        $wrappedCallback = function($socket, $flags) use ($callback) {
+            try {
+                return $callback($socket, $flags);
+            } catch (\Throwable $e) {
+                // Don't rethrow - allow event loop to continue
+                // Exception will be logged in onClientRead/onServerAccept handlers
+                return false;
+            }
+        };
+
         $event = new Event(
             $this->base,
             $socket,
             Event::READ | Event::PERSIST,
-            $callback,
+            $wrappedCallback,
         );
 
         $event->add();
@@ -62,18 +73,29 @@ class EventLoop
     /**
      * Register socket for write events
      *
-     * @param resource|Socket $socket Socket resource or Socket object
+     * @param resource|object $socket Socket resource or Socket object
      * @param callable $callback Callback function(resource $socket, int $flags)
      */
     public function registerWrite($socket, callable $callback): void
     {
         $socketId = is_resource($socket) || is_int($socket) ? (int)$socket : spl_object_id($socket);
         
+        // Wrap callback to catch exceptions (logging is handled in handler methods)
+        $wrappedCallback = function($socket, $flags) use ($callback) {
+            try {
+                return $callback($socket, $flags);
+            } catch (\Throwable $e) {
+                // Don't rethrow - allow event loop to continue
+                // Exception will be logged in handler methods
+                return false;
+            }
+        };
+
         $event = new Event(
             $this->base,
             $socket,
             Event::WRITE | Event::PERSIST,
-            $callback,
+            $wrappedCallback,
         );
 
         $event->add();
@@ -84,7 +106,7 @@ class EventLoop
     /**
      * Unregister socket events
      *
-     * @param resource|Socket $socket Socket resource or Socket object
+     * @param resource|object $socket Socket resource or Socket object
      */
     public function unregister($socket): void
     {
@@ -115,6 +137,7 @@ class EventLoop
     public function tick(): void
     {
         // Non-blocking loop - process ready events and return
+        // Exceptions in callbacks are handled by wrapper functions
         $this->base->loop(EventBase::LOOP_NONBLOCK);
     }
 

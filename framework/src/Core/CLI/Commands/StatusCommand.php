@@ -120,14 +120,16 @@ class StatusCommand implements CommandInterface
      */
     private function displayStatusTable(): void
     {
-        echo "+------------------+---------------------+\n";
-        echo "| Metric           | Value               |\n";
-        echo "+------------------+---------------------+\n";
-        printf("| %-16s | %-19s |\n", "Status", $this->getStatusValue());
-        printf("| %-16s | %-19s |\n", "Uptime", $this->getUptimeValue());
-        printf("| %-16s | %-19s |\n", "Memory Usage", $this->getMemoryValue());
-        printf("| %-16s | %-19s |\n", "CPU Usage", $this->getCpuValue());
-        echo "+------------------+---------------------+\n";
+        echo "+--------------------+---------------------+\n";
+        echo "| Metric             | Value               |\n";
+        echo "+--------------------+---------------------+\n";
+        printf("| %-18s | %-19s |\n", "Status", $this->getStatusValue());
+        printf("| %-18s | %-19s |\n", "Uptime", $this->getUptimeValue());
+        printf("| %-18s | %-19s |\n", "Memory Usage", $this->getMemoryValue());
+        printf("| %-18s | %-19s |\n", "CPU Usage", $this->getCpuValue());
+        printf("| %-18s | %-4s | %-12s |\n", "Workers Regular", $this->getWorkersRegularValue(), $this->getWorkersMaxRegularValue());
+        printf("| %-18s | %-19s |\n", "Workers Mono", $this->getWorkersMonopolisticValue());
+        echo "+--------------------+---------------------+\n";
     }
 
     /**
@@ -177,6 +179,42 @@ class StatusCommand implements CommandInterface
         }
 
         return round($this->daemonStatus->cpuUsage, 1) . '%';
+    }
+
+    /**
+     * Get regular workers count
+     */
+    private function getWorkersRegularValue(): string
+    {
+        if ($this->daemonStatus === null) {
+            return DaemonConstants::VALUE_NOT_AVAILABLE;
+        }
+
+        return (string)$this->daemonStatus->workersRegular;
+    }
+
+    /**
+     * Get monopolistic workers count
+     */
+    private function getWorkersMonopolisticValue(): string
+    {
+        if ($this->daemonStatus === null) {
+            return DaemonConstants::VALUE_NOT_AVAILABLE;
+        }
+
+        return (string)$this->daemonStatus->workersMonopolistic;
+    }
+
+    /**
+     * Get maximum regular workers count
+     */
+    private function getWorkersMaxRegularValue(): string
+    {
+        if ($this->daemonStatus === null) {
+            return DaemonConstants::VALUE_NOT_AVAILABLE;
+        }
+
+        return (string)$this->daemonStatus->workersMaxRegular;
     }
 }
 

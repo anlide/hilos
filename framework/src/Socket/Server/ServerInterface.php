@@ -59,5 +59,12 @@ interface ServerInterface
      * @return string Server name
      */
     public function getServerName(): string;
+
+    /**
+     * Tick method - called regularly to process clients
+     *
+     * Should process read/write operations for all connected clients.
+     */
+    public function tick(): void;
 }
 

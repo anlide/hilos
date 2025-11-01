@@ -114,12 +114,28 @@ abstract class AbstractSocket
     {
         // For socket_create, use socket_last_error() without socket parameter
         // For other operations, use socket_last_error($this->socket)
-        $errorCode = $this->socket !== null ? socket_last_error($this->socket) : socket_last_error();
+        // Check if socket is still a valid resource before calling socket_last_error
+        $errorCode = 0;
+        if ($this->socket !== null && (is_resource($this->socket) || is_object($this->socket))) {
+            try {
+                $errorCode = socket_last_error($this->socket);
+            } catch (\Throwable $e) {
+                // Socket may be already closed, use global error
+                $errorCode = socket_last_error();
+            }
+        } else {
+            $errorCode = socket_last_error();
+        }
         $errorMessage = socket_strerror($errorCode);
 
         // Reset error state
-        if ($this->socket !== null) {
-            socket_clear_error($this->socket);
+        if ($this->socket !== null && (is_resource($this->socket) || is_object($this->socket))) {
+            try {
+                socket_clear_error($this->socket);
+            } catch (\Throwable $e) {
+                // Socket may be already closed, use global clear
+                socket_clear_error();
+            }
         } else {
             socket_clear_error();
         }

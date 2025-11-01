@@ -69,5 +69,17 @@ enum EnvConstants
 
     /** @var string Socket read buffer size in bytes */
     case SOCKET_READ_BUFFER_SIZE;
+
+    /** @var string Minimum number of regular worker processes to run */
+    case WORKER_MIN_REGULAR;
+
+    /** @var string Minimum number of monopolistic worker processes to run */
+    case WORKER_MIN_MONOPOLISTIC;
+
+    /** @var string Maximum number of regular worker processes that can be started */
+    case WORKER_MAX_REGULAR;
+
+    /** @var string Minimum interval between daemon restarts after errors (in seconds) */
+    case DAEMON_MIN_RESTART_INTERVAL;
 }
 
