@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Socket\Server;
 
+use Hilos\Exception\SocketException;
 use Hilos\Socket\Client\HttpClient;
 use Hilos\Socket\Client\Interface\HttpClientInterface;
 
@@ -19,31 +20,23 @@ class HttpServer extends AbstractServer
      * Accept new connection
      *
      * @return ?HttpClientInterface New client or null
+     * @throws SocketException
      */
     public function acceptConnection(): ?HttpClientInterface
     {
+        /** @var ?HttpClientInterface */
         return parent::acceptConnection();
     }
 
     /**
-     * Create HTTP client instance
+     * Called when a new HTTP client connection is accepted
      *
      * @param resource $socket Client socket
      * @return HttpClientInterface Client instance
      */
-    protected function createClient($socket): HttpClientInterface
+    protected function onCreateClient($socket): HttpClientInterface
     {
         return new HttpClient($socket);
-    }
-
-    /**
-     * Get backlog size for listen
-     *
-     * @return int Backlog size
-     */
-    protected function getBacklogSize(): int
-    {
-        return 5;
     }
 
     /**

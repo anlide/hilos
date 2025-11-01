@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Socket\Server;
 
+use Hilos\Socket\Client\ClientInterface;
+
 /**
  * ServerInterface - Interface for all server implementations
  *
@@ -33,23 +35,23 @@ interface ServerInterface
     /**
      * Get server socket for select
      *
-     * @return ?resource Server socket
+     * @return resource|object|null Server socket
      */
     public function getSocket();
 
     /**
      * Remove client from server
      *
-     * @param mixed $client Client to remove
+     * @param ClientInterface $client Client to remove
      */
-    public function removeClient($client): void;
+    public function removeClient(ClientInterface $client): void;
 
     /**
      * Accept new connection
      *
-     * @return mixed New client or null
+     * @return ?ClientInterface New client instance or null if no connection available (EWOULDBLOCK in non-blocking mode)
      */
-    public function acceptConnection();
+    public function acceptConnection(): ?ClientInterface;
 
     /**
      * Get server name for logging

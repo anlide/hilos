@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Socket\Server;
 
+use Hilos\Exception\SocketException;
 use Hilos\Socket\Client\Interface\WorkerClientInterface;
 use Hilos\Socket\Client\WorkerClient;
 
@@ -19,31 +20,23 @@ class WorkerServer extends AbstractServer
      * Accept new worker connection
      *
      * @return ?WorkerClientInterface New worker client or null
+     * @throws SocketException
      */
     public function acceptConnection(): ?WorkerClientInterface
     {
+        /** @var ?WorkerClientInterface */
         return parent::acceptConnection();
     }
 
     /**
-     * Create worker client instance
+     * Called when a new worker client connection is accepted
      *
      * @param resource $socket Client socket
      * @return WorkerClientInterface Client instance
      */
-    protected function createClient($socket): WorkerClientInterface
+    protected function onCreateClient($socket): WorkerClientInterface
     {
         return new WorkerClient($socket);
-    }
-
-    /**
-     * Get backlog size for listen
-     *
-     * @return int Backlog size
-     */
-    protected function getBacklogSize(): int
-    {
-        return 10;
     }
 
     /**

@@ -15,5 +15,11 @@ enum SocketOperation: string
     case WRITE = 'write';
     case CLOSE = 'close';
     case GETPEERNAME = 'getpeername';
+    case CREATE = 'create';
+    case SET_OPTION = 'set_option';
+    case SET_NONBLOCK = 'set_nonblock';
+    case BIND = 'bind';
+    case LISTEN = 'listen';
+    case ACCEPT = 'accept';
 }
 

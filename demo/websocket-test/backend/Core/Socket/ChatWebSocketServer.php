@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace Demo\WebSocketTest\Core\Socket;
 
+use Hilos\Exception\SocketException;
 use Hilos\Socket\Client\Interface\WebSocketClientInterface;
 use Hilos\Socket\Server\WebSocketServer;
-use Demo\WebSocketTest\Core\Socket\ChatWebSocketClient;
 
 /**
  * ChatWebSocketServer - WebSocket server for chat demo
@@ -22,6 +22,7 @@ class ChatWebSocketServer extends WebSocketServer
      * Accept new connection
      *
      * @return ?ChatWebSocketClient New client or null
+     * @throws SocketException
      */
     public function acceptConnection(): ?ChatWebSocketClient
     {
@@ -39,12 +40,12 @@ class ChatWebSocketServer extends WebSocketServer
     }
 
     /**
-     * Create chat WebSocket client instance
+     * Called when a new chat WebSocket client connection is accepted
      *
      * @param resource $socket Client socket
      * @return WebSocketClientInterface Client instance
      */
-    protected function createClient($socket): WebSocketClientInterface
+    protected function onCreateClient($socket): WebSocketClientInterface
     {
         return new ChatWebSocketClient($socket);
     }
