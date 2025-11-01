@@ -3,6 +3,8 @@
 declare(strict_types=1);
 
 use Hilos\Core\Daemon\DockerManager;
+use Hilos\Exception\InvalidScriptPathException;
+use Hilos\Exception\Log\LogRotationException;
 use Hilos\Exception\Process\CouldNotStartException;
 use Hilos\Exception\Process\FailedToGetStatusException;
 use Hilos\Exception\Process\FailedToSetNonBlockingException;
@@ -28,6 +30,12 @@ try {
     // Start watchdog with daemon script
     $dockerManager->runDockerWatchdog(__DIR__ . '/daemon.php');
 
+} catch (InvalidScriptPathException $e) {
+    echo "Docker Watchdog invalid script path: " . $e->getMessage() . "\n";
+    exit(ExitCode::ERROR);
+} catch (LogRotationException $e) {
+    echo "Docker Watchdog log rotation failed: " . $e->getMessage() . "\n";
+    exit(ExitCode::ERROR);
 } catch (CouldNotStartException $e) {
     echo "Docker Watchdog could not start daemon: " . $e->getMessage() . "\n";
     exit(ExitCode::ERROR);

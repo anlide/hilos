@@ -174,6 +174,9 @@ class WorkerServer extends AbstractServer
             try {
                 $process->tick();
 
+                // Read and save stdout/stderr to files
+                $this->saveWorkerOutput($process, 'regular', $workerId);
+
                 // Check if process is still running
                 $status = $process->getStatus();
                 if (!$status[Process::STATUS_RUNNING]) {
@@ -197,6 +200,9 @@ class WorkerServer extends AbstractServer
             try {
                 $process->tick();
                 
+                // Read and save stdout/stderr to files
+                $this->saveWorkerOutput($process, 'monopolistic', $workerId);
+
                 // Check if process is still running
                 $status = $process->getStatus();
                 if (!$status[Process::STATUS_RUNNING]) {
@@ -214,6 +220,48 @@ class WorkerServer extends AbstractServer
                 // Process error, remove from list
                 unset($this->monopolisticWorkers[$workerId]);
             }
+        }
+    }
+
+    /**
+     * Save worker stdout and stderr output to files
+     *
+     * @param Process $process Worker process
+     * @param string $workerType Worker type ('regular' or 'monopolistic')
+     * @param int $workerId Worker ID
+     */
+    private function saveWorkerOutput(Process $process, string $workerType, int $workerId): void
+    {
+        // Determine log directory from daemon log file path (same directory)
+        // Fallback to 'data/logs' if DAEMON_LOG_FILE is not set
+        try {
+            $daemonLogFile = Env::get(EnvConstants::DAEMON_LOG_FILE);
+            $logDirectory = dirname($daemonLogFile);
+        } catch (MissingEnvironmentVariableException) {
+            // Fallback to default log directory if env variable is not set
+            $logDirectory = 'data/logs';
+        }
+
+        // Ensure log directory exists
+        if (!is_dir($logDirectory)) {
+            if (!mkdir($logDirectory, 0755, true)) {
+                error_log("Failed to create log directory: {$logDirectory}");
+                return;
+            }
+        }
+
+        // Read stdout and write to file
+        $stdout = $process->getStdOut();
+        if (!empty($stdout)) {
+            $stdoutFile = $logDirectory . "/worker-{$workerType}-{$workerId}.log";
+            file_put_contents($stdoutFile, $stdout, FILE_APPEND | LOCK_EX);
+        }
+
+        // Read stderr and write to file
+        $stderr = $process->getStdErr();
+        if (!empty($stderr)) {
+            $stderrFile = $logDirectory . "/worker-{$workerType}-{$workerId}.error.log";
+            file_put_contents($stderrFile, $stderr, FILE_APPEND | LOCK_EX);
         }
     }
 

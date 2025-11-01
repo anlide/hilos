@@ -18,7 +18,7 @@ use Hilos\Utils\Env;
  */
 
 // Get project root path (2 levels up from Bootstrap)
-$projectRoot = realpath(__DIR__ . '/../..') ?: __DIR__ . '/../..';
+$projectRoot = dirname(dirname(realpath(__DIR__)));
 
 // Initialize environment with project root
 Env::init($projectRoot);

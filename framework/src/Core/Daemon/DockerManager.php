@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Hilos\Core\Daemon;
 
 use Hilos\Core\Process;
+use Hilos\Exception\InvalidScriptPathException;
+use Hilos\Exception\Log\LogRotationException;
 use Hilos\Exception\MissingEnvironmentVariableException;
 use Hilos\Exception\Process\CouldNotStartException;
 use Hilos\Exception\Process\FailedToClosePipeException;
@@ -15,7 +17,6 @@ use Hilos\Exception\Process\FailedToSetStdErrException;
 use Hilos\Exception\Process\FailedToTerminateProcessExceptionException;
 use Hilos\Utils\Constants\EnvConstants;
 use Hilos\Utils\Env;
-use RuntimeException;
 
 /**
  * DockerManager - manages daemon process in Docker container
@@ -47,7 +48,7 @@ class DockerManager extends BaseManager
      * Starts daemon.php as daemon and monitors its health
      *
      * @param string $daemonScript Path to daemon.php script
-     * @throws RuntimeException If required, functions are not available
+     * @throws InvalidScriptPathException If script path validation fails
      * @throws FailedToGetStatusException If process status cannot be retrieved
      * @throws CouldNotStartException If daemon process cannot be started
      * @throws FailedToSetNonBlockingException If non-blocking mode cannot be set
@@ -56,6 +57,7 @@ class DockerManager extends BaseManager
      * @throws FailedToTerminateProcessExceptionException If the process cannot be terminated
      * @throws FailedToClosePipeException If pipes cannot be closed
      * @throws MissingEnvironmentVariableException
+     * @throws LogRotationException If log rotation fails
      */
     public function runDockerWatchdog(string $daemonScript = __DIR__ . '/../../Bootstrap/daemon.php'): void
     {
@@ -68,6 +70,9 @@ class DockerManager extends BaseManager
         // Setup error handling and signal handlers
         $this->setupErrorHandling();
         $this->setupSignalHandlers();
+
+        // Rotate logs before starting processes
+        $this->rotateLogs();
 
         echo "Docker watchdog started.\n";
 
@@ -203,7 +208,7 @@ class DockerManager extends BaseManager
      * @param string $script Path to daemon script
      * @throws CouldNotStartException If daemon process cannot be started
      * @throws FailedToSetNonBlockingException If non-blocking mode cannot be set
-     * @throws RuntimeException If log directory cannot be created
+     * @throws LogRotationException If log directory cannot be created
      * @throws MissingEnvironmentVariableException
      */
     private function startDaemon(string $script): void
@@ -215,7 +220,7 @@ class DockerManager extends BaseManager
         $logDir = dirname(Env::get(EnvConstants::DAEMON_LOG_FILE));
         if (!is_dir($logDir)) {
             if (!mkdir($logDir, 0700, true)) {
-                throw new RuntimeException("Cannot create log directory: $logDir");
+                throw new LogRotationException("Cannot create log directory: $logDir");
             }
         }
 
@@ -339,26 +344,92 @@ class DockerManager extends BaseManager
     }
 
     /**
+     * Rotate log files - move all existing logs to archive directory
+     *
+     * Creates archive/{timestamp} directory and moves all .log files there.
+     * This should be called before starting processes to ensure clean log directory.
+     *
+     * @throws LogRotationException If log directory operations fail
+     */
+    private function rotateLogs(): void
+    {
+        // Determine log directory from daemon log file path
+        try {
+            $daemonLogFile = Env::get(EnvConstants::DAEMON_LOG_FILE);
+            $logDirectory = dirname($daemonLogFile);
+        } catch (MissingEnvironmentVariableException) {
+            // Fallback to default log directory if env variable is not set
+            $logDirectory = 'data/logs';
+        }
+
+        // If log directory doesn't exist, nothing to rotate
+        if (!is_dir($logDirectory)) {
+            return;
+        }
+
+        // Find all .log files in the log directory
+        $logFiles = glob($logDirectory . '/*.log');
+        
+        // If no log files found, nothing to rotate
+        if (empty($logFiles)) {
+            return;
+        }
+
+        // Create archive directory structure
+        $archiveDir = $logDirectory . '/archive';
+        if (!is_dir($archiveDir)) {
+            if (!mkdir($archiveDir, 0755, true)) {
+                throw new LogRotationException("Cannot create archive directory: $archiveDir");
+            }
+        }
+
+        // Create timestamp directory (format: Y-m-d-H-i-s)
+        $timestamp = date('Y-m-d-H-i-s');
+        $timestampDir = $archiveDir . '/' . $timestamp;
+        if (!mkdir($timestampDir, 0755, true)) {
+            throw new LogRotationException("Cannot create timestamp directory: $timestampDir");
+        }
+
+        // Move all log files to archive
+        $movedCount = 0;
+        foreach ($logFiles as $logFile) {
+            $filename = basename($logFile);
+            $targetPath = $timestampDir . '/' . $filename;
+            
+            if (!rename($logFile, $targetPath)) {
+                error_log("Failed to move log file: $logFile to $targetPath");
+                continue;
+            }
+            
+            $movedCount++;
+        }
+
+        if ($movedCount > 0) {
+            echo "Log rotation: moved $movedCount log file(s) to archive/$timestamp/\n";
+        }
+    }
+
+    /**
      * Validate script path
      *
      * @param string $script Path to script
      * @return string Validated path
-     * @throws RuntimeException If the path is invalid
+     * @throws InvalidScriptPathException If the path is invalid
      */
     private function validateScriptPath(string $script): string
     {
         $realPath = realpath($script);
         if ($realPath === false) {
-            throw new RuntimeException("Script path does not exist: $script");
+            throw new InvalidScriptPathException("Script path does not exist: $script");
         }
 
         if (!is_file($realPath)) {
-            throw new RuntimeException("Path is not a file: $script");
+            throw new InvalidScriptPathException("Path is not a file: $script");
         }
 
         $extension = pathinfo($realPath, PATHINFO_EXTENSION);
         if ($extension !== 'php') {
-            throw new RuntimeException("Script must be a PHP file: $script");
+            throw new InvalidScriptPathException("Script must be a PHP file: $script");
         }
 
         return $realPath;

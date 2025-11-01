@@ -35,7 +35,7 @@ try {
 
     // Create Worker server
     $workerScript = __DIR__ . '/worker.php';
-    $projectRoot = realpath(__DIR__ . '/../../..') ?: __DIR__ . '/../../..';
+    $projectRoot = dirname(dirname(dirname(realpath(__DIR__))));
     $workerServer = new WorkerServer(
         Env::get(EnvConstants::WORKER_COMM_HOST),
         Env::getInt(EnvConstants::WORKER_COMM_PORT),

@@ -3,6 +3,7 @@
 
 # Log files
 data/logs/*.log
+data/logs/archive/
 
 # PID files
 data/run/*.pid

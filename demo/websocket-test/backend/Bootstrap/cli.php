@@ -8,8 +8,8 @@ use Hilos\Core\CLI\CliManager;
 use Hilos\Utils\Constants\ExitCode;
 use Hilos\Utils\Env;
 
-// Get project root path (2 levels up from src/Bootstrap)
-$projectRoot = realpath(__DIR__ . '/../..') ?: __DIR__ . '/../..';
+// Get project root path (2 levels up from Bootstrap)
+$projectRoot = dirname(dirname(realpath(__DIR__)));
 
 // Initialize environment with project root
 Env::init($projectRoot);
