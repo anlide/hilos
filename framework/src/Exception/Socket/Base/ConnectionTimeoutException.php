@@ -10,7 +10,7 @@ use Throwable;
 /**
  * Exception thrown when connection timed out (ETIMEDOUT)
  */
-class ConnectionTimeoutException extends SocketException implements Throwable
+class ConnectionTimeoutException extends SocketException
 {
     public function __construct(?Throwable $previous = null)
     {

@@ -10,7 +10,7 @@ use Throwable;
 /**
  * Exception thrown when socket_getpeername fails
  */
-class SocketGetPeerNameException extends SocketException implements Throwable
+class SocketGetPeerNameException extends SocketException
 {
     public function __construct(int $errorCode, string $errorMessage, ?Throwable $previous = null)
     {

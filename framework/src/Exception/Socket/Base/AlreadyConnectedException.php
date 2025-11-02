@@ -10,7 +10,7 @@ use Throwable;
 /**
  * Exception thrown when socket is already connected (EISCONN)
  */
-class AlreadyConnectedException extends SocketException implements Throwable
+class AlreadyConnectedException extends SocketException
 {
     public function __construct(?Throwable $previous = null)
     {

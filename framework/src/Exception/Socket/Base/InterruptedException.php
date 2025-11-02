@@ -10,7 +10,7 @@ use Throwable;
 /**
  * Exception thrown when operation was interrupted (EINTR)
  */
-class InterruptedException extends SocketException implements Throwable
+class InterruptedException extends SocketException
 {
     public function __construct(?Throwable $previous = null)
     {

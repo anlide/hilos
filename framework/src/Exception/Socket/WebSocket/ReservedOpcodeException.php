@@ -10,7 +10,7 @@ use Throwable;
 /**
  * Exception thrown when a reserved WebSocket opcode is encountered
  */
-class ReservedOpcodeException extends WebSocketException implements Throwable
+class ReservedOpcodeException extends WebSocketException
 {
     public function __construct(int $opcode, ?Throwable $previous = null)
     {

@@ -10,7 +10,7 @@ use Throwable;
 /**
  * Exception thrown when message is too long (EMSGSIZE)
  */
-class MessageTooLongException extends SocketException implements Throwable
+class MessageTooLongException extends SocketException
 {
     public function __construct(?Throwable $previous = null)
     {

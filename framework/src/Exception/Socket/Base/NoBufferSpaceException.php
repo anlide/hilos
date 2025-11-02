@@ -10,7 +10,7 @@ use Throwable;
 /**
  * Exception thrown when no buffer space available (ENOBUFS)
  */
-class NoBufferSpaceException extends SocketException implements Throwable
+class NoBufferSpaceException extends SocketException
 {
     public function __construct(?Throwable $previous = null)
     {

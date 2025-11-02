@@ -10,7 +10,7 @@ use Throwable;
 /**
  * Exception thrown when connection is reset by peer (ECONNRESET)
  */
-class ConnectionResetException extends SocketException implements Throwable
+class ConnectionResetException extends SocketException
 {
     public function __construct(?Throwable $previous = null)
     {

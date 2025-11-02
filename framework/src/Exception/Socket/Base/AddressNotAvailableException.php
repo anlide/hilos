@@ -10,7 +10,7 @@ use Throwable;
 /**
  * Exception thrown when address is not available (EADDRNOTAVAIL)
  */
-class AddressNotAvailableException extends SocketException implements Throwable
+class AddressNotAvailableException extends SocketException
 {
     public function __construct(?Throwable $previous = null)
     {

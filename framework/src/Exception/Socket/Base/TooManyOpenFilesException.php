@@ -10,7 +10,7 @@ use Throwable;
 /**
  * Exception thrown when too many open files (EMFILE/ENFILE)
  */
-class TooManyOpenFilesException extends SocketException implements Throwable
+class TooManyOpenFilesException extends SocketException
 {
     public function __construct(?Throwable $previous = null)
     {

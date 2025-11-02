@@ -10,11 +10,10 @@ use Throwable;
 /**
  * Base exception for socket-related errors
  */
-class SocketException extends Exception implements Throwable
+class SocketException extends Exception
 {
     public function __construct(string $message, int $code = 0, ?Throwable $previous = null)
     {
         parent::__construct($message, $code, $previous);
     }
 }
-

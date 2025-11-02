@@ -36,9 +36,6 @@
         "daemon-status": "docker-compose -f docker/docker-compose.local.yml run --rm websocket-test-cli-local php backend/Bootstrap/cli.php daemon:status",
         "daemon-monitor": "docker-compose -f docker/docker-compose.local.yml run --rm websocket-test-cli-local php backend/Bootstrap/cli.php daemon:monitor",
         "cli": "docker-compose -f docker/docker-compose.local.yml run --rm websocket-test-cli-local php backend/Bootstrap/cli.php"
-    },
-    "require-dev": {
-        "jetbrains/phpstorm-stubs": "^2024.3"
     }
 }
 

@@ -19,6 +19,16 @@ abstract class AbstractServer extends AbstractSocket implements ServerInterface
     /** @var ClientInterface[] Active client connections */
     protected array $clients = [];
 
+    /**
+     * Get all active client connections
+     *
+     * @return ClientInterface[] Array of client connections
+     */
+    public function getClients(): array
+    {
+        return $this->clients;
+    }
+
     /** @var string Server host */
     protected string $host;
 

@@ -25,7 +25,7 @@ use Demo\WebSocketTest\Core\Daemon\WebSocketTestDaemon;
  */
 
 // Get project root path (2 levels up from Bootstrap)
-$projectRoot = dirname(dirname(realpath(__DIR__)));
+$projectRoot = dirname(realpath(__DIR__), 2);
 
 // Initialize environment with project root
 Env::init($projectRoot);

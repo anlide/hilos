@@ -10,7 +10,7 @@ use Throwable;
 /**
  * Exception thrown when socket_listen fails
  */
-class SocketListenException extends SocketException implements Throwable
+class SocketListenException extends SocketException
 {
     public function __construct(int $errorCode, string $errorMessage, ?Throwable $previous = null)
     {

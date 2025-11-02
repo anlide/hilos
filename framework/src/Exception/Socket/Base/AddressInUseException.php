@@ -10,7 +10,7 @@ use Throwable;
 /**
  * Exception thrown when address is already in use (EADDRINUSE)
  */
-class AddressInUseException extends SocketException implements Throwable
+class AddressInUseException extends SocketException
 {
     public function __construct(?Throwable $previous = null)
     {

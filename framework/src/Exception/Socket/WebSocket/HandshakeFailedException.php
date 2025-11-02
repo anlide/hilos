@@ -10,7 +10,7 @@ use Throwable;
 /**
  * Exception thrown when WebSocket handshake fails
  */
-class HandshakeFailedException extends WebSocketException implements Throwable
+class HandshakeFailedException extends WebSocketException
 {
     public function __construct(string $reason = "Handshake failed", ?Throwable $previous = null)
     {

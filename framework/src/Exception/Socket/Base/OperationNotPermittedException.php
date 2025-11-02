@@ -10,7 +10,7 @@ use Throwable;
 /**
  * Exception thrown when operation is not permitted (EPERM)
  */
-class OperationNotPermittedException extends SocketException implements Throwable
+class OperationNotPermittedException extends SocketException
 {
     public function __construct(?Throwable $previous = null)
     {

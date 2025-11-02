@@ -4,34 +4,53 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Daemon;
 
+use Hilos\Core\Agent\AgentInterface;
+use Hilos\Exception\SocketException;
+use Hilos\Logging\Logger\AgentLogger;
+use Hilos\Socket\Worker\WorkerDaemonClient;
+use Hilos\Utils\Helpers\ArgumentHelper;
+
 /**
  * WorkerManager - Base worker process manager
  *
  * Main loop for worker processes. Extends BaseManager for error handling,
  * signal management and logging infrastructure.
+ * Manages daemon connection and agents.
  *
  * @abstract
  */
 abstract class WorkerManager extends BaseManager
 {
-    /** @var int Worker ID */
-    protected int $workerId;
+    /** @var int Worker index */
+    protected int $workerIndex;
+
+    /** @var bool Whether this worker is monopolistic */
+    protected bool $isMonopolistic;
+
+    /** @var WorkerDaemonClient|null Client connection to daemon */
+    private ?WorkerDaemonClient $daemonClient = null;
+
+    /** @var AgentInterface[] Active agents indexed by agent ID */
+    protected array $agents = [];
 
     /**
      * WorkerManager constructor
      *
-     * @param int $workerId Worker ID
+     * @param int $workerIndex Worker index
+     * @param array<string> $argv Command line arguments
      */
-    public function __construct(int $workerId)
+    public function __construct(int $workerIndex, array $argv = [])
     {
-        $this->workerId = $workerId;
+        $this->workerIndex = $workerIndex;
+        $this->isMonopolistic = ArgumentHelper::isMonopolistic($argv);
     }
 
     /**
      * Run worker - main method
      *
      * Starts the worker main loop with error handling and signal processing.
-     * Runs until shutdown signal is received.
+     * Connects to daemon asynchronously and runs until shutdown signal is received.
+     * Worker tick() is only called when connection to daemon is established.
      */
     public function run(): void
     {
@@ -39,14 +58,69 @@ abstract class WorkerManager extends BaseManager
         $this->setupErrorHandling();
         $this->setupSignalHandlers();
 
-        $this->logMessage("Worker #{$this->workerId} started");
+        $this->logMessage("Worker #{$this->workerIndex} started");
+
+        // Start connection to daemon (non-blocking)
+        try {
+            $this->connectToDaemon();
+        } catch (\Throwable $e) {
+            $this->logError("Failed to start daemon connection: " . $e->getMessage());
+            $this->cleanup();
+            return;
+        }
 
         // Main loop
         while (!$this->shouldExit) {
             $loopStartTime = microtime(true);
 
-            // Call tick method
-            $this->tick();
+            // Check connection status if not yet connected
+            if ($this->daemonClient !== null && !$this->daemonClient->isConnected()) {
+                try {
+                    $this->daemonClient->checkConnection();
+                } catch (SocketException $e) {
+                    $this->logError("Connection check failed: " . $e->getMessage());
+                    $this->shouldExit = true;
+                    break;
+                }
+            }
+
+            // Only tick when connected to daemon
+            if ($this->daemonClient !== null && $this->daemonClient->isConnected()) {
+                // Process daemon connection
+                try {
+                    $this->daemonClient->read();
+                    $this->daemonClient->write();
+                } catch (SocketException $e) {
+                    // Connection error - check if connection is lost
+                    if (!$this->daemonClient->isConnected()) {
+                        $this->logError("Connection to daemon lost: " . $e->getMessage());
+                        $this->shouldExit = true;
+                        break;
+                    }
+                    $this->logError("Daemon client error: " . $e->getMessage());
+                }
+
+                // Call tick method (only when connected)
+                $this->tick();
+
+                // Tick all agents and collect those that requested stop
+                $agentsToRemove = [];
+                foreach ($this->agents as $agentId => $agent) {
+                    $agent->tick();
+
+                    // Check if agent requested stop (after tick which calls onStop)
+                    if ($agent->shouldStop()) {
+                        $agentsToRemove[] = $agentId;
+                    }
+                }
+
+                // Remove agents that requested stop
+                foreach ($agentsToRemove as $agentId) {
+                    unset($this->agents[$agentId]);
+                    $this->logMessage("Agent {$agentId} stopped (self-requested) [worker side]");
+                    AgentLogger::logInfo($agentId, "Agent stopped (self-requested) on worker [workerIndex={$this->workerIndex}]");
+                }
+            }
 
             $this->sleepWithPreciseTiming($loopStartTime);
 
@@ -54,21 +128,216 @@ abstract class WorkerManager extends BaseManager
             pcntl_signal_dispatch();
         }
 
-        $this->logMessage("Worker #{$this->workerId} stopped");
+        // Cleanup
+        $this->cleanup();
+
+        $this->logMessage("Worker #{$this->workerIndex} stopped");
     }
+
+    /**
+     * Connect to daemon WorkerServer (non-blocking)
+     *
+     * Starts connection attempt. Connection will be checked asynchronously in run() loop.
+     *
+     * @throws SocketException
+     */
+    private function connectToDaemon(): void
+    {
+        $this->daemonClient = new WorkerDaemonClient();
+        $this->daemonClient->setMessageHandler([$this, 'handleDaemonMessage']);
+        $this->daemonClient->connect();
+
+        // Send worker registration message (will be sent when connection is established)
+        $this->daemonClient->send([
+            'type' => 'worker_register',
+            'workerIndex' => $this->workerIndex,
+            'monopolistic' => $this->isMonopolistic,
+        ]);
+    }
+
+    /**
+     * Handle message from daemon
+     *
+     * @param array $data Message data
+     */
+    public function handleDaemonMessage(array $data): void
+    {
+        $type = $data['type'] ?? '';
+
+        switch ($type) {
+            case 'worker_registered':
+                // Connection confirmed by daemon
+                $this->logMessage("Connected to daemon");
+                break;
+
+            case 'agent_start':
+                $this->handleAgentStart($data);
+                break;
+
+            case 'agent_stop':
+                $this->handleAgentStop($data);
+                break;
+
+            case 'agent_message':
+                $this->handleAgentMessage($data);
+                break;
+
+            default:
+                // Unknown message type
+                break;
+        }
+    }
+
+    /**
+     * Handle agent start message
+     *
+     * @param array $data Message data
+     */
+    private function handleAgentStart(array $data): void
+    {
+        $agentId = $data['agentId'] ?? '';
+        $agentType = $data['agentType'] ?? '';
+        $agentIndex = $data['agentIndex'] ?? null;
+
+        if ($agentId === '' || $agentType === '') {
+            return;
+        }
+
+        // Check if agent already exists
+        if (isset($this->agents[$agentId])) {
+            return;
+        }
+
+        // Create agent using factory method
+        $agent = $this->createAgent($agentType, $agentIndex);
+
+        if ($agent !== null) {
+            $agent->setMessageSender([$this, 'sendAgentMessage']);
+            $agent->onStart(); // This will call AgentLogger::logStart inside agent
+            $this->agents[$agentId] = $agent;
+            $this->logMessage("Agent {$agentId} started [worker side]");
+            // Additional agent log from worker side
+            AgentLogger::logInfo($agentId, "Agent started on worker [workerIndex={$this->workerIndex}]");
+        }
+    }
+
+    /**
+     * Handle agent stop message
+     *
+     * @param array $data Message data
+     */
+    private function handleAgentStop(array $data): void
+    {
+        $agentId = $data['agentId'] ?? '';
+
+        if ($agentId === '' || !isset($this->agents[$agentId])) {
+            return;
+        }
+
+        $agent = $this->agents[$agentId];
+        $agent->onStop(); // This will call AgentLogger::logStop inside agent
+        unset($this->agents[$agentId]);
+        $this->logMessage("Agent {$agentId} stopped [worker side]");
+        // Additional agent log from worker side
+        AgentLogger::logInfo($agentId, "Agent stopped on worker [workerIndex={$this->workerIndex}]");
+    }
+
+    /**
+     * Handle agent message
+     *
+     * @param array $data Message data
+     */
+    private function handleAgentMessage(array $data): void
+    {
+        $agentId = $data['agentId'] ?? '';
+        $source = $data['source'] ?? 'daemon';
+
+        if ($agentId === '' || !isset($this->agents[$agentId])) {
+            return;
+        }
+
+        $agent = $this->agents[$agentId];
+
+        // TODO: Convert to proper DTO based on source
+        // For now, use placeholder - will be implemented when agent manager is ready
+    }
+
+    /**
+     * Send message from agent to daemon
+     *
+     * @param string $agentId Agent ID
+     * @param array $data Message data
+     */
+    public function sendAgentMessage(string $agentId, array $data): void
+    {
+        if ($this->daemonClient === null || !$this->daemonClient->isConnected()) {
+            return;
+        }
+
+        // Find agent to get type
+        $agent = $this->agents[$agentId] ?? null;
+        if ($agent === null) {
+            return;
+        }
+
+        $message = [
+            'type' => 'agent_message',
+            'agentId' => $agentId,
+            'agentType' => $agent->getType(),
+            'data' => $data,
+        ];
+
+        $this->daemonClient->send($message);
+    }
+
+    /**
+     * Cleanup on shutdown
+     */
+    private function cleanup(): void
+    {
+        // Stop all agents
+        foreach ($this->agents as $agentId => $agent) {
+            $agent->onStop(); // This will call AgentLogger::logStop inside agent
+            $this->logMessage("Agent {$agentId} stopped during cleanup [worker side]");
+            AgentLogger::logInfo($agentId, "Agent stopped during worker cleanup [workerIndex={$this->workerIndex}]");
+        }
+        $this->agents = [];
+
+        // Close daemon connection
+        if ($this->daemonClient !== null) {
+            try {
+                $this->daemonClient->close();
+            } catch (SocketException $e) {
+                // Ignore errors during cleanup
+            }
+            $this->daemonClient = null;
+        }
+    }
+
+    /**
+     * Create agent instance (factory method)
+     *
+     * Must be implemented in child classes to create specific agent types.
+     *
+     * @param string $agentType Agent type
+     * @param ?string $agentIndex Agent index (optional)
+     * @return AgentInterface|null Agent instance or null if type is not supported
+     */
+    abstract protected function createAgent(string $agentType, ?string $agentIndex): ?AgentInterface;
 
     /**
      * Tick method - called regularly in main loop
      *
      * Must be implemented in child classes to define worker-specific
      * work logic. Called on each loop iteration with precise timing.
+     * Only called when connection to daemon is established.
      */
     abstract protected function tick(): void;
 
     /** @return string Manager name for logging */
     protected function getManagerName(): string
     {
-        return "Worker #{$this->workerId}";
+        return "Worker #{$this->workerIndex}";
     }
 
     /** @param string $message Error message to log */

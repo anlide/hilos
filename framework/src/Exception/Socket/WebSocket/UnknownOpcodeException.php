@@ -10,7 +10,7 @@ use Throwable;
 /**
  * Exception thrown when an unknown or invalid WebSocket opcode is encountered
  */
-class UnknownOpcodeException extends WebSocketException implements Throwable
+class UnknownOpcodeException extends WebSocketException
 {
     public function __construct(int $opcode, ?Throwable $previous = null)
     {

@@ -18,6 +18,7 @@ enum SocketOperation: string
     case CREATE = 'create';
     case SET_OPTION = 'set_option';
     case SET_NONBLOCK = 'set_nonblock';
+    case CONNECT = 'connect';
     case BIND = 'bind';
     case LISTEN = 'listen';
     case ACCEPT = 'accept';

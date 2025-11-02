@@ -24,8 +24,8 @@ use Hilos\Utils\Env;
 Env::init();
 
 try {
-    // Parse command line arguments for worker ID
-    $workerId = ArgumentHelper::getWorkerId($argv);
+    // Parse command line arguments for worker index
+    $workerIndex = ArgumentHelper::getWorkerIndex($argv);
 } catch (InvalidWorkerIdException $e) {
     echo "Worker bootstrap failed: " . $e->getMessage() . "\n";
     exit(ExitCode::ERROR);
@@ -34,7 +34,22 @@ try {
 try {
     // Create anonymous class extending WorkerManager
     // Projects should override this with their own WorkerManager implementation
-    $workerManager = new class($workerId) extends WorkerManager {
+    $workerManager = new class($workerIndex, $argv) extends WorkerManager {
+        /**
+         * Create agent instance (required by abstract method)
+         *
+         * Framework bootstrap doesn't create agents - this is for projects.
+         *
+         * @param string $agentType Agent type
+         * @param ?string $agentIndex Agent index (optional)
+         * @return \Hilos\Core\Agent\AgentInterface|null Always returns null (no agents in framework bootstrap)
+         */
+        protected function createAgent(string $agentType, ?string $agentIndex): ?\Hilos\Core\Agent\AgentInterface
+        {
+            // Framework bootstrap doesn't create agents
+            return null;
+        }
+
         /**
          * Worker tick implementation with heartbeat functionality
          *
@@ -50,7 +65,7 @@ try {
 
             // Send heartbeat every 5 seconds with millisecond precision
             if (($currentTime - $lastHeartbeat) >= $heartbeatInterval) {
-                $this->logMessage("Worker #{$this->workerId} heartbeat - " . date('Y-m-d H:i:s'));
+                $this->logMessage("Worker #{$this->workerIndex} heartbeat - " . date('Y-m-d H:i:s'));
                 $lastHeartbeat = $currentTime;
             }
         }
@@ -60,7 +75,7 @@ try {
     $workerManager->run();
     
 } catch (\Throwable $e) {
-    echo "Worker #{$workerId} failed: " . $e->getMessage() . "\n";
+    echo "Worker #{$workerIndex} failed: " . $e->getMessage() . "\n";
     exit(ExitCode::ERROR);
 }
 

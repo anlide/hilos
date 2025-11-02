@@ -10,7 +10,7 @@ use Throwable;
 /**
  * Exception thrown when WebSocket frame is invalid or malformed
  */
-class InvalidFrameException extends WebSocketException implements Throwable
+class InvalidFrameException extends WebSocketException
 {
     public function __construct(string $reason, ?Throwable $previous = null)
     {

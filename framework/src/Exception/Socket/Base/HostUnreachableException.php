@@ -10,7 +10,7 @@ use Throwable;
 /**
  * Exception thrown when host is unreachable (EHOSTUNREACH)
  */
-class HostUnreachableException extends SocketException implements Throwable
+class HostUnreachableException extends SocketException
 {
     public function __construct(?Throwable $previous = null)
     {

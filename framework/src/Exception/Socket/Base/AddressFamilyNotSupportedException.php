@@ -10,7 +10,7 @@ use Throwable;
 /**
  * Exception thrown when address family is not supported (EAFNOSUPPORT)
  */
-class AddressFamilyNotSupportedException extends SocketException implements Throwable
+class AddressFamilyNotSupportedException extends SocketException
 {
     public function __construct(?Throwable $previous = null)
     {

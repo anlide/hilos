@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../../vendor/autoload.php';
 
-use Demo\WebSocketTest\Core\Worker\ChatWorkerManager;
+use Demo\WebSocketTest\Core\Daemon\ChatWorkerManager;
 use Hilos\Exception\InvalidWorkerIdException;
 use Hilos\Utils\Constants\ExitCode;
-use Hilos\Utils\Helpers\ArgumentHelper;
 use Hilos\Utils\Env;
+use Hilos\Utils\Helpers\ArgumentHelper;
 
 /**
  * Worker Bootstrap - Entry point for worker processes
@@ -18,14 +18,14 @@ use Hilos\Utils\Env;
  */
 
 // Get project root path (2 levels up from Bootstrap)
-$projectRoot = dirname(dirname(realpath(__DIR__)));
+$projectRoot = dirname(realpath(__DIR__), 2);
 
 // Initialize environment with project root
 Env::init($projectRoot);
 
 try {
-    // Parse command line arguments for worker ID
-    $workerId = ArgumentHelper::getWorkerId($argv);
+    // Parse command line arguments for worker index
+    $workerIndex = ArgumentHelper::getWorkerIndex($argv);
 } catch (InvalidWorkerIdException $e) {
     echo "Worker bootstrap failed: " . $e->getMessage() . "\n";
     exit(ExitCode::ERROR);
@@ -33,13 +33,13 @@ try {
 
 try {
     // Create worker manager instance
-    $workerManager = new ChatWorkerManager($workerId);
+    $workerManager = new ChatWorkerManager($workerIndex, $argv);
 
     // Start worker main loop
     $workerManager->run();
     
 } catch (\Throwable $e) {
-    echo "Worker #{$workerId} failed: " . $e->getMessage() . "\n";
+    echo "Worker #{$workerIndex} failed: " . $e->getMessage() . "\n";
     exit(ExitCode::ERROR);
 }
 

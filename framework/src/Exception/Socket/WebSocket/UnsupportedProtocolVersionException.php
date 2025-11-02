@@ -10,7 +10,7 @@ use Throwable;
 /**
  * Exception thrown when client uses unsupported WebSocket protocol version
  */
-class UnsupportedProtocolVersionException extends WebSocketException implements Throwable
+class UnsupportedProtocolVersionException extends WebSocketException
 {
     public function __construct(string $version, ?Throwable $previous = null)
     {

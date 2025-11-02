@@ -10,7 +10,7 @@ use Throwable;
 /**
  * Exception thrown when socket is not connected (ENOTCONN)
  */
-class NotConnectedException extends SocketException implements Throwable
+class NotConnectedException extends SocketException
 {
     public function __construct(?Throwable $previous = null)
     {

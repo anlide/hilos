@@ -4,13 +4,12 @@ declare(strict_types=1);
 
 namespace Hilos\Exception;
 
-use Exception;
 use Throwable;
 
 /**
  * Exception thrown when a required environment variable is missing
  */
-class MissingEnvironmentVariableException extends Exception implements Throwable
+class MissingEnvironmentVariableException extends \Exception
 {
     public function __construct(string $variableName, ?Throwable $previous = null)
     {

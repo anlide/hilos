@@ -10,7 +10,7 @@ use Throwable;
 /**
  * Exception thrown when socket is invalid (EBADF)
  */
-class InvalidSocketException extends SocketException implements Throwable
+class InvalidSocketException extends SocketException
 {
     public function __construct(?Throwable $previous = null)
     {

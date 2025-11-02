@@ -10,7 +10,7 @@ use Throwable;
 /**
  * Exception thrown when out of memory (ENOMEM)
  */
-class OutOfMemoryException extends SocketException implements Throwable
+class OutOfMemoryException extends SocketException
 {
     public function __construct(?Throwable $previous = null)
     {

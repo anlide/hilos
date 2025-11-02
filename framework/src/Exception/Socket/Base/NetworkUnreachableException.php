@@ -10,7 +10,7 @@ use Throwable;
 /**
  * Exception thrown when network is unreachable (ENETUNREACH)
  */
-class NetworkUnreachableException extends SocketException implements Throwable
+class NetworkUnreachableException extends SocketException
 {
     public function __construct(?Throwable $previous = null)
     {

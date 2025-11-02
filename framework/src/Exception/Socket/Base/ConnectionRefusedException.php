@@ -10,7 +10,7 @@ use Throwable;
 /**
  * Exception thrown when connection was refused (ECONNREFUSED)
  */
-class ConnectionRefusedException extends SocketException implements Throwable
+class ConnectionRefusedException extends SocketException
 {
     public function __construct(?Throwable $previous = null)
     {

@@ -45,16 +45,16 @@ class ArgumentHelper
     }
 
     /**
-     * Get worker ID from command line arguments
+     * Get worker index from command line arguments
      *
      * Parses --worker-id=N argument from $argv array.
-     * Throws InvalidWorkerIdException if worker ID is missing or invalid.
+     * Throws InvalidWorkerIdException if worker index is missing or invalid.
      *
      * @param array<string> $argv Command line arguments
-     * @return int Worker ID (positive integer)
-     * @throws InvalidWorkerIdException If worker ID is missing or not a positive integer
+     * @return int Worker index (positive integer)
+     * @throws InvalidWorkerIdException If worker index is missing or not a positive integer
      */
-    public static function getWorkerId(array $argv): int
+    public static function getWorkerIndex(array $argv): int
     {
         $format = self::getWorkerIdArgFormat();
         $formatLength = self::getWorkerIdArgFormatLength();
@@ -62,32 +62,45 @@ class ArgumentHelper
         // Find worker ID argument
         foreach ($argv as $arg) {
             if (str_starts_with($arg, $format)) {
-                $workerIdString = substr($arg, $formatLength);
+                $workerIndexString = substr($arg, $formatLength);
                 
                 // Check if value is empty
-                if ($workerIdString === '') {
-                    throw new InvalidWorkerIdException('worker ID value is empty');
+                if ($workerIndexString === '') {
+                    throw new InvalidWorkerIdException('worker index value is empty');
                 }
                 
                 // Parse as integer
-                $workerId = (int)$workerIdString;
+                $workerIndex = (int)$workerIndexString;
                 
                 // Check if value was actually numeric (intval('abc') returns 0, but we need to check if original was numeric)
-                if ((string)$workerId !== $workerIdString) {
-                    throw new InvalidWorkerIdException("worker ID '{$workerIdString}' is not a valid integer");
+                if ((string)$workerIndex !== $workerIndexString) {
+                    throw new InvalidWorkerIdException("worker index '{$workerIndexString}' is not a valid integer");
                 }
                 
                 // Check if positive
-                if ($workerId <= 0) {
-                    throw new InvalidWorkerIdException("worker ID must be positive, got {$workerId}");
+                if ($workerIndex <= 0) {
+                    throw new InvalidWorkerIdException("worker index must be positive, got {$workerIndex}");
                 }
                 
-                return $workerId;
+                return $workerIndex;
             }
         }
 
         // Worker ID argument not found
         throw new InvalidWorkerIdException('--worker-id argument is missing');
+    }
+
+    /**
+     * Get worker index from command line arguments (alias for getWorkerIndex)
+     *
+     * @param array<string> $argv Command line arguments
+     * @return int Worker index (positive integer)
+     * @throws InvalidWorkerIdException If worker index is missing or not a positive integer
+     * @deprecated Use getWorkerIndex() instead. This method is kept for backward compatibility.
+     */
+    public static function getWorkerId(array $argv): int
+    {
+        return self::getWorkerIndex($argv);
     }
 
     /**
@@ -102,26 +115,26 @@ class ArgumentHelper
     }
 
     /**
-     * Build worker ID argument string
+     * Build worker index argument string
      *
-     * @param int $workerId Worker ID
+     * @param int $workerIndex Worker index
      * @return string Argument string (e.g., "--worker-id=1")
      */
-    public static function buildWorkerIdArg(int $workerId): string
+    public static function buildWorkerIdArg(int $workerIndex): string
     {
-        return self::getWorkerIdArgFormat() . $workerId;
+        return self::getWorkerIdArgFormat() . $workerIndex;
     }
 
     /**
      * Build command line arguments array for worker process
      *
-     * @param int $workerId Worker ID
+     * @param int $workerIndex Worker index
      * @param bool $monopolistic Whether worker is monopolistic
      * @return array<string> Array of command line arguments
      */
-    public static function buildWorkerArgs(int $workerId, bool $monopolistic = false): array
+    public static function buildWorkerArgs(int $workerIndex, bool $monopolistic = false): array
     {
-        $args = [self::buildWorkerIdArg($workerId)];
+        $args = [self::buildWorkerIdArg($workerIndex)];
 
         if ($monopolistic) {
             $args[] = self::getMonopolisticArgFormat();

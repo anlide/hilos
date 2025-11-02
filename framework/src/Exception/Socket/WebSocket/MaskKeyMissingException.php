@@ -10,7 +10,7 @@ use Throwable;
 /**
  * Exception thrown when WebSocket frame requires masking key but it's missing
  */
-class MaskKeyMissingException extends WebSocketException implements Throwable
+class MaskKeyMissingException extends WebSocketException
 {
     public function __construct(?Throwable $previous = null)
     {

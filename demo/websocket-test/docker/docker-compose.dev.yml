@@ -16,7 +16,6 @@ services:
       - ../../../composer.lock:/hilos/composer.lock:ro
       - ../../../framework:/hilos/framework:ro
       - ../data/logs:/var/log/hilos
-      - ../data/run:/var/run
     working_dir: /app
     environment:
       - PHP_INI_SCAN_DIR=/usr/local/etc/php/conf.d

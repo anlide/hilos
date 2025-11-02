@@ -45,7 +45,7 @@ class FileLogger
     {
         $timestamp = date('Y-m-d H:i:s');
         $contextStr = !empty($context) ? ' ' . json_encode($context) : '';
-        $logLine = "[$timestamp] [$level] $message$contextStr\n";
+        $logLine = "[$timestamp] [$level] $message$contextStr";
         
         file_put_contents($this->logFile, $logLine, FILE_APPEND | LOCK_EX);
     }

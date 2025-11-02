@@ -10,7 +10,7 @@ use Throwable;
 /**
  * Exception thrown when network is down (ENETDOWN)
  */
-class NetworkDownException extends SocketException implements Throwable
+class NetworkDownException extends SocketException
 {
     public function __construct(?Throwable $previous = null)
     {

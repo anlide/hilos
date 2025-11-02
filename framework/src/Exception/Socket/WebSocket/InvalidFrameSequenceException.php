@@ -11,7 +11,7 @@ use Throwable;
  * Exception thrown when WebSocket frame sequence is invalid
  * (e.g., continuation frame received without initial fragmented frame)
  */
-class InvalidFrameSequenceException extends WebSocketException implements Throwable
+class InvalidFrameSequenceException extends WebSocketException
 {
     public function __construct(string $message = "Invalid WebSocket frame sequence", ?Throwable $previous = null)
     {

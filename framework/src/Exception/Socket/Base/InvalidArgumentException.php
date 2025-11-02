@@ -10,7 +10,7 @@ use Throwable;
 /**
  * Exception thrown when invalid argument provided (EINVAL)
  */
-class InvalidArgumentException extends SocketException implements Throwable
+class InvalidArgumentException extends SocketException
 {
     public function __construct(string $details = '', ?Throwable $previous = null)
     {

@@ -10,7 +10,7 @@ use Throwable;
 /**
  * Exception thrown when broken pipe (EPIPE)
  */
-class BrokenPipeException extends SocketException implements Throwable
+class BrokenPipeException extends SocketException
 {
     public function __construct(?Throwable $previous = null)
     {

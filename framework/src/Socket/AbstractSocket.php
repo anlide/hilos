@@ -29,6 +29,7 @@ use Hilos\Exception\Socket\Base\TooManyOpenFilesException;
 use Hilos\Exception\Socket\SocketAcceptException;
 use Hilos\Exception\Socket\SocketBindException;
 use Hilos\Exception\Socket\SocketCloseException;
+use Hilos\Exception\Socket\SocketConnectException;
 use Hilos\Exception\Socket\SocketCreateException;
 use Hilos\Exception\Socket\SocketGetPeerNameException;
 use Hilos\Exception\Socket\SocketListenException;
@@ -74,6 +75,7 @@ abstract class AbstractSocket
     protected const int ERR_TIMEDOUT            = 110;  // ETIMEDOUT
     protected const int ERR_CONN_REFUSED        = 111;  // ECONNREFUSED
     protected const int ERR_HOST_UNREACH        = 113;  // EHOSTUNREACH
+    protected const int ERR_INPROGRESS          = 115;  // EINPROGRESS
 
     /** Windows socket error code constants (WSA codes) */
     protected const int WSA_WOULDBLOCK      = 10035;   // WSAEWOULDBLOCK
@@ -150,6 +152,11 @@ abstract class AbstractSocket
             case self::WSA_WOULDBLOCK:
                 // EAGAIN/EWOULDBLOCK (11) / WSAEWOULDBLOCK (10035) - operation would block
                 // In non-blocking mode, this is normal - just return
+                return;
+
+            case self::ERR_INPROGRESS:
+                // EINPROGRESS (115) - connection in progress (normal for non-blocking connect)
+                // In non-blocking mode, this means connection started but not yet complete
                 return;
 
             case self::ERR_CONN_RESET:
@@ -291,6 +298,7 @@ abstract class AbstractSocket
                     SocketOperation::CREATE => throw new SocketCreateException($errorCode, $errorMessage),
                     SocketOperation::SET_OPTION => throw new SocketSetOptionException($errorCode, $errorMessage),
                     SocketOperation::SET_NONBLOCK => throw new SocketSetNonBlockException($errorCode, $errorMessage),
+                    SocketOperation::CONNECT => throw new SocketConnectException($errorCode, $errorMessage),
                     SocketOperation::BIND => throw new SocketBindException($errorCode, $errorMessage),
                     SocketOperation::LISTEN => throw new SocketListenException($errorCode, $errorMessage),
                     SocketOperation::ACCEPT => throw new SocketAcceptException($errorCode, $errorMessage),

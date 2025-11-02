@@ -10,7 +10,7 @@ use Throwable;
 /**
  * Exception thrown when permission denied (EACCES)
  */
-class AccessDeniedException extends SocketException implements Throwable
+class AccessDeniedException extends SocketException
 {
     public function __construct(?Throwable $previous = null)
     {

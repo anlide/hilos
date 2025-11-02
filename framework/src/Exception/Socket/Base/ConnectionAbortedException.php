@@ -10,7 +10,7 @@ use Throwable;
 /**
  * Exception thrown when connection was aborted (ECONNABORTED)
  */
-class ConnectionAbortedException extends SocketException implements Throwable
+class ConnectionAbortedException extends SocketException
 {
     public function __construct(?Throwable $previous = null)
     {

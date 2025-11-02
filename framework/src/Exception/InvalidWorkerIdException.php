@@ -4,13 +4,12 @@ declare(strict_types=1);
 
 namespace Hilos\Exception;
 
-use Exception;
 use Throwable;
 
 /**
  * Exception thrown when worker ID is missing or invalid
  */
-class InvalidWorkerIdException extends Exception implements Throwable
+class InvalidWorkerIdException extends \Exception
 {
     public function __construct(string $reason, ?Throwable $previous = null)
     {
