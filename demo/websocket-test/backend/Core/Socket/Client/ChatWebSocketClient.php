@@ -4,27 +4,29 @@ declare(strict_types=1);
 
 namespace Demo\WebSocketTest\Core\Socket\Client;
 
-use Demo\WebSocketTest\Core\Socket\Server\ChatWebSocketServer;
+use Demo\WebSocketTest\Utils\DTO\WebSocketCloseSignalDTO;
+use Demo\WebSocketTest\Utils\DTO\WebSocketFrameSignalDTO;
+use Demo\WebSocketTest\Utils\DTO\WebSocketHandshakeSignalDTO;
 use Hilos\Socket\Client\WebSocketClient;
 
 /**
  * ChatWebSocketClient - WebSocket client for chat demo
  *
- * Handles chat-specific WebSocket frame processing.
+ * Handles chat-specific WebSocket frame processing and sends signals to chat agent.
  */
 class ChatWebSocketClient extends WebSocketClient
 {
-    /** @var ?ChatWebSocketServer Server instance for broadcasting */
-    private $server = null;
+    /** @var string Client identifier (acceptKey from handshake) */
+    private string $clientId = '';
 
     /**
-     * Set server instance for broadcasting messages
+     * Get client identifier
      *
-     * @param ChatWebSocketServer $server Server instance
+     * @return string Client ID
      */
-    public function setServer(ChatWebSocketServer $server): void
+    public function getClientId(): string
     {
-        $this->server = $server;
+        return $this->clientId;
     }
 
     /**
@@ -34,10 +36,13 @@ class ChatWebSocketClient extends WebSocketClient
      */
     protected function onFrame(string $payload): void
     {
-        // Broadcast message to all other clients via server
-        if ($this->server !== null) {
-            $this->server->broadcastMessage($this, $payload);
-        }
+        $dto = new WebSocketFrameSignalDTO(
+            clientId: $this->clientId,
+            payload: $payload,
+            isBinary: false,
+        );
+
+        $this->signalRouter->queueSignal('websocket', 'frame', $dto);
     }
 
     /**
@@ -47,18 +52,13 @@ class ChatWebSocketClient extends WebSocketClient
      */
     protected function onFrameBinary(string $payload): void
     {
-        // Chat only handles text frames, ignore binary frames
-        // Could log or handle binary data if needed
-    }
+        $dto = new WebSocketFrameSignalDTO(
+            clientId: $this->clientId,
+            payload: $payload,
+            isBinary: true,
+        );
 
-    /**
-     * Send chat message
-     *
-     * @param string $message Message to send
-     */
-    public function sendMessage(string $message): void
-    {
-        $this->sendFrame($message);
+        $this->signalRouter->queueSignal('websocket', 'frame', $dto);
     }
 
     /**
@@ -76,8 +76,17 @@ class ChatWebSocketClient extends WebSocketClient
         string $clientIp,
     ): void
     {
-        // Chat client handshake handling if needed
-        // Can log connection info, validate cookies, etc.
+        $this->clientId = $acceptKey;
+
+        $dto = new WebSocketHandshakeSignalDTO(
+            clientId: $this->clientId,
+            headers: $headers,
+            acceptKey: $acceptKey,
+            cookies: $cookies,
+            clientIp: $clientIp,
+        );
+
+        $this->signalRouter->queueSignal('websocket', 'handshake', $dto);
     }
 
     /**
@@ -85,10 +94,11 @@ class ChatWebSocketClient extends WebSocketClient
      */
     protected function onClose(): void
     {
-        // Remove client from server's client list when connection closes
-        if ($this->server !== null) {
-            $this->server->removeClient($this);
-        }
+        $dto = new WebSocketCloseSignalDTO(
+            clientId: $this->clientId,
+        );
+
+        $this->signalRouter->queueSignal('websocket', 'close', $dto);
     }
 }
 

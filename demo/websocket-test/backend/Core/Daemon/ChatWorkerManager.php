@@ -7,6 +7,7 @@ namespace Demo\WebSocketTest\Core\Daemon;
 use Demo\WebSocketTest\Core\Agent\ChatAgentFactory;
 use Hilos\Core\Agent\AgentInterface;
 use Hilos\Core\Daemon\WorkerManager;
+use Hilos\Utils\Helpers\TimeHelper;
 
 /**
  * ChatWorkerManager - Worker manager for chat demo
@@ -54,6 +55,74 @@ class ChatWorkerManager extends WorkerManager
 
         // Worker-specific tick logic (if any)
         // Agents are already ticked by base class
+    }
+
+    /**
+     * Handle signal from daemon to agent
+     *
+     * Processes WebSocket signals (frame, handshake, close) from daemon.
+     *
+     * @param string $agentId Agent ID
+     * @param array $signalData Signal data
+     */
+    protected function onSignal(string $agentId, array $signalData): void
+    {
+        $signalType = $signalData['signalType'] ?? '';
+        $data = $signalData['data'] ?? [];
+
+        switch ($signalType) {
+            case 'frame':
+                $this->handleFrameSignal($agentId, $data);
+                break;
+
+            case 'handshake':
+                $this->handleHandshakeSignal($agentId, $data);
+                break;
+
+            case 'close':
+                $this->handleCloseSignal($agentId, $data);
+                break;
+
+            default:
+                // Unknown signal type
+                break;
+        }
+    }
+
+    /**
+     * Handle frame signal
+     *
+     * @param string $agentId Agent ID
+     * @param array $data Frame signal data
+     */
+    private function handleFrameSignal(string $agentId, array $data): void
+    {
+        $timestamped = "[" . TimeHelper::getTimestampWithMs() . "] ";
+        echo $timestamped . "Frame signal received for agent {$agentId}: " . json_encode($data) . "\n";
+    }
+
+    /**
+     * Handle handshake signal
+     *
+     * @param string $agentId Agent ID
+     * @param array $data Handshake signal data
+     */
+    private function handleHandshakeSignal(string $agentId, array $data): void
+    {
+        $timestamped = "[" . TimeHelper::getTimestampWithMs() . "] ";
+        echo $timestamped . "Handshake signal received for agent {$agentId}: " . json_encode($data) . "\n";
+    }
+
+    /**
+     * Handle close signal
+     *
+     * @param string $agentId Agent ID
+     * @param array $data Close signal data
+     */
+    private function handleCloseSignal(string $agentId, array $data): void
+    {
+        $timestamped = "[" . TimeHelper::getTimestampWithMs() . "] ";
+        echo $timestamped . "Close signal received for agent {$agentId}: " . json_encode($data) . "\n";
     }
 }
 

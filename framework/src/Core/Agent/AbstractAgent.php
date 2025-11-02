@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Agent;
 
-use Hilos\Core\Agent\DTO\AgentMessageDTOInterface;
-use Hilos\Core\Agent\DTO\MessageFromAgentDTO;
-use Hilos\Core\Agent\DTO\MessageFromDaemonDTO;
-use Hilos\Core\Agent\DTO\MessageFromUserDTO;
-use Hilos\Core\Agent\DTO\MessageFromWorkerDTO;
+use Hilos\Utils\DTO\Agent\AgentMessageDTOInterface;
+use Hilos\Utils\DTO\Agent\MessageFromAgentDTO;
+use Hilos\Utils\DTO\Agent\MessageFromDaemonDTO;
+use Hilos\Utils\DTO\Agent\MessageFromUserDTO;
+use Hilos\Utils\DTO\Agent\MessageFromWorkerDTO;
 
 /**
  * AbstractAgent - Abstract base class for agents running in worker processes

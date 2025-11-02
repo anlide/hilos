@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Socket\Client;
 
 use Hilos\Socket\Client\Interface\WorkerClientInterface;
-use Hilos\Utils\DTO\AgentMessageDTO;
+use Hilos\Utils\DTO\Worker\AgentMessageDTO;
 use Hilos\Utils\Helpers\TimeHelper;
 
 /**

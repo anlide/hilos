@@ -265,9 +265,20 @@ abstract class WorkerManager extends BaseManager
 
         $agent = $this->agents[$agentId];
 
-        // TODO: Convert to proper DTO based on source
-        // For now, use placeholder - will be implemented when agent manager is ready
+        // Extract signal data and call onSignal handler
+        $signalData = $data['data'] ?? [];
+        $this->onSignal($agentId, $signalData);
     }
+
+    /**
+     * Handle signal from daemon to agent
+     *
+     * Must be implemented in child classes to handle specific signal types.
+     *
+     * @param string $agentId Agent ID
+     * @param array $signalData Signal data
+     */
+    abstract protected function onSignal(string $agentId, array $signalData): void;
 
     /**
      * Send message from agent to daemon

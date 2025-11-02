@@ -6,9 +6,9 @@ namespace Demo\WebSocketTest\Core\Agent;
 
 use Demo\WebSocketTest\Utils\Constants\AgentType;
 use Hilos\Core\Agent\AbstractAgent;
-use Hilos\Core\Agent\DTO\AgentMessageDTOInterface;
-use Hilos\Core\Agent\DTO\MessageFromDaemonDTO;
-use Hilos\Core\Agent\DTO\MessageFromUserDTO;
+use Hilos\Utils\DTO\Agent\AgentMessageDTOInterface;
+use Hilos\Utils\DTO\Agent\MessageFromDaemonDTO;
+use Hilos\Utils\DTO\Agent\MessageFromUserDTO;
 use Hilos\Logging\Logger\AgentLogger;
 
 /**

@@ -2,9 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Hilos\Core\Agent\DTO;
-
-use Hilos\Utils\DTO\BaseDTO;
+namespace Hilos\Utils\DTO\Agent;
 
 /**
  * AgentMessageDTOInterface - Interface for agent message DTOs

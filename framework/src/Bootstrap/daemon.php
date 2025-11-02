@@ -28,10 +28,39 @@ use Hilos\Utils\Env;
 Env::init();
 
 try {
+    // Create anonymous class to override tick() method
+    $daemon = new class extends DaemonManager {
+        /** @var float Last heartbeat timestamp in milliseconds */
+        private float $lastHeartbeat = 0.0;
+
+        /** @var float Heartbeat interval in milliseconds (5 seconds) */
+        private float $heartbeatInterval = 5000.0;
+
+        /**
+         * Daemon tick implementation with heartbeat functionality
+         *
+         * Logs heartbeat message every 5 seconds for health monitoring.
+         * Uses millisecond precision for accurate timing.
+         */
+        protected function tick(): void {
+            $currentTime = microtime(true) * 1000;
+
+            // Send heartbeat every 5 seconds with millisecond precision
+            if (($currentTime - $this->lastHeartbeat) >= $this->heartbeatInterval) {
+                $this->logMessage("Daemon heartbeat - " . date('Y-m-d H:i:s'));
+                $this->lastHeartbeat = $currentTime;
+            }
+        }
+    };
+
+    // Get signal router from daemon
+    $signalRouter = $daemon->getSignalRouter();
+
     // Create HTTP server
     $httpServer = new HttpServer(
         Env::get(EnvConstants::HTTP_STATUS_HOST),
         Env::getInt(EnvConstants::HTTP_STATUS_PORT),
+        $signalRouter,
     );
 
     // Create Worker server
@@ -42,6 +71,7 @@ try {
         Env::getInt(EnvConstants::WORKER_COMM_PORT),
         $workerScript,
         $projectRoot,
+        $signalRouter,
     ) extends WorkerServer {
         protected function onStart(): void
         {
@@ -90,31 +120,6 @@ try {
             HttpConstants::RESPONSE_KEY_BODY => $dto->toJson(),
         ];
     });
-
-    // Create anonymous class to override tick() method
-    $daemon = new class extends DaemonManager {
-        /** @var float Last heartbeat timestamp in milliseconds */
-        private float $lastHeartbeat = 0.0;
-
-        /** @var float Heartbeat interval in milliseconds (5 seconds) */
-        private float $heartbeatInterval = 5000.0;
-
-        /**
-         * Daemon tick implementation with heartbeat functionality
-         *
-         * Logs heartbeat message every 5 seconds for health monitoring.
-         * Uses millisecond precision for accurate timing.
-         */
-        protected function tick(): void {
-            $currentTime = microtime(true) * 1000;
-
-            // Send heartbeat every 5 seconds with millisecond precision
-            if (($currentTime - $this->lastHeartbeat) >= $this->heartbeatInterval) {
-                $this->logMessage("Daemon heartbeat - " . date('Y-m-d H:i:s'));
-                $this->lastHeartbeat = $currentTime;
-            }
-        }
-    };
 
     // Register servers and router with daemon
     $daemon->registerServer($httpServer);

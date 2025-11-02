@@ -4,9 +4,13 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Daemon;
 
+use Hilos\Core\Router\SignalRouter;
+use Hilos\Exception\Worker\AgentDaemonCreationFailedException;
 use Hilos\Socket\Server\ServerInterface;
+use Hilos\Socket\Server\WorkerServer;
 use Hilos\API\Router\HttpRouter;
 use Hilos\Core\EventLoop\EventLoop;
+use Hilos\Utils\Helpers\TimeHelper;
 
 /**
  * DaemonManager - Abstract base class for daemon process management
@@ -29,6 +33,9 @@ abstract class DaemonManager extends BaseManager
     /** @var EventLoop Event loop for epoll */
     protected EventLoop $eventLoop;
 
+    /** @var SignalRouter Signal router instance */
+    protected SignalRouter $signalRouter;
+
     /** @var ?float Shutdown start time (null if not shutting down) */
     private ?float $shutdownStartTime = null;
 
@@ -36,11 +43,23 @@ abstract class DaemonManager extends BaseManager
     private const float SHUTDOWN_TIMEOUT = 30.0;
 
     /**
+     * Constructor
+     *
+     * Creates default signal router. Can be overridden in child classes
+     * to create custom signal router.
+     */
+    public function __construct()
+    {
+        $this->signalRouter = new SignalRouter();
+    }
+
+    /**
      * Run daemon - main method
      *
      * Starts the daemon main loop with error handling, signal processing
      * and precise timing control. Runs until shutdown signal is received
      * and all servers are ready to shutdown (or timeout expires).
+     * @throws AgentDaemonCreationFailedException
      */
     public function run(): void
     {
@@ -73,6 +92,9 @@ abstract class DaemonManager extends BaseManager
 
             // Call tick method
             $this->tick();
+
+            // Dispatch accumulated signals
+            $this->dispatchSignals();
 
             $this->sleepWithPreciseTiming($loopStartTime);
 
@@ -139,6 +161,16 @@ abstract class DaemonManager extends BaseManager
     public function registerServer(ServerInterface $server): void
     {
         $this->servers[] = $server;
+    }
+
+    /**
+     * Get signal router instance
+     *
+     * @return SignalRouter Signal router instance
+     */
+    public function getSignalRouter(): SignalRouter
+    {
+        return $this->signalRouter;
     }
 
     /**
@@ -316,6 +348,56 @@ abstract class DaemonManager extends BaseManager
     }
 
     /**
+     * Dispatch accumulated signals
+     *
+     * Processes all queued signals from SignalRouter and sends them to appropriate agents via WorkerServer.
+     * Called at the end of each loop iteration.
+     * @throws AgentDaemonCreationFailedException
+     */
+    private function dispatchSignals(): void
+    {
+        // Get queued signals from router
+        $queuedSignals = $this->signalRouter->getAndClearQueuedSignals();
+
+        if (empty($queuedSignals)) {
+            return;
+        }
+
+        // Find WorkerServer
+        $workerServer = null;
+        foreach ($this->servers as $server) {
+            if ($server instanceof WorkerServer) {
+                $workerServer = $server;
+                break;
+            }
+        }
+
+        if ($workerServer === null) {
+            // No WorkerServer available
+            return;
+        }
+
+        // Dispatch all queued signals
+        foreach ($queuedSignals as $signal) {
+            $route = $signal['route'];
+            if ($route === null) {
+                // No route found, skip
+                continue;
+            }
+
+            // Send signal to agent via worker server
+            $workerServer->sendSignalToAgent(
+                $route['agentType'],
+                $route['agentIndex'],
+                [
+                    'signalType' => $signal['signalType'],
+                    'data' => $signal['dto']->toArray(),
+                ]
+            );
+        }
+    }
+
+    /**
      * Tick method - called regularly in main loop
      *
      * Must be implemented in child classes to define daemon-specific
@@ -332,7 +414,7 @@ abstract class DaemonManager extends BaseManager
     /** @param string $message Error message to log */
     protected function logError(string $message): void
     {
-        $timestamped = "[" . \Hilos\Utils\Helpers\TimeHelper::getTimestampWithMs() . "] " . $message;
+        $timestamped = "[" . TimeHelper::getTimestampWithMs() . "] " . $message;
         echo $timestamped . "\n";
         $this->logMessage($message);
     }
@@ -340,7 +422,7 @@ abstract class DaemonManager extends BaseManager
     /** @param string $message Exception message to log */
     protected function logException(string $message): void
     {
-        $timestamped = "[" . \Hilos\Utils\Helpers\TimeHelper::getTimestampWithMs() . "] " . $message;
+        $timestamped = "[" . TimeHelper::getTimestampWithMs() . "] " . $message;
         echo $timestamped . "\n";
         $this->logMessage($message);
     }
@@ -348,7 +430,7 @@ abstract class DaemonManager extends BaseManager
     /** @param string $message Shutdown message to log */
     protected function logShutdown(string $message): void
     {
-        $timestamped = "[" . \Hilos\Utils\Helpers\TimeHelper::getTimestampWithMs() . "] " . $message;
+        $timestamped = "[" . TimeHelper::getTimestampWithMs() . "] " . $message;
         echo $timestamped . "\n";
         $this->logMessage($message);
     }

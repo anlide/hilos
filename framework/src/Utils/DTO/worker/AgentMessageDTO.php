@@ -2,14 +2,16 @@
 
 declare(strict_types=1);
 
-namespace Hilos\Utils\DTO;
+namespace Hilos\Utils\DTO\Worker;
 
-    /**
-     * AgentMessageDTO - Data Transfer Object for agent signals
-     *
-     * Used for communication between daemon and worker processes.
-     * Supports different signal types: agent_start, agent_stop, agent_message.
-     */
+use Hilos\Utils\DTO\BaseDTO;
+
+/**
+ * AgentMessageDTO - Data Transfer Object for agent signals
+ *
+ * Used for communication between daemon and worker processes.
+ * Supports different signal types: agent_start, agent_stop, agent_message.
+ */
 class AgentMessageDTO extends BaseDTO
 {
     // Field name constants

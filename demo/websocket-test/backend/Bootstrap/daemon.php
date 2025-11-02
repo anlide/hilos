@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../../vendor/autoload.php';
 
-use Demo\WebSocketTest\Core\Daemon\WebSocketTestDaemon;
+use Demo\WebSocketTest\Core\Daemon\ChatDaemonManager;
 use Demo\WebSocketTest\Core\Socket\Server\ChatWebSocketServer;
 use Demo\WebSocketTest\Core\Socket\Server\ChatWorkerServer;
 use Hilos\API\Router\HttpRouter;
@@ -28,10 +28,17 @@ use Hilos\Utils\Env;
 Env::init(__DIR__);
 
 try {
+    // Create chat daemon manager instance first (creates signalRouter)
+    $daemon = new ChatDaemonManager();
+    
+    // Get signal router from daemon
+    $signalRouter = $daemon->getSignalRouter();
+
     // Create HTTP server
     $httpServer = new HttpServer(
         Env::get(EnvConstants::HTTP_STATUS_HOST),
         Env::getInt(EnvConstants::HTTP_STATUS_PORT),
+        $signalRouter,
     );
 
     // Create Worker server
@@ -41,12 +48,14 @@ try {
         Env::getInt(EnvConstants::WORKER_COMM_PORT),
         $workerScript,
         __DIR__, // Working directory for worker processes (Bootstrap folder)
+        $signalRouter,
     );
 
     // Create WebSocket server
     $webSocketServer = new ChatWebSocketServer(
         Env::get(EnvConstants::WEBSOCKET_HOST),
         Env::getInt(EnvConstants::WEBSOCKET_PORT),
+        $signalRouter,
     );
 
     // Create HTTP router
@@ -81,9 +90,6 @@ try {
             HttpConstants::RESPONSE_KEY_BODY => $dto->toJson(),
         ];
     });
-
-    // Create WebSocket test daemon instance
-    $daemon = new WebSocketTestDaemon();
 
     // Register servers and router with daemon
     $daemon->registerServer($httpServer);

@@ -4,21 +4,36 @@ declare(strict_types=1);
 
 namespace Demo\WebSocketTest\Core\Daemon;
 
+use Demo\WebSocketTest\Core\Router\ChatSignalRouter;
 use Hilos\Core\Daemon\DaemonManager;
 
 /**
- * WebSocketTestDaemon - Main daemon manager for WebSocket test project
+ * ChatDaemonManager - Main daemon manager for chat demo
  *
- * Extends framework DaemonManager to provide WebSocket test functionality.
+ * Extends framework DaemonManager to provide chat functionality.
  * Implements tick() method for project-specific logic.
+ * Manages signal routing and server coordination.
  */
-class WebSocketTestDaemon extends DaemonManager
+class ChatDaemonManager extends DaemonManager
 {
     /** @var float Last heartbeat timestamp in milliseconds */
     private float $lastHeartbeat = 0.0;
 
     /** @var float Heartbeat interval in milliseconds (5 seconds) */
     private float $heartbeatInterval = 5000.0;
+
+    /**
+     * Constructor
+     *
+     * Creates ChatSignalRouter instance. It will be automatically
+     * set to all servers registered via registerServer().
+     */
+    public function __construct()
+    {
+        parent::__construct();
+
+        $this->signalRouter = new ChatSignalRouter();
+    }
 
     /**
      * Daemon tick implementation with heartbeat functionality
@@ -33,11 +48,11 @@ class WebSocketTestDaemon extends DaemonManager
 
         // Send heartbeat every 5 seconds with millisecond precision
         if (($currentTime - $this->lastHeartbeat) >= $this->heartbeatInterval) {
-            $this->logMessage("WebSocketTest Daemon heartbeat - " . date('Y-m-d H:i:s'));
+            $this->logMessage("Chat Daemon heartbeat - " . date('Y-m-d H:i:s'));
             $this->lastHeartbeat = $currentTime;
         }
 
-        // TODO: Add WebSocket test specific logic here
+        // TODO: Add chat-specific logic here
         // - Check WebSocket connections
         // - Process messages
         // - Manage agents/workers if needed

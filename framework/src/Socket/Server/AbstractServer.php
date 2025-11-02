@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Socket\Server;
 
+use Hilos\Core\Router\SignalRouter;
 use Hilos\Exception\SocketException;
 use Hilos\Socket\AbstractSocket;
 use Hilos\Socket\Client\ClientInterface;
@@ -41,16 +42,21 @@ abstract class AbstractServer extends AbstractSocket implements ServerInterface
     /** @var bool Whether server is preparing for shutdown (should not accept new connections) */
     protected bool $preparingShutdown = false;
 
+    /** @var SignalRouter Signal router instance */
+    protected SignalRouter $signalRouter;
+
     /**
      * AbstractServer constructor
      *
      * @param string $host Host to bind
      * @param int $port Port to bind
+     * @param SignalRouter $signalRouter Signal router instance
      */
-    public function __construct(string $host, int $port)
+    public function __construct(string $host, int $port, SignalRouter $signalRouter)
     {
         $this->host = $host;
         $this->port = $port;
+        $this->signalRouter = $signalRouter;
     }
 
     /**
@@ -188,7 +194,7 @@ abstract class AbstractServer extends AbstractSocket implements ServerInterface
             return null;
         }
 
-        $client = $this->onCreateClient($clientSocket);
+        $client = $this->onCreateClient($clientSocket, $this->signalRouter);
         $this->clients[] = $client;
 
         return $client;
@@ -235,9 +241,10 @@ abstract class AbstractServer extends AbstractSocket implements ServerInterface
      * Must be implemented by child classes to create specific client type.
      *
      * @param resource $socket Client socket
+     * @param SignalRouter $signalRouter Signal router instance
      * @return ClientInterface Client instance
      */
-    abstract protected function onCreateClient($socket): ClientInterface;
+    abstract protected function onCreateClient($socket, SignalRouter $signalRouter): ClientInterface;
 
     /**
      * Tick method - process all clients

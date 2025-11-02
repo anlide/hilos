@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Socket\Server;
 
+use Hilos\Core\Router\SignalRouter;
 use Hilos\Exception\SocketException;
 use Hilos\Socket\Client\Interface\WebSocketClientInterface;
 
@@ -36,9 +37,10 @@ abstract class WebSocketServer extends AbstractServer
      * Must be implemented by child classes to create concrete WebSocketClient.
      *
      * @param resource $socket Client socket
+     * @param SignalRouter $signalRouter Signal router instance
      * @return WebSocketClientInterface Client instance
      */
-    abstract protected function onCreateClient($socket): WebSocketClientInterface;
+    abstract protected function onCreateClient($socket, SignalRouter $signalRouter): WebSocketClientInterface;
 
     /**
      * Get server name for logging

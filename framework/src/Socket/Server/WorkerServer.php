@@ -7,6 +7,7 @@ namespace Hilos\Socket\Server;
 use Hilos\Core\Agent\Daemon\AbstractAgentDaemonFactory;
 use Hilos\Core\Agent\Daemon\AgentDaemonInterface;
 use Hilos\Core\Process;
+use Hilos\Core\Router\SignalRouter;
 use Hilos\Exception\MissingEnvironmentVariableException;
 use Hilos\Exception\Process\CouldNotStartException;
 use Hilos\Exception\Process\FailedToClosePipeException;
@@ -17,8 +18,7 @@ use Hilos\Exception\Process\FailedToSetStdErrException;
 use Hilos\Exception\Process\FailedToTerminateProcessExceptionException;
 use Hilos\Exception\SocketException;
 use Hilos\Exception\Worker\AgentDaemonCreationFailedException;
-use Hilos\Exception\Worker\AgentDaemonFactoryNotConfiguredException;
-use Hilos\Utils\DTO\AgentMessageDTO;
+use Hilos\Utils\DTO\Worker\AgentMessageDTO;
 use Hilos\Socket\Client\Interface\WorkerClientInterface;
 use Hilos\Socket\Client\WorkerClient;
 use Hilos\Utils\Constants\EnvConstants;
@@ -98,9 +98,9 @@ abstract class WorkerServer extends AbstractServer
      * @param string $workingDirectory Working directory for worker processes
      * @throws MissingEnvironmentVariableException
      */
-    public function __construct(string $host, int $port, string $workerScript, string $workingDirectory)
+    public function __construct(string $host, int $port, string $workerScript, string $workingDirectory, SignalRouter $signalRouter)
     {
-        parent::__construct($host, $port);
+        parent::__construct($host, $port, $signalRouter);
 
         $this->workerScript = $workerScript;
         $this->workingDirectory = $workingDirectory;
@@ -128,9 +128,9 @@ abstract class WorkerServer extends AbstractServer
      * @param resource $socket Client socket
      * @return WorkerClientInterface Client instance
      */
-    protected function onCreateClient($socket): WorkerClientInterface
+    protected function onCreateClient($socket, SignalRouter $signalRouter): WorkerClientInterface
     {
-        $workerClient = new WorkerClient($socket);
+        $workerClient = new WorkerClient($socket, $signalRouter);
 
         // Set agent message handler to track agent lifecycle
         $workerClient->setAgentMessageHandler(function(WorkerClient $client, array $data) {

@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Agent\Daemon;
 
-use Hilos\Core\Agent\DTO\AgentMessageDTOInterface;
-use Hilos\Core\Agent\DTO\MessageFromUserDTO;
+use Hilos\Utils\DTO\Agent\AgentMessageDTOInterface;
+use Hilos\Utils\DTO\Agent\MessageFromUserDTO;
 use Hilos\Socket\Client\WorkerClient;
 use Hilos\Utils\Helpers\TimeHelper;
 
