@@ -158,11 +158,6 @@ class Process
     {
         $status = $this->getStatus();
 
-        if (!$status[self::STATUS_RUNNING]) {
-            $this->halt(); // Ensure the process is terminated if not running
-            return;
-        }
-
         if (isset($this->pipes[1]) && ($this->pipes[1] !== null)) {
             $stdoutContent = stream_get_contents($this->pipes[1]);
             if ($stdoutContent === false) {
@@ -177,6 +172,10 @@ class Process
                 throw new FailedToSetStdErrException('Failed to read from stderr.');
             }
             $this->unreadStdErr .= $stderrContent;
+        }
+
+        if (!$status[self::STATUS_RUNNING]) {
+            $this->halt(); // Ensure the process is terminated if not running
         }
     }
 

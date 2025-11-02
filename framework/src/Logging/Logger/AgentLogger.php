@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Logging\Logger;
 
+use Hilos\Utils\Helpers\TimeHelper;
+
 /**
  * AgentLogger - Logger for agent-specific events
  *
@@ -99,13 +101,13 @@ class AgentLogger
      */
     private static function log(string $agentId, string $level, string $message, bool $useStderr = false): void
     {
-        $timestamp = date('Y-m-d H:i:s');
+        $timestamp = TimeHelper::getTimestampWithMs();
         $logLine = self::MARKER . "{$agentId}|{$level}|[{$timestamp}] {$message}";
         
         if ($useStderr) {
             error_log($logLine);
         } else {
-            echo $logLine;
+            echo $logLine."\n";
         }
     }
 }

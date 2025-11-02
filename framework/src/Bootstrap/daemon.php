@@ -7,6 +7,7 @@ require_once __DIR__ . '/../../../vendor/autoload.php';
 use Hilos\API\Router\HttpRouter;
 use Hilos\Core\Daemon\DaemonManager;
 use Hilos\Core\Daemon\Master\DaemonStatus;
+use Hilos\Exception\Worker\AgentDaemonFactoryNotConfiguredException;
 use Hilos\Socket\Server\HttpServer;
 use Hilos\Socket\Server\WorkerServer;
 use Hilos\Utils\Constants\EnvConstants;
@@ -35,13 +36,26 @@ try {
 
     // Create Worker server
     $workerScript = __DIR__ . '/worker.php';
-    $projectRoot = dirname(dirname(dirname(realpath(__DIR__))));
-    $workerServer = new WorkerServer(
+    $projectRoot = dirname(realpath(__DIR__), 3);
+    $workerServer = new class(
         Env::get(EnvConstants::WORKER_COMM_HOST),
         Env::getInt(EnvConstants::WORKER_COMM_PORT),
         $workerScript,
         $projectRoot,
-    );
+    ) extends WorkerServer {
+        protected function onStart(): void
+        {
+            // Framework daemon has no specific startup logic
+        }
+
+        protected function getAgentDaemonFactoryClass(): string
+        {
+            // Framework daemon doesn't use agent daemons
+            // This will throw AgentDaemonFactoryNotConfiguredException if agent daemon is requested
+            // For framework daemon, agent daemon functionality is not needed
+            throw new AgentDaemonFactoryNotConfiguredException();
+        }
+    };
 
     // Create HTTP router
     $router = new HttpRouter();

@@ -7,6 +7,7 @@ namespace Hilos\Core\Agent\Daemon;
 use Hilos\Core\Agent\DTO\AgentMessageDTOInterface;
 use Hilos\Core\Agent\DTO\MessageFromUserDTO;
 use Hilos\Socket\Client\WorkerClient;
+use Hilos\Utils\Helpers\TimeHelper;
 
 /**
  * AbstractAgentDaemon - Abstract base class for agent proxies in daemon
@@ -32,8 +33,8 @@ abstract class AbstractAgentDaemon implements AgentDaemonInterface
         $agentId = $this->getId();
         $agentType = $this->getType();
         $workerIndex = $workerClient->getWorkerIndex();
-        $timestamp = date('Y-m-d H:i:s');
-        error_log("[{$timestamp}] AgentDaemon {$agentId} linked to WorkerClient [daemon side] [type={$agentType}] [workerIndex={$workerIndex}]");
+        $timestamp = TimeHelper::getTimestampWithMs();
+        echo "[{$timestamp}] AgentDaemon {$agentId} linked to WorkerClient [daemon side] [type={$agentType}] [workerIndex={$workerIndex}]\n";
     }
 
     /**
@@ -126,7 +127,7 @@ abstract class AbstractAgentDaemon implements AgentDaemonInterface
     {
         $agentId = $this->getId();
         $agentType = $this->getType();
-        $timestamp = date('Y-m-d H:i:s');
+        $timestamp = TimeHelper::getTimestampWithMs();
         $workerIndex = $this->workerClient?->getWorkerIndex() ?? 'unknown';
         // Log to daemon.log (stdout) instead of daemon-error.log
         echo "[{$timestamp}] Agent {$agentId} started [daemon side] [type={$agentType}] [workerIndex={$workerIndex}]\n";
@@ -141,7 +142,7 @@ abstract class AbstractAgentDaemon implements AgentDaemonInterface
     {
         $agentId = $this->getId();
         $agentType = $this->getType();
-        $timestamp = date('Y-m-d H:i:s');
+        $timestamp = TimeHelper::getTimestampWithMs();
         $workerIndex = $this->workerClient?->getWorkerIndex() ?? 'unknown';
         // Log to daemon.log (stdout) instead of daemon-error.log
         echo "[{$timestamp}] Agent {$agentId} stopped [daemon side] [type={$agentType}] [workerIndex={$workerIndex}]\n";

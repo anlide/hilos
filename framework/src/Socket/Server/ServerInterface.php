@@ -66,5 +66,20 @@ interface ServerInterface
      * Should process read/write operations for all connected clients.
      */
     public function tick(): void;
+
+    /**
+     * Prepare server for shutdown
+     *
+     * Called when daemon receives shutdown signal.
+     * Server should stop accepting new connections and prepare for graceful shutdown.
+     */
+    public function prepareShutdown(): void;
+
+    /**
+     * Check if server is ready to shutdown
+     *
+     * @return bool True if server is ready to shutdown (all clients disconnected, all workers stopped, etc.)
+     */
+    public function isReadyToShutdown(): bool;
 }
 

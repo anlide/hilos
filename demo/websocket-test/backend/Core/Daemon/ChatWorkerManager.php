@@ -4,9 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\WebSocketTest\Core\Daemon;
 
-use Demo\WebSocketTest\Core\Agent\ChatAgent;
-use Demo\WebSocketTest\Core\Agent\UserAgent;
-use Demo\WebSocketTest\Utils\Constants\AgentType;
+use Demo\WebSocketTest\Core\Agent\ChatAgentFactory;
 use Hilos\Core\Agent\AgentInterface;
 use Hilos\Core\Daemon\WorkerManager;
 
@@ -21,7 +19,7 @@ class ChatWorkerManager extends WorkerManager
     /**
      * Create agent instance based on type
      *
-     * Factory method for creating chat-specific agents.
+     * Uses ChatAgentFactory to create chat-specific agents.
      *
      * @param string $agentType Agent type
      * @param ?string $agentIndex Agent index (optional)
@@ -29,17 +27,7 @@ class ChatWorkerManager extends WorkerManager
      */
     protected function createAgent(string $agentType, ?string $agentIndex): ?AgentInterface
     {
-        if ($agentType === AgentType::CHAT) {
-            // Chat agent (monopolistic)
-            return new ChatAgent();
-        } elseif ($agentType === AgentType::USER) {
-            // User agent (regular) - requires user ID as index
-            if ($agentIndex !== null && $agentIndex !== '') {
-                return new UserAgent($agentIndex);
-            }
-        }
-
-        return null;
+        return ChatAgentFactory::createAgent($agentType, $agentIndex);
     }
 
     /** @var float Last heartbeat timestamp in milliseconds */

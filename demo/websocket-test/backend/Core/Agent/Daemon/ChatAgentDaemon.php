@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Demo\WebSocketTest\Core\Agent\Daemon;
 
 use Hilos\Core\Agent\Daemon\AbstractAgentDaemon;
+use Hilos\Utils\Helpers\TimeHelper;
 
 /**
  * ChatAgentDaemon - Daemon proxy for ChatAgent
@@ -22,8 +23,8 @@ class ChatAgentDaemon extends AbstractAgentDaemon
      */
     public function __construct()
     {
-        $timestamp = date('Y-m-d H:i:s');
-        error_log("[{$timestamp}] ChatAgentDaemon created [daemon side] [type=" . self::AGENT_TYPE . "]");
+        $timestamp = TimeHelper::getTimestampWithMs();
+        echo "[{$timestamp}] ChatAgentDaemon created [daemon side] [type=" . self::AGENT_TYPE . "]\n";
     }
 
     /**
@@ -46,6 +47,18 @@ class ChatAgentDaemon extends AbstractAgentDaemon
     public function getIndex(): ?string
     {
         return null;
+    }
+
+    /**
+     * Check if agent requires monopolistic worker process
+     *
+     * Chat agent requires monopolistic worker.
+     *
+     * @return bool True (chat agent requires monopolistic worker)
+     */
+    public function requiresMonopolisticProcess(): bool
+    {
+        return true;
     }
 
     /**

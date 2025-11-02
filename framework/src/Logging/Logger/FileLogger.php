@@ -2,6 +2,8 @@
 
 namespace Hilos\Logging\Logger;
 
+use Hilos\Utils\Helpers\TimeHelper;
+
 /**
  * FileLogger - простой файловый логгер
  */
@@ -43,7 +45,7 @@ class FileLogger
      */
     private function log(string $level, string $message, array $context = []): void
     {
-        $timestamp = date('Y-m-d H:i:s');
+        $timestamp = TimeHelper::getTimestampWithMs();
         $contextStr = !empty($context) ? ' ' . json_encode($context) : '';
         $logLine = "[$timestamp] [$level] $message$contextStr";
         

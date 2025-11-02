@@ -38,6 +38,9 @@ abstract class AbstractServer extends AbstractSocket implements ServerInterface
     /** @var bool Server running state */
     protected bool $isRunning = false;
 
+    /** @var bool Whether server is preparing for shutdown (should not accept new connections) */
+    protected bool $preparingShutdown = false;
+
     /**
      * AbstractServer constructor
      *
@@ -90,8 +93,20 @@ abstract class AbstractServer extends AbstractSocket implements ServerInterface
         }
 
         $this->isRunning = true;
+        
+        // Call onStart hook after server is started
+        $this->onStart();
+        
         return true;
     }
+
+    /**
+     * Called when server is started
+     *
+     * Must be implemented in child classes to perform actions when server starts.
+     * Called once after server socket is bound and listening.
+     */
+    abstract protected function onStart(): void;
 
     /**
      * Stop server
@@ -270,5 +285,31 @@ abstract class AbstractServer extends AbstractSocket implements ServerInterface
      * @return string Server name
      */
     abstract public function getServerName(): string;
+
+    /**
+     * Prepare server for shutdown
+     *
+     * Default implementation - stops accepting new connections.
+     * Child classes should override to implement additional shutdown preparation logic.
+     */
+    public function prepareShutdown(): void
+    {
+        // Stop accepting new connections
+        $this->preparingShutdown = true;
+    }
+
+    /**
+     * Check if server is ready to shutdown
+     *
+     * Default implementation - by default servers are ready immediately.
+     * Child classes should override to check client connections, worker processes, etc.
+     *
+     * @return bool True if server is ready to shutdown
+     */
+    public function isReadyToShutdown(): bool
+    {
+        // Default implementation - ready immediately
+        return true;
+    }
 }
 

@@ -28,11 +28,19 @@ abstract class DaemonManager extends BaseManager
 
     /** @var EventLoop Event loop for epoll */
     protected EventLoop $eventLoop;
+
+    /** @var ?float Shutdown start time (null if not shutting down) */
+    private ?float $shutdownStartTime = null;
+
+    /** @var float Shutdown timeout in seconds */
+    private const float SHUTDOWN_TIMEOUT = 30.0;
+
     /**
      * Run daemon - main method
      *
      * Starts the daemon main loop with error handling, signal processing
-     * and precise timing control. Runs until shutdown signal is received.
+     * and precise timing control. Runs until shutdown signal is received
+     * and all servers are ready to shutdown (or timeout expires).
      */
     public function run(): void
     {
@@ -46,8 +54,14 @@ abstract class DaemonManager extends BaseManager
         $this->logMessage("Daemon started with epoll");
 
         // Main loop
-        while (!$this->shouldExit) {
+        while ($this->shouldContinueRunning()) {
             $loopStartTime = microtime(true);
+
+            // If shutdown requested but not started yet, initiate shutdown
+            if ($this->shouldExit && $this->shutdownStartTime === null) {
+                $this->shutdownStartTime = microtime(true);
+                $this->initiateShutdown();
+            }
 
             // Process epoll events for all servers
             $this->processEventLoop();
@@ -69,6 +83,52 @@ abstract class DaemonManager extends BaseManager
         // Cleanup
         $this->eventLoop->cleanup();
         $this->logMessage("Daemon stopped");
+    }
+
+    /**
+     * Check if daemon should continue running
+     *
+     * @return bool True if should continue running
+     */
+    private function shouldContinueRunning(): bool
+    {
+        // Continue if not requested to exit
+        if (!$this->shouldExit) {
+            return true;
+        }
+
+        // If shutdown not started yet, continue
+        if ($this->shutdownStartTime === null) {
+            return true;
+        }
+
+        // Check timeout
+        $elapsed = microtime(true) - $this->shutdownStartTime;
+        if ($elapsed >= self::SHUTDOWN_TIMEOUT) {
+            $this->logMessage("Shutdown timeout expired, forcing exit");
+            return false;
+        }
+
+        // Check if all servers are ready
+        return array_any($this->servers, fn($server) => !$server->isReadyToShutdown());
+
+        // All servers ready, can exit
+    }
+
+    /**
+     * Initiate shutdown sequence
+     *
+     * Called when shouldExit becomes true.
+     * Prepares all servers for shutdown.
+     */
+    private function initiateShutdown(): void
+    {
+        $this->logMessage("Shutdown initiated, preparing servers for graceful shutdown");
+        
+        // Tell all servers to prepare for shutdown
+        foreach ($this->servers as $server) {
+            $server->prepareShutdown();
+        }
     }
 
     /**
@@ -272,24 +332,24 @@ abstract class DaemonManager extends BaseManager
     /** @param string $message Error message to log */
     protected function logError(string $message): void
     {
-        $timestamped = "[" . date('Y-m-d H:i:s') . "] " . $message;
-        error_log($timestamped);
+        $timestamped = "[" . \Hilos\Utils\Helpers\TimeHelper::getTimestampWithMs() . "] " . $message;
+        echo $timestamped . "\n";
         $this->logMessage($message);
     }
 
     /** @param string $message Exception message to log */
     protected function logException(string $message): void
     {
-        $timestamped = "[" . date('Y-m-d H:i:s') . "] " . $message;
-        error_log($timestamped);
+        $timestamped = "[" . \Hilos\Utils\Helpers\TimeHelper::getTimestampWithMs() . "] " . $message;
+        echo $timestamped . "\n";
         $this->logMessage($message);
     }
 
     /** @param string $message Shutdown message to log */
     protected function logShutdown(string $message): void
     {
-        $timestamped = "[" . date('Y-m-d H:i:s') . "] " . $message;
-        error_log($timestamped);
+        $timestamped = "[" . \Hilos\Utils\Helpers\TimeHelper::getTimestampWithMs() . "] " . $message;
+        echo $timestamped . "\n";
         $this->logMessage($message);
     }
 

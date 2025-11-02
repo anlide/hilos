@@ -4,17 +4,17 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../../vendor/autoload.php';
 
+use Demo\WebSocketTest\Core\Daemon\WebSocketTestDaemon;
+use Demo\WebSocketTest\Core\Socket\Server\ChatWebSocketServer;
+use Demo\WebSocketTest\Core\Socket\Server\ChatWorkerServer;
 use Hilos\API\Router\HttpRouter;
 use Hilos\Core\Daemon\Master\DaemonStatus;
 use Hilos\Socket\Server\HttpServer;
-use Hilos\Socket\Server\WorkerServer;
-use Demo\WebSocketTest\Core\Socket\ChatWebSocketServer;
 use Hilos\Utils\Constants\EnvConstants;
 use Hilos\Utils\Constants\ExitCode;
 use Hilos\Utils\Constants\HttpConstants;
 use Hilos\Utils\DTO\DaemonStatusDTO;
 use Hilos\Utils\Env;
-use Demo\WebSocketTest\Core\Daemon\WebSocketTestDaemon;
 
 /**
  * Daemon - Entry point for WebSocket test daemon
@@ -24,11 +24,8 @@ use Demo\WebSocketTest\Core\Daemon\WebSocketTestDaemon;
  * Includes HTTP server for status endpoint and Worker server for worker communication.
  */
 
-// Get project root path (2 levels up from Bootstrap)
-$projectRoot = dirname(realpath(__DIR__), 2);
-
-// Initialize environment with project root
-Env::init($projectRoot);
+// Initialize environment (reads .env from local directory)
+Env::init(__DIR__);
 
 try {
     // Create HTTP server
@@ -39,11 +36,11 @@ try {
 
     // Create Worker server
     $workerScript = __DIR__ . '/worker.php';
-    $workerServer = new WorkerServer(
+    $workerServer = new ChatWorkerServer(
         Env::get(EnvConstants::WORKER_COMM_HOST),
         Env::getInt(EnvConstants::WORKER_COMM_PORT),
         $workerScript,
-        $projectRoot,
+        __DIR__, // Working directory for worker processes (Bootstrap folder)
     );
 
     // Create WebSocket server

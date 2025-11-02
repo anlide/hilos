@@ -11,11 +11,8 @@ use Hilos\Exception\Process\FailedToSetNonBlockingException;
 use Hilos\Utils\Constants\ExitCode;
 use Hilos\Utils\Env;
 
-// Get project root path (2 levels up from Bootstrap)
-$projectRoot = dirname(realpath(__DIR__), 2);
-
-// Initialize environment with project root
-Env::init($projectRoot);
+// Initialize environment (reads .env from local directory)
+Env::init(__DIR__);
 
 /**
  * Docker Watchdog - Process manager for Docker containers

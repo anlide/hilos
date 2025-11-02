@@ -2,8 +2,9 @@
 
 declare(strict_types=1);
 
-namespace Demo\WebSocketTest\Core\Socket;
+namespace Demo\WebSocketTest\Core\Socket\Client;
 
+use Demo\WebSocketTest\Core\Socket\Server\ChatWebSocketServer;
 use Hilos\Socket\Client\WebSocketClient;
 
 /**

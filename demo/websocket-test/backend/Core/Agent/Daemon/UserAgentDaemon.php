@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Demo\WebSocketTest\Core\Agent\Daemon;
 
 use Hilos\Core\Agent\Daemon\AbstractAgentDaemon;
+use Hilos\Utils\Helpers\TimeHelper;
 
 /**
  * UserAgentDaemon - Daemon proxy for UserAgent
@@ -28,8 +29,8 @@ class UserAgentDaemon extends AbstractAgentDaemon
     public function __construct(string $userId)
     {
         $this->userId = $userId;
-        $timestamp = date('Y-m-d H:i:s');
-        error_log("[{$timestamp}] UserAgentDaemon created [daemon side] [type=" . self::AGENT_TYPE . "] [userId={$userId}]");
+        $timestamp = TimeHelper::getTimestampWithMs();
+        echo "[{$timestamp}] UserAgentDaemon created [daemon side] [type=" . self::AGENT_TYPE . "] [userId={$userId}]\n";
     }
 
     /**
@@ -52,6 +53,18 @@ class UserAgentDaemon extends AbstractAgentDaemon
     public function getIndex(): ?string
     {
         return $this->userId;
+    }
+
+    /**
+     * Check if agent requires monopolistic worker process
+     *
+     * User agent does not require monopolistic worker.
+     *
+     * @return bool False (user agent does not require monopolistic worker)
+     */
+    public function requiresMonopolisticProcess(): bool
+    {
+        return false;
     }
 
     /**

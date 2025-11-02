@@ -36,6 +36,13 @@ interface AgentDaemonInterface
     public function getIndex(): ?string;
 
     /**
+     * Check if agent requires monopolistic worker process
+     *
+     * @return bool True if agent requires monopolistic worker, false otherwise
+     */
+    public function requiresMonopolisticProcess(): bool;
+
+    /**
      * Set worker client connection
      *
      * WorkerClient represents the connection to the worker process where

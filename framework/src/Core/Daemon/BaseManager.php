@@ -7,6 +7,7 @@ namespace Hilos\Core\Daemon;
 use ErrorException;
 use Hilos\Utils\Constants\ErrorConstants;
 use Hilos\Utils\Env;
+use Hilos\Utils\Helpers\TimeHelper;
 use RuntimeException;
 use Throwable;
 
@@ -261,7 +262,7 @@ abstract class BaseManager
      */
     protected function logMessage(string $message): void
     {
-        echo "[" . date('Y-m-d H:i:s') . "] " . $message . "\n";
+        echo "[" . TimeHelper::getTimestampWithMs() . "] " . $message . "\n";
     }
 
     // Abstract methods that must be implemented by child classes

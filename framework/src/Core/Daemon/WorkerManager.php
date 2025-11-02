@@ -9,6 +9,7 @@ use Hilos\Exception\SocketException;
 use Hilos\Logging\Logger\AgentLogger;
 use Hilos\Socket\Worker\WorkerDaemonClient;
 use Hilos\Utils\Helpers\ArgumentHelper;
+use Hilos\Utils\Helpers\TimeHelper;
 
 /**
  * WorkerManager - Base worker process manager
@@ -218,6 +219,9 @@ abstract class WorkerManager extends BaseManager
             $this->logMessage("Agent {$agentId} started [worker side]");
             // Additional agent log from worker side
             AgentLogger::logInfo($agentId, "Agent started on worker [workerIndex={$this->workerIndex}]");
+            
+            // Notify daemon that agent started
+            $this->notifyAgentStarted($agentId, $agentType, $agentIndex);
         }
     }
 
@@ -240,6 +244,9 @@ abstract class WorkerManager extends BaseManager
         $this->logMessage("Agent {$agentId} stopped [worker side]");
         // Additional agent log from worker side
         AgentLogger::logInfo($agentId, "Agent stopped on worker [workerIndex={$this->workerIndex}]");
+        
+        // Notify daemon that agent stopped
+        $this->notifyAgentStopped($agentId);
     }
 
     /**
@@ -285,6 +292,51 @@ abstract class WorkerManager extends BaseManager
             'agentId' => $agentId,
             'agentType' => $agent->getType(),
             'data' => $data,
+        ];
+
+        $this->daemonClient->send($message);
+    }
+
+    /**
+     * Notify daemon that agent started
+     *
+     * @param string $agentId Agent ID
+     * @param string $agentType Agent type
+     * @param ?string $agentIndex Agent index (optional)
+     */
+    private function notifyAgentStarted(string $agentId, string $agentType, ?string $agentIndex): void
+    {
+        if ($this->daemonClient === null || !$this->daemonClient->isConnected()) {
+            return;
+        }
+
+        $message = [
+            'type' => 'agent_started',
+            'agentId' => $agentId,
+            'agentType' => $agentType,
+        ];
+
+        if ($agentIndex !== null) {
+            $message['agentIndex'] = $agentIndex;
+        }
+
+        $this->daemonClient->send($message);
+    }
+
+    /**
+     * Notify daemon that agent stopped
+     *
+     * @param string $agentId Agent ID
+     */
+    private function notifyAgentStopped(string $agentId): void
+    {
+        if ($this->daemonClient === null || !$this->daemonClient->isConnected()) {
+            return;
+        }
+
+        $message = [
+            'type' => 'agent_stopped',
+            'agentId' => $agentId,
         ];
 
         $this->daemonClient->send($message);
@@ -343,7 +395,7 @@ abstract class WorkerManager extends BaseManager
     /** @param string $message Error message to log */
     protected function logError(string $message): void
     {
-        $timestamped = "[" . date('Y-m-d H:i:s') . "] " . $message;
+        $timestamped = "[" . TimeHelper::getTimestampWithMs() . "] " . $message;
         error_log($timestamped);
         $this->logMessage($message);
     }
@@ -351,7 +403,7 @@ abstract class WorkerManager extends BaseManager
     /** @param string $message Exception message to log */
     protected function logException(string $message): void
     {
-        $timestamped = "[" . date('Y-m-d H:i:s') . "] " . $message;
+        $timestamped = "[" . TimeHelper::getTimestampWithMs() . "] " . $message;
         error_log($timestamped);
         $this->logMessage($message);
     }
@@ -359,7 +411,7 @@ abstract class WorkerManager extends BaseManager
     /** @param string $message Shutdown message to log */
     protected function logShutdown(string $message): void
     {
-        $timestamped = "[" . date('Y-m-d H:i:s') . "] " . $message;
+        $timestamped = "[" . TimeHelper::getTimestampWithMs() . "] " . $message;
         error_log($timestamped);
         $this->logMessage($message);
     }

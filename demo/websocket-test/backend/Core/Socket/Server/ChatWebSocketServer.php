@@ -2,8 +2,9 @@
 
 declare(strict_types=1);
 
-namespace Demo\WebSocketTest\Core\Socket;
+namespace Demo\WebSocketTest\Core\Socket\Server;
 
+use Demo\WebSocketTest\Core\Socket\Client\ChatWebSocketClient;
 use Hilos\Exception\SocketException;
 use Hilos\Socket\Client\Interface\WebSocketClientInterface;
 use Hilos\Socket\Server\WebSocketServer;
@@ -84,6 +85,14 @@ class ChatWebSocketServer extends WebSocketServer
         if ($key !== false) {
             unset($this->chatClients[$key]);
         }
+    }
+
+    /**
+     * Called when server is started
+     */
+    protected function onStart(): void
+    {
+        // Chat WebSocket server has no specific startup logic
     }
 }
 
