@@ -1,5 +1,5 @@
 # Docker Compose configuration for LOCAL development (Windows)
-# Frontend dev server runs locally, backend runs in Docker
+# Backend runs in Docker, frontend can run locally or in Docker (via websocket-test-frontend-local service)
 
 name: hilos-websocket-test-local
 
@@ -73,6 +73,21 @@ services:
       - WORKER_COMM_PORT=${WORKER_COMM_PORT:-8091}
     profiles:
       - monitor
+    networks:
+      - hilos-demo-websocket-test-local-network
+
+  websocket-test-frontend-local:
+    image: node:20-alpine
+    container_name: websocket-test-frontend-local
+    volumes:
+      - ../frontend:/app
+    working_dir: /app
+    environment:
+      - NODE_ENV=development
+      - DOCKER=true
+    command: npm run dev
+    ports:
+      - "${FRONTEND_DEV_PORT:-5173}:5173"
     networks:
       - hilos-demo-websocket-test-local-network
 
