@@ -39,7 +39,7 @@ class ChatWorkerManager extends WorkerManager
      * Called regularly when connected to daemon.
      * Base class already ticks all agents, so this is for worker-specific work.
      */
-    protected function tick(): void
+    protected function onTick(): void
     {
         // Worker-specific tick logic (if any)
         // Agents are already ticked by base class

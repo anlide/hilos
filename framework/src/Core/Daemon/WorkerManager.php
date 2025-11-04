@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Core\Daemon;
 
 use Hilos\Core\Agent\AgentInterface;
+use Hilos\Exception\MissingEnvironmentVariableException;
 use Hilos\Exception\SocketException;
 use Hilos\Exception\Worker\AgentCreationFailedException;
 use Hilos\Logging\Logger\Logger;
@@ -28,7 +29,7 @@ abstract class WorkerManager extends BaseManager
     /** @var bool Whether this worker is monopolistic */
     protected bool $isMonopolistic;
 
-    /** @var WorkerDaemonClient|null Client connection to daemon */
+    /** @var ?WorkerDaemonClient Client connection to daemon */
     private ?WorkerDaemonClient $daemonClient = null;
 
     /** @var AgentInterface[] Active agents indexed by agent ID */
@@ -102,7 +103,7 @@ abstract class WorkerManager extends BaseManager
                 }
 
                 // Call tick method (only when connected)
-                $this->tick();
+                $this->onTick();
 
                 // Tick all agents and collect those that requested stop
                 $agentsToRemove = [];
@@ -140,7 +141,8 @@ abstract class WorkerManager extends BaseManager
      *
      * Starts connection attempt. Connection will be checked asynchronously in run() loop.
      *
-     * @throws SocketException
+     * @throws SocketException If connection fails
+     * @throws MissingEnvironmentVariableException If required env variables are missing
      */
     private function connectToDaemon(): void
     {
@@ -160,6 +162,7 @@ abstract class WorkerManager extends BaseManager
      * Handle message from daemon
      *
      * @param array $data Message data
+     * @throws AgentCreationFailedException If agent creation fails
      */
     public function handleDaemonMessage(array $data): void
     {
@@ -193,6 +196,7 @@ abstract class WorkerManager extends BaseManager
      * Handle agent start message
      *
      * @param array $data Message data
+     * @throws AgentCreationFailedException If agent creation fails
      */
     private function handleAgentStart(array $data): void
     {
@@ -394,7 +398,7 @@ abstract class WorkerManager extends BaseManager
      * work logic. Called on each loop iteration with precise timing.
      * Only called when connection to daemon is established.
      */
-    abstract protected function tick(): void;
+    abstract protected function onTick(): void;
 
     /** @return string Manager name for logging */
     protected function getManagerName(): string

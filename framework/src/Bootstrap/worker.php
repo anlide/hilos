@@ -59,7 +59,7 @@ try {
          * Logs heartbeat message every 5 seconds for health monitoring.
          * Uses millisecond precision for accurate timing.
          */
-        protected function tick(): void
+        protected function onTick(): void
         {
             static $lastHeartbeat = 0.0;
             $heartbeatInterval = 5000.0; // 5 seconds
