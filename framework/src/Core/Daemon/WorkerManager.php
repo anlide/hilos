@@ -6,6 +6,7 @@ namespace Hilos\Core\Daemon;
 
 use Hilos\Core\Agent\AgentInterface;
 use Hilos\Exception\SocketException;
+use Hilos\Exception\Worker\AgentCreationFailedException;
 use Hilos\Logging\Logger\Logger;
 use Hilos\Socket\Worker\WorkerDaemonClient;
 use Hilos\Utils\Helpers\ArgumentHelper;
@@ -211,17 +212,15 @@ abstract class WorkerManager extends BaseManager
         // Create agent using factory method
         $agent = $this->createAgent($agentType, $agentIndex);
 
-        if ($agent !== null) {
-            $agent->setMessageSender([$this, 'sendAgentMessage']);
-            $agent->onStart();
-            $this->agents[$agentId] = $agent;
-            Logger::info("Agent {$agentId} started [worker side]");
-            // Additional agent log from worker side
-            Logger::logAgentInfo($agentId, "Agent started on worker [workerIndex={$this->workerIndex}]");
-
-            // Notify daemon that agent started
-            $this->notifyAgentStarted($agentId, $agentType, $agentIndex);
-        }
+        $agent->setMessageSender([$this, 'sendAgentMessage']);
+        $agent->onStart();
+        $this->agents[$agentId] = $agent;
+        Logger::info("Agent {$agentId} started [worker side]");
+        // Additional agent log from worker side
+        Logger::logAgentInfo($agentId, "Agent started on worker [workerIndex={$this->workerIndex}]");
+        
+        // Notify daemon that agent started
+        $this->notifyAgentStarted($agentId, $agentType, $agentIndex);
     }
 
     /**
@@ -383,9 +382,10 @@ abstract class WorkerManager extends BaseManager
      *
      * @param string $agentType Agent type
      * @param ?string $agentIndex Agent index (optional)
-     * @return AgentInterface|null Agent instance or null if type is not supported
+     * @return AgentInterface Agent instance
+     * @throws AgentCreationFailedException If agent cannot be created
      */
-    abstract protected function createAgent(string $agentType, ?string $agentIndex): ?AgentInterface;
+    abstract protected function createAgent(string $agentType, ?string $agentIndex): AgentInterface;
 
     /**
      * Tick method - called regularly in main loop

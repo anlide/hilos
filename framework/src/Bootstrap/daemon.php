@@ -43,7 +43,7 @@ try {
          * Logs heartbeat message every 5 seconds for health monitoring.
          * Uses millisecond precision for accurate timing.
          */
-        protected function tick(): void {
+        protected function onTick(): void {
             $currentTime = microtime(true) * 1000;
 
             // Send heartbeat every 5 seconds with millisecond precision

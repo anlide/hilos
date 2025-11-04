@@ -17,7 +17,7 @@ use Hilos\Logging\Logger\Logger;
  *
  * Provides simple interface for creating daemons:
  * - run() - Main daemon startup method with epoll-based event loop
- * - tick() - Abstract method called regularly (must be implemented in child classes)
+ * - onTick() - Abstract method called regularly (must be implemented in child classes)
  * - processEventLoop() - Handles epoll events for registered servers
  *
  * @abstract
@@ -91,7 +91,7 @@ abstract class DaemonManager extends BaseManager
             }
 
             // Call tick method
-            $this->tick();
+            $this->onTick();
 
             // Dispatch accumulated signals
             $this->dispatchSignals();
@@ -403,7 +403,7 @@ abstract class DaemonManager extends BaseManager
      * Must be implemented in child classes to define daemon-specific
      * work logic. Called on each loop iteration with precise timing.
      */
-    abstract protected function tick(): void;
+    abstract protected function onTick(): void;
 
     /** @return string Manager name for logging */
     protected function getManagerName(): string

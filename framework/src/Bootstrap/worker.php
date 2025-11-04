@@ -7,6 +7,7 @@ require_once __DIR__ . '/../../../vendor/autoload.php';
 use Hilos\Core\Agent\AgentInterface;
 use Hilos\Core\Daemon\WorkerManager;
 use Hilos\Exception\InvalidWorkerIdException;
+use Hilos\Exception\Worker\AgentCreationFailedException;
 use Hilos\Logging\Logger\Logger;
 use Hilos\Utils\Constants\ExitCode;
 use Hilos\Utils\Helpers\ArgumentHelper;
@@ -44,12 +45,12 @@ try {
          *
          * @param string $agentType Agent type
          * @param ?string $agentIndex Agent index (optional)
-         * @return AgentInterface|null Always returns null (no agents in framework bootstrap)
+         * @return AgentInterface Agent instance
          */
-        protected function createAgent(string $agentType, ?string $agentIndex): ?AgentInterface
+        protected function createAgent(string $agentType, ?string $agentIndex): AgentInterface
         {
             // Framework bootstrap doesn't create agents
-            return null;
+            throw new AgentCreationFailedException($agentType, $agentIndex);
         }
 
         /**

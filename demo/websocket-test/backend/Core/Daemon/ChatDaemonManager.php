@@ -36,7 +36,7 @@ class ChatDaemonManager extends DaemonManager
      *
      * This is where project-specific logic would be implemented.
      */
-    protected function tick(): void
+    protected function onTick(): void
     {
         // TODO: Add chat-specific logic here
         // - Check WebSocket connections

@@ -7,6 +7,7 @@ namespace Demo\WebSocketTest\Core\Daemon;
 use Demo\WebSocketTest\Core\Agent\ChatAgentFactory;
 use Hilos\Core\Agent\AgentInterface;
 use Hilos\Core\Daemon\WorkerManager;
+use Hilos\Exception\Worker\AgentCreationFailedException;
 use Hilos\Logging\Logger\Logger;
 
 /**
@@ -24,9 +25,10 @@ class ChatWorkerManager extends WorkerManager
      *
      * @param string $agentType Agent type
      * @param ?string $agentIndex Agent index (optional)
-     * @return AgentInterface|null Agent instance or null if type is not supported
+     * @return AgentInterface Agent instance
+     * @throws AgentCreationFailedException If agent cannot be created
      */
-    protected function createAgent(string $agentType, ?string $agentIndex): ?AgentInterface
+    protected function createAgent(string $agentType, ?string $agentIndex): AgentInterface
     {
         return ChatAgentFactory::createAgent($agentType, $agentIndex);
     }
