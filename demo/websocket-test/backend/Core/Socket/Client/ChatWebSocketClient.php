@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Demo\WebSocketTest\Core\Socket\Client;
 
 use Demo\WebSocketTest\Utils\DTO\WebSocketCloseSignalDTO;
+use Demo\WebSocketTest\Utils\DTO\WebSocketFrameBinarySignalDTO;
 use Demo\WebSocketTest\Utils\DTO\WebSocketFrameSignalDTO;
 use Demo\WebSocketTest\Utils\DTO\WebSocketHandshakeSignalDTO;
 use Hilos\Socket\Client\WebSocketClient;
@@ -20,16 +21,6 @@ class ChatWebSocketClient extends WebSocketClient
     private string $clientId = '';
 
     /**
-     * Get client identifier
-     *
-     * @return string Client ID
-     */
-    public function getClientId(): string
-    {
-        return $this->clientId;
-    }
-
-    /**
      * Handle received WebSocket text frame
      *
      * @param string $payload Frame payload (UTF-8 text)
@@ -39,7 +30,6 @@ class ChatWebSocketClient extends WebSocketClient
         $dto = new WebSocketFrameSignalDTO(
             clientId: $this->clientId,
             payload: $payload,
-            isBinary: false,
         );
 
         $this->signalRouter->queueSignal('websocket', 'frame', $dto);
@@ -52,13 +42,12 @@ class ChatWebSocketClient extends WebSocketClient
      */
     protected function onFrameBinary(string $payload): void
     {
-        $dto = new WebSocketFrameSignalDTO(
+        $dto = new WebSocketFrameBinarySignalDTO(
             clientId: $this->clientId,
             payload: $payload,
-            isBinary: true,
         );
 
-        $this->signalRouter->queueSignal('websocket', 'frame', $dto);
+        $this->signalRouter->queueSignal('websocket', 'frame_binary', $dto);
     }
 
     /**
@@ -101,4 +90,3 @@ class ChatWebSocketClient extends WebSocketClient
         $this->signalRouter->queueSignal('websocket', 'close', $dto);
     }
 }
-

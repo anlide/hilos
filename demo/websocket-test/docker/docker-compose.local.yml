@@ -26,6 +26,7 @@ services:
       - WEBSOCKET_HOST=${WEBSOCKET_HOST:-0.0.0.0}
       - WEBSOCKET_PORT=${WEBSOCKET_PORT:-8092}
     command: ["php", "backend/Bootstrap/docker.php"]
+    stop_grace_period: 25s
     ports:
       # Expose ports to host for local frontend access
       - "${HTTP_STATUS_PORT:-8090}:${HTTP_STATUS_PORT:-8090}"

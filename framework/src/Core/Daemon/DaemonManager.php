@@ -10,7 +10,7 @@ use Hilos\Socket\Server\ServerInterface;
 use Hilos\Socket\Server\WorkerServer;
 use Hilos\API\Router\HttpRouter;
 use Hilos\Core\EventLoop\EventLoop;
-use Hilos\Utils\Helpers\TimeHelper;
+use Hilos\Logging\Logger\Logger;
 
 /**
  * DaemonManager - Abstract base class for daemon process management
@@ -40,7 +40,7 @@ abstract class DaemonManager extends BaseManager
     private ?float $shutdownStartTime = null;
 
     /** @var float Shutdown timeout in seconds */
-    private const float SHUTDOWN_TIMEOUT = 30.0;
+    protected float $shutdownTimeout = 20.0;
 
     /**
      * Constructor
@@ -70,7 +70,7 @@ abstract class DaemonManager extends BaseManager
         $this->setupErrorHandling();
         $this->setupSignalHandlers();
 
-        $this->logMessage("Daemon started with epoll");
+        Logger::info("Daemon started with epoll");
 
         // Main loop
         while ($this->shouldContinueRunning()) {
@@ -104,7 +104,7 @@ abstract class DaemonManager extends BaseManager
 
         // Cleanup
         $this->eventLoop->cleanup();
-        $this->logMessage("Daemon stopped");
+        Logger::info("Daemon stopped");
     }
 
     /**
@@ -126,8 +126,8 @@ abstract class DaemonManager extends BaseManager
 
         // Check timeout
         $elapsed = microtime(true) - $this->shutdownStartTime;
-        if ($elapsed >= self::SHUTDOWN_TIMEOUT) {
-            $this->logMessage("Shutdown timeout expired, forcing exit");
+        if ($elapsed >= $this->shutdownTimeout) {
+            Logger::info("Shutdown timeout expired, forcing exit");
             return false;
         }
 
@@ -145,8 +145,8 @@ abstract class DaemonManager extends BaseManager
      */
     private function initiateShutdown(): void
     {
-        $this->logMessage("Shutdown initiated, preparing servers for graceful shutdown");
-        
+        Logger::info("Shutdown initiated, preparing servers for graceful shutdown");
+
         // Tell all servers to prepare for shutdown
         foreach ($this->servers as $server) {
             $server->prepareShutdown();
@@ -193,12 +193,12 @@ abstract class DaemonManager extends BaseManager
         foreach ($this->servers as $server) {
             if (!$server->isRunning()) {
                 if ($server->start()) {
-                    $this->logMessage($server->getServerName() . " started");
-                    
+                    Logger::info($server->getServerName() . " started");
+
                     // Register server socket in event loop
                     $this->registerServerSocket($server);
                 } else {
-                    $this->logMessage("Failed to start " . $server->getServerName());
+                    Logger::info("Failed to start " . $server->getServerName());
                 }
             }
         }
@@ -288,7 +288,7 @@ abstract class DaemonManager extends BaseManager
     {
         try {
             $client->read();
-            
+
             // Write any pending data from write buffer
             $client->write();
 
@@ -300,7 +300,7 @@ abstract class DaemonManager extends BaseManager
                 if ($socket !== null) {
                     $this->eventLoop->unregister($socket);
                 }
-                
+
                 // Now safe to close the socket
                 $client->close();
                 $server->removeClient($client);
@@ -316,7 +316,7 @@ abstract class DaemonManager extends BaseManager
                     $e->getMessage()
                 )
             );
-            
+
             // Close and cleanup client on error
             // CRITICAL: Unregister from event loop BEFORE closing socket
             try {
@@ -414,25 +414,19 @@ abstract class DaemonManager extends BaseManager
     /** @param string $message Error message to log */
     protected function logError(string $message): void
     {
-        $timestamped = "[" . TimeHelper::getTimestampWithMs() . "] " . $message;
-        echo $timestamped . "\n";
-        $this->logMessage($message);
+        Logger::error($message);
     }
 
     /** @param string $message Exception message to log */
     protected function logException(string $message): void
     {
-        $timestamped = "[" . TimeHelper::getTimestampWithMs() . "] " . $message;
-        echo $timestamped . "\n";
-        $this->logMessage($message);
+        Logger::error($message);
     }
 
     /** @param string $message Shutdown message to log */
     protected function logShutdown(string $message): void
     {
-        $timestamped = "[" . TimeHelper::getTimestampWithMs() . "] " . $message;
-        echo $timestamped . "\n";
-        $this->logMessage($message);
+        Logger::error($message);
     }
 
     /** Handle error event - sets exit flag */

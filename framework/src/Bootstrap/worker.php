@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../../../vendor/autoload.php';
 
+use Hilos\Core\Agent\AgentInterface;
 use Hilos\Core\Daemon\WorkerManager;
 use Hilos\Exception\InvalidWorkerIdException;
+use Hilos\Logging\Logger\Logger;
 use Hilos\Utils\Constants\ExitCode;
 use Hilos\Utils\Helpers\ArgumentHelper;
 use Hilos\Utils\Env;
@@ -27,7 +29,7 @@ try {
     // Parse command line arguments for worker index
     $workerIndex = ArgumentHelper::getWorkerIndex($argv);
 } catch (InvalidWorkerIdException $e) {
-    echo "Worker bootstrap failed: " . $e->getMessage() . "\n";
+    Logger::error("Worker bootstrap failed: " . $e->getMessage());
     exit(ExitCode::ERROR);
 }
 
@@ -42,9 +44,9 @@ try {
          *
          * @param string $agentType Agent type
          * @param ?string $agentIndex Agent index (optional)
-         * @return \Hilos\Core\Agent\AgentInterface|null Always returns null (no agents in framework bootstrap)
+         * @return AgentInterface|null Always returns null (no agents in framework bootstrap)
          */
-        protected function createAgent(string $agentType, ?string $agentIndex): ?\Hilos\Core\Agent\AgentInterface
+        protected function createAgent(string $agentType, ?string $agentIndex): ?AgentInterface
         {
             // Framework bootstrap doesn't create agents
             return null;
@@ -65,9 +67,14 @@ try {
 
             // Send heartbeat every 5 seconds with millisecond precision
             if (($currentTime - $lastHeartbeat) >= $heartbeatInterval) {
-                $this->logMessage("Worker #{$this->workerIndex} heartbeat - " . date('Y-m-d H:i:s'));
+                Logger::info("Worker #{$this->workerIndex} heartbeat - " . date('Y-m-d H:i:s'));
                 $lastHeartbeat = $currentTime;
             }
+        }
+
+        protected function onSignal(string $agentId, array $signalData): void
+        {
+            // TODO: Implement onSignal() method.
         }
     };
 
@@ -75,7 +82,7 @@ try {
     $workerManager->run();
     
 } catch (\Throwable $e) {
-    echo "Worker #{$workerIndex} failed: " . $e->getMessage() . "\n";
+    Logger::error("Worker #{$workerIndex} failed: " . $e->getMessage());
     exit(ExitCode::ERROR);
 }
 

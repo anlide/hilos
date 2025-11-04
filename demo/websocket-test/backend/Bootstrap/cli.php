@@ -5,6 +5,8 @@ declare(strict_types=1);
 require_once __DIR__ . '/../../vendor/autoload.php';
 
 use Hilos\Core\CLI\CliManager;
+use Hilos\Logging\Logger\Logger;
+use Hilos\Utils\Constants\ErrorConstants;
 use Hilos\Utils\Constants\ExitCode;
 use Hilos\Utils\Env;
 
@@ -23,12 +25,13 @@ try {
     $cliManager = new CliManager($argv);
 
     // Run CLI manager and get exit code
-    $exitCode = $cliManager->run();
-
-    exit($exitCode);
+    exit($cliManager->run());
 
 } catch (Throwable $e) {
-    echo "CLI failed: " . $e->getMessage() . "\n";
+    Logger::error("CLI failed: " . $e->getMessage(), [
+        ErrorConstants::CONTEXT_KEY_FILE => $e->getFile(),
+        ErrorConstants::CONTEXT_KEY_LINE => $e->getLine(),
+        ErrorConstants::CONTEXT_KEY_TRACE => $e->getTraceAsString(),
+    ]);
     exit(ExitCode::ERROR);
 }
-

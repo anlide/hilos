@@ -18,5 +18,15 @@ class ErrorConstants
 
     /** @var int Maximum length of stack trace in characters */
     public const int ERROR_STACK_TRACE_MAX_LENGTH = 10000;
+
+    // Error context array keys
+    /** @var string Error context key for file path */
+    public const string CONTEXT_KEY_FILE = 'file';
+
+    /** @var string Error context key for line number */
+    public const string CONTEXT_KEY_LINE = 'line';
+
+    /** @var string Error context key for stack trace */
+    public const string CONTEXT_KEY_TRACE = 'trace';
 }
 

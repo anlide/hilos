@@ -24,7 +24,7 @@ use Hilos\Socket\Client\WorkerClient;
 use Hilos\Utils\Constants\EnvConstants;
 use Hilos\Utils\Helpers\ArgumentHelper;
 use Hilos\Utils\Env;
-use Hilos\Utils\Helpers\TimeHelper;
+use Hilos\Logging\Logger\Logger;
 
 /**
  * WorkerServer - Worker communication server implementation
@@ -248,8 +248,7 @@ abstract class WorkerServer extends AbstractServer
         // Process queued signals for this agent
         $this->processQueuedSignalsForAgent($agentId);
 
-        $timestamp = TimeHelper::getTimestampWithMs();
-        echo "[{$timestamp}] Agent {$agentId} started on worker #{$workerClient->getWorkerIndex()} [daemon side]\n";
+        Logger::info("Agent {$agentId} started on worker #{$workerClient->getWorkerIndex()} [daemon side]");
     }
 
     /**
@@ -314,8 +313,7 @@ abstract class WorkerServer extends AbstractServer
             $agentDaemon->onStop();
             unset($this->agentDaemons[$agentId]);
 
-            $timestamp = TimeHelper::getTimestampWithMs();
-            echo "[{$timestamp}] Agent {$agentId} stopped on worker #{$workerClient->getWorkerIndex()} [daemon side]\n";
+            Logger::info("Agent {$agentId} stopped on worker #{$workerClient->getWorkerIndex()} [daemon side]");
         }
     }
 
@@ -404,9 +402,9 @@ abstract class WorkerServer extends AbstractServer
         try {
             $this->ensureMinWorkers();
         } catch (CouldNotStartException $e) {
-            echo "[" . TimeHelper::getTimestampWithMs() . "] Failed to start worker process: " . $e->getMessage() . "\n";
+            Logger::error("Failed to start worker process: " . $e->getMessage());
         } catch (FailedToSetNonBlockingException $e) {
-            echo "[" . TimeHelper::getTimestampWithMs() . "] Failed to set non-blocking mode for worker process: " . $e->getMessage() . "\n";
+            Logger::error("Failed to set non-blocking mode for worker process: " . $e->getMessage());
         }
     }
 
@@ -558,7 +556,7 @@ abstract class WorkerServer extends AbstractServer
                     $this->saveWorkerOutput($process, 'regular', $workerIndex);
 
                     // Worker died, remove from list and free index for reuse
-                    echo "[" . TimeHelper::getTimestampWithMs() . "] Worker #{$workerIndex} stopped [type=regular]\n";
+                    Logger::info("Worker #{$workerIndex} stopped [type=regular]");
 
                     unset($this->regularWorkers[$workerIndex]);
                     $this->availableRegularIndices[] = $workerIndex;
@@ -595,7 +593,7 @@ abstract class WorkerServer extends AbstractServer
                     $this->saveWorkerOutput($process, 'monopolistic', $workerIndex);
 
                     // Worker died, remove from list and free index for reuse
-                    echo "[" . TimeHelper::getTimestampWithMs() . "] Worker #{$workerIndex} stopped [type=monopolistic]\n";
+                    Logger::info("Worker #{$workerIndex} stopped [type=monopolistic]");
                     unset($this->monopolisticWorkers[$workerIndex]);
                     $this->availableMonopolisticIndices[] = $workerIndex;
                     sort($this->availableMonopolisticIndices);
@@ -640,7 +638,7 @@ abstract class WorkerServer extends AbstractServer
         // Ensure log directory exists
         if (!is_dir($logDirectory)) {
             if (!mkdir($logDirectory, 0755, true)) {
-                echo "[" . TimeHelper::getTimestampWithMs() . "] Failed to create log directory: {$logDirectory}\n";
+                Logger::error("Failed to create log directory: {$logDirectory}");
                 return;
             }
         }
@@ -827,8 +825,8 @@ abstract class WorkerServer extends AbstractServer
 
         $this->regularWorkers[$workerIndex] = $process;
 
-        // Log worker start to daemon.log (stdout)
-        echo "[" . TimeHelper::getTimestampWithMs() . "] Worker #{$workerIndex} started [type=regular]\n";
+        // Log worker start
+        Logger::info("Worker #{$workerIndex} started [type=regular]");
     }
 
     /**
@@ -859,8 +857,8 @@ abstract class WorkerServer extends AbstractServer
 
         $this->monopolisticWorkers[$workerIndex] = $process;
 
-        // Log worker start to daemon.log (stdout)
-        echo "[" . TimeHelper::getTimestampWithMs() . "] Worker #{$workerIndex} started [type=monopolistic]\n";
+        // Log worker start
+        Logger::info("Worker #{$workerIndex} started [type=monopolistic]");
     }
 
     /**
@@ -879,9 +877,9 @@ abstract class WorkerServer extends AbstractServer
             try {
                 $process->stop(); // Send SIGTERM
                 $this->regularWorkersWaitingShutdown[$workerIndex] = $currentTime;
-                echo "[" . TimeHelper::getTimestampWithMs() . "] Sent stop signal to regular worker #{$workerIndex}\n";
+                Logger::info("Sent stop signal to regular worker #{$workerIndex}");
             } catch (\Throwable $e) {
-                echo "[" . TimeHelper::getTimestampWithMs() . "] Failed to stop regular worker #{$workerIndex}: " . $e->getMessage() . "\n";
+                Logger::error("Failed to stop regular worker #{$workerIndex}: " . $e->getMessage());
                 // Force remove if stop failed
                 unset($this->regularWorkers[$workerIndex]);
             }
@@ -892,9 +890,9 @@ abstract class WorkerServer extends AbstractServer
             try {
                 $process->stop(); // Send SIGTERM
                 $this->monopolisticWorkersWaitingShutdown[$workerIndex] = $currentTime;
-                echo "[" . TimeHelper::getTimestampWithMs() . "] Sent stop signal to monopolistic worker #{$workerIndex}\n";
+                Logger::info("Sent stop signal to monopolistic worker #{$workerIndex}");
             } catch (\Throwable $e) {
-                echo "[" . TimeHelper::getTimestampWithMs() . "] Failed to stop monopolistic worker #{$workerIndex}: " . $e->getMessage() . "\n";
+                Logger::error("Failed to stop monopolistic worker #{$workerIndex}: " . $e->getMessage());
                 // Force remove if stop failed
                 unset($this->monopolisticWorkers[$workerIndex]);
             }
@@ -941,7 +939,7 @@ abstract class WorkerServer extends AbstractServer
                     $this->saveWorkerOutput($process, 'regular', $workerIndex);
 
                     // Worker died, remove from list and free index for reuse
-                    echo "[" . TimeHelper::getTimestampWithMs() . "] Worker #{$workerIndex} graceful stopped [type=regular]\n";
+                    Logger::info("Worker #{$workerIndex} graceful stopped [type=regular]");
 
                     // Worker exited gracefully
                     unset($this->regularWorkersWaitingShutdown[$workerIndex]);
@@ -984,7 +982,7 @@ abstract class WorkerServer extends AbstractServer
                     $this->saveWorkerOutput($process, 'monopolistic', $workerIndex);
 
                     // Worker died, remove from list and free index for reuse
-                    echo "[" . TimeHelper::getTimestampWithMs() . "] Worker #{$workerIndex} graceful stopped [type=monopolistic]\n";
+                    Logger::info("Worker #{$workerIndex} graceful stopped [type=monopolistic]");
 
                     // Worker exited gracefully
                     unset($this->monopolisticWorkersWaitingShutdown[$workerIndex]);
@@ -1016,9 +1014,9 @@ abstract class WorkerServer extends AbstractServer
 
         try {
             $process->halt(); // Force kill with SIGKILL
-            echo "[" . TimeHelper::getTimestampWithMs() . "] Force killed regular worker #{$workerIndex}\n";
+            Logger::info("Force killed regular worker #{$workerIndex}");
         } catch (\Throwable $e) {
-            echo "[" . TimeHelper::getTimestampWithMs() . "] Failed to force kill regular worker #{$workerIndex}: " . $e->getMessage() . "\n";
+            Logger::error("Failed to force kill regular worker #{$workerIndex}: " . $e->getMessage());
         }
 
         // Remove from active workers
@@ -1043,9 +1041,9 @@ abstract class WorkerServer extends AbstractServer
 
         try {
             $process->halt(); // Force kill with SIGKILL
-            echo "[" . TimeHelper::getTimestampWithMs() . "] Force killed monopolistic worker #{$workerIndex}\n";
+            Logger::info("Force killed monopolistic worker #{$workerIndex}");
         } catch (\Throwable $e) {
-            echo "[" . TimeHelper::getTimestampWithMs() . "] Failed to force kill monopolistic worker #{$workerIndex}: " . $e->getMessage() . "\n";
+            Logger::error("Failed to force kill monopolistic worker #{$workerIndex}: " . $e->getMessage());
         }
 
         // Remove from active workers

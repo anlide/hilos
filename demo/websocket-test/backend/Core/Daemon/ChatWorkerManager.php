@@ -7,7 +7,7 @@ namespace Demo\WebSocketTest\Core\Daemon;
 use Demo\WebSocketTest\Core\Agent\ChatAgentFactory;
 use Hilos\Core\Agent\AgentInterface;
 use Hilos\Core\Daemon\WorkerManager;
-use Hilos\Utils\Helpers\TimeHelper;
+use Hilos\Logging\Logger\Logger;
 
 /**
  * ChatWorkerManager - Worker manager for chat demo
@@ -31,28 +31,14 @@ class ChatWorkerManager extends WorkerManager
         return ChatAgentFactory::createAgent($agentType, $agentIndex);
     }
 
-    /** @var float Last heartbeat timestamp in milliseconds */
-    private float $lastHeartbeat = 0.0;
-
-    /** @var float Heartbeat interval in milliseconds (5 seconds) */
-    private const float HEARTBEAT_INTERVAL = 5000.0; // 5 seconds
-
     /**
-     * Worker tick implementation with heartbeat
+     * Worker tick implementation
      *
      * Called regularly when connected to daemon.
      * Base class already ticks all agents, so this is for worker-specific work.
      */
     protected function tick(): void
     {
-        $currentTime = microtime(true) * 1000;
-
-        // Send heartbeat every 5 seconds
-        if (($currentTime - $this->lastHeartbeat) >= self::HEARTBEAT_INTERVAL) {
-            $this->logMessage("Worker #{$this->workerIndex} heartbeat - " . date('Y-m-d H:i:s'));
-            $this->lastHeartbeat = $currentTime;
-        }
-
         // Worker-specific tick logic (if any)
         // Agents are already ticked by base class
     }
@@ -97,8 +83,7 @@ class ChatWorkerManager extends WorkerManager
      */
     private function handleFrameSignal(string $agentId, array $data): void
     {
-        $timestamped = "[" . TimeHelper::getTimestampWithMs() . "] ";
-        echo $timestamped . "Frame signal received for agent {$agentId}: " . json_encode($data) . "\n";
+        Logger::info("Frame signal received for agent {$agentId}: " . json_encode($data));
     }
 
     /**
@@ -109,8 +94,7 @@ class ChatWorkerManager extends WorkerManager
      */
     private function handleHandshakeSignal(string $agentId, array $data): void
     {
-        $timestamped = "[" . TimeHelper::getTimestampWithMs() . "] ";
-        echo $timestamped . "Handshake signal received for agent {$agentId}: " . json_encode($data) . "\n";
+        Logger::info("Handshake signal received for agent {$agentId}: " . json_encode($data));
     }
 
     /**
@@ -121,8 +105,6 @@ class ChatWorkerManager extends WorkerManager
      */
     private function handleCloseSignal(string $agentId, array $data): void
     {
-        $timestamped = "[" . TimeHelper::getTimestampWithMs() . "] ";
-        echo $timestamped . "Close signal received for agent {$agentId}: " . json_encode($data) . "\n";
+        Logger::info("Close signal received for agent {$agentId}: " . json_encode($data));
     }
 }
-

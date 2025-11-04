@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Core\Router;
 
 use Hilos\Utils\DTO\BaseDTO;
-use Hilos\Utils\Helpers\TimeHelper;
+use Hilos\Logging\Logger\Logger;
 
 /**
  * SignalRouter - Base class for routing signals from sources to agents
@@ -133,11 +133,10 @@ class SignalRouter
         ];
 
         // Log signal queued
-        $timestamped = "[" . TimeHelper::getTimestampWithMs() . "] ";
-        $routeInfo = $route !== null 
-            ? "route to agent {$route['agentType']}" . ($route['agentIndex'] !== null ? "({$route['agentIndex']})" : "") 
+        $routeInfo = $route !== null
+            ? "route to agent {$route['agentType']}" . ($route['agentIndex'] !== null ? "({$route['agentIndex']})" : "")
             : "no route";
-        echo $timestamped . "Signal queued: {$source}/{$signalType} -> {$routeInfo}\n";
+        Logger::info("Signal queued: {$source}/{$signalType} -> {$routeInfo}");
     }
 
     /**
@@ -152,12 +151,11 @@ class SignalRouter
     {
         $signals = $this->queuedSignals;
         $count = count($signals);
-        
+
         if ($count > 0) {
-            $timestamped = "[" . TimeHelper::getTimestampWithMs() . "] ";
-            echo $timestamped . "Signals dequeued: {$count} signal(s)\n";
+            Logger::info("Signals dequeued: {$count} signal(s)");
         }
-        
+
         $this->queuedSignals = [];
         return $signals;
     }

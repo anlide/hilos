@@ -15,6 +15,7 @@ use Hilos\Exception\Process\FailedToReadStdOutException;
 use Hilos\Exception\Process\FailedToSetNonBlockingException;
 use Hilos\Exception\Process\FailedToSetStdErrException;
 use Hilos\Exception\Process\FailedToTerminateProcessExceptionException;
+use Hilos\Logging\Logger\Logger;
 use Hilos\Utils\Constants\EnvConstants;
 use Hilos\Utils\Env;
 
@@ -193,7 +194,7 @@ class DockerManager extends BaseManager
             // Process is running successfully - check if it worked long enough to reset restart protection
             $processUptime = microtime(true) - $this->processStartTime;
             $minRestartInterval = Env::getInt(EnvConstants::DAEMON_MIN_RESTART_INTERVAL, 20);
-            
+
             if ($processUptime >= $minRestartInterval) {
                 // Process has been running successfully for minimum interval - reset restart protection
                 $this->lastErrorRestartTime = null;
@@ -237,7 +238,7 @@ class DockerManager extends BaseManager
         // Log startup time
         $startupTime = microtime(true) - $startTime;
         $this->processStartTime = microtime(true);
-        
+
         $this->shouldRestart = false;
 
         echo "Daemon started (startup time: " . number_format($startupTime * 1000, 2) . "ms).\n";
@@ -257,9 +258,9 @@ class DockerManager extends BaseManager
         try {
             $this->process->stop();
         } catch (FailedToGetStatusException $e) {
-            error_log('Failed to get status while stopping daemon: ' . $e->getMessage());
+            Logger::errorLog('Failed to get status while stopping daemon: ' . $e->getMessage());
         } catch (FailedToTerminateProcessExceptionException $e) {
-            error_log('Failed to terminate daemon process: ' . $e->getMessage());
+            Logger::errorLog('Failed to terminate daemon process: ' . $e->getMessage());
         }
     }
 
@@ -275,29 +276,29 @@ class DockerManager extends BaseManager
 
     /**
      * Log error message (file + system log)
+     * @throws MissingEnvironmentVariableException
      */
     protected function logError(string $message): void
     {
-        error_log($message, 3, Env::get(EnvConstants::DAEMON_ERROR_LOG_FILE));
-        error_log($message);
+        Logger::errorLog($message, 3, Env::get(EnvConstants::DAEMON_ERROR_LOG_FILE));
     }
 
     /**
      * Log exception message (file + system log)
+     * @throws MissingEnvironmentVariableException
      */
     protected function logException(string $message): void
     {
-        error_log($message, 3, Env::get(EnvConstants::DAEMON_ERROR_LOG_FILE));
-        error_log($message);
+        Logger::errorLog($message, 3, Env::get(EnvConstants::DAEMON_ERROR_LOG_FILE));
     }
 
     /**
      * Log shutdown message (file + system log)
+     * @throws MissingEnvironmentVariableException
      */
     protected function logShutdown(string $message): void
     {
-        error_log($message, 3, Env::get(EnvConstants::DAEMON_ERROR_LOG_FILE));
-        error_log($message);
+        Logger::errorLog($message, 3, Env::get(EnvConstants::DAEMON_ERROR_LOG_FILE));
     }
 
     /**
@@ -369,7 +370,7 @@ class DockerManager extends BaseManager
 
         // Find all .log files in the log directory
         $logFiles = glob($logDirectory . '/*.log');
-        
+
         // If no log files found, nothing to rotate
         if (empty($logFiles)) {
             return;
@@ -395,12 +396,12 @@ class DockerManager extends BaseManager
         foreach ($logFiles as $logFile) {
             $filename = basename($logFile);
             $targetPath = $timestampDir . '/' . $filename;
-            
+
             if (!rename($logFile, $targetPath)) {
-                error_log("Failed to move log file: $logFile to $targetPath");
+                Logger::errorLog("Failed to move log file: $logFile to $targetPath");
                 continue;
             }
-            
+
             $movedCount++;
         }
 

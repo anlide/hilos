@@ -8,6 +8,7 @@ use Hilos\Exception\Log\LogRotationException;
 use Hilos\Exception\Process\CouldNotStartException;
 use Hilos\Exception\Process\FailedToGetStatusException;
 use Hilos\Exception\Process\FailedToSetNonBlockingException;
+use Hilos\Logging\Logger\Logger;
 use Hilos\Utils\Constants\ExitCode;
 use Hilos\Utils\Env;
 
@@ -31,22 +32,22 @@ try {
     $dockerManager->runDockerWatchdog(__DIR__ . '/daemon.php');
 
 } catch (InvalidScriptPathException $e) {
-    echo "Docker Watchdog invalid script path: " . $e->getMessage() . "\n";
+    Logger::error("Docker Watchdog invalid script path: " . $e->getMessage());
     exit(ExitCode::ERROR);
 } catch (LogRotationException $e) {
-    echo "Docker Watchdog log rotation failed: " . $e->getMessage() . "\n";
+    Logger::error("Docker Watchdog log rotation failed: " . $e->getMessage());
     exit(ExitCode::ERROR);
 } catch (CouldNotStartException $e) {
-    echo "Docker Watchdog could not start daemon: " . $e->getMessage() . "\n";
+    Logger::error("Docker Watchdog could not start daemon: " . $e->getMessage());
     exit(ExitCode::ERROR);
 } catch (FailedToGetStatusException $e) {
-    echo "Docker Watchdog failed to get daemon status: " . $e->getMessage() . "\n";
+    Logger::error("Docker Watchdog failed to get daemon status: " . $e->getMessage());
     exit(ExitCode::ERROR);
 } catch (FailedToSetNonBlockingException $e) {
-    echo "Docker Watchdog failed to set non-blocking mode: " . $e->getMessage() . "\n";
+    Logger::error("Docker Watchdog failed to set non-blocking mode: " . $e->getMessage());
     exit(ExitCode::ERROR);
 } catch (Throwable $e) {
-    echo "Docker Watchdog failed: " . $e->getMessage() . "\n";
+    Logger::error("Docker Watchdog failed: " . $e->getMessage());
     exit(ExitCode::ERROR);
 }
 

@@ -9,7 +9,7 @@ use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Utils\DTO\Agent\AgentMessageDTOInterface;
 use Hilos\Utils\DTO\Agent\MessageFromDaemonDTO;
 use Hilos\Utils\DTO\Agent\MessageFromUserDTO;
-use Hilos\Logging\Logger\AgentLogger;
+use Hilos\Logging\Logger\Logger;
 
 /**
  * ChatAgent - Monopolistic agent for chat management
@@ -58,7 +58,7 @@ class ChatAgent extends AbstractAgent
      */
     public function onStart(): void
     {
-        AgentLogger::logStart($this->getId(), $this->getType());
+        Logger::logAgentStart($this->getId(), $this->getType());
         // Add chat started event to history
         $this->addEvent('chat_started', []);
     }
@@ -68,7 +68,7 @@ class ChatAgent extends AbstractAgent
      */
     public function onStop(): void
     {
-        AgentLogger::logStop($this->getId(), $this->getType());
+        Logger::logAgentStop($this->getId(), $this->getType());
     }
 
     /**
@@ -122,7 +122,7 @@ class ChatAgent extends AbstractAgent
     {
         // payload is array in MessageFromUserDTO, convert to string for logging
         $payloadStr = json_encode($message->payload, JSON_UNESCAPED_UNICODE);
-        AgentLogger::logUserMessage($this->getId(), $message->userId, $payloadStr);
+        Logger::logAgentUserMessage($this->getId(), $message->userId, $payloadStr);
         // Chat agent can receive messages from users
         // TODO: Implement proper message handling with DTO
         return null;
@@ -158,4 +158,3 @@ class ChatAgent extends AbstractAgent
         $this->addEvent('history_cleared', []);
     }
 }
-

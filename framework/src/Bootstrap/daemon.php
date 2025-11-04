@@ -10,6 +10,7 @@ use Hilos\Core\Daemon\Master\DaemonStatus;
 use Hilos\Exception\Worker\AgentDaemonFactoryNotConfiguredException;
 use Hilos\Socket\Server\HttpServer;
 use Hilos\Socket\Server\WorkerServer;
+use Hilos\Logging\Logger\Logger;
 use Hilos\Utils\Constants\EnvConstants;
 use Hilos\Utils\Constants\ExitCode;
 use Hilos\Utils\Constants\HttpConstants;
@@ -47,7 +48,7 @@ try {
 
             // Send heartbeat every 5 seconds with millisecond precision
             if (($currentTime - $this->lastHeartbeat) >= $this->heartbeatInterval) {
-                $this->logMessage("Daemon heartbeat - " . date('Y-m-d H:i:s'));
+                Logger::info("Daemon heartbeat - " . date('Y-m-d H:i:s'));
                 $this->lastHeartbeat = $currentTime;
             }
         }
@@ -130,6 +131,6 @@ try {
     $daemon->run();
 
 } catch (\Throwable $e) {
-    echo "Daemon failed: " . $e->getMessage() . "\n";
+    Logger::error("Daemon failed: " . $e->getMessage());
     exit(ExitCode::ERROR);
 }

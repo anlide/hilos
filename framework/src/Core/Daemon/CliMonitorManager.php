@@ -14,6 +14,7 @@ use Hilos\Utils\Constants\EnvConstants;
 use Hilos\Utils\Constants\HttpConstants;
 use Hilos\Utils\DTO\DaemonStatusDTO;
 use Hilos\Utils\Env;
+use Hilos\Logging\Logger\Logger;
 
 /**
  * CliMonitorManager - manages real-time daemon monitoring
@@ -59,9 +60,8 @@ class CliMonitorManager extends BaseManager
         $this->setupErrorHandling();
         $this->setupSignalHandlers();
 
-        $this->logMessage("Starting Hilos Daemon Monitor...");
-        $this->logMessage("Press Ctrl+C to exit");
-        $this->logMessage("");
+        Logger::info("Starting Hilos Daemon Monitor...");
+        Logger::info("Press Ctrl+C to exit");
 
         // Initialize HTTP client
         $host = Env::get(EnvConstants::HILOS_DAEMON_HOST);
@@ -113,7 +113,7 @@ class CliMonitorManager extends BaseManager
         }
 
         // Cleanup
-        $this->logMessage("Monitoring stopped.");
+        Logger::info("Monitoring stopped.");
     }
 
     /**
@@ -128,23 +128,23 @@ class CliMonitorManager extends BaseManager
     {
         // Check if TTY is available
         if (!posix_isatty(STDOUT)) {
-            $this->logMessage("ERROR: Terminal not supported for interactive monitoring.");
-            $this->logMessage("This command requires a TTY (terminal) to work properly.");
-            $this->logMessage("");
-            $this->logMessage("Solutions:");
-            $this->logMessage("1. On Windows: Use PowerShell script: scripts/monitor.ps1");
-            $this->logMessage("2. On Linux: Ensure you're running in a terminal");
-            $this->logMessage("3. For production monitoring: Use daemon:status command");
-            $this->logMessage("");
+            Logger::info("ERROR: Terminal not supported for interactive monitoring.");
+            Logger::info("This command requires a TTY (terminal) to work properly.");
+            Logger::info("");
+            Logger::info("Solutions:");
+            Logger::info("1. On Windows: Use PowerShell script: scripts/monitor.ps1");
+            Logger::info("2. On Linux: Ensure you're running in a terminal");
+            Logger::info("3. For production monitoring: Use daemon:status command");
+            Logger::info("");
             return false;
         }
 
         // Check TERM variable
         $term = getenv('TERM');
         if (!$term || $term === 'dumb') {
-            $this->logMessage("WARNING: Terminal capabilities limited (TERM=$term).");
-            $this->logMessage("Monitor may not display correctly.");
-            $this->logMessage("");
+            Logger::info("WARNING: Terminal capabilities limited (TERM=$term).");
+            Logger::info("Monitor may not display correctly.");
+            Logger::info("");
         }
 
         return true;
@@ -309,9 +309,7 @@ class CliMonitorManager extends BaseManager
      */
     protected function logError(string $message): void
     {
-        $timestamped = "[" . date('Y-m-d H:i:s') . "] " . $message;
-        error_log($timestamped);
-        $this->logMessage($message);
+        Logger::errorLog($message);
     }
 
     /**
@@ -319,9 +317,7 @@ class CliMonitorManager extends BaseManager
      */
     protected function logException(string $message): void
     {
-        $timestamped = "[" . date('Y-m-d H:i:s') . "] " . $message;
-        error_log($timestamped);
-        $this->logMessage($message);
+        Logger::errorLog($message);
     }
 
     /**
@@ -329,9 +325,7 @@ class CliMonitorManager extends BaseManager
      */
     protected function logShutdown(string $message): void
     {
-        $timestamped = "[" . date('Y-m-d H:i:s') . "] " . $message;
-        error_log($timestamped);
-        $this->logMessage($message);
+        Logger::errorLog($message);
     }
 
     /**
@@ -375,4 +369,3 @@ class CliMonitorManager extends BaseManager
         $this->shouldExit = true;
     }
 }
-

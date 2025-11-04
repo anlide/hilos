@@ -10,11 +10,13 @@ use Demo\WebSocketTest\Core\Socket\Server\ChatWorkerServer;
 use Hilos\API\Router\HttpRouter;
 use Hilos\Core\Daemon\Master\DaemonStatus;
 use Hilos\Socket\Server\HttpServer;
+use Hilos\Utils\Constants\ErrorConstants;
 use Hilos\Utils\Constants\EnvConstants;
 use Hilos\Utils\Constants\ExitCode;
 use Hilos\Utils\Constants\HttpConstants;
 use Hilos\Utils\DTO\DaemonStatusDTO;
 use Hilos\Utils\Env;
+use Hilos\Logging\Logger\Logger;
 
 /**
  * Daemon - Entry point for WebSocket test daemon
@@ -41,13 +43,16 @@ try {
         $signalRouter,
     );
 
+    // Set log file for daemon-side logging
+    Logger::setLogFile(Env::get(EnvConstants::DAEMON_LOG_FILE));
+
     // Create Worker server
     $workerScript = __DIR__ . '/worker.php';
     $workerServer = new ChatWorkerServer(
         Env::get(EnvConstants::WORKER_COMM_HOST),
         Env::getInt(EnvConstants::WORKER_COMM_PORT),
         $workerScript,
-        __DIR__, // Working directory for worker processes (Bootstrap folder)
+        __DIR__,
         $signalRouter,
     );
 
@@ -101,7 +106,10 @@ try {
     $daemon->run();
 
 } catch (\Throwable $e) {
-    echo "WebSocketTest Daemon failed: " . $e->getMessage() . "\n";
+    Logger::error("WebSocketTest Daemon failed: " . $e->getMessage(), [
+        ErrorConstants::CONTEXT_KEY_FILE => $e->getFile(),
+        ErrorConstants::CONTEXT_KEY_LINE => $e->getLine(),
+        ErrorConstants::CONTEXT_KEY_TRACE => $e->getTraceAsString(),
+    ]);
     exit(ExitCode::ERROR);
 }
-

@@ -6,10 +6,9 @@ namespace Hilos\Core\Daemon;
 
 use Hilos\Core\Agent\AgentInterface;
 use Hilos\Exception\SocketException;
-use Hilos\Logging\Logger\AgentLogger;
+use Hilos\Logging\Logger\Logger;
 use Hilos\Socket\Worker\WorkerDaemonClient;
 use Hilos\Utils\Helpers\ArgumentHelper;
-use Hilos\Utils\Helpers\TimeHelper;
 
 /**
  * WorkerManager - Base worker process manager
@@ -59,7 +58,7 @@ abstract class WorkerManager extends BaseManager
         $this->setupErrorHandling();
         $this->setupSignalHandlers();
 
-        $this->logMessage("Worker #{$this->workerIndex} started");
+        Logger::info("Worker #{$this->workerIndex} started");
 
         // Start connection to daemon (non-blocking)
         try {
@@ -118,8 +117,8 @@ abstract class WorkerManager extends BaseManager
                 // Remove agents that requested stop
                 foreach ($agentsToRemove as $agentId) {
                     unset($this->agents[$agentId]);
-                    $this->logMessage("Agent {$agentId} stopped (self-requested) [worker side]");
-                    AgentLogger::logInfo($agentId, "Agent stopped (self-requested) on worker [workerIndex={$this->workerIndex}]");
+                    Logger::info("Agent {$agentId} stopped (self-requested) [worker side]");
+                    Logger::logAgentInfo($agentId, "Agent stopped (self-requested) on worker [workerIndex={$this->workerIndex}]");
                 }
             }
 
@@ -132,7 +131,7 @@ abstract class WorkerManager extends BaseManager
         // Cleanup
         $this->cleanup();
 
-        $this->logMessage("Worker #{$this->workerIndex} stopped");
+        Logger::info("Worker #{$this->workerIndex} stopped");
     }
 
     /**
@@ -168,7 +167,7 @@ abstract class WorkerManager extends BaseManager
         switch ($type) {
             case 'worker_registered':
                 // Connection confirmed by daemon
-                $this->logMessage("Connected to daemon");
+                Logger::info("Connected to daemon");
                 break;
 
             case 'agent_start':
@@ -214,12 +213,12 @@ abstract class WorkerManager extends BaseManager
 
         if ($agent !== null) {
             $agent->setMessageSender([$this, 'sendAgentMessage']);
-            $agent->onStart(); // This will call AgentLogger::logStart inside agent
+            $agent->onStart();
             $this->agents[$agentId] = $agent;
-            $this->logMessage("Agent {$agentId} started [worker side]");
+            Logger::info("Agent {$agentId} started [worker side]");
             // Additional agent log from worker side
-            AgentLogger::logInfo($agentId, "Agent started on worker [workerIndex={$this->workerIndex}]");
-            
+            Logger::logAgentInfo($agentId, "Agent started on worker [workerIndex={$this->workerIndex}]");
+
             // Notify daemon that agent started
             $this->notifyAgentStarted($agentId, $agentType, $agentIndex);
         }
@@ -241,10 +240,10 @@ abstract class WorkerManager extends BaseManager
         $agent = $this->agents[$agentId];
         $agent->onStop(); // This will call AgentLogger::logStop inside agent
         unset($this->agents[$agentId]);
-        $this->logMessage("Agent {$agentId} stopped [worker side]");
+        Logger::info("Agent {$agentId} stopped [worker side]");
         // Additional agent log from worker side
-        AgentLogger::logInfo($agentId, "Agent stopped on worker [workerIndex={$this->workerIndex}]");
-        
+        Logger::logAgentInfo($agentId, "Agent stopped on worker [workerIndex={$this->workerIndex}]");
+
         // Notify daemon that agent stopped
         $this->notifyAgentStopped($agentId);
     }
@@ -360,9 +359,9 @@ abstract class WorkerManager extends BaseManager
     {
         // Stop all agents
         foreach ($this->agents as $agentId => $agent) {
-            $agent->onStop(); // This will call AgentLogger::logStop inside agent
-            $this->logMessage("Agent {$agentId} stopped during cleanup [worker side]");
-            AgentLogger::logInfo($agentId, "Agent stopped during worker cleanup [workerIndex={$this->workerIndex}]");
+            $agent->onStop();
+            Logger::info("Agent {$agentId} stopped during cleanup [worker side]");
+            Logger::logAgentInfo($agentId, "Agent stopped during worker cleanup [workerIndex={$this->workerIndex}]");
         }
         $this->agents = [];
 
@@ -406,25 +405,19 @@ abstract class WorkerManager extends BaseManager
     /** @param string $message Error message to log */
     protected function logError(string $message): void
     {
-        $timestamped = "[" . TimeHelper::getTimestampWithMs() . "] " . $message;
-        error_log($timestamped);
-        $this->logMessage($message);
+        Logger::errorLog($message);
     }
 
     /** @param string $message Exception message to log */
     protected function logException(string $message): void
     {
-        $timestamped = "[" . TimeHelper::getTimestampWithMs() . "] " . $message;
-        error_log($timestamped);
-        $this->logMessage($message);
+        Logger::errorLog($message);
     }
 
     /** @param string $message Shutdown message to log */
     protected function logShutdown(string $message): void
     {
-        $timestamped = "[" . TimeHelper::getTimestampWithMs() . "] " . $message;
-        error_log($timestamped);
-        $this->logMessage($message);
+        Logger::errorLog($message);
     }
 
     /** Handle error event - sets exit flag */

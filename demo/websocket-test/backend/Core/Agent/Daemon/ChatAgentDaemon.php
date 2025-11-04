@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Demo\WebSocketTest\Core\Agent\Daemon;
 
 use Hilos\Core\Agent\Daemon\AbstractAgentDaemon;
-use Hilos\Utils\Helpers\TimeHelper;
+use Hilos\Logging\Logger\Logger;
 
 /**
  * ChatAgentDaemon - Daemon proxy for ChatAgent
@@ -23,8 +23,7 @@ class ChatAgentDaemon extends AbstractAgentDaemon
      */
     public function __construct()
     {
-        $timestamp = TimeHelper::getTimestampWithMs();
-        echo "[{$timestamp}] ChatAgentDaemon created [daemon side] [type=" . self::AGENT_TYPE . "]\n";
+        Logger::info("ChatAgentDaemon created [daemon side] [type=" . self::AGENT_TYPE . "]");
     }
 
     /**
@@ -85,4 +84,3 @@ class ChatAgentDaemon extends AbstractAgentDaemon
         return null;
     }
 }
-

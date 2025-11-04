@@ -8,6 +8,8 @@ use Hilos\Core\Daemon\DockerManager;
 use Hilos\Exception\Process\CouldNotStartException;
 use Hilos\Exception\Process\FailedToGetStatusException;
 use Hilos\Exception\Process\FailedToSetNonBlockingException;
+use Hilos\Logging\Logger\Logger;
+use Hilos\Utils\Constants\ErrorConstants;
 use Hilos\Utils\Constants\ExitCode;
 use Hilos\Utils\Env;
 
@@ -29,16 +31,29 @@ try {
     $dockerManager->runDockerWatchdog(__DIR__ . '/daemon.php');
 
 } catch (CouldNotStartException $e) {
-    echo "Docker Watchdog could not start daemon: " . $e->getMessage() . "\n";
+    Logger::error("Docker Watchdog could not start daemon: " . $e->getMessage(), [
+        ErrorConstants::CONTEXT_KEY_FILE => $e->getFile(),
+        ErrorConstants::CONTEXT_KEY_LINE => $e->getLine(),
+    ]);
     exit(ExitCode::ERROR);
 } catch (FailedToGetStatusException $e) {
-    echo "Docker Watchdog failed to get daemon status: " . $e->getMessage() . "\n";
+    Logger::error("Docker Watchdog failed to get daemon status: " . $e->getMessage(), [
+        ErrorConstants::CONTEXT_KEY_FILE => $e->getFile(),
+        ErrorConstants::CONTEXT_KEY_LINE => $e->getLine(),
+    ]);
     exit(ExitCode::ERROR);
 } catch (FailedToSetNonBlockingException $e) {
-    echo "Docker Watchdog failed to set non-blocking mode: " . $e->getMessage() . "\n";
-    exit(ExitCode::ERROR);
+    Logger::error("Docker Watchdog failed to set non-blocking mode: " . $e->getMessage(), [
+        ErrorConstants::CONTEXT_KEY_FILE => $e->getFile(),
+        ErrorConstants::CONTEXT_KEY_LINE => $e->getLine(),
+    ]);
+    exit(ExitCode::PERMISSION_DENIED);
 } catch (Throwable $e) {
-    echo "Docker Watchdog failed: " . $e->getMessage() . "\n";
+    Logger::error("Docker Watchdog failed: " . $e->getMessage(), [
+        ErrorConstants::CONTEXT_KEY_FILE => $e->getFile(),
+        ErrorConstants::CONTEXT_KEY_LINE => $e->getLine(),
+        ErrorConstants::CONTEXT_KEY_TRACE => $e->getTraceAsString(),
+    ]);
     exit(ExitCode::ERROR);
 }
 

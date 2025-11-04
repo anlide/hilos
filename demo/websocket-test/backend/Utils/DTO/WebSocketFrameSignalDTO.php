@@ -4,52 +4,15 @@ declare(strict_types=1);
 
 namespace Demo\WebSocketTest\Utils\DTO;
 
+use Hilos\Utils\DTO\WebSocket\WebSocketFrameSignalDTO as FrameworkWebSocketFrameSignalDTO;
+
 /**
- * WebSocketFrameSignalDTO - DTO for WebSocket frame signal
+ * WebSocketFrameSignalDTO - DTO for WebSocket text frame signal
  *
- * Represents a WebSocket frame signal sent from WebSocket client to chat agent.
+ * Represents a WebSocket text frame signal sent from WebSocket client to chat agent.
+ * Extends framework WebSocketFrameSignalDTO for chat-specific functionality.
  */
-class WebSocketFrameSignalDTO extends AbstractChatMessageDTO
+class WebSocketFrameSignalDTO extends FrameworkWebSocketFrameSignalDTO implements ChatMessageDTOInterface
 {
-    // Field name constants
-    public const string CLIENT_ID = 'clientId';
-    public const string PAYLOAD = 'payload';
-    public const string IS_BINARY = 'isBinary';
-
-    public function __construct(
-        public readonly string $clientId,
-        public readonly string $payload,
-        public readonly bool $isBinary = false,
-    ) {
-    }
-
-    /**
-     * Convert DTO to array
-     *
-     * @return array DTO data as array
-     */
-    public function toArray(): array
-    {
-        return [
-            self::CLIENT_ID => $this->clientId,
-            self::PAYLOAD => $this->payload,
-            self::IS_BINARY => $this->isBinary,
-        ];
-    }
-
-    /**
-     * Create DTO from array
-     *
-     * @param array $data Source data
-     * @return static DTO instance
-     */
-    public static function fromArray(array $data): static
-    {
-        return new self(
-            clientId: $data[self::CLIENT_ID] ?? '',
-            payload: $data[self::PAYLOAD] ?? '',
-            isBinary: $data[self::IS_BINARY] ?? false,
-        );
-    }
+    // Inherits all functionality from framework DTO
 }
-

@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Hilos\Core\CLI\CliManager;
+use Hilos\Logging\Logger\Logger;
 use Hilos\Utils\Constants\ExitCode;
 use Hilos\Utils\Env;
 
@@ -28,6 +29,6 @@ try {
     exit($exitCode);
 
 } catch (Throwable $e) {
-    echo "CLI failed: " . $e->getMessage() . "\n";
+    Logger::error("CLI failed: " . $e->getMessage());
     exit(ExitCode::ERROR);
 }

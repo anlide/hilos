@@ -7,7 +7,7 @@ namespace Hilos\Core\Daemon;
 use ErrorException;
 use Hilos\Utils\Constants\ErrorConstants;
 use Hilos\Utils\Env;
-use Hilos\Utils\Helpers\TimeHelper;
+use Hilos\Logging\Logger\Logger;
 use RuntimeException;
 use Throwable;
 
@@ -194,7 +194,7 @@ abstract class BaseManager
      */
     public function handleShutdown(): void
     {
-        $this->logMessage($this->getManagerName() . " received shutdown signal");
+        Logger::info($this->getManagerName() . " received shutdown signal");
         $this->shouldExit = true;
         $this->onShutdownSignal();
     }
@@ -208,11 +208,11 @@ abstract class BaseManager
      */
     public function handleRestart(): void
     {
-        $this->logMessage($this->getManagerName() . " received restart signal");
-        
+        Logger::info($this->getManagerName() . " received restart signal");
+
         // Reload environment configuration
         Env::reload();
-        
+
         $this->shouldExit = true;
         $this->onRestartSignal();
     }
@@ -250,22 +250,6 @@ abstract class BaseManager
             );
         }
     }
-
-
-    /**
-     * Log message to console (basic implementation)
-     *
-     * Provides basic console logging with timestamp. Child classes
-     * can override this method to implement custom logging behavior.
-     *
-     * @param string $message Message to log
-     */
-    protected function logMessage(string $message): void
-    {
-        echo "[" . TimeHelper::getTimestampWithMs() . "] " . $message . "\n";
-    }
-
-    // Abstract methods that must be implemented by child classes
 
     /**
      * Get manager name for logging purposes

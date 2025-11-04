@@ -9,12 +9,12 @@ use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Utils\DTO\Agent\AgentMessageDTOInterface;
 use Hilos\Utils\DTO\Agent\MessageFromDaemonDTO;
 use Hilos\Utils\DTO\Agent\MessageFromUserDTO;
-use Hilos\Logging\Logger\AgentLogger;
+use Hilos\Logging\Logger\Logger;
 
 /**
- * UserAgent - Regular agent for user heartbeat
+ * UserAgent - Regular agent for user management
  *
- * Runs in regular worker process. Sends heartbeat every 5 seconds.
+ * Runs in regular worker process.
  */
 class UserAgent extends AbstractAgent
 {
@@ -23,12 +23,6 @@ class UserAgent extends AbstractAgent
 
     /** @var string User ID */
     private string $userId;
-
-    /** @var float Last heartbeat timestamp */
-    private float $lastHeartbeat = 0.0;
-
-    /** @var float Heartbeat interval in milliseconds (5 seconds) */
-    private const float HEARTBEAT_INTERVAL = 5000.0; // 5 seconds
 
     /**
      * UserAgent constructor
@@ -77,7 +71,7 @@ class UserAgent extends AbstractAgent
      */
     public function onStart(): void
     {
-        AgentLogger::logStart($this->getId(), $this->getType());
+        Logger::logAgentStart($this->getId(), $this->getType());
     }
 
     /**
@@ -85,7 +79,7 @@ class UserAgent extends AbstractAgent
      */
     public function onStop(): void
     {
-        AgentLogger::logStop($this->getId(), $this->getType());
+        Logger::logAgentStop($this->getId(), $this->getType());
     }
 
     /**
@@ -93,13 +87,7 @@ class UserAgent extends AbstractAgent
      */
     protected function doTick(): void
     {
-        $currentTime = microtime(true) * 1000;
-
-        // Send heartbeat every 5 seconds
-        if (($currentTime - $this->lastHeartbeat) >= self::HEARTBEAT_INTERVAL) {
-            $this->sendHeartbeat();
-            $this->lastHeartbeat = $currentTime;
-        }
+        // TODO: Add user-specific logic here
     }
 
     /**
@@ -125,19 +113,10 @@ class UserAgent extends AbstractAgent
     {
         // payload is array in MessageFromUserDTO, convert to string for logging
         $payloadStr = json_encode($message->payload, JSON_UNESCAPED_UNICODE);
-        AgentLogger::logUserMessage($this->getId(), $message->userId, $payloadStr);
+        Logger::logAgentUserMessage($this->getId(), $message->userId, $payloadStr);
         // User agent can receive messages from users
         // TODO: Implement proper message handling with DTO
         return null;
-    }
-
-    /**
-     * Send heartbeat to daemon
-     */
-    private function sendHeartbeat(): void
-    {
-        // TODO: Use proper DTO for heartbeat
-        // For now, this will be implemented when agent manager is ready
     }
 }
 

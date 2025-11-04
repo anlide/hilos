@@ -7,7 +7,7 @@ namespace Hilos\Core\Agent\Daemon;
 use Hilos\Utils\DTO\Agent\AgentMessageDTOInterface;
 use Hilos\Utils\DTO\Agent\MessageFromUserDTO;
 use Hilos\Socket\Client\WorkerClient;
-use Hilos\Utils\Helpers\TimeHelper;
+use Hilos\Logging\Logger\Logger;
 
 /**
  * AbstractAgentDaemon - Abstract base class for agent proxies in daemon
@@ -33,8 +33,8 @@ abstract class AbstractAgentDaemon implements AgentDaemonInterface
         $agentId = $this->getId();
         $agentType = $this->getType();
         $workerIndex = $workerClient->getWorkerIndex();
-        $timestamp = TimeHelper::getTimestampWithMs();
-        echo "[{$timestamp}] AgentDaemon {$agentId} linked to WorkerClient [daemon side] [type={$agentType}] [workerIndex={$workerIndex}]\n";
+
+        Logger::info("AgentDaemon {$agentId} linked to WorkerClient [daemon side] [type={$agentType}] [workerIndex={$workerIndex}]");
     }
 
     /**
@@ -127,10 +127,9 @@ abstract class AbstractAgentDaemon implements AgentDaemonInterface
     {
         $agentId = $this->getId();
         $agentType = $this->getType();
-        $timestamp = TimeHelper::getTimestampWithMs();
         $workerIndex = $this->workerClient?->getWorkerIndex() ?? 'unknown';
-        // Log to daemon.log (stdout) instead of daemon-error.log
-        echo "[{$timestamp}] Agent {$agentId} started [daemon side] [type={$agentType}] [workerIndex={$workerIndex}]\n";
+
+        Logger::info("Agent {$agentId} started [daemon side] [type={$agentType}] [workerIndex={$workerIndex}]");
     }
 
     /**
@@ -142,10 +141,8 @@ abstract class AbstractAgentDaemon implements AgentDaemonInterface
     {
         $agentId = $this->getId();
         $agentType = $this->getType();
-        $timestamp = TimeHelper::getTimestampWithMs();
         $workerIndex = $this->workerClient?->getWorkerIndex() ?? 'unknown';
-        // Log to daemon.log (stdout) instead of daemon-error.log
-        echo "[{$timestamp}] Agent {$agentId} stopped [daemon side] [type={$agentType}] [workerIndex={$workerIndex}]\n";
+
+        Logger::info("Agent {$agentId} stopped [daemon side] [type={$agentType}] [workerIndex={$workerIndex}]");
     }
 }
-

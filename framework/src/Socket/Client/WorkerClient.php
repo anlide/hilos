@@ -6,7 +6,7 @@ namespace Hilos\Socket\Client;
 
 use Hilos\Socket\Client\Interface\WorkerClientInterface;
 use Hilos\Utils\DTO\Worker\AgentMessageDTO;
-use Hilos\Utils\Helpers\TimeHelper;
+use Hilos\Logging\Logger\Logger;
 
 /**
  * WorkerClient - Represents a single worker connection
@@ -140,8 +140,7 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
 
         // Log worker registration on daemon side
         $workerType = $isMonopolistic ? 'monopolistic' : 'regular';
-        $timestamp = TimeHelper::getTimestampWithMs();
-        echo "[{$timestamp}] Worker #{$workerIndex} registered [daemon side] [type={$workerType}]\n";
+        Logger::info("Worker #{$workerIndex} registered [daemon side] [type={$workerType}]");
 
         // Send registration confirmation to worker
         $response = json_encode([
@@ -218,7 +217,7 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
     public function processAgentMessage(array $data): void
     {
         $type = $data['type'] ?? '';
-        
+
         // Forward agent lifecycle messages to handler if set
         if ($this->agentMessageHandler !== null && in_array($type, ['agent_started', 'agent_stopped', 'agent_message'])) {
             ($this->agentMessageHandler)($this, $data);
@@ -244,16 +243,15 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
      */
     public function sendAgentStart(string $agentId, string $agentType, ?string $agentIndex = null): void
     {
-        $timestamp = TimeHelper::getTimestampWithMs();
-        echo "[{$timestamp}] Sending agent_start signal to worker [daemon side] [agentId={$agentId}] [agentType={$agentType}] [agentIndex=" . ($agentIndex ?? 'null') . "] [workerIndex={$this->workerIndex}]\n";
-        
+        Logger::info("Sending agent_start signal to worker [daemon side] [agentId={$agentId}] [agentType={$agentType}] [agentIndex=" . ($agentIndex ?? 'null') . "] [workerIndex={$this->workerIndex}]");
+
         $dto = new AgentMessageDTO(
             type: AgentMessageDTO::TYPE_AGENT_START,
             agentId: $agentId,
             agentType: $agentType,
             agentIndex: $agentIndex,
         );
-        
+
         $this->send($dto->toJson());
     }
 
@@ -264,21 +262,20 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
      */
     public function sendAgentStop(string $agentId): void
     {
-        $timestamp = TimeHelper::getTimestampWithMs();
-        echo "[{$timestamp}] Sending agent_stop signal to worker [daemon side] [agentId={$agentId}] [workerIndex={$this->workerIndex}]\n";
-        
+        Logger::info("Sending agent_stop signal to worker [daemon side] [agentId={$agentId}] [workerIndex={$this->workerIndex}]");
+
         // Extract agent type from agentId (format: "type" or "type:index")
         $parts = explode(':', $agentId, 2);
         $agentType = $parts[0];
         $agentIndex = $parts[1] ?? null;
-        
+
         $dto = new AgentMessageDTO(
             type: AgentMessageDTO::TYPE_AGENT_STOP,
             agentId: $agentId,
             agentType: $agentType,
             agentIndex: $agentIndex,
         );
-        
+
         $this->send($dto->toJson());
     }
 
@@ -290,8 +287,7 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
         // Log worker disconnection on daemon side
         if ($this->workerIndex > 0) {
             $workerType = $this->isMonopolistic ? 'monopolistic' : 'regular';
-            $timestamp = TimeHelper::getTimestampWithMs();
-            echo "[{$timestamp}] Worker #{$this->workerIndex} disconnected [daemon side] [type={$workerType}]\n";
+            Logger::info("Worker #{$this->workerIndex} disconnected [daemon side] [type={$workerType}]");
         }
     }
 }

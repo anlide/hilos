@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Demo\WebSocketTest\Core\Agent\Daemon;
 
 use Hilos\Core\Agent\Daemon\AbstractAgentDaemon;
-use Hilos\Utils\Helpers\TimeHelper;
+use Hilos\Logging\Logger\Logger;
 
 /**
  * UserAgentDaemon - Daemon proxy for UserAgent
@@ -29,8 +29,7 @@ class UserAgentDaemon extends AbstractAgentDaemon
     public function __construct(string $userId)
     {
         $this->userId = $userId;
-        $timestamp = TimeHelper::getTimestampWithMs();
-        echo "[{$timestamp}] UserAgentDaemon created [daemon side] [type=" . self::AGENT_TYPE . "] [userId={$userId}]\n";
+        Logger::info("UserAgentDaemon created [daemon side] [type=" . self::AGENT_TYPE . "] [userId={$userId}]");
     }
 
     /**

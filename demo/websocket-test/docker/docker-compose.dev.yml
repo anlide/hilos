@@ -27,6 +27,7 @@ services:
       # - WEBSOCKET_HOST=${WEBSOCKET_HOST:-0.0.0.0}
       # - WEBSOCKET_PORT=${WEBSOCKET_PORT:-8092}
     command: ["php", "backend/Bootstrap/docker.php"]
+    stop_grace_period: 25s
     expose:
       - "${HTTP_STATUS_PORT:-8090}"
       - "${WORKER_COMM_PORT:-8091}"

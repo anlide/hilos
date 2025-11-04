@@ -6,6 +6,8 @@ require_once __DIR__ . '/../../vendor/autoload.php';
 
 use Demo\WebSocketTest\Core\Daemon\ChatWorkerManager;
 use Hilos\Exception\InvalidWorkerIdException;
+use Hilos\Logging\Logger\Logger;
+use Hilos\Utils\Constants\ErrorConstants;
 use Hilos\Utils\Constants\ExitCode;
 use Hilos\Utils\Env;
 use Hilos\Utils\Helpers\ArgumentHelper;
@@ -24,8 +26,11 @@ try {
     // Parse command line arguments for worker index
     $workerIndex = ArgumentHelper::getWorkerIndex($argv);
 } catch (InvalidWorkerIdException $e) {
-    echo "Worker bootstrap failed: " . $e->getMessage() . "\n";
-    exit(ExitCode::ERROR);
+    Logger::error("Worker bootstrap failed: " . $e->getMessage(), [
+        ErrorConstants::CONTEXT_KEY_FILE => $e->getFile(),
+        ErrorConstants::CONTEXT_KEY_LINE => $e->getLine(),
+    ]);
+    exit(ExitCode::INVALID_ARGUMENT);
 }
 
 try {
@@ -36,7 +41,11 @@ try {
     $workerManager->run();
     
 } catch (\Throwable $e) {
-    echo "Worker #{$workerIndex} failed: " . $e->getMessage() . "\n";
+    Logger::error("Worker #{$workerIndex} failed: " . $e->getMessage(), [
+        ErrorConstants::CONTEXT_KEY_FILE => $e->getFile(),
+        ErrorConstants::CONTEXT_KEY_LINE => $e->getLine(),
+        ErrorConstants::CONTEXT_KEY_TRACE => $e->getTraceAsString(),
+    ]);
     exit(ExitCode::ERROR);
 }
 
