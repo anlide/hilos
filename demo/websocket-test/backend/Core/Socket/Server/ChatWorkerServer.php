@@ -7,8 +7,7 @@ namespace Demo\WebSocketTest\Core\Socket\Server;
 use Demo\WebSocketTest\Core\Agent\Daemon\ChatAgentDaemonFactory;
 use Hilos\Core\Agent\Daemon\AbstractAgentDaemonFactory;
 use Hilos\Exception\Worker\AgentDaemonCreationFailedException;
-use Hilos\Socket\Client\Interface\WorkerClientInterface;
-use Hilos\Socket\Client\WorkerClient;
+use Hilos\Exception\Worker\NoSuitableWorkerException;
 use Hilos\Socket\Server\WorkerServer;
 
 /**
@@ -20,11 +19,20 @@ class ChatWorkerServer extends WorkerServer
 {
     /**
      * Called when server is started
-     *
-     * Sends ping signal to chat agent (starts it if needed, or queues if no worker available).
-     * @throws AgentDaemonCreationFailedException
      */
     protected function onStart(): void
+    {
+        // Server initialization - workers are not ready yet
+    }
+
+    /**
+     * Called when initial workers are ready
+     *
+     * Sends ping signal to chat agent when workers are ready.
+     * @throws AgentDaemonCreationFailedException
+     * @throws NoSuitableWorkerException
+     */
+    protected function onInitialWorkersReady(): void
     {
         $this->sendSignalToAgent('chat', null, ['action' => 'ping']);
     }

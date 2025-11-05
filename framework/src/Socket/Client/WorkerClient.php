@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 namespace Hilos\Socket\Client;
 
+use Hilos\Core\Router\SignalRouter;
 use Hilos\Socket\Client\Interface\WorkerClientInterface;
 use Hilos\Utils\DTO\Worker\AgentMessageDTO;
+use Hilos\Utils\DTO\Worker\WorkerRegisterDTO;
+use Hilos\Utils\DTO\Worker\WorkerRegisteredDTO;
 use Hilos\Logging\Logger\Logger;
 
 /**
@@ -24,6 +27,27 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
 
     /** @var bool Whether worker is registered */
     private bool $isRegistered = false;
+
+    /** @var array<int, array> Queue of agent messages waiting to be processed [['type' => string, 'data' => array], ...] */
+    private array $pendingAgentMessages = [];
+
+    /** @var float Connection time (microtime) */
+    private float $connectTime;
+
+    /** @var float Registration timeout in seconds */
+    private float $registrationTimeout = 10.0;
+
+    /**
+     * WorkerClient constructor
+     *
+     * @param resource $socket Client socket
+     * @param SignalRouter $signalRouter Signal router instance
+     */
+    public function __construct($socket, SignalRouter $signalRouter)
+    {
+        parent::__construct($socket, $signalRouter);
+        $this->connectTime = microtime(true);
+    }
 
     /**
      * Set worker index
@@ -104,19 +128,14 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
         // Handle different message types
         $type = $data['type'] ?? 'unknown';
         switch ($type) {
-            case 'worker_register':
+            case WorkerRegisterDTO::MESSAGE_TYPE:
                 $this->handleWorkerRegister($data);
-                break;
-            case 'heartbeat':
-                $this->handleHeartbeat($data);
-                break;
-            case 'status':
-                $this->handleStatus($data);
                 break;
             case 'agent_started':
             case 'agent_stopped':
             case 'agent_message':
-                $this->processAgentMessage($data);
+                // Queue agent messages for WorkerServer to process
+                $this->pendingAgentMessages[] = $data;
                 break;
             default:
                 // Unknown message type
@@ -131,97 +150,27 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
      */
     private function handleWorkerRegister(array $data): void
     {
-        $workerIndex = $data['workerIndex'] ?? 0;
-        $isMonopolistic = $data['monopolistic'] ?? false;
+        try {
+            $dto = WorkerRegisterDTO::fromArray($data);
+        } catch (\Throwable $e) {
+            Logger::error("Failed to parse worker_register DTO: " . $e->getMessage());
+            return;
+        }
 
-        $this->setWorkerIndex($workerIndex);
-        $this->setIsMonopolistic($isMonopolistic);
+        $this->setWorkerIndex($dto->workerIndex);
+        $this->setIsMonopolistic($dto->monopolistic);
         $this->isRegistered = true;
 
         // Log worker registration on daemon side
-        $workerType = $isMonopolistic ? 'monopolistic' : 'regular';
-        Logger::info("Worker #{$workerIndex} registered [daemon side] [type={$workerType}]");
+        $workerType = $dto->monopolistic ? 'monopolistic' : 'regular';
+        Logger::info("Worker #{$dto->workerIndex} registered [daemon side] [type={$workerType}]");
 
-        // Send registration confirmation to worker
-        $response = json_encode([
-            'type' => 'worker_registered',
-            'workerIndex' => $workerIndex,
-            'monopolistic' => $isMonopolistic,
-        ]);
-        $this->send($response);
-
-        // Notify registration handler
-        if ($this->workerRegistrationHandler !== null) {
-            ($this->workerRegistrationHandler)($this);
-        }
-    }
-
-    /**
-     * Handle heartbeat message
-     *
-     * @param array $data Message data
-     */
-    private function handleHeartbeat(array $data): void
-    {
-        // Send heartbeat response
-        $response = json_encode(['type' => 'heartbeat_ack', 'timestamp' => time()]);
-        $this->send($response);
-
-        // Log heartbeat on daemon side (optional, can be verbose - comment out if too noisy)
-        // $timestamp = TimeHelper::getTimestampWithMs();
-        // error_log("[{$timestamp}] Worker #{$this->workerIndex} heartbeat [daemon side]");
-    }
-
-    /**
-     * Handle status message
-     *
-     * @param array $data Message data
-     */
-    private function handleStatus(array $data): void
-    {
-        // Process worker status
-        // TODO: Store worker status
-    }
-
-    /** @var callable|null Callback for processing agent lifecycle messages */
-    private $agentMessageHandler = null;
-
-    /** @var callable|null Callback for worker registration */
-    private $workerRegistrationHandler = null;
-
-    /**
-     * Set agent message handler callback
-     *
-     * @param callable $handler Callback function(WorkerClient $client, array $data)
-     */
-    public function setAgentMessageHandler(callable $handler): void
-    {
-        $this->agentMessageHandler = $handler;
-    }
-
-    /**
-     * Set worker registration handler callback
-     *
-     * @param callable $handler Callback function(WorkerClient $client): void
-     */
-    public function setWorkerRegistrationHandler(callable $handler): void
-    {
-        $this->workerRegistrationHandler = $handler;
-    }
-
-    /**
-     * Process agent lifecycle messages
-     *
-     * @param array $data Message data from worker
-     */
-    public function processAgentMessage(array $data): void
-    {
-        $type = $data['type'] ?? '';
-
-        // Forward agent lifecycle messages to handler if set
-        if ($this->agentMessageHandler !== null && in_array($type, ['agent_started', 'agent_stopped', 'agent_message'])) {
-            ($this->agentMessageHandler)($this, $data);
-        }
+        // Send registration confirmation to worker using DTO
+        $responseDto = new WorkerRegisteredDTO(
+            workerIndex: $dto->workerIndex,
+            monopolistic: $dto->monopolistic,
+        );
+        $this->send($responseDto->toJson());
     }
 
     /**
@@ -277,6 +226,41 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
         );
 
         $this->send($dto->toJson());
+    }
+
+    /**
+     * Get and clear pending agent messages
+     *
+     * Returns all queued agent messages and clears the queue.
+     * Used by WorkerServer to process agent lifecycle events.
+     *
+     * @return array Pending agent messages [['type' => string, ...], ...]
+     */
+    public function getAndClearPendingAgentMessages(): array
+    {
+        $messages = $this->pendingAgentMessages;
+        $this->pendingAgentMessages = [];
+        return $messages;
+    }
+
+    /**
+     * Tick method - check registration timeout
+     *
+     * Checks if registration timeout has been exceeded and closes connection if so.
+     */
+    public function onTick(): void
+    {
+        // Skip if already registered or already closing
+        if ($this->isRegistered || $this->shouldClose) {
+            return;
+        }
+
+        // Check if registration timeout exceeded
+        $currentTime = microtime(true);
+        if (($currentTime - $this->connectTime) >= $this->registrationTimeout) {
+            Logger::error("Worker client registration timeout exceeded, disconnecting");
+            $this->shouldClose = true;
+        }
     }
 
     /**

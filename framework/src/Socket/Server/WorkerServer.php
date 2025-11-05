@@ -18,7 +18,11 @@ use Hilos\Exception\Process\FailedToSetStdErrException;
 use Hilos\Exception\Process\FailedToTerminateProcessExceptionException;
 use Hilos\Exception\SocketException;
 use Hilos\Exception\Worker\AgentDaemonCreationFailedException;
+use Hilos\Exception\Worker\NoSuitableWorkerException;
 use Hilos\Utils\DTO\Worker\AgentMessageDTO;
+use Hilos\Utils\DTO\Worker\WorkerAgentStartedDTO;
+use Hilos\Utils\DTO\Worker\WorkerAgentStoppedDTO;
+use Hilos\Socket\Client\ClientInterface;
 use Hilos\Socket\Client\Interface\WorkerClientInterface;
 use Hilos\Socket\Client\WorkerClient;
 use Hilos\Utils\Constants\EnvConstants;
@@ -56,14 +60,8 @@ abstract class WorkerServer extends AbstractServer
     /** @var int Next monopolistic worker index to assign if no available */
     private int $nextMonopolisticWorkerIndex = 1;
 
-    /** @var array<int, float> Regular worker indices waiting for graceful shutdown [workerIndex => startTime] */
-    private array $regularWorkersWaitingShutdown = [];
-
-    /** @var array<int, float> Monopolistic worker indices waiting for graceful shutdown [workerIndex => startTime] */
-    private array $monopolisticWorkersWaitingShutdown = [];
-
     /** @var float Graceful shutdown timeout in seconds */
-    private const float SHUTDOWN_TIMEOUT = 5.0;
+    protected float $shutdownTimeout = 5.0;
 
     /** @var string Path to worker bootstrap script */
     private string $workerScript;
@@ -83,11 +81,8 @@ abstract class WorkerServer extends AbstractServer
     /** @var array<string, AgentDaemonInterface> Active agent daemons indexed by agent ID */
     private array $agentDaemons = [];
 
-    /** @var array<string, array{agentType: string, agentIndex: ?string}> Agents waiting to be started */
-    private array $pendingAgents = [];
-
-    /** @var array<string, array{array{agentType: string, agentIndex: ?string, data: array}}> Queued signals for agents not linked to workers */
-    private array $queuedSignals = [];
+    /** @var bool Whether onInitialWorkersReady() has been called */
+    private bool $initialWorkersReadyCalled = false;
 
     /**
      * WorkerServer constructor
@@ -130,80 +125,19 @@ abstract class WorkerServer extends AbstractServer
      */
     protected function onCreateClient($socket, SignalRouter $signalRouter): WorkerClientInterface
     {
-        $workerClient = new WorkerClient($socket, $signalRouter);
-
-        // Set agent message handler to track agent lifecycle
-        $workerClient->setAgentMessageHandler(function(WorkerClient $client, array $data) {
-            $this->handleAgentMessage($client, $data);
-        });
-
-        // Set worker registration handler
-        $workerClient->setWorkerRegistrationHandler(function(WorkerClient $client) {
-            $this->handleWorkerRegistered($client);
-        });
-
-        return $workerClient;
-    }
-
-    /**
-     * Handle worker registration
-     *
-     * Called when a worker registers. Marks worker as registered.
-     * Actual pending processing happens in tickPending().
-     *
-     * @param WorkerClient $workerClient Registered worker client
-     */
-    private function handleWorkerRegistered(WorkerClient $workerClient): void
-    {
-        // Worker is now marked as registered in WorkerClient::handleWorkerRegister()
-        // Processing of pending agents will happen in tickPending()
-    }
-
-    /**
-     * Process queued signals for agents that are now linked to workers
-     */
-    private function processQueuedSignals(): void
-    {
-        foreach ($this->queuedSignals as $agentId => $signals) {
-            if (!isset($this->agentDaemons[$agentId])) {
-                continue; // Agent doesn't exist yet
-            }
-
-            $agentDaemon = $this->agentDaemons[$agentId];
-            $workerClient = $agentDaemon->getWorkerClient();
-            if ($workerClient === null) {
-                continue; // Agent not linked yet
-            }
-
-            // Send all queued signals
-            foreach ($signals as $signal) {
-                $parts = explode(':', $agentId, 2);
-                $agentTypeFromId = $parts[0];
-                $agentIndexFromId = $parts[1] ?? null;
-
-                $dto = new AgentMessageDTO(
-                    type: AgentMessageDTO::TYPE_AGENT_SIGNAL,
-                    agentId: $agentId,
-                    agentType: $agentTypeFromId,
-                    agentIndex: $agentIndexFromId,
-                    data: $signal['data'],
-                );
-
-                $workerClient->send($dto->toJson());
-            }
-
-            // Clear queued signals for this agent
-            unset($this->queuedSignals[$agentId]);
-        }
+        return new WorkerClient($socket, $signalRouter);
     }
 
     /**
      * Handle agent lifecycle signals from workers
      *
+     * Called from checkWorkerRegistration when processing worker messages.
+     * 
      * @param WorkerClient $workerClient Worker client that sent the signal
      * @param array $data Signal data
+     * @throws AgentDaemonCreationFailedException
      */
-    private function handleAgentMessage(WorkerClient $workerClient, array $data): void
+    protected function handleAgentMessage(WorkerClient $workerClient, array $data): void
     {
         $type = $data['type'] ?? '';
 
@@ -226,9 +160,16 @@ abstract class WorkerServer extends AbstractServer
      */
     protected function handleAgentStarted(WorkerClient $workerClient, array $data): void
     {
-        $agentId = $data['agentId'] ?? '';
-        $agentType = $data['agentType'] ?? '';
-        $agentIndex = $data['agentIndex'] ?? null;
+        try {
+            $dto = WorkerAgentStartedDTO::fromArray($data);
+        } catch (\Throwable $e) {
+            Logger::error("Failed to parse agent_started DTO: " . $e->getMessage());
+            return;
+        }
+
+        $agentId = $dto->agentId;
+        $agentType = $dto->agentType;
+        $agentIndex = $dto->agentIndex;
 
         if ($agentId === '' || $agentType === '') {
             return;
@@ -242,55 +183,7 @@ abstract class WorkerServer extends AbstractServer
         $agentDaemon->setWorkerClient($workerClient);
         $agentDaemon->onStart();
 
-        // Remove from pending if was there
-        unset($this->pendingAgents[$agentId]);
-
-        // Process queued signals for this agent
-        $this->processQueuedSignalsForAgent($agentId);
-
         Logger::info("Agent {$agentId} started on worker #{$workerClient->getWorkerIndex()} [daemon side]");
-    }
-
-    /**
-     * Process queued signals for a specific agent
-     *
-     * @param string $agentId Agent ID
-     */
-    private function processQueuedSignalsForAgent(string $agentId): void
-    {
-        if (!isset($this->queuedSignals[$agentId])) {
-            return; // No queued signals
-        }
-
-        if (!isset($this->agentDaemons[$agentId])) {
-            return; // Agent doesn't exist
-        }
-
-        $agentDaemon = $this->agentDaemons[$agentId];
-        $workerClient = $agentDaemon->getWorkerClient();
-        if ($workerClient === null) {
-            return; // Agent not linked yet
-        }
-
-        // Send all queued signals
-        foreach ($this->queuedSignals[$agentId] as $signal) {
-            $parts = explode(':', $agentId, 2);
-            $agentTypeFromId = $parts[0];
-            $agentIndexFromId = $parts[1] ?? null;
-
-            $dto = new AgentMessageDTO(
-                type: AgentMessageDTO::TYPE_AGENT_SIGNAL,
-                agentId: $agentId,
-                agentType: $agentTypeFromId,
-                agentIndex: $agentIndexFromId,
-                data: $signal['data'],
-            );
-
-            $workerClient->send($dto->toJson());
-        }
-
-        // Clear queued signals
-        unset($this->queuedSignals[$agentId]);
     }
 
     /**
@@ -301,7 +194,14 @@ abstract class WorkerServer extends AbstractServer
      */
     protected function handleAgentStopped(WorkerClient $workerClient, array $data): void
     {
-        $agentId = $data['agentId'] ?? '';
+        try {
+            $dto = WorkerAgentStoppedDTO::fromArray($data);
+        } catch (\Throwable $e) {
+            Logger::error("Failed to parse agent_stopped DTO: " . $e->getMessage());
+            return;
+        }
+
+        $agentId = $dto->agentId;
 
         if ($agentId === '') {
             return;
@@ -349,6 +249,15 @@ abstract class WorkerServer extends AbstractServer
     abstract protected function getAgentDaemonFactoryClass(): string;
 
     /**
+     * Called when initial workers are ready
+     *
+     * This method is called once when the minimum number of registered workers
+     * (both regular and monopolistic) has been reached according to configuration.
+     * Must be implemented by child classes to perform initialization that requires workers to be ready.
+     */
+    abstract protected function onInitialWorkersReady(): void;
+
+    /**
      * Get count of active regular worker processes
      *
      * @return int Number of active regular workers
@@ -384,19 +293,17 @@ abstract class WorkerServer extends AbstractServer
      * Overrides parent tick() to also manage worker processes lifecycle.
      * Checks running processes and starts missing ones.
      */
-    public function tick(): void
+    public function onTick(): void
     {
         // Process clients (read/write)
-        parent::tick();
+        // Registration timeout is handled in WorkerClient::onTick()
+        parent::onTick();
 
-        // Check workers waiting for graceful shutdown
-        $this->checkGracefulShutdown();
+        // Handle newly registered workers and process agent messages
+        $this->checkWorkerRegistration();
 
-        // Tick all worker processes (check status, read output)
+        // Tick all worker processes (check status, read output, handle graceful shutdown)
         $this->tickWorkerProcesses();
-
-        // Process pending agents and queued signals
-        $this->tickPending();
 
         // Ensure minimum number of workers are running
         try {
@@ -409,63 +316,64 @@ abstract class WorkerServer extends AbstractServer
     }
 
     /**
-     * Process pending agents and queued signals
+     * Check worker registration and process agent messages
      *
-     * Processes one pending agent per tick and sends queued signals.
-     * Called from tick() to handle agents waiting for workers.
+     * Processes newly registered workers and agent messages.
+     * Registration timeout is now handled in WorkerClient::onTick().
+     * Also checks if initial workers are ready and calls onInitialWorkersReady() once.
      */
-    private function tickPending(): void
+    private function checkWorkerRegistration(): void
     {
-        // Process one pending agent per tick
-        if (!empty($this->pendingAgents)) {
-            $this->processPendingAgent();
+        // Process agent messages from all worker clients
+        foreach ($this->clients as $client) {
+            if (!$client instanceof WorkerClient) {
+                continue;
+            }
+
+            // Process pending agent messages from worker
+            $pendingMessages = $client->getAndClearPendingAgentMessages();
+            foreach ($pendingMessages as $messageData) {
+                $this->handleAgentMessage($client, $messageData);
+            }
         }
 
-        // Process queued signals for agents that are now linked
-        $this->processQueuedSignals();
-    }
+        // Check if initial workers are ready (only once)
+        if (!$this->initialWorkersReadyCalled) {
+            // Count registered workers
+            $registeredRegular = 0;
+            $registeredMonopolistic = 0;
 
-    /**
-     * Process one pending agent
-     *
-     * Tries to find a suitable registered worker and start one pending agent.
-     */
-    private function processPendingAgent(): void
-    {
-        foreach ($this->pendingAgents as $agentId => $agentInfo) {
-            $agentType = $agentInfo['agentType'];
-            $agentIndex = $agentInfo['agentIndex'];
+            foreach ($this->clients as $client) {
+                if (!$client instanceof WorkerClient || !$client->isRegistered()) {
+                    continue;
+                }
 
-            // Create agent daemon if it doesn't exist
-            if (!isset($this->agentDaemons[$agentId])) {
-                try {
-                    $this->agentDaemons[$agentId] = $this->getAgentDaemonFactoryClass()::createAgentDaemon($agentType, $agentIndex);
-                } catch (\Throwable $e) {
-                    continue; // Skip if creation fails
+                if ($client->isMonopolistic()) {
+                    $registeredMonopolistic++;
+                } else {
+                    $registeredRegular++;
                 }
             }
 
-            $agentDaemon = $this->agentDaemons[$agentId];
-            $requiresMonopolistic = $agentDaemon->requiresMonopolisticProcess();
+            // Check if both types meet minimum requirements
+            $regularReady = $registeredRegular >= $this->minRegular;
+            $monopolisticReady = ($this->minMonopolistic === 0) || ($registeredMonopolistic >= $this->minMonopolistic);
 
-            // Find suitable registered worker
-            $workerClient = $this->findSuitableRegisteredWorker($requiresMonopolistic);
-            if ($workerClient === null) {
-                continue; // No suitable worker available yet
+            if ($regularReady && $monopolisticReady) {
+                $this->initialWorkersReadyCalled = true;
+                $this->onInitialWorkersReady();
             }
-
-            // Link agent daemon to this worker
-            $agentDaemon->setWorkerClient($workerClient);
-
-            // Remove from pending
-            unset($this->pendingAgents[$agentId]);
-
-            // Send agent_start signal to worker
-            $workerClient->sendAgentStart($agentId, $agentType, $agentIndex);
-
-            // Process only one agent per tick
-            break;
         }
+    }
+
+    /**
+     * Remove client from server
+     *
+     * @param ClientInterface $client Client to remove
+     */
+    public function removeClient(ClientInterface $client): void
+    {
+        parent::removeClient($client);
     }
 
     /**
@@ -546,15 +454,13 @@ abstract class WorkerServer extends AbstractServer
             try {
                 $process->tick();
 
-                // Read and save stdout/stderr to files
-                $this->saveWorkerOutput($process, 'regular', $workerIndex);
-
                 // Check if process is still running
                 $status = $process->getStatus();
+                
+                // Read and save stdout/stderr to files (after status check to ensure we capture final output)
+                $this->saveWorkerOutput($process, 'regular', $workerIndex);
+                
                 if (!$status[Process::STATUS_RUNNING]) {
-                    // Worker stopped - read final output before removing
-                    $this->saveWorkerOutput($process, 'regular', $workerIndex);
-
                     // Worker died, remove from list and free index for reuse
                     Logger::info("Worker #{$workerIndex} stopped [type=regular]");
 
@@ -583,15 +489,13 @@ abstract class WorkerServer extends AbstractServer
             try {
                 $process->tick();
 
-                // Read and save stdout/stderr to files
-                $this->saveWorkerOutput($process, 'monopolistic', $workerIndex);
-
                 // Check if process is still running
                 $status = $process->getStatus();
+                
+                // Read and save stdout/stderr to files (after status check to ensure we capture final output)
+                $this->saveWorkerOutput($process, 'monopolistic', $workerIndex);
+                
                 if (!$status[Process::STATUS_RUNNING]) {
-                    // Worker stopped - read final output before removing
-                    $this->saveWorkerOutput($process, 'monopolistic', $workerIndex);
-
                     // Worker died, remove from list and free index for reuse
                     Logger::info("Worker #{$workerIndex} stopped [type=monopolistic]");
                     unset($this->monopolisticWorkers[$workerIndex]);
@@ -864,19 +768,16 @@ abstract class WorkerServer extends AbstractServer
     /**
      * Stop all worker processes with graceful shutdown
      *
-     * Sends SIGTERM to all workers and tracks them for graceful shutdown.
-     * Actual termination will happen asynchronously in tick() method.
+     * Sends SIGTERM to all workers with shutdown timeout.
+     * Actual termination will happen asynchronously in tick() method via Process::tick().
      * Does NOT close socket or worker client connections - workers need to disconnect themselves.
      */
     public function stop(): void
     {
-        $currentTime = microtime(true);
-
-        // Stop regular workers (send SIGTERM, track for graceful shutdown)
+        // Stop regular workers (send SIGTERM with timeout)
         foreach ($this->regularWorkers as $workerIndex => $process) {
             try {
-                $process->stop(); // Send SIGTERM
-                $this->regularWorkersWaitingShutdown[$workerIndex] = $currentTime;
+                $process->stop($this->shutdownTimeout); // Send SIGTERM with timeout
                 Logger::info("Sent stop signal to regular worker #{$workerIndex}");
             } catch (\Throwable $e) {
                 Logger::error("Failed to stop regular worker #{$workerIndex}: " . $e->getMessage());
@@ -885,11 +786,10 @@ abstract class WorkerServer extends AbstractServer
             }
         }
 
-        // Stop monopolistic workers (send SIGTERM, track for graceful shutdown)
+        // Stop monopolistic workers (send SIGTERM with timeout)
         foreach ($this->monopolisticWorkers as $workerIndex => $process) {
             try {
-                $process->stop(); // Send SIGTERM
-                $this->monopolisticWorkersWaitingShutdown[$workerIndex] = $currentTime;
+                $process->stop($this->shutdownTimeout); // Send SIGTERM with timeout
                 Logger::info("Sent stop signal to monopolistic worker #{$workerIndex}");
             } catch (\Throwable $e) {
                 Logger::error("Failed to stop monopolistic worker #{$workerIndex}: " . $e->getMessage());
@@ -904,157 +804,6 @@ abstract class WorkerServer extends AbstractServer
     }
 
     /**
-     * Check workers waiting for graceful shutdown
-     *
-     * Called in tick() to asynchronously check if workers have exited gracefully.
-     * Force kills workers that exceed timeout.
-     */
-    private function checkGracefulShutdown(): void
-    {
-        $currentTime = microtime(true);
-
-        // Check regular workers waiting for shutdown
-        foreach ($this->regularWorkersWaitingShutdown as $workerIndex => $shutdownStartTime) {
-            // Check if timeout exceeded
-            if (($currentTime - $shutdownStartTime) >= self::SHUTDOWN_TIMEOUT) {
-                // Timeout reached, force kill
-                $this->forceKillRegularWorker($workerIndex);
-                unset($this->regularWorkersWaitingShutdown[$workerIndex]);
-                continue;
-            }
-
-            // Check if worker still exists and is running
-            $process = $this->regularWorkers[$workerIndex] ?? null;
-            if ($process === null) {
-                // Worker already terminated
-                unset($this->regularWorkersWaitingShutdown[$workerIndex]);
-                continue;
-            }
-
-            // Check status
-            try {
-                $status = $process->getStatus();
-                if (!$status[Process::STATUS_RUNNING]) {
-                    // Worker stopped - read final output before removing
-                    $this->saveWorkerOutput($process, 'regular', $workerIndex);
-
-                    // Worker died, remove from list and free index for reuse
-                    Logger::info("Worker #{$workerIndex} graceful stopped [type=regular]");
-
-                    // Worker exited gracefully
-                    unset($this->regularWorkersWaitingShutdown[$workerIndex]);
-                    // Remove from active workers
-                    unset($this->regularWorkers[$workerIndex]);
-                    // Free index for reuse
-                    $this->availableRegularIndices[] = $workerIndex;
-                    sort($this->availableRegularIndices);
-                }
-            } catch (\Throwable $e) {
-                // Error checking status, force kill
-                $this->forceKillRegularWorker($workerIndex);
-                unset($this->regularWorkersWaitingShutdown[$workerIndex]);
-            }
-        }
-
-        // Check monopolistic workers waiting for shutdown
-        foreach ($this->monopolisticWorkersWaitingShutdown as $workerIndex => $shutdownStartTime) {
-            // Check if timeout exceeded
-            if (($currentTime - $shutdownStartTime) >= self::SHUTDOWN_TIMEOUT) {
-                // Timeout reached, force kill
-                $this->forceKillMonopolisticWorker($workerIndex);
-                unset($this->monopolisticWorkersWaitingShutdown[$workerIndex]);
-                continue;
-            }
-
-            // Check if worker still exists and is running
-            $process = $this->monopolisticWorkers[$workerIndex] ?? null;
-            if ($process === null) {
-                // Worker already terminated
-                unset($this->monopolisticWorkersWaitingShutdown[$workerIndex]);
-                continue;
-            }
-
-            // Check status
-            try {
-                $status = $process->getStatus();
-                if (!$status[Process::STATUS_RUNNING]) {
-                    // Worker stopped - read final output before removing
-                    $this->saveWorkerOutput($process, 'monopolistic', $workerIndex);
-
-                    // Worker died, remove from list and free index for reuse
-                    Logger::info("Worker #{$workerIndex} graceful stopped [type=monopolistic]");
-
-                    // Worker exited gracefully
-                    unset($this->monopolisticWorkersWaitingShutdown[$workerIndex]);
-                    // Remove from active workers
-                    unset($this->monopolisticWorkers[$workerIndex]);
-                    // Free index for reuse
-                    $this->availableMonopolisticIndices[] = $workerIndex;
-                    sort($this->availableMonopolisticIndices);
-                }
-            } catch (\Throwable $e) {
-                // Error checking status, force kill
-                $this->forceKillMonopolisticWorker($workerIndex);
-                unset($this->monopolisticWorkersWaitingShutdown[$workerIndex]);
-            }
-        }
-    }
-
-    /**
-     * Force kill regular worker process
-     *
-     * @param int $workerIndex Worker index
-     */
-    private function forceKillRegularWorker(int $workerIndex): void
-    {
-        $process = $this->regularWorkers[$workerIndex] ?? null;
-        if ($process === null) {
-            return;
-        }
-
-        try {
-            $process->halt(); // Force kill with SIGKILL
-            Logger::info("Force killed regular worker #{$workerIndex}");
-        } catch (\Throwable $e) {
-            Logger::error("Failed to force kill regular worker #{$workerIndex}: " . $e->getMessage());
-        }
-
-        // Remove from active workers
-        unset($this->regularWorkers[$workerIndex]);
-
-        // Free index for reuse
-        $this->availableRegularIndices[] = $workerIndex;
-        sort($this->availableRegularIndices);
-    }
-
-    /**
-     * Force kill monopolistic worker process
-     *
-     * @param int $workerIndex Worker index
-     */
-    private function forceKillMonopolisticWorker(int $workerIndex): void
-    {
-        $process = $this->monopolisticWorkers[$workerIndex] ?? null;
-        if ($process === null) {
-            return;
-        }
-
-        try {
-            $process->halt(); // Force kill with SIGKILL
-            Logger::info("Force killed monopolistic worker #{$workerIndex}");
-        } catch (\Throwable $e) {
-            Logger::error("Failed to force kill monopolistic worker #{$workerIndex}: " . $e->getMessage());
-        }
-
-        // Remove from active workers
-        unset($this->monopolisticWorkers[$workerIndex]);
-
-        // Free index for reuse
-        $this->availableMonopolisticIndices[] = $workerIndex;
-        sort($this->availableMonopolisticIndices);
-    }
-
-    /**
      * Start agent on appropriate worker
      *
      * Agent router: selects appropriate worker and starts agent.
@@ -1063,50 +812,41 @@ abstract class WorkerServer extends AbstractServer
      *
      * @param string $agentType Agent type
      * @param ?string $agentIndex Agent index (optional)
-     * @return bool True if agent was started or already exists, false if no suitable worker available
      * @throws AgentDaemonCreationFailedException If agent daemon cannot be created
+     * @throws NoSuitableWorkerException If no suitable worker is available
      */
-    protected function startAgent(string $agentType, ?string $agentIndex = null): bool
+    protected function startAgent(string $agentType, ?string $agentIndex = null): void
     {
         // Build agent ID
         $agentId = $this->buildAgentId($agentType, $agentIndex);
 
-        // Check if agent already exists
+        // Check if agent already exists and is linked
         if (isset($this->agentDaemons[$agentId])) {
             $agentDaemon = $this->agentDaemons[$agentId];
             if ($agentDaemon->getWorkerClient() !== null) {
-                return true; // Agent already running and linked to worker
+                return; // Agent already running and linked to worker
             }
         }
 
         // Create agent daemon if it doesn't exist
         if (!isset($this->agentDaemons[$agentId])) {
-            // Store agent daemon temporarily - will be linked when agent_started arrives
             $this->agentDaemons[$agentId] = $this->getAgentDaemonFactoryClass()::createAgentDaemon($agentType, $agentIndex);
         }
 
         // Select appropriate worker
         $workerClient = $this->selectWorkerForAgent($this->agentDaemons[$agentId]->requiresMonopolisticProcess());
 
-        // If no suitable worker available, add to pending and return false
+        // If no suitable worker available, throw exception
         if ($workerClient === null) {
-            $this->pendingAgents[$agentId] = [
-                'agentType' => $agentType,
-                'agentIndex' => $agentIndex,
-            ];
-            return false;
+            $workerType = $this->agentDaemons[$agentId]->requiresMonopolisticProcess() ? 'monopolistic' : 'regular';
+            throw new NoSuitableWorkerException($workerType, $this->agentDaemons[$agentId]->requiresMonopolisticProcess());
         }
-
-        // Remove from pending if was there
-        unset($this->pendingAgents[$agentId]);
 
         // Link agent daemon to selected worker
         $this->agentDaemons[$agentId]->setWorkerClient($workerClient);
 
         // Send agent_start signal to worker
         $workerClient->sendAgentStart($agentId, $agentType, $agentIndex);
-
-        return true;
     }
 
     /**
@@ -1197,13 +937,13 @@ abstract class WorkerServer extends AbstractServer
      * Send signal to agent
      *
      * If agent doesn't exist or is not linked to worker, starts it first, then sends signal.
-     * If agent cannot be started (no worker available), signal is queued for later delivery.
-     * Always sends signal after ensuring agent exists and is linked, or queues it.
+     * Throws exception if agent cannot be started (no worker available).
      *
      * @param string $agentType Agent type
      * @param ?string $agentIndex Agent index (optional)
      * @param array $data Signal data
      * @throws AgentDaemonCreationFailedException If agent daemon cannot be created
+     * @throws NoSuitableWorkerException If no suitable worker is available
      */
     public function sendSignalToAgent(string $agentType, ?string $agentIndex, array $data): void
     {
@@ -1211,47 +951,19 @@ abstract class WorkerServer extends AbstractServer
 
         // If agent doesn't exist or not linked to worker, try to start it
         if (!isset($this->agentDaemons[$agentId]) || $this->agentDaemons[$agentId]->getWorkerClient() === null) {
-            $started = $this->startAgent($agentType, $agentIndex);
-            if (!$started) {
-                // Agent cannot be started now (no worker available), queue the signal
-                if (!isset($this->queuedSignals[$agentId])) {
-                    $this->queuedSignals[$agentId] = [];
-                }
-                $this->queuedSignals[$agentId][] = [
-                    'agentType' => $agentType,
-                    'agentIndex' => $agentIndex,
-                    'data' => $data,
-                ];
-                return;
-            }
+            $this->startAgent($agentType, $agentIndex);
         }
 
-        // At this point agent should exist, but might not be linked yet if just started
+        // At this point agent should exist and be linked
         if (!isset($this->agentDaemons[$agentId])) {
-            // Should not happen, but queue signal just in case
-            if (!isset($this->queuedSignals[$agentId])) {
-                $this->queuedSignals[$agentId] = [];
-            }
-            $this->queuedSignals[$agentId][] = [
-                'agentType' => $agentType,
-                'agentIndex' => $agentIndex,
-                'data' => $data,
-            ];
+            Logger::error("Agent {$agentId} does not exist after startAgent() call");
             return;
         }
 
         $agentDaemon = $this->agentDaemons[$agentId];
         $workerClient = $agentDaemon->getWorkerClient();
         if ($workerClient === null) {
-            // Agent exists but not linked, queue signal
-            if (!isset($this->queuedSignals[$agentId])) {
-                $this->queuedSignals[$agentId] = [];
-            }
-            $this->queuedSignals[$agentId][] = [
-                'agentType' => $agentType,
-                'agentIndex' => $agentIndex,
-                'data' => $data,
-            ];
+            Logger::error("Agent {$agentId} is not linked to worker after startAgent() call");
             return;
         }
 

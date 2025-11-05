@@ -8,7 +8,9 @@ use Demo\WebSocketTest\Utils\DTO\WebSocketCloseSignalDTO;
 use Demo\WebSocketTest\Utils\DTO\WebSocketFrameBinarySignalDTO;
 use Demo\WebSocketTest\Utils\DTO\WebSocketFrameSignalDTO;
 use Demo\WebSocketTest\Utils\DTO\WebSocketHandshakeSignalDTO;
+use Hilos\Core\Router\SignalSource;
 use Hilos\Socket\Client\WebSocketClient;
+use Hilos\Utils\Constants\SignalConstants;
 
 /**
  * ChatWebSocketClient - WebSocket client for chat demo
@@ -32,7 +34,8 @@ class ChatWebSocketClient extends WebSocketClient
             payload: $payload,
         );
 
-        $this->signalRouter->queueSignal('websocket', 'frame', $dto);
+        $signalSource = new SignalSource(SignalSource::SOURCE_WEBSOCKET);
+        $this->signalRouter->queueSignal($signalSource, SignalConstants::SIGNAL_FRAME, $dto);
     }
 
     /**
@@ -47,7 +50,8 @@ class ChatWebSocketClient extends WebSocketClient
             payload: $payload,
         );
 
-        $this->signalRouter->queueSignal('websocket', 'frame_binary', $dto);
+        $signalSource = new SignalSource(SignalSource::SOURCE_WEBSOCKET);
+        $this->signalRouter->queueSignal($signalSource, SignalConstants::SIGNAL_FRAME_BINARY, $dto);
     }
 
     /**
@@ -75,7 +79,8 @@ class ChatWebSocketClient extends WebSocketClient
             clientIp: $clientIp,
         );
 
-        $this->signalRouter->queueSignal('websocket', 'handshake', $dto);
+        $signalSource = new SignalSource(SignalSource::SOURCE_WEBSOCKET);
+        $this->signalRouter->queueSignal($signalSource, SignalConstants::SIGNAL_HANDSHAKE, $dto);
     }
 
     /**
@@ -87,6 +92,7 @@ class ChatWebSocketClient extends WebSocketClient
             clientId: $this->clientId,
         );
 
-        $this->signalRouter->queueSignal('websocket', 'close', $dto);
+        $signalSource = new SignalSource(SignalSource::SOURCE_WEBSOCKET);
+        $this->signalRouter->queueSignal($signalSource, SignalConstants::SIGNAL_CLOSE, $dto);
     }
 }

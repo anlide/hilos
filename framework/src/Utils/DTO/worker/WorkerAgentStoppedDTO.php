@@ -2,23 +2,26 @@
 
 declare(strict_types=1);
 
-namespace Hilos\Utils\DTO\WebSocket;
+namespace Hilos\Utils\DTO\Worker;
 
 use Hilos\Utils\DTO\BaseDTO;
-use Hilos\Utils\DTO\SignalDTO;
 
 /**
- * WebSocketCloseSignalDTO - DTO for WebSocket close signal
+ * WorkerAgentStoppedDTO - DTO for agent stopped notification
  *
- * Represents a WebSocket close signal sent from WebSocket client.
+ * Used when worker notifies daemon that agent has stopped.
  */
-class WebSocketCloseSignalDTO extends BaseDTO implements SignalDTO
+class WorkerAgentStoppedDTO extends BaseDTO
 {
     // Field name constants
-    public const string CLIENT_ID = 'clientId';
+    public const string TYPE = 'type';
+    public const string AGENT_ID = 'agentId';
+
+    // Message type
+    public const string MESSAGE_TYPE = 'agent_stopped';
 
     public function __construct(
-        public readonly string $clientId,
+        public readonly string $agentId,
     ) {
     }
 
@@ -30,7 +33,8 @@ class WebSocketCloseSignalDTO extends BaseDTO implements SignalDTO
     public function toArray(): array
     {
         return [
-            self::CLIENT_ID => $this->clientId,
+            self::TYPE => self::MESSAGE_TYPE,
+            self::AGENT_ID => $this->agentId,
         ];
     }
 
@@ -43,7 +47,8 @@ class WebSocketCloseSignalDTO extends BaseDTO implements SignalDTO
     public static function fromArray(array $data): static
     {
         return new self(
-            clientId: $data[self::CLIENT_ID] ?? '',
+            agentId: $data[self::AGENT_ID] ?? '',
         );
     }
 }
+

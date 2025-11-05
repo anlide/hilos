@@ -5,13 +5,14 @@ declare(strict_types=1);
 namespace Hilos\Utils\DTO\WebSocket;
 
 use Hilos\Utils\DTO\BaseDTO;
+use Hilos\Utils\DTO\SignalDTO;
 
 /**
  * WebSocketFrameBinarySignalDTO - DTO for WebSocket binary frame signal
  *
  * Represents a WebSocket binary frame signal sent from WebSocket client.
  */
-class WebSocketFrameBinarySignalDTO extends BaseDTO
+class WebSocketFrameBinarySignalDTO extends BaseDTO implements SignalDTO
 {
     // Field name constants
     public const string CLIENT_ID = 'clientId';

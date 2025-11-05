@@ -5,13 +5,14 @@ declare(strict_types=1);
 namespace Hilos\Utils\DTO\WebSocket;
 
 use Hilos\Utils\DTO\BaseDTO;
+use Hilos\Utils\DTO\SignalDTO;
 
 /**
  * WebSocketHandshakeSignalDTO - DTO for WebSocket handshake signal
  *
  * Represents a WebSocket handshake signal sent from WebSocket client.
  */
-class WebSocketHandshakeSignalDTO extends BaseDTO
+class WebSocketHandshakeSignalDTO extends BaseDTO implements SignalDTO
 {
     // Field name constants
     public const string CLIENT_ID = 'clientId';

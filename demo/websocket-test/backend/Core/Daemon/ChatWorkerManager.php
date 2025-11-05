@@ -9,6 +9,7 @@ use Hilos\Core\Agent\AgentInterface;
 use Hilos\Core\Daemon\WorkerManager;
 use Hilos\Exception\Worker\AgentCreationFailedException;
 use Hilos\Logging\Logger\Logger;
+use Hilos\Utils\Constants\SignalConstants;
 
 /**
  * ChatWorkerManager - Worker manager for chat demo
@@ -59,15 +60,15 @@ class ChatWorkerManager extends WorkerManager
         $data = $signalData['data'] ?? [];
 
         switch ($signalType) {
-            case 'frame':
+            case SignalConstants::SIGNAL_FRAME:
                 $this->handleFrameSignal($agentId, $data);
                 break;
 
-            case 'handshake':
+            case SignalConstants::SIGNAL_HANDSHAKE:
                 $this->handleHandshakeSignal($agentId, $data);
                 break;
 
-            case 'close':
+            case SignalConstants::SIGNAL_CLOSE:
                 $this->handleCloseSignal($agentId, $data);
                 break;
 

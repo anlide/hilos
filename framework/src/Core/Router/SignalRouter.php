@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Router;
 
-use Hilos\Utils\DTO\BaseDTO;
+use Hilos\Utils\DTO\SignalDTO;
 use Hilos\Logging\Logger\Logger;
 
 /**
@@ -30,7 +30,7 @@ class SignalRouter
      */
     protected array $config;
 
-    /** @var array Queued signals to dispatch [['source' => string, 'signalType' => string, 'dto' => BaseDTO, 'route' => ?array], ...] */
+    /** @var array Queued signals to dispatch [['signalSource' => SignalSourceInterface, 'signalType' => string, 'dto' => SignalDTO, 'route' => ?array], ...] */
     private array $queuedSignals = [];
 
     /**
@@ -50,13 +50,15 @@ class SignalRouter
      *
      * Returns routing information for signal, or null if no route found.
      *
-     * @param string $source Signal source (e.g., 'websocket')
+     * @param SignalSourceInterface $signalSource Signal source identifier
      * @param string $signalType Signal type (e.g., 'frame', 'handshake', 'close')
-     * @param BaseDTO $dto Signal DTO
+     * @param SignalDTO $dto Signal DTO
      * @return ?array Routing info ['agentType' => string, 'agentIndex' => ?string] or null if no route
      */
-    public function route(string $source, string $signalType, BaseDTO $dto): ?array
+    public function route(SignalSourceInterface $signalSource, string $signalType, SignalDTO $dto): ?array
     {
+        $source = $signalSource->getSource();
+
         // Check if source exists in config
         if (!isset($this->config[$source])) {
             return null;
@@ -85,12 +87,14 @@ class SignalRouter
     /**
      * Check if route exists
      *
-     * @param string $source Signal source
+     * @param SignalSourceInterface $signalSource Signal source identifier
      * @param string $signalType Signal type
      * @return bool True if route exists
      */
-    public function hasRoute(string $source, string $signalType): bool
+    public function hasRoute(SignalSourceInterface $signalSource, string $signalType): bool
     {
+        $source = $signalSource->getSource();
+
         // Check if source exists in config
         if (!isset($this->config[$source])) {
             return false;
@@ -115,24 +119,25 @@ class SignalRouter
      * Called by servers to queue signals for later dispatch.
      * Signals are accumulated during tick and dispatched at the end of loop iteration.
      *
-     * @param string $source Signal source (e.g., 'websocket')
+     * @param SignalSourceInterface $signalSource Signal source identifier
      * @param string $signalType Signal type (e.g., 'frame', 'handshake', 'close')
-     * @param BaseDTO $dto Signal DTO
+     * @param SignalDTO $dto Signal DTO
      */
-    public function queueSignal(string $source, string $signalType, BaseDTO $dto): void
+    public function queueSignal(SignalSourceInterface $signalSource, string $signalType, SignalDTO $dto): void
     {
         // Route signal to determine target
-        $route = $this->route($source, $signalType, $dto);
+        $route = $this->route($signalSource, $signalType, $dto);
 
         // Queue signal with route info
         $this->queuedSignals[] = [
-            'source' => $source,
+            'signalSource' => $signalSource,
             'signalType' => $signalType,
             'dto' => $dto,
             'route' => $route,
         ];
 
         // Log signal queued
+        $source = $signalSource->getSource();
         $routeInfo = $route !== null
             ? "route to agent {$route['agentType']}" . ($route['agentIndex'] !== null ? "({$route['agentIndex']})" : "")
             : "no route";
@@ -145,7 +150,7 @@ class SignalRouter
      * Returns all queued signals and clears the queue.
      * Used by DaemonManager to dispatch signals.
      *
-     * @return array Queued signals [['source' => string, 'signalType' => string, 'dto' => BaseDTO, 'route' => ?array], ...]
+     * @return array Queued signals [['signalSource' => SignalSourceInterface, 'signalType' => string, 'dto' => SignalDTO, 'route' => ?array], ...]
      */
     public function getAndClearQueuedSignals(): array
     {

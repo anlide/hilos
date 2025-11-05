@@ -220,6 +220,14 @@ abstract class AbstractClient extends AbstractSocket implements ClientInterface
     abstract protected function processReadBuffer(): void;
 
     /**
+     * Tick method - called on each server tick
+     * 
+     * Must be implemented by child classes to perform periodic operations (e.g., timeout checks).
+     * Can be left empty if no periodic operations are needed.
+     */
+    abstract public function onTick(): void;
+
+    /**
      * Called when socket connection is successfully closed
      *
      * This method is called after socket_close() completes without errors.

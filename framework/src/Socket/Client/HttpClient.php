@@ -155,6 +155,14 @@ class HttpClient extends AbstractClient implements HttpClientInterface
     }
 
     /**
+     * Tick method - called on each server tick
+     */
+    public function onTick(): void
+    {
+        // No periodic operations needed for HTTP clients
+    }
+
+    /**
      * Called when socket connection is successfully closed
      */
     protected function onClose(): void

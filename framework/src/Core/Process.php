@@ -52,6 +52,9 @@ class Process
     /** @var string Unread stderr content */
     private string $unreadStdErr = '';
 
+    /** @var ?float Time when halt() should be called (microtime) or null if not set */
+    private ?float $haltTime = null;
+
     /**
      * ProcessManager constructor.
      *
@@ -174,6 +177,12 @@ class Process
             $this->unreadStdErr .= $stderrContent;
         }
 
+        // Check if halt time reached
+        if ($this->haltTime !== null && microtime(true) >= $this->haltTime) {
+            $this->halt(); // Force kill - timeout exceeded
+            return;
+        }
+
         if (!$status[self::STATUS_RUNNING]) {
             $this->halt(); // Ensure the process is terminated if not running
         }
@@ -198,15 +207,21 @@ class Process
     /**
      * Stop process safely.
      *
+     * @param ?float $shutdownTimeout Timeout in seconds before force kill (null = no timeout, equivalent to old behavior)
      * @throws FailedToGetStatusException If process status cannot be retrieved
      * @throws FailedToTerminateProcessExceptionException If process cannot be terminated
      */
-    public function stop(): void
+    public function stop(?float $shutdownTimeout = null): void
     {
         $status = $this->getStatus();
         if ($status[self::STATUS_RUNNING]) {
             if (!proc_terminate($this->process)) {
                 throw new FailedToTerminateProcessExceptionException('Failed to terminate the process.');
+            }
+
+            // Set halt time if timeout specified
+            if ($shutdownTimeout !== null && $shutdownTimeout > 0) {
+                $this->haltTime = microtime(true) + $shutdownTimeout;
             }
         }
     }
@@ -227,6 +242,9 @@ class Process
             }
         }
         $this->closePipes();
+        
+        // Clear halt time
+        $this->haltTime = null;
     }
 
     /**

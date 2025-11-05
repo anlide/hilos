@@ -87,7 +87,7 @@ abstract class DaemonManager extends BaseManager
 
             // Tick all servers (process clients)
             foreach ($this->servers as $server) {
-                $server->tick();
+                $server->onTick();
             }
 
             // Call tick method

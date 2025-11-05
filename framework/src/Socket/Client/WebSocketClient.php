@@ -463,6 +463,15 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
     ): void;
 
     /**
+     * Tick method - called on each server tick
+     */
+    public function onTick(): void
+    {
+        // No periodic operations by default for WebSocket clients
+        // Can be overridden in child classes if needed
+    }
+
+    /**
      * Called when socket connection is successfully closed
      */
     protected function onClose(): void

@@ -65,7 +65,7 @@ interface ServerInterface
      *
      * Should process read/write operations for all connected clients.
      */
-    public function tick(): void;
+    public function onTick(): void;
 
     /**
      * Prepare server for shutdown

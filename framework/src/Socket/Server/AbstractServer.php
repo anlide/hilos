@@ -252,7 +252,7 @@ abstract class AbstractServer extends AbstractSocket implements ServerInterface
      * Reads from and writes to all connected clients.
      * Should be called regularly in main loop.
      */
-    public function tick(): void
+    public function onTick(): void
     {
         $clientsToRemove = [];
         
@@ -260,6 +260,9 @@ abstract class AbstractServer extends AbstractSocket implements ServerInterface
             try {
                 // Read from client
                 $client->read();
+
+                // Call client tick method
+                $client->onTick();
 
                 // Write to client
                 $client->write();
