@@ -70,6 +70,18 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
     }
 
     /**
+     * Get worker ID
+     *
+     * Worker ID is calculated as: negative = monopolistic, positive = regular
+     *
+     * @return int Worker ID (negative = monopolistic, positive = regular)
+     */
+    public function getWorkerId(): int
+    {
+        return $this->isMonopolistic ? -$this->workerIndex : $this->workerIndex;
+    }
+
+    /**
      * Set whether worker is monopolistic
      *
      * @param bool $isMonopolistic True if monopolistic
@@ -275,4 +287,3 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
         }
     }
 }
-

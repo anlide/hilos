@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Daemon;
 
-use Hilos\Core\Agent\AgentInterface;
+use Hilos\Core\Agent\AgentManager;
 use Hilos\Exception\MissingEnvironmentVariableException;
 use Hilos\Exception\SocketException;
 use Hilos\Exception\Worker\AgentCreationFailedException;
@@ -32,8 +32,8 @@ abstract class WorkerManager extends BaseManager
     /** @var ?WorkerDaemonClient Client connection to daemon */
     private ?WorkerDaemonClient $daemonClient = null;
 
-    /** @var AgentInterface[] Active agents indexed by agent ID */
-    protected array $agents = [];
+    /** @var AgentManager Agent manager instance */
+    protected AgentManager $agentManager;
 
     /**
      * WorkerManager constructor
@@ -45,6 +45,7 @@ abstract class WorkerManager extends BaseManager
     {
         $this->workerIndex = $workerIndex;
         $this->isMonopolistic = ArgumentHelper::isMonopolistic($argv);
+        $this->agentManager = $this->createAgentManager();
     }
 
     /**
@@ -107,7 +108,7 @@ abstract class WorkerManager extends BaseManager
 
                 // Tick all agents and collect those that requested stop
                 $agentsToRemove = [];
-                foreach ($this->agents as $agentId => $agent) {
+                foreach ($this->agentManager->getAgents() as $agentId => $agent) {
                     $agent->tick();
 
                     // Check if agent requested stop (after tick which calls onStop)
@@ -118,7 +119,7 @@ abstract class WorkerManager extends BaseManager
 
                 // Remove agents that requested stop
                 foreach ($agentsToRemove as $agentId) {
-                    unset($this->agents[$agentId]);
+                    $this->agentManager->removeAgent($agentId);
                     Logger::info("Agent {$agentId} stopped (self-requested) [worker side]");
                     Logger::logAgentInfo($agentId, "Agent stopped (self-requested) on worker [workerIndex={$this->workerIndex}]");
                 }
@@ -209,20 +210,19 @@ abstract class WorkerManager extends BaseManager
         }
 
         // Check if agent already exists
-        if (isset($this->agents[$agentId])) {
+        if ($this->agentManager->hasAgent($agentId)) {
             return;
         }
 
         // Create agent using factory method
-        $agent = $this->createAgent($agentType, $agentIndex);
+        $agent = $this->agentManager->createAndAddAgent($agentType, $agentIndex);
 
         $agent->setMessageSender([$this, 'sendAgentMessage']);
         $agent->onStart();
-        $this->agents[$agentId] = $agent;
         Logger::info("Agent {$agentId} started [worker side]");
         // Additional agent log from worker side
         Logger::logAgentInfo($agentId, "Agent started on worker [workerIndex={$this->workerIndex}]");
-        
+
         // Notify daemon that agent started
         $this->notifyAgentStarted($agentId, $agentType, $agentIndex);
     }
@@ -236,13 +236,17 @@ abstract class WorkerManager extends BaseManager
     {
         $agentId = $data['agentId'] ?? '';
 
-        if ($agentId === '' || !isset($this->agents[$agentId])) {
+        if ($agentId === '' || !$this->agentManager->hasAgent($agentId)) {
             return;
         }
 
-        $agent = $this->agents[$agentId];
+        $agent = $this->agentManager->getAgent($agentId);
+        if ($agent === null) {
+            return;
+        }
+
         $agent->onStop(); // This will call AgentLogger::logStop inside agent
-        unset($this->agents[$agentId]);
+        $this->agentManager->removeAgent($agentId);
         Logger::info("Agent {$agentId} stopped [worker side]");
         // Additional agent log from worker side
         Logger::logAgentInfo($agentId, "Agent stopped on worker [workerIndex={$this->workerIndex}]");
@@ -261,11 +265,14 @@ abstract class WorkerManager extends BaseManager
         $agentId = $data['agentId'] ?? '';
         $source = $data['source'] ?? 'daemon';
 
-        if ($agentId === '' || !isset($this->agents[$agentId])) {
+        if ($agentId === '' || !$this->agentManager->hasAgent($agentId)) {
             return;
         }
 
-        $agent = $this->agents[$agentId];
+        $agent = $this->agentManager->getAgent($agentId);
+        if ($agent === null) {
+            return;
+        }
 
         // Extract signal data and call onSignal handler
         $signalData = $data['data'] ?? [];
@@ -295,7 +302,7 @@ abstract class WorkerManager extends BaseManager
         }
 
         // Find agent to get type
-        $agent = $this->agents[$agentId] ?? null;
+        $agent = $this->agentManager->getAgent($agentId);
         if ($agent === null) {
             return;
         }
@@ -361,12 +368,15 @@ abstract class WorkerManager extends BaseManager
     private function cleanup(): void
     {
         // Stop all agents
-        foreach ($this->agents as $agentId => $agent) {
+        foreach ($this->agentManager->getAgents() as $agentId => $agent) {
             $agent->onStop();
             Logger::info("Agent {$agentId} stopped during cleanup [worker side]");
             Logger::logAgentInfo($agentId, "Agent stopped during worker cleanup [workerIndex={$this->workerIndex}]");
         }
-        $this->agents = [];
+        // Clear all agents
+        foreach ($this->agentManager->getAgents() as $agentId => $agent) {
+            $this->agentManager->removeAgent($agentId);
+        }
 
         // Close daemon connection
         if ($this->daemonClient !== null) {
@@ -378,18 +388,6 @@ abstract class WorkerManager extends BaseManager
             $this->daemonClient = null;
         }
     }
-
-    /**
-     * Create agent instance (factory method)
-     *
-     * Must be implemented in child classes to create specific agent types.
-     *
-     * @param string $agentType Agent type
-     * @param ?string $agentIndex Agent index (optional)
-     * @return AgentInterface Agent instance
-     * @throws AgentCreationFailedException If agent cannot be created
-     */
-    abstract protected function createAgent(string $agentType, ?string $agentIndex): AgentInterface;
 
     /**
      * Tick method - called regularly in main loop
@@ -454,4 +452,3 @@ abstract class WorkerManager extends BaseManager
         // Worker-specific restart logic (none needed)
     }
 }
-

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Demo\WebSocketTest\Core\Daemon;
 
 use Demo\WebSocketTest\Core\Router\ChatSignalRouter;
+use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\Daemon\DaemonManager;
 
 /**
@@ -29,6 +30,16 @@ class ChatDaemonManager extends DaemonManager
 
         $this->signalRouter = new ChatSignalRouter();
         $this->shutdownTimeout = 10.0;
+    }
+
+    /**
+     * Create agent manager daemon instance
+     *
+     * @return AgentManagerDaemon Agent manager daemon instance
+     */
+    protected function createAgentManagerDaemon(): AgentManagerDaemon
+    {
+        return new ChatAgentManagerDaemon();
     }
 
     /**

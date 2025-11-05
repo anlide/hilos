@@ -75,7 +75,7 @@ class DockerManager extends BaseManager
         // Rotate logs before starting processes
         $this->rotateLogs();
 
-        echo "Docker watchdog started.\n";
+        Logger::info("Docker watchdog started");
 
         // Main loop
         while ($this->shouldExit === false || $this->process !== null) {
@@ -94,7 +94,7 @@ class DockerManager extends BaseManager
             pcntl_signal_dispatch();
         }
 
-        echo "Docker watchdog stopped.\n";
+        Logger::info("Docker watchdog stopped");
     }
 
 
@@ -126,12 +126,12 @@ class DockerManager extends BaseManager
                 // Log message only once per restart attempt
                 if (!$this->restartIntervalLogged) {
                     $remainingWaitTime = $minRestartInterval - $timeSinceLastRestart;
-                    echo sprintf(
-                        "Skipping daemon restart: only %.2f seconds passed since last restart (minimum %d seconds required). Waiting %.2f more seconds.\n",
+                    Logger::info(sprintf(
+                        "Skipping daemon restart: only %.2f seconds passed since last restart (minimum %d seconds required). Waiting %.2f more seconds.",
                         $timeSinceLastRestart,
                         $minRestartInterval,
                         $remainingWaitTime
-                    );
+                    ));
                     $this->restartIntervalLogged = true;
                 }
                 return false;
@@ -164,12 +164,12 @@ class DockerManager extends BaseManager
         $this->process->tick();
         $stdOut = $this->process->getStdOut();
         if (!empty($stdOut)) {
-            echo "Daemon STDOUT: " . $stdOut . "\n";
+            Logger::info("Daemon STDOUT: " . $stdOut);
         }
 
         $stdErr = $this->process->getStdErr();
         if (!empty($stdErr)) {
-            echo "Daemon STDERR: " . $stdErr . "\n";
+            Logger::error("Daemon STDERR: " . $stdErr);
         }
 
         // Check if the daemon is running
@@ -179,15 +179,15 @@ class DockerManager extends BaseManager
             $this->processStartTime = null;
 
             if ($this->shouldExit) {
-                echo "Daemon process has stopped.\n";
+                Logger::info("Daemon process has stopped");
             } else {
                 if ($this->shouldRestart) {
-                    echo "Daemon process has stopped for restart.\n";
+                    Logger::info("Daemon process has stopped for restart");
                 } else {
                     // Error-based restart - record timestamp and reset logging flag
                     $this->lastErrorRestartTime = microtime(true);
                     $this->restartIntervalLogged = false;
-                    echo "Daemon process has stopped unexpectedly.\n";
+                    Logger::error("Daemon process has stopped unexpectedly");
                 }
             }
         } elseif ($this->processStartTime !== null && $this->lastErrorRestartTime !== null) {
@@ -214,7 +214,7 @@ class DockerManager extends BaseManager
      */
     private function startDaemon(string $script): void
     {
-        echo "Starting daemon process...\n";
+        Logger::info("Starting daemon process...");
         $startTime = microtime(true);
 
         // Create log directories if they don't exist
@@ -241,7 +241,7 @@ class DockerManager extends BaseManager
 
         $this->shouldRestart = false;
 
-        echo "Daemon started (startup time: " . number_format($startupTime * 1000, 2) . "ms).\n";
+        Logger::info("Daemon started (startup time: " . number_format($startupTime * 1000, 2) . "ms)");
     }
 
     /**
@@ -253,7 +253,7 @@ class DockerManager extends BaseManager
             return;
         }
 
-        echo "Stopping daemon process...\n";
+        Logger::info("Stopping daemon process...");
 
         try {
             $this->process->stop();
@@ -406,7 +406,7 @@ class DockerManager extends BaseManager
         }
 
         if ($movedCount > 0) {
-            echo "Log rotation: moved $movedCount log file(s) to archive/$timestamp/\n";
+            Logger::info("Log rotation: moved $movedCount log file(s) to archive/$timestamp/");
         }
     }
 

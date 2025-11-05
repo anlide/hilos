@@ -32,7 +32,7 @@ Env::init(__DIR__);
 try {
     // Create chat daemon manager instance first (creates signalRouter)
     $daemon = new ChatDaemonManager();
-    
+
     // Get signal router from daemon
     $signalRouter = $daemon->getSignalRouter();
 
@@ -54,6 +54,7 @@ try {
         $workerScript,
         __DIR__,
         $signalRouter,
+        $daemon->getAgentManagerDaemon(),
     );
 
     // Create WebSocket server
@@ -72,12 +73,12 @@ try {
     // Setup routes
     $router->addRoute('GET', '/status', function($args) use ($status, $workerServer) {
         $status->update();
-        
+
         // Get worker information from WorkerServer
         $regularCount = $workerServer->getRegularWorkersCount();
         $monopolisticCount = $workerServer->getMonopolisticWorkersCount();
         $maxRegular = $workerServer->getMaxRegularWorkers();
-        
+
         // Create DTO from status
         $dto = new DaemonStatusDTO(
             uptime: $status->getUptime(),
@@ -88,7 +89,7 @@ try {
             workersMonopolistic: $monopolisticCount,
             workersMaxRegular: $maxRegular,
         );
-        
+
         return [
             HttpConstants::RESPONSE_KEY_STATUS => HttpConstants::HTTP_OK,
             HttpConstants::RESPONSE_KEY_HEADERS => [HttpConstants::HEADER_CONTENT_TYPE => HttpConstants::CONTENT_TYPE_JSON],

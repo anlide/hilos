@@ -4,8 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Socket\Server;
 
-use Hilos\Core\Agent\Daemon\AbstractAgentDaemonFactory;
-use Hilos\Core\Agent\Daemon\AgentDaemonInterface;
+use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\Process;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Exception\MissingEnvironmentVariableException;
@@ -37,8 +36,8 @@ use Hilos\Logging\Logger\Logger;
  * Also manages worker processes lifecycle - starts, monitors and stops them.
  * Works with epoll in daemon main loop.
  *
- * This is an abstract class - child classes must implement onStart() and optionally
- * getAgentDaemonFactoryClass() to provide the factory for creating agent daemon instances.
+ * This is an abstract class - child classes must implement onStart() and onInitialWorkersReady().
+ * Agent manager daemon is passed via constructor.
  */
 abstract class WorkerServer extends AbstractServer
 {
@@ -78,8 +77,8 @@ abstract class WorkerServer extends AbstractServer
     /** @var int Maximum number of regular workers */
     private int $maxRegular;
 
-    /** @var array<string, AgentDaemonInterface> Active agent daemons indexed by agent ID */
-    private array $agentDaemons = [];
+    /** @var AgentManagerDaemon Agent manager daemon instance */
+    private AgentManagerDaemon $agentManager;
 
     /** @var bool Whether onInitialWorkersReady() has been called */
     private bool $initialWorkersReadyCalled = false;
@@ -91,14 +90,17 @@ abstract class WorkerServer extends AbstractServer
      * @param int $port Port to bind
      * @param string $workerScript Path to worker bootstrap script
      * @param string $workingDirectory Working directory for worker processes
+     * @param SignalRouter $signalRouter Signal router instance
+     * @param AgentManagerDaemon $agentManager Agent manager daemon instance
      * @throws MissingEnvironmentVariableException
      */
-    public function __construct(string $host, int $port, string $workerScript, string $workingDirectory, SignalRouter $signalRouter)
+    public function __construct(string $host, int $port, string $workerScript, string $workingDirectory, SignalRouter $signalRouter, AgentManagerDaemon $agentManager)
     {
         parent::__construct($host, $port, $signalRouter);
 
         $this->workerScript = $workerScript;
         $this->workingDirectory = $workingDirectory;
+        $this->agentManager = $agentManager;
 
         // Get worker configuration from environment
         $this->minRegular = Env::getInt(EnvConstants::WORKER_MIN_REGULAR, 3);
@@ -132,7 +134,7 @@ abstract class WorkerServer extends AbstractServer
      * Handle agent lifecycle signals from workers
      *
      * Called from checkWorkerRegistration when processing worker messages.
-     * 
+     *
      * @param WorkerClient $workerClient Worker client that sent the signal
      * @param array $data Signal data
      * @throws AgentDaemonCreationFailedException
@@ -176,10 +178,13 @@ abstract class WorkerServer extends AbstractServer
         }
 
         // Create and link agent daemon if it doesn't exist
-        if (!isset($this->agentDaemons[$agentId])) {
-            $this->agentDaemons[$agentId] = $this->getAgentDaemonFactoryClass()::createAgentDaemon($agentType, $agentIndex);
+        if (!$this->agentManager->hasAgent($agentId)) {
+            $this->agentManager->createAndAddAgent($agentType, $agentIndex, $workerClient->getWorkerIndex(), $workerClient->isMonopolistic());
         }
-        $agentDaemon = $this->agentDaemons[$agentId];
+        $agentDaemon = $this->agentManager->getAgent($agentId);
+        if ($agentDaemon === null) {
+            return;
+        }
         $agentDaemon->setWorkerClient($workerClient);
         $agentDaemon->onStart();
 
@@ -208,10 +213,12 @@ abstract class WorkerServer extends AbstractServer
         }
 
         // Remove agent daemon
-        if (isset($this->agentDaemons[$agentId])) {
-            $agentDaemon = $this->agentDaemons[$agentId];
-            $agentDaemon->onStop();
-            unset($this->agentDaemons[$agentId]);
+        if ($this->agentManager->hasAgent($agentId)) {
+            $agentDaemon = $this->agentManager->getAgent($agentId);
+            if ($agentDaemon !== null) {
+                $agentDaemon->onStop();
+            }
+            $this->agentManager->removeAgent($agentId);
 
             Logger::info("Agent {$agentId} stopped on worker #{$workerClient->getWorkerIndex()} [daemon side]");
         }
@@ -238,15 +245,6 @@ abstract class WorkerServer extends AbstractServer
     {
         return $agentIndex !== null ? $agentType . ':' . $agentIndex : $agentType;
     }
-
-    /**
-     * Get agent daemon factory class name
-     *
-     * Must be implemented by child classes to provide the factory for creating agent daemon instances.
-     *
-     * @return class-string<AbstractAgentDaemonFactory> Factory class name
-     */
-    abstract protected function getAgentDaemonFactoryClass(): string;
 
     /**
      * Called when initial workers are ready
@@ -377,74 +375,6 @@ abstract class WorkerServer extends AbstractServer
     }
 
     /**
-     * Find suitable registered worker for agent
-     *
-     * @param bool $requiresMonopolistic True if agent requires monopolistic worker
-     * @return WorkerClient|null Suitable worker client or null if not found
-     */
-    private function findSuitableRegisteredWorker(bool $requiresMonopolistic): ?WorkerClient
-    {
-        $candidates = [];
-        $workerAgentCounts = [];
-
-        // Collect suitable registered worker candidates
-        foreach ($this->clients as $client) {
-            if (!$client instanceof WorkerClient) {
-                continue;
-            }
-
-            // Worker must be registered
-            if (!$client->isRegistered()) {
-                continue;
-            }
-
-            // Check if worker type matches requirement
-            if ($client->isMonopolistic() !== $requiresMonopolistic) {
-                continue;
-            }
-
-            $workerIndex = $client->getWorkerIndex();
-            $agentCount = $this->getAgentCountOnWorker($workerIndex);
-
-            // For monopolistic workers: must have exactly 0 agents
-            // For regular workers: collect all (will select by load later)
-            if ($requiresMonopolistic) {
-                if ($agentCount === 0) {
-                    $candidates[] = $client;
-                }
-            } else {
-                $candidates[] = $client;
-                $workerAgentCounts[$workerIndex] = $agentCount;
-            }
-        }
-
-        // If no candidates found, return null
-        if (empty($candidates)) {
-            return null;
-        }
-
-        // For monopolistic: return random candidate (all have 0 agents)
-        if ($requiresMonopolistic) {
-            return $candidates[array_rand($candidates)];
-        }
-
-        // Find minimum agent count
-        $minCount = min($workerAgentCounts);
-
-        // Filter candidates to only those with minimum agent count
-        $minLoadCandidates = [];
-        foreach ($candidates as $client) {
-            $workerIndex = $client->getWorkerIndex();
-            if ($workerAgentCounts[$workerIndex] === $minCount) {
-                $minLoadCandidates[] = $client;
-            }
-        }
-
-        // Return random worker from minimum load candidates
-        return $minLoadCandidates[array_rand($minLoadCandidates)];
-    }
-
-    /**
      * Tick all worker processes - check status and read output
      */
     private function tickWorkerProcesses(): void
@@ -456,10 +386,10 @@ abstract class WorkerServer extends AbstractServer
 
                 // Check if process is still running
                 $status = $process->getStatus();
-                
+
                 // Read and save stdout/stderr to files (after status check to ensure we capture final output)
                 $this->saveWorkerOutput($process, 'regular', $workerIndex);
-                
+
                 if (!$status[Process::STATUS_RUNNING]) {
                     // Worker died, remove from list and free index for reuse
                     Logger::info("Worker #{$workerIndex} stopped [type=regular]");
@@ -491,10 +421,10 @@ abstract class WorkerServer extends AbstractServer
 
                 // Check if process is still running
                 $status = $process->getStatus();
-                
+
                 // Read and save stdout/stderr to files (after status check to ensure we capture final output)
                 $this->saveWorkerOutput($process, 'monopolistic', $workerIndex);
-                
+
                 if (!$status[Process::STATUS_RUNNING]) {
                     // Worker died, remove from list and free index for reuse
                     Logger::info("Worker #{$workerIndex} stopped [type=monopolistic]");
@@ -821,29 +751,39 @@ abstract class WorkerServer extends AbstractServer
         $agentId = $this->buildAgentId($agentType, $agentIndex);
 
         // Check if agent already exists and is linked
-        if (isset($this->agentDaemons[$agentId])) {
-            $agentDaemon = $this->agentDaemons[$agentId];
-            if ($agentDaemon->getWorkerClient() !== null) {
+        if ($this->agentManager->hasAgent($agentId)) {
+            $agentDaemon = $this->agentManager->getAgent($agentId);
+            if ($agentDaemon !== null && $agentDaemon->getWorkerClient() !== null) {
                 return; // Agent already running and linked to worker
             }
         }
 
-        // Create agent daemon if it doesn't exist
-        if (!isset($this->agentDaemons[$agentId])) {
-            $this->agentDaemons[$agentId] = $this->getAgentDaemonFactoryClass()::createAgentDaemon($agentType, $agentIndex);
+        // Create agent daemon if it doesn't exist (temporary, will be linked to worker below)
+        if (!$this->agentManager->hasAgent($agentId)) {
+            // Create agent daemon with dummy worker info (will be updated when linked)
+            $this->agentManager->createAndAddAgent($agentType, $agentIndex, 0, false);
+        }
+
+        $agentDaemon = $this->agentManager->getAgent($agentId);
+        if ($agentDaemon === null) {
+            throw new AgentDaemonCreationFailedException("Failed to create agent daemon for {$agentId}");
         }
 
         // Select appropriate worker
-        $workerClient = $this->selectWorkerForAgent($this->agentDaemons[$agentId]->requiresMonopolisticProcess());
+        $workerClient = $this->selectWorkerForAgent($agentDaemon->requiresMonopolisticProcess());
 
         // If no suitable worker available, throw exception
         if ($workerClient === null) {
-            $workerType = $this->agentDaemons[$agentId]->requiresMonopolisticProcess() ? 'monopolistic' : 'regular';
-            throw new NoSuitableWorkerException($workerType, $this->agentDaemons[$agentId]->requiresMonopolisticProcess());
+            $workerType = $agentDaemon->requiresMonopolisticProcess() ? 'monopolistic' : 'regular';
+            throw new NoSuitableWorkerException($workerType, $agentDaemon->requiresMonopolisticProcess());
         }
 
+        // Update agent daemon mapping with actual worker info
+        $this->agentManager->removeAgent($agentId);
+        $this->agentManager->addAgent($agentId, $agentDaemon, $workerClient->getWorkerIndex(), $workerClient->isMonopolistic());
+
         // Link agent daemon to selected worker
-        $this->agentDaemons[$agentId]->setWorkerClient($workerClient);
+        $agentDaemon->setWorkerClient($workerClient);
 
         // Send agent_start signal to worker
         $workerClient->sendAgentStart($agentId, $agentType, $agentIndex);
@@ -875,7 +815,8 @@ abstract class WorkerServer extends AbstractServer
             }
 
             $workerIndex = $client->getWorkerIndex();
-            $agentCount = $this->getAgentCountOnWorker($workerIndex);
+            $isMonopolistic = $client->isMonopolistic();
+            $agentCount = $this->agentManager->getAgentCountOnWorker($workerIndex, $isMonopolistic);
 
             // For monopolistic workers: must have exactly 0 agents
             // For regular workers: collect all (will select by load later)
@@ -916,21 +857,26 @@ abstract class WorkerServer extends AbstractServer
     }
 
     /**
-     * Get agent count on worker
+     * Find worker client by worker ID
      *
-     * @param int $workerIndex Worker index
-     * @return int Number of agents on worker
+     * @param int $workerId Worker ID (negative = monopolistic, positive = regular)
+     * @return ?WorkerClient Worker client or null if not found
      */
-    private function getAgentCountOnWorker(int $workerIndex): int
+    private function findWorkerClientById(int $workerId): ?WorkerClient
     {
-        $count = 0;
-        foreach ($this->agentDaemons as $agentDaemon) {
-            $workerClient = $agentDaemon->getWorkerClient();
-            if ($workerClient !== null && $workerClient->getWorkerIndex() === $workerIndex) {
-                $count++;
+        $isMonopolistic = $workerId < 0;
+        $workerIndex = abs($workerId);
+
+        foreach ($this->clients as $client) {
+            if (!$client instanceof WorkerClient) {
+                continue;
+            }
+            if ($client->getWorkerIndex() === $workerIndex && $client->isMonopolistic() === $isMonopolistic) {
+                return $client;
             }
         }
-        return $count;
+
+        return null;
     }
 
     /**
@@ -950,21 +896,43 @@ abstract class WorkerServer extends AbstractServer
         $agentId = $this->buildAgentId($agentType, $agentIndex);
 
         // If agent doesn't exist or not linked to worker, try to start it
-        if (!isset($this->agentDaemons[$agentId]) || $this->agentDaemons[$agentId]->getWorkerClient() === null) {
+        if (!$this->agentManager->hasAgent($agentId)) {
             $this->startAgent($agentType, $agentIndex);
+        } else {
+            $agentDaemon = $this->agentManager->getAgent($agentId);
+            if ($agentDaemon === null || $agentDaemon->getWorkerClient() === null) {
+                $this->startAgent($agentType, $agentIndex);
+            }
         }
 
-        // At this point agent should exist and be linked
-        if (!isset($this->agentDaemons[$agentId])) {
+        // At this point agent should exist
+        if (!$this->agentManager->hasAgent($agentId)) {
             Logger::error("Agent {$agentId} does not exist after startAgent() call");
             return;
         }
 
-        $agentDaemon = $this->agentDaemons[$agentId];
-        $workerClient = $agentDaemon->getWorkerClient();
-        if ($workerClient === null) {
+        $agentDaemon = $this->agentManager->getAgent($agentId);
+        if ($agentDaemon === null) {
+            Logger::error("Agent {$agentId} does not exist after startAgent() call");
+            return;
+        }
+
+        // Get worker client from mapping
+        $workerInfo = $this->agentManager->getAgentWorkerInfo($agentId);
+        if ($workerInfo === null) {
             Logger::error("Agent {$agentId} is not linked to worker after startAgent() call");
             return;
+        }
+
+        $workerClient = $this->findWorkerClientById($this->agentManager->getAgentWorkerId($agentId));
+        if ($workerClient === null) {
+            Logger::error("Worker client not found for agent {$agentId} (workerIndex={$workerInfo['workerIndex']}, isMonopolistic={$workerInfo['isMonopolistic']})");
+            return;
+        }
+
+        // Ensure agent daemon has worker client set
+        if ($agentDaemon->getWorkerClient() === null) {
+            $agentDaemon->setWorkerClient($workerClient);
         }
 
         // Agent exists and is linked, send signal immediately
@@ -983,47 +951,6 @@ abstract class WorkerServer extends AbstractServer
         );
 
         $workerClient->send($dto->toJson());
-    }
-
-    /**
-     * Stop agent
-     *
-     * Finds agent by ID and sends stop signal to worker.
-     *
-     * @param string $agentId Agent ID
-     * @return bool True if agent was stopped, false if agent not found
-     */
-    public function stopAgent(string $agentId): bool
-    {
-        // Check if agent exists and is linked to worker
-        if (!isset($this->agentDaemons[$agentId])) {
-            return false; // Agent not found
-        }
-
-        $agentDaemon = $this->agentDaemons[$agentId];
-        $workerClient = $agentDaemon->getWorkerClient();
-        if ($workerClient === null) {
-            return false; // Agent not linked to worker yet
-        }
-
-        // Send agent_stop signal to worker
-        $workerClient->sendAgentStop($agentId);
-
-        // Note: Agent daemon will be removed when agent_stopped signal arrives from worker
-        // This is handled in handleAgentStopped()
-
-        return true;
-    }
-
-    /**
-     * Get agent daemon by ID
-     *
-     * @param string $agentId Agent ID
-     * @return AgentDaemonInterface|null Agent daemon or null if not found
-     */
-    public function getAgentDaemon(string $agentId): ?AgentDaemonInterface
-    {
-        return $this->agentDaemons[$agentId] ?? null;
     }
 
     /**

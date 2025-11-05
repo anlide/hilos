@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Core\Daemon;
 
 use Hilos\Core\Router\SignalRouter;
+use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Exception\Worker\AgentDaemonCreationFailedException;
 use Hilos\Socket\Server\ServerInterface;
 use Hilos\Socket\Server\WorkerServer;
@@ -36,6 +37,19 @@ abstract class DaemonManager extends BaseManager
     /** @var SignalRouter Signal router instance */
     protected SignalRouter $signalRouter;
 
+    /** @var AgentManagerDaemon Agent manager daemon instance */
+    protected AgentManagerDaemon $agentManagerDaemon;
+
+    /**
+     * Get agent manager daemon instance
+     *
+     * @return AgentManagerDaemon Agent manager daemon instance
+     */
+    public function getAgentManagerDaemon(): AgentManagerDaemon
+    {
+        return $this->agentManagerDaemon;
+    }
+
     /** @var ?float Shutdown start time (null if not shutting down) */
     private ?float $shutdownStartTime = null;
 
@@ -51,7 +65,17 @@ abstract class DaemonManager extends BaseManager
     public function __construct()
     {
         $this->signalRouter = new SignalRouter();
+        $this->agentManagerDaemon = $this->createAgentManagerDaemon();
     }
+
+    /**
+     * Create agent manager daemon instance
+     *
+     * Must be implemented in child classes to create specific agent manager daemon.
+     *
+     * @return AgentManagerDaemon Agent manager daemon instance
+     */
+    abstract protected function createAgentManagerDaemon(): AgentManagerDaemon;
 
     /**
      * Run daemon - main method

@@ -45,7 +45,7 @@ abstract class AbstractClient extends AbstractSocket implements ClientInterface
     {
         $this->socket = $socket;
         $this->signalRouter = $signalRouter;
-        
+
         // Read buffer size from config with default fallback
         try {
             $this->readBufferSize = Env::getInt(EnvConstants::SOCKET_READ_BUFFER_SIZE, 8192);
@@ -67,7 +67,7 @@ abstract class AbstractClient extends AbstractSocket implements ClientInterface
         }
 
         $data = socket_read($this->socket, $this->readBufferSize, PHP_BINARY_READ);
-        
+
         // Empty string means connection closed gracefully
         if ($data === '') {
             $this->shouldClose = true;
@@ -99,7 +99,7 @@ abstract class AbstractClient extends AbstractSocket implements ClientInterface
         }
 
         $written = socket_write($this->socket, $this->writeBuffer);
-        
+
         if ($written === false) {
             $this->handleSocketError(SocketOperation::WRITE);
             return;
@@ -128,30 +128,40 @@ abstract class AbstractClient extends AbstractSocket implements ClientInterface
 
     /**
      * Close client connection
-     * 
-     * NOTE: Socket is NOT set to null to allow getSocket() to work after close()
-     * for cleanup purposes (e.g., unregistering from event loop before destruction)
-     * 
+     *
+     * Idempotent method - can be called multiple times safely.
+     * Sets socket to null after successful close to prevent double close.
+     *
      * @throws SocketException
      */
     public function close(): void
     {
+        if ($this->socket === null) {
+            return; // Already closed
+        }
+
         if (!is_resource($this->socket) && !is_object($this->socket)) {
+            $this->socket = null;
             return; // Already closed or invalid
         }
 
-        // socket_close returns void
-        socket_close($this->socket);
+        try {
+            // socket_close returns void
+            socket_close($this->socket);
+        } catch (\TypeError $e) {
+            // Socket already closed or invalid - ignore
+            $this->socket = null;
+            return;
+        }
+
+        // Set to null after successful close to prevent double close
+        $this->socket = null;
 
         // Check if there was an error during close
         $this->handleSocketError(SocketOperation::CLOSE);
 
         // Call onClose callback
         $this->onClose();
-        
-        // Keep $this->socket for event loop cleanup - garbage collector will handle it
-        // NOTE: Socket is NOT set to null to allow getSocket() to work after close()
-        // for cleanup purposes (e.g., unregistering from event loop before destruction)
     }
 
     /**
@@ -221,7 +231,7 @@ abstract class AbstractClient extends AbstractSocket implements ClientInterface
 
     /**
      * Tick method - called on each server tick
-     * 
+     *
      * Must be implemented by child classes to perform periodic operations (e.g., timeout checks).
      * Can be left empty if no periodic operations are needed.
      */
@@ -235,4 +245,3 @@ abstract class AbstractClient extends AbstractSocket implements ClientInterface
      */
     abstract protected function onClose(): void;
 }
-
