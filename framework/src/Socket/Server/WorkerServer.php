@@ -41,23 +41,14 @@ use Hilos\Logging\Logger\Logger;
  */
 abstract class WorkerServer extends AbstractServer
 {
-    /** @var array<int, Process> Regular worker processes indexed by worker index */
-    private array $regularWorkers = [];
+    /** @var array<string, array{process: Process, type: string, index: int}> Workers indexed by key (format: "type:index") */
+    private array $workers = [];
 
-    /** @var array<int, Process> Monopolistic worker processes indexed by worker index */
-    private array $monopolisticWorkers = [];
+    /** @var array<string, array<int>> Available worker indices by type (sorted, can be reused) */
+    private array $availableIndices = ['regular' => [], 'monopolistic' => []];
 
-    /** @var array<int> Available regular worker indices (sorted, can be reused) */
-    private array $availableRegularIndices = [];
-
-    /** @var array<int> Available monopolistic worker indices (sorted, can be reused) */
-    private array $availableMonopolisticIndices = [];
-
-    /** @var int Next regular worker index to assign if no available */
-    private int $nextRegularWorkerIndex = 1;
-
-    /** @var int Next monopolistic worker index to assign if no available */
-    private int $nextMonopolisticWorkerIndex = 1;
+    /** @var array<string, int> Next worker index to assign if no available, by type */
+    private array $nextWorkerIndex = ['regular' => 1, 'monopolistic' => 1];
 
     /** @var float Graceful shutdown timeout in seconds */
     protected float $shutdownTimeout = 5.0;
@@ -262,7 +253,7 @@ abstract class WorkerServer extends AbstractServer
      */
     public function getRegularWorkersCount(): int
     {
-        return count($this->regularWorkers);
+        return count(array_filter($this->workers, fn($worker) => $worker['type'] === 'regular'));
     }
 
     /**
@@ -272,7 +263,77 @@ abstract class WorkerServer extends AbstractServer
      */
     public function getMonopolisticWorkersCount(): int
     {
-        return count($this->monopolisticWorkers);
+        return count(array_filter($this->workers, fn($worker) => $worker['type'] === 'monopolistic'));
+    }
+
+    /**
+     * Build worker key from type and index
+     *
+     * @param bool $isMonopolistic True if monopolistic
+     * @param int $index Worker index
+     * @return string Worker key (format: "type:index")
+     */
+    private function buildWorkerKey(bool $isMonopolistic, int $index): string
+    {
+        $type = $isMonopolistic ? 'monopolistic' : 'regular';
+        return "{$type}:{$index}";
+    }
+
+    /**
+     * Parse worker key to extract type and index
+     *
+     * @param string $key Worker key (format: "type:index")
+     * @return array{type: string, index: int}
+     */
+    private function parseWorkerKey(string $key): array
+    {
+        [$type, $index] = explode(':', $key, 2);
+        return [
+            'type' => $type,
+            'index' => (int)$index
+        ];
+    }
+
+    /**
+     * Get workers count by type
+     *
+     * @param string $type Worker type ('regular' or 'monopolistic')
+     * @return int Count
+     */
+    private function getWorkersCountByType(string $type): int
+    {
+        return count(array_filter($this->workers, fn($worker) => $worker['type'] === $type));
+    }
+
+    /**
+     * Get next available worker index
+     *
+     * @param bool $isMonopolistic True if monopolistic
+     * @return int Worker index
+     */
+    private function getNextWorkerIndex(bool $isMonopolistic): int
+    {
+        $type = $isMonopolistic ? 'monopolistic' : 'regular';
+
+        if (!empty($this->availableIndices[$type])) {
+            return array_shift($this->availableIndices[$type]);
+        }
+
+        return $this->nextWorkerIndex[$type]++;
+    }
+
+    /**
+     * Remove worker from tracking
+     *
+     * @param string $key Worker key
+     * @param string $type Worker type
+     * @param int $index Worker index
+     */
+    private function removeWorker(string $key, string $type, int $index): void
+    {
+        unset($this->workers[$key]);
+        $this->availableIndices[$type][] = $index;
+        sort($this->availableIndices[$type]); // Keep sorted
     }
 
     /**
@@ -379,74 +440,50 @@ abstract class WorkerServer extends AbstractServer
      */
     private function tickWorkerProcesses(): void
     {
-        // Tick regular workers
-        foreach ($this->regularWorkers as $workerIndex => $process) {
+        foreach ($this->workers as $key => $worker) {
+            $process = $worker['process'];
+            $type = $worker['type'];
+            $index = $worker['index'];
+
             try {
-                $process->tick();
-
-                // Check if process is still running
-                $status = $process->getStatus();
-
-                // Read and save stdout/stderr to files (after status check to ensure we capture final output)
-                $this->saveWorkerOutput($process, 'regular', $workerIndex);
-
-                if (!$status[Process::STATUS_RUNNING]) {
-                    // Worker died, remove from list and free index for reuse
-                    Logger::info("Worker #{$workerIndex} stopped [type=regular]");
-
-                    unset($this->regularWorkers[$workerIndex]);
-                    $this->availableRegularIndices[] = $workerIndex;
-                    sort($this->availableRegularIndices); // Keep sorted for min selection
-                }
+                $this->tickWorkerProcess($process, $type, $index, $key);
             } catch (FailedToClosePipeException | FailedToTerminateProcessExceptionException $e) {
-                unset($this->regularWorkers[$workerIndex]);
-                $this->availableRegularIndices[] = $workerIndex;
-                sort($this->availableRegularIndices);
+                // Worker error, remove from tracking
+                $this->removeWorker($key, $type, $index);
             } catch (FailedToGetStatusException | FailedToReadStdOutException | FailedToSetStdErrException $e) {
                 try {
                     $process->stop();
                 } catch (FailedToGetStatusException | FailedToTerminateProcessExceptionException $e) {
                     // Ignore errors during halt
                 }
-                unset($this->regularWorkers[$workerIndex]);
-                $this->availableRegularIndices[] = $workerIndex;
-                sort($this->availableRegularIndices);
+                // Process error, remove from tracking
+                $this->removeWorker($key, $type, $index);
             }
         }
+    }
 
-        // Tick monopolistic workers
-        foreach ($this->monopolisticWorkers as $workerIndex => $process) {
-            try {
-                $process->tick();
+    /**
+     * Tick single worker process - check status and read output
+     *
+     * @param Process $process Worker process
+     * @param string $type Worker type
+     * @param int $index Worker index
+     * @param string $key Worker key
+     */
+    private function tickWorkerProcess(Process $process, string $type, int $index, string $key): void
+    {
+        $process->tick();
 
-                // Check if process is still running
-                $status = $process->getStatus();
+        // Check if process is still running
+        $status = $process->getStatus();
 
-                // Read and save stdout/stderr to files (after status check to ensure we capture final output)
-                $this->saveWorkerOutput($process, 'monopolistic', $workerIndex);
+        // Read and save stdout/stderr to files (after status check to ensure we capture final output)
+        $this->saveWorkerOutput($process, $type, $index);
 
-                if (!$status[Process::STATUS_RUNNING]) {
-                    // Worker died, remove from list and free index for reuse
-                    Logger::info("Worker #{$workerIndex} stopped [type=monopolistic]");
-                    unset($this->monopolisticWorkers[$workerIndex]);
-                    $this->availableMonopolisticIndices[] = $workerIndex;
-                    sort($this->availableMonopolisticIndices);
-                }
-            } catch (FailedToClosePipeException | FailedToTerminateProcessExceptionException $e) {
-                unset($this->monopolisticWorkers[$workerIndex]);
-                $this->availableMonopolisticIndices[] = $workerIndex;
-                sort($this->availableMonopolisticIndices);
-            } catch (FailedToGetStatusException | FailedToReadStdOutException | FailedToSetStdErrException $e) {
-                try {
-                    $process->stop();
-                } catch (FailedToGetStatusException | FailedToTerminateProcessExceptionException $e) {
-                    // Ignore errors during halt
-                }
-                // Process error, remove from list and free index for reuse
-                unset($this->monopolisticWorkers[$workerIndex]);
-                $this->availableMonopolisticIndices[] = $workerIndex;
-                sort($this->availableMonopolisticIndices);
-            }
+        if (!$status[Process::STATUS_RUNNING]) {
+            // Worker died, remove from tracking
+            Logger::info("Worker #{$index} stopped [type={$type}]");
+            $this->removeWorker($key, $type, $index);
         }
     }
 
@@ -618,81 +655,68 @@ abstract class WorkerServer extends AbstractServer
             return;
         }
 
-        // Start one regular worker if needed (not more than one per tick)
-        if (count($this->regularWorkers) < $this->minRegular && count($this->regularWorkers) < $this->maxRegular) {
-            $this->startRegularWorker();
-            return; // Exit after starting one - next tick will check again
-        }
+        $types = [
+            'regular' => ['min' => $this->minRegular, 'max' => $this->maxRegular],
+            'monopolistic' => ['min' => $this->minMonopolistic, 'max' => PHP_INT_MAX]
+        ];
 
-        // Start one monopolistic worker if needed (not more than one per tick)
-        if (count($this->monopolisticWorkers) < $this->minMonopolistic && $this->minMonopolistic > 0) {
-            $this->startMonopolisticWorker();
-            return; // Exit after starting one - next tick will check again
+        foreach ($types as $type => $limits) {
+            $count = $this->getWorkersCountByType($type);
+            $isMonopolistic = ($type === 'monopolistic');
+
+            // Check if we need to start a worker of this type
+            if ($count < $limits['min']) {
+                // For regular workers, also check max limit
+                if ($type === 'regular' && $count >= $limits['max']) {
+                    continue;
+                }
+                // For monopolistic workers, skip if min is 0
+                if ($type === 'monopolistic' && $limits['min'] === 0) {
+                    continue;
+                }
+
+                $this->startWorker($isMonopolistic);
+                return; // Exit after starting one - next tick will check again
+            }
         }
     }
 
     /**
-     * Start regular worker process
+     * Start worker process
      *
      * Uses minimum available index, or next sequential if none available.
      *
+     * @param bool $isMonopolistic True if monopolistic worker
      * @throws CouldNotStartException If worker cannot be started
      * @throws FailedToSetNonBlockingException If non-blocking mode cannot be set
      */
-    private function startRegularWorker(): void
+    private function startWorker(bool $isMonopolistic): void
     {
-        // Get minimum available index or use next sequential
-        if (!empty($this->availableRegularIndices)) {
-            $workerIndex = array_shift($this->availableRegularIndices);
-        } else {
-            $workerIndex = $this->nextRegularWorkerIndex++;
-        }
+        $type = $isMonopolistic ? 'monopolistic' : 'regular';
 
+        // Get next available index
+        $workerIndex = $this->getNextWorkerIndex($isMonopolistic);
+
+        // Create process
         $process = new Process(
             'php',
-            array_merge([$this->workerScript], ArgumentHelper::buildWorkerArgs($workerIndex)),
+            array_merge([$this->workerScript], ArgumentHelper::buildWorkerArgs($workerIndex, $isMonopolistic)),
             $this->workingDirectory,
             [Process::DESCRIPTOR_PIPE, Process::PIPE_READ], // stdin
             [Process::DESCRIPTOR_PIPE, Process::PIPE_WRITE], // stdout
             [Process::DESCRIPTOR_PIPE, Process::PIPE_WRITE], // stderr
         );
 
-        $this->regularWorkers[$workerIndex] = $process;
+        // Store worker
+        $key = $this->buildWorkerKey($isMonopolistic, $workerIndex);
+        $this->workers[$key] = [
+            'process' => $process,
+            'type' => $type,
+            'index' => $workerIndex
+        ];
 
         // Log worker start
-        Logger::info("Worker #{$workerIndex} started [type=regular]");
-    }
-
-    /**
-     * Start monopolistic worker process
-     *
-     * Uses minimum available index, or next sequential if none available.
-     *
-     * @throws CouldNotStartException If worker cannot be started
-     * @throws FailedToSetNonBlockingException If non-blocking mode cannot be set
-     */
-    private function startMonopolisticWorker(): void
-    {
-        // Get minimum available index or use next sequential
-        if (!empty($this->availableMonopolisticIndices)) {
-            $workerIndex = array_shift($this->availableMonopolisticIndices);
-        } else {
-            $workerIndex = $this->nextMonopolisticWorkerIndex++;
-        }
-
-        $process = new Process(
-            'php',
-            array_merge([$this->workerScript], ArgumentHelper::buildWorkerArgs($workerIndex, true)),
-            $this->workingDirectory,
-            [Process::DESCRIPTOR_PIPE, Process::PIPE_READ], // stdin
-            [Process::DESCRIPTOR_PIPE, Process::PIPE_WRITE], // stdout
-            [Process::DESCRIPTOR_PIPE, Process::PIPE_WRITE], // stderr
-        );
-
-        $this->monopolisticWorkers[$workerIndex] = $process;
-
-        // Log worker start
-        Logger::info("Worker #{$workerIndex} started [type=monopolistic]");
+        Logger::info("Worker #{$workerIndex} started [type={$type}]");
     }
 
     /**
@@ -704,27 +728,18 @@ abstract class WorkerServer extends AbstractServer
      */
     public function stop(): void
     {
-        // Stop regular workers (send SIGTERM with timeout)
-        foreach ($this->regularWorkers as $workerIndex => $process) {
-            try {
-                $process->stop($this->shutdownTimeout); // Send SIGTERM with timeout
-                Logger::info("Sent stop signal to regular worker #{$workerIndex}");
-            } catch (\Throwable $e) {
-                Logger::error("Failed to stop regular worker #{$workerIndex}: " . $e->getMessage());
-                // Force remove if stop failed
-                unset($this->regularWorkers[$workerIndex]);
-            }
-        }
+        foreach ($this->workers as $key => $worker) {
+            $process = $worker['process'];
+            $index = $worker['index'];
+            $type = $worker['type'];
 
-        // Stop monopolistic workers (send SIGTERM with timeout)
-        foreach ($this->monopolisticWorkers as $workerIndex => $process) {
             try {
                 $process->stop($this->shutdownTimeout); // Send SIGTERM with timeout
-                Logger::info("Sent stop signal to monopolistic worker #{$workerIndex}");
+                Logger::info("Sent stop signal to {$type} worker #{$index}");
             } catch (\Throwable $e) {
-                Logger::error("Failed to stop monopolistic worker #{$workerIndex}: " . $e->getMessage());
+                Logger::error("Failed to stop {$type} worker #{$index}: " . $e->getMessage());
                 // Force remove if stop failed
-                unset($this->monopolisticWorkers[$workerIndex]);
+                unset($this->workers[$key]);
             }
         }
 
@@ -976,6 +991,6 @@ abstract class WorkerServer extends AbstractServer
     public function isReadyToShutdown(): bool
     {
         // Ready when all workers have stopped
-        return $this->getRegularWorkersCount() === 0 && $this->getMonopolisticWorkersCount() === 0;
+        return count($this->workers) === 0;
     }
 }
