@@ -4,11 +4,16 @@ declare(strict_types=1);
 
 namespace Hilos\Socket\Client;
 
+use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\Router\SignalRouter;
+use Hilos\Exception\Worker\AgentDaemonCreationFailedException;
 use Hilos\Socket\Client\Interface\WorkerClientInterface;
 use Hilos\Utils\DTO\Worker\AgentMessageDTO;
 use Hilos\Utils\DTO\Worker\WorkerRegisterDTO;
 use Hilos\Utils\DTO\Worker\WorkerRegisteredDTO;
+use Hilos\Utils\DTO\Worker\WorkerAgentStartedDTO;
+use Hilos\Utils\DTO\Worker\WorkerAgentStoppedDTO;
+use Hilos\Utils\DTO\Worker\WorkerAgentMessageDTO;
 use Hilos\Logging\Logger\Logger;
 
 /**
@@ -28,8 +33,8 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
     /** @var bool Whether worker is registered */
     private bool $isRegistered = false;
 
-    /** @var array<int, array> Queue of agent messages waiting to be processed [['type' => string, 'data' => array], ...] */
-    private array $pendingAgentMessages = [];
+    /** @var AgentManagerDaemon Agent manager daemon instance */
+    private AgentManagerDaemon $agentManager;
 
     /** @var float Connection time (microtime) */
     private float $connectTime;
@@ -42,10 +47,12 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
      *
      * @param resource $socket Client socket
      * @param SignalRouter $signalRouter Signal router instance
+     * @param AgentManagerDaemon $agentManager Agent manager daemon instance
      */
-    public function __construct($socket, SignalRouter $signalRouter)
+    public function __construct($socket, SignalRouter $signalRouter, AgentManagerDaemon $agentManager)
     {
         parent::__construct($socket, $signalRouter);
+        $this->agentManager = $agentManager;
         $this->connectTime = microtime(true);
     }
 
@@ -113,21 +120,95 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
 
     /**
      * Process read buffer - check for complete messages
+     *
+     * Safely parses JSON messages by tracking bracket depth.
+     * Handles JSON objects that may contain newlines in strings.
+     * @throws AgentDaemonCreationFailedException
      */
     protected function processReadBuffer(): void
     {
-        // Check if we have complete message (ends with \n)
-        while (($pos = strpos($this->readBuffer, "\n")) !== false) {
-            $message = substr($this->readBuffer, 0, $pos);
-            $this->readBuffer = substr($this->readBuffer, $pos + 1);
+        while ($this->readBuffer !== '') {
+            $message = $this->extractCompleteJsonMessage();
+            if ($message === null) {
+                // Incomplete message, wait for more data
+                break;
+            }
+
             $this->processMessage($message);
         }
+    }
+
+    /**
+     * Extract complete JSON message from buffer
+     *
+     * Parses JSON by tracking bracket depth, handling nested objects and arrays.
+     * Returns null if message is incomplete.
+     *
+     * @return string|null Complete JSON message or null if incomplete
+     */
+    private function extractCompleteJsonMessage(): ?string
+    {
+        $buffer = $this->readBuffer;
+        $length = strlen($buffer);
+        $depth = 0; // Object/array depth
+        $inString = false; // Whether we're inside a string
+        $escapeNext = false; // Whether next character is escaped
+        $startPos = -1; // Start position of JSON object
+
+        for ($i = 0; $i < $length; $i++) {
+            $char = $buffer[$i];
+
+            if ($escapeNext) {
+                $escapeNext = false;
+                continue;
+            }
+
+            if ($char === '\\') {
+                $escapeNext = true;
+                continue;
+            }
+
+            if ($char === '"') {
+                $inString = !$inString;
+                continue;
+            }
+
+            // Only process brackets when not in string
+            if (!$inString) {
+                if ($char === '{' || $char === '[') {
+                    if ($startPos === -1) {
+                        $startPos = $i; // Start of JSON object
+                    }
+                    $depth++;
+                } elseif ($char === '}' || $char === ']') {
+                    $depth--;
+                    if ($depth === 0 && $startPos !== -1) {
+                        // Complete JSON object found
+                        $jsonEnd = $i + 1;
+
+                        // Check if followed by newline
+                        if ($jsonEnd < $length && $buffer[$jsonEnd] === "\n") {
+                            $message = substr($buffer, $startPos, $jsonEnd - $startPos);
+                            $this->readBuffer = substr($buffer, $jsonEnd + 1);
+                            return $message;
+                        }
+
+                        // If no newline, message is incomplete
+                        return null;
+                    }
+                }
+            }
+        }
+
+        // No complete message found
+        return null;
     }
 
     /**
      * Process message from worker
      *
      * @param string $message Message data
+     * @throws AgentDaemonCreationFailedException
      */
     private function processMessage(string $message): void
     {
@@ -141,18 +222,83 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
         $type = $data['type'] ?? 'unknown';
         switch ($type) {
             case WorkerRegisterDTO::MESSAGE_TYPE:
-                $this->handleWorkerRegister($data);
+                $this->handleWorkerRegisterMessage($data);
                 break;
-            case 'agent_started':
-            case 'agent_stopped':
-            case 'agent_message':
-                // Queue agent messages for WorkerServer to process
-                $this->pendingAgentMessages[] = $data;
+            case WorkerAgentStartedDTO::MESSAGE_TYPE:
+                $this->handleAgentStartedMessage($data);
+                break;
+            case WorkerAgentStoppedDTO::MESSAGE_TYPE:
+                $this->handleAgentStoppedMessage($data);
+                break;
+            case WorkerAgentMessageDTO::MESSAGE_TYPE:
+                $this->handleAgentMessageMessage($data);
                 break;
             default:
                 // Unknown message type
                 break;
         }
+    }
+
+    /**
+     * Handle worker register message
+     *
+     * @param array $data Message data
+     */
+    private function handleWorkerRegisterMessage(array $data): void
+    {
+        $this->handleWorkerRegister($data);
+    }
+
+    /**
+     * Handle agent started message
+     *
+     * @param array $data Message data
+     * @throws AgentDaemonCreationFailedException
+     */
+    private function handleAgentStartedMessage(array $data): void
+    {
+        try {
+            $dto = WorkerAgentStartedDTO::fromArray($data);
+        } catch (\Throwable $e) {
+            Logger::error("Failed to parse agent_started DTO: " . $e->getMessage());
+            return;
+        }
+
+        $this->agentManager->handleAgentStarted($this, $dto);
+    }
+
+    /**
+     * Handle agent stopped message
+     *
+     * @param array $data Message data
+     */
+    private function handleAgentStoppedMessage(array $data): void
+    {
+        try {
+            $dto = WorkerAgentStoppedDTO::fromArray($data);
+        } catch (\Throwable $e) {
+            Logger::error("Failed to parse agent_stopped DTO: " . $e->getMessage());
+            return;
+        }
+
+        $this->agentManager->handleAgentStopped($this, $dto);
+    }
+
+    /**
+     * Handle agent message
+     *
+     * @param array $data Message data
+     */
+    private function handleAgentMessageMessage(array $data): void
+    {
+        try {
+            $dto = WorkerAgentMessageDTO::fromArray($data);
+        } catch (\Throwable $e) {
+            Logger::error("Failed to parse agent_message DTO: " . $e->getMessage());
+            return;
+        }
+
+        $this->agentManager->handleAgentMessage($this, $dto);
     }
 
     /**
@@ -238,21 +384,6 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
         );
 
         $this->send($dto->toJson());
-    }
-
-    /**
-     * Get and clear pending agent messages
-     *
-     * Returns all queued agent messages and clears the queue.
-     * Used by WorkerServer to process agent lifecycle events.
-     *
-     * @return array Pending agent messages [['type' => string, ...], ...]
-     */
-    public function getAndClearPendingAgentMessages(): array
-    {
-        $messages = $this->pendingAgentMessages;
-        $this->pendingAgentMessages = [];
-        return $messages;
     }
 
     /**

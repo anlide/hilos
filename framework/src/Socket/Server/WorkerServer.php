@@ -19,8 +19,6 @@ use Hilos\Exception\SocketException;
 use Hilos\Exception\Worker\AgentDaemonCreationFailedException;
 use Hilos\Exception\Worker\NoSuitableWorkerException;
 use Hilos\Utils\DTO\Worker\AgentMessageDTO;
-use Hilos\Utils\DTO\Worker\WorkerAgentStartedDTO;
-use Hilos\Utils\DTO\Worker\WorkerAgentStoppedDTO;
 use Hilos\Socket\Client\ClientInterface;
 use Hilos\Socket\Client\Interface\WorkerClientInterface;
 use Hilos\Socket\Client\WorkerClient;
@@ -118,101 +116,7 @@ abstract class WorkerServer extends AbstractServer
      */
     protected function onCreateClient($socket, SignalRouter $signalRouter): WorkerClientInterface
     {
-        return new WorkerClient($socket, $signalRouter);
-    }
-
-    /**
-     * Handle agent lifecycle signals from workers
-     *
-     * Called from checkWorkerRegistration when processing worker messages.
-     *
-     * @param WorkerClient $workerClient Worker client that sent the signal
-     * @param array $data Signal data
-     * @throws AgentDaemonCreationFailedException
-     */
-    protected function handleAgentMessage(WorkerClient $workerClient, array $data): void
-    {
-        $type = $data['type'] ?? '';
-
-        switch ($type) {
-            case 'agent_started':
-                $this->handleAgentStarted($workerClient, $data);
-                break;
-            case 'agent_stopped':
-                $this->handleAgentStopped($workerClient, $data);
-                break;
-        }
-    }
-
-    /**
-     * Handle agent_started signal from worker
-     *
-     * @param WorkerClient $workerClient Worker client
-     * @param array $data Signal data
-     * @throws AgentDaemonCreationFailedException
-     */
-    protected function handleAgentStarted(WorkerClient $workerClient, array $data): void
-    {
-        try {
-            $dto = WorkerAgentStartedDTO::fromArray($data);
-        } catch (\Throwable $e) {
-            Logger::error("Failed to parse agent_started DTO: " . $e->getMessage());
-            return;
-        }
-
-        $agentId = $dto->agentId;
-        $agentType = $dto->agentType;
-        $agentIndex = $dto->agentIndex;
-
-        if ($agentId === '' || $agentType === '') {
-            return;
-        }
-
-        // Create and link agent daemon if it doesn't exist
-        if (!$this->agentManager->hasAgent($agentId)) {
-            $this->agentManager->createAndAddAgent($agentType, $agentIndex, $workerClient->getWorkerIndex(), $workerClient->isMonopolistic());
-        }
-        $agentDaemon = $this->agentManager->getAgent($agentId);
-        if ($agentDaemon === null) {
-            return;
-        }
-        $agentDaemon->setWorkerClient($workerClient);
-        $agentDaemon->onStart();
-
-        Logger::info("Agent {$agentId} started on worker #{$workerClient->getWorkerIndex()} [daemon side]");
-    }
-
-    /**
-     * Handle agent_stopped signal from worker
-     *
-     * @param WorkerClient $workerClient Worker client
-     * @param array $data Signal data
-     */
-    protected function handleAgentStopped(WorkerClient $workerClient, array $data): void
-    {
-        try {
-            $dto = WorkerAgentStoppedDTO::fromArray($data);
-        } catch (\Throwable $e) {
-            Logger::error("Failed to parse agent_stopped DTO: " . $e->getMessage());
-            return;
-        }
-
-        $agentId = $dto->agentId;
-
-        if ($agentId === '') {
-            return;
-        }
-
-        // Remove agent daemon
-        if ($this->agentManager->hasAgent($agentId)) {
-            $agentDaemon = $this->agentManager->getAgent($agentId);
-            if ($agentDaemon !== null) {
-                $agentDaemon->onStop();
-            }
-            $this->agentManager->removeAgent($agentId);
-
-            Logger::info("Agent {$agentId} stopped on worker #{$workerClient->getWorkerIndex()} [daemon side]");
-        }
+        return new WorkerClient($socket, $signalRouter, $this->agentManager);
     }
 
     /**
@@ -375,27 +279,13 @@ abstract class WorkerServer extends AbstractServer
     }
 
     /**
-     * Check worker registration and process agent messages
+     * Check worker registration
      *
-     * Processes newly registered workers and agent messages.
-     * Registration timeout is now handled in WorkerClient::onTick().
-     * Also checks if initial workers are ready and calls onInitialWorkersReady() once.
+     * Checks if initial workers are ready and calls onInitialWorkersReady() once.
+     * Agent messages are now processed directly in WorkerClient.
      */
     private function checkWorkerRegistration(): void
     {
-        // Process agent messages from all worker clients
-        foreach ($this->clients as $client) {
-            if (!$client instanceof WorkerClient) {
-                continue;
-            }
-
-            // Process pending agent messages from worker
-            $pendingMessages = $client->getAndClearPendingAgentMessages();
-            foreach ($pendingMessages as $messageData) {
-                $this->handleAgentMessage($client, $messageData);
-            }
-        }
-
         // Check if initial workers are ready (only once)
         if (!$this->initialWorkersReadyCalled) {
             // Count registered workers
@@ -712,7 +602,7 @@ abstract class WorkerServer extends AbstractServer
         $this->workers[$key] = [
             'process' => $process,
             'type' => $type,
-            'index' => $workerIndex
+            'index' => $workerIndex,
         ];
 
         // Log worker start

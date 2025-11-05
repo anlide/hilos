@@ -5,6 +5,11 @@ declare(strict_types=1);
 namespace Hilos\Core\Agent\Daemon;
 
 use Hilos\Exception\Worker\AgentDaemonCreationFailedException;
+use Hilos\Socket\Client\WorkerClient;
+use Hilos\Utils\DTO\Worker\WorkerAgentStartedDTO;
+use Hilos\Utils\DTO\Worker\WorkerAgentStoppedDTO;
+use Hilos\Utils\DTO\Worker\WorkerAgentMessageDTO;
+use Hilos\Logging\Logger\Logger;
 
 /**
  * AgentManagerDaemon - Base class for managing agent daemons in daemon process
@@ -215,5 +220,95 @@ abstract class AgentManagerDaemon
         $this->addAgent($agentId, $agentDaemon, $workerIndex, $isMonopolistic);
 
         return $agentDaemon;
+    }
+
+    /**
+     * Handle agent_started signal from worker
+     *
+     * Creates or updates agent daemon and links it to worker client.
+     *
+     * @param WorkerClient $workerClient Worker client that sent the signal
+     * @param WorkerAgentStartedDTO $dto DTO with agent started data
+     * @throws AgentDaemonCreationFailedException
+     */
+    public function handleAgentStarted(WorkerClient $workerClient, WorkerAgentStartedDTO $dto): void
+    {
+        $agentId = $dto->agentId;
+        $agentType = $dto->agentType;
+        $agentIndex = $dto->agentIndex;
+
+        if ($agentId === '' || $agentType === '') {
+            return;
+        }
+
+        // Create and link agent daemon if it doesn't exist
+        if (!$this->hasAgent($agentId)) {
+            $this->createAndAddAgent($agentType, $agentIndex, $workerClient->getWorkerIndex(), $workerClient->isMonopolistic());
+        }
+
+        $agentDaemon = $this->getAgent($agentId);
+        if ($agentDaemon === null) {
+            return;
+        }
+
+        $agentDaemon->setWorkerClient($workerClient);
+        $agentDaemon->onStart();
+
+        Logger::info("Agent {$agentId} started on worker #{$workerClient->getWorkerIndex()} [daemon side]");
+    }
+
+    /**
+     * Handle agent_stopped signal from worker
+     *
+     * Removes agent daemon and calls onStop().
+     *
+     * @param WorkerClient $workerClient Worker client that sent the signal
+     * @param WorkerAgentStoppedDTO $dto DTO with agent stopped data
+     */
+    public function handleAgentStopped(WorkerClient $workerClient, WorkerAgentStoppedDTO $dto): void
+    {
+        $agentId = $dto->agentId;
+
+        if ($agentId === '') {
+            return;
+        }
+
+        // Remove agent daemon
+        if ($this->hasAgent($agentId)) {
+            $agentDaemon = $this->getAgent($agentId);
+            if ($agentDaemon !== null) {
+                $agentDaemon->onStop();
+            }
+            $this->removeAgent($agentId);
+
+            Logger::info("Agent {$agentId} stopped on worker #{$workerClient->getWorkerIndex()} [daemon side]");
+        }
+    }
+
+    /**
+     * Handle agent_message signal from worker
+     *
+     * Forwards message from worker agent to agent daemon.
+     *
+     * @param WorkerClient $workerClient Worker client that sent the signal
+     * @param WorkerAgentMessageDTO $dto DTO with agent message data
+     */
+    public function handleAgentMessage(WorkerClient $workerClient, WorkerAgentMessageDTO $dto): void
+    {
+        $agentId = $dto->agentId;
+
+        if ($agentId === '' || !$this->hasAgent($agentId)) {
+            return;
+        }
+
+        $agentDaemon = $this->getAgent($agentId);
+        if ($agentDaemon === null) {
+            return;
+        }
+
+        // TODO: Implement message forwarding to agent daemon
+        // This will depend on the specific message format and agent daemon interface
+        // For now, just log the message
+        Logger::info("Agent message received from worker [agentId={$agentId}] [workerIndex={$workerClient->getWorkerIndex()}]");
     }
 }
