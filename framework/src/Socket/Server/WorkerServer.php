@@ -18,6 +18,9 @@ use Hilos\Exception\Process\FailedToTerminateProcessExceptionException;
 use Hilos\Exception\SocketException;
 use Hilos\Exception\Worker\AgentDaemonCreationFailedException;
 use Hilos\Exception\Worker\NoSuitableWorkerException;
+use Hilos\Exception\Worker\AgentNotFoundException;
+use Hilos\Exception\Worker\AgentNotLinkedToWorkerException;
+use Hilos\Exception\Worker\WorkerClientNotFoundException;
 use Hilos\Utils\DTO\Worker\AgentMessageDTO;
 use Hilos\Socket\Client\ClientInterface;
 use Hilos\Socket\Client\Interface\WorkerClientInterface;
@@ -788,13 +791,16 @@ abstract class WorkerServer extends AbstractServer
      * Send signal to agent
      *
      * If agent doesn't exist or is not linked to worker, starts it first, then sends signal.
-     * Throws exception if agent cannot be started (no worker available).
+     * Throws exception if agent cannot be started or found.
      *
      * @param string $agentType Agent type
      * @param ?string $agentIndex Agent index (optional)
      * @param array $data Signal data
      * @throws AgentDaemonCreationFailedException If agent daemon cannot be created
      * @throws NoSuitableWorkerException If no suitable worker is available
+     * @throws AgentNotFoundException If agent does not exist after startAgent() call
+     * @throws AgentNotLinkedToWorkerException If agent is not linked to worker
+     * @throws WorkerClientNotFoundException If worker client is not found for agent
      */
     public function sendSignalToAgent(string $agentType, ?string $agentIndex, array $data): void
     {
@@ -812,27 +818,23 @@ abstract class WorkerServer extends AbstractServer
 
         // At this point agent should exist
         if (!$this->agentManager->hasAgent($agentId)) {
-            Logger::error("Agent {$agentId} does not exist after startAgent() call");
-            return;
+            throw new AgentNotFoundException($agentId);
         }
 
         $agentDaemon = $this->agentManager->getAgent($agentId);
         if ($agentDaemon === null) {
-            Logger::error("Agent {$agentId} does not exist after startAgent() call");
-            return;
+            throw new AgentNotFoundException($agentId);
         }
 
         // Get worker client from mapping
         $workerInfo = $this->agentManager->getAgentWorkerInfo($agentId);
         if ($workerInfo === null) {
-            Logger::error("Agent {$agentId} is not linked to worker after startAgent() call");
-            return;
+            throw new AgentNotLinkedToWorkerException($agentId);
         }
 
         $workerClient = $this->findWorkerClientById($this->agentManager->getAgentWorkerId($agentId));
         if ($workerClient === null) {
-            Logger::error("Worker client not found for agent {$agentId} (workerIndex={$workerInfo['workerIndex']}, isMonopolistic={$workerInfo['isMonopolistic']})");
-            return;
+            throw new WorkerClientNotFoundException($agentId, $workerInfo['workerIndex'], $workerInfo['isMonopolistic']);
         }
 
         // Ensure agent daemon has worker client set
@@ -841,17 +843,12 @@ abstract class WorkerServer extends AbstractServer
         }
 
         // Agent exists and is linked, send signal immediately
-        // Extract agent type from agentId (format: "type" or "type:index")
-        $parts = explode(':', $agentId, 2);
-        $agentTypeFromId = $parts[0];
-        $agentIndexFromId = $parts[1] ?? null;
-
         // Create and send signal DTO
         $dto = new AgentMessageDTO(
             type: AgentMessageDTO::TYPE_AGENT_SIGNAL,
             agentId: $agentId,
-            agentType: $agentTypeFromId,
-            agentIndex: $agentIndexFromId,
+            agentType: $agentType,
+            agentIndex: $agentIndex,
             data: $data,
         );
 

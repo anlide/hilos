@@ -43,7 +43,7 @@ class ChatWorkerManager extends WorkerManager
     /**
      * Handle signal from daemon to agent
      *
-     * Processes WebSocket signals (frame, handshake, close) from daemon.
+     * Processes WebSocket signals (frame, handshake, close, subscribe, action, unsubscribe, update_subscription) from daemon.
      *
      * @param string $agentId Agent ID
      * @param array $signalData Signal data
@@ -64,6 +64,22 @@ class ChatWorkerManager extends WorkerManager
 
             case SignalConstants::SIGNAL_CLOSE:
                 $this->handleCloseSignal($agentId, $data);
+                break;
+
+            case SignalConstants::SIGNAL_SUBSCRIBE_PAGE:
+                $this->handleSubscribeSignal($agentId, $data);
+                break;
+
+            case SignalConstants::SIGNAL_ACTION:
+                $this->handleActionSignal($agentId, $data);
+                break;
+
+            case SignalConstants::SIGNAL_UNSUBSCRIBE_PAGE:
+                $this->handleUnsubscribeSignal($agentId, $data);
+                break;
+
+            case SignalConstants::SIGNAL_UPDATE_SUBSCRIPTION_PAGE:
+                $this->handleUpdateSubscriptionSignal($agentId, $data);
                 break;
 
             default:
@@ -103,5 +119,61 @@ class ChatWorkerManager extends WorkerManager
     private function handleCloseSignal(string $agentId, array $data): void
     {
         Logger::info("Close signal received for agent {$agentId}: " . json_encode($data));
+    }
+
+    /**
+     * Handle subscribe signal
+     *
+     * @param string $agentId Agent ID
+     * @param array $data Subscribe signal data
+     */
+    private function handleSubscribeSignal(string $agentId, array $data): void
+    {
+        $clientId = $data['clientId'] ?? '';
+        $page = $data['page'] ?? null;
+        $groups = $data['groups'] ?? [];
+        Logger::info("Subscribe signal received for agent {$agentId}, client {$clientId}, page: " . ($page ?? 'null') . ", groups: " . json_encode($groups));
+    }
+
+    /**
+     * Handle action signal
+     *
+     * @param string $agentId Agent ID
+     * @param array $data Action signal data
+     */
+    private function handleActionSignal(string $agentId, array $data): void
+    {
+        $clientId = $data['clientId'] ?? '';
+        $action = $data['action'] ?? '';
+        $actionData = $data['data'] ?? [];
+        Logger::info("Action signal received for agent {$agentId}, client {$clientId}, action: {$action}, data: " . json_encode($actionData));
+    }
+
+    /**
+     * Handle unsubscribe signal
+     *
+     * @param string $agentId Agent ID
+     * @param array $data Unsubscribe signal data
+     */
+    private function handleUnsubscribeSignal(string $agentId, array $data): void
+    {
+        $clientId = $data['clientId'] ?? '';
+        $page = $data['page'] ?? false;
+        $groups = $data['groups'] ?? [];
+        Logger::info("Unsubscribe signal received for agent {$agentId}, client {$clientId}, page: " . ($page ? 'true' : 'false') . ", groups: " . json_encode($groups));
+    }
+
+    /**
+     * Handle update subscription signal
+     *
+     * @param string $agentId Agent ID
+     * @param array $data Update subscription signal data
+     */
+    private function handleUpdateSubscriptionSignal(string $agentId, array $data): void
+    {
+        $clientId = $data['clientId'] ?? '';
+        $page = $data['page'] ?? null;
+        $groups = $data['groups'] ?? null;
+        Logger::info("Update subscription signal received for agent {$agentId}, client {$clientId}, page: " . ($page ?? 'null') . ", groups: " . ($groups !== null ? json_encode($groups) : 'null'));
     }
 }

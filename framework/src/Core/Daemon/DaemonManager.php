@@ -7,11 +7,14 @@ namespace Hilos\Core\Daemon;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Exception\Worker\AgentDaemonCreationFailedException;
+use Hilos\Exception\Worker\NoSuitableWorkerException;
 use Hilos\Socket\Server\ServerInterface;
 use Hilos\Socket\Server\WorkerServer;
 use Hilos\API\Router\HttpRouter;
 use Hilos\Core\EventLoop\EventLoop;
 use Hilos\Logging\Logger\Logger;
+use Hilos\Utils\Constants\SignalConstants;
+use Hilos\Utils\DTO\SignalDTO;
 
 /**
  * DaemonManager - Abstract base class for daemon process management
@@ -375,19 +378,14 @@ abstract class DaemonManager extends BaseManager
      * Dispatch accumulated signals
      *
      * Processes all queued signals from SignalRouter and sends them to appropriate agents via WorkerServer.
+     * Signals are processed one by one in while-do loop.
      * Called at the end of each loop iteration.
      * @throws AgentDaemonCreationFailedException
+     * @throws NoSuitableWorkerException
      */
     private function dispatchSignals(): void
     {
-        // Get queued signals from router
-        $queuedSignals = $this->signalRouter->getAndClearQueuedSignals();
-
-        if (empty($queuedSignals)) {
-            return;
-        }
-
-        // Find WorkerServer
+        // Find WorkerServer once
         $workerServer = null;
         foreach ($this->servers as $server) {
             if ($server instanceof WorkerServer) {
@@ -401,23 +399,90 @@ abstract class DaemonManager extends BaseManager
             return;
         }
 
-        // Dispatch all queued signals
-        foreach ($queuedSignals as $signal) {
-            $route = $signal['route'];
-            if ($route === null) {
-                // No route found, skip
+        // Process signals one by one in while-do loop
+        while (($signal = $this->signalRouter->getNextQueuedSignal()) !== null) {
+            $data = $signal->data->toArray();
+
+            // Update subscriptions BEFORE routing (routing may depend on current subscriptions)
+            $this->updateSubscriptions($signal);
+
+            // Get destinations for signal
+            $destinations = $this->signalRouter->getDestinations($signal);
+
+            if (empty($destinations)) {
+                // No destinations found, skip
                 continue;
             }
 
-            // Send signal to agent via worker server
-            $workerServer->sendSignalToAgent(
-                $route['agentType'],
-                $route['agentIndex'],
-                [
-                    'signalType' => $signal['signalType'],
-                    'data' => $signal['dto']->toArray(),
-                ]
-            );
+            // Deliver signal to each destination
+            while (($destination = array_shift($destinations)) !== null) {
+                $destinationType = $destination['type'] ?? 'agent';
+
+                switch ($destinationType) {
+                    case 'agent':
+                        // Send signal to agent via worker server
+                        $workerServer->sendSignalToAgent(
+                            $destination['agentType'],
+                            $destination['agentIndex'],
+                            [
+                                'signalType' => $signal->signalType,
+                                'data' => $data,
+                            ]
+                        );
+                        break;
+
+                    default:
+                        // Unknown destination type, skip
+                        Logger::warning("Unknown destination type: {$destinationType}");
+                        break;
+                }
+            }
+        }
+    }
+
+    /**
+     * Update user subscriptions based on signal type
+     *
+     * Updates subscriptions in SignalRouter for subscribe/unsubscribe/update_subscription signals.
+     * This must be called BEFORE routing, as routing may depend on current subscriptions.
+     *
+     * @param SignalDTO $signal Signal DTO
+     */
+    private function updateSubscriptions(SignalDTO $signal): void
+    {
+        $dataArray = $signal->data->toArray();
+        $clientId = $dataArray['clientId'] ?? '';
+
+        if ($clientId === '') {
+            return;
+        }
+
+        $params = $dataArray['params'] ?? [];
+
+        switch ($signal->signalType) {
+            case SignalConstants::SIGNAL_SUBSCRIBE_PAGE:
+                $this->signalRouter->subscribeToPage($clientId, $signal->signalName, $params);
+                break;
+
+            case SignalConstants::SIGNAL_UPDATE_SUBSCRIPTION_PAGE:
+                $this->signalRouter->updatePageSubscription($clientId, $signal->signalName, $params);
+                break;
+
+            case SignalConstants::SIGNAL_UNSUBSCRIBE_PAGE:
+                $this->signalRouter->unsubscribeFromPage($clientId);
+                break;
+
+            case SignalConstants::SIGNAL_SUBSCRIBE_GROUP:
+                $this->signalRouter->subscribeToGroup($clientId, $signal->signalName, $params);
+                break;
+
+            case SignalConstants::SIGNAL_UPDATE_SUBSCRIPTION_GROUP:
+                $this->signalRouter->updateGroupSubscription($clientId, $signal->signalName, $params);
+                break;
+
+            case SignalConstants::SIGNAL_UNSUBSCRIBE_GROUP:
+                $this->signalRouter->unsubscribeFromGroup($clientId, $signal->signalName);
+                break;
         }
     }
 

@@ -8,19 +8,21 @@ use Hilos\Utils\DTO\BaseDTO;
 use Hilos\Utils\DTO\SignalDataDTO;
 
 /**
- * WebSocketFrameBinarySignalDTO - DTO for WebSocket binary frame signal
+ * WebSocketUnsubscribeSignalDTO - DTO for WebSocket unsubscribe signal
  *
- * Represents a WebSocket binary frame signal sent from WebSocket client.
+ * Represents an unsubscribe signal sent from WebSocket client.
  */
-class WebSocketFrameBinarySignalDTO extends BaseDTO implements SignalDataDTO
+class WebSocketUnsubscribeSignalDTO extends BaseDTO implements SignalDataDTO
 {
     // Field name constants
     public const string CLIENT_ID = 'clientId';
-    public const string PAYLOAD = 'payload';
+    public const string PAGE = 'page';
+    public const string GROUPS = 'groups';
 
     public function __construct(
         public readonly string $clientId,
-        public readonly string $payload,
+        public readonly bool $page = false,
+        public readonly array $groups = [],
     ) {
     }
 
@@ -31,10 +33,19 @@ class WebSocketFrameBinarySignalDTO extends BaseDTO implements SignalDataDTO
      */
     public function toArray(): array
     {
-        return [
+        $result = [
             self::CLIENT_ID => $this->clientId,
-            self::PAYLOAD => $this->payload,
         ];
+
+        if ($this->page) {
+            $result[self::PAGE] = true;
+        }
+
+        if (!empty($this->groups)) {
+            $result[self::GROUPS] = $this->groups;
+        }
+
+        return $result;
     }
 
     /**
@@ -47,7 +58,8 @@ class WebSocketFrameBinarySignalDTO extends BaseDTO implements SignalDataDTO
     {
         return new self(
             clientId: $data[self::CLIENT_ID] ?? '',
-            payload: $data[self::PAYLOAD] ?? '',
+            page: $data[self::PAGE] ?? false,
+            groups: $data[self::GROUPS] ?? [],
         );
     }
 }
