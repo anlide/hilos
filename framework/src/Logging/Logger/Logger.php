@@ -162,7 +162,7 @@ class Logger
      */
     public static function logAgentStart(string $agentId, string $agentType): void
     {
-        self::logAgent($agentId, 'INFO', "Agent started [type={$agentType}]");
+        self::logAgent($agentId, 'INFO', "Agent started '{$agentType}'");
     }
 
     /**
@@ -173,7 +173,7 @@ class Logger
      */
     public static function logAgentStop(string $agentId, string $agentType): void
     {
-        self::logAgent($agentId, 'INFO', "Agent stopped [type={$agentType}]");
+        self::logAgent($agentId, 'INFO', "Agent stopped '{$agentType}'");
     }
 
     /**

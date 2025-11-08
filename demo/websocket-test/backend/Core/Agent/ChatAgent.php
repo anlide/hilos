@@ -19,9 +19,6 @@ use Hilos\Logging\Logger\Logger;
  */
 class ChatAgent extends AbstractAgent
 {
-    /** @var string Agent type */
-    private const string AGENT_TYPE = AgentType::CHAT;
-
     /** @var array Chat event history */
     private array $history = [];
 
@@ -38,7 +35,7 @@ class ChatAgent extends AbstractAgent
      */
     public function getType(): string
     {
-        return self::AGENT_TYPE;
+        return AgentType::CHAT;
     }
 
     /**
@@ -58,7 +55,6 @@ class ChatAgent extends AbstractAgent
      */
     public function onStart(): void
     {
-        Logger::logAgentStart($this->getId(), $this->getType());
         // Add chat started event to history
         $this->addEvent('chat_started', []);
     }
@@ -68,7 +64,6 @@ class ChatAgent extends AbstractAgent
      */
     public function onStop(): void
     {
-        Logger::logAgentStop($this->getId(), $this->getType());
     }
 
     /**

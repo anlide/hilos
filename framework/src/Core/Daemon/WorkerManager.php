@@ -129,7 +129,7 @@ abstract class WorkerManager extends BaseManager
                 // Remove agents that requested stop
                 foreach ($agentsToRemove as $agentId) {
                     $this->agentManager->removeAgent($agentId);
-                    Logger::info("Agent {$agentId} stopped (self-requested) [worker side]");
+                    Logger::info("Agent {$agentId} stopped (self-requested)");
                     Logger::logAgentInfo($agentId, "Agent stopped (self-requested) on worker [workerIndex={$this->workerIndex}]");
                 }
             }
@@ -228,7 +228,7 @@ abstract class WorkerManager extends BaseManager
 
         $agent->setMessageSender([$this, 'sendAgentMessage']);
         $agent->onStart();
-        Logger::info("Agent {$agentId} started [worker side]");
+        Logger::info("Agent {$agentId} started");
         // Additional agent log from worker side
         Logger::logAgentInfo($agentId, "Agent started on worker [workerIndex={$this->workerIndex}]");
 
@@ -256,7 +256,7 @@ abstract class WorkerManager extends BaseManager
 
         $agent->onStop(); // This will call AgentLogger::logStop inside agent
         $this->agentManager->removeAgent($agentId);
-        Logger::info("Agent {$agentId} stopped [worker side]");
+        Logger::info("Agent {$agentId} stopped");
         // Additional agent log from worker side
         Logger::logAgentInfo($agentId, "Agent stopped on worker [workerIndex={$this->workerIndex}]");
 
@@ -379,7 +379,7 @@ abstract class WorkerManager extends BaseManager
         // Stop all agents
         foreach ($this->agentManager->getAgents() as $agentId => $agent) {
             $agent->onStop();
-            Logger::info("Agent {$agentId} stopped during cleanup [worker side]");
+            Logger::info("Agent {$agentId} stopped during cleanup");
             Logger::logAgentInfo($agentId, "Agent stopped during worker cleanup [workerIndex={$this->workerIndex}]");
         }
         // Clear all agents
