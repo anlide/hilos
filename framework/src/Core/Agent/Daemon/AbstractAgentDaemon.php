@@ -6,6 +6,7 @@ namespace Hilos\Core\Agent\Daemon;
 
 use Hilos\Utils\DTO\Agent\AgentMessageDTOInterface;
 use Hilos\Utils\DTO\Agent\MessageFromUserDTO;
+use Hilos\Utils\DTO\BaseDTO;
 use Hilos\Socket\Client\WorkerClient;
 use Hilos\Logging\Logger\Logger;
 
@@ -53,15 +54,11 @@ abstract class AbstractAgentDaemon implements AgentDaemonInterface
      * Default implementation sends message through WorkerClient.
      * Child classes can override for custom routing logic.
      *
-     * @param MessageFromUserDTO $message Message from user
+     * @param BaseDTO $message Message DTO
      */
-    public function sendToAgent(MessageFromUserDTO $message): void
+    public function sendToAgent(BaseDTO $message): void
     {
-        if ($this->workerClient !== null) {
-            // Message will be sent through WorkerClient using DTO
-            // Actual sending will be handled by agent manager in daemon
-            // This is placeholder - child classes or agent manager should implement
-        }
+        $this->workerClient?->send($message->toJson());
     }
 
     /**

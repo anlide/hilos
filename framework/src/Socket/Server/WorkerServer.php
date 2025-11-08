@@ -832,13 +832,14 @@ abstract class WorkerServer extends AbstractServer
             throw new AgentNotLinkedToWorkerException($agentId);
         }
 
-        $workerClient = $this->findWorkerClientById($this->agentManager->getAgentWorkerId($agentId));
-        if ($workerClient === null) {
-            throw new WorkerClientNotFoundException($agentId, $workerInfo['workerIndex'], $workerInfo['isMonopolistic']);
-        }
-
         // Ensure agent daemon has worker client set
-        if ($agentDaemon->getWorkerClient() === null) {
+        $workerClient = $agentDaemon->getWorkerClient();
+        if ($workerClient === null) {
+            $workerClient = $this->findWorkerClientById($this->agentManager->getAgentWorkerId($agentId));
+            if ($workerClient === null) {
+                throw new WorkerClientNotFoundException($agentId, $workerInfo['workerIndex'], $workerInfo['isMonopolistic']);
+            }
+
             $agentDaemon->setWorkerClient($workerClient);
         }
 
@@ -852,7 +853,7 @@ abstract class WorkerServer extends AbstractServer
             data: $data,
         );
 
-        $workerClient->send($dto->toJson());
+        $agentDaemon->sendToAgent($dto);
     }
 
     /**

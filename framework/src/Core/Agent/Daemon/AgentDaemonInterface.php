@@ -6,6 +6,7 @@ namespace Hilos\Core\Agent\Daemon;
 
 use Hilos\Utils\DTO\Agent\AgentMessageDTOInterface;
 use Hilos\Utils\DTO\Agent\MessageFromUserDTO;
+use Hilos\Utils\DTO\BaseDTO;
 use Hilos\Socket\Client\WorkerClient;
 
 /**
@@ -66,9 +67,9 @@ interface AgentDaemonInterface
      *
      * Routes message from external source (WebSocket, HTTP, etc.) to worker agent.
      *
-     * @param MessageFromUserDTO $message Message from user
+     * @param BaseDTO $message Message DTO
      */
-    public function sendToAgent(MessageFromUserDTO $message): void;
+    public function sendToAgent(BaseDTO $message): void;
 
     /**
      * Send message from agent to user (external client)
