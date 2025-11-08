@@ -4,12 +4,13 @@ declare(strict_types=1);
 
 namespace Demo\WebSocketTest\Core\Socket\Server;
 
-use Hilos\Exception\Worker\AgentDaemonCreationFailedException;
-use Hilos\Exception\Worker\AgentNotFoundException;
-use Hilos\Exception\Worker\AgentNotLinkedToWorkerException;
-use Hilos\Exception\Worker\NoSuitableWorkerException;
-use Hilos\Exception\Worker\WorkerClientNotFoundException;
+use Demo\WebSocketTest\Utils\Constants\ChatSignalConstants;
+use Hilos\Core\Router\SignalSource;
+use Hilos\Core\Router\SignalType;
+use Hilos\Core\Router\SignalName;
+use Hilos\Core\Router\SignalData;
 use Hilos\Socket\Server\WorkerServer;
+use Hilos\Utils\Constants\SignalTypeConstants;
 
 /**
  * ChatWorkerServer - Worker server with chat-specific agent daemon factory
@@ -30,14 +31,14 @@ class ChatWorkerServer extends WorkerServer
      * Called when initial workers are ready
      *
      * Sends start signal to chat agent when workers are ready.
-     * @throws AgentDaemonCreationFailedException
-     * @throws AgentNotFoundException
-     * @throws AgentNotLinkedToWorkerException
-     * @throws WorkerClientNotFoundException
-     * @throws NoSuitableWorkerException
      */
     protected function onInitialWorkersReady(): void
     {
-        $this->sendSignalToAgent('chat', null, ['action' => 'start']);
+        $this->signalRouter->queueSignal(
+            new SignalSource(SignalSource::DAEMON),
+            new SignalType(SignalTypeConstants::SYSTEM),
+            new SignalName(ChatSignalConstants::START),
+            new SignalData(),
+        );
     }
 }

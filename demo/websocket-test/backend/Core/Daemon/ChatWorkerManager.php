@@ -8,7 +8,7 @@ use Demo\WebSocketTest\Core\Agent\ChatAgentManager;
 use Hilos\Core\Agent\AgentManager;
 use Hilos\Core\Daemon\WorkerManager;
 use Hilos\Logging\Logger\Logger;
-use Hilos\Utils\Constants\SignalConstants;
+use Hilos\Utils\Constants\SignalTypeConstants;
 
 /**
  * ChatWorkerManager - Worker manager for chat demo
@@ -54,71 +54,22 @@ class ChatWorkerManager extends WorkerManager
         $data = $signalData['data'] ?? [];
 
         switch ($signalType) {
-            case SignalConstants::SIGNAL_FRAME:
-                $this->handleFrameSignal($agentId, $data);
-                break;
-
-            case SignalConstants::SIGNAL_HANDSHAKE:
-                $this->handleHandshakeSignal($agentId, $data);
-                break;
-
-            case SignalConstants::SIGNAL_CLOSE:
-                $this->handleCloseSignal($agentId, $data);
-                break;
-
-            case SignalConstants::SIGNAL_SUBSCRIBE_PAGE:
+            case SignalTypeConstants::PAGE_SUBSCRIBE:
                 $this->handleSubscribeSignal($agentId, $data);
                 break;
 
-            case SignalConstants::SIGNAL_ACTION:
+            case SignalTypeConstants::ACTION:
                 $this->handleActionSignal($agentId, $data);
                 break;
 
-            case SignalConstants::SIGNAL_UNSUBSCRIBE_PAGE:
+            case SignalTypeConstants::PAGE_UNSUBSCRIBE:
                 $this->handleUnsubscribeSignal($agentId, $data);
-                break;
-
-            case SignalConstants::SIGNAL_UPDATE_SUBSCRIPTION_PAGE:
-                $this->handleUpdateSubscriptionSignal($agentId, $data);
                 break;
 
             default:
                 // Unknown signal type
                 break;
         }
-    }
-
-    /**
-     * Handle frame signal
-     *
-     * @param string $agentId Agent ID
-     * @param array $data Frame signal data
-     */
-    private function handleFrameSignal(string $agentId, array $data): void
-    {
-        Logger::logAgentInfo($agentId, "Frame signal received for agent: " . json_encode($data));
-    }
-
-    /**
-     * Handle handshake signal
-     *
-     * @param string $agentId Agent ID
-     * @param array $data Handshake signal data
-     */
-    private function handleHandshakeSignal(string $agentId, array $data): void
-    {
-        Logger::logAgentInfo($agentId, "Handshake signal received for agent: " . json_encode($data));
-    }
-
-    /**
-     * Handle close signal
-     *
-     * @param string $agentId Agent ID
-     * @param array $data Close signal data
-     */
-    private function handleCloseSignal(string $agentId, array $data): void
-    {
-        Logger::logAgentInfo($agentId, "Close signal received for agent: " . json_encode($data));
     }
 
     /**
@@ -161,19 +112,5 @@ class ChatWorkerManager extends WorkerManager
         $page = $data['page'] ?? false;
         $groups = $data['groups'] ?? [];
         Logger::logAgentInfo($agentId, "Unsubscribe signal received for agent, client {$clientId}, page: " . ($page ? 'true' : 'false') . ", groups: " . json_encode($groups));
-    }
-
-    /**
-     * Handle update subscription signal
-     *
-     * @param string $agentId Agent ID
-     * @param array $data Update subscription signal data
-     */
-    private function handleUpdateSubscriptionSignal(string $agentId, array $data): void
-    {
-        $clientId = $data['clientId'] ?? '';
-        $page = $data['page'] ?? null;
-        $groups = $data['groups'] ?? null;
-        Logger::logAgentInfo($agentId, "Update subscription signal received for agent, client {$clientId}, page: " . ($page ?? 'null') . ", groups: " . ($groups !== null ? json_encode($groups) : 'null'));
     }
 }

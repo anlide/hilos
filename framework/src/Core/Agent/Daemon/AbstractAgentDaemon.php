@@ -20,7 +20,7 @@ use Hilos\Logging\Logger\Logger;
  */
 abstract class AbstractAgentDaemon implements AgentDaemonInterface
 {
-    /** @var WorkerClient|null Worker client connection */
+    /** @var ?WorkerClient Worker client connection */
     private ?WorkerClient $workerClient = null;
 
     /**
@@ -35,7 +35,7 @@ abstract class AbstractAgentDaemon implements AgentDaemonInterface
         $agentType = $this->getType();
         $workerIndex = $workerClient->getWorkerIndex();
 
-        Logger::info("AgentDaemon {$agentId} linked to WorkerClient [daemon side] [type={$agentType}] [workerIndex={$workerIndex}]");
+        Logger::debug("Agent {$agentId} linked to WorkerClient [type={$agentType}] [workerIndex={$workerIndex}]");
     }
 
     /**
@@ -126,7 +126,7 @@ abstract class AbstractAgentDaemon implements AgentDaemonInterface
         $agentType = $this->getType();
         $workerIndex = $this->workerClient?->getWorkerIndex() ?? 'unknown';
 
-        Logger::info("Agent {$agentId} started [daemon side] [type={$agentType}] [workerIndex={$workerIndex}]");
+        Logger::debug("Agent {$agentId} started [type={$agentType}] [workerIndex={$workerIndex}]");
     }
 
     /**
@@ -140,6 +140,6 @@ abstract class AbstractAgentDaemon implements AgentDaemonInterface
         $agentType = $this->getType();
         $workerIndex = $this->workerClient?->getWorkerIndex() ?? 'unknown';
 
-        Logger::info("Agent {$agentId} stopped [daemon side] [type={$agentType}] [workerIndex={$workerIndex}]");
+        Logger::debug("Agent {$agentId} stopped [type={$agentType}] [workerIndex={$workerIndex}]");
     }
 }

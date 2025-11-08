@@ -13,11 +13,11 @@ namespace Hilos\Core\Router;
 class SignalSource implements SignalSourceInterface
 {
     // Signal source constants
-    public const string SOURCE_WEBSOCKET = 'websocket';
-    public const string SOURCE_DAEMON = 'daemon';
-    public const string SOURCE_WORKER = 'worker';
-    public const string SOURCE_HTTP = 'http';
-    public const string SOURCE_AGENT = 'agent';
+    public const string WEBSOCKET = 'websocket';
+    public const string DAEMON = 'daemon';
+    public const string WORKER = 'worker';
+    public const string HTTP = 'http';
+    public const string AGENT = 'agent';
 
     /**
      * SignalSource constructor

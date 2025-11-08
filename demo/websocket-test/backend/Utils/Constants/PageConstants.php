@@ -11,7 +11,7 @@ namespace Demo\WebSocketTest\Utils\Constants;
  */
 class PageConstants
 {
-    /** @var string Chat page */
-    public const string CHAT = 'chat';
+    /** @var string Chat main page */
+    public const string MAIN = 'main';
 }
 

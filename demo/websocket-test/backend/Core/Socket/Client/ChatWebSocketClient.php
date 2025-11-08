@@ -4,17 +4,16 @@ declare(strict_types=1);
 
 namespace Demo\WebSocketTest\Core\Socket\Client;
 
-use Demo\WebSocketTest\Utils\DTO\WebSocketActionSignalDTO;
-use Demo\WebSocketTest\Utils\DTO\WebSocketCloseSignalDTO;
-use Demo\WebSocketTest\Utils\DTO\WebSocketFrameBinarySignalDTO;
+use Demo\WebSocketTest\Utils\Constants\ChatSignalConstants;
+use Demo\WebSocketTest\Utils\Constants\PageConstants;
 use Demo\WebSocketTest\Utils\DTO\WebSocketFrameSignalDTO;
 use Demo\WebSocketTest\Utils\DTO\WebSocketHandshakeSignalDTO;
-use Demo\WebSocketTest\Utils\DTO\WebSocketSubscribeSignalDTO;
 use Demo\WebSocketTest\Utils\DTO\WebSocketUnsubscribeSignalDTO;
-use Demo\WebSocketTest\Utils\DTO\WebSocketUpdateSubscriptionSignalDTO;
 use Hilos\Core\Router\SignalSource;
+use Hilos\Core\Router\SignalType;
+use Hilos\Core\Router\SignalName;
 use Hilos\Socket\Client\WebSocketClient;
-use Hilos\Utils\Constants\SignalConstants;
+use Hilos\Utils\Constants\SignalTypeConstants;
 
 /**
  * ChatWebSocketClient - WebSocket client for chat demo
@@ -36,136 +35,19 @@ class ChatWebSocketClient extends WebSocketClient
      */
     protected function onFrame(string $payload): void
     {
-        // Try to parse JSON payload
-        $data = json_decode($payload, true);
+        $dto = new WebSocketFrameSignalDTO(
+            clientId: $this->clientId,
+            payload: $payload,
+        );
 
-        // If not valid JSON or missing 'type' field, treat as legacy frame signal
-        if ($data === null || !isset($data['type'])) {
-            $dto = new WebSocketFrameSignalDTO(
-                clientId: $this->clientId,
-                payload: $payload,
-            );
+        // TODO: Use ChatSignalConstants::RENAME
 
-            $signalSource = new SignalSource(SignalSource::SOURCE_WEBSOCKET);
-            $this->signalRouter->queueSignal($signalSource, SignalConstants::SIGNAL_FRAME, SignalConstants::SIGNAL_FRAME, $dto);
-            return;
-        }
-
-        // Route based on signal type
-        $signalType = $data['type'];
-        $signalSource = new SignalSource(SignalSource::SOURCE_WEBSOCKET);
-
-        switch ($signalType) {
-            case 'subscribe':
-                // Subscribe to page if provided
-                if (isset($data['page']) && $data['page'] !== null) {
-                    $pageDto = new WebSocketSubscribeSignalDTO(
-                        clientId: $this->clientId,
-                        page: $data['page'],
-                        groups: [],
-                        params: $data['params'] ?? [],
-                    );
-                    $this->signalRouter->queueSignal($signalSource, SignalConstants::SIGNAL_SUBSCRIBE_PAGE, $data['page'], $pageDto);
-                }
-                // Subscribe to groups if provided
-                if (!empty($data['groups']) && is_array($data['groups'])) {
-                    foreach ($data['groups'] as $group) {
-                        $groupDto = new WebSocketSubscribeSignalDTO(
-                            clientId: $this->clientId,
-                            page: null,
-                            groups: [],
-                            params: $data['params'] ?? [],
-                        );
-                        // Use group name as signalName, but DTO needs to have group field
-                        // We'll use a workaround: put group in params for now
-                        $groupDtoArray = $groupDto->toArray();
-                        $groupDtoArray['group'] = $group;
-                        $groupDto = WebSocketSubscribeSignalDTO::fromArray($groupDtoArray);
-                        $this->signalRouter->queueSignal($signalSource, SignalConstants::SIGNAL_SUBSCRIBE_GROUP, $group, $groupDto);
-                    }
-                }
-                break;
-
-            case 'action':
-                $dto = new WebSocketActionSignalDTO(
-                    clientId: $this->clientId,
-                    action: $data['action'] ?? '',
-                    data: $data['data'] ?? [],
-                    page: $data['page'] ?? null,
-                    group: $data['group'] ?? null,
-                );
-                $this->signalRouter->queueSignal($signalSource, SignalConstants::SIGNAL_ACTION, SignalConstants::SIGNAL_ACTION, $dto);
-                break;
-
-            case 'unsubscribe':
-                // Unsubscribe from page if requested
-                if (isset($data['page']) && $data['page'] === true) {
-                    $pageDto = new WebSocketUnsubscribeSignalDTO(
-                        clientId: $this->clientId,
-                        page: true,
-                        groups: [],
-                    );
-                    $pageName = $this->signalRouter->getUserPage($this->clientId);
-                    if ($pageName !== null) {
-                        $this->signalRouter->queueSignal($signalSource, SignalConstants::SIGNAL_UNSUBSCRIBE_PAGE, $pageName, $pageDto);
-                    }
-                }
-                // Unsubscribe from groups if provided
-                if (!empty($data['groups']) && is_array($data['groups'])) {
-                    foreach ($data['groups'] as $group) {
-                        $groupDto = new WebSocketUnsubscribeSignalDTO(
-                            clientId: $this->clientId,
-                            page: false,
-                            groups: [],
-                        );
-                        $groupDtoArray = $groupDto->toArray();
-                        $groupDtoArray['group'] = $group;
-                        $groupDto = WebSocketUnsubscribeSignalDTO::fromArray($groupDtoArray);
-                        $this->signalRouter->queueSignal($signalSource, SignalConstants::SIGNAL_UNSUBSCRIBE_GROUP, $group, $groupDto);
-                    }
-                }
-                break;
-
-            case 'update_subscription':
-                // Update page subscription if provided
-                if (isset($data['page'])) {
-                    $pageDto = new WebSocketUpdateSubscriptionSignalDTO(
-                        clientId: $this->clientId,
-                        page: $data['page'],
-                        groups: null,
-                    );
-                    $pageName = $data['page'] !== null ? $data['page'] : ($this->signalRouter->getUserPage($this->clientId) ?? '');
-                    if ($pageName !== '') {
-                        $this->signalRouter->queueSignal($signalSource, SignalConstants::SIGNAL_UPDATE_SUBSCRIPTION_PAGE, $pageName, $pageDto);
-                    }
-                }
-                // Update group subscription if provided
-                if (isset($data['groups'])) {
-                    if ($data['groups'] !== null && is_array($data['groups']) && !empty($data['groups'])) {
-                        // Update first group (we support only one group now)
-                        $group = $data['groups'][0];
-                        $groupDto = new WebSocketUpdateSubscriptionSignalDTO(
-                            clientId: $this->clientId,
-                            page: null,
-                            groups: null,
-                        );
-                        $groupDtoArray = $groupDto->toArray();
-                        $groupDtoArray['group'] = $group;
-                        $groupDto = WebSocketUpdateSubscriptionSignalDTO::fromArray($groupDtoArray);
-                        $this->signalRouter->queueSignal($signalSource, SignalConstants::SIGNAL_UPDATE_SUBSCRIPTION_GROUP, $group, $groupDto);
-                    }
-                }
-                break;
-
-            default:
-                // Unknown type, treat as legacy frame signal
-                $dto = new WebSocketFrameSignalDTO(
-                    clientId: $this->clientId,
-                    payload: $payload,
-                );
-                $this->signalRouter->queueSignal($signalSource, SignalConstants::SIGNAL_FRAME, SignalConstants::SIGNAL_FRAME, $dto);
-                break;
-        }
+        $this->signalRouter->queueSignal(
+            new SignalSource(SignalSource::WEBSOCKET),
+            new SignalType(SignalTypeConstants::ACTION),
+            new SignalName(ChatSignalConstants::MESSAGE),
+            $dto,
+        );
     }
 
     /**
@@ -175,13 +57,17 @@ class ChatWebSocketClient extends WebSocketClient
      */
     protected function onFrameBinary(string $payload): void
     {
-        $dto = new WebSocketFrameBinarySignalDTO(
+        $dto = new WebSocketFrameSignalDTO(
             clientId: $this->clientId,
             payload: $payload,
         );
 
-        $signalSource = new SignalSource(SignalSource::SOURCE_WEBSOCKET);
-        $this->signalRouter->queueSignal($signalSource, SignalConstants::SIGNAL_FRAME_BINARY, SignalConstants::SIGNAL_FRAME_BINARY, $dto);
+        $this->signalRouter->queueSignal(
+            new SignalSource(SignalSource::WEBSOCKET),
+            new SignalType(SignalTypeConstants::ACTION),
+            new SignalName(ChatSignalConstants::FILE),
+            $dto,
+        );
     }
 
     /**
@@ -209,8 +95,12 @@ class ChatWebSocketClient extends WebSocketClient
             clientIp: $clientIp,
         );
 
-        $signalSource = new SignalSource(SignalSource::SOURCE_WEBSOCKET);
-        $this->signalRouter->queueSignal($signalSource, SignalConstants::SIGNAL_HANDSHAKE, SignalConstants::SIGNAL_HANDSHAKE, $dto);
+        $this->signalRouter->queueSignal(
+            new SignalSource(SignalSource::WEBSOCKET),
+            new SignalType(SignalTypeConstants::PAGE_SUBSCRIBE),
+            new SignalName(PageConstants::MAIN),
+            $dto,
+        );
     }
 
     /**
@@ -220,45 +110,20 @@ class ChatWebSocketClient extends WebSocketClient
      */
     protected function onClose(): void
     {
-        // Get user's subscriptions before clearing
-        $page = $this->signalRouter->getUserPage($this->clientId);
-        $groups = $this->signalRouter->getUserGroups($this->clientId);
+        $pageDto = new WebSocketUnsubscribeSignalDTO(
+            clientId: $this->clientId,
+            page: true,
+            groups: [],
+        );
 
-        // Send unsubscribe signals if there were active subscriptions
-        if ($page !== null) {
-            $pageDto = new WebSocketUnsubscribeSignalDTO(
-                clientId: $this->clientId,
-                page: true,
-                groups: [],
-            );
-            $signalSource = new SignalSource(SignalSource::SOURCE_WEBSOCKET);
-            $this->signalRouter->queueSignal($signalSource, SignalConstants::SIGNAL_UNSUBSCRIBE_PAGE, $page, $pageDto);
-        }
-
-        if (!empty($groups)) {
-            foreach (array_keys($groups) as $group) {
-                $groupDto = new WebSocketUnsubscribeSignalDTO(
-                    clientId: $this->clientId,
-                    page: false,
-                    groups: [],
-                );
-                $groupDtoArray = $groupDto->toArray();
-                $groupDtoArray['group'] = $group;
-                $groupDto = WebSocketUnsubscribeSignalDTO::fromArray($groupDtoArray);
-                $signalSource = new SignalSource(SignalSource::SOURCE_WEBSOCKET);
-                $this->signalRouter->queueSignal($signalSource, SignalConstants::SIGNAL_UNSUBSCRIBE_GROUP, $group, $groupDto);
-            }
-        }
+        $this->signalRouter->queueSignal(
+            new SignalSource(SignalSource::WEBSOCKET),
+            new SignalType(SignalTypeConstants::PAGE_UNSUBSCRIBE),
+            new SignalName(PageConstants::MAIN),
+            $pageDto,
+        );
 
         // Unsubscribe from all subscriptions (clear after sending signal)
         $this->signalRouter->unsubscribeFromAll($this->clientId);
-
-        // Send close signal
-        $closeDto = new WebSocketCloseSignalDTO(
-            clientId: $this->clientId,
-        );
-
-        $signalSource = new SignalSource(SignalSource::SOURCE_WEBSOCKET);
-        $this->signalRouter->queueSignal($signalSource, SignalConstants::SIGNAL_CLOSE, SignalConstants::SIGNAL_CLOSE, $closeDto);
     }
 }

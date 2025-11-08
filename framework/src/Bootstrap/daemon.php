@@ -28,6 +28,9 @@ use Hilos\Utils\Env;
 // Initialize environment
 Env::init();
 
+// Enable debug logging (optional - uncomment to enable)
+// Logger::setDebugEnabled(true);
+
 try {
     // Create anonymous class to override tick() method
     $daemon = new class extends DaemonManager {

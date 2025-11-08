@@ -254,7 +254,7 @@ abstract class AgentManagerDaemon
         $agentDaemon->setWorkerClient($workerClient);
         $agentDaemon->onStart();
 
-        Logger::info("Agent {$agentId} started on worker #{$workerClient->getWorkerIndex()} [daemon side]");
+        Logger::info("Agent {$agentId} started on worker #{$workerClient->getWorkerIndex()}");
     }
 
     /**
@@ -281,7 +281,7 @@ abstract class AgentManagerDaemon
             }
             $this->removeAgent($agentId);
 
-            Logger::info("Agent {$agentId} stopped on worker #{$workerClient->getWorkerIndex()} [daemon side]");
+            Logger::info("Agent {$agentId} stopped on worker #{$workerClient->getWorkerIndex()}");
         }
     }
 

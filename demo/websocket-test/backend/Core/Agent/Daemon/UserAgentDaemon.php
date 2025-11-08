@@ -29,7 +29,7 @@ class UserAgentDaemon extends AbstractAgentDaemon
     public function __construct(string $userId)
     {
         $this->userId = $userId;
-        Logger::info("UserAgentDaemon created [daemon side] [type=" . self::AGENT_TYPE . "] [userId={$userId}]");
+        Logger::debug("UserAgentDaemon created [type=" . self::AGENT_TYPE . "] [userId={$userId}]");
     }
 
     /**

@@ -6,13 +6,14 @@ namespace Hilos\Utils\DTO\WebSocket;
 
 use Hilos\Utils\DTO\BaseDTO;
 use Hilos\Utils\DTO\SignalDataDTO;
+use Hilos\Core\Router\SignalDataInterface;
 
 /**
  * WebSocketUpdateSubscriptionSignalDTO - DTO for WebSocket update subscription signal
  *
  * Represents an update subscription signal sent from WebSocket client.
  */
-class WebSocketUpdateSubscriptionSignalDTO extends BaseDTO implements SignalDataDTO
+class WebSocketUpdateSubscriptionSignalDTO extends BaseDTO implements SignalDataDTO, SignalDataInterface
 {
     // Field name constants
     public const string CLIENT_ID = 'clientId';

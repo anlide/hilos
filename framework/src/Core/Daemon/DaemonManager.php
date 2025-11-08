@@ -13,7 +13,7 @@ use Hilos\Socket\Server\WorkerServer;
 use Hilos\API\Router\HttpRouter;
 use Hilos\Core\EventLoop\EventLoop;
 use Hilos\Logging\Logger\Logger;
-use Hilos\Utils\Constants\SignalConstants;
+use Hilos\Utils\Constants\SignalTypeConstants;
 use Hilos\Utils\DTO\SignalDTO;
 
 /**
@@ -124,10 +124,11 @@ abstract class DaemonManager extends BaseManager
             // Dispatch accumulated signals
             $this->dispatchSignals();
 
-            $this->sleepWithPreciseTiming($loopStartTime);
-
             // Process signals
             pcntl_signal_dispatch();
+
+            // Sleep for precise timing
+            $this->sleepWithPreciseTiming($loopStartTime);
         }
 
         // Cleanup
@@ -409,32 +410,57 @@ abstract class DaemonManager extends BaseManager
 
             // Get destinations for signal
             $destinations = $this->signalRouter->getDestinations($signal);
+            $signalName = $signal->signalName->getName();
+            $signalType = $signal->signalType->getType();
 
             if (empty($destinations)) {
                 // No destinations found, skip
+                Logger::info("No destinations found for signal: {$signalType}/{$signalName}");
                 continue;
             }
 
             // Deliver signal to each destination
+            Logger::debug("Found " . count($destinations) . " destination(s) for signal: {$signalType}/{$signalName}");
+            $skipSignal = false;
             while (($destination = array_shift($destinations)) !== null) {
+                if ($skipSignal) {
+                    break;
+                }
+
                 $destinationType = $destination['type'] ?? 'agent';
 
                 switch ($destinationType) {
                     case 'agent':
                         // Send signal to agent via worker server
-                        $workerServer->sendSignalToAgent(
-                            $destination['agentType'],
-                            $destination['agentIndex'],
-                            [
-                                'signalType' => $signal->signalType,
-                                'data' => $data,
-                            ]
-                        );
+                        $agentType = $destination['agentType'] ?? 'unknown';
+                        $agentIndex = $destination['agentIndex'] ?? null;
+                        $indexInfo = $agentIndex !== null ? " (index: {$agentIndex})" : '';
+                        Logger::info("Dispatching signal: {$signalType}/{$signalName} -> agent: {$agentType}{$indexInfo}");
+                        try {
+                            $workerServer->sendSignalToAgent(
+                                $destination['agentType'],
+                                $destination['agentIndex'],
+                                [
+                                    'signalType' => $signal->signalType->getType(),
+                                    'data' => $data,
+                                ]
+                            );
+                        } catch (NoSuitableWorkerException $e) {
+                            // During shutdown, workers may be unavailable - ignore this error
+                            if ($this->shouldExit) {
+                                Logger::info("Signal skipped during shutdown: {$signalType}/{$signalName} -> agent: {$agentType}{$indexInfo} - no suitable worker available");
+                                $skipSignal = true;
+                                break;
+                            }
+                            // Re-throw if not shutting down
+                            Logger::error("Failed to send signal: {$signalType}/{$signalName} -> agent: {$agentType}{$indexInfo} - no suitable worker available");
+                            throw $e;
+                        }
                         break;
 
                     default:
                         // Unknown destination type, skip
-                        Logger::warning("Unknown destination type: {$destinationType}");
+                        Logger::error("Unknown destination type: {$destinationType} for signal: {$signalType}/{$signalName}");
                         break;
                 }
             }
@@ -460,29 +486,32 @@ abstract class DaemonManager extends BaseManager
 
         $params = $dataArray['params'] ?? [];
 
-        switch ($signal->signalType) {
-            case SignalConstants::SIGNAL_SUBSCRIBE_PAGE:
-                $this->signalRouter->subscribeToPage($clientId, $signal->signalName, $params);
+        $signalType = $signal->signalType->getType();
+        $signalName = $signal->signalName->getName();
+
+        switch ($signalType) {
+            case SignalTypeConstants::PAGE_SUBSCRIBE:
+                $this->signalRouter->subscribeToPage($clientId, $signalName, $params);
                 break;
 
-            case SignalConstants::SIGNAL_UPDATE_SUBSCRIPTION_PAGE:
-                $this->signalRouter->updatePageSubscription($clientId, $signal->signalName, $params);
+            case SignalTypeConstants::PAGE_UPDATE_SUBSCRIPTION:
+                $this->signalRouter->updatePageSubscription($clientId, $signalName, $params);
                 break;
 
-            case SignalConstants::SIGNAL_UNSUBSCRIBE_PAGE:
+            case SignalTypeConstants::PAGE_UNSUBSCRIBE:
                 $this->signalRouter->unsubscribeFromPage($clientId);
                 break;
 
-            case SignalConstants::SIGNAL_SUBSCRIBE_GROUP:
-                $this->signalRouter->subscribeToGroup($clientId, $signal->signalName, $params);
+            case SignalTypeConstants::GROUP_SUBSCRIBE:
+                $this->signalRouter->subscribeToGroup($clientId, $signalName, $params);
                 break;
 
-            case SignalConstants::SIGNAL_UPDATE_SUBSCRIPTION_GROUP:
-                $this->signalRouter->updateGroupSubscription($clientId, $signal->signalName, $params);
+            case SignalTypeConstants::GROUP_UPDATE_SUBSCRIPTION:
+                $this->signalRouter->updateGroupSubscription($clientId, $signalName, $params);
                 break;
 
-            case SignalConstants::SIGNAL_UNSUBSCRIBE_GROUP:
-                $this->signalRouter->unsubscribeFromGroup($clientId, $signal->signalName);
+            case SignalTypeConstants::GROUP_UNSUBSCRIBE:
+                $this->signalRouter->unsubscribeFromGroup($clientId, $signalName);
                 break;
         }
     }

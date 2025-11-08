@@ -15,6 +15,6 @@ class AgentType
     public const string CHAT = 'chat';
 
     /** @var string User agent type (regular) */
-    public const string USER = 'user';
+    public const string SESSION = 'session';
 }
 

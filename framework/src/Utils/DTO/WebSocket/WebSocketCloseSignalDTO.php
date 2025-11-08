@@ -6,13 +6,14 @@ namespace Hilos\Utils\DTO\WebSocket;
 
 use Hilos\Utils\DTO\BaseDTO;
 use Hilos\Utils\DTO\SignalDataDTO;
+use Hilos\Core\Router\SignalDataInterface;
 
 /**
  * WebSocketCloseSignalDTO - DTO for WebSocket close signal
  *
  * Represents a WebSocket close signal sent from WebSocket client.
  */
-class WebSocketCloseSignalDTO extends BaseDTO implements SignalDataDTO
+class WebSocketCloseSignalDTO extends BaseDTO implements SignalDataDTO, SignalDataInterface
 {
     // Field name constants
     public const string CLIENT_ID = 'clientId';

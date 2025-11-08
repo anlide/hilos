@@ -321,7 +321,7 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
 
         // Log worker registration on daemon side
         $workerType = $dto->monopolistic ? 'monopolistic' : 'regular';
-        Logger::info("Worker #{$dto->workerIndex} registered [daemon side] [type={$workerType}]");
+        Logger::debug("Worker #{$dto->workerIndex} registered [type={$workerType}]");
 
         // Send registration confirmation to worker using DTO
         $responseDto = new WorkerRegisteredDTO(
@@ -350,7 +350,7 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
      */
     public function sendAgentStart(string $agentId, string $agentType, ?string $agentIndex = null): void
     {
-        Logger::info("Sending agent_start signal to worker [daemon side] [agentId={$agentId}] [agentType={$agentType}] [agentIndex=" . ($agentIndex ?? 'null') . "] [workerIndex={$this->workerIndex}]");
+        Logger::debug("Sending agent_start signal to worker [agentId={$agentId}] [agentType={$agentType}] [agentIndex=" . ($agentIndex ?? 'null') . "] [workerIndex={$this->workerIndex}]");
 
         $dto = new AgentMessageDTO(
             type: AgentMessageDTO::TYPE_AGENT_START,
@@ -369,7 +369,7 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
      */
     public function sendAgentStop(string $agentId): void
     {
-        Logger::info("Sending agent_stop signal to worker [daemon side] [agentId={$agentId}] [workerIndex={$this->workerIndex}]");
+        Logger::debug("Sending agent_stop signal to worker [agentId={$agentId}] [workerIndex={$this->workerIndex}]");
 
         // Extract agent type from agentId (format: "type" or "type:index")
         $parts = explode(':', $agentId, 2);
@@ -414,7 +414,7 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
         // Log worker disconnection on daemon side
         if ($this->workerIndex > 0) {
             $workerType = $this->isMonopolistic ? 'monopolistic' : 'regular';
-            Logger::info("Worker #{$this->workerIndex} disconnected [daemon side] [type={$workerType}]");
+            Logger::debug("Worker #{$this->workerIndex} disconnected [type={$workerType}]");
         }
     }
 }

@@ -29,6 +29,9 @@ use Hilos\Logging\Logger\Logger;
 // Initialize environment (reads .env from local directory)
 Env::init(__DIR__);
 
+// Enable debug logging (optional - uncomment to enable)
+// Logger::setDebugEnabled(true);
+
 try {
     // Create chat daemon manager instance first (creates signalRouter)
     $daemon = new ChatDaemonManager();

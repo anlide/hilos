@@ -5,10 +5,13 @@ declare(strict_types=1);
 namespace Demo\WebSocketTest\Core\Router;
 
 use Demo\WebSocketTest\Utils\Constants\AgentType;
+use Demo\WebSocketTest\Utils\Constants\ChatSignalConstants;
+use Demo\WebSocketTest\Utils\Constants\GroupConstants;
 use Demo\WebSocketTest\Utils\Constants\PageConstants;
+use Demo\WebSocketTest\Utils\Constants\SignalConstants;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalSource;
-use Hilos\Utils\Constants\SignalConstants;
+use Hilos\Utils\Constants\SignalTypeConstants;
 
 /**
  * ChatSignalRouter - Signal router for chat demo
@@ -29,7 +32,7 @@ class ChatSignalRouter extends SignalRouter
         
         // Pages configuration - defines available pages and their routing
         $pages = [
-            PageConstants::CHAT => [
+            PageConstants::MAIN => [
                 'agentType' => AgentType::CHAT,
                 'agentIndex' => null,
                 'params' => [],
@@ -39,65 +42,47 @@ class ChatSignalRouter extends SignalRouter
         // Groups configuration - defines available groups and their routing
         // Groups can be added dynamically or through config
         $groups = [
-            // Example: 'room1' => [
-            //     'agentType' => AgentType::CHAT,
-            //     'agentIndex' => 'room1',
-            //     'params' => [],
-            // ],
+            GroupConstants::SESSION => [
+                'agentType' => AgentType::SESSION,
+                'agentIndex' => 'clientId',
+                'params' => [],
+            ],
+        ];
+
+        // Signals configuration - defines signal routing rules
+        $signals = [
+            SignalSource::DAEMON => [
+                SignalTypeConstants::SYSTEM => AgentType::CHAT,
+                SignalTypeConstants::CRON => AgentType::CHAT,
+            ],
+            SignalSource::WEBSOCKET => [
+                // Page subscription signals - routing to CHAT agent
+                SignalTypeConstants::PAGE_SUBSCRIBE => AgentType::CHAT,
+                SignalTypeConstants::PAGE_UNSUBSCRIBE => AgentType::CHAT,
+                SignalTypeConstants::PAGE_UPDATE_SUBSCRIPTION => AgentType::CHAT,
+                // Group subscription signals - routing to SESSION agent
+                SignalTypeConstants::GROUP_SUBSCRIBE => AgentType::SESSION,
+                SignalTypeConstants::GROUP_UNSUBSCRIBE => AgentType::SESSION,
+                SignalTypeConstants::GROUP_UPDATE_SUBSCRIPTION => AgentType::SESSION,
+                // User`s action signal - routing to CHAT agent
+                SignalTypeConstants::ACTION => AgentType::CHAT,
+                // Cron`s action signal - routing to CHAT agent
+                SignalTypeConstants::CRON => AgentType::CHAT,
+            ],
+        ];
+
+        $actions = [
+            ChatSignalConstants::MESSAGE => AgentType::CHAT,
+            ChatSignalConstants::FILE => AgentType::CHAT,
+            ChatSignalConstants::RENAME => AgentType::CHAT,
         ];
 
         // Signal routing configuration
         $this->config = [
             'pages' => $pages,
             'groups' => $groups,
-            'signals' => [
-                SignalSource::SOURCE_WEBSOCKET => [
-                    // Legacy signals - direct routing
-                    SignalConstants::SIGNAL_FRAME => [
-                        'routeBy' => 'direct',
-                        'agentType' => AgentType::CHAT,
-                        'agentIndex' => null,
-                    ],
-                    SignalConstants::SIGNAL_FRAME_BINARY => [
-                        'routeBy' => 'direct',
-                        'agentType' => AgentType::CHAT,
-                        'agentIndex' => null,
-                    ],
-                    SignalConstants::SIGNAL_HANDSHAKE => [
-                        'routeBy' => 'direct',
-                        'agentType' => AgentType::CHAT,
-                        'agentIndex' => null,
-                    ],
-                    SignalConstants::SIGNAL_CLOSE => [
-                        'routeBy' => 'direct',
-                        'agentType' => AgentType::CHAT,
-                        'agentIndex' => null,
-                    ],
-                    // Page subscription signals - routing by page
-                    SignalConstants::SIGNAL_SUBSCRIBE_PAGE => [
-                        'routeBy' => 'page',
-                    ],
-                    SignalConstants::SIGNAL_UNSUBSCRIBE_PAGE => [
-                        'routeBy' => 'page',
-                    ],
-                    SignalConstants::SIGNAL_UPDATE_SUBSCRIPTION_PAGE => [
-                        'routeBy' => 'page',
-                    ],
-                    SignalConstants::SIGNAL_ACTION => [
-                        'routeBy' => 'page',
-                    ],
-                    // Group subscription signals - routing by group
-                    SignalConstants::SIGNAL_SUBSCRIBE_GROUP => [
-                        'routeBy' => 'group',
-                    ],
-                    SignalConstants::SIGNAL_UNSUBSCRIBE_GROUP => [
-                        'routeBy' => 'group',
-                    ],
-                    SignalConstants::SIGNAL_UPDATE_SUBSCRIPTION_GROUP => [
-                        'routeBy' => 'group',
-                    ],
-                ],
-            ],
+            'signals' => $signals,
+            'actions' => $actions,
         ];
     }
 }

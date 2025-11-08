@@ -6,13 +6,14 @@ namespace Hilos\Utils\DTO\WebSocket;
 
 use Hilos\Utils\DTO\BaseDTO;
 use Hilos\Utils\DTO\SignalDataDTO;
+use Hilos\Core\Router\SignalDataInterface;
 
 /**
  * WebSocketActionSignalDTO - DTO for WebSocket action signal
  *
  * Represents an action signal sent from WebSocket client.
  */
-class WebSocketActionSignalDTO extends BaseDTO implements SignalDataDTO
+class WebSocketActionSignalDTO extends BaseDTO implements SignalDataDTO, SignalDataInterface
 {
     // Field name constants
     public const string CLIENT_ID = 'clientId';

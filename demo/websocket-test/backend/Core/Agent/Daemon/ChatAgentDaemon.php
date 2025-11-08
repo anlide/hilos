@@ -23,7 +23,7 @@ class ChatAgentDaemon extends AbstractAgentDaemon
      */
     public function __construct()
     {
-        Logger::info("ChatAgentDaemon created [daemon side] [type=" . self::AGENT_TYPE . "]");
+        Logger::debug("ChatAgentDaemon created [type=" . self::AGENT_TYPE . "]");
     }
 
     /**

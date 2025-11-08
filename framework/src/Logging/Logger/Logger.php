@@ -20,6 +20,9 @@ class Logger
     /** @var bool Whether to show log level prefix [INFO], [ERROR], [DEBUG] (default: false) */
     private static bool $showLogLevel = false;
 
+    /** @var bool Whether to enable debug logging (default: false) */
+    private static bool $debugEnabled = false;
+
     /** @var string Agent log marker for parsing in daemon */
     private const string AGENT_LOG_MARKER = '[AGENT_LOG]';
 
@@ -41,6 +44,16 @@ class Logger
     public static function setShowLogLevel(bool $showLogLevel): void
     {
         self::$showLogLevel = $showLogLevel;
+    }
+
+    /**
+     * Enable or disable debug logging
+     *
+     * @param bool $enabled If true, debug messages will be logged, otherwise they will be ignored
+     */
+    public static function setDebugEnabled(bool $enabled): void
+    {
+        self::$debugEnabled = $enabled;
     }
 
     /**
@@ -68,11 +81,17 @@ class Logger
     /**
      * Log debug message
      *
+     * Only logs if debug logging is enabled via setDebugEnabled(true).
+     * By default, debug logging is disabled.
+     *
      * @param string $message Debug message
      * @param array $context Optional context data
      */
     public static function debug(string $message, array $context = []): void
     {
+        if (!self::$debugEnabled) {
+            return;
+        }
         self::log('DEBUG', $message, $context);
     }
 

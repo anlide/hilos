@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Hilos\Core\Router;
 
 use Hilos\Utils\DTO\SignalDTO;
-use Hilos\Utils\DTO\SignalDataDTO;
 use Hilos\Logging\Logger\Logger;
 use Hilos\Exception\Router\PageSubscriptionNotFoundException;
 use Hilos\Exception\Router\PageSubscriptionMismatchException;
@@ -72,16 +71,16 @@ class SignalRouter
      * Supports routing by page, group, or direct routing.
      *
      * @param SignalSourceInterface $signalSource Signal source identifier
-     * @param string $signalType Signal type (e.g., 'frame', 'handshake', 'close', 'subscribe', 'action')
-     * @param SignalDataDTO $dto Signal data DTO
+     * @param SignalTypeInterface $signalType Signal type (e.g., 'frame', 'handshake', 'close', 'subscribe', 'action')
+     * @param SignalDataInterface $dto Signal data DTO
      * @return ?array Routing info ['agentType' => string, 'agentIndex' => ?string] or null if no route
      */
-    public function route(SignalSourceInterface $signalSource, string $signalType, SignalDataDTO $dto): ?array
+    public function route(SignalSourceInterface $signalSource, SignalTypeInterface $signalType, SignalDataInterface $dto): ?array
     {
         $source = $signalSource->getSource();
+        $signalTypeValue = $signalType->getType();
 
-        // Support both old config structure (direct) and new structure (with 'signals' key)
-        $signalsConfig = $this->config['signals'] ?? $this->config;
+        $signalsConfig = $this->config['signals'];
 
         // Check if source exists in config
         if (!isset($signalsConfig[$source])) {
@@ -91,154 +90,16 @@ class SignalRouter
         $sourceConfig = $signalsConfig[$source];
 
         // Check if signal type exists in source config
-        if (!isset($sourceConfig[$signalType])) {
+        if (!isset($sourceConfig[$signalTypeValue])) {
             return null;
         }
 
-        $routeConfig = $sourceConfig[$signalType];
+        $routeConfig = $sourceConfig[$signalTypeValue];
 
-        // Get routeBy method (default to 'direct' for backward compatibility)
-        $routeBy = $routeConfig['routeBy'] ?? 'direct';
-
-        // Route by page subscription
-        if ($routeBy === 'page') {
-            return $this->routeByPage($dto, $routeConfig, $signalType);
-        }
-
-        // Route by group subscription
-        if ($routeBy === 'group') {
-            return $this->routeByGroup($dto, $routeConfig, $signalType);
-        }
-
-        // Direct routing (backward compatibility)
-        if (!isset($routeConfig['agentType'])) {
-            return null;
-        }
-
-        return [
-            'agentType' => $routeConfig['agentType'],
-            'agentIndex' => $routeConfig['agentIndex'] ?? null,
-        ];
-    }
-
-    /**
-     * Route signal by page subscription
-     *
-     * @param SignalDataDTO $dto Signal DTO
-     * @param array $routeConfig Route configuration
-     * @param string $signalType Signal type
-     * @return ?array Routing info or null
-     */
-    private function routeByPage(SignalDataDTO $dto, array $routeConfig, string $signalType): ?array
-    {
-        $dtoData = $dto->toArray();
-        $clientId = $dtoData['clientId'] ?? '';
-
-        if ($clientId === '') {
-            return null;
-        }
-
-        // For subscribe/unsubscribe signals, get page from DTO
-        if (in_array($signalType, ['subscribe', 'unsubscribe', 'update_subscription'], true)) {
-            $page = $dtoData['page'] ?? null;
-            if ($page === null) {
-                return null;
-            }
-
-            // Get route from pages config
-            if (!isset($this->config['pages'][$page])) {
-                return null;
-            }
-
-            $pageConfig = $this->config['pages'][$page];
+        if (is_string($routeConfig)) {
             return [
-                'agentType' => $pageConfig['agentType'] ?? '',
-                'agentIndex' => $pageConfig['agentIndex'] ?? null,
-            ];
-        }
-
-        // For action signals, get page from user subscription or DTO
-        if ($signalType === 'action') {
-            $page = $dtoData['page'] ?? $this->getUserPage($clientId);
-            if ($page === null) {
-                return null;
-            }
-
-            // Get route from pages config
-            if (!isset($this->config['pages'][$page])) {
-                return null;
-            }
-
-            $pageConfig = $this->config['pages'][$page];
-            return [
-                'agentType' => $pageConfig['agentType'] ?? '',
-                'agentIndex' => $pageConfig['agentIndex'] ?? null,
-            ];
-        }
-
-        return null;
-    }
-
-    /**
-     * Route signal by group subscription
-     *
-     * @param SignalDataDTO $dto Signal DTO
-     * @param array $routeConfig Route configuration
-     * @param string $signalType Signal type
-     * @return ?array Routing info or null (returns first matching group route)
-     */
-    private function routeByGroup(SignalDataDTO $dto, array $routeConfig, string $signalType): ?array
-    {
-        $dtoData = $dto->toArray();
-        $clientId = $dtoData['clientId'] ?? '';
-
-        if ($clientId === '') {
-            return null;
-        }
-
-        // For subscribe/unsubscribe signals, get groups from DTO
-        if (in_array($signalType, ['subscribe', 'unsubscribe', 'update_subscription'], true)) {
-            $groups = $dtoData['groups'] ?? [];
-            if (empty($groups)) {
-                return null;
-            }
-
-            // Get route from first group in config
-            foreach ($groups as $group) {
-                if (isset($this->config['groups'][$group])) {
-                    $groupConfig = $this->config['groups'][$group];
-                    return [
-                        'agentType' => $groupConfig['agentType'] ?? '',
-                        'agentIndex' => $groupConfig['agentIndex'] ?? null,
-                    ];
-                }
-            }
-
-            return null;
-        }
-
-        // For action signals, get group from DTO or user subscriptions
-        if ($signalType === 'action') {
-            $group = $dtoData['group'] ?? null;
-            if ($group === null) {
-                // Try to get first group from user subscriptions
-                $userGroups = $this->getUserGroups($clientId);
-                if (empty($userGroups)) {
-                    return null;
-                }
-                // Get first group name from array keys
-                $group = array_key_first($userGroups);
-            }
-
-            // Get route from groups config
-            if (!isset($this->config['groups'][$group])) {
-                return null;
-            }
-
-            $groupConfig = $this->config['groups'][$group];
-            return [
-                'agentType' => $groupConfig['agentType'] ?? '',
-                'agentIndex' => $groupConfig['agentIndex'] ?? null,
+                'agentType' => $routeConfig,
+                'agentIndex' => null,
             ];
         }
 
@@ -253,19 +114,21 @@ class SignalRouter
      * Routing is performed during dispatch, not during queue.
      *
      * @param SignalSourceInterface $signalSource Signal source identifier
-     * @param string $signalType Signal type (e.g., 'frame', 'handshake', 'close')
-     * @param string $signalName Signal name
-     * @param SignalDataDTO $data Signal data DTO
+     * @param SignalTypeInterface $signalType Signal type (e.g., 'frame', 'handshake', 'close')
+     * @param SignalNameInterface $signalName Signal name
+     * @param SignalDataInterface $signalData Signal data DTO
      */
-    public function queueSignal(SignalSourceInterface $signalSource, string $signalType, string $signalName, SignalDataDTO $data): void
+    public function queueSignal(SignalSourceInterface $signalSource, SignalTypeInterface $signalType, SignalNameInterface $signalName, SignalDataInterface $signalData): void
     {
         // Create SignalDTO and queue it
-        $signal = new SignalDTO($signalSource, $signalType, $signalName, $data);
+        $signal = new SignalDTO($signalSource, $signalType, $signalName, $signalData);
         $this->queuedSignals[] = $signal;
 
         // Log signal queued
         $source = $signalSource->getSource();
-        Logger::info("Signal queued: {$source}/{$signalType}/{$signalName}");
+        $signalTypeValue = $signalType->getType();
+        $signalNameValue = $signalName->getName();
+        Logger::info("Signal queued: {$source}/{$signalTypeValue}/{$signalNameValue}");
     }
 
     /**
@@ -406,74 +269,6 @@ class SignalRouter
     {
         unset($this->subscriptions[$clientId]);
         unset($this->subscriptionGroups[$clientId]);
-    }
-
-    /**
-     * Get user's page subscription
-     *
-     * @param string $clientId Client identifier
-     * @return ?string Page identifier or null if not subscribed
-     */
-    public function getUserPage(string $clientId): ?string
-    {
-        return $this->subscriptions[$clientId]['page'] ?? null;
-    }
-
-    /**
-     * Get user's page subscription params
-     *
-     * @param string $clientId Client identifier
-     * @return array Page subscription parameters
-     */
-    public function getUserPageParams(string $clientId): array
-    {
-        return $this->subscriptions[$clientId]['params'] ?? [];
-    }
-
-    /**
-     * Get user's group subscriptions
-     *
-     * @param string $clientId Client identifier
-     * @return array Array of group names (keys) with their params (values)
-     */
-    public function getUserGroups(string $clientId): array
-    {
-        return $this->subscriptionGroups[$clientId] ?? [];
-    }
-
-    /**
-     * Get user's group subscription params
-     *
-     * @param string $clientId Client identifier
-     * @param string $group Group identifier
-     * @return array Group subscription parameters or empty array if not subscribed
-     */
-    public function getUserGroupParams(string $clientId, string $group): array
-    {
-        return $this->subscriptionGroups[$clientId][$group] ?? [];
-    }
-
-    /**
-     * Check if user has page subscription
-     *
-     * @param string $clientId Client identifier
-     * @return bool True if user is subscribed to a page
-     */
-    public function hasPageSubscription(string $clientId): bool
-    {
-        return isset($this->subscriptions[$clientId]['page']) && $this->subscriptions[$clientId]['page'] !== null;
-    }
-
-    /**
-     * Check if user has group subscription
-     *
-     * @param string $clientId Client identifier
-     * @param string $group Group identifier
-     * @return bool True if user is subscribed to the group
-     */
-    public function hasGroupSubscription(string $clientId, string $group): bool
-    {
-        return isset($this->subscriptionGroups[$clientId][$group]);
     }
 
     /**

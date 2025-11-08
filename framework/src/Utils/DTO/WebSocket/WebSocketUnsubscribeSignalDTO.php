@@ -6,13 +6,14 @@ namespace Hilos\Utils\DTO\WebSocket;
 
 use Hilos\Utils\DTO\BaseDTO;
 use Hilos\Utils\DTO\SignalDataDTO;
+use Hilos\Core\Router\SignalDataInterface;
 
 /**
  * WebSocketUnsubscribeSignalDTO - DTO for WebSocket unsubscribe signal
  *
  * Represents an unsubscribe signal sent from WebSocket client.
  */
-class WebSocketUnsubscribeSignalDTO extends BaseDTO implements SignalDataDTO
+class WebSocketUnsubscribeSignalDTO extends BaseDTO implements SignalDataDTO, SignalDataInterface
 {
     // Field name constants
     public const string CLIENT_ID = 'clientId';
