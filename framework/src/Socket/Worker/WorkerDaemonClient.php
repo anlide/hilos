@@ -34,8 +34,8 @@ class WorkerDaemonClient extends AbstractSocket
     /** @var bool Whether connection attempt has been made */
     private bool $connectionAttempted = false;
 
-    /** @var callable|null Message handler callback */
-    private $messageHandler = null;
+    /** @var array<array> Message queue for received messages */
+    private array $messageQueue = [];
 
     /**
      * Connect to daemon WorkerServer (non-blocking)
@@ -136,13 +136,20 @@ class WorkerDaemonClient extends AbstractSocket
     }
 
     /**
-     * Set message handler callback
+     * Get next message from queue
      *
-     * @param callable $handler Callback function(array $data): void
+     * Returns one message from queue and removes it.
+     * Returns null if queue is empty.
+     *
+     * @return ?array Message data or null if queue is empty
      */
-    public function setMessageHandler(callable $handler): void
+    public function getNextMessage(): ?array
     {
-        $this->messageHandler = $handler;
+        if (empty($this->messageQueue)) {
+            return null;
+        }
+
+        return array_shift($this->messageQueue);
     }
 
     /**
@@ -217,8 +224,8 @@ class WorkerDaemonClient extends AbstractSocket
             $this->readBuffer = substr($this->readBuffer, $pos + 1);
             
             $data = json_decode($message, true);
-            if ($data !== null && $this->messageHandler !== null) {
-                ($this->messageHandler)($data);
+            if ($data !== null) {
+                $this->messageQueue[] = $data;
             }
         }
     }
@@ -246,6 +253,7 @@ class WorkerDaemonClient extends AbstractSocket
         $this->connectionAttempted = false;
         $this->readBuffer = '';
         $this->writeBuffer = '';
+        $this->messageQueue = [];
     }
 
     /**

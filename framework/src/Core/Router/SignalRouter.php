@@ -128,7 +128,7 @@ class SignalRouter
         $source = $signalSource->getSource();
         $signalTypeValue = $signalType->getType();
         $signalNameValue = $signalName->getName();
-        Logger::info("Signal queued: {$source}/{$signalTypeValue}/{$signalNameValue}");
+        Logger::debug("Signal queued: {$source}/{$signalTypeValue}/{$signalNameValue}");
     }
 
     /**

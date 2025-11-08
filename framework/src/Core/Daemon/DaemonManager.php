@@ -174,7 +174,7 @@ abstract class DaemonManager extends BaseManager
      */
     private function initiateShutdown(): void
     {
-        Logger::info("Shutdown initiated, preparing servers for graceful shutdown");
+        Logger::debug("Shutdown initiated, preparing servers for graceful shutdown");
 
         // Tell all servers to prepare for shutdown
         foreach ($this->servers as $server) {
@@ -435,15 +435,12 @@ abstract class DaemonManager extends BaseManager
                         $agentType = $destination['agentType'] ?? 'unknown';
                         $agentIndex = $destination['agentIndex'] ?? null;
                         $indexInfo = $agentIndex !== null ? " (index: {$agentIndex})" : '';
-                        Logger::info("Dispatching signal: {$signalType}/{$signalName} -> agent: {$agentType}{$indexInfo}");
+                        Logger::debug("Dispatching signal: {$signalType}/{$signalName} -> agent: {$agentType}{$indexInfo}");
                         try {
                             $workerServer->sendSignalToAgent(
                                 $destination['agentType'],
                                 $destination['agentIndex'],
-                                [
-                                    'signalType' => $signal->signalType->getType(),
-                                    'data' => $data,
-                                ]
+                                $signal,
                             );
                         } catch (NoSuitableWorkerException $e) {
                             // During shutdown, workers may be unavailable - ignore this error

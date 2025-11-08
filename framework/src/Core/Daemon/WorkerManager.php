@@ -103,6 +103,15 @@ abstract class WorkerManager extends BaseManager
                     $this->logError("Daemon client error: " . $e->getMessage());
                 }
 
+                // Process messages from daemon queue
+                while (($message = $this->daemonClient->getNextMessage()) !== null) {
+                    try {
+                        $this->handleDaemonMessage($message);
+                    } catch (AgentCreationFailedException $e) {
+                        $this->logError("Failed to handle daemon message: " . $e->getMessage());
+                    }
+                }
+
                 // Call tick method (only when connected)
                 $this->onTick();
 
@@ -148,7 +157,6 @@ abstract class WorkerManager extends BaseManager
     private function connectToDaemon(): void
     {
         $this->daemonClient = new WorkerDaemonClient();
-        $this->daemonClient->setMessageHandler([$this, 'handleDaemonMessage']);
         $this->daemonClient->connect();
 
         // Send worker registration message (will be sent when connection is established)
@@ -168,6 +176,7 @@ abstract class WorkerManager extends BaseManager
     public function handleDaemonMessage(array $data): void
     {
         $type = $data['type'] ?? '';
+        Logger::info("Received message from daemon: type={$type}, data=" . json_encode($data));
 
         switch ($type) {
             case 'worker_registered':
@@ -397,6 +406,15 @@ abstract class WorkerManager extends BaseManager
      * Only called when connection to daemon is established.
      */
     abstract protected function onTick(): void;
+
+    /**
+     * Create agent manager instance
+     *
+     * Must be implemented in child classes to create specific agent manager.
+     *
+     * @return AgentManager Agent manager instance
+     */
+    abstract protected function createAgentManager(): AgentManager;
 
     /** @return string Manager name for logging */
     protected function getManagerName(): string

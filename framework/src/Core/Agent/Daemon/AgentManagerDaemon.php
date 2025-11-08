@@ -254,7 +254,7 @@ abstract class AgentManagerDaemon
         $agentDaemon->setWorkerClient($workerClient);
         $agentDaemon->onStart();
 
-        Logger::info("Agent {$agentId} started on worker #{$workerClient->getWorkerIndex()}");
+        Logger::info("Agent '{$agentId}' started on worker #{$workerClient->getWorkerIndex()}");
     }
 
     /**

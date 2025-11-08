@@ -22,6 +22,7 @@ use Hilos\Exception\Worker\AgentNotFoundException;
 use Hilos\Exception\Worker\AgentNotLinkedToWorkerException;
 use Hilos\Exception\Worker\WorkerClientNotFoundException;
 use Hilos\Utils\DTO\Worker\AgentMessageDTO;
+use Hilos\Utils\DTO\SignalDTO;
 use Hilos\Socket\Client\ClientInterface;
 use Hilos\Socket\Client\Interface\WorkerClientInterface;
 use Hilos\Socket\Client\WorkerClient;
@@ -45,11 +46,11 @@ abstract class WorkerServer extends AbstractServer
     /** @var array<string, array{process: Process, type: string, index: int}> Workers indexed by key (format: "type:index") */
     private array $workers = [];
 
-    /** @var array<string, array<int>> Available worker indices by type (sorted, can be reused) */
-    private array $availableIndices = ['regular' => [], 'monopolistic' => []];
+    /** @var array<int> Available worker indices (sorted, can be reused) */
+    private array $availableIndices = [];
 
-    /** @var array<string, int> Next worker index to assign if no available, by type */
-    private array $nextWorkerIndex = ['regular' => 1, 'monopolistic' => 1];
+    /** @var int Next worker index to assign if no available */
+    private int $nextWorkerIndex = 1;
 
     /** @var float Graceful shutdown timeout in seconds */
     protected float $shutdownTimeout = 5.0;
@@ -215,18 +216,15 @@ abstract class WorkerServer extends AbstractServer
     /**
      * Get next available worker index
      *
-     * @param bool $isMonopolistic True if monopolistic
      * @return int Worker index
      */
-    private function getNextWorkerIndex(bool $isMonopolistic): int
+    private function getNextWorkerIndex(): int
     {
-        $type = $isMonopolistic ? 'monopolistic' : 'regular';
-
-        if (!empty($this->availableIndices[$type])) {
-            return array_shift($this->availableIndices[$type]);
+        if (!empty($this->availableIndices)) {
+            return array_shift($this->availableIndices);
         }
 
-        return $this->nextWorkerIndex[$type]++;
+        return $this->nextWorkerIndex++;
     }
 
     /**
@@ -239,8 +237,8 @@ abstract class WorkerServer extends AbstractServer
     private function removeWorker(string $key, string $type, int $index): void
     {
         unset($this->workers[$key]);
-        $this->availableIndices[$type][] = $index;
-        sort($this->availableIndices[$type]); // Keep sorted
+        $this->availableIndices[] = $index;
+        sort($this->availableIndices); // Keep sorted
     }
 
     /**
@@ -577,7 +575,8 @@ abstract class WorkerServer extends AbstractServer
     /**
      * Start worker process
      *
-     * Uses minimum available index, or next sequential if none available.
+     * Uses next available index (reused from stopped workers if available, otherwise next sequential).
+     * All workers share the same index space regardless of type.
      *
      * @param bool $isMonopolistic True if monopolistic worker
      * @throws CouldNotStartException If worker cannot be started
@@ -588,7 +587,7 @@ abstract class WorkerServer extends AbstractServer
         $type = $isMonopolistic ? 'monopolistic' : 'regular';
 
         // Get next available index
-        $workerIndex = $this->getNextWorkerIndex($isMonopolistic);
+        $workerIndex = $this->getNextWorkerIndex();
 
         // Create process
         $process = new Process(
@@ -628,7 +627,7 @@ abstract class WorkerServer extends AbstractServer
 
             try {
                 $process->stop($this->shutdownTimeout); // Send SIGTERM with timeout
-                Logger::info("Sent stop signal to {$type} worker #{$index}");
+                Logger::debug("Sent stop signal to {$type} worker #{$index}");
             } catch (\Throwable $e) {
                 Logger::error("Failed to stop {$type} worker #{$index}: " . $e->getMessage());
                 // Force remove if stop failed
@@ -795,14 +794,14 @@ abstract class WorkerServer extends AbstractServer
      *
      * @param string $agentType Agent type
      * @param ?string $agentIndex Agent index (optional)
-     * @param array $data Signal data
+     * @param SignalDTO $signal Signal DTO
      * @throws AgentDaemonCreationFailedException If agent daemon cannot be created
      * @throws NoSuitableWorkerException If no suitable worker is available
      * @throws AgentNotFoundException If agent does not exist after startAgent() call
      * @throws AgentNotLinkedToWorkerException If agent is not linked to worker
      * @throws WorkerClientNotFoundException If worker client is not found for agent
      */
-    public function sendSignalToAgent(string $agentType, ?string $agentIndex, array $data): void
+    public function sendSignalToAgent(string $agentType, ?string $agentIndex, SignalDTO $signal): void
     {
         $agentId = $this->buildAgentId($agentType, $agentIndex);
 
@@ -844,16 +843,7 @@ abstract class WorkerServer extends AbstractServer
         }
 
         // Agent exists and is linked, send signal immediately
-        // Create and send signal DTO
-        $dto = new AgentMessageDTO(
-            type: AgentMessageDTO::TYPE_AGENT_SIGNAL,
-            agentId: $agentId,
-            agentType: $agentType,
-            agentIndex: $agentIndex,
-            data: $data,
-        );
-
-        $agentDaemon->sendToAgent($dto);
+        $agentDaemon->sendToAgent($signal);
     }
 
     /**
