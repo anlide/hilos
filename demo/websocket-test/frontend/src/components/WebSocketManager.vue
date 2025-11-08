@@ -11,8 +11,7 @@ const chatStore = useChatStore()
 
 let ws: WebSocket | null = null
 let reconnectTimer: number | null = null
-let reconnectDelay = 1000 // Start with 1 second
-const maxReconnectDelay = 30000 // Max 30 seconds
+const reconnectDelay = 500 // Fixed 500ms delay between reconnection attempts
 
 const connect = () => {
   if (ws?.readyState === WebSocket.OPEN) {
@@ -30,7 +29,6 @@ const connect = () => {
       chatStore.setConnected(true)
       chatStore.setConnecting(false)
       chatStore.setError(null)
-      reconnectDelay = 1000 // Reset delay on successful connection
       chatStore.addNotification('Connected to server', 'user_joined')
       
       // Send initial username to server
@@ -80,15 +78,11 @@ const scheduleReconnect = () => {
     clearTimeout(reconnectTimer)
   }
 
-  if (chatStore.reconnectAttempts < chatStore.maxReconnectAttempts) {
-    chatStore.incrementReconnectAttempts()
-    
-    reconnectTimer = window.setTimeout(() => {
-      connect()
-      // Exponential backoff with max delay
-      reconnectDelay = Math.min(reconnectDelay * 1.5, maxReconnectDelay)
-    }, reconnectDelay)
-  }
+  chatStore.incrementReconnectAttempts()
+  
+  reconnectTimer = window.setTimeout(() => {
+    connect()
+  }, reconnectDelay)
 }
 
 const sendMessage = (message: string) => {
