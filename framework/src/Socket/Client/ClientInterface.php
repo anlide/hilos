@@ -42,6 +42,11 @@ interface ClientInterface
     public function shouldClose(): bool;
 
     /**
+     * Mark socket for closing
+     */
+    public function markShouldClose(): void;
+
+    /**
      * Close client connection
      * 
      * @throws SocketException

@@ -111,7 +111,7 @@ abstract class AbstractClient extends AbstractSocket implements ClientInterface
     /**
      * Mark socket for closing (abstract implementation from AbstractSocket)
      */
-    protected function markShouldClose(): void
+    public function markShouldClose(): void
     {
         $this->shouldClose = true;
     }

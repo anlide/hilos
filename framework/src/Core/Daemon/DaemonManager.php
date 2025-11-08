@@ -87,6 +87,7 @@ abstract class DaemonManager extends BaseManager
      * and precise timing control. Runs until shutdown signal is received
      * and all servers are ready to shutdown (or timeout expires).
      * @throws AgentDaemonCreationFailedException
+     * @throws NoSuitableWorkerException
      */
     public function run(): void
     {
@@ -159,7 +160,7 @@ abstract class DaemonManager extends BaseManager
         }
 
         // Check if all servers are ready
-        return array_any($this->servers, fn($server) => !$server->isReadyToShutdown());
+        return array_any($this->servers, fn(ServerInterface $server) => !$server->isReadyToShutdown());
 
         // All servers ready, can exit
     }

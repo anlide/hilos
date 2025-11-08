@@ -177,13 +177,8 @@ abstract class AbstractServer extends AbstractSocket implements ServerInterface
         // socket_accept
         $clientSocket = socket_accept($this->socket);
         if ($clientSocket === false) {
-            // EWOULDBLOCK is normal in non-blocking mode, just return null
-            $errorCode = socket_last_error($this->socket);
-            if ($errorCode === self::ERR_WOULDBLOCK || $errorCode === self::WSA_WOULDBLOCK) {
-                socket_clear_error($this->socket);
-                return null;
-            }
-            // For other errors, handle through unified error handler
+            // handleSocketError will handle ERR_WOULDBLOCK/WSA_WOULDBLOCK (returns silently)
+            // For other errors, it will throw appropriate exceptions
             $this->handleSocketError(SocketOperation::ACCEPT);
             return null;
         }
@@ -205,7 +200,7 @@ abstract class AbstractServer extends AbstractSocket implements ServerInterface
      *
      * Servers don't auto-close on errors - this is a no-op for servers.
      */
-    protected function markShouldClose(): void
+    public function markShouldClose(): void
     {
         // Servers don't auto-close on socket errors
         // They continue running or are explicitly stopped via stop()

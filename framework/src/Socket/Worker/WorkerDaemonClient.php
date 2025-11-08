@@ -70,17 +70,12 @@ class WorkerDaemonClient extends AbstractSocket
         }
 
         // Connect (non-blocking)
-        $result = @socket_connect($this->socket, $host, $port);
+        $result = socket_connect($this->socket, $host, $port);
         if ($result === false) {
-            $errorCode = socket_last_error($this->socket);
-            // EWOULDBLOCK, WSA_WOULDBLOCK, and EINPROGRESS are expected for non-blocking connect
-            if ($errorCode !== self::ERR_WOULDBLOCK 
-                && $errorCode !== self::WSA_WOULDBLOCK 
-                && $errorCode !== self::ERR_INPROGRESS) {
-                $this->handleSocketError(SocketOperation::CONNECT);
-                return;
-            }
-            // Connection started, will complete asynchronously
+            // handleSocketError will handle ERR_INPROGRESS, ERR_WOULDBLOCK/WSA_WOULDBLOCK (returns silently)
+            // For other errors, it will throw appropriate exceptions
+            $this->handleSocketError(SocketOperation::CONNECT);
+            // Connection started, will complete asynchronously (if no exception was thrown)
         }
 
         // Connection started (non-blocking), will be checked asynchronously
@@ -112,12 +107,8 @@ class WorkerDaemonClient extends AbstractSocket
         $result = socket_select($read, $write, $except, 0);
 
         if ($result === false) {
-            // Error occurred
-            $errorCode = socket_last_error($this->socket);
-            if ($errorCode !== self::ERR_WOULDBLOCK && $errorCode !== self::WSA_WOULDBLOCK) {
-                socket_clear_error($this->socket);
-                $this->handleSocketError(SocketOperation::CONNECT);
-            }
+            // Error occurred - handleSocketError will handle ERR_WOULDBLOCK/WSA_WOULDBLOCK
+            $this->handleSocketError(SocketOperation::CONNECT);
             return;
         }
 
@@ -174,11 +165,7 @@ class WorkerDaemonClient extends AbstractSocket
         }
 
         if ($data === false) {
-            $errorCode = socket_last_error($this->socket);
-            if ($errorCode === self::ERR_WOULDBLOCK || $errorCode === self::WSA_WOULDBLOCK) {
-                socket_clear_error($this->socket);
-                return;
-            }
+            // handleSocketError will handle ERR_WOULDBLOCK/WSA_WOULDBLOCK
             $this->handleSocketError(SocketOperation::READ);
             return;
         }
@@ -201,11 +188,7 @@ class WorkerDaemonClient extends AbstractSocket
         $written = socket_write($this->socket, $this->writeBuffer);
         
         if ($written === false) {
-            $errorCode = socket_last_error($this->socket);
-            if ($errorCode === self::ERR_WOULDBLOCK || $errorCode === self::WSA_WOULDBLOCK) {
-                socket_clear_error($this->socket);
-                return;
-            }
+            // handleSocketError will handle ERR_WOULDBLOCK/WSA_WOULDBLOCK
             $this->handleSocketError(SocketOperation::WRITE);
             return;
         }
@@ -252,8 +235,6 @@ class WorkerDaemonClient extends AbstractSocket
 
     /**
      * Close connection
-     *
-     * @throws SocketException
      */
     public function close(): void
     {
@@ -270,7 +251,7 @@ class WorkerDaemonClient extends AbstractSocket
     /**
      * Mark socket for closing (abstract implementation)
      */
-    protected function markShouldClose(): void
+    public function markShouldClose(): void
     {
         $this->connected = false;
         // Keep connectionAttempted = true to prevent reconnection attempts

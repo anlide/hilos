@@ -96,7 +96,7 @@ class ChatWorkerManager extends WorkerManager
      */
     private function handleFrameSignal(string $agentId, array $data): void
     {
-        Logger::info("Frame signal received for agent {$agentId}: " . json_encode($data));
+        Logger::logAgentInfo($agentId, "Frame signal received for agent: " . json_encode($data));
     }
 
     /**
@@ -107,7 +107,7 @@ class ChatWorkerManager extends WorkerManager
      */
     private function handleHandshakeSignal(string $agentId, array $data): void
     {
-        Logger::info("Handshake signal received for agent {$agentId}: " . json_encode($data));
+        Logger::logAgentInfo($agentId, "Handshake signal received for agent: " . json_encode($data));
     }
 
     /**
@@ -118,7 +118,7 @@ class ChatWorkerManager extends WorkerManager
      */
     private function handleCloseSignal(string $agentId, array $data): void
     {
-        Logger::info("Close signal received for agent {$agentId}: " . json_encode($data));
+        Logger::logAgentInfo($agentId, "Close signal received for agent: " . json_encode($data));
     }
 
     /**
@@ -132,7 +132,7 @@ class ChatWorkerManager extends WorkerManager
         $clientId = $data['clientId'] ?? '';
         $page = $data['page'] ?? null;
         $groups = $data['groups'] ?? [];
-        Logger::info("Subscribe signal received for agent {$agentId}, client {$clientId}, page: " . ($page ?? 'null') . ", groups: " . json_encode($groups));
+        Logger::logAgentInfo($agentId, "Subscribe signal received for agent, client {$clientId}, page: " . ($page ?? 'null') . ", groups: " . json_encode($groups));
     }
 
     /**
@@ -146,7 +146,7 @@ class ChatWorkerManager extends WorkerManager
         $clientId = $data['clientId'] ?? '';
         $action = $data['action'] ?? '';
         $actionData = $data['data'] ?? [];
-        Logger::info("Action signal received for agent {$agentId}, client {$clientId}, action: {$action}, data: " . json_encode($actionData));
+        Logger::logAgentInfo($agentId, "Action signal received for agent, client {$clientId}, action: {$action}, data: " . json_encode($actionData));
     }
 
     /**
@@ -160,7 +160,7 @@ class ChatWorkerManager extends WorkerManager
         $clientId = $data['clientId'] ?? '';
         $page = $data['page'] ?? false;
         $groups = $data['groups'] ?? [];
-        Logger::info("Unsubscribe signal received for agent {$agentId}, client {$clientId}, page: " . ($page ? 'true' : 'false') . ", groups: " . json_encode($groups));
+        Logger::logAgentInfo($agentId, "Unsubscribe signal received for agent, client {$clientId}, page: " . ($page ? 'true' : 'false') . ", groups: " . json_encode($groups));
     }
 
     /**
@@ -174,6 +174,6 @@ class ChatWorkerManager extends WorkerManager
         $clientId = $data['clientId'] ?? '';
         $page = $data['page'] ?? null;
         $groups = $data['groups'] ?? null;
-        Logger::info("Update subscription signal received for agent {$agentId}, client {$clientId}, page: " . ($page ?? 'null') . ", groups: " . ($groups !== null ? json_encode($groups) : 'null'));
+        Logger::logAgentInfo($agentId, "Update subscription signal received for agent, client {$clientId}, page: " . ($page ?? 'null') . ", groups: " . ($groups !== null ? json_encode($groups) : 'null'));
     }
 }

@@ -7,6 +7,7 @@ namespace Hilos\Socket\Server;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Exception\SocketException;
 use Hilos\Socket\Client\Interface\WebSocketClientInterface;
+use Hilos\Socket\SocketOperation;
 
 /**
  * WebSocketServer - WebSocket server implementation
@@ -56,10 +57,15 @@ abstract class WebSocketServer extends AbstractServer
      * Prepare server for shutdown
      *
      * Stops accepting new connections.
+     * Closing all connected clients.
      */
     public function prepareShutdown(): void
     {
         parent::prepareShutdown();
+
+        foreach ($this->clients as $client) {
+            $client->markShouldClose();
+        }
     }
 
     /**
@@ -89,7 +95,7 @@ abstract class WebSocketServer extends AbstractServer
         if ($this->socket !== null) {
             socket_close($this->socket);
             // Check for errors during close
-            $this->handleSocketError(\Hilos\Socket\SocketOperation::CLOSE);
+            $this->handleSocketError(SocketOperation::CLOSE);
             $this->socket = null;
         }
 

@@ -322,5 +322,5 @@ abstract class AbstractSocket
      * For clients: sets shouldClose flag to true.
      * For servers: empty implementation (servers don't auto-close on errors).
      */
-    abstract protected function markShouldClose(): void;
+    abstract public function markShouldClose(): void;
 }
