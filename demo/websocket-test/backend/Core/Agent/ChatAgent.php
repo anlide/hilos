@@ -7,9 +7,6 @@ namespace Demo\WebSocketTest\Core\Agent;
 use Demo\WebSocketTest\Utils\Constants\AgentType;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Router\SignalDataInterface;
-use Hilos\Utils\DTO\Agent\AgentMessageDTOInterface;
-use Hilos\Utils\DTO\Agent\MessageFromDaemonDTO;
-use Hilos\Utils\DTO\Agent\MessageFromUserDTO;
 use Hilos\Utils\DTO\BaseDTO;
 use Hilos\Logging\Logger\Logger;
 
@@ -71,7 +68,7 @@ class ChatAgent extends AbstractAgent
     /**
      * Agent-specific tick implementation
      */
-    protected function doTick(): void
+    public function onTick(): void
     {
         $currentTime = microtime(true) * 1000;
 
@@ -80,49 +77,6 @@ class ChatAgent extends AbstractAgent
             $this->cleanupHistory();
             $this->lastCleanup = $currentTime;
         }
-    }
-
-    /**
-     * Handle message from daemon
-     *
-     * @param MessageFromDaemonDTO $message Message from daemon
-     * @return AgentMessageDTOInterface|null Response DTO
-     */
-    public function handleMessageFromDaemon(MessageFromDaemonDTO $message): ?AgentMessageDTOInterface
-    {
-        $action = $message->action;
-
-        switch ($action) {
-            case 'get_history':
-                // TODO: Return proper DTO
-                // For now return null - will be implemented with proper DTO
-                return null;
-
-            case 'add_event':
-                $eventType = $message->payload['eventType'] ?? '';
-                $eventData = $message->payload['eventData'] ?? [];
-                $this->addEvent($eventType, $eventData);
-                return null;
-
-            default:
-                return null;
-        }
-    }
-
-    /**
-     * Handle message from user
-     *
-     * @param MessageFromUserDTO $message Message from user
-     * @return AgentMessageDTOInterface|null Response DTO
-     */
-    public function handleMessageFromUser(MessageFromUserDTO $message): ?AgentMessageDTOInterface
-    {
-        // payload is array in MessageFromUserDTO, convert to string for logging
-        $payloadStr = json_encode($message->payload, JSON_UNESCAPED_UNICODE);
-        Logger::logAgentUserMessage($this->getId(), $message->userId, $payloadStr);
-        // Chat agent can receive messages from users
-        // TODO: Implement proper message handling with DTO
-        return null;
     }
 
     /**

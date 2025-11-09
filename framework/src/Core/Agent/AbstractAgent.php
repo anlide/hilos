@@ -6,10 +6,6 @@ namespace Hilos\Core\Agent;
 
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Utils\DTO\Agent\AgentMessageDTOInterface;
-use Hilos\Utils\DTO\Agent\MessageFromAgentDTO;
-use Hilos\Utils\DTO\Agent\MessageFromDaemonDTO;
-use Hilos\Utils\DTO\Agent\MessageFromUserDTO;
-use Hilos\Utils\DTO\Agent\MessageFromWorkerDTO;
 
 /**
  * AbstractAgent - Abstract base class for agents running in worker processes
@@ -18,7 +14,7 @@ use Hilos\Utils\DTO\Agent\MessageFromWorkerDTO;
  * - getType() - return agent type
  * - getIndex() - return agent index (can return null)
  * - doTick() - agent work logic (override this instead of tick())
- * - Message handling methods (can override for specific sources)
+ * - Signal handling methods (can override onSignal* methods for specific signal types)
  */
 abstract class AbstractAgent implements AgentInterface
 {
@@ -64,93 +60,6 @@ abstract class AbstractAgent implements AgentInterface
         if ($this->messageSender !== null) {
             ($this->messageSender)($this->getId(), $dto);
         }
-    }
-
-    /**
-     * Tick method - checks shouldStop flag and calls doTick() if agent is running
-     *
-     * If shouldStop flag is set, calls onStop() and marks agent for removal.
-     * Otherwise calls doTick() for agent-specific work.
-     *
-     * Child classes should override doTick() instead of tick().
-     */
-    public function onTick(): void
-    {
-        // Check if agent requested stop
-        if ($this->shouldStop) {
-            $this->onStop();
-            return;
-        }
-
-        // Call agent-specific tick implementation
-        $this->doTick();
-    }
-
-    /**
-     * Agent-specific tick implementation
-     *
-     * Child classes should override this method for agent-specific work.
-     * Called only when agent is not stopping.
-     */
-    protected function doTick(): void
-    {
-        // Default: do nothing
-    }
-
-    /**
-     * Default implementation - no message handling from daemon
-     *
-     * Child classes can override this method.
-     *
-     * @param MessageFromDaemonDTO $message Message from daemon
-     * @return AgentMessageDTOInterface|null Response DTO
-     */
-    public function handleMessageFromDaemon(MessageFromDaemonDTO $message): ?AgentMessageDTOInterface
-    {
-        // Default: no response
-        return null;
-    }
-
-    /**
-     * Default implementation - no message handling from user
-     *
-     * Child classes can override this method.
-     *
-     * @param MessageFromUserDTO $message Message from user
-     * @return AgentMessageDTOInterface|null Response DTO
-     */
-    public function handleMessageFromUser(MessageFromUserDTO $message): ?AgentMessageDTOInterface
-    {
-        // Default: no response
-        return null;
-    }
-
-    /**
-     * Default implementation - no message handling from agent
-     *
-     * Child classes can override this method.
-     *
-     * @param MessageFromAgentDTO $message Message from another agent
-     * @return AgentMessageDTOInterface|null Response DTO
-     */
-    public function handleMessageFromAgent(MessageFromAgentDTO $message): ?AgentMessageDTOInterface
-    {
-        // Default: no response
-        return null;
-    }
-
-    /**
-     * Default implementation - no message handling from worker
-     *
-     * Child classes can override this method.
-     *
-     * @param MessageFromWorkerDTO $message Message from worker
-     * @return AgentMessageDTOInterface|null Response DTO
-     */
-    public function handleMessageFromWorker(MessageFromWorkerDTO $message): ?AgentMessageDTOInterface
-    {
-        // Default: no response
-        return null;
     }
 
     /**

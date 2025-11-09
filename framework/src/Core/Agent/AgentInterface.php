@@ -5,11 +5,6 @@ declare(strict_types=1);
 namespace Hilos\Core\Agent;
 
 use Hilos\Core\Router\SignalDataInterface;
-use Hilos\Utils\DTO\Agent\AgentMessageDTOInterface;
-use Hilos\Utils\DTO\Agent\MessageFromAgentDTO;
-use Hilos\Utils\DTO\Agent\MessageFromDaemonDTO;
-use Hilos\Utils\DTO\Agent\MessageFromUserDTO;
-use Hilos\Utils\DTO\Agent\MessageFromWorkerDTO;
 
 /**
  * AgentInterface - Interface for agents running in worker processes
@@ -47,38 +42,6 @@ interface AgentInterface
      * Performs agent's work on each tick. Called approximately every 100ms.
      */
     public function onTick(): void;
-
-    /**
-     * Handle message from daemon
-     *
-     * @param MessageFromDaemonDTO $message Message from daemon
-     * @return AgentMessageDTOInterface|null Response DTO (null if no response needed)
-     */
-    public function handleMessageFromDaemon(MessageFromDaemonDTO $message): ?AgentMessageDTOInterface;
-
-    /**
-     * Handle message from user (external source like WebSocket)
-     *
-     * @param MessageFromUserDTO $message Message from user
-     * @return AgentMessageDTOInterface|null Response DTO (null if no response needed)
-     */
-    public function handleMessageFromUser(MessageFromUserDTO $message): ?AgentMessageDTOInterface;
-
-    /**
-     * Handle message from another agent
-     *
-     * @param MessageFromAgentDTO $message Message from another agent
-     * @return AgentMessageDTOInterface|null Response DTO (null if no response needed)
-     */
-    public function handleMessageFromAgent(MessageFromAgentDTO $message): ?AgentMessageDTOInterface;
-
-    /**
-     * Handle message from worker process management
-     *
-     * @param MessageFromWorkerDTO $message Message from worker
-     * @return AgentMessageDTOInterface|null Response DTO (null if no response needed)
-     */
-    public function handleMessageFromWorker(MessageFromWorkerDTO $message): ?AgentMessageDTOInterface;
 
     /**
      * Called when agent is started
