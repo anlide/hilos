@@ -28,12 +28,6 @@ class ChatAgent extends AbstractAgent
     /** @var array<ChatEventInterface> Chat event history */
     private array $history = [];
 
-    /** @var float Last cleanup timestamp */
-    private float $lastCleanup = 0.0;
-
-    /** @var float Cleanup interval in milliseconds (5 minutes) */
-    private const float CLEANUP_INTERVAL = 300000.0; // 5 minutes
-
     /**
      * Get agent type
      *
@@ -195,12 +189,7 @@ class ChatAgent extends AbstractAgent
 
         // Handle cleanup cron task
         if ($name === 'cleanup_history') {
-            $currentTime = microtime(true) * 1000;
-            // Check if cleanup is needed (every 5 minutes)
-            if (($currentTime - $this->lastCleanup) >= self::CLEANUP_INTERVAL) {
-                $this->cleanupHistory();
-                $this->lastCleanup = $currentTime;
-            }
+            $this->cleanupHistory();
         }
     }
 }

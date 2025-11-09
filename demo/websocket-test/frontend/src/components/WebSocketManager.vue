@@ -11,7 +11,9 @@ const chatStore = useChatStore()
 
 let ws: WebSocket | null = null
 let reconnectTimer: number | null = null
+let pingTimer: number | null = null
 const reconnectDelay = 500 // Fixed 500ms delay between reconnection attempts
+const pingInterval = 40000 // 40 seconds in milliseconds
 
 const connect = () => {
   if (ws?.readyState === WebSocket.OPEN) {
@@ -30,6 +32,9 @@ const connect = () => {
       chatStore.setConnecting(false)
       chatStore.setError(null)
       chatStore.addNotification('Connected to server', 'user_joined')
+      
+      // Start ping interval
+      startPingInterval()
       
       // Send initial username to server
       // TODO: Send username when server supports it
@@ -58,6 +63,9 @@ const connect = () => {
     ws.onclose = () => {
       chatStore.setConnected(false)
       chatStore.setConnecting(false)
+      
+      // Stop ping interval
+      stopPingInterval()
       
       if (ws) {
         chatStore.addNotification('Connection lost. Reconnecting...', 'connection_lost')
@@ -98,11 +106,73 @@ const sendMessage = (message: string) => {
   }
 }
 
+/**
+ * Send WebSocket ping frame with opCode = 0x9
+ * 
+ * Browser WebSocket API doesn't allow direct control of opCode, so we create
+ * a ping frame manually and send it as binary data. The server recognizes
+ * ping frames inside binary payloads and handles them as OPCODE_PING.
+ */
+const sendPing = () => {
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    return
+  }
+
+  try {
+    // Try to use ping() method if available (Node.js ws library, etc.)
+    if (typeof (ws as any).ping === 'function') {
+      ;(ws as any).ping()
+      return
+    }
+
+    // Create WebSocket ping frame manually (RFC 6455)
+    // Structure: [0x89 (FIN+PING), 0x80 (MASK+len0), mask_key_4_bytes]
+    const frame = new Uint8Array(6)
+    frame[0] = 0x89 // FIN (0x80) | PING opCode (0x09)
+    frame[1] = 0x80 // MASK (0x80) | payload length 0
+    
+    // Generate 4-byte masking key (required for client-to-server frames)
+    const mask = crypto.getRandomValues(new Uint8Array(4))
+    frame[2] = mask[0] ?? 0
+    frame[3] = mask[1] ?? 0
+    frame[4] = mask[2] ?? 0
+    frame[5] = mask[3] ?? 0
+    
+    // Send as binary - server will detect ping frame structure and handle as OPCODE_PING
+    ws.send(frame.buffer)
+  } catch (error) {
+    console.error('Error sending ping:', error)
+  }
+}
+
+/**
+ * Start ping interval - sends ping every 40 seconds
+ */
+const startPingInterval = () => {
+  stopPingInterval() // Clear any existing interval
+  
+  pingTimer = window.setInterval(() => {
+    sendPing()
+  }, pingInterval)
+}
+
+/**
+ * Stop ping interval
+ */
+const stopPingInterval = () => {
+  if (pingTimer !== null) {
+    clearInterval(pingTimer)
+    pingTimer = null
+  }
+}
+
 const disconnect = () => {
   if (reconnectTimer) {
     clearTimeout(reconnectTimer)
     reconnectTimer = null
   }
+  
+  stopPingInterval()
   
   if (ws) {
     ws.close()
@@ -128,4 +198,3 @@ defineExpose({
   sendMessage,
 })
 </script>
-

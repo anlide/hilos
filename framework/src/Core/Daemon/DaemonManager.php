@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace Hilos\Core\Daemon;
 
 use Hilos\API\Router\HttpRouter;
+use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
+use Hilos\Core\Daemon\Cron\CronRule;
 use Hilos\Core\EventLoop\EventLoop;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\DTO\SignalDTO;
@@ -59,6 +61,15 @@ abstract class DaemonManager extends BaseManager
 
     /** @var float Shutdown timeout in seconds */
     protected float $shutdownTimeout = 20.0;
+
+    /** @var CronRule[] Array of cron rules */
+    private array $cronRules = [];
+
+    /** @var int Last cron check minute timestamp (minute-level, from floor(time() / 60)) */
+    private int $lastCronCheckMinute = -1;
+
+    /** @var bool Flag indicating if initial workers are ready */
+    private bool $workersReady = false;
 
     /**
      * Constructor
@@ -121,6 +132,9 @@ abstract class DaemonManager extends BaseManager
 
             // Call tick method
             $this->onTick();
+
+            // Check cron jobs (not more than once per minute)
+            $this->checkCronJobs();
 
             // Dispatch accumulated signals
             $this->dispatchSignals();
@@ -414,6 +428,13 @@ abstract class DaemonManager extends BaseManager
             $signalName = $signal->signalName->getName();
             $signalType = $signal->signalType->getType();
 
+            // Handle workers ready signal internally (before routing to agents)
+            if ($signalType === SignalTypeConstants::SYSTEM && $signalName === SignalConstants::WORKERS_READY) {
+                $this->workersReady = true;
+                Logger::info("Workers ready - cron jobs are now enabled");
+                // Continue to allow signal to be routed if needed, but flag is already set
+            }
+
             if (empty($destinations)) {
                 // No destinations found, skip
                 Logger::info("No destinations found for signal: {$signalType}/{$signalName}");
@@ -529,6 +550,109 @@ abstract class DaemonManager extends BaseManager
      * work logic. Called on each loop iteration with precise timing.
      */
     abstract protected function onTick(): void;
+
+    /**
+     * Called when a cron job should be executed
+     *
+     * Child classes can override this method to handle cron job execution.
+     * Default implementation does nothing.
+     *
+     * @param CronRule $rule Cron rule that should be executed
+     */
+    protected function onCron(CronRule $rule): void
+    {
+        // Default: do nothing, child classes should override
+    }
+
+    /**
+     * Add cron rule
+     *
+     * @param string $name Cron job name (unique identifier)
+     * @param string $expression Cron expression (minute hour day month weekday), e.g., "*\/5 * * * *"
+     */
+    protected function addCronRule(string $name, string $expression): void
+    {
+        $this->cronRules[$name] = new CronRule($name, $expression);
+    }
+
+    /**
+     * Update cron rule expression
+     *
+     * @param string $name Cron job name
+     * @param string $expression New cron expression (minute hour day month weekday)
+     * @return bool True if rule was found and updated
+     */
+    protected function updateCronRule(string $name, string $expression): bool
+    {
+        if (!isset($this->cronRules[$name])) {
+            return false;
+        }
+
+        $this->cronRules[$name]->expression = $expression;
+        return true;
+    }
+
+    /**
+     * Remove cron rule
+     *
+     * @param string $name Cron job name
+     * @return bool True if rule was found and removed
+     */
+    protected function removeCronRule(string $name): bool
+    {
+        if (!isset($this->cronRules[$name])) {
+            return false;
+        }
+
+        unset($this->cronRules[$name]);
+        return true;
+    }
+
+    /**
+     * Get all cron rules
+     *
+     * @return CronRule[] Array of cron rules
+     */
+    public function getCronRules(): array
+    {
+        return $this->cronRules;
+    }
+
+    /**
+     * Check cron jobs and execute if needed
+     *
+     * Checks all cron rules and executes jobs that are due.
+     * This method is called on each loop iteration but only
+     * performs actual checks once per minute for performance.
+     * Optimized: first checks if minute changed, only then checks rules.
+     * Cron jobs are only executed after workers are ready.
+     * Checks happen at the start of each minute for precise timing.
+     */
+    private function checkCronJobs(): void
+    {
+        // Don't run cron jobs until workers are ready
+        if (!$this->workersReady) {
+            return;
+        }
+
+        // Lightweight check: only check cron rules when minute changes
+        // Use minute-level timestamp for precise minute-level comparison
+        $currentMinuteTimestamp = (int)floor(time() / 60);
+
+        // Early return if still in the same minute - no need to check rules
+        if ($this->lastCronCheckMinute === $currentMinuteTimestamp) {
+            return;
+        }
+
+        $this->lastCronCheckMinute = $currentMinuteTimestamp;
+
+        // Check each cron rule when minute changed
+        foreach ($this->cronRules as $rule) {
+            if ($rule->shouldRun()) {
+                $this->onCron($rule);
+            }
+        }
+    }
 
     /** @return string Manager name for logging */
     protected function getManagerName(): string

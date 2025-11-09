@@ -5,9 +5,15 @@ declare(strict_types=1);
 namespace Hilos\Socket\Server;
 
 use Hilos\Constants\EnvConstants;
+use Hilos\Constants\SignalConstants;
+use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\Process;
+use Hilos\Core\Router\SignalData;
+use Hilos\Core\Router\SignalName;
+use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalRouter;
+use Hilos\Core\Router\SignalType;
 use Hilos\DTO\Worker\DaemonAgentMessageDTO;
 use Hilos\Exception\MissingEnvironmentVariableException;
 use Hilos\Exception\Process\CouldNotStartException;
@@ -311,6 +317,14 @@ abstract class WorkerServer extends AbstractServer
             if ($regularReady && $monopolisticReady) {
                 $this->initialWorkersReadyCalled = true;
                 $this->onInitialWorkersReady();
+
+                // Send workers ready signal to daemon
+                $this->signalRouter->queueSignal(
+                    new SignalSource(SignalSource::DAEMON),
+                    new SignalType(SignalTypeConstants::SYSTEM),
+                    new SignalName(SignalConstants::WORKERS_READY),
+                    new SignalData(),
+                );
             }
         }
     }
