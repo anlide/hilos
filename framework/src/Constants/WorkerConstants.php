@@ -42,4 +42,3 @@ class WorkerConstants
     /** @var string Agent stopped notification */
     public const string MESSAGE_AGENT_STOPPED = 'agent_stopped';
 }
-

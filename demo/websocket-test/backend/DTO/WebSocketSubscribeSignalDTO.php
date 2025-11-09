@@ -16,4 +16,3 @@ class WebSocketSubscribeSignalDTO extends FrameworkWebSocketSubscribeSignalDTO i
 {
     // Inherits all functionality from framework DTO
 }
-

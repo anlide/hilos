@@ -18,4 +18,3 @@ class OperationNotPermittedException extends SocketException
         parent::__construct($message, 1, $previous); // EPERM
     }
 }
-

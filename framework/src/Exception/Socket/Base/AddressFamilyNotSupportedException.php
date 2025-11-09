@@ -18,4 +18,3 @@ class AddressFamilyNotSupportedException extends SocketException
         parent::__construct($message, 97, $previous); // EAFNOSUPPORT
     }
 }
-

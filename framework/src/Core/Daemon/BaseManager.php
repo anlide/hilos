@@ -20,9 +20,6 @@ use Throwable;
  * - Precise timing control
  * - Function validation
  * - Logging infrastructure
- *
- * @package Hilos\Core\Daemon
- * @abstract
  */
 abstract class BaseManager
 {

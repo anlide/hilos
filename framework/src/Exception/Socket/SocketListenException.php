@@ -17,9 +17,8 @@ class SocketListenException extends SocketException
         $message = sprintf(
             "Socket listen failed (error %d): %s",
             $errorCode,
-            $errorMessage
+            $errorMessage,
         );
         parent::__construct($message, $errorCode, $previous);
     }
 }
-

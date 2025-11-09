@@ -12,8 +12,6 @@ use Hilos\Exception\Worker\AgentCreationFailedException;
  * Manages lifecycle of agents running in worker processes.
  * Provides unified interface for agent creation, storage and retrieval.
  * Child classes must implement createAgent() factory method.
- *
- * @abstract
  */
 abstract class AgentManager
 {

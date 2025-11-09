@@ -19,4 +19,3 @@ class NetworkResetException extends SocketException
         parent::__construct($message, 102, $previous);
     }
 }
-

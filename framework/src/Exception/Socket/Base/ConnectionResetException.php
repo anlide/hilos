@@ -18,4 +18,3 @@ class ConnectionResetException extends SocketException
         parent::__construct($message, 104, $previous); // ECONNRESET
     }
 }
-

@@ -48,4 +48,3 @@ class ChatAgentFactory extends AbstractAgentFactory
         return new UserAgent($agentIndex);
     }
 }
-

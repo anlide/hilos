@@ -22,4 +22,3 @@ class TimeHelper
         return date('Y-m-d H:i:s', $timestamp) . '.' . str_pad((string) $milliseconds, 3, '0', STR_PAD_LEFT);
     }
 }
-

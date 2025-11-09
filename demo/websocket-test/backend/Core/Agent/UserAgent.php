@@ -87,4 +87,3 @@ class UserAgent extends AbstractAgent
         // TODO: Add user-specific logic here
     }
 }
-

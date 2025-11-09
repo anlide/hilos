@@ -55,4 +55,3 @@ class MessageFromWorkerDTO extends BaseDTO implements AgentMessageDTOInterface
         );
     }
 }
-

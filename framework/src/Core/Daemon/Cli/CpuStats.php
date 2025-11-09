@@ -63,7 +63,7 @@ class CpuStats
     public static function fromProcStat(string $statLine): self
     {
         $parts = explode(' ', trim($statLine));
-        
+
         return new self(
             (int)($parts[1] ?? 0),
             (int)($parts[2] ?? 0),
@@ -131,4 +131,3 @@ class CpuStats
         return (($totalDiff - $idleDiff) / $totalDiff) * 100;
     }
 }
-

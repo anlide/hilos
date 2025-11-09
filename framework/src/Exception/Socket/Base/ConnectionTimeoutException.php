@@ -19,4 +19,3 @@ class ConnectionTimeoutException extends SocketException
         parent::__construct($message, 110, $previous);
     }
 }
-

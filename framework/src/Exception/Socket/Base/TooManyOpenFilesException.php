@@ -19,4 +19,3 @@ class TooManyOpenFilesException extends SocketException
         parent::__construct($message, 24, $previous); // EMFILE
     }
 }
-

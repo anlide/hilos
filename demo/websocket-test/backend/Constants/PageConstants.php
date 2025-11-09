@@ -14,4 +14,3 @@ class PageConstants
     /** @var string Chat main page */
     public const string MAIN = 'main';
 }
-

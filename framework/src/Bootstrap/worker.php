@@ -74,11 +74,10 @@ try {
 
     // Start worker main loop
     $workerManager->run();
-    
+
 } catch (\Throwable $e) {
     Logger::error("Worker #{$workerIndex} failed: " . $e->getMessage());
     exit(ExitCode::ERROR);
 }
 
 exit(ExitCode::SUCCESS);
-

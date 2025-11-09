@@ -14,4 +14,3 @@ class GroupConstants
     /** @var string Chat page */
     public const string SESSION = 'session';
 }
-

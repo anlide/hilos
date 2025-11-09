@@ -29,7 +29,7 @@ class ChatSignalRouter extends SignalRouter
     public function __construct()
     {
         parent::__construct();
-        
+
         // Pages configuration - defines available pages and their routing
         $pages = [
             PageConstants::MAIN => [
@@ -86,4 +86,3 @@ class ChatSignalRouter extends SignalRouter
         ];
     }
 }
-

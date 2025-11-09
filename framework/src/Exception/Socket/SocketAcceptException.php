@@ -17,9 +17,8 @@ class SocketAcceptException extends SocketException
         $message = sprintf(
             "Socket accept failed (error %d): %s",
             $errorCode,
-            $errorMessage
+            $errorMessage,
         );
         parent::__construct($message, $errorCode, $previous);
     }
 }
-

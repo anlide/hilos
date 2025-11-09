@@ -8,6 +8,7 @@ use Hilos\API\Router\HttpRouter;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\ExitCode;
 use Hilos\Constants\HttpConstants;
+use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\Daemon\DaemonManager;
 use Hilos\Core\Daemon\Master\DaemonStatus;
 use Hilos\DTO\DaemonStatusDTO;
@@ -55,6 +56,12 @@ try {
                 $this->lastHeartbeat = $currentTime;
             }
         }
+
+        protected function createAgentManagerDaemon(): AgentManagerDaemon
+        {
+            // TODO: Implement createAgentManagerDaemon() method.
+            throw new AgentDaemonFactoryNotConfiguredException();
+        }
     };
 
     // Get signal router from daemon
@@ -89,6 +96,11 @@ try {
             // For framework daemon, agent daemon functionality is not needed
             throw new AgentDaemonFactoryNotConfiguredException();
         }
+
+        protected function onInitialWorkersReady(): void
+        {
+            // TODO: Implement onInitialWorkersReady() method.
+        }
     };
 
     // Create HTTP router
@@ -100,12 +112,12 @@ try {
     // Setup routes
     $router->addRoute('GET', '/status', function($args) use ($status, $workerServer) {
         $status->update();
-        
+
         // Get worker information from WorkerServer
         $regularCount = $workerServer->getRegularWorkersCount();
         $monopolisticCount = $workerServer->getMonopolisticWorkersCount();
         $maxRegular = $workerServer->getMaxRegularWorkers();
-        
+
         // Create DTO from status
         // Note: If daemon responds, it's running by definition
         $dto = new DaemonStatusDTO(
@@ -117,7 +129,7 @@ try {
             workersMonopolistic: $monopolisticCount,
             workersMaxRegular: $maxRegular,
         );
-        
+
         return [
             HttpConstants::RESPONSE_KEY_STATUS => HttpConstants::HTTP_OK,
             HttpConstants::RESPONSE_KEY_HEADERS => [HttpConstants::HEADER_CONTENT_TYPE => HttpConstants::CONTENT_TYPE_JSON],

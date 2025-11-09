@@ -26,4 +26,3 @@ abstract class AbstractAgentFactory
      */
     abstract public static function createAgent(string $agentType, ?string $agentIndex): AgentInterface;
 }
-

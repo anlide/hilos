@@ -29,4 +29,3 @@ class ErrorConstants
     /** @var string Error context key for stack trace */
     public const string CONTEXT_KEY_TRACE = 'trace';
 }
-

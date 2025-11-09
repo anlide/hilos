@@ -18,4 +18,3 @@ class HandshakeFailedException extends WebSocketException
         parent::__construct($message, 0, $previous);
     }
 }
-

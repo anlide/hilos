@@ -228,4 +228,3 @@ abstract class AbstractAgent implements AgentInterface
         // Default: do nothing
     }
 }
-

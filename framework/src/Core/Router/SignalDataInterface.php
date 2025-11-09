@@ -14,4 +14,3 @@ namespace Hilos\Core\Router;
 interface SignalDataInterface
 {
 }
-

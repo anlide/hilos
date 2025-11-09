@@ -14,4 +14,3 @@ namespace Hilos\DTO;
 interface SignalDataDTO
 {
 }
-

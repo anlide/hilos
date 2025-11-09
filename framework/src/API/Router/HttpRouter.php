@@ -54,7 +54,7 @@ class HttpRouter
 
         // Find matching route
         $route = $this->registry->match($method, $path);
-        
+
         if ($route === null) {
             return [
                 HttpConstants::RESPONSE_KEY_STATUS => HttpConstants::HTTP_NOT_FOUND,
@@ -86,4 +86,3 @@ class HttpRouter
         return $this->registry;
     }
 }
-

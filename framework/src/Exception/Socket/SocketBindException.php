@@ -17,9 +17,8 @@ class SocketBindException extends SocketException
         $message = sprintf(
             "Socket bind failed (error %d): %s",
             $errorCode,
-            $errorMessage
+            $errorMessage,
         );
         parent::__construct($message, $errorCode, $previous);
     }
 }
-

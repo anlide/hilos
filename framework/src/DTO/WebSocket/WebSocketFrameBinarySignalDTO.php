@@ -52,4 +52,3 @@ class WebSocketFrameBinarySignalDTO extends BaseDTO implements SignalDataDTO, Si
         );
     }
 }
-

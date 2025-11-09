@@ -39,7 +39,7 @@ try {
 
     // Start worker main loop
     $workerManager->run();
-    
+
 } catch (\Throwable $e) {
     Logger::error("Worker #{$workerIndex} failed: " . $e->getMessage(), [
         ErrorConstants::CONTEXT_KEY_FILE => $e->getFile(),
@@ -50,4 +50,3 @@ try {
 }
 
 exit(ExitCode::SUCCESS);
-

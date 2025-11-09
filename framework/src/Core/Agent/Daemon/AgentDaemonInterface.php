@@ -113,4 +113,3 @@ interface AgentDaemonInterface
      */
     public function onStop(): void;
 }
-

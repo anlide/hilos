@@ -16,4 +16,3 @@ class WebSocketActionSignalDTO extends FrameworkWebSocketActionSignalDTO impleme
 {
     // Inherits all functionality from framework DTO
 }
-

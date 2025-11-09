@@ -56,4 +56,3 @@ class WebSocketFrameDTO extends BaseDTO
         );
     }
 }
-

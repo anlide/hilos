@@ -82,4 +82,3 @@ interface ServerInterface
      */
     public function isReadyToShutdown(): bool;
 }
-

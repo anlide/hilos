@@ -22,7 +22,7 @@ use Hilos\Utils\Env;
  *
  * Handles socket connection from worker process to daemon WorkerServer.
  * Manages reading/writing messages using JSON protocol (ready for DTO wrapping).
- * 
+ *
  * This is framework-level functionality as it's needed by any worker process
  * to establish communication with daemon.
  */
@@ -170,7 +170,7 @@ class WorkerDaemonClient extends AbstractSocket
         }
 
         $data = socket_read($this->socket, 8192, PHP_BINARY_READ);
-        
+
         if ($data === '') {
             // Connection closed
             $this->connected = false;
@@ -199,7 +199,7 @@ class WorkerDaemonClient extends AbstractSocket
         }
 
         $written = socket_write($this->socket, $this->writeBuffer);
-        
+
         if ($written === false) {
             // handleSocketError will handle ERR_WOULDBLOCK/WSA_WOULDBLOCK
             $this->handleSocketError(SocketOperation::WRITE);
@@ -301,4 +301,3 @@ class WorkerDaemonClient extends AbstractSocket
         // Keep connectionAttempted = true to prevent reconnection attempts
     }
 }
-

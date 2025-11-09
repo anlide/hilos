@@ -19,4 +19,3 @@ class ConnectionAbortedException extends SocketException
         parent::__construct($message, 103, $previous);
     }
 }
-

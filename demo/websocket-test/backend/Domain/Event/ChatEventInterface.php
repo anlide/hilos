@@ -42,4 +42,3 @@ interface ChatEventInterface
      */
     public function toArray(): array;
 }
-

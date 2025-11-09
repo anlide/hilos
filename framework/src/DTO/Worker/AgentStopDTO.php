@@ -69,4 +69,3 @@ class AgentStopDTO extends WorkerDTO
         );
     }
 }
-

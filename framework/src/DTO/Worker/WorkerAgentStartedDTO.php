@@ -64,4 +64,3 @@ class WorkerAgentStartedDTO extends BaseDTO
         );
     }
 }
-

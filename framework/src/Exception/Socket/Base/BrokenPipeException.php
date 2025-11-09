@@ -18,4 +18,3 @@ class BrokenPipeException extends SocketException
         parent::__construct($message, 32, $previous); // EPIPE
     }
 }
-

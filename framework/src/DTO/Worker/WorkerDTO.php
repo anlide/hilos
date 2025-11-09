@@ -23,4 +23,3 @@ abstract class WorkerDTO extends BaseDTO
      */
     abstract public function getType(): string;
 }
-

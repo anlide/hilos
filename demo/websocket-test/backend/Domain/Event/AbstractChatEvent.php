@@ -72,4 +72,3 @@ abstract class AbstractChatEvent implements ChatEventInterface
      */
     abstract protected function getEventData(): array;
 }
-

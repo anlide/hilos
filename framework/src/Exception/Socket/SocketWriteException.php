@@ -17,9 +17,8 @@ class SocketWriteException extends SocketException
         $message = sprintf(
             "Socket write failed (error %d): %s",
             $errorCode,
-            $errorMessage
+            $errorMessage,
         );
         parent::__construct($message, $errorCode, $previous);
     }
 }
-

@@ -31,4 +31,3 @@ class SignalType implements SignalTypeInterface
         return $this->type;
     }
 }
-

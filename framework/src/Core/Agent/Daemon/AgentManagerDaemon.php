@@ -18,8 +18,6 @@ use Hilos\Socket\Client\WorkerClient;
  * Provides unified interface for agent daemon creation, storage and retrieval.
  * Uses workerId mapping instead of WorkerClient objects (workerId: negative = monopolistic, positive = regular).
  * Child classes must implement createAgentDaemon() factory method.
- *
- * @abstract
  */
 abstract class AgentManagerDaemon
 {

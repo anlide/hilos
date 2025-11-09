@@ -13,27 +13,26 @@ namespace Hilos\Constants;
 class ExitCode
 {
     /** @var int Success exit code */
-    public const SUCCESS = 0;
+    public const int SUCCESS = 0;
 
     /** @var int General error exit code */
-    public const ERROR = 1;
+    public const int ERROR = 1;
 
     /** @var int Invalid command or argument */
-    public const INVALID_ARGUMENT = 2;
+    public const int INVALID_ARGUMENT = 2;
 
     /** @var int Configuration error */
-    public const CONFIG_ERROR = 3;
+    public const int CONFIG_ERROR = 3;
 
     /** @var int Process not found */
-    public const PROCESS_NOT_FOUND = 4;
+    public const int PROCESS_NOT_FOUND = 4;
 
     /** @var int Permission denied */
-    public const PERMISSION_DENIED = 5;
+    public const int PERMISSION_DENIED = 5;
 
     /** @var int Timeout occurred */
-    public const TIMEOUT = 6;
+    public const int TIMEOUT = 6;
 
     /** @var int Signal received (SIGTERM, SIGINT, etc) */
-    public const SIGNAL_RECEIVED = 130;
+    public const int SIGNAL_RECEIVED = 130;
 }
-

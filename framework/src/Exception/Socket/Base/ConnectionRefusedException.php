@@ -19,4 +19,3 @@ class ConnectionRefusedException extends SocketException
         parent::__construct($message, 111, $previous);
     }
 }
-

@@ -17,9 +17,8 @@ class SocketSetOptionException extends SocketException
         $message = sprintf(
             "Socket set option failed (error %d): %s",
             $errorCode,
-            $errorMessage
+            $errorMessage,
         );
         parent::__construct($message, $errorCode, $previous);
     }
 }
-

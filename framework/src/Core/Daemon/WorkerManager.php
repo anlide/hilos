@@ -24,8 +24,6 @@ use Hilos\Utils\Helpers\ArgumentHelper;
  * Main loop for worker processes. Extends BaseManager for error handling,
  * signal management and logging infrastructure.
  * Manages daemon connection and agents.
- *
- * @abstract
  */
 abstract class WorkerManager extends BaseManager
 {

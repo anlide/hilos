@@ -80,5 +80,3 @@ class DaemonAgentMessageDTO extends WorkerDTO
         );
     }
 }
-
-

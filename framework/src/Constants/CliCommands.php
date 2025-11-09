@@ -21,4 +21,3 @@ class CliCommands
     /** @var string Command: Show help information */
     public const string HELP = 'help';
 }
-

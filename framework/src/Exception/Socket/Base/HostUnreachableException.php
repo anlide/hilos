@@ -19,4 +19,3 @@ class HostUnreachableException extends SocketException
         parent::__construct($message, 113, $previous);
     }
 }
-

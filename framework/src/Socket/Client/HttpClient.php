@@ -47,7 +47,7 @@ class HttpClient extends AbstractClient implements HttpClientInterface
     {
         // Parse HTTP request
         $request = $this->parseRequest($this->readBuffer);
-        
+
         // Route request
         if ($this->router !== null) {
             $response = $this->router->route($request);
@@ -63,7 +63,7 @@ class HttpClient extends AbstractClient implements HttpClientInterface
         // Build and send HTTP response
         $this->writeBuffer = $this->buildResponse($response);
         $this->write();
-        
+
         // Close connection after response (HTTP/1.1 Connection: close)
         $this->shouldClose = true;
     }
@@ -78,10 +78,10 @@ class HttpClient extends AbstractClient implements HttpClientInterface
     {
         $lines = explode(HttpConstants::HTTP_LINE_SEPARATOR, $rawRequest);
         $firstLine = $lines[0] ?? '';
-        
+
         // Parse: GET /path HTTP/1.1
         $parts = explode(' ', $firstLine);
-        
+
         return [
             'method' => $parts[0] ?? 'GET',
             'path' => $parts[1] ?? '/',
@@ -126,12 +126,12 @@ class HttpClient extends AbstractClient implements HttpClientInterface
         $body = $response[HttpConstants::RESPONSE_KEY_BODY] ?? '';
 
         $http = HttpConstants::HTTP_VERSION . " {$status} {$statusText}" . HttpConstants::HTTP_LINE_SEPARATOR;
-        
+
         $headers[HttpConstants::HEADER_CONTENT_LENGTH] = strlen($body);
         foreach ($headers as $key => $value) {
             $http .= "{$key}: {$value}" . HttpConstants::HTTP_LINE_SEPARATOR;
         }
-        
+
         $http .= HttpConstants::HTTP_LINE_SEPARATOR;
         $http .= $body;
 
@@ -170,4 +170,3 @@ class HttpClient extends AbstractClient implements HttpClientInterface
         // HTTP client cleanup if needed
     }
 }
-

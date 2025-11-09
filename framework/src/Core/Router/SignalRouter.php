@@ -251,7 +251,7 @@ class SignalRouter
     {
         if (isset($this->subscriptionGroups[$clientId])) {
             unset($this->subscriptionGroups[$clientId][$group]);
-            
+
             // Clean up empty client entry
             if (empty($this->subscriptionGroups[$clientId])) {
                 unset($this->subscriptionGroups[$clientId]);
@@ -298,4 +298,3 @@ class SignalRouter
         return [$destination];
     }
 }
-

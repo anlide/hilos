@@ -19,4 +19,3 @@ class AddressInUseException extends SocketException
         parent::__construct($message, 98, $previous);
     }
 }
-

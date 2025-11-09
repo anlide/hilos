@@ -18,9 +18,8 @@ class UnknownOpcodeException extends WebSocketException
             "Unknown or invalid WebSocket opcode: 0x%02X. " .
             "Valid opcodes are: 0x0 (continuation), 0x1 (text), 0x2 (binary), " .
             "0x8 (close), 0x9 (ping), 0xA (pong).",
-            $opcode
+            $opcode,
         );
         parent::__construct($message, 0, $previous);
     }
 }
-

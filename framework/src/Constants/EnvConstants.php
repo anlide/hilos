@@ -10,7 +10,7 @@ namespace Hilos\Constants;
  * Defines all environment variable names used by the framework.
  * Centralized environment variable name management prevents typos and ensures consistency.
  * Using Pure Enum where the name IS the value.
- * 
+ *
  * Access the variable name using ->value() method:
  * Env::get(EnvConstants::HILOS_DAEMON_HOST->value())
  */
@@ -82,4 +82,3 @@ enum EnvConstants
     /** @var string Minimum interval between daemon restarts after errors (in seconds) */
     case DAEMON_MIN_RESTART_INTERVAL;
 }
-

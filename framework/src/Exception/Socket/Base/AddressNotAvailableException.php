@@ -19,4 +19,3 @@ class AddressNotAvailableException extends SocketException
         parent::__construct($message, 99, $previous);
     }
 }
-

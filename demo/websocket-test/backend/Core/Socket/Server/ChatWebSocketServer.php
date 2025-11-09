@@ -49,4 +49,3 @@ class ChatWebSocketServer extends WebSocketServer
         // Chat WebSocket server has no specific startup logic
     }
 }
-

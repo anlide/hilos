@@ -32,7 +32,7 @@ class CronRule
     {
         $this->name = $name;
         $this->expression = $expression;
-        
+
         // Store creation time as initial reference point (prevents immediate execution)
         // Use minute-level timestamp for consistent comparison
         $this->lastRun = floor(time() / 60);
@@ -49,11 +49,11 @@ class CronRule
     public function shouldRun(): bool
     {
         $currentTime = (float)time();
-        
+
         // Don't run if already executed in current minute
         // Compare minute-level timestamps (lastRun is already stored at minute level)
         $currentMinuteTimestamp = floor($currentTime / 60);
-        
+
         if ($this->lastRun === $currentMinuteTimestamp) {
             return false;
         }
@@ -140,7 +140,7 @@ class CronRule
         if ($slashPos !== false) {
             $range = substr($part, 0, $slashPos);
             $stepStr = substr($part, $slashPos + 1);
-            
+
             // Validate step is a positive integer
             if ($stepStr === '' || !ctype_digit($stepStr)) {
                 return false;
@@ -161,20 +161,20 @@ class CronRule
             if ($dashPos !== false) {
                 $rangeMinStr = substr($range, 0, $dashPos);
                 $rangeMaxStr = substr($range, $dashPos + 1);
-                
-                if ($rangeMinStr === '' || $rangeMaxStr === '' || 
+
+                if ($rangeMinStr === '' || $rangeMaxStr === '' ||
                     !ctype_digit($rangeMinStr) || !ctype_digit($rangeMaxStr)) {
                     return false;
                 }
-                
+
                 $rangeMin = (int)$rangeMinStr;
                 $rangeMax = (int)$rangeMaxStr;
-                
+
                 // Validate range
                 if ($rangeMin < $min || $rangeMax > $max || $rangeMin > $rangeMax) {
                     return false;
                 }
-                
+
                 // Check if value is within range
                 if ($value >= $rangeMin && $value <= $rangeMax) {
                     // Safe: value >= rangeMin, so (value - rangeMin) >= 0
@@ -182,7 +182,7 @@ class CronRule
                 }
                 return false;
             }
-            
+
             // Invalid format: something/N without * or range
             return false;
         }
@@ -192,20 +192,20 @@ class CronRule
         if ($dashPos !== false) {
             $rangeMinStr = substr($part, 0, $dashPos);
             $rangeMaxStr = substr($part, $dashPos + 1);
-            
-            if ($rangeMinStr === '' || $rangeMaxStr === '' || 
+
+            if ($rangeMinStr === '' || $rangeMaxStr === '' ||
                 !ctype_digit($rangeMinStr) || !ctype_digit($rangeMaxStr)) {
                 return false;
             }
-            
+
             $rangeMin = (int)$rangeMinStr;
             $rangeMax = (int)$rangeMaxStr;
-            
+
             // Validate range
             if ($rangeMin < $min || $rangeMax > $max || $rangeMin > $rangeMax) {
                 return false;
             }
-            
+
             return $value >= $rangeMin && $value <= $rangeMax;
         }
 
@@ -230,12 +230,12 @@ class CronRule
         if (!ctype_digit($part)) {
             return false;
         }
-        
+
         $intPart = (int)$part;
         if ($intPart < $min || $intPart > $max) {
             return false;
         }
-        
+
         return $intPart === $value;
     }
 
@@ -273,4 +273,3 @@ class CronRule
             && $this->matchesPart($weekdayExpr, $currentWeekday, 0, 6);
     }
 }
-

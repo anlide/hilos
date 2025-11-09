@@ -18,5 +18,3 @@ class DaemonConstants
     // Not available display value
     public const string VALUE_NOT_AVAILABLE = 'N/A';
 }
-
-

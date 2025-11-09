@@ -16,9 +16,8 @@ class UnsupportedProtocolVersionException extends WebSocketException
     {
         $message = sprintf(
             "Unsupported WebSocket protocol version: %s. Only version 13 (RFC 6455) is supported.",
-            $version
+            $version,
         );
         parent::__construct($message, 0, $previous);
     }
 }
-

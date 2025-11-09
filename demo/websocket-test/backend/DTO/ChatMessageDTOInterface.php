@@ -14,4 +14,3 @@ interface ChatMessageDTOInterface
 {
     // Marker interface - extends BaseDTO for serialization support
 }
-

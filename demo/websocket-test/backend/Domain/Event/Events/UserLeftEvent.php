@@ -59,4 +59,3 @@ class UserLeftEvent extends AbstractChatEvent
         ];
     }
 }
-

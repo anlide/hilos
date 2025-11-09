@@ -59,4 +59,3 @@ class UserJoinedEvent extends AbstractChatEvent
         ];
     }
 }
-

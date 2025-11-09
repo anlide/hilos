@@ -16,4 +16,3 @@ class ChatSignalConstants
     public const string FILE = 'file';
     public const string RENAME = 'rename';
 }
-

@@ -10,7 +10,6 @@ use Hilos\Core\CLI\Commands\CommandInterface;
 use Hilos\Core\CLI\Commands\HelpCommand;
 use Hilos\Core\CLI\Commands\MonitorCommand;
 use Hilos\Core\CLI\Commands\StatusCommand;
-use Hilos\Utils\Constants\CliConstants;
 
 /**
  * CliManager - Main CLI management class
@@ -185,4 +184,3 @@ class CliManager
         return ExitCode::ERROR;
     }
 }
-

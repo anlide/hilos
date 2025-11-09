@@ -18,4 +18,3 @@ interface SignalNameInterface
      */
     public function getName(): string;
 }
-

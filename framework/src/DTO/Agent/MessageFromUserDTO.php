@@ -54,4 +54,3 @@ class MessageFromUserDTO extends BaseDTO implements AgentMessageDTOInterface
         );
     }
 }
-

@@ -64,4 +64,3 @@ class WebSocketUnsubscribeSignalDTO extends BaseDTO implements SignalDataDTO, Si
         );
     }
 }
-

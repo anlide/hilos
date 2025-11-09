@@ -48,4 +48,3 @@ class CronSignalDTO extends BaseDTO implements SignalDataDTO, SignalDataInterfac
         );
     }
 }
-

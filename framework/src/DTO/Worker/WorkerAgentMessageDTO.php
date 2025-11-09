@@ -60,4 +60,3 @@ class WorkerAgentMessageDTO extends BaseDTO
         );
     }
 }
-

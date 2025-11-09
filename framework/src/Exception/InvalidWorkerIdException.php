@@ -14,8 +14,7 @@ class InvalidWorkerIdException extends \Exception
     public function __construct(string $reason, ?Throwable $previous = null)
     {
         $message = "Invalid worker ID: {$reason}. " .
-                   "Worker ID must be provided via --worker-id=N argument and must be a positive integer.";
+            "Worker ID must be provided via --worker-id=N argument and must be a positive integer.";
         parent::__construct($message, 0, $previous);
     }
 }
-

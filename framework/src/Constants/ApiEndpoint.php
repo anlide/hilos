@@ -20,4 +20,3 @@ enum ApiEndpoint: string
     /** @var string Daemon status endpoint */
     case STATUS = '/status';
 }
-

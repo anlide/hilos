@@ -23,4 +23,3 @@ enum SocketOperation: string
     case LISTEN = 'listen';
     case ACCEPT = 'accept';
 }
-

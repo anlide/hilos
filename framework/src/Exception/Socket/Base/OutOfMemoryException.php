@@ -18,4 +18,3 @@ class OutOfMemoryException extends SocketException
         parent::__construct($message, 12, $previous); // ENOMEM
     }
 }
-

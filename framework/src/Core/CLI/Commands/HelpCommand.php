@@ -40,4 +40,3 @@ class HelpCommand implements CommandInterface
         return ExitCode::SUCCESS;
     }
 }
-

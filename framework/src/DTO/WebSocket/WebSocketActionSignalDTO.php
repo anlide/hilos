@@ -75,4 +75,3 @@ class WebSocketActionSignalDTO extends BaseDTO implements SignalDataDTO, SignalD
         );
     }
 }
-

@@ -17,4 +17,3 @@ class SocketConstants
     /** @var int Maximum JSON nesting depth */
     public const int MAX_JSON_DEPTH = 100;
 }
-

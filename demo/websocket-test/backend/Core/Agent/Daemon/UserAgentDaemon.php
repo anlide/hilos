@@ -100,4 +100,3 @@ class UserAgentDaemon extends AbstractAgentDaemon
         return null;
     }
 }
-

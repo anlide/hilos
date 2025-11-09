@@ -17,9 +17,8 @@ class SocketReadException extends SocketException
         $message = sprintf(
             "Socket read failed (error %d): %s",
             $errorCode,
-            $errorMessage
+            $errorMessage,
         );
         parent::__construct($message, $errorCode, $previous);
     }
 }
-

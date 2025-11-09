@@ -31,4 +31,3 @@ class SignalName implements SignalNameInterface
         return $this->name;
     }
 }
-

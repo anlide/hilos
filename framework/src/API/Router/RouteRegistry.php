@@ -25,7 +25,7 @@ class RouteRegistry
     public function register(string $method, string $path, callable $handler): void
     {
         $method = strtoupper($method);
-        
+
         if (!isset($this->routes[$method])) {
             $this->routes[$method] = [];
         }
@@ -48,7 +48,7 @@ class RouteRegistry
     public function match(string $method, string $path): ?array
     {
         $method = strtoupper($method);
-        
+
         if (!isset($this->routes[$method])) {
             return null;
         }
@@ -81,10 +81,10 @@ class RouteRegistry
     {
         // Convert /user/{id} to /user/([^/]+)
         $pattern = preg_replace('/\{([a-zA-Z0-9_]+)\}/', '([^/]+)', $path);
-        
+
         // Escape slashes and add anchors
         $pattern = '#^' . $pattern . '$#';
-        
+
         return $pattern;
     }
 
@@ -98,4 +98,3 @@ class RouteRegistry
         return $this->routes;
     }
 }
-

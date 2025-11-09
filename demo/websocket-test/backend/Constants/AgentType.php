@@ -17,4 +17,3 @@ class AgentType
     /** @var string User agent type (regular) */
     public const string SESSION = 'session';
 }
-

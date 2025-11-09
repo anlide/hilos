@@ -138,4 +138,3 @@ interface AgentInterface
      */
     public function onSignalCron(string $source, string $name, SignalDataInterface $data): void;
 }
-

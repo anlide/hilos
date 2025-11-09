@@ -54,4 +54,3 @@ abstract class BaseDTO
         return static::fromArray($data);
     }
 }
-

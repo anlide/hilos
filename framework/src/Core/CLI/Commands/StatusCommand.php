@@ -217,4 +217,3 @@ class StatusCommand implements CommandInterface
         return (string)$this->daemonStatus->workersMaxRegular;
     }
 }
-

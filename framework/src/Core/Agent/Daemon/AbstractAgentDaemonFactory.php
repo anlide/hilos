@@ -26,4 +26,3 @@ abstract class AbstractAgentDaemonFactory
      */
     abstract public static function createAgentDaemon(string $agentType, ?string $agentIndex): AgentDaemonInterface;
 }
-

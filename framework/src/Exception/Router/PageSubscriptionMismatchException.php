@@ -15,4 +15,3 @@ class PageSubscriptionMismatchException extends RouteException
         parent::__construct($message, $code, $previous);
     }
 }
-

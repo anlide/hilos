@@ -17,9 +17,8 @@ class ReservedOpcodeException extends WebSocketException
         $message = sprintf(
             "Reserved WebSocket opcode encountered: 0x%02X. " .
             "Reserved opcodes (0x3-0x7, 0xB-0xF) must not be used and should result in connection closure.",
-            $opcode
+            $opcode,
         );
         parent::__construct($message, 0, $previous);
     }
 }
-

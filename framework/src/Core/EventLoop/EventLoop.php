@@ -41,7 +41,7 @@ class EventLoop
     public function registerRead($socket, callable $callback): void
     {
         $socketId = is_resource($socket) || is_int($socket) ? (int)$socket : spl_object_id($socket);
-        
+
         // Remove existing event if any
         if (isset($this->events[$socketId])) {
             $this->unregister($socket);
@@ -79,7 +79,7 @@ class EventLoop
     public function registerWrite($socket, callable $callback): void
     {
         $socketId = is_resource($socket) || is_int($socket) ? (int)$socket : spl_object_id($socket);
-        
+
         // Wrap callback to catch exceptions (logging is handled in handler methods)
         $wrappedCallback = function($socket, $flags) use ($callback) {
             try {
@@ -111,7 +111,7 @@ class EventLoop
     public function unregister($socket): void
     {
         $socketId = is_resource($socket) || is_int($socket) ? (int)$socket : spl_object_id($socket);
-        
+
         // Remove read event
         if (isset($this->events[$socketId])) {
             $this->events[$socketId]->del();
@@ -180,4 +180,3 @@ class EventLoop
         $this->cleanup();
     }
 }
-

@@ -19,4 +19,3 @@ class NetworkDownException extends SocketException
         parent::__construct($message, 100, $previous);
     }
 }
-

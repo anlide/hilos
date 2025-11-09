@@ -257,15 +257,14 @@ class Env
     public static function reload(): void
     {
         self::clearCache();
-        
+
         // Auto-detect project root
         $rootPath = dirname(dirname(dirname(dirname(realpath(__DIR__)))));
         $envPath = $rootPath . '/.env';
-        
+
         // Reload .env file if it exists
         if (file_exists($envPath)) {
             self::load($envPath);
         }
     }
 }
-

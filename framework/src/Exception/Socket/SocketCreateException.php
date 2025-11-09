@@ -17,9 +17,8 @@ class SocketCreateException extends SocketException
         $message = sprintf(
             "Socket create failed (error %d): %s",
             $errorCode,
-            $errorMessage
+            $errorMessage,
         );
         parent::__construct($message, $errorCode, $previous);
     }
 }
-

@@ -37,4 +37,3 @@ class MonitorCommand implements CommandInterface
         }
     }
 }
-

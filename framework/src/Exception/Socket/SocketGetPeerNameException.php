@@ -17,9 +17,8 @@ class SocketGetPeerNameException extends SocketException
         $message = sprintf(
             "Failed to get peer name of socket. Error code: %d, Message: %s",
             $errorCode,
-            $errorMessage
+            $errorMessage,
         );
         parent::__construct($message, $errorCode, $previous);
     }
 }
-

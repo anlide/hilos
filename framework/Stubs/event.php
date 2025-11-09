@@ -4,16 +4,16 @@ declare(strict_types=1);
 
 /**
  * Minimal stub file for PHP event extension
- * 
+ *
  * This is a STUB file. Methods have empty implementations and may return default values.
  * This file is for PhpStorm type hints only - DO NOT use in production code.
- * 
+ *
  * Contains only Event, EventBase and EventConfig classes used in EventLoop.
  */
 
 /**
  * Event class - represents an event firing on a file descriptor
- * 
+ *
  * @see https://php.net/manual/en/class.event.php
  */
 final class Event
@@ -27,7 +27,7 @@ final class Event
 
     /**
      * Constructs Event object
-     * 
+     *
      * @param EventBase $base Event base instance
      * @param mixed $fd File descriptor (socket resource)
      * @param int $what Event flags (Event::READ, Event::WRITE, etc.)
@@ -38,7 +38,7 @@ final class Event
 
     /**
      * Makes event pending
-     * 
+     *
      * @param float $timeout Optional timeout
      * @return bool
      */
@@ -49,7 +49,7 @@ final class Event
 
     /**
      * Makes event non-pending
-     * 
+     *
      * @return bool
      */
     public function del(): bool
@@ -68,7 +68,7 @@ final class Event
 
 /**
  * EventBase class - represents libevent's event base structure
- * 
+ *
  * @see https://php.net/manual/en/class.eventbase.php
  */
 final class EventBase
@@ -84,14 +84,14 @@ final class EventBase
 
     /**
      * Constructs EventBase object
-     * 
+     *
      * @param null|EventConfig $cfg Optional event configuration
      */
     public function __construct(?EventConfig $cfg = null) {}
 
     /**
      * Dispatch pending events
-     * 
+     *
      * @param int $flags EventBase::LOOP_ONCE, EventBase::LOOP_NONBLOCK, etc.
      */
     public function loop(int $flags = 0): void
@@ -101,7 +101,7 @@ final class EventBase
 
     /**
      * Stop dispatching events
-     * 
+     *
      * @param float $timeout Optional timeout
      * @return bool
      */
@@ -113,7 +113,7 @@ final class EventBase
 
 /**
  * EventConfig class - used for event base configuration
- * 
+ *
  * @see https://php.net/manual/en/class.eventconfig.php
  */
 final class EventConfig

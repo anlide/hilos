@@ -18,4 +18,3 @@ class NotConnectedException extends SocketException
         parent::__construct($message, 107, $previous); // ENOTCONN
     }
 }
-

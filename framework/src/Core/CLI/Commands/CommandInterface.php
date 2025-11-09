@@ -21,4 +21,3 @@ interface CommandInterface
      */
     public function execute(array $options, array $args): int;
 }
-

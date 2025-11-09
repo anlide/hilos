@@ -99,10 +99,10 @@ abstract class AbstractServer extends AbstractSocket implements ServerInterface
         }
 
         $this->isRunning = true;
-        
+
         // Call onStart hook after server is started
         $this->onStart();
-        
+
         return true;
     }
 
@@ -250,7 +250,7 @@ abstract class AbstractServer extends AbstractSocket implements ServerInterface
     public function onTick(): void
     {
         $clientsToRemove = [];
-        
+
         foreach ($this->clients as $client) {
             try {
                 // Read from client
@@ -277,7 +277,7 @@ abstract class AbstractServer extends AbstractSocket implements ServerInterface
                 $clientsToRemove[] = $client;
             }
         }
-        
+
         // Remove closed clients after iteration
         foreach ($clientsToRemove as $client) {
             $this->removeClient($client);
@@ -317,4 +317,3 @@ abstract class AbstractServer extends AbstractSocket implements ServerInterface
         return true;
     }
 }
-

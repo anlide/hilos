@@ -21,4 +21,3 @@ interface HttpClientInterface extends ClientInterface
      */
     public function setRouter(HttpRouter $router): void;
 }
-

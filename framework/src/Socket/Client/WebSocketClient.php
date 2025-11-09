@@ -163,7 +163,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
                     // Check if binary payload contains a ping frame (browser wraps ping in binary frame)
                     // Ping frame structure: [0x89, 0x80, mask_key_4_bytes] for empty ping
                     $payload = $frame->payload;
-                    if (strlen($payload) >= 6 
+                    if (strlen($payload) >= 6
                         && ord($payload[0]) === 0x89  // FIN + PING opCode
                         && ord($payload[1]) === 0x80  // MASK + length 0
                     ) {
@@ -502,4 +502,3 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
         // Can be overridden in child classes
     }
 }
-

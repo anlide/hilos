@@ -18,4 +18,3 @@ class InvalidFrameSequenceException extends WebSocketException
         parent::__construct($message, 0, $previous);
     }
 }
-

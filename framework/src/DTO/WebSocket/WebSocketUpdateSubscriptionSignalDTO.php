@@ -64,4 +64,3 @@ class WebSocketUpdateSubscriptionSignalDTO extends BaseDTO implements SignalData
         );
     }
 }
-

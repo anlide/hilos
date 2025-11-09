@@ -20,12 +20,12 @@ class Process
     public const string STATUS_STOPPED = 'stopped';
     public const string STATUS_SIGNALED = 'signaled';
     public const string STATUS_EXITED = 'exited';
-    
+
     // Process descriptor types
     public const string DESCRIPTOR_PIPE = 'pipe';
     public const string DESCRIPTOR_FILE = 'file';
     public const string DESCRIPTOR_PTY = 'pty';
-    
+
     // Pipe modes
     public const string PIPE_READ = 'r';
     public const string PIPE_WRITE = 'w';
@@ -242,7 +242,7 @@ class Process
             }
         }
         $this->closePipes();
-        
+
         // Clear halt time
         $this->haltTime = null;
     }

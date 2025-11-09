@@ -26,8 +26,6 @@ use Hilos\Socket\Server\WorkerServer;
  * - run() - Main daemon startup method with epoll-based event loop
  * - onTick() - Abstract method called regularly (must be implemented in child classes)
  * - processEventLoop() - Handles epoll events for registered servers
- *
- * @abstract
  */
 abstract class DaemonManager extends BaseManager
 {
@@ -458,14 +456,14 @@ abstract class DaemonManager extends BaseManager
                         $agentIndex = $destination['agentIndex'] ?? null;
                         $indexInfo = $agentIndex !== null ? " (index: {$agentIndex})" : '';
                         Logger::debug("Dispatching signal: {$signalType}/{$signalName} -> agent: {$agentType}{$indexInfo}");
-                        
+
                         // Wrap signal in DaemonAgentMessageDTO
                         $messageDto = new DaemonAgentMessageDTO(
                             agentType: $agentType,
                             agentIndex: $agentIndex,
                             signal: $signal,
                         );
-                        
+
                         try {
                             $workerServer->sendSignalToAgent(
                                 $agentType,

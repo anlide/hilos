@@ -15,4 +15,3 @@ use Hilos\Socket\Client\ClientInterface;
 interface WorkerClientInterface extends ClientInterface
 {
 }
-

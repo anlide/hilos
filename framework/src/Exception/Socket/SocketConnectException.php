@@ -19,9 +19,8 @@ class SocketConnectException extends SocketException
         $message = sprintf(
             "Socket connect failed (error %d): %s",
             $errorCode,
-            $errorMessage
+            $errorMessage,
         );
         parent::__construct($message, $errorCode, $previous);
     }
 }
-

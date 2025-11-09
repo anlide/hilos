@@ -18,4 +18,3 @@ class InvalidArgumentException extends SocketException
         parent::__construct($message, 22, $previous); // EINVAL
     }
 }
-

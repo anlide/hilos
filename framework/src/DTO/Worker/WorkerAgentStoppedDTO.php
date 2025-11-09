@@ -51,4 +51,3 @@ class WorkerAgentStoppedDTO extends BaseDTO
         );
     }
 }
-

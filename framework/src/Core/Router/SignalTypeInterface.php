@@ -18,4 +18,3 @@ interface SignalTypeInterface
      */
     public function getType(): string;
 }
-

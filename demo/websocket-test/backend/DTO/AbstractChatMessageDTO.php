@@ -16,4 +16,3 @@ abstract class AbstractChatMessageDTO extends BaseDTO implements ChatMessageDTOI
     // Base class for all chat message DTOs
     // Child classes must implement toArray() and fromArray()
 }
-

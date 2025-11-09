@@ -41,4 +41,3 @@ class SignalData extends BaseDTO implements SignalDataInterface
         return new self();
     }
 }
-

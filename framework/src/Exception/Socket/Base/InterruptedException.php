@@ -18,4 +18,3 @@ class InterruptedException extends SocketException
         parent::__construct($message, 4, $previous); // EINTR
     }
 }
-

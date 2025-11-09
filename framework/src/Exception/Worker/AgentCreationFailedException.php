@@ -15,8 +15,7 @@ class AgentCreationFailedException extends \Exception
     {
         $agentId = $agentIndex !== null ? $agentType . ':' . $agentIndex : $agentType;
         $message = "Failed to create agent for agent '{$agentId}'. " .
-                   "Factory returned null for agent type '{$agentType}'.";
+            "Factory returned null for agent type '{$agentType}'.";
         parent::__construct($message, 0, $previous);
     }
 }
-

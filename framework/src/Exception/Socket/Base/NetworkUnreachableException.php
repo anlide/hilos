@@ -19,4 +19,3 @@ class NetworkUnreachableException extends SocketException
         parent::__construct($message, 101, $previous);
     }
 }
-

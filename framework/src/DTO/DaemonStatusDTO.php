@@ -68,4 +68,3 @@ class DaemonStatusDTO extends BaseDTO
         );
     }
 }
-

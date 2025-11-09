@@ -14,4 +14,3 @@ interface AgentMessageDTOInterface
 {
     // Marker interface - extends BaseDTO for serialization support
 }
-

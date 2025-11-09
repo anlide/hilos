@@ -48,4 +48,3 @@ class ChatAgentDaemonFactory extends AbstractAgentDaemonFactory
         return new UserAgentDaemon($agentIndex);
     }
 }
-

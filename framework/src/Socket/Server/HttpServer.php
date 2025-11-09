@@ -102,4 +102,3 @@ class HttpServer extends AbstractServer
         // HTTP server has no specific startup logic
     }
 }
-

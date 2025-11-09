@@ -63,25 +63,25 @@ class ArgumentHelper
         foreach ($argv as $arg) {
             if (str_starts_with($arg, $format)) {
                 $workerIndexString = substr($arg, $formatLength);
-                
+
                 // Check if value is empty
                 if ($workerIndexString === '') {
                     throw new InvalidWorkerIdException('worker index value is empty');
                 }
-                
+
                 // Parse as integer
                 $workerIndex = (int)$workerIndexString;
-                
+
                 // Check if value was actually numeric (intval('abc') returns 0, but we need to check if original was numeric)
                 if ((string)$workerIndex !== $workerIndexString) {
                     throw new InvalidWorkerIdException("worker index '{$workerIndexString}' is not a valid integer");
                 }
-                
+
                 // Check if positive
                 if ($workerIndex <= 0) {
                     throw new InvalidWorkerIdException("worker index must be positive, got {$workerIndex}");
                 }
-                
+
                 return $workerIndex;
             }
         }
@@ -143,4 +143,3 @@ class ArgumentHelper
         return $args;
     }
 }
-

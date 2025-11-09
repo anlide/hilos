@@ -19,4 +19,3 @@ class MessageTooLongException extends SocketException
         parent::__construct($message, 90, $previous);
     }
 }
-

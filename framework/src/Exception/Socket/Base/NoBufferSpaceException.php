@@ -18,4 +18,3 @@ class NoBufferSpaceException extends SocketException
         parent::__construct($message, 105, $previous); // ENOBUFS
     }
 }
-

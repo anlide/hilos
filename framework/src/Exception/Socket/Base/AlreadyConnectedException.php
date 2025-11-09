@@ -18,4 +18,3 @@ class AlreadyConnectedException extends SocketException
         parent::__construct($message, 106, $previous); // EISCONN
     }
 }
-

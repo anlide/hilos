@@ -22,14 +22,14 @@ interface ClientInterface
 
     /**
      * Read data from client socket
-     * 
+     *
      * @throws SocketException
      */
     public function read(): void;
 
     /**
      * Write buffered data to socket
-     * 
+     *
      * @throws SocketException
      */
     public function write(): void;
@@ -48,17 +48,16 @@ interface ClientInterface
 
     /**
      * Close client connection
-     * 
+     *
      * @throws SocketException
      */
     public function close(): void;
 
     /**
      * Tick method - called on each server tick
-     * 
+     *
      * Allows clients to perform periodic operations (e.g., timeout checks).
      * Called before read() and write() in server's onTick().
      */
     public function onTick(): void;
 }
-

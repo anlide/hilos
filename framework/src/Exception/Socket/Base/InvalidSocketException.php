@@ -18,4 +18,3 @@ class InvalidSocketException extends SocketException
         parent::__construct($message, 9, $previous); // EBADF
     }
 }
-

@@ -17,9 +17,8 @@ class SocketCloseException extends SocketException
         $message = sprintf(
             "Socket close failed (error %d): %s",
             $errorCode,
-            $errorMessage
+            $errorMessage,
         );
         parent::__construct($message, $errorCode, $previous);
     }
 }
-

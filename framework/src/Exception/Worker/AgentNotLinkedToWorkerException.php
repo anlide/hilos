@@ -14,8 +14,7 @@ class AgentNotLinkedToWorkerException extends \Exception
     public function __construct(string $agentId, ?Throwable $previous = null)
     {
         $message = "Agent daemon '{$agentId}' is not linked to worker client. " .
-                   "Agent must be started and linked to worker before sending signals.";
+            "Agent must be started and linked to worker before sending signals.";
         parent::__construct($message, 0, $previous);
     }
 }
-

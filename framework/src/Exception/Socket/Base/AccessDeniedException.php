@@ -18,4 +18,3 @@ class AccessDeniedException extends SocketException
         parent::__construct($message, 13, $previous); // EACCES
     }
 }
-

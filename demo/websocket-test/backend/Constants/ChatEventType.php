@@ -29,4 +29,3 @@ enum ChatEventType: string
     /** User sent a message */
     case MESSAGE_SENT = 'message_sent';
 }
-

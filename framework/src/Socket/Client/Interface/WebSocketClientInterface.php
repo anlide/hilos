@@ -27,4 +27,3 @@ interface WebSocketClientInterface extends ClientInterface
      */
     public function sendFrameBinary(string $data): void;
 }
-

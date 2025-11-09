@@ -35,4 +35,3 @@ class ChatClearedEvent extends AbstractChatEvent
         return [];
     }
 }
-

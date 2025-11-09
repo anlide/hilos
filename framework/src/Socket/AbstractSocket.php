@@ -323,7 +323,7 @@ abstract class AbstractSocket
      * Parses JSON by tracking bracket depth, handling nested objects and arrays.
      * Safely handles JSON objects that may contain newlines in strings.
      * Returns null if message is incomplete.
-     * 
+     *
      * Throws SocketException if buffer exceeds maximum size or JSON depth is too high.
      *
      * @param string $readBuffer Read buffer (will be modified to remove extracted message)
@@ -371,7 +371,7 @@ abstract class AbstractSocket
                         $startPos = $i; // Start of JSON object
                     }
                     $depth++;
-                    
+
                     // Check JSON nesting depth to prevent stack overflow
                     if ($depth > SocketConstants::MAX_JSON_DEPTH) {
                         $this->markShouldClose();

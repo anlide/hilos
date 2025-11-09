@@ -30,4 +30,3 @@ class SignalTypeConstants
     // Cron actions signal types
     public const string CRON = 'cron';
 }
-

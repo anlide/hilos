@@ -17,9 +17,8 @@ class SocketSetNonBlockException extends SocketException
         $message = sprintf(
             "Socket set nonblock failed (error %d): %s",
             $errorCode,
-            $errorMessage
+            $errorMessage,
         );
         parent::__construct($message, $errorCode, $previous);
     }
 }
-
