@@ -244,7 +244,7 @@ abstract class WorkerManager extends BaseManager
 
         $agent->setMessageSender([$this, 'sendAgentMessage']);
         $agent->onStart();
-        Logger::info("Agent {$agentId} started");
+        Logger::info("Agent '{$agentId}' started");
         // Additional agent log from worker side
         Logger::logAgentInfo($agentId, "Agent started on worker [workerIndex={$this->workerIndex}]");
 
