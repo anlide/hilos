@@ -4,6 +4,13 @@ declare(strict_types=1);
 
 namespace Demo\WebSocketTest\Core\Agent;
 
+use Demo\WebSocketTest\Domain\Event\ChatEventInterface;
+use Demo\WebSocketTest\Domain\Event\Events\ChatClearedEvent;
+use Demo\WebSocketTest\Domain\Event\Events\ChatCreatedEvent;
+use Demo\WebSocketTest\Domain\Event\Events\MessageSentEvent;
+use Demo\WebSocketTest\Domain\Event\Events\UserJoinedEvent;
+use Demo\WebSocketTest\Domain\Event\Events\UserLeftEvent;
+use Demo\WebSocketTest\Domain\Event\Events\UserRenamedEvent;
 use Demo\WebSocketTest\Utils\Constants\AgentType;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Router\SignalDataInterface;
@@ -18,7 +25,7 @@ use Hilos\Logging\Logger\Logger;
  */
 class ChatAgent extends AbstractAgent
 {
-    /** @var array Chat event history */
+    /** @var array<ChatEventInterface> Chat event history */
     private array $history = [];
 
     /** @var float Last cleanup timestamp */
@@ -54,8 +61,8 @@ class ChatAgent extends AbstractAgent
      */
     public function onStart(): void
     {
-        // Add chat started event to history
-        $this->addEvent('chat_started', []);
+        // Add chat created event to history
+        $this->addEvent(new ChatCreatedEvent());
     }
 
     /**
@@ -70,29 +77,16 @@ class ChatAgent extends AbstractAgent
      */
     public function onTick(): void
     {
-        $currentTime = microtime(true) * 1000;
-
-        // Check if cleanup is needed (every 5 minutes)
-        if (($currentTime - $this->lastCleanup) >= self::CLEANUP_INTERVAL) {
-            $this->cleanupHistory();
-            $this->lastCleanup = $currentTime;
-        }
+        // No periodic tasks needed - cleanup handled via cron signals
     }
 
     /**
      * Add event to history
      *
-     * @param string $eventType Event type
-     * @param array $eventData Event data
+     * @param ChatEventInterface $event Event object
      */
-    private function addEvent(string $eventType, array $eventData): void
+    private function addEvent(ChatEventInterface $event): void
     {
-        $event = [
-            'type' => $eventType,
-            'timestamp' => time(),
-            'data' => $eventData,
-        ];
-
         $this->history[] = $event;
 
         // Broadcast event to all connected clients via daemon
@@ -106,20 +100,7 @@ class ChatAgent extends AbstractAgent
     private function cleanupHistory(): void
     {
         $this->history = [];
-        $this->addEvent('history_cleared', []);
-    }
-
-    /**
-     * Handle system signal
-     *
-     * @param string $source Signal source
-     * @param string $name Signal name
-     * @param SignalDataInterface $data Signal data
-     */
-    public function onSignalSystem(string $source, string $name, SignalDataInterface $data): void
-    {
-        $dataArray = $data instanceof BaseDTO ? $data->toArray() : [];
-        Logger::logAgentInfo($this->getId(), "System signal received: source={$source}, name={$name}, data=" . json_encode($dataArray));
+        $this->addEvent(new ChatClearedEvent());
     }
 
     /**
@@ -136,6 +117,11 @@ class ChatAgent extends AbstractAgent
         $page = $dataArray['page'] ?? null;
         $groups = $dataArray['groups'] ?? [];
         Logger::logAgentInfo($this->getId(), "Page subscribe signal received: source={$source}, name={$name}, client={$clientId}, page=" . ($page ?? 'null') . ", groups=" . json_encode($groups));
+
+        // Add user joined event if subscribing to chat page
+        if (($page === 'chat' || $page === null) && $clientId !== '') {
+            $this->addEvent(new UserJoinedEvent($clientId));
+        }
     }
 
     /**
@@ -152,58 +138,11 @@ class ChatAgent extends AbstractAgent
         $page = $dataArray['page'] ?? false;
         $groups = $dataArray['groups'] ?? [];
         Logger::logAgentInfo($this->getId(), "Page unsubscribe signal received: source={$source}, name={$name}, client={$clientId}, page=" . ($page ? 'true' : 'false') . ", groups=" . json_encode($groups));
-    }
 
-    /**
-     * Handle page update subscription signal
-     *
-     * @param string $source Signal source
-     * @param string $name Signal name
-     * @param SignalDataInterface $data Signal data
-     */
-    public function onSignalPageUpdateSubscription(string $source, string $name, SignalDataInterface $data): void
-    {
-        $dataArray = $data instanceof BaseDTO ? $data->toArray() : [];
-        Logger::logAgentInfo($this->getId(), "Page update subscription signal received: source={$source}, name={$name}, data=" . json_encode($dataArray));
-    }
-
-    /**
-     * Handle group subscribe signal
-     *
-     * @param string $source Signal source
-     * @param string $name Signal name
-     * @param SignalDataInterface $data Signal data
-     */
-    public function onSignalGroupSubscribe(string $source, string $name, SignalDataInterface $data): void
-    {
-        $dataArray = $data instanceof BaseDTO ? $data->toArray() : [];
-        Logger::logAgentInfo($this->getId(), "Group subscribe signal received: source={$source}, name={$name}, data=" . json_encode($dataArray));
-    }
-
-    /**
-     * Handle group unsubscribe signal
-     *
-     * @param string $source Signal source
-     * @param string $name Signal name
-     * @param SignalDataInterface $data Signal data
-     */
-    public function onSignalGroupUnsubscribe(string $source, string $name, SignalDataInterface $data): void
-    {
-        $dataArray = $data instanceof BaseDTO ? $data->toArray() : [];
-        Logger::logAgentInfo($this->getId(), "Group unsubscribe signal received: source={$source}, name={$name}, data=" . json_encode($dataArray));
-    }
-
-    /**
-     * Handle group update subscription signal
-     *
-     * @param string $source Signal source
-     * @param string $name Signal name
-     * @param SignalDataInterface $data Signal data
-     */
-    public function onSignalGroupUpdateSubscription(string $source, string $name, SignalDataInterface $data): void
-    {
-        $dataArray = $data instanceof BaseDTO ? $data->toArray() : [];
-        Logger::logAgentInfo($this->getId(), "Group update subscription signal received: source={$source}, name={$name}, data=" . json_encode($dataArray));
+        // Add user left event if unsubscribing from chat page
+        if (($page === 'chat' || $page === false) && $clientId !== '') {
+            $this->addEvent(new UserLeftEvent($clientId));
+        }
     }
 
     /**
@@ -220,6 +159,26 @@ class ChatAgent extends AbstractAgent
         $action = $dataArray['action'] ?? '';
         $actionData = $dataArray['data'] ?? [];
         Logger::logAgentInfo($this->getId(), "Action signal received: source={$source}, name={$name}, client={$clientId}, action={$action}, data=" . json_encode($actionData));
+
+        // Handle different action types
+        switch ($action) {
+            case 'rename':
+                // User renamed themselves
+                $oldName = $actionData['oldName'] ?? '';
+                $newName = $actionData['newName'] ?? '';
+                if ($oldName !== '' && $newName !== '' && $clientId !== '') {
+                    $this->addEvent(new UserRenamedEvent($clientId, $oldName, $newName));
+                }
+                break;
+
+            case 'message':
+                // User sent a message
+                $message = $actionData['message'] ?? '';
+                if ($message !== '' && $clientId !== '') {
+                    $this->addEvent(new MessageSentEvent($clientId, $message));
+                }
+                break;
+        }
     }
 
     /**
@@ -233,5 +192,15 @@ class ChatAgent extends AbstractAgent
     {
         $dataArray = $data instanceof BaseDTO ? $data->toArray() : [];
         Logger::logAgentInfo($this->getId(), "Cron signal received: source={$source}, name={$name}, data=" . json_encode($dataArray));
+
+        // Handle cleanup cron task
+        if ($name === 'cleanup_history') {
+            $currentTime = microtime(true) * 1000;
+            // Check if cleanup is needed (every 5 minutes)
+            if (($currentTime - $this->lastCleanup) >= self::CLEANUP_INTERVAL) {
+                $this->cleanupHistory();
+                $this->lastCleanup = $currentTime;
+            }
+        }
     }
 }
