@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../../../vendor/autoload.php';
 
-use Hilos\Core\Agent\AgentInterface;
+use Hilos\Core\Agent\AgentManager;
 use Hilos\Core\Daemon\WorkerManager;
 use Hilos\Exception\InvalidWorkerIdException;
 use Hilos\Exception\Worker\AgentCreationFailedException;
@@ -39,18 +39,16 @@ try {
     // Projects should override this with their own WorkerManager implementation
     $workerManager = new class($workerIndex, $argv) extends WorkerManager {
         /**
-         * Create agent instance (required by abstract method)
+         * Create agent manager instance
          *
-         * Framework bootstrap doesn't create agents - this is for projects.
+         * Framework bootstrap doesn't create agent managers - this is for projects.
          *
-         * @param string $agentType Agent type
-         * @param ?string $agentIndex Agent index (optional)
-         * @return AgentInterface Agent instance
+         * @return AgentManager Agent manager instance
          */
-        protected function createAgent(string $agentType, ?string $agentIndex): AgentInterface
+        protected function createAgentManager(): AgentManager
         {
-            // Framework bootstrap doesn't create agents
-            throw new AgentCreationFailedException($agentType, $agentIndex);
+            // Framework bootstrap doesn't create agent managers
+            throw new AgentCreationFailedException('framework', null);
         }
 
         /**
@@ -71,11 +69,6 @@ try {
                 Logger::info("Worker #{$this->workerIndex} heartbeat - " . date('Y-m-d H:i:s'));
                 $lastHeartbeat = $currentTime;
             }
-        }
-
-        protected function onSignal(string $agentId, array $signalData): void
-        {
-            // TODO: Implement onSignal() method.
         }
     };
 

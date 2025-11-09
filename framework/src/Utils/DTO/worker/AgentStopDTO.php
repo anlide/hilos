@@ -7,19 +7,18 @@ namespace Hilos\Utils\DTO\Worker;
 use Hilos\Utils\Constants\WorkerConstants;
 
 /**
- * WorkerRegisteredDTO - DTO for worker registration confirmation
+ * AgentStopDTO - DTO for agent stop signal
  *
- * Used when daemon confirms worker registration.
+ * Used when daemon sends agent_stop signal to worker.
  */
-class WorkerRegisteredDTO extends WorkerDTO
+class AgentStopDTO extends WorkerDTO
 {
     // Field name constants
-    public const string TYPE = 'type';
-    public const string WORKER_INDEX = 'workerIndex';
-    public const string MONOPOLISTIC = 'monopolistic';
+    public const string AGENT_TYPE = 'agentType';
+    public const string AGENT_INDEX = 'agentIndex';
 
     // Message type
-    public const string MESSAGE_TYPE = WorkerConstants::MESSAGE_WORKER_REGISTERED;
+    public const string MESSAGE_TYPE = WorkerConstants::MESSAGE_AGENT_STOP;
 
     /**
      * Get message type
@@ -32,8 +31,8 @@ class WorkerRegisteredDTO extends WorkerDTO
     }
 
     public function __construct(
-        public readonly int $workerIndex,
-        public readonly bool $monopolistic = false,
+        public readonly string $agentType,
+        public readonly ?string $agentIndex = null,
     ) {
     }
 
@@ -44,11 +43,16 @@ class WorkerRegisteredDTO extends WorkerDTO
      */
     public function toArray(): array
     {
-        return [
+        $result = [
             self::TYPE => $this->getType(),
-            self::WORKER_INDEX => $this->workerIndex,
-            self::MONOPOLISTIC => $this->monopolistic,
+            self::AGENT_TYPE => $this->agentType,
         ];
+
+        if ($this->agentIndex !== null) {
+            $result[self::AGENT_INDEX] = $this->agentIndex;
+        }
+
+        return $result;
     }
 
     /**
@@ -60,8 +64,9 @@ class WorkerRegisteredDTO extends WorkerDTO
     public static function fromArray(array $data): static
     {
         return new self(
-            workerIndex: $data[self::WORKER_INDEX] ?? 0,
-            monopolistic: $data[self::MONOPOLISTIC] ?? false,
+            agentType: $data[self::AGENT_TYPE] ?? '',
+            agentIndex: $data[self::AGENT_INDEX] ?? null,
         );
     }
 }
+

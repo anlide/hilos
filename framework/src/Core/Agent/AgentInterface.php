@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Agent;
 
+use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Utils\DTO\Agent\AgentMessageDTOInterface;
 use Hilos\Utils\DTO\Agent\MessageFromAgentDTO;
 use Hilos\Utils\DTO\Agent\MessageFromDaemonDTO;
@@ -45,7 +46,7 @@ interface AgentInterface
      *
      * Performs agent's work on each tick. Called approximately every 100ms.
      */
-    public function tick(): void;
+    public function onTick(): void;
 
     /**
      * Handle message from daemon
@@ -92,5 +93,86 @@ interface AgentInterface
      * Called once when agent is being destroyed/stopped.
      */
     public function onStop(): void;
+
+    /**
+     * Handle system signal
+     *
+     * @param string $source Signal source
+     * @param string $name Signal name
+     * @param SignalDataInterface $data Signal data
+     */
+    public function onSignalSystem(string $source, string $name, SignalDataInterface $data): void;
+
+    /**
+     * Handle page subscribe signal
+     *
+     * @param string $source Signal source
+     * @param string $name Signal name
+     * @param SignalDataInterface $data Signal data
+     */
+    public function onSignalPageSubscribe(string $source, string $name, SignalDataInterface $data): void;
+
+    /**
+     * Handle page unsubscribe signal
+     *
+     * @param string $source Signal source
+     * @param string $name Signal name
+     * @param SignalDataInterface $data Signal data
+     */
+    public function onSignalPageUnsubscribe(string $source, string $name, SignalDataInterface $data): void;
+
+    /**
+     * Handle page update subscription signal
+     *
+     * @param string $source Signal source
+     * @param string $name Signal name
+     * @param SignalDataInterface $data Signal data
+     */
+    public function onSignalPageUpdateSubscription(string $source, string $name, SignalDataInterface $data): void;
+
+    /**
+     * Handle group subscribe signal
+     *
+     * @param string $source Signal source
+     * @param string $name Signal name
+     * @param SignalDataInterface $data Signal data
+     */
+    public function onSignalGroupSubscribe(string $source, string $name, SignalDataInterface $data): void;
+
+    /**
+     * Handle group unsubscribe signal
+     *
+     * @param string $source Signal source
+     * @param string $name Signal name
+     * @param SignalDataInterface $data Signal data
+     */
+    public function onSignalGroupUnsubscribe(string $source, string $name, SignalDataInterface $data): void;
+
+    /**
+     * Handle group update subscription signal
+     *
+     * @param string $source Signal source
+     * @param string $name Signal name
+     * @param SignalDataInterface $data Signal data
+     */
+    public function onSignalGroupUpdateSubscription(string $source, string $name, SignalDataInterface $data): void;
+
+    /**
+     * Handle action signal
+     *
+     * @param string $source Signal source
+     * @param string $name Signal name
+     * @param SignalDataInterface $data Signal data
+     */
+    public function onSignalAction(string $source, string $name, SignalDataInterface $data): void;
+
+    /**
+     * Handle cron signal
+     *
+     * @param string $source Signal source
+     * @param string $name Signal name
+     * @param SignalDataInterface $data Signal data
+     */
+    public function onSignalCron(string $source, string $name, SignalDataInterface $data): void;
 }
 

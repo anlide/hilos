@@ -11,6 +11,7 @@ use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
 use Hilos\Core\Router\SignalName;
+use Hilos\Core\Router\SignalData;
 
 /**
  * SignalDTO - DTO for queued signal
@@ -34,11 +35,24 @@ class SignalDTO extends BaseDTO
      */
     public function toArray(): array
     {
+        $dataArray = $this->data instanceof BaseDTO
+            ? $this->data->toArray()
+            : $this->data;
+
+        // Serialize signalSource
+        $signalSourceArray = $this->signalSource instanceof SignalSourceInterface
+            ? [
+                'source' => $this->signalSource->getSource(),
+                'type' => $this->signalSource->getType(),
+                'index' => $this->signalSource->getIndex(),
+            ]
+            : $this->signalSource;
+
         return [
-            'signalSource' => $this->signalSource,
+            'signalSource' => $signalSourceArray,
             'signalType' => $this->signalType->getType(),
             'signalName' => $this->signalName->getName(),
-            'data' => $this->data,
+            'data' => $dataArray,
         ];
     }
 
@@ -50,9 +64,21 @@ class SignalDTO extends BaseDTO
      */
     public static function fromArray(array $data): static
     {
-        $signalSource = $data['signalSource'] instanceof SignalSourceInterface
-            ? $data['signalSource']
-            : new SignalSource($data['signalSource'] ?? '');
+        // Deserialize signalSource
+        $signalSourceData = $data['signalSource'] ?? [];
+        if ($signalSourceData instanceof SignalSourceInterface) {
+            $signalSource = $signalSourceData;
+        } elseif (is_array($signalSourceData)) {
+            // From JSON deserialization - array with source, type, index
+            $signalSource = new SignalSource(
+                source: $signalSourceData['source'] ?? '',
+                type: $signalSourceData['type'] ?? null,
+                index: $signalSourceData['index'] ?? null,
+            );
+        } else {
+            // Fallback: treat as string
+            $signalSource = new SignalSource((string)$signalSourceData);
+        }
 
         $signalType = $data['signalType'] instanceof SignalTypeInterface
             ? $data['signalType']
@@ -62,11 +88,18 @@ class SignalDTO extends BaseDTO
             ? $data['signalName']
             : new SignalName($data['signalName'] ?? '');
 
+        $signalData = $data['data'] ?? [];
+        if (!($signalData instanceof SignalDataInterface)) {
+            // If data is an array (from JSON deserialization), create empty SignalData
+            // In practice, specific SignalData DTOs should be created based on signal type
+            $signalData = new SignalData();
+        }
+
         return new self(
             signalSource: $signalSource,
             signalType: $signalType,
             signalName: $signalName,
-            data: $data['data'],
+            data: $signalData,
         );
     }
 }

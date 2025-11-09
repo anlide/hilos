@@ -10,6 +10,12 @@ use Hilos\Exception\SocketException;
 use Hilos\Exception\Worker\AgentCreationFailedException;
 use Hilos\Logging\Logger\Logger;
 use Hilos\Socket\Worker\WorkerDaemonClient;
+use Hilos\Utils\Constants\SignalTypeConstants;
+use Hilos\Utils\Constants\WorkerConstants;
+use Hilos\Utils\DTO\Worker\AgentStartDTO;
+use Hilos\Utils\DTO\Worker\AgentStopDTO;
+use Hilos\Utils\DTO\Worker\DaemonAgentMessageDTO;
+use Hilos\Utils\DTO\Worker\WorkerDTO;
 use Hilos\Utils\Helpers\ArgumentHelper;
 
 /**
@@ -115,22 +121,16 @@ abstract class WorkerManager extends BaseManager
                 // Call tick method (only when connected)
                 $this->onTick();
 
-                // Tick all agents and collect those that requested stop
-                $agentsToRemove = [];
+                // Tick all agents
                 foreach ($this->agentManager->getAgents() as $agentId => $agent) {
-                    $agent->tick();
+                    $agent->onTick();
 
-                    // Check if agent requested stop (after tick which calls onStop)
+                    // Check if agent requested stop
                     if ($agent->shouldStop()) {
-                        $agentsToRemove[] = $agentId;
+                        $this->agentManager->removeAgent($agentId);
+                        Logger::info("Agent {$agentId} stopped (self-requested)");
+                        Logger::logAgentInfo($agentId, "Agent stopped (self-requested) on worker [workerIndex={$this->workerIndex}]");
                     }
-                }
-
-                // Remove agents that requested stop
-                foreach ($agentsToRemove as $agentId) {
-                    $this->agentManager->removeAgent($agentId);
-                    Logger::info("Agent {$agentId} stopped (self-requested)");
-                    Logger::logAgentInfo($agentId, "Agent stopped (self-requested) on worker [workerIndex={$this->workerIndex}]");
                 }
             }
 
@@ -161,7 +161,7 @@ abstract class WorkerManager extends BaseManager
 
         // Send worker registration message (will be sent when connection is established)
         $this->daemonClient->send([
-            'type' => 'worker_register',
+            'type' => WorkerConstants::MESSAGE_WORKER_REGISTER,
             'workerIndex' => $this->workerIndex,
             'monopolistic' => $this->isMonopolistic,
         ]);
@@ -170,29 +170,28 @@ abstract class WorkerManager extends BaseManager
     /**
      * Handle message from daemon
      *
-     * @param array $data Message data
+     * @param WorkerDTO $data Message data
      * @throws AgentCreationFailedException If agent creation fails
      */
-    public function handleDaemonMessage(array $data): void
+    public function handleDaemonMessage(WorkerDTO $data): void
     {
-        $type = $data['type'] ?? '';
-        Logger::info("Received message from daemon: type={$type}, data=" . json_encode($data));
+        $type = $data->getType();
+        Logger::debug("Received message from daemon: type={$type}, data=" . json_encode($data->toArray()));
 
         switch ($type) {
-            case 'worker_registered':
-                // Connection confirmed by daemon
-                Logger::info("Connected to daemon");
+            case WorkerConstants::MESSAGE_WORKER_REGISTERED:
+                $this->handleWorkerRegistered($data);
                 break;
 
-            case 'agent_start':
+            case WorkerConstants::MESSAGE_AGENT_START:
                 $this->handleAgentStart($data);
                 break;
 
-            case 'agent_stop':
+            case WorkerConstants::MESSAGE_AGENT_STOP:
                 $this->handleAgentStop($data);
                 break;
 
-            case 'agent_message':
+            case WorkerConstants::MESSAGE_AGENT_MESSAGE:
                 $this->handleAgentMessage($data);
                 break;
 
@@ -203,20 +202,37 @@ abstract class WorkerManager extends BaseManager
     }
 
     /**
+     * Handle worker registered message
+     *
+     * @param WorkerDTO $data Message data
+     */
+    private function handleWorkerRegistered(WorkerDTO $data): void
+    {
+        // Connection confirmed by daemon
+        Logger::info("Connected to daemon");
+    }
+
+    /**
      * Handle agent start message
      *
-     * @param array $data Message data
+     * @param WorkerDTO $data Message data
      * @throws AgentCreationFailedException If agent creation fails
      */
-    private function handleAgentStart(array $data): void
+    private function handleAgentStart(WorkerDTO $data): void
     {
-        $agentId = $data['agentId'] ?? '';
-        $agentType = $data['agentType'] ?? '';
-        $agentIndex = $data['agentIndex'] ?? null;
-
-        if ($agentId === '' || $agentType === '') {
+        if (!($data instanceof AgentStartDTO)) {
             return;
         }
+
+        $agentType = $data->agentType;
+        $agentIndex = $data->agentIndex;
+
+        if ($agentType === '') {
+            return;
+        }
+
+        // Build agent ID from type and index
+        $agentId = $this->agentManager->buildAgentId($agentType, $agentIndex);
 
         // Check if agent already exists
         if ($this->agentManager->hasAgent($agentId)) {
@@ -239,13 +255,25 @@ abstract class WorkerManager extends BaseManager
     /**
      * Handle agent stop message
      *
-     * @param array $data Message data
+     * @param WorkerDTO $data Message data
      */
-    private function handleAgentStop(array $data): void
+    private function handleAgentStop(WorkerDTO $data): void
     {
-        $agentId = $data['agentId'] ?? '';
+        if (!($data instanceof AgentStopDTO)) {
+            return;
+        }
 
-        if ($agentId === '' || !$this->agentManager->hasAgent($agentId)) {
+        $agentType = $data->agentType;
+        $agentIndex = $data->agentIndex;
+
+        if ($agentType === '') {
+            return;
+        }
+
+        // Build agent ID from type and index
+        $agentId = $this->agentManager->buildAgentId($agentType, $agentIndex);
+
+        if (!$this->agentManager->hasAgent($agentId)) {
             return;
         }
 
@@ -267,14 +295,25 @@ abstract class WorkerManager extends BaseManager
     /**
      * Handle agent message
      *
-     * @param array $data Message data
+     * @param WorkerDTO $data Message data
      */
-    private function handleAgentMessage(array $data): void
+    private function handleAgentMessage(WorkerDTO $data): void
     {
-        $agentId = $data['agentId'] ?? '';
-        $source = $data['source'] ?? 'daemon';
+        if (!($data instanceof DaemonAgentMessageDTO)) {
+            return;
+        }
 
-        if ($agentId === '' || !$this->agentManager->hasAgent($agentId)) {
+        $agentType = $data->agentType;
+        $agentIndex = $data->agentIndex;
+
+        if ($agentType === '') {
+            return;
+        }
+
+        // Build agent ID from type and index
+        $agentId = $this->agentManager->buildAgentId($agentType, $agentIndex);
+
+        if (!$this->agentManager->hasAgent($agentId)) {
             return;
         }
 
@@ -283,20 +322,27 @@ abstract class WorkerManager extends BaseManager
             return;
         }
 
-        // Extract signal data and call onSignal handler
-        $signalData = $data['data'] ?? [];
-        $this->onSignal($agentId, $signalData);
-    }
+        // Extract signal and route to appropriate handler in agent based on signal type
+        $signal = $data->signal;
+        $signalType = $signal->signalType->getType();
+        $source = $signal->signalSource->getSource();
+        $name = $signal->signalName->getName();
+        $signalData = $signal->data;
 
-    /**
-     * Handle signal from daemon to agent
-     *
-     * Must be implemented in child classes to handle specific signal types.
-     *
-     * @param string $agentId Agent ID
-     * @param array $signalData Signal data
-     */
-    abstract protected function onSignal(string $agentId, array $signalData): void;
+        // Route to appropriate handler in agent based on signal type
+        match ($signalType) {
+            SignalTypeConstants::SYSTEM => $agent->onSignalSystem($source, $name, $signalData),
+            SignalTypeConstants::PAGE_SUBSCRIBE => $agent->onSignalPageSubscribe($source, $name, $signalData),
+            SignalTypeConstants::PAGE_UNSUBSCRIBE => $agent->onSignalPageUnsubscribe($source, $name, $signalData),
+            SignalTypeConstants::PAGE_UPDATE_SUBSCRIPTION => $agent->onSignalPageUpdateSubscription($source, $name, $signalData),
+            SignalTypeConstants::GROUP_SUBSCRIBE => $agent->onSignalGroupSubscribe($source, $name, $signalData),
+            SignalTypeConstants::GROUP_UNSUBSCRIBE => $agent->onSignalGroupUnsubscribe($source, $name, $signalData),
+            SignalTypeConstants::GROUP_UPDATE_SUBSCRIPTION => $agent->onSignalGroupUpdateSubscription($source, $name, $signalData),
+            SignalTypeConstants::ACTION => $agent->onSignalAction($source, $name, $signalData),
+            SignalTypeConstants::CRON => $agent->onSignalCron($source, $name, $signalData),
+            default => null, // Unknown signal type - ignore
+        };
+    }
 
     /**
      * Send message from agent to daemon
@@ -317,7 +363,7 @@ abstract class WorkerManager extends BaseManager
         }
 
         $message = [
-            'type' => 'agent_message',
+            'type' => WorkerConstants::MESSAGE_AGENT_MESSAGE,
             'agentId' => $agentId,
             'agentType' => $agent->getType(),
             'data' => $data,
@@ -340,7 +386,7 @@ abstract class WorkerManager extends BaseManager
         }
 
         $message = [
-            'type' => 'agent_started',
+            'type' => WorkerConstants::MESSAGE_AGENT_STARTED,
             'agentId' => $agentId,
             'agentType' => $agentType,
         ];
@@ -364,7 +410,7 @@ abstract class WorkerManager extends BaseManager
         }
 
         $message = [
-            'type' => 'agent_stopped',
+            'type' => WorkerConstants::MESSAGE_AGENT_STOPPED,
             'agentId' => $agentId,
         ];
 

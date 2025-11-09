@@ -21,8 +21,7 @@ use Hilos\Exception\Worker\NoSuitableWorkerException;
 use Hilos\Exception\Worker\AgentNotFoundException;
 use Hilos\Exception\Worker\AgentNotLinkedToWorkerException;
 use Hilos\Exception\Worker\WorkerClientNotFoundException;
-use Hilos\Utils\DTO\Worker\AgentMessageDTO;
-use Hilos\Utils\DTO\SignalDTO;
+use Hilos\Utils\DTO\Worker\DaemonAgentMessageDTO;
 use Hilos\Socket\Client\ClientInterface;
 use Hilos\Socket\Client\Interface\WorkerClientInterface;
 use Hilos\Socket\Client\WorkerClient;
@@ -693,7 +692,7 @@ abstract class WorkerServer extends AbstractServer
         $agentDaemon->setWorkerClient($workerClient);
 
         // Send agent_start signal to worker
-        $workerClient->sendAgentStart($agentId, $agentType, $agentIndex);
+        $workerClient->sendAgentStart($agentType, $agentIndex);
     }
 
     /**
@@ -794,14 +793,14 @@ abstract class WorkerServer extends AbstractServer
      *
      * @param string $agentType Agent type
      * @param ?string $agentIndex Agent index (optional)
-     * @param SignalDTO $signal Signal DTO
+     * @param DaemonAgentMessageDTO $messageDto Message DTO containing signal data
      * @throws AgentDaemonCreationFailedException If agent daemon cannot be created
      * @throws NoSuitableWorkerException If no suitable worker is available
      * @throws AgentNotFoundException If agent does not exist after startAgent() call
      * @throws AgentNotLinkedToWorkerException If agent is not linked to worker
      * @throws WorkerClientNotFoundException If worker client is not found for agent
      */
-    public function sendSignalToAgent(string $agentType, ?string $agentIndex, SignalDTO $signal): void
+    public function sendSignalToAgent(string $agentType, ?string $agentIndex, DaemonAgentMessageDTO $messageDto): void
     {
         $agentId = $this->buildAgentId($agentType, $agentIndex);
 
@@ -842,8 +841,8 @@ abstract class WorkerServer extends AbstractServer
             $agentDaemon->setWorkerClient($workerClient);
         }
 
-        // Agent exists and is linked, send signal immediately
-        $agentDaemon->sendToAgent($signal);
+        // Agent exists and is linked, send message DTO immediately
+        $workerClient->send($messageDto->toJson());
     }
 
     /**

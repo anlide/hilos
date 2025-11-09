@@ -38,6 +38,7 @@ use Hilos\Exception\Socket\SocketSetNonBlockException;
 use Hilos\Exception\Socket\SocketSetOptionException;
 use Hilos\Exception\Socket\SocketWriteException;
 use Hilos\Exception\SocketException;
+use Hilos\Utils\Constants\SocketConstants;
 
 /**
  * AbstractSocket - Abstract base class for socket operations
@@ -314,6 +315,90 @@ abstract class AbstractSocket
     public function getSocket()
     {
         return $this->socket;
+    }
+
+    /**
+     * Extract complete JSON message from buffer
+     *
+     * Parses JSON by tracking bracket depth, handling nested objects and arrays.
+     * Safely handles JSON objects that may contain newlines in strings.
+     * Returns null if message is incomplete.
+     * 
+     * Throws SocketException if buffer exceeds maximum size or JSON depth is too high.
+     *
+     * @param string $readBuffer Read buffer (will be modified to remove extracted message)
+     * @return string|null Complete JSON message or null if incomplete
+     * @throws SocketException If buffer size or JSON depth exceeds limits
+     */
+    protected function extractCompleteJsonMessage(string &$readBuffer): ?string
+    {
+        $buffer = $readBuffer;
+        $length = strlen($buffer);
+
+        // Check buffer size limit to prevent DoS attacks
+        if ($length > SocketConstants::MAX_READ_BUFFER_SIZE) {
+            $this->markShouldClose();
+            throw new MessageTooLongException();
+        }
+
+        $depth = 0; // Object/array depth
+        $inString = false; // Whether we're inside a string
+        $escapeNext = false; // Whether next character is escaped
+        $startPos = -1; // Start position of JSON object
+
+        for ($i = 0; $i < $length; $i++) {
+            $char = $buffer[$i];
+
+            if ($escapeNext) {
+                $escapeNext = false;
+                continue;
+            }
+
+            if ($char === '\\') {
+                $escapeNext = true;
+                continue;
+            }
+
+            if ($char === '"') {
+                $inString = !$inString;
+                continue;
+            }
+
+            // Only process brackets when not in string
+            if (!$inString) {
+                if ($char === '{' || $char === '[') {
+                    if ($startPos === -1) {
+                        $startPos = $i; // Start of JSON object
+                    }
+                    $depth++;
+                    
+                    // Check JSON nesting depth to prevent stack overflow
+                    if ($depth > SocketConstants::MAX_JSON_DEPTH) {
+                        $this->markShouldClose();
+                        throw new MessageTooLongException();
+                    }
+                } elseif ($char === '}' || $char === ']') {
+                    $depth--;
+                    if ($depth === 0 && $startPos !== -1) {
+                        // Complete JSON object found
+                        $jsonEnd = $i + 1;
+
+                        // Check if followed by newline
+                        if ($jsonEnd < $length && $buffer[$jsonEnd] === "\n") {
+                            $message = substr($buffer, $startPos, $jsonEnd - $startPos);
+                            $readBuffer = substr($buffer, $jsonEnd + 1);
+                            return $message;
+                        }
+
+                        // If no newline, message is incomplete
+                        return null;
+                    }
+                }
+            }
+        }
+
+        // No complete message found
+        return null;
     }
 
     /**

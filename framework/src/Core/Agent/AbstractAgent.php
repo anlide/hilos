@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Agent;
 
+use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Utils\DTO\Agent\AgentMessageDTOInterface;
 use Hilos\Utils\DTO\Agent\MessageFromAgentDTO;
 use Hilos\Utils\DTO\Agent\MessageFromDaemonDTO;
@@ -73,7 +74,7 @@ abstract class AbstractAgent implements AgentInterface
      *
      * Child classes should override doTick() instead of tick().
      */
-    public function tick(): void
+    public function onTick(): void
     {
         // Check if agent requested stop
         if ($this->shouldStop) {
@@ -191,5 +192,131 @@ abstract class AbstractAgent implements AgentInterface
      * Must be implemented in child classes to handle cleanup.
      */
     abstract public function onStop(): void;
+
+    /**
+     * Default implementation - no system signal handling
+     *
+     * Child classes can override this method.
+     *
+     * @param string $source Signal source
+     * @param string $name Signal name
+     * @param SignalDataInterface $data Signal data
+     */
+    public function onSignalSystem(string $source, string $name, SignalDataInterface $data): void
+    {
+        // Default: do nothing
+    }
+
+    /**
+     * Default implementation - no page subscribe signal handling
+     *
+     * Child classes can override this method.
+     *
+     * @param string $source Signal source
+     * @param string $name Signal name
+     * @param SignalDataInterface $data Signal data
+     */
+    public function onSignalPageSubscribe(string $source, string $name, SignalDataInterface $data): void
+    {
+        // Default: do nothing
+    }
+
+    /**
+     * Default implementation - no page unsubscribe signal handling
+     *
+     * Child classes can override this method.
+     *
+     * @param string $source Signal source
+     * @param string $name Signal name
+     * @param SignalDataInterface $data Signal data
+     */
+    public function onSignalPageUnsubscribe(string $source, string $name, SignalDataInterface $data): void
+    {
+        // Default: do nothing
+    }
+
+    /**
+     * Default implementation - no page update subscription signal handling
+     *
+     * Child classes can override this method.
+     *
+     * @param string $source Signal source
+     * @param string $name Signal name
+     * @param SignalDataInterface $data Signal data
+     */
+    public function onSignalPageUpdateSubscription(string $source, string $name, SignalDataInterface $data): void
+    {
+        // Default: do nothing
+    }
+
+    /**
+     * Default implementation - no group subscribe signal handling
+     *
+     * Child classes can override this method.
+     *
+     * @param string $source Signal source
+     * @param string $name Signal name
+     * @param SignalDataInterface $data Signal data
+     */
+    public function onSignalGroupSubscribe(string $source, string $name, SignalDataInterface $data): void
+    {
+        // Default: do nothing
+    }
+
+    /**
+     * Default implementation - no group unsubscribe signal handling
+     *
+     * Child classes can override this method.
+     *
+     * @param string $source Signal source
+     * @param string $name Signal name
+     * @param SignalDataInterface $data Signal data
+     */
+    public function onSignalGroupUnsubscribe(string $source, string $name, SignalDataInterface $data): void
+    {
+        // Default: do nothing
+    }
+
+    /**
+     * Default implementation - no group update subscription signal handling
+     *
+     * Child classes can override this method.
+     *
+     * @param string $source Signal source
+     * @param string $name Signal name
+     * @param SignalDataInterface $data Signal data
+     */
+    public function onSignalGroupUpdateSubscription(string $source, string $name, SignalDataInterface $data): void
+    {
+        // Default: do nothing
+    }
+
+    /**
+     * Default implementation - no action signal handling
+     *
+     * Child classes can override this method.
+     *
+     * @param string $source Signal source
+     * @param string $name Signal name
+     * @param SignalDataInterface $data Signal data
+     */
+    public function onSignalAction(string $source, string $name, SignalDataInterface $data): void
+    {
+        // Default: do nothing
+    }
+
+    /**
+     * Default implementation - no cron signal handling
+     *
+     * Child classes can override this method.
+     *
+     * @param string $source Signal source
+     * @param string $name Signal name
+     * @param SignalDataInterface $data Signal data
+     */
+    public function onSignalCron(string $source, string $name, SignalDataInterface $data): void
+    {
+        // Default: do nothing
+    }
 }
 

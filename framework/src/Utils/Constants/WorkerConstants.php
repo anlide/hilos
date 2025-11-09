@@ -9,6 +9,7 @@ namespace Hilos\Utils\Constants;
  *
  * Defines command line argument names for worker processes.
  * Formats are derived in ArgumentHelper.
+ * Also defines message types for worker-daemon communication.
  */
 class WorkerConstants
 {
@@ -17,5 +18,28 @@ class WorkerConstants
 
     /** @var string Monopolistic worker flag name */
     public const string MONOPOLISTIC_ARG = 'monopolistic';
+
+    // Message types from daemon to worker
+    /** @var string Worker registration confirmation */
+    public const string MESSAGE_WORKER_REGISTERED = 'worker_registered';
+
+    /** @var string Agent start signal */
+    public const string MESSAGE_AGENT_START = 'agent_start';
+
+    /** @var string Agent stop signal */
+    public const string MESSAGE_AGENT_STOP = 'agent_stop';
+
+    /** @var string Agent message signal */
+    public const string MESSAGE_AGENT_MESSAGE = 'agent_message';
+
+    // Message types from worker to daemon
+    /** @var string Worker registration request */
+    public const string MESSAGE_WORKER_REGISTER = 'worker_register';
+
+    /** @var string Agent started notification */
+    public const string MESSAGE_AGENT_STARTED = 'agent_started';
+
+    /** @var string Agent stopped notification */
+    public const string MESSAGE_AGENT_STOPPED = 'agent_stopped';
 }
 

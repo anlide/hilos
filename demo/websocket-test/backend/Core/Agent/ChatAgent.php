@@ -6,9 +6,11 @@ namespace Demo\WebSocketTest\Core\Agent;
 
 use Demo\WebSocketTest\Utils\Constants\AgentType;
 use Hilos\Core\Agent\AbstractAgent;
+use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Utils\DTO\Agent\AgentMessageDTOInterface;
 use Hilos\Utils\DTO\Agent\MessageFromDaemonDTO;
 use Hilos\Utils\DTO\Agent\MessageFromUserDTO;
+use Hilos\Utils\DTO\BaseDTO;
 use Hilos\Logging\Logger\Logger;
 
 /**
@@ -151,5 +153,131 @@ class ChatAgent extends AbstractAgent
     {
         $this->history = [];
         $this->addEvent('history_cleared', []);
+    }
+
+    /**
+     * Handle system signal
+     *
+     * @param string $source Signal source
+     * @param string $name Signal name
+     * @param SignalDataInterface $data Signal data
+     */
+    public function onSignalSystem(string $source, string $name, SignalDataInterface $data): void
+    {
+        $dataArray = $data instanceof BaseDTO ? $data->toArray() : [];
+        Logger::logAgentInfo($this->getId(), "System signal received: source={$source}, name={$name}, data=" . json_encode($dataArray));
+    }
+
+    /**
+     * Handle page subscribe signal
+     *
+     * @param string $source Signal source
+     * @param string $name Signal name
+     * @param SignalDataInterface $data Signal data
+     */
+    public function onSignalPageSubscribe(string $source, string $name, SignalDataInterface $data): void
+    {
+        $dataArray = $data instanceof BaseDTO ? $data->toArray() : [];
+        $clientId = $dataArray['clientId'] ?? '';
+        $page = $dataArray['page'] ?? null;
+        $groups = $dataArray['groups'] ?? [];
+        Logger::logAgentInfo($this->getId(), "Page subscribe signal received: source={$source}, name={$name}, client={$clientId}, page=" . ($page ?? 'null') . ", groups=" . json_encode($groups));
+    }
+
+    /**
+     * Handle page unsubscribe signal
+     *
+     * @param string $source Signal source
+     * @param string $name Signal name
+     * @param SignalDataInterface $data Signal data
+     */
+    public function onSignalPageUnsubscribe(string $source, string $name, SignalDataInterface $data): void
+    {
+        $dataArray = $data instanceof BaseDTO ? $data->toArray() : [];
+        $clientId = $dataArray['clientId'] ?? '';
+        $page = $dataArray['page'] ?? false;
+        $groups = $dataArray['groups'] ?? [];
+        Logger::logAgentInfo($this->getId(), "Page unsubscribe signal received: source={$source}, name={$name}, client={$clientId}, page=" . ($page ? 'true' : 'false') . ", groups=" . json_encode($groups));
+    }
+
+    /**
+     * Handle page update subscription signal
+     *
+     * @param string $source Signal source
+     * @param string $name Signal name
+     * @param SignalDataInterface $data Signal data
+     */
+    public function onSignalPageUpdateSubscription(string $source, string $name, SignalDataInterface $data): void
+    {
+        $dataArray = $data instanceof BaseDTO ? $data->toArray() : [];
+        Logger::logAgentInfo($this->getId(), "Page update subscription signal received: source={$source}, name={$name}, data=" . json_encode($dataArray));
+    }
+
+    /**
+     * Handle group subscribe signal
+     *
+     * @param string $source Signal source
+     * @param string $name Signal name
+     * @param SignalDataInterface $data Signal data
+     */
+    public function onSignalGroupSubscribe(string $source, string $name, SignalDataInterface $data): void
+    {
+        $dataArray = $data instanceof BaseDTO ? $data->toArray() : [];
+        Logger::logAgentInfo($this->getId(), "Group subscribe signal received: source={$source}, name={$name}, data=" . json_encode($dataArray));
+    }
+
+    /**
+     * Handle group unsubscribe signal
+     *
+     * @param string $source Signal source
+     * @param string $name Signal name
+     * @param SignalDataInterface $data Signal data
+     */
+    public function onSignalGroupUnsubscribe(string $source, string $name, SignalDataInterface $data): void
+    {
+        $dataArray = $data instanceof BaseDTO ? $data->toArray() : [];
+        Logger::logAgentInfo($this->getId(), "Group unsubscribe signal received: source={$source}, name={$name}, data=" . json_encode($dataArray));
+    }
+
+    /**
+     * Handle group update subscription signal
+     *
+     * @param string $source Signal source
+     * @param string $name Signal name
+     * @param SignalDataInterface $data Signal data
+     */
+    public function onSignalGroupUpdateSubscription(string $source, string $name, SignalDataInterface $data): void
+    {
+        $dataArray = $data instanceof BaseDTO ? $data->toArray() : [];
+        Logger::logAgentInfo($this->getId(), "Group update subscription signal received: source={$source}, name={$name}, data=" . json_encode($dataArray));
+    }
+
+    /**
+     * Handle action signal
+     *
+     * @param string $source Signal source
+     * @param string $name Signal name
+     * @param SignalDataInterface $data Signal data
+     */
+    public function onSignalAction(string $source, string $name, SignalDataInterface $data): void
+    {
+        $dataArray = $data instanceof BaseDTO ? $data->toArray() : [];
+        $clientId = $dataArray['clientId'] ?? '';
+        $action = $dataArray['action'] ?? '';
+        $actionData = $dataArray['data'] ?? [];
+        Logger::logAgentInfo($this->getId(), "Action signal received: source={$source}, name={$name}, client={$clientId}, action={$action}, data=" . json_encode($actionData));
+    }
+
+    /**
+     * Handle cron signal
+     *
+     * @param string $source Signal source
+     * @param string $name Signal name
+     * @param SignalDataInterface $data Signal data
+     */
+    public function onSignalCron(string $source, string $name, SignalDataInterface $data): void
+    {
+        $dataArray = $data instanceof BaseDTO ? $data->toArray() : [];
+        Logger::logAgentInfo($this->getId(), "Cron signal received: source={$source}, name={$name}, data=" . json_encode($dataArray));
     }
 }

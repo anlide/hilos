@@ -9,6 +9,12 @@ use Hilos\Exception\SocketException;
 use Hilos\Socket\AbstractSocket;
 use Hilos\Socket\SocketOperation;
 use Hilos\Utils\Constants\EnvConstants;
+use Hilos\Utils\Constants\WorkerConstants;
+use Hilos\Utils\DTO\Worker\AgentStartDTO;
+use Hilos\Utils\DTO\Worker\AgentStopDTO;
+use Hilos\Utils\DTO\Worker\DaemonAgentMessageDTO;
+use Hilos\Utils\DTO\Worker\WorkerDTO;
+use Hilos\Utils\DTO\Worker\WorkerRegisteredDTO;
 use Hilos\Utils\Env;
 
 /**
@@ -34,7 +40,7 @@ class WorkerDaemonClient extends AbstractSocket
     /** @var bool Whether connection attempt has been made */
     private bool $connectionAttempted = false;
 
-    /** @var array<array> Message queue for received messages */
+    /** @var array<WorkerDTO> Message queue for received messages */
     private array $messageQueue = [];
 
     /**
@@ -141,9 +147,9 @@ class WorkerDaemonClient extends AbstractSocket
      * Returns one message from queue and removes it.
      * Returns null if queue is empty.
      *
-     * @return ?array Message data or null if queue is empty
+     * @return ?WorkerDTO Message DTO or null if queue is empty
      */
-    public function getNextMessage(): ?array
+    public function getNextMessage(): ?WorkerDTO
     {
         if (empty($this->messageQueue)) {
             return null;
@@ -206,28 +212,58 @@ class WorkerDaemonClient extends AbstractSocket
     /**
      * Send message to daemon
      *
-     * @param array $data Message data
+     * @param WorkerDTO|array $data Message DTO or array data
      */
-    public function send(array $data): void
+    public function send(WorkerDTO|array $data): void
     {
-        $json = json_encode($data);
+        if ($data instanceof WorkerDTO) {
+            $json = $data->toJson();
+        } else {
+            $json = json_encode($data);
+        }
         $this->writeBuffer .= $json . "\n";
     }
 
     /**
      * Process read buffer - extract complete messages
+     * @throws SocketException
      */
     private function processReadBuffer(): void
     {
-        while (($pos = strpos($this->readBuffer, "\n")) !== false) {
-            $message = substr($this->readBuffer, 0, $pos);
-            $this->readBuffer = substr($this->readBuffer, $pos + 1);
-            
+        while ($this->readBuffer !== '') {
+            $message = $this->extractCompleteJsonMessage($this->readBuffer);
+            if ($message === null) {
+                // Incomplete message, wait for more data
+                break;
+            }
+
             $data = json_decode($message, true);
             if ($data !== null) {
-                $this->messageQueue[] = $data;
+                $dto = $this->createDTOFromArray($data);
+                if ($dto !== null) {
+                    $this->messageQueue[] = $dto;
+                }
             }
         }
+    }
+
+    /**
+     * Create DTO from array data based on message type
+     *
+     * @param array $data Message data
+     * @return ?WorkerDTO DTO instance or null if type is unknown
+     */
+    private function createDTOFromArray(array $data): ?WorkerDTO
+    {
+        $type = $data['type'] ?? '';
+
+        return match ($type) {
+            WorkerConstants::MESSAGE_WORKER_REGISTERED => WorkerRegisteredDTO::fromArray($data),
+            WorkerConstants::MESSAGE_AGENT_START => AgentStartDTO::fromArray($data),
+            WorkerConstants::MESSAGE_AGENT_STOP => AgentStopDTO::fromArray($data),
+            WorkerConstants::MESSAGE_AGENT_MESSAGE => DaemonAgentMessageDTO::fromArray($data),
+            default => null,
+        };
     }
 
     /**

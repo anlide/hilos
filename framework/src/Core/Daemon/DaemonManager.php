@@ -15,6 +15,7 @@ use Hilos\Core\EventLoop\EventLoop;
 use Hilos\Logging\Logger\Logger;
 use Hilos\Utils\Constants\SignalTypeConstants;
 use Hilos\Utils\DTO\SignalDTO;
+use Hilos\Utils\DTO\Worker\DaemonAgentMessageDTO;
 
 /**
  * DaemonManager - Abstract base class for daemon process management
@@ -436,11 +437,19 @@ abstract class DaemonManager extends BaseManager
                         $agentIndex = $destination['agentIndex'] ?? null;
                         $indexInfo = $agentIndex !== null ? " (index: {$agentIndex})" : '';
                         Logger::debug("Dispatching signal: {$signalType}/{$signalName} -> agent: {$agentType}{$indexInfo}");
+                        
+                        // Wrap signal in DaemonAgentMessageDTO
+                        $messageDto = new DaemonAgentMessageDTO(
+                            agentType: $agentType,
+                            agentIndex: $agentIndex,
+                            signal: $signal,
+                        );
+                        
                         try {
                             $workerServer->sendSignalToAgent(
-                                $destination['agentType'],
-                                $destination['agentIndex'],
-                                $signal,
+                                $agentType,
+                                $agentIndex,
+                                $messageDto,
                             );
                         } catch (NoSuitableWorkerException $e) {
                             // During shutdown, workers may be unavailable - ignore this error

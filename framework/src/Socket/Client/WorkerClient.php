@@ -6,9 +6,11 @@ namespace Hilos\Socket\Client;
 
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\Router\SignalRouter;
+use Hilos\Exception\SocketException;
 use Hilos\Exception\Worker\AgentDaemonCreationFailedException;
 use Hilos\Socket\Client\Interface\WorkerClientInterface;
-use Hilos\Utils\DTO\Worker\AgentMessageDTO;
+use Hilos\Utils\DTO\Worker\AgentStartDTO;
+use Hilos\Utils\DTO\Worker\AgentStopDTO;
 use Hilos\Utils\DTO\Worker\WorkerRegisterDTO;
 use Hilos\Utils\DTO\Worker\WorkerRegisteredDTO;
 use Hilos\Utils\DTO\Worker\WorkerAgentStartedDTO;
@@ -124,11 +126,12 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
      * Safely parses JSON messages by tracking bracket depth.
      * Handles JSON objects that may contain newlines in strings.
      * @throws AgentDaemonCreationFailedException
+     * @throws SocketException
      */
     protected function processReadBuffer(): void
     {
         while ($this->readBuffer !== '') {
-            $message = $this->extractCompleteJsonMessage();
+            $message = $this->extractCompleteJsonMessage($this->readBuffer);
             if ($message === null) {
                 // Incomplete message, wait for more data
                 break;
@@ -136,72 +139,6 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
 
             $this->processMessage($message);
         }
-    }
-
-    /**
-     * Extract complete JSON message from buffer
-     *
-     * Parses JSON by tracking bracket depth, handling nested objects and arrays.
-     * Returns null if message is incomplete.
-     *
-     * @return string|null Complete JSON message or null if incomplete
-     */
-    private function extractCompleteJsonMessage(): ?string
-    {
-        $buffer = $this->readBuffer;
-        $length = strlen($buffer);
-        $depth = 0; // Object/array depth
-        $inString = false; // Whether we're inside a string
-        $escapeNext = false; // Whether next character is escaped
-        $startPos = -1; // Start position of JSON object
-
-        for ($i = 0; $i < $length; $i++) {
-            $char = $buffer[$i];
-
-            if ($escapeNext) {
-                $escapeNext = false;
-                continue;
-            }
-
-            if ($char === '\\') {
-                $escapeNext = true;
-                continue;
-            }
-
-            if ($char === '"') {
-                $inString = !$inString;
-                continue;
-            }
-
-            // Only process brackets when not in string
-            if (!$inString) {
-                if ($char === '{' || $char === '[') {
-                    if ($startPos === -1) {
-                        $startPos = $i; // Start of JSON object
-                    }
-                    $depth++;
-                } elseif ($char === '}' || $char === ']') {
-                    $depth--;
-                    if ($depth === 0 && $startPos !== -1) {
-                        // Complete JSON object found
-                        $jsonEnd = $i + 1;
-
-                        // Check if followed by newline
-                        if ($jsonEnd < $length && $buffer[$jsonEnd] === "\n") {
-                            $message = substr($buffer, $startPos, $jsonEnd - $startPos);
-                            $this->readBuffer = substr($buffer, $jsonEnd + 1);
-                            return $message;
-                        }
-
-                        // If no newline, message is incomplete
-                        return null;
-                    }
-                }
-            }
-        }
-
-        // No complete message found
-        return null;
     }
 
     /**
@@ -344,17 +281,15 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
     /**
      * Send agent_start signal to worker
      *
-     * @param string $agentId Agent ID
      * @param string $agentType Agent type
      * @param ?string $agentIndex Agent index (optional)
      */
-    public function sendAgentStart(string $agentId, string $agentType, ?string $agentIndex = null): void
+    public function sendAgentStart(string $agentType, ?string $agentIndex = null): void
     {
+        $agentId = $agentType . ($agentIndex !== null ? ":{$agentIndex}" : '');
         Logger::debug("Sending agent_start signal to worker [agentId={$agentId}] [agentType={$agentType}] [agentIndex=" . ($agentIndex ?? 'null') . "] [workerIndex={$this->workerIndex}]");
 
-        $dto = new AgentMessageDTO(
-            type: AgentMessageDTO::TYPE_AGENT_START,
-            agentId: $agentId,
+        $dto = new AgentStartDTO(
             agentType: $agentType,
             agentIndex: $agentIndex,
         );
@@ -365,20 +300,15 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
     /**
      * Send agent_stop signal to worker
      *
-     * @param string $agentId Agent ID
+     * @param string $agentType Agent type
+     * @param ?string $agentIndex Agent index (optional)
      */
-    public function sendAgentStop(string $agentId): void
+    public function sendAgentStop(string $agentType, ?string $agentIndex = null): void
     {
+        $agentId = $agentType . ($agentIndex !== null ? ":{$agentIndex}" : '');
         Logger::debug("Sending agent_stop signal to worker [agentId={$agentId}] [workerIndex={$this->workerIndex}]");
 
-        // Extract agent type from agentId (format: "type" or "type:index")
-        $parts = explode(':', $agentId, 2);
-        $agentType = $parts[0];
-        $agentIndex = $parts[1] ?? null;
-
-        $dto = new AgentMessageDTO(
-            type: AgentMessageDTO::TYPE_AGENT_STOP,
-            agentId: $agentId,
+        $dto = new AgentStopDTO(
             agentType: $agentType,
             agentIndex: $agentIndex,
         );
