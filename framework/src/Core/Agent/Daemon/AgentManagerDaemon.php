@@ -4,12 +4,12 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Agent\Daemon;
 
+use Hilos\Core\Router\SignalRouter;
 use Hilos\DTO\Worker\WorkerAgentMessageDTO;
 use Hilos\DTO\Worker\WorkerAgentStartedDTO;
 use Hilos\DTO\Worker\WorkerAgentStoppedDTO;
 use Hilos\Exception\Worker\AgentDaemonCreationFailedException;
 use Hilos\Logging\Logger\Logger;
-use Hilos\Socket\Client\WorkerClient;
 
 /**
  * AgentManagerDaemon - Base class for managing agent daemons in daemon process
@@ -26,6 +26,19 @@ abstract class AgentManagerDaemon
 
     /** @var array<string, int> Mapping agentId => workerId (negative = monopolistic, positive = regular) */
     protected array $agentToWorker = [];
+
+    /** @var SignalRouter Signal router for queuing response signals */
+    protected SignalRouter $signalRouter;
+
+    /**
+     * Constructor
+     *
+     * @param SignalRouter $signalRouter Signal router instance
+     */
+    public function __construct(SignalRouter $signalRouter)
+    {
+        $this->signalRouter = $signalRouter;
+    }
 
     /**
      * Create agent daemon instance (factory method)
@@ -225,34 +238,23 @@ abstract class AgentManagerDaemon
      *
      * Creates or updates agent daemon and links it to worker client.
      *
-     * @param WorkerClient $workerClient Worker client that sent the signal
      * @param WorkerAgentStartedDTO $dto DTO with agent started data
      * @throws AgentDaemonCreationFailedException
      */
-    public function handleAgentStarted(WorkerClient $workerClient, WorkerAgentStartedDTO $dto): void
+    public function handleAgentStarted(WorkerAgentStartedDTO $dto): void
     {
         $agentId = $dto->agentId;
-        $agentType = $dto->agentType;
-        $agentIndex = $dto->agentIndex;
-
-        if ($agentId === '' || $agentType === '') {
-            return;
-        }
 
         // Create and link agent daemon if it doesn't exist
         if (!$this->hasAgent($agentId)) {
-            $this->createAndAddAgent($agentType, $agentIndex, $workerClient->getWorkerIndex(), $workerClient->isMonopolistic());
+            throw new AgentDaemonCreationFailedException("Agent daemon '{$agentId}' does not exist in daemon manager.");
         }
 
         $agentDaemon = $this->getAgent($agentId);
-        if ($agentDaemon === null) {
-            return;
-        }
-
-        $agentDaemon->setWorkerClient($workerClient);
         $agentDaemon->onStart();
+        $workerIndex = $agentDaemon->getWorkerClient()->getWorkerIndex();
 
-        Logger::info("Agent '{$agentId}' started on worker #{$workerClient->getWorkerIndex()}");
+        Logger::info("Agent '{$agentId}' started on worker #{$workerIndex}");
     }
 
     /**
@@ -260,53 +262,39 @@ abstract class AgentManagerDaemon
      *
      * Removes agent daemon and calls onStop().
      *
-     * @param WorkerClient $workerClient Worker client that sent the signal
      * @param WorkerAgentStoppedDTO $dto DTO with agent stopped data
      */
-    public function handleAgentStopped(WorkerClient $workerClient, WorkerAgentStoppedDTO $dto): void
+    public function handleAgentStopped(WorkerAgentStoppedDTO $dto): void
     {
-        $agentId = $dto->agentId;
-
-        if ($agentId === '') {
-            return;
-        }
-
         // Remove agent daemon
-        if ($this->hasAgent($agentId)) {
-            $agentDaemon = $this->getAgent($agentId);
-            if ($agentDaemon !== null) {
-                $agentDaemon->onStop();
-            }
-            $this->removeAgent($agentId);
+        if ($this->hasAgent($dto->agentId)) {
+            $agentDaemon = $this->getAgent($dto->agentId);
+            $workerIndex = $agentDaemon->getWorkerClient()->getWorkerIndex();
+            $agentDaemon->onStop();
+            $this->removeAgent($dto->agentId);
 
-            Logger::info("Agent {$agentId} stopped on worker #{$workerClient->getWorkerIndex()}");
+            Logger::info("Agent '{$dto->agentId}' stopped on worker #{$workerIndex}");
         }
     }
 
     /**
      * Handle agent_message signal from worker
      *
-     * Forwards message from worker agent to agent daemon.
+     * Receives signal from worker and simply queues it in daemon's SignalRouter.
+     * DaemonManager will process the signal and decide what to do with it
+     * (routing to other agents, WebSocket delivery to clients, etc.).
      *
-     * @param WorkerClient $workerClient Worker client that sent the signal
-     * @param WorkerAgentMessageDTO $dto DTO with agent message data
+     * @param WorkerAgentMessageDTO $dto DTO containing signal from worker
      */
-    public function handleAgentMessage(WorkerClient $workerClient, WorkerAgentMessageDTO $dto): void
+    public function handleAgentMessage(WorkerAgentMessageDTO $dto): void
     {
-        $agentId = $dto->agentId;
-
-        if ($agentId === '' || !$this->hasAgent($agentId)) {
-            return;
-        }
-
-        $agentDaemon = $this->getAgent($agentId);
-        if ($agentDaemon === null) {
-            return;
-        }
-
-        // TODO: Implement message forwarding to agent daemon
-        // This will depend on the specific message format and agent daemon interface
-        // For now, just log the message
-        Logger::info("Agent message received from worker [agentId={$agentId}] [workerIndex={$workerClient->getWorkerIndex()}]");
+        // Simply queue signal in daemon's SignalRouter
+        // DaemonManager will process it in dispatchSignals() and handle routing/delivery
+        $this->signalRouter->queueSignal(
+            signalSource: $dto->signal->signalSource,
+            signalType: $dto->signal->signalType,
+            signalName: $dto->signal->signalName,
+            signalData: $dto->signal->data,
+        );
     }
 }

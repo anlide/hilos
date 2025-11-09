@@ -30,7 +30,7 @@ use Hilos\Utils\Env;
 Env::init(__DIR__);
 
 // Enable debug logging (optional - uncomment to enable)
-// Logger::setDebugEnabled(true);
+#Logger::setDebugEnabled(true);
 
 try {
     // Create chat daemon manager instance first (creates signalRouter)

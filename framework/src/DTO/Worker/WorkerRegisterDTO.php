@@ -4,14 +4,12 @@ declare(strict_types=1);
 
 namespace Hilos\DTO\Worker;
 
-use Hilos\DTO\BaseDTO;
-
 /**
  * WorkerRegisterDTO - DTO for worker registration message
  *
  * Used when worker sends registration request to daemon.
  */
-class WorkerRegisterDTO extends BaseDTO
+class WorkerRegisterDTO extends WorkerDTO
 {
     // Field name constants
     public const string TYPE = 'type';
@@ -25,6 +23,16 @@ class WorkerRegisterDTO extends BaseDTO
         public readonly int $workerIndex,
         public readonly bool $monopolistic = false,
     ) {
+    }
+
+    /**
+     * Get message type
+     *
+     * @return string Message type
+     */
+    public function getType(): string
+    {
+        return self::MESSAGE_TYPE;
     }
 
     /**

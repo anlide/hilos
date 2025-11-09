@@ -151,6 +151,21 @@ abstract class WorkerServer extends AbstractServer
     }
 
     /**
+     * Parse agent ID to extract type and index
+     *
+     * @param string $agentId Agent ID (format: "type" or "type:index")
+     * @return array{agentType: string, agentIndex: ?string} Parsed agent type and index
+     */
+    final protected function parseAgentId(string $agentId): array
+    {
+        $parts = explode(':', $agentId, 2);
+        return [
+            'agentType' => $parts[0] ?? '',
+            'agentIndex' => $parts[1] ?? null,
+        ];
+    }
+
+    /**
      * Called when initial workers are ready
      *
      * This method is called once when the minimum number of registered workers
@@ -816,15 +831,21 @@ abstract class WorkerServer extends AbstractServer
      */
     public function sendSignalToAgent(string $agentType, ?string $agentIndex, DaemonAgentMessageDTO $messageDto): void
     {
-        $agentId = $this->buildAgentId($agentType, $agentIndex);
+        // Use agentId from messageDto (it already contains the correct agentId)
+        $agentId = $messageDto->agentId;
+
+        // Parse agentId to get type and index for startAgent if needed
+        $parsed = $this->parseAgentId($agentId);
+        $parsedAgentType = $parsed['agentType'];
+        $parsedAgentIndex = $parsed['agentIndex'];
 
         // If agent doesn't exist or not linked to worker, try to start it
         if (!$this->agentManager->hasAgent($agentId)) {
-            $this->startAgent($agentType, $agentIndex);
+            $this->startAgent($parsedAgentType, $parsedAgentIndex);
         } else {
             $agentDaemon = $this->agentManager->getAgent($agentId);
             if ($agentDaemon === null || $agentDaemon->getWorkerClient() === null) {
-                $this->startAgent($agentType, $agentIndex);
+                $this->startAgent($parsedAgentType, $parsedAgentIndex);
             }
         }
 

@@ -26,6 +26,16 @@ class ChatWebSocketClient extends WebSocketClient
     private string $clientId = '';
 
     /**
+     * Get client ID
+     *
+     * @return string Client ID
+     */
+    public function getClientId(): string
+    {
+        return $this->clientId;
+    }
+
+    /**
      * Handle received WebSocket text frame
      *
      * Parses JSON payload and routes to appropriate signal type (subscribe, action, unsubscribe, update_subscription).

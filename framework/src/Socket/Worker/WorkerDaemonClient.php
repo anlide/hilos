@@ -237,33 +237,8 @@ class WorkerDaemonClient extends AbstractSocket
                 break;
             }
 
-            $data = json_decode($message, true);
-            if ($data !== null) {
-                $dto = $this->createDTOFromArray($data);
-                if ($dto !== null) {
-                    $this->messageQueue[] = $dto;
-                }
-            }
+            $this->messageQueue[] = WorkerDTO::factoryWorkerDTO($message);
         }
-    }
-
-    /**
-     * Create DTO from array data based on message type
-     *
-     * @param array $data Message data
-     * @return ?WorkerDTO DTO instance or null if type is unknown
-     */
-    private function createDTOFromArray(array $data): ?WorkerDTO
-    {
-        $type = $data['type'] ?? '';
-
-        return match ($type) {
-            WorkerConstants::MESSAGE_WORKER_REGISTERED => WorkerRegisteredDTO::fromArray($data),
-            WorkerConstants::MESSAGE_AGENT_START => AgentStartDTO::fromArray($data),
-            WorkerConstants::MESSAGE_AGENT_STOP => AgentStopDTO::fromArray($data),
-            WorkerConstants::MESSAGE_AGENT_MESSAGE => DaemonAgentMessageDTO::fromArray($data),
-            default => null,
-        };
     }
 
     /**

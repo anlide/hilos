@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Agent;
 
+use Hilos\Core\Router\SignalRouter;
 use Hilos\Exception\Worker\AgentCreationFailedException;
 
 /**
@@ -17,6 +18,19 @@ abstract class AgentManager
 {
     /** @var array<string, AgentInterface> Active agents indexed by agent ID */
     protected array $agents = [];
+
+    /** @var SignalRouter Signal router instance */
+    protected SignalRouter $signalRouter;
+
+    /**
+     * Constructor
+     *
+     * @param SignalRouter $signalRouter Signal router instance
+     */
+    public function __construct(SignalRouter $signalRouter)
+    {
+        $this->signalRouter = $signalRouter;
+    }
 
     /**
      * Create agent instance (factory method)
@@ -40,6 +54,21 @@ abstract class AgentManager
     public function buildAgentId(string $agentType, ?string $agentIndex): string
     {
         return $agentIndex !== null ? $agentType . ':' . $agentIndex : $agentType;
+    }
+
+    /**
+     * Parse agent ID to extract type and index
+     *
+     * @param string $agentId Agent ID (format: "type" or "type:index")
+     * @return array{agentType: string, agentIndex: ?string} Parsed agent type and index
+     */
+    public function parseAgentId(string $agentId): array
+    {
+        $parts = explode(':', $agentId, 2);
+        return [
+            'agentType' => $parts[0] ?? '',
+            'agentIndex' => $parts[1] ?? null,
+        ];
     }
 
     /**

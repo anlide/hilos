@@ -28,7 +28,7 @@ class ChatAgentDaemonFactory extends AbstractAgentDaemonFactory
     {
         return match ($agentType) {
             AgentType::CHAT => new ChatAgentDaemon(),
-            AgentType::USER => self::createUserAgentDaemon($agentIndex),
+            AgentType::SESSION => self::createUserAgentDaemon($agentIndex),
             default => throw new AgentDaemonCreationFailedException($agentType, $agentIndex),
         };
     }

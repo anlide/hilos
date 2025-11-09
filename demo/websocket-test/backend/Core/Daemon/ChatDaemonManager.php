@@ -11,6 +11,7 @@ use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\Daemon\Cron\CronRule;
 use Hilos\Core\Daemon\DaemonManager;
 use Hilos\Core\Router\SignalName;
+use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
 
@@ -26,8 +27,6 @@ class ChatDaemonManager extends DaemonManager
     /**
      * Constructor
      *
-     * Creates ChatSignalRouter instance. It will be automatically
-     * set to all servers registered via registerServer().
      * Sets shutdown timeout to 10 seconds.
      * Registers cron rules for chat cleanup (every 5 minutes).
      */
@@ -35,7 +34,6 @@ class ChatDaemonManager extends DaemonManager
     {
         parent::__construct();
 
-        $this->signalRouter = new ChatSignalRouter();
         $this->shutdownTimeout = 10.0;
 
         // Register cron rule for chat history cleanup (every 5 minutes)
@@ -44,13 +42,24 @@ class ChatDaemonManager extends DaemonManager
     }
 
     /**
+     * Create signal router instance
+     *
+     * @return SignalRouter Signal router instance
+     */
+    protected function createSignalRouter(): SignalRouter
+    {
+        return new ChatSignalRouter();
+    }
+
+    /**
      * Create agent manager daemon instance
      *
+     * @param SignalRouter $signalRouter Signal router instance
      * @return AgentManagerDaemon Agent manager daemon instance
      */
-    protected function createAgentManagerDaemon(): AgentManagerDaemon
+    protected function createAgentManagerDaemon(SignalRouter $signalRouter): AgentManagerDaemon
     {
-        return new ChatAgentManagerDaemon();
+        return new ChatAgentManagerDaemon($signalRouter);
     }
 
     /**

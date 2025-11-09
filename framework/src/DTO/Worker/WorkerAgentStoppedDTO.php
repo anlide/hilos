@@ -4,14 +4,12 @@ declare(strict_types=1);
 
 namespace Hilos\DTO\Worker;
 
-use Hilos\DTO\BaseDTO;
-
 /**
  * WorkerAgentStoppedDTO - DTO for agent stopped notification
  *
  * Used when worker notifies daemon that agent has stopped.
  */
-class WorkerAgentStoppedDTO extends BaseDTO
+class WorkerAgentStoppedDTO extends WorkerDTO
 {
     // Field name constants
     public const string TYPE = 'type';
@@ -23,6 +21,16 @@ class WorkerAgentStoppedDTO extends BaseDTO
     public function __construct(
         public readonly string $agentId,
     ) {
+    }
+
+    /**
+     * Get message type
+     *
+     * @return string Message type
+     */
+    public function getType(): string
+    {
+        return self::MESSAGE_TYPE;
     }
 
     /**

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Router;
 
+use Hilos\Constants\SignalTypeConstants;
 use Hilos\DTO\SignalDTO;
 use Hilos\Exception\Router\GroupSubscriptionNotFoundException;
 use Hilos\Exception\Router\PageSubscriptionMismatchException;
@@ -129,6 +130,7 @@ class SignalRouter
         $signalTypeValue = $signalType->getType();
         $signalNameValue = $signalName->getName();
         Logger::debug("Signal queued: {$source}/{$signalTypeValue}/{$signalNameValue}");
+        Logger::debug('Now count of queued signals: ' . count($this->queuedSignals));
     }
 
     /**
@@ -146,6 +148,7 @@ class SignalRouter
             return null;
         }
 
+        Logger::debug('Was count of queued signals: ' . count($this->queuedSignals));
         return array_shift($this->queuedSignals);
     }
 
@@ -275,15 +278,30 @@ class SignalRouter
      * Get destinations for signal
      *
      * Returns array of destinations for signal based on routing configuration.
-     * Each destination is an array with 'type', 'agentType' and 'agentIndex'.
-     * Can return multiple destinations for signals that need to be delivered to multiple agents.
+     * Each destination is an array with 'type', 'agentType' and 'agentIndex' (for agent routing)
+     * or 'type' and 'clientId' (for WebSocket routing).
+     * Can return multiple destinations for signals that need to be delivered to multiple agents or clients.
      *
      * @param SignalDTO $signal Signal DTO
-     * @return array Array of destinations [['type' => string, 'agentType' => string, 'agentIndex' => ?string], ...]
+     * @return array Array of destinations [['type' => string, ...], ...]
      */
     public function getDestinations(SignalDTO $signal): array
     {
-        // Get route using existing route method
+        Logger::debug('getDestinations called for signal: ' . $signal->toJson());
+
+        $signalType = $signal->signalType->getType();
+        Logger::debug("getDestinations Signal type: " . $signalType);
+
+        // Handle WebSocket response signals (ws_user, ws_all, ws_group)
+        if (in_array($signalType, [
+            SignalTypeConstants::WS_USER,
+            SignalTypeConstants::WS_ALL,
+            SignalTypeConstants::WS_GROUP,
+        ], true)) {
+            return $this->getWebSocketDestinations($signal);
+        }
+
+        // Get route using existing route method for agent routing
         $route = $this->route($signal->signalSource, $signal->signalType, $signal->data);
 
         if ($route === null) {
@@ -296,5 +314,82 @@ class SignalRouter
         // For now, return single destination
         // Can be extended in child classes to return multiple destinations
         return [$destination];
+    }
+
+    /**
+     * Get WebSocket destinations for signal
+     *
+     * Returns array of WebSocket client destinations based on signal type and subscriptions.
+     * For ws_user: returns single client with targetClientId
+     * For ws_all: returns all subscribed clients, excluding excludeClientId
+     * For ws_group: returns clients subscribed to targetGroup, excluding excludeClientId
+     *
+     * @param SignalDTO $signal Signal DTO
+     * @return array Array of destinations [['type' => 'websocket', 'clientId' => string], ...]
+     */
+    private function getWebSocketDestinations(SignalDTO $signal): array
+    {
+        Logger::debug("Getting WebSocket destinations for signal type: " . $signal->toJson());
+        $signalType = $signal->signalType->getType();
+        $signalData = $signal->data;
+
+        // Extract targeting info from WebSocketSignalData
+        $targetClientId = null;
+        $targetGroup = null;
+        $excludeClientId = null;
+
+        #var_dump($signalData);
+        #var_dump($signalData instanceof WebSocketSignalData);
+        if ($signalData instanceof WebSocketSignalData) {
+            $targetClientId = $signalData->targetClientId;
+            $targetGroup = $signalData->targetGroup;
+            $excludeClientId = $signalData->excludeClientId;
+        }
+
+        $destinations = [];
+
+        switch ($signalType) {
+            case SignalTypeConstants::WS_USER:
+                // Return single client destination
+                if ($targetClientId !== null && $targetClientId !== '') {
+                    $destinations[] = [
+                        'type' => 'websocket',
+                        'clientId' => $targetClientId,
+                    ];
+                }
+                break;
+
+            case SignalTypeConstants::WS_ALL:
+                // Return all subscribed clients, excluding excludeClientId
+                foreach ($this->subscriptions as $clientId => $subscription) {
+                    if ($excludeClientId !== null && $clientId === $excludeClientId) {
+                        continue;
+                    }
+                    $destinations[] = [
+                        'type' => 'websocket',
+                        'clientId' => $clientId,
+                    ];
+                }
+                break;
+
+            case SignalTypeConstants::WS_GROUP:
+                // Return clients subscribed to targetGroup, excluding excludeClientId
+                if ($targetGroup !== null && $targetGroup !== '') {
+                    foreach ($this->subscriptionGroups as $clientId => $groups) {
+                        if ($excludeClientId !== null && $clientId === $excludeClientId) {
+                            continue;
+                        }
+                        if (isset($groups[$targetGroup])) {
+                            $destinations[] = [
+                                'type' => 'websocket',
+                                'clientId' => $clientId,
+                            ];
+                        }
+                    }
+                }
+                break;
+        }
+
+        return $destinations;
     }
 }

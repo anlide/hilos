@@ -35,9 +35,13 @@ class SignalDTO extends BaseDTO
      */
     public function toArray(): array
     {
+        // Serialize signalData - use toArray() from BaseDTO
         $dataArray = $this->data instanceof BaseDTO
             ? $this->data->toArray()
-            : $this->data;
+            : [];
+
+        // Store data class name for deserialization
+        $dataType = get_class($this->data);
 
         // Serialize signalSource
         $signalSourceArray = $this->signalSource instanceof SignalSourceInterface
@@ -53,6 +57,7 @@ class SignalDTO extends BaseDTO
             'signalType' => $this->signalType->getType(),
             'signalName' => $this->signalName->getName(),
             'data' => $dataArray,
+            'dataType' => $dataType,
         ];
     }
 
@@ -88,12 +93,10 @@ class SignalDTO extends BaseDTO
             ? $data['signalName']
             : new SignalName($data['signalName'] ?? '');
 
-        $signalData = $data['data'] ?? [];
-        if (!($signalData instanceof SignalDataInterface)) {
-            // If data is an array (from JSON deserialization), create empty SignalData
-            // In practice, specific SignalData DTOs should be created based on signal type
-            $signalData = new SignalData();
-        }
+        // Deserialize signalData
+        $dataArray = $data['data'] ?? [];
+        $dataType = $data['dataType'] ?? null;
+        $signalData = self::deserializeSignalData($dataArray, $dataType);
 
         return new self(
             signalSource: $signalSource,
@@ -101,5 +104,32 @@ class SignalDTO extends BaseDTO
             signalName: $signalName,
             data: $signalData,
         );
+    }
+
+    /**
+     * Deserialize signal data from array
+     *
+     * @param array $dataArray Signal data array
+     * @param ?string $dataType Signal data class name
+     * @return SignalDataInterface Deserialized signal data
+     */
+    private static function deserializeSignalData(array $dataArray, ?string $dataType): SignalDataInterface
+    {
+        // If dataType is provided, try to deserialize using that class
+        if (is_string($dataType) && class_exists($dataType)) {
+            // Check if class implements SignalDataInterface
+            if (is_a($dataType, SignalDataInterface::class, true)) {
+                // All SignalDataInterface implementations extend BaseDTO and have fromArray()
+                try {
+                    return $dataType::fromArray($dataArray);
+                } catch (\Throwable $e) {
+                    // If deserialization fails, fall back to SignalData with data
+                    // Some SignalData implementations may not support fromArray
+                }
+            }
+        }
+
+        // Fallback: create SignalData with provided data array
+        return SignalData::fromArray($dataArray);
     }
 }

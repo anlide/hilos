@@ -14,6 +14,13 @@ use Hilos\Socket\Client\ClientInterface;
 interface WebSocketClientInterface extends ClientInterface
 {
     /**
+     * Get client ID
+     *
+     * @return string Client unique identifier
+     */
+    public function getClientId(): string;
+
+    /**
      * Send WebSocket text frame
      *
      * @param string $data Text data to send (UTF-8)

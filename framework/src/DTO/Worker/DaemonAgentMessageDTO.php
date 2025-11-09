@@ -16,8 +16,7 @@ use Hilos\DTO\SignalDTO;
 class DaemonAgentMessageDTO extends WorkerDTO
 {
     // Field name constants
-    public const string AGENT_TYPE = 'agentType';
-    public const string AGENT_INDEX = 'agentIndex';
+    public const string AGENT_ID = 'agentId';
     public const string SIGNAL = 'signal';
 
     // Message type
@@ -34,8 +33,7 @@ class DaemonAgentMessageDTO extends WorkerDTO
     }
 
     public function __construct(
-        public readonly string $agentType,
-        public readonly ?string $agentIndex,
+        public readonly string $agentId,
         public readonly SignalDTO $signal,
     ) {
     }
@@ -47,17 +45,11 @@ class DaemonAgentMessageDTO extends WorkerDTO
      */
     public function toArray(): array
     {
-        $result = [
+        return [
             self::TYPE => $this->getType(),
-            self::AGENT_TYPE => $this->agentType,
+            self::AGENT_ID => $this->agentId,
             self::SIGNAL => $this->signal->toArray(),
         ];
-
-        if ($this->agentIndex !== null) {
-            $result[self::AGENT_INDEX] = $this->agentIndex;
-        }
-
-        return $result;
     }
 
     /**
@@ -74,8 +66,7 @@ class DaemonAgentMessageDTO extends WorkerDTO
             : SignalDTO::fromArray($signalData);
 
         return new self(
-            agentType: $data[self::AGENT_TYPE] ?? '',
-            agentIndex: $data[self::AGENT_INDEX] ?? null,
+            agentId: $data[self::AGENT_ID] ?? '',
             signal: $signal,
         );
     }

@@ -7,37 +7,41 @@ namespace Hilos\Core\Router;
 use Hilos\DTO\BaseDTO;
 
 /**
- * SignalData - Empty implementation of signal data
+ * SignalData - Generic implementation of signal data
  *
- * Represents empty signal data. Can be used when no data is needed for a signal.
+ * Can represent empty signal data or store arbitrary data as array.
+ * Used as fallback when specific SignalDataInterface implementation is not available.
  */
 class SignalData extends BaseDTO implements SignalDataInterface
 {
     /**
      * SignalData constructor
+     *
+     * @param array $data Optional data to store
      */
-    public function __construct()
-    {
+    public function __construct(
+        private array $data = [],
+    ) {
     }
 
     /**
      * Convert DTO to array
      *
-     * @return array Empty array
+     * @return array Stored data array
      */
     public function toArray(): array
     {
-        return [];
+        return $this->data;
     }
 
     /**
      * Create DTO from array
      *
-     * @param array $data Source data (ignored)
+     * @param array $data Source data
      * @return static DTO instance
      */
     public static function fromArray(array $data): static
     {
-        return new self();
+        return new self($data);
     }
 }

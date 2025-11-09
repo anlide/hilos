@@ -29,4 +29,9 @@ class SignalTypeConstants
 
     // Cron actions signal types
     public const string CRON = 'cron';
+
+    // WebSocket response signal types (for delivery to users)
+    public const string WS_USER = 'ws_user';
+    public const string WS_ALL = 'ws_all';
+    public const string WS_GROUP = 'ws_group';
 }

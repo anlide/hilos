@@ -11,6 +11,7 @@ use Hilos\DTO\Worker\AgentStopDTO;
 use Hilos\DTO\Worker\WorkerAgentMessageDTO;
 use Hilos\DTO\Worker\WorkerAgentStartedDTO;
 use Hilos\DTO\Worker\WorkerAgentStoppedDTO;
+use Hilos\DTO\Worker\WorkerDTO;
 use Hilos\DTO\Worker\WorkerRegisterDTO;
 use Hilos\DTO\Worker\WorkerRegisteredDTO;
 use Hilos\Exception\SocketException;
@@ -149,109 +150,29 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
      */
     private function processMessage(string $message): void
     {
-        // Parse JSON message
-        $data = json_decode($message, true);
-        if ($data === null) {
-            return;
-        }
+        // Log received message data for debugging
+        Logger::debug("Received message from worker: " . $message);
 
-        // Handle different message types
-        $type = $data['type'] ?? 'unknown';
-        switch ($type) {
-            case WorkerRegisterDTO::MESSAGE_TYPE:
-                $this->handleWorkerRegisterMessage($data);
-                break;
-            case WorkerAgentStartedDTO::MESSAGE_TYPE:
-                $this->handleAgentStartedMessage($data);
-                break;
-            case WorkerAgentStoppedDTO::MESSAGE_TYPE:
-                $this->handleAgentStoppedMessage($data);
-                break;
-            case WorkerAgentMessageDTO::MESSAGE_TYPE:
-                $this->handleAgentMessageMessage($data);
-                break;
-            default:
-                // Unknown message type
-                break;
-        }
+        // Parse JSON message and create appropriate DTO
+        $workerDTO = WorkerDTO::factoryWorkerDTO($message);
+
+        // Handle different message types using match with instanceof
+        match (true) {
+            $workerDTO instanceof WorkerRegisterDTO => $this->handleWorkerRegisterMessage($workerDTO),
+            $workerDTO instanceof WorkerAgentStartedDTO => $this->handleAgentStartedMessage($workerDTO),
+            $workerDTO instanceof WorkerAgentStoppedDTO => $this->handleAgentStoppedMessage($workerDTO),
+            $workerDTO instanceof WorkerAgentMessageDTO => $this->handleAgentMessageMessage($workerDTO),
+            default => Logger::error("Unknown message type received from worker: " . get_class($workerDTO)),
+        };
     }
 
     /**
      * Handle worker register message
      *
-     * @param array $data Message data
+     * @param WorkerRegisterDTO $dto Signal data
      */
-    private function handleWorkerRegisterMessage(array $data): void
+    private function handleWorkerRegisterMessage(WorkerRegisterDTO $dto): void
     {
-        $this->handleWorkerRegister($data);
-    }
-
-    /**
-     * Handle agent started message
-     *
-     * @param array $data Message data
-     * @throws AgentDaemonCreationFailedException
-     */
-    private function handleAgentStartedMessage(array $data): void
-    {
-        try {
-            $dto = WorkerAgentStartedDTO::fromArray($data);
-        } catch (\Throwable $e) {
-            Logger::error("Failed to parse agent_started DTO: " . $e->getMessage());
-            return;
-        }
-
-        $this->agentManager->handleAgentStarted($this, $dto);
-    }
-
-    /**
-     * Handle agent stopped message
-     *
-     * @param array $data Message data
-     */
-    private function handleAgentStoppedMessage(array $data): void
-    {
-        try {
-            $dto = WorkerAgentStoppedDTO::fromArray($data);
-        } catch (\Throwable $e) {
-            Logger::error("Failed to parse agent_stopped DTO: " . $e->getMessage());
-            return;
-        }
-
-        $this->agentManager->handleAgentStopped($this, $dto);
-    }
-
-    /**
-     * Handle agent message
-     *
-     * @param array $data Message data
-     */
-    private function handleAgentMessageMessage(array $data): void
-    {
-        try {
-            $dto = WorkerAgentMessageDTO::fromArray($data);
-        } catch (\Throwable $e) {
-            Logger::error("Failed to parse agent_message DTO: " . $e->getMessage());
-            return;
-        }
-
-        $this->agentManager->handleAgentMessage($this, $dto);
-    }
-
-    /**
-     * Handle worker registration message
-     *
-     * @param array $data Message data
-     */
-    private function handleWorkerRegister(array $data): void
-    {
-        try {
-            $dto = WorkerRegisterDTO::fromArray($data);
-        } catch (\Throwable $e) {
-            Logger::error("Failed to parse worker_register DTO: " . $e->getMessage());
-            return;
-        }
-
         $this->setWorkerIndex($dto->workerIndex);
         $this->setIsMonopolistic($dto->monopolistic);
         $this->isRegistered = true;
@@ -266,6 +187,40 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
             monopolistic: $dto->monopolistic,
         );
         $this->send($responseDto->toJson());
+    }
+
+    /**
+     * Handle agent started message
+     *
+     * @param WorkerAgentStartedDTO $dto DTO with agent started data
+     * @throws AgentDaemonCreationFailedException
+     */
+    private function handleAgentStartedMessage(WorkerAgentStartedDTO $dto): void
+    {
+        $this->agentManager->handleAgentStarted($dto);
+    }
+
+    /**
+     * Handle agent stopped message
+     *
+     * @param WorkerAgentStoppedDTO $dto DTO with agent stopped data
+     */
+    private function handleAgentStoppedMessage(WorkerAgentStoppedDTO $dto): void
+    {
+        $this->agentManager->handleAgentStopped($dto);
+    }
+
+    /**
+     * Handle agent_message message from worker
+     *
+     * Converts WorkerAgentMessageDTO to DaemonAgentMessageDTO and forwards it to AgentManagerDaemon.
+     * AgentManagerDaemon will queue the signal in daemon's SignalRouter.
+     *
+     * @param WorkerAgentMessageDTO $dto DTO with agent message data
+     */
+    private function handleAgentMessageMessage(WorkerAgentMessageDTO $dto): void
+    {
+        $this->agentManager->handleAgentMessage($dto);
     }
 
     /**
@@ -290,8 +245,7 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
         Logger::debug("Sending agent_start signal to worker [agentId={$agentId}] [agentType={$agentType}] [agentIndex=" . ($agentIndex ?? 'null') . "] [workerIndex={$this->workerIndex}]");
 
         $dto = new AgentStartDTO(
-            agentType: $agentType,
-            agentIndex: $agentIndex,
+            agentId: $agentId,
         );
 
         $this->send($dto->toJson());
@@ -309,8 +263,7 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
         Logger::debug("Sending agent_stop signal to worker [agentId={$agentId}] [workerIndex={$this->workerIndex}]");
 
         $dto = new AgentStopDTO(
-            agentType: $agentType,
-            agentIndex: $agentIndex,
+            agentId: $agentId,
         );
 
         $this->send($dto->toJson());

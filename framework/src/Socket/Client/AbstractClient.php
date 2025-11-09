@@ -9,6 +9,7 @@ use Hilos\Constants\HttpConstants;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Exception\MissingEnvironmentVariableException;
 use Hilos\Exception\SocketException;
+use Hilos\Logging\Logger\Logger;
 use Hilos\Socket\AbstractSocket;
 use Hilos\Socket\SocketOperation;
 use Hilos\Utils\Env;
@@ -98,11 +99,17 @@ abstract class AbstractClient extends AbstractSocket implements ClientInterface
             return;
         }
 
+        $bufferLength = strlen($this->writeBuffer);
         $written = socket_write($this->socket, $this->writeBuffer);
 
         if ($written === false) {
             $this->handleSocketError(SocketOperation::WRITE);
             return;
+        }
+
+        // Log if we didn't write everything (partial write)
+        if ($written < $bufferLength) {
+            Logger::debug("Partial write: {$written}/{$bufferLength} bytes written");
         }
 
         $this->writeBuffer = substr($this->writeBuffer, $written);

@@ -10,13 +10,17 @@ use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\Daemon\Cron\CronRule;
 use Hilos\Core\EventLoop\EventLoop;
+use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Router\SignalRouter;
+use Hilos\DTO\BaseDTO;
 use Hilos\DTO\SignalDTO;
 use Hilos\DTO\Worker\DaemonAgentMessageDTO;
 use Hilos\Exception\Worker\AgentDaemonCreationFailedException;
 use Hilos\Exception\Worker\NoSuitableWorkerException;
 use Hilos\Logging\Logger\Logger;
+use Hilos\Socket\Client\Interface\WebSocketClientInterface;
 use Hilos\Socket\Server\ServerInterface;
+use Hilos\Socket\Server\WebSocketServer;
 use Hilos\Socket\Server\WorkerServer;
 
 /**
@@ -72,23 +76,33 @@ abstract class DaemonManager extends BaseManager
     /**
      * Constructor
      *
-     * Creates default signal router. Can be overridden in child classes
-     * to create custom signal router.
+     * Creates signal router via createSignalRouter() method (must be implemented in child classes).
+     * Then creates agent manager daemon with the signal router.
      */
     public function __construct()
     {
-        $this->signalRouter = new SignalRouter();
-        $this->agentManagerDaemon = $this->createAgentManagerDaemon();
+        $this->signalRouter = $this->createSignalRouter();
+        $this->agentManagerDaemon = $this->createAgentManagerDaemon($this->signalRouter);
     }
+
+    /**
+     * Create signal router instance
+     *
+     * Must be implemented in child classes to create specific signal router.
+     *
+     * @return SignalRouter Signal router instance
+     */
+    abstract protected function createSignalRouter(): SignalRouter;
 
     /**
      * Create agent manager daemon instance
      *
      * Must be implemented in child classes to create specific agent manager daemon.
      *
+     * @param SignalRouter $signalRouter Signal router instance
      * @return AgentManagerDaemon Agent manager daemon instance
      */
-    abstract protected function createAgentManagerDaemon(): AgentManagerDaemon;
+    abstract protected function createAgentManagerDaemon(SignalRouter $signalRouter): AgentManagerDaemon;
 
     /**
      * Run daemon - main method
@@ -226,14 +240,41 @@ abstract class DaemonManager extends BaseManager
     }
 
     /**
-     * Start all registered servers
+     * Start all registered servers (except WebSocket server)
      *
      * Attempts to start servers that are not running and registers them in event loop.
+     * WebSocket server is started separately when workers are ready.
      */
     protected function startServers(): void
     {
         foreach ($this->servers as $server) {
+            // Skip WebSocket server - it will be started when workers are ready
+            if ($server instanceof WebSocketServer) {
+                continue;
+            }
+
             if (!$server->isRunning()) {
+                if ($server->start()) {
+                    Logger::info($server->getServerName() . " started");
+
+                    // Register server socket in event loop
+                    $this->registerServerSocket($server);
+                } else {
+                    Logger::info("Failed to start " . $server->getServerName());
+                }
+            }
+        }
+    }
+
+    /**
+     * Start WebSocket server
+     *
+     * Starts WebSocket server when workers are ready.
+     */
+    private function startWebSocketServer(): void
+    {
+        foreach ($this->servers as $server) {
+            if ($server instanceof WebSocketServer && !$server->isRunning()) {
                 if ($server->start()) {
                     Logger::info($server->getServerName() . " started");
 
@@ -414,9 +455,18 @@ abstract class DaemonManager extends BaseManager
             return;
         }
 
+        // Find WebSocket server once (for WebSocket destinations)
+        $webSocketServer = null;
+        foreach ($this->servers as $server) {
+            if ($server instanceof WebSocketServer) {
+                $webSocketServer = $server;
+                break;
+            }
+        }
+
         // Process signals one by one in while-do loop
         while (($signal = $this->signalRouter->getNextQueuedSignal()) !== null) {
-            $data = $signal->data->toArray();
+            Logger::debug('getNextQueuedSignal called for signal: ' . $signal->toJson());
 
             // Update subscriptions BEFORE routing (routing may depend on current subscriptions)
             $this->updateSubscriptions($signal);
@@ -430,12 +480,16 @@ abstract class DaemonManager extends BaseManager
             if ($signalType === SignalTypeConstants::SYSTEM && $signalName === SignalConstants::WORKERS_READY) {
                 $this->workersReady = true;
                 Logger::info("Workers ready - cron jobs are now enabled");
+
+                // Start WebSocket server when workers are ready
+                $this->startWebSocketServer();
+
                 // Continue to allow signal to be routed if needed, but flag is already set
             }
 
             if (empty($destinations)) {
                 // No destinations found, skip
-                Logger::info("No destinations found for signal: {$signalType}/{$signalName}");
+                Logger::debug("No destinations found for signal: {$signalType}/{$signalName}");
                 continue;
             }
 
@@ -454,13 +508,13 @@ abstract class DaemonManager extends BaseManager
                         // Send signal to agent via worker server
                         $agentType = $destination['agentType'] ?? 'unknown';
                         $agentIndex = $destination['agentIndex'] ?? null;
+                        $agentId = $agentIndex !== null ? $agentType . ':' . $agentIndex : $agentType;
                         $indexInfo = $agentIndex !== null ? " (index: {$agentIndex})" : '';
-                        Logger::debug("Dispatching signal: {$signalType}/{$signalName} -> agent: {$agentType}{$indexInfo}");
+                        Logger::debug("Dispatching signal to agent: {$signalType}/{$signalName} -> agent: {$agentType}{$indexInfo}");
 
                         // Wrap signal in DaemonAgentMessageDTO
                         $messageDto = new DaemonAgentMessageDTO(
-                            agentType: $agentType,
-                            agentIndex: $agentIndex,
+                            agentId: $agentId,
                             signal: $signal,
                         );
 
@@ -483,10 +537,140 @@ abstract class DaemonManager extends BaseManager
                         }
                         break;
 
+                    case 'websocket':
+                        // Send signal to WebSocket client
+                        if ($webSocketServer === null) {
+                            Logger::debug("No WebSocket server available for routing signal to client");
+                            break;
+                        }
+
+                        $clientId = $destination['clientId'] ?? '';
+                        if ($clientId === '') {
+                            Logger::error("Client ID is missing in WebSocket destination");
+                            break;
+                        }
+
+                        Logger::debug("Dispatching signal to websocket: {$signalType}/{$signalName} -> WebSocket client: {$clientId}");
+
+                        $this->sendSignalToWebSocketClient($webSocketServer, $signal, $clientId);
+                        break;
+
                     default:
                         // Unknown destination type, skip
                         Logger::error("Unknown destination type: {$destinationType} for signal: {$signalType}/{$signalName}");
                         break;
+                }
+            }
+        }
+    }
+
+    /**
+     * Send signal to WebSocket client
+     *
+     * Serializes signal data and sends it to specific WebSocket client.
+     *
+     * @param WebSocketServer $server WebSocket server
+     * @param SignalDTO $signal Signal DTO
+     * @param string $clientId Client ID
+     */
+    private function sendSignalToWebSocketClient(WebSocketServer $server, SignalDTO $signal, string $clientId): void
+    {
+        $signalName = $signal->signalName->getName();
+        $signalData = $signal->data;
+
+        // Extract inner data from WebSocketSignalData if present
+        $innerData = $signalData instanceof WebSocketSignalData
+            ? $signalData->data
+            : $signalData;
+
+        // Serialize signal data for sending
+        $dataArray = $innerData instanceof BaseDTO
+            ? $innerData->toArray()
+            : [];
+
+        $message = [
+            'type' => $signalName,
+            'data' => $dataArray,
+        ];
+
+        $messageJson = json_encode($message, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+        // Send to specific client
+        $this->sendToClient($server, $clientId, $messageJson);
+    }
+
+    /**
+     * Send message to specific client
+     *
+     * @param WebSocketServer $server WebSocket server
+     * @param string $clientId Client ID
+     * @param string $message Message JSON
+     */
+    private function sendToClient(WebSocketServer $server, string $clientId, string $message): void
+    {
+        foreach ($server->getClients() as $client) {
+            if ($client instanceof WebSocketClientInterface && $client->getClientId() === $clientId) {
+                try {
+                    Logger::debug("Sending message to client {$clientId}: {$message}");
+                    $client->sendFrame($message);
+                    return;
+                } catch (\Throwable $e) {
+                    Logger::error("Failed to send message to client {$clientId}: " . $e->getMessage());
+                }
+            }
+        }
+
+        Logger::debug("Client not found: {$clientId}");
+    }
+
+    /**
+     * Send message to all clients
+     *
+     * @param WebSocketServer $server WebSocket server
+     * @param string $message Message JSON
+     * @param ?string $excludeClientId Client ID to exclude (optional)
+     */
+    private function sendToAllClients(WebSocketServer $server, string $message, ?string $excludeClientId = null): void
+    {
+        foreach ($server->getClients() as $client) {
+            if ($client instanceof WebSocketClientInterface) {
+                if ($excludeClientId !== null && $client->getClientId() === $excludeClientId) {
+                    continue;
+                }
+
+                try {
+                    $client->sendFrame($message);
+                } catch (\Throwable $e) {
+                    Logger::error("Failed to send message to client {$client->getClientId()}: " . $e->getMessage());
+                }
+            }
+        }
+    }
+
+    /**
+     * Send message to group
+     *
+     * @param WebSocketServer $server WebSocket server
+     * @param string $group Group name
+     * @param string $message Message JSON
+     * @param ?string $excludeClientId Client ID to exclude (optional)
+     */
+    private function sendToGroup(WebSocketServer $server, string $group, string $message, ?string $excludeClientId = null): void
+    {
+        // TODO: Implement proper group subscription tracking
+        // For now, send to all clients (basic implementation)
+        foreach ($server->getClients() as $client) {
+            if ($client instanceof WebSocketClientInterface) {
+                if ($excludeClientId !== null && $client->getClientId() === $excludeClientId) {
+                    continue;
+                }
+
+                // Basic implementation: send to all clients
+                // In future, check if client is subscribed to group
+                try {
+                    $client->sendFrame($message);
+                } catch (\Throwable $e) {
+                    Logger::error("Failed to send message to client {$client->getClientId()}: " . $e->getMessage());
                 }
             }
         }

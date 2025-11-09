@@ -14,8 +14,7 @@ use Hilos\Constants\WorkerConstants;
 class AgentStartDTO extends WorkerDTO
 {
     // Field name constants
-    public const string AGENT_TYPE = 'agentType';
-    public const string AGENT_INDEX = 'agentIndex';
+    public const string AGENT_ID = 'agentId';
 
     // Message type
     public const string MESSAGE_TYPE = WorkerConstants::MESSAGE_AGENT_START;
@@ -31,8 +30,7 @@ class AgentStartDTO extends WorkerDTO
     }
 
     public function __construct(
-        public readonly string $agentType,
-        public readonly ?string $agentIndex = null,
+        public readonly string $agentId,
     ) {
     }
 
@@ -43,16 +41,10 @@ class AgentStartDTO extends WorkerDTO
      */
     public function toArray(): array
     {
-        $result = [
+        return [
             self::TYPE => $this->getType(),
-            self::AGENT_TYPE => $this->agentType,
+            self::AGENT_ID => $this->agentId,
         ];
-
-        if ($this->agentIndex !== null) {
-            $result[self::AGENT_INDEX] = $this->agentIndex;
-        }
-
-        return $result;
     }
 
     /**
@@ -64,8 +56,7 @@ class AgentStartDTO extends WorkerDTO
     public static function fromArray(array $data): static
     {
         return new self(
-            agentType: $data[self::AGENT_TYPE] ?? '',
-            agentIndex: $data[self::AGENT_INDEX] ?? null,
+            agentId: $data[self::AGENT_ID] ?? '',
         );
     }
 }

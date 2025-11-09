@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Agent;
 
+use Hilos\Core\Router\SignalRouter;
 use Hilos\Exception\Worker\AgentCreationFailedException;
 
 /**
@@ -21,8 +22,9 @@ abstract class AbstractAgentFactory
      *
      * @param string $agentType Agent type (e.g., 'chat', 'user')
      * @param ?string $agentIndex Agent index (optional, e.g., user ID)
+     * @param SignalRouter $signalRouter Signal router instance
      * @return AgentInterface Agent instance
      * @throws AgentCreationFailedException If agent cannot be created
      */
-    abstract public static function createAgent(string $agentType, ?string $agentIndex): AgentInterface;
+    abstract public static function createAgent(string $agentType, ?string $agentIndex, SignalRouter $signalRouter): AgentInterface;
 }

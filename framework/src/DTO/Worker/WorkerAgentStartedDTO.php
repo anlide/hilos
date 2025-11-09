@@ -4,14 +4,12 @@ declare(strict_types=1);
 
 namespace Hilos\DTO\Worker;
 
-use Hilos\DTO\BaseDTO;
-
 /**
  * WorkerAgentStartedDTO - DTO for agent started notification
  *
  * Used when worker notifies daemon that agent has started.
  */
-class WorkerAgentStartedDTO extends BaseDTO
+class WorkerAgentStartedDTO extends WorkerDTO
 {
     // Field name constants
     public const string TYPE = 'type';
@@ -27,6 +25,16 @@ class WorkerAgentStartedDTO extends BaseDTO
         public readonly string $agentType,
         public readonly ?string $agentIndex = null,
     ) {
+    }
+
+    /**
+     * Get message type
+     *
+     * @return string Message type
+     */
+    public function getType(): string
+    {
+        return self::MESSAGE_TYPE;
     }
 
     /**

@@ -25,6 +25,6 @@ class ChatAgentManager extends AgentManager
      */
     protected function createAgent(string $agentType, ?string $agentIndex): AgentInterface
     {
-        return ChatAgentFactory::createAgent($agentType, $agentIndex);
+        return ChatAgentFactory::createAgent($agentType, $agentIndex, $this->signalRouter);
     }
 }

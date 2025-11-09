@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Agent;
 
+use Hilos\Core\Router\SignalRouter;
+use Hilos\Core\Router\SignalSource;
+use Hilos\Core\Router\SignalSourceInterface;
 use Hilos\Core\Router\SignalDataInterface;
-use Hilos\DTO\Agent\AgentMessageDTOInterface;
 
 /**
  * AbstractAgent - Abstract base class for agents running in worker processes
@@ -18,20 +20,20 @@ use Hilos\DTO\Agent\AgentMessageDTOInterface;
  */
 abstract class AbstractAgent implements AgentInterface
 {
-    /** @var callable|null Callback for sending messages to daemon */
-    private $messageSender = null;
+    /** @var SignalRouter Signal router for queuing signals */
+    protected SignalRouter $signalRouter;
 
     /** @var bool Flag indicating agent should stop */
     private bool $shouldStop = false;
 
     /**
-     * Set message sender callback
+     * Constructor
      *
-     * @param callable $sender Callback function(string $agentId, AgentMessageDTOInterface $dto): void
+     * @param SignalRouter $signalRouter Signal router instance
      */
-    public function setMessageSender(callable $sender): void
+    public function __construct(SignalRouter $signalRouter)
     {
-        $this->messageSender = $sender;
+        $this->signalRouter = $signalRouter;
     }
 
     /**
@@ -51,15 +53,17 @@ abstract class AbstractAgent implements AgentInterface
     }
 
     /**
-     * Send message to daemon
+     * Get signal source for this agent
      *
-     * @param AgentMessageDTOInterface $dto Message DTO
+     * @return SignalSourceInterface Agent signal source
      */
-    protected function sendToDaemon(AgentMessageDTOInterface $dto): void
+    protected function getAgentSignalSource(): SignalSourceInterface
     {
-        if ($this->messageSender !== null) {
-            ($this->messageSender)($this->getId(), $dto);
-        }
+        return new SignalSource(
+            source: SignalSource::AGENT,
+            type: $this->getType(),
+            index: $this->getIndex(),
+        );
     }
 
     /**

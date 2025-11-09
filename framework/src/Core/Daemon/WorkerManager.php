@@ -7,9 +7,10 @@ namespace Hilos\Core\Daemon;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Constants\WorkerConstants;
 use Hilos\Core\Agent\AgentManager;
+use Hilos\Core\Router\SignalRouter;
 use Hilos\DTO\Worker\AgentStartDTO;
 use Hilos\DTO\Worker\AgentStopDTO;
-use Hilos\DTO\Worker\DaemonAgentMessageDTO;
+use Hilos\DTO\Worker\WorkerAgentMessageDTO;
 use Hilos\DTO\Worker\WorkerDTO;
 use Hilos\Exception\MissingEnvironmentVariableException;
 use Hilos\Exception\SocketException;
@@ -39,6 +40,9 @@ abstract class WorkerManager extends BaseManager
     /** @var AgentManager Agent manager instance */
     protected AgentManager $agentManager;
 
+    /** @var SignalRouter Signal router instance */
+    protected SignalRouter $signalRouter;
+
     /**
      * WorkerManager constructor
      *
@@ -49,7 +53,27 @@ abstract class WorkerManager extends BaseManager
     {
         $this->workerIndex = $workerIndex;
         $this->isMonopolistic = ArgumentHelper::isMonopolistic($argv);
-        $this->agentManager = $this->createAgentManager();
+        $this->signalRouter = $this->createSignalRouter();
+        $this->agentManager = $this->createAgentManager($this->signalRouter);
+    }
+
+    /**
+     * Create signal router instance
+     *
+     * Must be implemented in child classes to create specific signal router.
+     *
+     * @return SignalRouter Signal router instance
+     */
+    abstract protected function createSignalRouter(): SignalRouter;
+
+    /**
+     * Get signal router instance
+     *
+     * @return SignalRouter Signal router instance
+     */
+    public function getSignalRouter(): SignalRouter
+    {
+        return $this->signalRouter;
     }
 
     /**
@@ -130,6 +154,9 @@ abstract class WorkerManager extends BaseManager
                         Logger::logAgentInfo($agentId, "Agent stopped (self-requested) on worker [workerIndex={$this->workerIndex}]");
                     }
                 }
+
+                // Dispatch accumulated signals (send to daemon)
+                $this->dispatchSignals();
             }
 
             $this->sleepWithPreciseTiming($loopStartTime);
@@ -195,6 +222,7 @@ abstract class WorkerManager extends BaseManager
 
             default:
                 // Unknown message type
+                Logger::info("Unknown message type received from daemon: {$type}");
                 break;
         }
     }
@@ -222,25 +250,25 @@ abstract class WorkerManager extends BaseManager
             return;
         }
 
-        $agentType = $data->agentType;
-        $agentIndex = $data->agentIndex;
+        $agentId = $data->agentId;
 
-        if ($agentType === '') {
+        if ($agentId === '') {
             return;
         }
-
-        // Build agent ID from type and index
-        $agentId = $this->agentManager->buildAgentId($agentType, $agentIndex);
 
         // Check if agent already exists
         if ($this->agentManager->hasAgent($agentId)) {
             return;
         }
 
+        // Parse agentId to extract agentType and agentIndex
+        $parsed = $this->agentManager->parseAgentId($agentId);
+        $agentType = $parsed['agentType'];
+        $agentIndex = $parsed['agentIndex'];
+
         // Create agent using factory method
         $agent = $this->agentManager->createAndAddAgent($agentType, $agentIndex);
 
-        $agent->setMessageSender([$this, 'sendAgentMessage']);
         $agent->onStart();
         Logger::info("Agent '{$agentId}' started");
         // Additional agent log from worker side
@@ -261,15 +289,11 @@ abstract class WorkerManager extends BaseManager
             return;
         }
 
-        $agentType = $data->agentType;
-        $agentIndex = $data->agentIndex;
+        $agentId = $data->agentId;
 
-        if ($agentType === '') {
+        if ($agentId === '') {
             return;
         }
-
-        // Build agent ID from type and index
-        $agentId = $this->agentManager->buildAgentId($agentType, $agentIndex);
 
         if (!$this->agentManager->hasAgent($agentId)) {
             return;
@@ -297,26 +321,31 @@ abstract class WorkerManager extends BaseManager
      */
     private function handleAgentMessage(WorkerDTO $data): void
     {
-        if (!($data instanceof DaemonAgentMessageDTO)) {
+        if (!($data instanceof WorkerAgentMessageDTO)) {
+            Logger::error("handleAgentMessage - not WorkerAgentMessageDTO, type=" . get_class($data));
             return;
         }
 
-        $agentType = $data->agentType;
-        $agentIndex = $data->agentIndex;
+        $agentId = $data->agentId;
+
+        // Parse agentId to extract agentType and agentIndex
+        $parsed = $this->agentManager->parseAgentId($agentId);
+        $agentType = $parsed['agentType'];
+        $agentIndex = $parsed['agentIndex'];
 
         if ($agentType === '') {
+            Logger::error("handleAgentMessage - empty agentType from agentId: {$agentId}");
             return;
         }
 
-        // Build agent ID from type and index
-        $agentId = $this->agentManager->buildAgentId($agentType, $agentIndex);
-
         if (!$this->agentManager->hasAgent($agentId)) {
+            Logger::error("handleAgentMessage - agent not found: {$agentId}");
             return;
         }
 
         $agent = $this->agentManager->getAgent($agentId);
         if ($agent === null) {
+            Logger::error("handleAgentMessage - agent is null: {$agentId}");
             return;
         }
 
@@ -327,6 +356,7 @@ abstract class WorkerManager extends BaseManager
         $name = $signal->signalName->getName();
         $signalData = $signal->data;
 
+        Logger::debug('Signal routing: agentId=' . $agentId . ', signalType=' . $signalType . ', signalName=' . $name);
         // Route to appropriate handler in agent based on signal type
         match ($signalType) {
             SignalTypeConstants::SYSTEM => $agent->onSignalSystem($source, $name, $signalData),
@@ -340,34 +370,6 @@ abstract class WorkerManager extends BaseManager
             SignalTypeConstants::CRON => $agent->onSignalCron($source, $name, $signalData),
             default => null, // Unknown signal type - ignore
         };
-    }
-
-    /**
-     * Send message from agent to daemon
-     *
-     * @param string $agentId Agent ID
-     * @param array $data Message data
-     */
-    public function sendAgentMessage(string $agentId, array $data): void
-    {
-        if ($this->daemonClient === null || !$this->daemonClient->isConnected()) {
-            return;
-        }
-
-        // Find agent to get type
-        $agent = $this->agentManager->getAgent($agentId);
-        if ($agent === null) {
-            return;
-        }
-
-        $message = [
-            'type' => WorkerConstants::MESSAGE_AGENT_MESSAGE,
-            'agentId' => $agentId,
-            'agentType' => $agent->getType(),
-            'data' => $data,
-        ];
-
-        $this->daemonClient->send($message);
     }
 
     /**
@@ -452,13 +454,45 @@ abstract class WorkerManager extends BaseManager
     abstract protected function onTick(): void;
 
     /**
+     * Dispatch accumulated signals
+     *
+     * Processes all queued signals from SignalRouter and forwards them to daemon.
+     * Signals are processed one by one in while-do loop.
+     * Called at the end of each loop iteration when connected to daemon.
+     *
+     * Logic: We simply forward signals to daemon as-is. Daemon will decide what to do with them.
+     */
+    private function dispatchSignals(): void
+    {
+        if ($this->daemonClient === null || !$this->daemonClient->isConnected()) {
+            return;
+        }
+
+        // Process signals one by one in while-do loop
+        while (($signal = $this->signalRouter->getNextQueuedSignal()) !== null) {
+            // Extract agent type and index from signal source
+            $agentType = $signal->signalSource->getType();
+            $agentIndex = $signal->signalSource->getIndex();
+
+            $json = json_encode($signal->toArray());
+            Logger::debug("Signal going to transmit: {$json}");
+            // Send signal to daemon (daemon will handle routing)
+            $this->daemonClient->send(new WorkerAgentMessageDTO(
+                agentId: $this->agentManager->buildAgentId($agentType, $agentIndex),
+                signal: $signal,
+            ));
+        }
+    }
+
+    /**
      * Create agent manager instance
      *
      * Must be implemented in child classes to create specific agent manager.
      *
+     * @param SignalRouter $signalRouter Signal router instance
      * @return AgentManager Agent manager instance
      */
-    abstract protected function createAgentManager(): AgentManager;
+    abstract protected function createAgentManager(SignalRouter $signalRouter): AgentManager;
 
     /** @return string Manager name for logging */
     protected function getManagerName(): string

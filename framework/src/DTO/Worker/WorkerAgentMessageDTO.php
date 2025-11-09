@@ -4,27 +4,37 @@ declare(strict_types=1);
 
 namespace Hilos\DTO\Worker;
 
-use Hilos\DTO\BaseDTO;
+use Hilos\DTO\SignalDTO;
 
 /**
  * WorkerAgentMessageDTO - DTO for agent message from worker
  *
  * Used when worker sends agent message to daemon.
  */
-class WorkerAgentMessageDTO extends BaseDTO
+class WorkerAgentMessageDTO extends WorkerDTO
 {
     // Field name constants
     public const string TYPE = 'type';
     public const string AGENT_ID = 'agentId';
-    public const string DATA = 'data';
+    public const string SIGNAL = 'signal';
 
     // Message type
     public const string MESSAGE_TYPE = 'agent_message';
 
     public function __construct(
         public readonly string $agentId,
-        public readonly array $data = [],
+        public readonly SignalDTO $signal,
     ) {
+    }
+
+    /**
+     * Get message type
+     *
+     * @return string Message type
+     */
+    public function getType(): string
+    {
+        return self::MESSAGE_TYPE;
     }
 
     /**
@@ -39,8 +49,8 @@ class WorkerAgentMessageDTO extends BaseDTO
             self::AGENT_ID => $this->agentId,
         ];
 
-        if (!empty($this->data)) {
-            $result[self::DATA] = $this->data;
+        if (!empty($this->signal)) {
+            $result[self::SIGNAL] = $this->signal->toArray();
         }
 
         return $result;
@@ -56,7 +66,7 @@ class WorkerAgentMessageDTO extends BaseDTO
     {
         return new self(
             agentId: $data[self::AGENT_ID] ?? '',
-            data: $data[self::DATA] ?? [],
+            signal: SignalDTO::fromArray($data[self::SIGNAL]),
         );
     }
 }

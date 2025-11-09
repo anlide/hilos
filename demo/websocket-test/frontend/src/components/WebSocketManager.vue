@@ -12,7 +12,8 @@ const chatStore = useChatStore()
 let ws: WebSocket | null = null
 let reconnectTimer: number | null = null
 let pingTimer: number | null = null
-const reconnectDelay = 500 // Fixed 500ms delay between reconnection attempts
+let isReconnecting = false // Flag to prevent multiple simultaneous reconnection attempts
+const reconnectDelay = 3000 // 3 seconds delay between reconnection attempts
 const pingInterval = 40000 // 40 seconds in milliseconds
 
 const connect = () => {
@@ -20,14 +21,21 @@ const connect = () => {
     return // Already connected
   }
 
+  // Prevent multiple simultaneous connection attempts
+  if (isReconnecting || (ws && ws.readyState === WebSocket.CONNECTING)) {
+    return
+  }
+
   chatStore.setConnecting(true)
   chatStore.setError(null)
+  isReconnecting = false
 
   try {
     const url = `${config.websocketProtocol}://${config.websocketHost}:${config.websocketPort}`
     ws = new WebSocket(url)
     
     ws.onopen = () => {
+      isReconnecting = false
       chatStore.setConnected(true)
       chatStore.setConnecting(false)
       chatStore.setError(null)
@@ -43,11 +51,24 @@ const connect = () => {
     ws.onmessage = (event) => {
       try {
         // Handle incoming messages
-        // TODO: Parse server messages when protocol is defined
         const data = event.data
         if (typeof data === 'string') {
-          // For now, just display raw messages
-          chatStore.addChatMessage('Server', data)
+          // Try to parse as JSON
+          try {
+            const message = JSON.parse(data)
+            if (message.type && message.data !== undefined) {
+              // Handle structured message
+              console.log('Received message:', message.type, message.data)
+              // TODO: Handle different message types
+              // For now, just log it
+            } else {
+              // Fallback: display as raw message
+              chatStore.addChatMessage('Server', data)
+            }
+          } catch (parseError) {
+            // Not JSON, display as raw message
+            chatStore.addChatMessage('Server', data)
+          }
         }
       } catch (error) {
         console.error('Error processing message:', error)
@@ -67,12 +88,16 @@ const connect = () => {
       // Stop ping interval
       stopPingInterval()
       
-      if (ws) {
-        chatStore.addNotification('Connection lost. Reconnecting...', 'connection_lost')
-      }
+      // Clean up current connection
+      ws = null
       
-      // Attempt to reconnect
-      scheduleReconnect()
+      // Only reconnect if not already reconnecting
+      if (!isReconnecting) {
+        chatStore.addNotification('Connection lost. Reconnecting...', 'connection_lost')
+        
+        // Attempt to reconnect
+        scheduleReconnect()
+      }
     }
   } catch (error) {
     chatStore.setError(`Failed to connect: ${error}`)
@@ -82,13 +107,22 @@ const connect = () => {
 }
 
 const scheduleReconnect = () => {
-  if (reconnectTimer) {
-    clearTimeout(reconnectTimer)
+  // Prevent multiple simultaneous reconnection attempts
+  if (isReconnecting) {
+    return
   }
 
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer)
+    reconnectTimer = null
+  }
+
+  isReconnecting = true
   chatStore.incrementReconnectAttempts()
   
   reconnectTimer = window.setTimeout(() => {
+    isReconnecting = false
+    reconnectTimer = null
     connect()
   }, reconnectDelay)
 }
@@ -107,11 +141,7 @@ const sendMessage = (message: string) => {
 }
 
 /**
- * Send WebSocket ping frame with opCode = 0x9
- * 
- * Browser WebSocket API doesn't allow direct control of opCode, so we create
- * a ping frame manually and send it as binary data. The server recognizes
- * ping frames inside binary payloads and handles them as OPCODE_PING.
+ * Send WebSocket ping as simple text message
  */
 const sendPing = () => {
   if (!ws || ws.readyState !== WebSocket.OPEN) {
@@ -119,27 +149,8 @@ const sendPing = () => {
   }
 
   try {
-    // Try to use ping() method if available (Node.js ws library, etc.)
-    if (typeof (ws as any).ping === 'function') {
-      ;(ws as any).ping()
-      return
-    }
-
-    // Create WebSocket ping frame manually (RFC 6455)
-    // Structure: [0x89 (FIN+PING), 0x80 (MASK+len0), mask_key_4_bytes]
-    const frame = new Uint8Array(6)
-    frame[0] = 0x89 // FIN (0x80) | PING opCode (0x09)
-    frame[1] = 0x80 // MASK (0x80) | payload length 0
-    
-    // Generate 4-byte masking key (required for client-to-server frames)
-    const mask = crypto.getRandomValues(new Uint8Array(4))
-    frame[2] = mask[0] ?? 0
-    frame[3] = mask[1] ?? 0
-    frame[4] = mask[2] ?? 0
-    frame[5] = mask[3] ?? 0
-    
-    // Send as binary - server will detect ping frame structure and handle as OPCODE_PING
-    ws.send(frame.buffer)
+    // Send simple text "ping" message
+    ws.send('ping')
   } catch (error) {
     console.error('Error sending ping:', error)
   }

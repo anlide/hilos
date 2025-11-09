@@ -22,6 +22,9 @@ use Hilos\Utils\Helpers\ArgumentHelper;
 // Initialize environment (reads .env from local directory)
 Env::init(__DIR__);
 
+// Enable debug logging (optional - uncomment to enable)
+#Logger::setDebugEnabled(true);
+
 try {
     // Parse command line arguments for worker index
     $workerIndex = ArgumentHelper::getWorkerIndex($argv);

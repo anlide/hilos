@@ -6,6 +6,7 @@ namespace Demo\WebSocketTest\Core\Agent;
 
 use Demo\WebSocketTest\Constants\AgentType;
 use Hilos\Core\Agent\AbstractAgent;
+use Hilos\Core\Router\SignalRouter;
 use Hilos\Logging\Logger\Logger;
 
 /**
@@ -25,9 +26,11 @@ class UserAgent extends AbstractAgent
      * UserAgent constructor
      *
      * @param string $userId User identifier
+     * @param SignalRouter $signalRouter Signal router instance
      */
-    public function __construct(string $userId)
+    public function __construct(string $userId, SignalRouter $signalRouter)
     {
+        parent::__construct($signalRouter);
         $this->userId = $userId;
     }
 

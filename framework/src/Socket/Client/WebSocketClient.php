@@ -147,8 +147,13 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
                     $this->fragmentedOpcode = self::OPCODE_TEXT;
                     $this->fragmentedPayload = $frame->payload;
                 } else {
-                    // Complete text frame
-                    $this->onFrame($frame->payload);
+                    // Check if text is "ping" - respond with pong
+                    if ($frame->payload === 'ping') {
+                        $this->sendPong('');
+                    } else {
+                        // Complete text frame
+                        $this->onFrame($frame->payload);
+                    }
                 }
                 break;
 
@@ -160,25 +165,8 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
                     $this->fragmentedOpcode = self::OPCODE_BINARY;
                     $this->fragmentedPayload = $frame->payload;
                 } else {
-                    // Check if binary payload contains a ping frame (browser wraps ping in binary frame)
-                    // Ping frame structure: [0x89, 0x80, mask_key_4_bytes] for empty ping
-                    $payload = $frame->payload;
-                    if (strlen($payload) >= 6
-                        && ord($payload[0]) === 0x89  // FIN + PING opCode
-                        && ord($payload[1]) === 0x80  // MASK + length 0
-                    ) {
-                        // This is a ping frame wrapped in a binary frame by browser
-                        // Extract ping payload (skip 6-byte header: 0x89, 0x80, 4-byte mask)
-                        $pingPayload = '';
-                        if (strlen($payload) > 6) {
-                            $pingPayload = substr($payload, 6);
-                        }
-                        // Respond with pong
-                        $this->sendPong($pingPayload);
-                    } else {
-                        // Regular binary frame
-                        $this->onFrameBinary($frame->payload);
-                    }
+                    // Regular binary frame
+                    $this->onFrameBinary($frame->payload);
                 }
                 break;
 
@@ -274,7 +262,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
         $response .= HttpConstants::HEADER_UPGRADE . ": " . HttpConstants::WEBSOCKET_PROTOCOL . HttpConstants::HTTP_LINE_SEPARATOR;
         $response .= HttpConstants::HEADER_CONNECTION . ": " . HttpConstants::HEADER_UPGRADE . HttpConstants::HTTP_LINE_SEPARATOR;
         $response .= HttpConstants::HEADER_SEC_WEBSOCKET_ACCEPT . ": " . $acceptKey . HttpConstants::HTTP_LINE_SEPARATOR;
-        $response .= HttpConstants::HTTP_DELIMITER;
+        $response .= HttpConstants::HTTP_LINE_SEPARATOR;
 
         $this->writeBuffer .= $response;
         $this->handshakeCompleted = true;
@@ -386,6 +374,11 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
      */
     public function sendFrame(string $data): void
     {
+        // Check if handshake is completed
+        if (!$this->handshakeCompleted) {
+            throw new \RuntimeException("Cannot send frame: WebSocket handshake not completed");
+        }
+
         $header = $this->buildFrameHeader(strlen($data), self::OPCODE_TEXT);
         $this->writeBuffer .= $header . $data;
     }

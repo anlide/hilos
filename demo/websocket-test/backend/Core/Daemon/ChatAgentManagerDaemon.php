@@ -7,6 +7,7 @@ namespace Demo\WebSocketTest\Core\Daemon;
 use Demo\WebSocketTest\Core\Agent\Daemon\ChatAgentDaemonFactory;
 use Hilos\Core\Agent\Daemon\AgentDaemonInterface;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
+use Hilos\Core\Router\SignalRouter;
 use Hilos\Exception\Worker\AgentDaemonCreationFailedException;
 
 /**
@@ -16,6 +17,16 @@ use Hilos\Exception\Worker\AgentDaemonCreationFailedException;
  */
 class ChatAgentManagerDaemon extends AgentManagerDaemon
 {
+    /**
+     * Constructor
+     *
+     * @param SignalRouter $signalRouter Signal router instance
+     */
+    public function __construct(SignalRouter $signalRouter)
+    {
+        parent::__construct($signalRouter);
+    }
+
     /**
      * Create agent daemon instance (factory method)
      *

@@ -9,8 +9,14 @@ namespace Hilos\Core\Router;
  *
  * All signal data DTOs must implement this interface.
  * Signal data DTOs must extend BaseDTO and implement SignalDataInterface.
- * This is a marker interface to distinguish signal data DTOs from other DTOs.
+ * This interface ensures that all signal data can be serialized to array.
  */
 interface SignalDataInterface
 {
+    /**
+     * Convert signal data to array
+     *
+     * @return array Signal data as array
+     */
+    public function toArray(): array;
 }
