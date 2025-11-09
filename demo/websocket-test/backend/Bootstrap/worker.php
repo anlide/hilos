@@ -5,10 +5,10 @@ declare(strict_types=1);
 require_once __DIR__ . '/../../vendor/autoload.php';
 
 use Demo\WebSocketTest\Core\Daemon\ChatWorkerManager;
+use Hilos\Constants\ErrorConstants;
+use Hilos\Constants\ExitCode;
 use Hilos\Exception\InvalidWorkerIdException;
 use Hilos\Logging\Logger\Logger;
-use Hilos\Utils\Constants\ErrorConstants;
-use Hilos\Utils\Constants\ExitCode;
 use Hilos\Utils\Env;
 use Hilos\Utils\Helpers\ArgumentHelper;
 

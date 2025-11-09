@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\WebSocketTest\Core\Agent;
 
+use Demo\WebSocketTest\Constants\AgentType;
 use Demo\WebSocketTest\Domain\Event\ChatEventInterface;
 use Demo\WebSocketTest\Domain\Event\Events\ChatClearedEvent;
 use Demo\WebSocketTest\Domain\Event\Events\ChatCreatedEvent;
@@ -11,10 +12,9 @@ use Demo\WebSocketTest\Domain\Event\Events\MessageSentEvent;
 use Demo\WebSocketTest\Domain\Event\Events\UserJoinedEvent;
 use Demo\WebSocketTest\Domain\Event\Events\UserLeftEvent;
 use Demo\WebSocketTest\Domain\Event\Events\UserRenamedEvent;
-use Demo\WebSocketTest\Utils\Constants\AgentType;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Router\SignalDataInterface;
-use Hilos\Utils\DTO\BaseDTO;
+use Hilos\DTO\BaseDTO;
 use Hilos\Logging\Logger\Logger;
 
 /**

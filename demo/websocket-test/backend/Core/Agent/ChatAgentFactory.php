@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\WebSocketTest\Core\Agent;
 
-use Demo\WebSocketTest\Utils\Constants\AgentType;
+use Demo\WebSocketTest\Constants\AgentType;
 use Hilos\Core\Agent\AbstractAgentFactory;
 use Hilos\Core\Agent\AgentInterface;
 use Hilos\Exception\Worker\AgentCreationFailedException;

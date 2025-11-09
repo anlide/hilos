@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\API\Router;
 
-use Hilos\Utils\Constants\HttpConstants;
+use Hilos\Constants\HttpConstants;
 
 /**
  * HttpRouter - Routes HTTP requests to handlers

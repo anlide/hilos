@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace Hilos\Socket\Client;
 
 use Hilos\API\Router\HttpRouter;
+use Hilos\Constants\HttpConstants;
 use Hilos\Socket\Client\Interface\HttpClientInterface;
-use Hilos\Utils\Constants\HttpConstants;
 
 /**
  * HttpClient - Represents a single HTTP client connection

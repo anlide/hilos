@@ -8,15 +8,15 @@ use Demo\WebSocketTest\Core\Daemon\ChatDaemonManager;
 use Demo\WebSocketTest\Core\Socket\Server\ChatWebSocketServer;
 use Demo\WebSocketTest\Core\Socket\Server\ChatWorkerServer;
 use Hilos\API\Router\HttpRouter;
+use Hilos\Constants\EnvConstants;
+use Hilos\Constants\ErrorConstants;
+use Hilos\Constants\ExitCode;
+use Hilos\Constants\HttpConstants;
 use Hilos\Core\Daemon\Master\DaemonStatus;
-use Hilos\Socket\Server\HttpServer;
-use Hilos\Utils\Constants\ErrorConstants;
-use Hilos\Utils\Constants\EnvConstants;
-use Hilos\Utils\Constants\ExitCode;
-use Hilos\Utils\Constants\HttpConstants;
-use Hilos\Utils\DTO\DaemonStatusDTO;
-use Hilos\Utils\Env;
+use Hilos\DTO\DaemonStatusDTO;
 use Hilos\Logging\Logger\Logger;
+use Hilos\Socket\Server\HttpServer;
+use Hilos\Utils\Env;
 
 /**
  * Daemon - Entry point for WebSocket test daemon

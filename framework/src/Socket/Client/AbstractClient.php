@@ -4,13 +4,13 @@ declare(strict_types=1);
 
 namespace Hilos\Socket\Client;
 
+use Hilos\Constants\EnvConstants;
+use Hilos\Constants\HttpConstants;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Exception\MissingEnvironmentVariableException;
 use Hilos\Exception\SocketException;
 use Hilos\Socket\AbstractSocket;
 use Hilos\Socket\SocketOperation;
-use Hilos\Utils\Constants\EnvConstants;
-use Hilos\Utils\Constants\HttpConstants;
 use Hilos\Utils\Env;
 
 /**

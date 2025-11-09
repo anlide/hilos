@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Daemon;
 
+use Hilos\Constants\EnvConstants;
 use Hilos\Core\Process;
 use Hilos\Exception\InvalidScriptPathException;
 use Hilos\Exception\Log\LogRotationException;
@@ -16,7 +17,6 @@ use Hilos\Exception\Process\FailedToSetNonBlockingException;
 use Hilos\Exception\Process\FailedToSetStdErrException;
 use Hilos\Exception\Process\FailedToTerminateProcessExceptionException;
 use Hilos\Logging\Logger\Logger;
-use Hilos\Utils\Constants\EnvConstants;
 use Hilos\Utils\Env;
 
 /**

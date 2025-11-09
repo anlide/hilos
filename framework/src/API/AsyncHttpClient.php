@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\API;
 
-use Hilos\Utils\Constants\ApiEndpoint;
-use Hilos\Utils\Constants\HttpConstants;
+use Hilos\Constants\ApiEndpoint;
+use Hilos\Constants\HttpConstants;
 
 /**
  * AsyncHttpClient - Asynchronous non-blocking HTTP client

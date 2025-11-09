@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace Hilos\Core\Daemon;
 
 use ErrorException;
-use Hilos\Utils\Constants\ErrorConstants;
-use Hilos\Utils\Env;
+use Hilos\Constants\ErrorConstants;
 use Hilos\Logging\Logger\Logger;
+use Hilos\Utils\Env;
 use RuntimeException;
 use Throwable;
 

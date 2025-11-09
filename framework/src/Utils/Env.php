@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Utils;
 
+use Hilos\Constants\EnvConstants;
 use Hilos\Exception\MissingEnvironmentVariableException;
-use Hilos\Utils\Constants\EnvConstants;
 
 /**
  * Env - Environment variable manager

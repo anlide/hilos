@@ -4,13 +4,13 @@ declare(strict_types=1);
 
 namespace Hilos\Core\CLI;
 
+use Hilos\Constants\CliCommands;
+use Hilos\Constants\ExitCode;
 use Hilos\Core\CLI\Commands\CommandInterface;
 use Hilos\Core\CLI\Commands\HelpCommand;
 use Hilos\Core\CLI\Commands\MonitorCommand;
 use Hilos\Core\CLI\Commands\StatusCommand;
-use Hilos\Utils\Constants\CliCommands;
 use Hilos\Utils\Constants\CliConstants;
-use Hilos\Utils\Constants\ExitCode;
 
 /**
  * CliManager - Main CLI management class

@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Core\Agent;
 
 use Hilos\Core\Router\SignalDataInterface;
-use Hilos\Utils\DTO\Agent\AgentMessageDTOInterface;
+use Hilos\DTO\Agent\AgentMessageDTOInterface;
 
 /**
  * AbstractAgent - Abstract base class for agents running in worker processes

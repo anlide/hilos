@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Router;
 
-use Hilos\Utils\DTO\SignalDTO;
-use Hilos\Logging\Logger\Logger;
-use Hilos\Exception\Router\PageSubscriptionNotFoundException;
-use Hilos\Exception\Router\PageSubscriptionMismatchException;
+use Hilos\DTO\SignalDTO;
 use Hilos\Exception\Router\GroupSubscriptionNotFoundException;
+use Hilos\Exception\Router\PageSubscriptionMismatchException;
+use Hilos\Exception\Router\PageSubscriptionNotFoundException;
+use Hilos\Logging\Logger\Logger;
 
 /**
  * SignalRouter - Base class for routing signals from sources to agents

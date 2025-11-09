@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace Demo\WebSocketTest\Domain\Event;
 
-use Demo\WebSocketTest\Utils\Constants\ChatEventType;
-
 /**
  * AbstractChatEvent - Abstract base class for all chat events
  *

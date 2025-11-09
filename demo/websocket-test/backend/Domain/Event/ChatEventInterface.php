@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\WebSocketTest\Domain\Event;
 
-use Demo\WebSocketTest\Utils\Constants\ChatEventType;
+use Demo\WebSocketTest\Constants\ChatEventType;
 
 /**
  * ChatEventInterface - Interface for all chat events

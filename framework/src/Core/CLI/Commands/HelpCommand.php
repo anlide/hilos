@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Core\CLI\Commands;
 
-use Hilos\Utils\Constants\CliCommands;
-use Hilos\Utils\Constants\ExitCode;
+use Hilos\Constants\CliCommands;
+use Hilos\Constants\ExitCode;
 
 /**
  * HelpCommand - Display help information

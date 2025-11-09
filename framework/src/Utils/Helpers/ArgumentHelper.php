@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Utils\Helpers;
 
+use Hilos\Constants\WorkerConstants;
 use Hilos\Exception\InvalidWorkerIdException;
-use Hilos\Utils\Constants\WorkerConstants;
 
 /**
  * ArgumentHelper - Command line argument parsing utilities

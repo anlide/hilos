@@ -5,16 +5,16 @@ declare(strict_types=1);
 namespace Hilos\Core\CLI\Commands;
 
 use Hilos\API\AsyncHttpClient;
+use Hilos\Constants\ApiEndpoint;
+use Hilos\Constants\DaemonConstants;
+use Hilos\Constants\EnvConstants;
+use Hilos\Constants\ExitCode;
+use Hilos\Constants\HttpConstants;
 use Hilos\Core\Daemon\Master\DaemonStatus;
+use Hilos\DTO\DaemonStatusDTO;
 use Hilos\Exception\MissingEnvironmentVariableException;
-use Hilos\Utils\Constants\ApiEndpoint;
-use Hilos\Utils\Constants\DaemonConstants;
-use Hilos\Utils\Constants\EnvConstants;
-use Hilos\Utils\Constants\ExitCode;
-use Hilos\Utils\Constants\HttpConstants;
-use Hilos\Utils\DTO\DaemonStatusDTO;
-use Hilos\Utils\Helpers\StringHelper;
 use Hilos\Utils\Env;
+use Hilos\Utils\Helpers\StringHelper;
 
 /**
  * StatusCommand - Display daemon status

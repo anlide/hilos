@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Router;
 
-use Hilos\Utils\DTO\BaseDTO;
+use Hilos\DTO\BaseDTO;
 
 /**
  * SignalData - Empty implementation of signal data

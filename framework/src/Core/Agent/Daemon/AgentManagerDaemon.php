@@ -4,12 +4,12 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Agent\Daemon;
 
+use Hilos\DTO\Worker\WorkerAgentMessageDTO;
+use Hilos\DTO\Worker\WorkerAgentStartedDTO;
+use Hilos\DTO\Worker\WorkerAgentStoppedDTO;
 use Hilos\Exception\Worker\AgentDaemonCreationFailedException;
-use Hilos\Socket\Client\WorkerClient;
-use Hilos\Utils\DTO\Worker\WorkerAgentStartedDTO;
-use Hilos\Utils\DTO\Worker\WorkerAgentStoppedDTO;
-use Hilos\Utils\DTO\Worker\WorkerAgentMessageDTO;
 use Hilos\Logging\Logger\Logger;
+use Hilos\Socket\Client\WorkerClient;
 
 /**
  * AgentManagerDaemon - Base class for managing agent daemons in daemon process

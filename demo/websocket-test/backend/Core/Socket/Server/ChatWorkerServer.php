@@ -4,13 +4,13 @@ declare(strict_types=1);
 
 namespace Demo\WebSocketTest\Core\Socket\Server;
 
-use Demo\WebSocketTest\Utils\Constants\ChatSignalConstants;
+use Demo\WebSocketTest\Constants\ChatSignalConstants;
+use Hilos\Constants\SignalTypeConstants;
+use Hilos\Core\Router\SignalData;
+use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
-use Hilos\Core\Router\SignalName;
-use Hilos\Core\Router\SignalData;
 use Hilos\Socket\Server\WorkerServer;
-use Hilos\Utils\Constants\SignalTypeConstants;
 
 /**
  * ChatWorkerServer - Worker server with chat-specific agent daemon factory

@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace Hilos\Socket\Server;
 
+use Hilos\Constants\EnvConstants;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\Process;
 use Hilos\Core\Router\SignalRouter;
+use Hilos\DTO\Worker\DaemonAgentMessageDTO;
 use Hilos\Exception\MissingEnvironmentVariableException;
 use Hilos\Exception\Process\CouldNotStartException;
 use Hilos\Exception\Process\FailedToClosePipeException;
@@ -17,18 +19,16 @@ use Hilos\Exception\Process\FailedToSetStdErrException;
 use Hilos\Exception\Process\FailedToTerminateProcessExceptionException;
 use Hilos\Exception\SocketException;
 use Hilos\Exception\Worker\AgentDaemonCreationFailedException;
-use Hilos\Exception\Worker\NoSuitableWorkerException;
 use Hilos\Exception\Worker\AgentNotFoundException;
 use Hilos\Exception\Worker\AgentNotLinkedToWorkerException;
+use Hilos\Exception\Worker\NoSuitableWorkerException;
 use Hilos\Exception\Worker\WorkerClientNotFoundException;
-use Hilos\Utils\DTO\Worker\DaemonAgentMessageDTO;
+use Hilos\Logging\Logger\Logger;
 use Hilos\Socket\Client\ClientInterface;
 use Hilos\Socket\Client\Interface\WorkerClientInterface;
 use Hilos\Socket\Client\WorkerClient;
-use Hilos\Utils\Constants\EnvConstants;
-use Hilos\Utils\Helpers\ArgumentHelper;
 use Hilos\Utils\Env;
-use Hilos\Logging\Logger\Logger;
+use Hilos\Utils\Helpers\ArgumentHelper;
 
 /**
  * WorkerServer - Worker communication server implementation

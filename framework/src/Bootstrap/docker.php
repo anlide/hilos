@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Hilos\Constants\ExitCode;
 use Hilos\Core\Daemon\DockerManager;
 use Hilos\Exception\InvalidScriptPathException;
 use Hilos\Exception\Log\LogRotationException;
@@ -9,7 +10,6 @@ use Hilos\Exception\Process\CouldNotStartException;
 use Hilos\Exception\Process\FailedToGetStatusException;
 use Hilos\Exception\Process\FailedToSetNonBlockingException;
 use Hilos\Logging\Logger\Logger;
-use Hilos\Utils\Constants\ExitCode;
 use Hilos\Utils\Env;
 
 require_once __DIR__ . '/../../../vendor/autoload.php';

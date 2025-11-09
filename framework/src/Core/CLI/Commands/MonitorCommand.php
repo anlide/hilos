@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Core\CLI\Commands;
 
+use Hilos\Constants\ExitCode;
 use Hilos\Core\Daemon\CliMonitorManager;
-use Hilos\Utils\Constants\ExitCode;
 use Throwable;
 
 /**

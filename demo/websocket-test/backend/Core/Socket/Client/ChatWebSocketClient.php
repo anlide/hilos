@@ -4,16 +4,16 @@ declare(strict_types=1);
 
 namespace Demo\WebSocketTest\Core\Socket\Client;
 
-use Demo\WebSocketTest\Utils\Constants\ChatSignalConstants;
-use Demo\WebSocketTest\Utils\Constants\PageConstants;
-use Demo\WebSocketTest\Utils\DTO\WebSocketFrameSignalDTO;
-use Demo\WebSocketTest\Utils\DTO\WebSocketHandshakeSignalDTO;
-use Demo\WebSocketTest\Utils\DTO\WebSocketUnsubscribeSignalDTO;
+use Demo\WebSocketTest\Constants\ChatSignalConstants;
+use Demo\WebSocketTest\Constants\PageConstants;
+use Demo\WebSocketTest\DTO\WebSocketFrameSignalDTO;
+use Demo\WebSocketTest\DTO\WebSocketHandshakeSignalDTO;
+use Demo\WebSocketTest\DTO\WebSocketUnsubscribeSignalDTO;
+use Hilos\Constants\SignalTypeConstants;
+use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
-use Hilos\Core\Router\SignalName;
 use Hilos\Socket\Client\WebSocketClient;
-use Hilos\Utils\Constants\SignalTypeConstants;
 
 /**
  * ChatWebSocketClient - WebSocket client for chat demo

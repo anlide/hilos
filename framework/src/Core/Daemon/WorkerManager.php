@@ -4,18 +4,18 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Daemon;
 
+use Hilos\Constants\SignalTypeConstants;
+use Hilos\Constants\WorkerConstants;
 use Hilos\Core\Agent\AgentManager;
+use Hilos\DTO\Worker\AgentStartDTO;
+use Hilos\DTO\Worker\AgentStopDTO;
+use Hilos\DTO\Worker\DaemonAgentMessageDTO;
+use Hilos\DTO\Worker\WorkerDTO;
 use Hilos\Exception\MissingEnvironmentVariableException;
 use Hilos\Exception\SocketException;
 use Hilos\Exception\Worker\AgentCreationFailedException;
 use Hilos\Logging\Logger\Logger;
 use Hilos\Socket\Worker\WorkerDaemonClient;
-use Hilos\Utils\Constants\SignalTypeConstants;
-use Hilos\Utils\Constants\WorkerConstants;
-use Hilos\Utils\DTO\Worker\AgentStartDTO;
-use Hilos\Utils\DTO\Worker\AgentStopDTO;
-use Hilos\Utils\DTO\Worker\DaemonAgentMessageDTO;
-use Hilos\Utils\DTO\Worker\WorkerDTO;
 use Hilos\Utils\Helpers\ArgumentHelper;
 
 /**

@@ -4,17 +4,17 @@ declare(strict_types=1);
 
 namespace Hilos\Socket\Worker;
 
+use Hilos\Constants\EnvConstants;
+use Hilos\Constants\WorkerConstants;
+use Hilos\DTO\Worker\AgentStartDTO;
+use Hilos\DTO\Worker\AgentStopDTO;
+use Hilos\DTO\Worker\DaemonAgentMessageDTO;
+use Hilos\DTO\Worker\WorkerDTO;
+use Hilos\DTO\Worker\WorkerRegisteredDTO;
 use Hilos\Exception\MissingEnvironmentVariableException;
 use Hilos\Exception\SocketException;
 use Hilos\Socket\AbstractSocket;
 use Hilos\Socket\SocketOperation;
-use Hilos\Utils\Constants\EnvConstants;
-use Hilos\Utils\Constants\WorkerConstants;
-use Hilos\Utils\DTO\Worker\AgentStartDTO;
-use Hilos\Utils\DTO\Worker\AgentStopDTO;
-use Hilos\Utils\DTO\Worker\DaemonAgentMessageDTO;
-use Hilos\Utils\DTO\Worker\WorkerDTO;
-use Hilos\Utils\DTO\Worker\WorkerRegisteredDTO;
 use Hilos\Utils\Env;
 
 /**

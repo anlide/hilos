@@ -4,18 +4,18 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Daemon;
 
-use Hilos\Core\Router\SignalRouter;
+use Hilos\API\Router\HttpRouter;
+use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
+use Hilos\Core\EventLoop\EventLoop;
+use Hilos\Core\Router\SignalRouter;
+use Hilos\DTO\SignalDTO;
+use Hilos\DTO\Worker\DaemonAgentMessageDTO;
 use Hilos\Exception\Worker\AgentDaemonCreationFailedException;
 use Hilos\Exception\Worker\NoSuitableWorkerException;
+use Hilos\Logging\Logger\Logger;
 use Hilos\Socket\Server\ServerInterface;
 use Hilos\Socket\Server\WorkerServer;
-use Hilos\API\Router\HttpRouter;
-use Hilos\Core\EventLoop\EventLoop;
-use Hilos\Logging\Logger\Logger;
-use Hilos\Utils\Constants\SignalTypeConstants;
-use Hilos\Utils\DTO\SignalDTO;
-use Hilos\Utils\DTO\Worker\DaemonAgentMessageDTO;
 
 /**
  * DaemonManager - Abstract base class for daemon process management

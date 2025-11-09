@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
+use Hilos\Constants\ExitCode;
 use Hilos\Core\CLI\CliManager;
 use Hilos\Logging\Logger\Logger;
-use Hilos\Utils\Constants\ExitCode;
 use Hilos\Utils\Env;
 
 require_once __DIR__ . '/../../../vendor/autoload.php';

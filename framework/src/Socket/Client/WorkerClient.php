@@ -6,17 +6,17 @@ namespace Hilos\Socket\Client;
 
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\Router\SignalRouter;
+use Hilos\DTO\Worker\AgentStartDTO;
+use Hilos\DTO\Worker\AgentStopDTO;
+use Hilos\DTO\Worker\WorkerAgentMessageDTO;
+use Hilos\DTO\Worker\WorkerAgentStartedDTO;
+use Hilos\DTO\Worker\WorkerAgentStoppedDTO;
+use Hilos\DTO\Worker\WorkerRegisterDTO;
+use Hilos\DTO\Worker\WorkerRegisteredDTO;
 use Hilos\Exception\SocketException;
 use Hilos\Exception\Worker\AgentDaemonCreationFailedException;
-use Hilos\Socket\Client\Interface\WorkerClientInterface;
-use Hilos\Utils\DTO\Worker\AgentStartDTO;
-use Hilos\Utils\DTO\Worker\AgentStopDTO;
-use Hilos\Utils\DTO\Worker\WorkerRegisterDTO;
-use Hilos\Utils\DTO\Worker\WorkerRegisteredDTO;
-use Hilos\Utils\DTO\Worker\WorkerAgentStartedDTO;
-use Hilos\Utils\DTO\Worker\WorkerAgentStoppedDTO;
-use Hilos\Utils\DTO\Worker\WorkerAgentMessageDTO;
 use Hilos\Logging\Logger\Logger;
+use Hilos\Socket\Client\Interface\WorkerClientInterface;
 
 /**
  * WorkerClient - Represents a single worker connection

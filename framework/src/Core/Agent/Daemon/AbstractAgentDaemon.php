@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Agent\Daemon;
 
-use Hilos\Utils\DTO\Agent\AgentMessageDTOInterface;
-use Hilos\Utils\DTO\Agent\MessageFromUserDTO;
-use Hilos\Utils\DTO\BaseDTO;
-use Hilos\Socket\Client\WorkerClient;
+use Hilos\DTO\Agent\AgentMessageDTOInterface;
+use Hilos\DTO\Agent\MessageFromUserDTO;
+use Hilos\DTO\BaseDTO;
 use Hilos\Logging\Logger\Logger;
+use Hilos\Socket\Client\WorkerClient;
 
 /**
  * AbstractAgentDaemon - Abstract base class for agent proxies in daemon

@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\API\Router;
 
-use Hilos\Utils\Constants\HttpConstants;
+use Hilos\Constants\HttpConstants;
 
 /**
  * RouteResolver - Resolves and executes route handlers

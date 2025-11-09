@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Socket\Client;
 
+use Hilos\Constants\HttpConstants;
+use Hilos\DTO\WebSocketFrameDTO;
 use Hilos\Exception\Socket\WebSocket\HandshakeFailedException;
 use Hilos\Exception\Socket\WebSocket\InvalidFrameSequenceException;
 use Hilos\Exception\Socket\WebSocket\ReservedOpcodeException;
@@ -11,8 +13,6 @@ use Hilos\Exception\Socket\WebSocket\UnknownOpcodeException;
 use Hilos\Exception\Socket\WebSocket\UnsupportedProtocolVersionException;
 use Hilos\Exception\SocketException;
 use Hilos\Socket\Client\Interface\WebSocketClientInterface;
-use Hilos\Utils\Constants\HttpConstants;
-use Hilos\Utils\DTO\WebSocketFrameDTO;
 
 /**
  * WebSocketClient - Represents a single WebSocket connection

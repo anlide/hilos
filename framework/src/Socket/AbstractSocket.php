@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Socket;
 
+use Hilos\Constants\SocketConstants;
 use Hilos\Exception\Socket\Base\AccessDeniedException;
 use Hilos\Exception\Socket\Base\AddressFamilyNotSupportedException;
 use Hilos\Exception\Socket\Base\AddressInUseException;
@@ -38,7 +39,6 @@ use Hilos\Exception\Socket\SocketSetNonBlockException;
 use Hilos\Exception\Socket\SocketSetOptionException;
 use Hilos\Exception\Socket\SocketWriteException;
 use Hilos\Exception\SocketException;
-use Hilos\Utils\Constants\SocketConstants;
 
 /**
  * AbstractSocket - Abstract base class for socket operations

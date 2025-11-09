@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Demo\WebSocketTest\Domain\Event\Events;
 
+use Demo\WebSocketTest\Constants\ChatEventType;
 use Demo\WebSocketTest\Domain\Event\AbstractChatEvent;
-use Demo\WebSocketTest\Utils\Constants\ChatEventType;
 
 /**
  * UserLeftEvent - Event when user leaves the chat

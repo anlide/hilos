@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../../vendor/autoload.php';
 
+use Hilos\Constants\ErrorConstants;
+use Hilos\Constants\ExitCode;
 use Hilos\Core\CLI\CliManager;
 use Hilos\Logging\Logger\Logger;
-use Hilos\Utils\Constants\ErrorConstants;
-use Hilos\Utils\Constants\ExitCode;
 use Hilos\Utils\Env;
 
 // Initialize environment (reads .env from local directory)
