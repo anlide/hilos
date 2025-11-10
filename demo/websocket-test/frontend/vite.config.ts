@@ -2,6 +2,7 @@ import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { fileURLToPath, URL } from 'node:url'
 import { existsSync } from 'node:fs'
+import { resolve } from 'node:path'
 
 // Detect if running in Docker AND on Windows host
 const isDocker = process.env.DOCKER === 'true' || existsSync('/.dockerenv')
@@ -42,12 +43,28 @@ const detectWindowsHost = (): boolean => {
 const isWindowsHost = detectWindowsHost()
 const needsPolling = isDocker && isWindowsHost
 
+// Resolve SDK path for Docker
+// Framework is mounted at /hilos/framework in Docker container
+const dockerSdkPath = '/hilos/framework/frontend/src'
+
+let resolvedSdkPath: string
+
+// In Docker: use mounted volume path
+if (isDocker && existsSync(dockerSdkPath)) {
+  resolvedSdkPath = dockerSdkPath
+} else {
+  // Fallback for local development (should not happen in Docker)
+  resolvedSdkPath = resolve(fileURLToPath(new URL('../../../framework/frontend/src', import.meta.url)))
+}
+
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [vue()],
   resolve: {
+    preserveSymlinks: false, // Resolve symlinks to their real paths
     alias: {
-      '@': fileURLToPath(new URL('./src', import.meta.url))
+      '@': fileURLToPath(new URL('./src', import.meta.url)),
+      '@hilos/sdk': resolvedSdkPath
     }
   },
   server: {

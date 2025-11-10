@@ -66,4 +66,3 @@ const getNotificationIcon = (type?: ChatMessage['notificationType']): string => 
   }
 }
 </script>
-

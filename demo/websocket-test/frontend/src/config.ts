@@ -7,4 +7,3 @@ export const config = {
   websocketPort: parseInt(import.meta.env.VITE_WEBSOCKET_PORT || '8092'),
   websocketProtocol: (import.meta.env.VITE_WEBSOCKET_PROTOCOL || 'ws') as 'ws' | 'wss',
 } as const
-

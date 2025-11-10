@@ -23,4 +23,3 @@ import { useChatStore } from '@/stores'
 
 const chatStore = useChatStore()
 </script>
-

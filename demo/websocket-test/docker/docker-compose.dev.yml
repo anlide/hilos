@@ -46,6 +46,7 @@ services:
       - ../../../composer.json:/hilos/composer.json:ro
       - ../../../composer.lock:/hilos/composer.lock:ro
       - ../../../framework:/hilos/framework:ro
+      - ../../../scripts:/hilos/scripts:ro
     working_dir: /app
     environment:
       - TERM=xterm-256color

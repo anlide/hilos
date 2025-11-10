@@ -3,7 +3,7 @@
     <div class="card-header bg-primary text-white">
       <h5 class="mb-0">Chat</h5>
     </div>
-    <div class="card-body p-0 overflow-auto chat-messages-container" ref="messagesContainer">
+    <div class="card-body p-0 overflow-auto min-vh-50" ref="messagesContainer">
       <div class="list-group list-group-flush">
         <div
           v-for="message in chatStore.messages"
@@ -39,4 +39,3 @@ const scrollToBottom = () => {
 watch(() => chatStore.messages.length, scrollToBottom)
 onMounted(scrollToBottom)
 </script>
-
