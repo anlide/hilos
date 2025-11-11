@@ -12,9 +12,10 @@
             "dist": {
                 "type": "path",
                 "url": "/hilos",
-                "reference": "6347571cf60216f4a141f9055728bf4b95187cb9"
+                "reference": "7cb9fe4cd98a1b0f0eb22bb384e02452067bcf6d"
             },
             "require": {
+                "ext-mbstring": "*",
                 "ext-pcntl": "*",
                 "ext-posix": "*",
                 "ext-sockets": "*",
@@ -23,7 +24,7 @@
             "type": "library",
             "autoload": {
                 "psr-4": {
-                    "Hilos\\": "framework/src/"
+                    "Hilos\\": "framework/backend/"
                 }
             },
             "scripts": {

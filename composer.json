@@ -19,7 +19,7 @@
     },
     "autoload": {
         "psr-4": {
-            "Hilos\\": "framework/src/"
+            "Hilos\\": "framework/backend/"
         }
     },
     "scripts": {
