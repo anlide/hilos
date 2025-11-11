@@ -11,7 +11,8 @@ use Hilos\DTO\BaseDTO;
 /**
  * SubscriptionResponseSignalData - Signal data for subscription response
  *
- * Contains chat history events, server start time, and target client ID for new subscribers.
+ * Contains chat history events and server start time for new subscribers.
+ * Target client ID is handled by WebSocketSignalData wrapper for routing.
  */
 class SubscriptionResponseSignalData extends BaseDTO implements SignalDataInterface
 {
@@ -20,8 +21,6 @@ class SubscriptionResponseSignalData extends BaseDTO implements SignalDataInterf
         public readonly array $events,
         /** @var float Server start time (microtime) */
         public readonly float $startTime,
-        /** @var string Target client ID */
-        public readonly string $targetClientId,
     ) {
     }
 
@@ -40,7 +39,6 @@ class SubscriptionResponseSignalData extends BaseDTO implements SignalDataInterf
         return [
             'events' => $eventsArray,
             'startTime' => $this->startTime,
-            'targetClientId' => $this->targetClientId,
         ];
     }
 

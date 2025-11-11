@@ -169,7 +169,6 @@ class ChatAgent extends AbstractAgent
             $subscriptionData = new SubscriptionResponseSignalData(
                 events: $this->history,
                 startTime: $this->startTime,
-                targetClientId: $clientId,
             );
 
             // Wrap subscription data in WebSocketSignalData for WebSocket routing
