@@ -1,19 +1,36 @@
 /**
- * Chat message
+ * Re-export domain types
  */
-export interface ChatMessage {
-  id: string
-  type: 'message' | 'notification'
-  timestamp: number
-  username?: string
-  content: string
-  notificationType?: 'user_joined' | 'user_left' | 'connection_lost' | 'user_renamed'
-}
+export * from './domain'
+
+// Explicitly export classes for better TypeScript support
+export { ChatMessage, ChatNotification, ChatEventBase } from './domain'
+export type { ChatEvent, NotificationType } from './domain'
 
 /**
- * WebSocket message from server
+ * Re-export WebSocket types from framework
  */
-export interface WebSocketMessage {
-  type: string
-  data: unknown
-}
+export type {
+  WebSocketReceiveMessage,
+  WebSocketReceiveMessageTime,
+  WebSocketReceiveMessageEmpty,
+  WebSocketReceiveMessageError,
+  WebSocketReceiveMessageData,
+  WebSocketMessageEmpty,
+  WebSocketMessageError,
+  WebSocketMessageData,
+  WebSocketMessageWithFields,
+  WebSocketMessageTime,
+  WebSocketMessageWithDataAndTime,
+  WebSocketMessageSuccess,
+  WebSocketMessageFail,
+  WebSocketMessageProgress,
+  WebSocketSendMessage,
+  WebSocketConfig,
+  WebSocketEventHandler,
+  WebSocketCloseHandler,
+  WebSocketMessageHandler
+} from '@hilos/sdk/types'
+
+// Export function (not type)
+export { createWebSocketTypes } from '@hilos/sdk/types'

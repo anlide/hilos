@@ -2,17 +2,11 @@
   <div class="container-fluid py-4">
     <div class="row">
       <div class="col-12 col-lg-8 mx-auto">
-        <h1 class="h2 mb-4 text-center">WebSocket Chat Demo</h1>
-        
         <!-- Connection Status -->
         <ChatConnection v-if="!chatStore.isConnected" />
         
         <!-- Chat Interface -->
-        <div v-else>
-          <UsernameForm />
-          <ChatWindow />
-          <MessageForm @send="handleSendMessage" />
-        </div>
+        <ChatWindow v-else @send="handleSendMessage" />
       </div>
     </div>
   </div>
@@ -23,8 +17,6 @@ import { useChatStore } from '@/stores'
 import { useWebSocket } from '@hilos/sdk/plugins/websocket'
 import ChatConnection from '@/components/ChatConnection.vue'
 import ChatWindow from '@/components/ChatWindow.vue'
-import UsernameForm from '@/components/UsernameForm.vue'
-import MessageForm from '@/components/MessageForm.vue'
 
 const chatStore = useChatStore()
 const websocket = useWebSocket()

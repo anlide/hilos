@@ -1,27 +1,28 @@
 <template>
   <div v-if="message.type === 'message'" class="d-flex flex-column mb-2">
     <div class="d-flex align-items-baseline gap-2">
-      <span class="fw-bold text-primary">{{ message.username }}</span>
+      <span class="fw-bold text-primary">{{ (message as ChatMessage).username }}</span>
       <small class="text-muted">{{ formatTime(message.timestamp) }}</small>
     </div>
-    <div class="ms-3">{{ message.content }}</div>
+    <div class="ms-3">{{ (message as ChatMessage).content }}</div>
   </div>
   
-  <div v-else class="text-center my-2">
+  <div v-else-if="message.type === 'notification'" class="text-center my-2">
     <small 
-      :class="getNotificationClass(message.notificationType)"
+      :class="getNotificationClass((message as ChatNotification).notificationType)"
     >
-      <i :class="getNotificationIcon(message.notificationType)"></i>
-      {{ message.content }}
+      <i :class="getNotificationIcon((message as ChatNotification).notificationType)"></i>
+      {{ (message as ChatNotification).content }}
     </small>
   </div>
 </template>
 
 <script setup lang="ts">
-import type { ChatMessage } from '@/types'
+import { ChatMessage, ChatNotification } from '@/types'
+import type { ChatEvent, NotificationType } from '@/types'
 
 interface Props {
-  message: ChatMessage
+  message: ChatEvent
 }
 
 defineProps<Props>()
@@ -35,7 +36,7 @@ const formatTime = (timestamp: number): string => {
   })
 }
 
-const getNotificationClass = (type?: ChatMessage['notificationType']): string => {
+const getNotificationClass = (type?: NotificationType): string => {
   const base = 'badge '
   switch (type) {
     case 'user_joined':
@@ -51,7 +52,7 @@ const getNotificationClass = (type?: ChatMessage['notificationType']): string =>
   }
 }
 
-const getNotificationIcon = (type?: ChatMessage['notificationType']): string => {
+const getNotificationIcon = (type?: NotificationType): string => {
   switch (type) {
     case 'user_joined':
       return 'bi bi-person-plus'

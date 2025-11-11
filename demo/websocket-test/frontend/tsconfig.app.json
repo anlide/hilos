@@ -25,6 +25,7 @@
     "src/**/*.tsx",
     "src/**/*.vue",
     "../../../framework/frontend/src/**/*.ts",
-    "../../../framework/frontend/src/**/*.tsx"
+    "../../../framework/frontend/src/**/*.tsx",
+    "../../../framework/frontend/src/**/*.vue"
   ]
 }
