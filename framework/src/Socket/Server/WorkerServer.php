@@ -81,6 +81,15 @@ abstract class WorkerServer extends AbstractServer
     /** @var bool Whether onInitialWorkersReady() has been called */
     private bool $initialWorkersReadyCalled = false;
 
+    /** @var float Interval between worker processes tick checks in seconds */
+    private const float WORKER_PROCESSES_TICK_INTERVAL = 1.0;
+
+    /** @var ?float Last time worker processes were ticked (null = never) */
+    private ?float $lastWorkerProcessesTick = null;
+
+    /** @var ?string Cached log directory path (to avoid repeated Env::get() calls) */
+    private ?string $cachedLogDirectory = null;
+
     /**
      * WorkerServer constructor
      *
@@ -104,6 +113,9 @@ abstract class WorkerServer extends AbstractServer
         $this->minRegular = Env::getInt(EnvConstants::WORKER_MIN_REGULAR, 3);
         $this->minMonopolistic = Env::getInt(EnvConstants::WORKER_MIN_MONOPOLISTIC, 2);
         $this->maxRegular = Env::getInt(EnvConstants::WORKER_MAX_REGULAR, 10);
+
+        // Ensure log directory exists at startup to avoid repeated is_dir() checks
+        $this->ensureLogDirectory();
     }
     /**
      * Accept new worker connection
@@ -283,19 +295,31 @@ abstract class WorkerServer extends AbstractServer
         // Registration timeout is handled in WorkerClient::onTick()
         parent::onTick();
 
-        // Handle newly registered workers and process agent messages
-        $this->checkWorkerRegistration();
+        // Tick worker processes and related checks (check status, read output, handle graceful shutdown)
+        // In normal operation, check once per second to reduce system call overhead.
+        // During shutdown, check every tick for faster cleanup.
+        $now = microtime(true);
+        $shouldTick = $this->preparingShutdown
+            || $this->lastWorkerProcessesTick === null
+            || ($now - $this->lastWorkerProcessesTick) >= self::WORKER_PROCESSES_TICK_INTERVAL;
 
-        // Tick all worker processes (check status, read output, handle graceful shutdown)
-        $this->tickWorkerProcesses();
+        if ($shouldTick) {
+            // Handle newly registered workers and process agent messages
+            $this->checkWorkerRegistration();
 
-        // Ensure minimum number of workers are running
-        try {
-            $this->ensureMinWorkers();
-        } catch (CouldNotStartException $e) {
-            Logger::error("Failed to start worker process: " . $e->getMessage());
-        } catch (FailedToSetNonBlockingException $e) {
-            Logger::error("Failed to set non-blocking mode for worker process: " . $e->getMessage());
+            // Tick all worker processes
+            $this->tickWorkerProcesses();
+
+            // Ensure minimum number of workers are running
+            try {
+                $this->ensureMinWorkers();
+            } catch (CouldNotStartException $e) {
+                Logger::error("Failed to start worker process: " . $e->getMessage());
+            } catch (FailedToSetNonBlockingException $e) {
+                Logger::error("Failed to set non-blocking mode for worker process: " . $e->getMessage());
+            }
+
+            $this->lastWorkerProcessesTick = $now;
         }
     }
 
@@ -407,6 +431,48 @@ abstract class WorkerServer extends AbstractServer
     }
 
     /**
+     * Ensure log directory exists
+     *
+     * Checks and creates log directory if it doesn't exist.
+     * Called once in constructor to avoid repeated is_dir() checks during runtime.
+     */
+    private function ensureLogDirectory(): void
+    {
+        $logDirectory = $this->getLogDirectory();
+
+        // Ensure log directory exists
+        if (!is_dir($logDirectory)) {
+            if (!mkdir($logDirectory, 0755, true)) {
+                Logger::error("Failed to create log directory: {$logDirectory}");
+            }
+        }
+    }
+
+    /**
+     * Get log directory path
+     *
+     * Caches the result to avoid repeated Env::get() calls.
+     *
+     * @return string Log directory path
+     */
+    private function getLogDirectory(): string
+    {
+        if ($this->cachedLogDirectory === null) {
+            // Determine log directory from daemon log file path (same directory)
+            // Fallback to 'data/logs' if DAEMON_LOG_FILE is not set
+            try {
+                $daemonLogFile = Env::get(EnvConstants::DAEMON_LOG_FILE);
+                $this->cachedLogDirectory = dirname($daemonLogFile);
+            } catch (MissingEnvironmentVariableException) {
+                // Fallback to default log directory if env variable is not set
+                $this->cachedLogDirectory = 'data/logs';
+            }
+        }
+
+        return $this->cachedLogDirectory;
+    }
+
+    /**
      * Save worker stdout and stderr output to files
      *
      * @param Process $process Worker process
@@ -415,23 +481,8 @@ abstract class WorkerServer extends AbstractServer
      */
     private function saveWorkerOutput(Process $process, string $workerType, int $workerIndex): void
     {
-        // Determine log directory from daemon log file path (same directory)
-        // Fallback to 'data/logs' if DAEMON_LOG_FILE is not set
-        try {
-            $daemonLogFile = Env::get(EnvConstants::DAEMON_LOG_FILE);
-            $logDirectory = dirname($daemonLogFile);
-        } catch (MissingEnvironmentVariableException) {
-            // Fallback to default log directory if env variable is not set
-            $logDirectory = 'data/logs';
-        }
-
-        // Ensure log directory exists
-        if (!is_dir($logDirectory)) {
-            if (!mkdir($logDirectory, 0755, true)) {
-                Logger::error("Failed to create log directory: {$logDirectory}");
-                return;
-            }
-        }
+        // Get log directory (already ensured to exist in constructor)
+        $logDirectory = $this->getLogDirectory();
 
         // Read stdout and write to file
         $stdout = $process->getStdOut();
