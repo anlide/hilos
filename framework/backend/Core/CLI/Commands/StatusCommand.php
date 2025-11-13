@@ -27,6 +27,34 @@ class StatusCommand implements CommandInterface
     /** @var ?DaemonStatus Daemon status */
     private ?DaemonStatus $daemonStatus = null;
 
+    public function getName(): string
+    {
+        return 'daemon:status';
+    }
+
+    public function getDescription(): string
+    {
+        return 'Display current daemon status and metrics';
+    }
+
+    public function getHelp(): string
+    {
+        return <<<HELP
+Command: daemon:status
+
+Description:
+  Display current status and metrics of the running Hilos daemon.
+  Shows uptime, memory usage, CPU usage, and worker counts.
+
+Usage:
+  php cli.php daemon:status
+
+Examples:
+  php cli.php daemon:status
+  composer run daemon-status
+HELP;
+    }
+
     /**
      * Execute status command
      *

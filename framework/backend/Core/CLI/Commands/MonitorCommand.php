@@ -16,6 +16,40 @@ use Throwable;
  */
 class MonitorCommand implements CommandInterface
 {
+    public function getName(): string
+    {
+        return 'daemon:monitor';
+    }
+
+    public function getDescription(): string
+    {
+        return 'Start real-time monitoring of daemon status';
+    }
+
+    public function getHelp(): string
+    {
+        return <<<HELP
+Command: daemon:monitor
+
+Description:
+  Start real-time monitoring of the Hilos daemon status.
+  Displays continuously updating metrics in an interactive terminal interface.
+
+Usage:
+  php cli.php daemon:monitor
+
+Requirements:
+  - TTY terminal (interactive mode)
+  - Running Hilos daemon
+
+Examples:
+  php cli.php daemon:monitor
+  composer run daemon-monitor
+
+Press Ctrl+C to exit monitoring.
+HELP;
+    }
+
     /**
      * Execute monitor command
      *

@@ -4,6 +4,46 @@
 name: hilos-websocket-test-local
 
 services:
+  mysql-local:
+    image: mariadb:11.4
+    container_name: hilos-mysql-local
+    environment:
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD:-hilos_root_pass}
+      - MYSQL_DATABASE=${MYSQL_DATABASE:-hilos-demo-websocket}
+      - MYSQL_USER=${MYSQL_USER:-hilos}
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD:-hilos_pass}
+      - TZ=UTC
+    volumes:
+      - ../data/mysql:/var/lib/mysql
+      - ../data/backup:/root/backup
+      - ./mysql/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    command: >
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_0900_ai_ci
+      --skip-character-set-client-handshake
+    restart: unless-stopped
+    networks:
+      hilos-demo-websocket-test-local-network:
+        ipv4_address: ${DOCKER_MYSQL_IP:-172.26.0.10}
+
+  phpmyadmin-local:
+    image: phpmyadmin:latest
+    container_name: hilos-phpmyadmin-local
+    environment:
+      - PMA_HOST=mysql-local
+      - PMA_PORT=3306
+      - PMA_USER=root
+      - PMA_PASSWORD=${MYSQL_ROOT_PASSWORD:-hilos_root_pass}
+      - PMA_ARBITRARY=1
+      - UPLOAD_LIMIT=256M
+    depends_on:
+      - mysql-local
+    ports:
+      - "${PHPMYADMIN_PORT:-8080}:80"
+    networks:
+      - hilos-demo-websocket-test-local-network
+    restart: unless-stopped
+
   websocket-test-local:
     build: .
     env_file:
@@ -25,8 +65,15 @@ services:
       - WORKER_COMM_PORT=${WORKER_COMM_PORT:-8091}
       - WEBSOCKET_HOST=${WEBSOCKET_HOST:-0.0.0.0}
       - WEBSOCKET_PORT=${WEBSOCKET_PORT:-8092}
+      - DB_HOST=${DB_HOST:-mysql-local}
+      - DB_PORT=${DB_PORT:-3306}
+      - DB_DATABASE=${MYSQL_DATABASE:-hilos-demo-websocket}
+      - DB_USERNAME=${MYSQL_USER:-hilos}
+      - DB_PASSWORD=${MYSQL_PASSWORD:-hilos_pass}
     command: ["php", "backend/Bootstrap/docker.php"]
     stop_grace_period: 25s
+    depends_on:
+      - mysql-local
     ports:
       # Expose ports to host for local frontend access
       - "${HTTP_STATUS_PORT:-8090}:${HTTP_STATUS_PORT:-8090}"
@@ -53,8 +100,15 @@ services:
       - HILOS_DAEMON_HOST=${HILOS_DAEMON_HOST:-172.26.0.11}
       - HTTP_STATUS_PORT=${HTTP_STATUS_PORT:-8090}
       - WORKER_COMM_PORT=${WORKER_COMM_PORT:-8091}
+      - DB_HOST=${DB_HOST:-mysql-local}
+      - DB_PORT=${DB_PORT:-3306}
+      - DB_DATABASE=${MYSQL_DATABASE:-hilos-demo-websocket}
+      - DB_USERNAME=${MYSQL_USER:-hilos}
+      - DB_PASSWORD=${MYSQL_PASSWORD:-hilos_pass}
     profiles:
       - composer
+    depends_on:
+      - mysql-local
     networks:
       - hilos-demo-websocket-test-local-network
 

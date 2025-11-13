@@ -20,4 +20,22 @@ class CliCommands
 
     /** @var string Command: Show help information */
     public const string HELP = 'help';
+
+    /** @var string Command: Apply pending migrations */
+    public const string MIGRATION_UP = 'migration:up';
+
+    /** @var string Command: Rollback migrations */
+    public const string MIGRATION_DOWN = 'migration:down';
+
+    /** @var string Command: Show migration status */
+    public const string MIGRATION_STATUS = 'migration:status';
+
+    /** @var string Command: Retry failed migration */
+    public const string MIGRATION_RETRY = 'migration:retry';
+
+    /** @var string Command: Show database schema status */
+    public const string DB_SCHEMA_STATUS = 'db:schema:status';
+
+    /** @var string Command: Compare Entity files with database schema */
+    public const string DB_ENTITY_DIFF = 'db:entity:diff';
 }

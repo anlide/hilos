@@ -1,0 +1,393 @@
+<?php
+
+namespace Hilos\Database\Entity;
+
+use Hilos\Database\Database;
+use Hilos\Database\SqlParam;
+use Hilos\Database\SqlParamCollection;
+use Hilos\Exception\DatabaseException;
+
+/**
+ * Base Entity class
+ * Represents a row in a database table
+ * 
+ * Child classes must define:
+ * - const string _table - table name
+ * - const string|array _primary - primary key column(s)
+ * - const array _columns - all column names
+ * - const array _types - column types mapping
+ * - const array _foreign - foreign key relationships (optional)
+ * - const array _indexes - index definitions (optional)
+ * 
+ * @property bool $_related
+ */
+abstract class Entity
+{
+    /**
+     * Indicates if this entity is related to a database row
+     */
+    private bool $_related = false;
+
+    /**
+     * Original data from database (for tracking changes)
+     */
+    private array $_originalData = [];
+
+    public function __clone()
+    {
+        // Reset relation status on clone
+        $this->_related = false;
+        $this->_originalData = [];
+    }
+
+    public function __construct()
+    {
+    }
+
+    /**
+     * Save entity to database
+     *
+     * @param array $columns Specific columns to save (empty = all changed columns)
+     * @return bool Success status
+     * @throws DatabaseException
+     */
+    public function save(array $columns = []): bool
+    {
+        if ($this->_related) {
+            $this->saveUpdate($columns);
+        } else {
+            $this->saveInsert();
+        }
+        return true;
+    }
+
+    /**
+     * Save only changed columns (diff save)
+     */
+    public function saveDiff(Entity $originalEntity): bool
+    {
+        $changedColumns = [];
+        $columns = static::_columns;
+
+        foreach ($columns as $column) {
+            if ($this->$column !== $originalEntity->$column) {
+                $changedColumns[] = $column;
+            }
+        }
+
+        if (empty($changedColumns)) {
+            return true; // No changes
+        }
+
+        return $this->save($changedColumns);
+    }
+
+    /**
+     * Insert new row
+     * @throws DatabaseException
+     */
+    private function saveInsert(): void
+    {
+        $table = static::_table;
+        $columns = static::_columns;
+        $types = static::_types;
+
+        $insertColumns = [];
+        $params = SqlParamCollection::empty();
+
+        foreach ($columns as $column) {
+            $value = $this->$column;
+
+            // Skip auto-increment primary keys if null
+            $primaryKeys = is_array(static::_primary) ? static::_primary : [static::_primary];
+            if (in_array($column, $primaryKeys, true) && $value === null) {
+                continue;
+            }
+
+            $insertColumns[] = "`{$column}`";
+            $params->add(self::createParam($value, $types[$column]));
+        }
+
+        $placeholders = implode(', ', array_fill(0, count($insertColumns), '?'));
+        $sql = "INSERT INTO `{$table}` (" . implode(', ', $insertColumns) . ") VALUES ({$placeholders})";
+
+        Database::sql($sql, $params);
+
+        // Update primary key if auto-increment
+        $primaryKey = is_array(static::_primary) ? static::_primary[0] : static::_primary;
+        if ($this->$primaryKey === null) {
+            $this->$primaryKey = Database::lastInsertId();
+        }
+
+        $this->_related = true;
+        $this->_originalData = $this->toArray();
+    }
+
+    /**
+     * Update existing row
+     * @throws DatabaseException
+     */
+    private function saveUpdate(array $columns = []): void
+    {
+        $table = static::_table;
+        $allColumns = static::_columns;
+        $types = static::_types;
+        $primaryKeys = is_array(static::_primary) ? static::_primary : [static::_primary];
+
+        // Determine which columns to update
+        if (empty($columns)) {
+            $columns = array_diff($allColumns, $primaryKeys);
+        }
+
+        $updateParts = [];
+        $params = SqlParamCollection::empty();
+
+        foreach ($columns as $column) {
+            $value = $this->$column;
+            $updateParts[] = "`{$column}` = ?";
+            $params->add(self::createParam($value, $types[$column]));
+        }
+
+        // Add WHERE conditions for primary key(s)
+        $whereParts = [];
+        foreach ($primaryKeys as $primaryKey) {
+            $whereParts[] = "`{$primaryKey}` = ?";
+            $params->add(self::createParam($this->$primaryKey, $types[$primaryKey]));
+        }
+
+        $sql = "UPDATE `{$table}` SET " . implode(', ', $updateParts) . " WHERE " . implode(' AND ', $whereParts);
+
+        Database::sql($sql, $params);
+
+        $this->_originalData = $this->toArray();
+    }
+
+    /**
+     * Delete entity from database
+     * @throws DatabaseException
+     */
+    public function delete(): void
+    {
+        if (!$this->_related) {
+            throw new DatabaseException("Cannot delete entity that is not related to database");
+        }
+
+        $table = static::_table;
+        $primaryKeys = is_array(static::_primary) ? static::_primary : [static::_primary];
+        $types = static::_types;
+
+        $whereParts = [];
+        $params = SqlParamCollection::empty();
+
+        foreach ($primaryKeys as $primaryKey) {
+            $whereParts[] = "`{$primaryKey}` = ?";
+            $params->add(self::createParam($this->$primaryKey, $types[$primaryKey]));
+        }
+
+        $sql = "DELETE FROM `{$table}` WHERE " . implode(' AND ', $whereParts);
+
+        Database::sql($sql, $params);
+
+        $this->_related = false;
+        $this->_originalData = [];
+    }
+
+    /**
+     * Set entity data from database row
+     */
+    protected function setRelatedData(array $row): void
+    {
+        $columns = static::_columns;
+
+        foreach ($columns as $column) {
+            if (array_key_exists($column, $row)) {
+                $this->$column = self::castValue($row[$column], static::_types[$column]);
+            }
+        }
+
+        $this->_related = true;
+        $this->_originalData = $row;
+    }
+
+    /**
+     * Check if entity is related to database
+     */
+    public function isRelated(): bool
+    {
+        return $this->_related;
+    }
+
+    /**
+     * Mark as related (for external operations)
+     */
+    public function flushRelated(): void
+    {
+        $this->_related = true;
+        $this->_originalData = $this->toArray();
+    }
+
+    /**
+     * Get entities with filters
+     * @throws DatabaseException
+     */
+    private static function getEntities(string $class, array|string $filters = [], array|string $filtersParam = [], array|string $orderBy = []): EntityCollection
+    {
+        $table = $class::_table;
+
+        // Build WHERE clause
+        $whereClause = '';
+        $params = SqlParamCollection::empty();
+
+        if (!empty($filters)) {
+            if (is_string($filters)) {
+                $whereClause = " WHERE {$filters}";
+                if (is_array($filtersParam)) {
+                    $params = SqlParamCollection::fromArray($filtersParam);
+                }
+            } elseif (is_array($filters)) {
+                $whereParts = [];
+                foreach ($filters as $key => $value) {
+                    $whereParts[] = "`{$key}` = ?";
+                    $params->add(SqlParam::auto($value));
+                }
+                if (!empty($whereParts)) {
+                    $whereClause = " WHERE " . implode(' AND ', $whereParts);
+                }
+            }
+        }
+
+        // Build ORDER BY clause
+        $orderByClause = '';
+        if (!empty($orderBy)) {
+            if (is_string($orderBy)) {
+                $orderByClause = " ORDER BY {$orderBy}";
+            } elseif (is_array($orderBy)) {
+                $orderByParts = [];
+                foreach ($orderBy as $column => $direction) {
+                    $direction = strtoupper($direction);
+                    $orderByParts[] = "`{$column}` {$direction}";
+                }
+                if (!empty($orderByParts)) {
+                    $orderByClause = " ORDER BY " . implode(', ', $orderByParts);
+                }
+            }
+        }
+
+        $sql = "SELECT * FROM `{$table}`{$whereClause}{$orderByClause}";
+
+        Database::sql($sql, $params);
+
+        $collection = EntityCollection::empty();
+        $primaryKey = is_array($class::_primary) ? $class::_primary[0] : $class::_primary;
+
+        while ($row = Database::row()) {
+            $entity = new $class();
+            $entity->setRelatedData($row);
+            $collection->add($entity, $row[$primaryKey] ?? null);
+        }
+
+        return $collection;
+    }
+
+    /**
+     * Get entities with filters
+     * @throws DatabaseException
+     */
+    public static function get(array|string $filters = [], array|string $filtersParam = [], array|string $orderBy = []): EntityCollection
+    {
+        return self::getEntities(static::class, $filters, $filtersParam, $orderBy);
+    }
+
+    /**
+     * Get entity by primary key
+     * @throws DatabaseException
+     */
+    public static function getById(mixed $id): ?static
+    {
+        $primaryKey = is_array(static::_primary) ? static::_primary[0] : static::_primary;
+        $collection = self::get([$primaryKey => $id]);
+        return $collection->first();
+    }
+
+    /**
+     * Get empty entity (not related to database)
+     */
+    public static function getEmpty(): static
+    {
+        return new static();
+    }
+
+    /**
+     * Get all entities
+     * @throws DatabaseException
+     */
+    public static function getAll(): EntityCollection
+    {
+        return self::get();
+    }
+
+    /**
+     * Magic getter for accessing properties
+     * @throws DatabaseException
+     */
+    public function __get(string $name): mixed
+    {
+        if ($name === '_related') {
+            return $this->_related;
+        }
+
+        if (property_exists($this, $name)) {
+            return $this->$name;
+        }
+
+        throw new DatabaseException("Property {$name} does not exist on " . static::class);
+    }
+
+    /**
+     * Convert entity to array
+     */
+    public function toArray(): array
+    {
+        $data = [];
+        foreach (static::_columns as $column) {
+            $data[$column] = $this->$column;
+        }
+        return $data;
+    }
+
+    /**
+     * Create SqlParam from value and type
+     */
+    private static function createParam(mixed $value, string $type): SqlParam
+    {
+        if ($value === null) {
+            return SqlParam::auto(null);
+        }
+
+        return match ($type) {
+            'integer' => SqlParam::int((int)$value),
+            'float', 'double', 'decimal' => SqlParam::double((float)$value),
+            'boolean' => SqlParam::bool((bool)$value),
+            default => SqlParam::string((string)$value),
+        };
+    }
+
+    /**
+     * Cast value to proper type
+     */
+    private static function castValue(mixed $value, string $type): mixed
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        return match ($type) {
+            'integer' => (int)$value,
+            'float', 'double', 'decimal' => (float)$value,
+            'boolean' => (bool)$value,
+            'string', 'text' => (string)$value,
+            default => $value,
+        };
+    }
+}
+

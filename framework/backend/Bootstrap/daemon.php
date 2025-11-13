@@ -11,6 +11,7 @@ use Hilos\Constants\HttpConstants;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\Daemon\DaemonManager;
 use Hilos\Core\Daemon\Master\DaemonStatus;
+use Hilos\Database\Database;
 use Hilos\DTO\DaemonStatusDTO;
 use Hilos\Exception\Worker\AgentDaemonFactoryNotConfiguredException;
 use Hilos\Logging\Logger\Logger;
@@ -28,6 +29,9 @@ use Hilos\Utils\Env;
 
 // Initialize environment
 Env::init();
+
+// Initialize database connection and schema
+Database::initialize();
 
 // Enable debug logging (optional - uncomment to enable)
 // Logger::setDebugEnabled(true);

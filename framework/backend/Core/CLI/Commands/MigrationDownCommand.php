@@ -1,0 +1,167 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Hilos\Core\CLI\Commands;
+
+use Hilos\Constants\CliCommands;
+use Hilos\Constants\ExitCode;
+use Hilos\Database\Database;
+use Hilos\Database\Migration;
+use Hilos\Exception\DatabaseException;
+
+/**
+ * Migration Down Command
+ * Rolls back database migrations
+ */
+class MigrationDownCommand implements CommandInterface
+{
+    public function getName(): string
+    {
+        return CliCommands::MIGRATION_DOWN;
+    }
+
+    public function getDescription(): string
+    {
+        return 'Rollback database migrations';
+    }
+
+    public function getHelp(): string
+    {
+        return <<<HELP
+Command: migration:down
+
+Description:
+  Rollback migrations to a specific version.
+
+Usage:
+  php cli.php migration:down <version> [options]
+
+Arguments:
+  <version>          Target version to rollback to (required)
+
+Options:
+  --db-index=<N>     Database connection index (default: 0)
+  --force            Force rollback even if there are failures (use with caution)
+
+Examples:
+  php cli.php migration:down 1
+  php cli.php migration:down 0
+  php cli.php migration:down 1 --force
+  php cli.php migration:down 1 --db-index=0
+  composer run migration:down
+
+Warning:
+  Rollback operations can result in data loss!
+  Always backup your database before rolling back.
+HELP;
+    }
+
+    public function execute(array $options, array $args): int
+    {
+        echo "\n=== Database Migration DOWN ===\n\n";
+
+        // Parse arguments from options
+        $dbIndex = isset($options['db-index']) ? (int)$options['db-index'] : 0;
+        $force = isset($options['force']);
+        
+        // Get target version from positional args
+        $targetVersion = !empty($args) && is_numeric($args[0]) ? (int)$args[0] : null;
+
+        if ($targetVersion === null) {
+            echo "✗ ERROR: Target version is required\n";
+            echo "\nUsage: php cli.php migration:down <version>\n";
+            echo "Example: php cli.php migration:down 1\n\n";
+            return ExitCode::ERROR;
+        }
+
+        // Set database connection index if specified
+        if ($dbIndex !== 0) {
+            try {
+                Database::useConnection($dbIndex);
+                echo "Using database connection index: {$dbIndex}\n\n";
+            } catch (\Throwable $e) {
+                echo "✗ Failed to switch to database connection {$dbIndex}: {$e->getMessage()}\n\n";
+                return ExitCode::ERROR;
+            }
+        }
+
+        try {
+            // Initialize migration system
+            echo "Initializing migration system...\n";
+            Migration::initialize();
+            echo "✓ Migration system initialized\n\n";
+
+            // Get current status
+            $status = Migration::getStatus();
+            
+            echo "Current status:\n";
+            echo "  Current version: {$status['current_index']}\n";
+            echo "  Target version: {$targetVersion}\n";
+
+            if ($status['current_index'] <= $targetVersion) {
+                echo "\n○ Already at version {$targetVersion} or below\n";
+                echo "No rollback needed.\n\n";
+                return ExitCode::SUCCESS;
+            }
+
+            // Check for failed migrations
+            if (!empty($status['failed_migrations']) && !$force) {
+                echo "\n⚠ WARNING: Found failed migrations: " . implode(', ', $status['failed_migrations']) . "\n";
+                echo "These migrations failed previously.\n";
+                echo "Use --force to proceed anyway (not recommended).\n\n";
+                return ExitCode::ERROR;
+            }
+
+            // Calculate migrations to rollback
+            $toRollback = [];
+            foreach ($status['available_migrations'] as $index) {
+                if ($index > $targetVersion && $index <= $status['current_index']) {
+                    $toRollback[] = $index;
+                }
+            }
+            rsort($toRollback);
+
+            echo "\nMigrations to rollback:\n";
+            foreach ($toRollback as $index) {
+                echo "  ← Migration {$index}\n";
+            }
+            echo "\n";
+
+            // Warning
+            echo "⚠ WARNING: Rollback may result in DATA LOSS!\n";
+            echo "Make sure you have a database backup.\n\n";
+
+            // Rollback migrations
+            echo "Rolling back migrations...\n\n";
+            
+            $rolledBack = Migration::migrateDown($targetVersion);
+
+            if ($rolledBack > 0) {
+                echo "\n✓ Successfully rolled back {$rolledBack} migration(s)\n\n";
+            } else {
+                echo "\n○ No migrations were rolled back\n\n";
+            }
+            return ExitCode::SUCCESS;
+
+        } catch (DatabaseException $e) {
+            echo "\n✗ Rollback failed!\n";
+            echo "Error: {$e->getMessage()}\n";
+            echo "MySQL Error Code: {$e->getMysqlErrorCode()}\n";
+            echo "MySQL Error: {$e->getMysqlErrorMessage()}\n";
+            if ($e->getQuery()) {
+                echo "Query: {$e->getQuery()}\n";
+            }
+            echo "\nDatabase may be in inconsistent state!\n";
+            echo "Check database manually and fix any issues.\n\n";
+            return ExitCode::ERROR;
+        } catch (\Throwable $e) {
+            echo "\n✗ Unexpected error!\n";
+            echo "Error: {$e->getMessage()}\n";
+            echo "File: {$e->getFile()}:{$e->getLine()}\n\n";
+            return ExitCode::ERROR;
+        }
+    }
+
+}
+

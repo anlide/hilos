@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Hilos\Constants\ExitCode;
 use Hilos\Core\Daemon\DockerManager;
+use Hilos\Database\Database;
 use Hilos\Exception\InvalidScriptPathException;
 use Hilos\Exception\Log\LogRotationException;
 use Hilos\Exception\Process\CouldNotStartException;
@@ -25,6 +26,9 @@ Env::init();
  */
 
 try {
+    // Initialize database connection and schema
+    Database::initialize();
+
     // Create Docker manager instance
     $dockerManager = new DockerManager();
 

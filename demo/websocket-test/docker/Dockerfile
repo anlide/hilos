@@ -22,8 +22,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # PHP core extensions
 # Install sockets BEFORE event (critical!)
 # pcntl and posix are useful for daemonization and process management.
+# mysqli, pdo, and pdo_mysql are required for database operations.
 # -----------------------------------------------------------
-RUN docker-php-ext-install -j$(nproc) sockets pcntl posix
+RUN docker-php-ext-install -j$(nproc) sockets pcntl posix mysqli pdo pdo_mysql
 
 # -----------------------------------------------------------
 # Ensure custom extension load order

@@ -20,4 +20,25 @@ interface CommandInterface
      * @return int Exit code (0 = success, non-zero = error)
      */
     public function execute(array $options, array $args): int;
+
+    /**
+     * Get command name
+     *
+     * @return string Command name (e.g., 'daemon:status')
+     */
+    public function getName(): string;
+
+    /**
+     * Get short command description
+     *
+     * @return string One-line description for command listing
+     */
+    public function getDescription(): string;
+
+    /**
+     * Get detailed help text
+     *
+     * @return string Full help text with usage examples
+     */
+    public function getHelp(): string;
 }

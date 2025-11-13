@@ -15,7 +15,8 @@
         "ext-posix": "*",
         "ext-pcntl": "*",
         "ext-sockets": "*",
-        "ext-mbstring": "*"
+        "ext-mbstring": "*",
+        "ext-mysqli": "*"
     },
     "autoload": {
         "psr-4": {

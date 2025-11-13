@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Hilos\Constants\ExitCode;
 use Hilos\Core\CLI\CliManager;
+use Hilos\Database\Database;
 use Hilos\Logging\Logger\Logger;
 use Hilos\Utils\Env;
 
@@ -11,6 +12,9 @@ require_once __DIR__ . '/../../../vendor/autoload.php';
 
 // Initialize environment
 Env::init();
+
+// Initialize database connection and schema
+Database::initialize();
 
 /**
  * CLI - Entry point for CLI interface

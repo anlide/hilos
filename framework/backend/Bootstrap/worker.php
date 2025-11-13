@@ -7,6 +7,8 @@ require_once __DIR__ . '/../../../vendor/autoload.php';
 use Hilos\Constants\ExitCode;
 use Hilos\Core\Agent\AgentManager;
 use Hilos\Core\Daemon\WorkerManager;
+use Hilos\Core\Router\SignalRouter;
+use Hilos\Database\Database;
 use Hilos\Exception\InvalidWorkerIdException;
 use Hilos\Exception\Worker\AgentCreationFailedException;
 use Hilos\Logging\Logger\Logger;
@@ -27,14 +29,12 @@ use Hilos\Utils\Helpers\ArgumentHelper;
 Env::init();
 
 try {
+    // Initialize database connection and schema
+    Database::initialize();
+
     // Parse command line arguments for worker index
     $workerIndex = ArgumentHelper::getWorkerIndex($argv);
-} catch (InvalidWorkerIdException $e) {
-    Logger::error("Worker bootstrap failed: " . $e->getMessage());
-    exit(ExitCode::ERROR);
-}
 
-try {
     // Create anonymous class extending WorkerManager
     // Projects should override this with their own WorkerManager implementation
     $workerManager = new class($workerIndex, $argv) extends WorkerManager {
@@ -43,9 +43,10 @@ try {
          *
          * Framework bootstrap doesn't create agent managers - this is for projects.
          *
+         * @param SignalRouter $signalRouter
          * @return AgentManager Agent manager instance
          */
-        protected function createAgentManager(): AgentManager
+        protected function createAgentManager(SignalRouter $signalRouter): AgentManager
         {
             // Framework bootstrap doesn't create agent managers
             throw new AgentCreationFailedException('framework', null);
@@ -70,13 +71,25 @@ try {
                 $lastHeartbeat = $currentTime;
             }
         }
+
+        protected function createSignalRouter(): SignalRouter
+        {
+            return new SignalRouter();
+        }
     };
 
     // Start worker main loop
     $workerManager->run();
 
+} catch (InvalidWorkerIdException $e) {
+    Logger::error("Worker id bootstrap failed: " . $e->getMessage());
+    exit(ExitCode::ERROR);
 } catch (\Throwable $e) {
-    Logger::error("Worker #{$workerIndex} failed: " . $e->getMessage());
+    if (isset($workerIndex)) {
+        Logger::error("Worker #{$workerIndex} failed: " . $e->getMessage());
+    } else {
+        Logger::error("Worker bootstrap failed: " . $e->getMessage());
+    }
     exit(ExitCode::ERROR);
 }
 

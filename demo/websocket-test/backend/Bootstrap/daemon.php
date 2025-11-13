@@ -7,6 +7,7 @@ require_once __DIR__ . '/../../vendor/autoload.php';
 use Demo\WebSocketTest\Core\Daemon\ChatDaemonManager;
 use Demo\WebSocketTest\Core\Socket\Server\ChatWebSocketServer;
 use Demo\WebSocketTest\Core\Socket\Server\ChatWorkerServer;
+use Demo\WebSocketTest\Database\Database;
 use Hilos\API\Router\HttpRouter;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\ErrorConstants;
@@ -33,6 +34,9 @@ Env::init(__DIR__);
 #Logger::setDebugEnabled(true);
 
 try {
+    // Initialize database connection and schema
+    Database::initialize();
+
     // Create chat daemon manager instance first (creates signalRouter)
     $daemon = new ChatDaemonManager();
 

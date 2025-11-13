@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../../vendor/autoload.php';
 
+use Demo\WebSocketTest\Database\Database;
 use Hilos\Constants\ErrorConstants;
 use Hilos\Constants\ExitCode;
 use Hilos\Core\CLI\CliManager;
+use Hilos\Database\Migration;
 use Hilos\Logging\Logger\Logger;
 use Hilos\Utils\Env;
 
@@ -21,6 +23,14 @@ Env::init(__DIR__);
  */
 
 try {
+    // Initialize migration configuration
+    Migration::setMigrationListPath(__DIR__ . '/../Database/Migration');
+    Migration::setMigrationName('Schema');
+    Migration::setRoutinesPath(__DIR__ . '/../Database/Migration/Routines');
+
+    // Initialize database connection and schema
+    Database::initialize();
+
     // Create CLI manager instance with command line arguments
     $cliManager = new CliManager($argv);
 

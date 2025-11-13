@@ -160,7 +160,7 @@ class Env
         // Auto-detect project root if not provided
         if ($rootPath === null) {
             // Starting from framework/src/Utils, go up 3 levels to project root
-            $rootPath = dirname(dirname(dirname(dirname(realpath(__DIR__)))));
+            $rootPath = dirname(realpath(__DIR__), 4);
         }
 
         $envPath = $rootPath . '/.env';
@@ -259,7 +259,7 @@ class Env
         self::clearCache();
 
         // Auto-detect project root
-        $rootPath = dirname(dirname(dirname(dirname(realpath(__DIR__)))));
+        $rootPath = dirname(realpath(__DIR__), 4);
         $envPath = $rootPath . '/.env';
 
         // Reload .env file if it exists

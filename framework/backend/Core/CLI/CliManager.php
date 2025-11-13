@@ -10,6 +10,12 @@ use Hilos\Core\CLI\Commands\CommandInterface;
 use Hilos\Core\CLI\Commands\HelpCommand;
 use Hilos\Core\CLI\Commands\MonitorCommand;
 use Hilos\Core\CLI\Commands\StatusCommand;
+use Hilos\Core\CLI\Commands\MigrationUpCommand;
+use Hilos\Core\CLI\Commands\MigrationDownCommand;
+use Hilos\Core\CLI\Commands\MigrationStatusCommand;
+use Hilos\Core\CLI\Commands\MigrationRetryCommand;
+use Hilos\Core\CLI\Commands\DbSchemaStatusCommand;
+use Hilos\Core\CLI\Commands\DbEntityDiffCommand;
 
 /**
  * CliManager - Main CLI management class
@@ -76,7 +82,13 @@ class CliManager
     {
         $this->commands[CliCommands::DAEMON_STATUS] = new StatusCommand();
         $this->commands[CliCommands::DAEMON_MONITOR] = new MonitorCommand();
-        $this->commands[CliCommands::HELP] = new HelpCommand();
+        $this->commands[CliCommands::MIGRATION_UP] = new MigrationUpCommand();
+        $this->commands[CliCommands::MIGRATION_DOWN] = new MigrationDownCommand();
+        $this->commands[CliCommands::MIGRATION_STATUS] = new MigrationStatusCommand();
+        $this->commands[CliCommands::MIGRATION_RETRY] = new MigrationRetryCommand();
+        $this->commands[CliCommands::DB_SCHEMA_STATUS] = new DbSchemaStatusCommand();
+        $this->commands[CliCommands::DB_ENTITY_DIFF] = new DbEntityDiffCommand();
+        $this->commands[CliCommands::HELP] = new HelpCommand($this->commands);
     }
 
     /**
