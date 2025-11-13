@@ -11,7 +11,6 @@ CREATE TABLE `user` (
     `admin` TINYINT(1) NOT NULL DEFAULT 0,
     `block` TINYINT(1) NOT NULL DEFAULT 0,
     `will_delete` INT UNSIGNED DEFAULT NULL,
-    `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (`id_user`),
     KEY `admin` (`admin`),
     KEY `block` (`block`)

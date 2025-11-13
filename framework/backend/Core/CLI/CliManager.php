@@ -16,6 +16,7 @@ use Hilos\Core\CLI\Commands\MigrationStatusCommand;
 use Hilos\Core\CLI\Commands\MigrationRetryCommand;
 use Hilos\Core\CLI\Commands\DbSchemaStatusCommand;
 use Hilos\Core\CLI\Commands\DbEntityDiffCommand;
+use Hilos\Core\CLI\Commands\DbEntityFixCommand;
 
 /**
  * CliManager - Main CLI management class
@@ -88,6 +89,7 @@ class CliManager
         $this->commands[CliCommands::MIGRATION_RETRY] = new MigrationRetryCommand();
         $this->commands[CliCommands::DB_SCHEMA_STATUS] = new DbSchemaStatusCommand();
         $this->commands[CliCommands::DB_ENTITY_DIFF] = new DbEntityDiffCommand();
+        $this->commands[CliCommands::DB_ENTITY_FIX] = new DbEntityFixCommand();
         $this->commands[CliCommands::HELP] = new HelpCommand($this->commands);
     }
 

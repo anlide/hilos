@@ -79,9 +79,9 @@ class Generator
         }
 
         foreach ($indexGroups as $keyName => $info) {
-            $columns = "'" . implode("', '", $info['columns']) . "'";
+            $indexColumns = "'" . implode("', '", $info['columns']) . "'";
             $unique = $info['unique'] ? "'unique' => true, " : "";
-            $indexesList[] = "        '{$keyName}' => [{$unique}'columns' => [{$columns}]]";
+            $indexesList[] = "        '{$keyName}' => [{$unique}'columns' => [{$indexColumns}]]";
         }
 
         // Detect foreign keys (simplified - by naming convention)
@@ -233,6 +233,10 @@ class Generator
      */
     private static function mysqlTypeToPhp(string $mysqlType): string
     {
+        // Check for TINYINT(1) which should be boolean
+        if (preg_match('/^tinyint\s*\(\s*1\s*\)/i', $mysqlType)) {
+            return 'boolean';
+        }
         if (preg_match('/^(tiny|small|medium|big)?int/i', $mysqlType)) {
             return 'integer';
         }

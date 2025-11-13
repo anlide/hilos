@@ -38,4 +38,7 @@ class CliCommands
 
     /** @var string Command: Compare Entity files with database schema */
     public const string DB_ENTITY_DIFF = 'db:entity:diff';
+
+    /** @var string Command: Fix Entity files to match database schema */
+    public const string DB_ENTITY_FIX = 'db:entity:fix';
 }

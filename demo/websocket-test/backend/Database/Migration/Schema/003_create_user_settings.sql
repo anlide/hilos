@@ -7,7 +7,6 @@ CREATE TABLE `user_setting` (
     `id_user` INT UNSIGNED NOT NULL,
     `key` VARCHAR(100) NOT NULL,
     `value` TEXT DEFAULT NULL,
-    `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (`id_user_setting`),
     UNIQUE KEY `id_user_key` (`id_user`, `key`),
     KEY `id_user` (`id_user`),

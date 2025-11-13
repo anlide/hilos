@@ -255,6 +255,10 @@ class Schema
      */
     private static function mysqlTypeToPhp(string $mysqlType): string
     {
+        // Check for TINYINT(1) which should be boolean
+        if (preg_match('/^tinyint\s*\(\s*1\s*\)/i', $mysqlType)) {
+            return ColumnType::BOOLEAN->value;
+        }
         if (preg_match('/^(tiny|small|medium|big)?int/i', $mysqlType)) {
             return ColumnType::INTEGER->value;
         }
