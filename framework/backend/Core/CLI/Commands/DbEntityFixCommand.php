@@ -9,6 +9,7 @@ use Hilos\Constants\ExitCode;
 use Hilos\Database\Database;
 use Hilos\Database\Entity\Entity;
 use Hilos\Database\Generator;
+use Hilos\Database\PhpType;
 use Hilos\Database\Schema\IndexInfo;
 use Hilos\Database\Schema\Schema;
 use Hilos\Database\Schema\TableInfo;
@@ -373,20 +374,25 @@ HELP;
         // Missing columns (in DB but not in Entity)
         $entityColumns = array_flip($entity['columns']);
         foreach ($dbTable->columns as $colName => $colInfo) {
+            $normalizedType = $this->normalizeType($colInfo->phpType);
             if (!isset($entityColumns[$colName])) {
                 $fixes['add_columns'][] = [
                     'name' => $colName,
-                    'type' => $colInfo->phpType,
+                    'type' => $normalizedType,
                     'nullable' => $colInfo->nullable,
                     'default' => $colInfo->default,
                     'is_primary' => $colInfo->isPrimary,
                 ];
-            } elseif (($entity['types'][$colName] ?? null) !== $colInfo->phpType) {
-                $fixes['update_column_types'][] = [
-                    'name' => $colName,
-                    'old_type' => $entity['types'][$colName] ?? 'unknown',
-                    'new_type' => $colInfo->phpType,
-                ];
+            } else {
+                $entityType = $entity['types'][$colName] ?? null;
+                $normalizedEntityType = $entityType !== null ? $this->normalizeType($entityType) : null;
+                if ($normalizedEntityType !== $normalizedType) {
+                    $fixes['update_column_types'][] = [
+                        'name' => $colName,
+                        'old_type' => $entityType ?? 'unknown',
+                        'new_type' => $normalizedType,
+                    ];
+                }
             }
         }
 
@@ -687,6 +693,18 @@ HELP;
         $fixes = $tableFix['fixes'];
         $reflection = $tableFix['reflection'];
 
+        // Ensure PhpType is imported (always needed when converting types)
+        // Check if _types array exists and has string literals that need conversion
+        $needsPhpType = preg_match('/public const array _types = \[/', $content) && preg_match('/self::\w+\s*=>\s*\'[^\']+\'/', $content);
+        if ($needsPhpType && !preg_match('/use\s+Hilos\\\Database\\\PhpType;/', $content)) {
+            // Add use statement after other use statements
+            if (preg_match('/(use\s+Hilos\\\Database\\\Entity\\\Entity;)/', $content, $matches)) {
+                $content = str_replace($matches[1], $matches[1] . "\nuse Hilos\\Database\\PhpType;", $content);
+            } elseif (preg_match('/(namespace\s+[^;]+;\s*\n\n)/', $content, $matches)) {
+                $content = str_replace($matches[1], $matches[1] . "use Hilos\\Database\\Entity\\Entity;\nuse Hilos\\Database\\PhpType;\n\n", $content);
+            }
+        }
+
         // Apply fixes in order
         // Remove columns first (before adding new ones)
         if (!empty($fixes['remove_columns'])) {
@@ -707,6 +725,9 @@ HELP;
             $content = $this->addColumns($content, $fixes['add_columns'], $reflection);
         }
 
+        // Convert all string type literals to PhpType enum (not just updated ones)
+        $content = $this->convertAllTypesToPhpType($content);
+        
         if (!empty($fixes['update_column_types'])) {
             $content = $this->updateColumnTypes($content, $fixes['update_column_types'], $reflection);
         }
@@ -747,6 +768,39 @@ HELP;
     }
 
     /**
+     * Normalize type to PhpType enum value
+     */
+    private function normalizeType(string $type): string
+    {
+        // Try to find matching PhpType enum case
+        foreach (PhpType::cases() as $phpType) {
+            if ($phpType->value === $type) {
+                return $phpType->value;
+            }
+        }
+        
+        // If not found, return as-is (fallback for unknown types)
+        return $type;
+    }
+
+    /**
+     * Format type for use in _types array (use PhpType enum if available, otherwise string)
+     */
+    private function formatTypeForArray(string $type): string
+    {
+        // Try to find matching PhpType enum case
+        foreach (PhpType::cases() as $phpType) {
+            if ($phpType->value === $type) {
+                // Use PhpType enum directly: PhpType::INTEGER->value
+                return "PhpType::{$phpType->name}->value";
+            }
+        }
+        
+        // Fallback for unknown types
+        return "'{$type}'";
+    }
+
+    /**
      * Add columns to Entity file
      */
     private function addColumns(string $content, array $columns, ReflectionClass $reflection): string
@@ -782,7 +836,9 @@ HELP;
         // Add to _types array
         $typeEntries = [];
         foreach ($columns as $col) {
-            $typeEntries[] = "        self::{$col['name']} => '{$col['type']}'";
+            $normalizedType = $this->normalizeType($col['type']);
+            $typeValue = $this->formatTypeForArray($normalizedType);
+            $typeEntries[] = "        self::{$col['name']} => {$typeValue}";
         }
 
         if (preg_match('/(public const array _types = \[)(.*?)(\];)/s', $content, $matches)) {
@@ -800,8 +856,9 @@ HELP;
         // Add properties
         $properties = [];
         foreach ($columns as $col) {
-            $phpType = $col['nullable'] ? "?{$col['type']}" : $col['type'];
-            $default = $col['default'] !== null ? " = " . $this->formatDefaultValue($col['default'], $col['type']) : ($col['nullable'] ? ' = null' : '');
+            $normalizedType = $this->normalizeType($col['type']);
+            $phpType = $col['nullable'] ? "?{$normalizedType}" : $normalizedType;
+            $default = $col['default'] !== null ? " = " . $this->formatDefaultValue($col['default'], $normalizedType) : ($col['nullable'] ? ' = null' : '');
             $properties[] = "    public {$phpType} \${$col['name']}{$default};";
         }
 
@@ -1000,13 +1057,50 @@ HELP;
     }
 
     /**
+     * Convert all string type literals in _types array to PhpType enum
+     */
+    private function convertAllTypesToPhpType(string $content): string
+    {
+        // Find _types array
+        if (preg_match('/(public const array _types = \[)(.*?)(\];)/s', $content, $matches)) {
+            $typesContent = $matches[2];
+            
+            // Replace all string literals like 'integer', 'string' with PhpType::INTEGER->value, etc.
+            // Pattern: self::columnName => 'type' (with optional whitespace)
+            $pattern = '/(self::\w+\s*=>\s*)\'([^\']+)\'/';
+            $convertedContent = preg_replace_callback($pattern, function($matches) {
+                $before = $matches[1];
+                $typeString = $matches[2];
+                
+                // Format type using PhpType enum
+                $formattedType = $this->formatTypeForArray($typeString);
+                
+                return $before . $formattedType;
+            }, $typesContent);
+            
+            // Replace the original _types content with converted version
+            $content = str_replace($matches[0], $matches[1] . $convertedContent . $matches[3], $content);
+        }
+        
+        return $content;
+    }
+
+    /**
      * Update column types in Entity file
      */
     private function updateColumnTypes(string $content, array $updates, ReflectionClass $reflection): string
     {
         foreach ($updates as $update) {
-            $pattern = '/(self::' . preg_quote($update['name'], '/') . '\s*=>\s*\')([^\']+)(\')/';
-            $replacement = '$1' . $update['new_type'] . '$3';
+            $normalizedType = $this->normalizeType($update['new_type']);
+            $typeValue = $this->formatTypeForArray($normalizedType);
+
+            $escapedName = preg_quote($update['name'], '/');
+            
+            // Match any value after => until comma or newline
+            // This will match: 'string', PhpType::INTEGER->value, self::TYPE_INTEGER, etc.
+            // Pattern: self::columnName => (any value until comma or newline)
+            $pattern = '/(self::' . $escapedName . '\s*=>\s*)[^,\n]+/';
+            $replacement = '$1' . $typeValue;
             $content = preg_replace($pattern, $replacement, $content);
         }
 
@@ -1449,9 +1543,9 @@ HELP;
         }
 
         return match ($type) {
-            'integer' => (string)(int)$default,
-            'float' => (string)(float)$default,
-            'boolean' => $default ? 'true' : 'false',
+            PhpType::INTEGER->value => (string)(int)$default,
+            PhpType::FLOAT->value, PhpType::DECIMAL->value, PhpType::DOUBLE->value => (string)(float)$default,
+            PhpType::BOOLEAN->value => $default ? 'true' : 'false',
             default => "'" . addslashes((string)$default) . "'",
         };
     }

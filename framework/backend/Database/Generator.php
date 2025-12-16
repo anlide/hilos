@@ -50,7 +50,8 @@ class Generator
 
             $columnConstants[] = "    public const string {$field} = '{$field}';";
             $columnList[] = "self::{$field}";
-            $typesList[] = "        self::{$field} => '{$type}'";
+            $typeValue = self::formatTypeForArray($type);
+            $typesList[] = "        self::{$field} => {$typeValue}";
 
             $phpType = $nullable ? "?{$type}" : $type;
             $defaultValue = $default !== null ? " = " . self::formatDefaultValue($default, $type) : ($nullable ? ' = null' : '');
@@ -101,7 +102,8 @@ class Generator
         // Generate code
         $code = "<?php\n\n";
         $code .= "namespace {$namespace};\n\n";
-        $code .= "use Hilos\\Database\\Entity\\Entity;\n\n";
+        $code .= "use Hilos\\Database\\Entity\\Entity;\n";
+        $code .= "use Hilos\\Database\\PhpType;\n\n";
         $code .= "/**\n";
         $code .= " * {$className} Entity\n";
         $code .= " * Auto-generated from table: {$tableName}\n";
@@ -226,6 +228,23 @@ class Generator
         $code .= "}\n";
 
         return $code;
+    }
+
+    /**
+     * Format type for use in _types array (use PhpType enum if available, otherwise string)
+     */
+    private static function formatTypeForArray(string $type): string
+    {
+        // Try to find matching PhpType enum case
+        foreach (PhpType::cases() as $phpType) {
+            if ($phpType->value === $type) {
+                // Use PhpType enum directly: PhpType::INTEGER->value
+                return "PhpType::{$phpType->name}->value";
+            }
+        }
+        
+        // Fallback for unknown types
+        return "'{$type}'";
     }
 
     /**
