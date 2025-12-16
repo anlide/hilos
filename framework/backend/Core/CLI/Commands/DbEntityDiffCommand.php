@@ -232,16 +232,16 @@ HELP;
     private function extractEntityInfo(ReflectionClass $reflection): ?array
     {
         try {
-            $table = $reflection->getConstant('_table');
+            $table = $reflection->getConstant(Entity::META_TABLE);
             if ($table === false) {
                 return null;
             }
 
-            $primary = $reflection->getConstant('_primary');
-            $columns = $reflection->getConstant('_columns') ?: [];
-            $types = $reflection->getConstant('_types') ?: [];
-            $foreign = $reflection->getConstant('_foreign') ?: [];
-            $indexes = $reflection->getConstant('_indexes') ?: [];
+            $primary = $reflection->getConstant(Entity::META_PRIMARY);
+            $columns = $reflection->getConstant(Entity::META_COLUMNS) ?: [];
+            $types = $reflection->getConstant(Entity::META_TYPES) ?: [];
+            $foreign = $reflection->getConstant(Entity::META_FOREIGN) ?: [];
+            $indexes = $reflection->getConstant(Entity::META_INDEXES) ?: [];
 
             // Normalize primary key to array
             if (is_string($primary)) {

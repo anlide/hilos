@@ -14,6 +14,22 @@ use Hilos\Exception\DatabaseException;
  */
 class Schema
 {
+    // MySQL column key types
+    private const string MYSQL_KEY_PRI = 'PRI';
+    private const string MYSQL_KEY_UNI = 'UNI';
+    private const string MYSQL_NULL_YES = 'YES';
+    private const string MYSQL_INDEX_PRIMARY = 'PRIMARY';
+    private const string MYSQL_NON_UNIQUE_FALSE = '0';
+
+    // Statistics keys
+    private const string STAT_KEY_CONNECTION_INDEX = 'connection_index';
+    private const string STAT_KEY_INITIALIZED = 'initialized';
+    private const string STAT_KEY_TABLES_COUNT = 'tables_count';
+    private const string STAT_KEY_TOTAL_COLUMNS = 'total_columns';
+    private const string STAT_KEY_TOTAL_INDEXES = 'total_indexes';
+    private const string STAT_KEY_TOTAL_FOREIGN_KEYS = 'total_foreign_keys';
+    private const string STAT_KEY_TABLE_NAMES = 'table_names';
+
     /**
      * @var array<int, array<string, TableInfo>> Table structures per connection index
      */
@@ -93,7 +109,7 @@ class Schema
         foreach ($columns as $column) {
             $field = $column['Field'];
             $type = $column['Type'];
-            $nullable = $column['Null'] === 'YES';
+            $nullable = $column['Null'] === self::MYSQL_NULL_YES;
             $default = $column['Default'];
             $key = $column['Key'];
             $extra = $column['Extra'] ?? '';
@@ -106,12 +122,12 @@ class Schema
                 phpType: $phpType,
                 nullable: $nullable,
                 default: $default,
-                isPrimary: $key === 'PRI',
-                isUnique: $key === 'UNI',
+                isPrimary: $key === self::MYSQL_KEY_PRI,
+                isUnique: $key === self::MYSQL_KEY_UNI,
                 extra: $extra
             );
 
-            if ($key === 'PRI') {
+            if ($key === self::MYSQL_KEY_PRI) {
                 $primaryKeys[] = $field;
             }
         }
@@ -121,13 +137,13 @@ class Schema
         $indexGroups = [];
         foreach ($indexes as $index) {
             $keyName = $index['Key_name'];
-            if ($keyName === 'PRIMARY') {
+            if ($keyName === self::MYSQL_INDEX_PRIMARY) {
                 continue; // Already handled in columns
             }
 
             if (!isset($indexGroups[$keyName])) {
                 $indexGroups[$keyName] = [
-                    'unique' => $index['Non_unique'] === '0',
+                    'unique' => $index['Non_unique'] === self::MYSQL_NON_UNIQUE_FALSE,
                     'columns' => []
                 ];
             }
@@ -240,13 +256,13 @@ class Schema
         }
 
         return [
-            'connection_index' => $index,
-            'initialized' => self::isInitialized($index),
-            'tables_count' => count($tables),
-            'total_columns' => $totalColumns,
-            'total_indexes' => $totalIndexes,
-            'total_foreign_keys' => $totalForeignKeys,
-            'table_names' => array_keys($tables),
+            self::STAT_KEY_CONNECTION_INDEX => $index,
+            self::STAT_KEY_INITIALIZED => self::isInitialized($index),
+            self::STAT_KEY_TABLES_COUNT => count($tables),
+            self::STAT_KEY_TOTAL_COLUMNS => $totalColumns,
+            self::STAT_KEY_TOTAL_INDEXES => $totalIndexes,
+            self::STAT_KEY_TOTAL_FOREIGN_KEYS => $totalForeignKeys,
+            self::STAT_KEY_TABLE_NAMES => array_keys($tables),
         ];
     }
 

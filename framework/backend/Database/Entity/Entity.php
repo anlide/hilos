@@ -3,6 +3,7 @@
 namespace Hilos\Database\Entity;
 
 use Hilos\Database\Database;
+use Hilos\Database\PhpType;
 use Hilos\Database\SqlParam;
 use Hilos\Database\SqlParamCollection;
 use Hilos\Exception\DatabaseException;
@@ -23,6 +24,17 @@ use Hilos\Exception\DatabaseException;
  */
 abstract class Entity
 {
+    // Meta property names
+    public const string META_TABLE = '_table';
+    public const string META_PRIMARY = '_primary';
+    public const string META_COLUMNS = '_columns';
+    public const string META_TYPES = '_types';
+    public const string META_FOREIGN = '_foreign';
+    public const string META_INDEXES = '_indexes';
+
+    // Internal property names
+    public const string PROP_RELATED = '_related';
+
     /**
      * Indicates if this entity is related to a database row
      */
@@ -332,7 +344,7 @@ abstract class Entity
      */
     public function __get(string $name): mixed
     {
-        if ($name === '_related') {
+        if ($name === self::PROP_RELATED) {
             return $this->_related;
         }
 
@@ -356,7 +368,12 @@ abstract class Entity
     }
 
     /**
-     * Create SqlParam from value and type
+     * Create SqlParam from PHP value and PHP type
+     * Converts PHP value to SqlParam for database operations
+     * 
+     * @param mixed $value PHP value
+     * @param string $type PHP type (from _types array: 'integer', 'string', 'boolean', etc.)
+     * @return SqlParam Parameter ready for database query
      */
     private static function createParam(mixed $value, string $type): SqlParam
     {
@@ -365,15 +382,20 @@ abstract class Entity
         }
 
         return match ($type) {
-            'integer' => SqlParam::int((int)$value),
-            'float', 'double', 'decimal' => SqlParam::double((float)$value),
-            'boolean' => SqlParam::bool((bool)$value),
+            PhpType::INTEGER->value => SqlParam::int((int)$value),
+            PhpType::FLOAT->value, PhpType::DECIMAL->value, PhpType::DOUBLE->value => SqlParam::double((float)$value),
+            PhpType::BOOLEAN->value => SqlParam::bool((bool)$value),
             default => SqlParam::string((string)$value),
         };
     }
 
     /**
-     * Cast value to proper type
+     * Cast database value to PHP type
+     * Converts value from database to appropriate PHP type
+     * 
+     * @param mixed $value Value from database
+     * @param string $type PHP type (from _types array: 'integer', 'string', 'boolean', etc.)
+     * @return mixed Value cast to PHP type
      */
     private static function castValue(mixed $value, string $type): mixed
     {
@@ -382,10 +404,12 @@ abstract class Entity
         }
 
         return match ($type) {
-            'integer' => (int)$value,
-            'float', 'double', 'decimal' => (float)$value,
-            'boolean' => (bool)$value,
-            'string', 'text' => (string)$value,
+            PhpType::INTEGER->value => (int)$value,
+            PhpType::FLOAT->value, PhpType::DECIMAL->value, PhpType::DOUBLE->value => (float)$value,
+            PhpType::BOOLEAN->value => (bool)$value,
+            PhpType::STRING->value, PhpType::TEXT->value => (string)$value,
+            // datetime, date, time, json, binary are handled as strings but not explicitly cast
+            // to preserve their original format from database
             default => $value,
         };
     }
