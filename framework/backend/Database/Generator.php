@@ -53,12 +53,29 @@ class Generator
             $typeValue = self::formatTypeForArray($type);
             $typesList[] = "        self::{$field} => {$typeValue}";
 
-            $phpType = $nullable ? "?{$type}" : $type;
-            $defaultValue = $default !== null ? " = " . self::formatDefaultValue($default, $type) : ($nullable ? ' = null' : '');
+            // Convert type for property: integer -> int, boolean -> bool, datetime -> string
+            $propertyType = self::phpTypeToPropertyType($type);
+            
+            // Primary key columns should always be nullable with default null
+            $isPrimary = $key === 'PRI';
+            $shouldBeNullable = $isPrimary || $nullable;
+            $phpType = $shouldBeNullable ? "?{$propertyType}" : $propertyType;
+            
+            // For primary keys, always set default to null
+            // For other columns, use database default or null if nullable
+            if ($isPrimary) {
+                $defaultValue = ' = null';
+            } elseif ($default !== null) {
+                $defaultValue = " = " . self::formatDefaultValue($default, $type);
+            } elseif ($nullable) {
+                $defaultValue = ' = null';
+            } else {
+                $defaultValue = '';
+            }
 
             $properties[] = "    public {$phpType} \${$field}{$defaultValue};";
 
-            if ($key === 'PRI') {
+            if ($isPrimary) {
                 $primaryKeys[] = "self::{$field}";
             }
         }
@@ -73,14 +90,16 @@ class Generator
             if (!isset($indexGroups[$keyName])) {
                 $indexGroups[$keyName] = [
                     'unique' => $index['Non_unique'] === '0',
-                    'columns' => []
+                    'columns' => [],
                 ];
             }
             $indexGroups[$keyName]['columns'][] = $index['Column_name'];
         }
 
         foreach ($indexGroups as $keyName => $info) {
-            $indexColumns = "'" . implode("', '", $info['columns']) . "'";
+            // Use column constants instead of strings
+            $indexColumnRefs = array_map(fn($col) => "self::{$col}", $info['columns']);
+            $indexColumns = implode(", ", $indexColumnRefs);
             $unique = $info['unique'] ? "'unique' => true, " : "";
             $indexesList[] = "        '{$keyName}' => [{$unique}'columns' => [{$indexColumns}]]";
         }
@@ -95,9 +114,11 @@ class Generator
         }
 
         // Build primary key definition
-        $primaryDef = count($primaryKeys) === 1 
+        $isSinglePrimary = count($primaryKeys) === 1;
+        $primaryDef = $isSinglePrimary
             ? $primaryKeys[0] 
             : '[' . implode(', ', $primaryKeys) . ']';
+        $primaryType = $isSinglePrimary ? 'string' : 'array';
 
         // Generate code
         $code = "<?php\n\n";
@@ -114,27 +135,27 @@ class Generator
         $code .= implode("\n", $columnConstants) . "\n\n";
         $code .= "    // Table meta information\n";
         $code .= "    public const string _table = '{$tableName}';\n";
-        $code .= "    public const string|array _primary = {$primaryDef};\n";
+        $code .= "    public const {$primaryType} _primary = {$primaryDef};\n";
         $code .= "    public const array _columns = [\n        ";
         $code .= implode(",\n        ", $columnList);
-        $code .= "\n    ];\n\n";
+        $code .= ",\n    ];\n\n";
         $code .= "    // Column types\n";
         $code .= "    public const array _types = [\n";
         $code .= implode(",\n", $typesList);
-        $code .= "\n    ];\n\n";
+        $code .= ",\n    ];\n\n";
 
         if (!empty($foreignKeys)) {
             $code .= "    // Foreign keys\n";
             $code .= "    public const array _foreign = [\n";
             $code .= implode(",\n", $foreignKeys);
-            $code .= "\n    ];\n\n";
+            $code .= ",\n    ];\n\n";
         }
 
         if (!empty($indexesList)) {
             $code .= "    // Indexes\n";
             $code .= "    public const array _indexes = [\n";
             $code .= implode(",\n", $indexesList);
-            $code .= "\n    ];\n\n";
+            $code .= ",\n    ];\n\n";
         }
 
         $code .= "    // Properties\n";
@@ -285,6 +306,20 @@ class Generator
     private static function snakeToCamelCase(string $snake): string
     {
         return lcfirst(str_replace('_', '', ucwords($snake, '_')));
+    }
+
+    /**
+     * Convert PhpType enum value to PHP type hint for properties
+     * Converts 'integer' -> 'int', 'boolean' -> 'bool', 'datetime' -> 'string'
+     */
+    private static function phpTypeToPropertyType(string $type): string
+    {
+        return match ($type) {
+            'integer' => 'int',
+            'boolean' => 'bool',
+            'datetime' => 'string', // datetime in DB is represented as string in PHP
+            default => $type,
+        };
     }
 
     /**

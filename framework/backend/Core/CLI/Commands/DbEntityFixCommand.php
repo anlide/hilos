@@ -340,6 +340,11 @@ HELP;
         $fixes = [];
 
         foreach ($entities as $tableName => $entityInfo) {
+            // Skip migration table (hardcoded exclusion)
+            if ($tableName === 'migration') {
+                continue;
+            }
+            
             if ($tableFilter !== null && $tableName !== $tableFilter) {
                 continue;
             }
@@ -357,6 +362,7 @@ HELP;
                     'class' => $entityInfo['class'],
                     'reflection' => $entityInfo['reflection'],
                     'fixes' => $tableFixes,
+                    'db_table' => $dbTable, // Store table info for column order
                 ];
             }
         }
@@ -391,6 +397,65 @@ HELP;
                         'name' => $colName,
                         'old_type' => $entityType ?? 'unknown',
                         'new_type' => $normalizedType,
+                    ];
+                }
+                
+                // Update properties (exact names as in database) - sync nullable and default values
+                // This ensures properties match database schema exactly
+                // Parse current property from Entity file to compare
+                $currentProperty = $this->parsePropertyFromEntity($entity['file'], $colName);
+                
+                // Determine what property should be
+                $isPrimary = $colInfo->isPrimary;
+                $shouldBeNullable = $isPrimary || $colInfo->nullable;
+                $shouldBeDefault = $isPrimary ? null : $colInfo->default;
+                
+                // Normalize should-be default for comparison
+                $shouldBeDefaultStr = $isPrimary 
+                    ? 'null' 
+                    : ($shouldBeDefault !== null 
+                        ? $this->normalizeDefaultForComparison($this->formatDefaultValue($shouldBeDefault, $normalizedType), $normalizedType)
+                        : ($shouldBeNullable ? 'null' : null));
+                
+                // Compare current vs should be
+                $needsUpdate = false;
+                if ($currentProperty === null) {
+                    $needsUpdate = true; // Property doesn't exist
+                } else {
+                    // Check nullable
+                    // For primary key columns, always require nullable (even if DB says not nullable)
+                    // So if it's primary key and current is not nullable, we need to update
+                    // But if it's primary key and DB says not nullable, we still want nullable in Entity
+                    if ($isPrimary) {
+                        // For primary keys, always require nullable
+                        if (!$currentProperty['nullable']) {
+                            $needsUpdate = true;
+                        }
+                    } else {
+                        // For non-primary keys, compare normally
+                        if ($currentProperty['nullable'] !== $shouldBeNullable) {
+                            $needsUpdate = true;
+                        }
+                    }
+                    // Check default value (normalize for comparison)
+                    $currentDefaultStr = $currentProperty['default'] !== null 
+                        ? $this->normalizeDefaultForComparison($currentProperty['default'], $normalizedType)
+                        : ($currentProperty['nullable'] ? 'null' : null);
+                    if ($currentDefaultStr !== $shouldBeDefaultStr) {
+                        $needsUpdate = true;
+                    }
+                }
+                
+                if ($needsUpdate) {
+                    if (!isset($fixes['update_properties'])) {
+                        $fixes['update_properties'] = [];
+                    }
+                    $fixes['update_properties'][] = [
+                        'name' => $colName,
+                        'type' => $normalizedType,
+                        'nullable' => $shouldBeNullable,
+                        'default' => $shouldBeDefault,
+                        'is_primary' => $isPrimary,
                     ];
                 }
             }
@@ -504,6 +569,11 @@ HELP;
         $tablesToCreate = [];
         
         foreach ($dbTables as $tableName => $dbTable) {
+            // Skip migration table (hardcoded exclusion)
+            if ($tableName === 'migration') {
+                continue;
+            }
+            
             if ($tableFilter !== null && $tableName !== $tableFilter) {
                 continue;
             }
@@ -568,6 +638,16 @@ HELP;
                 echo "\n";
             }
 
+            if (!empty($tableFixes['update_properties'])) {
+                echo "  Will update properties (nullable/default values):\n";
+                foreach ($tableFixes['update_properties'] as $col) {
+                    $nullable = $col['nullable'] ? 'nullable' : 'not null';
+                    $default = $col['default'] !== null ? " (default: {$col['default']})" : '';
+                    echo "    ~ {$col['name']}: {$nullable}{$default}\n";
+                }
+                echo "\n";
+            }
+
             if (!empty($tableFixes['remove_columns'])) {
                 echo "  Will remove columns:\n";
                 foreach ($tableFixes['remove_columns'] as $col) {
@@ -594,7 +674,19 @@ HELP;
 
             if (isset($tableFixes['update_primary'])) {
                 echo "  Will update primary key:\n";
-                echo "    ~ [" . implode(', ', $tableFix['reflection']->getConstant(Entity::META_PRIMARY) ?: []) . "] -> [" . implode(', ', $tableFixes['update_primary']) . "]\n";
+                $oldPrimary = $tableFix['reflection']->getConstant(Entity::META_PRIMARY);
+                if (is_string($oldPrimary)) {
+                    $oldPrimary = [$oldPrimary];
+                } elseif (!is_array($oldPrimary)) {
+                    $oldPrimary = [];
+                }
+                $newPrimary = $tableFixes['update_primary'];
+                if (is_string($newPrimary)) {
+                    $newPrimary = [$newPrimary];
+                } elseif (!is_array($newPrimary)) {
+                    $newPrimary = [];
+                }
+                echo "    ~ [" . implode(', ', $oldPrimary) . "] -> [" . implode(', ', $newPrimary) . "]\n";
                 echo "\n";
             }
 
@@ -693,10 +785,8 @@ HELP;
         $fixes = $tableFix['fixes'];
         $reflection = $tableFix['reflection'];
 
-        // Ensure PhpType is imported (always needed when converting types)
-        // Check if _types array exists and has string literals that need conversion
-        $needsPhpType = preg_match('/public const array _types = \[/', $content) && preg_match('/self::\w+\s*=>\s*\'[^\']+\'/', $content);
-        if ($needsPhpType && !preg_match('/use\s+Hilos\\\Database\\\PhpType;/', $content)) {
+        // Ensure PhpType is imported (always needed)
+        if (!preg_match('/use\s+Hilos\\\Database\\\PhpType;/', $content)) {
             // Add use statement after other use statements
             if (preg_match('/(use\s+Hilos\\\Database\\\Entity\\\Entity;)/', $content, $matches)) {
                 $content = str_replace($matches[1], $matches[1] . "\nuse Hilos\\Database\\PhpType;", $content);
@@ -721,8 +811,15 @@ HELP;
             $content = $this->removeForeignKeys($content, $fixes['remove_foreign_keys'], $reflection);
         }
 
+        // Fix missing trailing comma in _columns array (even if no new columns added)
+        $content = $this->fixTrailingCommaInColumnsArray($content);
+
         if (!empty($fixes['add_columns'])) {
-            $content = $this->addColumns($content, $fixes['add_columns'], $reflection);
+            $dbTable = $tableFix['db_table'] ?? null;
+            $content = $this->addColumnConstants($content, $fixes['add_columns'], $dbTable, $reflection);
+            $content = $this->addColumnsToArray($content, $fixes['add_columns'], $dbTable, $reflection);
+            $content = $this->addTypesToArray($content, $fixes['add_columns'], $dbTable, $reflection);
+            $content = $this->addProperties($content, $fixes['add_columns'], $reflection);
         }
 
         // Convert all string type literals to PhpType enum (not just updated ones)
@@ -732,18 +829,26 @@ HELP;
             $content = $this->updateColumnTypes($content, $fixes['update_column_types'], $reflection);
         }
 
+        if (!empty($fixes['update_properties'])) {
+            $content = $this->updateProperties($content, $fixes['update_properties'], $reflection);
+        }
+
         if (isset($fixes['update_primary'])) {
             $content = $this->updatePrimaryKey($content, $fixes['update_primary'], $reflection);
         }
 
         if (!empty($fixes['add_indexes']) || !empty($fixes['update_indexes'])) {
-            $content = $this->updateIndexes($content, $fixes['add_indexes'] ?? [], $fixes['update_indexes'] ?? [], $reflection);
+            $dbTable = $tableFix['db_table'] ?? null;
+            $content = $this->updateIndexes($content, $dbTable, $reflection);
         }
         
         // Clean up empty _indexes after all operations
         if (preg_match('/(\/\/ Indexes\s*public const array _indexes = \[)\s*(\];)/s', $content, $matches)) {
             // Remove only the comment and declaration lines, preserve surrounding empty lines
-            $content = preg_replace('/\s*\/\/ Indexes\s*\n\s*public const array _indexes = \[\s*\];\s*\n/s', "\n", $content);
+            // Match: \n    // Indexes\n    public const array _indexes = [\n    ];\n
+            // Replace with just newline before to preserve spacing
+            $pattern = '/(\n)\s*\/\/ Indexes\s*\n\s*public const array _indexes = \[\s*\];\s*\n/';
+            $content = preg_replace($pattern, '$1', $content);
         }
 
         if (!empty($fixes['add_foreign_keys']) || !empty($fixes['update_foreign_keys'])) {
@@ -759,8 +864,9 @@ HELP;
             $pattern = '/(\n)\s*\/\/ Foreign keys\s*\n\s*public const array _foreign = \[\s*\];\s*\n/';
             $content = preg_replace($pattern, '$1', $content);
             
-            // Clean up any extra spaces that might remain before next section
-            $content = preg_replace('/(\n)\s{4,}(\/\/ (?:Indexes|Properties))/', '$1    $2', $content);
+            // Clean up any extra spaces that might remain before next section (but preserve empty lines)
+            // Only fix excessive indentation, don't remove empty lines
+            $content = preg_replace('/(\n)\s{5,}(\/\/ (?:Indexes|Properties))/', '$1    $2', $content);
         }
 
         // Write updated content
@@ -784,6 +890,19 @@ HELP;
     }
 
     /**
+     * Convert PhpType enum value to PHP type hint for properties
+     * Converts 'integer' -> 'int', 'boolean' -> 'bool' for property type hints
+     */
+    private function phpTypeToPropertyType(string $type): string
+    {
+        return match ($type) {
+            PhpType::INTEGER->value => 'int',
+            PhpType::BOOLEAN->value => 'bool',
+            default => $type,
+        };
+    }
+
+    /**
      * Format type for use in _types array (use PhpType enum if available, otherwise string)
      */
     private function formatTypeForArray(string $type): string
@@ -801,64 +920,382 @@ HELP;
     }
 
     /**
-     * Add columns to Entity file
+     * Add column constants in correct order according to database schema
      */
-    private function addColumns(string $content, array $columns, ReflectionClass $reflection): string
+    private function addColumnConstants(string $content, array $newColumns, ?TableInfo $dbTable, ReflectionClass $reflection): string
     {
-        // Add column constants
-        $constants = [];
-        foreach ($columns as $col) {
-            $constants[] = "    public const string {$col['name']} = '{$col['name']}';";
+        // Get all column names from DB in order
+        $dbColumnOrder = [];
+        if ($dbTable !== null) {
+            $dbColumnOrder = array_keys($dbTable->columns);
         }
 
-        // Find position after last column constant
-        if (preg_match('/(\/\/ Column name constants.*?\n)((?:    public const string \w+ = \'[^\']+\';\n)+)/s', $content, $matches)) {
-            $content = str_replace($matches[2], $matches[2] . implode("\n", $constants) . "\n", $content);
-        } else {
-            // Insert after class declaration
-            if (preg_match('/(final class \w+ extends Entity\n\{)/', $content, $matches)) {
-                $content = str_replace($matches[1], $matches[1] . "\n    // Column name constants\n" . implode("\n", $constants) . "\n", $content);
+        // Extract existing column constants from file
+        $existingConstants = [];
+        if (preg_match_all('/    public const string (\w+) = \'[^\']+\';\n/', $content, $matches)) {
+            $existingConstants = $matches[1];
+        }
+
+        // Create map of new columns by name
+        $newColumnsMap = [];
+        foreach ($newColumns as $col) {
+            $newColumnsMap[$col['name']] = $col;
+        }
+
+        // Build ordered list: existing columns + new columns in DB order
+        $allColumns = [];
+        $processedNew = [];
+        
+        // First, add all existing columns
+        foreach ($existingConstants as $colName) {
+            $allColumns[] = $colName;
+        }
+        
+        // Then, insert new columns in their DB order position
+        foreach ($dbColumnOrder as $dbColName) {
+            if (isset($newColumnsMap[$dbColName]) && !in_array($dbColName, $allColumns, true)) {
+                // Find position in DB order relative to existing columns
+                $insertPos = count($allColumns);
+                for ($i = 0; $i < count($allColumns); $i++) {
+                    $existingCol = $allColumns[$i];
+                    $existingPos = array_search($existingCol, $dbColumnOrder, true);
+                    $newPos = array_search($dbColName, $dbColumnOrder, true);
+                    if ($existingPos !== false && $newPos !== false && $newPos < $existingPos) {
+                        $insertPos = $i;
+                        break;
+                    }
+                }
+                array_splice($allColumns, $insertPos, 0, $dbColName);
+                $processedNew[] = $dbColName;
+            }
+        }
+        
+        // Add any remaining new columns that weren't in DB order (shouldn't happen, but safety)
+        foreach ($newColumns as $col) {
+            if (!in_array($col['name'], $allColumns, true)) {
+                $allColumns[] = $col['name'];
+                $processedNew[] = $col['name'];
             }
         }
 
-        // Add to _columns array
-        $columnRefs = [];
-        foreach ($columns as $col) {
-            $columnRefs[] = "        self::{$col['name']}";
+        // Generate constants for new columns only
+        $newConstants = [];
+        foreach ($processedNew as $colName) {
+            $newConstants[] = "    public const string {$colName} = '{$colName}';";
         }
+
+        if (empty($newConstants)) {
+            return $content;
+        }
+
+        // Find position to insert new constants
+        if (preg_match('/(\/\/ Column name constants.*?\n)((?:    public const string \w+ = \'[^\']+\';\n)+)/s', $content, $matches, PREG_OFFSET_CAPTURE)) {
+            $constantsBlock = $matches[2][0];
+            $constantsBlockStart = $matches[2][1];
+            
+            // Get existing constants with their DB positions
+            $existingWithPositions = [];
+            foreach ($existingConstants as $colName) {
+                $dbPos = array_search($colName, $dbColumnOrder, true);
+                $existingWithPositions[] = [
+                    'name' => $colName,
+                    'db_position' => $dbPos !== false ? $dbPos : 9999,
+                ];
+            }
+            
+            // For each new constant, find where to insert it
+            $insertions = [];
+            foreach ($processedNew as $newColName) {
+                $newDbPos = array_search($newColName, $dbColumnOrder, true);
+                if ($newDbPos === false) {
+                    $newDbPos = 9999;
+                }
+                
+                // Find the last existing constant that comes before this new one in DB order
+                $insertAfter = null;
+                foreach ($existingWithPositions as $existing) {
+                    if ($existing['db_position'] < $newDbPos) {
+                        $insertAfter = $existing['name'];
+                    }
+                }
+                
+                // Find the actual position in the constants block
+                if ($insertAfter !== null) {
+                    $pattern = '/(    public const string ' . preg_quote($insertAfter, '/') . ' = \'[^\']+\';\n)/';
+                    if (preg_match($pattern, $constantsBlock, $found, PREG_OFFSET_CAPTURE)) {
+                        $insertions[] = [
+                            'constant' => "    public const string {$newColName} = '{$newColName}';",
+                            'position' => $found[0][1] + strlen($found[0][0]),
+                        ];
+                    } else {
+                        // Fallback: append
+                        $insertions[] = [
+                            'constant' => "    public const string {$newColName} = '{$newColName}';",
+                            'position' => strlen($constantsBlock),
+                        ];
+                    }
+                } else {
+                    // No existing constant before this one, insert at start
+                    $insertions[] = [
+                        'constant' => "    public const string {$newColName} = '{$newColName}';",
+                        'position' => 0,
+                    ];
+                }
+            }
+            
+            // Sort insertions by position (descending) to insert from end to start
+            usort($insertions, fn($a, $b) => $b['position'] <=> $a['position']);
+            
+            // Insert constants from end to start to preserve positions
+            $newConstantsBlock = $constantsBlock;
+            foreach ($insertions as $insertion) {
+                $before = substr($newConstantsBlock, 0, $insertion['position']);
+                $after = substr($newConstantsBlock, $insertion['position']);
+                $newConstantsBlock = $before . $insertion['constant'] . "\n" . $after;
+            }
+            
+            $content = str_replace($constantsBlock, $newConstantsBlock, $content);
+        } else {
+            // Insert after class declaration if no constants section exists
+            if (preg_match('/(final class \w+ extends Entity\n\{)/', $content, $matches)) {
+                $content = str_replace($matches[1], $matches[1] . "\n    // Column name constants\n" . implode("\n", $newConstants) . "\n", $content);
+            }
+        }
+
+        return $content;
+    }
+
+    /**
+     * Add columns to _columns array in correct order
+     */
+    private function addColumnsToArray(string $content, array $columns, ?TableInfo $dbTable, ReflectionClass $reflection): string
+    {
+        // Get all column names from DB in order
+        $dbColumnOrder = [];
+        if ($dbTable !== null) {
+            $dbColumnOrder = array_keys($dbTable->columns);
+        }
+
+        // Extract existing columns from _columns array
+        $existingColumns = [];
+        $existingContent = '';
+        if (preg_match('/(public const array _columns = \[)(.*?)(\];)/s', $content, $matches)) {
+            $existingContent = $matches[2];
+            if (preg_match_all('/self::(\w+)/', $existingContent, $colMatches)) {
+                $existingColumns = $colMatches[1];
+            }
+        }
+
+        // Build ordered list: existing + new columns in DB order
+        $allColumns = [];
+        $newColumnNames = array_column($columns, 'name');
+        
+        // Start with existing columns
+        foreach ($existingColumns as $colName) {
+            $allColumns[] = $colName;
+        }
+        
+        // Insert new columns in their DB order position
+        foreach ($dbColumnOrder as $dbColName) {
+            if (in_array($dbColName, $newColumnNames, true) && !in_array($dbColName, $allColumns, true)) {
+                // Find position in DB order relative to existing columns
+                $insertPos = count($allColumns);
+                for ($i = 0; $i < count($allColumns); $i++) {
+                    $existingCol = $allColumns[$i];
+                    $existingPos = array_search($existingCol, $dbColumnOrder, true);
+                    $newPos = array_search($dbColName, $dbColumnOrder, true);
+                    if ($existingPos !== false && $newPos !== false && $newPos < $existingPos) {
+                        $insertPos = $i;
+                        break;
+                    }
+                }
+                array_splice($allColumns, $insertPos, 0, $dbColName);
+            }
+        }
+        
+        // Add any remaining new columns
+        foreach ($newColumnNames as $colName) {
+            if (!in_array($colName, $allColumns, true)) {
+                $allColumns[] = $colName;
+            }
+        }
+
+        // Generate column references
+        $columnRefs = array_map(fn($col) => "        self::{$col}", $allColumns);
 
         if (preg_match('/(public const array _columns = \[)(.*?)(\];)/s', $content, $matches)) {
-            $existing = $matches[2];
-            $new = $existing . ",\n" . implode(",\n", $columnRefs);
-            $content = str_replace($matches[0], $matches[1] . $new . "\n    " . $matches[3], $content);
+            // Always ensure trailing comma after last element
+            $newContent = "\n" . implode(",\n", $columnRefs) . ",\n    ";
+            $content = str_replace($matches[0], $matches[1] . $newContent . $matches[3], $content);
         }
 
-        // Add to _types array
-        $typeEntries = [];
+        return $content;
+    }
+
+    /**
+     * Fix missing trailing comma in _columns array
+     */
+    private function fixTrailingCommaInColumnsArray(string $content): string
+    {
+        // Check if _columns array exists and if last element has trailing comma
+        if (preg_match('/(public const array _columns = \[)(.*?)(\];)/s', $content, $matches)) {
+            $arrayContent = $matches[2];
+            
+            // Check if there's at least one column
+            if (preg_match('/self::\w+/', $arrayContent)) {
+                // Check if last non-whitespace character before closing bracket is not a comma
+                $trimmed = rtrim($arrayContent);
+                $lastChar = !empty($trimmed) ? substr($trimmed, -1) : '';
+                
+                if (!empty($trimmed) && $lastChar !== ',') {
+                    // Find the last column reference
+                    if (preg_match_all('/(self::\w+)(\s*,?\s*)/', $arrayContent, $colMatches, PREG_OFFSET_CAPTURE)) {
+                        $lastColRef = end($colMatches[1]);
+                        $lastPos = $lastColRef[1] + strlen($lastColRef[0]);
+                        
+                        // Check if there's a comma after this column
+                        $afterCol = substr($arrayContent, $lastPos);
+                        $afterColTrimmed = ltrim($afterCol);
+                        
+                        // If no comma found, add it
+                        if (!empty($afterColTrimmed) && $afterColTrimmed[0] !== ',') {
+                            $before = substr($arrayContent, 0, $lastPos);
+                            $after = substr($arrayContent, $lastPos);
+                            // Add comma after the column reference
+                            $newArrayContent = $before . ',' . $after;
+                            $content = str_replace($matches[0], $matches[1] . $newArrayContent . $matches[3], $content);
+                        } elseif (empty($afterColTrimmed)) {
+                            // Column is at the end, add comma and newline
+                            $newArrayContent = rtrim($arrayContent) . ",\n    ";
+                            $content = str_replace($matches[0], $matches[1] . $newArrayContent . $matches[3], $content);
+                        }
+                    }
+                }
+            }
+        }
+        
+        return $content;
+    }
+
+    /**
+     * Add types to _types array in correct order
+     */
+    private function addTypesToArray(string $content, array $columns, ?TableInfo $dbTable, ReflectionClass $reflection): string
+    {
+        // Get all column names from DB in order
+        $dbColumnOrder = [];
+        if ($dbTable !== null) {
+            $dbColumnOrder = array_keys($dbTable->columns);
+        }
+
+        // Extract existing types from _types array
+        $existingTypes = [];
+        if (preg_match('/(public const array _types = \[)(.*?)(\];)/s', $content, $matches)) {
+            if (preg_match_all('/self::(\w+)\s*=>\s*([^,\n]+)/', $matches[2], $typeMatches)) {
+                foreach ($typeMatches[1] as $i => $colName) {
+                    $existingTypes[$colName] = trim($typeMatches[2][$i]);
+                }
+            }
+        }
+
+        // Create map of new types by column name
+        $newTypesMap = [];
         foreach ($columns as $col) {
             $normalizedType = $this->normalizeType($col['type']);
             $typeValue = $this->formatTypeForArray($normalizedType);
-            $typeEntries[] = "        self::{$col['name']} => {$typeValue}";
+            $newTypesMap[$col['name']] = $typeValue;
         }
 
-        if (preg_match('/(public const array _types = \[)(.*?)(\];)/s', $content, $matches)) {
-            $existing = $matches[2];
-            $new = $existing . ",\n" . implode(",\n", $typeEntries);
-            $content = str_replace($matches[0], $matches[1] . $new . "\n    " . $matches[3], $content);
+        // Build ordered list: existing + new types in DB order
+        // First, get all existing column names in their current order
+        $existingColNames = array_keys($existingTypes);
+        
+        // Build ordered list similar to addColumnsToArray
+        $allColNames = [];
+        $newColumnNames = array_column($columns, 'name');
+        
+        // Start with existing columns
+        foreach ($existingColNames as $colName) {
+            $allColNames[] = $colName;
+        }
+        
+        // Insert new columns in their DB order position
+        foreach ($dbColumnOrder as $dbColName) {
+            if (in_array($dbColName, $newColumnNames, true) && !in_array($dbColName, $allColNames, true)) {
+                // Find position in DB order relative to existing columns
+                $insertPos = count($allColNames);
+                for ($i = 0; $i < count($allColNames); $i++) {
+                    $existingCol = $allColNames[$i];
+                    $existingPos = array_search($existingCol, $dbColumnOrder, true);
+                    $newPos = array_search($dbColName, $dbColumnOrder, true);
+                    if ($existingPos !== false && $newPos !== false && $newPos < $existingPos) {
+                        $insertPos = $i;
+                        break;
+                    }
+                }
+                array_splice($allColNames, $insertPos, 0, $dbColName);
+            }
+        }
+        
+        // Add any remaining new columns
+        foreach ($newColumnNames as $colName) {
+            if (!in_array($colName, $allColNames, true)) {
+                $allColNames[] = $colName;
+            }
+        }
+
+        // Generate type entries in correct order
+        $typeEntries = [];
+        foreach ($allColNames as $colName) {
+            $typeValue = $existingTypes[$colName] ?? $newTypesMap[$colName] ?? "PhpType::STRING->value";
+            $typeEntries[] = "        self::{$colName} => {$typeValue}";
+        }
+
+        // Check if _types section exists - match with comment and preserve surrounding newlines
+        if (preg_match('/(\n)(\s*\/\/ Column types\s*\n\s*public const array _types = \[)(.*?)(\];\s*\n)(\s*)/s', $content, $matches)) {
+            // Rewrite entire array, preserve newlines before comment and after
+            // $matches[1] = newline before, $matches[5] = whitespace/newlines after
+            $newContent = $matches[1] . $matches[2] . "\n" . implode(",\n", $typeEntries) . ",\n    " . $matches[4] . $matches[5];
+            $content = str_replace($matches[0], $newContent, $content);
         } else {
             // Add _types section
             if (preg_match('/(public const array _columns = \[.*?\];\n\n)/s', $content, $matches)) {
-                $typesSection = "    // Column types\n    public const array _types = [\n" . implode(",\n", $typeEntries) . "\n    ];\n\n";
+                $typesSection = "    // Column types\n    public const array _types = [\n" . implode(",\n", $typeEntries) . ",\n    ];\n\n";
                 $content = str_replace($matches[1], $matches[1] . $typesSection, $content);
             }
         }
 
-        // Add properties
+        return $content;
+    }
+
+    /**
+     * Add properties (exact names as in database)
+     */
+    private function addProperties(string $content, array $columns, ReflectionClass $reflection): string
+    {
         $properties = [];
         foreach ($columns as $col) {
             $normalizedType = $this->normalizeType($col['type']);
-            $phpType = $col['nullable'] ? "?{$normalizedType}" : $normalizedType;
-            $default = $col['default'] !== null ? " = " . $this->formatDefaultValue($col['default'], $normalizedType) : ($col['nullable'] ? ' = null' : '');
+            $propertyType = $this->phpTypeToPropertyType($normalizedType);
+            
+            // Primary key columns should be nullable with default null
+            $isPrimary = $col['is_primary'] ?? false;
+            $shouldBeNullable = $isPrimary || $col['nullable'];
+            
+            $phpType = $shouldBeNullable ? "?{$propertyType}" : $propertyType;
+            
+            // For primary keys, always set default to null
+            // For other columns, use database default or null if nullable
+            if ($isPrimary) {
+                $default = ' = null';
+            } elseif ($col['default'] !== null) {
+                $default = " = " . $this->formatDefaultValue($col['default'], $normalizedType);
+            } elseif ($col['nullable']) {
+                $default = ' = null';
+            } else {
+                $default = '';
+            }
+            
             $properties[] = "    public {$phpType} \${$col['name']}{$default};";
         }
 
@@ -1108,157 +1545,169 @@ HELP;
     }
 
     /**
+     * Update properties (exact names as in database) with nullable and default values
+     */
+    private function updateProperties(string $content, array $updates, ReflectionClass $reflection): string
+    {
+        foreach ($updates as $update) {
+            $colName = $update['name'];
+            $normalizedType = $this->normalizeType($update['type']);
+            $propertyType = $this->phpTypeToPropertyType($normalizedType);
+            
+            // Primary key columns should be nullable with default null
+            $isPrimary = $update['is_primary'] ?? false;
+            $shouldBeNullable = $isPrimary || $update['nullable'];
+            $phpType = $shouldBeNullable ? "?{$propertyType}" : $propertyType;
+            
+            // For primary keys, always set default to null
+            // For other columns, use database default or null if nullable
+            if ($isPrimary) {
+                $default = ' = null';
+            } elseif ($update['default'] !== null) {
+                $default = " = " . $this->formatDefaultValue($update['default'], $normalizedType);
+            } elseif ($update['nullable']) {
+                $default = ' = null';
+            } else {
+                $default = '';
+            }
+            
+            $escapedName = preg_quote($colName, '/');
+            
+            // Match property declaration: public [type] $name [= value];
+            // Pattern: public (nullable type or type) $name (optional = value);
+            // This matches: public ?string $name = null; or public string $name; or public int $id = 0;
+            // More precise pattern to match the entire property line
+            $pattern = '/    public\s+(?:\?[a-zA-Z_]+|[a-zA-Z_]+)\s+\$' . $escapedName . '(?:\s*=\s*[^;]+)?;/';
+            $replacement = "    public {$phpType} \${$colName}{$default};";
+            $content = preg_replace($pattern, $replacement, $content);
+        }
+
+        return $content;
+    }
+    
+    /**
+     * Parse property from Entity file to get nullable and default values
+     */
+    private function parsePropertyFromEntity(string $file, string $colName): ?array
+    {
+        $content = file_get_contents($file);
+        $escapedName = preg_quote($colName, '/');
+        
+        // Match property declaration: public [type] $name [= value];
+        if (preg_match('/    public\s+(\??)([a-zA-Z_]+)\s+\$' . $escapedName . '(?:\s*=\s*([^;]+))?;/', $content, $matches)) {
+            $nullable = !empty($matches[1]); // ? prefix means nullable
+            $type = $matches[2];
+            $default = isset($matches[3]) ? trim($matches[3]) : null;
+            
+            return [
+                'nullable' => $nullable,
+                'type' => $type,
+                'default' => $default,
+            ];
+        }
+        
+        return null;
+    }
+    
+    /**
+     * Normalize default value for comparison (handles 0 vs false for boolean, etc.)
+     * Removes quotes from string values for comparison
+     */
+    private function normalizeDefaultForComparison(?string $default, string $type): ?string
+    {
+        if ($default === null) {
+            return null;
+        }
+        
+        $default = trim($default);
+        
+        // Remove quotes from string values (formatDefaultValue adds quotes)
+        if (preg_match("/^'(.*)'$/", $default, $matches)) {
+            $default = $matches[1];
+        }
+        
+        // For boolean type, normalize 0/false and 1/true
+        if ($type === PhpType::BOOLEAN->value) {
+            if ($default === '0' || $default === 'false') {
+                return 'false';
+            }
+            if ($default === '1' || $default === 'true') {
+                return 'true';
+            }
+        }
+        
+        // For integer type, normalize numeric strings
+        if ($type === PhpType::INTEGER->value) {
+            if (is_numeric($default)) {
+                return (string)(int)$default;
+            }
+        }
+        
+        return $default;
+    }
+
+    /**
      * Update primary key in Entity file
      */
     private function updatePrimaryKey(string $content, array $newPrimary, ReflectionClass $reflection): string
     {
-        $primaryDef = count($newPrimary) === 1 
+        $isSingle = count($newPrimary) === 1;
+        $primaryDef = $isSingle
             ? "self::{$newPrimary[0]}" 
             : '[' . implode(', ', array_map(fn($col) => "self::{$col}", $newPrimary)) . ']';
+        
+        $type = $isSingle ? 'string' : 'array';
 
-        $pattern = '/(public const string\|array _primary = )(.*?)(;)/';
-        $replacement = '$1' . $primaryDef . '$3';
+        // Update _primary constant - replace any existing type (string|array, string, or array) with correct type
+        $pattern = '/(public const )(?:string\|array|string|array)( _primary = )(.*?)(;)/';
+        $replacement = '$1' . $type . '$2' . $primaryDef . '$4';
         $content = preg_replace($pattern, $replacement, $content);
 
         return $content;
     }
 
     /**
-     * Update indexes in Entity file
+     * Update indexes in Entity file - rewrite entire array from database
      */
-    private function updateIndexes(string $content, array $addIndexes, array $updateIndexes, ReflectionClass $reflection): string
+    private function updateIndexes(string $content, ?TableInfo $dbTable, ReflectionClass $reflection): string
     {
-        $allIndexes = array_merge($addIndexes, $updateIndexes);
+        // Get all indexes from database
         $indexEntries = [];
-
-        foreach ($allIndexes as $index) {
-            $columns = "'" . implode("', '", $index['columns']) . "'";
-            $unique = $index['unique'] ? "'unique' => true, " : "";
-            $indexEntries[] = "        '{$index['name']}' => [{$unique}'columns' => [{$columns}]]";
+        if ($dbTable !== null && !empty($dbTable->indexes)) {
+            foreach ($dbTable->indexes as $indexName => $indexInfo) {
+                // Use column constants instead of strings
+                $columnRefs = array_map(fn($col) => "self::{$col}", $indexInfo->columns);
+                $columns = implode(", ", $columnRefs);
+                $unique = $indexInfo->unique ? "'unique' => true, " : "";
+                $indexEntries[] = "        '{$indexName}' => [{$unique}'columns' => [{$columns}]],";
+            }
         }
 
-        // Check if _indexes section exists
-        if (preg_match('/(public const array _indexes = \[)(.*?)(\];)/s', $content, $matches)) {
-            // Get existing indexes to preserve ones not being updated
-            $existingIndexes = [];
-            // Match index definitions more precisely, including nested arrays
-            // Pattern: 'index_name' => [ ... ]
-            // We need to match the full structure: 'name' => ['columns' => [...], 'unique' => ...]
-            if (preg_match_all("/'([^']+)' => \[(?:[^\[\]]+|\[[^\]]*\])*\]/s", $matches[2], $existingMatches, PREG_SET_ORDER)) {
-                foreach ($existingMatches as $match) {
-                    $indexName = $match[1];
-                    // Skip if it's not a valid index name (like 'columns', 'unique', etc.)
-                    // These are keys inside the index definition, not index names
-                    if (!in_array($indexName, ['columns', 'unique'], true)) {
-                        $existingIndexes[] = $indexName;
-                    }
-                }
-            }
-            
-            // Also try to extract index names from the raw content more carefully
-            // Sometimes the regex might miss indexes due to formatting
-            $rawContent = $matches[2];
-            // Look for patterns like 'index_name' => [ at the start of lines (with proper indentation)
-            // This catches indexes that might be missed by the first regex
-            if (preg_match_all("/^\s+'([^']+)' => \[/m", $rawContent, $lineMatches)) {
-                foreach ($lineMatches[1] as $indexName) {
-                    // Skip keys that are part of index definition structure
-                    if (!in_array($indexName, ['columns', 'unique'], true) && !in_array($indexName, $existingIndexes, true)) {
-                        $existingIndexes[] = $indexName;
-                    }
-                }
-            }
-
-            // Get names of indexes being updated/added
-            $updatedNames = array_column($allIndexes, 'name');
-
-            // Keep existing indexes that are not being updated
-            $finalEntries = [];
-            foreach ($existingIndexes as $existingName) {
-                if (!in_array($existingName, $updatedNames, true)) {
-                    // Extract existing index definition - match more precisely
-                    $escapedName = preg_quote($existingName, '/');
-                    // Match the full index definition including nested arrays
-                    // Try multiple patterns to catch different formatting
-                    $found = false;
-                    
-                    // Pattern 1: Standard format 'name' => [...]
-                    if (preg_match("/('{$escapedName}' => \[(?:[^\[\]]+|\[[^\]]*\])*\])/s", $matches[2], $existingIndexMatch)) {
-                        $entry = trim($existingIndexMatch[1]);
-                        // Fix missing closing brackets if needed
-                        $openBrackets = substr_count($entry, '[');
-                        $closeBrackets = substr_count($entry, ']');
-                        while ($openBrackets > $closeBrackets) {
-                            $entry .= ']';
-                            $closeBrackets++;
-                        }
-                        // Ensure trailing comma (but not double comma)
-                        $entry = rtrim($entry, ',');
-                        $entry .= ',';
-                        $finalEntries[] = "        " . $entry;
-                        $found = true;
-                    }
-                    
-                    // Pattern 2: Line-based extraction if first pattern failed
-                    if (!$found) {
-                        // Extract by matching lines that start with the index name
-                        $lines = explode("\n", $matches[2]);
-                        foreach ($lines as $i => $line) {
-                            if (preg_match("/^\s*'{$escapedName}' => \[/", $line)) {
-                                // Found the start, collect until we find the closing ]
-                                $entry = trim($line);
-                                $bracketCount = substr_count($entry, '[') - substr_count($entry, ']');
-                                $j = $i + 1;
-                                while ($bracketCount > 0 && $j < count($lines)) {
-                                    $entry .= " " . trim($lines[$j]);
-                                    $bracketCount += substr_count($lines[$j], '[') - substr_count($lines[$j], ']');
-                                    $j++;
-                                }
-                                // Ensure trailing comma (but not double comma)
-                                $entry = rtrim($entry, ',');
-                                $entry .= ',';
-                                $finalEntries[] = "        " . $entry;
-                                $found = true;
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Add new/updated indexes
-            foreach ($allIndexes as $index) {
-                $columns = "'" . implode("', '", $index['columns']) . "'";
-                $unique = $index['unique'] ? "'unique' => true, " : "";
-                // Ensure no double comma - entry should end with single comma
-                $entry = "        '{$index['name']}' => [{$unique}'columns' => [{$columns}]],";
-                $finalEntries[] = $entry;
-            }
-            
+        // Check if _indexes section exists - match with comment and preserve surrounding newlines
+        if (preg_match('/(\n)(\s*\/\/ Indexes\s*\n\s*public const array _indexes = \[)(.*?)(\];\s*\n)(\s*)/s', $content, $matches)) {
             // Remove empty _indexes array if no entries
-            if (empty($finalEntries)) {
-                // Remove the entire _indexes section
-                $content = preg_replace('/\s*\/\/ Indexes\s*public const array _indexes = \[\s*\];\s*/s', '', $content);
+            if (empty($indexEntries)) {
+                // Remove the entire _indexes section, but preserve newlines before and after
+                // $matches[1] = newline before, $matches[5] = whitespace/newlines after
+                $content = str_replace($matches[0], $matches[1] . $matches[5], $content);
                 return $content;
             }
             
-            // Keep trailing comma on all entries (including last one)
-            $new = "\n" . implode("\n", $finalEntries) . "\n    ";
-            $content = str_replace($matches[0], $matches[1] . $new . $matches[3], $content);
+            // Rewrite entire array with all indexes from database
+            // Preserve newline before comment and whitespace after
+            // $matches[2] already contains "    // Indexes\n    public const array _indexes = ["
+            // $matches[4] contains "];\n"
+            // Note: Each $indexEntries element already ends with a comma, so use "\n" not ",\n"
+            $new = $matches[1] . $matches[2] . "\n" . implode("\n", $indexEntries) . "\n    " . $matches[4] . $matches[5];
+            $content = str_replace($matches[0], $new, $content);
         } else {
             // Don't add _indexes section if empty
             if (empty($indexEntries)) {
                 return $content;
             }
             
-            // Add _indexes section with trailing comma for all entries (including last one)
-            $indexesWithComma = [];
-            foreach ($indexEntries as $entry) {
-                // Ensure entry has trailing comma
-                $entry = rtrim($entry, ',');
-                $indexesWithComma[] = $entry . ',';
-            }
-            $indexesSection = "    // Indexes\n    public const array _indexes = [\n" . implode("\n", $indexesWithComma) . "\n    ];\n\n";
+            // Add _indexes section
+            $indexesSection = "    // Indexes\n    public const array _indexes = [\n" . implode("\n", $indexEntries) . "\n    ];\n\n";
             
             // Insert before properties or at end
             if (preg_match('/(\/\/ Properties)/', $content, $matches)) {
@@ -1413,6 +1862,11 @@ HELP;
 
         $created = 0;
         foreach ($tablesToCreate as $tableName => $dbTable) {
+            // Skip migration table (hardcoded exclusion)
+            if ($tableName === 'migration') {
+                continue;
+            }
+            
             try {
                 $className = $this->tableToPascalCase($tableName);
                 $filePath = $entityDir . '/' . $className . '.php';
