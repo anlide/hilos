@@ -116,7 +116,7 @@ HELP;
 
         // Find differences and prepare fixes
         $fixes = $this->prepareFixes($entities, $dbTables, $tableName);
-        
+
         // Find tables without Entity files and Entity files without tables
         $tablesToCreate = $this->findTablesToCreate($entities, $dbTables, $tableName);
         $filesToDelete = $this->findFilesToDelete($entities, $dbTables, $tableName);
@@ -146,13 +146,13 @@ HELP;
 
         // Apply fixes to existing files
         $applied = $this->applyFixes($fixes);
-        
+
         // Create new Entity files
         $created = $this->createEntityFiles($tablesToCreate, $entityDir, $entityNamespace, $dbIndex);
-        
+
         // Delete Entity files without tables
         $deleted = $this->deleteEntityFiles($filesToDelete);
-        
+
         // Summary
         $totalChanges = $applied + $created + $deleted;
         if ($totalChanges > 0) {
@@ -235,7 +235,7 @@ HELP;
                 if ($content === false) {
                     continue;
                 }
-                
+
                 // Use php -l to check syntax
                 $output = [];
                 $returnVar = 0;
@@ -344,7 +344,7 @@ HELP;
             if ($tableName === 'migration') {
                 continue;
             }
-            
+
             if ($tableFilter !== null && $tableName !== $tableFilter) {
                 continue;
             }
@@ -399,24 +399,24 @@ HELP;
                         'new_type' => $normalizedType,
                     ];
                 }
-                
+
                 // Update properties (exact names as in database) - sync nullable and default values
                 // This ensures properties match database schema exactly
                 // Parse current property from Entity file to compare
                 $currentProperty = $this->parsePropertyFromEntity($entity['file'], $colName);
-                
+
                 // Determine what property should be
                 $isPrimary = $colInfo->isPrimary;
                 $shouldBeNullable = $isPrimary || $colInfo->nullable;
                 $shouldBeDefault = $isPrimary ? null : $colInfo->default;
-                
+
                 // Normalize should-be default for comparison
-                $shouldBeDefaultStr = $isPrimary 
-                    ? 'null' 
-                    : ($shouldBeDefault !== null 
+                $shouldBeDefaultStr = $isPrimary
+                    ? 'null'
+                    : ($shouldBeDefault !== null
                         ? $this->normalizeDefaultForComparison($this->formatDefaultValue($shouldBeDefault, $normalizedType), $normalizedType)
                         : ($shouldBeNullable ? 'null' : null));
-                
+
                 // Compare current vs should be
                 $needsUpdate = false;
                 if ($currentProperty === null) {
@@ -438,14 +438,14 @@ HELP;
                         }
                     }
                     // Check default value (normalize for comparison)
-                    $currentDefaultStr = $currentProperty['default'] !== null 
+                    $currentDefaultStr = $currentProperty['default'] !== null
                         ? $this->normalizeDefaultForComparison($currentProperty['default'], $normalizedType)
                         : ($currentProperty['nullable'] ? 'null' : null);
                     if ($currentDefaultStr !== $shouldBeDefaultStr) {
                         $needsUpdate = true;
                     }
                 }
-                
+
                 if ($needsUpdate) {
                     if (!isset($fixes['update_properties'])) {
                         $fixes['update_properties'] = [];
@@ -469,10 +469,10 @@ HELP;
                 $columnsToRemove[] = $colName;
             }
         }
-        
+
         if (!empty($columnsToRemove)) {
             $fixes['remove_columns'] = $columnsToRemove;
-            
+
             // Also remove indexes that reference removed columns
             $entityIndexes = $entity['indexes'] ?? [];
             foreach ($entityIndexes as $indexName => $indexDef) {
@@ -484,7 +484,7 @@ HELP;
                     }
                 }
             }
-            
+
             // Also remove foreign keys that reference removed columns
             $entityForeign = $entity['foreign'] ?? [];
             foreach ($entityForeign as $colName => $foreignTable) {
@@ -529,7 +529,7 @@ HELP;
             if ($foreignTable === $currentTable) {
                 continue;
             }
-            
+
             if (!isset($entityForeign[$colName])) {
                 $fixes['add_foreign_keys'][] = [
                     'column' => $colName,
@@ -567,22 +567,22 @@ HELP;
     private function findTablesToCreate(array $entities, array $dbTables, ?string $tableFilter): array
     {
         $tablesToCreate = [];
-        
+
         foreach ($dbTables as $tableName => $dbTable) {
             // Skip migration table (hardcoded exclusion)
             if ($tableName === 'migration') {
                 continue;
             }
-            
+
             if ($tableFilter !== null && $tableName !== $tableFilter) {
                 continue;
             }
-            
+
             if (!isset($entities[$tableName])) {
                 $tablesToCreate[$tableName] = $dbTable;
             }
         }
-        
+
         return $tablesToCreate;
     }
 
@@ -592,17 +592,17 @@ HELP;
     private function findFilesToDelete(array $entities, array $dbTables, ?string $tableFilter): array
     {
         $filesToDelete = [];
-        
+
         foreach ($entities as $tableName => $entityInfo) {
             if ($tableFilter !== null && $tableName !== $tableFilter) {
                 continue;
             }
-            
+
             if (!isset($dbTables[$tableName])) {
                 $filesToDelete[$tableName] = $entityInfo;
             }
         }
-        
+
         return $filesToDelete;
     }
 
@@ -728,7 +728,7 @@ HELP;
 
             echo "\n";
         }
-        
+
         // Display files to create
         if (!empty($tablesToCreate)) {
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
@@ -739,7 +739,7 @@ HELP;
             }
             echo "\n";
         }
-        
+
         // Display files to delete
         if (!empty($filesToDelete)) {
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
@@ -824,7 +824,7 @@ HELP;
 
         // Convert all string type literals to PhpType enum (not just updated ones)
         $content = $this->convertAllTypesToPhpType($content);
-        
+
         if (!empty($fixes['update_column_types'])) {
             $content = $this->updateColumnTypes($content, $fixes['update_column_types'], $reflection);
         }
@@ -841,7 +841,7 @@ HELP;
             $dbTable = $tableFix['db_table'] ?? null;
             $content = $this->updateIndexes($content, $dbTable, $reflection);
         }
-        
+
         // Clean up empty _indexes after all operations
         if (preg_match('/(\/\/ Indexes\s*public const array _indexes = \[)\s*(\];)/s', $content, $matches)) {
             // Remove only the comment and declaration lines, preserve surrounding empty lines
@@ -854,7 +854,7 @@ HELP;
         if (!empty($fixes['add_foreign_keys']) || !empty($fixes['update_foreign_keys'])) {
             $content = $this->updateForeignKeys($content, $fixes['add_foreign_keys'] ?? [], $fixes['update_foreign_keys'] ?? [], $reflection);
         }
-        
+
         // Clean up empty _foreign after all operations
         if (preg_match('/(\/\/ Foreign keys\s*public const array _foreign = \[)\s*(\];)/s', $content, $matches)) {
             // Remove only the comment and declaration lines, preserve surrounding empty lines
@@ -863,7 +863,7 @@ HELP;
             // Replace with just \n (removing the section but keeping one newline)
             $pattern = '/(\n)\s*\/\/ Foreign keys\s*\n\s*public const array _foreign = \[\s*\];\s*\n/';
             $content = preg_replace($pattern, '$1', $content);
-            
+
             // Clean up any extra spaces that might remain before next section (but preserve empty lines)
             // Only fix excessive indentation, don't remove empty lines
             $content = preg_replace('/(\n)\s{5,}(\/\/ (?:Indexes|Properties))/', '$1    $2', $content);
@@ -875,18 +875,11 @@ HELP;
 
     /**
      * Normalize type to PhpType enum value
+     * Uses common method from Generator
      */
     private function normalizeType(string $type): string
     {
-        // Try to find matching PhpType enum case
-        foreach (PhpType::cases() as $phpType) {
-            if ($phpType->value === $type) {
-                return $phpType->value;
-            }
-        }
-        
-        // If not found, return as-is (fallback for unknown types)
-        return $type;
+        return Generator::normalizeType($type);
     }
 
     /**
@@ -914,7 +907,7 @@ HELP;
                 return "PhpType::{$phpType->name}->value";
             }
         }
-        
+
         // Fallback for unknown types
         return "'{$type}'";
     }
@@ -945,12 +938,12 @@ HELP;
         // Build ordered list: existing columns + new columns in DB order
         $allColumns = [];
         $processedNew = [];
-        
+
         // First, add all existing columns
         foreach ($existingConstants as $colName) {
             $allColumns[] = $colName;
         }
-        
+
         // Then, insert new columns in their DB order position
         foreach ($dbColumnOrder as $dbColName) {
             if (isset($newColumnsMap[$dbColName]) && !in_array($dbColName, $allColumns, true)) {
@@ -969,7 +962,7 @@ HELP;
                 $processedNew[] = $dbColName;
             }
         }
-        
+
         // Add any remaining new columns that weren't in DB order (shouldn't happen, but safety)
         foreach ($newColumns as $col) {
             if (!in_array($col['name'], $allColumns, true)) {
@@ -992,7 +985,7 @@ HELP;
         if (preg_match('/(\/\/ Column name constants.*?\n)((?:    public const string \w+ = \'[^\']+\';\n)+)/s', $content, $matches, PREG_OFFSET_CAPTURE)) {
             $constantsBlock = $matches[2][0];
             $constantsBlockStart = $matches[2][1];
-            
+
             // Get existing constants with their DB positions
             $existingWithPositions = [];
             foreach ($existingConstants as $colName) {
@@ -1002,7 +995,7 @@ HELP;
                     'db_position' => $dbPos !== false ? $dbPos : 9999,
                 ];
             }
-            
+
             // For each new constant, find where to insert it
             $insertions = [];
             foreach ($processedNew as $newColName) {
@@ -1010,7 +1003,7 @@ HELP;
                 if ($newDbPos === false) {
                     $newDbPos = 9999;
                 }
-                
+
                 // Find the last existing constant that comes before this new one in DB order
                 $insertAfter = null;
                 foreach ($existingWithPositions as $existing) {
@@ -1018,7 +1011,7 @@ HELP;
                         $insertAfter = $existing['name'];
                     }
                 }
-                
+
                 // Find the actual position in the constants block
                 if ($insertAfter !== null) {
                     $pattern = '/(    public const string ' . preg_quote($insertAfter, '/') . ' = \'[^\']+\';\n)/';
@@ -1042,10 +1035,10 @@ HELP;
                     ];
                 }
             }
-            
+
             // Sort insertions by position (descending) to insert from end to start
             usort($insertions, fn($a, $b) => $b['position'] <=> $a['position']);
-            
+
             // Insert constants from end to start to preserve positions
             $newConstantsBlock = $constantsBlock;
             foreach ($insertions as $insertion) {
@@ -1053,7 +1046,7 @@ HELP;
                 $after = substr($newConstantsBlock, $insertion['position']);
                 $newConstantsBlock = $before . $insertion['constant'] . "\n" . $after;
             }
-            
+
             $content = str_replace($constantsBlock, $newConstantsBlock, $content);
         } else {
             // Insert after class declaration if no constants section exists
@@ -1089,12 +1082,12 @@ HELP;
         // Build ordered list: existing + new columns in DB order
         $allColumns = [];
         $newColumnNames = array_column($columns, 'name');
-        
+
         // Start with existing columns
         foreach ($existingColumns as $colName) {
             $allColumns[] = $colName;
         }
-        
+
         // Insert new columns in their DB order position
         foreach ($dbColumnOrder as $dbColName) {
             if (in_array($dbColName, $newColumnNames, true) && !in_array($dbColName, $allColumns, true)) {
@@ -1112,7 +1105,7 @@ HELP;
                 array_splice($allColumns, $insertPos, 0, $dbColName);
             }
         }
-        
+
         // Add any remaining new columns
         foreach ($newColumnNames as $colName) {
             if (!in_array($colName, $allColumns, true)) {
@@ -1140,23 +1133,23 @@ HELP;
         // Check if _columns array exists and if last element has trailing comma
         if (preg_match('/(public const array _columns = \[)(.*?)(\];)/s', $content, $matches)) {
             $arrayContent = $matches[2];
-            
+
             // Check if there's at least one column
             if (preg_match('/self::\w+/', $arrayContent)) {
                 // Check if last non-whitespace character before closing bracket is not a comma
                 $trimmed = rtrim($arrayContent);
                 $lastChar = !empty($trimmed) ? substr($trimmed, -1) : '';
-                
+
                 if (!empty($trimmed) && $lastChar !== ',') {
                     // Find the last column reference
                     if (preg_match_all('/(self::\w+)(\s*,?\s*)/', $arrayContent, $colMatches, PREG_OFFSET_CAPTURE)) {
                         $lastColRef = end($colMatches[1]);
                         $lastPos = $lastColRef[1] + strlen($lastColRef[0]);
-                        
+
                         // Check if there's a comma after this column
                         $afterCol = substr($arrayContent, $lastPos);
                         $afterColTrimmed = ltrim($afterCol);
-                        
+
                         // If no comma found, add it
                         if (!empty($afterColTrimmed) && $afterColTrimmed[0] !== ',') {
                             $before = substr($arrayContent, 0, $lastPos);
@@ -1173,7 +1166,7 @@ HELP;
                 }
             }
         }
-        
+
         return $content;
     }
 
@@ -1209,16 +1202,16 @@ HELP;
         // Build ordered list: existing + new types in DB order
         // First, get all existing column names in their current order
         $existingColNames = array_keys($existingTypes);
-        
+
         // Build ordered list similar to addColumnsToArray
         $allColNames = [];
         $newColumnNames = array_column($columns, 'name');
-        
+
         // Start with existing columns
         foreach ($existingColNames as $colName) {
             $allColNames[] = $colName;
         }
-        
+
         // Insert new columns in their DB order position
         foreach ($dbColumnOrder as $dbColName) {
             if (in_array($dbColName, $newColumnNames, true) && !in_array($dbColName, $allColNames, true)) {
@@ -1236,7 +1229,7 @@ HELP;
                 array_splice($allColNames, $insertPos, 0, $dbColName);
             }
         }
-        
+
         // Add any remaining new columns
         foreach ($newColumnNames as $colName) {
             if (!in_array($colName, $allColNames, true)) {
@@ -1277,13 +1270,13 @@ HELP;
         foreach ($columns as $col) {
             $normalizedType = $this->normalizeType($col['type']);
             $propertyType = $this->phpTypeToPropertyType($normalizedType);
-            
+
             // Primary key columns should be nullable with default null
             $isPrimary = $col['is_primary'] ?? false;
             $shouldBeNullable = $isPrimary || $col['nullable'];
-            
+
             $phpType = $shouldBeNullable ? "?{$propertyType}" : $propertyType;
-            
+
             // For primary keys, always set default to null
             // For other columns, use database default or null if nullable
             if ($isPrimary) {
@@ -1295,7 +1288,7 @@ HELP;
             } else {
                 $default = '';
             }
-            
+
             $properties[] = "    public {$phpType} \${$col['name']}{$default};";
         }
 
@@ -1328,7 +1321,7 @@ HELP;
             // But don't match if it's part of a longer line with other columns
             $pattern = '/(?<=\n)\s+self::' . preg_quote($colName, '/') . '\s*,?\s*(?=\n)/';
             $content = preg_replace($pattern, '', $content);
-            
+
             // Also handle inline cases (multiple columns on one line)
             $pattern = '/\s+self::' . preg_quote($colName, '/') . '\s*,/';
             $content = preg_replace($pattern, '', $content);
@@ -1338,7 +1331,7 @@ HELP;
             // Remove from _types array - match entry with optional comma, be precise
             $pattern = '/(?<=\n)\s+self::' . preg_quote($colName, '/') . '\s*=>\s*\'[^\']+\'\s*,?\s*(?=\n)/';
             $content = preg_replace($pattern, '', $content);
-            
+
             // Also handle inline cases
             $pattern = '/\s+self::' . preg_quote($colName, '/') . '\s*=>\s*\'[^\']+\'\s*,/';
             $content = preg_replace($pattern, '', $content);
@@ -1437,7 +1430,7 @@ HELP;
         if (preg_match('/(public const array _indexes = \[)(.*?)(\];)/s', $content, $matches)) {
             $indexesContent = $matches[2];
             $remainingIndexes = [];
-            
+
             // Parse existing indexes
             if (preg_match_all("/'([^']+)' => \[.*?\]/s", $indexesContent, $existingMatches, PREG_SET_ORDER)) {
                 foreach ($existingMatches as $match) {
@@ -1455,12 +1448,12 @@ HELP;
                     }
                 }
             }
-            
+
             // Keep trailing comma on all entries (including last one)
             $new = !empty($remainingIndexes) ? "\n" . implode("\n", $remainingIndexes) . "\n    " : "\n    ";
             $content = str_replace($matches[0], $matches[1] . $new . $matches[3], $content);
         }
-        
+
         return $content;
     }
 
@@ -1473,7 +1466,7 @@ HELP;
         if (preg_match('/(public const array _foreign = \[)(.*?)(\];)/s', $content, $matches)) {
             $foreignContent = $matches[2];
             $remainingForeign = [];
-            
+
             // Parse existing foreign keys
             if (preg_match_all("/self::(\w+)\s*=>\s*'([^']+)'/", $foreignContent, $existingMatches, PREG_SET_ORDER)) {
                 foreach ($existingMatches as $match) {
@@ -1484,12 +1477,12 @@ HELP;
                     }
                 }
             }
-            
+
             // Keep trailing comma on all entries (including last one)
             $new = !empty($remainingForeign) ? "\n" . implode("\n", $remainingForeign) . "\n    " : "\n    ";
             $content = str_replace($matches[0], $matches[1] . $new . $matches[3], $content);
         }
-        
+
         return $content;
     }
 
@@ -1501,24 +1494,27 @@ HELP;
         // Find _types array
         if (preg_match('/(public const array _types = \[)(.*?)(\];)/s', $content, $matches)) {
             $typesContent = $matches[2];
-            
+
             // Replace all string literals like 'integer', 'string' with PhpType::INTEGER->value, etc.
             // Pattern: self::columnName => 'type' (with optional whitespace)
             $pattern = '/(self::\w+\s*=>\s*)\'([^\']+)\'/';
             $convertedContent = preg_replace_callback($pattern, function($matches) {
                 $before = $matches[1];
                 $typeString = $matches[2];
-                
+
+                // Normalize type first (convert 'text' to 'string', etc.)
+                $normalizedType = Generator::normalizeType($typeString);
+
                 // Format type using PhpType enum
-                $formattedType = $this->formatTypeForArray($typeString);
-                
+                $formattedType = $this->formatTypeForArray($normalizedType);
+
                 return $before . $formattedType;
             }, $typesContent);
-            
+
             // Replace the original _types content with converted version
             $content = str_replace($matches[0], $matches[1] . $convertedContent . $matches[3], $content);
         }
-        
+
         return $content;
     }
 
@@ -1532,7 +1528,7 @@ HELP;
             $typeValue = $this->formatTypeForArray($normalizedType);
 
             $escapedName = preg_quote($update['name'], '/');
-            
+
             // Match any value after => until comma or newline
             // This will match: 'string', PhpType::INTEGER->value, self::TYPE_INTEGER, etc.
             // Pattern: self::columnName => (any value until comma or newline)
@@ -1553,12 +1549,12 @@ HELP;
             $colName = $update['name'];
             $normalizedType = $this->normalizeType($update['type']);
             $propertyType = $this->phpTypeToPropertyType($normalizedType);
-            
+
             // Primary key columns should be nullable with default null
             $isPrimary = $update['is_primary'] ?? false;
             $shouldBeNullable = $isPrimary || $update['nullable'];
             $phpType = $shouldBeNullable ? "?{$propertyType}" : $propertyType;
-            
+
             // For primary keys, always set default to null
             // For other columns, use database default or null if nullable
             if ($isPrimary) {
@@ -1570,9 +1566,9 @@ HELP;
             } else {
                 $default = '';
             }
-            
+
             $escapedName = preg_quote($colName, '/');
-            
+
             // Match property declaration: public [type] $name [= value];
             // Pattern: public (nullable type or type) $name (optional = value);
             // This matches: public ?string $name = null; or public string $name; or public int $id = 0;
@@ -1584,7 +1580,7 @@ HELP;
 
         return $content;
     }
-    
+
     /**
      * Parse property from Entity file to get nullable and default values
      */
@@ -1592,23 +1588,23 @@ HELP;
     {
         $content = file_get_contents($file);
         $escapedName = preg_quote($colName, '/');
-        
+
         // Match property declaration: public [type] $name [= value];
         if (preg_match('/    public\s+(\??)([a-zA-Z_]+)\s+\$' . $escapedName . '(?:\s*=\s*([^;]+))?;/', $content, $matches)) {
             $nullable = !empty($matches[1]); // ? prefix means nullable
             $type = $matches[2];
             $default = isset($matches[3]) ? trim($matches[3]) : null;
-            
+
             return [
                 'nullable' => $nullable,
                 'type' => $type,
                 'default' => $default,
             ];
         }
-        
+
         return null;
     }
-    
+
     /**
      * Normalize default value for comparison (handles 0 vs false for boolean, etc.)
      * Removes quotes from string values for comparison
@@ -1618,14 +1614,14 @@ HELP;
         if ($default === null) {
             return null;
         }
-        
+
         $default = trim($default);
-        
+
         // Remove quotes from string values (formatDefaultValue adds quotes)
         if (preg_match("/^'(.*)'$/", $default, $matches)) {
             $default = $matches[1];
         }
-        
+
         // For boolean type, normalize 0/false and 1/true
         if ($type === PhpType::BOOLEAN->value) {
             if ($default === '0' || $default === 'false') {
@@ -1635,14 +1631,14 @@ HELP;
                 return 'true';
             }
         }
-        
+
         // For integer type, normalize numeric strings
         if ($type === PhpType::INTEGER->value) {
             if (is_numeric($default)) {
                 return (string)(int)$default;
             }
         }
-        
+
         return $default;
     }
 
@@ -1653,9 +1649,9 @@ HELP;
     {
         $isSingle = count($newPrimary) === 1;
         $primaryDef = $isSingle
-            ? "self::{$newPrimary[0]}" 
+            ? "self::{$newPrimary[0]}"
             : '[' . implode(', ', array_map(fn($col) => "self::{$col}", $newPrimary)) . ']';
-        
+
         $type = $isSingle ? 'string' : 'array';
 
         // Update _primary constant - replace any existing type (string|array, string, or array) with correct type
@@ -1692,7 +1688,7 @@ HELP;
                 $content = str_replace($matches[0], $matches[1] . $matches[5], $content);
                 return $content;
             }
-            
+
             // Rewrite entire array with all indexes from database
             // Preserve newline before comment and whitespace after
             // $matches[2] already contains "    // Indexes\n    public const array _indexes = ["
@@ -1705,10 +1701,10 @@ HELP;
             if (empty($indexEntries)) {
                 return $content;
             }
-            
+
             // Add _indexes section
             $indexesSection = "    // Indexes\n    public const array _indexes = [\n" . implode("\n", $indexEntries) . "\n    ];\n\n";
-            
+
             // Insert before properties or at end
             if (preg_match('/(\/\/ Properties)/', $content, $matches)) {
                 $content = str_replace($matches[1], $indexesSection . $matches[1], $content);
@@ -1735,14 +1731,14 @@ HELP;
         if (preg_match("/public const string _table = '([^']+)'/", $content, $tableMatch)) {
             $currentTable = $tableMatch[1];
         }
-        
+
         // Filter out self-references
         $allForeignKeys = array_merge($addForeignKeys, $updateForeignKeys);
         $allForeignKeys = array_filter($allForeignKeys, function($fk) use ($currentTable) {
             $table = $fk['table'] ?? $fk['new_table'] ?? null;
             return $table !== null && $table !== $currentTable;
         });
-        
+
         $updatedColumns = array_column($allForeignKeys, 'column');
 
         // Check if _foreign section exists
@@ -1769,7 +1765,7 @@ HELP;
                 $table = $fk['table'] ?? $fk['new_table'];
                 $finalEntries[] = "        self::{$column} => '{$table}',";
             }
-            
+
             // Remove empty _foreign array if no entries
             if (empty($finalEntries)) {
                 // Remove only the comment and declaration lines, preserve surrounding empty lines
@@ -1779,7 +1775,7 @@ HELP;
                 $content = preg_replace($pattern, '$1$2', $content);
                 return $content;
             }
-            
+
             // Keep trailing comma on all entries (including last one)
             $new = "\n" . implode("\n", $finalEntries) . "\n    ";
             $content = str_replace($matches[0], $matches[1] . $new . $matches[3], $content);
@@ -1788,7 +1784,7 @@ HELP;
             if (empty($allForeignKeys)) {
                 return $content;
             }
-            
+
             // Add _foreign section with trailing comma for all entries
             $foreignEntries = [];
             foreach ($allForeignKeys as $fk) {
@@ -1798,7 +1794,7 @@ HELP;
             }
             // Keep trailing comma on all entries (including last one)
             $foreignSection = "    // Foreign keys\n    public const array _foreign = [\n" . implode("\n", $foreignEntries) . "\n    ];\n\n";
-            
+
             // Insert after _types, before _indexes or properties
             if (preg_match('/(public const array _types = \[.*?\];\n\n)/s', $content, $matches)) {
                 $content = str_replace($matches[1], $matches[1] . $foreignSection, $content);
@@ -1856,7 +1852,7 @@ HELP;
 
             // Auto-detect namespace from directory structure
             if ($entityNamespace === null) {
-                $entityNamespace = $this->detectNamespaceFromPath($entityDir);
+                $entityNamespace = Generator::detectNamespaceFromPath($entityDir);
             }
         }
 
@@ -1866,14 +1862,14 @@ HELP;
             if ($tableName === 'migration') {
                 continue;
             }
-            
+
             try {
                 $className = $this->tableToPascalCase($tableName);
                 $filePath = $entityDir . '/' . $className . '.php';
-                
-                // Generate Entity code using Generator
-                $code = Generator::generateEntity($tableName, $entityNamespace, $className);
-                
+
+                // Generate Entity code using Generator (pass entityDir for namespace auto-detection if needed)
+                $code = Generator::generateEntity($tableName, $entityNamespace, $className, $entityDir);
+
                 // Write file
                 file_put_contents($filePath, $code);
                 $created++;
@@ -1911,75 +1907,6 @@ HELP;
     }
 
     /**
-     * Detect namespace from Entity directory path
-     */
-    private function detectNamespaceFromPath(string $entityDir): string
-    {
-        // Try to extract namespace by looking at existing Entity files
-        $files = glob($entityDir . '/*.php');
-        if ($files !== false && !empty($files)) {
-            // Read first Entity file to extract namespace
-            $content = file_get_contents($files[0]);
-            if ($content !== false && preg_match('/namespace\s+([^;]+);/', $content, $matches)) {
-                return trim($matches[1]);
-            }
-        }
-        
-        // Fallback: try to extract from path structure
-        // Look for common patterns like demo/websocket-test/backend/Database/Entity
-        $path = str_replace('\\', '/', $entityDir);
-        $parts = explode('/', $path);
-        
-        // Find "Entity" in path
-        $entityIndex = -1;
-        for ($i = count($parts) - 1; $i >= 0; $i--) {
-            if ($parts[$i] === 'Entity') {
-                $entityIndex = $i;
-                break;
-            }
-        }
-        
-        if ($entityIndex > 0) {
-            // Find "backend" or similar root directory
-            $backendIndex = -1;
-            for ($i = $entityIndex - 1; $i >= 0; $i--) {
-                if (in_array($parts[$i], ['backend', 'src', 'app'], true)) {
-                    $backendIndex = $i;
-                    break;
-                }
-            }
-            
-            if ($backendIndex >= 0) {
-                // Take parts from before backend to Entity (inclusive)
-                // Example: demo/websocket-test/backend/Database/Entity
-                // We want: Demo\WebSocketTest\Database\Entity
-                $namespaceParts = [];
-                // Add project name if exists (before backend)
-                if ($backendIndex > 0) {
-                    $projectParts = array_slice($parts, 0, $backendIndex);
-                    foreach ($projectParts as $part) {
-                        // Convert to PascalCase
-                        $namespaceParts[] = str_replace(' ', '', ucwords(str_replace(['-', '_'], ' ', $part)));
-                    }
-                }
-                // Add parts from backend to Entity
-                $pathParts = array_slice($parts, $backendIndex, $entityIndex - $backendIndex + 1);
-                foreach ($pathParts as $part) {
-                    $namespaceParts[] = str_replace(' ', '', ucwords(str_replace(['-', '_'], ' ', $part)));
-                }
-                return implode('\\', $namespaceParts);
-            } else {
-                // No backend found, use all parts up to Entity
-                $namespaceParts = array_slice($parts, 0, $entityIndex + 1);
-                return implode('\\', array_map(fn($p) => str_replace(' ', '', ucwords(str_replace(['-', '_'], ' ', $p))), $namespaceParts));
-            }
-        }
-        
-        // Fallback
-        return 'App\\Entity';
-    }
-
-    /**
      * Convert table name to PascalCase class name
      */
     private function tableToPascalCase(string $tableName): string
@@ -2004,4 +1931,3 @@ HELP;
         };
     }
 }
-

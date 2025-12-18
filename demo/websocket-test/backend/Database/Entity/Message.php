@@ -31,7 +31,7 @@ final class Message extends Entity
     public const array _types = [
         self::id => PhpType::INTEGER->value,
         self::user_id => PhpType::INTEGER->value,
-        self::message => PhpType::TEXT->value,
+        self::message => PhpType::STRING->value,
         self::timestamp => PhpType::DATETIME->value,
     ];
 

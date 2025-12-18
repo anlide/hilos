@@ -32,7 +32,7 @@ final class UserSetting extends Entity
         self::id => PhpType::INTEGER->value,
         self::user_id => PhpType::INTEGER->value,
         self::key => PhpType::STRING->value,
-        self::value => PhpType::TEXT->value,
+        self::value => PhpType::STRING->value,
     ];
 
     // Indexes

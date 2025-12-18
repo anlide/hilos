@@ -7,11 +7,11 @@ use Hilos\Database\PhpType;
 
 /**
  * User Entity
- * Direct mapping to 'user' table in database
+ * Auto-generated from table: user
  */
 final class User extends Entity
 {
-    // Column name constants (as they are in database)
+    // Column name constants
     public const string id = 'id';
     public const string password_hash = 'password_hash';
     public const string salt = 'salt';
@@ -24,7 +24,6 @@ final class User extends Entity
     // Table meta information
     public const string _table = 'user';
     public const string _primary = self::id;
-    
     public const array _columns = [
         self::id,
         self::password_hash,
@@ -47,12 +46,14 @@ final class User extends Entity
         self::block => PhpType::BOOLEAN->value,
         self::will_delete => PhpType::INTEGER->value,
     ];
+
     // Indexes
     public const array _indexes = [
         'admin' => ['columns' => [self::admin]],
         'block' => ['columns' => [self::block]],
     ];
-    // Properties (exact names as in database)
+
+    // Properties
     public ?int $id = null;
     public string $password_hash;
     public string $salt;
@@ -62,4 +63,3 @@ final class User extends Entity
     public bool $block = false;
     public ?int $will_delete = null;
 }
-

@@ -16,13 +16,22 @@ class Generator
      * @param string $tableName Database table name
      * @param string $namespace Namespace for generated class
      * @param ?string $className Class name (defaults to PascalCase of table name)
+     * @param ?string $entityDir Entity directory path for namespace auto-detection (if namespace is default)
      * @return string Generated PHP code
      * @throws DatabaseException
      */
-    public static function generateEntity(string $tableName, string $namespace = 'App\\Entity', ?string $className = null): string
+    public static function generateEntity(string $tableName, string $namespace = 'App\\Entity', ?string $className = null, ?string $entityDir = null): string
     {
         if ($className === null) {
             $className = self::tableToPascalCase($tableName);
+        }
+
+        // Auto-detect namespace from entityDir if default namespace is used
+        if ($namespace === 'App\\Entity' && $entityDir !== null) {
+            $detectedNamespace = self::detectNamespaceFromPath($entityDir);
+            if ($detectedNamespace !== 'App\\Entity') {
+                $namespace = $detectedNamespace;
+            }
         }
 
         // Get table structure
@@ -44,29 +53,31 @@ class Generator
         foreach ($columns as $column) {
             $field = $column['Field'];
             $type = self::mysqlTypeToPhp($column['Type']);
+            // Normalize type: convert 'text' to 'string' (as in DbEntityFixCommand)
+            $normalizedType = self::normalizeType($type);
             $nullable = $column['Null'] === 'YES';
             $default = $column['Default'];
             $key = $column['Key'];
 
             $columnConstants[] = "    public const string {$field} = '{$field}';";
             $columnList[] = "self::{$field}";
-            $typeValue = self::formatTypeForArray($type);
+            $typeValue = self::formatTypeForArray($normalizedType);
             $typesList[] = "        self::{$field} => {$typeValue}";
 
             // Convert type for property: integer -> int, boolean -> bool, datetime -> string
-            $propertyType = self::phpTypeToPropertyType($type);
-            
+            $propertyType = self::phpTypeToPropertyType($normalizedType);
+
             // Primary key columns should always be nullable with default null
             $isPrimary = $key === 'PRI';
             $shouldBeNullable = $isPrimary || $nullable;
             $phpType = $shouldBeNullable ? "?{$propertyType}" : $propertyType;
-            
+
             // For primary keys, always set default to null
             // For other columns, use database default or null if nullable
             if ($isPrimary) {
                 $defaultValue = ' = null';
             } elseif ($default !== null) {
-                $defaultValue = " = " . self::formatDefaultValue($default, $type);
+                $defaultValue = " = " . self::formatDefaultValue($default, $normalizedType);
             } elseif ($nullable) {
                 $defaultValue = ' = null';
             } else {
@@ -116,7 +127,7 @@ class Generator
         // Build primary key definition
         $isSinglePrimary = count($primaryKeys) === 1;
         $primaryDef = $isSinglePrimary
-            ? $primaryKeys[0] 
+            ? $primaryKeys[0]
             : '[' . implode(', ', $primaryKeys) . ']';
         $primaryType = $isSinglePrimary ? 'string' : 'array';
 
@@ -252,6 +263,29 @@ class Generator
     }
 
     /**
+     * Normalize type to PhpType enum value
+     * Converts 'text' to 'string' (as TEXT should be represented as STRING in Entity)
+     * This is a common method used both in Generator and DbEntityFixCommand
+     */
+    public static function normalizeType(string $type): string
+    {
+        // Convert 'text' to 'string' (TEXT types should use STRING in Entity, not PhpType::TEXT)
+        if ($type === PhpType::TEXT->value) {
+            return PhpType::STRING->value;
+        }
+
+        // Try to find matching PhpType enum case
+        foreach (PhpType::cases() as $phpType) {
+            if ($phpType->value === $type) {
+                return $phpType->value;
+            }
+        }
+
+        // If not found, return as-is (fallback for unknown types)
+        return $type;
+    }
+
+    /**
      * Format type for use in _types array (use PhpType enum if available, otherwise string)
      */
     private static function formatTypeForArray(string $type): string
@@ -263,7 +297,7 @@ class Generator
                 return "PhpType::{$phpType->name}->value";
             }
         }
-        
+
         // Fallback for unknown types
         return "'{$type}'";
     }
@@ -387,7 +421,7 @@ class Generator
     {
         Database::sql("SHOW CREATE TABLE `{$tableName}`");
         $row = Database::row();
-        
+
         if ($row === null) {
             throw new DatabaseException("Table {$tableName} not found");
         }
@@ -414,5 +448,146 @@ class Generator
         }
         return $tables;
     }
-}
 
+    /**
+     * Detect namespace from Entity directory path
+     * Used both for creating and updating Entity files
+     *
+     * Algorithm:
+     * 1. Try to find composer.json by going up from entityDir
+     * 2. Read autoload.psr-4 from composer.json
+     * 3. Find matching namespace prefix for the path
+     * 4. Build namespace: prefix + path remainder (converted to PascalCase)
+     * 5. Fallback to old path-based algorithm if composer.json not found
+     */
+    public static function detectNamespaceFromPath(string $entityDir): string
+    {
+        // Try to extract namespace by looking at existing Entity files
+        // But ignore wrong namespaces (starting with App\)
+        $files = glob($entityDir . '/*.php');
+        if ($files !== false && !empty($files)) {
+            $content = file_get_contents($files[0]);
+            if ($content !== false && preg_match('/namespace\s+([^;]+);/', $content, $matches)) {
+                $detectedNamespace = trim($matches[1]);
+                $detectedNamespace = ltrim($detectedNamespace, '\\');
+                // Only use detected namespace if it doesn't look like a default/wrong one
+                if (!str_starts_with($detectedNamespace, 'App\\')) {
+                    return $detectedNamespace;
+                }
+            }
+        }
+
+        // Normalize paths
+        $entityDir = str_replace('\\', '/', $entityDir);
+        $entityDir = rtrim($entityDir, '/');
+
+        // Try to find composer.json by going up from entityDir
+        $currentDir = $entityDir;
+        $composerJsonPath = null;
+
+        while ($currentDir !== '' && $currentDir !== '/') {
+            $composerJsonPath = $currentDir . '/composer.json';
+            if (file_exists($composerJsonPath)) {
+                break;
+            }
+            $parentDir = dirname($currentDir);
+            if ($parentDir === $currentDir) {
+                break; // Reached root
+            }
+            $currentDir = $parentDir;
+        }
+
+        // If composer.json found, use it to determine namespace
+        if ($composerJsonPath !== null && file_exists($composerJsonPath)) {
+            $composerContent = file_get_contents($composerJsonPath);
+            if ($composerContent !== false) {
+                $composer = json_decode($composerContent, true);
+                if (isset($composer['autoload']['psr-4']) && is_array($composer['autoload']['psr-4'])) {
+                    // Get directory where composer.json is located
+                    $composerDir = dirname($composerJsonPath);
+                    $composerDir = str_replace('\\', '/', $composerDir);
+                    $composerDir = rtrim($composerDir, '/');
+
+                    // Calculate relative path from composer.json directory to Entity directory
+                    $relativePath = str_replace($composerDir . '/', '', $entityDir);
+
+                    // Try to find matching psr-4 mapping
+                    foreach ($composer['autoload']['psr-4'] as $namespacePrefix => $pathPrefix) {
+                        $pathPrefix = rtrim(str_replace('\\', '/', $pathPrefix), '/');
+
+                        // Check if relative path starts with path prefix
+                        if (str_starts_with($relativePath, $pathPrefix . '/') || $relativePath === $pathPrefix) {
+                            // Get remainder after path prefix
+                            $remainder = substr($relativePath, strlen($pathPrefix));
+                            $remainder = ltrim($remainder, '/');
+
+                            // Convert remainder to namespace parts (PascalCase)
+                            $remainderParts = explode('/', $remainder);
+                            $namespaceParts = [];
+                            foreach ($remainderParts as $part) {
+                                if ($part !== '') {
+                                    // Convert to PascalCase: handle dashes and underscores
+                                    $namespaceParts[] = str_replace(' ', '', ucwords(str_replace(['-', '_'], ' ', $part)));
+                                }
+                            }
+
+                            // Build final namespace
+                            $namespacePrefix = rtrim($namespacePrefix, '\\');
+                            if (!empty($namespaceParts)) {
+                                return $namespacePrefix . '\\' . implode('\\', $namespaceParts);
+                            } else {
+                                return $namespacePrefix;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Fallback: try to extract from path structure (old algorithm)
+        $path = str_replace('\\', '/', $entityDir);
+        $parts = explode('/', $path);
+
+        // Find "Entity" in path
+        $entityIndex = -1;
+        for ($i = count($parts) - 1; $i >= 0; $i--) {
+            if ($parts[$i] === 'Entity') {
+                $entityIndex = $i;
+                break;
+            }
+        }
+
+        if ($entityIndex > 0) {
+            // Find "backend" or similar root directory
+            $backendIndex = -1;
+            for ($i = $entityIndex - 1; $i >= 0; $i--) {
+                if (in_array($parts[$i], ['backend', 'src', 'app'], true)) {
+                    $backendIndex = $i;
+                    break;
+                }
+            }
+
+            if ($backendIndex >= 0) {
+                // Take parts from before backend to Entity (inclusive)
+                $namespaceParts = [];
+                if ($backendIndex > 0) {
+                    $projectParts = array_slice($parts, 0, $backendIndex);
+                    foreach ($projectParts as $part) {
+                        $namespaceParts[] = str_replace(' ', '', ucwords(str_replace(['-', '_'], ' ', $part)));
+                    }
+                }
+                $pathParts = array_slice($parts, $backendIndex, $entityIndex - $backendIndex + 1);
+                foreach ($pathParts as $part) {
+                    $namespaceParts[] = str_replace(' ', '', ucwords(str_replace(['-', '_'], ' ', $part)));
+                }
+                return implode('\\', $namespaceParts);
+            } else {
+                $namespaceParts = array_slice($parts, 0, $entityIndex + 1);
+                return implode('\\', array_map(fn($p) => str_replace(' ', '', ucwords(str_replace(['-', '_'], ' ', $p))), $namespaceParts));
+            }
+        }
+
+        // Final fallback
+        return 'App\\Entity';
+    }
+}
