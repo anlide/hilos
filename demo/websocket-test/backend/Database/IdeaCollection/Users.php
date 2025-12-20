@@ -5,7 +5,7 @@ namespace Demo\WebSocketTest\Database\IdeaCollection;
 use Demo\WebSocketTest\Database\Idea\User as IdeaUser;
 use Demo\WebSocketTest\Database\Object\User as ObjectUser;
 use Hilos\Database\Idea\IdeaCollection;
-use Hilos\Database\Object\ObjectCollection;
+use Hilos\Database\Object\Objects;
 
 /**
  * Users Idea Collection
@@ -16,7 +16,7 @@ final class Users extends IdeaCollection
     /**
      * Initialize collection from objects
      */
-    public static function init(ObjectCollection &$objects): self
+    public static function init(Objects &$objects): self
     {
         return new self($objects);
     }
@@ -81,4 +81,3 @@ final class Users extends IdeaCollection
         return parent::toArray($withId, $idAsIndex, $withBridges, $withCalculation);
     }
 }
-

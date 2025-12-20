@@ -20,11 +20,25 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
 {
     public const string allowLazyLoading = 'allowLazyLoading';
 
+    /**
+     * Lazy loading strategies
+     */
+    public const int LAZY_STRATEGY_NONE = 0;           // Never lazy load, always full load
+    public const int LAZY_STRATEGY_KEY = 1;            // Lazy load by key only, never load all
+    public const int LAZY_STRATEGY_BATCH = 2;          // Lazy load by key, but load all on iteration
+    public const int LAZY_STRATEGY_FULL_ON_ACCESS = 3; // Load all on first access
+
     /** @var Object_[] */
     protected array $objects = [];
 
     /** @var bool */
     protected bool $_allowLazyLoading = false;
+
+    /** @var int Lazy loading strategy */
+    protected int $_lazyStrategy = self::LAZY_STRATEGY_NONE;
+
+    /** @var bool Whether all objects have been loaded */
+    protected bool $_allLoaded = false;
 
     /** @var int */
     protected int $index = 0;
@@ -42,9 +56,10 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
     /**
      * Initialize collection with partial database loading (lazy loading enabled)
      *
+     * @param int $strategy Lazy loading strategy (LAZY_STRATEGY_KEY, LAZY_STRATEGY_BATCH, etc.)
      * @return self
      */
-    abstract public static function initPartialDB(): self;
+    abstract public static function initPartialDB(int $strategy = self::LAZY_STRATEGY_BATCH): self;
 
     /**
      * Initialize empty collection
@@ -60,11 +75,15 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
 
     /**
      * Reload with partial database loading (lazy loading enabled)
+     *
+     * @param int $strategy Lazy loading strategy
      */
-    public function initAgainPartialDB(): void
+    public function initAgainPartialDB(int $strategy = self::LAZY_STRATEGY_BATCH): void
     {
         $this->initAgainEmpty();
         $this->_allowLazyLoading = true;
+        $this->_lazyStrategy = $strategy;
+        $this->_allLoaded = false;
     }
 
     /**
@@ -73,6 +92,41 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
     public function initAgainEmpty(): void
     {
         $this->objects = [];
+        $this->_allLoaded = false;
+    }
+
+    /**
+     * Lazy load object by key (only if allowLazyLoading is true)
+     * Must be implemented by child classes
+     *
+     * @param int|string $key Object key (usually primary key)
+     * @return Object_|null
+     */
+    abstract protected function lazyLoadObject(int|string $key): ?Object_;
+
+    /**
+     * Lazy load count from database (only if allowLazyLoading is true)
+     * Must be implemented by child classes
+     *
+     * @return int
+     */
+    abstract protected function lazyLoadCount(): int;
+
+    /**
+     * Load all objects from database (for batch strategy)
+     * Must be implemented by child classes
+     */
+    abstract protected function lazyLoadAll(): void;
+
+    /**
+     * Preload all objects (explicit full load)
+     */
+    public function preloadAll(): void
+    {
+        if (!$this->_allLoaded && $this->_allowLazyLoading) {
+            $this->lazyLoadAll();
+            $this->_allLoaded = true;
+        }
     }
 
     protected function __construct()
@@ -109,12 +163,27 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
 
     /**
      * Get current object
+     * For batch strategy, loads all objects on first iteration
      *
      * @return Object_
      */
     public function current(): Object_
     {
-        return $this->objects[array_keys($this->objects)[$this->index]];
+        // For batch strategy, load all on first iteration
+        if ($this->_allowLazyLoading &&
+            $this->_lazyStrategy === self::LAZY_STRATEGY_BATCH &&
+            !$this->_allLoaded) {
+            $this->lazyLoadAll();
+            $this->_allLoaded = true;
+        }
+
+        $keys = array_keys($this->objects);
+        if (!isset($keys[$this->index])) {
+            // This shouldn't happen if valid() is checked, but handle gracefully
+            throw new \RuntimeException("Invalid iterator position");
+        }
+
+        return $this->objects[$keys[$this->index]];
     }
 
     /**
@@ -137,10 +206,23 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
 
     /**
      * Check if current position is valid
+     * For KEY strategy, we need to check if we can load more
      */
     public function valid(): bool
     {
-        return isset(array_keys($this->objects)[$this->index]);
+        $keys = array_keys($this->objects);
+
+        if (isset($keys[$this->index])) {
+            return true;
+        }
+
+        // For KEY strategy, we can't iterate over all (would require loading all)
+        // So iteration is only valid for already loaded objects
+        if ($this->_allowLazyLoading && $this->_lazyStrategy === self::LAZY_STRATEGY_KEY) {
+            return false; // Can't iterate over all in KEY strategy
+        }
+
+        return false;
     }
 
     /**
@@ -190,20 +272,55 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
 
     /**
      * Get object at offset
+     * Supports lazy loading if enabled
      *
      * @param mixed $offset
      * @return Object_|null
      */
     public function offsetGet($offset): ?Object_
     {
-        return $this->objects[$offset] ?? null;
+        if (isset($this->objects[$offset])) {
+            return $this->objects[$offset];
+        }
+
+        // Lazy load if enabled and strategy allows
+        if ($this->_allowLazyLoading && !$this->_allLoaded) {
+            if ($this->_lazyStrategy === self::LAZY_STRATEGY_KEY ||
+                $this->_lazyStrategy === self::LAZY_STRATEGY_BATCH) {
+                $object = $this->lazyLoadObject($offset);
+                if ($object !== null) {
+                    $this->objects[$offset] = $object;
+                }
+                return $object;
+            } elseif ($this->_lazyStrategy === self::LAZY_STRATEGY_FULL_ON_ACCESS) {
+                $this->lazyLoadAll();
+                $this->_allLoaded = true;
+                return $this->objects[$offset] ?? null;
+            }
+        }
+
+        return null;
     }
 
     /**
      * Get count of objects
+     * Supports lazy loading count from database
      */
     public function count(): int
     {
+        if ($this->_allowLazyLoading && !$this->_allLoaded) {
+            // For KEY strategy, we need to query DB for count
+            if ($this->_lazyStrategy === self::LAZY_STRATEGY_KEY) {
+                return $this->lazyLoadCount();
+            }
+            // For other strategies, if we haven't loaded all, get count from DB
+            // But if we have some loaded, we might want to load all first
+            if ($this->_lazyStrategy === self::LAZY_STRATEGY_BATCH) {
+                // Could return DB count or load all - let's return DB count for efficiency
+                return $this->lazyLoadCount();
+            }
+        }
+
         return count($this->objects);
     }
 
@@ -234,4 +351,3 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
         }, $this->objects);
     }
 }
-

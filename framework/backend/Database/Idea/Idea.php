@@ -2,90 +2,132 @@
 
 namespace Hilos\Database\Idea;
 
+use Hilos\Database\Object\Objects;
+use Hilos\Exception\DatabaseException;
+
 /**
- * Base Idea class
- * Provides lazy loading and high-level abstraction over Object layer
- * Manages relationships between different entities
- * 
- * Child classes should:
- * - Hold reference to Object_ instance
- * - Implement lazy loading of related entities
- * - Cache loaded relationships
- * - Provide read-only access to data
+ * Idea - Static access point for read-only data access
+ *
+ * Provides global access to Idea collections through IdeaStorage
+ * All data access is read-only through Idea objects
+ *
+ * Usage:
+ *   Idea::init(true); // Initialize with IdeaStorage
+ *   $user = Idea::$idea->users[123]; // Get User idea
+ *   $users = Idea::$idea->users; // Get Users collection
  */
-abstract class Idea
+class Idea
 {
+    /** @var self|null Singleton instance */
+    public static ?self $idea = null;
+
+    /** @var IdeaStorage|null Storage instance */
+    public static ?IdeaStorage $storage = null;
+
     /**
-     * Cache for related data
-     * 
-     * @var array<string, mixed>
+     * Object collections (references to Objects instances)
+     * These are set by setRepresent*() methods
+     *
+     * @var array<string, Objects>
      */
-    protected array $relatedCache = [];
+    private array $_objectCollections = [];
 
-    protected function __clone()
-    {
-    }
+    /**
+     * Idea collections (wrappers around Object collections)
+     * These are created automatically from Object collections
+     *
+     * @var array<string, IdeaCollection>
+     */
+    private array $_ideaCollections = [];
 
+    /**
+     * Private constructor - use init() instead
+     */
     protected function __construct()
     {
     }
 
     /**
-     * Flush global cache for this Idea type
-     * Should be implemented by child classes
+     * Private clone - prevent cloning
      */
-    abstract public static function flushCache(): void;
-
-    /**
-     * Debug info
-     */
-    public function __debugInfo(): array
+    private function __clone()
     {
-        return $this->toArray();
     }
 
     /**
-     * Convert to array
-     * 
-     * @param bool $withId Include ID fields
-     * @param bool $idAsIndex Use ID as array index (used in collections)
-     * @param bool $withBridges Include bridge/junction table data
-     * @param bool $withCalculation Include calculated/computed fields
+     * Initialize Idea with storage
+     *
+     * @param bool $withStorage If true, initialize IdeaStorage
+     * @throws DatabaseException
      */
-    public function toArray(bool $withId = true, bool $idAsIndex = true, bool $withBridges = false, bool $withCalculation = false): array
+    public static function init(bool $withStorage = false): void
     {
-        return [];
+        if (self::$idea === null) {
+            self::$idea = new self();
+        }
+
+        if ($withStorage && self::$storage === null) {
+            // IdeaStorage should be created in application code
+            // This is a placeholder - child classes should override
+            throw new DatabaseException("IdeaStorage must be initialized in application code");
+        }
     }
 
     /**
-     * Clear related data cache for this instance
+     * Set IdeaStorage instance
+     *
+     * @param IdeaStorage $storage
      */
-    protected function clearRelatedCache(): void
+    public static function setStorage(IdeaStorage $storage): void
     {
-        $this->relatedCache = [];
+        self::$storage = $storage;
     }
 
     /**
-     * Get cached related data
+     * Set representation for Object collection
+     * Creates corresponding Idea collection automatically
+     *
+     * @param string $name Collection name (e.g., 'users')
+     * @param Objects $objectCollection Object collection instance
+     * @param string $ideaCollectionClass Idea collection class name
      */
-    protected function getCachedRelated(string $key): mixed
+    public function setRepresent(string $name, Objects &$objectCollection, string $ideaCollectionClass): void
     {
-        return $this->relatedCache[$key] ?? null;
+        $this->_objectCollections[$name] = &$objectCollection;
+
+        // Create Idea collection from Object collection
+        if (is_subclass_of($ideaCollectionClass, IdeaCollection::class)) {
+            $this->_ideaCollections[$name] = $ideaCollectionClass::init($objectCollection);
+        }
     }
 
     /**
-     * Set cached related data
+     * Get Idea collection by name
+     *
+     * @param string $name Collection name
+     * @return IdeaCollection
+     * @throws DatabaseException
      */
-    protected function setCachedRelated(string $key, mixed $value): void
+    public function __get(string $name)
     {
-        $this->relatedCache[$key] = $value;
+        if (!isset($this->_ideaCollections[$name])) {
+            throw new DatabaseException("Idea collection [{$name}] does not exist");
+        }
+
+        return $this->_ideaCollections[$name];
     }
 
     /**
-     * Check if related data is cached
+     * Convert all collections to array
+     *
+     * @return array<string, array>
      */
-    protected function hasRelatedCache(string $key): bool
+    public function toArray(): array
     {
-        return array_key_exists($key, $this->relatedCache);
+        $result = [];
+        foreach ($this->_ideaCollections as $name => $collection) {
+            $result[$name] = $collection->toArray();
+        }
+        return $result;
     }
 }

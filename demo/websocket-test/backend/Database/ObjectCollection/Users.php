@@ -4,8 +4,10 @@ namespace Demo\WebSocketTest\Database\ObjectCollection;
 
 use ArrayAccess;
 use Countable;
+use Demo\WebSocketTest\Database\Entity\User as EntityUser;
 use Demo\WebSocketTest\Database\EntityCollection\Users as EntityUsers;
 use Demo\WebSocketTest\Database\Object\User as ObjectUser;
+use Hilos\Database\Database;
 use Hilos\Database\Object\Objects;
 use Hilos\Exception\DatabaseException;
 use Iterator;
@@ -55,12 +57,15 @@ final class Users extends Objects implements Iterator, ArrayAccess, Countable
     /**
      * Initialize collection with partial database loading (lazy loading enabled)
      *
+     * @param int $strategy Lazy loading strategy (LAZY_STRATEGY_KEY by default - never load all)
      * @return self
      */
-    public static function initPartialDB(): self
+    public static function initPartialDB(int $strategy = self::LAZY_STRATEGY_KEY): self
     {
         $self = new self();
         $self->_allowLazyLoading = true;
+        $self->_lazyStrategy = $strategy;
+        $self->_allLoaded = false;
         return $self;
     }
 
@@ -112,5 +117,58 @@ final class Users extends Objects implements Iterator, ArrayAccess, Countable
     public function offsetGet($offset): ?ObjectUser
     {
         return parent::offsetGet($offset);
+    }
+
+    /**
+     * Lazy load User object by key
+     *
+     * @param int|string $key User ID
+     * @return ObjectUser|null
+     * @throws DatabaseException
+     */
+    protected function lazyLoadObject(int|string $key): ?ObjectUser
+    {
+        $entity = EntityUser::getById((int)$key);
+        return $entity !== null ? ObjectUser::fromEntity($entity) : null;
+    }
+
+    /**
+     * Lazy load count of users from database
+     *
+     * @return int
+     * @throws DatabaseException
+     */
+    protected function lazyLoadCount(): int
+    {
+        // Use Entity to get count
+        $resultSetCollection = Database::sql(
+            "SELECT COUNT(*) as count FROM `" . EntityUser::_table . "`"
+        );
+        $firstResultSet = $resultSetCollection->first();
+
+        if ($firstResultSet === null) {
+            return 0;
+        }
+
+        $row = $firstResultSet->first();
+        return $row !== null ? (int)($row['count'] ?? 0) : 0;
+    }
+
+    /**
+     * Lazy load all users from database (for batch strategy)
+     *
+     * @throws DatabaseException
+     */
+    protected function lazyLoadAll(): void
+    {
+        $entityUsers = EntityUsers::initFullDB();
+
+        foreach ($entityUsers as $key => $entityUser) {
+            if (!isset($this->objects[$key])) {
+                $this->objects[$key] = ObjectUser::fromEntity($entityUser);
+            }
+        }
+
+        $this->_allLoaded = true;
     }
 }
