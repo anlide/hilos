@@ -11,7 +11,7 @@ use Hilos\Exception\DatabaseException;
 /**
  * Base Entity class
  * Represents a row in a database table
- * 
+ *
  * Child classes must define:
  * - const string _table - table name
  * - const string|array _primary - primary key column(s)
@@ -19,7 +19,7 @@ use Hilos\Exception\DatabaseException;
  * - const array _types - column types mapping
  * - const array _foreign - foreign key relationships (optional)
  * - const array _indexes - index definitions (optional)
- * 
+ *
  * @property bool $_related
  */
 abstract class Entity
@@ -287,18 +287,15 @@ abstract class Entity
 
         $sql = "SELECT * FROM `{$table}`{$whereClause}{$orderByClause}";
 
-        Database::sql($sql, $params);
+        $resultSetCollection = Database::sql($sql, $params);
+        $firstResultSet = $resultSetCollection->first();
 
-        $collection = EntityCollection::empty();
-        $primaryKey = is_array($class::_primary) ? $class::_primary[0] : $class::_primary;
-
-        while ($row = Database::row()) {
-            $entity = new $class();
-            $entity->setRelatedData($row);
-            $collection->add($entity, $row[$primaryKey] ?? null);
+        if ($firstResultSet === null) {
+            return EntityCollection::empty();
         }
 
-        return $collection;
+        $primaryKey = is_array($class::_primary) ? $class::_primary[0] : $class::_primary;
+        return $firstResultSet->toEntityCollection($class, $primaryKey);
     }
 
     /**
@@ -339,6 +336,19 @@ abstract class Entity
     }
 
     /**
+     * Create entity from database row array
+     *
+     * @param array<string, mixed> $row Database row data
+     * @return static
+     */
+    public static function fromRow(array $row): static
+    {
+        $entity = new static();
+        $entity->setRelatedData($row);
+        return $entity;
+    }
+
+    /**
      * Magic getter for accessing properties
      * @throws DatabaseException
      */
@@ -370,7 +380,7 @@ abstract class Entity
     /**
      * Create SqlParam from PHP value and PHP type
      * Converts PHP value to SqlParam for database operations
-     * 
+     *
      * @param mixed $value PHP value
      * @param string $type PHP type (from _types array: 'integer', 'string', 'boolean', etc.)
      * @return SqlParam Parameter ready for database query
@@ -392,7 +402,7 @@ abstract class Entity
     /**
      * Cast database value to PHP type
      * Converts value from database to appropriate PHP type
-     * 
+     *
      * @param mixed $value Value from database
      * @param string $type PHP type (from _types array: 'integer', 'string', 'boolean', etc.)
      * @return mixed Value cast to PHP type

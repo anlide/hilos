@@ -25,6 +25,8 @@ use Hilos\Exception\Database\SqlRuntime\QueryExecutionTimeoutException;
 use Hilos\Exception\Database\SqlRuntime\SyntaxErrorException;
 use Hilos\Exception\Database\SqlRuntime\TableNotFoundException;
 use Hilos\Exception\Database\DatabaseParamsException;
+use Hilos\Database\ResultSet\ResultSet;
+use Hilos\Database\ResultSet\ResultSetCollection;
 use Hilos\Exception\DatabaseException;
 use mysqli;
 use mysqli_result;
@@ -54,13 +56,25 @@ class Database
     private static array $results = [];
 
     /**
+     * Get current result set (for ResultSetCollection)
+     *
+     * @param ?int $index Connection index
+     * @return ?mysqli_result
+     */
+    public static function getCurrentResult(?int $index = null): ?mysqli_result
+    {
+        $index = $index ?? self::$currentIndex;
+        return self::$results[$index] ?? null;
+    }
+
+    /**
      * Initialize database connections and schema
-     * 
+     *
      * This method should be overridden in child classes to:
      * 1. Configure database connections using self::configure()
      * 2. Connect to databases using self::connect()
      * 3. Initialize database schema structure using Schema::initialize()
-     * 
+     *
      * Example implementation:
      * ```php
      * public static function initialize(): void
@@ -78,7 +92,7 @@ class Database
 
     /**
      * Configure a database connection (doesn't connect yet)
-     * 
+     *
      * @param int $index Connection index (0 by default for primary)
      * @param string $host Database host
      * @param string $user Database user
@@ -119,7 +133,7 @@ class Database
 
     /**
      * Set current connection index
-     * 
+     *
      * @param int $index Connection index
      * @throws DatabaseException If connection not configured
      */
@@ -141,7 +155,7 @@ class Database
 
     /**
      * Connect to database using configured settings
-     * 
+     *
      * @param int|null $index Connection index (uses current if null)
      * @throws DatabaseConnectionException On connection failure
      */
@@ -185,7 +199,7 @@ class Database
 
     /**
      * Close database connection
-     * 
+     *
      * @param ?int $index Connection index (uses current if null)
      */
     public static function close(?int $index = null): void
@@ -205,7 +219,7 @@ class Database
 
     /**
      * Get active mysqli connection
-     * 
+     *
      * @param ?int $index Connection index
      * @throws DatabaseConnectionException If not connected
      */
@@ -235,9 +249,10 @@ class Database
      * @param string $sql SQL query with ? placeholders
      * @param array|SqlParamCollection|null $params Query parameters
      * @param bool $tryReconnect Try to reconnect on connection loss
+     * @return ResultSetCollection Collection of result sets (even for single result set)
      * @throws DatabaseException On query failure
      */
-    public static function sql(string $sql, array|SqlParamCollection|null $params = null, bool $tryReconnect = true): void
+    public static function sql(string $sql, array|SqlParamCollection|null $params = null, bool $tryReconnect = true): ResultSetCollection
     {
         $index = self::$currentIndex;
         $mysqli = self::getConnection($index);
@@ -279,11 +294,11 @@ class Database
                         // Timeout exceeded, throw error
                         self::throwRuntimeException($errno, $error, $sql);
                     }
-                    
+
                     // Sleep using sleep() for seconds (minimum 1 second)
                     $delaySeconds = (int)ceil($delayMs / 1000);
                     sleep($delaySeconds);
-                    
+
                     self::close($index);
                     try {
                         self::connect($index);
@@ -304,11 +319,32 @@ class Database
         // (or null if no result set, e.g. for INSERT/UPDATE/DELETE)
         $result = @mysqli_store_result($mysqli);
         self::$results[$index] = $result !== false ? $result : null;
+
+        // Collect all result sets into ResultSetCollection
+        $collection = ResultSetCollection::empty();
+
+        // Add first result set
+        if (self::$results[$index] !== null) {
+            $collection->add(ResultSet::fromMysqliResult(self::$results[$index]));
+        }
+
+        // Collect remaining result sets from multi-query
+        while (@mysqli_next_result($mysqli)) {
+            $nextResult = @mysqli_store_result($mysqli);
+            if ($nextResult !== false && $nextResult !== null) {
+                self::$results[$index] = $nextResult;
+                $collection->add(ResultSet::fromMysqliResult($nextResult));
+            } else {
+                self::$results[$index] = null;
+            }
+        }
+
+        return $collection;
     }
 
     /**
      * Execute SQL with timeout
-     * 
+     *
      * @param string $sql SQL query
      * @param array|SqlParamCollection|null $params Query parameters
      * @param int $timeout Timeout in seconds
@@ -366,48 +402,42 @@ class Database
     /**
      * Get all rows from current result set
      * Note: This loads all rows into memory. For large datasets, use row() in a loop instead.
-     * 
+     *
      * @return array Array of associative arrays
      */
     public static function rows(): array
     {
-        $index = self::$currentIndex;
-        $result = self::$results[$index] ?? null;
+        $resultSetCollection = ResultSetCollection::fromDatabase();
+        $firstResultSet = $resultSetCollection->first();
 
-        if (!($result instanceof mysqli_result)) {
+        if ($firstResultSet === null) {
             return [];
         }
 
-        $rows = [];
-        while ($row = mysqli_fetch_assoc($result)) {
-            $rows[] = $row;
-        }
-
-        return $rows;
+        return $firstResultSet->rows();
     }
 
     /**
      * Get single row from current result set
      * Advances the internal pointer, so each call returns the next row
-     * 
+     *
      * @return array|null Associative array or null if no more rows
      */
     public static function row(): ?array
     {
-        $index = self::$currentIndex;
-        $result = self::$results[$index] ?? null;
+        $resultSetCollection = ResultSetCollection::fromDatabase();
+        $firstResultSet = $resultSetCollection->first();
 
-        if (!($result instanceof mysqli_result)) {
+        if ($firstResultSet === null) {
             return null;
         }
 
-        $row = mysqli_fetch_assoc($result);
-        return $row !== null ? $row : null;
+        return $firstResultSet->row();
     }
 
     /**
      * Get single field value from current result set
-     * 
+     *
      * @param string $fieldName Field name
      * @return mixed Field value or null
      */
@@ -422,14 +452,14 @@ class Database
      */
     public static function count(): int
     {
-        $index = self::$currentIndex;
-        $result = self::$results[$index] ?? null;
+        $resultSetCollection = ResultSetCollection::fromDatabase();
+        $firstResultSet = $resultSetCollection->first();
 
-        if (!($result instanceof mysqli_result)) {
+        if ($firstResultSet === null) {
             return 0;
         }
 
-        return mysqli_num_rows($result);
+        return $firstResultSet->count();
     }
 
     /**
@@ -579,7 +609,7 @@ class Database
 
     /**
      * Throw appropriate connection exception based on error code
-     * 
+     *
      * @throws DatabaseConnectionException
      */
     private static function throwConnectionException(int $errno, string $error): never
@@ -602,7 +632,7 @@ class Database
 
     /**
      * Throw appropriate runtime exception based on error code
-     * 
+     *
      * @throws DatabaseRuntimeException
      */
     private static function throwRuntimeException(int $errno, string $error, string $query): never
