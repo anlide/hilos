@@ -41,4 +41,7 @@ class CliCommands
 
     /** @var string Command: Fix Entity files to match database schema */
     public const string DB_ENTITY_FIX = 'db:entity:fix';
+
+    /** @var string Command: Fix Object files to match Entity files */
+    public const string DB_OBJECT_FIX = 'db:object:fix';
 }

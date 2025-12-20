@@ -96,6 +96,7 @@ HELP;
                 CliCommands::DB_SCHEMA_STATUS,
                 CliCommands::DB_ENTITY_DIFF,
                 CliCommands::DB_ENTITY_FIX,
+                CliCommands::DB_OBJECT_FIX,
             ],
             'Help' => [
                 CliCommands::HELP,

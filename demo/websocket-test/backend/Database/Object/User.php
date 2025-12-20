@@ -7,14 +7,13 @@ use Hilos\Database\Object\Object_;
 
 /**
  * User Object
+ * Auto-generated from Entity: Demo\WebSocketTest\Database\Entity\User
+ *
  * Business logic layer with change tracking
- * 
- * @property-read int $idUser
- * @property-read string $email
+ *
+ * @property-read ?int $id
  * @property string $name
  * @property ?string $theme
- * @property ?int $idLanguage
- * @property ?int $idLocale
  * @property bool $admin
  * @property bool $block
  * @property ?int $willDelete
@@ -22,12 +21,9 @@ use Hilos\Database\Object\Object_;
 final class User extends Object_
 {
     // Property name constants (camelCase for PHP)
-    public const string idUser = 'idUser';
-    public const string email = 'email';
+    public const string id = 'id';
     public const string name = 'name';
     public const string theme = 'theme';
-    public const string idLanguage = 'idLanguage';
-    public const string idLocale = 'idLocale';
     public const string admin = 'admin';
     public const string block = 'block';
     public const string willDelete = 'willDelete';
@@ -146,12 +142,9 @@ final class User extends Object_
     public function __get(string $property): mixed
     {
         return match ($property) {
-            self::idUser => $this->entity->id_user,
-            self::email => $this->entity->email,
+            self::id => $this->entity->id,
             self::name => $this->entity->name,
             self::theme => $this->entity->theme,
-            self::idLanguage => $this->entity->id_language,
-            self::idLocale => $this->entity->id_locale,
             self::admin => $this->entity->admin,
             self::block => $this->entity->block,
             self::willDelete => $this->entity->will_delete,
@@ -165,11 +158,8 @@ final class User extends Object_
     public function __set(string $property, mixed $value): void
     {
         match ($property) {
-            self::email => $this->entity->email = (string)$value,
             self::name => $this->entity->name = (string)$value,
             self::theme => $this->entity->theme = is_scalar($value) ? (string)$value : null,
-            self::idLanguage => $this->entity->id_language = is_numeric($value) ? (int)$value : null,
-            self::idLocale => $this->entity->id_locale = is_numeric($value) ? (int)$value : null,
             self::admin => $this->entity->admin = (bool)$value,
             self::block => $this->entity->block = (bool)$value,
             self::willDelete => $this->entity->will_delete = is_numeric($value) ? (int)$value : null,
@@ -183,12 +173,9 @@ final class User extends Object_
     public function toArray(): array
     {
         return [
-            self::idUser => $this->entity->id_user,
-            self::email => $this->entity->email,
+            self::id => $this->entity->id,
             self::name => $this->entity->name,
             self::theme => $this->entity->theme,
-            self::idLanguage => $this->entity->id_language,
-            self::idLocale => $this->entity->id_locale,
             self::admin => $this->entity->admin,
             self::block => $this->entity->block,
             self::willDelete => $this->entity->will_delete,

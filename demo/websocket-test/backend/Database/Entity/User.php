@@ -8,6 +8,8 @@ use Hilos\Database\PhpType;
 /**
  * User Entity
  * Auto-generated from table: user
+ * 
+ * @object-exclude password_hash, salt
  */
 final class User extends Entity
 {
@@ -55,7 +57,9 @@ final class User extends Entity
 
     // Properties
     public ?int $id = null;
+    // @object-exclude
     public string $password_hash;
+    // @object-exclude
     public string $salt;
     public string $name;
     public ?string $theme = null;

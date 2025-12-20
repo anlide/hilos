@@ -50,6 +50,8 @@
         "db:entity:diff": "docker-compose -f docker/docker-compose.local.yml run --rm websocket-test-cli-local php backend/Bootstrap/cli.php db:entity:diff",
         "db:entity:fix": "docker-compose -f docker/docker-compose.local.yml run --rm websocket-test-cli-local php backend/Bootstrap/cli.php db:entity:fix",
         "db:entity:fix-dry-run": "docker-compose -f docker/docker-compose.local.yml run --rm websocket-test-cli-local php backend/Bootstrap/cli.php db:entity:fix --dry-run",
+        "db:object:fix": "docker-compose -f docker/docker-compose.local.yml run --rm websocket-test-cli-local php backend/Bootstrap/cli.php db:object:fix",
+        "db:object:fix-dry-run": "docker-compose -f docker/docker-compose.local.yml run --rm websocket-test-cli-local php backend/Bootstrap/cli.php db:object:fix --dry-run",
         "pma": "docker-compose -f docker/docker-compose.local.yml up -d phpmyadmin-local && echo phpMyAdmin is running at http://localhost:8080",
         "pma-stop": "docker-compose -f docker/docker-compose.local.yml stop phpmyadmin-local",
         "frontend-install": "docker-compose -f docker/docker-compose.local.yml run --rm websocket-test-frontend-local npm install",
