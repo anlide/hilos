@@ -87,12 +87,14 @@ class ChatWebSocketClient extends WebSocketClient
      * @param string $acceptKey Sec-WebSocket-Accept value (can be used as connection identifier)
      * @param array $cookies Parsed cookies
      * @param string $clientIp Client IP address
+     * @param array $queryParams Query parameters (GET parameters) from request URL
      */
     protected function onHandshake(
         array $headers,
         string $acceptKey,
         array $cookies,
         string $clientIp,
+        array $queryParams,
     ): void
     {
         $this->clientId = $acceptKey;
@@ -103,6 +105,7 @@ class ChatWebSocketClient extends WebSocketClient
             acceptKey: $acceptKey,
             cookies: $cookies,
             clientIp: $clientIp,
+            queryParams: $queryParams,
         );
 
         $this->signalRouter->queueSignal(

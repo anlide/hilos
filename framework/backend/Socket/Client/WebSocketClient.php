@@ -222,6 +222,10 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
         $request = substr($this->readBuffer, 0, $delimiterPos + $delimiterLen);
         $this->readBuffer = substr($this->readBuffer, strlen($request));
 
+        // Parse request line to extract path and query parameters
+        $requestLine = $this->parseRequestLine($request);
+        $queryParams = $this->parseQueryParams($requestLine['path'] ?? '');
+
         // Parse headers
         $headers = $this->parseHeaders($request);
 
@@ -255,6 +259,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
             $acceptKey,
             $this->parseCookies($headers),
             $this->getClientIp(),
+            $queryParams,
         );
 
         // Send handshake response
@@ -266,6 +271,46 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
 
         $this->writeBuffer .= $response;
         $this->handshakeCompleted = true;
+    }
+
+    /**
+     * Parse request line (first line of HTTP request)
+     *
+     * @param string $request HTTP request
+     * @return array ['method' => string, 'path' => string, 'version' => string]
+     */
+    private function parseRequestLine(string $request): array
+    {
+        $lines = explode(HttpConstants::HTTP_LINE_SEPARATOR, $request);
+        $firstLine = $lines[0] ?? '';
+
+        // Parse: GET /path?query=params HTTP/1.1
+        $parts = explode(' ', $firstLine);
+
+        return [
+            'method' => $parts[0] ?? 'GET',
+            'path' => $parts[1] ?? '/',
+            'version' => $parts[2] ?? 'HTTP/1.1',
+        ];
+    }
+
+    /**
+     * Parse query parameters from path
+     *
+     * @param string $path Path with optional query string (e.g., "/path?key=value&key2=value2")
+     * @return array Query parameters as key-value pairs
+     */
+    private function parseQueryParams(string $path): array
+    {
+        $queryParams = [];
+        $queryPos = strpos($path, '?');
+        
+        if ($queryPos !== false) {
+            $queryString = substr($path, $queryPos + 1);
+            parse_str($queryString, $queryParams);
+        }
+
+        return $queryParams;
     }
 
     /**
@@ -464,12 +509,14 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
      * @param string $acceptKey Sec-WebSocket-Accept value (computed from key, can be used as connection identifier)
      * @param array $cookies Parsed cookies from Cookie header (key-value pairs)
      * @param string $clientIp Client IP address (IPv4 or IPv6, empty if unavailable)
+     * @param array $queryParams Query parameters (GET parameters) from request URL
      */
     abstract protected function onHandshake(
         array $headers,
         string $acceptKey,
         array $cookies,
         string $clientIp,
+        array $queryParams,
     ): void;
 
     /**

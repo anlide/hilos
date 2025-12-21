@@ -4,6 +4,8 @@
 export interface WebSocketOptions {
   /** WebSocket server URL (protocol://host:port) */
   url: string
+  /** Query parameters (GET parameters) to add to WebSocket URL */
+  queryParams?: Record<string, string>
   /** Auto-connect on plugin installation */
   autoConnect?: boolean
   /** Reconnection delay in milliseconds */

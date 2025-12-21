@@ -11,7 +11,6 @@ export const useChatStore = defineStore('chat', {
     connecting: false,
     error: null as string | null,
     // Demo-specific state
-    username: localStorage.getItem('chat_username') || 'User',
     messages: [] as ChatEvent[],
     reconnectAttempts: 0,
     maxReconnectAttempts: Infinity,
@@ -50,10 +49,6 @@ export const useChatStore = defineStore('chat', {
     },
     
     // Demo-specific actions
-    setUsername(username: string) {
-      this.username = username
-      localStorage.setItem('chat_username', username)
-    },
     
     addMessage(message: ChatEvent) {
       this.messages.push(message)

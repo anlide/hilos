@@ -9,15 +9,28 @@ export class WebSocketService {
   private reconnectTimer: number | null = null
   private pingTimer: number | null = null
   private isReconnecting = false
-  private options: Required<Omit<WebSocketOptions, 'url' | 'onOpen' | 'onClose' | 'onError' | 'onMessage'>> & Pick<WebSocketOptions, 'url' | 'onOpen' | 'onClose' | 'onError' | 'onMessage'>
+  private options: Required<Omit<WebSocketOptions, 'url' | 'queryParams' | 'onOpen' | 'onClose' | 'onError' | 'onMessage'>> & Pick<WebSocketOptions, 'url' | 'queryParams' | 'onOpen' | 'onClose' | 'onError' | 'onMessage'>
   
   private readonly defaultReconnectDelay = 3000 // 3 seconds
   private readonly defaultPingInterval = 40000 // 40 seconds
   private readonly defaultPingMessage = 'ping'
 
   constructor(options: WebSocketOptions) {
+    // Build URL with query parameters
+    let url = options.url
+    if (options.queryParams) {
+      const queryParams = new URLSearchParams()
+      for (const [key, value] of Object.entries(options.queryParams)) {
+        queryParams.append(key, value)
+      }
+      const queryString = queryParams.toString()
+      if (queryString) {
+        url += (url.includes('?') ? '&' : '?') + queryString
+      }
+    }
+    
     this.options = {
-      url: options.url,
+      url: url,
       autoConnect: options.autoConnect ?? true,
       reconnectDelay: options.reconnectDelay ?? this.defaultReconnectDelay,
       pingInterval: options.pingInterval ?? this.defaultPingInterval,

@@ -3,7 +3,7 @@
     <div class="card-body d-flex justify-content-between align-items-center">
       <div>
         <small class="text-muted d-block">Your Name</small>
-        <strong>{{ chatStore.username }}</strong>
+        <strong>User</strong>
       </div>
       <button
         type="button"
@@ -68,7 +68,7 @@ import { Modal } from '@hilos/sdk/components'
 
 const chatStore = useChatStore()
 const showModal = ref(false)
-const localUsername = ref(chatStore.username)
+const localUsername = ref('User')
 
 const isValidUsername = computed(() => {
   const trimmed = localUsername.value.trim()
@@ -77,14 +77,13 @@ const isValidUsername = computed(() => {
 
 const handleSubmit = () => {
   if (isValidUsername.value) {
-    chatStore.setUsername(localUsername.value.trim())
-    showModal.value = false
     // TODO: Send username change to server via WebSocket
+    showModal.value = false
   }
 }
 
 const resetForm = () => {
-  localUsername.value = chatStore.username
+  localUsername.value = 'User'
   showModal.value = false
 }
 </script>

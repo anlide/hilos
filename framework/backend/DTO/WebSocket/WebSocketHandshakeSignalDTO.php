@@ -21,6 +21,7 @@ class WebSocketHandshakeSignalDTO extends BaseDTO implements SignalDataDTO, Sign
     public const string ACCEPT_KEY = 'acceptKey';
     public const string COOKIES = 'cookies';
     public const string CLIENT_IP = 'clientIp';
+    public const string QUERY_PARAMS = 'queryParams';
 
     public function __construct(
         public readonly string $clientId,
@@ -28,6 +29,7 @@ class WebSocketHandshakeSignalDTO extends BaseDTO implements SignalDataDTO, Sign
         public readonly string $acceptKey,
         public readonly array $cookies,
         public readonly string $clientIp,
+        public readonly array $queryParams = [],
     ) {
     }
 
@@ -44,6 +46,7 @@ class WebSocketHandshakeSignalDTO extends BaseDTO implements SignalDataDTO, Sign
             self::ACCEPT_KEY => $this->acceptKey,
             self::COOKIES => $this->cookies,
             self::CLIENT_IP => $this->clientIp,
+            self::QUERY_PARAMS => $this->queryParams,
         ];
     }
 
@@ -61,6 +64,7 @@ class WebSocketHandshakeSignalDTO extends BaseDTO implements SignalDataDTO, Sign
             acceptKey: $data[self::ACCEPT_KEY] ?? '',
             cookies: $data[self::COOKIES] ?? [],
             clientIp: $data[self::CLIENT_IP] ?? '',
+            queryParams: $data[self::QUERY_PARAMS] ?? [],
         );
     }
 }

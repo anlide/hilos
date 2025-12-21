@@ -102,7 +102,7 @@ const chatStore = useChatStore()
 const messagesContainer = ref<HTMLElement | null>(null)
 const message = ref('')
 const showModal = ref(false)
-const localUsername = ref(chatStore.username)
+const localUsername = ref('User')
 
 const emit = defineEmits<{
   send: [message: string]
@@ -130,14 +130,13 @@ const handleSubmit = () => {
 
 const handleSubmitUsername = () => {
   if (isValidUsername.value) {
-    chatStore.setUsername(localUsername.value.trim())
-    showModal.value = false
     // TODO: Send username change to server via WebSocket
+    showModal.value = false
   }
 }
 
 const resetForm = () => {
-  localUsername.value = chatStore.username
+  localUsername.value = 'User'
   showModal.value = false
 }
 

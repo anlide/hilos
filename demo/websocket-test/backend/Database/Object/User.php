@@ -27,6 +27,8 @@ final class User extends Object_
     public const string admin = 'admin';
     public const string block = 'block';
     public const string willDelete = 'willDelete';
+    public const string sessionToken = 'sessionToken';
+    public const string lastActivity = 'lastActivity';
 
     protected EntityUser $entity;
     protected EntityUser $entitySync;
@@ -63,69 +65,66 @@ final class User extends Object_
     }
 
     /**
-     * Load user by email
+     * Load user by session token
      */
-    public static function getByEmail(string $email): ?self
+    public static function getBySessionToken(string $sessionToken): ?self
     {
-        $collection = EntityUser::get(['email' => $email]);
+        if (empty($sessionToken)) {
+            return null;
+        }
+        
+        $collection = EntityUser::get(['session_token' => $sessionToken]);
         $entity = $collection->first();
         return $entity !== null ? self::fromEntity($entity) : null;
     }
 
     /**
-     * Register new user
+     * Login or register user by session token
+     * 
+     * If sessionToken is provided and user exists - returns existing user and updates activity
+     * If sessionToken is empty or user not found - creates new user with new session token
+     * 
+     * @param string $sessionToken Session token (32 hex characters) or empty string
+     * @return self User object with valid session token
      */
-    public static function register(string $email, string $password, string $name): self
+    public static function loginOrRegister(string $sessionToken): self
     {
+        // Try to find existing user by session token
+        if (!empty($sessionToken) && strlen($sessionToken) === 32) {
+            $user = self::getBySessionToken($sessionToken);
+            
+            if ($user !== null && !$user->block) {
+                // User found and not blocked - update activity and return
+                $user->updateActivity();
+                return $user;
+            }
+        }
+        
+        // User not found or invalid token - create new user
         $user = self::create();
-        $user->entity->email = $email;
-        $user->entity->name = $name;
-        $user->setPassword($password);
+        $user->entity->name = 'User' . mt_rand(1000, 9999); // Generate random name
+        $user->entity->session_token = self::generateSessionToken();
+        $user->entity->last_activity = date('Y-m-d H:i:s');
         $user->sync();
+        
         return $user;
     }
 
     /**
-     * Set password (generates hash and salt)
+     * Generate new session token (32 hex characters = 16 bytes)
      */
-    public function setPassword(string $password): void
+    private static function generateSessionToken(): string
     {
-        $salt = bin2hex(random_bytes(16));
-        $hash = hash('sha256', $salt . $password);
-        
-        $this->entity->salt = $salt;
-        $this->entity->password_hash = $hash;
+        return bin2hex(random_bytes(16)); // 16 bytes = 32 hex characters
     }
 
     /**
-     * Verify password
+     * Update user activity timestamp
      */
-    public function verifyPassword(string $password): bool
+    public function updateActivity(): void
     {
-        $hash = hash('sha256', $this->entity->salt . $password);
-        return hash_equals($this->entity->password_hash, $hash);
-    }
-
-    /**
-     * Try to login
-     */
-    public static function tryToLogin(string $email, string $password): ?self
-    {
-        $user = self::getByEmail($email);
-        
-        if ($user === null) {
-            return null;
-        }
-
-        if ($user->block) {
-            return null; // User is blocked
-        }
-
-        if (!$user->verifyPassword($password)) {
-            return null; // Wrong password
-        }
-
-        return $user;
+        $this->entity->last_activity = date('Y-m-d H:i:s');
+        $this->sync();
     }
 
     /**
@@ -148,6 +147,8 @@ final class User extends Object_
             self::admin => $this->entity->admin,
             self::block => $this->entity->block,
             self::willDelete => $this->entity->will_delete,
+            self::sessionToken => $this->entity->session_token,
+            self::lastActivity => $this->entity->last_activity,
             default => parent::__get($property),
         };
     }
@@ -179,6 +180,8 @@ final class User extends Object_
             self::admin => $this->entity->admin,
             self::block => $this->entity->block,
             self::willDelete => $this->entity->will_delete,
+            self::sessionToken => $this->entity->session_token,
+            self::lastActivity => $this->entity->last_activity,
         ];
     }
 }

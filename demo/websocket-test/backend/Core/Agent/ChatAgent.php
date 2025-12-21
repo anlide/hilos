@@ -7,6 +7,7 @@ namespace Demo\WebSocketTest\Core\Agent;
 use Demo\WebSocketTest\Constants\AgentType;
 use Demo\WebSocketTest\DTO\ChatEventSignalData;
 use Demo\WebSocketTest\DTO\SubscriptionResponseSignalData;
+use Demo\WebSocketTest\DTO\WebSocketHandshakeSignalDTO;
 use Demo\WebSocketTest\Domain\Event\ChatEventInterface;
 use Hilos\Core\Router\WebSocketSignalData;
 use Demo\WebSocketTest\Domain\Event\Events\ChatClearedEvent;
@@ -158,6 +159,13 @@ class ChatAgent extends AbstractAgent
 
         if ($clientId === '') {
             return;
+        }
+
+        // Get session token from query parameters via DTO
+        $sessionToken = null;
+        if ($data instanceof WebSocketHandshakeSignalDTO) {
+            $sessionToken = $data->queryParams['X-Session-Token'] ?? null;
+            Logger::logAgentInfo($this->getId(), "Session token from DTO: " . ($sessionToken ?? 'null'));
         }
 
         // Add user joined event if subscribing to chat page
