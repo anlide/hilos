@@ -52,11 +52,12 @@ class Database
     /** @var int Current active connection index */
     private static int $currentIndex = 0;
 
-    /** @var array<int, ?mysqli_result> Current active result set for each connection */
-    private static array $results = [];
+    /** @var array<int, ?ResultSet> Cached ResultSet instances for each connection */
+    private static array $resultSets = [];
 
     /**
      * Get current result set (for ResultSetCollection)
+     * Returns mysqli_result from cached ResultSet
      *
      * @param ?int $index Connection index
      * @return ?mysqli_result
@@ -64,7 +65,19 @@ class Database
     public static function getCurrentResult(?int $index = null): ?mysqli_result
     {
         $index = $index ?? self::$currentIndex;
-        return self::$results[$index] ?? null;
+        return self::$resultSets[$index]?->getMysqliResult();
+    }
+
+    /**
+     * Get cached ResultSet for current result (preserves pointer position)
+     *
+     * @param ?int $index Connection index
+     * @return ?ResultSet
+     */
+    public static function getCachedResultSet(?int $index = null): ?ResultSet
+    {
+        $index = $index ?? self::$currentIndex;
+        return self::$resultSets[$index] ?? null;
     }
 
     /**
@@ -128,7 +141,7 @@ class Database
             'reconnect_delay' => $reconnectDelay,
         ];
         self::$connections[$index] = null;
-        self::$results[$index] = null;
+        self::$resultSets[$index] = null;
     }
 
     /**
@@ -207,13 +220,17 @@ class Database
         $index = $index ?? self::$currentIndex;
 
         if (isset(self::$connections[$index]) && self::$connections[$index] !== null) {
-            // Free current result set if exists
-            if (isset(self::$results[$index]) && self::$results[$index] instanceof mysqli_result) {
-                @mysqli_free_result(self::$results[$index]);
+            // Free current result set if exists (get mysqli_result from ResultSet)
+            $resultSet = self::$resultSets[$index] ?? null;
+            if ($resultSet !== null) {
+                $mysqliResult = $resultSet->getMysqliResult();
+                if ($mysqliResult !== null && $mysqliResult instanceof mysqli_result) {
+                    @mysqli_free_result($mysqliResult);
+                }
             }
             @mysqli_close(self::$connections[$index]);
             self::$connections[$index] = null;
-            self::$results[$index] = null;
+            self::$resultSets[$index] = null;
         }
     }
 
@@ -257,6 +274,9 @@ class Database
         $index = self::$currentIndex;
         $mysqli = self::getConnection($index);
         $config = self::$configurations[$index];
+
+        // Clear cached ResultSet before new query (new query = new result set)
+        self::$resultSets[$index] = null;
 
         // Convert array to SqlParamCollection
         if (is_array($params)) {
@@ -318,25 +338,29 @@ class Database
         // Store first result set immediately after multi_query
         // (or null if no result set, e.g. for INSERT/UPDATE/DELETE)
         $result = @mysqli_store_result($mysqli);
-        self::$results[$index] = $result !== false ? $result : null;
+        $mysqliResult = $result !== false ? $result : null;
 
-        // Collect all result sets into ResultSetCollection
-        $collection = ResultSetCollection::empty();
-
-        // Add first result set
-        if (self::$results[$index] !== null) {
-            $collection->add(ResultSet::fromMysqliResult(self::$results[$index]));
+        // Create/cache ResultSet for this result (reuse same instance to preserve pointer position)
+        if ($mysqliResult !== null) {
+            // Create new ResultSet only if not cached or if result changed
+            // Check if result changed by comparing object identity
+            $currentResultSet = self::$resultSets[$index] ?? null;
+            if ($currentResultSet === null || $currentResultSet->getMysqliResult() !== $mysqliResult) {
+                // Reset pointer for new result set (first time)
+                self::$resultSets[$index] = ResultSet::fromMysqliResult($mysqliResult, true);
+            }
+            // Otherwise reuse existing ResultSet (preserve pointer position)
+        } else {
+            self::$resultSets[$index] = null;
         }
 
-        // Collect remaining result sets from multi-query
-        while (@mysqli_next_result($mysqli)) {
-            $nextResult = @mysqli_store_result($mysqli);
-            if ($nextResult !== false && $nextResult !== null) {
-                self::$results[$index] = $nextResult;
-                $collection->add(ResultSet::fromMysqliResult($nextResult));
-            } else {
-                self::$results[$index] = null;
-            }
+        // Create ResultSetCollection with only first result set
+        // Remaining result sets will be collected on-demand via nextResult()
+        $collection = ResultSetCollection::empty();
+
+        // Add cached ResultSet (reuse same instance to preserve pointer position)
+        if (self::$resultSets[$index] !== null) {
+            $collection->add(self::$resultSets[$index]);
         }
 
         return $collection;
@@ -390,12 +414,20 @@ class Database
         if ($hasMore) {
             // Store next result set (or null if no result set)
             $result = @mysqli_store_result($mysqli);
-            self::$results[$index] = $result !== false ? $result : null;
+            $mysqliResult = $result !== false ? $result : null;
+            
+            // Create/cache new ResultSet for next result
+            if ($mysqliResult !== null) {
+                self::$resultSets[$index] = ResultSet::fromMysqliResult($mysqliResult);
+            } else {
+                self::$resultSets[$index] = null;
+            }
+            
             return true;
         }
 
         // No more result sets
-        self::$results[$index] = null;
+        self::$resultSets[$index] = null;
         return false;
     }
 

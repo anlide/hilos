@@ -346,7 +346,7 @@ class Generator
      * Convert PhpType enum value to PHP type hint for properties
      * Converts 'integer' -> 'int', 'boolean' -> 'bool', 'datetime' -> 'string'
      */
-    private static function phpTypeToPropertyType(string $type): string
+    public static function phpTypeToPropertyType(string $type): string
     {
         return match ($type) {
             'integer' => 'int',

@@ -8,6 +8,7 @@ use Hilos\Constants\CliCommands;
 use Hilos\Constants\ExitCode;
 use Hilos\Database\Database;
 use Hilos\Database\Entity\Entity;
+use Hilos\Database\Generator;
 use Hilos\Database\PhpType;
 use Hilos\Exception\DatabaseException;
 use ReflectionClass;
@@ -529,7 +530,7 @@ HELP;
         // Compare: find missing, extra, and changed properties
         foreach ($includedColumns as $colName => $colInfo) {
             $camelCase = $this->snakeToCamelCase($colName);
-            $normalizedType = \Hilos\Database\Generator::normalizeType($colInfo['type']);
+            $normalizedType = Generator::normalizeType($colInfo['type']);
 
             // Check if there's a mapping for this Entity field
             $objectConstantName = $entityFieldToObjectConstant[$colName] ?? $camelCase;
@@ -1490,11 +1491,13 @@ HELP;
     private function rebuildPhpDoc(string $content, array $includedColumns, array $entityFieldToObjectConstant, \ReflectionClass $entityReflection): string
     {
         // Extract existing PHPDoc descriptions and custom class description
+        // Find only the PHPDoc block directly before class declaration
+        // Use non-greedy pattern for content (.*?) to stop at first */, but greedy for overall block matching
         $existingDescriptions = [];
         $customClassDescription = [];
         
-        if (preg_match('/\/\*\*(.*?)\*\//s', $content, $docMatch)) {
-            $docContent = $docMatch[1];
+        if (preg_match('/(\/\*\*(.*?)\*\/)(\s*)(?:final\s+)?class\s+\w+/s', $content, $docMatch)) {
+            $docContent = $docMatch[2];
             
             // Split PHPDoc into lines
             $lines = explode("\n", $docContent);
@@ -1534,10 +1537,15 @@ HELP;
             }
             
             // Extract descriptions: @property type $name Description text
-            if (preg_match_all('/@property(?:-read)?\s+\S+\s+\$(\w+)(?:\s+(.+))?/s', $docContent, $matches, PREG_SET_ORDER)) {
-                foreach ($matches as $match) {
+            // Parse line by line to avoid capturing next property line
+            $lines = explode("\n", $docContent);
+            foreach ($lines as $line) {
+                // Match @property or @property-read on this line only
+                if (preg_match('/^\s*\*\s*@property(?:-read)?\s+\S+\s+\$(\w+)(?:\s+(.+))?$/', $line, $match)) {
+                    $propertyName = $match[1];
+                    // Description is everything after the property name, if present
                     if (isset($match[2]) && trim($match[2]) !== '') {
-                        $existingDescriptions[$match[1]] = trim($match[2]);
+                        $existingDescriptions[$propertyName] = trim($match[2]);
                     }
                 }
             }
@@ -1562,7 +1570,7 @@ HELP;
         foreach ($includedColumns as $colName => $colInfo) {
             $camelCase = $this->snakeToCamelCase($colName);
             $objectConstantName = $entityFieldToObjectConstant[$colName] ?? $camelCase;
-            $normalizedType = \Hilos\Database\Generator::normalizeType($colInfo['type']);
+            $normalizedType = Generator::normalizeType($colInfo['type']);
             $phpType = $this->getPhpDocType($normalizedType, $colInfo['is_primary'], $colInfo['nullable'] ?? false);
             $docType = $colInfo['is_primary'] ? '@property-read' : '@property';
             
@@ -1574,19 +1582,40 @@ HELP;
 
         $newPhpDoc = "/**\n" . implode("\n", $phpDocLines) . "\n */";
 
-        // Replace PHPDoc
-        if (preg_match('/\/\*\*.*?\*\//s', $content, $matches, PREG_OFFSET_CAPTURE)) {
-            $docEnd = $matches[0][1] + strlen($matches[0][0]);
-            $afterDoc = substr($content, $docEnd);
-            // Check if there's already a newline after PHPDoc
-            $hasNewlineAfter = preg_match('/^\s*\n/', $afterDoc);
-            $replacement = $newPhpDoc . ($hasNewlineAfter ? '' : "\n");
-            $content = substr_replace($content, $replacement, $matches[0][1], strlen($matches[0][0]));
-        } else {
-            // Add PHPDoc before class declaration
-            if (preg_match('/(final\s+class\s+\w+)/', $content, $matches)) {
-                $content = str_replace($matches[1], $newPhpDoc . "\n" . $matches[1], $content);
+        // Find class declaration position first
+        $classStart = null; // Initialize to fix PHPStorm warning
+        if (preg_match('/((?:final\s+)?class\s+\w+)/', $content, $classMatch, PREG_OFFSET_CAPTURE)) {
+            $classStart = $classMatch[0][1];
+            $beforeClass = substr($content, 0, $classStart);
+            $afterClass = substr($content, $classStart);
+            
+            // Check if there's an empty line (double newline) before PHPDoc blocks
+            // Pattern: \n\n (empty line) followed by optional whitespace and /**
+            $hadEmptyLineBeforePhpDoc = preg_match('/\n\n\s*\/\*\*/', $beforeClass);
+            
+            // Remove ALL PHPDoc blocks before class
+            // Pattern: /** ... */ with optional whitespace before and after
+            $beforeClassAfterRemoval = preg_replace('/\n?\s*\/\*\*.*?\*\/\s*/s', '', $beforeClass);
+            
+            // Trim trailing whitespace but preserve final newline if it exists
+            $beforeClass = rtrim($beforeClassAfterRemoval);
+            
+            // Add new PHPDoc before class
+            // Check if there's already a newline at the end of beforeClass
+            $hasNewlineBefore = preg_match('/\n\s*$/', $beforeClass);
+            
+            // Determine what to add before newPhpDoc
+            // If there was an empty line before PHPDoc, we need \n\n (empty line)
+            // If there was no empty line, we need just \n
+            if ($hadEmptyLineBeforePhpDoc) {
+                // Need empty line: if beforeClass ends with \n, add one more \n; otherwise add \n\n
+                $separatorBeforePhpDoc = $hasNewlineBefore ? "\n" : "\n\n";
+            } else {
+                // No empty line needed: if beforeClass ends with \n, add nothing; otherwise add \n
+                $separatorBeforePhpDoc = $hasNewlineBefore ? "" : "\n";
             }
+            
+            $content = $beforeClass . $separatorBeforePhpDoc . $newPhpDoc . "\n" . $afterClass;
         }
 
         return $content;
@@ -1961,7 +1990,7 @@ HELP;
 
         foreach ($includedColumns as $colName => $colInfo) {
             $camelCase = $this->snakeToCamelCase($colName);
-            $normalizedType = \Hilos\Database\Generator::normalizeType($colInfo['type']);
+            $normalizedType = Generator::normalizeType($colInfo['type']);
             $propertyType = $this->phpTypeToPropertyType($normalizedType);
             $isPrimary = $colInfo['is_primary'];
 

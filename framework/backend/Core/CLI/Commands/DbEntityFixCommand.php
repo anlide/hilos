@@ -884,15 +884,12 @@ HELP;
 
     /**
      * Convert PhpType enum value to PHP type hint for properties
-     * Converts 'integer' -> 'int', 'boolean' -> 'bool' for property type hints
+     * Converts 'integer' -> 'int', 'boolean' -> 'bool', 'datetime' -> 'string'
+     * Uses common method from Generator to ensure consistency
      */
     private function phpTypeToPropertyType(string $type): string
     {
-        return match ($type) {
-            PhpType::INTEGER->value => 'int',
-            PhpType::BOOLEAN->value => 'bool',
-            default => $type,
-        };
+        return Generator::phpTypeToPropertyType($type);
     }
 
     /**

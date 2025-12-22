@@ -22,6 +22,8 @@ final class User extends Entity
     public const string admin = 'admin';
     public const string block = 'block';
     public const string will_delete = 'will_delete';
+    public const string last_activity = 'last_activity';
+    public const string session_token = 'session_token';
 
     // Table meta information
     public const string _table = 'user';
@@ -35,6 +37,8 @@ final class User extends Entity
         self::admin,
         self::block,
         self::will_delete,
+        self::session_token,
+        self::last_activity,
     ];
 
     // Column types
@@ -47,15 +51,21 @@ final class User extends Entity
         self::admin => PhpType::BOOLEAN->value,
         self::block => PhpType::BOOLEAN->value,
         self::will_delete => PhpType::INTEGER->value,
+        self::session_token => PhpType::STRING->value,
+        self::last_activity => PhpType::DATETIME->value,
     ];
 
     // Indexes
     public const array _indexes = [
+        'session_token' => ['unique' => true, 'columns' => [self::session_token]],
         'admin' => ['columns' => [self::admin]],
         'block' => ['columns' => [self::block]],
+        'last_activity' => ['columns' => [self::last_activity]],
     ];
 
     // Properties
+    public ?string $session_token = null;
+    public ?string $last_activity = null;
     public ?int $id = null;
     // @object-exclude
     public string $password_hash;

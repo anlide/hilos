@@ -18,6 +18,16 @@ class ResultSet implements \Iterator, \Countable
     /** @var ?mysqli_result Original mysqli result (if not loaded yet) */
     private ?mysqli_result $mysqliResult = null;
 
+    /**
+     * Get mysqli_result (for comparison to detect result changes)
+     *
+     * @return ?mysqli_result
+     */
+    public function getMysqliResult(): ?mysqli_result
+    {
+        return $this->mysqliResult;
+    }
+
     /** @var array<int, array<string, mixed>> Raw rows from database (lazy loaded) */
     private array $rows = [];
 
@@ -50,7 +60,7 @@ class ResultSet implements \Iterator, \Countable
      * @param ?mysqli_result $result mysqli result or null
      * @return self
      */
-    public static function fromMysqliResult(?mysqli_result $result): self
+    public static function fromMysqliResult(?mysqli_result $result, bool $resetPointer = true): self
     {
         $instance = new self();
         $instance->mysqliResult = $result;
@@ -60,8 +70,11 @@ class ResultSet implements \Iterator, \Countable
             $fields = mysqli_fetch_fields($result);
             $instance->columns = array_map(fn($field) => $field->name, $fields);
 
-            // Reset result pointer
-            mysqli_data_seek($result, 0);
+            // Reset result pointer only if requested (default: true for new queries)
+            // Set to false when reusing existing ResultSet to preserve position for streaming
+            if ($resetPointer) {
+                mysqli_data_seek($result, 0);
+            }
         }
 
         return $instance;

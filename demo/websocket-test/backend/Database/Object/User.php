@@ -17,6 +17,8 @@ use Hilos\Database\Object\Object_;
  * @property bool $admin
  * @property bool $block
  * @property ?int $willDelete
+ * @property ?string $sessionToken
+ * @property ?string $lastActivity
  */
 final class User extends Object_
 {
@@ -164,6 +166,8 @@ final class User extends Object_
             self::admin => $this->entity->admin = (bool)$value,
             self::block => $this->entity->block = (bool)$value,
             self::willDelete => $this->entity->will_delete = is_numeric($value) ? (int)$value : null,
+            self::sessionToken => $this->entity->session_token = is_scalar($value) ? (string)$value : null,
+            self::lastActivity => $this->entity->last_activity = is_scalar($value) ? (string)$value : null,
             default => parent::__set($property, $value),
         };
     }
