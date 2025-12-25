@@ -258,11 +258,17 @@ class Logger
     /**
      * Log agent debug message
      *
+     * Only logs if debug logging is enabled via setDebugEnabled(true).
+     * By default, debug logging is disabled.
+     *
      * @param string $agentId Agent ID
      * @param string $message Debug message
      */
     public static function logAgentDebug(string $agentId, string $message): void
     {
+        if (!self::$debugEnabled) {
+            return;
+        }
         self::logAgent($agentId, 'DEBUG', $message);
     }
 
