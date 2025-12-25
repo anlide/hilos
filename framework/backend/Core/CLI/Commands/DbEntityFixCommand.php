@@ -1436,13 +1436,15 @@ HELP;
             $content = preg_replace($pattern, '', $content);
 
             // Remove from _types array - match entry with optional comma, be precise
-            $pattern = '/(?<=\n)\s+self::' . preg_quote($colName, '/') . '\s*=>\s*\'[^\']+\'\s*,?\s*(?=\n)/';
+            // Match both string literals ('string') and PhpType enum (PhpType::STRING->value)
+            // Pattern: self::columnName => (string literal OR PhpType enum) with optional comma
+            $pattern = '/(?<=\n)\s+self::' . preg_quote($colName, '/') . '\s*=>\s*(?:\'[^\']+\'|PhpType::\w+->value)\s*,?\s*(?=\n)/';
             $content = preg_replace($pattern, '', $content);
 
             // Also handle inline cases
-            $pattern = '/\s+self::' . preg_quote($colName, '/') . '\s*=>\s*\'[^\']+\'\s*,/';
+            $pattern = '/\s+self::' . preg_quote($colName, '/') . '\s*=>\s*(?:\'[^\']+\'|PhpType::\w+->value)\s*,/';
             $content = preg_replace($pattern, '', $content);
-            $pattern = '/,\s*self::' . preg_quote($colName, '/') . '\s*=>\s*\'[^\']+\'(?=\s*,|\s*;)/';
+            $pattern = '/,\s*self::' . preg_quote($colName, '/') . '\s*=>\s*(?:\'[^\']+\'|PhpType::\w+->value)(?=\s*,|\s*;)/';
             $content = preg_replace($pattern, '', $content);
 
             // Remove property if it wasn't already removed with @object-exclude directive
@@ -1519,13 +1521,19 @@ HELP;
                 }
                 if (!empty($normalizedLines)) {
                     $typesContent = "\n        " . implode(",\n        ", $normalizedLines) . ",\n    ";
+                    $content = str_replace($matches[0], $matches[1] . $typesContent . $matches[3], $content);
                 } else {
-                    $typesContent = "\n    ";
+                    // All entries removed - remove entire _types section
+                    // Match: \n    // Column types\n    public const array _types = [\n    ];\n
+                    $pattern = '/(\n)\s*\/\/ Column types\s*\n\s*public const array _types = \[\s*\];\s*\n/';
+                    $content = preg_replace($pattern, '$1', $content);
                 }
             } else {
-                $typesContent = "\n    ";
+                // All entries removed - remove entire _types section
+                // Match: \n    // Column types\n    public const array _types = [\n    ];\n
+                $pattern = '/(\n)\s*\/\/ Column types\s*\n\s*public const array _types = \[\s*\];\s*\n/';
+                $content = preg_replace($pattern, '$1', $content);
             }
-            $content = str_replace($matches[0], $matches[1] . $typesContent . $matches[3], $content);
         }
 
         return $content;
@@ -1591,21 +1599,49 @@ HELP;
             $indexesContent = $matches[2];
             $remainingIndexes = [];
 
-            // Parse existing indexes
-            if (preg_match_all("/'([^']+)' => \[.*?\]/s", $indexesContent, $existingMatches, PREG_SET_ORDER)) {
-                foreach ($existingMatches as $match) {
-                    $indexName = $match[1];
-                    if (!in_array($indexName, $indexNames, true)) {
-                        // Extract full index definition
-                        $escapedName = preg_quote($indexName, '/');
-                        if (preg_match("/('{$escapedName}' => \[.*?\])/s", $indexesContent, $indexMatch)) {
-                            $entry = trim($indexMatch[1]);
-                            // Ensure trailing comma (but not double comma)
-                            $entry = rtrim($entry, ',');
-                            $entry .= ',';
-                            $remainingIndexes[] = "        " . $entry;
+            // Parse existing indexes by finding each index entry with balanced brackets
+            // Pattern: 'index_name' => [ ... balanced brackets ... ]
+            $offset = 0;
+            while (preg_match("/'([^']+)' => \[/", $indexesContent, $nameMatch, PREG_OFFSET_CAPTURE, $offset)) {
+                $indexName = $nameMatch[1][0];
+                $startPos = $nameMatch[0][1];
+                
+                // Find the matching closing bracket for this index definition
+                $bracketStart = $nameMatch[0][1] + strlen($nameMatch[0][0]) - 1; // Position of opening [
+                $depth = 1;
+                $pos = $bracketStart + 1;
+                $endPos = $pos;
+                
+                while ($depth > 0 && $pos < strlen($indexesContent)) {
+                    if ($indexesContent[$pos] === '[') {
+                        $depth++;
+                    } elseif ($indexesContent[$pos] === ']') {
+                        $depth--;
+                        if ($depth === 0) {
+                            $endPos = $pos + 1;
+                            break;
                         }
                     }
+                    $pos++;
+                }
+                
+                if ($depth === 0) {
+                    // Extract full index definition
+                    $fullEntry = substr($indexesContent, $startPos, $endPos - $startPos);
+                    
+                    if (!in_array($indexName, $indexNames, true)) {
+                        // Keep this index
+                        $entry = trim($fullEntry);
+                        // Ensure trailing comma (but not double comma)
+                        $entry = rtrim($entry, ',');
+                        $entry .= ',';
+                        $remainingIndexes[] = "        " . $entry;
+                    }
+                    
+                    $offset = $endPos;
+                } else {
+                    // Unbalanced brackets, skip this match
+                    $offset = $startPos + 1;
                 }
             }
 
