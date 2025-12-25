@@ -2,6 +2,7 @@
 
 namespace Hilos\Database;
 
+use Hilos\Database\SqlParamCollection;
 use Hilos\Exception\DatabaseException;
 
 /**
@@ -115,13 +116,31 @@ class Generator
             $indexesList[] = "        '{$keyName}' => [{$unique}'columns' => [{$indexColumns}]]";
         }
 
-        // Detect foreign keys (simplified - by naming convention)
-        foreach ($columns as $column) {
-            $field = $column['Field'];
-            if (preg_match('/^id_(\w+)$/', $field, $matches)) {
-                $foreignTable = $matches[1];
-                $foreignKeys[] = "        self::{$field} => '{$foreignTable}'";
+        // Get real foreign keys from INFORMATION_SCHEMA
+        $realForeignKeys = self::getRealForeignKeys($tableName);
+        
+        // Generate foreign key entries with Entity class constants
+        foreach ($realForeignKeys as $columnsStr => $referencedTable) {
+            $columns = explode(',', $columnsStr);
+            
+            if (count($columns) === 1) {
+                // Simple foreign key
+                $column = trim($columns[0]);
+                $referencedEntityClass = self::tableToPascalCase($referencedTable);
+                $foreignKeys[] = "        self::{$column} => Entity{$referencedEntityClass}::_table";
+            } else {
+                // Composite foreign key
+                $columnRefs = array_map(fn($col) => "self::" . trim($col), $columns);
+                $referencedEntityClass = self::tableToPascalCase($referencedTable);
+                $foreignKeys[] = "        " . implode(' . \',\' . . ', $columnRefs) . " => Entity{$referencedEntityClass}::_table";
             }
+        }
+        
+        // Collect Entity class names for use statements
+        $entityImports = [];
+        foreach ($realForeignKeys as $referencedTable) {
+            $entityClassName = self::tableToPascalCase($referencedTable);
+            $entityImports["Entity{$entityClassName}"] = "{$namespace}\\{$entityClassName}";
         }
 
         // Build primary key definition
@@ -135,7 +154,18 @@ class Generator
         $code = "<?php\n\n";
         $code .= "namespace {$namespace};\n\n";
         $code .= "use Hilos\\Database\\Entity\\Entity;\n";
-        $code .= "use Hilos\\Database\\PhpType;\n\n";
+        $code .= "use Hilos\\Database\\PhpType;\n";
+        
+        // Add Entity imports for foreign keys
+        foreach ($entityImports as $alias => $fullClassName) {
+            $code .= "use {$fullClassName} as {$alias};\n";
+        }
+        
+        if (!empty($entityImports)) {
+            $code .= "\n";
+        } else {
+            $code .= "\n";
+        }
         $code .= "/**\n";
         $code .= " * {$className} Entity\n";
         $code .= " * Auto-generated from table: {$tableName}\n";
@@ -260,6 +290,60 @@ class Generator
         $code .= "}\n";
 
         return $code;
+    }
+
+    /**
+     * Get real foreign keys from INFORMATION_SCHEMA
+     * Supports both simple and composite foreign keys
+     * 
+     * @param string $tableName Table name
+     * @return array<string, string> Foreign keys mapping:
+     *   - Simple: 'column' => 'referenced_table'
+     *   - Composite: 'col1,col2' => 'referenced_table'
+     * @throws DatabaseException
+     */
+    private static function getRealForeignKeys(string $tableName): array
+    {
+        try {
+            // Get database name from current connection
+            Database::sql('SELECT DATABASE() as db_name');
+            $dbRow = Database::row();
+            $dbName = $dbRow['db_name'] ?? null;
+            
+            if ($dbName === null) {
+                return [];
+            }
+
+            // Query INFORMATION_SCHEMA for foreign keys
+            // GROUP_CONCAT with ORDER BY to handle composite keys correctly
+            Database::sql("
+                SELECT 
+                    GROUP_CONCAT(kcu.COLUMN_NAME ORDER BY kcu.ORDINAL_POSITION SEPARATOR ',') as columns,
+                    kcu.REFERENCED_TABLE_NAME as referenced_table
+                FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu
+                WHERE kcu.TABLE_SCHEMA = ?
+                  AND kcu.TABLE_NAME = ?
+                  AND kcu.REFERENCED_TABLE_NAME IS NOT NULL
+                GROUP BY kcu.CONSTRAINT_NAME, kcu.REFERENCED_TABLE_NAME
+                ORDER BY kcu.CONSTRAINT_NAME, MIN(kcu.ORDINAL_POSITION)
+            ", SqlParamCollection::fromArray([$dbName, $tableName]));
+
+            $foreignKeys = [];
+            while ($row = Database::row()) {
+                $columns = $row['columns'];
+                $referencedTable = $row['referenced_table'];
+                
+                // For composite keys, use comma-separated string as key
+                // For simple keys, use single column name
+                $foreignKeys[$columns] = $referencedTable;
+            }
+
+            return $foreignKeys;
+        } catch (DatabaseException $e) {
+            // If INFORMATION_SCHEMA query fails, return empty array
+            // This allows the system to continue working even if INFORMATION_SCHEMA is not accessible
+            return [];
+        }
     }
 
     /**

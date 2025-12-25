@@ -4,6 +4,7 @@ namespace Hilos\Database\Schema;
 
 use Hilos\Database\ColumnType;
 use Hilos\Database\Database;
+use Hilos\Database\SqlParamCollection;
 use Hilos\Exception\DatabaseException;
 
 /**
@@ -158,15 +159,8 @@ class Schema
             );
         }
 
-        // Detect foreign keys (by naming convention: id_*)
-        $foreignKeys = [];
-        foreach ($columns as $column) {
-            $field = $column['Field'];
-            if (preg_match('/^id_(\w+)$/', $field, $matches)) {
-                $foreignTable = $matches[1];
-                $foreignKeys[$field] = $foreignTable;
-            }
-        }
+        // Get real foreign keys from INFORMATION_SCHEMA
+        $foreignKeys = self::getRealForeignKeys($tableName);
 
         return new TableInfo(
             name: $tableName,
@@ -175,6 +169,60 @@ class Schema
             indexes: $indexInfo,
             foreignKeys: $foreignKeys
         );
+    }
+
+    /**
+     * Get real foreign keys from INFORMATION_SCHEMA
+     * Supports both simple and composite foreign keys
+     * 
+     * @param string $tableName Table name
+     * @return array<string, string> Foreign keys mapping:
+     *   - Simple: 'column' => 'referenced_table'
+     *   - Composite: 'col1,col2' => 'referenced_table'
+     * @throws DatabaseException
+     */
+    private static function getRealForeignKeys(string $tableName): array
+    {
+        try {
+            // Get database name from current connection
+            Database::sql('SELECT DATABASE() as db_name');
+            $dbRow = Database::row();
+            $dbName = $dbRow['db_name'] ?? null;
+            
+            if ($dbName === null) {
+                return [];
+            }
+
+            // Query INFORMATION_SCHEMA for foreign keys
+            // GROUP_CONCAT with ORDER BY to handle composite keys correctly
+            Database::sql("
+                SELECT 
+                    GROUP_CONCAT(kcu.COLUMN_NAME ORDER BY kcu.ORDINAL_POSITION SEPARATOR ',') as columns,
+                    kcu.REFERENCED_TABLE_NAME as referenced_table
+                FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu
+                WHERE kcu.TABLE_SCHEMA = ?
+                  AND kcu.TABLE_NAME = ?
+                  AND kcu.REFERENCED_TABLE_NAME IS NOT NULL
+                GROUP BY kcu.CONSTRAINT_NAME, kcu.REFERENCED_TABLE_NAME
+                ORDER BY kcu.CONSTRAINT_NAME, MIN(kcu.ORDINAL_POSITION)
+            ", SqlParamCollection::fromArray([$dbName, $tableName]));
+
+            $foreignKeys = [];
+            while ($row = Database::row()) {
+                $columns = $row['columns'];
+                $referencedTable = $row['referenced_table'];
+                
+                // For composite keys, use comma-separated string as key
+                // For simple keys, use single column name
+                $foreignKeys[$columns] = $referencedTable;
+            }
+
+            return $foreignKeys;
+        } catch (DatabaseException $e) {
+            // If INFORMATION_SCHEMA query fails, return empty array
+            // This allows the system to continue working even if INFORMATION_SCHEMA is not accessible
+            return [];
+        }
     }
 
     /**

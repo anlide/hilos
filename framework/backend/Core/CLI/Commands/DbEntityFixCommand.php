@@ -507,10 +507,22 @@ HELP;
             }
 
             // Also remove foreign keys that reference removed columns
-            $entityForeign = $entity['foreign'] ?? [];
-            foreach ($entityForeign as $colName => $foreignTable) {
-                if (in_array($colName, $columnsToRemove, true)) {
-                    $fixes['remove_foreign_keys'][] = $colName;
+            // Need to check both simple and composite foreign keys
+            $entityFile = $entity['file'] ?? null;
+            if ($entityFile !== null) {
+                $content = file_get_contents($entityFile);
+                if ($content !== false) {
+                    $existingForeignKeys = $this->parseExistingForeignKeys($content);
+                    foreach ($existingForeignKeys as $colKey => $tableInfo) {
+                        $columns = $this->parseColumnKey($colKey);
+                        // If any column in this foreign key is being removed, remove the entire foreign key
+                        foreach ($columns as $col) {
+                            if (in_array($col, $columnsToRemove, true)) {
+                                $fixes['remove_foreign_keys'][] = $colKey;
+                                break;
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -545,21 +557,27 @@ HELP;
         // Missing foreign keys (but not self-references)
         $entityForeign = $entity['foreign'] ?? [];
         $currentTable = $entity['table'];
-        foreach ($dbTable->foreignKeys as $colName => $foreignTable) {
+        
+        // Normalize entity foreign keys: extract table names from Entity constants or strings
+        $normalizedEntityForeign = $this->normalizeForeignKeys($entityForeign, $entity['file']);
+        
+        foreach ($dbTable->foreignKeys as $colKey => $foreignTable) {
             // Skip if foreign key references the same table (self-reference)
             if ($foreignTable === $currentTable) {
                 continue;
             }
 
-            if (!isset($entityForeign[$colName])) {
+            // Check if foreign key exists (support both simple and composite)
+            $normalizedColKey = $this->normalizeColumnKey($colKey);
+            if (!isset($normalizedEntityForeign[$normalizedColKey])) {
                 $fixes['add_foreign_keys'][] = [
-                    'column' => $colName,
+                    'columns' => $this->parseColumnKey($colKey),
                     'table' => $foreignTable,
                 ];
-            } elseif ($entityForeign[$colName] !== $foreignTable) {
+            } elseif ($normalizedEntityForeign[$normalizedColKey] !== $foreignTable) {
                 $fixes['update_foreign_keys'][] = [
-                    'column' => $colName,
-                    'old_table' => $entityForeign[$colName],
+                    'columns' => $this->parseColumnKey($colKey),
+                    'old_table' => $normalizedEntityForeign[$normalizedColKey],
                     'new_table' => $foreignTable,
                 ];
             }
@@ -811,7 +829,9 @@ HELP;
             if (!empty($tableFixes['add_foreign_keys'])) {
                 echo "  Will add foreign keys:\n";
                 foreach ($tableFixes['add_foreign_keys'] as $fk) {
-                    echo "    + {$fk['column']} -> {$fk['table']}\n";
+                    $columns = $fk['columns'] ?? [$fk['column'] ?? ''];
+                    $colStr = count($columns) === 1 ? $columns[0] : implode(', ', $columns);
+                    echo "    + {$colStr} -> {$fk['table']}\n";
                 }
                 echo "\n";
             }
@@ -819,7 +839,9 @@ HELP;
             if (!empty($tableFixes['update_foreign_keys'])) {
                 echo "  Will update foreign keys:\n";
                 foreach ($tableFixes['update_foreign_keys'] as $fk) {
-                    echo "    ~ {$fk['column']}: {$fk['old_table']} -> {$fk['new_table']}\n";
+                    $columns = $fk['columns'] ?? [$fk['column'] ?? ''];
+                    $colStr = count($columns) === 1 ? $columns[0] : implode(', ', $columns);
+                    echo "    ~ {$colStr}: {$fk['old_table']} -> {$fk['new_table']}\n";
                 }
                 echo "\n";
             }
@@ -1655,22 +1677,35 @@ HELP;
 
     /**
      * Remove foreign keys from Entity file
+     * Supports both simple and composite foreign keys
+     * 
+     * @param string $content Entity file content
+     * @param array<string> $columnKeys Column keys to remove (can be 'column' or 'col1,col2')
+     * @param ReflectionClass $reflection Entity reflection class
+     * @return string Updated content
      */
-    private function removeForeignKeys(string $content, array $columnNames, ReflectionClass $reflection): string
+    private function removeForeignKeys(string $content, array $columnKeys, ReflectionClass $reflection): string
     {
         // Find _foreign array
         if (preg_match('/(public const array _foreign = \[)(.*?)(\];)/s', $content, $matches)) {
-            $foreignContent = $matches[2];
             $remainingForeign = [];
 
-            // Parse existing foreign keys
-            if (preg_match_all("/self::(\w+)\s*=>\s*'([^']+)'/", $foreignContent, $existingMatches, PREG_SET_ORDER)) {
-                foreach ($existingMatches as $match) {
-                    $colName = $match[1];
-                    if (!in_array($colName, $columnNames, true)) {
-                        $table = $match[2];
-                        $remainingForeign[] = "        self::{$colName} => '{$table}',";
-                    }
+            // Parse existing foreign keys (support both simple and composite)
+            $existingForeignKeys = $this->parseExistingForeignKeys($content);
+
+            // Normalize keys to remove for comparison
+            $normalizedKeysToRemove = [];
+            foreach ($columnKeys as $key) {
+                $normalizedKeysToRemove[$this->normalizeColumnKey($key)] = true;
+            }
+
+            foreach ($existingForeignKeys as $colKey => $tableInfo) {
+                $normalizedKey = $this->normalizeColumnKey($colKey);
+                
+                // Check if this foreign key should be removed
+                if (!isset($normalizedKeysToRemove[$normalizedKey])) {
+                    // Keep this foreign key (preserve original format)
+                    $remainingForeign[] = $tableInfo['original_line'];
                 }
             }
 
@@ -1919,13 +1954,18 @@ HELP;
 
     /**
      * Update foreign keys in Entity file
+     * Supports both simple and composite foreign keys with Entity class constants
      */
     private function updateForeignKeys(string $content, array $addForeignKeys, array $updateForeignKeys, ReflectionClass $reflection): string
     {
-        // Get current table name to filter out self-references
+        // Get current table name and namespace to filter out self-references
         $currentTable = null;
+        $namespace = null;
         if (preg_match("/public const string _table = '([^']+)'/", $content, $tableMatch)) {
             $currentTable = $tableMatch[1];
+        }
+        if (preg_match('/namespace\s+([^;]+);/', $content, $nsMatch)) {
+            $namespace = trim($nsMatch[1]);
         }
 
         // Filter out self-references
@@ -1935,38 +1975,95 @@ HELP;
             return $table !== null && $table !== $currentTable;
         });
 
-        $updatedColumns = array_column($allForeignKeys, 'column');
+        if (empty($allForeignKeys)) {
+            // No foreign keys to add/update, but check if we need to remove empty section
+            if (preg_match('/(public const array _foreign = \[)(.*?)(\];)/s', $content, $matches)) {
+                $foreignContent = trim($matches[2]);
+                if (empty($foreignContent)) {
+                    // Remove empty _foreign section
+                    $pattern = '/(\n\s*)\/\/ Foreign keys\s*\n\s*public const array _foreign = \[\s*\];\s*\n(\s*)/';
+                    $content = preg_replace($pattern, '$1$2', $content);
+                }
+            }
+            return $content;
+        }
+
+        // Collect referenced tables for use statements
+        $referencedTables = [];
+        foreach ($allForeignKeys as $fk) {
+            $table = $fk['table'] ?? $fk['new_table'] ?? null;
+            if ($table !== null) {
+                $referencedTables[$table] = true;
+            }
+        }
+
+        // Generate use statements for Entity classes
+        $useStatements = [];
+        foreach ($referencedTables as $table => $_) {
+            $entityClassName = $this->tableToPascalCase($table);
+            $entityAlias = "Entity{$entityClassName}";
+            $fullEntityClassName = $namespace !== null ? "{$namespace}\\{$entityClassName}" : $entityClassName;
+            
+            // Check if Entity class exists
+            if (class_exists($fullEntityClassName)) {
+                $useStatements[$entityAlias] = $fullEntityClassName;
+            }
+        }
+
+        // Add use statements if needed
+        $content = $this->addEntityUseStatements($content, $useStatements);
+
+        // Parse existing foreign keys (support both simple and composite, with Entity constants)
+        $existingForeignKeys = $this->parseExistingForeignKeys($content);
+
+        // Build normalized keys for comparison
+        $updatedKeys = [];
+        foreach ($allForeignKeys as $fk) {
+            $columns = $fk['columns'] ?? [$fk['column'] ?? ''];
+            $normalizedKey = $this->normalizeColumnKey(implode(',', $columns));
+            $updatedKeys[$normalizedKey] = true;
+        }
 
         // Check if _foreign section exists
         if (preg_match('/(public const array _foreign = \[)(.*?)(\];)/s', $content, $matches)) {
-            // Get existing foreign keys to preserve ones not being updated
-            $existingForeignKeys = [];
-            if (preg_match_all("/self::(\w+)\s*=>\s*'([^']+)'/", $matches[2], $existingMatches, PREG_SET_ORDER)) {
-                foreach ($existingMatches as $match) {
-                    $existingForeignKeys[$match[1]] = $match[2];
-                }
-            }
-
             // Merge: keep existing that are not being updated, add/update new ones
             $finalEntries = [];
-            foreach ($existingForeignKeys as $col => $table) {
-                if (!in_array($col, $updatedColumns, true)) {
-                    $finalEntries[] = "        self::{$col} => '{$table}',";
+            
+            // Keep existing foreign keys that are not being updated
+            foreach ($existingForeignKeys as $colKey => $tableInfo) {
+                $normalizedKey = $this->normalizeColumnKey($colKey);
+                if (!isset($updatedKeys[$normalizedKey])) {
+                    // Preserve existing format (may be Entity constant or string)
+                    $finalEntries[] = $tableInfo['original_line'];
                 }
             }
 
             // Add new/updated foreign keys
             foreach ($allForeignKeys as $fk) {
-                $column = $fk['column'];
-                $table = $fk['table'] ?? $fk['new_table'];
-                $finalEntries[] = "        self::{$column} => '{$table}',";
+                $columns = $fk['columns'] ?? [$fk['column'] ?? ''];
+                $table = $fk['table'] ?? $fk['new_table'] ?? null;
+                
+                if ($table === null) {
+                    continue;
+                }
+
+                $entityClassName = $this->tableToPascalCase($table);
+                $entityAlias = "Entity{$entityClassName}";
+                
+                // Generate foreign key entry
+                if (count($columns) === 1) {
+                    // Simple foreign key
+                    $column = $columns[0];
+                    $finalEntries[] = "        self::{$column} => {$entityAlias}::_table,";
+                } else {
+                    // Composite foreign key
+                    $columnRefs = array_map(fn($col) => "self::{$col}", $columns);
+                    $finalEntries[] = "        " . implode(' . \',\' . . ', $columnRefs) . " => {$entityAlias}::_table,";
+                }
             }
 
             // Remove empty _foreign array if no entries
             if (empty($finalEntries)) {
-                // Remove only the comment and declaration lines, preserve surrounding empty lines
-                // Match exactly: // Foreign keys\n    public const array _foreign = [\n    ];\n
-                // Be very precise to avoid removing extra content
                 $pattern = '/(\n\s*)\/\/ Foreign keys\s*\n\s*public const array _foreign = \[\s*\];\s*\n(\s*)/';
                 $content = preg_replace($pattern, '$1$2', $content);
                 return $content;
@@ -1976,18 +2073,35 @@ HELP;
             $new = "\n" . implode("\n", $finalEntries) . "\n    ";
             $content = str_replace($matches[0], $matches[1] . $new . $matches[3], $content);
         } else {
-            // Don't add _foreign section if empty
-            if (empty($allForeignKeys)) {
+            // Add _foreign section
+            $foreignEntries = [];
+            foreach ($allForeignKeys as $fk) {
+                $columns = $fk['columns'] ?? [$fk['column'] ?? ''];
+                $table = $fk['table'] ?? $fk['new_table'] ?? null;
+                
+                if ($table === null) {
+                    continue;
+                }
+
+                $entityClassName = $this->tableToPascalCase($table);
+                $entityAlias = "Entity{$entityClassName}";
+                
+                // Generate foreign key entry
+                if (count($columns) === 1) {
+                    // Simple foreign key
+                    $column = $columns[0];
+                    $foreignEntries[] = "        self::{$column} => {$entityAlias}::_table,";
+                } else {
+                    // Composite foreign key
+                    $columnRefs = array_map(fn($col) => "self::{$col}", $columns);
+                    $foreignEntries[] = "        " . implode(' . \',\' . . ', $columnRefs) . " => {$entityAlias}::_table,";
+                }
+            }
+
+            if (empty($foreignEntries)) {
                 return $content;
             }
 
-            // Add _foreign section with trailing comma for all entries
-            $foreignEntries = [];
-            foreach ($allForeignKeys as $fk) {
-                $column = $fk['column'];
-                $table = $fk['table'] ?? $fk['new_table'];
-                $foreignEntries[] = "        self::{$column} => '{$table}',";
-            }
             // Keep trailing comma on all entries (including last one)
             $foreignSection = "    // Foreign keys\n    public const array _foreign = [\n" . implode("\n", $foreignEntries) . "\n    ];\n\n";
 
@@ -1999,6 +2113,187 @@ HELP;
             } elseif (preg_match('/(\/\/ Properties)/', $content, $matches)) {
                 $content = str_replace($matches[1], $foreignSection . $matches[1], $content);
             }
+        }
+
+        return $content;
+    }
+
+    /**
+     * Parse existing foreign keys from Entity file content
+     * Supports both simple and composite, with Entity constants or strings
+     * 
+     * @param string $content Entity file content
+     * @return array<string, array{original_line: string, table: string}> Parsed foreign keys
+     */
+    private function parseExistingForeignKeys(string $content): array
+    {
+        $foreignKeys = [];
+        
+        if (!preg_match('/(public const array _foreign = \[)(.*?)(\];)/s', $content, $matches)) {
+            return $foreignKeys;
+        }
+
+        // Extract namespace for Entity class loading
+        $namespace = null;
+        if (preg_match('/namespace\s+([^;]+);/', $content, $nsMatch)) {
+            $namespace = trim($nsMatch[1]);
+        }
+
+        $foreignContent = $matches[2];
+        $lines = explode("\n", $foreignContent);
+
+        foreach ($lines as $line) {
+            $line = trim($line);
+            if (empty($line) || $line === ',') {
+                continue;
+            }
+
+            // Remove trailing comma
+            $line = rtrim($line, ',');
+
+            // Match composite first (more specific pattern): self::col1 . ',' . self::col2 => EntityTable::_table
+            // Pattern: self::col1 . ',' . self::col2 => ... (or variations with quotes)
+            if (preg_match('/(self::\w+(?:\s*\.\s*[\'",]\s*,\s*[\'"]\s*\.\s*\.\s*self::\w+)+)\s*=>\s*(.+)/', $line, $compositeMatch)) {
+                $columnExpr = $compositeMatch[1];
+                $tableValue = trim($compositeMatch[2]);
+                
+                // Extract column names from expression
+                if (preg_match_all('/self::(\w+)/', $columnExpr, $colMatches)) {
+                    $columns = $colMatches[1];
+                    $colKey = implode(',', $columns);
+                    $tableName = $this->extractTableNameFromValue($tableValue, $namespace);
+                    if ($tableName !== null) {
+                        $foreignKeys[$colKey] = [
+                            'original_line' => "        {$line},",
+                            'table' => $tableName,
+                        ];
+                    }
+                }
+                continue;
+            }
+
+            // Match simple: self::column => EntityTable::_table or self::column => 'table'
+            if (preg_match('/self::(\w+)\s*=>\s*(.+)/', $line, $simpleMatch)) {
+                $column = $simpleMatch[1];
+                $tableValue = trim($simpleMatch[2]);
+                $tableName = $this->extractTableNameFromValue($tableValue, $namespace);
+                if ($tableName !== null) {
+                    $foreignKeys[$column] = [
+                        'original_line' => "        {$line},",
+                        'table' => $tableName,
+                    ];
+                }
+            }
+        }
+
+        return $foreignKeys;
+    }
+
+    /**
+     * Extract table name from foreign key value
+     * Handles both EntityClass::_table and string 'table'
+     * 
+     * @param string $value Value from _foreign array
+     * @param string|null $namespace Entity namespace (for loading Entity class)
+     * @return string|null Table name
+     */
+    private function extractTableNameFromValue(string $value, ?string $namespace = null): ?string
+    {
+        // Check if it's EntityClass::_table
+        if (preg_match('/Entity(\w+)::_table/', $value, $matches)) {
+            $entityClassName = $matches[1];
+            
+            // Try to load Entity class and get table name
+            if ($namespace !== null) {
+                $fullClassName = "{$namespace}\\{$entityClassName}";
+                if (class_exists($fullClassName)) {
+                    $table = $fullClassName::_table ?? null;
+                    if ($table !== null) {
+                        return $table;
+                    }
+                }
+            }
+            
+            // Fallback: convert PascalCase to table name
+            return $this->pascalCaseToTableName($entityClassName);
+        }
+
+        // Check if it's quoted string 'table'
+        if (preg_match("/^'([^']+)'$/", $value, $matches)) {
+            return $matches[1];
+        }
+
+        // If it's just a string without quotes, use as-is
+        return trim($value) !== '' ? trim($value) : null;
+    }
+
+    /**
+     * Add Entity use statements to file content
+     * 
+     * @param string $content File content
+     * @param array<string, string> $useStatements Map of alias => full class name
+     * @return string Updated content
+     */
+    private function addEntityUseStatements(string $content, array $useStatements): string
+    {
+        if (empty($useStatements)) {
+            return $content;
+        }
+
+        // Extract namespace
+        $namespace = null;
+        if (preg_match('/namespace\s+([^;]+);/', $content, $nsMatch)) {
+            $namespace = trim($nsMatch[1]);
+        }
+
+        // Check existing use statements
+        $existingUses = [];
+        if (preg_match_all('/use\s+([^;]+);/', $content, $useMatches)) {
+            foreach ($useMatches[1] as $useLine) {
+                $useLine = trim($useLine);
+                // Check for "Class as Alias" format
+                if (preg_match('/^(.+?)\s+as\s+(\w+)$/', $useLine, $asMatch)) {
+                    $existingUses[trim($asMatch[2])] = trim($asMatch[1]);
+                } else {
+                    // Extract class name from full namespace
+                    $parts = explode('\\', $useLine);
+                    $className = end($parts);
+                    $existingUses[$className] = $useLine;
+                }
+            }
+        }
+
+        // Add missing use statements
+        $newUseStatements = [];
+        foreach ($useStatements as $alias => $fullClassName) {
+            // Check if already imported
+            $alreadyImported = false;
+            foreach ($existingUses as $existingAlias => $existingClass) {
+                if ($existingAlias === $alias || $existingClass === $fullClassName) {
+                    $alreadyImported = true;
+                    break;
+                }
+            }
+
+            if (!$alreadyImported) {
+                $newUseStatements[] = "use {$fullClassName} as {$alias};";
+            }
+        }
+
+        if (empty($newUseStatements)) {
+            return $content;
+        }
+
+        // Find position to insert use statements (after existing use statements or after namespace)
+        if (preg_match('/(use\s+[^;]+;\n)/', $content, $lastUseMatch, PREG_OFFSET_CAPTURE)) {
+            // Insert after last use statement
+            $insertPos = $lastUseMatch[0][1] + strlen($lastUseMatch[0][0]);
+            $before = substr($content, 0, $insertPos);
+            $after = substr($content, $insertPos);
+            $content = $before . implode("\n", $newUseStatements) . "\n" . $after;
+        } elseif (preg_match('/(namespace\s+[^;]+;\n\n)/', $content, $nsMatch)) {
+            // Insert after namespace
+            $content = str_replace($nsMatch[1], $nsMatch[1] . implode("\n", $newUseStatements) . "\n", $content);
         }
 
         return $content;
@@ -2108,6 +2403,72 @@ HELP;
     private function tableToPascalCase(string $tableName): string
     {
         return str_replace('_', '', ucwords($tableName, '_'));
+    }
+
+    /**
+     * Normalize foreign keys from Entity file
+     * Extracts table names from Entity constants (EntityTable::_table) or strings
+     * Parses directly from file content to handle composite keys correctly
+     * 
+     * @param array $entityForeign Foreign keys from Entity constant (for reference)
+     * @param string $entityFile Entity file path (for parsing Entity class names)
+     * @return array<string, string> Normalized foreign keys: 'column' or 'col1,col2' => 'table'
+     */
+    private function normalizeForeignKeys(array $entityForeign, string $entityFile): array
+    {
+        $normalized = [];
+        $content = file_get_contents($entityFile);
+        if ($content === false) {
+            return [];
+        }
+
+        // Parse foreign keys directly from file content
+        $parsedForeignKeys = $this->parseExistingForeignKeys($content);
+        
+        foreach ($parsedForeignKeys as $colKey => $tableInfo) {
+            $normalizedKey = $this->normalizeColumnKey($colKey);
+            $normalized[$normalizedKey] = $tableInfo['table'];
+        }
+
+        return $normalized;
+    }
+
+    /**
+     * Convert PascalCase class name to table name (snake_case)
+     */
+    private function pascalCaseToTableName(string $pascalCase): string
+    {
+        // Insert underscore before uppercase letters (except first)
+        $snake = preg_replace('/([a-z])([A-Z])/', '$1_$2', $pascalCase);
+        return strtolower($snake);
+    }
+
+    /**
+     * Parse column key (supports both simple and composite)
+     * 
+     * @param string $colKey Column key: 'column' or 'col1,col2'
+     * @return array<string> Array of column names
+     */
+    private function parseColumnKey(string $colKey): array
+    {
+        if (strpos($colKey, ',') !== false) {
+            return array_map('trim', explode(',', $colKey));
+        }
+        return [trim($colKey)];
+    }
+
+    /**
+     * Normalize column key for comparison
+     * Sorts columns for composite keys to ensure consistent comparison
+     * 
+     * @param string $colKey Column key: 'column' or 'col1,col2'
+     * @return string Normalized key
+     */
+    private function normalizeColumnKey(string $colKey): string
+    {
+        $columns = $this->parseColumnKey($colKey);
+        sort($columns);
+        return implode(',', $columns);
     }
 
     /**

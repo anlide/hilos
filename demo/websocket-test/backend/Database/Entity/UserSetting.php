@@ -3,6 +3,7 @@
 namespace Demo\WebSocketTest\Database\Entity;
 
 use Hilos\Database\Entity\Entity;
+use Demo\WebSocketTest\Database\Entity\User as EntityUser;
 use Hilos\Database\PhpType;
 
 /**
@@ -33,6 +34,11 @@ final class UserSetting extends Entity
         self::user_id => PhpType::INTEGER->value,
         self::key => PhpType::STRING->value,
         self::value => PhpType::STRING->value,
+    ];
+
+    // Foreign keys
+    public const array _foreign = [
+        self::user_id => EntityUser::_table,
     ];
 
     // Indexes
