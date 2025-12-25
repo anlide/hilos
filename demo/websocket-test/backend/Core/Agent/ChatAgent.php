@@ -5,6 +5,9 @@ declare(strict_types=1);
 namespace Demo\WebSocketTest\Core\Agent;
 
 use Demo\WebSocketTest\Constants\AgentType;
+use Demo\WebSocketTest\Database\Idea;
+use Demo\WebSocketTest\Database\Object\User as ObjectUser;
+use Demo\WebSocketTest\Database\Idea\User as IdeaUser;
 use Demo\WebSocketTest\DTO\ChatEventSignalData;
 use Demo\WebSocketTest\DTO\SubscriptionResponseSignalData;
 use Demo\WebSocketTest\DTO\WebSocketHandshakeSignalDTO;
@@ -149,34 +152,77 @@ class ChatAgent extends AbstractAgent
      * @param string $source Signal source
      * @param string $name Signal name
      * @param SignalDataInterface $data Signal data
+     * @throws \RuntimeException If data is not WebSocketHandshakeSignalDTO or session token is invalid
      */
     public function onSignalPageSubscribe(string $source, string $name, SignalDataInterface $data): void
     {
-        $dataArray = $data instanceof BaseDTO ? $data->toArray() : [];
+        // Validate that data is WebSocketHandshakeSignalDTO
+        if (!($data instanceof WebSocketHandshakeSignalDTO)) {
+            $dataType = get_class($data);
+            Logger::logAgentError($this->getId(), "Invalid signal data type: expected WebSocketHandshakeSignalDTO, got {$dataType}");
+            throw new \RuntimeException("Expected WebSocketHandshakeSignalDTO, got {$dataType}");
+        }
+
+        // Now we can safely use WebSocketHandshakeSignalDTO type
+        $handshakeData = $data;
+        
+        $dataArray = $handshakeData->toArray();
         $clientId = $dataArray['clientId'] ?? '';
         $page = $name;
-        Logger::logAgentInfo($this->getId(), "Page subscribe signal received: source={$source}, client={$clientId}, page={$page}");
+        Logger::logAgentDebug($this->getId(), "Page subscribe signal received: source={$source}, client={$clientId}, page={$page}");
 
         if ($clientId === '') {
             return;
         }
 
         // Get session token from query parameters via DTO
-        $sessionToken = null;
-        if ($data instanceof WebSocketHandshakeSignalDTO) {
-            $sessionToken = $data->queryParams['X-Session-Token'] ?? null;
-            Logger::logAgentInfo($this->getId(), "Session token from DTO: " . ($sessionToken ?? 'null'));
+        try {
+            $sessionToken = $handshakeData->queryParams['X-Session-Token'] ?? null;
+            
+            // Validate that session token is provided and is a non-empty string
+            if ($sessionToken === null || $sessionToken === '') {
+                Logger::logAgentError($this->getId(), "X-Session-Token is required but not provided or empty");
+                throw new \RuntimeException("X-Session-Token is required but not provided or empty");
+            }
+            
+            if (!is_string($sessionToken)) {
+                $tokenType = gettype($sessionToken);
+                Logger::logAgentError($this->getId(), "X-Session-Token must be a string, got: {$tokenType}");
+                throw new \RuntimeException("X-Session-Token must be a string, got: {$tokenType}");
+            }
+            
+            Logger::logAgentDebug($this->getId(), "Session token from DTO: " . $sessionToken);
+            
+            // Try to find existing user
+            $user = Idea::$storage->users->findBySession($sessionToken);
+            
+            // If user not found, register new user
+            if ($user === null) {
+                $user = ObjectUser::register($sessionToken);
+                Logger::logAgentDebug($this->getId(), "New user registered with session token: " . $sessionToken);
+            } else {
+                Logger::logAgentDebug($this->getId(), "Existing user found with session token: " . $sessionToken);
+            }
+        } catch (\Exception $e) {
+            Logger::logAgentError($this->getId(), "Error processing session token: " . $e->getMessage());
+            throw $e;
         }
 
         // Add user joined event if subscribing to chat page
         if ($page === 'main') {
+            // Get user ID from Idea user object
+            $userId = $user->id;
+            
             // Exclude the joining user from receiving their own join event
-            $this->addEvent(new UserJoinedEvent($clientId), $clientId);
+            $this->addEvent(new UserJoinedEvent($userId), $clientId);
 
-            // Send subscription response with all events and start time
+            // Send subscription response with all events, start time and user info
             $subscriptionData = new SubscriptionResponseSignalData(
                 events: $this->history,
                 startTime: $this->startTime,
+                userId: $userId,
+                username: $user->name,
+                theme: $user->theme,
             );
 
             // Wrap subscription data in WebSocketSignalData for WebSocket routing
@@ -208,7 +254,7 @@ class ChatAgent extends AbstractAgent
         $dataArray = $data instanceof BaseDTO ? $data->toArray() : [];
         $clientId = $dataArray['clientId'] ?? '';
         $page = $name;
-        Logger::logAgentInfo($this->getId(), "Page unsubscribe signal received: source={$source}, client={$clientId}, page=$page");
+        Logger::logAgentDebug($this->getId(), "Page unsubscribe signal received: source={$source}, client={$clientId}, page=$page");
 
         if ($clientId === '') {
             return;

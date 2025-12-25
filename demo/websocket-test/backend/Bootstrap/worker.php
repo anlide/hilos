@@ -27,7 +27,7 @@ Env::init(__DIR__);
 #Logger::setDebugEnabled(true);
 
 try {
-    // Initialize database connection and schema
+    // Initialize database connection, schema and Idea
     Database::initialize();
 
     // Parse command line arguments for worker index

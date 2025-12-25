@@ -4,6 +4,7 @@ namespace Demo\WebSocketTest\Database\Object;
 
 use Demo\WebSocketTest\Database\Entity\User as EntityUser;
 use Hilos\Database\Object\Object_;
+use Hilos\Exception\DatabaseException;
 
 /**
  * User Object
@@ -14,9 +15,6 @@ use Hilos\Database\Object\Object_;
  * @property-read ?int $id
  * @property string $name
  * @property ?string $theme
- * @property bool $admin
- * @property bool $block
- * @property ?int $willDelete
  * @property ?string $sessionToken
  * @property ?string $lastActivity
  */
@@ -26,9 +24,6 @@ final class User extends Object_
     public const string id = 'id';
     public const string name = 'name';
     public const string theme = 'theme';
-    public const string admin = 'admin';
-    public const string block = 'block';
-    public const string willDelete = 'willDelete';
     public const string sessionToken = 'sessionToken';
     public const string lastActivity = 'lastActivity';
 
@@ -95,7 +90,7 @@ final class User extends Object_
         if (!empty($sessionToken) && strlen($sessionToken) === 32) {
             $user = self::getBySessionToken($sessionToken);
             
-            if ($user !== null && !$user->block) {
+            if ($user !== null) {
                 // User found and not blocked - update activity and return
                 $user->updateActivity();
                 return $user;
@@ -109,6 +104,46 @@ final class User extends Object_
         $user->entity->last_activity = date('Y-m-d H:i:s');
         $user->sync();
         
+        return $user;
+    }
+
+    /**
+     * Register new user
+     * 
+     * Creates a new user with the provided session token.
+     * If sessionToken already exists, throws DatabaseException.
+     * 
+     * @param string $sessionToken Session token (32 hex characters)
+     * @return self Newly registered user object
+     * @throws DatabaseException If registration fails (e.g., invalid token format, duplicate session token, database error)
+     */
+    public static function register(string $sessionToken): self
+    {
+        // Validate token format (should be 32 hex characters)
+        if (strlen($sessionToken) !== 32 || !ctype_xdigit($sessionToken)) {
+            throw new DatabaseException("Invalid session token format. Expected 32 hex characters.");
+        }
+
+        // Check if token already exists
+        $existingUser = self::getBySessionToken($sessionToken);
+        if ($existingUser !== null) {
+            throw new DatabaseException("User with session token already exists");
+        }
+
+        // Create new user
+        $user = self::create();
+        $user->entity->name = 'User' . mt_rand(1000, 9999); // Generate random name
+        $user->entity->session_token = $sessionToken;
+        $user->entity->last_activity = date('Y-m-d H:i:s');
+        
+        // Save to database (may throw DatabaseException on failure)
+        try {
+            $user->sync();
+        } catch (DatabaseException $e) {
+            // Re-throw with more context if needed
+            throw new DatabaseException("Failed to register user: " . $e->getMessage(), $e->getCode(), $e);
+        }
+
         return $user;
     }
 
@@ -146,9 +181,6 @@ final class User extends Object_
             self::id => $this->entity->id,
             self::name => $this->entity->name,
             self::theme => $this->entity->theme,
-            self::admin => $this->entity->admin,
-            self::block => $this->entity->block,
-            self::willDelete => $this->entity->will_delete,
             self::sessionToken => $this->entity->session_token,
             self::lastActivity => $this->entity->last_activity,
             default => parent::__get($property),
@@ -163,9 +195,6 @@ final class User extends Object_
         match ($property) {
             self::name => $this->entity->name = (string)$value,
             self::theme => $this->entity->theme = is_scalar($value) ? (string)$value : null,
-            self::admin => $this->entity->admin = (bool)$value,
-            self::block => $this->entity->block = (bool)$value,
-            self::willDelete => $this->entity->will_delete = is_numeric($value) ? (int)$value : null,
             self::sessionToken => $this->entity->session_token = is_scalar($value) ? (string)$value : null,
             self::lastActivity => $this->entity->last_activity = is_scalar($value) ? (string)$value : null,
             default => parent::__set($property, $value),
@@ -181,9 +210,6 @@ final class User extends Object_
             self::id => $this->entity->id,
             self::name => $this->entity->name,
             self::theme => $this->entity->theme,
-            self::admin => $this->entity->admin,
-            self::block => $this->entity->block,
-            self::willDelete => $this->entity->will_delete,
             self::sessionToken => $this->entity->session_token,
             self::lastActivity => $this->entity->last_activity,
         ];

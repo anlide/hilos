@@ -11,8 +11,10 @@ use Hilos\Exception\DatabaseException;
  *
  * This class should be extended in application-specific code to define
  * which collections to use and their lazy loading strategies
+ * 
+ * @implements IdeaStorageInterface<static>
  */
-abstract class IdeaStorage
+abstract class IdeaStorage implements IdeaStorageInterface
 {
     /**
      * Initialize storage with all collections

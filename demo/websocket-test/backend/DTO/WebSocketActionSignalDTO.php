@@ -14,5 +14,22 @@ use Hilos\DTO\WebSocket\WebSocketActionSignalDTO as FrameworkWebSocketActionSign
  */
 class WebSocketActionSignalDTO extends FrameworkWebSocketActionSignalDTO implements ChatMessageDTOInterface
 {
-    // Inherits all functionality from framework DTO
+    /**
+     * Create DTO from array
+     *
+     * Override parent method to return correct child class type.
+     *
+     * @param array $data Source data
+     * @return static DTO instance
+     */
+    public static function fromArray(array $data): static
+    {
+        return new self(
+            clientId: $data[self::CLIENT_ID] ?? '',
+            action: $data[self::ACTION] ?? '',
+            data: $data[self::DATA] ?? [],
+            page: $data[self::PAGE] ?? null,
+            group: $data[self::GROUP] ?? null,
+        );
+    }
 }

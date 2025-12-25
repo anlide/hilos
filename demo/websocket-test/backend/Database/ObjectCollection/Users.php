@@ -171,4 +171,42 @@ final class Users extends Objects implements Iterator, ArrayAccess, Countable
 
         $this->_allLoaded = true;
     }
+
+    /**
+     * Find user by session token
+     *
+     * @param string $sessionToken Session token (32 hex characters)
+     * @return ObjectUser|null User object or null if not found
+     * @throws DatabaseException
+     */
+    public function findBySession(string $sessionToken): ?ObjectUser
+    {
+        if (empty($sessionToken)) {
+            return null;
+        }
+
+        // Use Entity to find by session_token
+        $entityUsers = EntityUser::get(['session_token' => $sessionToken]);
+        $entity = $entityUsers->first();
+
+        if ($entity === null) {
+            return null;
+        }
+
+        // Check if already loaded in collection
+        $userId = $entity->id;
+        if ($userId !== null && isset($this->objects[$userId])) {
+            return $this->objects[$userId];
+        }
+
+        // Create ObjectUser from entity
+        $objectUser = ObjectUser::fromEntity($entity);
+
+        // Optionally cache it in collection for future access by ID
+        if ($userId !== null) {
+            $this->objects[$userId] = $objectUser;
+        }
+
+        return $objectUser;
+    }
 }

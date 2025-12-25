@@ -11,21 +11,13 @@ use Hilos\Exception\DatabaseException;
  * Manages two Entity instances: current state and synced state
  * Enables precise change tracking and saves only modified columns
  * 
- * @property Entity $entity Current entity state
- * @property Entity $entitySync Synced entity state (from database)
+ * @template TEntity of Entity
+ * 
+ * @property TEntity $entity Current entity state
+ * @property TEntity $entitySync Synced entity state (from database)
  */
 abstract class Object_
 {
-    /**
-     * Current entity state (with modifications)
-     */
-    protected Entity $entity;
-
-    /**
-     * Synced entity state (original from database)
-     */
-    protected Entity $entitySync;
-
     protected function __clone()
     {
     }

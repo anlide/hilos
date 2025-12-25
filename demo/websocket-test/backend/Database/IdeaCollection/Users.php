@@ -4,6 +4,7 @@ namespace Demo\WebSocketTest\Database\IdeaCollection;
 
 use Demo\WebSocketTest\Database\Idea\User as IdeaUser;
 use Demo\WebSocketTest\Database\Object\User as ObjectUser;
+use Demo\WebSocketTest\Database\ObjectCollection\Users as ObjectUsers;
 use Hilos\Database\Idea\IdeaCollection;
 use Hilos\Database\Object\Objects;
 
@@ -43,34 +44,35 @@ final class Users extends IdeaCollection
         });
     }
 
-    /**
-     * Filter admins only
-     */
-    public function filterAdmins(): self
-    {
-        return $this->filter(function(ObjectUser $user) {
-            return $user->admin === true;
-        });
-    }
 
     /**
-     * Filter non-blocked users
+     * Find user by session token
+     * Returns Idea\User (read-only) or null
+     *
+     * @param string $sessionToken Session token (32 hex characters)
+     * @return IdeaUser|null User idea or null if not found
+     * @throws \Hilos\Exception\DatabaseException
      */
-    public function filterActive(): self
+    public function findBySession(string $sessionToken): ?IdeaUser
     {
-        return $this->filter(function(ObjectUser $user) {
-            return $user->block === false;
-        });
-    }
+        if (empty($sessionToken)) {
+            return null;
+        }
 
-    /**
-     * Get users marked for deletion
-     */
-    public function filterMarkedForDeletion(): self
-    {
-        return $this->filter(function(ObjectUser $user) {
-            return $user->willDelete !== null;
-        });
+        // Delegate to ObjectCollection
+        // $this->objects is guaranteed to be ObjectUsers instance
+        if (!($this->objects instanceof ObjectUsers)) {
+            throw new \RuntimeException("Expected ObjectUsers instance");
+        }
+
+        $objectUser = $this->objects->findBySession($sessionToken);
+
+        if ($objectUser === null) {
+            return null;
+        }
+
+        // Convert to Idea
+        return $this->objectToIdea($objectUser);
     }
 
     /**

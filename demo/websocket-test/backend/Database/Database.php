@@ -57,6 +57,10 @@ class Database extends BaseDatabase
         // Initialize database schema structure
         Schema::initialize(0);
 
+        // Initialize Idea with storage (for read-only data access)
+        // Idea depends on Database, so initialize it here
+        Idea::init(true);
+
         // Additional database connections can be configured here
         // Example for secondary database:
         // self::configure(

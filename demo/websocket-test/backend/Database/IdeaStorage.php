@@ -19,10 +19,10 @@ final class IdeaStorage extends BaseIdeaStorage
     /**
      * Initialize storage with all collections
      *
-     * @return self
+     * @return static
      * @throws DatabaseException
      */
-    public static function init(): self
+    public static function init(): static
     {
         $self = new self();
 
@@ -45,7 +45,9 @@ final class IdeaStorage extends BaseIdeaStorage
     {
         $this->users->initAgainFullDB();
 
-        // TODO: Add other collections
+        // TODO: Add other collections as needed
+        // Example:
+        // $this->orders->initAgainFullDB();
     }
 
     /**

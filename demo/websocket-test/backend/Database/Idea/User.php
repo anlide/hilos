@@ -3,7 +3,7 @@
 namespace Demo\WebSocketTest\Database\Idea;
 
 use Demo\WebSocketTest\Database\Object\User as ObjectUser;
-use Hilos\Database\Idea\Idea as BaseIdea;
+use Hilos\Database\Idea\IdeaObject as BaseIdea;
 use Hilos\Database\Idea\IdeaCollection;
 
 /**
@@ -13,9 +13,6 @@ use Hilos\Database\Idea\IdeaCollection;
  * @property-read int $id
  * @property-read string $name
  * @property-read ?string $theme
- * @property-read bool $admin
- * @property-read bool $block
- * @property-read ?int $willDelete
  */
 final class User extends BaseIdea
 {
@@ -64,11 +61,9 @@ final class User extends BaseIdea
             ObjectUser::id => $this->objectUser->id,
             ObjectUser::name => $this->objectUser->name,
             ObjectUser::theme => $this->objectUser->theme,
-            ObjectUser::admin => $this->objectUser->admin,
-            ObjectUser::block => $this->objectUser->block,
-            ObjectUser::willDelete => $this->objectUser->willDelete,
 
-            // Example of lazy loading (implement when you have related entities)
+            // Example of lazy loading relationships (implement when you have related entities)
+            // 'orders' => $this->loadOrders(),
             // 'posts' => $this->loadPosts(),
 
             default => throw new \Exception("Property [{$name}] does not exist on IdeaUser"),
@@ -88,26 +83,65 @@ final class User extends BaseIdea
 
         $data[ObjectUser::name] = $this->objectUser->name;
         $data[ObjectUser::theme] = $this->objectUser->theme;
-        $data[ObjectUser::admin] = $this->objectUser->admin;
-        $data[ObjectUser::block] = $this->objectUser->block;
-        $data[ObjectUser::willDelete] = $this->objectUser->willDelete;
 
         return $data;
     }
 
     /**
-     * Example: Lazy load posts (implement when Post entity exists)
+     * Example: Lazy load orders (implement when Order entity exists)
+     * 
+     * Usage: Idea::$idea->users[123]->orders[456]->amount
+     * 
+     * @return IdeaCollection Collection of Order ideas
      */
-    // private function loadPosts(): array
+    // private function loadOrders(): IdeaCollection
+    // {
+    //     if ($this->hasRelatedCache('orders')) {
+    //         return $this->getCachedRelated('orders');
+    //     }
+    //
+    //     // Load orders from database using Entity
+    //     $entityOrders = EntityOrder::get(['user_id' => $this->objectUser->id]);
+    //     
+    //     // Create Object collection
+    //     $objectOrders = ObjectOrders::initEmpty();
+    //     foreach ($entityOrders as $entityOrder) {
+    //         $objectOrder = ObjectOrder::fromEntity($entityOrder);
+    //         $objectOrders[$objectOrder->id] = $objectOrder;
+    //     }
+    //
+    //     // Create Idea collection from Object collection
+    //     $ideaOrders = IdeaOrders::init($objectOrders);
+    //     $this->setCachedRelated('orders', $ideaOrders);
+    //
+    //     return $ideaOrders;
+    // }
+
+    /**
+     * Example: Lazy load posts (implement when Post entity exists)
+     * 
+     * @return IdeaCollection Collection of Post ideas
+     */
+    // private function loadPosts(): IdeaCollection
     // {
     //     if ($this->hasRelatedCache('posts')) {
     //         return $this->getCachedRelated('posts');
     //     }
     //
     //     // Load posts from database
-    //     $posts = Post::getByUserId($this->objectUser->id);
-    //     $this->setCachedRelated('posts', $posts);
+    //     $entityPosts = EntityPost::get(['user_id' => $this->objectUser->id]);
+    //     
+    //     // Create Object collection
+    //     $objectPosts = ObjectPosts::initEmpty();
+    //     foreach ($entityPosts as $entityPost) {
+    //         $objectPost = ObjectPost::fromEntity($entityPost);
+    //         $objectPosts[$objectPost->id] = $objectPost;
+    //     }
     //
-    //     return $posts;
+    //     // Create Idea collection from Object collection
+    //     $ideaPosts = IdeaPosts::init($objectPosts);
+    //     $this->setCachedRelated('posts', $ideaPosts);
+    //
+    //     return $ideaPosts;
     // }
 }

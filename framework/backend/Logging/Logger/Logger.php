@@ -17,6 +17,9 @@ class Logger
     /** @var ?string Log file path for daemon-side logging */
     private static ?string $logFile = null;
 
+    /** @var ?string Error log file path for error-only logging */
+    private static ?string $errorLogFile = null;
+
     /** @var bool Whether to show log level prefix [INFO], [ERROR], [DEBUG] (default: false) */
     private static bool $showLogLevel = false;
 
@@ -34,6 +37,16 @@ class Logger
     public static function setLogFile(string $logFile): void
     {
         self::$logFile = $logFile;
+    }
+
+    /**
+     * Set error log file path for error-only logging
+     *
+     * @param string $errorLogFile Error log file path
+     */
+    public static function setErrorLogFile(string $errorLogFile): void
+    {
+        self::$errorLogFile = $errorLogFile;
     }
 
     /**
@@ -107,18 +120,39 @@ class Logger
     {
         $timestamp = TimeHelper::getTimestampWithMs();
         $contextStr = !empty($context) ? ' ' . json_encode($context) : '';
-        $levelPrefix = self::$showLogLevel ? " [{$level}]" : '';
-        $logLine = "[{$timestamp}]{$levelPrefix} {$message}{$contextStr}";
+
+        // Determine prefix for main log file:
+        // - INFO: no prefix (main log entries)
+        // - DEBUG: DEBUG: prefix
+        // - ERROR: ERROR: prefix
+        $mainLogPrefix = ($level === 'INFO') ? '' : "{$level}:";
+        $mainLogLine = "[{$timestamp}]" . ($mainLogPrefix !== '' ? " {$mainLogPrefix}" : '') . " {$message}{$contextStr}";
+
+        // For error log file: no prefix (only errors there)
+        $errorLogLine = "[{$timestamp}] {$message}{$contextStr}";
 
         if (self::$logFile !== null) {
-            // Write to log file if set
-            file_put_contents(self::$logFile, $logLine . "\n", FILE_APPEND | LOCK_EX);
+            // Write to main log file
+            file_put_contents(self::$logFile, $mainLogLine . "\n", FILE_APPEND | LOCK_EX);
+
+            // If ERROR level, also write to error log file (without prefix)
+            if ($level === 'ERROR' && self::$errorLogFile !== null) {
+                file_put_contents(self::$errorLogFile, $errorLogLine . "\n", FILE_APPEND | LOCK_EX);
+            }
         } else {
             // Fallback to echo/error_log
-            if ($useStderr) {
-                self::errorLog($logLine);
+            // For ERROR level: write to both stdout (with prefix) and stderr (without prefix)
+            if ($level === 'ERROR') {
+                // Write to stdout (main log file) with ERROR: prefix
+                echo $mainLogLine . "\n";
+                // Write to stderr (error log file) without prefix
+                self::errorLog($errorLogLine);
+            } elseif ($useStderr) {
+                // For other levels going to stderr, write without prefix
+                self::errorLog($errorLogLine);
             } else {
-                echo $logLine . "\n";
+                // For other levels going to stdout, write with appropriate prefix
+                echo $mainLogLine . "\n";
             }
         }
     }
@@ -142,10 +176,16 @@ class Logger
         }
 
         if (self::$logFile !== null) {
-            // Write to log file if set
+            // Write to main log file with ERROR: prefix
             $timestamp = TimeHelper::getTimestampWithMs();
-            $logLine = "[{$timestamp}] [ERROR] {$message}";
-            file_put_contents(self::$logFile, $logLine . "\n", FILE_APPEND | LOCK_EX);
+            $mainLogLine = "[{$timestamp}] ERROR: {$message}";
+            file_put_contents(self::$logFile, $mainLogLine . "\n", FILE_APPEND | LOCK_EX);
+
+            // Also write to error log file without prefix
+            if (self::$errorLogFile !== null) {
+                $errorLogLine = "[{$timestamp}] {$message}";
+                file_put_contents(self::$errorLogFile, $errorLogLine . "\n", FILE_APPEND | LOCK_EX);
+            }
         } else {
             // Fallback to error_log
             error_log($message, $messageType);

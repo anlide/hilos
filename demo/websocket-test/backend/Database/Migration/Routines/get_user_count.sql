@@ -1,20 +1,15 @@
--- Stored Procedure: Get user count by status
+-- Stored Procedure: Get user count
 -- This is an example of a SQL routine
+-- Note: admin and block fields have been removed, so this procedure now just returns total count
 
 DELIMITER $$
 
 DROP PROCEDURE IF EXISTS GetUserCount$$
 
-CREATE PROCEDURE GetUserCount(
-    IN p_admin TINYINT,
-    IN p_blocked TINYINT
-)
+CREATE PROCEDURE GetUserCount()
 BEGIN
     SELECT COUNT(*) as user_count
-    FROM `user`
-    WHERE 
-        (p_admin IS NULL OR `admin` = p_admin)
-        AND (p_blocked IS NULL OR `block` = p_blocked);
+    FROM `user`;
 END$$
 
 DELIMITER ;

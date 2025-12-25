@@ -14,5 +14,21 @@ use Hilos\DTO\WebSocket\WebSocketSubscribeSignalDTO as FrameworkWebSocketSubscri
  */
 class WebSocketSubscribeSignalDTO extends FrameworkWebSocketSubscribeSignalDTO implements ChatMessageDTOInterface
 {
-    // Inherits all functionality from framework DTO
+    /**
+     * Create DTO from array
+     *
+     * Override parent method to return correct child class type.
+     *
+     * @param array $data Source data
+     * @return static DTO instance
+     */
+    public static function fromArray(array $data): static
+    {
+        return new self(
+            clientId: $data[self::CLIENT_ID] ?? '',
+            page: $data[self::PAGE] ?? null,
+            groups: $data[self::GROUPS] ?? [],
+            params: $data[self::PARAMS] ?? [],
+        );
+    }
 }

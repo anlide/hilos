@@ -42,7 +42,7 @@
 // Note: Vue types are resolved by demo projects via tsconfig.app.json
 // IDE may show errors here, but TypeScript compiler in demo projects will resolve them correctly
 // @ts-expect-error - Vue types are provided by demo project's node_modules
-import { computed, defineProps, defineEmits, onBeforeUnmount, watch } from 'vue'
+import { computed, onBeforeUnmount, watch } from 'vue'
 
 interface Props {
   modelValue: boolean
@@ -135,7 +135,7 @@ const setAutoFocus = () => {
 
 watch(
   () => visible.value,
-  (val) => {
+  (val: boolean) => {
     if (val) {
       document.body.classList.add('modal-open')
       document.addEventListener('keydown', onKeydown)

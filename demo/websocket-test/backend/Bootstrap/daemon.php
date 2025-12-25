@@ -34,7 +34,7 @@ Env::init(__DIR__);
 #Logger::setDebugEnabled(true);
 
 try {
-    // Initialize database connection and schema
+    // Initialize database connection, schema and Idea
     Database::initialize();
 
     // Create chat daemon manager instance first (creates signalRouter)

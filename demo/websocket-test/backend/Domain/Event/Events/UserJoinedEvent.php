@@ -17,11 +17,11 @@ class UserJoinedEvent extends AbstractChatEvent
     /**
      * Constructor
      *
-     * @param string $clientId Client ID of the user who joined
+     * @param int $userId User ID of the user who joined
      * @param int|null $timestamp Optional timestamp (defaults to current time)
      */
     public function __construct(
-        private readonly string $clientId,
+        private readonly int $userId,
         ?int $timestamp = null
     ) {
         parent::__construct($timestamp);
@@ -38,24 +38,24 @@ class UserJoinedEvent extends AbstractChatEvent
     }
 
     /**
-     * Get client ID associated with event
+     * Get user ID associated with event
      *
-     * @return string Client ID
+     * @return int User ID
      */
-    public function getClientId(): ?string
+    public function getUserId(): int
     {
-        return $this->clientId;
+        return $this->userId;
     }
 
     /**
      * Get event-specific data
      *
-     * @return array Event data with clientId
+     * @return array Event data with userId
      */
     protected function getEventData(): array
     {
         return [
-            'clientId' => $this->clientId,
+            'userId' => $this->userId,
         ];
     }
 }

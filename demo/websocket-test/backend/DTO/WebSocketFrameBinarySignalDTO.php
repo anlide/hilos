@@ -14,5 +14,19 @@ use Hilos\DTO\WebSocket\WebSocketFrameBinarySignalDTO as FrameworkWebSocketFrame
  */
 class WebSocketFrameBinarySignalDTO extends FrameworkWebSocketFrameBinarySignalDTO implements ChatMessageDTOInterface
 {
-    // Inherits all functionality from framework DTO
+    /**
+     * Create DTO from array
+     *
+     * Override parent method to return correct child class type.
+     *
+     * @param array $data Source data
+     * @return static DTO instance
+     */
+    public static function fromArray(array $data): static
+    {
+        return new self(
+            clientId: $data[self::CLIENT_ID] ?? '',
+            payload: $data[self::PAYLOAD] ?? '',
+        );
+    }
 }

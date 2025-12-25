@@ -12,6 +12,7 @@ use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalSourceInterface;
 use Hilos\Core\Router\SignalType;
 use Hilos\Core\Router\SignalTypeInterface;
+use Hilos\Logging\Logger\Logger;
 
 /**
  * SignalDTO - DTO for queued signal
@@ -35,22 +36,21 @@ class SignalDTO extends BaseDTO
      */
     public function toArray(): array
     {
-        // Serialize signalData - use toArray() from BaseDTO
-        $dataArray = $this->data instanceof BaseDTO
+        // Serialize signalData - check if it has toArray() method
+        // SignalDataInterface requires toArray() method, so we can safely call it
+        $dataArray = method_exists($this->data, 'toArray')
             ? $this->data->toArray()
             : [];
 
         // Store data class name for deserialization
         $dataType = get_class($this->data);
 
-        // Serialize signalSource
-        $signalSourceArray = $this->signalSource instanceof SignalSourceInterface
-            ? [
-                'source' => $this->signalSource->getSource(),
-                'type' => $this->signalSource->getType(),
-                'index' => $this->signalSource->getIndex(),
-            ]
-            : $this->signalSource;
+        // Serialize signalSource - always serialize to array
+        $signalSourceArray = [
+            'source' => $this->signalSource->getSource(),
+            'type' => $this->signalSource->getType(),
+            'index' => $this->signalSource->getIndex(),
+        ];
 
         return [
             'signalSource' => $signalSourceArray,
@@ -66,11 +66,35 @@ class SignalDTO extends BaseDTO
      *
      * @param array $data Source data
      * @return static DTO instance
+     * @throws \InvalidArgumentException If required fields are missing or invalid
      */
     public static function fromArray(array $data): static
     {
+        // Validate required fields
+        if (!isset($data['signalSource'])) {
+            throw new \InvalidArgumentException("Missing required field: signalSource");
+        }
+
+        if (!isset($data['signalType'])) {
+            throw new \InvalidArgumentException("Missing required field: signalType");
+        }
+
+        if (!isset($data['signalName'])) {
+            throw new \InvalidArgumentException("Missing required field: signalName");
+        }
+
+        // Validate data field type
+        if (isset($data['data']) && !is_array($data['data'])) {
+            throw new \InvalidArgumentException("Field 'data' must be an array, got: " . gettype($data['data']));
+        }
+
+        // Validate dataType field type - must be string or null
+        if (array_key_exists('dataType', $data) && $data['dataType'] !== null && !is_string($data['dataType'])) {
+            throw new \InvalidArgumentException("Field 'dataType' must be string or null, got: " . gettype($data['dataType']));
+        }
+
         // Deserialize signalSource
-        $signalSourceData = $data['signalSource'] ?? [];
+        $signalSourceData = $data['signalSource'];
         if ($signalSourceData instanceof SignalSourceInterface) {
             $signalSource = $signalSourceData;
         } elseif (is_array($signalSourceData)) {
@@ -85,13 +109,19 @@ class SignalDTO extends BaseDTO
             $signalSource = new SignalSource((string)$signalSourceData);
         }
 
-        $signalType = $data['signalType'] instanceof SignalTypeInterface
-            ? $data['signalType']
-            : new SignalType($data['signalType'] ?? '');
+        // Deserialize signalType
+        if ($data['signalType'] instanceof SignalTypeInterface) {
+            $signalType = $data['signalType'];
+        } else {
+            $signalType = new SignalType($data['signalType'] ?? '');
+        }
 
-        $signalName = $data['signalName'] instanceof SignalNameInterface
-            ? $data['signalName']
-            : new SignalName($data['signalName'] ?? '');
+        // Deserialize signalName
+        if ($data['signalName'] instanceof SignalNameInterface) {
+            $signalName = $data['signalName'];
+        } else {
+            $signalName = new SignalName($data['signalName'] ?? '');
+        }
 
         // Deserialize signalData
         $dataArray = $data['data'] ?? [];
@@ -116,20 +146,151 @@ class SignalDTO extends BaseDTO
     private static function deserializeSignalData(array $dataArray, ?string $dataType): SignalDataInterface
     {
         // If dataType is provided, try to deserialize using that class
-        if (is_string($dataType) && class_exists($dataType)) {
-            // Check if class implements SignalDataInterface
-            if (is_a($dataType, SignalDataInterface::class, true)) {
-                // All SignalDataInterface implementations extend BaseDTO and have fromArray()
-                try {
-                    return $dataType::fromArray($dataArray);
-                } catch (\Throwable $e) {
-                    // If deserialization fails, fall back to SignalData with data
-                    // Some SignalData implementations may not support fromArray
+        if (is_string($dataType) && $dataType !== '') {
+            // Aggressively try to load the class - it should be available via autoload
+            // Try multiple times with different approaches
+            $classLoaded = false;
+
+            // Try to load the class
+            if (!class_exists($dataType, false)) {
+                spl_autoload_call($dataType);
+            }
+
+            if (class_exists($dataType, true)) {
+                // Check if class implements SignalDataInterface
+                if (is_a($dataType, SignalDataInterface::class, true)) {
+                    try {
+                        $result = $dataType::fromArray($dataArray);
+                        Logger::debug("Deserialized signal data as {$dataType}");
+                        return $result;
+                    } catch (\Throwable $e) {
+                        // If deserialization fails, try framework fallback
+                        Logger::error("Failed to deserialize signal data as {$dataType}: {$e->getMessage()}");
+
+                        // Try framework class fallback
+                        $fallbackResult = self::tryFrameworkClassFallback($dataType, $dataArray);
+                        if ($fallbackResult !== null) {
+                            return $fallbackResult;
+                        }
+                    }
+                } else {
+                    Logger::error("Signal data type {$dataType} does not implement SignalDataInterface");
+                }
+            } else {
+                // Class not found - try framework fallback
+                Logger::debug("Class {$dataType} not found, attempting framework fallback");
+
+                // Try framework class fallback
+                $fallbackResult = self::tryFrameworkClassFallback($dataType, $dataArray);
+                if ($fallbackResult !== null) {
+                    return $fallbackResult;
                 }
             }
         }
 
-        // Fallback: create SignalData with provided data array
+        // Final fallback: create SignalData with provided data array
+        Logger::debug("Using SignalData fallback");
         return SignalData::fromArray($dataArray);
+    }
+
+    /**
+     * Try to deserialize using framework class fallback
+     *
+     * Attempts to find and use framework equivalent of custom class.
+     *
+     * @param string $originalClass Original class name (may be custom class outside framework)
+     * @param array $dataArray Data array for deserialization
+     * @return SignalDataInterface|null Deserialized signal data or null if fallback failed
+     */
+    private static function tryFrameworkClassFallback(string $originalClass, array $dataArray): ?SignalDataInterface
+    {
+        $frameworkClass = self::getFrameworkClassFallback($originalClass);
+        if ($frameworkClass === null) {
+            return null;
+        }
+
+        // Check if framework class exists (with autoload enabled)
+        if (!class_exists($frameworkClass, true)) {
+            Logger::debug("Framework fallback class {$frameworkClass} not found");
+            return null;
+        }
+
+        try {
+            Logger::debug("Using framework fallback: {$frameworkClass} (original: {$originalClass})");
+            $result = $frameworkClass::fromArray($dataArray);
+
+            // Try to normalize back to original class if it's now available
+            if (!class_exists($originalClass, false)) {
+                spl_autoload_call($originalClass);
+            }
+
+            if (class_exists($originalClass, true) && is_a($originalClass, SignalDataInterface::class, true)) {
+                try {
+                    $normalizedResult = $originalClass::fromArray($dataArray);
+                    Logger::debug("Normalized to original class: {$originalClass}");
+                    return $normalizedResult;
+                } catch (\Throwable $e) {
+                    Logger::debug("Normalization failed, using framework class: {$e->getMessage()}");
+                }
+            }
+
+            return $result;
+        } catch (\Throwable $e) {
+            Logger::error("Framework class fallback failed for {$frameworkClass}: {$e->getMessage()}");
+            return null;
+        }
+    }
+
+    /**
+     * Get framework class fallback for custom class
+     *
+     * Intelligently maps custom classes (outside Hilos namespace) to their framework equivalents
+     * by analyzing namespace structure.
+     *
+     * Examples:
+     * - Custom\WebSocketTest\DTO\WebSocketHandshakeSignalDTO -> Hilos\DTO\WebSocket\WebSocketHandshakeSignalDTO
+     * - Custom\SomeApp\DTO\Agent\AgentSignalDTO -> Hilos\DTO\Agent\AgentSignalDTO
+     * - Custom\SomeApp\DTO\SomeDTO -> Hilos\DTO\SomeDTO
+     *
+     * @param string $customClass Custom class name (outside Hilos namespace)
+     * @return ?string Framework class name or null if no mapping exists
+     */
+    private static function getFrameworkClassFallback(string $customClass): ?string
+    {
+        // Check if it's a custom class (not in Hilos namespace)
+        if (str_starts_with($customClass, 'Hilos\\')) {
+            return null;
+        }
+
+        // Parse namespace structure: Custom\WebSocketTest\DTO\WebSocketHandshakeSignalDTO
+        $parts = explode('\\', $customClass);
+        $className = end($parts); // Last part is class name
+
+        // Build candidate list based on namespace structure
+        $candidates = [];
+
+        // If namespace has more than 4 parts (Custom\App\DTO\SubNamespace\ClassName),
+        // try to preserve middle parts in framework namespace
+        // Example: Custom\SomeApp\DTO\Agent\SomeDTO -> Hilos\DTO\Agent\SomeDTO
+        if (count($parts) > 4) {
+            // Extract middle parts between Custom\App\DTO and ClassName
+            // Custom\SomeApp\DTO\Agent\SomeDTO -> [Agent]
+            $middleParts = array_slice($parts, 3, -1);
+            if (!empty($middleParts)) {
+                $middlePath = implode('\\', $middleParts);
+                $candidates[] = "Hilos\\DTO\\{$middlePath}\\{$className}";
+            }
+        }
+
+        // Always try WebSocket namespace first (common case)
+        $candidates[] = "Hilos\\DTO\\WebSocket\\{$className}";
+
+        // Try generic DTO namespace as fallback
+        $candidates[] = "Hilos\\DTO\\{$className}";
+
+        // Try each candidate and return first that exists
+        return array_find($candidates, fn($candidate) => class_exists($candidate, true));
+
+        // No framework class found
     }
 }

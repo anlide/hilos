@@ -21,6 +21,12 @@ class SubscriptionResponseSignalData extends BaseDTO implements SignalDataInterf
         public readonly array $events,
         /** @var float Server start time (microtime) */
         public readonly float $startTime,
+        /** @var int User ID */
+        public readonly int $userId,
+        /** @var string Username */
+        public readonly string $username,
+        /** @var ?string User theme */
+        public readonly ?string $theme = null,
     ) {
     }
 
@@ -39,6 +45,9 @@ class SubscriptionResponseSignalData extends BaseDTO implements SignalDataInterf
         return [
             'events' => $eventsArray,
             'startTime' => $this->startTime,
+            'userId' => $this->userId,
+            'username' => $this->username,
+            'theme' => $this->theme,
         ];
     }
 

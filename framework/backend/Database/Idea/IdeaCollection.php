@@ -12,7 +12,7 @@ use Hilos\Database\Object\Objects;
  * Base Idea Collection class
  * Provides lazy loading and relation management between Idea objects
  * 
- * @template T of Idea
+ * @template T of IdeaObject
  * @implements ArrayAccess<int|string, T>
  * @implements Iterator<int|string, T>
  */
@@ -26,7 +26,7 @@ abstract class IdeaCollection implements ArrayAccess, Countable, Iterator
     /**
      * Cached Idea instances
      * 
-     * @var array<int|string, Idea>
+     * @var array<int|string, IdeaObject>
      */
     private array $ideaCache = [];
 
@@ -54,7 +54,7 @@ abstract class IdeaCollection implements ArrayAccess, Countable, Iterator
      * Convert Object to Idea instance
      * Must be implemented by child classes
      */
-    abstract protected function objectToIdea(mixed $object): Idea;
+    abstract protected function objectToIdea(mixed $object): IdeaObject;
 
     /**
      * Clear Idea cache
@@ -68,7 +68,7 @@ abstract class IdeaCollection implements ArrayAccess, Countable, Iterator
      * Get Idea instance for object at key
      * Supports lazy loading from Object collection
      */
-    protected function getIdeaForKey(int|string $key): ?Idea
+    protected function getIdeaForKey(int|string $key): ?IdeaObject
     {
         // Accessing $this->objects[$key] will trigger lazy loading if enabled
         $object = $this->objects[$key];
@@ -156,7 +156,7 @@ abstract class IdeaCollection implements ArrayAccess, Countable, Iterator
     /**
      * Get first Idea
      */
-    public function first(): ?Idea
+    public function first(): ?IdeaObject
     {
         $firstObject = $this->objects->first();
         if ($firstObject === null) {
@@ -170,7 +170,7 @@ abstract class IdeaCollection implements ArrayAccess, Countable, Iterator
     /**
      * Get last Idea
      */
-    public function last(): ?Idea
+    public function last(): ?IdeaObject
     {
         $lastObject = $this->objects->last();
         if ($lastObject === null) {
@@ -202,10 +202,22 @@ abstract class IdeaCollection implements ArrayAccess, Countable, Iterator
     // ArrayAccess implementation
     public function offsetExists(mixed $offset): bool
     {
-        return isset($this->objects[$offset]);
+        // If object is already loaded, it exists
+        if (isset($this->objects[$offset])) {
+            return true;
+        }
+
+        // If lazy loading is enabled, try to load the object
+        // This will check if object exists in database
+        if ($this->objects->allowLazyLoading) {
+            $object = $this->objects[$offset];
+            return $object !== null;
+        }
+
+        return false;
     }
 
-    public function offsetGet(mixed $offset): ?Idea
+    public function offsetGet(mixed $offset): ?IdeaObject
     {
         return $this->getIdeaForKey($offset);
     }
@@ -231,7 +243,7 @@ abstract class IdeaCollection implements ArrayAccess, Countable, Iterator
     }
 
     // Iterator implementation
-    public function current(): ?Idea
+    public function current(): ?IdeaObject
     {
         $this->objects->rewind();
         $objectKey = null;
