@@ -72,8 +72,9 @@ HELP;
 
         // Load Entity classes
         $syntaxErrors = 0;
+        $brokenEntities = [];
         try {
-            $entities = $this->loadEntities($entityDir, $syntaxErrors);
+            $entities = $this->loadEntities($entityDir, $syntaxErrors, $brokenEntities);
         } catch (\Throwable $e) {
             echo "Error: Failed to load Entity classes\n";
             echo "Message: {$e->getMessage()}\n\n";
@@ -91,8 +92,19 @@ HELP;
 
         // Find differences and prepare fixes
         $fixes = $this->prepareFixes($entities, $objects, $tableName, $forceRepair);
-        $objectsToCreate = $this->findObjectsToCreate($entities, $objects, $tableName);
-        $filesToDelete = $this->findFilesToDelete($entities, $objects, $tableName);
+        $objectsToCreate = $this->findObjectsToCreate($entities, $objects, $tableName, $brokenEntities);
+        $filesToDelete = $this->findFilesToDelete($entities, $objects, $tableName, $brokenEntities, $entityDir);
+
+        // Display information about broken Entity files
+        if (!empty($brokenEntities)) {
+            echo "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
+            echo "⚠ Damaged Entity files (Object files will not be modified):\n";
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n";
+            foreach ($brokenEntities as $file => $reason) {
+                echo "  - {$file}\n";
+                echo "    Reason: {$reason}\n\n";
+            }
+        }
 
         if ($syntaxErrors > 0) {
             echo "\n⚠ {$syntaxErrors} file(s) contain syntax errors and were skipped.\n";
@@ -142,7 +154,7 @@ HELP;
     /**
      * Load Entity classes from directory
      */
-    private function loadEntities(?string $entityDir, int &$syntaxErrors = 0): array
+    private function loadEntities(?string $entityDir, int &$syntaxErrors = 0, array &$brokenEntities = []): array
     {
         // Auto-detect if not provided
         if ($entityDir === null) {
@@ -193,6 +205,8 @@ HELP;
         foreach ($files as $file) {
             $className = $this->extractClassNameFromFile($file);
             if ($className === null) {
+                // File exists but cannot extract class name - mark as broken
+                $brokenEntities[$file] = 'Cannot extract class name from file';
                 continue;
             }
 
@@ -202,8 +216,8 @@ HELP;
                 $returnVar = 0;
                 exec("php -l " . escapeshellarg($file) . " 2>&1", $output, $returnVar);
                 if ($returnVar !== 0) {
-                    echo "⚠ Skipping {$file}: PHP syntax error detected\n";
-                    echo "  " . implode("\n  ", $output) . "\n";
+                    $errorMessage = implode(' ', $output);
+                    $brokenEntities[$file] = "PHP syntax error: {$errorMessage}";
                     $syntaxErrors++;
                     continue;
                 }
@@ -228,7 +242,7 @@ HELP;
                     'reflection' => $reflection,
                 ];
             } catch (\Throwable $e) {
-                echo "⚠ Skipping {$file}: {$e->getMessage()}\n";
+                $brokenEntities[$file] = $e->getMessage();
                 continue;
             }
         }
@@ -747,12 +761,18 @@ HELP;
     /**
      * Find Object files to create
      */
-    private function findObjectsToCreate(array $entities, array $objects, ?string $tableFilter): array
+    private function findObjectsToCreate(array $entities, array $objects, ?string $tableFilter, array $brokenEntities = []): array
     {
         $toCreate = [];
 
         foreach ($entities as $tableName => $entityInfo) {
             if ($tableFilter !== null && $tableName !== $tableFilter) {
+                continue;
+            }
+
+            // Skip if Entity file is broken
+            $entityFile = $entityInfo['file'];
+            if (isset($brokenEntities[$entityFile])) {
                 continue;
             }
 
@@ -770,7 +790,7 @@ HELP;
     /**
      * Find Object files to delete (no corresponding Entity)
      */
-    private function findFilesToDelete(array $entities, array $objects, ?string $tableFilter): array
+    private function findFilesToDelete(array $entities, array $objects, ?string $tableFilter, array $brokenEntities = [], ?string $entityDir = null): array
     {
         $toDelete = [];
 
@@ -779,6 +799,7 @@ HELP;
 
             // Try to find corresponding Entity
             $found = false;
+            $entityFile = null;
             foreach ($entities as $tableName => $entityInfo) {
                 if ($tableFilter !== null && $tableName !== $tableFilter) {
                     continue;
@@ -787,16 +808,76 @@ HELP;
                 $entityShortName = substr($entityInfo['class'], strrpos($entityInfo['class'], '\\') + 1);
                 if ($entityShortName === $objectShortName) {
                     $found = true;
+                    $entityFile = $entityInfo['file'];
                     break;
                 }
             }
 
+            // If Entity not found in loaded entities, check if corresponding Entity file exists but is broken
             if (!$found) {
+                // Try to find Entity file by matching short class name
+                $entityFile = $this->findEntityFileByShortName($objectShortName, $entityDir);
+                if ($entityFile !== null && isset($brokenEntities[$entityFile])) {
+                    // Entity file exists but is broken - don't delete Object
+                    continue;
+                }
+                
+                // Entity not found and not broken - mark for deletion
                 $toDelete[$objectClassName] = $objectInfo;
+            } elseif ($entityFile !== null && isset($brokenEntities[$entityFile])) {
+                // Entity exists but is broken - don't delete Object
+                continue;
             }
         }
 
         return $toDelete;
+    }
+
+    /**
+     * Find Entity file by short class name
+     */
+    private function findEntityFileByShortName(string $shortName, ?string $entityDir = null): ?string
+    {
+        // If entityDir is provided, use it first
+        if ($entityDir !== null && is_dir($entityDir)) {
+            $file = $entityDir . '/' . $shortName . '.php';
+            if (file_exists($file)) {
+                return $file;
+            }
+        }
+
+        // Try to find Entity file in common locations
+        $cwd = getcwd();
+        $possibleDirs = [
+            $cwd . '/backend/Database/Entity',
+            $cwd . '/Database/Entity',
+            $cwd . '/Entity',
+            dirname($cwd) . '/backend/Database/Entity',
+            dirname($cwd) . '/Database/Entity',
+        ];
+
+        $bootstrapDir = null;
+        if (file_exists($cwd . '/backend/Bootstrap/cli.php')) {
+            $bootstrapDir = $cwd . '/backend';
+        } elseif (file_exists($cwd . '/Bootstrap/cli.php')) {
+            $bootstrapDir = $cwd;
+        }
+
+        if ($bootstrapDir !== null) {
+            $possibleDirs[] = $bootstrapDir . '/Database/Entity';
+        }
+
+        foreach ($possibleDirs as $dir) {
+            $realPath = realpath($dir);
+            if ($realPath !== false && is_dir($realPath)) {
+                $file = $realPath . '/' . $shortName . '.php';
+                if (file_exists($file)) {
+                    return $file;
+                }
+            }
+        }
+
+        return null;
     }
 
     /**

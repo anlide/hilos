@@ -103,8 +103,9 @@ HELP;
 
         // Load Entity classes and their file paths
         $syntaxErrors = 0;
+        $brokenEntities = [];
         try {
-            $entities = $this->loadEntities($entityDir, $entityNamespace, $syntaxErrors);
+            $entities = $this->loadEntities($entityDir, $entityNamespace, $syntaxErrors, $brokenEntities);
         } catch (\Throwable $e) {
             echo "Error: Failed to load Entity classes\n";
             echo "Message: {$e->getMessage()}\n\n";
@@ -115,11 +116,22 @@ HELP;
         $dbTables = Schema::getTables($dbIndex);
 
         // Find differences and prepare fixes
-        $fixes = $this->prepareFixes($entities, $dbTables, $tableName);
+        $fixes = $this->prepareFixes($entities, $dbTables, $tableName, $brokenEntities);
 
         // Find tables without Entity files and Entity files without tables
-        $tablesToCreate = $this->findTablesToCreate($entities, $dbTables, $tableName);
-        $filesToDelete = $this->findFilesToDelete($entities, $dbTables, $tableName);
+        $tablesToCreate = $this->findTablesToCreate($entities, $dbTables, $tableName, $brokenEntities, $entityDir);
+        $filesToDelete = $this->findFilesToDelete($entities, $dbTables, $tableName, $brokenEntities);
+
+        // Display information about broken Entity files
+        if (!empty($brokenEntities)) {
+            echo "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
+            echo "⚠ Damaged Entity files (will not be modified):\n";
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n";
+            foreach ($brokenEntities as $file => $reason) {
+                echo "  - {$file}\n";
+                echo "    Reason: {$reason}\n\n";
+            }
+        }
 
         if ($syntaxErrors > 0) {
             echo "\n⚠ {$syntaxErrors} file(s) contain syntax errors and were skipped.\n";
@@ -175,7 +187,7 @@ HELP;
     /**
      * Load Entity classes from directory
      */
-    private function loadEntities(?string $entityDir, ?string $entityNamespace, int &$syntaxErrors = 0): array
+    private function loadEntities(?string $entityDir, ?string $entityNamespace, int &$syntaxErrors = 0, array &$brokenEntities = []): array
     {
         // Auto-detect if not provided (same logic as DbEntityDiffCommand)
         if ($entityDir === null) {
@@ -226,6 +238,8 @@ HELP;
         foreach ($files as $file) {
             $className = $this->extractClassNameFromFile($file, $entityNamespace);
             if ($className === null) {
+                // File exists but cannot extract class name - mark as broken
+                $brokenEntities[$file] = 'Cannot extract class name from file';
                 continue;
             }
 
@@ -233,6 +247,7 @@ HELP;
                 // Check PHP syntax first
                 $content = file_get_contents($file);
                 if ($content === false) {
+                    $brokenEntities[$file] = 'Cannot read file';
                     continue;
                 }
 
@@ -241,8 +256,8 @@ HELP;
                 $returnVar = 0;
                 exec("php -l " . escapeshellarg($file) . " 2>&1", $output, $returnVar);
                 if ($returnVar !== 0) {
-                    echo "⚠ Skipping {$file}: PHP syntax error detected\n";
-                    echo "  " . implode("\n  ", $output) . "\n";
+                    $errorMessage = implode(' ', $output);
+                    $brokenEntities[$file] = "PHP syntax error: {$errorMessage}";
                     $syntaxErrors++;
                     continue;
                 }
@@ -263,7 +278,7 @@ HELP;
                     $entities[$entityInfo['table']] = $entityInfo;
                 }
             } catch (\Throwable $e) {
-                echo "⚠ Skipping {$file}: {$e->getMessage()}\n";
+                $brokenEntities[$file] = $e->getMessage();
                 continue;
             }
         }
@@ -335,7 +350,7 @@ HELP;
     /**
      * Prepare fixes for Entity files
      */
-    private function prepareFixes(array $entities, array $dbTables, ?string $tableFilter): array
+    private function prepareFixes(array $entities, array $dbTables, ?string $tableFilter, array $brokenEntities = []): array
     {
         $fixes = [];
 
@@ -346,6 +361,12 @@ HELP;
             }
 
             if ($tableFilter !== null && $tableName !== $tableFilter) {
+                continue;
+            }
+
+            // Skip if Entity file is broken
+            $entityFile = $entityInfo['file'];
+            if (isset($brokenEntities[$entityFile])) {
                 continue;
             }
 
@@ -564,7 +585,7 @@ HELP;
     /**
      * Find tables in DB without Entity files
      */
-    private function findTablesToCreate(array $entities, array $dbTables, ?string $tableFilter): array
+    private function findTablesToCreate(array $entities, array $dbTables, ?string $tableFilter, array $brokenEntities = [], ?string $entityDir = null): array
     {
         $tablesToCreate = [];
 
@@ -579,6 +600,13 @@ HELP;
             }
 
             if (!isset($entities[$tableName])) {
+                // Check if Entity file exists but is broken
+                $entityFile = $this->findEntityFileByTableName($tableName, $entityDir);
+                if ($entityFile !== null && isset($brokenEntities[$entityFile])) {
+                    // Entity file exists but is broken - don't create new one
+                    continue;
+                }
+                
                 $tablesToCreate[$tableName] = $dbTable;
             }
         }
@@ -587,14 +615,84 @@ HELP;
     }
 
     /**
+     * Find Entity file by table name
+     */
+    private function findEntityFileByTableName(string $tableName, ?string $entityDir): ?string
+    {
+        // Auto-detect if not provided
+        if ($entityDir === null) {
+            $cwd = getcwd();
+            $possibleDirs = [
+                $cwd . '/backend/Database/Entity',
+                $cwd . '/Database/Entity',
+                $cwd . '/Entity',
+                dirname($cwd) . '/backend/Database/Entity',
+                dirname($cwd) . '/Database/Entity',
+            ];
+
+            $bootstrapDir = null;
+            if (file_exists($cwd . '/backend/Bootstrap/cli.php')) {
+                $bootstrapDir = $cwd . '/backend';
+            } elseif (file_exists($cwd . '/Bootstrap/cli.php')) {
+                $bootstrapDir = $cwd;
+            }
+
+            if ($bootstrapDir !== null) {
+                $possibleDirs[] = $bootstrapDir . '/Database/Entity';
+            }
+
+            foreach ($possibleDirs as $dir) {
+                $realPath = realpath($dir);
+                if ($realPath !== false && is_dir($realPath)) {
+                    $entityDir = $realPath;
+                    break;
+                }
+            }
+        }
+
+        if ($entityDir === null || !is_dir($entityDir)) {
+            return null;
+        }
+
+        // Try to find Entity file by checking all PHP files
+        $files = glob($entityDir . '/*.php');
+        if ($files === false) {
+            return null;
+        }
+
+        foreach ($files as $file) {
+            // Try to extract table name from file
+            $content = file_get_contents($file);
+            if ($content === false) {
+                continue;
+            }
+
+            // Check if file contains table name constant
+            if (preg_match("/public const string _table = '([^']+)'/", $content, $matches)) {
+                if ($matches[1] === $tableName) {
+                    return $file;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
      * Find Entity files without tables in DB
      */
-    private function findFilesToDelete(array $entities, array $dbTables, ?string $tableFilter): array
+    private function findFilesToDelete(array $entities, array $dbTables, ?string $tableFilter, array $brokenEntities = []): array
     {
         $filesToDelete = [];
 
         foreach ($entities as $tableName => $entityInfo) {
             if ($tableFilter !== null && $tableName !== $tableFilter) {
+                continue;
+            }
+
+            // Skip if Entity file is broken
+            $entityFile = $entityInfo['file'];
+            if (isset($brokenEntities[$entityFile])) {
                 continue;
             }
 
@@ -1309,6 +1407,18 @@ HELP;
     private function removeColumns(string $content, array $columns, ReflectionClass $reflection): string
     {
         foreach ($columns as $colName) {
+            // Remove property-level @object-exclude directive before property
+            // Match: // @object-exclude or /** @object-exclude */ followed by property
+            $escapedColName = preg_quote($colName, '/');
+            // Single-line comment: entire line with // @object-exclude followed by property line
+            // Remove entire comment line (including leading spaces) and property line
+            $pattern = '/^[ \t]*\/\/[^\n]*@object-exclude[^\n]*\n[ \t]*public\s+(?:\?)?\w+\s+\$' . $escapedColName . '(?:\s*=\s*[^;]+)?;\n?/m';
+            $content = preg_replace($pattern, '', $content);
+            // Multi-line comment: entire /** @object-exclude */ block followed by property line
+            // Remove entire comment block (including leading spaces) and property line
+            $pattern = '/^[ \t]*\/\*\*[^\*]*@object-exclude[^\*]*\*\/\s*\n[ \t]*public\s+(?:\?)?\w+\s+\$' . $escapedColName . '(?:\s*=\s*[^;]+)?;\n?/m';
+            $content = preg_replace($pattern, '', $content);
+
             // Remove column constant (only the line itself, not extra newlines)
             $pattern = '/    public const string ' . preg_quote($colName, '/') . ' = \'[^\']+\';\n/';
             $content = preg_replace($pattern, '', $content);
@@ -1335,13 +1445,16 @@ HELP;
             $pattern = '/,\s*self::' . preg_quote($colName, '/') . '\s*=>\s*\'[^\']+\'(?=\s*,|\s*;)/';
             $content = preg_replace($pattern, '', $content);
 
-            // Remove property - match property line only, preserve surrounding newlines
+            // Remove property if it wasn't already removed with @object-exclude directive
             // Match: public type $name = value; or public type $name;
             $pattern = '/    public\s+(?:\?[a-z]+|[a-z]+)\s+\$' . preg_quote($colName, '/') . '(?:\s*=\s*[^;]+)?;\n/';
             $content = preg_replace($pattern, '', $content);
 
             // Remove from _foreign if exists - already handled separately
         }
+
+        // Remove field from class-level @object-exclude directive and clean up if empty
+        $content = $this->removeFromClassLevelObjectExclude($content, $columns);
 
         // Clean up empty lines in _columns array
         if (preg_match('/(public const array _columns = \[)(.*?)(\];)/s', $content, $matches)) {
@@ -1413,6 +1526,56 @@ HELP;
                 $typesContent = "\n    ";
             }
             $content = str_replace($matches[0], $matches[1] . $typesContent . $matches[3], $content);
+        }
+
+        return $content;
+    }
+
+    /**
+     * Remove fields from class-level @object-exclude directive
+     */
+    private function removeFromClassLevelObjectExclude(string $content, array $columnsToRemove): string
+    {
+        if (empty($columnsToRemove)) {
+            return $content;
+        }
+
+        // Find class-level @object-exclude directive in PHPDoc
+        // Pattern: /** ... @object-exclude field1, field2, field3 ... */
+        // The directive can be on a single line or span multiple lines
+        if (preg_match('/(\/\*\*.*?)(\*\s*@object-exclude\s+)([^\n\*]+)(.*?\*\/)/s', $content, $matches)) {
+            $beforeDirective = $matches[1];
+            $directiveStart = $matches[2];
+            $fieldsString = trim($matches[3]);
+            $afterDirective = $matches[4];
+
+            if (empty($fieldsString)) {
+                return $content; // No fields to remove
+            }
+
+            // Parse fields from directive
+            $fields = preg_split('/\s*,\s*/', $fieldsString);
+            $fields = array_map('trim', $fields);
+            $fields = array_filter($fields, fn($f) => $f !== '');
+
+            // Remove fields that are being deleted
+            $remainingFields = array_filter($fields, fn($field) => !in_array($field, $columnsToRemove, true));
+
+            if (empty($remainingFields)) {
+                // All fields removed - remove entire @object-exclude line from PHPDoc
+                // Remove entire line including leading spaces and * symbol: [spaces]* @object-exclude field1, field2
+                $pattern = '/^[ \t]*\*\s*@object-exclude\s+[^\n\*]+\n?/m';
+                $content = preg_replace($pattern, '', $content);
+                
+                // Clean up multiple consecutive empty lines
+                $content = preg_replace('/\n\s*\n\s*\n/', "\n\n", $content);
+            } elseif (count($remainingFields) < count($fields)) {
+                // Some fields removed - update directive with remaining fields
+                $newFieldsString = implode(', ', $remainingFields);
+                $oldDirective = $directiveStart . $fieldsString;
+                $newDirective = $directiveStart . $newFieldsString;
+                $content = str_replace($oldDirective, $newDirective, $content);
+            }
         }
 
         return $content;
