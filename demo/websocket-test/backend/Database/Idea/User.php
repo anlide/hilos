@@ -10,9 +10,11 @@ use Hilos\Database\Idea\IdeaCollection;
  * User Idea
  * High-level abstraction with lazy loading and relationships
  *
- * @property-read int $id
+ * @property-read ?int $id
  * @property-read string $name
  * @property-read ?string $theme
+ * @property-read ?string $sessionToken
+ * @property-read ?string $lastActivity
  */
 final class User extends BaseIdea
 {
@@ -21,10 +23,10 @@ final class User extends BaseIdea
 
     private ObjectUser $objectUser;
 
-    protected function __construct(ObjectUser &$user)
+    protected function __construct(ObjectUser &$objectUser)
     {
         parent::__construct();
-        $this->objectUser = &$user;
+        $this->objectUser = &$objectUser;
     }
 
     /**
@@ -38,15 +40,15 @@ final class User extends BaseIdea
     /**
      * Get User idea instance (cached)
      */
-    public static function get(ObjectUser &$user): self
+    public static function get(ObjectUser &$objectUser): self
     {
-        $id = $user->id;
+        $id = $objectUser->id;
 
         if (!isset(self::$users[$id])) {
-            self::$users[$id] = new self($user);
-        } elseif (self::$users[$id]->objectUser !== $user) {
+            self::$users[$id] = new self($objectUser);
+        } elseif (self::$users[$id]->objectUser !== $objectUser) {
             // Object reference changed, recreate
-            self::$users[$id] = new self($user);
+            self::$users[$id] = new self($objectUser);
         }
 
         return self::$users[$id];
@@ -61,6 +63,8 @@ final class User extends BaseIdea
             ObjectUser::id => $this->objectUser->id,
             ObjectUser::name => $this->objectUser->name,
             ObjectUser::theme => $this->objectUser->theme,
+            ObjectUser::sessionToken => $this->objectUser->sessionToken,
+            ObjectUser::lastActivity => $this->objectUser->lastActivity,
 
             // Example of lazy loading relationships (implement when you have related entities)
             // 'orders' => $this->loadOrders(),
@@ -83,65 +87,9 @@ final class User extends BaseIdea
 
         $data[ObjectUser::name] = $this->objectUser->name;
         $data[ObjectUser::theme] = $this->objectUser->theme;
+        $data[ObjectUser::sessionToken] = $this->objectUser->sessionToken;
+        $data[ObjectUser::lastActivity] = $this->objectUser->lastActivity;
 
         return $data;
     }
-
-    /**
-     * Example: Lazy load orders (implement when Order entity exists)
-     * 
-     * Usage: Idea::$idea->users[123]->orders[456]->amount
-     * 
-     * @return IdeaCollection Collection of Order ideas
-     */
-    // private function loadOrders(): IdeaCollection
-    // {
-    //     if ($this->hasRelatedCache('orders')) {
-    //         return $this->getCachedRelated('orders');
-    //     }
-    //
-    //     // Load orders from database using Entity
-    //     $entityOrders = EntityOrder::get(['user_id' => $this->objectUser->id]);
-    //     
-    //     // Create Object collection
-    //     $objectOrders = ObjectOrders::initEmpty();
-    //     foreach ($entityOrders as $entityOrder) {
-    //         $objectOrder = ObjectOrder::fromEntity($entityOrder);
-    //         $objectOrders[$objectOrder->id] = $objectOrder;
-    //     }
-    //
-    //     // Create Idea collection from Object collection
-    //     $ideaOrders = IdeaOrders::init($objectOrders);
-    //     $this->setCachedRelated('orders', $ideaOrders);
-    //
-    //     return $ideaOrders;
-    // }
-
-    /**
-     * Example: Lazy load posts (implement when Post entity exists)
-     * 
-     * @return IdeaCollection Collection of Post ideas
-     */
-    // private function loadPosts(): IdeaCollection
-    // {
-    //     if ($this->hasRelatedCache('posts')) {
-    //         return $this->getCachedRelated('posts');
-    //     }
-    //
-    //     // Load posts from database
-    //     $entityPosts = EntityPost::get(['user_id' => $this->objectUser->id]);
-    //     
-    //     // Create Object collection
-    //     $objectPosts = ObjectPosts::initEmpty();
-    //     foreach ($entityPosts as $entityPost) {
-    //         $objectPost = ObjectPost::fromEntity($entityPost);
-    //         $objectPosts[$objectPost->id] = $objectPost;
-    //     }
-    //
-    //     // Create Idea collection from Object collection
-    //     $ideaPosts = IdeaPosts::init($objectPosts);
-    //     $this->setCachedRelated('posts', $ideaPosts);
-    //
-    //     return $ideaPosts;
-    // }
 }

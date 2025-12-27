@@ -6,6 +6,7 @@ namespace Hilos\Core\CLI\Commands;
 
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\ExitCode;
+use Hilos\Core\CLI\Commands\DbEntityFixCommand\EntityCollectionFixer;
 use Hilos\Database\Database;
 use Hilos\Database\Entity\Entity;
 use Hilos\Database\Generator;
@@ -24,6 +25,7 @@ use ReflectionClass;
  */
 class DbEntityFixCommand implements CommandInterface
 {
+    use EntityCollectionFixer;
     public function getName(): string
     {
         return CliCommands::DB_ENTITY_FIX;
@@ -165,18 +167,63 @@ HELP;
         // Delete Entity files without tables
         $deleted = $this->deleteEntityFiles($filesToDelete);
 
+        // Process EntityCollection files (only if no errors in Entity files)
+        $appliedCollections = 0;
+        $createdCollections = 0;
+        
+        if (empty($brokenEntities) && $syntaxErrors === 0) {
+            // Load EntityCollection files
+            $entityCollectionDir = null; // Auto-detect
+            $brokenEntityCollections = [];
+            $entityCollections = [];
+            
+            try {
+                $entityCollections = $this->loadEntityCollections($entityCollectionDir, $syntaxErrors, $brokenEntityCollections);
+            } catch (\Throwable $e) {
+                echo "Error: Failed to load EntityCollection files\n";
+                echo "Message: {$e->getMessage()}\n\n";
+                // Continue with summary, but skip EntityCollection processing
+            }
+
+            // Process EntityCollections (entityCollections is always an array, even if empty)
+            // Prepare fixes for EntityCollections
+            $entityCollectionFixes = $this->prepareEntityCollectionFixes($entities, $entityCollections, $tableName);
+
+            // Find EntityCollection files to create
+            $entityCollectionsToCreate = $this->findEntityCollectionsToCreate($entities, $entityCollections, $tableName, $brokenEntities);
+
+            // Display and apply EntityCollection fixes
+            if (!empty($entityCollectionFixes) || !empty($entityCollectionsToCreate)) {
+                $this->displayEntityCollectionFixes($entityCollectionFixes, $entityCollectionsToCreate, $dryRun);
+
+                if (!$dryRun) {
+                    $appliedCollections = $this->applyEntityCollectionFixes($entityCollectionFixes, $entityCollections, $entities);
+                    $createdCollections = $this->createEntityCollectionFiles($entityCollectionsToCreate, $entityCollectionDir, $entities);
+                }
+            }
+        } elseif (!empty($brokenEntities) || $syntaxErrors > 0) {
+            echo "\n⚠ Skipping EntityCollection processing due to errors in Entity files.\n";
+            echo "   Please fix the errors above before processing EntityCollection files.\n";
+        }
+
         // Summary
-        $totalChanges = $applied + $created + $deleted;
+        $totalChanges = $applied + $created + $deleted + $appliedCollections + $createdCollections;
         if ($totalChanges > 0) {
             echo "\n";
             if ($applied > 0) {
-                echo "✓ Updated {$applied} file(s).\n";
+                echo "✓ Updated {$applied} Entity file(s).\n";
             }
             if ($created > 0) {
-                echo "✓ Created {$created} file(s).\n";
+                echo "✓ Created {$created} Entity file(s).\n";
             }
             if ($deleted > 0) {
-                echo "✓ Deleted {$deleted} file(s).\n";
+                echo "✓ Deleted {$deleted} Entity file(s).\n";
+            }
+            if ($appliedCollections > 0) {
+                echo "✓ Updated {$appliedCollections} EntityCollection file(s).\n";
+            }
+            if ($createdCollections > 0) {
+                echo "✓ Created {$createdCollections} EntityCollection file(s).\n";
             }
             echo "\n";
         }
@@ -2395,6 +2442,143 @@ HELP;
         }
 
         return $deleted;
+    }
+
+    /**
+     * Display EntityCollection fixes that will be applied
+     *
+     * @param array $fixes Fixes to apply
+     * @param array $toCreate EntityCollections to create
+     * @param bool $dryRun Dry run mode
+     */
+    private function displayEntityCollectionFixes(array $fixes, array $toCreate, bool $dryRun): void
+    {
+        if ($dryRun) {
+            echo "\n[DRY RUN] The following EntityCollection changes would be made:\n\n";
+        } else {
+            echo "\nThe following EntityCollection changes will be made:\n\n";
+        }
+
+        if (!empty($fixes)) {
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
+            echo "EntityCollection Files to Update:\n";
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n";
+
+            foreach ($fixes as $entityClassName => $collectionFixes) {
+                $entityShortName = (new ReflectionClass($entityClassName))->getShortName();
+                $collectionShortName = $entityShortName . 's';
+                echo "  {$collectionShortName}:\n";
+
+                if (isset($collectionFixes['update_imports'])) {
+                    echo "    - Update imports (Entity class)\n";
+                }
+
+                if (isset($collectionFixes['update_type_hints'])) {
+                    $wrong = count($collectionFixes['update_type_hints']['wrong'] ?? []);
+                    if ($wrong > 0) {
+                        echo "    - Update type hints ({$wrong} method/methods)\n";
+                    }
+                }
+
+                echo "\n";
+            }
+        }
+
+        if (!empty($toCreate)) {
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
+            echo "EntityCollection Files to Create:\n";
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n";
+
+            foreach ($toCreate as $entityClassName => $info) {
+                $entityShortName = (new ReflectionClass($entityClassName))->getShortName();
+                $collectionShortName = $entityShortName . 's';
+                echo "  + {$collectionShortName}\n";
+            }
+            echo "\n";
+        }
+    }
+
+    /**
+     * Create EntityCollection files
+     *
+     * @param array $toCreate EntityCollections to create
+     * @param string|null $entityCollectionDir EntityCollection directory
+     * @param array $entities Loaded Entity classes
+     * @return int Number of files created
+     */
+    private function createEntityCollectionFiles(array $toCreate, ?string $entityCollectionDir, array $entities): int
+    {
+        if (empty($toCreate)) {
+            return 0;
+        }
+
+        // Auto-detect entity collection directory if not provided
+        if ($entityCollectionDir === null) {
+            $cwd = getcwd();
+            $possibleDirs = [
+                $cwd . '/backend/Database/EntityCollection',
+                $cwd . '/Database/EntityCollection',
+                $cwd . '/EntityCollection',
+                dirname($cwd) . '/backend/Database/EntityCollection',
+                dirname($cwd) . '/Database/EntityCollection',
+            ];
+
+            $bootstrapDir = null;
+            if (file_exists($cwd . '/backend/Bootstrap/cli.php')) {
+                $bootstrapDir = $cwd . '/backend';
+            } elseif (file_exists($cwd . '/Bootstrap/cli.php')) {
+                $bootstrapDir = $cwd;
+            }
+
+            if ($bootstrapDir !== null) {
+                $possibleDirs[] = $bootstrapDir . '/Database/EntityCollection';
+            }
+
+            foreach ($possibleDirs as $dir) {
+                $realPath = realpath($dir);
+                if ($realPath !== false && is_dir($realPath)) {
+                    $entityCollectionDir = $realPath;
+                    break;
+                }
+            }
+
+            // If directory doesn't exist, try to infer from Entity directory
+            if ($entityCollectionDir === null && !empty($entities)) {
+                $firstEntity = reset($entities);
+                $entityFile = $firstEntity['file'];
+                $entityDir = dirname($entityFile);
+                $entityCollectionDir = str_replace('/Entity', '/EntityCollection', $entityDir);
+            }
+        }
+
+        if ($entityCollectionDir === null) {
+            echo "Error: Cannot determine EntityCollection directory\n";
+            return 0;
+        }
+
+        // Extract namespace from first Entity class
+        $namespace = null;
+        if (!empty($entities)) {
+            $firstEntity = reset($entities);
+            $entityReflection = $firstEntity['reflection'];
+            $entityNamespace = $entityReflection->getNamespaceName();
+            $namespace = str_replace('\\Entity', '\\EntityCollection', $entityNamespace);
+        }
+
+        if ($namespace === null) {
+            echo "Error: Cannot determine EntityCollection namespace\n";
+            return 0;
+        }
+
+        $created = 0;
+        foreach ($toCreate as $entityClassName => $info) {
+            $entityReflection = $info['reflection'];
+            if ($this->createEntityCollectionFile($entityClassName, $entityCollectionDir, $namespace, $entityReflection)) {
+                $created++;
+            }
+        }
+
+        return $created;
     }
 
     /**
