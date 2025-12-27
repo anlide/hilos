@@ -2,18 +2,18 @@
 
 namespace Demo\WebSocketTest\Database\EntityCollection;
 
-use Demo\WebSocketTest\Database\Entity\User as EntityUser;
+use Demo\WebSocketTest\Database\Entity\UserSetting as EntityUserSetting;
 use Hilos\Database\Entity\EntityCollection;
 use Hilos\Exception\DatabaseException;
 
 /**
- * Users Entity Collection
- * Typed wrapper around EntityCollection for User entities
+ * UserSettings Entity Collection
+ * Typed wrapper around EntityCollection for UserSetting entities
  *
  * This is a convenience class that provides type safety and convenience methods
  * while using EntityCollection internally.
  */
-final class Users
+final class UserSettings
 {
     private EntityCollection $collection;
 
@@ -26,14 +26,14 @@ final class Users
     }
 
     /**
-     * Initialize collection with all User entities from database
+     * Initialize collection with all UserSetting entities from database
      *
      * @return self
      * @throws DatabaseException
      */
     public static function initFullDB(): self
     {
-        $entityCollection = EntityUser::getAll();
+        $entityCollection = EntityUserSetting::getAll();
         return new self($entityCollection);
     }
 
@@ -69,41 +69,41 @@ final class Users
     }
 
     /**
-     * Get User entity by key
+     * Get UserSetting entity by key
      *
      * @param int|string $key
-     * @return EntityUser|null
+     * @return EntityUserSetting|null
      */
-    public function get(int|string $key): ?EntityUser
+    public function get(int|string $key): ?EntityUserSetting
     {
         $entity = $this->collection->get($key);
-        return $entity instanceof EntityUser ? $entity : null;
+        return $entity instanceof EntityUserSetting ? $entity : null;
     }
 
     /**
-     * Get first User entity
+     * Get first UserSetting entity
      *
-     * @return EntityUser|null
+     * @return EntityUserSetting|null
      */
-    public function first(): ?EntityUser
+    public function first(): ?EntityUserSetting
     {
         $entity = $this->collection->first();
-        return $entity instanceof EntityUser ? $entity : null;
+        return $entity instanceof EntityUserSetting ? $entity : null;
     }
 
     /**
-     * Get last User entity
+     * Get last UserSetting entity
      *
-     * @return EntityUser|null
+     * @return EntityUserSetting|null
      */
-    public function last(): ?EntityUser
+    public function last(): ?EntityUserSetting
     {
         $entity = $this->collection->last();
-        return $entity instanceof EntityUser ? $entity : null;
+        return $entity instanceof EntityUserSetting ? $entity : null;
     }
 
     /**
-     * Get count of User entities
+     * Get count of UserSetting entities
      */
     public function count(): int
     {
@@ -121,13 +121,13 @@ final class Users
     /**
      * Filter collection
      *
-     * @param callable(EntityUser): bool $callback
+     * @param callable(EntityUserSetting): bool $callback
      * @return self
      */
     public function filter(callable $callback): self
     {
         $filtered = $this->collection->filter(function($entity) use ($callback) {
-            return $entity instanceof EntityUser && $callback($entity);
+            return $entity instanceof EntityUserSetting && $callback($entity);
         });
         return new self($filtered);
     }
@@ -135,13 +135,13 @@ final class Users
     /**
      * Convert to array
      *
-     * @return EntityUser[]
+     * @return EntityUserSetting[]
      */
     public function toArray(): array
     {
         $result = [];
         foreach ($this->collection as $entity) {
-            if ($entity instanceof EntityUser) {
+            if ($entity instanceof EntityUserSetting) {
                 $result[] = $entity;
             }
         }
@@ -149,14 +149,14 @@ final class Users
     }
 
     /**
-     * Iterator support - get current User
+     * Iterator support - get current UserSetting
      *
-     * @return EntityUser|null
+     * @return EntityUserSetting|null
      */
-    public function current(): ?EntityUser
+    public function current(): ?EntityUserSetting
     {
         $entity = $this->collection->current();
-        return $entity instanceof EntityUser ? $entity : null;
+        return $entity instanceof EntityUserSetting ? $entity : null;
     }
 
     /**
@@ -200,26 +200,26 @@ final class Users
     }
 
     /**
-     * ArrayAccess support - get User at offset
+     * ArrayAccess support - get UserSetting at offset
      */
-    public function offsetGet(mixed $offset): ?EntityUser
+    public function offsetGet(mixed $offset): ?EntityUserSetting
     {
         $entity = $this->collection->offsetGet($offset);
-        return $entity instanceof EntityUser ? $entity : null;
+        return $entity instanceof EntityUserSetting ? $entity : null;
     }
 
     /**
-     * ArrayAccess support - set User at offset
+     * ArrayAccess support - set UserSetting at offset
      */
     public function offsetSet(mixed $offset, mixed $value): void
     {
-        if ($value instanceof EntityUser) {
+        if ($value instanceof EntityUserSetting) {
             $this->collection->offsetSet($offset, $value);
         }
     }
 
     /**
-     * ArrayAccess support - unset User at offset
+     * ArrayAccess support - unset UserSetting at offset
      */
     public function offsetUnset(mixed $offset): void
     {

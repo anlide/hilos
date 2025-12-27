@@ -16,6 +16,7 @@ use Hilos\Database\Schema\Schema;
 use Hilos\Database\Schema\TableInfo;
 use Hilos\Exception\DatabaseException;
 use ReflectionClass;
+use RuntimeException;
 
 /**
  * DbEntityFixCommand - Fix Entity and EntityCollection files to match database schema
@@ -65,6 +66,20 @@ Examples:
 HELP;
     }
 
+    /**
+     * Execute the command to fix Entity and EntityCollection files
+     *
+     * @param array $options Command options:
+     *   - 'db-index' (int): Database connection index (default: 0)
+     *   - 'table' (string|null): Fix specific table only
+     *   - 'entity-dir' (string|null): Entity files directory (auto-detect if null)
+     *   - 'entity-ns' (string|null): Entity namespace prefix (auto-detect if null)
+     *   - 'dry-run' (bool): Show what would be changed without modifying files
+     * @param array $args Command arguments (not used)
+     * @return int Exit code (ExitCode::SUCCESS on success)
+     * @throws DatabaseException
+     * @throws RuntimeException
+     */
     public function execute(array $options, array $args): int
     {
         echo "\n=== Fix Entity Files ===\n\n";
@@ -81,7 +96,7 @@ HELP;
 
         // Check if connected
         if (!Database::isConnected($dbIndex)) {
-            throw new \RuntimeException("Database connection {$dbIndex} is not established. Please ensure database connection is initialized before running this command.");
+            throw new RuntimeException("Database connection {$dbIndex} is not established. Please ensure database connection is initialized before running this command.");
         }
 
         // Initialize schema if not already initialized
@@ -108,12 +123,15 @@ HELP;
 
         // Display information about broken Entity files
         if (!empty($brokenEntities)) {
-            echo "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
+            echo "\n";
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
             echo "⚠ Damaged Entity files (will not be modified):\n";
-            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n";
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
+            echo "\n";
             foreach ($brokenEntities as $file => $reason) {
                 echo "  - {$file}\n";
-                echo "    Reason: {$reason}\n\n";
+                echo "    Reason: {$reason}\n";
+                echo "\n";
             }
         }
 
@@ -121,17 +139,75 @@ HELP;
             echo "\n⚠ {$syntaxErrors} file(s) contain syntax errors and were skipped.\n";
         }
 
-        if (empty($fixes) && empty($tablesToCreate) && empty($filesToDelete)) {
+        $hasEntityChanges = !empty($fixes) || !empty($tablesToCreate) || !empty($filesToDelete);
+        
+        if (!$hasEntityChanges) {
             if ($syntaxErrors > 0) {
                 echo "\n";
             } else {
                 echo "✓ No fixes needed! Entity files match database schema.\n\n";
             }
-            return ExitCode::SUCCESS;
+        } else {
+            // Display what will be fixed
+            $this->displayFixes($fixes, $tablesToCreate, $filesToDelete, $dryRun);
         }
 
-        // Display what will be fixed
-        $this->displayFixes($fixes, $tablesToCreate, $filesToDelete, $dryRun);
+        // Process EntityCollection files (only if no errors in Entity files)
+        echo "\n=== Fix EntityCollection Files ===\n\n";
+        
+        $appliedCollections = 0;
+        $createdCollections = 0;
+        $entityCollectionFixes = [];
+        $entityCollectionsToCreate = [];
+        $entityCollectionDir = null;
+        $entityCollections = [];
+        $brokenEntityCollections = [];
+        $collectionSyntaxErrors = 0;
+        
+        if (empty($brokenEntities) && $syntaxErrors === 0) {
+            // Load EntityCollection files
+            $entityCollections = $this->loadEntityCollections($entityCollectionDir, $collectionSyntaxErrors, $brokenEntityCollections);
+
+            // Display information about broken EntityCollection files
+            if (!empty($brokenEntityCollections)) {
+                echo "\n";
+                echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
+                echo "⚠ Damaged EntityCollection files (will not be modified):\n";
+                echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
+                echo "\n";
+                foreach ($brokenEntityCollections as $file => $reason) {
+                    echo "  - {$file}\n";
+                    echo "    Reason: {$reason}\n";
+                    echo "\n";
+                }
+            }
+
+            if ($collectionSyntaxErrors > 0) {
+                echo "\n⚠ {$collectionSyntaxErrors} EntityCollection file(s) contain syntax errors and were skipped.\n";
+            }
+
+            // Process EntityCollections (entityCollections is always an array, even if empty)
+            // Prepare fixes for EntityCollections
+            $entityCollectionFixes = $this->prepareEntityCollectionFixes($entities, $entityCollections, $tableName);
+
+            // Find EntityCollection files to create
+            $entityCollectionsToCreate = $this->findEntityCollectionsToCreate($entities, $entityCollections, $tableName, $brokenEntities);
+
+            // Check if there are any fixes needed
+            if (empty($entityCollectionFixes) && empty($entityCollectionsToCreate)) {
+                if ($collectionSyntaxErrors > 0 || !empty($brokenEntityCollections)) {
+                    echo "\n";
+                } else {
+                    echo "✓ No fixes needed! EntityCollection files match Entity classes.\n\n";
+                }
+            } else {
+                // Display EntityCollection fixes
+                $this->displayEntityCollectionFixes($entityCollectionFixes, $entityCollectionsToCreate, $dryRun);
+            }
+        } else {
+            echo "⚠ Skipping EntityCollection processing due to errors in Entity files.\n";
+            echo "   Please fix the errors above before processing EntityCollection files.\n\n";
+        }
 
         if ($dryRun) {
             echo "\n[DRY RUN] No files were modified.\n\n";
@@ -149,57 +225,52 @@ HELP;
         // Delete Entity files without tables
         $deleted = $this->deleteEntityFiles($filesToDelete);
 
-        // Process EntityCollection files (only if no errors in Entity files)
-        $appliedCollections = 0;
-        $createdCollections = 0;
-        
+        // Apply EntityCollection fixes (only if no errors in Entity files)
         if (empty($brokenEntities) && $syntaxErrors === 0) {
-            // Load EntityCollection files
-            $entityCollectionDir = null; // Auto-detect
-            $brokenEntityCollections = [];
-            $entityCollections = $this->loadEntityCollections($entityCollectionDir, $syntaxErrors, $brokenEntityCollections);
-
-            // Process EntityCollections (entityCollections is always an array, even if empty)
-            // Prepare fixes for EntityCollections
-            $entityCollectionFixes = $this->prepareEntityCollectionFixes($entities, $entityCollections, $tableName);
-
-            // Find EntityCollection files to create
-            $entityCollectionsToCreate = $this->findEntityCollectionsToCreate($entities, $entityCollections, $tableName, $brokenEntities);
-
-            // Display and apply EntityCollection fixes
             if (!empty($entityCollectionFixes) || !empty($entityCollectionsToCreate)) {
-                $this->displayEntityCollectionFixes($entityCollectionFixes, $entityCollectionsToCreate, $dryRun);
-
-                if (!$dryRun) {
-                    $appliedCollections = $this->applyEntityCollectionFixes($entityCollectionFixes, $entityCollections, $entities);
-                    $createdCollections = $this->createEntityCollectionFiles($entityCollectionsToCreate, $entityCollectionDir, $entities);
-                }
+                $appliedCollections = $this->applyEntityCollectionFixes($entityCollectionFixes, $entityCollections, $entities);
+                $createdCollections = $this->createEntityCollectionFiles($entityCollectionsToCreate, $entityCollectionDir, $entities);
             }
-        } elseif (!empty($brokenEntities) || $syntaxErrors > 0) {
-            echo "\n⚠ Skipping EntityCollection processing due to errors in Entity files.\n";
-            echo "   Please fix the errors above before processing EntityCollection files.\n";
         }
 
         // Summary
         $totalChanges = $applied + $created + $deleted + $appliedCollections + $createdCollections;
         if ($totalChanges > 0) {
             echo "\n";
-            if ($applied > 0) {
-                echo "✓ Updated {$applied} Entity file(s).\n";
-            }
-            if ($created > 0) {
-                echo "✓ Created {$created} Entity file(s).\n";
-            }
-            if ($deleted > 0) {
-                echo "✓ Deleted {$deleted} Entity file(s).\n";
-            }
-            if ($appliedCollections > 0) {
-                echo "✓ Updated {$appliedCollections} EntityCollection file(s).\n";
-            }
-            if ($createdCollections > 0) {
-                echo "✓ Created {$createdCollections} EntityCollection file(s).\n";
-            }
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
+            echo "Summary:\n";
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
             echo "\n";
+            
+            $entityChanges = $applied + $created + $deleted;
+            if ($entityChanges > 0) {
+                echo "Entity files:\n";
+                if ($applied > 0) {
+                    echo "  ✓ Updated {$applied} file(s)\n";
+                }
+                if ($created > 0) {
+                    echo "  ✓ Created {$created} file(s)\n";
+                }
+                if ($deleted > 0) {
+                    echo "  ✓ Deleted {$deleted} file(s)\n";
+                }
+                echo "\n";
+            }
+            
+            $collectionChanges = $appliedCollections + $createdCollections;
+            if ($collectionChanges > 0) {
+                echo "EntityCollection files:\n";
+                if ($appliedCollections > 0) {
+                    echo "  ✓ Updated {$appliedCollections} file(s)\n";
+                }
+                if ($createdCollections > 0) {
+                    echo "  ✓ Created {$createdCollections} file(s)\n";
+                }
+                echo "\n";
+            }
+        } elseif (empty($brokenEntities) && $syntaxErrors === 0 && empty($brokenEntityCollections) && $collectionSyntaxErrors === 0) {
+            // No changes at all and no errors
+            echo "\n✓ All files are up to date. No changes needed.\n\n";
         }
 
         return ExitCode::SUCCESS;
@@ -241,12 +312,12 @@ HELP;
             }
 
             if ($entityDir === null) {
-                throw new \RuntimeException("Could not auto-detect Entity directory. Please specify --entity-dir");
+                throw new RuntimeException("Could not auto-detect Entity directory. Please specify --entity-dir");
             }
         }
 
         if (!is_dir($entityDir)) {
-            throw new \RuntimeException("Entity directory does not exist: {$entityDir}");
+            throw new RuntimeException("Entity directory does not exist: {$entityDir}");
         }
 
         $entities = [];
@@ -920,7 +991,7 @@ HELP;
         $file = $tableFix['file'];
         $content = file_get_contents($file);
         if ($content === false) {
-            throw new \RuntimeException("Failed to read file: {$file}");
+            throw new RuntimeException("Failed to read file: {$file}");
         }
 
         $fixes = $tableFix['fixes'];

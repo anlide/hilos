@@ -141,8 +141,20 @@ trait EntityCollectionFixer
             return null;
         }
 
-        // Extract class name
-        if (preg_match('/\b(?:final\s+)?class\s+(\w+)/', $content, $classMatch)) {
+        // Remove comments and strings to avoid false matches
+        // Remove single-line comments
+        $contentWithoutComments = preg_replace('/\/\/.*$/m', '', $content);
+        // Remove multi-line comments
+        $contentWithoutComments = preg_replace('/\/\*.*?\*\//s', '', $contentWithoutComments);
+        // Remove single-quoted strings
+        $contentWithoutComments = preg_replace("/'[^']*'/", "''", $contentWithoutComments);
+        // Remove double-quoted strings
+        $contentWithoutComments = preg_replace('/"[^"]*"/', '""', $contentWithoutComments);
+
+        // Extract class name - look for class definition at the start of a line
+        // (after optional whitespace) to avoid matching "class" in remaining text
+        // Pattern: start of line, optional whitespace, optional "final", "class", whitespace, class name
+        if (preg_match('/^\s*(?:final\s+)?class\s+(\w+)/m', $contentWithoutComments, $classMatch)) {
             $className = trim($classMatch[1]);
             return $namespace . '\\' . $className;
         }
@@ -162,9 +174,17 @@ trait EntityCollectionFixer
 
         // Look for use statement: use ...\Entity\ClassName as EntityClassName;
         // Or: use ...\Entity\ClassName;
-        if (preg_match('/use\s+([^;]+\\\Entity\\\[^;]+)(?:\s+as\s+(\w+))?;/', $content, $useMatch)) {
-            $entityClassName = trim($useMatch[1]);
-            return $entityClassName;
+        // Use preg_match_all to find all use statements and filter for Entity classes
+        // This avoids capturing comments or strings that might contain \Entity\
+        if (preg_match_all('/^use\s+([^;]+)(?:\s+as\s+(\w+))?;/m', $content, $useMatches, PREG_SET_ORDER)) {
+            foreach ($useMatches as $useMatch) {
+                $fullClassName = trim($useMatch[1]);
+                // Check that this is an Entity class, but not EntityCollection
+                if (strpos($fullClassName, '\\Entity\\') !== false && 
+                    strpos($fullClassName, '\\EntityCollection\\') === false) {
+                    return $fullClassName;
+                }
+            }
         }
 
         // Fallback: try to infer from EntityCollection class name

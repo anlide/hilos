@@ -2,18 +2,18 @@
 
 namespace Demo\WebSocketTest\Database\EntityCollection;
 
-use Demo\WebSocketTest\Database\Entity\User as EntityUser;
+use Demo\WebSocketTest\Database\Entity\Event as EntityEvent;
 use Hilos\Database\Entity\EntityCollection;
 use Hilos\Exception\DatabaseException;
 
 /**
- * Users Entity Collection
- * Typed wrapper around EntityCollection for User entities
+ * Events Entity Collection
+ * Typed wrapper around EntityCollection for Event entities
  *
  * This is a convenience class that provides type safety and convenience methods
  * while using EntityCollection internally.
  */
-final class Users
+final class Events
 {
     private EntityCollection $collection;
 
@@ -26,14 +26,14 @@ final class Users
     }
 
     /**
-     * Initialize collection with all User entities from database
+     * Initialize collection with all Event entities from database
      *
      * @return self
      * @throws DatabaseException
      */
     public static function initFullDB(): self
     {
-        $entityCollection = EntityUser::getAll();
+        $entityCollection = EntityEvent::getAll();
         return new self($entityCollection);
     }
 
@@ -69,41 +69,41 @@ final class Users
     }
 
     /**
-     * Get User entity by key
+     * Get Event entity by key
      *
      * @param int|string $key
-     * @return EntityUser|null
+     * @return EntityEvent|null
      */
-    public function get(int|string $key): ?EntityUser
+    public function get(int|string $key): ?EntityEvent
     {
         $entity = $this->collection->get($key);
-        return $entity instanceof EntityUser ? $entity : null;
+        return $entity instanceof EntityEvent ? $entity : null;
     }
 
     /**
-     * Get first User entity
+     * Get first Event entity
      *
-     * @return EntityUser|null
+     * @return EntityEvent|null
      */
-    public function first(): ?EntityUser
+    public function first(): ?EntityEvent
     {
         $entity = $this->collection->first();
-        return $entity instanceof EntityUser ? $entity : null;
+        return $entity instanceof EntityEvent ? $entity : null;
     }
 
     /**
-     * Get last User entity
+     * Get last Event entity
      *
-     * @return EntityUser|null
+     * @return EntityEvent|null
      */
-    public function last(): ?EntityUser
+    public function last(): ?EntityEvent
     {
         $entity = $this->collection->last();
-        return $entity instanceof EntityUser ? $entity : null;
+        return $entity instanceof EntityEvent ? $entity : null;
     }
 
     /**
-     * Get count of User entities
+     * Get count of Event entities
      */
     public function count(): int
     {
@@ -121,13 +121,13 @@ final class Users
     /**
      * Filter collection
      *
-     * @param callable(EntityUser): bool $callback
+     * @param callable(EntityEvent): bool $callback
      * @return self
      */
     public function filter(callable $callback): self
     {
         $filtered = $this->collection->filter(function($entity) use ($callback) {
-            return $entity instanceof EntityUser && $callback($entity);
+            return $entity instanceof EntityEvent && $callback($entity);
         });
         return new self($filtered);
     }
@@ -135,13 +135,13 @@ final class Users
     /**
      * Convert to array
      *
-     * @return EntityUser[]
+     * @return EntityEvent[]
      */
     public function toArray(): array
     {
         $result = [];
         foreach ($this->collection as $entity) {
-            if ($entity instanceof EntityUser) {
+            if ($entity instanceof EntityEvent) {
                 $result[] = $entity;
             }
         }
@@ -149,14 +149,14 @@ final class Users
     }
 
     /**
-     * Iterator support - get current User
+     * Iterator support - get current Event
      *
-     * @return EntityUser|null
+     * @return EntityEvent|null
      */
-    public function current(): ?EntityUser
+    public function current(): ?EntityEvent
     {
         $entity = $this->collection->current();
-        return $entity instanceof EntityUser ? $entity : null;
+        return $entity instanceof EntityEvent ? $entity : null;
     }
 
     /**
@@ -200,26 +200,26 @@ final class Users
     }
 
     /**
-     * ArrayAccess support - get User at offset
+     * ArrayAccess support - get Event at offset
      */
-    public function offsetGet(mixed $offset): ?EntityUser
+    public function offsetGet(mixed $offset): ?EntityEvent
     {
         $entity = $this->collection->offsetGet($offset);
-        return $entity instanceof EntityUser ? $entity : null;
+        return $entity instanceof EntityEvent ? $entity : null;
     }
 
     /**
-     * ArrayAccess support - set User at offset
+     * ArrayAccess support - set Event at offset
      */
     public function offsetSet(mixed $offset, mixed $value): void
     {
-        if ($value instanceof EntityUser) {
+        if ($value instanceof EntityEvent) {
             $this->collection->offsetSet($offset, $value);
         }
     }
 
     /**
-     * ArrayAccess support - unset User at offset
+     * ArrayAccess support - unset Event at offset
      */
     public function offsetUnset(mixed $offset): void
     {
