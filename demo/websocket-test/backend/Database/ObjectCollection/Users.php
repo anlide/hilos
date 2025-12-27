@@ -14,7 +14,10 @@ use Iterator;
 
 /**
  * Users Object Collection
- * Collection of User objects
+ * Typed wrapper around Objects for User objects
+ *
+ * This is a convenience class that provides type safety and convenience methods
+ * while using Objects internally.
  */
 final class Users extends Objects implements Iterator, ArrayAccess, Countable
 {
@@ -52,15 +55,18 @@ final class Users extends Objects implements Iterator, ArrayAccess, Countable
         foreach ($entityUsers as $key => $entityUser) {
             $this->objects[$key] = ObjectUser::fromEntity($entityUser);
         }
+
+        $this->_allLoaded = true;
+        $this->_allowLazyLoading = false;
     }
 
     /**
      * Initialize collection with partial database loading (lazy loading enabled)
      *
-     * @param int $strategy Lazy loading strategy (LAZY_STRATEGY_KEY by default - never load all)
+     * @param int $strategy Lazy loading strategy (LAZY_STRATEGY_BATCH by default)
      * @return self
      */
-    public static function initPartialDB(int $strategy = self::LAZY_STRATEGY_KEY): self
+    public static function initPartialDB(int $strategy = self::LAZY_STRATEGY_BATCH): self
     {
         $self = new self();
         $self->_allowLazyLoading = true;
@@ -84,7 +90,7 @@ final class Users extends Objects implements Iterator, ArrayAccess, Countable
     /**
      * Get current User object
      *
-     * @return ObjectUser
+     * @return ObjectUser Current User object (throws RuntimeException if invalid position)
      */
     public function current(): ObjectUser
     {
@@ -186,21 +192,22 @@ final class Users extends Objects implements Iterator, ArrayAccess, Countable
         }
 
         // Use Entity to find by session_token
-        $entityUsers = EntityUser::get(['session_token' => $sessionToken]);
-        $entity = $entityUsers->first();
+        $entityCollection = EntityUser::get(['session_token' => $sessionToken]);
+        $entityUsers = EntityUsers::fromEntityCollection($entityCollection);
+        $entityUser = $entityUsers->first();
 
-        if ($entity === null) {
+        if ($entityUser === null) {
             return null;
         }
 
         // Check if already loaded in collection
-        $userId = $entity->id;
+        $userId = $entityUser->id;
         if ($userId !== null && isset($this->objects[$userId])) {
             return $this->objects[$userId];
         }
 
-        // Create ObjectUser from entity
-        $objectUser = ObjectUser::fromEntity($entity);
+        // Create ObjectUser from entityUser
+        $objectUser = ObjectUser::fromEntity($entityUser);
 
         // Optionally cache it in collection for future access by ID
         if ($userId !== null) {
@@ -208,5 +215,74 @@ final class Users extends Objects implements Iterator, ArrayAccess, Countable
         }
 
         return $objectUser;
+    }
+
+    /**
+     * Get User object by key
+     *
+     * @param int|string $key
+     * @return ObjectUser|null
+     */
+    public function get(int|string $key): ?ObjectUser
+    {
+        return $this->offsetGet($key);
+    }
+
+    /**
+     * Get first User object
+     *
+     * @return ObjectUser|null
+     */
+    public function first(): ?ObjectUser
+    {
+        if (empty($this->objects)) {
+            return null;
+        }
+
+        $keys = array_keys($this->objects);
+        return $this->objects[$keys[0]] ?? null;
+    }
+
+    /**
+     * Get last User object
+     *
+     * @return ObjectUser|null
+     */
+    public function last(): ?ObjectUser
+    {
+        if (empty($this->objects)) {
+            return null;
+        }
+
+        $keys = array_keys($this->objects);
+        $lastKey = end($keys);
+        return $this->objects[$lastKey] ?? null;
+    }
+
+    /**
+     * Filter collection
+     *
+     * @param callable(ObjectUser): bool $callback
+     * @return self New filtered collection
+     */
+    public function filter(callable $callback): self
+    {
+        $filtered = new self();
+        foreach ($this->objects as $key => $object) {
+            if ($object instanceof ObjectUser && $callback($object)) {
+                $filtered->objects[$key] = $object;
+            }
+        }
+        return $filtered;
+    }
+
+    /**
+     * Convert to array
+     *
+     * @return ObjectUser[]
+     */
+    public function toArray(): array
+    {
+        return array_values($this->objects);
     }
 }

@@ -13,10 +13,11 @@ use Hilos\Database\PhpType;
 use ReflectionClass;
 
 /**
- * DbObjectFixCommand - Fix Object files to match Entity files
+ * DbObjectFixCommand - Fix Object and ObjectCollection files to match Entity files
  *
- * Automatically updates Object class definitions to match Entity structure.
+ * Automatically updates Object and ObjectCollection class definitions to match Entity structure.
  * Adds missing properties, updates types, and maintains user-defined methods.
+ * Also fixes corresponding ObjectCollection files to match Object classes.
  */
 class DbObjectFixCommand implements CommandInterface
 {
@@ -27,7 +28,7 @@ class DbObjectFixCommand implements CommandInterface
 
     public function getDescription(): string
     {
-        return 'Fix Object files to match Entity files';
+        return 'Fix Object and ObjectCollection files to match Entity files';
     }
 
     public function getHelp(): string
@@ -36,19 +37,20 @@ class DbObjectFixCommand implements CommandInterface
 Command: db:object:fix
 
 Description:
-  Automatically update Object class definitions to match Entity structure.
+  Automatically update Object and ObjectCollection class definitions to match Entity structure.
   Adds missing properties, updates types, and preserves user-defined methods.
   Uses @object-exclude directives in Entity files to determine excluded fields.
+  Also fixes corresponding ObjectCollection files to match Object classes.
 
 Usage:
   php cli.php db:object:fix [options]
 
 Options:
-  --object-dir=<path>  Object files directory (default: auto-detect)
+  --object-dir=<path>  Object and ObjectCollection files directory (default: auto-detect)
   --entity-dir=<path>  Entity files directory (default: auto-detect)
   --table=<name>       Fix specific table only
   --dry-run            Show what would be changed without modifying files
-  --force-repair       Attempt to repair broken Object files
+  --force-repair       Attempt to repair broken Object and ObjectCollection files
 
 Examples:
   php cli.php db:object:fix
@@ -58,9 +60,22 @@ Examples:
 HELP;
     }
 
+    /**
+     * Execute the command to fix Object and ObjectCollection files
+     *
+     * @param array $options Command options:
+     *   - 'table' (string|null): Fix specific table only
+     *   - 'object-dir' (string|null): Object and ObjectCollection files directory (auto-detect if null)
+     *   - 'entity-dir' (string|null): Entity files directory (auto-detect if null)
+     *   - 'dry-run' (bool): Show what would be changed without modifying files
+     *   - 'force-repair' (bool): Attempt to repair broken Object and ObjectCollection files
+     * @param array $args Command arguments (not used)
+     * @return int Exit code (ExitCode::SUCCESS on success)
+     * @throws \RuntimeException
+     */
     public function execute(array $options, array $args): int
     {
-        echo "\n=== Fix Object Files ===\n\n";
+        echo "\n=== Fix Object and ObjectCollection Files ===\n\n";
 
         // Parse arguments from options
         $tableName = $options['table'] ?? null;
@@ -85,7 +100,7 @@ HELP;
         // Display information about broken Entity files
         if (!empty($brokenEntities)) {
             echo "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
-            echo "⚠ Damaged Entity files (Object files will not be modified):\n";
+            echo "⚠ Damaged Entity files (Object and ObjectCollection files will not be modified):\n";
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n";
             foreach ($brokenEntities as $file => $reason) {
                 echo "  - {$file}\n";
@@ -101,7 +116,7 @@ HELP;
             if ($syntaxErrors > 0) {
                 echo "\n";
             } else {
-                echo "✓ No fixes needed! Object files match Entity files.\n\n";
+                echo "✓ No fixes needed! Object and ObjectCollection files match Entity files.\n\n";
             }
             return ExitCode::SUCCESS;
         }
