@@ -167,7 +167,7 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
      *
      * @return Object_
      */
-    public function current(): Object_
+    public function current(): ?Object_
     {
         // For batch strategy, load all on first iteration
         if ($this->_allowLazyLoading &&
@@ -179,8 +179,8 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
 
         $keys = array_keys($this->objects);
         if (!isset($keys[$this->index])) {
-            // This shouldn't happen if valid() is checked, but handle gracefully
-            throw new \RuntimeException("Invalid iterator position");
+            // Return null if position is invalid
+            return null;
         }
 
         return $this->objects[$keys[$this->index]];

@@ -90,9 +90,9 @@ final class Users extends Objects implements Iterator, ArrayAccess, Countable
     /**
      * Get current User object
      *
-     * @return ObjectUser Current User object (throws RuntimeException if invalid position)
+     * @return ObjectUser|null Current User object or null if invalid position
      */
-    public function current(): ObjectUser
+    public function current(): ?ObjectUser
     {
         return parent::current();
     }

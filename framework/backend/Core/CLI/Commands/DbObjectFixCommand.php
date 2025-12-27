@@ -6,10 +6,12 @@ namespace Hilos\Core\CLI\Commands;
 
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\ExitCode;
+use Hilos\Core\CLI\Commands\DbObjectFixCommand\ObjectCollectionFixer;
 use Hilos\Database\Database;
 use Hilos\Database\Entity\Entity;
 use Hilos\Database\Generator;
 use Hilos\Database\PhpType;
+use Hilos\Utils\Helpers\StringHelper;
 use ReflectionClass;
 
 /**
@@ -21,6 +23,8 @@ use ReflectionClass;
  */
 class DbObjectFixCommand implements CommandInterface
 {
+    use ObjectCollectionFixer;
+
     public function getName(): string
     {
         return CliCommands::DB_OBJECT_FIX;
@@ -75,8 +79,6 @@ HELP;
      */
     public function execute(array $options, array $args): int
     {
-        echo "\n=== Fix Object and ObjectCollection Files ===\n\n";
-
         // Parse arguments from options
         $tableName = $options['table'] ?? null;
         $objectDir = $options['object-dir'] ?? null;
@@ -90,6 +92,7 @@ HELP;
         $entities = $this->loadEntities($entityDir, $syntaxErrors, $brokenEntities);
 
         // Load Object classes
+        $brokenObjects = [];
         $objects = $this->loadObjects($objectDir, $syntaxErrors);
 
         // Find differences and prepare fixes
@@ -112,17 +115,98 @@ HELP;
             echo "\n⚠ {$syntaxErrors} file(s) contain syntax errors and were skipped.\n";
         }
 
+        // Display Object files section
+        echo "\n=== Fix Object Files ===\n\n";
+
         if (empty($fixes) && empty($objectsToCreate) && empty($filesToDelete)) {
             if ($syntaxErrors > 0) {
                 echo "\n";
             } else {
-                echo "✓ No fixes needed! Object and ObjectCollection files match Entity files.\n\n";
+                echo "✓ No fixes needed! Object files match Entity files.\n\n";
             }
-            return ExitCode::SUCCESS;
+        } else {
+            // Display what will be fixed
+            $this->displayFixes($fixes, $objectsToCreate, $filesToDelete, $dryRun);
         }
 
-        // Display what will be fixed
-        $this->displayFixes($fixes, $objectsToCreate, $filesToDelete, $dryRun);
+        // Process ObjectCollection files (only if no errors in Object files)
+        echo "\n=== Fix ObjectCollection Files ===\n\n";
+
+        $appliedCollections = 0;
+        $createdCollections = 0;
+        $objectCollectionDir = null;
+        $brokenObjectCollections = [];
+        $collectionSyntaxErrors = 0;
+        $objectCollections = [];
+        $objectCollectionFixes = [];
+        $objectCollectionsToCreate = [];
+
+        // Check for errors in Object files - skip ObjectCollection processing if found
+        if (!empty($brokenObjects) || $syntaxErrors > 0) {
+            echo "⚠ Skipping ObjectCollection files due to errors in Object files.\n";
+            echo "  Please fix the errors above before processing ObjectCollection files.\n\n";
+        } else {
+            // Validate EntityCollection files first
+            $entityCollectionDir = null;
+            $entityCollectionSyntaxErrors = 0;
+            $brokenEntityCollections = [];
+            $entityCollectionsValid = $this->validateEntityCollections($entityCollectionDir, $entityCollectionSyntaxErrors, $brokenEntityCollections);
+
+            if (!empty($brokenEntityCollections) || $entityCollectionSyntaxErrors > 0) {
+                echo "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
+                echo "⚠ Damaged EntityCollection files (ObjectCollection files will not be processed):\n";
+                echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n";
+                foreach ($brokenEntityCollections as $file => $reason) {
+                    echo "  - {$file}\n";
+                    echo "    Reason: {$reason}\n\n";
+                }
+                if ($entityCollectionSyntaxErrors > 0) {
+                    echo "⚠ {$entityCollectionSyntaxErrors} EntityCollection file(s) contain syntax errors.\n\n";
+                }
+                echo "⚠ Skipping ObjectCollection files due to errors in EntityCollection files.\n";
+                echo "  Please fix the errors above before processing ObjectCollection files.\n\n";
+            } else {
+                // Load ObjectCollection files
+                $objectCollections = $this->loadObjectCollections($objectCollectionDir, $collectionSyntaxErrors, $brokenObjectCollections);
+
+                // Display information about broken ObjectCollection files
+                if (!empty($brokenObjectCollections)) {
+                    echo "\n";
+                    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
+                    echo "⚠ Damaged ObjectCollection files (will not be modified):\n";
+                    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
+                    echo "\n";
+                    foreach ($brokenObjectCollections as $file => $reason) {
+                        echo "  - {$file}\n";
+                        echo "    Reason: {$reason}\n";
+                        echo "\n";
+                    }
+                }
+
+                if ($collectionSyntaxErrors > 0) {
+                    echo "\n⚠ {$collectionSyntaxErrors} ObjectCollection file(s) contain syntax errors and were skipped.\n";
+                }
+
+                // Process ObjectCollections
+                // Prepare fixes for ObjectCollections
+                $objectCollectionFixes = $this->prepareObjectCollectionFixes($objects, $objectCollections, $tableName);
+
+                // Find ObjectCollection files to create
+                $objectCollectionsToCreate = $this->findObjectCollectionsToCreate($objects, $objectCollections, $tableName, $brokenObjects);
+
+                // Check if there are any fixes needed
+                if (empty($objectCollectionFixes) && empty($objectCollectionsToCreate)) {
+                    if ($collectionSyntaxErrors > 0 || !empty($brokenObjectCollections)) {
+                        echo "\n";
+                    } else {
+                        echo "✓ No fixes needed! ObjectCollection files match Object classes.\n\n";
+                    }
+                } else {
+                    // Display ObjectCollection fixes
+                    $this->displayObjectCollectionFixes($objectCollectionFixes, $objectCollectionsToCreate, $dryRun);
+                }
+            }
+        }
 
         if ($dryRun) {
             echo "\n[DRY RUN] No files were modified.\n\n";
@@ -134,20 +218,50 @@ HELP;
         $created = $this->createObjectFiles($objectsToCreate, $objectDir, $entityDir);
         $deleted = $this->deleteObjectFiles($filesToDelete);
 
+        // Apply ObjectCollection fixes
+        if (!empty($objectCollectionFixes) || !empty($objectCollectionsToCreate)) {
+            $appliedCollections = $this->applyObjectCollectionFixes($objectCollectionFixes, $objectCollections, $objects);
+            $createdCollections = $this->createObjectCollectionFiles($objectCollectionsToCreate, $objectCollectionDir, $objects);
+        }
+
         // Summary
-        $totalChanges = $applied + $created + $deleted;
+        $totalChanges = $applied + $created + $deleted + $appliedCollections + $createdCollections;
         if ($totalChanges > 0) {
             echo "\n";
-            if ($applied > 0) {
-                echo "✓ Updated {$applied} file(s).\n";
-            }
-            if ($created > 0) {
-                echo "✓ Created {$created} file(s).\n";
-            }
-            if ($deleted > 0) {
-                echo "✓ Deleted {$deleted} file(s).\n";
-            }
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
+            echo "Summary:\n";
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
             echo "\n";
+
+            $objectChanges = $applied + $created + $deleted;
+            if ($objectChanges > 0) {
+                echo "Object files:\n";
+                if ($applied > 0) {
+                    echo "  ✓ Updated {$applied} file(s)\n";
+                }
+                if ($created > 0) {
+                    echo "  ✓ Created {$created} file(s)\n";
+                }
+                if ($deleted > 0) {
+                    echo "  ✓ Deleted {$deleted} file(s)\n";
+                }
+                echo "\n";
+            }
+
+            $collectionChanges = $appliedCollections + $createdCollections;
+            if ($collectionChanges > 0) {
+                echo "ObjectCollection files:\n";
+                if ($appliedCollections > 0) {
+                    echo "  ✓ Updated {$appliedCollections} file(s)\n";
+                }
+                if ($createdCollections > 0) {
+                    echo "  ✓ Created {$createdCollections} file(s)\n";
+                }
+                echo "\n";
+            }
+        } elseif (empty($brokenEntities) && $syntaxErrors === 0 && empty($brokenObjectCollections) && $collectionSyntaxErrors === 0) {
+            // No changes at all and no errors
+            echo "\n✓ All files are up to date. No changes needed.\n\n";
         }
 
         return ExitCode::SUCCESS;
@@ -2300,6 +2414,144 @@ HELP;
         }
 
         return 'App\\Object';
+    }
+
+    /**
+     * Display ObjectCollection fixes that will be applied
+     *
+     * @param array $fixes Fixes to apply
+     * @param array $toCreate ObjectCollections to create
+     * @param bool $dryRun Whether this is a dry run
+     */
+    private function displayObjectCollectionFixes(array $fixes, array $toCreate, bool $dryRun): void
+    {
+        if ($dryRun) {
+            echo "\n[DRY RUN] The following ObjectCollection changes would be made:\n\n";
+        } else {
+            echo "\nThe following ObjectCollection changes will be made:\n\n";
+        }
+
+        if (!empty($fixes)) {
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
+            echo "ObjectCollection Files to Update:\n";
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n";
+
+            foreach ($fixes as $objectClassName => $collectionFixes) {
+                $objectShortName = substr($objectClassName, strrpos($objectClassName, '\\') + 1);
+                $collectionShortName = StringHelper::pluralize($objectShortName);
+                echo "  {$collectionShortName}:\n";
+
+                if (isset($collectionFixes['update_imports'])) {
+                    echo "    - Update imports (Object class)\n";
+                }
+
+                if (isset($collectionFixes['update_type_hints'])) {
+                    $wrong = count($collectionFixes['update_type_hints']['wrong'] ?? []);
+                    if ($wrong > 0) {
+                        echo "    - Update type hints ({$wrong} method/methods)\n";
+                    }
+                }
+
+                echo "\n";
+            }
+        }
+
+        if (!empty($toCreate)) {
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
+            echo "ObjectCollection Files to Create:\n";
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n";
+
+            foreach ($toCreate as $objectClassName => $info) {
+                $objectShortName = substr($objectClassName, strrpos($objectClassName, '\\') + 1);
+                $collectionShortName = StringHelper::pluralize($objectShortName);
+                echo "  + {$collectionShortName}\n";
+            }
+            echo "\n";
+        }
+    }
+
+    /**
+     * Create ObjectCollection files
+     *
+     * @param array $toCreate ObjectCollections to create
+     * @param string|null $objectCollectionDir ObjectCollection directory
+     * @param array $objects Loaded Object classes
+     * @return int Number of files created
+     */
+    private function createObjectCollectionFiles(array $toCreate, ?string $objectCollectionDir, array $objects): int
+    {
+        if (empty($toCreate)) {
+            return 0;
+        }
+
+        // Auto-detect object collection directory if not provided
+        if ($objectCollectionDir === null) {
+            $cwd = getcwd();
+            $possibleDirs = [
+                $cwd . '/backend/Database/ObjectCollection',
+                $cwd . '/Database/ObjectCollection',
+                $cwd . '/ObjectCollection',
+                dirname($cwd) . '/backend/Database/ObjectCollection',
+                dirname($cwd) . '/Database/ObjectCollection',
+            ];
+
+            $bootstrapDir = null;
+            if (file_exists($cwd . '/backend/Bootstrap/cli.php')) {
+                $bootstrapDir = $cwd . '/backend';
+            } elseif (file_exists($cwd . '/Bootstrap/cli.php')) {
+                $bootstrapDir = $cwd;
+            }
+
+            if ($bootstrapDir !== null) {
+                $possibleDirs[] = $bootstrapDir . '/Database/ObjectCollection';
+            }
+
+            foreach ($possibleDirs as $dir) {
+                $realPath = realpath($dir);
+                if ($realPath !== false && is_dir($realPath)) {
+                    $objectCollectionDir = $realPath;
+                    break;
+                }
+            }
+
+            // If directory doesn't exist, try to infer from Object directory
+            if ($objectCollectionDir === null && !empty($objects)) {
+                $firstObject = reset($objects);
+                $objectFile = $firstObject['file'];
+                $objectDir = dirname($objectFile);
+                $objectCollectionDir = str_replace('/Object', '/ObjectCollection', $objectDir);
+            }
+        }
+
+        if ($objectCollectionDir === null) {
+            echo "Error: Cannot determine ObjectCollection directory\n";
+            return 0;
+        }
+
+        // Extract namespace from first Object class
+        $namespace = null;
+        if (!empty($objects)) {
+            $firstObject = reset($objects);
+            $objectClassName = $firstObject['class'];
+            $objectReflection = new ReflectionClass($objectClassName);
+            $objectNamespace = $objectReflection->getNamespaceName();
+            $namespace = str_replace('\\Object', '\\ObjectCollection', $objectNamespace);
+        }
+
+        if ($namespace === null) {
+            echo "Error: Cannot determine ObjectCollection namespace\n";
+            return 0;
+        }
+
+        $created = 0;
+        foreach ($toCreate as $objectClassName => $info) {
+            $objectReflection = $info['reflection'];
+            if ($this->createObjectCollectionFile($objectClassName, $objectCollectionDir, $namespace, $objectReflection)) {
+                $created++;
+            }
+        }
+
+        return $created;
     }
 }
 
