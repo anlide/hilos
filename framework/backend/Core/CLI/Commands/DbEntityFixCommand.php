@@ -140,7 +140,7 @@ HELP;
         }
 
         $hasEntityChanges = !empty($fixes) || !empty($tablesToCreate) || !empty($filesToDelete);
-        
+
         if (!$hasEntityChanges) {
             if ($syntaxErrors > 0) {
                 echo "\n";
@@ -154,59 +154,59 @@ HELP;
 
         // Process EntityCollection files (only if no errors in Entity files)
         echo "\n=== Fix EntityCollection Files ===\n\n";
-        
+
         $appliedCollections = 0;
         $createdCollections = 0;
-        $entityCollectionFixes = [];
-        $entityCollectionsToCreate = [];
         $entityCollectionDir = null;
-        $entityCollections = [];
         $brokenEntityCollections = [];
         $collectionSyntaxErrors = 0;
-        
-        if (empty($brokenEntities) && $syntaxErrors === 0) {
-            // Load EntityCollection files
-            $entityCollections = $this->loadEntityCollections($entityCollectionDir, $collectionSyntaxErrors, $brokenEntityCollections);
 
-            // Display information about broken EntityCollection files
-            if (!empty($brokenEntityCollections)) {
+        // Check for errors in Entity files - throw exception if found
+        if (!empty($brokenEntities) || $syntaxErrors > 0) {
+            throw new RuntimeException(
+                "Cannot process EntityCollection files due to errors in Entity files. " .
+                "Please fix the errors above before processing EntityCollection files."
+            );
+        }
+
+        // Load EntityCollection files
+        $entityCollections = $this->loadEntityCollections($entityCollectionDir, $collectionSyntaxErrors, $brokenEntityCollections);
+
+        // Display information about broken EntityCollection files
+        if (!empty($brokenEntityCollections)) {
+            echo "\n";
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
+            echo "⚠ Damaged EntityCollection files (will not be modified):\n";
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
+            echo "\n";
+            foreach ($brokenEntityCollections as $file => $reason) {
+                echo "  - {$file}\n";
+                echo "    Reason: {$reason}\n";
                 echo "\n";
-                echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
-                echo "⚠ Damaged EntityCollection files (will not be modified):\n";
-                echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
+            }
+        }
+
+        if ($collectionSyntaxErrors > 0) {
+            echo "\n⚠ {$collectionSyntaxErrors} EntityCollection file(s) contain syntax errors and were skipped.\n";
+        }
+
+        // Process EntityCollections (entityCollections is always an array, even if empty)
+        // Prepare fixes for EntityCollections
+        $entityCollectionFixes = $this->prepareEntityCollectionFixes($entities, $entityCollections, $tableName);
+
+        // Find EntityCollection files to create
+        $entityCollectionsToCreate = $this->findEntityCollectionsToCreate($entities, $entityCollections, $tableName, $brokenEntities);
+
+        // Check if there are any fixes needed
+        if (empty($entityCollectionFixes) && empty($entityCollectionsToCreate)) {
+            if ($collectionSyntaxErrors > 0 || !empty($brokenEntityCollections)) {
                 echo "\n";
-                foreach ($brokenEntityCollections as $file => $reason) {
-                    echo "  - {$file}\n";
-                    echo "    Reason: {$reason}\n";
-                    echo "\n";
-                }
-            }
-
-            if ($collectionSyntaxErrors > 0) {
-                echo "\n⚠ {$collectionSyntaxErrors} EntityCollection file(s) contain syntax errors and were skipped.\n";
-            }
-
-            // Process EntityCollections (entityCollections is always an array, even if empty)
-            // Prepare fixes for EntityCollections
-            $entityCollectionFixes = $this->prepareEntityCollectionFixes($entities, $entityCollections, $tableName);
-
-            // Find EntityCollection files to create
-            $entityCollectionsToCreate = $this->findEntityCollectionsToCreate($entities, $entityCollections, $tableName, $brokenEntities);
-
-            // Check if there are any fixes needed
-            if (empty($entityCollectionFixes) && empty($entityCollectionsToCreate)) {
-                if ($collectionSyntaxErrors > 0 || !empty($brokenEntityCollections)) {
-                    echo "\n";
-                } else {
-                    echo "✓ No fixes needed! EntityCollection files match Entity classes.\n\n";
-                }
             } else {
-                // Display EntityCollection fixes
-                $this->displayEntityCollectionFixes($entityCollectionFixes, $entityCollectionsToCreate, $dryRun);
+                echo "✓ No fixes needed! EntityCollection files match Entity classes.\n\n";
             }
         } else {
-            echo "⚠ Skipping EntityCollection processing due to errors in Entity files.\n";
-            echo "   Please fix the errors above before processing EntityCollection files.\n\n";
+            // Display EntityCollection fixes
+            $this->displayEntityCollectionFixes($entityCollectionFixes, $entityCollectionsToCreate, $dryRun);
         }
 
         if ($dryRun) {
@@ -225,12 +225,10 @@ HELP;
         // Delete Entity files without tables
         $deleted = $this->deleteEntityFiles($filesToDelete);
 
-        // Apply EntityCollection fixes (only if no errors in Entity files)
-        if (empty($brokenEntities) && $syntaxErrors === 0) {
-            if (!empty($entityCollectionFixes) || !empty($entityCollectionsToCreate)) {
-                $appliedCollections = $this->applyEntityCollectionFixes($entityCollectionFixes, $entityCollections, $entities);
-                $createdCollections = $this->createEntityCollectionFiles($entityCollectionsToCreate, $entityCollectionDir, $entities);
-            }
+        // Apply EntityCollection fixes
+        if (!empty($entityCollectionFixes) || !empty($entityCollectionsToCreate)) {
+            $appliedCollections = $this->applyEntityCollectionFixes($entityCollectionFixes, $entityCollections, $entities);
+            $createdCollections = $this->createEntityCollectionFiles($entityCollectionsToCreate, $entityCollectionDir, $entities);
         }
 
         // Summary
@@ -241,7 +239,7 @@ HELP;
             echo "Summary:\n";
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
             echo "\n";
-            
+
             $entityChanges = $applied + $created + $deleted;
             if ($entityChanges > 0) {
                 echo "Entity files:\n";
@@ -256,7 +254,7 @@ HELP;
                 }
                 echo "\n";
             }
-            
+
             $collectionChanges = $appliedCollections + $createdCollections;
             if ($collectionChanges > 0) {
                 echo "EntityCollection files:\n";
@@ -649,10 +647,10 @@ HELP;
         // Missing foreign keys (but not self-references)
         $entityForeign = $entity['foreign'] ?? [];
         $currentTable = $entity['table'];
-        
+
         // Normalize entity foreign keys: extract table names from Entity constants or strings
         $normalizedEntityForeign = $this->normalizeForeignKeys($entityForeign, $entity['file']);
-        
+
         foreach ($dbTable->foreignKeys as $colKey => $foreignTable) {
             // Skip if foreign key references the same table (self-reference)
             if ($foreignTable === $currentTable) {
@@ -716,7 +714,7 @@ HELP;
                     // Entity file exists but is broken - don't create new one
                     continue;
                 }
-                
+
                 $tablesToCreate[$tableName] = $dbTable;
             }
         }
@@ -1688,7 +1686,7 @@ HELP;
                 // Remove entire line including leading spaces and * symbol: [spaces]* @object-exclude field1, field2
                 $pattern = '/^[ \t]*\*\s*@object-exclude\s+[^\n\*]+\n?/m';
                 $content = preg_replace($pattern, '', $content);
-                
+
                 // Clean up multiple consecutive empty lines
                 $content = preg_replace('/\n\s*\n\s*\n/', "\n\n", $content);
             } elseif (count($remainingFields) < count($fields)) {
@@ -1719,13 +1717,13 @@ HELP;
             while (preg_match("/'([^']+)' => \[/", $indexesContent, $nameMatch, PREG_OFFSET_CAPTURE, $offset)) {
                 $indexName = $nameMatch[1][0];
                 $startPos = $nameMatch[0][1];
-                
+
                 // Find the matching closing bracket for this index definition
                 $bracketStart = $nameMatch[0][1] + strlen($nameMatch[0][0]) - 1; // Position of opening [
                 $depth = 1;
                 $pos = $bracketStart + 1;
                 $endPos = $pos;
-                
+
                 while ($depth > 0 && $pos < strlen($indexesContent)) {
                     if ($indexesContent[$pos] === '[') {
                         $depth++;
@@ -1738,11 +1736,11 @@ HELP;
                     }
                     $pos++;
                 }
-                
+
                 if ($depth === 0) {
                     // Extract full index definition
                     $fullEntry = substr($indexesContent, $startPos, $endPos - $startPos);
-                    
+
                     if (!in_array($indexName, $indexNames, true)) {
                         // Keep this index
                         $entry = trim($fullEntry);
@@ -1751,7 +1749,7 @@ HELP;
                         $entry .= ',';
                         $remainingIndexes[] = "        " . $entry;
                     }
-                    
+
                     $offset = $endPos;
                 } else {
                     // Unbalanced brackets, skip this match
@@ -1770,7 +1768,7 @@ HELP;
     /**
      * Remove foreign keys from Entity file
      * Supports both simple and composite foreign keys
-     * 
+     *
      * @param string $content Entity file content
      * @param array<string> $columnKeys Column keys to remove (can be 'column' or 'col1,col2')
      * @param ReflectionClass $reflection Entity reflection class
@@ -1793,7 +1791,7 @@ HELP;
 
             foreach ($existingForeignKeys as $colKey => $tableInfo) {
                 $normalizedKey = $this->normalizeColumnKey($colKey);
-                
+
                 // Check if this foreign key should be removed
                 if (!isset($normalizedKeysToRemove[$normalizedKey])) {
                     // Keep this foreign key (preserve original format)
@@ -2095,7 +2093,7 @@ HELP;
             $entityClassName = $this->tableToPascalCase($table);
             $entityAlias = "Entity{$entityClassName}";
             $fullEntityClassName = $namespace !== null ? "{$namespace}\\{$entityClassName}" : $entityClassName;
-            
+
             // Check if Entity class exists
             if (class_exists($fullEntityClassName)) {
                 $useStatements[$entityAlias] = $fullEntityClassName;
@@ -2120,7 +2118,7 @@ HELP;
         if (preg_match('/(public const array _foreign = \[)(.*?)(\];)/s', $content, $matches)) {
             // Merge: keep existing that are not being updated, add/update new ones
             $finalEntries = [];
-            
+
             // Keep existing foreign keys that are not being updated
             foreach ($existingForeignKeys as $colKey => $tableInfo) {
                 $normalizedKey = $this->normalizeColumnKey($colKey);
@@ -2134,14 +2132,14 @@ HELP;
             foreach ($allForeignKeys as $fk) {
                 $columns = $fk['columns'] ?? [$fk['column'] ?? ''];
                 $table = $fk['table'] ?? $fk['new_table'] ?? null;
-                
+
                 if ($table === null) {
                     continue;
                 }
 
                 $entityClassName = $this->tableToPascalCase($table);
                 $entityAlias = "Entity{$entityClassName}";
-                
+
                 // Generate foreign key entry
                 if (count($columns) === 1) {
                     // Simple foreign key
@@ -2170,14 +2168,14 @@ HELP;
             foreach ($allForeignKeys as $fk) {
                 $columns = $fk['columns'] ?? [$fk['column'] ?? ''];
                 $table = $fk['table'] ?? $fk['new_table'] ?? null;
-                
+
                 if ($table === null) {
                     continue;
                 }
 
                 $entityClassName = $this->tableToPascalCase($table);
                 $entityAlias = "Entity{$entityClassName}";
-                
+
                 // Generate foreign key entry
                 if (count($columns) === 1) {
                     // Simple foreign key
@@ -2213,14 +2211,14 @@ HELP;
     /**
      * Parse existing foreign keys from Entity file content
      * Supports both simple and composite, with Entity constants or strings
-     * 
+     *
      * @param string $content Entity file content
      * @return array<string, array{original_line: string, table: string}> Parsed foreign keys
      */
     private function parseExistingForeignKeys(string $content): array
     {
         $foreignKeys = [];
-        
+
         if (!preg_match('/(public const array _foreign = \[)(.*?)(\];)/s', $content, $matches)) {
             return $foreignKeys;
         }
@@ -2248,7 +2246,7 @@ HELP;
             if (preg_match('/(self::\w+(?:\s*\.\s*[\'",]\s*,\s*[\'"]\s*\.\s*\.\s*self::\w+)+)\s*=>\s*(.+)/', $line, $compositeMatch)) {
                 $columnExpr = $compositeMatch[1];
                 $tableValue = trim($compositeMatch[2]);
-                
+
                 // Extract column names from expression
                 if (preg_match_all('/self::(\w+)/', $columnExpr, $colMatches)) {
                     $columns = $colMatches[1];
@@ -2284,7 +2282,7 @@ HELP;
     /**
      * Extract table name from foreign key value
      * Handles both EntityClass::_table and string 'table'
-     * 
+     *
      * @param string $value Value from _foreign array
      * @param string|null $namespace Entity namespace (for loading Entity class)
      * @return string|null Table name
@@ -2294,7 +2292,7 @@ HELP;
         // Check if it's EntityClass::_table
         if (preg_match('/Entity(\w+)::_table/', $value, $matches)) {
             $entityClassName = $matches[1];
-            
+
             // Try to load Entity class and get table name
             if ($namespace !== null) {
                 $fullClassName = "{$namespace}\\{$entityClassName}";
@@ -2305,7 +2303,7 @@ HELP;
                     }
                 }
             }
-            
+
             // Fallback: convert PascalCase to table name
             return $this->pascalCaseToTableName($entityClassName);
         }
@@ -2321,7 +2319,7 @@ HELP;
 
     /**
      * Add Entity use statements to file content
-     * 
+     *
      * @param string $content File content
      * @param array<string, string> $useStatements Map of alias => full class name
      * @return string Updated content
@@ -2638,7 +2636,7 @@ HELP;
      * Normalize foreign keys from Entity file
      * Extracts table names from Entity constants (EntityTable::_table) or strings
      * Parses directly from file content to handle composite keys correctly
-     * 
+     *
      * @param array $entityForeign Foreign keys from Entity constant (for reference)
      * @param string $entityFile Entity file path (for parsing Entity class names)
      * @return array<string, string> Normalized foreign keys: 'column' or 'col1,col2' => 'table'
@@ -2653,7 +2651,7 @@ HELP;
 
         // Parse foreign keys directly from file content
         $parsedForeignKeys = $this->parseExistingForeignKeys($content);
-        
+
         foreach ($parsedForeignKeys as $colKey => $tableInfo) {
             $normalizedKey = $this->normalizeColumnKey($colKey);
             $normalized[$normalizedKey] = $tableInfo['table'];
@@ -2674,7 +2672,7 @@ HELP;
 
     /**
      * Parse column key (supports both simple and composite)
-     * 
+     *
      * @param string $colKey Column key: 'column' or 'col1,col2'
      * @return array<string> Array of column names
      */
@@ -2689,7 +2687,7 @@ HELP;
     /**
      * Normalize column key for comparison
      * Sorts columns for composite keys to ensure consistent comparison
-     * 
+     *
      * @param string $colKey Column key: 'column' or 'col1,col2'
      * @return string Normalized key
      */

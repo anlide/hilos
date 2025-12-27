@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Core\CLI\Commands\DbEntityFixCommand;
 
 use Hilos\Database\Entity\Entity;
+use Hilos\Utils\Helpers\StringHelper;
 use ReflectionClass;
 
 /**
@@ -176,11 +177,12 @@ trait EntityCollectionFixer
         // Or: use ...\Entity\ClassName;
         // Use preg_match_all to find all use statements and filter for Entity classes
         // This avoids capturing comments or strings that might contain \Entity\
-        if (preg_match_all('/^use\s+([^;]+)(?:\s+as\s+(\w+))?;/m', $content, $useMatches, PREG_SET_ORDER)) {
+        // Pattern: capture class name (without "as alias") in group 1, alias in group 2
+        if (preg_match_all('/^use\s+([^\s;]+)(?:\s+as\s+(\w+))?;/m', $content, $useMatches, PREG_SET_ORDER)) {
             foreach ($useMatches as $useMatch) {
                 $fullClassName = trim($useMatch[1]);
                 // Check that this is an Entity class, but not EntityCollection
-                if (strpos($fullClassName, '\\Entity\\') !== false && 
+                if (strpos($fullClassName, '\\Entity\\') !== false &&
                     strpos($fullClassName, '\\EntityCollection\\') === false) {
                     return $fullClassName;
                 }
@@ -191,18 +193,15 @@ trait EntityCollectionFixer
         // If EntityCollection class is "Users", Entity class should be "User" in Entity subnamespace
         $entityCollectionNamespace = $entityCollectionReflection->getNamespaceName();
         $entityCollectionShortName = $entityCollectionReflection->getShortName();
-        
+
         // Replace EntityCollection namespace with Entity namespace
         $entityNamespace = str_replace('\\EntityCollection', '\\Entity', $entityCollectionNamespace);
-        
-        // Remove 's' from end if plural (Users -> User)
-        $entityShortName = $entityCollectionShortName;
-        if (str_ends_with($entityShortName, 's')) {
-            $entityShortName = substr($entityShortName, 0, -1);
-        }
-        
+
+        // Remove plural ending to get singular form (Users -> User, Events -> Event)
+        $entityShortName = StringHelper::singularize($entityCollectionShortName);
+
         $entityClassName = $entityNamespace . '\\' . $entityShortName;
-        
+
         if (class_exists($entityClassName)) {
             return $entityClassName;
         }
@@ -223,16 +222,40 @@ trait EntityCollectionFixer
         $fixes = [];
 
         foreach ($entities as $tableName => $entityInfo) {
+            $entityClassName = $entityInfo['class'];
+
             // Apply table filter if specified
             if ($tableFilter !== null && $tableName !== $tableFilter) {
                 continue;
             }
 
-            $entityClassName = $entityInfo['class'];
-            
             // Check if EntityCollection exists for this Entity
+            // Try direct lookup first
             $entityCollectionInfo = $entityCollections[$entityClassName] ?? null;
-            
+
+            // If not found, try to find by file name (handle pluralization mismatch)
+            if ($entityCollectionInfo === null) {
+                $entityReflection = $entityInfo['reflection'];
+                $entityShortName = $entityReflection->getShortName();
+                $entityCollectionShortName = StringHelper::pluralize($entityShortName);
+
+                // Try to find EntityCollection by checking all loaded collections
+                // and comparing their file names or class names
+                foreach ($entityCollections as $loadedEntityClassName => $collectionInfo) {
+                    $collectionReflection = $collectionInfo['reflection'];
+                    $collectionShortName = $collectionReflection->getShortName();
+
+                    // Check if collection name matches expected pluralized name
+                    if ($collectionShortName === $entityCollectionShortName) {
+                        // Verify that the loaded Entity class matches our Entity class
+                        if ($loadedEntityClassName === $entityClassName) {
+                            $entityCollectionInfo = $collectionInfo;
+                            break;
+                        }
+                    }
+                }
+            }
+
             if ($entityCollectionInfo === null) {
                 // EntityCollection doesn't exist - will be created
                 continue;
@@ -267,9 +290,23 @@ trait EntityCollectionFixer
         $entityClassName = $entityInfo['class'];
         $entityReflection = $entityInfo['reflection'];
         $entityShortName = $entityReflection->getShortName();
-        
-        // Parse EntityCollection file
-        $parsed = $this->parseEntityCollectionFile($entityCollectionFile);
+
+        // Calculate expected Entity class name from EntityCollection class name
+        $entityCollectionReflection = $entityCollectionInfo['reflection'];
+        $entityCollectionShortName = $entityCollectionReflection->getShortName();
+        $entityCollectionNamespace = $entityCollectionReflection->getNamespaceName();
+
+        // Apply singularization to get Entity short name
+        $expectedEntityShortName = StringHelper::singularize($entityCollectionShortName);
+
+        // Replace EntityCollection namespace with Entity namespace
+        $expectedEntityNamespace = str_replace('\\EntityCollection', '\\Entity', $entityCollectionNamespace);
+
+        // Build expected Entity class name
+        $expectedEntityClass = $expectedEntityNamespace . '\\' . $expectedEntityShortName;
+
+        // Parse EntityCollection file with expected Entity class
+        $parsed = $this->parseEntityCollectionFile($entityCollectionFile, $expectedEntityClass);
         if ($parsed === null) {
             return $fixes;
         }
@@ -287,11 +324,11 @@ trait EntityCollectionFixer
         // Compare method type hints
         $expectedEntityAlias = "Entity{$entityShortName}";
         $currentEntityAlias = $parsed['entity_alias'] ?? null;
-        
+
         // Check if type hints are correct in methods
         $methodsToCheck = ['get', 'first', 'last', 'current', 'offsetGet'];
         $wrongTypeHints = [];
-        
+
         foreach ($methodsToCheck as $methodName) {
             $expectedReturnType = $parsed['methods'][$methodName]['return_type'] ?? null;
             if ($expectedReturnType !== null && $expectedReturnType !== "?{$expectedEntityAlias}" && $expectedReturnType !== "{$expectedEntityAlias}|null") {
@@ -322,7 +359,7 @@ trait EntityCollectionFixer
      * @param string $filePath EntityCollection file path
      * @return array|null Parsed structure or null if failed
      */
-    protected function parseEntityCollectionFile(string $filePath): ?array
+    protected function parseEntityCollectionFile(string $filePath, ?string $expectedEntityClass = null): ?array
     {
         $content = file_get_contents($filePath);
         if ($content === false) {
@@ -336,15 +373,41 @@ trait EntityCollectionFixer
         ];
 
         // Parse imports
-        if (preg_match_all('/use\s+([^;]+)(?:\s+as\s+(\w+))?;/', $content, $useMatches, PREG_SET_ORDER)) {
+        $foundEntityClasses = [];
+        if (preg_match_all('/^use\s+([^\s;]+)(?:\s+as\s+(\w+))?;/m', $content, $useMatches, PREG_SET_ORDER)) {
             foreach ($useMatches as $useMatch) {
-                $fullClassName = trim($useMatch[1]);
-                $alias = isset($useMatch[2]) ? trim($useMatch[2]) : null;
+                $fullClassName = $useMatch[1];
+                $alias = $useMatch[2] ?? null;
 
-                if (strpos($fullClassName, '\\Entity\\') !== false && strpos($fullClassName, '\\EntityCollection\\') === false) {
-                    $parsed['entity_class'] = $fullClassName;
-                    $parsed['entity_alias'] = $alias ?? $this->getShortClassName($fullClassName);
+                // Skip base classes
+                if ($fullClassName === 'Hilos\\Database\\Entity\\EntityCollection' ||
+                    $fullClassName === 'Hilos\\Database\\Entity\\Entity') {
+                    continue;
                 }
+
+                if (str_contains($fullClassName, '\\Entity\\') && !str_contains($fullClassName, '\\EntityCollection\\')) {
+                    $foundEntityClasses[] = [
+                        'class' => $fullClassName,
+                        'alias' => $alias ?? $this->getShortClassName($fullClassName),
+                    ];
+                }
+            }
+        }
+
+        // If expected Entity class is provided, search for it specifically
+        if ($expectedEntityClass !== null) {
+            foreach ($foundEntityClasses as $entityInfo) {
+                if ($entityInfo['class'] === $expectedEntityClass) {
+                    $parsed['entity_class'] = $entityInfo['class'];
+                    $parsed['entity_alias'] = $entityInfo['alias'];
+                    break;
+                }
+            }
+        } else {
+            // Fallback: use first found Entity class (for backward compatibility)
+            if (!empty($foundEntityClasses)) {
+                $parsed['entity_class'] = $foundEntityClasses[0]['class'];
+                $parsed['entity_alias'] = $foundEntityClasses[0]['alias'];
             }
         }
 
@@ -463,28 +526,62 @@ trait EntityCollectionFixer
         // Find namespace section
         if (preg_match('/(namespace\s+[^;]+;\n\n)(.*?)(\n(?:final\s+)?class\s+\w+)/s', $content, $matches)) {
             $existingUses = $matches[2];
-            
-            // Remove empty lines
-            $existingUses = preg_replace('/\n\s*\n/', "\n", $existingUses);
-            $existingUses = trim($existingUses);
-            
+
+            // Separate use statements from PHPDoc block
+            $useStatements = '';
+            $phpDocBlock = '';
+            $separator = '';
+
+            // Check if there's a PHPDoc block (/** ... */)
+            // Pattern: capture use statements, separator (newlines), and PHPDoc block separately
+            if (preg_match('/(.*?)(\n+)\s*(\/\*\*.*?\*\/)\s*$/s', $existingUses, $parts)) {
+                // Has PHPDoc: separate use statements, separator, and PHPDoc
+                $useStatements = trim($parts[1]);
+                $separator = $parts[2]; // Preserve original separator (newlines before PHPDoc)
+                $phpDocBlock = $parts[3]; // PHPDoc block without leading/trailing newlines
+            } else {
+                // No PHPDoc: only use statements
+                $useStatements = trim($existingUses);
+                $phpDocBlock = '';
+                $separator = '';
+            }
+
+            // Process use statements: remove empty lines and normalize
+            if (!empty($useStatements)) {
+                $useStatements = preg_replace('/\n\s*\n/', "\n", $useStatements);
+                $useStatements = trim($useStatements);
+            }
+
             // Add new Entity import
             $newUse = "use {$entityClassName} as {$entityAlias};";
-            
+
             // Add EntityCollection import if not present
             $entityCollectionUse = "use Hilos\\Database\\Entity\\EntityCollection;";
-            if (strpos($existingUses, $entityCollectionUse) === false) {
+            if (!str_contains($useStatements, $entityCollectionUse)) {
                 $newUse .= "\n" . $entityCollectionUse;
             }
-            
+
             // Add DatabaseException import if not present
             $dbExceptionUse = "use Hilos\\Exception\\DatabaseException;";
-            if (strpos($existingUses, $dbExceptionUse) === false && strpos($content, 'DatabaseException') !== false) {
+            if (!str_contains($useStatements, $dbExceptionUse) && str_contains($content, 'DatabaseException')) {
                 $newUse .= "\n" . $dbExceptionUse;
             }
-            
-            $allUses = $newUse . "\n" . ($existingUses ? $existingUses . "\n" : "");
-            
+
+            // Build all uses section, preserving PHPDoc formatting
+            if (empty($useStatements) && empty($phpDocBlock)) {
+                // No existing uses and no PHPDoc
+                $allUses = $newUse . "\n";
+            } elseif (empty($useStatements)) {
+                // Only PHPDoc, no use statements
+                $allUses = $newUse . "\n" . $separator . $phpDocBlock;
+            } elseif (empty($phpDocBlock)) {
+                // Only use statements, no PHPDoc
+                $allUses = $newUse . "\n" . $useStatements . "\n";
+            } else {
+                // Both use statements and PHPDoc
+                $allUses = $newUse . "\n" . $useStatements . $separator . $phpDocBlock;
+            }
+
             $content = str_replace($matches[0], $matches[1] . $allUses . $matches[3], $content);
         } else {
             // Insert after namespace
@@ -511,7 +608,7 @@ trait EntityCollectionFixer
     {
         foreach ($wrongTypeHints as $methodName => $typeInfo) {
             $expectedType = "?{$entityAlias}";
-            
+
             // Replace return type in method signature
             $pattern = '/((?:public|private|protected)\s+function\s+' . preg_quote($methodName, '/') . '\s*\([^)]*\)\s*):\s*[^\{]+/';
             $replacement = '$1: ' . $expectedType;
@@ -539,7 +636,7 @@ trait EntityCollectionFixer
         }
 
         $entityShortName = $entityReflection->getShortName();
-        $entityCollectionShortName = $entityShortName . 's'; // Pluralize
+        $entityCollectionShortName = StringHelper::pluralize($entityShortName);
         $entityCollectionFile = $entityCollectionDir . '/' . $entityCollectionShortName . '.php';
 
         // Determine aliases
@@ -768,8 +865,11 @@ trait EntityCollectionFixer
         $toCreate = [];
 
         foreach ($entities as $tableName => $entityInfo) {
+            $entityClassName = $entityInfo['class'];
+            $entityFile = $entityInfo['file'];
+
             // Skip broken entities
-            if (isset($brokenEntities[$entityInfo['file']])) {
+            if (isset($brokenEntities[$entityFile])) {
                 continue;
             }
 
@@ -778,10 +878,35 @@ trait EntityCollectionFixer
                 continue;
             }
 
-            $entityClassName = $entityInfo['class'];
-
             // Check if EntityCollection already exists
-            if (isset($entityCollections[$entityClassName])) {
+            // Try direct lookup first
+            $entityCollectionInfo = $entityCollections[$entityClassName] ?? null;
+
+            // If not found, try to find by file name (handle pluralization mismatch)
+            if ($entityCollectionInfo === null) {
+                $entityReflection = $entityInfo['reflection'];
+                $entityShortName = $entityReflection->getShortName();
+                $entityCollectionShortName = StringHelper::pluralize($entityShortName);
+
+                // Try to find EntityCollection by checking all loaded collections
+                // and comparing their file names or class names
+                foreach ($entityCollections as $loadedEntityClassName => $collectionInfo) {
+                    $collectionReflection = $collectionInfo['reflection'];
+                    $collectionShortName = $collectionReflection->getShortName();
+
+                    // Check if collection name matches expected pluralized name
+                    if ($collectionShortName === $entityCollectionShortName) {
+                        // Verify that the loaded Entity class matches our Entity class
+                        if ($loadedEntityClassName === $entityClassName) {
+                            $entityCollectionInfo = $collectionInfo;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            // If EntityCollection exists (found by direct lookup or by name), skip
+            if ($entityCollectionInfo !== null) {
                 continue;
             }
 
@@ -794,4 +919,3 @@ trait EntityCollectionFixer
         return $toCreate;
     }
 }
-
