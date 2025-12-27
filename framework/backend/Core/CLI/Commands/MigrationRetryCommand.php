@@ -8,7 +8,6 @@ use Hilos\Constants\CliCommands;
 use Hilos\Constants\ExitCode;
 use Hilos\Database\Database;
 use Hilos\Database\Migration;
-use Hilos\Exception\DatabaseException;
 
 /**
  * Migration Retry Command
@@ -74,57 +73,33 @@ HELP;
 
         // Set database connection index if specified
         if ($dbIndex !== 0) {
-            try {
-                Database::useConnection($dbIndex);
-                echo "Using database connection index: {$dbIndex}\n\n";
-            } catch (\Throwable $e) {
-                echo "✗ Failed to switch to database connection {$dbIndex}: {$e->getMessage()}\n\n";
-                return ExitCode::ERROR;
-            }
+            Database::useConnection($dbIndex);
+            echo "Using database connection index: {$dbIndex}\n\n";
         }
 
-        try{
-            // Initialize migration system
-            echo "Initializing migration system...\n";
-            Migration::initialize();
-            echo "✓ Migration system initialized\n\n";
+        // Initialize migration system
+        echo "Initializing migration system...\n";
+        Migration::initialize();
+        echo "✓ Migration system initialized\n\n";
 
-            // Get status
-            $status = Migration::getStatus();
-            
-            // Check if migration is actually failed
-            if (!in_array($version, $status['failed_migrations'], true)) {
-                echo "✗ ERROR: Migration {$version} is not marked as failed\n";
-                echo "\nFailed migrations: " . (empty($status['failed_migrations']) ? 'none' : implode(', ', $status['failed_migrations'])) . "\n\n";
-                return ExitCode::ERROR;
-            }
-
-            echo "Retrying migration {$version}...\n";
-            echo "This will remove the failed record and re-apply the migration.\n\n";
-
-            // Retry the migration
-            Migration::retryFailed($version);
-
-            echo "\n✓ Migration {$version} successfully applied\n\n";
-            return ExitCode::SUCCESS;
-
-        } catch (DatabaseException $e) {
-            echo "\n✗ Migration retry failed!\n";
-            echo "Error: {$e->getMessage()}\n";
-            echo "MySQL Error Code: {$e->getMysqlErrorCode()}\n";
-            echo "MySQL Error: {$e->getMysqlErrorMessage()}\n";
-            if ($e->getQuery()) {
-                echo "Query: {$e->getQuery()}\n";
-            }
-            echo "\nThe migration is still marked as failed.\n";
-            echo "Fix the issue and try again.\n\n";
-            return ExitCode::ERROR;
-        } catch (\Throwable $e) {
-            echo "\n✗ Unexpected error!\n";
-            echo "Error: {$e->getMessage()}\n";
-            echo "File: {$e->getFile()}:{$e->getLine()}\n\n";
+        // Get status
+        $status = Migration::getStatus();
+        
+        // Check if migration is actually failed
+        if (!in_array($version, $status['failed_migrations'], true)) {
+            echo "✗ ERROR: Migration {$version} is not marked as failed\n";
+            echo "\nFailed migrations: " . (empty($status['failed_migrations']) ? 'none' : implode(', ', $status['failed_migrations'])) . "\n\n";
             return ExitCode::ERROR;
         }
+
+        echo "Retrying migration {$version}...\n";
+        echo "This will remove the failed record and re-apply the migration.\n\n";
+
+        // Retry the migration
+        Migration::retryFailed($version);
+
+        echo "\n✓ Migration {$version} successfully applied\n\n";
+        return ExitCode::SUCCESS;
     }
 
 }

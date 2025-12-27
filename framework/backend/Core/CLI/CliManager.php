@@ -19,6 +19,7 @@ use Hilos\Core\CLI\Commands\DbEntityDiffCommand;
 use Hilos\Core\CLI\Commands\DbEntityFixCommand;
 use Hilos\Core\CLI\Commands\DbObjectFixCommand;
 use Hilos\Core\CLI\Commands\DbIdeaFixCommand;
+use Hilos\Exception\DatabaseException;
 
 /**
  * CliManager - Main CLI management class
@@ -102,23 +103,48 @@ class CliManager
      *
      * Main entry point for CLI execution. Parses command and routes
      * to appropriate handler. Displays help if no command provided.
+     * Handles exceptions and displays user-friendly error messages.
      *
      * @return int Exit code (0 = success, 1 = error)
      */
     public function run(): int
     {
-        // Show help if no command provided
-        if ($this->command === null) {
-            return $this->commands[CliCommands::HELP]->execute($this->options, $this->args);
-        }
+        try {
+            // Show help if no command provided
+            if ($this->command === null) {
+                return $this->commands[CliCommands::HELP]->execute($this->options, $this->args);
+            }
 
-        // Execute command if registered
-        if (isset($this->commands[$this->command])) {
-            return $this->commands[$this->command]->execute($this->options, $this->args);
-        }
+            // Execute command if registered
+            if (isset($this->commands[$this->command])) {
+                return $this->commands[$this->command]->execute($this->options, $this->args);
+            }
 
-        // Handle unknown command
-        return $this->handleUnknownCommand();
+            // Handle unknown command
+            return $this->handleUnknownCommand();
+        } catch (DatabaseException $e) {
+            // Handle database exceptions with detailed error information
+            echo "\n✗ Database Error\n";
+            echo "Error: {$e->getMessage()}\n";
+            
+            if ($e->getMysqlErrorCode() > 0) {
+                echo "MySQL Error Code: {$e->getMysqlErrorCode()}\n";
+                echo "MySQL Error: {$e->getMysqlErrorMessage()}\n";
+            }
+            
+            if ($e->getQuery()) {
+                echo "Query: {$e->getQuery()}\n";
+            }
+            
+            echo "\n";
+            return ExitCode::ERROR;
+        } catch (\Throwable $e) {
+            // Handle unexpected errors
+            echo "\n✗ Unexpected Error\n";
+            echo "Error: {$e->getMessage()}\n";
+            echo "File: {$e->getFile()}:{$e->getLine()}\n\n";
+            return ExitCode::ERROR;
+        }
     }
 
     /**

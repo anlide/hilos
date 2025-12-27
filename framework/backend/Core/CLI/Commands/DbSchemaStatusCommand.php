@@ -9,7 +9,6 @@ use Hilos\Constants\ExitCode;
 use Hilos\Database\Database;
 use Hilos\Database\Schema\Schema;
 use Hilos\Database\Schema\TableInfo;
-use Hilos\Exception\DatabaseException;
 
 /**
  * DbSchemaStatusCommand - Display database schema structure status
@@ -64,32 +63,18 @@ HELP;
         $verbose = isset($options['verbose']);
 
         // Set database connection index if specified
-        try {
-            Database::useConnection($dbIndex);
-        } catch (DatabaseException $e) {
-            echo "Error: Connection {$dbIndex} is not configured\n";
-            echo "Message: {$e->getMessage()}\n\n";
-            return ExitCode::ERROR;
-        }
+        Database::useConnection($dbIndex);
 
         // Check if connected
         if (!Database::isConnected($dbIndex)) {
-            echo "Error: Database connection {$dbIndex} is not established\n";
-            echo "Please ensure database connection is initialized before running this command.\n\n";
-            return ExitCode::ERROR;
+            throw new \RuntimeException("Database connection {$dbIndex} is not established. Please ensure database connection is initialized before running this command.");
         }
 
         // Initialize schema if not already initialized
-        try {
-            if (!Schema::isInitialized($dbIndex)) {
-                echo "Initializing schema for connection {$dbIndex}...\n";
-                Schema::initialize($dbIndex);
-                echo "Schema initialized successfully.\n\n";
-            }
-        } catch (DatabaseException $e) {
-            echo "Error: Failed to initialize schema\n";
-            echo "Message: {$e->getMessage()}\n\n";
-            return ExitCode::ERROR;
+        if (!Schema::isInitialized($dbIndex)) {
+            echo "Initializing schema for connection {$dbIndex}...\n";
+            Schema::initialize($dbIndex);
+            echo "Schema initialized successfully.\n\n";
         }
 
         // Get statistics

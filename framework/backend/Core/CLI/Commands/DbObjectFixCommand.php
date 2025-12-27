@@ -10,7 +10,6 @@ use Hilos\Database\Database;
 use Hilos\Database\Entity\Entity;
 use Hilos\Database\Generator;
 use Hilos\Database\PhpType;
-use Hilos\Exception\DatabaseException;
 use ReflectionClass;
 
 /**
@@ -73,22 +72,10 @@ HELP;
         // Load Entity classes
         $syntaxErrors = 0;
         $brokenEntities = [];
-        try {
-            $entities = $this->loadEntities($entityDir, $syntaxErrors, $brokenEntities);
-        } catch (\Throwable $e) {
-            echo "Error: Failed to load Entity classes\n";
-            echo "Message: {$e->getMessage()}\n\n";
-            return ExitCode::ERROR;
-        }
+        $entities = $this->loadEntities($entityDir, $syntaxErrors, $brokenEntities);
 
         // Load Object classes
-        try {
-            $objects = $this->loadObjects($objectDir, $syntaxErrors);
-        } catch (\Throwable $e) {
-            echo "Error: Failed to load Object classes\n";
-            echo "Message: {$e->getMessage()}\n\n";
-            return ExitCode::ERROR;
-        }
+        $objects = $this->loadObjects($objectDir, $syntaxErrors);
 
         // Find differences and prepare fixes
         $fixes = $this->prepareFixes($entities, $objects, $tableName, $forceRepair);

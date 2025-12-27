@@ -18,10 +18,11 @@ use Hilos\Exception\DatabaseException;
 use ReflectionClass;
 
 /**
- * DbEntityFixCommand - Fix Entity files to match database schema
+ * DbEntityFixCommand - Fix Entity and EntityCollection files to match database schema
  *
  * Automatically updates Entity class definitions to match actual database structure.
  * Adds missing columns, indexes, foreign keys, and updates types.
+ * Also fixes corresponding EntityCollection files to match Entity classes.
  */
 class DbEntityFixCommand implements CommandInterface
 {
@@ -33,7 +34,7 @@ class DbEntityFixCommand implements CommandInterface
 
     public function getDescription(): string
     {
-        return 'Fix Entity files to match database schema';
+        return 'Fix Entity and EntityCollection files to match database schema';
     }
 
     public function getHelp(): string
@@ -42,8 +43,9 @@ class DbEntityFixCommand implements CommandInterface
 Command: db:entity:fix
 
 Description:
-  Automatically update Entity class definitions to match database schema.
-  Adds missing columns, indexes, foreign keys, and updates types.
+  Automatically update Entity and EntityCollection class definitions to match database schema.
+  Adds missing columns, indexes, foreign keys, and updates types in Entity files.
+  Also fixes corresponding EntityCollection files to match Entity classes.
 
 Usage:
   php cli.php db:entity:fix [options]
@@ -75,44 +77,24 @@ HELP;
         $dryRun = isset($options['dry-run']);
 
         // Set database connection index if specified
-        try {
-            Database::useConnection($dbIndex);
-        } catch (DatabaseException $e) {
-            echo "Error: Connection {$dbIndex} is not configured\n";
-            echo "Message: {$e->getMessage()}\n\n";
-            return ExitCode::ERROR;
-        }
+        Database::useConnection($dbIndex);
 
         // Check if connected
         if (!Database::isConnected($dbIndex)) {
-            echo "Error: Database connection {$dbIndex} is not established\n";
-            echo "Please ensure database connection is initialized before running this command.\n\n";
-            return ExitCode::ERROR;
+            throw new \RuntimeException("Database connection {$dbIndex} is not established. Please ensure database connection is initialized before running this command.");
         }
 
         // Initialize schema if not already initialized
-        try {
-            if (!Schema::isInitialized($dbIndex)) {
-                echo "Initializing schema for connection {$dbIndex}...\n";
-                Schema::initialize($dbIndex);
-                echo "Schema initialized successfully.\n\n";
-            }
-        } catch (DatabaseException $e) {
-            echo "Error: Failed to initialize schema\n";
-            echo "Message: {$e->getMessage()}\n\n";
-            return ExitCode::ERROR;
+        if (!Schema::isInitialized($dbIndex)) {
+            echo "Initializing schema for connection {$dbIndex}...\n";
+            Schema::initialize($dbIndex);
+            echo "Schema initialized successfully.\n\n";
         }
 
         // Load Entity classes and their file paths
         $syntaxErrors = 0;
         $brokenEntities = [];
-        try {
-            $entities = $this->loadEntities($entityDir, $entityNamespace, $syntaxErrors, $brokenEntities);
-        } catch (\Throwable $e) {
-            echo "Error: Failed to load Entity classes\n";
-            echo "Message: {$e->getMessage()}\n\n";
-            return ExitCode::ERROR;
-        }
+        $entities = $this->loadEntities($entityDir, $entityNamespace, $syntaxErrors, $brokenEntities);
 
         // Get database tables
         $dbTables = Schema::getTables($dbIndex);
@@ -175,15 +157,7 @@ HELP;
             // Load EntityCollection files
             $entityCollectionDir = null; // Auto-detect
             $brokenEntityCollections = [];
-            $entityCollections = [];
-            
-            try {
-                $entityCollections = $this->loadEntityCollections($entityCollectionDir, $syntaxErrors, $brokenEntityCollections);
-            } catch (\Throwable $e) {
-                echo "Error: Failed to load EntityCollection files\n";
-                echo "Message: {$e->getMessage()}\n\n";
-                // Continue with summary, but skip EntityCollection processing
-            }
+            $entityCollections = $this->loadEntityCollections($entityCollectionDir, $syntaxErrors, $brokenEntityCollections);
 
             // Process EntityCollections (entityCollections is always an array, even if empty)
             // Prepare fixes for EntityCollections

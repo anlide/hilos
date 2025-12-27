@@ -6,7 +6,6 @@ namespace Hilos\Core\CLI\Commands;
 
 use Hilos\Constants\ExitCode;
 use Hilos\Core\Daemon\CliMonitorManager;
-use Throwable;
 
 /**
  * MonitorCommand - Real-time daemon monitoring
@@ -61,13 +60,8 @@ HELP;
      */
     public function execute(array $options, array $args): int
     {
-        try {
-            $monitor = new CliMonitorManager();
-            $monitor->run();
-            return ExitCode::SUCCESS;
-        } catch (Throwable $e) {
-            echo "Monitor failed: " . $e->getMessage() . "\n";
-            return ExitCode::ERROR;
-        }
+        $monitor = new CliMonitorManager();
+        $monitor->run();
+        return ExitCode::SUCCESS;
     }
 }

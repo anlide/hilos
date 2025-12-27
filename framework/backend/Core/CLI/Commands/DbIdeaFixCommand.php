@@ -86,13 +86,7 @@ HELP;
         // Load Object classes
         $syntaxErrors = 0;
         $brokenObjects = [];
-        try {
-            $objects = $this->loadObjects($objectDir, $syntaxErrors, $brokenObjects);
-        } catch (\Throwable $e) {
-            echo "Error: Failed to load Object classes\n";
-            echo "Message: {$e->getMessage()}\n\n";
-            return ExitCode::ERROR;
-        }
+        $objects = $this->loadObjects($objectDir, $syntaxErrors, $brokenObjects);
 
         if (empty($objects)) {
             echo "⚠ No Object classes found. Please run 'db:object:fix' first to create Object classes.\n\n";
@@ -101,13 +95,7 @@ HELP;
 
         // Load IdeaObject files
         $brokenIdeaObjects = [];
-        try {
-            $ideaObjects = $this->loadIdeaObjects($ideaDir, $syntaxErrors, $brokenIdeaObjects);
-        } catch (\Throwable $e) {
-            echo "Error: Failed to load IdeaObject files\n";
-            echo "Message: {$e->getMessage()}\n\n";
-            return ExitCode::ERROR;
-        }
+        $ideaObjects = $this->loadIdeaObjects($ideaDir, $syntaxErrors, $brokenIdeaObjects);
 
         // Display information about broken files
         if (!empty($brokenObjects)) {

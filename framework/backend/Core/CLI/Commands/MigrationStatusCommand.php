@@ -8,7 +8,6 @@ use Hilos\Constants\CliCommands;
 use Hilos\Constants\ExitCode;
 use Hilos\Database\Database;
 use Hilos\Database\Migration;
-use Hilos\Exception\DatabaseException;
 
 /**
  * Migration Status Command
@@ -56,83 +55,67 @@ HELP;
 
         // Set database connection index if specified
         if ($dbIndex !== 0) {
-            try {
-                Database::useConnection($dbIndex);
-                echo "Using database connection index: {$dbIndex}\n\n";
-            } catch (\Throwable $e) {
-                echo "✗ Failed to switch to database connection {$dbIndex}: {$e->getMessage()}\n\n";
-                return ExitCode::ERROR;
-            }
+            Database::useConnection($dbIndex);
+            echo "Using database connection index: {$dbIndex}\n\n";
         }
 
-        try {
-            // Initialize migration system
-            Migration::initialize();
+        // Initialize migration system
+        Migration::initialize();
 
-            // Get status
-            $status = Migration::getStatus();
+        // Get status
+        $status = Migration::getStatus();
+        
+        echo "Current version:    {$status['current_index']}\n";
+        echo "Latest available:   {$status['latest_available']}\n";
+        echo "Pending migrations: {$status['pending_count']}\n";
+        
+        if (!empty($status['failed_migrations'])) {
+            echo "Failed migrations:  " . implode(', ', $status['failed_migrations']) . " ⚠\n";
+        }
+        
+        echo "\nMigration list:\n";
+        echo str_repeat('-', 50) . "\n";
+        
+        foreach ($status['available_migrations'] as $index) {
+            $isCurrent = $index === $status['current_index'];
+            $isApplied = $index <= $status['current_index'];
+            $isFailed = in_array($index, $status['failed_migrations'], true);
             
-            echo "Current version:    {$status['current_index']}\n";
-            echo "Latest available:   {$status['latest_available']}\n";
-            echo "Pending migrations: {$status['pending_count']}\n";
-            
-            if (!empty($status['failed_migrations'])) {
-                echo "Failed migrations:  " . implode(', ', $status['failed_migrations']) . " ⚠\n";
-            }
-            
-            echo "\nMigration list:\n";
-            echo str_repeat('-', 50) . "\n";
-            
-            foreach ($status['available_migrations'] as $index) {
-                $isCurrent = $index === $status['current_index'];
-                $isApplied = $index <= $status['current_index'];
-                $isFailed = in_array($index, $status['failed_migrations'], true);
-                
-                if ($isFailed) {
-                    $marker = '✗';
-                    $statusText = 'FAILED';
-                } elseif ($isApplied) {
-                    $marker = '✓';
-                    $statusText = 'Applied';
-                } else {
-                    $marker = '○';
-                    $statusText = 'Pending';
-                }
-                
-                $current = $isCurrent ? ' (current)' : '';
-                
-                printf("  %s Migration %03d - %-10s%s\n", $marker, $index, $statusText, $current);
-            }
-            
-            echo str_repeat('-', 50) . "\n";
-            
-            // Overall status
-            echo "\nOverall status: ";
-            if (!empty($status['failed_migrations'])) {
-                echo "⚠ HAS FAILURES\n";
-                echo "\nAction required:\n";
-                echo "  - Fix failed migrations manually\n";
-                echo "  - Retry with: php cli.php migration:retry <version>\n";
-            } elseif ($status['pending_count'] > 0) {
-                echo "○ PENDING\n";
-                echo "\nAction:\n";
-                echo "  php cli.php migration:up\n";
+            if ($isFailed) {
+                $marker = '✗';
+                $statusText = 'FAILED';
+            } elseif ($isApplied) {
+                $marker = '✓';
+                $statusText = 'Applied';
             } else {
-                echo "✓ UP TO DATE\n";
+                $marker = '○';
+                $statusText = 'Pending';
             }
             
-            echo "\n";
-            return ExitCode::SUCCESS;
-
-        } catch (DatabaseException $e) {
-            echo "\n✗ Failed to get migration status\n";
-            echo "Error: {$e->getMessage()}\n\n";
-            return ExitCode::ERROR;
-        } catch (\Throwable $e) {
-            echo "\n✗ Unexpected error!\n";
-            echo "Error: {$e->getMessage()}\n\n";
-            return ExitCode::ERROR;
+            $current = $isCurrent ? ' (current)' : '';
+            
+            printf("  %s Migration %03d - %-10s%s\n", $marker, $index, $statusText, $current);
         }
+        
+        echo str_repeat('-', 50) . "\n";
+        
+        // Overall status
+        echo "\nOverall status: ";
+        if (!empty($status['failed_migrations'])) {
+            echo "⚠ HAS FAILURES\n";
+            echo "\nAction required:\n";
+            echo "  - Fix failed migrations manually\n";
+            echo "  - Retry with: php cli.php migration:retry <version>\n";
+        } elseif ($status['pending_count'] > 0) {
+            echo "○ PENDING\n";
+            echo "\nAction:\n";
+            echo "  php cli.php migration:up\n";
+        } else {
+            echo "✓ UP TO DATE\n";
+        }
+        
+        echo "\n";
+        return ExitCode::SUCCESS;
     }
 
 }
