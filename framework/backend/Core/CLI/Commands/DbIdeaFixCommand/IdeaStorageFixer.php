@@ -26,8 +26,7 @@ trait IdeaStorageFixer
      */
     protected function loadIdeaStorage(?string $ideaStorageFile): ?array
     {
-        // TODO: Not implemented
-        echo "  [IdeaStorageFixer] loadIdeaStorage() - Not implemented\n";
+        // TODO: Not implemented yet
         return null;
     }
 
@@ -40,8 +39,7 @@ trait IdeaStorageFixer
      */
     protected function prepareIdeaStorageFixes(array $objectCollections, ?array $ideaStorage): array
     {
-        // TODO: Not implemented
-        echo "  [IdeaStorageFixer] prepareIdeaStorageFixes() - Not implemented\n";
+        // TODO: Not implemented yet
         return [];
     }
 
@@ -54,8 +52,7 @@ trait IdeaStorageFixer
      */
     protected function applyIdeaStorageFixes(array $fixes, string $ideaStorageFile): bool
     {
-        // TODO: Not implemented
-        echo "  [IdeaStorageFixer] applyIdeaStorageFixes() - Not implemented\n";
+        // TODO: Not implemented yet
         return false;
     }
 
@@ -67,8 +64,7 @@ trait IdeaStorageFixer
      */
     protected function parseIdeaStorageFile(string $filePath): ?array
     {
-        // TODO: Not implemented
-        echo "  [IdeaStorageFixer] parseIdeaStorageFile() - Not implemented\n";
+        // TODO: Not implemented yet
         return null;
     }
 
@@ -81,8 +77,7 @@ trait IdeaStorageFixer
      */
     protected function rebuildIdeaStorageProperties(string $content, array $objectCollections): string
     {
-        // TODO: Not implemented
-        echo "  [IdeaStorageFixer] rebuildIdeaStorageProperties() - Not implemented\n";
+        // TODO: Not implemented yet
         return $content;
     }
 
@@ -95,8 +90,7 @@ trait IdeaStorageFixer
      */
     protected function rebuildIdeaStorageInit(string $content, array $objectCollections): string
     {
-        // TODO: Not implemented
-        echo "  [IdeaStorageFixer] rebuildIdeaStorageInit() - Not implemented\n";
+        // TODO: Not implemented yet
         return $content;
     }
 
@@ -109,8 +103,7 @@ trait IdeaStorageFixer
      */
     protected function rebuildIdeaStorageInitAgain(string $content, array $objectCollections): string
     {
-        // TODO: Not implemented
-        echo "  [IdeaStorageFixer] rebuildIdeaStorageInitAgain() - Not implemented\n";
+        // TODO: Not implemented yet
         return $content;
     }
 
@@ -123,8 +116,7 @@ trait IdeaStorageFixer
      */
     protected function rebuildIdeaStorageReloadCollection(string $content, array $objectCollections): string
     {
-        // TODO: Not implemented
-        echo "  [IdeaStorageFixer] rebuildIdeaStorageReloadCollection() - Not implemented\n";
+        // TODO: Not implemented yet
         return $content;
     }
 
@@ -136,8 +128,7 @@ trait IdeaStorageFixer
      */
     protected function extractIdeaStorageLazyStrategies(string $content): array
     {
-        // TODO: Not implemented
-        echo "  [IdeaStorageFixer] extractIdeaStorageLazyStrategies() - Not implemented\n";
+        // TODO: Not implemented yet
         return [];
     }
 }

@@ -6,6 +6,7 @@ namespace Hilos\Core\CLI\Commands\DbIdeaFixCommand;
 
 use Hilos\Database\Idea\IdeaCollection;
 use Hilos\Database\Object\Objects;
+use Hilos\Utils\Helpers\StringHelper;
 use ReflectionClass;
 
 /**

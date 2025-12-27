@@ -67,11 +67,52 @@ Examples:
   php cli.php db:idea:fix --force-repair
 
 Note:
-  This command is currently not implemented. It will display a message
-  indicating that the feature is under development.
+  This command synchronizes 4 levels of Idea files:
+  1. IdeaObject files (Idea/{Name}.php) - individual Idea objects with lazy loading
+  2. IdeaCollection files (IdeaCollection/{Name}s.php) - Idea collections with filtering
+  3. IdeaStorage.php - central storage for Object collections with lazy loading strategies
+  4. Idea.php - access point that connects IdeaStorage with IdeaCollection classes
+  
+  Processing order: IdeaObject → IdeaCollection → IdeaStorage → Idea.php
+  Each level depends on the previous one, so errors in earlier stages skip later stages.
 HELP;
     }
 
+    /**
+     * Execute the command to fix Idea files (IdeaObject, IdeaCollection, IdeaStorage, Idea.php)
+     *
+     * The command works in 5 stages:
+     * 1. Load all data (estimate phase): Loads Object, IdeaObject, ObjectCollection, IdeaCollection,
+     *    IdeaStorage, and Idea.php files. Displays broken files and syntax errors.
+     * 2. Prepare fixes for all 4 blocks: Compares loaded files and prepares fixes for:
+     *    - IdeaObject files: Updates __get(), toArray(), PHPDoc to match Object properties
+     *    - IdeaCollection files: Updates objectToIdea() method and imports to match ObjectCollection
+     *    - IdeaStorage.php: Updates properties, init(), initAgain(), reloadCollection() methods
+     *    - Idea.php: Updates constants and init() method with setRepresent() calls
+     * 3. Display planned changes: Shows what will be changed for each block (if dry-run, stops here)
+     * 4. Apply fixes: Applies changes to all 4 blocks in order
+     * 5. Summary: Displays summary of all changes made
+     *
+     * Processing order and dependencies:
+     * - IdeaObject files are processed first (depends on Object classes)
+     * - IdeaCollection files are processed second (depends on ObjectCollection classes)
+     * - IdeaStorage.php is processed third (depends on ObjectCollection classes)
+     * - Idea.php is processed last (depends on IdeaStorage and IdeaCollection classes)
+     *
+     * If there are errors in Object/IdeaObject files, IdeaCollection/IdeaStorage/Idea.php
+     * processing is skipped to prevent cascading errors.
+     *
+     * @param array $options Command options:
+     *   - 'table' (string|null): Fix specific table only (filters by Entity table name)
+     *   - 'idea-dir' (string|null): IdeaObject files directory (auto-detect if null)
+     *   - 'idea-collection-dir' (string|null): IdeaCollection files directory (auto-detect if null)
+     *   - 'object-dir' (string|null): Object and ObjectCollection files directory (auto-detect if null)
+     *   - 'dry-run' (bool): Show what would be changed without modifying files
+     *   - 'force-repair' (bool): Attempt to repair broken Idea files (currently not used)
+     * @param array $args Command arguments (not used)
+     * @return int Exit code (ExitCode::SUCCESS on success)
+     * @throws \RuntimeException If critical errors occur during processing
+     */
     public function execute(array $options, array $args): int
     {
         echo "\n=== Fix Idea Files ===\n\n";
@@ -79,11 +120,15 @@ HELP;
         // Parse arguments from options
         $tableName = $options['table'] ?? null;
         $ideaDir = $options['idea-dir'] ?? null;
+        $ideaCollectionDir = $options['idea-collection-dir'] ?? null;
         $objectDir = $options['object-dir'] ?? null;
         $dryRun = isset($options['dry-run']);
         $forceRepair = isset($options['force-repair']);
 
-        // Load Object classes
+        // ============================================
+        // STEP 1: Load all data (estimate phase)
+        // ============================================
+        
         $syntaxErrors = 0;
         $brokenObjects = [];
         $objects = $this->loadObjects($objectDir, $syntaxErrors, $brokenObjects);
@@ -97,148 +142,300 @@ HELP;
         $brokenIdeaObjects = [];
         $ideaObjects = $this->loadIdeaObjects($ideaDir, $syntaxErrors, $brokenIdeaObjects);
 
+        // Load ObjectCollection classes
+        $brokenObjectCollections = [];
+        $objectCollections = [];
+        if (empty($brokenObjects) && empty($brokenIdeaObjects) && $syntaxErrors === 0) {
+            $objectCollections = $this->loadObjectCollections($objectDir, $syntaxErrors, $brokenObjectCollections);
+        }
+
+        // Load IdeaCollection files
+        $brokenIdeaCollections = [];
+        $ideaCollections = [];
+        if (empty($brokenObjects) && empty($brokenIdeaObjects) && $syntaxErrors === 0) {
+            $ideaCollections = $this->loadIdeaCollections($ideaCollectionDir, $syntaxErrors, $brokenIdeaCollections);
+        }
+
+        // Load IdeaStorage file
+        $ideaStorageFile = null;
+        $ideaStorage = null;
+        $brokenIdeaStorage = null;
+        if (empty($brokenObjects) && empty($brokenIdeaObjects) && $syntaxErrors === 0) {
+            // Auto-detect IdeaStorage file
+            $cwd = getcwd();
+            $possibleFiles = [
+                $cwd . '/backend/Database/IdeaStorage.php',
+                $cwd . '/Database/IdeaStorage.php',
+                $cwd . '/IdeaStorage.php',
+            ];
+            foreach ($possibleFiles as $file) {
+                if (file_exists($file)) {
+                    $ideaStorageFile = $file;
+                    break;
+                }
+            }
+            if ($ideaStorageFile !== null) {
+                try {
+                    $ideaStorage = $this->loadIdeaStorage($ideaStorageFile);
+                } catch (\Throwable $e) {
+                    $brokenIdeaStorage = [
+                        'file' => $ideaStorageFile,
+                        'reason' => $e->getMessage(),
+                    ];
+                }
+            }
+        }
+
+        // Load Idea.php file
+        $ideaFile = null;
+        $ideaMain = null;
+        $brokenIdeaMain = null;
+        if (empty($brokenObjects) && empty($brokenIdeaObjects) && $syntaxErrors === 0) {
+            // Auto-detect Idea.php file
+            $cwd = getcwd();
+            $possibleFiles = [
+                $cwd . '/backend/Database/Idea.php',
+                $cwd . '/Database/Idea.php',
+                $cwd . '/Idea.php',
+            ];
+            foreach ($possibleFiles as $file) {
+                if (file_exists($file)) {
+                    $ideaFile = $file;
+                    break;
+                }
+            }
+            if ($ideaFile !== null) {
+                try {
+                    $ideaMain = $this->loadIdeaMain($ideaFile);
+                } catch (\Throwable $e) {
+                    $brokenIdeaMain = [
+                        'file' => $ideaFile,
+                        'reason' => $e->getMessage(),
+                    ];
+                }
+            }
+        }
+
         // Display information about broken files
         if (!empty($brokenObjects)) {
-            echo "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
+            echo "\n";
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
             echo "⚠ Damaged Object files (Idea files will not be modified):\n";
-            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n";
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
+            echo "\n";
             foreach ($brokenObjects as $file => $reason) {
                 echo "  - {$file}\n";
-                echo "    Reason: {$reason}\n\n";
+                echo "    Reason: {$reason}\n";
+                echo "\n";
             }
         }
 
         if (!empty($brokenIdeaObjects)) {
-            echo "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
+            echo "\n";
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
             echo "⚠ Damaged IdeaObject files:\n";
-            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n";
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
+            echo "\n";
             foreach ($brokenIdeaObjects as $file => $reason) {
                 echo "  - {$file}\n";
-                echo "    Reason: {$reason}\n\n";
+                echo "    Reason: {$reason}\n";
+                echo "\n";
             }
+        }
+
+        if ($brokenIdeaStorage !== null) {
+            echo "\n";
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
+            echo "⚠ Damaged IdeaStorage file:\n";
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
+            echo "\n";
+            echo "  - {$brokenIdeaStorage['file']}\n";
+            echo "    Reason: {$brokenIdeaStorage['reason']}\n";
+            echo "\n";
+        }
+
+        if ($brokenIdeaMain !== null) {
+            echo "\n";
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
+            echo "⚠ Damaged Idea.php file:\n";
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
+            echo "\n";
+            echo "  - {$brokenIdeaMain['file']}\n";
+            echo "    Reason: {$brokenIdeaMain['reason']}\n";
+            echo "\n";
         }
 
         if ($syntaxErrors > 0) {
             echo "\n⚠ {$syntaxErrors} file(s) contain syntax errors and were skipped.\n";
         }
 
-        // Prepare fixes for existing IdeaObject files (will populate brokenIdeaObjects with parse errors)
-        $fixes = $this->prepareIdeaObjectFixes($objects, $ideaObjects, $tableName, $brokenIdeaObjects);
-
-        // Display parse errors if any
-        if (!empty($brokenIdeaObjects)) {
-            $parseErrors = [];
-            foreach ($brokenIdeaObjects as $file => $reason) {
-                if (strpos($reason, 'Failed to parse') !== false || strpos($reason, 'Failed to read') !== false) {
-                    $parseErrors[$file] = $reason;
-                }
-            }
-            
-            if (!empty($parseErrors)) {
-                echo "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
-                echo "⚠ IdeaObject files with parsing errors (will not be modified):\n";
-                echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n";
-                foreach ($parseErrors as $file => $reason) {
-                    echo "  - {$file}\n";
-                    echo "    Reason: {$reason}\n\n";
-                }
-            }
+        // If IdeaStorage or Idea.php are broken, terminate with error
+        if ($brokenIdeaStorage !== null || $brokenIdeaMain !== null) {
+            throw new \RuntimeException('Cannot proceed: IdeaStorage or Idea.php files are damaged. Please fix them first.');
         }
 
-        // Find IdeaObject files to create
+        // ============================================
+        // STEP 2: Prepare fixes for all 4 blocks (estimate)
+        // ============================================
+
+        // Prepare fixes for IdeaObjects
+        $ideaObjectFixes = $this->prepareIdeaObjectFixes($objects, $ideaObjects, $tableName, $brokenIdeaObjects);
         $ideaObjectsToCreate = $this->findIdeaObjectsToCreate($objects, $ideaObjects, $tableName, $brokenObjects);
 
-        if (empty($fixes) && empty($ideaObjectsToCreate)) {
+        // Prepare fixes for IdeaCollections (only if no errors)
+        $ideaCollectionFixes = [];
+        $ideaCollectionsToCreate = [];
+        if (empty($brokenObjects) && empty($brokenIdeaObjects) && $syntaxErrors === 0) {
+            $ideaCollectionFixes = $this->prepareIdeaCollectionFixes($objectCollections, $ideaCollections, $tableName);
+            $ideaCollectionsToCreate = $this->findIdeaCollectionsToCreate($objectCollections, $ideaCollections, $tableName, $brokenObjectCollections);
+        }
+
+        // Prepare fixes for IdeaStorage (only if no errors)
+        $ideaStorageFixes = [];
+        if (empty($brokenObjects) && empty($brokenIdeaObjects) && $syntaxErrors === 0) {
+            $ideaStorageFixes = $this->prepareIdeaStorageFixes($objectCollections, $ideaStorage);
+        }
+
+        // Prepare fixes for Idea.php (only if no errors)
+        $ideaMainFixes = [];
+        if (empty($brokenObjects) && empty($brokenIdeaObjects) && $syntaxErrors === 0) {
+            $ideaMainFixes = $this->prepareIdeaMainFixes($objectCollections, $ideaMain);
+        }
+
+        // ============================================
+        // STEP 3: Display planned changes for all blocks
+        // ============================================
+
+        $hasAnyChanges = !empty($ideaObjectFixes) || !empty($ideaObjectsToCreate) ||
+                         !empty($ideaCollectionFixes) || !empty($ideaCollectionsToCreate) ||
+                         !empty($ideaStorageFixes) || !empty($ideaMainFixes);
+
+        if (!$hasAnyChanges) {
             if ($syntaxErrors > 0 || !empty($brokenObjects) || !empty($brokenIdeaObjects)) {
                 echo "\n";
             } else {
-                echo "✓ No fixes needed! IdeaObject files match Object classes.\n\n";
+                echo "✓ No fixes needed! All Idea files match Object classes.\n\n";
             }
-            return ExitCode::SUCCESS;
-        }
+        } else {
+            // Display IdeaObject fixes
+            if (!empty($ideaObjectFixes) || !empty($ideaObjectsToCreate)) {
+                echo "\n=== Fix IdeaObject Files ===\n\n";
+                $this->displayIdeaObjectFixes($ideaObjectFixes, $ideaObjectsToCreate, $dryRun);
+            }
 
-        // Display what will be fixed
-        $this->displayIdeaObjectFixes($fixes, $ideaObjectsToCreate, $dryRun);
+            // Display IdeaCollection fixes
+            if (!empty($ideaCollectionFixes) || !empty($ideaCollectionsToCreate)) {
+                echo "\n=== Fix IdeaCollection Files ===\n\n";
+                $this->displayIdeaCollectionFixes($ideaCollectionFixes, $ideaCollectionsToCreate, $dryRun);
+            }
+
+            // Display IdeaStorage fixes
+            if (!empty($ideaStorageFixes)) {
+                echo "\n=== Fix IdeaStorage File ===\n\n";
+                $this->displayIdeaStorageFixes($ideaStorageFixes, $dryRun);
+            }
+
+            // Display Idea.php fixes
+            if (!empty($ideaMainFixes)) {
+                echo "\n=== Fix Idea.php File ===\n\n";
+                $this->displayIdeaMainFixes($ideaMainFixes, $dryRun);
+            }
+        }
 
         if ($dryRun) {
             echo "\n[DRY RUN] No files were modified.\n\n";
             return ExitCode::SUCCESS;
         }
 
-        // Apply fixes for IdeaObjects
-        $appliedObjects = $this->applyIdeaObjectFixes($fixes, $ideaObjects, $objects);
-        $createdObjects = $this->createIdeaObjectFiles($ideaObjectsToCreate, $ideaDir, $objects);
+        // ============================================
+        // STEP 4: Apply fixes for all blocks
+        // ============================================
 
-        // Check if we should skip IdeaCollection processing due to errors
-        $hasErrors = !empty($brokenObjects) || !empty($brokenIdeaObjects) || $syntaxErrors > 0;
-        
-        if ($hasErrors) {
-            echo "\n⚠ Skipping IdeaCollection processing due to errors in Entity/Object/IdeaObject files.\n";
-            echo "   Please fix the errors above before processing IdeaCollection files.\n\n";
-            $appliedCollections = 0;
-            $createdCollections = 0;
-        } else {
-            // Load ObjectCollection classes
-            $brokenObjectCollections = [];
-            try {
-                $objectCollections = $this->loadObjectCollections($objectDir, $syntaxErrors, $brokenObjectCollections);
-            } catch (\Throwable $e) {
-                echo "Error: Failed to load ObjectCollection classes\n";
-                echo "Message: {$e->getMessage()}\n\n";
-                return ExitCode::ERROR;
-            }
+        $appliedObjects = 0;
+        $createdObjects = 0;
+        $appliedCollections = 0;
+        $createdCollections = 0;
+        $appliedStorage = 0;
+        $appliedMain = 0;
 
-            // Load IdeaCollection files
-            $ideaCollectionDir = $options['idea-collection-dir'] ?? null;
-            $brokenIdeaCollections = [];
-            try {
-                $ideaCollections = $this->loadIdeaCollections($ideaCollectionDir, $syntaxErrors, $brokenIdeaCollections);
-            } catch (\Throwable $e) {
-                echo "Error: Failed to load IdeaCollection files\n";
-                echo "Message: {$e->getMessage()}\n\n";
-                return ExitCode::ERROR;
-            }
+        // Apply IdeaObject fixes
+        if (!empty($ideaObjectFixes) || !empty($ideaObjectsToCreate)) {
+            $appliedObjects = $this->applyIdeaObjectFixes($ideaObjectFixes, $ideaObjects, $objects);
+            $createdObjects = $this->createIdeaObjectFiles($ideaObjectsToCreate, $ideaDir, $objects);
+        }
 
-            // Prepare fixes for IdeaCollections
-            $ideaCollectionFixes = $this->prepareIdeaCollectionFixes($objectCollections, $ideaCollections, $tableName);
-
-            // Find IdeaCollection files to create
-            $ideaCollectionsToCreate = $this->findIdeaCollectionsToCreate($objectCollections, $ideaCollections, $tableName, $brokenObjectCollections);
-
-            // Display and apply IdeaCollection fixes
+        // Apply IdeaCollection fixes (only if no errors)
+        if (empty($brokenObjects) && empty($brokenIdeaObjects) && $syntaxErrors === 0) {
             if (!empty($ideaCollectionFixes) || !empty($ideaCollectionsToCreate)) {
-                $this->displayIdeaCollectionFixes($ideaCollectionFixes, $ideaCollectionsToCreate, $dryRun);
+                $appliedCollections = $this->applyIdeaCollectionFixes($ideaCollectionFixes, $ideaCollections, $objectCollections);
+                $createdCollections = $this->createIdeaCollectionFiles($ideaCollectionsToCreate, $ideaCollectionDir, $objectCollections);
+            }
 
-                if (!$dryRun) {
-                    $appliedCollections = $this->applyIdeaCollectionFixes($ideaCollectionFixes, $ideaCollections, $objectCollections);
-                    $createdCollections = $this->createIdeaCollectionFiles($ideaCollectionsToCreate, $ideaCollectionDir, $objectCollections);
-                } else {
-                    $appliedCollections = 0;
-                    $createdCollections = 0;
+            // Apply IdeaStorage fixes
+            if (!empty($ideaStorageFixes) && $ideaStorageFile !== null) {
+                if ($this->applyIdeaStorageFixes($ideaStorageFixes, $ideaStorageFile)) {
+                    $appliedStorage = 1;
                 }
-            } else {
-                $appliedCollections = 0;
-                $createdCollections = 0;
+            }
+
+            // Apply Idea.php fixes
+            if (!empty($ideaMainFixes) && $ideaFile !== null) {
+                if ($this->applyIdeaMainFixes($ideaMainFixes, $ideaFile)) {
+                    $appliedMain = 1;
+                }
             }
         }
 
-        // Summary
-        $totalChanges = $appliedObjects + $createdObjects + $appliedCollections + $createdCollections;
+        // ============================================
+        // STEP 5: Summary
+        // ============================================
+
+        $totalChanges = $appliedObjects + $createdObjects + $appliedCollections + $createdCollections + $appliedStorage + $appliedMain;
         if ($totalChanges > 0) {
             echo "\n";
-            if ($appliedObjects > 0) {
-                echo "✓ Updated {$appliedObjects} IdeaObject file(s).\n";
-            }
-            if ($createdObjects > 0) {
-                echo "✓ Created {$createdObjects} IdeaObject file(s).\n";
-            }
-            if ($appliedCollections > 0) {
-                echo "✓ Updated {$appliedCollections} IdeaCollection file(s).\n";
-            }
-            if ($createdCollections > 0) {
-                echo "✓ Created {$createdCollections} IdeaCollection file(s).\n";
-            }
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
+            echo "Summary:\n";
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
             echo "\n";
+
+            $objectChanges = $appliedObjects + $createdObjects;
+            if ($objectChanges > 0) {
+                echo "IdeaObject files:\n";
+                if ($appliedObjects > 0) {
+                    echo "  ✓ Updated {$appliedObjects} file(s)\n";
+                }
+                if ($createdObjects > 0) {
+                    echo "  ✓ Created {$createdObjects} file(s)\n";
+                }
+                echo "\n";
+            }
+
+            $collectionChanges = $appliedCollections + $createdCollections;
+            if ($collectionChanges > 0) {
+                echo "IdeaCollection files:\n";
+                if ($appliedCollections > 0) {
+                    echo "  ✓ Updated {$appliedCollections} file(s)\n";
+                }
+                if ($createdCollections > 0) {
+                    echo "  ✓ Created {$createdCollections} file(s)\n";
+                }
+                echo "\n";
+            }
+
+            if ($appliedStorage > 0) {
+                echo "IdeaStorage file:\n";
+                echo "  ✓ Updated 1 file\n";
+                echo "\n";
+            }
+
+            if ($appliedMain > 0) {
+                echo "Idea.php file:\n";
+                echo "  ✓ Updated 1 file\n";
+                echo "\n";
+            }
+        } elseif (empty($brokenObjects) && $syntaxErrors === 0 && empty($brokenIdeaObjects)) {
+            // No changes at all and no errors
+            echo "\n✓ All files are up to date. No changes needed.\n\n";
         }
 
         return ExitCode::SUCCESS;
@@ -395,37 +592,32 @@ HELP;
 
             // Get table name from Entity to apply filter
             $objectReflection = $objectInfo['reflection'];
-            try {
-                $entityProperty = $objectReflection->getProperty('entity');
-                $entityType = $entityProperty->getType();
-                if ($entityType === null || !method_exists($entityType, 'getName')) {
-                    continue;
-                }
-
-                $entityClassName = $entityType->getName();
-                if (!class_exists($entityClassName)) {
-                    continue;
-                }
-
-                $entityReflection = new ReflectionClass($entityClassName);
-                $table = $entityReflection->getConstant('_table');
-                if ($table === false) {
-                    continue;
-                }
-
-                // Apply table filter if specified
-                if ($tableFilter !== null && $table !== $tableFilter) {
-                    continue;
-                }
-
-                $toCreate[$objectClassName] = [
-                    'object_class' => $objectClassName,
-                    'reflection' => $objectReflection,
-                ];
-            } catch (\Throwable $e) {
-                // Skip if we can't determine table
+            $entityProperty = $objectReflection->getProperty('entity');
+            $entityType = $entityProperty->getType();
+            if ($entityType === null || !method_exists($entityType, 'getName')) {
                 continue;
             }
+
+            $entityClassName = $entityType->getName();
+            if (!class_exists($entityClassName)) {
+                continue;
+            }
+
+            $entityReflection = new ReflectionClass($entityClassName);
+            $table = $entityReflection->getConstant('_table');
+            if ($table === false) {
+                continue;
+            }
+
+            // Apply table filter if specified
+            if ($tableFilter !== null && $table !== $tableFilter) {
+                continue;
+            }
+
+            $toCreate[$objectClassName] = [
+                'object_class' => $objectClassName,
+                'reflection' => $objectReflection,
+            ];
         }
 
         return $toCreate;
@@ -721,31 +913,26 @@ HELP;
 
             // Get table name from Entity to apply filter
             $objectCollectionReflection = $objectCollectionInfo['reflection'];
-            try {
-                $entityClassName = $this->extractEntityClassNameFromObjectCollection($objectCollectionReflection);
-                if ($entityClassName === null || !class_exists($entityClassName)) {
-                    continue;
-                }
-
-                $entityReflection = new ReflectionClass($entityClassName);
-                $table = $entityReflection->getConstant('_table');
-                if ($table === false) {
-                    continue;
-                }
-
-                // Apply table filter if specified
-                if ($tableFilter !== null && $table !== $tableFilter) {
-                    continue;
-                }
-
-                $toCreate[$objectCollectionClassName] = [
-                    'object_collection_class' => $objectCollectionClassName,
-                    'reflection' => $objectCollectionReflection,
-                ];
-            } catch (\Throwable $e) {
-                // Skip if we can't determine table
+            $entityClassName = $this->extractEntityClassNameFromObjectCollection($objectCollectionReflection);
+            if ($entityClassName === null || !class_exists($entityClassName)) {
                 continue;
             }
+
+            $entityReflection = new ReflectionClass($entityClassName);
+            $table = $entityReflection->getConstant('_table');
+            if ($table === false) {
+                continue;
+            }
+
+            // Apply table filter if specified
+            if ($tableFilter !== null && $table !== $tableFilter) {
+                continue;
+            }
+
+            $toCreate[$objectCollectionClassName] = [
+                'object_collection_class' => $objectCollectionClassName,
+                'reflection' => $objectCollectionReflection,
+            ];
         }
 
         return $toCreate;
@@ -911,6 +1098,42 @@ HELP;
         }
 
         return $created;
+    }
+
+    /**
+     * Display IdeaStorage fixes that will be applied
+     *
+     * @param array $fixes Fixes to apply
+     * @param bool $dryRun Dry run mode
+     */
+    private function displayIdeaStorageFixes(array $fixes, bool $dryRun): void
+    {
+        if ($dryRun) {
+            echo "[DRY RUN] The following IdeaStorage changes would be made:\n\n";
+        } else {
+            echo "The following IdeaStorage changes will be made:\n\n";
+        }
+
+        // TODO: Implement detailed display when IdeaStorageFixer is implemented
+        echo "  (IdeaStorage fixes display not yet implemented)\n\n";
+    }
+
+    /**
+     * Display Idea.php fixes that will be applied
+     *
+     * @param array $fixes Fixes to apply
+     * @param bool $dryRun Dry run mode
+     */
+    private function displayIdeaMainFixes(array $fixes, bool $dryRun): void
+    {
+        if ($dryRun) {
+            echo "[DRY RUN] The following Idea.php changes would be made:\n\n";
+        } else {
+            echo "The following Idea.php changes will be made:\n\n";
+        }
+
+        // TODO: Implement detailed display when IdeaMainFixer is implemented
+        echo "  (Idea.php fixes display not yet implemented)\n\n";
     }
 }
 

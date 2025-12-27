@@ -24,8 +24,7 @@ trait IdeaMainFixer
      */
     protected function loadIdeaMain(?string $ideaFile): ?array
     {
-        // TODO: Not implemented
-        echo "  [IdeaMainFixer] loadIdeaMain() - Not implemented\n";
+        // TODO: Not implemented yet
         return null;
     }
 
@@ -38,8 +37,7 @@ trait IdeaMainFixer
      */
     protected function prepareIdeaMainFixes(array $objectCollections, ?array $ideaMain): array
     {
-        // TODO: Not implemented
-        echo "  [IdeaMainFixer] prepareIdeaMainFixes() - Not implemented\n";
+        // TODO: Not implemented yet
         return [];
     }
 
@@ -52,8 +50,7 @@ trait IdeaMainFixer
      */
     protected function applyIdeaMainFixes(array $fixes, string $ideaFile): bool
     {
-        // TODO: Not implemented
-        echo "  [IdeaMainFixer] applyIdeaMainFixes() - Not implemented\n";
+        // TODO: Not implemented yet
         return false;
     }
 
@@ -65,8 +62,7 @@ trait IdeaMainFixer
      */
     protected function parseIdeaMainFile(string $filePath): ?array
     {
-        // TODO: Not implemented
-        echo "  [IdeaMainFixer] parseIdeaMainFile() - Not implemented\n";
+        // TODO: Not implemented yet
         return null;
     }
 
@@ -79,8 +75,7 @@ trait IdeaMainFixer
      */
     protected function rebuildIdeaMainConstants(string $content, array $objectCollections): string
     {
-        // TODO: Not implemented
-        echo "  [IdeaMainFixer] rebuildIdeaMainConstants() - Not implemented\n";
+        // TODO: Not implemented yet
         return $content;
     }
 
@@ -93,8 +88,7 @@ trait IdeaMainFixer
      */
     protected function rebuildIdeaMainInit(string $content, array $objectCollections): string
     {
-        // TODO: Not implemented
-        echo "  [IdeaMainFixer] rebuildIdeaMainInit() - Not implemented\n";
+        // TODO: Not implemented yet
         return $content;
     }
 
@@ -106,8 +100,7 @@ trait IdeaMainFixer
      */
     protected function extractIdeaMainUserCode(string $content): array
     {
-        // TODO: Not implemented
-        echo "  [IdeaMainFixer] extractIdeaMainUserCode() - Not implemented\n";
+        // TODO: Not implemented yet
         return [];
     }
 }

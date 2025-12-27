@@ -6,6 +6,7 @@ namespace Hilos\Core\CLI\Commands\DbIdeaFixCommand;
 
 use Hilos\Database\Idea\IdeaObject;
 use Hilos\Database\Object\Object_;
+use Hilos\Utils\Helpers\StringHelper;
 use ReflectionClass;
 
 /**
@@ -495,15 +496,22 @@ trait IdeaObjectFixer
             }
         }
 
+        // Prepare all variables upfront
         $ideaClassName = $objectReflection->getShortName();
         $ideaFile = $ideaDir . '/' . $ideaClassName . '.php';
-
-        // Get Object properties
         $objectProperties = $this->extractObjectProperties($objectReflection);
-
-        // Determine Object class alias (usually just the short name)
         $objectShortName = $objectReflection->getShortName();
         $objectClassAlias = "Object{$objectShortName}";
+        $objectPropertyName = $this->camelCaseToPropertyName($objectShortName);
+        $pluralizedCacheName = StringHelper::pluralize(strtolower($ideaClassName));
+
+        // Build PHPDoc property annotations
+        $phpDocProperties = [];
+        foreach ($objectProperties as $propertyName => $propertyInfo) {
+            $type = $propertyInfo['type'];
+            $phpDocProperties[] = " * @property-read {$type} \${$propertyName}";
+        }
+        $phpDocPropertiesStr = implode("\n", $phpDocProperties);
 
         // Build file content
         $content = "<?php\n\n";
@@ -517,51 +525,50 @@ trait IdeaObjectFixer
         $content .= " * {$ideaClassName} Idea\n";
         $content .= " * High-level abstraction with lazy loading and relationships\n";
         $content .= " *\n";
-        foreach ($objectProperties as $propertyName => $propertyInfo) {
-            $type = $propertyInfo['type'];
-            $content .= " * @property-read {$type} \${$propertyName}\n";
-        }
+        $content .= $phpDocPropertiesStr . "\n";
         $content .= " */\n";
 
         // Class declaration
         $content .= "final class {$ideaClassName} extends BaseIdea\n";
         $content .= "{\n";
         $content .= "    /** @var self[] Global cache of {$ideaClassName} ideas */\n";
-        $content .= "    private static array \${$this->pluralize(strtolower($ideaClassName))} = [];\n\n";
-        $content .= "    private {$objectClassAlias} \${$this->camelCaseToPropertyName($objectShortName)};\n\n";
-        $content .= "    protected function __construct({$objectClassAlias} &\${$this->camelCaseToPropertyName($objectShortName)})\n";
+        $content .= "    private static array \${$pluralizedCacheName} = [];\n\n";
+        $content .= "    private {$objectClassAlias} \${$objectPropertyName};\n\n";
+        $content .= "    protected function __construct({$objectClassAlias} &\${$objectPropertyName})\n";
         $content .= "    {\n";
         $content .= "        parent::__construct();\n";
-        $content .= "        \$this->{$this->camelCaseToPropertyName($objectShortName)} = &\${$this->camelCaseToPropertyName($objectShortName)};\n";
+        $content .= "        \$this->{$objectPropertyName} = &\${$objectPropertyName};\n";
         $content .= "    }\n\n";
         $content .= "    /**\n";
         $content .= "     * Flush global cache\n";
         $content .= "     */\n";
         $content .= "    public static function flushCache(): void\n";
         $content .= "    {\n";
-        $content .= "        self::\${$this->pluralize(strtolower($ideaClassName))} = [];\n";
+        $content .= "        self::\${$pluralizedCacheName} = [];\n";
         $content .= "    }\n\n";
         $content .= "    /**\n";
         $content .= "     * Get {$ideaClassName} idea instance (cached)\n";
         $content .= "     */\n";
-        $content .= "    public static function get({$objectClassAlias} &\${$this->camelCaseToPropertyName($objectShortName)}): self\n";
+        $content .= "    public static function get({$objectClassAlias} &\${$objectPropertyName}): self\n";
         $content .= "    {\n";
-        $content .= "        \$id = \${$this->camelCaseToPropertyName($objectShortName)}->id;\n\n";
-        $content .= "        if (!isset(self::\${$this->pluralize(strtolower($ideaClassName))}[\$id])) {\n";
-        $content .= "            self::\${$this->pluralize(strtolower($ideaClassName))}[\$id] = new self(\${$this->camelCaseToPropertyName($objectShortName)});\n";
-        $content .= "        } elseif (self::\${$this->pluralize(strtolower($ideaClassName))}[\$id]->{$this->camelCaseToPropertyName($objectShortName)} !== \${$this->camelCaseToPropertyName($objectShortName)}) {\n";
+        $content .= "        \$id = \${$objectPropertyName}->id;\n\n";
+        $content .= "        if (!isset(self::\${$pluralizedCacheName}[\$id])) {\n";
+        $content .= "            self::\${$pluralizedCacheName}[\$id] = new self(\${$objectPropertyName});\n";
+        $content .= "        } elseif (self::\${$pluralizedCacheName}[\$id]->{$objectPropertyName} !== \${$objectPropertyName}) {\n";
         $content .= "            // Object reference changed, recreate\n";
-        $content .= "            self::\${$this->pluralize(strtolower($ideaClassName))}[\$id] = new self(\${$this->camelCaseToPropertyName($objectShortName)});\n";
+        $content .= "            self::\${$pluralizedCacheName}[\$id] = new self(\${$objectPropertyName});\n";
         $content .= "        }\n\n";
-        $content .= "        return self::\${$this->pluralize(strtolower($ideaClassName))}[\$id];\n";
+        $content .= "        return self::\${$pluralizedCacheName}[\$id];\n";
         $content .= "    }\n\n";
 
         // __get() method
-        $content .= $this->buildGetterMethod($objectProperties, $objectClassAlias, $this->camelCaseToPropertyName($objectShortName), $ideaClassName);
+        $getterMethod = $this->buildGetterMethod($objectProperties, $objectClassAlias, $objectPropertyName, $ideaClassName);
+        $content .= $getterMethod;
         $content .= "\n\n";
 
         // toArray() method
-        $content .= $this->buildToArrayMethod($objectProperties, $objectClassAlias, $this->camelCaseToPropertyName($objectShortName));
+        $toArrayMethod = $this->buildToArrayMethod($objectProperties, $objectClassAlias, $objectPropertyName);
+        $content .= $toArrayMethod;
         $content .= "\n";
         $content .= "}\n";
 
@@ -650,21 +657,6 @@ trait IdeaObjectFixer
         return 'object' . $className;
     }
 
-    /**
-     * Simple pluralization (basic implementation)
-     */
-    private function pluralize(string $word): string
-    {
-        // Basic pluralization rules
-        if (str_ends_with($word, 'y')) {
-            return substr($word, 0, -1) . 'ies';
-        }
-        if (str_ends_with($word, 's') || str_ends_with($word, 'x') || str_ends_with($word, 'z') || 
-            str_ends_with($word, 'ch') || str_ends_with($word, 'sh')) {
-            return $word . 'es';
-        }
-        return $word . 's';
-    }
 
     /**
      * Parse Idea object file to extract current structure
