@@ -2,11 +2,14 @@
 
 namespace Demo\WebSocketTest\Database\IdeaCollection;
 
+use Demo\WebSocketTest\Database\Idea;
 use Demo\WebSocketTest\Database\Idea\User as IdeaUser;
 use Demo\WebSocketTest\Database\Object\User as ObjectUser;
 use Demo\WebSocketTest\Database\ObjectCollection\Users as ObjectUsers;
 use Hilos\Database\Idea\IdeaCollection;
+use Hilos\Database\Object\Object_;
 use Hilos\Database\Object\Objects;
+use Hilos\Exception\DatabaseException;
 
 /**
  * Users Idea Collection
@@ -15,35 +18,40 @@ use Hilos\Database\Object\Objects;
 final class Users extends IdeaCollection
 {
     /**
-     * Initialize collection from objects
+     * Initialize collection
      */
-    public static function init(Objects &$objects): self
+    public static function init(): self
     {
-        return new self($objects);
+        return new self();
     }
 
     /**
-     * Convert object to idea
+     * Get ObjectCollection from IdeaStorage
+     * 
+     * @return Objects ObjectCollection instance from IdeaStorage
      */
-    protected function objectToIdea(mixed $object): IdeaUser
+    protected function getObjectCollection(): Objects
+    {
+        $storage = Idea::$storage;
+        if ($storage === null) {
+            throw new \RuntimeException("IdeaStorage not initialized");
+        }
+        return $storage->users;
+    }
+
+    /**
+     * Create Idea instance from Object
+     * 
+     * @param Object_ $object Object instance (reference)
+     * @return IdeaUser
+     */
+    protected function createIdea(Object_ &$object): IdeaUser
     {
         if (!($object instanceof ObjectUser)) {
             throw new \InvalidArgumentException("Object must be instance of ObjectUser");
         }
-
-        return IdeaUser::get($object);
+        return new IdeaUser($object);
     }
-
-    /**
-     * Filter by email domain
-     */
-    public function filterByEmailDomain(string $domain): self
-    {
-        return $this->filter(function(ObjectUser $user) use ($domain) {
-            return str_ends_with($user->email, "@{$domain}");
-        });
-    }
-
 
     /**
      * Find user by session token
@@ -51,7 +59,7 @@ final class Users extends IdeaCollection
      *
      * @param string $sessionToken Session token (32 hex characters)
      * @return IdeaUser|null User idea or null if not found
-     * @throws \Hilos\Exception\DatabaseException
+     * @throws DatabaseException
      */
     public function findBySession(string $sessionToken): ?IdeaUser
     {
@@ -60,19 +68,53 @@ final class Users extends IdeaCollection
         }
 
         // Delegate to ObjectCollection
-        // $this->objects is guaranteed to be ObjectUsers instance
-        if (!($this->objects instanceof ObjectUsers)) {
+        $objectCollection = $this->getObjectCollection();
+        if (!($objectCollection instanceof ObjectUsers)) {
             throw new \RuntimeException("Expected ObjectUsers instance");
         }
 
-        $objectUser = $this->objects->findBySession($sessionToken);
+        $objectUser = $objectCollection->findBySession($sessionToken);
 
         if ($objectUser === null) {
             return null;
         }
 
-        // Convert to Idea
-        return $this->objectToIdea($objectUser);
+        // Convert to Idea using Object
+        $id = $objectUser->id;
+        if ($id === null) {
+            return null;
+        }
+
+        // Use getIdeaForKey which will create IdeaUser from ObjectUser
+        return $this->getIdeaForKey($id);
+    }
+
+    /**
+     * Register new user
+     * Creates ObjectUser, adds it to ObjectCollection in IdeaStorage, and returns IdeaUser
+     *
+     * @param string $sessionToken Session token (32 hex characters)
+     * @return IdeaUser Newly registered user idea
+     * @throws DatabaseException If registration fails
+     */
+    public function register(string $sessionToken): IdeaUser
+    {
+        // Create ObjectUser through ObjectUser::register()
+        $objectUser = ObjectUser::register($sessionToken);
+
+        // Add to ObjectCollection in IdeaStorage
+        $objectCollection = $this->getObjectCollection();
+        if (!($objectCollection instanceof ObjectUsers)) {
+            throw new \RuntimeException("Expected ObjectUsers instance");
+        }
+
+        // Add ObjectUser to ObjectCollection
+        if ($objectUser->id !== null) {
+            $objectCollection[$objectUser->id] = $objectUser;
+        }
+
+        // Create and return IdeaUser
+        return $this->createIdea($objectUser);
     }
 
     /**

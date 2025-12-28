@@ -3,7 +3,7 @@
 namespace Demo\WebSocketTest\Database\Idea;
 
 use Demo\WebSocketTest\Database\Object\UserSetting as ObjectUserSetting;
-use Hilos\Database\Idea\IdeaObject as BaseIdea;
+use Hilos\Database\Idea\IdeaItem as BaseIdea;
 use Hilos\Database\Idea\IdeaCollection;
 
 /**

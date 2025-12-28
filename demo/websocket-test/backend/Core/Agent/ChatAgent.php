@@ -194,11 +194,11 @@ class ChatAgent extends AbstractAgent
             Logger::logAgentDebug($this->getId(), "Session token from DTO: " . $sessionToken);
             
             // Try to find existing user
-            $user = Idea::$storage->users->findBySession($sessionToken);
+            $user = Idea::$idea->users->findBySession($sessionToken);
             
             // If user not found, register new user
             if ($user === null) {
-                $user = ObjectUser::register($sessionToken);
+                $user = Idea::$storage->users->register($sessionToken);
                 Logger::logAgentDebug($this->getId(), "New user registered with session token: " . $sessionToken);
             } else {
                 Logger::logAgentDebug($this->getId(), "Existing user found with session token: " . $sessionToken);

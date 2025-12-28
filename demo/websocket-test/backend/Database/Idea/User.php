@@ -3,12 +3,15 @@
 namespace Demo\WebSocketTest\Database\Idea;
 
 use Demo\WebSocketTest\Database\Object\User as ObjectUser;
-use Hilos\Database\Idea\IdeaObject as BaseIdea;
+use Hilos\Database\Idea\IdeaItem as BaseIdea;
 use Hilos\Database\Idea\IdeaCollection;
 
 /**
  * User Idea
  * High-level abstraction with lazy loading and relationships
+ * 
+ * Stores reference to ObjectUser instance.
+ * Object instances are stored in ObjectCollection in IdeaStorage.
  *
  * @property-read ?int $id
  * @property-read string $name
@@ -18,40 +21,40 @@ use Hilos\Database\Idea\IdeaCollection;
  */
 final class User extends BaseIdea
 {
-    /** @var self[] Global cache of User ideas */
-    private static array $users = [];
-
-    private ObjectUser $objectUser;
-
-    protected function __construct(ObjectUser &$objectUser)
+    /**
+     * Public constructor - creates IdeaUser from ObjectUser instance
+     * 
+     * @param ObjectUser $objectUser ObjectUser instance (reference)
+     */
+    public function __construct(ObjectUser &$objectUser)
     {
-        parent::__construct();
-        $this->objectUser = &$objectUser;
+        parent::__construct($objectUser);
     }
 
     /**
-     * Flush global cache
+     * Get ObjectUser instance
+     * 
+     * @return ObjectUser
      */
-    public static function flushCache(): void
+    private function getObjectUser(): ObjectUser
     {
-        self::$users = [];
-    }
-
-    /**
-     * Get User idea instance (cached)
-     */
-    public static function get(ObjectUser &$objectUser): self
-    {
-        $id = $objectUser->id;
-
-        if (!isset(self::$users[$id])) {
-            self::$users[$id] = new self($objectUser);
-        } elseif (self::$users[$id]->objectUser !== $objectUser) {
-            // Object reference changed, recreate
-            self::$users[$id] = new self($objectUser);
+        $object = $this->getObject();
+        if (!($object instanceof ObjectUser)) {
+            throw new \RuntimeException("Expected ObjectUser instance");
         }
+        return $object;
+    }
 
-        return self::$users[$id];
+    /**
+     * Get IdeaStorage instance
+     * Override to use application-specific Idea class
+     * 
+     * @return \Demo\WebSocketTest\Database\IdeaStorage|null
+     */
+    protected function getStorage(): ?\Demo\WebSocketTest\Database\IdeaStorage
+    {
+        // Access IdeaStorage through application-specific Idea class
+        return \Demo\WebSocketTest\Database\Idea::$storage ?? null;
     }
 
     /**
@@ -59,16 +62,18 @@ final class User extends BaseIdea
      */
     public function __get(string $name): IdeaCollection|int|string|bool|null
     {
-        return match ($name) {
-            ObjectUser::id => $this->objectUser->id,
-            ObjectUser::name => $this->objectUser->name,
-            ObjectUser::theme => $this->objectUser->theme,
-            ObjectUser::sessionToken => $this->objectUser->sessionToken,
-            ObjectUser::lastActivity => $this->objectUser->lastActivity,
+        $objectUser = $this->getObjectUser();
 
-            // Example of lazy loading relationships (implement when you have related entities)
-            // 'orders' => $this->loadOrders(),
-            // 'posts' => $this->loadPosts(),
+        return match ($name) {
+            ObjectUser::id => $objectUser->id,
+            ObjectUser::name => $objectUser->name,
+            ObjectUser::theme => $objectUser->theme,
+            ObjectUser::sessionToken => $objectUser->sessionToken,
+            ObjectUser::lastActivity => $objectUser->lastActivity,
+
+            // Example of lazy loading relationships:
+            // 'orders' => $this->getOrders(),
+            // 'posts' => $this->getPosts(),
 
             default => throw new \Exception("Property [{$name}] does not exist on IdeaUser"),
         };
@@ -79,17 +84,51 @@ final class User extends BaseIdea
      */
     public function toArray(bool $withId = true, bool $idAsIndex = true, bool $withBridges = false, bool $withCalculation = false): array
     {
+        $objectUser = $this->getObjectUser();
+
         $data = [];
 
         if ($withId) {
-            $data[ObjectUser::id] = $this->objectUser->id;
+            $data[ObjectUser::id] = $objectUser->id;
         }
 
-        $data[ObjectUser::name] = $this->objectUser->name;
-        $data[ObjectUser::theme] = $this->objectUser->theme;
-        $data[ObjectUser::sessionToken] = $this->objectUser->sessionToken;
-        $data[ObjectUser::lastActivity] = $this->objectUser->lastActivity;
+        $data[ObjectUser::name] = $objectUser->name;
+        $data[ObjectUser::theme] = $objectUser->theme;
+        $data[ObjectUser::sessionToken] = $objectUser->sessionToken;
+        $data[ObjectUser::lastActivity] = $objectUser->lastActivity;
 
         return $data;
     }
+
+    /**
+     * Get related orders collection (example)
+     * 
+     * This demonstrates how to create related Idea collections dynamically.
+     * The ObjectOrderCollection is retrieved from IdeaStorage, and IdeaOrderCollection
+     * is created from it. If ObjectOrderCollection is already loaded, it uses those
+     * Object instances; otherwise, lazy loading strategy applies.
+     * 
+     * @return IdeaCollection|null Related orders collection
+     */
+    /*
+    public function getOrders(): ?IdeaCollection
+    {
+        $storage = $this->getStorage();
+        if ($storage === null) {
+            return null;
+        }
+
+        // Get ObjectOrderCollection from IdeaStorage
+        // This may be already loaded or use lazy loading strategy
+        $objectOrders = $storage->orders ?? null;
+        if ($objectOrders === null) {
+            return null;
+        }
+
+        // Create IdeaOrderCollection from ObjectOrderCollection
+        // Object instances are passed as references, so IdeaOrder instances
+        // will reference the same Object instances stored in IdeaStorage
+        return \Demo\WebSocketTest\Database\IdeaCollection\Orders::init($objectOrders);
+    }
+    */
 }

@@ -4,34 +4,34 @@ declare(strict_types=1);
 
 namespace Hilos\Core\CLI\Commands\DbIdeaFixCommand;
 
-use Hilos\Database\Idea\IdeaObject;
+use Hilos\Database\Idea\IdeaItem;
 use Hilos\Database\Object\Object_;
 use Hilos\Utils\Helpers\StringHelper;
 use ReflectionClass;
 
 /**
- * IdeaObjectFixer trait
+ * IdeaItemFixer trait
  *
- * Handles synchronization of Idea object files (Idea/{Name}.php)
+ * Handles synchronization of Idea item files (Idea/{Name}.php)
  * with Object classes. Idea is isolated from Entity and works only with Object.
  *
  * Responsibilities:
- * - Compare Idea object __get() method with Object properties
- * - Compare Idea object toArray() method with Object properties
+ * - Compare Idea item __get() method with Object properties
+ * - Compare Idea item toArray() method with Object properties
  * - Update PHPDoc @property-read annotations
  * - Preserve user-defined methods (lazy loading, relationships, etc.)
  */
-trait IdeaObjectFixer
+trait IdeaItemFixer
 {
     /**
-     * Load Idea object files from directory
+     * Load Idea item files from directory
      *
      * @param string|null $ideaDir Idea files directory
      * @param int $syntaxErrors Reference to syntax error counter
      * @param array $brokenFiles Reference to broken files array
-     * @return array<string, array{class: string, file: string, reflection: ReflectionClass}> Loaded Idea object files info
+     * @return array<string, array{class: string, file: string, reflection: ReflectionClass}> Loaded Idea item files info
      */
-    protected function loadIdeaObjects(?string $ideaDir, int &$syntaxErrors = 0, array &$brokenFiles = []): array
+    protected function loadIdeaItems(?string $ideaDir, int &$syntaxErrors = 0, array &$brokenFiles = []): array
     {
         // Auto-detect if not provided
         if ($ideaDir === null) {
@@ -73,11 +73,11 @@ trait IdeaObjectFixer
             return [];
         }
 
-        $ideaObjects = [];
+        $IdeaItems = [];
         $files = glob($ideaDir . '/*.php');
 
         if ($files === false) {
-            return $ideaObjects;
+            return $IdeaItems;
         }
 
         foreach ($files as $file) {
@@ -104,18 +104,18 @@ trait IdeaObjectFixer
                 }
 
                 $reflection = new ReflectionClass($className);
-                if (!$reflection->isSubclassOf(IdeaObject::class)) {
+                if (!$reflection->isSubclassOf(IdeaItem::class)) {
                     continue;
                 }
 
-                // Extract Object class name from IdeaObject
-                $objectClassName = $this->extractObjectClassNameFromIdea($reflection, $file);
+                // Extract Object class name from IdeaItem
+                $objectClassName = $this->extractObjectClassNameFromIdeaItem($reflection, $file);
                 if ($objectClassName === null) {
                     $brokenFiles[$file] = 'Cannot determine Object class name';
                     continue;
                 }
 
-                $ideaObjects[$objectClassName] = [
+                $IdeaItems[$objectClassName] = [
                     'class' => $className,
                     'file' => $file,
                     'reflection' => $reflection,
@@ -127,7 +127,7 @@ trait IdeaObjectFixer
             }
         }
 
-        return $ideaObjects;
+        return $IdeaItems;
     }
 
     /**
@@ -158,9 +158,9 @@ trait IdeaObjectFixer
     }
 
     /**
-     * Extract Object class name from IdeaObject reflection or file
+     * Extract Object class name from IdeaItem reflection or file
      */
-    private function extractObjectClassNameFromIdea(ReflectionClass $ideaReflection, string $ideaFile): ?string
+    private function extractObjectClassNameFromIdeaItem(ReflectionClass $ideaReflection, string $ideaFile): ?string
     {
         // Try to find Object class from use statements or property type
         $content = file_get_contents($ideaFile);
@@ -214,15 +214,15 @@ trait IdeaObjectFixer
     }
 
     /**
-     * Prepare fixes for Idea object files
+     * Prepare fixes for Idea item files
      *
      * @param array $objects Loaded Object classes
-     * @param array $ideaObjects Loaded Idea object files
+     * @param array $IdeaItems Loaded Idea item files
      * @param string|null $tableFilter Table name filter
-     * @param array $brokenIdeaObjects Reference to broken files array (will be populated with parse errors)
+     * @param array $brokenIdeaItems Reference to broken files array (will be populated with parse errors)
      * @return array Fixes to apply
      */
-    protected function prepareIdeaObjectFixes(array $objects, array $ideaObjects, ?string $tableFilter, array &$brokenIdeaObjects = []): array
+    protected function prepareIdeaItemFixes(array $objects, array $IdeaItems, ?string $tableFilter, array &$brokenIdeaItems = []): array
     {
         $fixes = [];
 
@@ -252,21 +252,21 @@ trait IdeaObjectFixer
                 continue;
             }
 
-            // Check if IdeaObject exists for this Object
-            $ideaObjectInfo = $ideaObjects[$objectClassName] ?? null;
+            // Check if IdeaItem exists for this Object
+            $IdeaItemInfo = $IdeaItems[$objectClassName] ?? null;
             
-            if ($ideaObjectInfo === null) {
-                // IdeaObject doesn't exist - will be created
+            if ($IdeaItemInfo === null) {
+                // IdeaItem doesn't exist - will be created
                 continue;
             }
 
-            // Compare IdeaObject with Object
+            // Compare IdeaItem with Object
             $parseError = null;
-            $ideaFixes = $this->compareIdeaObjectWithObject($ideaObjectInfo, $objectInfo, $parseError);
+            $ideaFixes = $this->compareIdeaItemWithObject($IdeaItemInfo, $objectInfo, $parseError);
             
             // If parsing failed, add to broken files and skip
             if ($parseError !== null) {
-                $brokenIdeaObjects[$ideaObjectInfo['file']] = $parseError;
+                $brokenIdeaItems[$IdeaItemInfo['file']] = $parseError;
                 continue;
             }
             
@@ -279,18 +279,18 @@ trait IdeaObjectFixer
     }
 
     /**
-     * Compare IdeaObject with Object and prepare fixes
+     * Compare IdeaItem with Object and prepare fixes
      *
-     * @param array $ideaObjectInfo IdeaObject info
+     * @param array $IdeaItemInfo IdeaItem info
      * @param array $objectInfo Object info
      * @param array|null $parseError Reference to store parse error message
      * @return array Fixes to apply
      */
-    private function compareIdeaObjectWithObject(array $ideaObjectInfo, array $objectInfo, ?string &$parseError = null): array
+    private function compareIdeaItemWithObject(array $IdeaItemInfo, array $objectInfo, ?string &$parseError = null): array
     {
         $fixes = [];
         $parseError = null;
-        $ideaFile = $ideaObjectInfo['file'];
+        $ideaFile = $IdeaItemInfo['file'];
         $content = file_get_contents($ideaFile);
         if ($content === false) {
             $parseError = 'Failed to read file content';
@@ -299,10 +299,10 @@ trait IdeaObjectFixer
 
         $objectReflection = $objectInfo['reflection'];
         
-        // Parse IdeaObject file
-        $ideaParsed = $this->parseIdeaObjectFile($ideaFile);
+        // Parse IdeaItem file
+        $ideaParsed = $this->parseIdeaItemFile($ideaFile);
         if ($ideaParsed === null) {
-            $parseError = 'Failed to parse IdeaObject file structure (possibly due to unsupported syntax or malformed file)';
+            $parseError = 'Failed to parse IdeaItem file structure (possibly due to unsupported syntax or malformed file)';
             return $fixes;
         }
 
@@ -409,21 +409,21 @@ trait IdeaObjectFixer
     }
 
     /**
-     * Apply fixes to Idea object files
+     * Apply fixes to Idea item files
      *
      * @param array $fixes Fixes to apply (keyed by object class name)
-     * @param array $ideaObjects Loaded IdeaObject files info
+     * @param array $IdeaItems Loaded IdeaItem files info
      * @param array $objects Loaded Object files info
      * @return int Number of files updated
      */
-    protected function applyIdeaObjectFixes(array $fixes, array $ideaObjects, array $objects): int
+    protected function applyIdeaItemFixes(array $fixes, array $IdeaItems, array $objects): int
     {
         $updated = 0;
 
         foreach ($fixes as $objectClassName => $ideaFixes) {
-            // Get IdeaObject info
-            $ideaObjectInfo = $ideaObjects[$objectClassName] ?? null;
-            if ($ideaObjectInfo === null) {
+            // Get IdeaItem info
+            $IdeaItemInfo = $IdeaItems[$objectClassName] ?? null;
+            if ($IdeaItemInfo === null) {
                 continue;
             }
 
@@ -433,10 +433,10 @@ trait IdeaObjectFixer
                 continue;
             }
 
-            $ideaFile = $ideaObjectInfo['file'];
+            $ideaFile = $IdeaItemInfo['file'];
             $objectReflection = $objectInfo['reflection'];
 
-            if ($this->applyIdeaObjectFileFixes($ideaFile, $ideaFixes, $objectReflection)) {
+            if ($this->applyIdeaItemFileFixes($ideaFile, $ideaFixes, $objectReflection)) {
                 $updated++;
             }
         }
@@ -445,14 +445,14 @@ trait IdeaObjectFixer
     }
 
     /**
-     * Apply fixes to a single IdeaObject file
+     * Apply fixes to a single IdeaItem file
      *
-     * @param string $ideaFile IdeaObject file path
+     * @param string $ideaFile IdeaItem file path
      * @param array $fixes Fixes to apply
      * @param ReflectionClass $objectReflection Object reflection
      * @return bool Success
      */
-    private function applyIdeaObjectFileFixes(string $ideaFile, array $fixes, ReflectionClass $objectReflection): bool
+    private function applyIdeaItemFileFixes(string $ideaFile, array $fixes, ReflectionClass $objectReflection): bool
     {
         $content = file_get_contents($ideaFile);
         if ($content === false) {
@@ -464,15 +464,15 @@ trait IdeaObjectFixer
 
         // Apply fixes
         if (isset($fixes['update_getter'])) {
-            $content = $this->rebuildIdeaObjectGetter($content, $objectProperties, $objectReflection);
+            $content = $this->rebuildIdeaItemGetter($content, $objectProperties, $objectReflection);
         }
 
         if (isset($fixes['update_toarray'])) {
-            $content = $this->rebuildIdeaObjectToArray($content, $objectProperties, $objectReflection);
+            $content = $this->rebuildIdeaItemToArray($content, $objectProperties, $objectReflection);
         }
 
         if (isset($fixes['update_phpdoc'])) {
-            $content = $this->rebuildIdeaObjectPhpDoc($content, $objectProperties, $objectReflection);
+            $content = $this->rebuildIdeaItemPhpDoc($content, $objectProperties, $objectReflection);
         }
 
         // Write file
@@ -480,7 +480,7 @@ trait IdeaObjectFixer
     }
 
     /**
-     * Create Idea object file from Object class
+     * Create Idea item file from Object class
      *
      * @param string $objectClassName Object class name
      * @param string $ideaDir Idea directory
@@ -488,7 +488,7 @@ trait IdeaObjectFixer
      * @param ReflectionClass $objectReflection Object reflection
      * @return bool Success
      */
-    protected function createIdeaObjectFile(string $objectClassName, string $ideaDir, string $namespace, ReflectionClass $objectReflection): bool
+    protected function createIdeaItemFile(string $objectClassName, string $ideaDir, string $namespace, ReflectionClass $objectReflection): bool
     {
         if (!is_dir($ideaDir)) {
             if (!mkdir($ideaDir, 0755, true)) {
@@ -517,7 +517,7 @@ trait IdeaObjectFixer
         $content = "<?php\n\n";
         $content .= "namespace {$namespace};\n\n";
         $content .= "use {$objectClassName} as {$objectClassAlias};\n";
-        $content .= "use Hilos\\Database\\Idea\\IdeaObject as BaseIdea;\n";
+        $content .= "use Hilos\\Database\\Idea\\IdeaItem as BaseIdea;\n";
         $content .= "use Hilos\\Database\\Idea\\IdeaCollection;\n\n";
 
         // PHPDoc
@@ -659,12 +659,12 @@ trait IdeaObjectFixer
 
 
     /**
-     * Parse Idea object file to extract current structure
+     * Parse Idea item file to extract current structure
      *
-     * @param string $filePath Idea object file path
+     * @param string $filePath Idea item file path
      * @return array|null Parsed structure or null if failed
      */
-    protected function parseIdeaObjectFile(string $filePath): ?array
+    protected function parseIdeaItemFile(string $filePath): ?array
     {
         $content = file_get_contents($filePath);
         if ($content === false) {
@@ -731,12 +731,12 @@ trait IdeaObjectFixer
     }
 
     /**
-     * Extract user-defined methods from Idea object file
+     * Extract user-defined methods from Idea item file
      *
      * @param string $content File content
      * @return array<string, string> User-defined methods (method name => method code)
      */
-    protected function extractIdeaObjectUserMethods(string $content): array
+    protected function extractIdeaItemUserMethods(string $content): array
     {
         $userMethods = [];
 
@@ -776,14 +776,14 @@ trait IdeaObjectFixer
     }
 
     /**
-     * Rebuild __get() method in Idea object
+     * Rebuild __get() method in Idea item
      *
      * @param string $content Current file content
      * @param array $objectProperties Object properties to include
      * @param ReflectionClass $objectReflection Object reflection
      * @return string Updated content
      */
-    protected function rebuildIdeaObjectGetter(string $content, array $objectProperties, ReflectionClass $objectReflection): string
+    protected function rebuildIdeaItemGetter(string $content, array $objectProperties, ReflectionClass $objectReflection): string
     {
         // Extract Object class alias from use statements
         $objectClassAlias = $this->extractObjectClassAlias($content, $objectReflection);
@@ -871,14 +871,14 @@ trait IdeaObjectFixer
     }
 
     /**
-     * Rebuild toArray() method in Idea object
+     * Rebuild toArray() method in Idea item
      *
      * @param string $content Current file content
      * @param array $objectProperties Object properties to include
      * @param ReflectionClass $objectReflection Object reflection
      * @return string Updated content
      */
-    protected function rebuildIdeaObjectToArray(string $content, array $objectProperties, ReflectionClass $objectReflection): string
+    protected function rebuildIdeaItemToArray(string $content, array $objectProperties, ReflectionClass $objectReflection): string
     {
         // Extract Object class alias
         $objectClassAlias = $this->extractObjectClassAlias($content, $objectReflection);
@@ -945,14 +945,14 @@ trait IdeaObjectFixer
     }
 
     /**
-     * Rebuild PHPDoc in Idea object
+     * Rebuild PHPDoc in Idea item
      *
      * @param string $content Current file content
      * @param array $objectProperties Object properties to include
      * @param ReflectionClass $objectReflection Object reflection
      * @return string Updated content
      */
-    protected function rebuildIdeaObjectPhpDoc(string $content, array $objectProperties, ReflectionClass $objectReflection): string
+    protected function rebuildIdeaItemPhpDoc(string $content, array $objectProperties, ReflectionClass $objectReflection): string
     {
         // Extract existing class description if any
         $customDescription = [];

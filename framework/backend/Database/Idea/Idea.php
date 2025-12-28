@@ -95,9 +95,10 @@ class Idea
     {
         $this->_objectCollections[$name] = &$objectCollection;
 
-        // Create Idea collection from Object collection
+        // Create Idea collection (without passing ObjectCollection)
+        // IdeaCollection will get ObjectCollection from IdeaStorage via getObjectCollection()
         if (is_subclass_of($ideaCollectionClass, IdeaCollection::class)) {
-            $this->_ideaCollections[$name] = $ideaCollectionClass::init($objectCollection);
+            $this->_ideaCollections[$name] = $ideaCollectionClass::init();
         }
     }
 

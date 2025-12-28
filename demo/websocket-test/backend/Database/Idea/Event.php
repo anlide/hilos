@@ -3,7 +3,7 @@
 namespace Demo\WebSocketTest\Database\Idea;
 
 use Demo\WebSocketTest\Database\Object\Event as ObjectEvent;
-use Hilos\Database\Idea\IdeaObject as BaseIdea;
+use Hilos\Database\Idea\IdeaItem as BaseIdea;
 use Hilos\Database\Idea\IdeaCollection;
 
 /**

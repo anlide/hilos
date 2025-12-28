@@ -6,7 +6,7 @@ namespace Hilos\Core\CLI\Commands;
 
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\ExitCode;
-use Hilos\Core\CLI\Commands\DbIdeaFixCommand\IdeaObjectFixer;
+use Hilos\Core\CLI\Commands\DbIdeaFixCommand\IdeaItemFixer;
 use Hilos\Core\CLI\Commands\DbIdeaFixCommand\IdeaCollectionFixer;
 use Hilos\Core\CLI\Commands\DbIdeaFixCommand\IdeaMainFixer;
 use Hilos\Core\CLI\Commands\DbIdeaFixCommand\IdeaStorageFixer;
@@ -23,7 +23,7 @@ use ReflectionClass;
  */
 class DbIdeaFixCommand implements CommandInterface
 {
-    use IdeaObjectFixer;
+    use IdeaItemFixer;
     use IdeaCollectionFixer;
     use IdeaMainFixer;
     use IdeaStorageFixer;
@@ -279,7 +279,7 @@ HELP;
         // ============================================
 
         // Prepare fixes for IdeaObjects
-        $ideaObjectFixes = $this->prepareIdeaObjectFixes($objects, $ideaObjects, $tableName, $brokenIdeaObjects);
+        $ideaItemFixes = $this->prepareIdeaItemFixes($objects, $ideaObjects, $tableName, $brokenIdeaObjects);
         $ideaObjectsToCreate = $this->findIdeaObjectsToCreate($objects, $ideaObjects, $tableName, $brokenObjects);
 
         // Prepare fixes for IdeaCollections (only if no errors)
@@ -306,7 +306,7 @@ HELP;
         // STEP 3: Display planned changes for all blocks
         // ============================================
 
-        $hasAnyChanges = !empty($ideaObjectFixes) || !empty($ideaObjectsToCreate) ||
+        $hasAnyChanges = !empty($ideaItemFixes) || !empty($ideaObjectsToCreate) ||
                          !empty($ideaCollectionFixes) || !empty($ideaCollectionsToCreate) ||
                          !empty($ideaStorageFixes) || !empty($ideaMainFixes);
 
@@ -317,10 +317,10 @@ HELP;
                 echo "✓ No fixes needed! All Idea files match Object classes.\n\n";
             }
         } else {
-            // Display IdeaObject fixes
-            if (!empty($ideaObjectFixes) || !empty($ideaObjectsToCreate)) {
-                echo "\n=== Fix IdeaObject Files ===\n\n";
-                $this->displayIdeaObjectFixes($ideaObjectFixes, $ideaObjectsToCreate, $dryRun);
+            // Display IdeaItem fixes
+            if (!empty($ideaItemFixes) || !empty($ideaObjectsToCreate)) {
+                echo "\n=== Fix IdeaItem Files ===\n\n";
+                $this->displayIdeaItemFixes($ideaItemFixes, $ideaObjectsToCreate, $dryRun);
             }
 
             // Display IdeaCollection fixes
@@ -358,10 +358,10 @@ HELP;
         $appliedStorage = 0;
         $appliedMain = 0;
 
-        // Apply IdeaObject fixes
-        if (!empty($ideaObjectFixes) || !empty($ideaObjectsToCreate)) {
-            $appliedObjects = $this->applyIdeaObjectFixes($ideaObjectFixes, $ideaObjects, $objects);
-            $createdObjects = $this->createIdeaObjectFiles($ideaObjectsToCreate, $ideaDir, $objects);
+        // Apply IdeaItem fixes
+        if (!empty($ideaItemFixes) || !empty($ideaObjectsToCreate)) {
+            $appliedObjects = $this->applyIdeaItemFixes($ideaItemFixes, $ideaObjects, $objects);
+            $createdObjects = $this->createIdeaItemFiles($ideaObjectsToCreate, $ideaDir, $objects);
         }
 
         // Apply IdeaCollection fixes (only if no errors)
@@ -400,7 +400,7 @@ HELP;
 
             $objectChanges = $appliedObjects + $createdObjects;
             if ($objectChanges > 0) {
-                echo "IdeaObject files:\n";
+                echo "IdeaItem files:\n";
                 if ($appliedObjects > 0) {
                     echo "  ✓ Updated {$appliedObjects} file(s)\n";
                 }
@@ -624,13 +624,13 @@ HELP;
     }
 
     /**
-     * Display IdeaObject fixes that will be applied
+     * Display IdeaItem fixes that will be applied
      *
      * @param array $fixes Fixes to apply
-     * @param array $toCreate IdeaObjects to create
+     * @param array $toCreate IdeaItems to create
      * @param bool $dryRun Dry run mode
      */
-    private function displayIdeaObjectFixes(array $fixes, array $toCreate, bool $dryRun): void
+    private function displayIdeaItemFixes(array $fixes, array $toCreate, bool $dryRun): void
     {
         if ($dryRun) {
             echo "\n[DRY RUN] The following changes would be made:\n\n";
@@ -640,7 +640,7 @@ HELP;
 
         if (!empty($fixes)) {
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
-            echo "IdeaObject Files to Update:\n";
+            echo "IdeaItem Files to Update:\n";
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n";
 
             foreach ($fixes as $objectClassName => $ideaFixes) {
@@ -705,7 +705,7 @@ HELP;
      * @param array $objects Loaded Object classes
      * @return int Number of files created
      */
-    private function createIdeaObjectFiles(array $toCreate, ?string $ideaDir, array $objects): int
+    private function createIdeaItemFiles(array $toCreate, ?string $ideaDir, array $objects): int
     {
         if (empty($toCreate)) {
             return 0;
@@ -772,7 +772,7 @@ HELP;
         $created = 0;
         foreach ($toCreate as $objectClassName => $info) {
             $objectReflection = $info['reflection'];
-            if ($this->createIdeaObjectFile($objectClassName, $ideaDir, $namespace, $objectReflection)) {
+            if ($this->createIdeaItemFile($objectClassName, $ideaDir, $namespace, $objectReflection)) {
                 $created++;
             }
         }
