@@ -3,6 +3,7 @@
 namespace Hilos\Database\Idea;
 
 use Hilos\Exception\DatabaseException;
+use RuntimeException;
 
 /**
  * IdeaStorage
@@ -49,9 +50,13 @@ abstract class IdeaStorage implements IdeaStorageInterface
     }
 
     /**
-     * Private clone - prevent cloning
+     * Public clone - prevent cloning
+     *
+     * Magic methods in PHP must be public to be called.
+     * IdeaStorage instances should not be cloned.
      */
-    private function __clone()
+    public function __clone(): void
     {
+        throw new RuntimeException('IdeaStorage cannot be cloned');
     }
 }

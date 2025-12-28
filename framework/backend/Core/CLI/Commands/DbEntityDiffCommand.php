@@ -11,6 +11,7 @@ use Hilos\Database\Entity\Entity;
 use Hilos\Database\Schema\Schema;
 use Hilos\Database\Schema\TableInfo;
 use ReflectionClass;
+use RuntimeException;
 
 /**
  * DbEntityDiffCommand - Compare Entity files with database schema
@@ -71,7 +72,7 @@ HELP;
 
         // Check if connected
         if (!Database::isConnected($dbIndex)) {
-            throw new \RuntimeException("Database connection {$dbIndex} is not established. Please ensure database connection is initialized before running this command.");
+            throw new RuntimeException("Database connection {$dbIndex} is not established. Please ensure database connection is initialized before running this command.");
         }
 
         // Initialize schema if not already initialized
@@ -135,12 +136,12 @@ HELP;
             }
 
             if ($entityDir === null) {
-                throw new \RuntimeException("Could not auto-detect Entity directory. Please specify --entity-dir");
+                throw new RuntimeException("Could not auto-detect Entity directory. Please specify --entity-dir");
             }
         }
 
         if (!is_dir($entityDir)) {
-            throw new \RuntimeException("Entity directory does not exist: {$entityDir}");
+            throw new RuntimeException("Entity directory does not exist: {$entityDir}");
         }
 
         $entities = [];

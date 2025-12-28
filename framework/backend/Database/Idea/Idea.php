@@ -4,6 +4,8 @@ namespace Hilos\Database\Idea;
 
 use Hilos\Database\Object\Objects;
 use Hilos\Exception\DatabaseException;
+use Demo\WebSocketTest\Database\IdeaCollection\Users as IdeaUsers;
+use RuntimeException;
 
 /**
  * Idea - Static access point for read-only data access
@@ -15,6 +17,7 @@ use Hilos\Exception\DatabaseException;
  *   Idea::init(true); // Initialize with IdeaStorage
  *   $user = Idea::$idea->users[123]; // Get User idea
  *   $users = Idea::$idea->users; // Get Users collection
+ * @property IdeaUsers $users
  */
 class Idea
 {
@@ -48,10 +51,14 @@ class Idea
     }
 
     /**
-     * Private clone - prevent cloning
+     * Public clone - prevent cloning
+     *
+     * Magic methods in PHP must be public to be called.
+     * Idea is a singleton and should not be cloned.
      */
-    private function __clone()
+    public function __clone(): void
     {
+        throw new RuntimeException('Idea cannot be cloned');
     }
 
     /**

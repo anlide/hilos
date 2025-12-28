@@ -13,6 +13,7 @@ use Hilos\Database\Generator;
 use Hilos\Database\PhpType;
 use Hilos\Utils\Helpers\StringHelper;
 use ReflectionClass;
+use RuntimeException;
 
 /**
  * DbObjectFixCommand - Fix Object and ObjectCollection files to match Entity files
@@ -75,7 +76,7 @@ HELP;
      *   - 'force-repair' (bool): Attempt to repair broken Object and ObjectCollection files
      * @param array $args Command arguments (not used)
      * @return int Exit code (ExitCode::SUCCESS on success)
-     * @throws \RuntimeException
+     * @throws RuntimeException
      */
     public function execute(array $options, array $args): int
     {
@@ -303,12 +304,12 @@ HELP;
             }
 
             if ($entityDir === null) {
-                throw new \RuntimeException("Could not auto-detect Entity directory. Please specify --entity-dir");
+                throw new RuntimeException("Could not auto-detect Entity directory. Please specify --entity-dir");
             }
         }
 
         if (!is_dir($entityDir)) {
-            throw new \RuntimeException("Entity directory does not exist: {$entityDir}");
+            throw new RuntimeException("Entity directory does not exist: {$entityDir}");
         }
 
         $entities = [];
@@ -1138,7 +1139,7 @@ HELP;
         // Extract namespace and class name from existing file
         $content = file_get_contents($objectFile);
         if ($content === false) {
-            throw new \RuntimeException("Cannot read file: {$objectFile}");
+            throw new RuntimeException("Cannot read file: {$objectFile}");
         }
 
         // Try to extract namespace and class name
@@ -1152,7 +1153,7 @@ HELP;
         }
 
         if ($namespace === null || $className === null) {
-            throw new \RuntimeException("Cannot extract namespace or class name from file");
+            throw new RuntimeException("Cannot extract namespace or class name from file");
         }
 
         // Extract user-defined methods (preserve them)
@@ -1177,7 +1178,7 @@ HELP;
         $objectFile = $fix['file'];
         $content = file_get_contents($objectFile);
         if ($content === false) {
-            throw new \RuntimeException("Cannot read file: {$objectFile}");
+            throw new RuntimeException("Cannot read file: {$objectFile}");
         }
 
         $entityInfo = $fix['entity'];
@@ -2136,23 +2137,23 @@ HELP;
     private function generateObjectFromEntity(string $entityClassName, string $namespace, string $className): string
     {
         if (!class_exists($entityClassName)) {
-            throw new \RuntimeException("Entity class not found: {$entityClassName}");
+            throw new RuntimeException("Entity class not found: {$entityClassName}");
         }
 
         $reflection = new ReflectionClass($entityClassName);
         if (!$reflection->isSubclassOf(Entity::class)) {
-            throw new \RuntimeException("Class {$entityClassName} is not an Entity");
+            throw new RuntimeException("Class {$entityClassName} is not an Entity");
         }
 
         // Get Entity file path to parse directives
         $entityFile = $reflection->getFileName();
         if ($entityFile === false) {
-            throw new \RuntimeException("Cannot get Entity file path");
+            throw new RuntimeException("Cannot get Entity file path");
         }
 
         $entityContent = file_get_contents($entityFile);
         if ($entityContent === false) {
-            throw new \RuntimeException("Cannot read Entity file");
+            throw new RuntimeException("Cannot read Entity file");
         }
 
         // Parse excluded fields

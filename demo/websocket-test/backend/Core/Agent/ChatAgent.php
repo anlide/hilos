@@ -26,7 +26,9 @@ use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalType;
 use Hilos\DTO\BaseDTO;
+use Hilos\Exception\DatabaseException;
 use Hilos\Logging\Logger\Logger;
+use RuntimeException;
 
 /**
  * ChatAgent - Monopolistic agent for chat management
@@ -152,7 +154,8 @@ class ChatAgent extends AbstractAgent
      * @param string $source Signal source
      * @param string $name Signal name
      * @param SignalDataInterface $data Signal data
-     * @throws \RuntimeException If data is not WebSocketHandshakeSignalDTO or session token is invalid
+     * @throws RuntimeException If data is not WebSocketHandshakeSignalDTO or session token is invalid
+     * @throws DatabaseException If user registration fails
      */
     public function onSignalPageSubscribe(string $source, string $name, SignalDataInterface $data): void
     {
@@ -160,7 +163,7 @@ class ChatAgent extends AbstractAgent
         if (!($data instanceof WebSocketHandshakeSignalDTO)) {
             $dataType = get_class($data);
             Logger::logAgentError($this->getId(), "Invalid signal data type: expected WebSocketHandshakeSignalDTO, got {$dataType}");
-            throw new \RuntimeException("Expected WebSocketHandshakeSignalDTO, got {$dataType}");
+            throw new RuntimeException("Expected WebSocketHandshakeSignalDTO, got {$dataType}");
         }
 
         // Now we can safely use WebSocketHandshakeSignalDTO type
@@ -182,13 +185,13 @@ class ChatAgent extends AbstractAgent
             // Validate that session token is provided and is a non-empty string
             if ($sessionToken === null || $sessionToken === '') {
                 Logger::logAgentError($this->getId(), "X-Session-Token is required but not provided or empty");
-                throw new \RuntimeException("X-Session-Token is required but not provided or empty");
+                throw new RuntimeException("X-Session-Token is required but not provided or empty");
             }
             
             if (!is_string($sessionToken)) {
                 $tokenType = gettype($sessionToken);
                 Logger::logAgentError($this->getId(), "X-Session-Token must be a string, got: {$tokenType}");
-                throw new \RuntimeException("X-Session-Token must be a string, got: {$tokenType}");
+                throw new RuntimeException("X-Session-Token must be a string, got: {$tokenType}");
             }
             
             Logger::logAgentDebug($this->getId(), "Session token from DTO: " . $sessionToken);
@@ -198,7 +201,7 @@ class ChatAgent extends AbstractAgent
             
             // If user not found, register new user
             if ($user === null) {
-                $user = Idea::$storage->users->register($sessionToken);
+                $user = Idea::$idea->users->register($sessionToken);
                 Logger::logAgentDebug($this->getId(), "New user registered with session token: " . $sessionToken);
             } else {
                 Logger::logAgentDebug($this->getId(), "Existing user found with session token: " . $sessionToken);

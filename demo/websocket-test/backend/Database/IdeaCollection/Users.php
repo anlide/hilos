@@ -10,6 +10,8 @@ use Hilos\Database\Idea\IdeaCollection;
 use Hilos\Database\Object\Object_;
 use Hilos\Database\Object\Objects;
 use Hilos\Exception\DatabaseException;
+use InvalidArgumentException;
+use RuntimeException;
 
 /**
  * Users Idea Collection
@@ -17,24 +19,20 @@ use Hilos\Exception\DatabaseException;
  */
 final class Users extends IdeaCollection
 {
-    /**
-     * Initialize collection
-     */
-    public static function init(): self
-    {
-        return new self();
-    }
+    // init() and initEmpty() are inherited from IdeaCollection
+    // Override only if custom initialization logic is needed
 
     /**
      * Get ObjectCollection from IdeaStorage
+     * Returns null for manual collections
      * 
-     * @return Objects ObjectCollection instance from IdeaStorage
+     * @return Objects|null ObjectCollection instance from IdeaStorage, or null for manual collections
      */
-    protected function getObjectCollection(): Objects
+    protected function getObjectCollection(): ?Objects
     {
         $storage = Idea::$storage;
         if ($storage === null) {
-            throw new \RuntimeException("IdeaStorage not initialized");
+            throw new RuntimeException("IdeaStorage not initialized");
         }
         return $storage->users;
     }
@@ -48,7 +46,7 @@ final class Users extends IdeaCollection
     protected function createIdea(Object_ &$object): IdeaUser
     {
         if (!($object instanceof ObjectUser)) {
-            throw new \InvalidArgumentException("Object must be instance of ObjectUser");
+            throw new InvalidArgumentException("Object must be instance of ObjectUser");
         }
         return new IdeaUser($object);
     }
@@ -70,7 +68,7 @@ final class Users extends IdeaCollection
         // Delegate to ObjectCollection
         $objectCollection = $this->getObjectCollection();
         if (!($objectCollection instanceof ObjectUsers)) {
-            throw new \RuntimeException("Expected ObjectUsers instance");
+            throw new RuntimeException("Expected ObjectUsers instance");
         }
 
         $objectUser = $objectCollection->findBySession($sessionToken);
@@ -105,7 +103,7 @@ final class Users extends IdeaCollection
         // Add to ObjectCollection in IdeaStorage
         $objectCollection = $this->getObjectCollection();
         if (!($objectCollection instanceof ObjectUsers)) {
-            throw new \RuntimeException("Expected ObjectUsers instance");
+            throw new RuntimeException("Expected ObjectUsers instance");
         }
 
         // Add ObjectUser to ObjectCollection

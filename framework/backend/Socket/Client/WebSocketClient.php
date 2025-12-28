@@ -13,6 +13,7 @@ use Hilos\Exception\Socket\WebSocket\UnknownOpcodeException;
 use Hilos\Exception\Socket\WebSocket\UnsupportedProtocolVersionException;
 use Hilos\Exception\SocketException;
 use Hilos\Socket\Client\Interface\WebSocketClientInterface;
+use RuntimeException;
 
 /**
  * WebSocketClient - Represents a single WebSocket connection
@@ -421,7 +422,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
     {
         // Check if handshake is completed
         if (!$this->handshakeCompleted) {
-            throw new \RuntimeException("Cannot send frame: WebSocket handshake not completed");
+            throw new RuntimeException("Cannot send frame: WebSocket handshake not completed");
         }
 
         $header = $this->buildFrameHeader(strlen($data), self::OPCODE_TEXT);

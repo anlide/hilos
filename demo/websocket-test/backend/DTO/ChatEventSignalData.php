@@ -7,6 +7,7 @@ namespace Demo\WebSocketTest\DTO;
 use Demo\WebSocketTest\Domain\Event\ChatEventInterface;
 use Hilos\Core\Router\SignalData;
 use Hilos\Core\Router\SignalDataInterface;
+use RuntimeException;
 
 /**
  * ChatEventSignalData - Signal data for chat events
@@ -41,6 +42,6 @@ class ChatEventSignalData extends SignalData implements SignalDataInterface
     {
         // This is not used for deserialization from array
         // Events are created directly in ChatAgent
-        throw new \RuntimeException('ChatEventSignalData::fromArray() is not implemented');
+        throw new RuntimeException('ChatEventSignalData::fromArray() is not implemented');
     }
 }

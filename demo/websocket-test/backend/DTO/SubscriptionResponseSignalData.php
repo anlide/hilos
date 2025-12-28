@@ -7,6 +7,7 @@ namespace Demo\WebSocketTest\DTO;
 use Demo\WebSocketTest\Domain\Event\ChatEventInterface;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\DTO\BaseDTO;
+use RuntimeException;
 
 /**
  * SubscriptionResponseSignalData - Signal data for subscription response
@@ -61,6 +62,6 @@ class SubscriptionResponseSignalData extends BaseDTO implements SignalDataInterf
     {
         // This is not used for deserialization from array
         // Response is created directly in ChatAgent
-        throw new \RuntimeException('SubscriptionResponseSignalData::fromArray() is not implemented');
+        throw new RuntimeException('SubscriptionResponseSignalData::fromArray() is not implemented');
     }
 }

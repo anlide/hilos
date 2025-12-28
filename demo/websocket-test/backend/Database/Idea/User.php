@@ -3,8 +3,9 @@
 namespace Demo\WebSocketTest\Database\Idea;
 
 use Demo\WebSocketTest\Database\Object\User as ObjectUser;
-use Hilos\Database\Idea\IdeaItem as BaseIdea;
-use Hilos\Database\Idea\IdeaCollection;
+use Exception;
+use Hilos\Database\Idea\IdeaItem;
+use RuntimeException;
 
 /**
  * User Idea
@@ -13,13 +14,13 @@ use Hilos\Database\Idea\IdeaCollection;
  * Stores reference to ObjectUser instance.
  * Object instances are stored in ObjectCollection in IdeaStorage.
  *
- * @property-read ?int $id
- * @property-read string $name
- * @property-read ?string $theme
- * @property-read ?string $sessionToken
- * @property-read ?string $lastActivity
+ * @property-read ?int $id User ID (primary key)
+ * @property-read string $name User name
+ * @property-read ?string $theme User theme preference
+ * @property-read ?string $sessionToken User session token (32 hex characters)
+ * @property-read ?string $lastActivity Last activity timestamp
  */
-final class User extends BaseIdea
+final class User extends IdeaItem
 {
     /**
      * Public constructor - creates IdeaUser from ObjectUser instance
@@ -33,34 +34,31 @@ final class User extends BaseIdea
 
     /**
      * Get ObjectUser instance
+     * Returns the underlying ObjectUser instance that this IdeaUser wraps.
+     * This is a reference to the Object stored in ObjectCollection in IdeaStorage.
      * 
-     * @return ObjectUser
+     * @return ObjectUser ObjectUser instance (reference, not a copy)
+     * @throws RuntimeException If the underlying object is not an ObjectUser instance
      */
     private function getObjectUser(): ObjectUser
     {
         $object = $this->getObject();
         if (!($object instanceof ObjectUser)) {
-            throw new \RuntimeException("Expected ObjectUser instance");
+            throw new RuntimeException("Expected ObjectUser instance");
         }
         return $object;
     }
 
     /**
-     * Get IdeaStorage instance
-     * Override to use application-specific Idea class
-     * 
-     * @return \Demo\WebSocketTest\Database\IdeaStorage|null
-     */
-    protected function getStorage(): ?\Demo\WebSocketTest\Database\IdeaStorage
-    {
-        // Access IdeaStorage through application-specific Idea class
-        return \Demo\WebSocketTest\Database\Idea::$storage ?? null;
-    }
-
-    /**
      * Property getter (read-only access)
+     * Provides access to ObjectUser properties through IdeaUser interface.
+     * Supports lazy loading of related collections (see examples in comments).
+     *
+     * @param string $name Property name (id, name, theme, sessionToken, lastActivity, or related collection name)
+     * @return int|string|null Property value or IdeaCollection for relationships
+     * @throws Exception If property does not exist
      */
-    public function __get(string $name): IdeaCollection|int|string|bool|null
+    public function __get(string $name): int|string|null
     {
         $objectUser = $this->getObjectUser();
 
@@ -75,12 +73,19 @@ final class User extends BaseIdea
             // 'orders' => $this->getOrders(),
             // 'posts' => $this->getPosts(),
 
-            default => throw new \Exception("Property [{$name}] does not exist on IdeaUser"),
+            default => throw new Exception("Property [{$name}] does not exist on IdeaUser"),
         };
     }
 
     /**
-     * Convert to array
+     * Convert IdeaUser to array representation
+     * Extracts data from underlying ObjectUser instance.
+     *
+     * @param bool $withId Include ID field in result
+     * @param bool $idAsIndex Use ID as array key (ignored if $withId is false)
+     * @param bool $withBridges Include bridge/junction table data (not used for User)
+     * @param bool $withCalculation Include calculated fields (not used for User)
+     * @return array<string, mixed> Array representation of user data
      */
     public function toArray(bool $withId = true, bool $idAsIndex = true, bool $withBridges = false, bool $withCalculation = false): array
     {
@@ -99,36 +104,4 @@ final class User extends BaseIdea
 
         return $data;
     }
-
-    /**
-     * Get related orders collection (example)
-     * 
-     * This demonstrates how to create related Idea collections dynamically.
-     * The ObjectOrderCollection is retrieved from IdeaStorage, and IdeaOrderCollection
-     * is created from it. If ObjectOrderCollection is already loaded, it uses those
-     * Object instances; otherwise, lazy loading strategy applies.
-     * 
-     * @return IdeaCollection|null Related orders collection
-     */
-    /*
-    public function getOrders(): ?IdeaCollection
-    {
-        $storage = $this->getStorage();
-        if ($storage === null) {
-            return null;
-        }
-
-        // Get ObjectOrderCollection from IdeaStorage
-        // This may be already loaded or use lazy loading strategy
-        $objectOrders = $storage->orders ?? null;
-        if ($objectOrders === null) {
-            return null;
-        }
-
-        // Create IdeaOrderCollection from ObjectOrderCollection
-        // Object instances are passed as references, so IdeaOrder instances
-        // will reference the same Object instances stored in IdeaStorage
-        return \Demo\WebSocketTest\Database\IdeaCollection\Orders::init($objectOrders);
-    }
-    */
 }
