@@ -177,4 +177,14 @@ final class UserSettings extends Objects implements Iterator, ArrayAccess, Count
 
         $this->_allLoaded = true;
     }
+
+    /**
+     * Get table name from Entity
+     * 
+     * @return string Table name
+     */
+    protected function getTableName(): string
+    {
+        return EntityUserSetting::_table;
+    }
 }

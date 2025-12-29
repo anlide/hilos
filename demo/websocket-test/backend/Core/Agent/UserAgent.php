@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace Demo\WebSocketTest\Core\Agent;
 
 use Demo\WebSocketTest\Constants\AgentType;
+use Demo\WebSocketTest\Database\Idea;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Router\SignalRouter;
+use Hilos\Database\Idea\TruthSourceRegistry;
 use Hilos\Logging\Logger\Logger;
 
 /**
@@ -72,6 +74,33 @@ class UserAgent extends AbstractAgent
     public function onStart(): void
     {
         Logger::logAgentStart($this->getId(), $this->getType());
+
+        // Register this agent as truth source for user_settings table
+        // Get all UserSettings keys for this user
+        $userId = (int)$this->userId;
+        if ($userId > 0 && Idea::$storage !== null) {
+            $userSettings = Idea::$storage->userSettings;
+            
+            // Get all UserSettings for this user from ObjectCollection
+            // For now, collect keys from already loaded objects
+            // TODO: Load all UserSettings for this user if needed
+            $keys = [];
+            $userSettings->backupIndex();
+            try {
+                foreach ($userSettings as $key => $setting) {
+                    if ($setting->userId === $userId) {
+                        $keys[] = $key;
+                    }
+                }
+            } finally {
+                $userSettings->restoreIndex();
+            }
+
+            // Register as truth source if we have keys
+            if (!empty($keys)) {
+                TruthSourceRegistry::register('user_setting', $keys, $this->getId());
+            }
+        }
     }
 
     /**
@@ -79,6 +108,9 @@ class UserAgent extends AbstractAgent
      */
     public function onStop(): void
     {
+        // Unregister as truth source
+        TruthSourceRegistry::unregister('user_setting', $this->getId());
+        
         Logger::logAgentStop($this->getId(), $this->getType());
     }
 

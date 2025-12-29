@@ -2,9 +2,15 @@
 
 namespace Demo\WebSocketTest\Database\Idea;
 
+use Demo\WebSocketTest\Database\Idea;
+use Demo\WebSocketTest\Database\IdeaCollection\UserSettings as IdeaUserSettings;
 use Demo\WebSocketTest\Database\Object\User as ObjectUser;
+use Demo\WebSocketTest\Database\Object\UserSetting as ObjectUserSetting;
 use Exception;
+use Hilos\Database\Filter\FilterBuilder;
+use Hilos\Database\Filter\FilterOperator;
 use Hilos\Database\Idea\IdeaItem;
+use Hilos\Exception\DatabaseException;
 use RuntimeException;
 
 /**
@@ -50,15 +56,64 @@ final class User extends IdeaItem
     }
 
     /**
+     * Create UserSettings collection for this user
+     * Creates manual collection and populates it with UserSettings from ObjectCollection in IdeaStorage
+     * Uses filter system for filtering by userId
+     *
+     * @return IdeaUserSettings
+     * @throws DatabaseException
+     */
+    private function createCollectionSettings(): IdeaUserSettings
+    {
+        $objectUser = $this->getObjectUser();
+        $userId = $objectUser->id;
+
+        // Create manual collection
+        $settingsCollection = IdeaUserSettings::initEmpty();
+
+        if ($userId === null) {
+            // User has no ID, return empty collection
+            return $settingsCollection;
+        }
+
+        // Get ObjectCollection from IdeaStorage
+        $objectCollection = Idea::$storage->userSettings;
+
+        // Create filter for userId
+        $filter = (new FilterBuilder())
+            ->where('userId', FilterOperator::EQUALS, $userId)
+            ->build();
+
+        // Get filtered collection
+        $filtered = $objectCollection->filter($filter);
+
+        // Backup iterator index before iteration
+        $objectCollection->backupIndex();
+
+        try {
+            // Iterate through filtered collection
+            foreach ($filtered as $objectUserSetting) {
+                // Add Object to manual IdeaCollection (creates IdeaUserSetting automatically)
+                $settingsCollection->addFromObject($objectUserSetting);
+            }
+        } finally {
+            // Restore iterator index after iteration
+            $objectCollection->restoreIndex();
+        }
+
+        return $settingsCollection;
+    }
+
+    /**
      * Property getter (read-only access)
      * Provides access to ObjectUser properties through IdeaUser interface.
-     * Supports lazy loading of related collections (see examples in comments).
+     * Supports lazy loading of related collections.
      *
-     * @param string $name Property name (id, name, theme, sessionToken, lastActivity, or related collection name)
-     * @return int|string|null Property value or IdeaCollection for relationships
+     * @param string $name Property name (id, name, theme, sessionToken, lastActivity, settings)
+     * @return int|string|IdeaUserSettings|null Property value or IdeaCollection for relationships
      * @throws Exception If property does not exist
      */
-    public function __get(string $name): int|string|null
+    public function __get(string $name): int|string|IdeaUserSettings|null
     {
         $objectUser = $this->getObjectUser();
 
@@ -69,9 +124,8 @@ final class User extends IdeaItem
             ObjectUser::sessionToken => $objectUser->sessionToken,
             ObjectUser::lastActivity => $objectUser->lastActivity,
 
-            // Example of lazy loading relationships:
-            // 'orders' => $this->getOrders(),
-            // 'posts' => $this->getPosts(),
+            // Related collections
+            'settings' => $this->createCollectionSettings(),
 
             default => throw new Exception("Property [{$name}] does not exist on IdeaUser"),
         };

@@ -2,8 +2,10 @@
 
 namespace Demo\WebSocketTest\Database\Idea;
 
+use Demo\WebSocketTest\Database\Idea\User as IdeaUser;
+use Demo\WebSocketTest\Database\Idea;
 use Demo\WebSocketTest\Database\Object\UserSetting as ObjectUserSetting;
-use Hilos\Database\Idea\IdeaItem as BaseIdea;
+use Hilos\Database\Idea\IdeaItem;
 use Hilos\Database\Idea\IdeaCollection;
 
 /**
@@ -15,61 +17,78 @@ use Hilos\Database\Idea\IdeaCollection;
  * @property-read string $key
  * @property-read ?string $value
  */
-final class UserSetting extends BaseIdea
+final class UserSetting extends IdeaItem
 {
-    /** @var self[] Global cache of UserSetting ideas */
-    private static array $usersettings = [];
-
-    private ObjectUserSetting $objectUserSetting;
-
-    protected function __construct(ObjectUserSetting &$objectUserSetting)
+    /**
+     * Public constructor - creates IdeaUserSetting from ObjectUserSetting instance
+     * 
+     * @param ObjectUserSetting $objectUserSetting ObjectUserSetting instance (reference)
+     */
+    public function __construct(ObjectUserSetting &$objectUserSetting)
     {
-        parent::__construct();
-        $this->objectUserSetting = &$objectUserSetting;
+        parent::__construct($objectUserSetting);
     }
 
     /**
-     * Flush global cache
+     * Get ObjectUserSetting instance
+     * Returns the underlying ObjectUserSetting instance that this IdeaUserSetting wraps.
+     * This is a reference to the Object stored in ObjectCollection in IdeaStorage.
+     * 
+     * @return ObjectUserSetting ObjectUserSetting instance (reference, not a copy)
+     * @throws \RuntimeException If the underlying object is not an ObjectUserSetting instance
      */
-    public static function flushCache(): void
+    private function getObjectUserSetting(): ObjectUserSetting
     {
-        self::$usersettings = [];
-    }
-
-    /**
-     * Get UserSetting idea instance (cached)
-     */
-    public static function get(ObjectUserSetting &$objectUserSetting): self
-    {
-        $id = $objectUserSetting->id;
-
-        if (!isset(self::$usersettings[$id])) {
-            self::$usersettings[$id] = new self($objectUserSetting);
-        } elseif (self::$usersettings[$id]->objectUserSetting !== $objectUserSetting) {
-            // Object reference changed, recreate
-            self::$usersettings[$id] = new self($objectUserSetting);
+        $object = $this->getObject();
+        if (!($object instanceof ObjectUserSetting)) {
+            throw new \RuntimeException("Expected ObjectUserSetting instance");
         }
-
-        return self::$usersettings[$id];
+        return $object;
     }
 
     /**
      * Property getter (read-only access)
      */
-    public function __get(string $name): IdeaCollection|int|string|bool|null
+    public function __get(string $name): IdeaUser|IdeaCollection|int|string|bool|null
     {
-        return match ($name) {
-            ObjectUserSetting::id => $this->objectUserSetting->id,
-            ObjectUserSetting::userId => $this->objectUserSetting->userId,
-            ObjectUserSetting::key => $this->objectUserSetting->key,
-            ObjectUserSetting::value => $this->objectUserSetting->value,
+        $objectUserSetting = $this->getObjectUserSetting();
 
-            // Example of lazy loading relationships (implement when you have related entities)
-            // 'orders' => $this->loadOrders(),
-            // 'posts' => $this->loadPosts(),
+        return match ($name) {
+            ObjectUserSetting::id => $objectUserSetting->id,
+            ObjectUserSetting::userId => $objectUserSetting->userId,
+            ObjectUserSetting::key => $objectUserSetting->key,
+            ObjectUserSetting::value => $objectUserSetting->value,
+
+            // Related collections
+            'user' => $this->getUser(),
 
             default => throw new \Exception("Property [{$name}] does not exist on IdeaUserSetting"),
         };
+    }
+
+    /**
+     * Get User idea for this UserSetting
+     * Returns IdeaUser from IdeaStorage users collection
+     * 
+     * @return IdeaUser|null
+     */
+    private function getUser(): ?IdeaUser
+    {
+        $objectUserSetting = $this->getObjectUserSetting();
+        $userId = $objectUserSetting->userId;
+
+        if ($userId === null) {
+            return null;
+        }
+
+        $storage = Idea::$storage;
+        if ($storage === null) {
+            throw new \RuntimeException("IdeaStorage not initialized");
+        }
+
+        // Get IdeaUser from IdeaStorage users collection
+        $usersCollection = Idea::$idea->users;
+        return $usersCollection[$userId] ?? null;
     }
 
     /**
@@ -77,15 +96,17 @@ final class UserSetting extends BaseIdea
      */
     public function toArray(bool $withId = true, bool $idAsIndex = true, bool $withBridges = false, bool $withCalculation = false): array
     {
+        $objectUserSetting = $this->getObjectUserSetting();
+
         $data = [];
 
         if ($withId) {
-            $data[ObjectUserSetting::id] = $this->objectUserSetting->id;
+            $data[ObjectUserSetting::id] = $objectUserSetting->id;
         }
 
-        $data[ObjectUserSetting::userId] = $this->objectUserSetting->userId;
-        $data[ObjectUserSetting::key] = $this->objectUserSetting->key;
-        $data[ObjectUserSetting::value] = $this->objectUserSetting->value;
+        $data[ObjectUserSetting::userId] = $objectUserSetting->userId;
+        $data[ObjectUserSetting::key] = $objectUserSetting->key;
+        $data[ObjectUserSetting::value] = $objectUserSetting->value;
 
         return $data;
     }

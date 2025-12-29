@@ -179,6 +179,16 @@ final class Users extends Objects implements Iterator, ArrayAccess, Countable
     }
 
     /**
+     * Get table name from Entity
+     * 
+     * @return string Table name
+     */
+    protected function getTableName(): string
+    {
+        return EntityUser::_table;
+    }
+
+    /**
      * Find user by session token
      *
      * @param string $sessionToken Session token (32 hex characters)
@@ -260,12 +270,12 @@ final class Users extends Objects implements Iterator, ArrayAccess, Countable
     }
 
     /**
-     * Filter collection
+     * Filter collection by callback
      *
      * @param callable(ObjectUser): bool $callback
      * @return self New filtered collection
      */
-    public function filter(callable $callback): self
+    public function filterByCallback(callable $callback): self
     {
         $filtered = new self();
         foreach ($this->objects as $key => $object) {

@@ -4,7 +4,14 @@ namespace Hilos\Database\Object;
 
 use ArrayAccess;
 use Countable;
+use Hilos\Database\Filter\FilterInterface;
+use Hilos\Database\Idea\TruthSourceRegistry;
+use Hilos\Database\Database;
+use Hilos\Database\Entity\Entity;
+use Hilos\Database\SqlParamCollection;
+use Hilos\Exception\DatabaseException;
 use Iterator;
+use ReflectionClass;
 
 /**
  * Abstract base class for Object collections
@@ -337,6 +344,97 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
             self::allowLazyLoading => $this->_allowLazyLoading,
             default => throw new \InvalidArgumentException("Property [{$property}] does not exist on " . static::class),
         };
+    }
+
+    /**
+     * Get table name from Entity class
+     * Uses reflection to get _table constant from Entity
+     * 
+     * @return string Table name
+     */
+    protected function getTableName(): string
+    {
+        // Get first object to determine Entity class
+        $firstObject = reset($this->objects);
+        if ($firstObject === false) {
+            // No objects loaded, try to get from lazyLoadObject
+            // For now, throw exception - child classes should override this
+            throw new DatabaseException("Cannot determine table name: no objects loaded and getTableName() not overridden");
+        }
+
+        // Get Entity class through reflection
+        $reflection = new ReflectionClass($firstObject);
+        $entityProperty = $reflection->getProperty('entity');
+        $entityProperty->setAccessible(true);
+        $entity = $entityProperty->getValue($firstObject);
+
+        if (!($entity instanceof Entity)) {
+            throw new DatabaseException("Object does not contain Entity instance");
+        }
+
+        // Get _table constant from Entity class
+        $entityReflection = new ReflectionClass($entity);
+        $tableConstant = $entityReflection->getConstant('_table');
+        
+        if ($tableConstant === false) {
+            throw new DatabaseException("Entity class does not have _table constant");
+        }
+
+        return $tableConstant;
+    }
+
+    /**
+     * Filter collection by filter criteria
+     * Uses truth source to avoid loading from DB if keys are already in memory
+     * Currently works for LAZY_STRATEGY_NONE (when all objects are already loaded)
+     * 
+     * @param FilterInterface $filter Filter criteria
+     * @return FilteredCollection Filtered collection
+     * @throws DatabaseException
+     */
+    public function filter(FilterInterface $filter): FilteredCollection
+    {
+        $table = $this->getTableName();
+        $truthSourceKeys = TruthSourceRegistry::getTruthSourceKeys($table);
+        
+        $filteredObjects = [];
+        
+        // Если есть источник истины - фильтровать из памяти
+        if ($truthSourceKeys !== null && $truthSourceKeys !== true) {
+            // Фильтровать только объекты из источника истины
+            foreach ($truthSourceKeys as $key) {
+                if (isset($this->objects[$key])) {
+                    $object = $this->objects[$key];
+                    if ($filter->matches($object)) {
+                        $filteredObjects[$key] = $object;
+                    }
+                }
+            }
+        } elseif ($truthSourceKeys === true) {
+            // Все ключи - источник истины, фильтровать все загруженные
+            foreach ($this->objects as $key => $object) {
+                if ($filter->matches($object)) {
+                    $filteredObjects[$key] = $object;
+                }
+            }
+        } else {
+            // Нет источника истины
+            // Для LAZY_STRATEGY_NONE или когда все загружено - фильтровать из памяти
+            if (!$this->_allowLazyLoading || $this->_allLoaded) {
+                foreach ($this->objects as $key => $object) {
+                    if ($filter->matches($object)) {
+                        $filteredObjects[$key] = $object;
+                    }
+                }
+            } else {
+                // Для lazy стратегий - SQL запрос с фильтром
+                // TODO: Реализовать для других стратегий lazy loading
+                // Пока только для полностью загруженных коллекций
+                throw new DatabaseException("Filtering for lazy-loaded collections not yet implemented. Use LAZY_STRATEGY_NONE or ensure all objects are loaded.");
+            }
+        }
+        
+        return new FilteredCollection($this, $filter, $filteredObjects);
     }
 
     /**
