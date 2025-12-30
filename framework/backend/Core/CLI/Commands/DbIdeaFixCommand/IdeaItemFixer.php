@@ -539,7 +539,7 @@ trait IdeaItemFixer
         $content = "<?php\n\n";
         $content .= "namespace {$namespace};\n\n";
         $content .= "use {$objectClassName} as {$objectClassAlias};\n";
-        $content .= "use Hilos\\Database\\Idea\\IdeaItem as BaseIdea;\n";
+        $content .= "use Hilos\\Database\\Idea\\IdeaItem;\n";
         $content .= "use Hilos\\Database\\Idea\\IdeaCollection;\n\n";
 
         // PHPDoc
@@ -547,13 +547,13 @@ trait IdeaItemFixer
         $content .= " * {$ideaClassName} Idea\n";
         $content .= " * High-level abstraction with lazy loading and relationships\n";
         $content .= " *\n";
-        $content .= " * @extends BaseIdea<{$objectClassAlias}>\n";
+        $content .= " * @extends IdeaItem<{$objectClassAlias}>\n";
         $content .= " *\n";
         $content .= $phpDocPropertiesStr . "\n";
         $content .= " */\n";
 
         // Class declaration
-        $content .= "final class {$ideaClassName} extends BaseIdea\n";
+        $content .= "final class {$ideaClassName} extends IdeaItem\n";
         $content .= "{\n";
         $content .= "    /** @var self[] Global cache of {$ideaClassName} ideas */\n";
         $content .= "    private static array \${$pluralizedCacheName} = [];\n\n";
@@ -598,6 +598,80 @@ trait IdeaItemFixer
     }
 
     /**
+     * Calculate return type for __get() method based on object properties
+     *
+     * @param array $objectProperties Object properties with type information
+     * @return string Return type string (e.g., "int|string|null")
+     */
+    private function calculateGetterReturnType(array $objectProperties): string
+    {
+        $types = [];
+        $hasNullable = false;
+        
+        foreach ($objectProperties as $propertyInfo) {
+            $type = $propertyInfo['type'];
+            
+            // Handle nullable types: ?int, ?string, etc.
+            if (strpos($type, '?') === 0) {
+                $baseType = substr($type, 1);
+                // Handle union types in nullable: ?(int|string) -> extract both
+                if (strpos($baseType, '|') !== false) {
+                    $unionTypes = explode('|', $baseType);
+                    foreach ($unionTypes as $unionType) {
+                        $types[trim($unionType)] = true;
+                    }
+                } else {
+                    $types[$baseType] = true;
+                }
+                $hasNullable = true;
+            } elseif (strpos($type, '|') !== false) {
+                // Handle union types: int|string
+                $unionTypes = explode('|', $type);
+                foreach ($unionTypes as $unionType) {
+                    $unionType = trim($unionType);
+                    // Skip null in union, we'll add it separately if needed
+                    if ($unionType !== 'null') {
+                        $types[$unionType] = true;
+                    } else {
+                        $hasNullable = true;
+                    }
+                }
+            } else {
+                // Simple type: int, string, bool, etc.
+                $types[$type] = true;
+            }
+        }
+        
+        // Add null if any property is nullable or if we have no types (safety)
+        if ($hasNullable || empty($types)) {
+            $types['null'] = true;
+        }
+        
+        // Order types: primitives first, then others
+        $orderedTypes = [];
+        $typeOrder = ['int', 'string', 'bool', 'float', 'null'];
+        
+        foreach ($typeOrder as $type) {
+            if (isset($types[$type])) {
+                $orderedTypes[] = $type;
+                unset($types[$type]);
+            }
+        }
+        
+        // Add any remaining types (custom types, classes, etc.)
+        foreach (array_keys($types) as $type) {
+            $orderedTypes[] = $type;
+        }
+        
+        // If no types found, default to mixed
+        if (empty($orderedTypes)) {
+            return 'mixed';
+        }
+        
+        return implode('|', $orderedTypes);
+    }
+
+    /**
      * Build __get() method content
      */
     private function buildGetterMethod(array $objectProperties, string $objectClassAlias, string $objectPropertyName, string $ideaClassName): string
@@ -608,17 +682,29 @@ trait IdeaItemFixer
             $getterCases[] = "            {$objectClassAlias}::{$constant} => \$this->_object->{$constant},";
         }
 
+        // Calculate return type based on property types
+        $returnType = $this->calculateGetterReturnType($objectProperties);
+        
+        // Output information about return type
+        $propertyTypes = [];
+        foreach ($objectProperties as $name => $info) {
+            $propertyTypes[] = "{$name}: {$info['type']}";
+        }
+        echo "  [INFO] Calculated __get() return type for {$ideaClassName}: {$returnType}\n";
+        echo "  [INFO] Based on " . count($objectProperties) . " properties: " . implode(', ', $propertyTypes) . "\n";
+
         $method = "    /**\n";
         $method .= "     * Property getter (read-only access)\n";
+        $method .= "     *\n";
+        $method .= "     * @param string \$name Property name\n";
+        $method .= "     * @return {$returnType} Property value\n";
+        $method .= "     * @throws \\RuntimeException If property does not exist\n";
         $method .= "     */\n";
-        $method .= "    public function __get(string \$name): IdeaCollection|int|string|bool|null\n";
+        $method .= "    public function __get(string \$name): {$returnType}\n";
         $method .= "    {\n";
         $method .= "        return match (\$name) {\n";
         $method .= implode("\n", $getterCases) . "\n";
-        $method .= "\n            // Example of lazy loading relationships (implement when you have related entities)\n";
-        $method .= "            // 'orders' => \$this->loadOrders(),\n";
-        $method .= "            // 'posts' => \$this->loadPosts(),\n";
-        $method .= "\n            default => throw new \\Exception(\"Property [{\$name}] does not exist on Idea{$ideaClassName}\"),\n";
+        $method .= "\n            default => parent::__get(\$name),\n";
         $method .= "        };\n";
         $method .= "    }";
 
@@ -880,6 +966,12 @@ trait IdeaItemFixer
         $objectPropertyType = $objectPropertyInfo['type']; // 'property' or 'variable'
         $objectGetterMethod = $objectPropertyInfo['getter_method'] ?? null; // Method name if type is 'variable'
 
+        // Calculate return type based on property types
+        $returnType = $this->calculateGetterReturnType($objectProperties);
+        $ideaClassName = $objectReflection->getShortName();
+        echo "  [INFO] Calculated __get() return type for {$ideaClassName}: {$returnType}\n";
+        echo "  [INFO] Based on " . count($objectProperties) . " properties\n";
+
         // Find existing __get() method
         $getterMethod = $this->extractMethodBody($content, '__get');
         if ($getterMethod === null) {
@@ -892,15 +984,16 @@ trait IdeaItemFixer
 
             $newGetter = "    /**\n";
             $newGetter .= "     * Property getter (read-only access)\n";
+            $newGetter .= "     *\n";
+            $newGetter .= "     * @param string \$name Property name\n";
+            $newGetter .= "     * @return {$returnType} Property value\n";
+            $newGetter .= "     * @throws \\RuntimeException If property does not exist\n";
             $newGetter .= "     */\n";
-            $newGetter .= "    public function __get(string \$name): IdeaCollection|int|string|bool|null\n";
+            $newGetter .= "    public function __get(string \$name): {$returnType}\n";
             $newGetter .= "    {\n";
             $newGetter .= "        return match (\$name) {\n";
             $newGetter .= implode("\n", $getterCases) . "\n";
-            $newGetter .= "\n            // Example of lazy loading relationships (implement when you have related entities)\n";
-            $newGetter .= "            // 'orders' => \$this->loadOrders(),\n";
-            $newGetter .= "            // 'posts' => \$this->loadPosts(),\n";
-            $newGetter .= "\n            default => throw new \\Exception(\"Property [{\$name}] does not exist on Idea{$objectReflection->getShortName()}\"),\n";
+            $newGetter .= "\n            default => parent::__get(\$name),\n";
             $newGetter .= "        };\n";
             $newGetter .= "    }";
 
@@ -1011,11 +1104,8 @@ trait IdeaItemFixer
             // Find where to insert other lines - usually after property cases
             $updatedMatchContent .= "\n" . implode("\n", $otherLines);
         } else {
-            // Add default comments and default case if not present
-            $updatedMatchContent .= "\n\n            // Example of lazy loading relationships (implement when you have related entities)\n";
-            $updatedMatchContent .= "            // 'orders' => \$this->loadOrders(),\n";
-            $updatedMatchContent .= "            // 'posts' => \$this->loadPosts(),\n";
-            $updatedMatchContent .= "\n            default => throw new \\Exception(\"Property [{\$name}] does not exist on Idea{$objectReflection->getShortName()}\"),";
+            // Add default case if not present
+            $updatedMatchContent .= "\n            default => parent::__get(\$name),";
         }
 
         // Rebuild method body with updated match
@@ -1046,18 +1136,31 @@ trait IdeaItemFixer
             $getterCases[] = "            {$objectClassAlias}::{$constant} => \$this->_object->{$constant},";
         }
 
+        // Calculate return type
+        $returnType = $this->calculateGetterReturnType($objectProperties);
+        $ideaClassName = $objectReflection->getShortName();
+        
+        // Output information about return type
+        $propertyTypes = [];
+        foreach ($objectProperties as $name => $info) {
+            $propertyTypes[] = "{$name}: {$info['type']}";
+        }
+        echo "  [INFO] Calculated __get() return type for {$ideaClassName}: {$returnType}\n";
+        echo "  [INFO] Based on " . count($objectProperties) . " properties: " . implode(', ', $propertyTypes) . "\n";
+
         // Build new __get() method
         $newGetter = "    /**\n";
         $newGetter .= "     * Property getter (read-only access)\n";
+        $newGetter .= "     *\n";
+        $newGetter .= "     * @param string \$name Property name\n";
+        $newGetter .= "     * @return {$returnType} Property value\n";
+        $newGetter .= "     * @throws \\RuntimeException If property does not exist\n";
         $newGetter .= "     */\n";
-        $newGetter .= "    public function __get(string \$name): IdeaCollection|int|string|bool|null\n";
+        $newGetter .= "    public function __get(string \$name): {$returnType}\n";
         $newGetter .= "    {\n";
         $newGetter .= "        return match (\$name) {\n";
         $newGetter .= implode("\n", $getterCases) . "\n";
-        $newGetter .= "\n            // Example of lazy loading relationships (implement when you have related entities)\n";
-        $newGetter .= "            // 'orders' => \$this->loadOrders(),\n";
-        $newGetter .= "            // 'posts' => \$this->loadPosts(),\n";
-        $newGetter .= "\n            default => throw new \\Exception(\"Property [{\$name}] does not exist on Idea{$objectReflection->getShortName()}\"),\n";
+        $newGetter .= "\n            default => parent::__get(\$name),\n";
         $newGetter .= "        };\n";
         $newGetter .= "    }";
 
@@ -1341,9 +1444,9 @@ trait IdeaItemFixer
             return true; // Object class use statement is missing or incorrect
         }
 
-        // Check if BaseIdea use statement exists
-        if (!preg_match('/use\s+Hilos\\\Database\\\Idea\\\IdeaItem\s+as\s+BaseIdea;/', $content)) {
-            return true; // BaseIdea use statement is missing
+        // Check if IdeaItem use statement exists (without alias)
+        if (!preg_match('/use\s+Hilos\\\Database\\\Idea\\\IdeaItem;/', $content)) {
+            return true; // IdeaItem use statement is missing
         }
 
         // Check if IdeaCollection use statement exists
@@ -1393,16 +1496,16 @@ trait IdeaItemFixer
         // Build new use statements
         $newUseStatements = [];
         $newUseStatements[] = "use {$objectClassName} as {$objectClassAlias};";
-        $newUseStatements[] = "use Hilos\\Database\\Idea\\IdeaItem as BaseIdea;";
+        $newUseStatements[] = "use Hilos\\Database\\Idea\\IdeaItem;";
         $newUseStatements[] = "use Hilos\\Database\\Idea\\IdeaCollection;";
 
         // Find existing use statements section
         if (preg_match('/(namespace\s+[^;]+;\n\n)(.*?)(\n(?:final\s+)?class\s+\w+)/s', $content, $matches)) {
             $existingUses = $matches[2];
             
-            // Remove old use statements for Object classes, BaseIdea, and IdeaCollection
+            // Remove old use statements for Object classes, IdeaItem (with or without alias), and IdeaCollection
             $existingUses = preg_replace('/use\s+[^;]+\\\Object\\\[^;]*;?\n?/', '', $existingUses);
-            $existingUses = preg_replace('/use\s+Hilos\\\Database\\\Idea\\\IdeaItem\s+as\s+BaseIdea;?\n?/', '', $existingUses);
+            $existingUses = preg_replace('/use\s+Hilos\\\Database\\\Idea\\\IdeaItem(?:\s+as\s+\w+)?;?\n?/', '', $existingUses);
             $existingUses = preg_replace('/use\s+Hilos\\\Database\\\Idea\\\IdeaCollection;?\n?/', '', $existingUses);
             
             // Keep other use statements (user-defined imports)

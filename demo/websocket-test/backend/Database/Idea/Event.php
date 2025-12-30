@@ -3,9 +3,8 @@
 namespace Demo\WebSocketTest\Database\Idea;
 
 use Demo\WebSocketTest\Database\Object\Event as ObjectEvent;
-use Exception;
 use Hilos\Database\Idea\IdeaItem;
-use Hilos\Database\Idea\IdeaCollection;
+use RuntimeException;
 
 /**
  * Event Idea
@@ -32,9 +31,12 @@ final class Event extends IdeaItem
 
     /**
      * Property getter (read-only access)
-     * @throws Exception
+     *
+     * @param string $name Property name
+     * @return int|string|null Property value
+     * @throws RuntimeException If property does not exist
      */
-    public function __get(string $name): IdeaCollection|int|string|bool|null
+    public function __get(string $name): int|string|null
     {
         return match ($name) {
             ObjectEvent::id => $this->_object->id,
@@ -42,12 +44,18 @@ final class Event extends IdeaItem
             ObjectEvent::type => $this->_object->type,
             ObjectEvent::timestamp => $this->_object->timestamp,
 
-            default => throw new Exception("Property [{$name}] does not exist on IdeaEvent"),
+            default => parent::__get($name),
         };
     }
 
     /**
-     * Convert to array
+     * Convert to array representation
+     *
+     * @param bool $withId Include ID field in result
+     * @param bool $idAsIndex Use ID as array key
+     * @param bool $withBridges Include bridge/junction table data
+     * @param bool $withCalculation Include calculated fields
+     * @return array<string, mixed> Array representation
      */
     public function toArray(bool $withId = true, bool $idAsIndex = true, bool $withBridges = false, bool $withCalculation = false): array
     {

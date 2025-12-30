@@ -39,16 +39,6 @@ abstract class IdeaItem
     }
 
     /**
-     * Get Object instance
-     *
-     * @return TObject Object instance
-     */
-    protected function getObject(): Object_
-    {
-        return $this->_object;
-    }
-
-    /**
      * Public clone - prevent cloning
      *
      * Magic methods in PHP must be public to be called.
@@ -72,6 +62,38 @@ abstract class IdeaItem
     public function __wakeup(): void
     {
         throw new RuntimeException('IdeaItem cannot be unserialized');
+    }
+
+    /**
+     * Property getter - throws error for undeclared properties
+     *
+     * Child classes should override this method and call parent::__get() in default case
+     * for properties that are not handled by the child class.
+     *
+     * @param string $name Property name
+     * @return never
+     * @throws RuntimeException Always throws exception for undeclared properties
+     */
+    public function __get(string $name)
+    {
+        $className = static::class;
+        throw new RuntimeException("Property [{$name}] does not exist on {$className}");
+    }
+
+    /**
+     * Property setter - prevents modification (read-only)
+     *
+     * IdeaItem is read-only wrapper, properties cannot be modified.
+     *
+     * @param string $name Property name
+     * @param mixed $value Property value
+     * @return never
+     * @throws RuntimeException Always throws exception (read-only)
+     */
+    final public function __set(string $name, mixed $value): never
+    {
+        $className = static::class;
+        throw new RuntimeException("Cannot set property [{$name}] on {$className}: IdeaItem is read-only");
     }
 
     /**

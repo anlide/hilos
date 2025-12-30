@@ -6,11 +6,11 @@ use Demo\WebSocketTest\Database\Idea;
 use Demo\WebSocketTest\Database\IdeaCollection\UserSettings as IdeaUserSettings;
 use Demo\WebSocketTest\Database\Object\User as ObjectUser;
 use Demo\WebSocketTest\Database\Object\UserSetting as ObjectUserSetting;
-use Exception;
 use Hilos\Database\Filter\FilterBuilder;
 use Hilos\Database\Filter\FilterOperator;
 use Hilos\Database\Idea\IdeaItem;
 use Hilos\Exception\DatabaseException;
+use RuntimeException;
 
 /**
  * User Idea
@@ -26,6 +26,7 @@ use Hilos\Exception\DatabaseException;
  * @property-read ?string $theme User theme preference
  * @property-read ?string $sessionToken User session token (32 hex characters)
  * @property-read ?string $lastActivity Last activity timestamp
+ * @property-read IdeaUserSettings $settings User settings collection (lazy loaded)
  */
 final class User extends IdeaItem
 {
@@ -94,7 +95,7 @@ final class User extends IdeaItem
      *
      * @param string $name Property name
      * @return int|string|IdeaUserSettings|null Property value or IdeaCollection for relationships
-     * @throws Exception If property does not exist
+     * @throws RuntimeException If property does not exist
      */
     public function __get(string $name): int|string|IdeaUserSettings|null
     {
@@ -108,19 +109,18 @@ final class User extends IdeaItem
             // Related collections
             'settings' => $this->createCollectionSettings(),
 
-            default => throw new Exception("Property [{$name}] does not exist on IdeaUser"),
+            default => parent::__get($name),
         };
     }
 
     /**
-     * Convert IdeaUser to array representation
-     * Extracts data from underlying ObjectUser instance.
+     * Convert to array representation
      *
      * @param bool $withId Include ID field in result
-     * @param bool $idAsIndex Use ID as array key (ignored if $withId is false)
-     * @param bool $withBridges Include bridge/junction table data (not used for User)
-     * @param bool $withCalculation Include calculated fields (not used for User)
-     * @return array<string, mixed> Array representation of user data
+     * @param bool $idAsIndex Use ID as array key
+     * @param bool $withBridges Include bridge/junction table data
+     * @param bool $withCalculation Include calculated fields
+     * @return array<string, mixed> Array representation
      */
     public function toArray(bool $withId = true, bool $idAsIndex = true, bool $withBridges = false, bool $withCalculation = false): array
     {

@@ -63,11 +63,7 @@ final class Message extends BaseIdea
             ObjectMessage::message => $this->_object->message,
             ObjectMessage::timestamp => $this->_object->timestamp,
 
-            // Example of lazy loading relationships (implement when you have related entities)
-            // 'orders' => $this->loadOrders(),
-            // 'posts' => $this->loadPosts(),
-
-            default => throw new \Exception("Property [{$name}] does not exist on IdeaMessage"),
+            default => parent::__get($name),
         };
     }
 
