@@ -11,14 +11,15 @@ use Hilos\Database\Filter\FilterBuilder;
 use Hilos\Database\Filter\FilterOperator;
 use Hilos\Database\Idea\IdeaItem;
 use Hilos\Exception\DatabaseException;
-use RuntimeException;
 
 /**
  * User Idea
  * High-level abstraction with lazy loading and relationships
- * 
+ *
  * Stores reference to ObjectUser instance.
  * Object instances are stored in ObjectCollection in IdeaStorage.
+ *
+ * @extends IdeaItem<ObjectUser>
  *
  * @property-read ?int $id User ID (primary key)
  * @property-read string $name User name
@@ -30,29 +31,12 @@ final class User extends IdeaItem
 {
     /**
      * Public constructor - creates IdeaUser from ObjectUser instance
-     * 
+     *
      * @param ObjectUser $objectUser ObjectUser instance (reference)
      */
     public function __construct(ObjectUser &$objectUser)
     {
         parent::__construct($objectUser);
-    }
-
-    /**
-     * Get ObjectUser instance
-     * Returns the underlying ObjectUser instance that this IdeaUser wraps.
-     * This is a reference to the Object stored in ObjectCollection in IdeaStorage.
-     * 
-     * @return ObjectUser ObjectUser instance (reference, not a copy)
-     * @throws RuntimeException If the underlying object is not an ObjectUser instance
-     */
-    private function getObjectUser(): ObjectUser
-    {
-        $object = $this->getObject();
-        if (!($object instanceof ObjectUser)) {
-            throw new RuntimeException("Expected ObjectUser instance");
-        }
-        return $object;
     }
 
     /**
@@ -65,8 +49,7 @@ final class User extends IdeaItem
      */
     private function createCollectionSettings(): IdeaUserSettings
     {
-        $objectUser = $this->getObjectUser();
-        $userId = $objectUser->id;
+        $userId = $this->_object->id;
 
         // Create manual collection
         $settingsCollection = IdeaUserSettings::initEmpty();
@@ -109,20 +92,18 @@ final class User extends IdeaItem
      * Provides access to ObjectUser properties through IdeaUser interface.
      * Supports lazy loading of related collections.
      *
-     * @param string $name Property name (id, name, theme, sessionToken, lastActivity, settings)
+     * @param string $name Property name
      * @return int|string|IdeaUserSettings|null Property value or IdeaCollection for relationships
      * @throws Exception If property does not exist
      */
     public function __get(string $name): int|string|IdeaUserSettings|null
     {
-        $objectUser = $this->getObjectUser();
-
         return match ($name) {
-            ObjectUser::id => $objectUser->id,
-            ObjectUser::name => $objectUser->name,
-            ObjectUser::theme => $objectUser->theme,
-            ObjectUser::sessionToken => $objectUser->sessionToken,
-            ObjectUser::lastActivity => $objectUser->lastActivity,
+            ObjectUser::id => $this->_object->id,
+            ObjectUser::name => $this->_object->name,
+            ObjectUser::theme => $this->_object->theme,
+            ObjectUser::sessionToken => $this->_object->sessionToken,
+            ObjectUser::lastActivity => $this->_object->lastActivity,
 
             // Related collections
             'settings' => $this->createCollectionSettings(),
@@ -143,18 +124,16 @@ final class User extends IdeaItem
      */
     public function toArray(bool $withId = true, bool $idAsIndex = true, bool $withBridges = false, bool $withCalculation = false): array
     {
-        $objectUser = $this->getObjectUser();
-
         $data = [];
 
         if ($withId) {
-            $data[ObjectUser::id] = $objectUser->id;
+            $data[ObjectUser::id] = $this->_object->id;
         }
 
-        $data[ObjectUser::name] = $objectUser->name;
-        $data[ObjectUser::theme] = $objectUser->theme;
-        $data[ObjectUser::sessionToken] = $objectUser->sessionToken;
-        $data[ObjectUser::lastActivity] = $objectUser->lastActivity;
+        $data[ObjectUser::name] = $this->_object->name;
+        $data[ObjectUser::theme] = $this->_object->theme;
+        $data[ObjectUser::sessionToken] = $this->_object->sessionToken;
+        $data[ObjectUser::lastActivity] = $this->_object->lastActivity;
 
         return $data;
     }

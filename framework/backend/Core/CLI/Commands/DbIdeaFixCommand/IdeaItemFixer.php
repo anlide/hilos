@@ -547,6 +547,8 @@ trait IdeaItemFixer
         $content .= " * {$ideaClassName} Idea\n";
         $content .= " * High-level abstraction with lazy loading and relationships\n";
         $content .= " *\n";
+        $content .= " * @extends BaseIdea<{$objectClassAlias}>\n";
+        $content .= " *\n";
         $content .= $phpDocPropertiesStr . "\n";
         $content .= " */\n";
 
@@ -555,11 +557,9 @@ trait IdeaItemFixer
         $content .= "{\n";
         $content .= "    /** @var self[] Global cache of {$ideaClassName} ideas */\n";
         $content .= "    private static array \${$pluralizedCacheName} = [];\n\n";
-        $content .= "    private {$objectClassAlias} \${$objectPropertyName};\n\n";
         $content .= "    protected function __construct({$objectClassAlias} &\${$objectPropertyName})\n";
         $content .= "    {\n";
-        $content .= "        parent::__construct();\n";
-        $content .= "        \$this->{$objectPropertyName} = &\${$objectPropertyName};\n";
+        $content .= "        parent::__construct(\${$objectPropertyName});\n";
         $content .= "    }\n\n";
         $content .= "    /**\n";
         $content .= "     * Flush global cache\n";
@@ -576,7 +576,7 @@ trait IdeaItemFixer
         $content .= "        \$id = \${$objectPropertyName}->id;\n\n";
         $content .= "        if (!isset(self::\${$pluralizedCacheName}[\$id])) {\n";
         $content .= "            self::\${$pluralizedCacheName}[\$id] = new self(\${$objectPropertyName});\n";
-        $content .= "        } elseif (self::\${$pluralizedCacheName}[\$id]->{$objectPropertyName} !== \${$objectPropertyName}) {\n";
+        $content .= "        } elseif (self::\${$pluralizedCacheName}[\$id]->_object !== \${$objectPropertyName}) {\n";
         $content .= "            // Object reference changed, recreate\n";
         $content .= "            self::\${$pluralizedCacheName}[\$id] = new self(\${$objectPropertyName});\n";
         $content .= "        }\n\n";
@@ -605,7 +605,7 @@ trait IdeaItemFixer
         $getterCases = [];
         foreach ($objectProperties as $propertyName => $propertyInfo) {
             $constant = $propertyInfo['constant'];
-            $getterCases[] = "            {$objectClassAlias}::{$constant} => \$this->{$objectPropertyName}->{$constant},";
+            $getterCases[] = "            {$objectClassAlias}::{$constant} => \$this->_object->{$constant},";
         }
 
         $method = "    /**\n";
@@ -640,7 +640,7 @@ trait IdeaItemFixer
             if (strtolower($propertyName) === 'id') {
                 $constant = $propertyInfo['constant'];
                 $toArrayLines[] = "        if (\$withId) {";
-                $toArrayLines[] = "            \$data[{$objectClassAlias}::{$constant}] = \$this->{$objectPropertyName}->{$constant};";
+                $toArrayLines[] = "            \$data[{$objectClassAlias}::{$constant}] = \$this->_object->{$constant};";
                 $toArrayLines[] = "        }";
                 $toArrayLines[] = "";
                 $hasId = true;
@@ -654,7 +654,7 @@ trait IdeaItemFixer
                 continue;
             }
             $constant = $propertyInfo['constant'];
-            $toArrayLines[] = "        \$data[{$objectClassAlias}::{$constant}] = \$this->{$objectPropertyName}->{$constant};";
+            $toArrayLines[] = "        \$data[{$objectClassAlias}::{$constant}] = \$this->_object->{$constant};";
         }
 
         $toArrayLines[] = "";
@@ -871,10 +871,14 @@ trait IdeaItemFixer
         }
 
         // Extract object property name (e.g., $objectUser)
-        $objectPropertyName = $this->extractObjectPropertyName($content);
-        if ($objectPropertyName === null) {
+        // Returns array with 'name' and 'type' ('property' or 'variable')
+        $objectPropertyInfo = $this->extractObjectPropertyInfo($content);
+        if ($objectPropertyInfo === null) {
             return $content;
         }
+        $objectPropertyName = $objectPropertyInfo['name'];
+        $objectPropertyType = $objectPropertyInfo['type']; // 'property' or 'variable'
+        $objectGetterMethod = $objectPropertyInfo['getter_method'] ?? null; // Method name if type is 'variable'
 
         // Find existing __get() method
         $getterMethod = $this->extractMethodBody($content, '__get');
@@ -883,7 +887,7 @@ trait IdeaItemFixer
             $getterCases = [];
             foreach ($objectProperties as $propertyName => $propertyInfo) {
                 $constant = $propertyInfo['constant'];
-                $getterCases[] = "            {$objectClassAlias}::{$constant} => \$this->{$objectPropertyName}->{$constant},";
+                $getterCases[] = "            {$objectClassAlias}::{$constant} => \$this->_object->{$constant},";
             }
 
             $newGetter = "    /**\n";
@@ -917,6 +921,7 @@ trait IdeaItemFixer
         $matchContent = $matchMatch[1];
         
         // Extract all existing case lines (property => value)
+        // Store with object class alias (anchor) to identify Object properties vs user-defined cases
         $existingCases = [];
         $otherLines = [];
         $lines = explode("\n", $matchContent);
@@ -924,39 +929,79 @@ trait IdeaItemFixer
             $trimmed = trim($line);
             // Match: ObjectClass::property => $this->object->property,
             if (preg_match('/^(\w+)::(\w+)\s*=>\s*(.+?),?\s*$/', $trimmed, $caseMatch)) {
+                $objectClassInCase = $caseMatch[1]; // Anchor (e.g., "ObjectUser")
                 $propertyName = $caseMatch[2];
-                $existingCases[$propertyName] = $line; // Keep original formatting
+                $existingCases[$propertyName] = [
+                    'line' => $line, // Keep original formatting
+                    'object_class' => $objectClassInCase, // For checking if it's our Object property
+                ];
             } elseif (!empty($trimmed) && !preg_match('/^\s*\/\//', $trimmed)) {
-                // Keep non-empty lines that are not comments (like default case, blank lines)
+                // Keep non-empty lines that are not comments (like default case, blank lines, string literal cases)
                 // But skip property case lines we already captured
                 $otherLines[] = $line;
             }
         }
+        
+        // Process existing cases: identify which should be removed (Object properties not in $objectProperties)
+        // and which are user-defined (different anchor or string literals) that should be preserved
+        $casesToRemove = [];
+        foreach ($existingCases as $propertyName => $caseInfo) {
+            // Check if case belongs to our Object class
+            if ($caseInfo['object_class'] === $objectClassAlias) {
+                // This is an Object property - it will be handled in the loop below
+                // If property is not in $objectProperties, it will be removed (not added to $newCases)
+                if (!isset($objectProperties[$propertyName])) {
+                    $casesToRemove[] = $propertyName;
+                }
+                continue;
+            } else {
+                // Case with different anchor - this is a user-defined case (relationship, lazy loading, etc.)
+                // Preserve it in $otherLines
+                if (!in_array($caseInfo['line'], $otherLines, true)) {
+                    $otherLines[] = $caseInfo['line'];
+                }
+            }
+        }
 
         // Build new cases for all properties
+        // Only Object properties from $objectProperties will be included
+        // Cases with our Object anchor that are not in $objectProperties will be removed
         $newCases = [];
         foreach ($objectProperties as $propertyName => $propertyInfo) {
             $constant = $propertyInfo['constant'];
-            $newCaseLine = "            {$objectClassAlias}::{$constant} => \$this->{$objectPropertyName}->{$constant},";
+            // Always use $this->_object (generic template approach)
+            $newCaseLine = "            {$objectClassAlias}::{$constant} => \$this->_object->{$constant},";
             
-            // If property exists, check if it needs update
+            // If property exists in existing cases, check if it needs update
             if (isset($existingCases[$propertyName])) {
-                $oldCaseLine = $existingCases[$propertyName];
-                // Compare normalized versions (ignore whitespace)
-                $oldNormalized = preg_replace('/\s+/', ' ', trim($oldCaseLine));
-                $newNormalized = preg_replace('/\s+/', ' ', trim($newCaseLine));
-                if ($oldNormalized !== $newNormalized) {
-                    // Property changed - use new version
-                    $newCases[$propertyName] = $newCaseLine;
+                $caseInfo = $existingCases[$propertyName];
+                $oldCaseLine = $caseInfo['line'];
+                
+                // Verify this is our Object case (should always be true at this point, but check for safety)
+                if ($caseInfo['object_class'] === $objectClassAlias) {
+                    // Compare normalized versions (ignore whitespace)
+                    $oldNormalized = preg_replace('/\s+/', ' ', trim($oldCaseLine));
+                    $newNormalized = preg_replace('/\s+/', ' ', trim($newCaseLine));
+                    if ($oldNormalized !== $newNormalized) {
+                        // Property changed - use new version
+                        $newCases[$propertyName] = $newCaseLine;
+                    } else {
+                        // Property unchanged - keep original formatting
+                        $newCases[$propertyName] = $oldCaseLine;
+                    }
                 } else {
-                    // Property unchanged - keep original formatting
-                    $newCases[$propertyName] = $existingCases[$propertyName];
+                    // Edge case: same property name but different object class
+                    // Use new version (shouldn't happen in practice)
+                    $newCases[$propertyName] = $newCaseLine;
                 }
             } else {
                 // New property - add it
                 $newCases[$propertyName] = $newCaseLine;
             }
         }
+        
+        // Note: Cases from $existingCases that have our Object anchor but are not in $objectProperties
+        // are automatically removed by not being added to $newCases
 
         // Build updated match content
         $updatedMatchContent = implode("\n", $newCases);
@@ -998,7 +1043,7 @@ trait IdeaItemFixer
         $getterCases = [];
         foreach ($objectProperties as $propertyName => $propertyInfo) {
             $constant = $propertyInfo['constant'];
-            $getterCases[] = "            {$objectClassAlias}::{$constant} => \$this->{$objectPropertyName}->{$constant},";
+            $getterCases[] = "            {$objectClassAlias}::{$constant} => \$this->_object->{$constant},";
         }
 
         // Build new __get() method
@@ -1052,12 +1097,41 @@ trait IdeaItemFixer
     }
 
     /**
-     * Extract object property name (e.g., $objectUser)
+     * Extract object property info (e.g., $objectUser)
+     * 
+     * First tries to find a private property, then looks for variable usage in __get() method
+     * Returns array with 'name', 'type' ('property' or 'variable'), and optionally 'getter_method'
      */
-    private function extractObjectPropertyName(string $content): ?string
+    private function extractObjectPropertyInfo(string $content): ?array
     {
+        // Try to find private property first (standard case)
         if (preg_match('/private\s+\w+\s+\$(\w+);/', $content, $match)) {
-            return $match[1];
+            return [
+                'name' => $match[1],
+                'type' => 'property',
+            ];
+        }
+
+        // If no private property found, try to find variable usage in __get() method
+        // Pattern: $objectUser = $this->getObjectUser(); or similar
+        // Then look for usage: $objectUser->property
+        if (preg_match('/public\s+function\s+__get[^{]*\{([^}]+)\}/s', $content, $getterMatch)) {
+            $getterBody = $getterMatch[1];
+            
+            // Find variable assignment like: $objectUser = $this->getObjectUser();
+            if (preg_match('/\$(\w+)\s*=\s*\$this->(get\w+)\(\);/', $getterBody, $varMatch)) {
+                $varName = $varMatch[1];
+                $getterMethodName = $varMatch[2];
+                
+                // Verify this variable is used to access Object properties (e.g., $objectUser->id)
+                if (preg_match('/\$' . preg_quote($varName, '/') . '->\w+/', $getterBody)) {
+                    return [
+                        'name' => $varName,
+                        'type' => 'variable',
+                        'getter_method' => $getterMethodName,
+                    ];
+                }
+            }
         }
 
         return null;
@@ -1079,11 +1153,13 @@ trait IdeaItemFixer
             return $content;
         }
 
-        // Extract object property name
-        $objectPropertyName = $this->extractObjectPropertyName($content);
-        if ($objectPropertyName === null) {
+        // Extract object property info
+        $objectPropertyInfo = $this->extractObjectPropertyInfo($content);
+        if ($objectPropertyInfo === null) {
             return $content;
         }
+        $objectPropertyName = $objectPropertyInfo['name'];
+        $objectPropertyType = $objectPropertyInfo['type'];
 
         // Build toArray() method
         $toArrayLines = [];
@@ -1096,7 +1172,8 @@ trait IdeaItemFixer
             if (strtolower($propertyName) === 'id') {
                 $constant = $propertyInfo['constant'];
                 $toArrayLines[] = "        if (\$withId) {";
-                $toArrayLines[] = "            \$data[{$objectClassAlias}::{$constant}] = \$this->{$objectPropertyName}->{$constant};";
+                // Always use $this->_object (generic template approach)
+                $toArrayLines[] = "            \$data[{$objectClassAlias}::{$constant}] = \$this->_object->{$constant};";
                 $toArrayLines[] = "        }";
                 $toArrayLines[] = "";
                 $hasId = true;
@@ -1110,7 +1187,8 @@ trait IdeaItemFixer
                 continue; // Already added
             }
             $constant = $propertyInfo['constant'];
-            $toArrayLines[] = "        \$data[{$objectClassAlias}::{$constant}] = \$this->{$objectPropertyName}->{$constant};";
+            // Always use $this->_object (generic template approach)
+            $toArrayLines[] = "        \$data[{$objectClassAlias}::{$constant}] = \$this->_object->{$constant};";
         }
 
         $toArrayLines[] = "";

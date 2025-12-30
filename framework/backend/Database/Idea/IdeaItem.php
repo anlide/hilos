@@ -14,7 +14,9 @@ use RuntimeException;
  * IdeaItem stores only reference to Object for memory efficiency.
  * Object instances are stored in ObjectCollection in IdeaStorage.
  *
+ * @template TObject of Object_
  * @property-read mixed $id Primary key value
+ * @property-read TObject $_object Reference to Object instance
  */
 abstract class IdeaItem
 {
@@ -22,7 +24,7 @@ abstract class IdeaItem
      * Reference to Object instance
      * Object is stored in ObjectCollection in IdeaStorage
      *
-     * @var Object_
+     * @var TObject
      */
     protected Object_ $_object;
 
@@ -39,7 +41,7 @@ abstract class IdeaItem
     /**
      * Get Object instance
      *
-     * @return Object_ Object instance
+     * @return TObject Object instance
      */
     protected function getObject(): Object_
     {

@@ -3,72 +3,46 @@
 namespace Demo\WebSocketTest\Database\Idea;
 
 use Demo\WebSocketTest\Database\Object\Event as ObjectEvent;
-use Hilos\Database\Idea\IdeaItem as BaseIdea;
+use Exception;
+use Hilos\Database\Idea\IdeaItem;
 use Hilos\Database\Idea\IdeaCollection;
 
 /**
  * Event Idea
  * High-level abstraction with lazy loading and relationships
  *
+ * @extends IdeaItem<ObjectEvent>
+ *
  * @property-read ?int $id
  * @property-read int $userId
  * @property-read string $type
  * @property-read ?string $timestamp
  */
-final class Event extends BaseIdea
+final class Event extends IdeaItem
 {
-    /** @var self[] Global cache of Event ideas */
-    private static array $events = [];
-
-    private ObjectEvent $objectEvent;
-
+    /**
+     * Public constructor - creates IdeaEvent from ObjectEvent instance
+     *
+     * @param ObjectEvent $objectEvent ObjectEvent instance (reference)
+     */
     protected function __construct(ObjectEvent &$objectEvent)
     {
-        parent::__construct();
-        $this->objectEvent = &$objectEvent;
-    }
-
-    /**
-     * Flush global cache
-     */
-    public static function flushCache(): void
-    {
-        self::$events = [];
-    }
-
-    /**
-     * Get Event idea instance (cached)
-     */
-    public static function get(ObjectEvent &$objectEvent): self
-    {
-        $id = $objectEvent->id;
-
-        if (!isset(self::$events[$id])) {
-            self::$events[$id] = new self($objectEvent);
-        } elseif (self::$events[$id]->objectEvent !== $objectEvent) {
-            // Object reference changed, recreate
-            self::$events[$id] = new self($objectEvent);
-        }
-
-        return self::$events[$id];
+        parent::__construct($objectEvent);
     }
 
     /**
      * Property getter (read-only access)
+     * @throws Exception
      */
     public function __get(string $name): IdeaCollection|int|string|bool|null
     {
         return match ($name) {
-            ObjectEvent::id => $this->objectEvent->id,
-            ObjectEvent::userId => $this->objectEvent->userId,
-            ObjectEvent::type => $this->objectEvent->type,
-            ObjectEvent::timestamp => $this->objectEvent->timestamp,
+            ObjectEvent::id => $this->_object->id,
+            ObjectEvent::userId => $this->_object->userId,
+            ObjectEvent::type => $this->_object->type,
+            ObjectEvent::timestamp => $this->_object->timestamp,
 
-            // Example of lazy loading relationships (implement when you have related entities)
-            // 'orders' => $this->loadOrders(),
-            // 'posts' => $this->loadPosts(),
-
-            default => throw new \Exception("Property [{$name}] does not exist on IdeaEvent"),
+            default => throw new Exception("Property [{$name}] does not exist on IdeaEvent"),
         };
     }
 
@@ -80,12 +54,12 @@ final class Event extends BaseIdea
         $data = [];
 
         if ($withId) {
-            $data[ObjectEvent::id] = $this->objectEvent->id;
+            $data[ObjectEvent::id] = $this->_object->id;
         }
 
-        $data[ObjectEvent::userId] = $this->objectEvent->userId;
-        $data[ObjectEvent::type] = $this->objectEvent->type;
-        $data[ObjectEvent::timestamp] = $this->objectEvent->timestamp;
+        $data[ObjectEvent::userId] = $this->_object->userId;
+        $data[ObjectEvent::type] = $this->_object->type;
+        $data[ObjectEvent::timestamp] = $this->_object->timestamp;
 
         return $data;
     }

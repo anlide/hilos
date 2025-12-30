@@ -10,6 +10,8 @@ use Hilos\Database\Idea\IdeaCollection;
  * Message Idea
  * High-level abstraction with lazy loading and relationships
  *
+ * @extends BaseIdea<ObjectMessage>
+ *
  * @property-read ?int $id
  * @property-read int $userId
  * @property-read string $message
@@ -20,12 +22,9 @@ final class Message extends BaseIdea
     /** @var self[] Global cache of Message ideas */
     private static array $messages = [];
 
-    private ObjectMessage $objectMessage;
-
     protected function __construct(ObjectMessage &$objectMessage)
     {
-        parent::__construct();
-        $this->objectMessage = &$objectMessage;
+        parent::__construct($objectMessage);
     }
 
     /**
@@ -45,7 +44,7 @@ final class Message extends BaseIdea
 
         if (!isset(self::$messages[$id])) {
             self::$messages[$id] = new self($objectMessage);
-        } elseif (self::$messages[$id]->objectMessage !== $objectMessage) {
+        } elseif (self::$messages[$id]->_object !== $objectMessage) {
             // Object reference changed, recreate
             self::$messages[$id] = new self($objectMessage);
         }
@@ -59,10 +58,10 @@ final class Message extends BaseIdea
     public function __get(string $name): IdeaCollection|int|string|bool|null
     {
         return match ($name) {
-            ObjectMessage::id => $this->objectMessage->id,
-            ObjectMessage::userId => $this->objectMessage->userId,
-            ObjectMessage::message => $this->objectMessage->message,
-            ObjectMessage::timestamp => $this->objectMessage->timestamp,
+            ObjectMessage::id => $this->_object->id,
+            ObjectMessage::userId => $this->_object->userId,
+            ObjectMessage::message => $this->_object->message,
+            ObjectMessage::timestamp => $this->_object->timestamp,
 
             // Example of lazy loading relationships (implement when you have related entities)
             // 'orders' => $this->loadOrders(),
@@ -80,12 +79,12 @@ final class Message extends BaseIdea
         $data = [];
 
         if ($withId) {
-            $data[ObjectMessage::id] = $this->objectMessage->id;
+            $data[ObjectMessage::id] = $this->_object->id;
         }
 
-        $data[ObjectMessage::userId] = $this->objectMessage->userId;
-        $data[ObjectMessage::message] = $this->objectMessage->message;
-        $data[ObjectMessage::timestamp] = $this->objectMessage->timestamp;
+        $data[ObjectMessage::userId] = $this->_object->userId;
+        $data[ObjectMessage::message] = $this->_object->message;
+        $data[ObjectMessage::timestamp] = $this->_object->timestamp;
 
         return $data;
     }
