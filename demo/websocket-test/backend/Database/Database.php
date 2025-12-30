@@ -31,11 +31,13 @@ class Database extends BaseDatabase
      * - DB_PASSWORD: Database password (default: empty)
      * - DB_DATABASE: Database name (default: hilos_demo)
      *
+     * @param bool $initIdea If true, initialize Idea with storage. Set to false for commands
+     *                       that need to work with broken Idea files (e.g., db:idea:fix)
      * @return void
      * @throws DatabaseException
      * @throws MissingEnvironmentVariableException
      */
-    public static function initialize(): void
+    public static function initialize(bool $initIdea = true): void
     {
         // Configure primary database connection (index 0)
         self::configure(
@@ -59,7 +61,10 @@ class Database extends BaseDatabase
 
         // Initialize Idea with storage (for read-only data access)
         // Idea depends on Database, so initialize it here
-        Idea::init(true);
+        // Can be skipped for commands that need to work with broken Idea files
+        if ($initIdea) {
+            Idea::init(true);
+        }
 
         // Additional database connections can be configured here
         // Example for secondary database:

@@ -167,9 +167,15 @@ trait IdeaCollectionFixer
 
         // Look for use statement: use ...\ObjectCollection\ClassName as ObjectClassName;
         // Or: use ...\ObjectCollection\ClassName;
-        if (preg_match('/use\s+([^;]+\\\ObjectCollection\\\[^;]+)(?:\s+as\s+(\w+))?;/', $content, $useMatch)) {
-            $objectCollectionClassName = trim($useMatch[1]);
-            return $objectCollectionClassName;
+        // Use proper regex that separates class name from "as alias" part
+        if (preg_match_all('/^use\s+([^\s;]+)(?:\s+as\s+(\w+))?;/m', $content, $useMatches, PREG_SET_ORDER)) {
+            foreach ($useMatches as $useMatch) {
+                $fullClassName = trim($useMatch[1]);
+                // Check that this is an ObjectCollection class
+                if (strpos($fullClassName, '\\ObjectCollection\\') !== false) {
+                    return $fullClassName;
+                }
+            }
         }
 
         // Fallback: try to infer from IdeaCollection class name
@@ -260,8 +266,16 @@ trait IdeaCollectionFixer
 
         // Look for use statement: use ...\Entity\ClassName as EntityClassName;
         // Or: use ...\Entity\ClassName;
-        if (preg_match('/use\s+([^;]+\\\Entity\\\[^;]+)(?:\s+as\s+(\w+))?;/', $content, $useMatch)) {
-            return trim($useMatch[1]);
+        // Use proper regex that separates class name from "as alias" part
+        if (preg_match_all('/^use\s+([^\s;]+)(?:\s+as\s+(\w+))?;/m', $content, $useMatches, PREG_SET_ORDER)) {
+            foreach ($useMatches as $useMatch) {
+                $fullClassName = trim($useMatch[1]);
+                // Check that this is an Entity class, but not EntityCollection
+                if (strpos($fullClassName, '\\Entity\\') !== false &&
+                    strpos($fullClassName, '\\EntityCollection\\') === false) {
+                    return $fullClassName;
+                }
+            }
         }
 
         return null;
@@ -365,8 +379,18 @@ trait IdeaCollectionFixer
 
         // Look for use statement: use ...\Object\ClassName as ObjectClassName;
         // Or: use ...\Object\ClassName;
-        if (preg_match('/use\s+([^;]+\\\Object\\\[^;]+)(?:\s+as\s+(\w+))?;/', $content, $useMatch)) {
-            return trim($useMatch[1]);
+        // Use proper regex that separates class name from "as alias" part
+        if (preg_match_all('/^use\s+([^\s;]+)(?:\s+as\s+(\w+))?;/m', $content, $useMatches, PREG_SET_ORDER)) {
+            foreach ($useMatches as $useMatch) {
+                $fullClassName = trim($useMatch[1]);
+                // Check that this is an Object class, but not ObjectCollection or Objects
+                if (strpos($fullClassName, '\\Object\\') !== false &&
+                    strpos($fullClassName, '\\ObjectCollection\\') === false &&
+                    strpos($fullClassName, '\\Object\\Objects') === false &&
+                    strpos($fullClassName, '\\Object\\Object_') === false) {
+                    return $fullClassName;
+                }
+            }
         }
 
         return null;
@@ -559,7 +583,8 @@ trait IdeaCollectionFixer
         }
 
         // Parse imports
-        if (preg_match_all('/use\s+([^;]+)(?:\s+as\s+(\w+))?;/', $content, $useMatches, PREG_SET_ORDER)) {
+        // Use proper regex that separates class name from "as alias" part
+        if (preg_match_all('/^use\s+([^\s;]+)(?:\s+as\s+(\w+))?;/m', $content, $useMatches, PREG_SET_ORDER)) {
             foreach ($useMatches as $useMatch) {
                 $fullClassName = trim($useMatch[1]);
                 $alias = isset($useMatch[2]) ? trim($useMatch[2]) : null;
@@ -587,16 +612,19 @@ trait IdeaCollectionFixer
     private function resolveClassNameFromUse(string $content, string $alias): ?string
     {
         // Look for use statement with this alias
-        if (preg_match('/use\s+([^;]+)\s+as\s+' . preg_quote($alias, '/') . ';/', $content, $match)) {
+        // Use proper regex that separates class name from "as alias" part
+        if (preg_match('/^use\s+([^\s;]+)\s+as\s+' . preg_quote($alias, '/') . ';/m', $content, $match)) {
             return trim($match[1]);
         }
 
         // Look for use statement without alias (short name matches)
         $shortName = $this->getShortClassName($alias);
-        if (preg_match('/use\s+([^;]+);/', $content, $matches)) {
-            $fullClassName = trim($matches[1]);
-            if ($this->getShortClassName($fullClassName) === $shortName) {
-                return $fullClassName;
+        if (preg_match_all('/^use\s+([^\s;]+);/m', $content, $matches, PREG_SET_ORDER)) {
+            foreach ($matches as $match) {
+                $fullClassName = trim($match[1]);
+                if ($this->getShortClassName($fullClassName) === $shortName) {
+                    return $fullClassName;
+                }
             }
         }
 

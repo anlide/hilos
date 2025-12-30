@@ -100,6 +100,13 @@ HELP;
         $fixes = $this->prepareFixes($entities, $objects, $tableName, $forceRepair);
         $objectsToCreate = $this->findObjectsToCreate($entities, $objects, $tableName, $brokenEntities);
         $filesToDelete = $this->findFilesToDelete($entities, $objects, $tableName, $brokenEntities, $entityDir);
+        
+        // Find ObjectCollection files to delete (for deleted Object files)
+        $objectCollectionDir = null;
+        $objectCollectionsToDelete = [];
+        if (!empty($filesToDelete)) {
+            $objectCollectionsToDelete = $this->findObjectCollectionsToDelete($filesToDelete, $objectCollectionDir);
+        }
 
         // Display information about broken Entity files
         if (!empty($brokenEntities)) {
@@ -127,7 +134,7 @@ HELP;
             }
         } else {
             // Display what will be fixed
-            $this->displayFixes($fixes, $objectsToCreate, $filesToDelete, $dryRun);
+            $this->displayFixes($fixes, $objectsToCreate, $filesToDelete, $objectCollectionsToDelete, $dryRun);
         }
 
         // Process ObjectCollection files (only if no errors in Object files)
@@ -135,7 +142,7 @@ HELP;
 
         $appliedCollections = 0;
         $createdCollections = 0;
-        $objectCollectionDir = null;
+        $deletedCollections = 0;
         $brokenObjectCollections = [];
         $collectionSyntaxErrors = 0;
         $objectCollections = [];
@@ -219,6 +226,11 @@ HELP;
         $created = $this->createObjectFiles($objectsToCreate, $objectDir, $entityDir);
         $deleted = $this->deleteObjectFiles($filesToDelete);
 
+        // Delete ObjectCollection files for deleted Object files
+        if (!empty($objectCollectionsToDelete)) {
+            $deletedCollections = $this->deleteObjectCollectionFiles($objectCollectionsToDelete);
+        }
+
         // Apply ObjectCollection fixes
         if (!empty($objectCollectionFixes) || !empty($objectCollectionsToCreate)) {
             $appliedCollections = $this->applyObjectCollectionFixes($objectCollectionFixes, $objectCollections, $objects);
@@ -226,7 +238,7 @@ HELP;
         }
 
         // Summary
-        $totalChanges = $applied + $created + $deleted + $appliedCollections + $createdCollections;
+        $totalChanges = $applied + $created + $deleted + $appliedCollections + $createdCollections + $deletedCollections;
         if ($totalChanges > 0) {
             echo "\n";
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
@@ -249,7 +261,7 @@ HELP;
                 echo "\n";
             }
 
-            $collectionChanges = $appliedCollections + $createdCollections;
+            $collectionChanges = $appliedCollections + $createdCollections + $deletedCollections;
             if ($collectionChanges > 0) {
                 echo "ObjectCollection files:\n";
                 if ($appliedCollections > 0) {
@@ -257,6 +269,9 @@ HELP;
                 }
                 if ($createdCollections > 0) {
                     echo "  ✓ Created {$createdCollections} file(s)\n";
+                }
+                if ($deletedCollections > 0) {
+                    echo "  ✓ Deleted {$deletedCollections} file(s)\n";
                 }
                 echo "\n";
             }
@@ -1000,7 +1015,7 @@ HELP;
     /**
      * Display fixes that will be applied
      */
-    private function displayFixes(array $fixes, array $objectsToCreate, array $filesToDelete, bool $dryRun): void
+    private function displayFixes(array $fixes, array $objectsToCreate, array $filesToDelete, array $objectCollectionsToDelete, bool $dryRun): void
     {
         $prefix = $dryRun ? "[DRY RUN] " : "";
 
@@ -1098,6 +1113,18 @@ HELP;
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n";
             foreach ($filesToDelete as $objectClassName => $objectInfo) {
                 echo "  - {$objectClassName} ({$objectInfo['file']})\n";
+            }
+            echo "\n";
+        }
+
+        // Display ObjectCollection files to delete
+        if (!empty($objectCollectionsToDelete)) {
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
+            echo ($dryRun ? "[DRY RUN] " : "") . "ObjectCollection files to delete (orphaned):\n";
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n";
+            foreach ($objectCollectionsToDelete as $objectClassName => $collectionInfo) {
+                echo "  - {$collectionInfo['class']} ({$collectionInfo['file']})\n";
+                echo "    (Object: {$objectClassName})\n";
             }
             echo "\n";
         }
@@ -2129,6 +2156,170 @@ HELP;
         }
 
         return $deleted;
+    }
+
+    /**
+     * Find ObjectCollection files that reference deleted Object classes
+     *
+     * @param array $deletedObjects Array of deleted Object info (from findFilesToDelete)
+     * @param string|null $objectCollectionDir ObjectCollection directory (auto-detect if null)
+     * @return array<string, array{class: string, file: string, object_class: string}> ObjectCollections to delete
+     */
+    private function findObjectCollectionsToDelete(array $deletedObjects, ?string &$objectCollectionDir = null): array
+    {
+        if (empty($deletedObjects)) {
+            return [];
+        }
+
+        // Auto-detect ObjectCollection directory if not provided
+        if ($objectCollectionDir === null) {
+            $cwd = getcwd();
+            $possibleDirs = [
+                $cwd . '/backend/Database/ObjectCollection',
+                $cwd . '/Database/ObjectCollection',
+                $cwd . '/ObjectCollection',
+                dirname($cwd) . '/backend/Database/ObjectCollection',
+                dirname($cwd) . '/Database/ObjectCollection',
+            ];
+
+            $bootstrapDir = null;
+            if (file_exists($cwd . '/backend/Bootstrap/cli.php')) {
+                $bootstrapDir = $cwd . '/backend';
+            } elseif (file_exists($cwd . '/Bootstrap/cli.php')) {
+                $bootstrapDir = $cwd;
+            }
+
+            if ($bootstrapDir !== null) {
+                $possibleDirs[] = $bootstrapDir . '/Database/ObjectCollection';
+            }
+
+            foreach ($possibleDirs as $dir) {
+                $realPath = realpath($dir);
+                if ($realPath !== false && is_dir($realPath)) {
+                    $objectCollectionDir = $realPath;
+                    break;
+                }
+            }
+
+            if ($objectCollectionDir === null) {
+                return [];
+            }
+        }
+
+        if (!is_dir($objectCollectionDir)) {
+            return [];
+        }
+
+        $toDelete = [];
+        $files = glob($objectCollectionDir . '/*.php');
+
+        if ($files === false) {
+            return $toDelete;
+        }
+
+        // Build set of deleted Object class names for quick lookup
+        $deletedObjectClasses = [];
+        foreach ($deletedObjects as $objectClassName => $objectInfo) {
+            $deletedObjectClasses[$objectClassName] = true;
+        }
+
+        // Check each ObjectCollection file
+        foreach ($files as $file) {
+            $content = file_get_contents($file);
+            if ($content === false) {
+                continue;
+            }
+
+            // Extract Object class name from ObjectCollection file
+            // Look for use statement: use ...\Object\ClassName as ObjectClassName;
+            if (preg_match_all('/^use\s+([^\s;]+)(?:\s+as\s+(\w+))?;/m', $content, $useMatches, PREG_SET_ORDER)) {
+                foreach ($useMatches as $useMatch) {
+                    $fullClassName = trim($useMatch[1]);
+                    // Check that this is an Object class, but not ObjectCollection or Objects
+                    if (strpos($fullClassName, '\\Object\\') !== false &&
+                        strpos($fullClassName, '\\ObjectCollection\\') === false &&
+                        strpos($fullClassName, '\\Object\\Objects') === false &&
+                        strpos($fullClassName, '\\Object\\Object_') === false) {
+                        // Check if this Object class is in the deleted list
+                        if (isset($deletedObjectClasses[$fullClassName])) {
+                            // Extract ObjectCollection class name
+                            $className = $this->extractObjectCollectionClassName($file);
+                            if ($className !== null) {
+                                $toDelete[$fullClassName] = [
+                                    'class' => $className,
+                                    'file' => $file,
+                                    'object_class' => $fullClassName,
+                                ];
+                            }
+                            break; // Found matching Object, no need to check other use statements
+                        }
+                    }
+                }
+            }
+        }
+
+        return $toDelete;
+    }
+
+    /**
+     * Delete ObjectCollection files
+     *
+     * @param array $filesToDelete Array of ObjectCollection info to delete
+     * @return int Number of files deleted
+     */
+    private function deleteObjectCollectionFiles(array $filesToDelete): int
+    {
+        if (empty($filesToDelete)) {
+            return 0;
+        }
+
+        $deleted = 0;
+        foreach ($filesToDelete as $objectClassName => $collectionInfo) {
+            try {
+                $file = $collectionInfo['file'];
+                if (file_exists($file)) {
+                    unlink($file);
+                    $deleted++;
+                }
+            } catch (\Throwable $e) {
+                echo "⚠ Failed to delete ObjectCollection file for {$collectionInfo['class']}: {$e->getMessage()}\n";
+            }
+        }
+
+        return $deleted;
+    }
+
+    /**
+     * Extract class name from ObjectCollection file
+     */
+    private function extractObjectCollectionClassName(string $file): ?string
+    {
+        $content = file_get_contents($file);
+        if ($content === false) {
+            return null;
+        }
+
+        // Extract namespace
+        $namespace = null;
+        if (preg_match('/namespace\s+([^;]+);/', $content, $nsMatch)) {
+            $namespace = trim($nsMatch[1]);
+        } else {
+            return null;
+        }
+
+        // Remove comments and strings to avoid false matches
+        $contentWithoutComments = preg_replace('/\/\/.*$/m', '', $content);
+        $contentWithoutComments = preg_replace('/\/\*.*?\*\//s', '', $contentWithoutComments);
+        $contentWithoutComments = preg_replace("/'[^']*'/", "''", $contentWithoutComments);
+        $contentWithoutComments = preg_replace('/"[^"]*"/', '""', $contentWithoutComments);
+
+        // Extract class name
+        if (preg_match('/^\s*(?:final\s+)?class\s+(\w+)/m', $contentWithoutComments, $classMatch)) {
+            $className = trim($classMatch[1]);
+            return $namespace . '\\' . $className;
+        }
+
+        return null;
     }
 
     /**

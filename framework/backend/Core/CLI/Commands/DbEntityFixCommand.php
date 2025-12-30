@@ -120,6 +120,13 @@ HELP;
         // Find tables without Entity files and Entity files without tables
         $tablesToCreate = $this->findTablesToCreate($entities, $dbTables, $tableName, $brokenEntities, $entityDir);
         $filesToDelete = $this->findFilesToDelete($entities, $dbTables, $tableName, $brokenEntities);
+        
+        // Find EntityCollection files to delete (for deleted Entity files)
+        $entityCollectionDir = null;
+        $entityCollectionsToDelete = [];
+        if (!empty($filesToDelete)) {
+            $entityCollectionsToDelete = $this->findEntityCollectionsToDelete($filesToDelete, $entityCollectionDir);
+        }
 
         // Display information about broken Entity files
         if (!empty($brokenEntities)) {
@@ -149,7 +156,7 @@ HELP;
             }
         } else {
             // Display what will be fixed
-            $this->displayFixes($fixes, $tablesToCreate, $filesToDelete, $dryRun);
+            $this->displayFixes($fixes, $tablesToCreate, $filesToDelete, $entityCollectionsToDelete, $dryRun);
         }
 
         // Process EntityCollection files (only if no errors in Entity files)
@@ -157,7 +164,7 @@ HELP;
 
         $appliedCollections = 0;
         $createdCollections = 0;
-        $entityCollectionDir = null;
+        $deletedCollections = 0;
         $brokenEntityCollections = [];
         $collectionSyntaxErrors = 0;
 
@@ -225,6 +232,11 @@ HELP;
         // Delete Entity files without tables
         $deleted = $this->deleteEntityFiles($filesToDelete);
 
+        // Delete EntityCollection files for deleted Entity files
+        if (!empty($entityCollectionsToDelete)) {
+            $deletedCollections = $this->deleteEntityCollectionFiles($entityCollectionsToDelete);
+        }
+
         // Apply EntityCollection fixes
         if (!empty($entityCollectionFixes) || !empty($entityCollectionsToCreate)) {
             $appliedCollections = $this->applyEntityCollectionFixes($entityCollectionFixes, $entityCollections, $entities);
@@ -232,7 +244,7 @@ HELP;
         }
 
         // Summary
-        $totalChanges = $applied + $created + $deleted + $appliedCollections + $createdCollections;
+        $totalChanges = $applied + $created + $deleted + $appliedCollections + $createdCollections + $deletedCollections;
         if ($totalChanges > 0) {
             echo "\n";
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
@@ -255,7 +267,7 @@ HELP;
                 echo "\n";
             }
 
-            $collectionChanges = $appliedCollections + $createdCollections;
+            $collectionChanges = $appliedCollections + $createdCollections + $deletedCollections;
             if ($collectionChanges > 0) {
                 echo "EntityCollection files:\n";
                 if ($appliedCollections > 0) {
@@ -263,6 +275,9 @@ HELP;
                 }
                 if ($createdCollections > 0) {
                     echo "  ✓ Created {$createdCollections} file(s)\n";
+                }
+                if ($deletedCollections > 0) {
+                    echo "  ✓ Deleted {$deletedCollections} file(s)\n";
                 }
                 echo "\n";
             }
@@ -815,7 +830,7 @@ HELP;
     /**
      * Display fixes that will be applied
      */
-    private function displayFixes(array $fixes, array $tablesToCreate, array $filesToDelete, bool $dryRun): void
+    private function displayFixes(array $fixes, array $tablesToCreate, array $filesToDelete, array $entityCollectionsToDelete, bool $dryRun): void
     {
         $prefix = $dryRun ? "[DRY RUN] " : "";
 
@@ -957,6 +972,18 @@ HELP;
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n";
             foreach ($filesToDelete as $tableName => $entityInfo) {
                 echo "  - {$tableName} ({$entityInfo['file']})\n";
+            }
+            echo "\n";
+        }
+
+        // Display EntityCollection files to delete
+        if (!empty($entityCollectionsToDelete)) {
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
+            echo ($dryRun ? "[DRY RUN] " : "") . "EntityCollection files to delete (orphaned):\n";
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n";
+            foreach ($entityCollectionsToDelete as $entityClassName => $collectionInfo) {
+                echo "  - {$collectionInfo['class']} ({$collectionInfo['file']})\n";
+                echo "    (Entity: {$entityClassName})\n";
             }
             echo "\n";
         }
@@ -2485,6 +2512,168 @@ HELP;
         }
 
         return $deleted;
+    }
+
+    /**
+     * Find EntityCollection files that reference deleted Entity classes
+     *
+     * @param array $deletedEntities Array of deleted Entity info (from findFilesToDelete)
+     * @param string|null $entityCollectionDir EntityCollection directory (auto-detect if null)
+     * @return array<string, array{class: string, file: string, entity_class: string}> EntityCollections to delete
+     */
+    private function findEntityCollectionsToDelete(array $deletedEntities, ?string &$entityCollectionDir = null): array
+    {
+        if (empty($deletedEntities)) {
+            return [];
+        }
+
+        // Auto-detect EntityCollection directory if not provided
+        if ($entityCollectionDir === null) {
+            $cwd = getcwd();
+            $possibleDirs = [
+                $cwd . '/backend/Database/EntityCollection',
+                $cwd . '/Database/EntityCollection',
+                $cwd . '/EntityCollection',
+                dirname($cwd) . '/backend/Database/EntityCollection',
+                dirname($cwd) . '/Database/EntityCollection',
+            ];
+
+            $bootstrapDir = null;
+            if (file_exists($cwd . '/backend/Bootstrap/cli.php')) {
+                $bootstrapDir = $cwd . '/backend';
+            } elseif (file_exists($cwd . '/Bootstrap/cli.php')) {
+                $bootstrapDir = $cwd;
+            }
+
+            if ($bootstrapDir !== null) {
+                $possibleDirs[] = $bootstrapDir . '/Database/EntityCollection';
+            }
+
+            foreach ($possibleDirs as $dir) {
+                $realPath = realpath($dir);
+                if ($realPath !== false && is_dir($realPath)) {
+                    $entityCollectionDir = $realPath;
+                    break;
+                }
+            }
+
+            if ($entityCollectionDir === null) {
+                return [];
+            }
+        }
+
+        if (!is_dir($entityCollectionDir)) {
+            return [];
+        }
+
+        $toDelete = [];
+        $files = glob($entityCollectionDir . '/*.php');
+
+        if ($files === false) {
+            return $toDelete;
+        }
+
+        // Build set of deleted Entity class names for quick lookup
+        $deletedEntityClasses = [];
+        foreach ($deletedEntities as $tableName => $entityInfo) {
+            $deletedEntityClasses[$entityInfo['class']] = true;
+        }
+
+        // Check each EntityCollection file
+        foreach ($files as $file) {
+            $content = file_get_contents($file);
+            if ($content === false) {
+                continue;
+            }
+
+            // Extract Entity class name from EntityCollection file
+            // Look for use statement: use ...\Entity\ClassName as EntityClassName;
+            if (preg_match_all('/^use\s+([^\s;]+)(?:\s+as\s+(\w+))?;/m', $content, $useMatches, PREG_SET_ORDER)) {
+                foreach ($useMatches as $useMatch) {
+                    $fullClassName = trim($useMatch[1]);
+                    // Check that this is an Entity class, but not EntityCollection
+                    if (strpos($fullClassName, '\\Entity\\') !== false &&
+                        strpos($fullClassName, '\\EntityCollection\\') === false) {
+                        // Check if this Entity class is in the deleted list
+                        if (isset($deletedEntityClasses[$fullClassName])) {
+                            // Extract EntityCollection class name
+                            $className = $this->extractEntityCollectionClassName($file);
+                            if ($className !== null) {
+                                $toDelete[$fullClassName] = [
+                                    'class' => $className,
+                                    'file' => $file,
+                                    'entity_class' => $fullClassName,
+                                ];
+                            }
+                            break; // Found matching Entity, no need to check other use statements
+                        }
+                    }
+                }
+            }
+        }
+
+        return $toDelete;
+    }
+
+    /**
+     * Delete EntityCollection files
+     *
+     * @param array $filesToDelete Array of EntityCollection info to delete
+     * @return int Number of files deleted
+     */
+    private function deleteEntityCollectionFiles(array $filesToDelete): int
+    {
+        if (empty($filesToDelete)) {
+            return 0;
+        }
+
+        $deleted = 0;
+        foreach ($filesToDelete as $entityClassName => $collectionInfo) {
+            try {
+                $file = $collectionInfo['file'];
+                if (file_exists($file)) {
+                    unlink($file);
+                    $deleted++;
+                }
+            } catch (\Throwable $e) {
+                echo "⚠ Failed to delete EntityCollection file for {$collectionInfo['class']}: {$e->getMessage()}\n";
+            }
+        }
+
+        return $deleted;
+    }
+
+    /**
+     * Extract class name from EntityCollection file
+     */
+    private function extractEntityCollectionClassName(string $file): ?string
+    {
+        $content = file_get_contents($file);
+        if ($content === false) {
+            return null;
+        }
+
+        // Extract namespace
+        $namespace = null;
+        if (preg_match('/namespace\s+([^;]+);/', $content, $nsMatch)) {
+            $namespace = trim($nsMatch[1]);
+        } else {
+            return null;
+        }
+
+        // Remove comments and strings to avoid false matches
+        $contentWithoutComments = preg_replace('/\/\/.*$/m', '', $content);
+        $contentWithoutComments = preg_replace('/\/\*.*?\*\//s', '', $contentWithoutComments);
+        $contentWithoutComments = preg_replace("/'[^']*'/", "''", $contentWithoutComments);
+        $contentWithoutComments = preg_replace('/"[^"]*"/', '""', $contentWithoutComments);
+
+        // Extract class name
+        if (preg_match('/^\s*(?:final\s+)?class\s+(\w+)/m', $contentWithoutComments, $classMatch)) {
+            $className = trim($classMatch[1]);
+            return $namespace . '\\' . $className;
+        }
+
+        return null;
     }
 
     /**

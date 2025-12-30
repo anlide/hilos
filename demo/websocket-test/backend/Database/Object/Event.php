@@ -12,7 +12,7 @@ use Demo\WebSocketTest\Database\Entity\Event as EntityEvent;
  * @property-read ?int $id
  * @property int $userId
  * @property string $type
- * @property ?string $timestamp
+ * @property string $timestamp
  */
 final class Event extends Object_
 {

@@ -14,7 +14,6 @@ use Hilos\Exception\DatabaseException;
  *
  * @property-read ?int $id
  * @property string $name
- * @property ?string $theme
  * @property ?string $sessionToken
  * @property ?string $lastActivity
  */
@@ -23,7 +22,6 @@ final class User extends Object_
     // Property name constants (camelCase for PHP)
     public const string id = 'id';
     public const string name = 'name';
-    public const string theme = 'theme';
     public const string sessionToken = 'sessionToken';
     public const string lastActivity = 'lastActivity';
 
@@ -180,7 +178,6 @@ final class User extends Object_
         return match ($property) {
             self::id => $this->entity->id,
             self::name => $this->entity->name,
-            self::theme => $this->entity->theme,
             self::sessionToken => $this->entity->session_token,
             self::lastActivity => $this->entity->last_activity,
             default => parent::__get($property),
@@ -194,7 +191,6 @@ final class User extends Object_
     {
         match ($property) {
             self::name => $this->entity->name = (string)$value,
-            self::theme => $this->entity->theme = is_scalar($value) ? (string)$value : null,
             self::sessionToken => $this->entity->session_token = is_scalar($value) ? (string)$value : null,
             self::lastActivity => $this->entity->last_activity = is_scalar($value) ? (string)$value : null,
             default => parent::__set($property, $value),
@@ -209,7 +205,6 @@ final class User extends Object_
         return [
             self::id => $this->entity->id,
             self::name => $this->entity->name,
-            self::theme => $this->entity->theme,
             self::sessionToken => $this->entity->session_token,
             self::lastActivity => $this->entity->last_activity,
         ];

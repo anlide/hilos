@@ -28,8 +28,15 @@ try {
     Migration::setMigrationName('Schema');
     Migration::setRoutinesPath(__DIR__ . '/../Database/Migration/Routines');
 
+    // Determine which command is being executed
+    // Some commands (like db:idea:fix) need to work with potentially broken Idea files,
+    // so we skip Idea initialization for them
+    $command = $argv[1] ?? '';
+    $commandsWithoutIdea = ['db:idea:fix'];
+    $initIdea = !in_array($command, $commandsWithoutIdea);
+
     // Initialize database connection and schema
-    Database::initialize();
+    Database::initialize(initIdea: $initIdea);
 
     // Create CLI manager instance with command line arguments
     $cliManager = new CliManager($argv);

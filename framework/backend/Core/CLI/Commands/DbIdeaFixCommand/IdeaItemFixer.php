@@ -170,29 +170,26 @@ trait IdeaItemFixer
 
         // Look for use statement: use ...\Object\ClassName as ObjectClassName;
         // Or: use ...\Object\ClassName;
-        if (preg_match('/use\s+([^;]+\\\Object\\\[^;]+)(?:\s+as\s+(\w+))?;/', $content, $useMatch)) {
-            $objectClassName = trim($useMatch[1]);
-            // Remove "as Alias" part if exists
-            if (isset($useMatch[2])) {
-                // If there's an alias, we need to find the actual class name
-                // Look for property type hint
-                if (preg_match('/private\s+(\w+)\s+\$object\w+;/', $content, $propMatch)) {
-                    $alias = $useMatch[2];
-                    // The alias should match the property type
-                    if ($propMatch[1] === $alias) {
-                        return $objectClassName;
-                    }
+        // Use proper regex that separates class name from "as alias" part
+        if (preg_match_all('/^use\s+([^\s;]+)(?:\s+as\s+(\w+))?;/m', $content, $useMatches, PREG_SET_ORDER)) {
+            foreach ($useMatches as $useMatch) {
+                $fullClassName = trim($useMatch[1]);
+                // Check that this is an Object class, but not ObjectCollection or Objects
+                if (strpos($fullClassName, '\\Object\\') !== false &&
+                    strpos($fullClassName, '\\ObjectCollection\\') === false &&
+                    strpos($fullClassName, '\\Object\\Objects') === false &&
+                    strpos($fullClassName, '\\Object\\Object_') === false) {
+                    // Found Object class - return it
+                    return $fullClassName;
                 }
-            } else {
-                return $objectClassName;
             }
         }
 
         // Try to find from property type hint: private ObjectClassName $object...
         if (preg_match('/private\s+(\w+)\s+\$object\w+;/', $content, $propMatch)) {
             $typeHint = $propMatch[1];
-            // Try to find use statement for this type
-            if (preg_match('/use\s+([^;]+)\s+as\s+' . preg_quote($typeHint, '/') . ';/', $content, $useMatch)) {
+            // Try to find use statement for this type with proper regex
+            if (preg_match('/^use\s+([^\s;]+)\s+as\s+' . preg_quote($typeHint, '/') . ';/m', $content, $useMatch)) {
                 return trim($useMatch[1]);
             }
         }
@@ -340,12 +337,34 @@ trait IdeaItemFixer
         $missingInPhpDoc = array_diff_key($objectProperties, $phpdocProperties);
         $extraInPhpDoc = array_diff_key($phpdocProperties, $objectProperties);
         
-        if (!empty($missingInPhpDoc) || !empty($extraInPhpDoc)) {
+        // Check for type changes
+        $typeChanged = [];
+        foreach ($objectProperties as $propName => $propInfo) {
+            if (isset($phpdocProperties[$propName])) {
+                $objectType = $propInfo['type'];
+                $phpdocType = $phpdocProperties[$propName]['type'] ?? '';
+                if ($objectType !== $phpdocType) {
+                    $typeChanged[$propName] = [
+                        'old_type' => $phpdocType,
+                        'new_type' => $objectType,
+                    ];
+                }
+            }
+        }
+        
+        if (!empty($missingInPhpDoc) || !empty($extraInPhpDoc) || !empty($typeChanged)) {
             $fixes['update_phpdoc'] = [
                 'missing' => $missingInPhpDoc,
                 'extra' => $extraInPhpDoc,
+                'type_changed' => $typeChanged,
                 'all_properties' => $objectProperties,
             ];
+        }
+
+        // Check use statements
+        $useStatementsNeedUpdate = $this->checkIdeaItemUseStatements($content, $objectReflection);
+        if ($useStatementsNeedUpdate) {
+            $fixes['update_use_statements'] = true;
         }
 
         return $fixes;
@@ -463,6 +482,9 @@ trait IdeaItemFixer
         $objectProperties = $this->extractObjectProperties($objectReflection);
 
         // Apply fixes
+        if (isset($fixes['update_use_statements'])) {
+            $content = $this->rebuildIdeaItemUseStatements($content, $objectReflection);
+        }
         if (isset($fixes['update_getter'])) {
             $content = $this->rebuildIdeaItemGetter($content, $objectProperties, $objectReflection);
         }
@@ -659,6 +681,50 @@ trait IdeaItemFixer
 
 
     /**
+     * Extract method body with proper brace balancing
+     *
+     * @param string $content File content
+     * @param string $methodName Method name
+     * @return array|null Array with 'start', 'end', 'body' keys or null if not found
+     */
+    private function extractMethodBody(string $content, string $methodName): ?array
+    {
+        // Find method signature
+        $pattern = '/public\s+function\s+' . preg_quote($methodName, '/') . '\s*\([^)]*\)\s*:[^\{]*\{/';
+        if (!preg_match($pattern, $content, $matches, PREG_OFFSET_CAPTURE)) {
+            return null;
+        }
+
+        $startPos = $matches[0][1] + strlen($matches[0][0]) - 1; // Position of opening brace
+        $braceCount = 1;
+        $pos = $startPos + 1;
+
+        // Find matching closing brace
+        while ($pos < strlen($content) && $braceCount > 0) {
+            $char = $content[$pos];
+            if ($char === '{') {
+                $braceCount++;
+            } elseif ($char === '}') {
+                $braceCount--;
+            }
+            $pos++;
+        }
+
+        if ($braceCount !== 0) {
+            return null; // Unbalanced braces
+        }
+
+        $endPos = $pos - 1; // Position of closing brace
+        $body = substr($content, $startPos + 1, $endPos - $startPos - 1);
+
+        return [
+            'start' => $matches[0][1],
+            'end' => $endPos + 1,
+            'body' => $body,
+        ];
+    }
+
+    /**
      * Parse Idea item file to extract current structure
      *
      * @param string $filePath Idea item file path
@@ -678,11 +744,14 @@ trait IdeaItemFixer
         ];
 
         // Parse __get() method
-        if (preg_match('/public\s+function\s+__get\s*\([^)]*\)\s*:[^\{]*\{([^}]+)\}/s', $content, $getterMatch)) {
-            $getterBody = $getterMatch[1];
+        $getterMethod = $this->extractMethodBody($content, '__get');
+        if ($getterMethod !== null) {
+            $getterBody = $getterMethod['body'];
             
             // Match cases: ObjectClass::property => $this->objectClass->property
-            if (preg_match_all('/(\w+)::(\w+)\s*=>\s*\$this->object\w+->\w+/', $getterBody, $matches, PREG_SET_ORDER)) {
+            // Flexible regex similar to PHPDoc - finds ObjectClass::property pattern
+            // Allows whitespace and newlines around =>
+            if (preg_match_all('/(\w+)::(\w+)\s*=>/s', $getterBody, $matches, PREG_SET_ORDER)) {
                 foreach ($matches as $match) {
                     $objectClass = $match[1]; // e.g., "ObjectUser"
                     $property = $match[2]; // e.g., "id"
@@ -695,11 +764,14 @@ trait IdeaItemFixer
         }
 
         // Parse toArray() method
-        if (preg_match('/public\s+function\s+toArray\s*\([^)]*\)\s*:[^\{]*\{([^}]+)\}/s', $content, $toArrayMatch)) {
-            $toArrayBody = $toArrayMatch[1];
+        $toArrayMethod = $this->extractMethodBody($content, 'toArray');
+        if ($toArrayMethod !== null) {
+            $toArrayBody = $toArrayMethod['body'];
             
-            // Match: ObjectClass::property => $this->objectClass->property
-            if (preg_match_all('/(\w+)::(\w+)\s*=>\s*\$this->object\w+->\w+/', $toArrayBody, $matches, PREG_SET_ORDER)) {
+            // Match: $data[ObjectClass::property] = ...
+            // Flexible regex similar to PHPDoc - finds $data[ObjectClass::property] pattern
+            // Allows whitespace, newlines, and matches properties inside if blocks
+            if (preg_match_all('/\$data\[(\w+)::(\w+)\]/s', $toArrayBody, $matches, PREG_SET_ORDER)) {
                 foreach ($matches as $match) {
                     $objectClass = $match[1];
                     $property = $match[2];
@@ -715,13 +787,20 @@ trait IdeaItemFixer
         if (preg_match('/\/\*\*.*?\*\//s', $content, $phpdocMatch)) {
             $phpdoc = $phpdocMatch[0];
             
-            if (preg_match_all('/@property-read\s+(\S+)\s+\$(\w+)/', $phpdoc, $matches, PREG_SET_ORDER)) {
-                foreach ($matches as $match) {
+            // Match @property-read with optional comment after variable name
+            // Pattern: @property-read type $name optional comment
+            // Match each line separately - simpler and more reliable
+            $lines = explode("\n", $phpdoc);
+            foreach ($lines as $line) {
+                // Match: * @property-read type $name optional comment
+                if (preg_match('/\*\s*@property-read\s+([^\s\$]+)\s+\$(\w+)(?:\s+(.+))?$/', $line, $match)) {
                     $type = trim($match[1]);
                     $property = trim($match[2]);
+                    $comment = isset($match[3]) ? trim($match[3]) : '';
                     $parsed['phpdoc_properties'][$property] = [
                         'type' => $type,
                         'property' => $property,
+                        'comment' => $comment,
                     ];
                 }
             }
@@ -797,6 +876,124 @@ trait IdeaItemFixer
             return $content;
         }
 
+        // Find existing __get() method
+        $getterMethod = $this->extractMethodBody($content, '__get');
+        if ($getterMethod === null) {
+            // Method doesn't exist - create new one
+            $getterCases = [];
+            foreach ($objectProperties as $propertyName => $propertyInfo) {
+                $constant = $propertyInfo['constant'];
+                $getterCases[] = "            {$objectClassAlias}::{$constant} => \$this->{$objectPropertyName}->{$constant},";
+            }
+
+            $newGetter = "    /**\n";
+            $newGetter .= "     * Property getter (read-only access)\n";
+            $newGetter .= "     */\n";
+            $newGetter .= "    public function __get(string \$name): IdeaCollection|int|string|bool|null\n";
+            $newGetter .= "    {\n";
+            $newGetter .= "        return match (\$name) {\n";
+            $newGetter .= implode("\n", $getterCases) . "\n";
+            $newGetter .= "\n            // Example of lazy loading relationships (implement when you have related entities)\n";
+            $newGetter .= "            // 'orders' => \$this->loadOrders(),\n";
+            $newGetter .= "            // 'posts' => \$this->loadPosts(),\n";
+            $newGetter .= "\n            default => throw new \\Exception(\"Property [{\$name}] does not exist on Idea{$objectReflection->getShortName()}\"),\n";
+            $newGetter .= "        };\n";
+            $newGetter .= "    }";
+
+            // Insert before closing brace of class
+            if (preg_match('/(\n\s*)(\})/s', $content, $matches)) {
+                $content = str_replace($matches[0], "\n\n" . $newGetter . "\n" . $matches[2], $content);
+            }
+            return $content;
+        }
+
+        // Extract existing match expression from method body
+        $methodBody = $getterMethod['body'];
+        if (!preg_match('/return\s+match\s*\([^)]+\)\s*\{([^}]+)\};/s', $methodBody, $matchMatch)) {
+            // Can't parse match - replace entire method
+            return $this->replaceEntireGetterMethod($content, $getterMethod, $objectProperties, $objectClassAlias, $objectPropertyName, $objectReflection);
+        }
+
+        $matchContent = $matchMatch[1];
+        
+        // Extract all existing case lines (property => value)
+        $existingCases = [];
+        $otherLines = [];
+        $lines = explode("\n", $matchContent);
+        foreach ($lines as $line) {
+            $trimmed = trim($line);
+            // Match: ObjectClass::property => $this->object->property,
+            if (preg_match('/^(\w+)::(\w+)\s*=>\s*(.+?),?\s*$/', $trimmed, $caseMatch)) {
+                $propertyName = $caseMatch[2];
+                $existingCases[$propertyName] = $line; // Keep original formatting
+            } elseif (!empty($trimmed) && !preg_match('/^\s*\/\//', $trimmed)) {
+                // Keep non-empty lines that are not comments (like default case, blank lines)
+                // But skip property case lines we already captured
+                $otherLines[] = $line;
+            }
+        }
+
+        // Build new cases for all properties
+        $newCases = [];
+        foreach ($objectProperties as $propertyName => $propertyInfo) {
+            $constant = $propertyInfo['constant'];
+            $newCaseLine = "            {$objectClassAlias}::{$constant} => \$this->{$objectPropertyName}->{$constant},";
+            
+            // If property exists, check if it needs update
+            if (isset($existingCases[$propertyName])) {
+                $oldCaseLine = $existingCases[$propertyName];
+                // Compare normalized versions (ignore whitespace)
+                $oldNormalized = preg_replace('/\s+/', ' ', trim($oldCaseLine));
+                $newNormalized = preg_replace('/\s+/', ' ', trim($newCaseLine));
+                if ($oldNormalized !== $newNormalized) {
+                    // Property changed - use new version
+                    $newCases[$propertyName] = $newCaseLine;
+                } else {
+                    // Property unchanged - keep original formatting
+                    $newCases[$propertyName] = $existingCases[$propertyName];
+                }
+            } else {
+                // New property - add it
+                $newCases[$propertyName] = $newCaseLine;
+            }
+        }
+
+        // Build updated match content
+        $updatedMatchContent = implode("\n", $newCases);
+        
+        // Add other lines (comments, default case, etc.) if they exist
+        if (!empty($otherLines)) {
+            // Find where to insert other lines - usually after property cases
+            $updatedMatchContent .= "\n" . implode("\n", $otherLines);
+        } else {
+            // Add default comments and default case if not present
+            $updatedMatchContent .= "\n\n            // Example of lazy loading relationships (implement when you have related entities)\n";
+            $updatedMatchContent .= "            // 'orders' => \$this->loadOrders(),\n";
+            $updatedMatchContent .= "            // 'posts' => \$this->loadPosts(),\n";
+            $updatedMatchContent .= "\n            default => throw new \\Exception(\"Property [{\$name}] does not exist on Idea{$objectReflection->getShortName()}\"),";
+        }
+
+        // Rebuild method body with updated match
+        $updatedMethodBody = "        return match (\$name) {\n" . $updatedMatchContent . "\n        };";
+        
+        // Replace method body in content
+        $methodStart = $getterMethod['start'];
+        $methodBodyStart = strpos($content, '{', $methodStart) + 1;
+        $methodBodyEnd = $getterMethod['end'] - 1; // Before closing brace
+        
+        $beforeBody = substr($content, 0, $methodBodyStart);
+        $afterBody = substr($content, $methodBodyEnd);
+        
+        $content = $beforeBody . $updatedMethodBody . $afterBody;
+
+        return $content;
+    }
+
+    /**
+     * Replace entire __get() method (fallback when parsing fails)
+     */
+    private function replaceEntireGetterMethod(string $content, array $getterMethod, array $objectProperties, string $objectClassAlias, string $objectPropertyName, ReflectionClass $objectReflection): string
+    {
         // Build getter cases
         $getterCases = [];
         foreach ($objectProperties as $propertyName => $propertyInfo) {
@@ -819,15 +1016,11 @@ trait IdeaItemFixer
         $newGetter .= "        };\n";
         $newGetter .= "    }";
 
-        // Replace existing __get() method
-        if (preg_match('/(public\s+function\s+__get\s*\([^)]*\)\s*:[^\{]*\{[^}]*\})/s', $content, $matches)) {
-            $content = str_replace($matches[1], $newGetter, $content);
-        } else {
-            // Insert before closing brace of class
-            if (preg_match('/(\n\s*)(\})/s', $content, $matches)) {
-                $content = str_replace($matches[0], "\n\n" . $newGetter . "\n" . $matches[2], $content);
-            }
-        }
+        // Replace from method start to method end
+        $methodStart = $getterMethod['start'];
+        $methodEnd = $getterMethod['end'];
+        $oldMethodLength = $methodEnd - $methodStart;
+        $content = substr_replace($content, $newGetter, $methodStart, $oldMethodLength);
 
         return $content;
     }
@@ -932,8 +1125,28 @@ trait IdeaItemFixer
         $newToArray .= "    }";
 
         // Replace existing toArray() method
-        if (preg_match('/(public\s+function\s+toArray\s*\([^)]*\)\s*:[^\{]*\{[^}]*\})/s', $content, $matches)) {
-            $content = str_replace($matches[1], $newToArray, $content);
+        $toArrayMethod = $this->extractMethodBody($content, 'toArray');
+        if ($toArrayMethod !== null) {
+            // Find PHPDoc before method if exists
+            $methodStart = $toArrayMethod['start'];
+            $replaceStart = $methodStart;
+            
+            // Look backwards for PHPDoc before method signature
+            $searchStart = max(0, $methodStart - 300);
+            $beforeText = substr($content, $searchStart, $methodStart - $searchStart);
+            
+            // Find PHPDoc that ends just before method signature
+            if (preg_match('/\/\*\*.*?\*\/\s*\n\s*public\s+function\s+toArray/s', $beforeText . substr($content, $methodStart, 100), $phpdocMatch, PREG_OFFSET_CAPTURE)) {
+                // Find actual start position of PHPDoc in full content
+                $phpdocInBefore = strrpos($beforeText, '/**');
+                if ($phpdocInBefore !== false) {
+                    $replaceStart = $searchStart + $phpdocInBefore;
+                }
+            }
+            
+            // Replace from PHPDoc start (or method start) to method end
+            $oldMethodLength = $toArrayMethod['end'] - $replaceStart;
+            $content = substr_replace($content, $newToArray, $replaceStart, $oldMethodLength);
         } else {
             // Insert before closing brace of class
             if (preg_match('/(\n\s*)(\})/s', $content, $matches)) {
@@ -954,51 +1167,239 @@ trait IdeaItemFixer
      */
     protected function rebuildIdeaItemPhpDoc(string $content, array $objectProperties, ReflectionClass $objectReflection): string
     {
-        // Extract existing class description if any
+        // Extract existing class description - improved regex to handle stars in description
         $customDescription = [];
-        if (preg_match('/\/\*\*\s*\*\s*([^*]+)\s*\*\s*@property-read/s', $content, $descMatch)) {
-            $descLines = explode("\n", trim($descMatch[1]));
+        // Match from /** to first @property-read, capturing description lines
+        // Use non-greedy match and stop at @property-read
+        if (preg_match('/\/\*\*\s*\*\s*(.+?)\s*\*\s*@property-read/s', $content, $descMatch)) {
+            $descText = $descMatch[1];
+            $descLines = explode("\n", $descText);
             foreach ($descLines as $line) {
-                $line = trim($line);
-                if (!empty($line) && !preg_match('/^Idea\s+/', $line)) {
-                    $customDescription[] = $line;
+                // Remove leading * and spaces
+                $line = preg_replace('/^\s*\*\s*/', '', trim($line));
+                $customDescription[] = $line;
+            }
+        }
+
+        // Extract existing comments for properties from old PHPDoc
+        $existingComments = [];
+        if (preg_match('/\/\*\*.*?\*\//s', $content, $phpdocMatch)) {
+            $phpdoc = $phpdocMatch[0];
+            // Match @property-read with optional comment - process line by line
+            $lines = explode("\n", $phpdoc);
+            foreach ($lines as $line) {
+                // Match: * @property-read type $name optional comment
+                if (preg_match('/\*\s*@property-read\s+[^\s\$]+\s+\$(\w+)(?:\s+(.+))?$/', $line, $match)) {
+                    $propertyName = trim($match[1]);
+                    if (isset($match[2]) && !empty(trim($match[2]))) {
+                        $existingComments[$propertyName] = trim($match[2]);
+                    }
                 }
             }
         }
 
         // Build PHPDoc
         $phpDocLines = [];
-        $phpDocLines[] = " * {$objectReflection->getShortName()} Idea";
-        $phpDocLines[] = " * High-level abstraction with lazy loading and relationships";
         
+        // Use custom description if available, otherwise use default
         if (!empty($customDescription)) {
-            $phpDocLines[] = " *";
             foreach ($customDescription as $line) {
                 $phpDocLines[] = " * {$line}";
             }
+        } else {
+            // Default description if no custom description found
+            $phpDocLines[] = " * {$objectReflection->getShortName()} Idea";
+            $phpDocLines[] = " * High-level abstraction with lazy loading and relationships";
         }
-        
-        $phpDocLines[] = " *";
 
-        // Add @property-read annotations
+        // Add @property-read annotations with preserved comments
         foreach ($objectProperties as $propertyName => $propertyInfo) {
             $type = $propertyInfo['type'];
-            $phpDocLines[] = " * @property-read {$type} \${$propertyName}";
+            $comment = $existingComments[$propertyName] ?? '';
+            if (!empty($comment)) {
+                $phpDocLines[] = " * @property-read {$type} \${$propertyName} {$comment}";
+            } else {
+                $phpDocLines[] = " * @property-read {$type} \${$propertyName}";
+            }
         }
 
         $newPhpDoc = "/**\n" . implode("\n", $phpDocLines) . "\n */";
 
-        // Replace existing PHPDoc
-        if (preg_match('/\/\*\*.*?\*\//s', $content, $matches)) {
-            $content = str_replace($matches[0], $newPhpDoc, $content);
+        // Replace existing PHPDoc - preserve newline after */
+        if (preg_match('/\/\*\*.*?\*\/\s*\n?/s', $content, $matches)) {
+            // Check if there's a newline after */
+            $hasNewlineAfter = (strlen($matches[0]) > 0 && substr($matches[0], -1) === "\n");
+            $replacement = $newPhpDoc;
+            if ($hasNewlineAfter) {
+                $replacement .= "\n";
+            }
+            $content = str_replace($matches[0], $replacement, $content);
         } else {
             // Insert before class declaration
             if (preg_match('/(\n)(\s*(?:final\s+)?class\s+\w+)/', $content, $matches)) {
-                $content = str_replace($matches[0], $matches[1] . $newPhpDoc . $matches[1] . $matches[2], $content);
+                $content = str_replace($matches[0], $matches[1] . $newPhpDoc . "\n" . $matches[2], $content);
             }
         }
 
         return $content;
+    }
+
+    /**
+     * Check if use statements need to be updated
+     *
+     * @param string $content Current file content
+     * @param ReflectionClass $objectReflection Object reflection
+     * @return bool True if use statements need update
+     */
+    private function checkIdeaItemUseStatements(string $content, ReflectionClass $objectReflection): bool
+    {
+        $objectClassName = $objectReflection->getName();
+        $objectShortName = $objectReflection->getShortName();
+        $expectedAlias = "Object{$objectShortName}";
+
+        // Check if Object class use statement exists and is correct
+        $objectUsePattern = '/use\s+' . preg_quote($objectClassName, '/') . '\s+as\s+' . preg_quote($expectedAlias, '/') . ';/';
+        if (!preg_match($objectUsePattern, $content)) {
+            return true; // Object class use statement is missing or incorrect
+        }
+
+        // Check if BaseIdea use statement exists
+        if (!preg_match('/use\s+Hilos\\\Database\\\Idea\\\IdeaItem\s+as\s+BaseIdea;/', $content)) {
+            return true; // BaseIdea use statement is missing
+        }
+
+        // Check if IdeaCollection use statement exists
+        if (!preg_match('/use\s+Hilos\\\Database\\\Idea\\\IdeaCollection;/', $content)) {
+            return true; // IdeaCollection use statement is missing
+        }
+
+        // Check for old/incorrect Object class use statements
+        // Find all Object class use statements
+        if (preg_match_all('/^use\s+([^\s;]+)(?:\s+as\s+(\w+))?;/m', $content, $useMatches, PREG_SET_ORDER)) {
+            foreach ($useMatches as $useMatch) {
+                $fullClassName = trim($useMatch[1]);
+                // Check if this is an Object class (but not ObjectCollection or Objects)
+                if (strpos($fullClassName, '\\Object\\') !== false &&
+                    strpos($fullClassName, '\\ObjectCollection\\') === false &&
+                    strpos($fullClassName, '\\Object\\Objects') === false &&
+                    strpos($fullClassName, '\\Object\\Object_') === false) {
+                    // If it's not the current Object class, it needs to be removed
+                    if ($fullClassName !== $objectClassName) {
+                        return true;
+                    }
+                    // If alias is incorrect, it needs to be updated
+                    $alias = $useMatch[2] ?? $objectShortName;
+                    if ($alias !== $expectedAlias) {
+                        return true;
+                    }
+                }
+            }
+        }
+
+        return false; // All use statements are correct
+    }
+
+    /**
+     * Rebuild use statements in IdeaItem file
+     *
+     * @param string $content Current file content
+     * @param ReflectionClass $objectReflection Object reflection
+     * @return string Updated content
+     */
+    protected function rebuildIdeaItemUseStatements(string $content, ReflectionClass $objectReflection): string
+    {
+        $objectClassName = $objectReflection->getName();
+        $objectShortName = $objectReflection->getShortName();
+        $objectClassAlias = "Object{$objectShortName}";
+
+        // Build new use statements
+        $newUseStatements = [];
+        $newUseStatements[] = "use {$objectClassName} as {$objectClassAlias};";
+        $newUseStatements[] = "use Hilos\\Database\\Idea\\IdeaItem as BaseIdea;";
+        $newUseStatements[] = "use Hilos\\Database\\Idea\\IdeaCollection;";
+
+        // Find existing use statements section
+        if (preg_match('/(namespace\s+[^;]+;\n\n)(.*?)(\n(?:final\s+)?class\s+\w+)/s', $content, $matches)) {
+            $existingUses = $matches[2];
+            
+            // Remove old use statements for Object classes, BaseIdea, and IdeaCollection
+            $existingUses = preg_replace('/use\s+[^;]+\\\Object\\\[^;]*;?\n?/', '', $existingUses);
+            $existingUses = preg_replace('/use\s+Hilos\\\Database\\\Idea\\\IdeaItem\s+as\s+BaseIdea;?\n?/', '', $existingUses);
+            $existingUses = preg_replace('/use\s+Hilos\\\Database\\\Idea\\\IdeaCollection;?\n?/', '', $existingUses);
+            
+            // Keep other use statements (user-defined imports)
+            $otherUses = trim($existingUses);
+            
+            // Combine new and existing use statements
+            $allUseStatements = array_merge($newUseStatements, $otherUses ? [$otherUses] : []);
+            
+            $newUseSection = implode("\n", $allUseStatements) . "\n";
+            
+            $content = str_replace($matches[0], $matches[1] . $newUseSection . $matches[3], $content);
+        } else {
+            // Insert after namespace
+            if (preg_match('/(namespace\s+[^;]+;\n\n)/', $content, $nsMatch)) {
+                $content = str_replace($nsMatch[1], $nsMatch[1] . implode("\n", $newUseStatements) . "\n\n", $content);
+            }
+        }
+
+        return $content;
+    }
+
+    /**
+     * Find IdeaItem files to delete (when corresponding Object class doesn't exist)
+     *
+     * @param array $objects Loaded Object classes (keyed by class name)
+     * @param array $ideaItems Loaded IdeaItem files (keyed by object class name)
+     * @param string|null $ideaDir Idea directory (auto-detect if null)
+     * @return array IdeaItem files to delete (keyed by object class name)
+     */
+    protected function findIdeaItemsToDelete(array $objects, array $ideaItems, ?string &$ideaDir = null): array
+    {
+        // Build set of existing Object class names for quick lookup
+        $existingObjectClasses = [];
+        foreach ($objects as $objectClassName => $objectInfo) {
+            $existingObjectClasses[$objectClassName] = true;
+        }
+
+        // Find IdeaItem files that reference non-existent Object classes
+        $toDelete = [];
+        foreach ($ideaItems as $objectClassName => $ideaItemInfo) {
+            // If Object class doesn't exist, mark IdeaItem for deletion
+            if (!isset($existingObjectClasses[$objectClassName])) {
+                $toDelete[$objectClassName] = $ideaItemInfo;
+            }
+        }
+
+        return $toDelete;
+    }
+
+    /**
+     * Delete IdeaItem files
+     *
+     * @param array $filesToDelete IdeaItem files to delete (keyed by object class name)
+     * @return int Number of files deleted
+     */
+    protected function deleteIdeaItemFiles(array $filesToDelete): int
+    {
+        if (empty($filesToDelete)) {
+            return 0;
+        }
+
+        $deleted = 0;
+        foreach ($filesToDelete as $objectClassName => $ideaItemInfo) {
+            try {
+                $file = $ideaItemInfo['file'];
+                if (file_exists($file)) {
+                    unlink($file);
+                    $deleted++;
+                }
+            } catch (\Throwable $e) {
+                echo "⚠ Failed to delete IdeaItem file for {$ideaItemInfo['class']}: {$e->getMessage()}\n";
+            }
+        }
+
+        return $deleted;
     }
 }
 

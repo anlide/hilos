@@ -52,5 +52,5 @@ final class Event extends Entity
     public ?int $id = null;
     public int $user_id;
     public string $type;
-    public ?string $timestamp = 'current_timestamp()';
+    public string $timestamp = 'current_timestamp()';
 }

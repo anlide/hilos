@@ -16,7 +16,6 @@ final class User extends Entity
     // Column name constants
     public const string id = 'id';
     public const string name = 'name';
-    public const string theme = 'theme';
     public const string last_activity = 'last_activity';
     public const string session_token = 'session_token';
 
@@ -26,7 +25,6 @@ final class User extends Entity
     public const array _columns = [
         self::id,
         self::name,
-        self::theme,
         self::session_token,
         self::last_activity,
     ];
@@ -35,7 +33,6 @@ final class User extends Entity
     public const array _types = [
         self::id => PhpType::INTEGER->value,
         self::name => PhpType::STRING->value,
-        self::theme => PhpType::STRING->value,
         self::session_token => PhpType::STRING->value,
         self::last_activity => PhpType::DATETIME->value,
     ];
@@ -51,5 +48,4 @@ final class User extends Entity
     public ?string $last_activity = null;
     public ?int $id = null;
     public string $name;
-    public ?string $theme = null;
 }

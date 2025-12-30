@@ -139,21 +139,21 @@ HELP;
             return ExitCode::SUCCESS;
         }
 
-        // Load IdeaObject files
-        $brokenIdeaObjects = [];
-        $ideaObjects = $this->loadIdeaObjects($ideaDir, $syntaxErrors, $brokenIdeaObjects);
+        // Load IdeaItem files
+        $brokenIdeaItems = [];
+        $ideaItems = $this->loadIdeaItems($ideaDir, $syntaxErrors, $brokenIdeaItems);
 
         // Load ObjectCollection classes
         $brokenObjectCollections = [];
         $objectCollections = [];
-        if (empty($brokenObjects) && empty($brokenIdeaObjects) && $syntaxErrors === 0) {
+        if (empty($brokenObjects) && empty($brokenIdeaItems) && $syntaxErrors === 0) {
             $objectCollections = $this->loadObjectCollections($objectDir, $syntaxErrors, $brokenObjectCollections);
         }
 
         // Load IdeaCollection files
         $brokenIdeaCollections = [];
         $ideaCollections = [];
-        if (empty($brokenObjects) && empty($brokenIdeaObjects) && $syntaxErrors === 0) {
+        if (empty($brokenObjects) && empty($brokenIdeaItems) && $syntaxErrors === 0) {
             $ideaCollections = $this->loadIdeaCollections($ideaCollectionDir, $syntaxErrors, $brokenIdeaCollections);
         }
 
@@ -161,7 +161,7 @@ HELP;
         $ideaStorageFile = null;
         $ideaStorage = null;
         $brokenIdeaStorage = null;
-        if (empty($brokenObjects) && empty($brokenIdeaObjects) && $syntaxErrors === 0) {
+        if (empty($brokenObjects) && empty($brokenIdeaItems) && $syntaxErrors === 0) {
             // Auto-detect IdeaStorage file
             $cwd = getcwd();
             $possibleFiles = [
@@ -191,7 +191,7 @@ HELP;
         $ideaFile = null;
         $ideaMain = null;
         $brokenIdeaMain = null;
-        if (empty($brokenObjects) && empty($brokenIdeaObjects) && $syntaxErrors === 0) {
+        if (empty($brokenObjects) && empty($brokenIdeaItems) && $syntaxErrors === 0) {
             // Auto-detect Idea.php file
             $cwd = getcwd();
             $possibleFiles = [
@@ -231,13 +231,13 @@ HELP;
             }
         }
 
-        if (!empty($brokenIdeaObjects)) {
+        if (!empty($brokenIdeaItems)) {
             echo "\n";
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
-            echo "⚠ Damaged IdeaObject files:\n";
+            echo "⚠ Damaged IdeaItem files:\n";
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
             echo "\n";
-            foreach ($brokenIdeaObjects as $file => $reason) {
+            foreach ($brokenIdeaItems as $file => $reason) {
                 echo "  - {$file}\n";
                 echo "    Reason: {$reason}\n";
                 echo "\n";
@@ -279,66 +279,60 @@ HELP;
         // STEP 2: Prepare fixes for all 4 blocks (estimate)
         // ============================================
 
-        // Prepare fixes for IdeaObjects
-        $ideaItemFixes = $this->prepareIdeaItemFixes($objects, $ideaObjects, $tableName, $brokenIdeaObjects);
-        $ideaObjectsToCreate = $this->findIdeaObjectsToCreate($objects, $ideaObjects, $tableName, $brokenObjects);
+        // Prepare fixes for IdeaItems
+        $ideaItemFixes = $this->prepareIdeaItemFixes($objects, $ideaItems, $tableName, $brokenIdeaItems);
+        $ideaItemsToCreate = $this->findIdeaItemsToCreate($objects, $ideaItems, $tableName, $brokenObjects);
+        $ideaItemsToDelete = $this->findIdeaItemsToDelete($objects, $ideaItems, $ideaDir);
 
         // Prepare fixes for IdeaCollections (only if no errors)
         $ideaCollectionFixes = [];
         $ideaCollectionsToCreate = [];
-        if (empty($brokenObjects) && empty($brokenIdeaObjects) && $syntaxErrors === 0) {
+        if (empty($brokenObjects) && empty($brokenIdeaItems) && $syntaxErrors === 0) {
             $ideaCollectionFixes = $this->prepareIdeaCollectionFixes($objectCollections, $ideaCollections, $tableName);
             $ideaCollectionsToCreate = $this->findIdeaCollectionsToCreate($objectCollections, $ideaCollections, $tableName, $brokenObjectCollections);
         }
 
         // Prepare fixes for IdeaStorage (only if no errors)
         $ideaStorageFixes = [];
-        if (empty($brokenObjects) && empty($brokenIdeaObjects) && $syntaxErrors === 0) {
+        if (empty($brokenObjects) && empty($brokenIdeaItems) && $syntaxErrors === 0) {
             $ideaStorageFixes = $this->prepareIdeaStorageFixes($objectCollections, $ideaStorage);
         }
 
         // Prepare fixes for Idea.php (only if no errors)
         $ideaMainFixes = [];
-        if (empty($brokenObjects) && empty($brokenIdeaObjects) && $syntaxErrors === 0) {
+        if (empty($brokenObjects) && empty($brokenIdeaItems) && $syntaxErrors === 0) {
             $ideaMainFixes = $this->prepareIdeaMainFixes($objectCollections, $ideaMain);
         }
 
         // ============================================
-        // STEP 3: Display planned changes for all blocks
+        // STEP 3: Display planned changes (estimate)
         // ============================================
 
-        $hasAnyChanges = !empty($ideaItemFixes) || !empty($ideaObjectsToCreate) ||
+        $hasAnyChanges = !empty($ideaItemFixes) || !empty($ideaItemsToCreate) || !empty($ideaItemsToDelete) ||
                          !empty($ideaCollectionFixes) || !empty($ideaCollectionsToCreate) ||
                          !empty($ideaStorageFixes) || !empty($ideaMainFixes);
 
         if (!$hasAnyChanges) {
-            if ($syntaxErrors > 0 || !empty($brokenObjects) || !empty($brokenIdeaObjects)) {
+            if ($syntaxErrors > 0 || !empty($brokenObjects) || !empty($brokenIdeaItems)) {
                 echo "\n";
             } else {
                 echo "✓ No fixes needed! All Idea files match Object classes.\n\n";
             }
         } else {
-            // Display IdeaItem fixes
-            if (!empty($ideaItemFixes) || !empty($ideaObjectsToCreate)) {
-                echo "\n=== Fix IdeaItem Files ===\n\n";
-                $this->displayIdeaItemFixes($ideaItemFixes, $ideaObjectsToCreate, $dryRun);
+            // Display planned changes (estimate)
+            if (!empty($ideaItemFixes) || !empty($ideaItemsToCreate) || !empty($ideaItemsToDelete)) {
+                $this->displayIdeaItemFixes($ideaItemFixes, $ideaItemsToCreate, $ideaItemsToDelete, $dryRun);
             }
 
-            // Display IdeaCollection fixes
             if (!empty($ideaCollectionFixes) || !empty($ideaCollectionsToCreate)) {
-                echo "\n=== Fix IdeaCollection Files ===\n\n";
                 $this->displayIdeaCollectionFixes($ideaCollectionFixes, $ideaCollectionsToCreate, $dryRun);
             }
 
-            // Display IdeaStorage fixes
             if (!empty($ideaStorageFixes)) {
-                echo "\n=== Fix IdeaStorage File ===\n\n";
                 $this->displayIdeaStorageFixes($ideaStorageFixes, $dryRun);
             }
 
-            // Display Idea.php fixes
             if (!empty($ideaMainFixes)) {
-                echo "\n=== Fix Idea.php File ===\n\n";
                 $this->displayIdeaMainFixes($ideaMainFixes, $dryRun);
             }
         }
@@ -349,24 +343,26 @@ HELP;
         }
 
         // ============================================
-        // STEP 4: Apply fixes for all blocks
+        // STEP 4: Apply fixes (implementation)
         // ============================================
 
         $appliedObjects = 0;
         $createdObjects = 0;
+        $deletedObjects = 0;
         $appliedCollections = 0;
         $createdCollections = 0;
         $appliedStorage = 0;
         $appliedMain = 0;
 
         // Apply IdeaItem fixes
-        if (!empty($ideaItemFixes) || !empty($ideaObjectsToCreate)) {
-            $appliedObjects = $this->applyIdeaItemFixes($ideaItemFixes, $ideaObjects, $objects);
-            $createdObjects = $this->createIdeaItemFiles($ideaObjectsToCreate, $ideaDir, $objects);
+        if (!empty($ideaItemFixes) || !empty($ideaItemsToCreate) || !empty($ideaItemsToDelete)) {
+            $appliedObjects = $this->applyIdeaItemFixes($ideaItemFixes, $ideaItems, $objects);
+            $createdObjects = $this->createIdeaItemFiles($ideaItemsToCreate, $ideaDir, $objects);
+            $deletedObjects = $this->deleteIdeaItemFiles($ideaItemsToDelete);
         }
 
         // Apply IdeaCollection fixes (only if no errors)
-        if (empty($brokenObjects) && empty($brokenIdeaObjects) && $syntaxErrors === 0) {
+        if (empty($brokenObjects) && empty($brokenIdeaItems) && $syntaxErrors === 0) {
             if (!empty($ideaCollectionFixes) || !empty($ideaCollectionsToCreate)) {
                 $appliedCollections = $this->applyIdeaCollectionFixes($ideaCollectionFixes, $ideaCollections, $objectCollections);
                 $createdCollections = $this->createIdeaCollectionFiles($ideaCollectionsToCreate, $ideaCollectionDir, $objectCollections);
@@ -391,7 +387,7 @@ HELP;
         // STEP 5: Summary
         // ============================================
 
-        $totalChanges = $appliedObjects + $createdObjects + $appliedCollections + $createdCollections + $appliedStorage + $appliedMain;
+        $totalChanges = $appliedObjects + $createdObjects + $deletedObjects + $appliedCollections + $createdCollections + $appliedStorage + $appliedMain;
         if ($totalChanges > 0) {
             echo "\n";
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
@@ -399,7 +395,7 @@ HELP;
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
             echo "\n";
 
-            $objectChanges = $appliedObjects + $createdObjects;
+            $objectChanges = $appliedObjects + $createdObjects + $deletedObjects;
             if ($objectChanges > 0) {
                 echo "IdeaItem files:\n";
                 if ($appliedObjects > 0) {
@@ -407,6 +403,9 @@ HELP;
                 }
                 if ($createdObjects > 0) {
                     echo "  ✓ Created {$createdObjects} file(s)\n";
+                }
+                if ($deletedObjects > 0) {
+                    echo "  ✓ Deleted {$deletedObjects} file(s)\n";
                 }
                 echo "\n";
             }
@@ -434,7 +433,7 @@ HELP;
                 echo "  ✓ Updated 1 file\n";
                 echo "\n";
             }
-        } elseif (empty($brokenObjects) && $syntaxErrors === 0 && empty($brokenIdeaObjects)) {
+        } elseif (empty($brokenObjects) && $syntaxErrors === 0 && empty($brokenIdeaItems)) {
             // No changes at all and no errors
             echo "\n✓ All files are up to date. No changes needed.\n\n";
         }
@@ -568,15 +567,15 @@ HELP;
     }
 
     /**
-     * Find IdeaObject files that need to be created
+     * Find IdeaItem files that need to be created
      *
      * @param array $objects Loaded Object classes
-     * @param array $ideaObjects Loaded IdeaObject files
+     * @param array $ideaItems Loaded IdeaItem files
      * @param string|null $tableFilter Table name filter
      * @param array $brokenObjects Broken Object files
-     * @return array<string, array{object_class: string, reflection: ReflectionClass}> IdeaObjects to create
+     * @return array<string, array{object_class: string, reflection: ReflectionClass}> IdeaItems to create
      */
-    private function findIdeaObjectsToCreate(array $objects, array $ideaObjects, ?string $tableFilter, array $brokenObjects): array
+    private function findIdeaItemsToCreate(array $objects, array $ideaItems, ?string $tableFilter, array $brokenObjects): array
     {
         $toCreate = [];
 
@@ -586,8 +585,8 @@ HELP;
                 continue;
             }
 
-            // Check if IdeaObject already exists
-            if (isset($ideaObjects[$objectClassName])) {
+            // Check if IdeaItem already exists
+            if (isset($ideaItems[$objectClassName])) {
                 continue;
             }
 
@@ -631,17 +630,11 @@ HELP;
      * @param array $toCreate IdeaItems to create
      * @param bool $dryRun Dry run mode
      */
-    private function displayIdeaItemFixes(array $fixes, array $toCreate, bool $dryRun): void
+    private function displayIdeaItemFixes(array $fixes, array $toCreate, array $toDelete, bool $dryRun): void
     {
-        if ($dryRun) {
-            echo "\n[DRY RUN] The following changes would be made:\n\n";
-        } else {
-            echo "\nThe following changes will be made:\n\n";
-        }
-
         if (!empty($fixes)) {
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
-            echo "IdeaItem Files to Update:\n";
+            echo ($dryRun ? "[DRY RUN] " : "") . "Idea Files to Update:\n";
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n";
 
             foreach ($fixes as $objectClassName => $ideaFixes) {
@@ -653,8 +646,14 @@ HELP;
                     $extra = count($ideaFixes['update_getter']['extra'] ?? []);
                     if ($missing > 0 || $extra > 0) {
                         echo "    - Update __get() method";
-                        if ($missing > 0) echo " (add {$missing} property/properties)";
-                        if ($extra > 0) echo " (remove {$extra} property/properties)";
+                        if ($missing > 0) {
+                            $word = $missing === 1 ? 'property' : 'properties';
+                            echo " (add {$missing} {$word})";
+                        }
+                        if ($extra > 0) {
+                            $word = $extra === 1 ? 'property' : 'properties';
+                            echo " (remove {$extra} {$word})";
+                        }
                         echo "\n";
                     }
                 }
@@ -664,8 +663,14 @@ HELP;
                     $extra = count($ideaFixes['update_toarray']['extra'] ?? []);
                     if ($missing > 0 || $extra > 0) {
                         echo "    - Update toArray() method";
-                        if ($missing > 0) echo " (add {$missing} property/properties)";
-                        if ($extra > 0) echo " (remove {$extra} property/properties)";
+                        if ($missing > 0) {
+                            $word = $missing === 1 ? 'property' : 'properties';
+                            echo " (add {$missing} {$word})";
+                        }
+                        if ($extra > 0) {
+                            $word = $extra === 1 ? 'property' : 'properties';
+                            echo " (remove {$extra} {$word})";
+                        }
                         echo "\n";
                     }
                 }
@@ -673,12 +678,27 @@ HELP;
                 if (isset($ideaFixes['update_phpdoc'])) {
                     $missing = count($ideaFixes['update_phpdoc']['missing'] ?? []);
                     $extra = count($ideaFixes['update_phpdoc']['extra'] ?? []);
-                    if ($missing > 0 || $extra > 0) {
+                    $typeChanged = count($ideaFixes['update_phpdoc']['type_changed'] ?? []);
+                    if ($missing > 0 || $extra > 0 || $typeChanged > 0) {
                         echo "    - Update PHPDoc @property-read";
-                        if ($missing > 0) echo " (add {$missing} property/properties)";
-                        if ($extra > 0) echo " (remove {$extra} property/properties)";
+                        if ($missing > 0) {
+                            $word = $missing === 1 ? 'property' : 'properties';
+                            echo " (add {$missing} {$word})";
+                        }
+                        if ($extra > 0) {
+                            $word = $extra === 1 ? 'property' : 'properties';
+                            echo " (remove {$extra} {$word})";
+                        }
+                        if ($typeChanged > 0) {
+                            $word = $typeChanged === 1 ? 'property' : 'properties';
+                            echo " (update type for {$typeChanged} {$word})";
+                        }
                         echo "\n";
                     }
+                }
+
+                if (isset($ideaFixes['update_use_statements'])) {
+                    echo "    - Update use statements\n";
                 }
 
                 echo "\n";
@@ -687,7 +707,7 @@ HELP;
 
         if (!empty($toCreate)) {
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
-            echo "IdeaObject Files to Create:\n";
+            echo ($dryRun ? "[DRY RUN] " : "") . "Idea Files to Create:\n";
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n";
 
             foreach ($toCreate as $objectClassName => $info) {
@@ -696,12 +716,24 @@ HELP;
             }
             echo "\n";
         }
+
+        if (!empty($toDelete)) {
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
+            echo ($dryRun ? "[DRY RUN] " : "") . "Idea Files to Delete:\n";
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n";
+
+            foreach ($toDelete as $objectClassName => $ideaItemInfo) {
+                $ideaItemShortName = (new \ReflectionClass($ideaItemInfo['class']))->getShortName();
+                echo "  - {$ideaItemShortName} (Object class {$objectClassName} no longer exists)\n";
+            }
+            echo "\n";
+        }
     }
 
     /**
-     * Create IdeaObject files
+     * Create IdeaItem files
      *
-     * @param array $toCreate IdeaObjects to create
+     * @param array $toCreate IdeaItems to create
      * @param string|null $ideaDir Idea directory
      * @param array $objects Loaded Object classes
      * @return int Number of files created
@@ -971,15 +1003,9 @@ HELP;
      */
     private function displayIdeaCollectionFixes(array $fixes, array $toCreate, bool $dryRun): void
     {
-        if ($dryRun) {
-            echo "\n[DRY RUN] The following IdeaCollection changes would be made:\n\n";
-        } else {
-            echo "\nThe following IdeaCollection changes will be made:\n\n";
-        }
-
         if (!empty($fixes)) {
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
-            echo "IdeaCollection Files to Update:\n";
+            echo ($dryRun ? "[DRY RUN] " : "") . "IdeaCollection Files to Update:\n";
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n";
 
             foreach ($fixes as $objectCollectionClassName => $ideaFixes) {
@@ -1007,7 +1033,7 @@ HELP;
 
         if (!empty($toCreate)) {
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
-            echo "IdeaCollection Files to Create:\n";
+            echo ($dryRun ? "[DRY RUN] " : "") . "IdeaCollection Files to Create:\n";
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n";
 
             foreach ($toCreate as $objectCollectionClassName => $info) {
@@ -1109,11 +1135,9 @@ HELP;
      */
     private function displayIdeaStorageFixes(array $fixes, bool $dryRun): void
     {
-        if ($dryRun) {
-            echo "[DRY RUN] The following IdeaStorage changes would be made:\n\n";
-        } else {
-            echo "The following IdeaStorage changes will be made:\n\n";
-        }
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
+        echo ($dryRun ? "[DRY RUN] " : "") . "IdeaStorage File to Update:\n";
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n";
 
         // TODO: Implement detailed display when IdeaStorageFixer is implemented
         echo "  (IdeaStorage fixes display not yet implemented)\n\n";
@@ -1127,11 +1151,9 @@ HELP;
      */
     private function displayIdeaMainFixes(array $fixes, bool $dryRun): void
     {
-        if ($dryRun) {
-            echo "[DRY RUN] The following Idea.php changes would be made:\n\n";
-        } else {
-            echo "The following Idea.php changes will be made:\n\n";
-        }
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
+        echo ($dryRun ? "[DRY RUN] " : "") . "Idea.php File to Update:\n";
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n";
 
         // TODO: Implement detailed display when IdeaMainFixer is implemented
         echo "  (Idea.php fixes display not yet implemented)\n\n";
