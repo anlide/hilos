@@ -5,7 +5,6 @@ namespace Demo\WebSocketTest\Database\Idea;
 use Demo\WebSocketTest\Database\Idea;
 use Demo\WebSocketTest\Database\IdeaCollection\UserSettings as IdeaUserSettings;
 use Demo\WebSocketTest\Database\Object\User as ObjectUser;
-use Demo\WebSocketTest\Database\Object\UserSetting as ObjectUserSetting;
 use Hilos\Database\Filter\FilterBuilder;
 use Hilos\Database\Filter\FilterOperator;
 use Hilos\Database\Idea\IdeaItem;
@@ -23,10 +22,8 @@ use RuntimeException;
  *
  * @property-read ?int $id User ID (primary key)
  * @property-read string $name User name
- * @property-read ?string $theme User theme preference
  * @property-read ?string $sessionToken User session token (32 hex characters)
  * @property-read ?string $lastActivity Last activity timestamp
- * @property-read IdeaUserSettings $settings User settings collection (lazy loaded)
  */
 final class User extends IdeaItem
 {
@@ -102,7 +99,6 @@ final class User extends IdeaItem
         return match ($name) {
             ObjectUser::id => $this->_object->id,
             ObjectUser::name => $this->_object->name,
-            ObjectUser::theme => $this->_object->theme,
             ObjectUser::sessionToken => $this->_object->sessionToken,
             ObjectUser::lastActivity => $this->_object->lastActivity,
 
@@ -131,7 +127,6 @@ final class User extends IdeaItem
         }
 
         $data[ObjectUser::name] = $this->_object->name;
-        $data[ObjectUser::theme] = $this->_object->theme;
         $data[ObjectUser::sessionToken] = $this->_object->sessionToken;
         $data[ObjectUser::lastActivity] = $this->_object->lastActivity;
 

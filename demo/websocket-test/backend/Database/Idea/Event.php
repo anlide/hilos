@@ -15,7 +15,7 @@ use RuntimeException;
  * @property-read ?int $id
  * @property-read int $userId
  * @property-read string $type
- * @property-read ?string $timestamp
+ * @property-read string $timestamp
  */
 final class Event extends IdeaItem
 {
