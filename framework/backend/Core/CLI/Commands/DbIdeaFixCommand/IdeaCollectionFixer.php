@@ -97,7 +97,14 @@ trait IdeaCollectionFixer
                     continue;
                 }
 
-                if (!class_exists($className)) {
+                // Check if file can be loaded safely (without fatal errors)
+                // Use class_exists with autoload=false to avoid triggering autoloader
+                // which would load the file and potentially cause fatal errors
+                if (!class_exists($className, false)) {
+                    if (!$this->canLoadFileSafely($file, $className)) {
+                        $brokenFiles[$file] = 'Cannot load file: missing dependencies or fatal error during class loading';
+                        continue;
+                    }
                     require_once $file;
                 }
 
@@ -812,6 +819,116 @@ trait IdeaCollectionFixer
         }
 
         return $content;
+    }
+
+    /**
+     * Find vendor/autoload.php path relative to current working directory or file location
+     *
+     * @param string|null $referenceFile Optional reference file to search from
+     * @return string|null Path to autoload.php or null if not found
+     */
+    private function findAutoloadPath(?string $referenceFile = null): ?string
+    {
+        $searchDirs = [];
+        
+        if ($referenceFile !== null) {
+            $dir = dirname($referenceFile);
+            // Go up to 5 levels to find vendor
+            for ($i = 0; $i < 5; $i++) {
+                $searchDirs[] = $dir;
+                $dir = dirname($dir);
+            }
+        }
+        
+        $cwd = getcwd();
+        $searchDirs[] = $cwd;
+        // Go up to 5 levels from CWD
+        $dir = $cwd;
+        for ($i = 0; $i < 5; $i++) {
+            $searchDirs[] = $dir;
+            $dir = dirname($dir);
+        }
+        
+        foreach (array_unique($searchDirs) as $dir) {
+            $autoloadPath = $dir . '/vendor/autoload.php';
+            if (file_exists($autoloadPath)) {
+                return $autoloadPath;
+            }
+        }
+        
+        return null;
+    }
+
+    /**
+     * Check if PHP file can be loaded safely without fatal errors
+     * Uses a child process to isolate potential fatal errors
+     *
+     * @param string $file File path to check
+     * @param string $className Expected class name
+     * @return bool True if file can be loaded safely, false otherwise
+     */
+    private function canLoadFileSafely(string $file, string $className): bool
+    {
+        $autoloadPath = $this->findAutoloadPath($file);
+        if ($autoloadPath === null) {
+            // If autoload not found, try to load anyway (might work without it)
+            // But this is risky, so we'll return false to be safe
+            return false;
+        }
+        
+        $autoloadPath = realpath($autoloadPath);
+        $filePath = realpath($file);
+        
+        if ($autoloadPath === false || $filePath === false) {
+            return false;
+        }
+        
+        // Create temporary PHP script to test file loading
+        $tempScript = sys_get_temp_dir() . '/hilos_check_' . md5($filePath . $className) . '.php';
+        
+        // Build test script
+        $scriptContent = "<?php\n";
+        $scriptContent .= "error_reporting(E_ALL);\n";
+        $scriptContent .= "ini_set('display_errors', 0);\n";
+        $scriptContent .= "ini_set('log_errors', 0);\n";
+        $scriptContent .= "\n";
+        $scriptContent .= "// Load autoloader\n";
+        $scriptContent .= "require_once " . var_export($autoloadPath, true) . ";\n";
+        $scriptContent .= "\n";
+        $scriptContent .= "try {\n";
+        $scriptContent .= "    // Try to load the file\n";
+        $scriptContent .= "    require_once " . var_export($filePath, true) . ";\n";
+        $scriptContent .= "    \n";
+        $scriptContent .= "    // Check if class exists\n";
+        $scriptContent .= "    if (!class_exists(" . var_export($className, true) . ")) {\n";
+        $scriptContent .= "        exit(1);\n";
+        $scriptContent .= "    }\n";
+        $scriptContent .= "    \n";
+        $scriptContent .= "    // Try to create reflection (this will trigger compatibility checks)\n";
+        $scriptContent .= "    \$reflection = new ReflectionClass(" . var_export($className, true) . ");\n";
+        $scriptContent .= "    \n";
+        $scriptContent .= "    // Success\n";
+        $scriptContent .= "    exit(0);\n";
+        $scriptContent .= "} catch (Throwable \$e) {\n";
+        $scriptContent .= "    // Any error means file cannot be loaded safely\n";
+        $scriptContent .= "    exit(1);\n";
+        $scriptContent .= "}\n";
+        
+        // Write temporary script
+        if (file_put_contents($tempScript, $scriptContent) === false) {
+            return false;
+        }
+        
+        // Execute script in child process
+        $output = [];
+        $returnVar = 0;
+        exec('php ' . escapeshellarg($tempScript) . ' 2>&1', $output, $returnVar);
+        
+        // Clean up temporary file
+        @unlink($tempScript);
+        
+        // Return true if exit code is 0 (success)
+        return $returnVar === 0;
     }
 }
 

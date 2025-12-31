@@ -1477,9 +1477,12 @@ trait IdeaItemFixer
             return true; // IdeaItem use statement is missing
         }
 
-        // Check if IdeaCollection use statement exists
-        if (!preg_match('/use\s+Hilos\\\Database\\\Idea\\\IdeaCollection;/', $content)) {
-            return true; // IdeaCollection use statement is missing
+        // Check if IdeaCollection use statement exists (only if it's used in the file)
+        // IdeaCollection is only needed if the file actually uses it
+        $usesIdeaCollection = preg_match('/\bIdeaCollection\b/', $content) && 
+                             !preg_match('/use\s+[^;]+\\\IdeaCollection\\\[^;]+;/', $content);
+        if ($usesIdeaCollection && !preg_match('/use\s+Hilos\\\Database\\\Idea\\\IdeaCollection;/', $content)) {
+            return true; // IdeaCollection is used but use statement is missing
         }
 
         // Check for old/incorrect Object class use statements
@@ -1487,6 +1490,7 @@ trait IdeaItemFixer
         if (preg_match_all('/^use\s+([^\s;]+)(?:\s+as\s+(\w+))?;/m', $content, $useMatches, PREG_SET_ORDER)) {
             foreach ($useMatches as $useMatch) {
                 $fullClassName = trim($useMatch[1]);
+                $alias = isset($useMatch[2]) && $useMatch[2] !== '' ? trim($useMatch[2]) : null;
                 // Check if this is an Object class (but not ObjectCollection or Objects)
                 if (strpos($fullClassName, '\\Object\\') !== false &&
                     strpos($fullClassName, '\\ObjectCollection\\') === false &&
@@ -1497,7 +1501,7 @@ trait IdeaItemFixer
                         return true;
                     }
                     // If alias is incorrect, it needs to be updated
-                    $alias = $useMatch[2] ?? $objectShortName;
+                    // Note: alias can be null if not specified, but we expect a specific alias
                     if ($alias !== $expectedAlias) {
                         return true;
                     }
