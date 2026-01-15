@@ -35,7 +35,7 @@
             "@php -r \"if (file_exists('/hilos/scripts/link-frontend-sdk.php')) { require '/hilos/scripts/link-frontend-sdk.php'; } elseif (file_exists('../../../scripts/link-frontend-sdk.php')) { require '../../../scripts/link-frontend-sdk.php'; }\""
         ],
         "install-deps": "docker-compose -f docker/docker-compose.local.yml run --rm websocket-test-cli-local composer install",
-        "setup-env": "docker-compose -f docker/docker-compose.local.yml run --rm websocket-test-cli-local php -r \"require 'vendor/autoload.php'; \\\\Hilos\\\\Utils\\\\Env::init(); echo '.env file initialized.';\"",
+        "setup-env": "docker-compose -f docker/docker-compose.local.yml run --rm websocket-test-cli-local php -r \"require 'vendor/autoload.php'; \\Hilos\\Utils\\Env::init(); echo '.env file initialized.';\"",
         "daemon-start": "docker-compose -f docker/docker-compose.local.yml up -d",
         "daemon-stop": "docker-compose -f docker/docker-compose.local.yml stop",
         "daemon-restart": "docker-compose -f docker/docker-compose.local.yml restart websocket-test-local",
