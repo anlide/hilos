@@ -287,9 +287,11 @@ HELP;
         // Prepare fixes for IdeaCollections (only if no errors)
         $ideaCollectionFixes = [];
         $ideaCollectionsToCreate = [];
+        $ideaCollectionsToDelete = [];
         if (empty($brokenObjects) && empty($brokenIdeaItems) && $syntaxErrors === 0) {
             $ideaCollectionFixes = $this->prepareIdeaCollectionFixes($objectCollections, $ideaCollections, $tableName);
             $ideaCollectionsToCreate = $this->findIdeaCollectionsToCreate($objectCollections, $ideaCollections, $tableName, $brokenObjectCollections);
+            $ideaCollectionsToDelete = $this->findIdeaCollectionsToDelete($objectCollections, $ideaCollections);
         }
 
         // Prepare fixes for IdeaStorage (only if no errors)
@@ -309,7 +311,7 @@ HELP;
         // ============================================
 
         $hasAnyChanges = !empty($ideaItemFixes) || !empty($ideaItemsToCreate) || !empty($ideaItemsToDelete) ||
-                         !empty($ideaCollectionFixes) || !empty($ideaCollectionsToCreate) ||
+                         !empty($ideaCollectionFixes) || !empty($ideaCollectionsToCreate) || !empty($ideaCollectionsToDelete) ||
                          !empty($ideaStorageFixes) || !empty($ideaMainFixes);
 
         if (!$hasAnyChanges) {
@@ -324,8 +326,8 @@ HELP;
                 $this->displayIdeaItemFixes($ideaItemFixes, $ideaItemsToCreate, $ideaItemsToDelete, $dryRun);
             }
 
-            if (!empty($ideaCollectionFixes) || !empty($ideaCollectionsToCreate)) {
-                $this->displayIdeaCollectionFixes($ideaCollectionFixes, $ideaCollectionsToCreate, $dryRun);
+            if (!empty($ideaCollectionFixes) || !empty($ideaCollectionsToCreate) || !empty($ideaCollectionsToDelete)) {
+                $this->displayIdeaCollectionFixes($ideaCollectionFixes, $ideaCollectionsToCreate, $ideaCollectionsToDelete, $dryRun);
             }
 
             if (!empty($ideaStorageFixes)) {
@@ -557,8 +559,11 @@ HELP;
             return null;
         }
 
-        // Extract class name
-        if (preg_match('/\b(?:final\s+)?class\s+(\w+)/', $content, $classMatch)) {
+        // Extract class name - look for class declaration
+        // Match: "final class Name" or "class Name" followed by extends/implements or {
+        // This avoids matching "class" in comments or strings
+        // Use multiline mode and look for class declaration that's not in a comment
+        if (preg_match('/^\s*(?:final\s+)?class\s+(\w+)(?:\s+(?:extends|implements)|\s*\{)/m', $content, $classMatch)) {
             $className = trim($classMatch[1]);
             return $namespace . '\\' . $className;
         }
@@ -999,9 +1004,10 @@ HELP;
      *
      * @param array $fixes Fixes to apply
      * @param array $toCreate IdeaCollections to create
+     * @param array $toDelete IdeaCollections to delete
      * @param bool $dryRun Dry run mode
      */
-    private function displayIdeaCollectionFixes(array $fixes, array $toCreate, bool $dryRun): void
+    private function displayIdeaCollectionFixes(array $fixes, array $toCreate, array $toDelete, bool $dryRun): void
     {
         if (!empty($fixes)) {
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
@@ -1039,6 +1045,18 @@ HELP;
             foreach ($toCreate as $objectCollectionClassName => $info) {
                 $objectCollectionShortName = (new ReflectionClass($objectCollectionClassName))->getShortName();
                 echo "  + {$objectCollectionShortName}\n";
+            }
+            echo "\n";
+        }
+
+        if (!empty($toDelete)) {
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
+            echo ($dryRun ? "[DRY RUN] " : "") . "IdeaCollection Files to Delete:\n";
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n";
+
+            foreach ($toDelete as $objectCollectionClassName => $ideaCollectionInfo) {
+                $ideaCollectionShortName = (new \ReflectionClass($ideaCollectionInfo['class']))->getShortName();
+                echo "  - {$ideaCollectionShortName} (ObjectCollection class {$objectCollectionClassName} no longer exists)\n";
             }
             echo "\n";
         }

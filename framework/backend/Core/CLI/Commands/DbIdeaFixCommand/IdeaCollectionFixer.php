@@ -822,6 +822,33 @@ trait IdeaCollectionFixer
     }
 
     /**
+     * Find IdeaCollection files to delete (when corresponding ObjectCollection class doesn't exist)
+     *
+     * @param array $objectCollections Loaded ObjectCollection classes (keyed by class name)
+     * @param array $ideaCollections Loaded IdeaCollection files (keyed by object collection class name)
+     * @return array IdeaCollection files to delete (keyed by object collection class name)
+     */
+    protected function findIdeaCollectionsToDelete(array $objectCollections, array $ideaCollections): array
+    {
+        // Build set of existing ObjectCollection class names for quick lookup
+        $existingObjectCollectionClasses = [];
+        foreach ($objectCollections as $objectCollectionClassName => $objectCollectionInfo) {
+            $existingObjectCollectionClasses[$objectCollectionClassName] = true;
+        }
+
+        // Find IdeaCollection files that reference non-existent ObjectCollection classes
+        $toDelete = [];
+        foreach ($ideaCollections as $objectCollectionClassName => $ideaCollectionInfo) {
+            // If ObjectCollection class doesn't exist, mark IdeaCollection for deletion
+            if (!isset($existingObjectCollectionClasses[$objectCollectionClassName])) {
+                $toDelete[$objectCollectionClassName] = $ideaCollectionInfo;
+            }
+        }
+
+        return $toDelete;
+    }
+
+    /**
      * Find vendor/autoload.php path relative to current working directory or file location
      *
      * @param string|null $referenceFile Optional reference file to search from
