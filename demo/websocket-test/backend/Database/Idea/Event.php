@@ -24,7 +24,7 @@ final class Event extends IdeaItem
      *
      * @param ObjectEvent $objectEvent ObjectEvent instance (reference)
      */
-    protected function __construct(ObjectEvent &$objectEvent)
+    public function __construct(ObjectEvent &$objectEvent)
     {
         parent::__construct($objectEvent);
     }
