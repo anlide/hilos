@@ -3,9 +3,9 @@
 namespace Demo\WebSocketTest\Database;
 
 use Demo\WebSocketTest\Database\ObjectCollection\Users as ObjectUsers;
-use Demo\WebSocketTest\Database\ObjectCollection\UserSettings as ObjectUserSettings;
 use Hilos\Database\Idea\IdeaStorage as BaseIdeaStorage;
 use Hilos\Database\Object\Objects;
+use Demo\WebSocketTest\Database\ObjectCollection\Events as ObjectEvents;
 use Hilos\Exception\DatabaseException;
 
 /**
@@ -17,8 +17,8 @@ final class IdeaStorage extends BaseIdeaStorage
     /** @var ObjectUsers */
     public ObjectUsers $users;
 
-    /** @var ObjectUserSettings */
-    public ObjectUserSettings $userSettings;
+    /** @var ObjectEvents */
+    public ObjectEvents $events;
 
     /**
      * Initialize storage with all collections
@@ -32,9 +32,7 @@ final class IdeaStorage extends BaseIdeaStorage
 
         // Users - LAZY_STRATEGY_KEY (never load all, only by key)
         $self->users = ObjectUsers::initPartialDB(Objects::LAZY_STRATEGY_KEY);
-
-        // UserSettings - LAZY_STRATEGY_KEY (never load all, only by key)
-        $self->userSettings = ObjectUserSettings::initPartialDB(Objects::LAZY_STRATEGY_KEY);
+        $self->events = ObjectEvents::initPartialDB(Objects::LAZY_STRATEGY_KEY);
 
         return $self;
     }
@@ -47,7 +45,7 @@ final class IdeaStorage extends BaseIdeaStorage
     public function initAgain(): void
     {
         $this->users->initAgainFullDB();
-        $this->userSettings->initAgainFullDB();
+        $this->events->initAgainFullDB();
     }
 
     /**
@@ -60,7 +58,7 @@ final class IdeaStorage extends BaseIdeaStorage
     {
         match($collectionName) {
             'users' => $this->users->initAgainFullDB(),
-            'userSettings' => $this->userSettings->initAgainFullDB(),
+            'events' => $this->events->initAgainFullDB(),
             default => throw new DatabaseException("Unknown collection: {$collectionName}"),
         };
     }

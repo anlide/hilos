@@ -1145,21 +1145,6 @@ HELP;
         return $created;
     }
 
-    /**
-     * Display IdeaStorage fixes that will be applied
-     *
-     * @param array $fixes Fixes to apply
-     * @param bool $dryRun Dry run mode
-     */
-    private function displayIdeaStorageFixes(array $fixes, bool $dryRun): void
-    {
-        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
-        echo ($dryRun ? "[DRY RUN] " : "") . "IdeaStorage File to Update:\n";
-        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n";
-
-        // TODO: Implement detailed display when IdeaStorageFixer is implemented
-        echo "  (IdeaStorage fixes display not yet implemented)\n\n";
-    }
 
     /**
      * Display Idea.php fixes that will be applied
