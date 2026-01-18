@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Demo\WebSocketTest\Core\Agent;
 
 use Demo\WebSocketTest\Constants\AgentType;
+use Demo\WebSocketTest\Core\Agent\Worker\ChatAgent;
+use Demo\WebSocketTest\Core\Agent\Worker\UserAgent;
 use Hilos\Core\Agent\AbstractAgentFactory;
 use Hilos\Core\Agent\AgentInterface;
 use Hilos\Core\Router\SignalRouter;

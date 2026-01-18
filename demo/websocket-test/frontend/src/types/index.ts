@@ -4,8 +4,7 @@
 export * from './domain'
 
 // Explicitly export classes for better TypeScript support
-export { ChatMessage, ChatNotification, ChatEventBase } from './domain'
-export type { ChatEvent, NotificationType } from './domain'
+export { Event, User } from './domain'
 
 /**
  * Re-export WebSocket types from framework

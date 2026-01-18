@@ -17,6 +17,7 @@ final class Event extends Entity
     public const string user_id = 'user_id';
     public const string type = 'type';
     public const string timestamp = 'timestamp';
+    public const string data = 'data';
 
     // Table meta information
     public const string _table = 'event';
@@ -26,6 +27,7 @@ final class Event extends Entity
         self::user_id,
         self::type,
         self::timestamp,
+        self::data,
     ];
 
     // Column types
@@ -34,6 +36,7 @@ final class Event extends Entity
         self::user_id => PhpType::INTEGER->value,
         self::type => PhpType::STRING->value,
         self::timestamp => PhpType::DATETIME->value,
+        self::data => PhpType::STRING->value,
     ];
 
     // Foreign keys
@@ -50,7 +53,8 @@ final class Event extends Entity
 
     // Properties
     public ?int $id = null;
-    public int $user_id;
+    public ?int $user_id = null;
     public string $type;
     public string $timestamp = 'current_timestamp()';
+    public ?string $data = null;
 }

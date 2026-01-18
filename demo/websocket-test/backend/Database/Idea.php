@@ -16,6 +16,9 @@ use Hilos\Exception\DatabaseException;
  *   Idea::init(true); // Initialize with IdeaStorage
  *   $user = Idea::$idea->users[123]; // Get User idea
  *   $users = Idea::$idea->users; // Get Users collection
+ * 
+ * @property IdeaUsers $users
+ * @property IdeaEvents $events
  */
 final class Idea extends BaseIdea
 {

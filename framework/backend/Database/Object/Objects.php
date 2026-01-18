@@ -54,31 +54,72 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
     private int $backupIndex = 0;
 
     /**
+     * Initialize collection with database loading strategy
+     * Automatically determines loading behavior based on strategy
+     *
+     * @param int $strategy Lazy loading strategy (LAZY_STRATEGY_BATCH by default)
+     * @return static
+     * @throws DatabaseException
+     */
+    public static function initDB(int $strategy = self::LAZY_STRATEGY_BATCH): static
+    {
+        $self = new static();
+        
+        // For LAZY_STRATEGY_NONE, load all data immediately and disable lazy loading
+        if ($strategy === self::LAZY_STRATEGY_NONE) {
+            $self->_allowLazyLoading = false;
+            $self->_lazyStrategy = self::LAZY_STRATEGY_NONE;
+            $self->_allLoaded = true;
+            // Load all objects from database
+            $self->loadAllFromDB();
+        } else {
+            $self->_allowLazyLoading = true;
+            $self->_lazyStrategy = $strategy;
+            $self->_allLoaded = false;
+        }
+        
+        return $self;
+    }
+
+    /**
+     * Load all objects from database
+     * Clears existing objects and loads all from database
+     * Must be implemented by child classes
+     *
+     * @throws DatabaseException
+     */
+    abstract public function loadAllFromDB(): void;
+
+    /**
      * Initialize collection with all objects from database
      *
-     * @return self
+     * @return static
+     * @deprecated Use initDB(LAZY_STRATEGY_NONE) instead
      */
-    abstract public static function initFullDB(): self;
+    public static function initFullDB(): static
+    {
+        return static::initDB(self::LAZY_STRATEGY_NONE);
+    }
 
     /**
      * Initialize collection with partial database loading (lazy loading enabled)
      *
-     * @param int $strategy Lazy loading strategy (LAZY_STRATEGY_KEY, LAZY_STRATEGY_BATCH, etc.)
-     * @return self
+     * @param int $strategy Lazy loading strategy (LAZY_STRATEGY_BATCH by default)
+     * @return static
+     * @deprecated Use initDB() instead
      */
-    abstract public static function initPartialDB(int $strategy = self::LAZY_STRATEGY_BATCH): self;
+    public static function initPartialDB(int $strategy = self::LAZY_STRATEGY_BATCH): static
+    {
+        return static::initDB($strategy);
+    }
 
     /**
      * Initialize empty collection
      *
-     * @return self
+     * @return static
      */
-    abstract public static function initEmpty(): self;
+    abstract public static function initEmpty(): static;
 
-    /**
-     * Reload all objects from database
-     */
-    abstract public function initAgainFullDB(): void;
 
     /**
      * Reload with partial database loading (lazy loading enabled)

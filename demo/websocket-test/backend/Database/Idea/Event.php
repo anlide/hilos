@@ -13,9 +13,10 @@ use RuntimeException;
  * @extends IdeaItem<ObjectEvent>
  *
  * @property-read ?int $id
- * @property-read int $userId
+ * @property-read ?int $userId
  * @property-read string $type
  * @property-read string $timestamp
+ * @property-read ?string $data
  */
 final class Event extends IdeaItem
 {
@@ -43,6 +44,7 @@ final class Event extends IdeaItem
             ObjectEvent::userId => $this->_object->userId,
             ObjectEvent::type => $this->_object->type,
             ObjectEvent::timestamp => $this->_object->timestamp,
+            ObjectEvent::data => $this->_object->data,
 
             default => parent::__get($name),
         };
@@ -68,6 +70,7 @@ final class Event extends IdeaItem
         $data[ObjectEvent::userId] = $this->_object->userId;
         $data[ObjectEvent::type] = $this->_object->type;
         $data[ObjectEvent::timestamp] = $this->_object->timestamp;
+        $data[ObjectEvent::data] = $this->_object->data;
 
         return $data;
     }

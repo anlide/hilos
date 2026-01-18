@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Demo\WebSocketTest\Core\Agent;
+namespace Demo\WebSocketTest\Core\Agent\Worker;
 
 use Demo\WebSocketTest\Constants\AgentType;
 use Demo\WebSocketTest\Database\Idea;

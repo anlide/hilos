@@ -297,12 +297,42 @@ class Database
         while ($attempts < $maxAttempts) {
             $attempts++;
 
+            // Check if connection is still valid before using it
+            if (!isset(self::$connections[$index]) || self::$connections[$index] === null || self::$connections[$index] !== $mysqli) {
+                // Connection was closed or changed - reconnect if allowed
+                if ($tryReconnect && $attempts < $maxAttempts) {
+                    try {
+                        self::connect($index);
+                        $mysqli = self::getConnection($index);
+                        // Re-parse SQL with new connection
+                        $parsedSql = self::parseSqlWithParams($sql, $params, $mysqli);
+                    } catch (DatabaseConnectionException $e) {
+                        throw new DatabaseConnectionException(
+                            "Database connection was closed. Attempted to reconnect (attempt {$attempts}/{$maxAttempts}) but failed: " . $e->getMessage() . 
+                            ". Original query: " . substr($sql, 0, 200)
+                        );
+                    }
+                } else {
+                    throw new DatabaseConnectionException(
+                        "Database connection is closed at index {$index}. " .
+                        "Connection state: " . (isset(self::$connections[$index]) ? "exists but is null" : "does not exist") . ". " .
+                        "Query: " . substr($sql, 0, 200)
+                    );
+                }
+            }
+
             // Execute multi-query
             $result = @mysqli_multi_query($mysqli, $parsedSql);
 
             if ($result === false) {
                 $errno = mysqli_errno($mysqli);
                 $error = mysqli_error($mysqli);
+                
+                // If mysqli_errno returns 0, connection is likely closed
+                if ($errno === 0 && $error === '') {
+                    $error = 'mysqli object is already closed';
+                    $errno = 2006; // Treat as "MySQL server has gone away" for reconnection logic
+                }
 
                 // Check if we should try to reconnect
                 if ($tryReconnect && self::isConnectionLostError($errno) && $attempts < $maxAttempts) {
@@ -669,20 +699,27 @@ class Database
      */
     private static function throwRuntimeException(int $errno, string $error, string $query): never
     {
+        // Build detailed error message
+        $queryPreview = strlen($query) > 200 ? substr($query, 0, 200) . '...' : $query;
+        $detailedMessage = "MySQL Error [{$errno}]: {$error}";
+        if ($query !== '') {
+            $detailedMessage .= "\nQuery: {$queryPreview}";
+        }
+
         $exception = match ($errno) {
-            1406 => new DataTooLongException($error, $errno),
-            1213 => new DeadlockDetectedException($error, $errno),
-            1365 => new DivisionByZeroException($error, $errno),
-            1062 => new DuplicateEntryException($error, $errno),
-            1451, 1452 => new ForeignKeyConstraintException($error, $errno),
-            1205 => new LockWaitTimeoutException($error, $errno),
-            1264 => new OutOfRangeValueException($error, $errno),
-            1064 => new SyntaxErrorException($error, $errno),
-            1146 => new TableNotFoundException($error, $errno),
-            3024 => new QueryExecutionTimeoutException($error, $errno),
-            2013 => new LostConnectionException($error, $errno),
-            2006 => new GoneAwayException($error, $errno),
-            default => new DatabaseRuntimeException($error, $errno),
+            1406 => new DataTooLongException($detailedMessage, $errno),
+            1213 => new DeadlockDetectedException($detailedMessage, $errno),
+            1365 => new DivisionByZeroException($detailedMessage, $errno),
+            1062 => new DuplicateEntryException($detailedMessage, $errno),
+            1451, 1452 => new ForeignKeyConstraintException($detailedMessage, $errno),
+            1205 => new LockWaitTimeoutException($detailedMessage, $errno),
+            1264 => new OutOfRangeValueException($detailedMessage, $errno),
+            1064 => new SyntaxErrorException($detailedMessage, $errno),
+            1146 => new TableNotFoundException($detailedMessage, $errno),
+            3024 => new QueryExecutionTimeoutException($detailedMessage, $errno),
+            2013 => new LostConnectionException($detailedMessage, $errno),
+            2006 => new GoneAwayException($detailedMessage, $errno),
+            default => new DatabaseRuntimeException($detailedMessage, $errno),
         };
 
         $exception->setMysqlError($errno, $error);

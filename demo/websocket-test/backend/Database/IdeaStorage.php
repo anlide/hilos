@@ -23,7 +23,7 @@ final class IdeaStorage extends BaseIdeaStorage
     /**
      * Initialize storage with all collections
      *
-     * @return static
+     * @return IdeaStorage
      * @throws DatabaseException
      */
     public static function init(): static
@@ -31,21 +31,11 @@ final class IdeaStorage extends BaseIdeaStorage
         $self = new self();
 
         // Users - LAZY_STRATEGY_KEY (never load all, only by key)
-        $self->users = ObjectUsers::initPartialDB(Objects::LAZY_STRATEGY_KEY);
-        $self->events = ObjectEvents::initPartialDB(Objects::LAZY_STRATEGY_KEY);
+        $self->users = ObjectUsers::initDB(Objects::LAZY_STRATEGY_KEY);
+        // Events - LAZY_STRATEGY_NONE (load all immediately, no lazy loading)
+        $self->events = ObjectEvents::initDB(Objects::LAZY_STRATEGY_NONE);
 
         return $self;
-    }
-
-    /**
-     * Reload all collections from database
-     *
-     * @throws DatabaseException
-     */
-    public function initAgain(): void
-    {
-        $this->users->initAgainFullDB();
-        $this->events->initAgainFullDB();
     }
 
     /**
@@ -57,9 +47,20 @@ final class IdeaStorage extends BaseIdeaStorage
     public function reloadCollection(string $collectionName): void
     {
         match($collectionName) {
-            'users' => $this->users->initAgainFullDB(),
-            'events' => $this->events->initAgainFullDB(),
+            'users' => $this->users->loadAllFromDB(),
+            'events' => $this->events->loadAllFromDB(),
             default => throw new DatabaseException("Unknown collection: {$collectionName}"),
         };
+    }
+
+    /**
+     * Clear all events from database and collection
+     * Lazy load will reload events on next access
+     *
+     * @throws DatabaseException
+     */
+    public function clearEvents(): void
+    {
+        $this->events->deleteAll();
     }
 }

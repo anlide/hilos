@@ -23,15 +23,8 @@ interface IdeaStorageInterface
     public static function init(): static;
 
     /**
-     * Reload all collections from database
-     * 
-     * @throws DatabaseException
-     */
-    public function initAgain(): void;
-
-    /**
      * Reload specific collection (for write threads)
-     * 
+     *
      * @param string $collectionName Collection property name
      * @throws DatabaseException
      */

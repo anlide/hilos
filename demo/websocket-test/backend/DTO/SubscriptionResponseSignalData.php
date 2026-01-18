@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Demo\WebSocketTest\DTO;
 
-use Demo\WebSocketTest\Domain\Event\ChatEventInterface;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\DTO\BaseDTO;
 use RuntimeException;
@@ -18,7 +17,7 @@ use RuntimeException;
 class SubscriptionResponseSignalData extends BaseDTO implements SignalDataInterface
 {
     public function __construct(
-        /** @var array<ChatEventInterface> Chat event history */
+        /** @var array<array{id: int, type: string, timestamp: int, data: array<string, mixed>}> Chat event history */
         public readonly array $events,
         /** @var float Server start time (microtime) */
         public readonly float $startTime,
@@ -36,13 +35,8 @@ class SubscriptionResponseSignalData extends BaseDTO implements SignalDataInterf
      */
     public function toArray(): array
     {
-        $eventsArray = [];
-        foreach ($this->events as $event) {
-            $eventsArray[] = $event->toArray();
-        }
-
         return [
-            'events' => $eventsArray,
+            'events' => $this->events,
             'startTime' => $this->startTime,
             'userId' => $this->userId,
             'username' => $this->username,

@@ -10,9 +10,10 @@ use Demo\WebSocketTest\Database\Entity\Event as EntityEvent;
  * Auto-generated from Entity: Demo\WebSocketTest\Database\Entity\Event
  *
  * @property-read ?int $id
- * @property int $userId
+ * @property ?int $userId
  * @property string $type
  * @property string $timestamp
+ * @property ?string $data
  */
 final class Event extends Object_
 {
@@ -21,6 +22,7 @@ final class Event extends Object_
     public const string userId = 'userId';
     public const string type = 'type';
     public const string timestamp = 'timestamp';
+    public const string data = 'data';
 
     protected EntityEvent $entity;
     protected EntityEvent $entitySync;
@@ -40,7 +42,6 @@ final class Event extends Object_
         $obj->entitySync = clone $entity;
         return $obj;
     }
-
     public function __get(string $property): mixed
     {
         return match ($property) {
@@ -48,20 +49,20 @@ final class Event extends Object_
             self::userId => $this->entity->user_id,
             self::type => $this->entity->type,
             self::timestamp => $this->entity->timestamp,
+            self::data => $this->entity->data,
             default => parent::__get($property),
         };
     }
-
     public function __set(string $property, mixed $value): void
     {
         match ($property) {
-            self::userId => $this->entity->user_id = (int)$value,
+            self::userId => $this->entity->user_id = $value === null ? null : (int)$value,
             self::type => $this->entity->type = (string)$value,
             self::timestamp => $this->entity->timestamp = (string)$value,
+            self::data => $this->entity->data = $value === null ? null : (string)$value,
             default => parent::__set($property, $value),
         };
     }
-
     public function toArray(): array
     {
         return [
@@ -69,6 +70,7 @@ final class Event extends Object_
             self::userId => $this->entity->user_id,
             self::type => $this->entity->type,
             self::timestamp => $this->entity->timestamp,
+            self::data => $this->entity->data,
         ];
     }
 }

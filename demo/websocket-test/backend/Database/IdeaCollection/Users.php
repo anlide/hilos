@@ -116,6 +116,51 @@ final class Users extends IdeaCollection
     }
 
     /**
+     * Get current User idea
+     * 
+     * @return IdeaUser|null Current User idea or null if invalid position
+     */
+    public function current(): ?IdeaUser
+    {
+        $item = parent::current();
+        return $item instanceof IdeaUser ? $item : null;
+    }
+
+    /**
+     * Get first User idea
+     * 
+     * @return IdeaUser|null First User idea or null if collection is empty
+     */
+    public function first(): ?IdeaUser
+    {
+        $item = parent::first();
+        return $item instanceof IdeaUser ? $item : null;
+    }
+
+    /**
+     * Get last User idea
+     * 
+     * @return IdeaUser|null Last User idea or null if collection is empty
+     */
+    public function last(): ?IdeaUser
+    {
+        $item = parent::last();
+        return $item instanceof IdeaUser ? $item : null;
+    }
+
+    /**
+     * Get User idea by offset
+     * 
+     * @param mixed $offset User ID
+     * @return IdeaUser|null User idea or null if not found
+     */
+    public function offsetGet(mixed $offset): ?IdeaUser
+    {
+        $item = parent::offsetGet($offset);
+        return $item instanceof IdeaUser ? $item : null;
+    }
+
+    /**
      * Convert to array with additional options
      */
     public function toArray(bool $withId = true, bool $idAsIndex = true, bool $withBridges = false, bool $withCalculation = false): array

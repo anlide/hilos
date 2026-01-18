@@ -15,15 +15,15 @@
     <div class="card-body p-0 overflow-auto min-vh-50" ref="messagesContainer">
       <div class="list-group list-group-flush">
         <div
-          v-for="message in chatStore.messages"
-          :key="message.id"
+          v-for="event in chatStore.events"
+          :key="event.id || `event-${event.timestamp}-${event.userId}`"
           class="list-group-item border-0"
         >
-          <MessageItem :message="message" />
+          <MessageItem :event="event" />
         </div>
       </div>
-      <div v-if="chatStore.messages.length === 0" class="text-center text-muted p-5">
-        <p class="mb-0">No messages yet. Start chatting!</p>
+      <div v-if="chatStore.events.length === 0" class="text-center text-muted p-5">
+        <p class="mb-0">No events yet. Start chatting!</p>
       </div>
     </div>
     <div class="card-footer">
@@ -140,6 +140,6 @@ const resetForm = () => {
   showModal.value = false
 }
 
-watch(() => chatStore.messages.length, scrollToBottom)
+watch(() => chatStore.events.length, scrollToBottom)
 onMounted(scrollToBottom)
 </script>

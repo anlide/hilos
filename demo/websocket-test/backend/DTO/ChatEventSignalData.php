@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\WebSocketTest\DTO;
 
-use Demo\WebSocketTest\Domain\Event\ChatEventInterface;
+use Demo\WebSocketTest\Database\Object\Event as ObjectEvent;
 use Hilos\Core\Router\SignalData;
 use Hilos\Core\Router\SignalDataInterface;
 use RuntimeException;
@@ -12,12 +12,12 @@ use RuntimeException;
 /**
  * ChatEventSignalData - Signal data for chat events
  *
- * Wraps ChatEventInterface to be used as SignalDataInterface.
+ * Wraps ObjectEvent to be used as SignalDataInterface.
  */
 class ChatEventSignalData extends SignalData implements SignalDataInterface
 {
     public function __construct(
-        public readonly ChatEventInterface $event,
+        public readonly ObjectEvent $event,
     ) {
         // Don't call parent::__construct() - we override toArray() to use event data
     }
@@ -29,7 +29,27 @@ class ChatEventSignalData extends SignalData implements SignalDataInterface
      */
     public function toArray(): array
     {
-        return $this->event->toArray();
+        if ($this->event->id === null) {
+            throw new RuntimeException("Cannot convert event to array: id is null");
+        }
+
+        $timestamp = strtotime($this->event->timestamp);
+        if ($timestamp === false) {
+            $timestamp = 0;
+        }
+
+        // Parse data from JSON string and merge userId if not already present
+        $data = $this->event->data === null ? [] : json_decode($this->event->data, true) ?? [];
+        if ($this->event->userId !== null && !isset($data['userId'])) {
+            $data['userId'] = $this->event->userId;
+        }
+
+        return [
+            'id' => $this->event->id,
+            'type' => $this->event->type,
+            'timestamp' => $timestamp,
+            'data' => $data,
+        ];
     }
 
     /**

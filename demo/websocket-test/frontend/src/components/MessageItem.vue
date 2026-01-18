@@ -1,33 +1,34 @@
 <template>
-  <div v-if="message.type === 'message'" class="d-flex flex-column mb-2">
+  <!-- Message event -->
+  <div v-if="event.type === 'message_sent'" class="d-flex flex-column mb-2">
     <div class="d-flex align-items-baseline gap-2">
-      <span class="fw-bold text-primary">{{ (message as ChatMessage).username }}</span>
-      <small class="text-muted">{{ formatTime(message.timestamp) }}</small>
+      <span class="fw-bold text-primary">{{ getUserName(event.userId) }}</span>
+      <small class="text-muted">{{ formatTime(event.timestamp) }}</small>
     </div>
-    <div class="ms-3">{{ (message as ChatMessage).content }}</div>
+    <div class="ms-3">{{ getMessageText() }}</div>
   </div>
   
-  <div v-else-if="message.type === 'notification'" class="text-center my-2">
-    <small 
-      :class="getNotificationClass((message as ChatNotification).notificationType)"
-    >
-      <i :class="getNotificationIcon((message as ChatNotification).notificationType)"></i>
-      {{ (message as ChatNotification).content }}
+  <!-- Notification events -->
+  <div v-else class="text-center my-2">
+    <small :class="getNotificationClass()">
+      <i :class="getNotificationIcon()"></i>
+      {{ getNotificationText() }}
     </small>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ChatMessage, ChatNotification } from '@/types'
-import type { ChatEvent, NotificationType } from '@/types'
+import { Event } from '@/types'
+import { useChatStore } from '@/stores'
 
 interface Props {
-  message: ChatEvent
+  event: Event
 }
 
-defineProps<Props>()
+const props = defineProps<Props>()
+const chatStore = useChatStore()
 
-const formatTime = (timestamp: number): string => {
+const formatTime = (timestamp: string): string => {
   const date = new Date(timestamp)
   return date.toLocaleTimeString('en-US', { 
     hour: '2-digit', 
@@ -36,32 +37,70 @@ const formatTime = (timestamp: number): string => {
   })
 }
 
-const getNotificationClass = (type?: NotificationType): string => {
-  const base = 'badge '
+const getUserName = (userId: number): string => {
+  const user = chatStore.users.find(u => u.id === userId)
+  return user?.name || `User${userId}`
+}
+
+const getMessageText = (): string => {
+  return (props.event.data.message as string) || '(No message)'
+}
+
+const getNotificationText = (): string => {
+  const { type, data } = props.event
+  const userName = getUserName(props.event.userId)
+  
   switch (type) {
+    case 'user_joined':
+      return `${userName} joined the chat`
+    case 'user_left':
+      return `${userName} left the chat`
+    case 'user_renamed': {
+      const oldName = data.oldName as string | undefined
+      const newName = data.newName as string | undefined
+      if (oldName && newName) {
+        return `${oldName} renamed to ${newName}`
+      }
+      return `${userName} renamed`
+    }
+    case 'chat_created':
+      return 'Chat created'
+    case 'chat_cleared':
+      return 'Chat history cleared'
+    default:
+      return `Event: ${type}`
+  }
+}
+
+const getNotificationClass = (): string => {
+  const base = 'badge '
+  switch (props.event.type) {
     case 'user_joined':
       return base + 'bg-success'
     case 'user_left':
       return base + 'bg-secondary'
-    case 'connection_lost':
-      return base + 'bg-danger'
     case 'user_renamed':
       return base + 'bg-info'
+    case 'chat_created':
+    case 'chat_cleared':
+      return base + 'bg-primary'
     default:
       return base + 'bg-secondary'
   }
 }
 
-const getNotificationIcon = (type?: NotificationType): string => {
-  switch (type) {
+const getNotificationIcon = (): string => {
+  switch (props.event.type) {
     case 'user_joined':
       return 'bi bi-person-plus'
     case 'user_left':
       return 'bi bi-person-dash'
-    case 'connection_lost':
-      return 'bi bi-exclamation-triangle'
     case 'user_renamed':
       return 'bi bi-pencil'
+    case 'chat_created':
+      return 'bi bi-chat-dots'
+    case 'chat_cleared':
+      return 'bi bi-trash'
     default:
       return 'bi bi-info-circle'
   }

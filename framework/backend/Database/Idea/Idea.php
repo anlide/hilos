@@ -4,7 +4,6 @@ namespace Hilos\Database\Idea;
 
 use Hilos\Database\Object\Objects;
 use Hilos\Exception\DatabaseException;
-use Demo\WebSocketTest\Database\IdeaCollection\Users as IdeaUsers;
 use RuntimeException;
 
 /**
@@ -17,11 +16,10 @@ use RuntimeException;
  *   Idea::init(true); // Initialize with IdeaStorage
  *   $user = Idea::$idea->users[123]; // Get User idea
  *   $users = Idea::$idea->users; // Get Users collection
- * @property IdeaUsers $users
  */
 class Idea
 {
-    /** @var self|null Singleton instance */
+    /** @var static|null Singleton instance (may be instance of child class) */
     public static ?self $idea = null;
 
     /** @var IdeaStorage|null Storage instance */
@@ -132,10 +130,8 @@ class Idea
      */
     public function toArray(): array
     {
-        $result = [];
-        foreach ($this->_ideaCollections as $name => $collection) {
-            $result[$name] = $collection->toArray();
-        }
-        return $result;
+      return array_map(function ($collection) {
+        return $collection->toArray();
+      }, $this->_ideaCollections);
     }
 }

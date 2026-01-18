@@ -25,62 +25,28 @@ final class Users extends Objects implements Iterator, ArrayAccess, Countable
     protected array $objects = [];
 
     /**
-     * Initialize collection with all users from database
-     *
-     * @return self
-     * @throws DatabaseException
-     */
-    public static function initFullDB(): self
-    {
-        $self = new self();
-        $entityUsers = EntityUsers::initFullDB();
-
-        foreach ($entityUsers as $key => $entityUser) {
-            $self->objects[$key] = ObjectUser::fromEntity($entityUser);
-        }
-
-        return $self;
-    }
-
-    /**
-     * Reload all users from database
+     * Load all users from database
+     * Clears existing objects and loads all from database
      *
      * @throws DatabaseException
      */
-    public function initAgainFullDB(): void
+    public function loadAllFromDB(): void
     {
         $this->objects = [];
         $entityUsers = EntityUsers::initFullDB();
-
         foreach ($entityUsers as $key => $entityUser) {
             $this->objects[$key] = ObjectUser::fromEntity($entityUser);
         }
-
         $this->_allLoaded = true;
         $this->_allowLazyLoading = false;
     }
 
     /**
-     * Initialize collection with partial database loading (lazy loading enabled)
-     *
-     * @param int $strategy Lazy loading strategy (LAZY_STRATEGY_BATCH by default)
-     * @return self
-     */
-    public static function initPartialDB(int $strategy = self::LAZY_STRATEGY_BATCH): self
-    {
-        $self = new self();
-        $self->_allowLazyLoading = true;
-        $self->_lazyStrategy = $strategy;
-        $self->_allLoaded = false;
-        return $self;
-    }
-
-    /**
      * Initialize empty collection
      *
-     * @return self
+     * @return static
      */
-    public static function initEmpty(): self
+    public static function initEmpty(): static
     {
         $self = new self();
         $self->objects = [];

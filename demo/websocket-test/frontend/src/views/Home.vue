@@ -22,11 +22,9 @@ const chatStore = useChatStore()
 const websocket = useWebSocket()
 
 const handleSendMessage = (message: string) => {
-  const chatStore = useChatStore()
   websocket.send({
     type: 'message',
     content: message,
   })
-  chatStore.addChatMessage('You', message)
 }
 </script>

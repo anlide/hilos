@@ -11,6 +11,7 @@ use Hilos\Database\Database;
 use Hilos\Database\Object\Objects;
 use Hilos\Exception\DatabaseException;
 use Iterator;
+use RuntimeException;
 
 /**
  * Events Object Collection
@@ -25,66 +26,32 @@ final class Events extends Objects implements Iterator, ArrayAccess, Countable
     protected array $objects = [];
 
     /**
-     * Initialize collection with all Event objects from database
+     * Load all events from database
+     * Clears existing objects and loads all from database
      *
-     * @return self
      * @throws DatabaseException
      */
-    public static function initFullDB(): self
+    public function loadAllFromDB(): void
     {
-        $self = new self();
+        $this->objects = [];
         $EntityEvents = EntityEvents::initFullDB();
-
         foreach ($EntityEvents as $key => $EntityEvent) {
-            $self->objects[$key] = ObjectEvent::fromEntity($EntityEvent);
+            $this->objects[$key] = ObjectEvent::fromEntity($EntityEvent);
         }
-
-        return $self;
-    }
-
-    /**
-     * Initialize collection with partial database loading (lazy loading enabled)
-     *
-     * @param int $strategy Lazy loading strategy (LAZY_STRATEGY_BATCH by default)
-     * @return self
-     */
-    public static function initPartialDB(int $strategy = self::LAZY_STRATEGY_BATCH): self
-    {
-        $self = new self();
-        $self->_allowLazyLoading = true;
-        $self->_lazyStrategy = $strategy;
-        $self->_allLoaded = false;
-        return $self;
+        $this->_allLoaded = true;
+        $this->_allowLazyLoading = false;
     }
 
     /**
      * Initialize empty collection
      *
-     * @return self
+     * @return static
      */
-    public static function initEmpty(): self
+    public static function initEmpty(): static
     {
         $self = new self();
         $self->objects = [];
         return $self;
-    }
-
-    /**
-     * Reload all Event objects from database
-     *
-     * @throws DatabaseException
-     */
-    public function initAgainFullDB(): void
-    {
-        $this->objects = [];
-        $EntityEvents = EntityEvents::initFullDB();
-
-        foreach ($EntityEvents as $key => $EntityEvent) {
-            $this->objects[$key] = ObjectEvent::fromEntity($EntityEvent);
-        }
-
-        $this->_allLoaded = true;
-        $this->_allowLazyLoading = false;
     }
 
     /**
@@ -176,5 +143,45 @@ final class Events extends Objects implements Iterator, ArrayAccess, Countable
         }
 
         $this->_allLoaded = true;
+    }
+
+    /**
+     * Delete all events from database
+     * Clears collection cache - lazy load will reload on next access
+     *
+     * @throws DatabaseException
+     */
+    public function deleteAll(): void
+    {
+        Database::sql("DELETE FROM `event`;");
+        $this->objects = [];
+    }
+
+    /**
+     * Add event to collection and database
+     * Creates ObjectEvent, saves to database, and adds to collection
+     *
+     * @param string $type Event type
+     * @param ?int $userId User ID (null for system events)
+     * @param ?array $data Event-specific data (optional, will be JSON encoded)
+     * @return ObjectEvent Created event object
+     * @throws DatabaseException
+     * @throws RuntimeException If event ID is null after sync
+     */
+    public function add(string $type, ?int $userId = null, ?array $data = null): ObjectEvent
+    {
+        $objectEvent = ObjectEvent::create();
+        $objectEvent->userId = $userId;
+        $objectEvent->type = $type;
+        $objectEvent->timestamp = date('Y-m-d H:i:s');
+        $objectEvent->data = $data === null ? null : json_encode($data);
+        $objectEvent->sync();
+
+        if ($objectEvent->id === null) {
+            throw new RuntimeException("Failed to save event to database: id is null after sync");
+        }
+
+        $this->objects[$objectEvent->id] = $objectEvent;
+        return $objectEvent;
     }
 }

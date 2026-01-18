@@ -52,6 +52,51 @@ final class Events extends IdeaCollection
     }
 
     /**
+     * Get current Event idea
+     * 
+     * @return IdeaEvent|null Current Event idea or null if invalid position
+     */
+    public function current(): ?IdeaEvent
+    {
+        $item = parent::current();
+        return $item instanceof IdeaEvent ? $item : null;
+    }
+
+    /**
+     * Get first Event idea
+     * 
+     * @return IdeaEvent|null First Event idea or null if collection is empty
+     */
+    public function first(): ?IdeaEvent
+    {
+        $item = parent::first();
+        return $item instanceof IdeaEvent ? $item : null;
+    }
+
+    /**
+     * Get last Event idea
+     * 
+     * @return IdeaEvent|null Last Event idea or null if collection is empty
+     */
+    public function last(): ?IdeaEvent
+    {
+        $item = parent::last();
+        return $item instanceof IdeaEvent ? $item : null;
+    }
+
+    /**
+     * Get Event idea by offset
+     * 
+     * @param mixed $offset Event ID
+     * @return IdeaEvent|null Event idea or null if not found
+     */
+    public function offsetGet(mixed $offset): ?IdeaEvent
+    {
+        $item = parent::offsetGet($offset);
+        return $item instanceof IdeaEvent ? $item : null;
+    }
+
+    /**
      * Convert to array with additional options
      */
     public function toArray(bool $withId = true, bool $idAsIndex = true, bool $withBridges = false, bool $withCalculation = false): array

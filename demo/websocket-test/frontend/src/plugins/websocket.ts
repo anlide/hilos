@@ -2,6 +2,7 @@ import { createWebSocketPlugin } from '@hilos/sdk/plugins/websocket'
 import { config } from '@/config'
 import { useChatStore } from '@/stores'
 import { localStorageService } from '@/services/LocalStorageService'
+import { Event } from '@/types'
 
 /**
  * WebSocket plugin configuration for chat application
@@ -27,7 +28,6 @@ export function createChatWebSocketPlugin() {
       chatStore.setConnected(true)
       chatStore.setConnecting(false)
       chatStore.setError(null)
-      chatStore.addNotification('Connected to server', 'user_joined')
     },
     onClose: () => {
       const chatStore = useChatStore()
@@ -49,8 +49,7 @@ export function createChatWebSocketPlugin() {
         try {
           message = JSON.parse(data)
         } catch (parseError) {
-          // Not JSON, display as raw message
-          chatStore.addChatMessage('Server', data)
+          // Not JSON, ignore
           return
         }
       } else if (typeof data === 'object' && data !== null) {
@@ -68,15 +67,58 @@ export function createChatWebSocketPlugin() {
           return
         }
         
+        // Handle subscription_response
+        if (message.type === 'subscription_response') {
+          const subscriptionData = message.data as {
+            events: Array<{
+              id: number
+              type: string
+              timestamp: number
+              data: Record<string, unknown>
+            }>
+            startTime: number
+            userId: number
+            username: string
+          }
+          
+          chatStore.handleSubscriptionResponse(
+            subscriptionData.events,
+            subscriptionData.startTime,
+            subscriptionData.userId,
+            subscriptionData.username,
+          )
+          return
+        }
+        
+        // Handle chat event messages (new events from server)
+        if (message.type === 'chat_event' || message.type === 'event') {
+          const eventData = message.data as {
+            id: number
+            type: string
+            timestamp: number
+            data: Record<string, unknown>
+          }
+          
+          const userId = (eventData.data.userId as number | null) ?? chatStore.currentUserId
+          const timestampString = new Date(eventData.timestamp * 1000).toISOString().slice(0, 19).replace('T', ' ')
+          
+          const event = Event.fromObject({
+            id: eventData.id,
+            userId: userId,
+            type: eventData.type,
+            timestamp: timestampString,
+            data: eventData.data,
+          })
+          
+          chatStore.addEvent(event)
+          return
+        }
+        
         // Handle other structured messages
         if (message.data !== undefined) {
           console.log('Received message:', message.type, message.data)
           // TODO: Handle different message types
-        } else {
-          chatStore.addChatMessage('Server', JSON.stringify(message))
         }
-      } else {
-        chatStore.addChatMessage('Server', JSON.stringify(data))
       }
     },
   })

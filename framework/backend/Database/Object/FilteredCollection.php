@@ -100,24 +100,14 @@ class FilteredCollection extends Objects
     }
 
     // Abstract methods - must implement but not used in filtered collection
-    public static function initFullDB(): self
-    {
-        throw new \RuntimeException("FilteredCollection cannot be initialized directly");
-    }
-
-    public static function initPartialDB(int $strategy = self::LAZY_STRATEGY_BATCH): self
-    {
-        throw new \RuntimeException("FilteredCollection cannot be initialized directly");
-    }
-
     public static function initEmpty(): self
     {
         throw new \RuntimeException("FilteredCollection cannot be initialized directly");
     }
 
-    public function initAgainFullDB(): void
+    public function loadAllFromDB(): void
     {
-        throw new \RuntimeException("FilteredCollection cannot be reloaded directly");
+        throw new \RuntimeException("FilteredCollection cannot load from database directly");
     }
 
     protected function lazyLoadObject(int|string $key): ?Object_

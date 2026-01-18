@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ChatMessage, ChatNotification, type ChatEvent, type NotificationType } from '@/types'
+import { Event, User } from '@/types'
 
 /**
  * WebSocket chat store - uses base connection store pattern from framework
@@ -10,8 +10,14 @@ export const useChatStore = defineStore('chat', {
     connected: false,
     connecting: false,
     error: null as string | null,
-    // Demo-specific state
-    messages: [] as ChatEvent[],
+    // Events from database (Event)
+    events: [] as Event[],
+    // Users from database (User)
+    users: [] as User[],
+    // Current user information
+    currentUserId: null as number | null,
+    currentUsername: null as string | null,
+    serverStartTime: null as number | null,
     reconnectAttempts: 0,
     maxReconnectAttempts: Infinity,
   }),
@@ -50,40 +56,76 @@ export const useChatStore = defineStore('chat', {
     
     // Demo-specific actions
     
-    addMessage(message: ChatEvent) {
-      this.messages.push(message)
-      // Keep last 1000 messages
-      if (this.messages.length > 1000) {
-        this.messages.shift()
+    incrementReconnectAttempts() {
+      this.reconnectAttempts++
+    },
+    
+    /**
+     * Handle subscription_response
+     */
+    handleSubscriptionResponse(
+      events: Array<{
+        id: number
+        type: string
+        timestamp: number
+        data: Record<string, unknown>
+      }>,
+      startTime: number,
+      userId: number,
+      username: string,
+    ) {
+      this.serverStartTime = startTime
+      this.currentUserId = userId
+      this.currentUsername = username
+      
+      this.clearEvents()
+      
+      for (const event of events) {
+        // userId can be null for system events, otherwise use from data or currentUserId
+        const userId = (event.data.userId as number | null) ?? this.currentUserId
+        const timestampString = new Date(event.timestamp * 1000).toISOString().slice(0, 19).replace('T', ' ')
+        
+        const eventObj = Event.fromObject({
+          id: event.id,
+          userId: userId,
+          type: event.type,
+          timestamp: timestampString,
+          data: event.data,
+        })
+        
+        this.addEvent(eventObj)
       }
     },
     
-    addNotification(content: string, type: NotificationType = 'user_joined') {
-      const notification = new ChatNotification(
-        `notif_${Date.now()}_${Math.random()}`,
-        Date.now(),
-        content,
-        type
-      )
-      this.addMessage(notification)
+    /**
+     * Add Event from database to store
+     */
+    addEvent(event: Event) {
+      this.events.push(event)
+      // Keep last 1000 events
+      if (this.events.length > 1000) {
+        this.events.shift()
+      }
     },
     
-    addChatMessage(username: string, content: string) {
-      const message = new ChatMessage(
-        `msg_${Date.now()}_${Math.random()}`,
-        Date.now(),
-        username,
-        content
-      )
-      this.addMessage(message)
+    /**
+     * Add User from database to store
+     */
+    addUser(user: User) {
+      // Update existing user or add new one
+      const existingIndex = this.users.findIndex(u => u.id === user.id)
+      if (existingIndex >= 0) {
+        this.users[existingIndex] = user
+      } else {
+        this.users.push(user)
+      }
     },
     
-    clearMessages() {
-      this.messages = []
-    },
-    
-    incrementReconnectAttempts() {
-      this.reconnectAttempts++
+    /**
+     * Clear events from database
+     */
+    clearEvents() {
+      this.events = []
     },
   }
 })

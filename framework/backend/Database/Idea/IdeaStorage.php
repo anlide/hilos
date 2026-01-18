@@ -27,14 +27,6 @@ abstract class IdeaStorage implements IdeaStorageInterface
     abstract public static function init(): static;
 
     /**
-     * Reload all collections from database
-     * Should be overridden in child classes
-     *
-     * @throws DatabaseException
-     */
-    abstract public function initAgain(): void;
-
-    /**
      * Reload specific collection (for write threads)
      *
      * @param string $collectionName Collection property name
