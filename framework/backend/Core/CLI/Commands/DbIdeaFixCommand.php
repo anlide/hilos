@@ -1144,22 +1144,5 @@ HELP;
 
         return $created;
     }
-
-
-    /**
-     * Display Idea.php fixes that will be applied
-     *
-     * @param array $fixes Fixes to apply
-     * @param bool $dryRun Dry run mode
-     */
-    private function displayIdeaMainFixes(array $fixes, bool $dryRun): void
-    {
-        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
-        echo ($dryRun ? "[DRY RUN] " : "") . "Idea.php File to Update:\n";
-        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n";
-
-        // TODO: Implement detailed display when IdeaMainFixer is implemented
-        echo "  (Idea.php fixes display not yet implemented)\n\n";
-    }
 }
 
