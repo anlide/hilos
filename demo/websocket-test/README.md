@@ -13,38 +13,37 @@ This is a chat application demo that showcases WebSocket real-time communication
 ### Prerequisites
 
 - Docker and Docker Compose
-- Node.js 18+ (for local frontend development)
-- PHP 8.4+ and Composer (for backend)
 
 ### Setup
 
-1. **Create `.env` file** in project root:
+1. **Setup environment file** (creates `.env` from `.env.example` if needed):
    ```bash
-   cp .env.example .env  # if exists
-   # Or create manually with required variables
+   composer run setup-env
    ```
 
-2. **Install backend dependencies:**
+2. **Install dependencies** (backend Composer packages):
    ```bash
-   composer install
+   composer run install-deps
    ```
 
-3. **Install frontend dependencies:**
+3. **Install frontend dependencies** (npm packages):
    ```bash
-   cd frontend
-   npm install
+   composer run frontend-install
    ```
 
 ### Running
 
-**Local Development (Windows):**
-- Backend runs in Docker
-- Frontend runs locally
-- See [Frontend README](frontend/README.md) for details
+All components run in Docker containers. See Docker configuration in `docker/` directory for details.
 
-**Production (Linux):**
-- Both frontend and backend run in Docker
-- See [Frontend README](frontend/README.md) for details
+**Start daemon:**
+```bash
+composer run daemon-start
+```
+
+**Start frontend dev server:**
+```bash
+composer run frontend-dev
+```
 
 ## Documentation
 

@@ -2,9 +2,8 @@
 
 namespace Demo\WebSocketTest\Database;
 
-use Demo\WebSocketTest\Database\IdeaCollection\UserSettings as IdeaUserSettings;
+use Demo\WebSocketTest\Database\IdeaCollection\Events as IdeaEvents;
 use Demo\WebSocketTest\Database\IdeaCollection\Users as IdeaUsers;
-use Demo\WebSocketTest\Database\ObjectCollection\Users as ObjectUsers;
 use Hilos\Database\Idea\Idea as BaseIdea;
 use Hilos\Exception\DatabaseException;
 
@@ -21,7 +20,7 @@ use Hilos\Exception\DatabaseException;
 final class Idea extends BaseIdea
 {
     public const string users = 'users';
-    public const string userSettings = 'userSettings';
+    public const string events = 'events';
 
     /**
      * Initialize Idea with storage
@@ -54,9 +53,9 @@ final class Idea extends BaseIdea
             );
 
             self::$idea->setRepresent(
-                name: self::userSettings,
-                objectCollection: $storage->userSettings,
-                ideaCollectionClass: IdeaUserSettings::class,
+                name: self::events,
+                objectCollection: $storage->events,
+                ideaCollectionClass: IdeaEvents::class,
             );
         }
     }

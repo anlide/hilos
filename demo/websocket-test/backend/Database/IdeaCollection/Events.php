@@ -3,9 +3,9 @@
 namespace Demo\WebSocketTest\Database\IdeaCollection;
 
 use Demo\WebSocketTest\Database\Idea;
-use Demo\WebSocketTest\Database\Idea\UserSetting as IdeaUserSetting;
-use Demo\WebSocketTest\Database\Object\UserSetting as ObjectUserSetting;
-use Demo\WebSocketTest\Database\ObjectCollection\UserSettings as ObjectUserSettings;
+use Demo\WebSocketTest\Database\Idea\Event as IdeaEvent;
+use Demo\WebSocketTest\Database\Object\Event as ObjectEvent;
+use Demo\WebSocketTest\Database\ObjectCollection\Events as ObjectEvents;
 use Hilos\Database\Idea\IdeaCollection;
 use Hilos\Database\Object\Object_;
 use Hilos\Database\Object\Objects;
@@ -14,10 +14,10 @@ use InvalidArgumentException;
 use RuntimeException;
 
 /**
- * UserSettings Idea Collection
- * Collection of UserSetting ideas with additional filtering methods
+ * Events Idea Collection
+ * Collection of Event ideas with additional filtering methods
  */
-final class UserSettings extends IdeaCollection
+final class Events extends IdeaCollection
 {
     // init() and initEmpty() are inherited from IdeaCollection
     // Override only if custom initialization logic is needed
@@ -34,21 +34,21 @@ final class UserSettings extends IdeaCollection
         if ($storage === null) {
             throw new RuntimeException("IdeaStorage not initialized");
         }
-        return $storage->userSettings;
+        return $storage->events;
     }
 
     /**
      * Create Idea instance from Object
      * 
      * @param Object_ $object Object instance (reference)
-     * @return IdeaUserSetting
+     * @return IdeaEvent
      */
-    protected function createIdea(Object_ &$object): IdeaUserSetting
+    protected function createIdea(Object_ &$object): IdeaEvent
     {
-        if (!($object instanceof ObjectUserSetting)) {
-            throw new InvalidArgumentException("Object must be instance of ObjectUserSetting");
+        if (!($object instanceof ObjectEvent)) {
+            throw new InvalidArgumentException("Object must be instance of ObjectEvent");
         }
-        return new IdeaUserSetting($object);
+        return new IdeaEvent($object);
     }
 
     /**
@@ -59,4 +59,3 @@ final class UserSettings extends IdeaCollection
         return parent::toArray($withId, $idAsIndex, $withBridges, $withCalculation);
     }
 }
-

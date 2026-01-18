@@ -65,7 +65,22 @@ export default defineConfig({
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),
       '@hilos/sdk': resolvedSdkPath
-    }
+    },
+    // Explicitly tell Vite to look for node_modules in current project directory
+    // This is critical when framework code imports dependencies like vue-router, pinia, vue
+    // Without this, Vite searches node_modules relative to framework path (/hilos/framework/...)
+    // instead of project path (/app/...)
+    modules: [
+      fileURLToPath(new URL('./node_modules', import.meta.url)), // Project's node_modules first
+      'node_modules' // Fallback
+    ],
+    // Ensure dependencies from demo project are always used, not from framework's location
+    dedupe: ['vue', 'vue-router', 'pinia']
+  },
+  optimizeDeps: {
+    // Pre-bundle these dependencies so Vite can resolve them correctly
+    // even when imported from framework code
+    include: ['vue-router', 'pinia', 'vue']
   },
   server: {
     host: '0.0.0.0',
