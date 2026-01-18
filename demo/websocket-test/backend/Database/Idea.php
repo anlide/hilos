@@ -50,13 +50,13 @@ final class Idea extends BaseIdea
             self::$idea->setRepresent(
                 name: self::users,
                 objectCollection: $storage->users,
-                ideaCollectionClass: IdeaUsers::class
+                ideaCollectionClass: IdeaUsers::class,
             );
 
             self::$idea->setRepresent(
                 name: self::userSettings,
                 objectCollection: $storage->userSettings,
-                ideaCollectionClass: IdeaUserSettings::class
+                ideaCollectionClass: IdeaUserSettings::class,
             );
         }
     }
