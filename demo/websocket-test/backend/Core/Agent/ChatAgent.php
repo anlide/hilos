@@ -225,7 +225,6 @@ class ChatAgent extends AbstractAgent
                 startTime: $this->startTime,
                 userId: $userId,
                 username: $user->name,
-                theme: $user->theme,
             );
 
             // Wrap subscription data in WebSocketSignalData for WebSocket routing

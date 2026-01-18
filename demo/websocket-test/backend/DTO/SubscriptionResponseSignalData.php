@@ -26,8 +26,6 @@ class SubscriptionResponseSignalData extends BaseDTO implements SignalDataInterf
         public readonly int $userId,
         /** @var string Username */
         public readonly string $username,
-        /** @var ?string User theme */
-        public readonly ?string $theme = null,
     ) {
     }
 
@@ -48,7 +46,6 @@ class SubscriptionResponseSignalData extends BaseDTO implements SignalDataInterf
             'startTime' => $this->startTime,
             'userId' => $this->userId,
             'username' => $this->username,
-            'theme' => $this->theme,
         ];
     }
 
