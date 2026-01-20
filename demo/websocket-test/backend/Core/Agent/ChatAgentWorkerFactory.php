@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace Demo\WebSocketTest\Core\Agent;
 
 use Demo\WebSocketTest\Constants\AgentType;
+use Demo\WebSocketTest\Core\Agent\Worker\BotAgent;
 use Demo\WebSocketTest\Core\Agent\Worker\ChatAgent;
+use Demo\WebSocketTest\Core\Agent\Worker\ModeratorAgent;
 use Demo\WebSocketTest\Core\Agent\Worker\UserAgent;
-use Hilos\Core\Agent\AbstractAgentFactory;
+use Hilos\Core\Agent\AbstractAgentWorkerFactory;
 use Hilos\Core\Agent\AgentInterface;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Exception\Worker\AgentCreationFailedException;
@@ -15,9 +17,9 @@ use Hilos\Exception\Worker\AgentCreationFailedException;
 /**
  * ChatAgentFactory - Factory for creating chat-specific agents in worker processes
  *
- * Creates ChatAgent and UserAgent instances based on agent type.
+ * Creates ChatAgent, UserAgent, BotAgent and ModeratorAgent instances based on agent type.
  */
-class ChatAgentFactory extends AbstractAgentFactory
+class ChatAgentWorkerFactory extends AbstractAgentWorkerFactory
 {
     /**
      * Create agent instance based on type
@@ -33,6 +35,8 @@ class ChatAgentFactory extends AbstractAgentFactory
         return match ($agentType) {
             AgentType::CHAT => new ChatAgent($signalRouter),
             AgentType::SESSION => self::createUserAgent($agentIndex, $signalRouter),
+            AgentType::BOT => new BotAgent($signalRouter),
+            AgentType::MODERATOR => new ModeratorAgent($signalRouter),
             default => throw new AgentCreationFailedException($agentType, $agentIndex),
         };
     }

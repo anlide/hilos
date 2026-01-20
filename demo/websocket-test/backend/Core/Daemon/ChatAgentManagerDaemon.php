@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\WebSocketTest\Core\Daemon;
 
-use Demo\WebSocketTest\Core\Agent\Daemon\ChatAgentDaemonFactory;
+use Demo\WebSocketTest\Core\Agent\ChatAgentDaemonFactory;
 use Hilos\Core\Agent\Daemon\AgentDaemonInterface;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\Router\SignalRouter;

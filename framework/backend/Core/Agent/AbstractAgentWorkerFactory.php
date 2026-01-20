@@ -12,7 +12,7 @@ use Hilos\Exception\Worker\AgentCreationFailedException;
  *
  * Child classes must implement createAgent() static method to create specific agent types.
  */
-abstract class AbstractAgentFactory
+abstract class AbstractAgentWorkerFactory
 {
     /**
      * Create agent instance based on type and index

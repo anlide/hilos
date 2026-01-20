@@ -16,4 +16,10 @@ class AgentType
 
     /** @var string User agent type (regular) */
     public const string SESSION = 'session';
+
+    /** @var string Bot agent type (regular) */
+    public const string BOT = 'bot';
+
+    /** @var string Moderator agent type (regular) */
+    public const string MODERATOR = 'moderator';
 }

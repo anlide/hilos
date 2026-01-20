@@ -37,6 +37,46 @@ class ChatSignalRouter extends SignalRouter
                 'agentIndex' => null,
                 'params' => [],
             ],
+            PageConstants::PROFILE => [
+                'agentType' => AgentType::SESSION,
+                'agentIndex' => 'clientId',
+                'params' => [],
+            ],
+            PageConstants::USER => [
+                'agentType' => AgentType::SESSION,
+                'agentIndex' => 'clientId',
+                'params' => [],
+            ],
+            PageConstants::BOT => [
+                'agentType' => AgentType::BOT,
+                'agentIndex' => null,
+                'params' => [],
+            ],
+            PageConstants::MODERATOR => [
+                'agentType' => AgentType::MODERATOR,
+                'agentIndex' => null,
+                'params' => [],
+            ],
+            PageConstants::ADMIN => [
+                'agentType' => AgentType::CHAT,
+                'agentIndex' => null,
+                'params' => [],
+            ],
+            PageConstants::ADMIN_USERS => [
+                'agentType' => AgentType::CHAT,
+                'agentIndex' => null,
+                'params' => [],
+            ],
+            PageConstants::ADMIN_MODERATOR => [
+                'agentType' => AgentType::CHAT,
+                'agentIndex' => null,
+                'params' => [],
+            ],
+            PageConstants::ADMIN_BOTS => [
+                'agentType' => AgentType::CHAT,
+                'agentIndex' => null,
+                'params' => [],
+            ],
         ];
 
         // Groups configuration - defines available groups and their routing

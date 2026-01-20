@@ -2,9 +2,13 @@
 
 declare(strict_types=1);
 
-namespace Demo\WebSocketTest\Core\Agent\Daemon;
+namespace Demo\WebSocketTest\Core\Agent;
 
 use Demo\WebSocketTest\Constants\AgentType;
+use Demo\WebSocketTest\Core\Agent\Daemon\BotAgentDaemon;
+use Demo\WebSocketTest\Core\Agent\Daemon\ChatAgentDaemon;
+use Demo\WebSocketTest\Core\Agent\Daemon\ModeratorAgentDaemon;
+use Demo\WebSocketTest\Core\Agent\Daemon\UserAgentDaemon;
 use Hilos\Core\Agent\Daemon\AbstractAgentDaemonFactory;
 use Hilos\Core\Agent\Daemon\AgentDaemonInterface;
 use Hilos\Exception\Worker\AgentDaemonCreationFailedException;
@@ -12,7 +16,7 @@ use Hilos\Exception\Worker\AgentDaemonCreationFailedException;
 /**
  * ChatAgentDaemonFactory - Factory for creating chat-specific agent daemon proxies
  *
- * Creates ChatAgentDaemon and UserAgentDaemon instances based on agent type.
+ * Creates ChatAgentDaemon, UserAgentDaemon, BotAgentDaemon and ModeratorAgentDaemon instances based on agent type.
  */
 class ChatAgentDaemonFactory extends AbstractAgentDaemonFactory
 {
@@ -29,6 +33,8 @@ class ChatAgentDaemonFactory extends AbstractAgentDaemonFactory
         return match ($agentType) {
             AgentType::CHAT => new ChatAgentDaemon(),
             AgentType::SESSION => self::createUserAgentDaemon($agentIndex),
+            AgentType::BOT => new BotAgentDaemon(),
+            AgentType::MODERATOR => new ModeratorAgentDaemon(),
             default => throw new AgentDaemonCreationFailedException($agentType, $agentIndex),
         };
     }
