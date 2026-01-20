@@ -29,10 +29,10 @@
     },
     "scripts": {
         "post-install-cmd": [
-            "@php -r \"\\$dockerPath='/hilos/scripts/link-frontend-sdk.php';\\$isDocker=file_exists('/.dockerenv')||getenv('DOCKER')=='true';if(\\$isDocker&&file_exists(\\$dockerPath)){require \\$dockerPath;}else{\\$cwd=getcwd();\\$localPath=dirname(dirname(dirname(\\$cwd))).'/scripts/link-frontend-sdk.php';if(file_exists(\\$localPath)){require \\$localPath;}elseif(file_exists(\\$dockerPath)){require \\$dockerPath;}}\""
+            "@php scripts/link-frontend-sdk.php"
         ],
         "post-update-cmd": [
-            "@php -r \"\\$dockerPath='/hilos/scripts/link-frontend-sdk.php';\\$isDocker=file_exists('/.dockerenv')||getenv('DOCKER')=='true';if(\\$isDocker&&file_exists(\\$dockerPath)){require \\$dockerPath;}else{\\$cwd=getcwd();\\$localPath=dirname(dirname(dirname(\\$cwd))).'/scripts/link-frontend-sdk.php';if(file_exists(\\$localPath)){require \\$localPath;}elseif(file_exists(\\$dockerPath)){require \\$dockerPath;}}\""
+            "@php scripts/link-frontend-sdk.php"
         ],
         "setup-env": "docker-compose -f docker/docker-compose.local.yml run --rm websocket-test-cli-local sh -c \"if [ ! -f ../.env ] && [ -f ../.env.example ]; then cp ../.env.example ../.env && echo '.env file created from .env.example'; else echo '.env file already exists or .env.example not found'; fi\"",
         "install-deps": "docker-compose -f docker/docker-compose.local.yml run --rm websocket-test-cli-local composer install",

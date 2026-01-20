@@ -60,7 +60,7 @@ class DockerManager extends BaseManager
      * @throws MissingEnvironmentVariableException
      * @throws LogRotationException If log rotation fails
      */
-    public function runDockerWatchdog(string $daemonScript = __DIR__ . '/../../Bootstrap/daemon.php'): void
+    public function runDockerWatchdog(string $daemonScript): void
     {
         // Validate script path
         $daemonScript = $this->validateScriptPath($daemonScript);
@@ -355,13 +355,9 @@ class DockerManager extends BaseManager
     private function rotateLogs(): void
     {
         // Determine log directory from daemon log file path
-        try {
-            $daemonLogFile = Env::get(EnvConstants::DAEMON_LOG_FILE);
-            $logDirectory = dirname($daemonLogFile);
-        } catch (MissingEnvironmentVariableException) {
-            // Fallback to default log directory if env variable is not set
-            $logDirectory = 'data/logs';
-        }
+        // DAEMON_LOG_FILE must be set in environment configuration
+        $daemonLogFile = Env::get(EnvConstants::DAEMON_LOG_FILE);
+        $logDirectory = dirname($daemonLogFile);
 
         // If log directory doesn't exist, nothing to rotate
         if (!is_dir($logDirectory)) {

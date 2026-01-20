@@ -167,4 +167,3 @@ foreach ($frontendDirs as $frontendDir) {
 }
 
 echo "✨ Frontend SDK linking completed\n";
-

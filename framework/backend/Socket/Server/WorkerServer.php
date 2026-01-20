@@ -459,14 +459,9 @@ abstract class WorkerServer extends AbstractServer
     {
         if ($this->cachedLogDirectory === null) {
             // Determine log directory from daemon log file path (same directory)
-            // Fallback to 'data/logs' if DAEMON_LOG_FILE is not set
-            try {
-                $daemonLogFile = Env::get(EnvConstants::DAEMON_LOG_FILE);
-                $this->cachedLogDirectory = dirname($daemonLogFile);
-            } catch (MissingEnvironmentVariableException) {
-                // Fallback to default log directory if env variable is not set
-                $this->cachedLogDirectory = 'data/logs';
-            }
+            // DAEMON_LOG_FILE must be set in environment configuration
+            $daemonLogFile = Env::get(EnvConstants::DAEMON_LOG_FILE);
+            $this->cachedLogDirectory = dirname($daemonLogFile);
         }
 
         return $this->cachedLogDirectory;

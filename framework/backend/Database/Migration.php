@@ -10,9 +10,9 @@ use Hilos\Exception\DatabaseException;
  */
 class Migration
 {
-    private static string $migrationListPath = 'data/migrations';
+    private static ?string $migrationListPath = null;
     private static string $migrationName = 'main';
-    private static string $routinesPath = 'data/routines';
+    private static ?string $routinesPath = null;
     private static bool $initialized = false;
 
     /**
@@ -91,6 +91,10 @@ class Migration
      */
     public static function getAvailableMigrations(): array
     {
+        if (self::$migrationListPath === null) {
+            return [];
+        }
+
         $migrationPath = self::$migrationListPath . '/' . self::$migrationName;
 
         if (!is_dir($migrationPath)) {
@@ -350,7 +354,7 @@ class Migration
      */
     public static function applyRoutines(): void
     {
-        if (!is_dir(self::$routinesPath)) {
+        if (self::$routinesPath === null || !is_dir(self::$routinesPath)) {
             return;
         }
 
@@ -374,9 +378,14 @@ class Migration
      * 
      * @param string $name Migration name/description
      * @return int New migration index
+     * @throws DatabaseException If migration path is not configured
      */
     public static function create(string $name): int
     {
+        if (self::$migrationListPath === null) {
+            throw new DatabaseException("Migration path is not configured. Call Migration::setMigrationListPath() first.");
+        }
+
         $availableMigrations = self::getAvailableMigrations();
         $newIndex = !empty($availableMigrations) ? max($availableMigrations) + 1 : 1;
 

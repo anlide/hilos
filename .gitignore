@@ -1,16 +1,6 @@
 # Environment configuration
 .env
 
-# Log files
-data/logs/*.log
-data/logs/archive/
-
-# PID files
-data/run/*.pid
-
-# Runtime data
-data/run/hilos.pid
-
 # Vendor
 vendor/
 
