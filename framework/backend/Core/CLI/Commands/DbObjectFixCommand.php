@@ -199,8 +199,21 @@ HELP;
                 // Prepare fixes for ObjectCollections
                 $objectCollectionFixes = $this->prepareObjectCollectionFixes($objects, $objectCollections, $tableName);
 
-                // Find ObjectCollection files to create
+                // Find ObjectCollection files to create for existing objects
                 $objectCollectionsToCreate = $this->findObjectCollectionsToCreate($objects, $objectCollections, $tableName, $brokenObjects);
+
+                // Also find ObjectCollection files to create for new objects (from objectsToCreate)
+                if (!empty($objectsToCreate)) {
+                    // We need to simulate what objectsAfter would look like
+                    // For estimate, we can use the entity info to predict object class names
+                    $objectCollectionsToCreateForNew = $this->findObjectCollectionsToCreateForNewObjectsEstimate($objectsToCreate, $objects, $objectCollections, $brokenObjects);
+                    // Merge with existing list
+                    foreach ($objectCollectionsToCreateForNew as $objectClassName => $collectionInfo) {
+                        if (!isset($objectCollectionsToCreate[$objectClassName])) {
+                            $objectCollectionsToCreate[$objectClassName] = $collectionInfo;
+                        }
+                    }
+                }
 
                 // Check if there are any fixes needed
                 if (empty($objectCollectionFixes) && empty($objectCollectionsToCreate)) {
@@ -224,6 +237,25 @@ HELP;
         // Apply fixes
         $applied = $this->applyFixes($fixes, $forceRepair);
         $created = $this->createObjectFiles($objectsToCreate, $objectDir, $entityDir);
+
+        // After creating new Object files, find ObjectCollections to create for them
+        if ($created > 0 && !empty($objectsToCreate)) {
+            // Reload objects to include newly created ones
+            $syntaxErrorsAfter = 0;
+            $brokenObjectsAfter = [];
+            $objectsAfter = $this->loadObjects($objectDir, $syntaxErrorsAfter, $brokenObjectsAfter);
+            
+            // Find ObjectCollections for newly created Object files
+            $newlyCreatedObjectCollections = $this->findObjectCollectionsToCreateForNewObjects($objectsToCreate, $objectsAfter, $objectCollections, $brokenObjectsAfter);
+            
+            // Merge with existing list
+            foreach ($newlyCreatedObjectCollections as $objectClassName => $collectionInfo) {
+                if (!isset($objectCollectionsToCreate[$objectClassName])) {
+                    $objectCollectionsToCreate[$objectClassName] = $collectionInfo;
+                }
+            }
+        }
+
         $deleted = $this->deleteObjectFiles($filesToDelete);
 
         // Delete ObjectCollection files for deleted Object files
@@ -2737,7 +2769,16 @@ HELP;
 
         $created = 0;
         foreach ($toCreate as $objectClassName => $info) {
-            $objectReflection = $info['reflection'];
+            // Get reflection from info, or create it from objectClassName if not present
+            $objectReflection = $info['reflection'] ?? null;
+            if ($objectReflection === null) {
+                try {
+                    $objectReflection = new ReflectionClass($objectClassName);
+                } catch (\Throwable $e) {
+                    echo "⚠ Failed to create ObjectCollection for {$objectClassName}: Cannot load Object class\n";
+                    continue;
+                }
+            }
             if ($this->createObjectCollectionFile($objectClassName, $objectCollectionDir, $namespace, $objectReflection)) {
                 $created++;
             }

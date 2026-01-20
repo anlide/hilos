@@ -823,68 +823,47 @@ trait ObjectCollectionFixer
         $content .= "    /** @var {$objectAlias}[] \$objects */\n";
         $content .= "    protected array \$objects = [];\n\n";
         $content .= "    /**\n";
-        $content .= "     * Initialize collection with all {$objectShortName} objects from database\n";
+        $content .= "     * Load all {$objectShortName} objects from database\n";
+        $content .= "     * Clears existing objects and loads all from database\n";
         $content .= "     *\n";
-        $content .= "     * @return self\n";
         $content .= "     * @throws DatabaseException\n";
         $content .= "     */\n";
-        $content .= "    public static function initFullDB(): self\n";
+        $content .= "    public function loadAllFromDB(): void\n";
         $content .= "    {\n";
-        $content .= "        \$self = new self();\n";
+        $content .= "        \$this->objects = [];\n";
         if ($entityCollectionClassName !== null) {
-            $content .= "        \${$entityCollectionAlias} = {$entityCollectionAlias}::initFullDB();\n\n";
+            $content .= "        \${$entityCollectionAlias} = {$entityCollectionAlias}::initFullDB();\n";
             $content .= "        foreach (\${$entityCollectionAlias} as \$key => \${$entityAlias}) {\n";
-            $content .= "            \$self->objects[\$key] = {$objectAlias}::fromEntity(\${$entityAlias});\n";
-            $content .= "        }\n\n";
+            $content .= "            \$this->objects[\$key] = {$objectAlias}::fromEntity(\${$entityAlias});\n";
+            $content .= "        }\n";
         } else {
-            $content .= "        // TODO: Implement initFullDB\n\n";
+            $content .= "        // TODO: Implement loadAllFromDB\n";
         }
-        $content .= "        return \$self;\n";
-        $content .= "    }\n\n";
-        $content .= "    /**\n";
-        $content .= "     * Initialize collection with partial database loading (lazy loading enabled)\n";
-        $content .= "     *\n";
-        $content .= "     * @param int \$strategy Lazy loading strategy (LAZY_STRATEGY_BATCH by default)\n";
-        $content .= "     * @return self\n";
-        $content .= "     */\n";
-        $content .= "    public static function initPartialDB(int \$strategy = self::LAZY_STRATEGY_BATCH): self\n";
-        $content .= "    {\n";
-        $content .= "        \$self = new self();\n";
-        $content .= "        \$self->_allowLazyLoading = true;\n";
-        $content .= "        \$self->_lazyStrategy = \$strategy;\n";
-        $content .= "        \$self->_allLoaded = false;\n";
-        $content .= "        return \$self;\n";
+        $content .= "        \$this->_allLoaded = true;\n";
+        $content .= "        \$this->_allowLazyLoading = false;\n";
         $content .= "    }\n\n";
         $content .= "    /**\n";
         $content .= "     * Initialize empty collection\n";
         $content .= "     *\n";
-        $content .= "     * @return self\n";
+        $content .= "     * @return static\n";
         $content .= "     */\n";
-        $content .= "    public static function initEmpty(): self\n";
+        $content .= "    public static function initEmpty(): static\n";
         $content .= "    {\n";
         $content .= "        \$self = new self();\n";
         $content .= "        \$self->objects = [];\n";
         $content .= "        return \$self;\n";
         $content .= "    }\n\n";
-        $content .= "    /**\n";
-        $content .= "     * Reload all {$objectShortName} objects from database\n";
-        $content .= "     *\n";
-        $content .= "     * @throws DatabaseException\n";
-        $content .= "     */\n";
-        $content .= "    public function initAgainFullDB(): void\n";
-        $content .= "    {\n";
-        $content .= "        \$this->objects = [];\n";
-        if ($entityCollectionClassName !== null) {
-            $content .= "        \${$entityCollectionAlias} = {$entityCollectionAlias}::initFullDB();\n\n";
-            $content .= "        foreach (\${$entityCollectionAlias} as \$key => \${$entityAlias}) {\n";
-            $content .= "            \$this->objects[\$key] = {$objectAlias}::fromEntity(\${$entityAlias});\n";
-            $content .= "        }\n\n";
-        } else {
-            $content .= "        // TODO: Implement initAgainFullDB\n\n";
+        if ($entityClassName !== null) {
+            $content .= "    /**\n";
+            $content .= "     * Get table name from Entity\n";
+            $content .= "     * \n";
+            $content .= "     * @return string Table name\n";
+            $content .= "     */\n";
+            $content .= "    protected function getTableName(): string\n";
+            $content .= "    {\n";
+            $content .= "        return {$entityAlias}::_table;\n";
+            $content .= "    }\n\n";
         }
-        $content .= "        \$this->_allLoaded = true;\n";
-        $content .= "        \$this->_allowLazyLoading = false;\n";
-        $content .= "    }\n\n";
         $content .= "    /**\n";
         $content .= "     * Get current {$objectShortName} object\n";
         $content .= "     *\n";
@@ -1054,6 +1033,158 @@ trait ObjectCollectionFixer
             $toCreate[$objectClassName] = [
                 'object_class' => $objectClassName,
                 'reflection' => new ReflectionClass($objectClassName),
+            ];
+        }
+
+        return $toCreate;
+    }
+
+    /**
+     * Find ObjectCollection files to create for newly created Object files
+     *
+     * @param array $objectsToCreate Array of tableName => entityInfo for newly created objects
+     * @param array $objectsAfter Loaded Object classes after creation (includes new ones)
+     * @param array $objectCollections Loaded ObjectCollection files
+     * @param array $brokenObjects Broken Object files
+     * @return array<string, array{object_class: string, reflection: ReflectionClass}> ObjectCollections to create
+     */
+    protected function findObjectCollectionsToCreateForNewObjects(array $objectsToCreate, array $objectsAfter, array $objectCollections, array $brokenObjects): array
+    {
+        $toCreate = [];
+
+        foreach ($objectsToCreate as $tableName => $entityInfo) {
+            $entityClassName = $entityInfo['class'];
+            
+            // Find corresponding Object in objectsAfter by Entity class name
+            $objectClassName = null;
+            foreach ($objectsAfter as $loadedObjectClassName => $objectInfoAfter) {
+                // Extract Entity class name from Object file
+                $objectFile = $objectInfoAfter['file'];
+                $extractedEntityClassName = $this->extractEntityClassNameFromObject($objectFile);
+                if ($extractedEntityClassName === $entityClassName) {
+                    $objectClassName = $loadedObjectClassName;
+                    break;
+                }
+            }
+
+            if ($objectClassName === null) {
+                continue;
+            }
+
+            $objectInfoAfter = $objectsAfter[$objectClassName];
+            $objectFile = $objectInfoAfter['file'];
+
+            // Skip broken objects
+            if (isset($brokenObjects[$objectFile])) {
+                continue;
+            }
+
+            // Create reflection if not present
+            if (!isset($objectInfoAfter['reflection'])) {
+                try {
+                    $objectInfoAfter['reflection'] = new ReflectionClass($objectClassName);
+                } catch (\Throwable $e) {
+                    continue; // Skip if reflection cannot be created
+                }
+            }
+
+            // Check if ObjectCollection already exists
+            $objectCollectionInfo = $objectCollections[$objectClassName] ?? null;
+
+            // If not found, try to find by file name (handle pluralization mismatch)
+            if ($objectCollectionInfo === null) {
+                $objectShortName = substr($objectClassName, strrpos($objectClassName, '\\') + 1);
+                $objectCollectionShortName = StringHelper::pluralize($objectShortName);
+
+                // Try to find ObjectCollection by checking all loaded collections
+                foreach ($objectCollections as $loadedObjectClassName => $collectionInfo) {
+                    $collectionReflection = $collectionInfo['reflection'];
+                    $collectionShortName = $collectionReflection->getShortName();
+
+                    // Check if collection name matches expected pluralized name
+                    if ($collectionShortName === $objectCollectionShortName) {
+                        // Verify that the loaded Object class matches our Object class
+                        if ($loadedObjectClassName === $objectClassName) {
+                            $objectCollectionInfo = $collectionInfo;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            // If ObjectCollection exists, skip
+            if ($objectCollectionInfo !== null) {
+                continue;
+            }
+
+            $toCreate[$objectClassName] = [
+                'object_class' => $objectClassName,
+                'reflection' => $objectInfoAfter['reflection'],
+            ];
+        }
+
+        return $toCreate;
+    }
+
+    /**
+     * Find ObjectCollection files to create for new objects (estimate phase)
+     * Uses entity info to predict object class names
+     *
+     * @param array $objectsToCreate Array of tableName => entityInfo for newly created objects
+     * @param array $objects Loaded Object classes
+     * @param array $objectCollections Loaded ObjectCollection files
+     * @param array $brokenObjects Broken Object files
+     * @return array<string, array{object_class: string, reflection: ReflectionClass}> ObjectCollections to create
+     */
+    protected function findObjectCollectionsToCreateForNewObjectsEstimate(array $objectsToCreate, array $objects, array $objectCollections, array $brokenObjects): array
+    {
+        $toCreate = [];
+
+        foreach ($objectsToCreate as $tableName => $entityInfo) {
+            $entityClassName = $entityInfo['class'];
+            
+            // Predict Object class name from Entity class name
+            $objectClassName = str_replace('\\Entity\\', '\\Object\\', $entityClassName);
+            
+            // Check if Object already exists (shouldn't, but check anyway)
+            if (isset($objects[$objectClassName])) {
+                continue;
+            }
+
+            // Check if ObjectCollection already exists
+            $objectCollectionInfo = $objectCollections[$objectClassName] ?? null;
+
+            // If not found, try to find by file name (handle pluralization mismatch)
+            if ($objectCollectionInfo === null) {
+                $objectShortName = substr($objectClassName, strrpos($objectClassName, '\\') + 1);
+                $objectCollectionShortName = StringHelper::pluralize($objectShortName);
+
+                // Try to find ObjectCollection by checking all loaded collections
+                foreach ($objectCollections as $loadedObjectClassName => $collectionInfo) {
+                    $collectionReflection = $collectionInfo['reflection'];
+                    $collectionShortName = $collectionReflection->getShortName();
+
+                    // Check if collection name matches expected pluralized name
+                    if ($collectionShortName === $objectCollectionShortName) {
+                        // Verify that the loaded Object class matches our predicted Object class
+                        if ($loadedObjectClassName === $objectClassName) {
+                            $objectCollectionInfo = $collectionInfo;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            // If ObjectCollection exists, skip
+            if ($objectCollectionInfo !== null) {
+                continue;
+            }
+
+            // For estimate, we don't need reflection yet - it will be created after Object file is created
+            // We just need to mark that this ObjectCollection should be created
+            $toCreate[$objectClassName] = [
+                'object_class' => $objectClassName,
+                'reflection' => null, // Will be created after Object file is created
             ];
         }
 

@@ -12,6 +12,7 @@ use Hilos\Core\CLI\Commands\DbIdeaFixCommand\IdeaMainFixer;
 use Hilos\Core\CLI\Commands\DbIdeaFixCommand\IdeaStorageFixer;
 use Hilos\Database\Object\Object_;
 use Hilos\Database\Object\Objects;
+use Hilos\Utils\Helpers\StringHelper;
 use ReflectionClass;
 use RuntimeException;
 
@@ -291,6 +292,18 @@ HELP;
         if (empty($brokenObjects) && empty($brokenIdeaItems) && $syntaxErrors === 0) {
             $ideaCollectionFixes = $this->prepareIdeaCollectionFixes($objectCollections, $ideaCollections, $tableName);
             $ideaCollectionsToCreate = $this->findIdeaCollectionsToCreate($objectCollections, $ideaCollections, $tableName, $brokenObjectCollections);
+            
+            // Also find IdeaCollection files to create for new idea items (from ideaItemsToCreate)
+            if (!empty($ideaItemsToCreate)) {
+                $ideaCollectionsToCreateForNew = $this->findIdeaCollectionsToCreateForNewIdeaItemsEstimate($ideaItemsToCreate, $objectCollections, $ideaCollections, $brokenObjectCollections);
+                // Merge with existing list
+                foreach ($ideaCollectionsToCreateForNew as $objectCollectionClassName => $collectionInfo) {
+                    if (!isset($ideaCollectionsToCreate[$objectCollectionClassName])) {
+                        $ideaCollectionsToCreate[$objectCollectionClassName] = $collectionInfo;
+                    }
+                }
+            }
+            
             $ideaCollectionsToDelete = $this->findIdeaCollectionsToDelete($objectCollections, $ideaCollections);
         }
 
@@ -361,6 +374,31 @@ HELP;
             $appliedObjects = $this->applyIdeaItemFixes($ideaItemFixes, $ideaItems, $objects);
             $createdObjects = $this->createIdeaItemFiles($ideaItemsToCreate, $ideaDir, $objects);
             $deletedObjects = $this->deleteIdeaItemFiles($ideaItemsToDelete);
+        }
+
+        // After creating new IdeaItem files, find IdeaCollections to create for them
+        if ($createdObjects > 0 && !empty($ideaItemsToCreate) && empty($brokenObjects) && empty($brokenIdeaItems) && $syntaxErrors === 0) {
+            // Reload ideaItems to include newly created ones
+            $syntaxErrorsAfter = 0;
+            $brokenIdeaItemsAfter = [];
+            $ideaItemsAfter = $this->loadIdeaItems($ideaDir, $syntaxErrorsAfter, $brokenIdeaItemsAfter);
+            
+            // Reload objectCollections to ensure we have latest data
+            $brokenObjectCollectionsAfter = [];
+            $objectCollectionsAfter = [];
+            if (empty($brokenObjects) && empty($brokenIdeaItemsAfter) && $syntaxErrorsAfter === 0) {
+                $objectCollectionsAfter = $this->loadObjectCollections($objectDir, $syntaxErrorsAfter, $brokenObjectCollectionsAfter);
+            }
+            
+            // Find IdeaCollections for newly created IdeaItem files
+            $newlyCreatedIdeaCollections = $this->findIdeaCollectionsToCreateForNewIdeaItems($ideaItemsToCreate, $ideaItemsAfter, $objectCollectionsAfter, $ideaCollections, $brokenIdeaItemsAfter, $brokenObjectCollectionsAfter);
+            
+            // Merge with existing list
+            foreach ($newlyCreatedIdeaCollections as $ideaItemClassName => $collectionInfo) {
+                if (!isset($ideaCollectionsToCreate[$ideaItemClassName])) {
+                    $ideaCollectionsToCreate[$ideaItemClassName] = $collectionInfo;
+                }
+            }
         }
 
         // Apply IdeaCollection fixes (only if no errors)
@@ -977,6 +1015,159 @@ HELP;
     }
 
     /**
+     * Find IdeaCollection files to create for newly created IdeaItem files
+     *
+     * @param array $ideaItemsToCreate Array of object class names => object info for newly created idea items
+     * @param array $ideaItemsAfter Loaded IdeaItem classes after creation (includes new ones)
+     * @param array $objectCollectionsAfter Loaded ObjectCollection classes after creation
+     * @param array $ideaCollections Loaded IdeaCollection files
+     * @param array $brokenIdeaItems Broken IdeaItem files
+     * @param array $brokenObjectCollections Broken ObjectCollection files
+     * @return array<string, array{object_collection_class: string, reflection: ReflectionClass}> IdeaCollections to create
+     */
+    private function findIdeaCollectionsToCreateForNewIdeaItems(array $ideaItemsToCreate, array $ideaItemsAfter, array $objectCollectionsAfter, array $ideaCollections, array $brokenIdeaItems, array $brokenObjectCollections): array
+    {
+        $toCreate = [];
+
+        foreach ($ideaItemsToCreate as $objectClassName => $objectInfo) {
+            // Find corresponding IdeaItem in ideaItemsAfter
+            if (!isset($ideaItemsAfter[$objectClassName])) {
+                continue;
+            }
+
+            $ideaItemInfo = $ideaItemsAfter[$objectClassName];
+            $ideaItemFile = $ideaItemInfo['file'];
+
+            // Skip broken idea items
+            if (isset($brokenIdeaItems[$ideaItemFile])) {
+                continue;
+            }
+
+            // Find corresponding ObjectCollection
+            $objectCollectionClassName = null;
+            foreach ($objectCollectionsAfter as $loadedObjectCollectionClassName => $objectCollectionInfo) {
+                $objectCollectionFile = $objectCollectionInfo['file'];
+                
+                // Skip broken object collections
+                if (isset($brokenObjectCollections[$objectCollectionFile])) {
+                    continue;
+                }
+
+                // Extract Entity class name from ObjectCollection
+                $entityClassName = $this->extractEntityClassNameFromObjectCollection($objectCollectionInfo['reflection']);
+                if ($entityClassName === null) {
+                    continue;
+                }
+
+                // Find Object class name from Entity class name
+                $objectClassNameFromEntity = str_replace('\\Entity\\', '\\Object\\', $entityClassName);
+                if ($objectClassNameFromEntity === $objectClassName) {
+                    $objectCollectionClassName = $loadedObjectCollectionClassName;
+                    break;
+                }
+            }
+
+            if ($objectCollectionClassName === null) {
+                continue;
+            }
+
+            // Check if IdeaCollection already exists
+            if (isset($ideaCollections[$objectCollectionClassName])) {
+                continue;
+            }
+
+            $objectCollectionInfo = $objectCollectionsAfter[$objectCollectionClassName];
+            // Reflection should exist in objectCollectionInfo after file creation
+            $reflection = $objectCollectionInfo['reflection'] ?? null;
+            if ($reflection === null) {
+                try {
+                    $reflection = new ReflectionClass($objectCollectionClassName);
+                } catch (\Throwable $e) {
+                    continue; // Skip if reflection cannot be created
+                }
+            }
+            $toCreate[$objectCollectionClassName] = [
+                'object_collection_class' => $objectCollectionClassName,
+                'reflection' => $reflection,
+            ];
+        }
+
+        return $toCreate;
+    }
+
+    /**
+     * Find IdeaCollection files to create for new idea items (estimate phase)
+     * Uses object class names to predict object collection class names
+     *
+     * @param array $ideaItemsToCreate Array of object class names => object info for newly created idea items
+     * @param array $objectCollections Loaded ObjectCollection classes
+     * @param array $ideaCollections Loaded IdeaCollection files
+     * @param array $brokenObjectCollections Broken ObjectCollection files
+     * @return array<string, array{object_collection_class: string, reflection: ReflectionClass}> IdeaCollections to create
+     */
+    private function findIdeaCollectionsToCreateForNewIdeaItemsEstimate(array $ideaItemsToCreate, array $objectCollections, array $ideaCollections, array $brokenObjectCollections): array
+    {
+        $toCreate = [];
+
+        foreach ($ideaItemsToCreate as $objectClassName => $objectInfo) {
+            // Predict ObjectCollection class name from Object class name
+            $objectCollectionClassName = str_replace('\\Object\\', '\\ObjectCollection\\', $objectClassName);
+            $objectCollectionShortName = substr($objectCollectionClassName, strrpos($objectCollectionClassName, '\\') + 1);
+            $objectCollectionShortName = StringHelper::pluralize($objectCollectionShortName);
+            $objectCollectionNamespace = substr($objectCollectionClassName, 0, strrpos($objectCollectionClassName, '\\'));
+            $objectCollectionClassName = $objectCollectionNamespace . '\\' . $objectCollectionShortName;
+            
+            // Check if ObjectCollection exists
+            if (!isset($objectCollections[$objectCollectionClassName])) {
+                // Try to find by short name
+                $found = false;
+                foreach ($objectCollections as $loadedObjectCollectionClassName => $objectCollectionInfo) {
+                    $collectionReflection = $objectCollectionInfo['reflection'];
+                    $collectionShortName = $collectionReflection->getShortName();
+                    if ($collectionShortName === $objectCollectionShortName) {
+                        $objectCollectionClassName = $loadedObjectCollectionClassName;
+                        $found = true;
+                        break;
+                    }
+                }
+                if (!$found) {
+                    continue; // ObjectCollection doesn't exist yet, skip
+                }
+            }
+
+            $objectCollectionInfo = $objectCollections[$objectCollectionClassName];
+            $objectCollectionFile = $objectCollectionInfo['file'];
+            
+            // Skip broken object collections
+            if (isset($brokenObjectCollections[$objectCollectionFile])) {
+                continue;
+            }
+
+            // Check if IdeaCollection already exists
+            if (isset($ideaCollections[$objectCollectionClassName])) {
+                continue;
+            }
+
+            // For estimate, reflection should exist in objectCollectionInfo
+            // If not, we'll create it when needed
+            $reflection = $objectCollectionInfo['reflection'] ?? null;
+            if ($reflection === null) {
+                try {
+                    $reflection = new ReflectionClass($objectCollectionClassName);
+                } catch (\Throwable $e) {
+                    continue; // Skip if reflection cannot be created
+                }
+            }
+            $toCreate[$objectCollectionClassName] = [
+                'object_collection_class' => $objectCollectionClassName,
+                'reflection' => $reflection,
+            ];
+        }
+
+        return $toCreate;
+    }
+
+    /**
      * Extract Entity class name from ObjectCollection (helper method)
      */
     private function extractEntityClassNameFromObjectCollection(ReflectionClass $objectCollectionReflection): ?string
@@ -1043,7 +1234,12 @@ HELP;
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n";
 
             foreach ($toCreate as $objectCollectionClassName => $info) {
-                $objectCollectionShortName = (new ReflectionClass($objectCollectionClassName))->getShortName();
+                // Get short name from reflection if available, otherwise extract from class name
+                if (isset($info['reflection']) && $info['reflection'] !== null) {
+                    $objectCollectionShortName = $info['reflection']->getShortName();
+                } else {
+                    $objectCollectionShortName = substr($objectCollectionClassName, strrpos($objectCollectionClassName, '\\') + 1);
+                }
                 echo "  + {$objectCollectionShortName}\n";
             }
             echo "\n";
@@ -1136,7 +1332,16 @@ HELP;
 
         $created = 0;
         foreach ($toCreate as $objectCollectionClassName => $info) {
-            $objectCollectionReflection = $info['reflection'];
+            // Get reflection from info, or create it from objectCollectionClassName if not present
+            $objectCollectionReflection = $info['reflection'] ?? null;
+            if ($objectCollectionReflection === null) {
+                try {
+                    $objectCollectionReflection = new ReflectionClass($objectCollectionClassName);
+                } catch (\Throwable $e) {
+                    echo "⚠ Failed to create IdeaCollection for {$objectCollectionClassName}: Cannot load ObjectCollection class\n";
+                    continue;
+                }
+            }
             if ($this->createIdeaCollectionFile($objectCollectionClassName, $ideaCollectionDir, $namespace, $objectCollectionReflection)) {
                 $created++;
             }

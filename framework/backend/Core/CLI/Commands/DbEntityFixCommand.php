@@ -15,6 +15,7 @@ use Hilos\Database\Schema\IndexInfo;
 use Hilos\Database\Schema\Schema;
 use Hilos\Database\Schema\TableInfo;
 use Hilos\Exception\DatabaseException;
+use Hilos\Utils\Helpers\StringHelper;
 use ReflectionClass;
 use RuntimeException;
 
@@ -201,8 +202,19 @@ HELP;
         // Prepare fixes for EntityCollections
         $entityCollectionFixes = $this->prepareEntityCollectionFixes($entities, $entityCollections, $tableName);
 
-        // Find EntityCollection files to create
+        // Find EntityCollection files to create for existing entities
         $entityCollectionsToCreate = $this->findEntityCollectionsToCreate($entities, $entityCollections, $tableName, $brokenEntities);
+
+        // Also find EntityCollection files to create for new entities (from tablesToCreate)
+        if (!empty($tablesToCreate)) {
+            $entityCollectionsToCreateForNew = $this->findEntityCollectionsToCreateForNewEntitiesEstimate($tablesToCreate, $entityDir, $entityNamespace, $entityCollections, $brokenEntities);
+            // Merge with existing list
+            foreach ($entityCollectionsToCreateForNew as $entityClassName => $collectionInfo) {
+                if (!isset($entityCollectionsToCreate[$entityClassName])) {
+                    $entityCollectionsToCreate[$entityClassName] = $collectionInfo;
+                }
+            }
+        }
 
         // Check if there are any fixes needed
         if (empty($entityCollectionFixes) && empty($entityCollectionsToCreate)) {
@@ -228,6 +240,25 @@ HELP;
 
         // Create new Entity files
         $created = $this->createEntityFiles($tablesToCreate, $entityDir, $entityNamespace, $dbIndex);
+
+        // After creating new Entity files, find EntityCollections to create for them
+        $newlyCreatedEntityCollections = [];
+        if ($created > 0 && !empty($tablesToCreate)) {
+            // Reload entities to include newly created ones
+            $syntaxErrorsAfter = 0;
+            $brokenEntitiesAfter = [];
+            $entitiesAfter = $this->loadEntities($entityDir, $entityNamespace, $syntaxErrorsAfter, $brokenEntitiesAfter);
+            
+            // Find EntityCollections for newly created Entity files
+            $newlyCreatedEntityCollections = $this->findEntityCollectionsToCreateForNewEntities($tablesToCreate, $entitiesAfter, $entityCollections, $brokenEntitiesAfter);
+            
+            // Merge with existing list
+            foreach ($newlyCreatedEntityCollections as $entityClassName => $collectionInfo) {
+                if (!isset($entityCollectionsToCreate[$entityClassName])) {
+                    $entityCollectionsToCreate[$entityClassName] = $collectionInfo;
+                }
+            }
+        }
 
         // Delete Entity files without tables
         $deleted = $this->deleteEntityFiles($filesToDelete);
@@ -2698,7 +2729,7 @@ HELP;
 
             foreach ($fixes as $entityClassName => $collectionFixes) {
                 $entityShortName = (new ReflectionClass($entityClassName))->getShortName();
-                $collectionShortName = $entityShortName . 's';
+                $collectionShortName = StringHelper::pluralize($entityShortName);
                 echo "  {$collectionShortName}:\n";
 
                 if (isset($collectionFixes['update_imports'])) {
@@ -2722,8 +2753,13 @@ HELP;
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n";
 
             foreach ($toCreate as $entityClassName => $info) {
-                $entityShortName = (new ReflectionClass($entityClassName))->getShortName();
-                $collectionShortName = $entityShortName . 's';
+                // Get short name from reflection if available, otherwise extract from class name
+                if (isset($info['reflection']) && $info['reflection'] !== null) {
+                    $entityShortName = $info['reflection']->getShortName();
+                } else {
+                    $entityShortName = substr($entityClassName, strrpos($entityClassName, '\\') + 1);
+                }
+                $collectionShortName = StringHelper::pluralize($entityShortName);
                 echo "  + {$collectionShortName}\n";
             }
             echo "\n";
@@ -2804,7 +2840,16 @@ HELP;
 
         $created = 0;
         foreach ($toCreate as $entityClassName => $info) {
-            $entityReflection = $info['reflection'];
+            // Get reflection from info, or create it from entityClassName if not present
+            $entityReflection = $info['reflection'] ?? null;
+            if ($entityReflection === null) {
+                try {
+                    $entityReflection = new ReflectionClass($entityClassName);
+                } catch (\Throwable $e) {
+                    echo "⚠ Failed to create EntityCollection for {$entityClassName}: Cannot load Entity class\n";
+                    continue;
+                }
+            }
             if ($this->createEntityCollectionFile($entityClassName, $entityCollectionDir, $namespace, $entityReflection)) {
                 $created++;
             }

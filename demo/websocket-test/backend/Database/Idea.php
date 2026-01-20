@@ -2,7 +2,9 @@
 
 namespace Demo\WebSocketTest\Database;
 
+use Demo\WebSocketTest\Database\IdeaCollection\Bots as IdeaBots;
 use Demo\WebSocketTest\Database\IdeaCollection\Events as IdeaEvents;
+use Demo\WebSocketTest\Database\IdeaCollection\Moderators as IdeaModerators;
 use Demo\WebSocketTest\Database\IdeaCollection\Users as IdeaUsers;
 use Hilos\Database\Idea\Idea as BaseIdea;
 use Hilos\Exception\DatabaseException;
@@ -19,11 +21,15 @@ use Hilos\Exception\DatabaseException;
  * 
  * @property IdeaUsers $users
  * @property IdeaEvents $events
+ * @property IdeaBots $bots
+ * @property IdeaModerators $moderators
  */
 final class Idea extends BaseIdea
 {
     public const string users = 'users';
     public const string events = 'events';
+    public const string bots = 'bots';
+    public const string moderators = 'moderators';
 
     /**
      * Initialize Idea with storage
@@ -59,6 +65,18 @@ final class Idea extends BaseIdea
                 name: self::events,
                 objectCollection: $storage->events,
                 ideaCollectionClass: IdeaEvents::class,
+            );
+
+            self::$idea->setRepresent(
+                name: self::bots,
+                objectCollection: $storage->bots,
+                ideaCollectionClass: IdeaBots::class,
+            );
+
+            self::$idea->setRepresent(
+                name: self::moderators,
+                objectCollection: $storage->moderators,
+                ideaCollectionClass: IdeaModerators::class,
             );
         }
     }

@@ -918,4 +918,159 @@ trait EntityCollectionFixer
 
         return $toCreate;
     }
+
+    /**
+     * Find EntityCollection files to create for newly created Entity files
+     *
+     * @param array $tablesToCreate Array of table names => TableInfo for newly created tables
+     * @param array $entitiesAfter Loaded Entity classes after creation (includes new ones)
+     * @param array $entityCollections Loaded EntityCollection files
+     * @param array $brokenEntities Broken Entity files
+     * @return array<string, array{entity_class: string, reflection: ReflectionClass}> EntityCollections to create
+     */
+    protected function findEntityCollectionsToCreateForNewEntities(array $tablesToCreate, array $entitiesAfter, array $entityCollections, array $brokenEntities): array
+    {
+        $toCreate = [];
+
+        foreach ($tablesToCreate as $tableName => $dbTable) {
+            // Skip migration table
+            if ($tableName === 'migration') {
+                continue;
+            }
+
+            // Find corresponding Entity in entitiesAfter
+            if (!isset($entitiesAfter[$tableName])) {
+                continue;
+            }
+
+            $entityInfo = $entitiesAfter[$tableName];
+            $entityClassName = $entityInfo['class'];
+            $entityFile = $entityInfo['file'];
+
+            // Skip broken entities
+            if (isset($brokenEntities[$entityFile])) {
+                continue;
+            }
+
+            // Check if EntityCollection already exists
+            $entityCollectionInfo = $entityCollections[$entityClassName] ?? null;
+
+            // If not found, try to find by file name (handle pluralization mismatch)
+            if ($entityCollectionInfo === null) {
+                $entityReflection = $entityInfo['reflection'];
+                $entityShortName = $entityReflection->getShortName();
+                $entityCollectionShortName = StringHelper::pluralize($entityShortName);
+
+                // Try to find EntityCollection by checking all loaded collections
+                foreach ($entityCollections as $loadedEntityClassName => $collectionInfo) {
+                    $collectionReflection = $collectionInfo['reflection'];
+                    $collectionShortName = $collectionReflection->getShortName();
+
+                    // Check if collection name matches expected pluralized name
+                    if ($collectionShortName === $entityCollectionShortName) {
+                        // Verify that the loaded Entity class matches our Entity class
+                        if ($loadedEntityClassName === $entityClassName) {
+                            $entityCollectionInfo = $collectionInfo;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            // If EntityCollection exists, skip
+            if ($entityCollectionInfo !== null) {
+                continue;
+            }
+
+            $toCreate[$entityClassName] = [
+                'entity_class' => $entityClassName,
+                'reflection' => $entityInfo['reflection'],
+            ];
+        }
+
+        return $toCreate;
+    }
+
+    /**
+     * Find EntityCollection files to create for new entities (estimate phase)
+     * Predicts entity class names from table names without loading files
+     *
+     * @param array $tablesToCreate Array of table names => TableInfo for newly created tables
+     * @param string|null $entityDir Entity directory
+     * @param string|null $entityNamespace Entity namespace
+     * @param array $entityCollections Loaded EntityCollection files
+     * @param array $brokenEntities Broken Entity files
+     * @return array<string, array{entity_class: string, reflection: ReflectionClass}> EntityCollections to create
+     */
+    protected function findEntityCollectionsToCreateForNewEntitiesEstimate(array $tablesToCreate, ?string $entityDir, ?string $entityNamespace, array $entityCollections, array $brokenEntities): array
+    {
+        $toCreate = [];
+
+        foreach ($tablesToCreate as $tableName => $dbTable) {
+            // Skip migration table
+            if ($tableName === 'migration') {
+                continue;
+            }
+
+            // Predict Entity class name from table name
+            $entityShortName = $this->tableToPascalCase($tableName);
+            if ($entityNamespace === null) {
+                // Try to detect namespace from entityDir
+                if ($entityDir !== null) {
+                    $entityNamespace = \Hilos\Database\Generator::detectNamespaceFromPath($entityDir);
+                }
+                if ($entityNamespace === null) {
+                    continue; // Cannot determine namespace
+                }
+            }
+            $entityClassName = $entityNamespace . '\\' . $entityShortName;
+
+            // Check if EntityCollection already exists
+            $entityCollectionInfo = $entityCollections[$entityClassName] ?? null;
+
+            // If not found, try to find by file name (handle pluralization mismatch)
+            if ($entityCollectionInfo === null) {
+                $entityCollectionShortName = StringHelper::pluralize($entityShortName);
+
+                // Try to find EntityCollection by checking all loaded collections
+                foreach ($entityCollections as $loadedEntityClassName => $collectionInfo) {
+                    $collectionReflection = $collectionInfo['reflection'];
+                    $collectionShortName = $collectionReflection->getShortName();
+
+                    // Check if collection name matches expected pluralized name
+                    if ($collectionShortName === $entityCollectionShortName) {
+                        // Verify that the loaded Entity class matches our predicted Entity class
+                        if ($loadedEntityClassName === $entityClassName) {
+                            $entityCollectionInfo = $collectionInfo;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            // If EntityCollection exists, skip
+            if ($entityCollectionInfo !== null) {
+                continue;
+            }
+
+            // For estimate, we don't need reflection yet - it will be created after Entity file is created
+            // We just need to mark that this EntityCollection should be created
+            // Use a placeholder structure that will be replaced after Entity creation
+            $toCreate[$entityClassName] = [
+                'entity_class' => $entityClassName,
+                'reflection' => null, // Will be created after Entity file is created
+                'table_name' => $tableName, // Store table name for later use
+            ];
+        }
+
+        return $toCreate;
+    }
+
+    /**
+     * Convert table name to PascalCase class name
+     */
+    protected function tableToPascalCase(string $tableName): string
+    {
+        return str_replace('_', '', ucwords($tableName, '_'));
+    }
 }

@@ -7,6 +7,8 @@ use Hilos\Database\Idea\IdeaStorage as BaseIdeaStorage;
 use Hilos\Database\Object\Objects;
 use Demo\WebSocketTest\Database\ObjectCollection\Events as ObjectEvents;
 use Hilos\Exception\DatabaseException;
+use Demo\WebSocketTest\Database\ObjectCollection\Moderators as ObjectModerators;
+use Demo\WebSocketTest\Database\ObjectCollection\Bots as ObjectBots;
 
 /**
  * IdeaStorage for WebSocket Test Demo
@@ -19,6 +21,12 @@ final class IdeaStorage extends BaseIdeaStorage
 
     /** @var ObjectEvents */
     public ObjectEvents $events;
+
+    /** @var ObjectBots */
+    public ObjectBots $bots;
+
+    /** @var ObjectModerators */
+    public ObjectModerators $moderators;
 
     /**
      * Initialize storage with all collections
@@ -34,6 +42,8 @@ final class IdeaStorage extends BaseIdeaStorage
         $self->users = ObjectUsers::initDB(Objects::LAZY_STRATEGY_KEY);
         // Events - LAZY_STRATEGY_NONE (load all immediately, no lazy loading)
         $self->events = ObjectEvents::initDB(Objects::LAZY_STRATEGY_NONE);
+        $self->bots = ObjectBots::initDB(Objects::LAZY_STRATEGY_KEY);
+        $self->moderators = ObjectModerators::initDB(Objects::LAZY_STRATEGY_KEY);
 
         return $self;
     }
@@ -49,6 +59,8 @@ final class IdeaStorage extends BaseIdeaStorage
         match($collectionName) {
             'users' => $this->users->loadAllFromDB(),
             'events' => $this->events->loadAllFromDB(),
+            'bots' => $this->bots->loadAllFromDB(),
+            'moderators' => $this->moderators->loadAllFromDB(),
             default => throw new DatabaseException("Unknown collection: {$collectionName}"),
         };
     }
