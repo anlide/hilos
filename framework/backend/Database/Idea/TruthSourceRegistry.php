@@ -117,5 +117,31 @@ class TruthSourceRegistry
 
         return empty($allKeys) ? null : array_unique($allKeys);
     }
+
+    /**
+     * Check if table has any registered truth source
+     * Used for LAZY_STRATEGY_NONE to determine if write operations are allowed
+     * 
+     * @param string $table Table name
+     * @return bool True if table has at least one registered truth source
+     */
+    public static function hasTruthSource(string $table): bool
+    {
+        return isset(self::$sources[$table]) && !empty(self::$sources[$table]);
+    }
+
+    /**
+     * Check if write operation is allowed for table
+     * Throws exception if no truth source is registered
+     * 
+     * @param string $table Table name
+     * @throws RuntimeException If write is not allowed (no truth source registered)
+     */
+    public static function checkCanWrite(string $table): void
+    {
+        if (!self::hasTruthSource($table)) {
+            throw new RuntimeException("Write operation not allowed: no truth source registered for table '{$table}'. Register via TruthSourceRegistry::register() first.");
+        }
+    }
 }
 

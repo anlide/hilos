@@ -16,7 +16,7 @@ use RuntimeException;
  * High-level abstraction with lazy loading and relationships
  *
  * Stores reference to ObjectUser instance.
- * Object instances are stored in ObjectCollection in IdeaStorage.
+ * Object instances are stored in ObjectCollection in Idea.
  *
  * @extends IdeaItem<ObjectUser>
  *
@@ -39,7 +39,7 @@ final class User extends IdeaItem
 
     /**
      * Create UserSettings collection for this user
-     * Creates manual collection and populates it with UserSettings from ObjectCollection in IdeaStorage
+     * Creates manual collection and populates it with UserSettings from ObjectCollection in Idea
      * Uses filter system for filtering by userId
      *
      * @return IdeaUserSettings
@@ -57,8 +57,9 @@ final class User extends IdeaItem
             return $settingsCollection;
         }
 
-        // Get ObjectCollection from IdeaStorage
-        $objectCollection = Idea::$storage->userSettings;
+        // Get ObjectCollection from Idea
+        // TODO: Add userSettings collection to Idea if needed
+        $objectCollection = Idea::$idea->getObjectCollection('userSettings');
 
         // Create filter for userId
         $filter = (new FilterBuilder())

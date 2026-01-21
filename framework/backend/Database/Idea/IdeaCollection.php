@@ -15,11 +15,11 @@ use RuntimeException;
  * Provides lazy loading and relation management between Idea items
  *
  * Supports two modes:
- * 1. Automatic mode (default): Wraps ObjectCollection from IdeaStorage, lazy loading handled by ObjectCollection
+ * 1. Automatic mode (default): Wraps ObjectCollection from Idea, lazy loading handled by ObjectCollection
  * 2. Manual mode: Empty collection that can be populated manually with IdeaItem instances
  *
  * IdeaCollection contains array of IdeaItem instances.
- * Each IdeaItem references a specific Object stored in ObjectCollection in IdeaStorage.
+ * Each IdeaItem references a specific Object stored in ObjectCollection in Idea.
  *
  * @template T of IdeaItem
  * @implements ArrayAccess<int|string, T>
@@ -54,7 +54,7 @@ abstract class IdeaCollection implements ArrayAccess, Countable, Iterator
     }
 
     /**
-     * Initialize collection in automatic mode (wraps ObjectCollection from IdeaStorage)
+     * Initialize collection in automatic mode (wraps ObjectCollection from Idea)
      * Default implementation - child classes can override if needed
      *
      * @return static
@@ -102,13 +102,103 @@ abstract class IdeaCollection implements ArrayAccess, Countable, Iterator
     }
 
     /**
-     * Get ObjectCollection from IdeaStorage
-     * Must be implemented by child classes to return the appropriate ObjectCollection
+     * Object collection reference (set via setObjectCollection)
+     * Used in automatic mode to access Object collection
+     *
+     * @var Objects|null
+     */
+    private ?Objects $_objectCollection = null;
+
+    /**
+     * Actions class name (set via setActionsClass)
+     * Used to create Actions instance on demand
+     *
+     * @var string|null
+     */
+    private ?string $_actionsClass = null;
+
+    /**
+     * Cached Actions instance (created lazily)
+     *
+     * @var IdeaActions|null
+     */
+    private ?IdeaActions $_actions = null;
+
+    /**
+     * Set Object collection reference
+     * Called by Idea::setRepresent() when collection is registered
+     *
+     * @param Objects $objectCollection Object collection instance (reference)
+     */
+    public function setObjectCollection(Objects &$objectCollection): void
+    {
+        $this->_objectCollection = &$objectCollection;
+    }
+
+    /**
+     * Set Actions class name
+     * Called by Idea::setRepresent() when collection is registered
+     *
+     * @param string|null $actionsClass Actions class name (null to use default)
+     */
+    public function setActionsClass(?string $actionsClass): void
+    {
+        $this->_actionsClass = $actionsClass;
+    }
+
+    /**
+     * Get Actions instance
+     * Creates Actions instance lazily on first access
+     *
+     * @return IdeaActions
+     * @throws DatabaseException If Actions class is not set and default class cannot be used
+     */
+    protected function getActions(): IdeaActions
+    {
+        if ($this->_actions === null) {
+            $class = $this->_actionsClass ?? IdeaActions::class;
+            if (!is_subclass_of($class, IdeaActions::class)) {
+                throw new DatabaseException("Actions class [{$class}] must extend IdeaActions");
+            }
+            $this->_actions = new $class($this);
+            
+            // Set callback for creating IdeaItem from Object
+            // This allows Actions to create IdeaItem instances without accessing protected createIdea()
+            $this->_actions->setCreateIdeaCallback(function (Object_ &$object): IdeaItem {
+                return $this->createIdea($object);
+            });
+        }
+        return $this->_actions;
+    }
+
+    /**
+     * Get ObjectCollection
+     * Returns the Object collection reference set via setObjectCollection()
      * Returns null for manual collections
      *
-     * @return Objects|null ObjectCollection instance from IdeaStorage, or null for manual collections
+     * @return Objects|null ObjectCollection instance, or null for manual collections
      */
-    abstract protected function getObjectCollection(): ?Objects;
+    protected function getObjectCollection(): ?Objects
+    {
+        return $this->_objectCollection;
+    }
+
+    /**
+     * Get ObjectCollection for Actions
+     * Public method to allow Actions to access ObjectCollection
+     * Returns reference to storage - modifications will affect the stored collection
+     * 
+     * Note: In PHP, objects are passed by reference, so modifications to the returned
+     * object will affect the original object stored in Idea::_objectCollections
+     *
+     * @return Objects|null ObjectCollection instance, or null for manual collections
+     */
+    public function getObjectCollectionForActions(): ?Objects
+    {
+        // Returns the same object reference stored in _objectCollection
+        // Modifications to this object will be visible in Idea::_objectCollections
+        return $this->_objectCollection;
+    }
 
     /**
      * Create Idea instance from Object
@@ -157,23 +247,6 @@ abstract class IdeaCollection implements ArrayAccess, Countable, Iterator
         }
 
         $this->items[$key] = $item;
-    }
-
-    /**
-     * Add Object to manual collection (creates IdeaItem automatically)
-     * Only works for manual collections (created via initEmpty())
-     *
-     * @param Object_ $object Object instance (reference)
-     * @throws DatabaseException If collection is not manual
-     */
-    public function addFromObject(Object_ &$object): void
-    {
-        if (!$this->isManual) {
-            throw new DatabaseException("Can only add objects to manual collections (created via initEmpty())");
-        }
-
-        $ideaItem = $this->createIdea($object);
-        $this->add($ideaItem);
     }
 
     /**
@@ -442,6 +515,22 @@ abstract class IdeaCollection implements ArrayAccess, Countable, Iterator
                 unset($objectCollection[$offset]);
             }
         }
+    }
+
+    /**
+     * Magic getter for actions
+     *
+     * @param string $name Property name
+     * @return IdeaActions|never
+     * @throws DatabaseException
+     */
+    public function __get(string $name)
+    {
+        if ($name === 'actions') {
+            return $this->getActions();
+        }
+        
+        throw new DatabaseException("Property [{$name}] does not exist on " . static::class);
     }
 
     // Countable implementation

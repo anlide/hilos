@@ -22,20 +22,8 @@ final class Users extends IdeaCollection
     // init() and initEmpty() are inherited from IdeaCollection
     // Override only if custom initialization logic is needed
 
-    /**
-     * Get ObjectCollection from IdeaStorage
-     * Returns null for manual collections
-     * 
-     * @return Objects|null ObjectCollection instance from IdeaStorage, or null for manual collections
-     */
-    protected function getObjectCollection(): ?Objects
-    {
-        $storage = Idea::$storage;
-        if ($storage === null) {
-            throw new RuntimeException("IdeaStorage not initialized");
-        }
-        return $storage->users;
-    }
+    // getObjectCollection() is inherited from IdeaCollection
+    // ObjectCollection is set via setObjectCollection() by Idea::setRepresent()
 
     /**
      * Create Idea instance from Object
@@ -87,33 +75,7 @@ final class Users extends IdeaCollection
         return $this->getIdeaForKey($id);
     }
 
-    /**
-     * Register new user
-     * Creates ObjectUser, adds it to ObjectCollection in IdeaStorage, and returns IdeaUser
-     *
-     * @param string $sessionToken Session token (32 hex characters)
-     * @return IdeaUser Newly registered user idea
-     * @throws DatabaseException If registration fails
-     */
-    public function register(string $sessionToken): IdeaUser
-    {
-        // Create ObjectUser through ObjectUser::register()
-        $objectUser = ObjectUser::register($sessionToken);
-
-        // Add to ObjectCollection in IdeaStorage
-        $objectCollection = $this->getObjectCollection();
-        if (!($objectCollection instanceof ObjectUsers)) {
-            throw new RuntimeException("Expected ObjectUsers instance");
-        }
-
-        // Add ObjectUser to ObjectCollection
-        if ($objectUser->id !== null) {
-            $objectCollection[$objectUser->id] = $objectUser;
-        }
-
-        // Create and return IdeaUser
-        return $this->createIdea($objectUser);
-    }
+    // register() method moved to UsersActions
 
     /**
      * Get current User idea

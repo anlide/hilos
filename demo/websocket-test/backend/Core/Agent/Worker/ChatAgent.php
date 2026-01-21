@@ -8,7 +8,6 @@ use Demo\WebSocketTest\Constants\AgentType;
 use Demo\WebSocketTest\Constants\ChatEventType;
 use Demo\WebSocketTest\Constants\PageConstants;
 use Demo\WebSocketTest\Database\Idea;
-use Demo\WebSocketTest\Database\Object\Event as ObjectEvent;
 use Demo\WebSocketTest\DTO\ChatEventSignalData;
 use Demo\WebSocketTest\DTO\SubscriptionResponseSignalData;
 use Demo\WebSocketTest\DTO\WebSocketHandshakeSignalDTO;
@@ -19,7 +18,6 @@ use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalType;
 use Hilos\Core\Router\WebSocketSignalData;
-use Hilos\Database\Database;
 use Hilos\Database\Idea\TruthSourceRegistry;
 use Hilos\DTO\BaseDTO;
 use Hilos\Exception\DatabaseException;
@@ -85,7 +83,7 @@ class ChatAgent extends AbstractAgent
         TruthSourceRegistry::register('event', true, $this->getId());
 
         // Add chat created event to history (system event with userId = null)
-        $this->addEvent(ChatEventType::CHAT_CREATED);
+        Idea::$idea->events->actions->add(ChatEventType::CHAT_CREATED->value, null, null);
     }
 
     /**
@@ -126,31 +124,22 @@ class ChatAgent extends AbstractAgent
         }
 
         // Add event to collection (saves to database and adds to collection)
-        $objectEvent = Idea::$storage->events->add($type->value, $userId, $data);
+        $event = Idea::$idea->events->actions->add($type->value, $userId, $data);
 
         // Broadcast event to all connected clients via SignalRouter
-        $eventData = new ChatEventSignalData($objectEvent);
+        $eventData = new ChatEventSignalData($event);
 
         // Wrap event data in WebSocketSignalData for WebSocket routing
-        $signalData = new WebSocketSignalData(
-            data: $eventData,
-            targetClientId: null,
-            targetGroup: null,
-            excludeClientId: $excludeClientId,
-        );
-
-        // Determine signal type based on event
-        // If event has clientId, we might want to send only to that user or to all
-        // For now, send to all users
-        $signalType = new SignalType(SignalTypeConstants::WS_ALL);
-        $signalName = new SignalName('new_event');
-
-        // Queue signal in SignalRouter
         $this->signalRouter->queueSignal(
             signalSource: $this->getAgentSignalSource(),
-            signalType: $signalType,
-            signalName: $signalName,
-            signalData: $signalData,
+            signalType: new SignalType(SignalTypeConstants::WS_ALL),
+            signalName: new SignalName('new_event'),
+            signalData: new WebSocketSignalData(
+                data: $eventData,
+                targetClientId: null,
+                targetGroup: null,
+                excludeClientId: $excludeClientId,
+            ),
         );
     }
 
@@ -160,7 +149,7 @@ class ChatAgent extends AbstractAgent
    */
     private function cleanupHistory(): void
     {
-        Idea::$storage->clearEvents();
+        Idea::$idea->events->actions->deleteAll();
 
         // Add ChatClearedEvent as a system event (userId = null for system events)
         $this->addEvent(ChatEventType::CHAT_CLEARED);
@@ -219,7 +208,7 @@ class ChatAgent extends AbstractAgent
 
             // If user not found, register new user
             if ($user === null) {
-                $user = Idea::$idea->users->register($sessionToken);
+                $user = Idea::$idea->users->actions->register($sessionToken);
                 Logger::logAgentDebug($this->getId(), "New user registered with session token: " . $sessionToken);
             } else {
                 Logger::logAgentDebug($this->getId(), "Existing user found with session token: " . $sessionToken);

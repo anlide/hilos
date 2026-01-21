@@ -8,7 +8,6 @@ use Demo\WebSocketTest\Constants\AgentType;
 use Demo\WebSocketTest\Constants\ChatSignalConstants;
 use Demo\WebSocketTest\Constants\GroupConstants;
 use Demo\WebSocketTest\Constants\PageConstants;
-use Demo\WebSocketTest\Utils\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalSource;

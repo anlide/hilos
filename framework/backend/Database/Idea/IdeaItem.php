@@ -12,7 +12,7 @@ use RuntimeException;
  * They provide high-level access to data with lazy loading support for relationships
  *
  * IdeaItem stores only reference to Object for memory efficiency.
- * Object instances are stored in ObjectCollection in IdeaStorage.
+ * Object instances are stored in ObjectCollection in Idea.
  *
  * @template TObject of Object_
  * @property-read mixed $id Primary key value

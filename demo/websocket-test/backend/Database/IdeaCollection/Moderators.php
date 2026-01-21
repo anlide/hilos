@@ -22,20 +22,8 @@ final class Moderators extends IdeaCollection
     // init() and initEmpty() are inherited from IdeaCollection
     // Override only if custom initialization logic is needed
 
-    /**
-     * Get ObjectCollection from IdeaStorage
-     * Returns null for manual collections
-     * 
-     * @return Objects|null ObjectCollection instance from IdeaStorage, or null for manual collections
-     */
-    protected function getObjectCollection(): ?Objects
-    {
-        $storage = Idea::$storage;
-        if ($storage === null) {
-            throw new RuntimeException("IdeaStorage not initialized");
-        }
-        return $storage->moderators;
-    }
+    // getObjectCollection() is inherited from IdeaCollection
+    // ObjectCollection is set via setObjectCollection() by Idea::setRepresent()
 
     /**
      * Create Idea instance from Object

@@ -9,7 +9,7 @@ use Hilos\Exception\DatabaseException;
 
 /**
  * Schema - Database structure storage and management
- * 
+ *
  * Stores database table structure in static variables per connection index.
  * Provides methods to initialize and query database schema information.
  */
@@ -44,8 +44,8 @@ class Schema
     /**
      * Initialize schema for a connection index
      * Reads all tables and their structure from database
-     * 
-     * @param int $index Connection index (default: current)
+     *
+     * @param int|null $index Connection index (default: current)
      * @throws DatabaseException
      */
     public static function initialize(?int $index = null): void
@@ -88,7 +88,7 @@ class Schema
 
     /**
      * Read table structure from database
-     * 
+     *
      * @param string $tableName Table name
      * @return TableInfo Table structure information
      * @throws DatabaseException
@@ -174,7 +174,7 @@ class Schema
     /**
      * Get real foreign keys from INFORMATION_SCHEMA
      * Supports both simple and composite foreign keys
-     * 
+     *
      * @param string $tableName Table name
      * @return array<string, string> Foreign keys mapping:
      *   - Simple: 'column' => 'referenced_table'
@@ -188,7 +188,7 @@ class Schema
             Database::sql('SELECT DATABASE() as db_name');
             $dbRow = Database::row();
             $dbName = $dbRow['db_name'] ?? null;
-            
+
             if ($dbName === null) {
                 return [];
             }
@@ -211,7 +211,7 @@ class Schema
             while ($row = Database::row()) {
                 $columns = $row['columns'];
                 $referencedTable = $row['referenced_table'];
-                
+
                 // For composite keys, use comma-separated string as key
                 // For simple keys, use single column name
                 $foreignKeys[$columns] = $referencedTable;
@@ -227,7 +227,7 @@ class Schema
 
     /**
      * Get table structure
-     * 
+     *
      * @param string $tableName Table name
      * @param ?int $index Connection index
      * @return TableInfo|null Table structure or null if not found
@@ -245,7 +245,7 @@ class Schema
 
     /**
      * Get all tables for a connection index
-     * 
+     *
      * @param ?int $index Connection index
      * @return array<string, TableInfo> Array of table structures
      */
@@ -258,7 +258,7 @@ class Schema
 
     /**
      * Get table names for a connection index
-     * 
+     *
      * @param ?int $index Connection index
      * @return array<string> Array of table names
      */
@@ -271,7 +271,7 @@ class Schema
 
     /**
      * Check if schema is initialized for a connection index
-     * 
+     *
      * @param ?int $index Connection index
      * @return bool True if initialized
      */
@@ -284,7 +284,7 @@ class Schema
 
     /**
      * Get schema statistics for a connection index
-     * 
+     *
      * @param ?int $index Connection index
      * @return array Statistics array
      */
@@ -355,7 +355,7 @@ class Schema
 
     /**
      * Reset schema for a connection index (for re-initialization)
-     * 
+     *
      * @param ?int $index Connection index
      */
     public static function reset(?int $index = null): void

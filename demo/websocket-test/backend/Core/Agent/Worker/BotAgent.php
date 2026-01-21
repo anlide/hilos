@@ -61,9 +61,7 @@ class BotAgent extends AbstractAgent
         Logger::logAgentStart($this->getId(), $this->getType());
 
         // Register this agent as truth source for bot table (all keys)
-        if (Idea::$storage !== null) {
-            TruthSourceRegistry::register('bot', true, $this->getId());
-        }
+        TruthSourceRegistry::register('bot', true, $this->getId());
     }
 
     /**

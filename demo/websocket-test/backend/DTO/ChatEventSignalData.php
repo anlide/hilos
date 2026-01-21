@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\WebSocketTest\DTO;
 
-use Demo\WebSocketTest\Database\Object\Event as ObjectEvent;
+use Demo\WebSocketTest\Database\Idea\Event as IdeaEvent;
 use Hilos\Core\Router\SignalData;
 use Hilos\Core\Router\SignalDataInterface;
 use RuntimeException;
@@ -12,12 +12,12 @@ use RuntimeException;
 /**
  * ChatEventSignalData - Signal data for chat events
  *
- * Wraps ObjectEvent to be used as SignalDataInterface.
+ * Wraps IdeaEvent to be used as SignalDataInterface.
  */
 class ChatEventSignalData extends SignalData implements SignalDataInterface
 {
     public function __construct(
-        public readonly ObjectEvent $event,
+        public readonly IdeaEvent $event,
     ) {
         // Don't call parent::__construct() - we override toArray() to use event data
     }

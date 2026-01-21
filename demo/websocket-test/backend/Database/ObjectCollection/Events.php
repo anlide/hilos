@@ -160,16 +160,34 @@ final class Events extends Objects implements Iterator, ArrayAccess, Countable
     /**
      * Add event to collection and database
      * Creates ObjectEvent, saves to database, and adds to collection
+     * 
+     * For LAZY_STRATEGY_NONE: Only allows write if truth source is registered.
+     * Ensures all data is loaded before write operation.
      *
      * @param string $type Event type
      * @param ?int $userId User ID (null for system events)
      * @param ?array $data Event-specific data (optional, will be JSON encoded)
      * @return ObjectEvent Created event object
      * @throws DatabaseException
-     * @throws RuntimeException If event ID is null after sync
+     * @throws RuntimeException If event ID is null after sync or if write is not allowed
      */
     public function add(string $type, ?int $userId = null, ?array $data = null): ObjectEvent
     {
+        // For LAZY_STRATEGY_NONE: Check if truth source is registered
+        if ($this->_lazyStrategy === Objects::LAZY_STRATEGY_NONE) {
+            $table = EntityEvent::_table;
+            $hasTruthSource = \Hilos\Database\Idea\TruthSourceRegistry::hasTruthSource($table);
+            
+            if (!$hasTruthSource) {
+                throw new RuntimeException("Write operation not allowed: no truth source registered for table '{$table}'. Register via TruthSourceRegistry::register() first.");
+            }
+            
+            // Ensure all data is loaded before write (for consistency)
+            if (!$this->_allLoaded) {
+                $this->loadAllFromDB();
+            }
+        }
+        
         $objectEvent = ObjectEvent::create();
         $objectEvent->userId = $userId;
         $objectEvent->type = $type;

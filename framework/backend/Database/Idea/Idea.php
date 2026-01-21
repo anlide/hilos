@@ -9,11 +9,11 @@ use RuntimeException;
 /**
  * Idea - Static access point for read-only data access
  *
- * Provides global access to Idea collections through IdeaStorage
+ * Provides global access to Idea collections through Object collections
  * All data access is read-only through Idea objects
  *
  * Usage:
- *   Idea::init(true); // Initialize with IdeaStorage
+ *   Idea::init(); // Initialize with Object collections (mandatory)
  *   $user = Idea::$idea->users[123]; // Get User idea
  *   $users = Idea::$idea->users; // Get Users collection
  */
@@ -22,16 +22,14 @@ class Idea
     /** @var static|null Singleton instance (may be instance of child class) */
     public static ?self $idea = null;
 
-    /** @var IdeaStorage|null Storage instance */
-    public static ?IdeaStorage $storage = null;
-
     /**
      * Object collections (references to Objects instances)
-     * These are set by setRepresent*() methods
+     * These are set by setRepresent() method
+     * Protected to allow access from IdeaCollection via getObjectCollection()
      *
      * @var array<string, Objects>
      */
-    private array $_objectCollections = [];
+    protected array $_objectCollections = [];
 
     /**
      * Idea collections (wrappers around Object collections)
@@ -39,7 +37,7 @@ class Idea
      *
      * @var array<string, IdeaCollection>
      */
-    private array $_ideaCollections = [];
+    protected array $_ideaCollections = [];
 
     /**
      * Private constructor - use init() instead
@@ -60,55 +58,69 @@ class Idea
     }
 
     /**
-     * Initialize Idea with storage
+     * Initialize Idea with Object collections
      *
-     * @param bool $withStorage If true, initialize IdeaStorage
-     * @throws DatabaseException
+     * Object collections initialization is mandatory and must be implemented in child classes.
+     * Child classes should override this method to create and register Object collections.
      */
-    public static function init(bool $withStorage = false): void
+    public static function init(): void
     {
         if (self::$idea === null) {
             self::$idea = new self();
         }
 
-        if ($withStorage && self::$storage === null) {
-            // IdeaStorage should be created in application code
-            // This is a placeholder - child classes should override
-            throw new DatabaseException("IdeaStorage must be initialized in application code");
-        }
-    }
-
-    /**
-     * Set IdeaStorage instance
-     *
-     * @param IdeaStorage $storage
-     */
-    public static function setStorage(IdeaStorage $storage): void
-    {
-        self::$storage = $storage;
+        // Object collections must be initialized in child class
+        // Child classes should override this method to create Object collections
+        // and register them via setRepresent() method
     }
 
     /**
      * Set representation for Object collection
      * Creates corresponding Idea collection automatically
+     * Object collection must be already stored in _objectCollections[$name]
      *
      * @param string $name Collection name (e.g., 'users')
-     * @param Objects $objectCollection Object collection instance
      * @param string $ideaCollectionClass Idea collection class name
+     * @param string|null $actionsClass Actions class name (optional)
+     * @throws DatabaseException If Object collection not found in _objectCollections
      */
-    public function setRepresent(string $name, Objects &$objectCollection, string $ideaCollectionClass): void
+    public function setRepresent(string $name, string $ideaCollectionClass, ?string $actionsClass = null): void
     {
-        $this->_objectCollections[$name] = &$objectCollection;
-
-        // Create Idea collection (without passing ObjectCollection)
-        // IdeaCollection will get ObjectCollection from IdeaStorage via getObjectCollection()
+        // Get Object collection from _objectCollections
+        if (!isset($this->_objectCollections[$name])) {
+            throw new DatabaseException("Object collection [{$name}] not found in _objectCollections. Create it before calling setRepresent().");
+        }
+        
+        $objectCollection = $this->_objectCollections[$name];
+        
+        // Create Idea collection
         if (is_subclass_of($ideaCollectionClass, IdeaCollection::class)) {
-            $this->_ideaCollections[$name] = $ideaCollectionClass::init();
+            $ideaCollection = $ideaCollectionClass::init();
+            // Pass Object collection to IdeaCollection
+            $ideaCollection->setObjectCollection($objectCollection);
+            // Set Actions class if provided
+            if ($actionsClass !== null) {
+                $ideaCollection->setActionsClass($actionsClass);
+            }
+            $this->_ideaCollections[$name] = $ideaCollection;
         }
     }
 
     /**
+     * Get Object collection by name
+     * Used internally by IdeaCollection to access Object collections
+     *
+     * @param string $name Collection name
+     * @return Objects|null Object collection or null if not found
+     */
+    public function getObjectCollection(string $name): ?Objects
+    {
+        return $this->_objectCollections[$name] ?? null;
+    }
+
+    /**
      * Get Idea collection by name
+     * For LAZY_STRATEGY_NONE: Loads all data from database on first access (read or write)
      *
      * @param string $name Collection name
      * @return IdeaCollection
@@ -118,6 +130,15 @@ class Idea
     {
         if (!isset($this->_ideaCollections[$name])) {
             throw new DatabaseException("Idea collection [{$name}] does not exist");
+        }
+
+        // Check if ObjectCollection has LAZY_STRATEGY_NONE and needs loading
+        $objectCollection = $this->_objectCollections[$name] ?? null;
+        if ($objectCollection !== null && 
+            $objectCollection->getLazyStrategy() === Objects::LAZY_STRATEGY_NONE &&
+            !$objectCollection->isAllLoaded()) {
+            // Load all data from database on first access
+            $objectCollection->loadAllFromDB();
         }
 
         return $this->_ideaCollections[$name];

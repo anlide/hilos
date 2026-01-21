@@ -2,11 +2,18 @@
 
 namespace Demo\WebSocketTest\Database;
 
+use Demo\WebSocketTest\Database\IdeaActions\EventsActions;
+use Demo\WebSocketTest\Database\IdeaActions\UsersActions;
 use Demo\WebSocketTest\Database\IdeaCollection\Bots as IdeaBots;
 use Demo\WebSocketTest\Database\IdeaCollection\Events as IdeaEvents;
 use Demo\WebSocketTest\Database\IdeaCollection\Moderators as IdeaModerators;
 use Demo\WebSocketTest\Database\IdeaCollection\Users as IdeaUsers;
+use Demo\WebSocketTest\Database\ObjectCollection\Bots as ObjectBots;
+use Demo\WebSocketTest\Database\ObjectCollection\Events as ObjectEvents;
+use Demo\WebSocketTest\Database\ObjectCollection\Moderators as ObjectModerators;
+use Demo\WebSocketTest\Database\ObjectCollection\Users as ObjectUsers;
 use Hilos\Database\Idea\Idea as BaseIdea;
+use Hilos\Database\Object\Objects;
 use Hilos\Exception\DatabaseException;
 
 /**
@@ -15,14 +22,14 @@ use Hilos\Exception\DatabaseException;
  * Extends framework Idea class to provide application-specific initialization.
  *
  * Usage:
- *   Idea::init(true); // Initialize with IdeaStorage
+ *   Idea::init(); // Initialize with Object collections (mandatory)
  *   $user = Idea::$idea->users[123]; // Get User idea
  *   $users = Idea::$idea->users; // Get Users collection
  * 
- * @property IdeaUsers $users
- * @property IdeaEvents $events
- * @property IdeaBots $bots
- * @property IdeaModerators $moderators
+ * @property-read IdeaUsers $users
+ * @property-read IdeaEvents $events
+ * @property-read IdeaBots $bots
+ * @property-read IdeaModerators $moderators
  */
 final class Idea extends BaseIdea
 {
@@ -32,52 +39,42 @@ final class Idea extends BaseIdea
     public const string moderators = 'moderators';
 
     /**
-     * Initialize Idea with storage
+     * Initialize Idea with Object collections
      *
-     * Overrides base class to create and configure IdeaStorage for this application.
+     * Overrides base class to create and configure Object collections for this application.
+     * Object collections initialization is mandatory.
      *
-     * @param bool $withStorage If true, initialize IdeaStorage
      * @throws DatabaseException
      */
-    public static function init(bool $withStorage = false): void
+    public static function init(): void
     {
         // Create singleton instance if not exists
-        if (self::$idea === null) {
-            self::$idea = new self();
-        }
+        parent::init();
 
-        // Initialize storage if requested and not already initialized
-        if ($withStorage && self::$storage === null) {
-            // Create application-specific IdeaStorage
-            $storage = IdeaStorage::init();
-            
-            // Set storage using parent method
-            self::setStorage($storage);
+        // Create Object collections with lazy loading strategies
+        self::$idea->_objectCollections[self::users] = ObjectUsers::initDB(Objects::LAZY_STRATEGY_KEY);
+        self::$idea->_objectCollections[self::events] = ObjectEvents::initDB(Objects::LAZY_STRATEGY_NONE);
+        self::$idea->_objectCollections[self::bots] = ObjectBots::initDB(Objects::LAZY_STRATEGY_KEY);
+        self::$idea->_objectCollections[self::moderators] = ObjectModerators::initDB(Objects::LAZY_STRATEGY_KEY);
 
-            // Configure collections using parent's setRepresent method
-            self::$idea->setRepresent(
-                name: self::users,
-                objectCollection: $storage->users,
-                ideaCollectionClass: IdeaUsers::class,
-            );
+        // Configure collections using parent's setRepresent method
+        self::$idea->setRepresent(self::users, IdeaUsers::class, UsersActions::class);
+        self::$idea->setRepresent(self::events, IdeaEvents::class, EventsActions::class);
+        self::$idea->setRepresent(self::bots, IdeaBots::class);
+        self::$idea->setRepresent(self::moderators, IdeaModerators::class);
+    }
 
-            self::$idea->setRepresent(
-                name: self::events,
-                objectCollection: $storage->events,
-                ideaCollectionClass: IdeaEvents::class,
-            );
-
-            self::$idea->setRepresent(
-                name: self::bots,
-                objectCollection: $storage->bots,
-                ideaCollectionClass: IdeaBots::class,
-            );
-
-            self::$idea->setRepresent(
-                name: self::moderators,
-                objectCollection: $storage->moderators,
-                ideaCollectionClass: IdeaModerators::class,
-            );
+    /**
+     * Clear all events from database and collection
+     * Lazy load will reload events on next access
+     *
+     * @throws DatabaseException
+     */
+    public function clearEvents(): void
+    {
+        $events = $this->getObjectCollection(self::events);
+        if ($events instanceof ObjectEvents) {
+            $events->deleteAll();
         }
     }
 }

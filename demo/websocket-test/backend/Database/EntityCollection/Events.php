@@ -13,7 +13,7 @@ use Hilos\Exception\DatabaseException;
  * This is a convenience class that provides type safety and convenience methods
  * while using EntityCollection internally.
  */
-final class Events
+final class Events implements \Iterator
 {
     private EntityCollection $collection;
 

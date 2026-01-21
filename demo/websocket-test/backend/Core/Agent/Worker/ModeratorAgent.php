@@ -61,9 +61,7 @@ class ModeratorAgent extends AbstractAgent
         Logger::logAgentStart($this->getId(), $this->getType());
 
         // Register this agent as truth source for moderator table (all keys)
-        if (Idea::$storage !== null) {
-            TruthSourceRegistry::register('moderator', true, $this->getId());
-        }
+        TruthSourceRegistry::register('moderator', true, $this->getId());
     }
 
     /**

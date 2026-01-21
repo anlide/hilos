@@ -64,7 +64,7 @@ class Database extends BaseDatabase
         // Idea depends on Database, so initialize it here
         // Can be skipped for commands that need to work with broken Idea files
         if ($initIdea) {
-            Idea::init(true);
+            Idea::init();
         }
 
         // Additional database connections can be configured here

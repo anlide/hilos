@@ -65,13 +65,13 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
     {
         $self = new static();
         
-        // For LAZY_STRATEGY_NONE, load all data immediately and disable lazy loading
+        // For LAZY_STRATEGY_NONE, configure for lazy loading on first access
+        // Data will be loaded when collection is first accessed (read or write)
         if ($strategy === self::LAZY_STRATEGY_NONE) {
             $self->_allowLazyLoading = false;
             $self->_lazyStrategy = self::LAZY_STRATEGY_NONE;
-            $self->_allLoaded = true;
-            // Load all objects from database
-            $self->loadAllFromDB();
+            $self->_allLoaded = false; // Will be loaded on first access
+            // Do NOT load all data here - load on first access instead
         } else {
             $self->_allowLazyLoading = true;
             $self->_lazyStrategy = $strategy;
@@ -102,46 +102,11 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
     }
 
     /**
-     * Initialize collection with partial database loading (lazy loading enabled)
-     *
-     * @param int $strategy Lazy loading strategy (LAZY_STRATEGY_BATCH by default)
-     * @return static
-     * @deprecated Use initDB() instead
-     */
-    public static function initPartialDB(int $strategy = self::LAZY_STRATEGY_BATCH): static
-    {
-        return static::initDB($strategy);
-    }
-
-    /**
      * Initialize empty collection
      *
      * @return static
      */
     abstract public static function initEmpty(): static;
-
-
-    /**
-     * Reload with partial database loading (lazy loading enabled)
-     *
-     * @param int $strategy Lazy loading strategy
-     */
-    public function initAgainPartialDB(int $strategy = self::LAZY_STRATEGY_BATCH): void
-    {
-        $this->initAgainEmpty();
-        $this->_allowLazyLoading = true;
-        $this->_lazyStrategy = $strategy;
-        $this->_allLoaded = false;
-    }
-
-    /**
-     * Clear collection
-     */
-    public function initAgainEmpty(): void
-    {
-        $this->objects = [];
-        $this->_allLoaded = false;
-    }
 
     /**
      * Lazy load object by key (only if allowLazyLoading is true)
@@ -385,6 +350,28 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
             self::allowLazyLoading => $this->_allowLazyLoading,
             default => throw new \InvalidArgumentException("Property [{$property}] does not exist on " . static::class),
         };
+    }
+
+    /**
+     * Get lazy loading strategy
+     * Used by Actions to check if LAZY_STRATEGY_NONE is enabled
+     *
+     * @return int Lazy loading strategy constant
+     */
+    public function getLazyStrategy(): int
+    {
+        return $this->_lazyStrategy;
+    }
+
+    /**
+     * Check if all objects are loaded
+     * Used by Actions to check if data needs to be loaded
+     *
+     * @return bool True if all objects are loaded
+     */
+    public function isAllLoaded(): bool
+    {
+        return $this->_allLoaded;
     }
 
     /**

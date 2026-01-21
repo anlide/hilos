@@ -11,7 +11,7 @@ use RuntimeException;
  * High-level abstraction with lazy loading and relationships
  *
  * Stores reference to ObjectBot instance.
- * Object instances are stored in ObjectCollection in IdeaStorage.
+ * Object instances are stored in ObjectCollection in Idea.
  *
  * @extends IdeaItem<ObjectBot>
  *
