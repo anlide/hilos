@@ -38,13 +38,13 @@ class ChatSignalRouter extends SignalRouter
                 'params' => [],
             ],
             PageConstants::PROFILE => [
-                'agentType' => AgentType::SESSION,
-                'agentIndex' => 'clientId',
+                'agentType' => AgentType::CHAT,
+                'agentIndex' => null,
                 'params' => [],
             ],
             PageConstants::USER => [
-                'agentType' => AgentType::SESSION,
-                'agentIndex' => 'clientId',
+                'agentType' => AgentType::CHAT,
+                'agentIndex' => null,
                 'params' => [],
             ],
             PageConstants::BOT => [
@@ -83,8 +83,8 @@ class ChatSignalRouter extends SignalRouter
         // Groups can be added dynamically or through config
         $groups = [
             GroupConstants::SESSION => [
-                'agentType' => AgentType::SESSION,
-                'agentIndex' => 'clientId',
+                'agentType' => AgentType::CHAT,
+                'agentIndex' => null,
                 'params' => [],
             ],
         ];
@@ -100,10 +100,10 @@ class ChatSignalRouter extends SignalRouter
                 SignalTypeConstants::PAGE_SUBSCRIBE => AgentType::CHAT,
                 SignalTypeConstants::PAGE_UNSUBSCRIBE => AgentType::CHAT,
                 SignalTypeConstants::PAGE_UPDATE_SUBSCRIPTION => AgentType::CHAT,
-                // Group subscription signals - routing to SESSION agent
-                SignalTypeConstants::GROUP_SUBSCRIBE => AgentType::SESSION,
-                SignalTypeConstants::GROUP_UNSUBSCRIBE => AgentType::SESSION,
-                SignalTypeConstants::GROUP_UPDATE_SUBSCRIPTION => AgentType::SESSION,
+                // Group subscription signals - routing to CHAT agent
+                SignalTypeConstants::GROUP_SUBSCRIBE => AgentType::CHAT,
+                SignalTypeConstants::GROUP_UNSUBSCRIBE => AgentType::CHAT,
+                SignalTypeConstants::GROUP_UPDATE_SUBSCRIPTION => AgentType::CHAT,
                 // User`s action signal - routing to CHAT agent
                 SignalTypeConstants::ACTION => AgentType::CHAT,
                 // Cron`s action signal - routing to CHAT agent
