@@ -170,9 +170,12 @@ class Database
      * Connect to database using configured settings
      *
      * @param int|null $index Connection index (uses current if null)
+     * @param bool $retryOnConnectionError If true, retry connection on temporary errors (2002, 2003)
+     * @param int|null $maxRetries Maximum retry attempts (uses reconnect_attempts from config if null)
+     * @param int|null $retryDelaySeconds Delay between retries in seconds (uses reconnect_delay/1000 from config if null)
      * @throws DatabaseConnectionException On connection failure
      */
-    public static function connect(?int $index = null): void
+    public static function connect(?int $index = null, bool $retryOnConnectionError = false, ?int $maxRetries = null, ?int $retryDelaySeconds = null): void
     {
         $index = $index ?? self::$currentIndex;
 
@@ -181,33 +184,70 @@ class Database
         }
 
         $config = self::$configurations[$index];
+        
+        // Determine retry parameters
+        $retries = $maxRetries ?? ($retryOnConnectionError ? 30 : 1);
+        $delaySeconds = $retryDelaySeconds ?? ($retryOnConnectionError ? 2 : 0);
+        
+        $lastException = null;
+        
+        for ($attempt = 0; $attempt < $retries; $attempt++) {
+            if ($attempt > 0) {
+                sleep($delaySeconds);
+            }
+            
+            try {
+                mysqli_report(MYSQLI_REPORT_OFF);
 
-        mysqli_report(MYSQLI_REPORT_OFF);
+                $mysqli = @mysqli_connect(
+                    $config['host'],
+                    $config['user'],
+                    $config['password'],
+                    $config['database'],
+                    $config['port'],
+                    $config['socket'],
+                );
 
-        $mysqli = @mysqli_connect(
-            $config['host'],
-            $config['user'],
-            $config['password'],
-            $config['database'],
-            $config['port'],
-            $config['socket'],
-        );
+                if ($mysqli === false) {
+                    $errno = mysqli_connect_errno();
+                    $error = mysqli_connect_error();
+                    
+                    // Retry only for temporary connection errors (2002, 2003) if retry is enabled
+                    if ($retryOnConnectionError && in_array($errno, [2002, 2003]) && $attempt < $retries - 1) {
+                        $lastException = new CantConnectToMysqlServerException($error, $errno);
+                        continue; // Retry
+                    }
+                    
+                    self::throwConnectionException($errno, $error);
+                }
 
-        if ($mysqli === false) {
-            $errno = mysqli_connect_errno();
-            $error = mysqli_connect_error();
-            self::throwConnectionException($errno, $error);
+                // Set charset
+                if (!@mysqli_set_charset($mysqli, $config['charset'])) {
+                    $errno = mysqli_errno($mysqli);
+                    $error = mysqli_error($mysqli);
+                    mysqli_close($mysqli);
+                    
+                    // Charset errors are not retryable
+                    self::throwConnectionException($errno, $error);
+                }
+
+                self::$connections[$index] = $mysqli;
+                return; // Success
+                
+            } catch (CantConnectToMysqlServerException $e) {
+                // Retry only if enabled and not last attempt
+                if ($retryOnConnectionError && $attempt < $retries - 1) {
+                    $lastException = $e;
+                    continue;
+                }
+                throw $e;
+            }
         }
-
-        // Set charset
-        if (!@mysqli_set_charset($mysqli, $config['charset'])) {
-            $errno = mysqli_errno($mysqli);
-            $error = mysqli_error($mysqli);
-            mysqli_close($mysqli);
-            self::throwConnectionException($errno, $error);
+        
+        // All retries exhausted
+        if ($lastException !== null) {
+            throw $lastException;
         }
-
-        self::$connections[$index] = $mysqli;
     }
 
     /**

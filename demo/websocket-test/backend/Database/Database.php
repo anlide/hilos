@@ -33,11 +33,12 @@ class Database extends BaseDatabase
      *
      * @param bool $initIdea If true, initialize Idea with storage. Set to false for commands
      *                       that need to work with broken Idea files (e.g., db:idea:fix)
+     * @param bool $retryConnection If true, retry connection on temporary errors (useful for Docker startup)
      * @return void
      * @throws DatabaseException
      * @throws MissingEnvironmentVariableException
      */
-    public static function initialize(bool $initIdea = true): void
+    public static function initialize(bool $initIdea = true, bool $retryConnection = false): void
     {
         // Configure primary database connection (index 0)
         self::configure(
@@ -51,7 +52,7 @@ class Database extends BaseDatabase
         );
 
         // Connect to primary database
-        self::connect(0);
+        self::connect(0, retryOnConnectionError: $retryConnection);
 
         // Set collation (utf8mb4_0900_ai_ci for MySQL 8.0+)
         self::sql("SET NAMES utf8mb4 COLLATE utf8mb4_0900_ai_ci");

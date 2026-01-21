@@ -28,7 +28,8 @@ Env::init(__DIR__);
 
 try {
     // Initialize database connection and schema
-    Database::initialize();
+    // Enable connection retry for Docker startup (MySQL may not be ready yet)
+    Database::initialize(retryConnection: true);
 
     // Initialize migration configuration
     Migration::setMigrationListPath(__DIR__ . '/../Database/Migration');
