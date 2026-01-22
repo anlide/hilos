@@ -1,0 +1,38 @@
+{
+    "name": "anlide/hilos-demo-simple-poll",
+    "description": "Simple poll in real-time demo project for Hilos v2 framework",
+    "type": "project",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Alexander Baranov",
+            "email": "alexander.baranov@anlide.online"
+        }
+    ],
+    "scripts": {
+        "post-install-cmd": [
+            "@php ../../framework/scripts/link-frontend-sdk.php"
+        ],
+        "post-update-cmd": [
+            "@php ../../framework/scripts/link-frontend-sdk.php"
+        ]
+    },
+    "repositories": [
+        {
+            "type": "path",
+            "url": "/hilos",
+            "options": {
+                "symlink": true
+            }
+        }
+    ],
+    "require": {
+        "php": ">=8.4",
+        "anlide/hilos": "^2.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "Demo\\SimplePoll\\": "backend/"
+        }
+    }
+}
