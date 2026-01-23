@@ -1,12 +1,27 @@
 # WebSocket Test Demo Project
 
-Simple demo project for testing WebSocket functionality of Hilos v2 framework.
+**Complexity: 3/5**
+
+Demo project demonstrating real-time chat with WebSocket and enhanced capabilities.
+Shows basic agent architecture in worker processes.
 
 ## What is this?
 
-This is a chat application demo that showcases WebSocket real-time communication:
+This is a chat application demo that showcases WebSocket real-time communication with extended features:
+
+### Base Functionality
 - **Backend**: PHP daemon with WebSocket server (Hilos framework)
 - **Frontend**: Vue 3 + TypeScript chat interface with auto-reconnect
+- Real-time message exchange
+- Conversational bots supporting chat
+- Bot-moderator for chat management
+
+### Enhanced Capabilities
+- **AI moderation**: AI bot-moderator analyzes messages in real-time, automatically removes spam, insults, unwanted content
+- **User management**: Can ban users, issue warnings
+- **Donation integration**: Notifications about donations in chat
+- **High-frequency processing**: Message processing, scaling to many users
+- **Advanced frontend**: Fast message scrolling, filtering, moderator panel
 
 ## Quick Start
 

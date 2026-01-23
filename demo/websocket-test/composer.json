@@ -1,6 +1,6 @@
 {
     "name": "anlide/hilos-demo-websocket-test",
-    "description": "WebSocket test demo project for Hilos v2 framework",
+    "description": "Real-time chat with WebSocket and enhanced capabilities demo project for Hilos v2 framework",
     "type": "project",
     "license": "MIT",
     "authors": [
