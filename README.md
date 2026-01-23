@@ -25,24 +25,29 @@ Hilos is an event-driven, non-blocking framework designed for building scalable 
 Hilos follows a daemon-worker architecture pattern:
 
 ```
-┌─────────────┐
-│   Daemon    │  ← Main process managing servers and routing
-└──────┬──────┘
-       │
-   ┌───┴───┬──────────┬──────────┐
-   │       │          │          │
-┌──▼──┐ ┌──▼──┐   ┌──▼──┐   ┌──▼──┐
-│Worker│ │Worker│   │Worker│   │Worker│  ← Worker processes
-└──┬──┘ └──┬──┘   └──┬──┘   └──┬──┘
-   │       │          │          │
-┌──▼──┐ ┌──▼──┐   ┌──▼──┐   ┌──▼──┐
-│Agent│ │Agent│   │Agent│   │Agent│  ← Agents executing business logic
-└─────┘ └─────┘   └─────┘   └─────┘
+                    ┌─────────────┐
+                    │   Daemon    │  ← Main process managing servers and routing
+                    └──────┬──────┘
+                           │
+        ┌──────────────────┼──────────────────┐
+        │                  │                  │
+   ┌────▼────┐        ┌────▼────┐        ┌────▼────┐
+   │ Worker  │        │ Worker  │        │ Worker  │  ← Worker processes
+   │    #1   │        │    #2   │        │    #N   │
+   └────┬────┘        └────┬────┘        └────┬────┘
+        │                  │                  │
+   ┌────┼────┐        ┌────┼────┐        ┌────┼────┐
+   │    │    │        │    │    │        │    │    │
+┌──▼──┐┌▼──┐┌▼──┐  ┌──▼──┐┌▼──┐┌▼──┐  ┌──▼──┐┌▼──┐┌▼──┐
+│Agent││Agt││Agt│  │Agent││Agt││Agt│  │Agent││Agt││Agt│
+└─────┘└───┘└───┘  └─────┘└───┘└───┘  └─────┘└───┘└───┘
+     ↑                  ↑                  ↑
+  Multiple agents per worker
 ```
 
 - **Daemon Process**: Manages HTTP/WebSocket/Worker servers, handles signal routing, and coordinates workers
-- **Worker Processes**: Execute agents that perform business logic
-- **Agents**: Isolated units of work identified by type and optional index
+- **Worker Processes**: Execute multiple agents that perform business logic
+- **Agents**: Isolated units of work identified by type and optional index (each worker can run multiple agents)
 - **Event Loop**: Non-blocking I/O using PHP Event extension (epoll-based)
 
 ## 📋 Requirements
@@ -141,21 +146,21 @@ composer run daemon-start
 
 ```
 hilos/
-├── framework/              # Core framework code
-│   ├── backend/           # PHP backend (main framework)
-│   │   ├── API/          # HTTP routing and async client
-│   │   ├── Constants/    # Centralized constants
-│   │   ├── Core/         # Core components (Daemon, Worker, Agent, Router)
-│   │   ├── Database/     # ORM system (Entity, Object, Idea, Migrations)
-│   │   ├── DTO/          # Data Transfer Objects
-│   │   ├── Exception/    # Exception hierarchy
-│   │   ├── Logging/      # Logging system
-│   │   ├── Socket/       # Socket servers and clients
-│   │   └── Utils/        # Utility classes
-│   └── frontend/          # TypeScript/Vue frontend SDK (minimal)
-├── demo/                  # Example projects
-│   └── websocket-test/   # Working chat application example
-└── FEATURES.md           # Complete feature list
+├── framework/                   # Core framework code
+│   ├── backend/                 # PHP backend (main framework)
+│   │   ├── API/                 # HTTP routing and async client
+│   │   ├── Constants/           # Centralized constants
+│   │   ├── Core/                # Core components (Daemon, Worker, Agent, Router)
+│   │   ├── Database/            # ORM system (Entity, Object, Idea, Migrations)
+│   │   ├── DTO/                 # Data Transfer Objects
+│   │   ├── Exception/           # Exception hierarchy
+│   │   ├── Logging/             # Logging system
+│   │   ├── Socket/              # Socket servers and clients
+│   │   └── Utils/               # Utility classes
+│   └── frontend/                # TypeScript/Vue frontend SDK (minimal)
+├── demo/                        # Example projects
+│   └── websocket-test/          # Working chat application example
+└── FEATURES.md                  # Complete feature list
 ```
 
 ## 🔧 Core Components
@@ -202,20 +207,20 @@ Hilos includes a command-line interface for management:
 ```bash
 # Database migrations
 php cli.php migration:up          # Apply migrations
-php cli.php migration:down         # Rollback migrations
-php cli.php migration:status       # Check migration status
-php cli.php migration:retry        # Retry failed migration
+php cli.php migration:down        # Rollback migrations
+php cli.php migration:status      # Check migration status
+php cli.php migration:retry       # Retry failed migration
 
 # Database schema
-php cli.php db:schema:status       # Check schema status
-php cli.php db:entity:fix          # Fix Entity classes
+php cli.php db:schema:status      # Check schema status
+php cli.php db:entity:fix         # Fix Entity classes
 php cli.php db:object:fix         # Fix Object classes
 php cli.php db:idea:fix           # Fix Idea classes
 
 # System
-php cli.php status                 # Daemon status
-php cli.php monitor                # Monitor daemon
-php cli.php help                   # Show help
+php cli.php status                # Daemon status
+php cli.php monitor               # Monitor daemon
+php cli.php help                  # Show help
 ```
 
 ## 🎯 Use Cases
