@@ -3,6 +3,7 @@
 namespace Hilos\Database\Idea;
 
 use Hilos\Database\Object\Object_;
+use Hilos\Exception\DatabaseException;
 use RuntimeException;
 
 /**
@@ -36,6 +37,18 @@ abstract class IdeaItem
     public function __construct(Object_ &$object)
     {
         $this->_object = &$object;
+    }
+
+    /**
+     * Get ID as string (for use as array key)
+     * Delegates to underlying Object instance.
+     *
+     * Supports composite keys via Object_::getIdString().
+     * @throws DatabaseException If ID is null
+     */
+    public function getIdString(): string
+    {
+        return $this->_object->getIdString();
     }
 
     /**

@@ -22,8 +22,10 @@ use RuntimeException;
  * Each IdeaItem references a specific Object stored in ObjectCollection in Idea.
  *
  * @template T of IdeaItem
- * @implements ArrayAccess<int|string, T>
- * @implements Iterator<int|string, T>
+ * @implements ArrayAccess<int|string, IdeaItem>
+ * @implements Iterator<int|string, IdeaItem>
+ * @psalm-implements ArrayAccess<int|string, T>
+ * @psalm-implements Iterator<int|string, T>
  */
 abstract class IdeaCollection implements ArrayAccess, Countable, Iterator
 {
@@ -42,7 +44,8 @@ abstract class IdeaCollection implements ArrayAccess, Countable, Iterator
      * Cached IdeaItem instances for iteration
      * Key is the primary key ID, value is IdeaItem instance
      *
-     * @var array<int|string, T>
+     * @var array<int|string, IdeaItem>
+     * @psalm-var array<int|string, T>
      */
     private array $items = [];
 
@@ -161,7 +164,7 @@ abstract class IdeaCollection implements ArrayAccess, Countable, Iterator
                 throw new DatabaseException("Actions class [{$class}] must extend IdeaActions");
             }
             $this->_actions = new $class($this);
-            
+
             // Set callback for creating IdeaItem from Object
             // This allows Actions to create IdeaItem instances without accessing protected createIdea()
             $this->_actions->setCreateIdeaCallback(function (Object_ &$object): IdeaItem {
@@ -175,10 +178,10 @@ abstract class IdeaCollection implements ArrayAccess, Countable, Iterator
      * Get ObjectCollection
      * Returns the Object collection reference set via setObjectCollection()
      * Returns null for manual collections
-     * 
+     *
      * Public method to allow Actions and child classes to access ObjectCollection.
      * Returns reference to storage - modifications will affect the stored collection.
-     * 
+     *
      * Note: In PHP, objects are passed by reference, so modifications to the returned
      * object will affect the original object stored in Idea::_objectCollections
      *
@@ -194,35 +197,19 @@ abstract class IdeaCollection implements ArrayAccess, Countable, Iterator
      * Must be implemented by child classes
      *
      * @param Object_ $object Object instance (reference)
-     * @return T
+     * @return IdeaItem
+     * @psalm-return T
      */
     abstract protected function createIdea(Object_ &$object): IdeaItem;
-
-    /**
-     * Get key from IdeaItem (extracts ID from Object)
-     * 
-     * @param IdeaItem $item IdeaItem instance
-     * @return int|string|null Primary key ID
-     */
-    protected function getKeyFromItem(IdeaItem $item): int|string|null
-    {
-        // Access Object through reflection to get ID
-        // Note: This assumes Object has 'id' property accessible via magic getter
-        $reflection = new \ReflectionClass($item);
-        $objectProperty = $reflection->getProperty('_object');
-        $objectProperty->setAccessible(true);
-        $object = $objectProperty->getValue($item);
-        
-        // Get ID from Object (assuming Object has 'id' property)
-        return $object->id ?? null;
-    }
 
     /**
      * Add IdeaItem to manual collection
      * Only works for manual collections (created via initEmpty())
      *
-     * @param T $item IdeaItem instance to add
-     * @throws DatabaseException If collection is not manual
+     * @param IdeaItem $item IdeaItem instance to add
+     * @psalm-param T $item
+     *
+     * @throws DatabaseException If collection is not manual, or item has no ID
      */
     public function add(IdeaItem $item): void
     {
@@ -230,12 +217,7 @@ abstract class IdeaCollection implements ArrayAccess, Countable, Iterator
             throw new DatabaseException("Can only add items to manual collections (created via initEmpty())");
         }
 
-        $key = $this->getKeyFromItem($item);
-        if ($key === null) {
-            throw new DatabaseException("Cannot add IdeaItem without ID");
-        }
-
-        $this->items[$key] = $item;
+        $this->items[$item->getIdString()] = $item;
     }
 
     /**
@@ -244,7 +226,8 @@ abstract class IdeaCollection implements ArrayAccess, Countable, Iterator
      * Uses cached IdeaItem if available, otherwise creates new instance
      *
      * @param int|string $key Primary key ID
-     * @return ?T
+     * @return ?IdeaItem
+     * @psalm-return ?T
      */
     protected function getIdeaForKey(int|string $key): ?IdeaItem
     {
@@ -367,7 +350,8 @@ abstract class IdeaCollection implements ArrayAccess, Countable, Iterator
     /**
      * Map collection
      *
-     * @param callable(T, int|string): mixed $callback Callback (idea, key) => any
+     * @param callable(IdeaItem, int|string): mixed $callback Callback (idea, key) => any
+     * @psalm-param callable(T, int|string): mixed $callback
      * @return array<int|string, mixed>
      */
     public function map(callable $callback): array
@@ -382,7 +366,8 @@ abstract class IdeaCollection implements ArrayAccess, Countable, Iterator
     /**
      * Get first Idea
      *
-     * @return ?T
+     * @return ?IdeaItem
+     * @psalm-return ?T
      */
     public function first(): ?IdeaItem
     {
@@ -409,7 +394,8 @@ abstract class IdeaCollection implements ArrayAccess, Countable, Iterator
     /**
      * Get last Idea
      *
-     * @return ?T
+     * @return ?IdeaItem
+     * @psalm-return ?T
      */
     public function last(): ?IdeaItem
     {
@@ -500,7 +486,8 @@ abstract class IdeaCollection implements ArrayAccess, Countable, Iterator
     }
 
     /**
-     * @return ?T
+     * @return ?IdeaItem
+     * @psalm-return ?T
      *
      * @param mixed $offset Primary key ID
      */
@@ -520,7 +507,7 @@ abstract class IdeaCollection implements ArrayAccess, Countable, Iterator
     public function offsetUnset(mixed $offset): void
     {
         unset($this->items[$offset]);
-        
+
         if (!$this->isManual) {
             $objectCollection = $this->getObjectCollection();
             if ($objectCollection !== null) {
@@ -541,7 +528,7 @@ abstract class IdeaCollection implements ArrayAccess, Countable, Iterator
         if ($name === 'actions') {
             return $this->getActions();
         }
-        
+
         throw new DatabaseException("Property [{$name}] does not exist on " . static::class);
     }
 
@@ -563,7 +550,8 @@ abstract class IdeaCollection implements ArrayAccess, Countable, Iterator
     /**
      * Get current element.
      *
-     * @return ?T
+     * @return ?IdeaItem
+     * @psalm-return ?T
      */
     public function current(): ?IdeaItem
     {

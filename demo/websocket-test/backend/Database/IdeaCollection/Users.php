@@ -2,14 +2,12 @@
 
 namespace Demo\WebSocketTest\Database\IdeaCollection;
 
-use Demo\WebSocketTest\Database\Idea;
 use Demo\WebSocketTest\Database\Idea\User as IdeaUser;
 use Demo\WebSocketTest\Database\IdeaActions\UsersActions as IdeaUsersActions;
 use Demo\WebSocketTest\Database\Object\User as ObjectUser;
 use Demo\WebSocketTest\Database\ObjectCollection\Users as ObjectUsers;
 use Hilos\Database\Idea\IdeaCollection;
 use Hilos\Database\Object\Object_;
-use Hilos\Database\Object\Objects;
 use Hilos\Exception\DatabaseException;
 use InvalidArgumentException;
 use RuntimeException;
