@@ -6,8 +6,10 @@ namespace Demo\WebSocketTest\Core\Agent\Worker;
 
 use Demo\WebSocketTest\Constants\AgentType;
 use Demo\WebSocketTest\Constants\ChatEventType;
+use Demo\WebSocketTest\Constants\HttpHeaders;
 use Demo\WebSocketTest\Constants\PageConstants;
 use Demo\WebSocketTest\Database\Idea;
+use Demo\WebSocketTest\Database\Idea\User as IdeaUser;
 use Demo\WebSocketTest\DTO\ChatEventSignalData;
 use Demo\WebSocketTest\DTO\SubscriptionResponseSignalData;
 use Demo\WebSocketTest\DTO\WebSocketHandshakeSignalDTO;
@@ -32,12 +34,6 @@ use RuntimeException;
  */
 class ChatAgent extends AbstractAgent
 {
-    /** @var ?float Agent start time (microtime) */
-    private ?float $startTime = null;
-
-    /** @var array<string, int> Mapping of clientId to userId */
-    private array $clientIdToUserId = [];
-
     /**
      * Constructor
      *
@@ -70,20 +66,18 @@ class ChatAgent extends AbstractAgent
         return null;
     }
 
-  /**
-   * Called when agent is started
-   * @throws DatabaseException If database operation fails
-   */
+    /**
+     * Called when agent is started
+     * @throws DatabaseException If database operation fails
+     */
     public function onStart(): void
     {
-        // Store agent start time
-        $this->startTime = microtime(true);
-
-        // Register this agent as truth source for event table (all keys)
-        TruthSourceRegistry::register('event', true, $this->getId());
+        // Register this agent as truth source for event and user tables (all keys)
+        TruthSourceRegistry::register(Idea::getTableName(Idea::events), true, $this->getId());
+        TruthSourceRegistry::register(Idea::getTableName(Idea::users), true, $this->getId());
 
         // Add chat created event to history (system event with userId = null)
-        Idea::$idea->events->actions->add(ChatEventType::CHAT_CREATED->value, null, null);
+        Idea::$idea->events->actions->add(ChatEventType::CHAT_CREATED->value);
     }
 
     /**
@@ -91,8 +85,7 @@ class ChatAgent extends AbstractAgent
      */
     public function onStop(): void
     {
-        // Unregister as truth source
-        TruthSourceRegistry::unregister('event', $this->getId());
+        TruthSourceRegistry::unregisterAgent($this->getId());
     }
 
     /**
@@ -103,26 +96,17 @@ class ChatAgent extends AbstractAgent
         // No periodic tasks needed - cleanup handled via cron signals
     }
 
-  /**
-   * Add event to history
-   *
-   * @param ChatEventType $type Event type
-   * @param ?int $userId User ID (null for system events or to determine from clientId)
-   * @param ?array $data Event-specific data (optional, may contain clientId for userId resolution)
-   * @param string|null $excludeClientId Client ID to exclude from receiving the event (optional)
-   * @throws RuntimeException If userId cannot be determined when needed
-   * @throws DatabaseException If database operation fails
-   */
+    /**
+     * Add event to history
+     *
+     * @param ChatEventType $type Event type
+     * @param ?int $userId User ID (null for system events)
+     * @param ?array $data Event-specific data (optional)
+     * @param string|null $excludeClientId Client ID to exclude from receiving the event (optional)
+     * @throws DatabaseException If database operation fails
+     */
     private function addEvent(ChatEventType $type, ?int $userId = null, ?array $data = null, ?string $excludeClientId = null): void
     {
-        // Determine userId from data if not provided
-        if ($userId === null && $data !== null && isset($data['clientId'])) {
-            $clientId = $data['clientId'];
-            if (isset($this->clientIdToUserId[$clientId])) {
-                $userId = $this->clientIdToUserId[$clientId];
-            }
-        }
-
         // Add event to collection (saves to database and adds to collection)
         $event = Idea::$idea->events->actions->add($type->value, $userId, $data);
 
@@ -143,10 +127,10 @@ class ChatAgent extends AbstractAgent
         );
     }
 
-  /**
-   * Cleanup chat history
-   * @throws DatabaseException If database operation fails
-   */
+    /**
+     * Cleanup chat history
+     * @throws DatabaseException If database operation fails
+     */
     private function cleanupHistory(): void
     {
         Idea::$idea->events->actions->deleteAll();
@@ -173,122 +157,253 @@ class ChatAgent extends AbstractAgent
             throw new RuntimeException("Expected WebSocketHandshakeSignalDTO, got {$dataType}");
         }
 
-        // Now we can safely use WebSocketHandshakeSignalDTO type
+        // Prepare variables
         $handshakeData = $data;
-
-        $dataArray = $handshakeData->toArray();
-        $clientId = $dataArray['clientId'] ?? '';
+        $clientId = $handshakeData->clientId;
         $page = $name;
         Logger::logAgentDebug($this->getId(), "Page subscribe signal received: source={$source}, client={$clientId}, page={$page}");
 
+        // Validate clientId
         if ($clientId === '') {
-            return;
+            throw new RuntimeException("Client ID is required but not provided or empty");
         }
 
+        // Get or register user from session token
+        $user = $this->getOrRegisterUser($handshakeData);
+
+        // Handle page-specific subscription logic
+        $this->handlePageSubscribe($page, $clientId, $user);
+    }
+
+    /**
+     * Get or register user from session token
+     * Returns user or throws exception
+     *
+     * @param WebSocketHandshakeSignalDTO $handshakeData Handshake data containing session token
+     * @return IdeaUser User idea
+     * @throws RuntimeException If session token is invalid
+     * @throws DatabaseException If user registration fails
+     */
+    private function getOrRegisterUser(WebSocketHandshakeSignalDTO $handshakeData): IdeaUser
+    {
         // Get session token from query parameters via DTO
-        try {
-            $sessionToken = $handshakeData->queryParams['X-Session-Token'] ?? null;
+        $sessionToken = $handshakeData->queryParams[HttpHeaders::SESSION_TOKEN] ?? null;
 
-            // Validate that session token is provided and is a non-empty string
-            if ($sessionToken === null || $sessionToken === '') {
-                Logger::logAgentError($this->getId(), "X-Session-Token is required but not provided or empty");
-                throw new RuntimeException("X-Session-Token is required but not provided or empty");
-            }
-
-            if (!is_string($sessionToken)) {
-                $tokenType = gettype($sessionToken);
-                Logger::logAgentError($this->getId(), "X-Session-Token must be a string, got: {$tokenType}");
-                throw new RuntimeException("X-Session-Token must be a string, got: {$tokenType}");
-            }
-
-            Logger::logAgentDebug($this->getId(), "Session token from DTO: " . $sessionToken);
-
-            // Try to find existing user
-            $user = Idea::$idea->users->findBySession($sessionToken);
-
-            // If user not found, register new user
-            if ($user === null) {
-                $user = Idea::$idea->users->actions->register($sessionToken);
-                Logger::logAgentDebug($this->getId(), "New user registered with session token: " . $sessionToken);
-            } else {
-                Logger::logAgentDebug($this->getId(), "Existing user found with session token: " . $sessionToken);
-            }
-        } catch (\Exception $e) {
-            Logger::logAgentError($this->getId(), "Error processing session token: " . $e->getMessage());
-            throw $e;
+        // Validate that session token is provided and is a non-empty string
+        if ($sessionToken === null || $sessionToken === '') {
+            Logger::logAgentError($this->getId(), HttpHeaders::SESSION_TOKEN . " is required but not provided or empty");
+            throw new RuntimeException(HttpHeaders::SESSION_TOKEN . " is required but not provided or empty");
         }
 
-        // Add user joined event if subscribing to chat page
-        if ($page === PageConstants::MAIN) {
-            // Get user ID from Idea user object
-            $userId = $user->id;
+        if (!is_string($sessionToken)) {
+            $tokenType = gettype($sessionToken);
+            Logger::logAgentError($this->getId(), HttpHeaders::SESSION_TOKEN . " must be a string, got: {$tokenType}");
+            throw new RuntimeException(HttpHeaders::SESSION_TOKEN . " must be a string, got: {$tokenType}");
+        }
 
-            // Store mapping of clientId to userId
-            $this->clientIdToUserId[$clientId] = $userId;
+        Logger::logAgentDebug($this->getId(), "Session token from DTO: " . $sessionToken);
 
-            // Exclude the joining user from receiving their own join event
-            $this->addEvent(ChatEventType::USER_JOINED, $userId, null, $clientId);
+        // Try to find existing user
+        $user = Idea::$idea->users->findBySession($sessionToken);
 
-            // Convert Idea events to array format for subscription response
-            $eventsArray = [];
-            foreach (Idea::$idea->events as $ideaEvent) {
-                if ($ideaEvent->id === null) {
-                    continue; // Skip events without ID
-                }
+        // If user not found, register new user
+        if ($user === null) {
+            $user = Idea::$idea->users->actions->register($sessionToken);
+            Logger::logAgentDebug($this->getId(), "New user registered with session token: " . $sessionToken);
+        } else {
+            Logger::logAgentDebug($this->getId(), "Existing user found with session token: " . $sessionToken);
+        }
 
-                // Convert timestamp from database format to Unix timestamp
-                $timestamp = strtotime($ideaEvent->timestamp);
-                if ($timestamp === false) {
-                    $timestamp = 0;
-                }
+        return $user;
+    }
 
-                // Parse data from JSON string and merge userId if not already present
-                $data = $ideaEvent->data === null ? [] : json_decode($ideaEvent->data, true) ?? [];
-                if ($ideaEvent->userId !== null && !isset($data['userId'])) {
-                    $data['userId'] = $ideaEvent->userId;
-                }
+    /**
+     * Handle page-specific subscription logic
+     * Routes to page-specific handler based on page name
+     *
+     * @param string $page Page name
+     * @param string $clientId Client ID
+     * @param IdeaUser $user User idea
+     * @throws DatabaseException If page handling fails
+     */
+    private function handlePageSubscribe(string $page, string $clientId, IdeaUser $user): void
+    {
+        switch ($page) {
+            case PageConstants::MAIN:
+                $this->handleMainPageSubscribe($clientId, $user);
+                break;
 
-                $eventsArray[] = [
-                    'id' => $ideaEvent->id,
-                    'type' => $ideaEvent->type,
-                    'timestamp' => $timestamp,
-                    'data' => $data,
-                ];
-            }
+            case PageConstants::PROFILE:
+                $this->handleProfilePageSubscribe($clientId, $user);
+                break;
 
-            // Send subscription response with all events, start time and user info
-            $subscriptionData = new SubscriptionResponseSignalData(
-                events: $eventsArray,
-                startTime: $this->startTime,
-                userId: $userId,
-                username: $user->name,
-            );
+            case PageConstants::USER:
+                $this->handleUserPageSubscribe($clientId, $user);
+                break;
 
-            // Wrap subscription data in WebSocketSignalData for WebSocket routing
-            $signalData = new WebSocketSignalData(
-                data: $subscriptionData,
-                targetClientId: $clientId,
-                targetGroup: null,
-                excludeClientId: null,
-            );
+            case PageConstants::BOT:
+                $this->handleBotPageSubscribe($clientId, $user);
+                break;
 
-            $this->signalRouter->queueSignal(
-                signalSource: $this->getAgentSignalSource(),
-                signalType: new SignalType(SignalTypeConstants::WS_USER),
-                signalName: new SignalName('subscription_response'),
-                signalData: $signalData,
-            );
+            case PageConstants::MODERATOR:
+                $this->handleModeratorPageSubscribe($clientId, $user);
+                break;
+
+            case PageConstants::ADMIN:
+                $this->handleAdminPageSubscribe($clientId, $user);
+                break;
+
+            case PageConstants::ADMIN_USERS:
+                $this->handleAdminUsersPageSubscribe($clientId, $user);
+                break;
+
+            case PageConstants::ADMIN_MODERATOR:
+                $this->handleAdminModeratorPageSubscribe($clientId, $user);
+                break;
+
+            case PageConstants::ADMIN_BOTS:
+                $this->handleAdminBotsPageSubscribe($clientId, $user);
+                break;
+
+            default:
+                // Unknown page - throw exception
+                Logger::logAgentError($this->getId(), "Unknown page subscription: {$page}");
+                throw new RuntimeException("Unknown page subscription: {$page}");
         }
     }
 
-  /**
-   * Handle page unsubscribe signal
-   *
-   * @param string $source Signal source
-   * @param string $name Signal name
-   * @param SignalDataInterface $data Signal data
-   * @throws DatabaseException If database operation fails
-   */
+    /**
+     * Handle main page subscription
+     * Adds user joined event and sends subscription response with chat history
+     *
+     * @param string $clientId Client ID
+     * @param IdeaUser $user User idea
+     * @throws DatabaseException If operation fails
+     */
+    private function handleMainPageSubscribe(string $clientId, IdeaUser $user): void
+    {
+        // Exclude the joining user from receiving their own join event
+        $this->addEvent(ChatEventType::USER_JOINED, $user->id, null, $clientId);
+
+        // Send subscription response with all events and user info
+        $subscriptionData = new SubscriptionResponseSignalData(
+            events: Idea::$idea->events->toArray(idAsIndex: false),
+            userId: $user->id,
+            username: $user->name,
+        );
+
+        // Wrap subscription data in WebSocketSignalData for WebSocket routing
+        $signalData = new WebSocketSignalData(
+            data: $subscriptionData,
+            targetClientId: $clientId,
+            targetGroup: null,
+            excludeClientId: null,
+        );
+
+        $this->signalRouter->queueSignal(
+            signalSource: $this->getAgentSignalSource(),
+            signalType: new SignalType(SignalTypeConstants::WS_USER),
+            signalName: new SignalName('subscription_response'),
+            signalData: $signalData,
+        );
+    }
+
+    /**
+     * Handle profile page subscription
+     *
+     * @param string $clientId Client ID
+     * @param IdeaUser $user User idea
+     */
+    private function handleProfilePageSubscribe(string $clientId, IdeaUser $user): void
+    {
+        // TODO: Implement profile page subscription logic
+    }
+
+    /**
+     * Handle user page subscription
+     *
+     * @param string $clientId Client ID
+     * @param IdeaUser $user User idea
+     */
+    private function handleUserPageSubscribe(string $clientId, IdeaUser $user): void
+    {
+        // TODO: Implement user page subscription logic
+    }
+
+    /**
+     * Handle bot page subscription
+     *
+     * @param string $clientId Client ID
+     * @param IdeaUser $user User idea
+     */
+    private function handleBotPageSubscribe(string $clientId, IdeaUser $user): void
+    {
+        // TODO: Implement bot page subscription logic
+    }
+
+    /**
+     * Handle moderator page subscription
+     *
+     * @param string $clientId Client ID
+     * @param IdeaUser $user User idea
+     */
+    private function handleModeratorPageSubscribe(string $clientId, IdeaUser $user): void
+    {
+        // TODO: Implement moderator page subscription logic
+    }
+
+    /**
+     * Handle admin page subscription
+     *
+     * @param string $clientId Client ID
+     * @param IdeaUser $user User idea
+     */
+    private function handleAdminPageSubscribe(string $clientId, IdeaUser $user): void
+    {
+        // TODO: Implement admin page subscription logic
+    }
+
+    /**
+     * Handle admin users page subscription
+     *
+     * @param string $clientId Client ID
+     * @param IdeaUser $user User idea
+     */
+    private function handleAdminUsersPageSubscribe(string $clientId, IdeaUser $user): void
+    {
+        // TODO: Implement admin users page subscription logic
+    }
+
+    /**
+     * Handle admin moderator page subscription
+     *
+     * @param string $clientId Client ID
+     * @param IdeaUser $user User idea
+     */
+    private function handleAdminModeratorPageSubscribe(string $clientId, IdeaUser $user): void
+    {
+        // TODO: Implement admin moderator page subscription logic
+    }
+
+    /**
+     * Handle admin bots page subscription
+     *
+     * @param string $clientId Client ID
+     * @param IdeaUser $user User idea
+     */
+    private function handleAdminBotsPageSubscribe(string $clientId, IdeaUser $user): void
+    {
+        // TODO: Implement admin bots page subscription logic
+    }
+
+    /**
+     * Handle page unsubscribe signal
+     *
+     * @param string $source Signal source
+     * @param string $name Signal name
+     * @param SignalDataInterface $data Signal data
+     * @throws DatabaseException If database operation fails
+     */
     public function onSignalPageUnsubscribe(string $source, string $name, SignalDataInterface $data): void
     {
         $dataArray = $data instanceof BaseDTO ? $data->toArray() : [];
@@ -303,19 +418,17 @@ class ChatAgent extends AbstractAgent
         // Add user left event if unsubscribing from chat page
         if ($page === 'main') {
             $this->addEvent(ChatEventType::USER_LEFT, null, ['clientId' => $clientId]);
-            // Remove mapping when user leaves
-            unset($this->clientIdToUserId[$clientId]);
         }
     }
 
-  /**
-   * Handle action signal
-   *
-   * @param string $source Signal source
-   * @param string $name Signal name
-   * @param SignalDataInterface $data Signal data
-   * @throws DatabaseException If database operation fails
-   */
+    /**
+     * Handle action signal
+     *
+     * @param string $source Signal source
+     * @param string $name Signal name
+     * @param SignalDataInterface $data Signal data
+     * @throws DatabaseException If database operation fails
+     */
     public function onSignalAction(string $source, string $name, SignalDataInterface $data): void
     {
         $dataArray = $data instanceof BaseDTO ? $data->toArray() : [];
@@ -356,14 +469,14 @@ class ChatAgent extends AbstractAgent
         }
     }
 
-  /**
-   * Handle cron signal
-   *
-   * @param string $source Signal source
-   * @param string $name Signal name
-   * @param SignalDataInterface $data Signal data
-   * @throws DatabaseException If database operation fails
-   */
+    /**
+     * Handle cron signal
+     *
+     * @param string $source Signal source
+     * @param string $name Signal name
+     * @param SignalDataInterface $data Signal data
+     * @throws DatabaseException If database operation fails
+     */
     public function onSignalCron(string $source, string $name, SignalDataInterface $data): void
     {
         $dataArray = $data instanceof BaseDTO ? $data->toArray() : [];

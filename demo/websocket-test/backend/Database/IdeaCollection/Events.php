@@ -2,22 +2,18 @@
 
 namespace Demo\WebSocketTest\Database\IdeaCollection;
 
-use Demo\WebSocketTest\Database\Idea;
 use Demo\WebSocketTest\Database\Idea\Event as IdeaEvent;
 use Demo\WebSocketTest\Database\IdeaActions\EventsActions as IdeaActionsEvents;
 use Demo\WebSocketTest\Database\Object\Event as ObjectEvent;
-use Demo\WebSocketTest\Database\ObjectCollection\Events as ObjectEvents;
 use Hilos\Database\Idea\IdeaCollection;
 use Hilos\Database\Object\Object_;
-use Hilos\Database\Object\Objects;
-use Hilos\Exception\DatabaseException;
 use InvalidArgumentException;
-use RuntimeException;
 
 /**
  * Events Idea Collection
  * Collection of Event ideas with additional filtering methods
  *
+ * @extends IdeaCollection<IdeaEvent>
  * @property-read IdeaActionsEvents $actions Actions for write operations
  */
 final class Events extends IdeaCollection
@@ -30,7 +26,7 @@ final class Events extends IdeaCollection
 
     /**
      * Create Idea instance from Object
-     * 
+     *
      * @param Object_ $object Object instance (reference)
      * @return IdeaEvent
      */
@@ -44,7 +40,7 @@ final class Events extends IdeaCollection
 
     /**
      * Get current Event idea
-     * 
+     *
      * @return IdeaEvent|null Current Event idea or null if invalid position
      */
     public function current(): ?IdeaEvent
@@ -55,7 +51,7 @@ final class Events extends IdeaCollection
 
     /**
      * Get first Event idea
-     * 
+     *
      * @return IdeaEvent|null First Event idea or null if collection is empty
      */
     public function first(): ?IdeaEvent
@@ -66,7 +62,7 @@ final class Events extends IdeaCollection
 
     /**
      * Get last Event idea
-     * 
+     *
      * @return IdeaEvent|null Last Event idea or null if collection is empty
      */
     public function last(): ?IdeaEvent
@@ -77,7 +73,7 @@ final class Events extends IdeaCollection
 
     /**
      * Get Event idea by offset
-     * 
+     *
      * @param mixed $offset Event ID
      * @return IdeaEvent|null Event idea or null if not found
      */

@@ -2,6 +2,8 @@
 
 namespace Hilos\Database\Idea;
 
+use RuntimeException;
+
 /**
  * Truth Source Registry
  * Tracks which agents are sources of truth for specific tables and keys
@@ -13,7 +15,7 @@ class TruthSourceRegistry
 
     /**
      * Register agent as truth source for table
-     * 
+     *
      * @param string $table Table name
      * @param array|true $keys Array of keys or true for all keys
      * @param string $agentId Agent ID from agent->getId()
@@ -28,7 +30,7 @@ class TruthSourceRegistry
 
     /**
      * Unregister agent as truth source
-     * 
+     *
      * @param string $table Table name
      * @param string $agentId Agent ID
      */
@@ -44,7 +46,7 @@ class TruthSourceRegistry
 
     /**
      * Unregister agent from all tables
-     * 
+     *
      * @param string $agentId Agent ID
      */
     public static function unregisterAgent(string $agentId): void
@@ -61,7 +63,7 @@ class TruthSourceRegistry
 
     /**
      * Check if keys are truth source (don't need to load from DB)
-     * 
+     *
      * @param string $table Table name
      * @param array $keys Keys to check
      * @return bool True if all keys are truth source
@@ -95,7 +97,7 @@ class TruthSourceRegistry
 
     /**
      * Get truth source keys for table (keys that are already in memory and up-to-date)
-     * 
+     *
      * @param string $table Table name
      * @return array|true|null Array of keys that are truth source, true for all keys, or null if not truth source
      */
@@ -121,7 +123,7 @@ class TruthSourceRegistry
     /**
      * Check if table has any registered truth source
      * Used for LAZY_STRATEGY_NONE to determine if write operations are allowed
-     * 
+     *
      * @param string $table Table name
      * @return bool True if table has at least one registered truth source
      */
@@ -133,7 +135,7 @@ class TruthSourceRegistry
     /**
      * Check if write operation is allowed for table
      * Throws exception if no truth source is registered
-     * 
+     *
      * @param string $table Table name
      * @throws RuntimeException If write is not allowed (no truth source registered)
      */
@@ -144,4 +146,3 @@ class TruthSourceRegistry
         }
     }
 }
-

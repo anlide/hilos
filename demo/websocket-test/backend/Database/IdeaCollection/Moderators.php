@@ -6,6 +6,7 @@ use Demo\WebSocketTest\Database\Idea;
 use Demo\WebSocketTest\Database\Idea\Moderator as IdeaModerator;
 use Demo\WebSocketTest\Database\Object\Moderator as ObjectModerator;
 use Demo\WebSocketTest\Database\ObjectCollection\Moderators as ObjectModerators;
+use Hilos\Database\Idea\IdeaActions;
 use Hilos\Database\Idea\IdeaCollection;
 use Hilos\Database\Object\Object_;
 use Hilos\Database\Object\Objects;
@@ -16,6 +17,9 @@ use RuntimeException;
 /**
  * Moderators Idea Collection
  * Collection of Moderator ideas with additional filtering methods
+ *
+ * @extends IdeaCollection<IdeaModerator>
+ * @property-read IdeaActions $actions Actions for write operations
  */
 final class Moderators extends IdeaCollection
 {

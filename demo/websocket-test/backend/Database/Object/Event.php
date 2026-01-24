@@ -4,6 +4,7 @@ namespace Demo\WebSocketTest\Database\Object;
 
 use Hilos\Database\Object\Object_;
 use Demo\WebSocketTest\Database\Entity\Event as EntityEvent;
+use Hilos\Exception\DatabaseException;
 
 /**
  * Event Object
@@ -42,6 +43,7 @@ final class Event extends Object_
         $obj->entitySync = clone $entity;
         return $obj;
     }
+
     public function __get(string $property): mixed
     {
         return match ($property) {
@@ -53,6 +55,7 @@ final class Event extends Object_
             default => parent::__get($property),
         };
     }
+
     public function __set(string $property, mixed $value): void
     {
         match ($property) {
@@ -63,6 +66,7 @@ final class Event extends Object_
             default => parent::__set($property, $value),
         };
     }
+
     public function toArray(): array
     {
         return [
@@ -72,5 +76,19 @@ final class Event extends Object_
             self::timestamp => $this->entity->timestamp,
             self::data => $this->entity->data,
         ];
+    }
+
+    /**
+     * Get ID as string (for use as array key)
+     * 
+     * @return string ID as string
+     * @throws DatabaseException If ID is null
+     */
+    public function getIdString(): string
+    {
+        if ($this->entity->id === null) {
+            throw new DatabaseException("Cannot get ID string: Event ID is null");
+        }
+        return (string)$this->entity->id;
     }
 }

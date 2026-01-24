@@ -2,14 +2,11 @@
 
 namespace Demo\WebSocketTest\Database\IdeaActions;
 
-use Demo\WebSocketTest\Database\Entity\Event as EntityEvent;
+use Demo\WebSocketTest\Database\Entity\Event;
 use Demo\WebSocketTest\Database\Idea\Event as IdeaEvent;
 use Demo\WebSocketTest\Database\IdeaCollection\Events as IdeaCollectionEvents;
 use Demo\WebSocketTest\Database\Object\Event as ObjectEvent;
-use Demo\WebSocketTest\Database\ObjectCollection\Events as ObjectEvents;
 use Hilos\Database\Idea\IdeaActions;
-use Hilos\Database\Idea\TruthSourceRegistry;
-use Hilos\Database\Object\Objects;
 use Hilos\Exception\DatabaseException;
 use RuntimeException;
 
@@ -21,6 +18,17 @@ use RuntimeException;
  */
 final class EventsActions extends IdeaActions
 {
+    /**
+     * Get table name for Events collection
+     * Overrides parent to provide table name when collection is empty
+     *
+     * @return string Table name
+     */
+    protected function getTableName(): string
+    {
+        return Event::_table;
+    }
+
     /**
      * Add event to collection and database
      * Creates ObjectEvent, saves to database, and adds to collection
@@ -37,12 +45,8 @@ final class EventsActions extends IdeaActions
      */
     public function add(string $type, ?int $userId = null, ?array $data = null): IdeaEvent
     {
-        // Get ObjectCollection (returns reference to storage)
-        /** @var ObjectEvents $objectCollection */
-        $objectCollection = $this->collection->getObjectCollectionForActions();
-
         // Check write permissions and load data if needed
-        $this->ensureCanWriteAndLoaded($objectCollection, EntityEvent::_table);
+        $this->ensureCanWriteAndLoaded();
         
         // Create and save ObjectEvent
         $objectEvent = ObjectEvent::create();
@@ -52,42 +56,14 @@ final class EventsActions extends IdeaActions
         $objectEvent->data = $data === null ? null : json_encode($data);
         $objectEvent->sync();
 
-        if ($objectEvent->id === null) {
-            throw new RuntimeException("Failed to save event to database: id is null after sync");
-        }
-
         // Add to ObjectCollection (modifies storage directly via reference)
-        $objectCollection[$objectEvent->id] = $objectEvent;
+        // getIdString() will throw exception if ID is null
+        $this->addObjectToCollection($objectEvent);
 
         // Create and return IdeaEvent using callback
         /** @var IdeaEvent $ideaEvent */
         $ideaEvent = $this->createIdeaFromObject($objectEvent);
         return $ideaEvent;
-    }
-
-    /**
-     * Ensure write is allowed and data is loaded if needed
-     * Checks TruthSourceRegistry and loads data for LAZY_STRATEGY_NONE
-     *
-     * @param Objects $objectCollection Object collection
-     * @param string $table Table name
-     * @throws RuntimeException If write is not allowed
-     * @throws DatabaseException If data loading fails
-     */
-    private function ensureCanWriteAndLoaded(Objects $objectCollection, string $table): void
-    {
-        // Check lazy strategy and load if needed
-        $strategy = $objectCollection->getLazyStrategy();
-        
-        if ($strategy === Objects::LAZY_STRATEGY_NONE) {
-            // Check write permission
-            TruthSourceRegistry::checkCanWrite($table);
-            
-            // Load all data if not loaded yet
-            if (!$objectCollection->isAllLoaded()) {
-                $objectCollection->loadAllFromDB();
-            }
-        }
     }
 
     /**
@@ -98,9 +74,14 @@ final class EventsActions extends IdeaActions
      */
     public function deleteAll(): void
     {
-        // Get ObjectCollection (returns reference to storage)
-        /** @var ObjectEvents $objectCollection */
-        $objectCollection = $this->collection->getObjectCollectionForActions();
+        $objectCollection = $this->getObjectCollection();
+        if ($objectCollection === null) {
+            throw new DatabaseException("Cannot delete all: ObjectCollection is null");
+        }
+        
+        if (!($objectCollection instanceof \Demo\WebSocketTest\Database\ObjectCollection\Events)) {
+            throw new DatabaseException("ObjectCollection is not an instance of Events");
+        }
         
         $objectCollection->deleteAll();
     }

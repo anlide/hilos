@@ -74,7 +74,7 @@ export function createChatWebSocketPlugin() {
               id: number
               type: string
               timestamp: number
-              data: Record<string, unknown>
+              data: Record<string, unknown> | null
             }>
             startTime: number
             userId: number
@@ -83,7 +83,6 @@ export function createChatWebSocketPlugin() {
           
           chatStore.handleSubscriptionResponse(
             subscriptionData.events,
-            subscriptionData.startTime,
             subscriptionData.userId,
             subscriptionData.username,
           )

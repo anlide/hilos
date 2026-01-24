@@ -4,6 +4,7 @@ namespace Demo\WebSocketTest\Database\IdeaCollection;
 
 use Demo\WebSocketTest\Database\Idea;
 use Demo\WebSocketTest\Database\Idea\User as IdeaUser;
+use Demo\WebSocketTest\Database\IdeaActions\UsersActions as IdeaUsersActions;
 use Demo\WebSocketTest\Database\Object\User as ObjectUser;
 use Demo\WebSocketTest\Database\ObjectCollection\Users as ObjectUsers;
 use Hilos\Database\Idea\IdeaCollection;
@@ -16,6 +17,9 @@ use RuntimeException;
 /**
  * Users Idea Collection
  * Collection of User ideas with additional filtering methods
+ *
+ * @extends IdeaCollection<IdeaUser>
+ * @property-read IdeaUsersActions $actions Actions for write operations
  */
 final class Users extends IdeaCollection
 {

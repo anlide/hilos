@@ -175,28 +175,17 @@ abstract class IdeaCollection implements ArrayAccess, Countable, Iterator
      * Get ObjectCollection
      * Returns the Object collection reference set via setObjectCollection()
      * Returns null for manual collections
-     *
-     * @return Objects|null ObjectCollection instance, or null for manual collections
-     */
-    protected function getObjectCollection(): ?Objects
-    {
-        return $this->_objectCollection;
-    }
-
-    /**
-     * Get ObjectCollection for Actions
-     * Public method to allow Actions to access ObjectCollection
-     * Returns reference to storage - modifications will affect the stored collection
+     * 
+     * Public method to allow Actions and child classes to access ObjectCollection.
+     * Returns reference to storage - modifications will affect the stored collection.
      * 
      * Note: In PHP, objects are passed by reference, so modifications to the returned
      * object will affect the original object stored in Idea::_objectCollections
      *
      * @return Objects|null ObjectCollection instance, or null for manual collections
      */
-    public function getObjectCollectionForActions(): ?Objects
+    public function getObjectCollection(): ?Objects
     {
-        // Returns the same object reference stored in _objectCollection
-        // Modifications to this object will be visible in Idea::_objectCollections
         return $this->_objectCollection;
     }
 

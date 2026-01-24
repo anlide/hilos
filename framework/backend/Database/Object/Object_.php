@@ -138,6 +138,19 @@ abstract class Object_
     }
 
     /**
+     * Get ID as string (for use as array key)
+     * Supports composite keys by returning string representation
+     * Must be overridden in child classes
+     * 
+     * @return string ID as string (for simple keys) or composite key representation
+     * @throws DatabaseException If ID is not set or method is not overridden
+     */
+    public function getIdString(): string
+    {
+        throw new DatabaseException("getIdString() must be implemented in child class: " . static::class);
+    }
+
+    /**
      * Magic getter - must be overridden in child classes
      * 
      * @throws DatabaseException

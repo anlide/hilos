@@ -11,7 +11,7 @@ use RuntimeException;
 /**
  * SubscriptionResponseSignalData - Signal data for subscription response
  *
- * Contains chat history events and server start time for new subscribers.
+ * Contains chat history events and user info for new subscribers.
  * Target client ID is handled by WebSocketSignalData wrapper for routing.
  */
 class SubscriptionResponseSignalData extends BaseDTO implements SignalDataInterface
@@ -19,8 +19,6 @@ class SubscriptionResponseSignalData extends BaseDTO implements SignalDataInterf
     public function __construct(
         /** @var array<array{id: int, type: string, timestamp: int, data: array<string, mixed>}> Chat event history */
         public readonly array $events,
-        /** @var float Server start time (microtime) */
-        public readonly float $startTime,
         /** @var int User ID */
         public readonly int $userId,
         /** @var string Username */
@@ -37,7 +35,6 @@ class SubscriptionResponseSignalData extends BaseDTO implements SignalDataInterf
     {
         return [
             'events' => $this->events,
-            'startTime' => $this->startTime,
             'userId' => $this->userId,
             'username' => $this->username,
         ];

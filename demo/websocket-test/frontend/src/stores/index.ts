@@ -17,7 +17,6 @@ export const useChatStore = defineStore('chat', {
     // Current user information
     currentUserId: null as number | null,
     currentUsername: null as string | null,
-    serverStartTime: null as number | null,
     reconnectAttempts: 0,
     maxReconnectAttempts: Infinity,
   }),
@@ -68,13 +67,11 @@ export const useChatStore = defineStore('chat', {
         id: number
         type: string
         timestamp: number
-        data: Record<string, unknown>
+        data: Record<string, unknown> | null
       }>,
-      startTime: number,
       userId: number,
       username: string,
     ) {
-      this.serverStartTime = startTime
       this.currentUserId = userId
       this.currentUsername = username
       
@@ -82,15 +79,27 @@ export const useChatStore = defineStore('chat', {
       
       for (const event of events) {
         // userId can be null for system events, otherwise use from data or currentUserId
-        const userId = (event.data.userId as number | null) ?? this.currentUserId
-        const timestampString = new Date(event.timestamp * 1000).toISOString().slice(0, 19).replace('T', ' ')
+        // Handle null data case
+        const eventData = event.data ?? {}
+        const userId = (eventData.userId as number | null | undefined) ?? this.currentUserId
+        
+        // Convert timestamp - handle both string and number formats
+        let timestamp: number
+        if (typeof event.timestamp === 'string') {
+          const parsed = Date.parse(event.timestamp)
+          timestamp = isNaN(parsed) ? 0 : Math.floor(parsed / 1000)
+        } else {
+          timestamp = event.timestamp
+        }
+        
+        const timestampString = new Date(timestamp * 1000).toISOString().slice(0, 19).replace('T', ' ')
         
         const eventObj = Event.fromObject({
           id: event.id,
           userId: userId,
           type: event.type,
           timestamp: timestampString,
-          data: event.data,
+          data: eventData,
         })
         
         this.addEvent(eventObj)

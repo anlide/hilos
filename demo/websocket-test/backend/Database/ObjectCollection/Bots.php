@@ -58,7 +58,7 @@ final class Bots extends Objects implements Iterator, ArrayAccess, Countable
      * 
      * @return string Table name
      */
-    protected function getTableName(): string
+    public function getTableName(): string
     {
         return EntityBot::_table;
     }

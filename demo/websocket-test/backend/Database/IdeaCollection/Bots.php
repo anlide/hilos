@@ -6,6 +6,7 @@ use Demo\WebSocketTest\Database\Idea;
 use Demo\WebSocketTest\Database\Idea\Bot as IdeaBot;
 use Demo\WebSocketTest\Database\Object\Bot as ObjectBot;
 use Demo\WebSocketTest\Database\ObjectCollection\Bots as ObjectBots;
+use Hilos\Database\Idea\IdeaActions;
 use Hilos\Database\Idea\IdeaCollection;
 use Hilos\Database\Object\Object_;
 use Hilos\Database\Object\Objects;
@@ -16,6 +17,9 @@ use RuntimeException;
 /**
  * Bots Idea Collection
  * Collection of Bot ideas with additional filtering methods
+ *
+ * @extends IdeaCollection<IdeaBot>
+ * @property-read IdeaActions $actions Actions for write operations
  */
 final class Bots extends IdeaCollection
 {

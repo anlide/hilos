@@ -10,6 +10,7 @@ use Hilos\Database\Database;
 use Hilos\Database\Entity\Entity;
 use Hilos\Database\SqlParamCollection;
 use Hilos\Exception\DatabaseException;
+use InvalidArgumentException;
 use Iterator;
 use ReflectionClass;
 
@@ -64,7 +65,7 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
     public static function initDB(int $strategy = self::LAZY_STRATEGY_BATCH): static
     {
         $self = new static();
-        
+
         // For LAZY_STRATEGY_NONE, configure for lazy loading on first access
         // Data will be loaded when collection is first accessed (read or write)
         if ($strategy === self::LAZY_STRATEGY_NONE) {
@@ -77,7 +78,7 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
             $self->_lazyStrategy = $strategy;
             $self->_allLoaded = false;
         }
-        
+
         return $self;
     }
 
@@ -342,13 +343,13 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
      *
      * @param string $property
      * @return bool
-     * @throws \InvalidArgumentException
+     * @throws InvalidArgumentException
      */
     public function __get(string $property): bool
     {
         return match ($property) {
             self::allowLazyLoading => $this->_allowLazyLoading,
-            default => throw new \InvalidArgumentException("Property [{$property}] does not exist on " . static::class),
+            default => throw new InvalidArgumentException("Property [{$property}] does not exist on " . static::class),
         };
     }
 
@@ -376,46 +377,17 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
 
     /**
      * Get table name from Entity class
-     * Uses reflection to get _table constant from Entity
-     * 
+     * Must be implemented in child classes
+     *
      * @return string Table name
      */
-    protected function getTableName(): string
-    {
-        // Get first object to determine Entity class
-        $firstObject = reset($this->objects);
-        if ($firstObject === false) {
-            // No objects loaded, try to get from lazyLoadObject
-            // For now, throw exception - child classes should override this
-            throw new DatabaseException("Cannot determine table name: no objects loaded and getTableName() not overridden");
-        }
-
-        // Get Entity class through reflection
-        $reflection = new ReflectionClass($firstObject);
-        $entityProperty = $reflection->getProperty('entity');
-        $entityProperty->setAccessible(true);
-        $entity = $entityProperty->getValue($firstObject);
-
-        if (!($entity instanceof Entity)) {
-            throw new DatabaseException("Object does not contain Entity instance");
-        }
-
-        // Get _table constant from Entity class
-        $entityReflection = new ReflectionClass($entity);
-        $tableConstant = $entityReflection->getConstant('_table');
-        
-        if ($tableConstant === false) {
-            throw new DatabaseException("Entity class does not have _table constant");
-        }
-
-        return $tableConstant;
-    }
+    abstract public function getTableName(): string;
 
     /**
      * Filter collection by filter criteria
      * Uses truth source to avoid loading from DB if keys are already in memory
      * Currently works for LAZY_STRATEGY_NONE (when all objects are already loaded)
-     * 
+     *
      * @param FilterInterface $filter Filter criteria
      * @return FilteredCollection Filtered collection
      * @throws DatabaseException
@@ -424,12 +396,12 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
     {
         $table = $this->getTableName();
         $truthSourceKeys = TruthSourceRegistry::getTruthSourceKeys($table);
-        
+
         $filteredObjects = [];
-        
-        // Если есть источник истины - фильтровать из памяти
+
+        // If there is a truth source - filter from memory
         if ($truthSourceKeys !== null && $truthSourceKeys !== true) {
-            // Фильтровать только объекты из источника истины
+            // Filter only objects from truth source
             foreach ($truthSourceKeys as $key) {
                 if (isset($this->objects[$key])) {
                     $object = $this->objects[$key];
@@ -439,15 +411,15 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
                 }
             }
         } elseif ($truthSourceKeys === true) {
-            // Все ключи - источник истины, фильтровать все загруженные
+            // All keys are truth source, filter all loaded objects
             foreach ($this->objects as $key => $object) {
                 if ($filter->matches($object)) {
                     $filteredObjects[$key] = $object;
                 }
             }
         } else {
-            // Нет источника истины
-            // Для LAZY_STRATEGY_NONE или когда все загружено - фильтровать из памяти
+            // No truth source
+            // For LAZY_STRATEGY_NONE or when all loaded - filter from memory
             if (!$this->_allowLazyLoading || $this->_allLoaded) {
                 foreach ($this->objects as $key => $object) {
                     if ($filter->matches($object)) {
@@ -455,13 +427,13 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
                     }
                 }
             } else {
-                // Для lazy стратегий - SQL запрос с фильтром
-                // TODO: Реализовать для других стратегий lazy loading
-                // Пока только для полностью загруженных коллекций
+                // For lazy strategies - SQL query with filter
+                // TODO: Implement for other lazy loading strategies
+                // Currently only for fully loaded collections
                 throw new DatabaseException("Filtering for lazy-loaded collections not yet implemented. Use LAZY_STRATEGY_NONE or ensure all objects are loaded.");
             }
         }
-        
+
         return new FilteredCollection($this, $filter, $filteredObjects);
     }
 

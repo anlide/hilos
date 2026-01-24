@@ -149,7 +149,7 @@ final class Users extends Objects implements Iterator, ArrayAccess, Countable
      * 
      * @return string Table name
      */
-    protected function getTableName(): string
+    public function getTableName(): string
     {
         return EntityUser::_table;
     }

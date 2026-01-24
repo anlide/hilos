@@ -17,9 +17,9 @@ use RuntimeException;
  *   $user = Idea::$idea->users[123]; // Get User idea
  *   $users = Idea::$idea->users; // Get Users collection
  */
-class Idea
+abstract class Idea
 {
-    /** @var static|null Singleton instance (may be instance of child class) */
+    /** @var ?static Singleton instance (may be instance of child class) */
     public static ?self $idea = null;
 
     /**
@@ -66,7 +66,7 @@ class Idea
     public static function init(): void
     {
         if (self::$idea === null) {
-            self::$idea = new self();
+            self::$idea = new static();
         }
 
         // Object collections must be initialized in child class
@@ -81,7 +81,7 @@ class Idea
      *
      * @param string $name Collection name (e.g., 'users')
      * @param string $ideaCollectionClass Idea collection class name
-     * @param string|null $actionsClass Actions class name (optional)
+     * @param ?string $actionsClass Actions class name (optional)
      * @throws DatabaseException If Object collection not found in _objectCollections
      */
     public function setRepresent(string $name, string $ideaCollectionClass, ?string $actionsClass = null): void
@@ -90,9 +90,9 @@ class Idea
         if (!isset($this->_objectCollections[$name])) {
             throw new DatabaseException("Object collection [{$name}] not found in _objectCollections. Create it before calling setRepresent().");
         }
-        
+
         $objectCollection = $this->_objectCollections[$name];
-        
+
         // Create Idea collection
         if (is_subclass_of($ideaCollectionClass, IdeaCollection::class)) {
             $ideaCollection = $ideaCollectionClass::init();
@@ -111,7 +111,7 @@ class Idea
      * Used internally by IdeaCollection to access Object collections
      *
      * @param string $name Collection name
-     * @return Objects|null Object collection or null if not found
+     * @return ?Objects Object collection or null if not found
      */
     public function getObjectCollection(string $name): ?Objects
     {
@@ -120,7 +120,7 @@ class Idea
 
     /**
      * Get Idea collection by name
-     * For LAZY_STRATEGY_NONE: Loads all data from database on first access (read or write)
+     * Handles lazy loading based on ObjectCollection strategy
      *
      * @param string $name Collection name
      * @return IdeaCollection
@@ -128,20 +128,80 @@ class Idea
      */
     public function __get(string $name)
     {
+        // Early exit if collection doesn't exist
         if (!isset($this->_ideaCollections[$name])) {
             throw new DatabaseException("Idea collection [{$name}] does not exist");
         }
 
-        // Check if ObjectCollection has LAZY_STRATEGY_NONE and needs loading
-        $objectCollection = $this->_objectCollections[$name] ?? null;
-        if ($objectCollection !== null && 
-            $objectCollection->getLazyStrategy() === Objects::LAZY_STRATEGY_NONE &&
-            !$objectCollection->isAllLoaded()) {
-            // Load all data from database on first access
-            $objectCollection->loadAllFromDB();
+        switch ($this->_objectCollections[$name]->getLazyStrategy()) {
+            case Objects::LAZY_STRATEGY_NONE:
+                // Load all data from database on first access if not loaded
+                if (!$this->_objectCollections[$name]->isAllLoaded()) {
+                    $this->_objectCollections[$name]->loadAllFromDB();
+                }
+                break;
+
+            case Objects::LAZY_STRATEGY_KEY:
+                // For KEY strategy, no action needed on collection access
+                // Objects will be loaded lazily when accessed by key via offsetGet()
+                // This allows efficient memory usage - only requested objects are loaded
+                break;
+
+            case Objects::LAZY_STRATEGY_BATCH:
+                // TODO: Implement batch lazy loading strategy
+                break;
+
+            case Objects::LAZY_STRATEGY_FULL_ON_ACCESS:
+                // TODO: Implement full load on access strategy
+                break;
+
+            default:
+                // Unknown strategy - no action needed
+                throw new DatabaseException("Unknown lazy loading strategy for collection [{$name}]");
         }
 
         return $this->_ideaCollections[$name];
+    }
+
+    /**
+     * Get entity mapping for collections
+     * Maps collection names to Entity class names
+     * Must be implemented in child classes
+     *
+     * @return array<string, string> Mapping of collection name => Entity class name
+     */
+    abstract protected static function getEntityMapping(): array;
+
+    /**
+     * Get table name for collection
+     * Uses entity mapping to get table name from Entity class
+     *
+     * @param string $collectionName Collection name
+     * @return string Table name
+     * @throws DatabaseException If collection not found in mapping
+     */
+    public static function getTableName(string $collectionName): string
+    {
+        $entityMapping = static::getEntityMapping();
+        $entityClass = $entityMapping[$collectionName] ?? null;
+
+        if ($entityClass === null) {
+            throw new DatabaseException("No entity mapping for collection: {$collectionName}");
+        }
+
+        if (!class_exists($entityClass)) {
+            throw new DatabaseException("Entity class does not exist: {$entityClass}");
+        }
+
+        // Get _table constant from Entity class
+        $reflection = new \ReflectionClass($entityClass);
+        $tableConstant = $reflection->getConstant('_table');
+
+        if ($tableConstant === false) {
+            throw new DatabaseException("Entity class [{$entityClass}] does not have _table constant");
+        }
+
+        return $tableConstant;
     }
 
     /**
@@ -151,8 +211,8 @@ class Idea
      */
     public function toArray(): array
     {
-      return array_map(function ($collection) {
-        return $collection->toArray();
-      }, $this->_ideaCollections);
+        return array_map(function ($collection) {
+            return $collection->toArray();
+        }, $this->_ideaCollections);
     }
 }

@@ -2,6 +2,10 @@
 
 namespace Demo\WebSocketTest\Database;
 
+use Demo\WebSocketTest\Database\Entity\Bot as EntityBot;
+use Demo\WebSocketTest\Database\Entity\Event as EntityEvent;
+use Demo\WebSocketTest\Database\Entity\Moderator as EntityModerator;
+use Demo\WebSocketTest\Database\Entity\User as EntityUser;
 use Demo\WebSocketTest\Database\IdeaActions\EventsActions;
 use Demo\WebSocketTest\Database\IdeaActions\UsersActions;
 use Demo\WebSocketTest\Database\IdeaCollection\Bots as IdeaBots;
@@ -65,16 +69,18 @@ final class Idea extends BaseIdea
     }
 
     /**
-     * Clear all events from database and collection
-     * Lazy load will reload events on next access
+     * Get entity mapping for collections
+     * Maps collection names to Entity class names
      *
-     * @throws DatabaseException
+     * @return array<string, string> Mapping of collection name => Entity class name
      */
-    public function clearEvents(): void
+    protected static function getEntityMapping(): array
     {
-        $events = $this->getObjectCollection(self::events);
-        if ($events instanceof ObjectEvents) {
-            $events->deleteAll();
-        }
+        return [
+            self::users => EntityUser::class,
+            self::events => EntityEvent::class,
+            self::bots => EntityBot::class,
+            self::moderators => EntityModerator::class,
+        ];
     }
 }

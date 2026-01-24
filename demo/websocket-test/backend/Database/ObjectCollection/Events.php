@@ -146,6 +146,16 @@ final class Events extends Objects implements Iterator, ArrayAccess, Countable
     }
 
     /**
+     * Get table name from Entity
+     * 
+     * @return string Table name
+     */
+    public function getTableName(): string
+    {
+        return EntityEvent::_table;
+    }
+
+    /**
      * Delete all events from database
      * Clears collection cache - lazy load will reload on next access
      *

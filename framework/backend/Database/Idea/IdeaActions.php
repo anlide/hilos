@@ -2,8 +2,9 @@
 
 namespace Hilos\Database\Idea;
 
-use Hilos\Database\Idea\IdeaItem;
 use Hilos\Database\Object\Object_;
+use Hilos\Database\Object\Objects;
+use Hilos\Exception\DatabaseException;
 use RuntimeException;
 
 /**
@@ -60,7 +61,7 @@ abstract class IdeaActions
 
     /**
      * Create IdeaItem from Object using callback
-     * 
+     *
      * @param Object_ $object Object instance
      * @return IdeaItem
      * @throws RuntimeException If callback is not set
@@ -70,7 +71,113 @@ abstract class IdeaActions
         if ($this->createIdeaCallback === null) {
             throw new RuntimeException("createIdeaCallback is not set. IdeaCollection must call setCreateIdeaCallback() when creating Actions.");
         }
-        
+
         return ($this->createIdeaCallback)($object);
+    }
+
+    /**
+     * Get ObjectCollection for this Actions
+     * Returns reference to storage - modifications will affect the stored collection
+     *
+     * @return Objects|null ObjectCollection instance, or null for manual collections
+     */
+    protected function getObjectCollection(): ?Objects
+    {
+        return $this->collection->getObjectCollection();
+    }
+
+    /**
+     * Get table name from ObjectCollection
+     * Uses Objects::getTableName() or creates temporary object if collection is empty
+     *
+     * @return string Table name
+     * @throws DatabaseException If table name cannot be determined
+     */
+    protected function getTableName(): string
+    {
+        $objectCollection = $this->getObjectCollection();
+        if ($objectCollection === null) {
+            throw new DatabaseException("Cannot get table name: ObjectCollection is null");
+        }
+
+        try {
+            return $objectCollection->getTableName();
+        } catch (DatabaseException $e) {
+            // Collection is empty, try to create temporary object to get table name
+            // This requires ObjectCollection to have a way to create temporary objects
+            // For now, re-throw the exception - child classes should override if needed
+            throw new DatabaseException("Cannot determine table name: collection is empty. Override getTableName() in Actions class if needed.", 0, $e);
+        }
+    }
+
+    /**
+     * Ensure write is allowed and data is loaded if needed
+     * Checks TruthSourceRegistry and loads data based on lazy loading strategy
+     *
+     * @throws RuntimeException If write is not allowed
+     * @throws DatabaseException If data loading fails
+     */
+    protected function ensureCanWriteAndLoaded(): void
+    {
+        $objectCollection = $this->getObjectCollection();
+        if ($objectCollection === null) {
+            throw new DatabaseException("Cannot ensure write: ObjectCollection is null");
+        }
+
+        switch ($objectCollection->getLazyStrategy()) {
+            case Objects::LAZY_STRATEGY_NONE:
+                // Check write permission
+                $table = $this->getTableName();
+                TruthSourceRegistry::checkCanWrite($table);
+
+                // Load all data if not loaded yet
+                if (!$objectCollection->isAllLoaded()) {
+                    $objectCollection->loadAllFromDB();
+                }
+                break;
+
+            case Objects::LAZY_STRATEGY_KEY:
+                // TODO: Implement write check for KEY strategy
+                break;
+
+            case Objects::LAZY_STRATEGY_BATCH:
+                // TODO: Implement write check for BATCH strategy
+                break;
+
+            case Objects::LAZY_STRATEGY_FULL_ON_ACCESS:
+                // TODO: Implement write check for FULL_ON_ACCESS strategy
+                break;
+
+            default:
+                // Unknown strategy - no action needed
+                throw new DatabaseException("Unknown lazy loading strategy for write check");
+        }
+    }
+
+    /**
+     * Add Object to ObjectCollection
+     * Adds object to the global ObjectCollection storage
+     * Checks for duplicate IDs and throws exception if object already exists
+     *
+     * @param Object_ $object Object instance to add
+     * @throws DatabaseException If ObjectCollection is null, object ID is null, or object with same ID already exists
+     */
+    protected function addObjectToCollection(Object_ &$object): void
+    {
+        $objectCollection = $this->getObjectCollection();
+        if ($objectCollection === null) {
+            throw new DatabaseException("Cannot add object: ObjectCollection is null");
+        }
+
+        // Get ID string (supports composite keys)
+        $idString = $object->getIdString();
+
+        // Check if object with this ID already exists
+        if (isset($objectCollection[$idString])) {
+            $table = $this->getTableName();
+            throw new DatabaseException("Cannot add object to collection: object with ID '{$idString}' already exists in table '{$table}'");
+        }
+
+        $objectCollection[$idString] = $object;
     }
 }

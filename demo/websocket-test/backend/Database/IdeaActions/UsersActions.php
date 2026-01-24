@@ -33,7 +33,7 @@ final class UsersActions extends IdeaActions
 
         // Get ObjectCollection (returns reference to storage)
         /** @var ObjectUsers $objectCollection */
-        $objectCollection = $this->collection->getObjectCollectionForActions();
+        $objectCollection = $this->getObjectCollection();
 
         // Add ObjectUser to ObjectCollection (modifies storage directly via reference)
         if ($objectUser->id !== null) {

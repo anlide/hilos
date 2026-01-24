@@ -58,7 +58,7 @@ final class Moderators extends Objects implements Iterator, ArrayAccess, Countab
      * 
      * @return string Table name
      */
-    protected function getTableName(): string
+    public function getTableName(): string
     {
         return EntityModerator::_table;
     }

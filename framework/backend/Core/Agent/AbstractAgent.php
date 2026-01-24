@@ -121,6 +121,23 @@ abstract class AbstractAgent implements AgentInterface
     }
 
     /**
+     * Validate WebSocket handshake signal data
+     * Throws exception if data is not WebSocketHandshakeSignalDTO
+     *
+     * @param SignalDataInterface $data Signal data to validate
+     * @param string $expectedClass Expected DTO class name
+     * @return void
+     * @throws \RuntimeException If data is not of expected type
+     */
+    protected function validateWebSocketHandshake(SignalDataInterface $data, string $expectedClass): void
+    {
+        if (!($data instanceof $expectedClass)) {
+            $dataType = get_class($data);
+            throw new \RuntimeException("Invalid signal data type: expected {$expectedClass}, got {$dataType}");
+        }
+    }
+
+    /**
      * Default implementation - no page subscribe signal handling
      *
      * Child classes can override this method.
