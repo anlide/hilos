@@ -72,7 +72,7 @@ final class Moderators
      * Get Moderator entity by key
      *
      * @param int|string $key
-     * @return EntityModerator|null
+     * @return ?EntityModerator
      */
     public function get(int|string $key): ?EntityModerator
     {
@@ -83,7 +83,7 @@ final class Moderators
     /**
      * Get first Moderator entity
      *
-     * @return EntityModerator|null
+     * @return ?EntityModerator
      */
     public function first(): ?EntityModerator
     {
@@ -94,7 +94,7 @@ final class Moderators
     /**
      * Get last Moderator entity
      *
-     * @return EntityModerator|null
+     * @return ?EntityModerator
      */
     public function last(): ?EntityModerator
     {
@@ -151,7 +151,7 @@ final class Moderators
     /**
      * Iterator support - get current Moderator
      *
-     * @return EntityModerator|null
+     * @return ?EntityModerator
      */
     public function current(): ?EntityModerator
     {

@@ -72,7 +72,7 @@ final class Users
      * Get User entity by key
      *
      * @param int|string $key
-     * @return EntityUser|null
+     * @return ?EntityUser
      */
     public function get(int|string $key): ?EntityUser
     {
@@ -83,7 +83,7 @@ final class Users
     /**
      * Get first User entity
      *
-     * @return EntityUser|null
+     * @return ?EntityUser
      */
     public function first(): ?EntityUser
     {
@@ -94,7 +94,7 @@ final class Users
     /**
      * Get last User entity
      *
-     * @return EntityUser|null
+     * @return ?EntityUser
      */
     public function last(): ?EntityUser
     {
@@ -151,7 +151,7 @@ final class Users
     /**
      * Iterator support - get current User
      *
-     * @return EntityUser|null
+     * @return ?EntityUser
      */
     public function current(): ?EntityUser
     {

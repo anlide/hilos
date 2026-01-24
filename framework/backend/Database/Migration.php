@@ -118,7 +118,7 @@ class Migration
     /**
      * Migrate up to specific version
      *
-     * @param int|null $targetIndex Target migration index (null = latest)
+     * @param ?int $targetIndex Target migration index (null = latest)
      * @return int Number of migrations applied
      * @throws DatabaseException
      */

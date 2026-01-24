@@ -56,7 +56,7 @@ final class Users extends Objects implements Iterator, ArrayAccess, Countable
     /**
      * Get current User object
      *
-     * @return ObjectUser|null Current User object or null if invalid position
+     * @return ?ObjectUser Current User object or null if invalid position
      */
     public function current(): ?ObjectUser
     {
@@ -84,7 +84,7 @@ final class Users extends Objects implements Iterator, ArrayAccess, Countable
      * Get User object at offset
      *
      * @param mixed $offset
-     * @return ObjectUser|null
+     * @return ?ObjectUser
      */
     public function offsetGet($offset): ?ObjectUser
     {
@@ -95,7 +95,7 @@ final class Users extends Objects implements Iterator, ArrayAccess, Countable
      * Lazy load User object by key
      *
      * @param int|string $key User ID
-     * @return ObjectUser|null
+     * @return ?ObjectUser
      * @throws DatabaseException
      */
     protected function lazyLoadObject(int|string $key): ?ObjectUser
@@ -158,7 +158,7 @@ final class Users extends Objects implements Iterator, ArrayAccess, Countable
      * Find user by session token
      *
      * @param string $sessionToken Session token (32 hex characters)
-     * @return ObjectUser|null User object or null if not found
+     * @return ?ObjectUser User object or null if not found
      * @throws DatabaseException
      */
     public function findBySession(string $sessionToken): ?ObjectUser
@@ -197,7 +197,7 @@ final class Users extends Objects implements Iterator, ArrayAccess, Countable
      * Get User object by key
      *
      * @param int|string $key
-     * @return ObjectUser|null
+     * @return ?ObjectUser
      */
     public function get(int|string $key): ?ObjectUser
     {
@@ -207,7 +207,7 @@ final class Users extends Objects implements Iterator, ArrayAccess, Countable
     /**
      * Get first User object
      *
-     * @return ObjectUser|null
+     * @return ?ObjectUser
      */
     public function first(): ?ObjectUser
     {
@@ -222,7 +222,7 @@ final class Users extends Objects implements Iterator, ArrayAccess, Countable
     /**
      * Get last User object
      *
-     * @return ObjectUser|null
+     * @return ?ObjectUser
      */
     public function last(): ?ObjectUser
     {

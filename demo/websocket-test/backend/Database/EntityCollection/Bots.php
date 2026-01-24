@@ -72,7 +72,7 @@ final class Bots
      * Get Bot entity by key
      *
      * @param int|string $key
-     * @return EntityBot|null
+     * @return ?EntityBot
      */
     public function get(int|string $key): ?EntityBot
     {
@@ -83,7 +83,7 @@ final class Bots
     /**
      * Get first Bot entity
      *
-     * @return EntityBot|null
+     * @return ?EntityBot
      */
     public function first(): ?EntityBot
     {
@@ -94,7 +94,7 @@ final class Bots
     /**
      * Get last Bot entity
      *
-     * @return EntityBot|null
+     * @return ?EntityBot
      */
     public function last(): ?EntityBot
     {
@@ -151,7 +151,7 @@ final class Bots
     /**
      * Iterator support - get current Bot
      *
-     * @return EntityBot|null
+     * @return ?EntityBot
      */
     public function current(): ?EntityBot
     {

@@ -2194,7 +2194,7 @@ HELP;
      * Find ObjectCollection files that reference deleted Object classes
      *
      * @param array $deletedObjects Array of deleted Object info (from findFilesToDelete)
-     * @param string|null $objectCollectionDir ObjectCollection directory (auto-detect if null)
+     * @param ?string $objectCollectionDir ObjectCollection directory (auto-detect if null)
      * @return array<string, array{class: string, file: string, object_class: string}> ObjectCollections to delete
      */
     private function findObjectCollectionsToDelete(array $deletedObjects, ?string &$objectCollectionDir = null): array
@@ -2698,7 +2698,7 @@ HELP;
      * Create ObjectCollection files
      *
      * @param array $toCreate ObjectCollections to create
-     * @param string|null $objectCollectionDir ObjectCollection directory
+     * @param ?string $objectCollectionDir ObjectCollection directory
      * @param array $objects Loaded Object classes
      * @return int Number of files created
      */

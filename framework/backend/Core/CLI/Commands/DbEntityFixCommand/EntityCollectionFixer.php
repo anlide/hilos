@@ -24,7 +24,7 @@ trait EntityCollectionFixer
     /**
      * Load EntityCollection files from directory
      *
-     * @param string|null $entityCollectionDir EntityCollection files directory
+     * @param ?string $entityCollectionDir EntityCollection files directory
      * @param int $syntaxErrors Reference to syntax error counter
      * @param array $brokenFiles Reference to broken files array
      * @return array<string, array{class: string, file: string, reflection: ReflectionClass, entity_class: string}> Loaded EntityCollection files info
@@ -214,7 +214,7 @@ trait EntityCollectionFixer
      *
      * @param array $entities Loaded Entity classes
      * @param array $entityCollections Loaded EntityCollection files
-     * @param string|null $tableFilter Table name filter
+     * @param ?string $tableFilter Table name filter
      * @return array Fixes to apply
      */
     protected function prepareEntityCollectionFixes(array $entities, array $entityCollections, ?string $tableFilter): array
@@ -357,7 +357,7 @@ trait EntityCollectionFixer
      * Parse EntityCollection file to extract current structure
      *
      * @param string $filePath EntityCollection file path
-     * @return array|null Parsed structure or null if failed
+     * @return ?array Parsed structure or null if failed
      */
     protected function parseEntityCollectionFile(string $filePath, ?string $expectedEntityClass = null): ?array
     {
@@ -708,7 +708,7 @@ trait EntityCollectionFixer
         $content .= "     * Get {$entityShortName} entity by key\n";
         $content .= "     *\n";
         $content .= "     * @param int|string \$key\n";
-        $content .= "     * @return {$entityAlias}|null\n";
+        $content .= "     * @return ?{$entityAlias}\n";
         $content .= "     */\n";
         $content .= "    public function get(int|string \$key): ?{$entityAlias}\n";
         $content .= "    {\n";
@@ -718,7 +718,7 @@ trait EntityCollectionFixer
         $content .= "    /**\n";
         $content .= "     * Get first {$entityShortName} entity\n";
         $content .= "     *\n";
-        $content .= "     * @return {$entityAlias}|null\n";
+        $content .= "     * @return ?{$entityAlias}\n";
         $content .= "     */\n";
         $content .= "    public function first(): ?{$entityAlias}\n";
         $content .= "    {\n";
@@ -728,7 +728,7 @@ trait EntityCollectionFixer
         $content .= "    /**\n";
         $content .= "     * Get last {$entityShortName} entity\n";
         $content .= "     *\n";
-        $content .= "     * @return {$entityAlias}|null\n";
+        $content .= "     * @return ?{$entityAlias}\n";
         $content .= "     */\n";
         $content .= "    public function last(): ?{$entityAlias}\n";
         $content .= "    {\n";
@@ -780,7 +780,7 @@ trait EntityCollectionFixer
         $content .= "    /**\n";
         $content .= "     * Iterator support - get current {$entityShortName}\n";
         $content .= "     *\n";
-        $content .= "     * @return {$entityAlias}|null\n";
+        $content .= "     * @return ?{$entityAlias}\n";
         $content .= "     */\n";
         $content .= "    public function current(): ?{$entityAlias}\n";
         $content .= "    {\n";
@@ -856,7 +856,7 @@ trait EntityCollectionFixer
      *
      * @param array $entities Loaded Entity classes
      * @param array $entityCollections Loaded EntityCollection files
-     * @param string|null $tableFilter Table name filter
+     * @param ?string $tableFilter Table name filter
      * @param array $brokenEntities Broken Entity files
      * @return array<string, array{entity_class: string, reflection: ReflectionClass}> EntityCollections to create
      */
@@ -996,8 +996,8 @@ trait EntityCollectionFixer
      * Predicts entity class names from table names without loading files
      *
      * @param array $tablesToCreate Array of table names => TableInfo for newly created tables
-     * @param string|null $entityDir Entity directory
-     * @param string|null $entityNamespace Entity namespace
+     * @param ?string $entityDir Entity directory
+     * @param ?string $entityNamespace Entity namespace
      * @param array $entityCollections Loaded EntityCollection files
      * @param array $brokenEntities Broken Entity files
      * @return array<string, array{entity_class: string, reflection: ReflectionClass}> EntityCollections to create

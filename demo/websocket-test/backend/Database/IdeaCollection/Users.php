@@ -48,7 +48,7 @@ final class Users extends IdeaCollection
      * Returns Idea\User (read-only) or null
      *
      * @param string $sessionToken Session token (32 hex characters)
-     * @return IdeaUser|null User idea or null if not found
+     * @return ?IdeaUser User idea or null if not found
      * @throws DatabaseException
      */
     public function findBySession(string $sessionToken): ?IdeaUser
@@ -84,7 +84,7 @@ final class Users extends IdeaCollection
     /**
      * Get current User idea
      * 
-     * @return IdeaUser|null Current User idea or null if invalid position
+     * @return ?IdeaUser Current User idea or null if invalid position
      */
     public function current(): ?IdeaUser
     {
@@ -95,7 +95,7 @@ final class Users extends IdeaCollection
     /**
      * Get first User idea
      * 
-     * @return IdeaUser|null First User idea or null if collection is empty
+     * @return ?IdeaUser First User idea or null if collection is empty
      */
     public function first(): ?IdeaUser
     {
@@ -106,7 +106,7 @@ final class Users extends IdeaCollection
     /**
      * Get last User idea
      * 
-     * @return IdeaUser|null Last User idea or null if collection is empty
+     * @return ?IdeaUser Last User idea or null if collection is empty
      */
     public function last(): ?IdeaUser
     {
@@ -118,7 +118,7 @@ final class Users extends IdeaCollection
      * Get User idea by offset
      * 
      * @param mixed $offset User ID
-     * @return IdeaUser|null User idea or null if not found
+     * @return ?IdeaUser User idea or null if not found
      */
     public function offsetGet(mixed $offset): ?IdeaUser
     {

@@ -91,7 +91,7 @@ abstract class AbstractAgentDaemon implements AgentDaemonInterface
      * Child classes can override for custom handling.
      *
      * @param MessageFromUserDTO $message Message from external source
-     * @return AgentMessageDTOInterface|null Response DTO
+     * @return ?AgentMessageDTOInterface Response DTO
      */
     public function handleMessageFromUser(MessageFromUserDTO $message): ?AgentMessageDTOInterface
     {

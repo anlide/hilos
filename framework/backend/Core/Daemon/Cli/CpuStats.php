@@ -109,7 +109,7 @@ class CpuStats
      * Compares current stats with previous stats and calculates CPU usage percentage.
      *
      * @param CpuStats $previous Previous CpuStats
-     * @return float|null CPU usage percentage (0-100) or null if can't calculate
+     * @return ?float CPU usage percentage (0-100) or null if can't calculate
      */
     public function getUsagePercentage(self $previous): ?float
     {

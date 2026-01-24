@@ -200,7 +200,7 @@ class SignalDTO extends BaseDTO
      *
      * @param string $originalClass Original class name (may be custom class outside framework)
      * @param array $dataArray Data array for deserialization
-     * @return SignalDataInterface|null Deserialized signal data or null if fallback failed
+     * @return ?SignalDataInterface Deserialized signal data or null if fallback failed
      */
     private static function tryFrameworkClassFallback(string $originalClass, array $dataArray): ?SignalDataInterface
     {

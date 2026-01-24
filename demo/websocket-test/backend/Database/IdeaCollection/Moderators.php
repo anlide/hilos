@@ -46,7 +46,7 @@ final class Moderators extends IdeaCollection
     /**
      * Get current Moderator idea
      * 
-     * @return IdeaModerator|null Current Moderator idea or null if invalid position
+     * @return ?IdeaModerator Current Moderator idea or null if invalid position
      */
     public function current(): ?IdeaModerator
     {
@@ -57,7 +57,7 @@ final class Moderators extends IdeaCollection
     /**
      * Get first Moderator idea
      * 
-     * @return IdeaModerator|null First Moderator idea or null if collection is empty
+     * @return ?IdeaModerator First Moderator idea or null if collection is empty
      */
     public function first(): ?IdeaModerator
     {
@@ -68,7 +68,7 @@ final class Moderators extends IdeaCollection
     /**
      * Get last Moderator idea
      * 
-     * @return IdeaModerator|null Last Moderator idea or null if collection is empty
+     * @return ?IdeaModerator Last Moderator idea or null if collection is empty
      */
     public function last(): ?IdeaModerator
     {
@@ -80,7 +80,7 @@ final class Moderators extends IdeaCollection
      * Get Moderator idea by offset
      * 
      * @param mixed $offset Moderator ID
-     * @return IdeaModerator|null Moderator idea or null if not found
+     * @return ?IdeaModerator Moderator idea or null if not found
      */
     public function offsetGet(mixed $offset): ?IdeaModerator
     {

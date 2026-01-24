@@ -54,8 +54,8 @@ trait IdeaStorageFixer
     /**
      * Load IdeaStorage file
      *
-     * @param string|null $ideaStorageFile IdeaStorage file path
-     * @return array|null Loaded IdeaStorage info or null if not found
+     * @param ?string $ideaStorageFile IdeaStorage file path
+     * @return ?array Loaded IdeaStorage info or null if not found
      */
     protected function loadIdeaStorage(?string $ideaStorageFile): ?array
     {
@@ -87,7 +87,7 @@ trait IdeaStorageFixer
      * Prepare fixes for IdeaStorage file
      *
      * @param array $objectCollections Loaded ObjectCollection classes
-     * @param array|null $ideaStorage Loaded IdeaStorage info
+     * @param ?array $ideaStorage Loaded IdeaStorage info
      * @return array Fixes to apply
      */
     protected function prepareIdeaStorageFixes(array $objectCollections, ?array $ideaStorage): array
@@ -344,7 +344,7 @@ trait IdeaStorageFixer
      * Parse IdeaStorage file to extract current structure
      *
      * @param string $filePath IdeaStorage file path
-     * @return array|null Parsed structure or null if failed
+     * @return ?array Parsed structure or null if failed
      */
     protected function parseIdeaStorageFile(string $filePath): ?array
     {
@@ -510,7 +510,7 @@ trait IdeaStorageFixer
      *
      * @param string $content File content
      * @param string $methodName Method name
-     * @return array|null Array with 'start', 'end', 'body' keys or null if not found
+     * @return ?array Array with 'start', 'end', 'body' keys or null if not found
      */
     private function extractIdeaStorageMethodBody(string $content, string $methodName): ?array
     {
@@ -554,7 +554,7 @@ trait IdeaStorageFixer
      *
      * @param string $content File content
      * @param string $alias Alias or short class name
-     * @return string|null Full class name or null if not found
+     * @return ?string Full class name or null if not found
      */
     private function resolveIdeaStorageClassNameFromUse(string $content, string $alias): ?string
     {

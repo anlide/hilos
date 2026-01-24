@@ -79,7 +79,7 @@ abstract class IdeaActions
      * Get ObjectCollection for this Actions
      * Returns reference to storage - modifications will affect the stored collection
      *
-     * @return Objects|null ObjectCollection instance, or null for manual collections
+     * @return ?Objects ObjectCollection instance, or null for manual collections
      */
     protected function getObjectCollection(): ?Objects
     {

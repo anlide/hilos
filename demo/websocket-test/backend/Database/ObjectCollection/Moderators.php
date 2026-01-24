@@ -66,7 +66,7 @@ final class Moderators extends Objects implements Iterator, ArrayAccess, Countab
     /**
      * Get current Moderator object
      *
-     * @return ObjectModerator|null Current Moderator object or null if invalid position
+     * @return ?ObjectModerator Current Moderator object or null if invalid position
      */
     public function current(): ?ObjectModerator
     {
@@ -94,7 +94,7 @@ final class Moderators extends Objects implements Iterator, ArrayAccess, Countab
      * Get Moderator object at offset
      *
      * @param mixed $offset
-     * @return ObjectModerator|null
+     * @return ?ObjectModerator
      */
     public function offsetGet($offset): ?ObjectModerator
     {
@@ -105,7 +105,7 @@ final class Moderators extends Objects implements Iterator, ArrayAccess, Countab
      * Lazy load Moderator object by key
      *
      * @param int|string $key Moderator ID
-     * @return ObjectModerator|null
+     * @return ?ObjectModerator
      * @throws DatabaseException
      */
     protected function lazyLoadObject(int|string $key): ?ObjectModerator

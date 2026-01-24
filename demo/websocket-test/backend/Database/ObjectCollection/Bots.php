@@ -66,7 +66,7 @@ final class Bots extends Objects implements Iterator, ArrayAccess, Countable
     /**
      * Get current Bot object
      *
-     * @return ObjectBot|null Current Bot object or null if invalid position
+     * @return ?ObjectBot Current Bot object or null if invalid position
      */
     public function current(): ?ObjectBot
     {
@@ -94,7 +94,7 @@ final class Bots extends Objects implements Iterator, ArrayAccess, Countable
      * Get Bot object at offset
      *
      * @param mixed $offset
-     * @return ObjectBot|null
+     * @return ?ObjectBot
      */
     public function offsetGet($offset): ?ObjectBot
     {
@@ -105,7 +105,7 @@ final class Bots extends Objects implements Iterator, ArrayAccess, Countable
      * Lazy load Bot object by key
      *
      * @param int|string $key Bot ID
-     * @return ObjectBot|null
+     * @return ?ObjectBot
      * @throws DatabaseException
      */
     protected function lazyLoadObject(int|string $key): ?ObjectBot

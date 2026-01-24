@@ -95,7 +95,7 @@ interface AgentDaemonInterface
      * Called when message arrives from external source. Should forward to worker agent.
      *
      * @param MessageFromUserDTO $message Message from external source
-     * @return AgentMessageDTOInterface|null Response DTO (null if no response needed)
+     * @return ?AgentMessageDTOInterface Response DTO (null if no response needed)
      */
     public function handleMessageFromUser(MessageFromUserDTO $message): ?AgentMessageDTOInterface;
 

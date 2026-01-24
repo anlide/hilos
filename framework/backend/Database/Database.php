@@ -169,10 +169,10 @@ class Database
     /**
      * Connect to database using configured settings
      *
-     * @param int|null $index Connection index (uses current if null)
+     * @param ?int $index Connection index (uses current if null)
      * @param bool $retryOnConnectionError If true, retry connection on temporary errors (2002, 2003)
-     * @param int|null $maxRetries Maximum retry attempts (uses reconnect_attempts from config if null)
-     * @param int|null $retryDelaySeconds Delay between retries in seconds (uses reconnect_delay/1000 from config if null)
+     * @param ?int $maxRetries Maximum retry attempts (uses reconnect_attempts from config if null)
+     * @param ?int $retryDelaySeconds Delay between retries in seconds (uses reconnect_delay/1000 from config if null)
      * @throws DatabaseConnectionException On connection failure
      */
     public static function connect(?int $index = null, bool $retryOnConnectionError = false, ?int $maxRetries = null, ?int $retryDelaySeconds = null): void
@@ -523,7 +523,7 @@ class Database
      * Get single row from current result set
      * Advances the internal pointer, so each call returns the next row
      *
-     * @return array|null Associative array or null if no more rows
+     * @return ?array Associative array or null if no more rows
      */
     public static function row(): ?array
     {

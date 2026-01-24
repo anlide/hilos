@@ -327,7 +327,7 @@ abstract class AbstractSocket
      * Throws SocketException if buffer exceeds maximum size or JSON depth is too high.
      *
      * @param string $readBuffer Read buffer (will be modified to remove extracted message)
-     * @return string|null Complete JSON message or null if incomplete
+     * @return ?string Complete JSON message or null if incomplete
      * @throws SocketException If buffer size or JSON depth exceeds limits
      */
     protected function extractCompleteJsonMessage(string &$readBuffer): ?string

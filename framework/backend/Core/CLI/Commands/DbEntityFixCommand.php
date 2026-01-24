@@ -2342,8 +2342,8 @@ HELP;
      * Handles both EntityClass::_table and string 'table'
      *
      * @param string $value Value from _foreign array
-     * @param string|null $namespace Entity namespace (for loading Entity class)
-     * @return string|null Table name
+     * @param ?string $namespace Entity namespace (for loading Entity class)
+     * @return ?string Table name
      */
     private function extractTableNameFromValue(string $value, ?string $namespace = null): ?string
     {
@@ -2549,7 +2549,7 @@ HELP;
      * Find EntityCollection files that reference deleted Entity classes
      *
      * @param array $deletedEntities Array of deleted Entity info (from findFilesToDelete)
-     * @param string|null $entityCollectionDir EntityCollection directory (auto-detect if null)
+     * @param ?string $entityCollectionDir EntityCollection directory (auto-detect if null)
      * @return array<string, array{class: string, file: string, entity_class: string}> EntityCollections to delete
      */
     private function findEntityCollectionsToDelete(array $deletedEntities, ?string &$entityCollectionDir = null): array
@@ -2770,7 +2770,7 @@ HELP;
      * Create EntityCollection files
      *
      * @param array $toCreate EntityCollections to create
-     * @param string|null $entityCollectionDir EntityCollection directory
+     * @param ?string $entityCollectionDir EntityCollection directory
      * @param array $entities Loaded Entity classes
      * @return int Number of files created
      */

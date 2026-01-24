@@ -75,7 +75,7 @@ class ChatAgentDaemon extends AbstractAgentDaemon
      * Handle message from external source (WebSocket, HTTP, etc.)
      *
      * @param array $data Message data from external source
-     * @return array|null Response data
+     * @return ?array Response data
      */
     public function handleExternalMessage(array $data): ?array
     {

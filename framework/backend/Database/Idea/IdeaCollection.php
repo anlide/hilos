@@ -42,7 +42,7 @@ abstract class IdeaCollection implements ArrayAccess, Countable, Iterator
      * Cached IdeaItem instances for iteration
      * Key is the primary key ID, value is IdeaItem instance
      *
-     * @var array<int|string, IdeaItem>
+     * @var array<int|string, T>
      */
     private array $items = [];
 
@@ -105,7 +105,7 @@ abstract class IdeaCollection implements ArrayAccess, Countable, Iterator
      * Object collection reference (set via setObjectCollection)
      * Used in automatic mode to access Object collection
      *
-     * @var Objects|null
+     * @var ?Objects
      */
     private ?Objects $_objectCollection = null;
 
@@ -113,14 +113,14 @@ abstract class IdeaCollection implements ArrayAccess, Countable, Iterator
      * Actions class name (set via setActionsClass)
      * Used to create Actions instance on demand
      *
-     * @var string|null
+     * @var ?string
      */
     private ?string $_actionsClass = null;
 
     /**
      * Cached Actions instance (created lazily)
      *
-     * @var IdeaActions|null
+     * @var ?IdeaActions
      */
     private ?IdeaActions $_actions = null;
 
@@ -139,7 +139,7 @@ abstract class IdeaCollection implements ArrayAccess, Countable, Iterator
      * Set Actions class name
      * Called by Idea::setRepresent() when collection is registered
      *
-     * @param string|null $actionsClass Actions class name (null to use default)
+     * @param ?string $actionsClass Actions class name (null to use default)
      */
     public function setActionsClass(?string $actionsClass): void
     {
@@ -182,7 +182,7 @@ abstract class IdeaCollection implements ArrayAccess, Countable, Iterator
      * Note: In PHP, objects are passed by reference, so modifications to the returned
      * object will affect the original object stored in Idea::_objectCollections
      *
-     * @return Objects|null ObjectCollection instance, or null for manual collections
+     * @return ?Objects ObjectCollection instance, or null for manual collections
      */
     public function getObjectCollection(): ?Objects
     {
@@ -194,7 +194,7 @@ abstract class IdeaCollection implements ArrayAccess, Countable, Iterator
      * Must be implemented by child classes
      *
      * @param Object_ $object Object instance (reference)
-     * @return IdeaItem
+     * @return T
      */
     abstract protected function createIdea(Object_ &$object): IdeaItem;
 
@@ -221,7 +221,7 @@ abstract class IdeaCollection implements ArrayAccess, Countable, Iterator
      * Add IdeaItem to manual collection
      * Only works for manual collections (created via initEmpty())
      *
-     * @param IdeaItem $item IdeaItem instance to add
+     * @param T $item IdeaItem instance to add
      * @throws DatabaseException If collection is not manual
      */
     public function add(IdeaItem $item): void
@@ -244,7 +244,7 @@ abstract class IdeaCollection implements ArrayAccess, Countable, Iterator
      * Uses cached IdeaItem if available, otherwise creates new instance
      *
      * @param int|string $key Primary key ID
-     * @return IdeaItem|null
+     * @return ?T
      */
     protected function getIdeaForKey(int|string $key): ?IdeaItem
     {
@@ -326,6 +326,7 @@ abstract class IdeaCollection implements ArrayAccess, Countable, Iterator
      *
      * @param callable $callback Callback function (IdeaItem, key) => bool
      * @return static New filtered manual collection
+     * @throws DatabaseException
      */
     public function filter(callable $callback): static
     {
@@ -365,6 +366,9 @@ abstract class IdeaCollection implements ArrayAccess, Countable, Iterator
 
     /**
      * Map collection
+     *
+     * @param callable(T, int|string): mixed $callback Callback (idea, key) => any
+     * @return array<int|string, mixed>
      */
     public function map(callable $callback): array
     {
@@ -377,6 +381,8 @@ abstract class IdeaCollection implements ArrayAccess, Countable, Iterator
 
     /**
      * Get first Idea
+     *
+     * @return ?T
      */
     public function first(): ?IdeaItem
     {
@@ -402,6 +408,8 @@ abstract class IdeaCollection implements ArrayAccess, Countable, Iterator
 
     /**
      * Get last Idea
+     *
+     * @return ?T
      */
     public function last(): ?IdeaItem
     {
@@ -431,29 +439,39 @@ abstract class IdeaCollection implements ArrayAccess, Countable, Iterator
      */
     private int $savedPosition = 0;
 
+    /**
+     * Backup current iterator position (Idea and Objects).
+     *
+     * Useful when you need to iterate and then restore cursor.
+     */
     public function backupIndex(): void
     {
         $this->savedPosition = $this->position;
         if (!$this->isManual) {
             $objectCollection = $this->getObjectCollection();
-            if ($objectCollection !== null) {
-                $objectCollection->backupIndex();
-            }
+            $objectCollection?->backupIndex();
         }
     }
 
+    /**
+     * Restore iterator position (Idea and Objects) from backup.
+     */
     public function restoreIndex(): void
     {
         $this->position = $this->savedPosition;
         if (!$this->isManual) {
             $objectCollection = $this->getObjectCollection();
-            if ($objectCollection !== null) {
-                $objectCollection->restoreIndex();
-            }
+            $objectCollection?->restoreIndex();
         }
     }
 
-    // ArrayAccess implementation
+    /**
+     * Check if element exists at offset.
+     *
+     * For automatic collections, may trigger lazy-load existence check.
+     *
+     * @param mixed $offset Primary key ID
+     */
     public function offsetExists(mixed $offset): bool
     {
         // For manual collections, check cached items
@@ -481,6 +499,11 @@ abstract class IdeaCollection implements ArrayAccess, Countable, Iterator
         return false;
     }
 
+    /**
+     * @return ?T
+     *
+     * @param mixed $offset Primary key ID
+     */
     public function offsetGet(mixed $offset): ?IdeaItem
     {
         return $this->getIdeaForKey($offset);
@@ -510,7 +533,7 @@ abstract class IdeaCollection implements ArrayAccess, Countable, Iterator
      * Magic getter for actions
      *
      * @param string $name Property name
-     * @return IdeaActions|never
+     * @return IdeaActions
      * @throws DatabaseException
      */
     public function __get(string $name)
@@ -522,7 +545,11 @@ abstract class IdeaCollection implements ArrayAccess, Countable, Iterator
         throw new DatabaseException("Property [{$name}] does not exist on " . static::class);
     }
 
-    // Countable implementation
+    /**
+     * Get number of elements in collection.
+     *
+     * For automatic collections, delegates to underlying ObjectCollection.
+     */
     public function count(): int
     {
         if ($this->isManual) {
@@ -533,7 +560,11 @@ abstract class IdeaCollection implements ArrayAccess, Countable, Iterator
         return $objectCollection !== null ? $objectCollection->count() : 0;
     }
 
-    // Iterator implementation
+    /**
+     * Get current element.
+     *
+     * @return ?T
+     */
     public function current(): ?IdeaItem
     {
         // Get keys array for current position
@@ -546,6 +577,9 @@ abstract class IdeaCollection implements ArrayAccess, Countable, Iterator
         return $this->items[$key];
     }
 
+    /**
+     * Get current iterator key.
+     */
     public function key(): mixed
     {
         // Get keys array for current position
@@ -553,11 +587,19 @@ abstract class IdeaCollection implements ArrayAccess, Countable, Iterator
         return $keys[$this->position] ?? null;
     }
 
+    /**
+     * Move iterator forward.
+     */
     public function next(): void
     {
         ++$this->position;
     }
 
+    /**
+     * Rewind iterator.
+     *
+     * For automatic collections, rebuilds local Idea cache from ObjectCollection.
+     */
     public function rewind(): void
     {
         $this->position = 0;
@@ -580,6 +622,9 @@ abstract class IdeaCollection implements ArrayAccess, Countable, Iterator
         }
     }
 
+    /**
+     * Check if current iterator position is valid.
+     */
     public function valid(): bool
     {
         $keys = array_keys($this->items);

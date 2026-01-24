@@ -57,7 +57,7 @@ class ResultSetCollection implements \Iterator, \Countable
      * This allows for streaming/paginated reading of large datasets
      * Reuses cached ResultSet from Database to preserve pointer position
      *
-     * @param int|null $index Connection index
+     * @param ?int $index Connection index
      * @return self
      */
     public static function fromDatabase(?int $index = null): self
@@ -81,8 +81,8 @@ class ResultSetCollection implements \Iterator, \Countable
     /**
      * Get current mysqli_result from Database
      *
-     * @param int|null $index Connection index
-     * @return mysqli_result|null
+     * @param ?int $index Connection index
+     * @return ?mysqli_result
      */
     private static function getCurrentResult(?int $index = null): ?mysqli_result
     {
@@ -105,7 +105,7 @@ class ResultSetCollection implements \Iterator, \Countable
      * Get result set by index
      *
      * @param int $index
-     * @return ResultSet|null
+     * @return ?ResultSet
      */
     public function get(int $index): ?ResultSet
     {
@@ -115,7 +115,7 @@ class ResultSetCollection implements \Iterator, \Countable
     /**
      * Get first result set
      *
-     * @return ResultSet|null
+     * @return ?ResultSet
      */
     public function first(): ?ResultSet
     {
@@ -125,7 +125,7 @@ class ResultSetCollection implements \Iterator, \Countable
     /**
      * Get last result set
      *
-     * @return ResultSet|null
+     * @return ?ResultSet
      */
     public function last(): ?ResultSet
     {
@@ -162,7 +162,7 @@ class ResultSetCollection implements \Iterator, \Countable
     /**
      * Get current result set
      *
-     * @return ResultSet|null
+     * @return ?ResultSet
      */
     public function current(): ?ResultSet
     {
@@ -214,7 +214,7 @@ class ResultSetCollection implements \Iterator, \Countable
      * Get single row from first result set (convenience method for chaining)
      * Advances the internal pointer, so each call returns the next row
      *
-     * @return array|null Associative array or null if no more rows
+     * @return ?array Associative array or null if no more rows
      */
     public function row(): ?array
     {
@@ -284,7 +284,7 @@ class ResultSetCollection implements \Iterator, \Countable
      * Get first row from first result set (convenience method)
      * Does not advance the pointer - always returns the first row
      *
-     * @return array|null First row or null if empty
+     * @return ?array First row or null if empty
      */
     public function firstRow(): ?array
     {
@@ -379,7 +379,7 @@ class ResultSetCollection implements \Iterator, \Countable
      * If index is beyond current collection, automatically calls nextResult() to collect more
      *
      * @param int $index Result set index (0-based)
-     * @return ResultSet|null Result set or null if index is out of bounds
+     * @return ?ResultSet Result set or null if index is out of bounds
      */
     public function getResultSet(int $index): ?ResultSet
     {

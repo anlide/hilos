@@ -777,7 +777,7 @@ abstract class WorkerServer extends AbstractServer
      * For regular agents: selects from regular workers with load balancing (random choice among workers with minimum agent count).
      *
      * @param bool $requiresMonopolistic True if agent requires monopolistic worker
-     * @return WorkerClient|null Selected worker client or null if no suitable worker available
+     * @return ?WorkerClient Selected worker client or null if no suitable worker available
      */
     private function selectWorkerForAgent(bool $requiresMonopolistic): ?WorkerClient
     {

@@ -62,7 +62,7 @@ class Process
      * @param array<int, string> $params Array of parameters to be passed to the command.
      * - Each element of the `params` array will be escaped using `escapeshellarg` to protect against command injection.
      * - Example: `new Process('python', ['script.py', 'param1', 'param2']);`
-     * @param string|null $cwd Working directory for the process
+     * @param ?string $cwd Working directory for the process
      * @param array $stdIn Standard input descriptor
      * @param array $stdOut Standard output descriptor
      * @param array $stdErr Standard error descriptor

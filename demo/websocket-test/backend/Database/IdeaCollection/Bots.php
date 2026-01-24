@@ -46,7 +46,7 @@ final class Bots extends IdeaCollection
     /**
      * Get current Bot idea
      * 
-     * @return IdeaBot|null Current Bot idea or null if invalid position
+     * @return ?IdeaBot Current Bot idea or null if invalid position
      */
     public function current(): ?IdeaBot
     {
@@ -57,7 +57,7 @@ final class Bots extends IdeaCollection
     /**
      * Get first Bot idea
      * 
-     * @return IdeaBot|null First Bot idea or null if collection is empty
+     * @return ?IdeaBot First Bot idea or null if collection is empty
      */
     public function first(): ?IdeaBot
     {
@@ -68,7 +68,7 @@ final class Bots extends IdeaCollection
     /**
      * Get last Bot idea
      * 
-     * @return IdeaBot|null Last Bot idea or null if collection is empty
+     * @return ?IdeaBot Last Bot idea or null if collection is empty
      */
     public function last(): ?IdeaBot
     {
@@ -80,7 +80,7 @@ final class Bots extends IdeaCollection
      * Get Bot idea by offset
      * 
      * @param mixed $offset Bot ID
-     * @return IdeaBot|null Bot idea or null if not found
+     * @return ?IdeaBot Bot idea or null if not found
      */
     public function offsetGet(mixed $offset): ?IdeaBot
     {

@@ -484,7 +484,7 @@ HELP;
     /**
      * Load Object classes from directory
      *
-     * @param string|null $objectDir Object directory
+     * @param ?string $objectDir Object directory
      * @param int $syntaxErrors Reference to syntax error counter
      * @param array $brokenObjects Reference to broken files array
      * @return array<string, array{class: string, file: string, reflection: ReflectionClass}> Loaded Object classes
@@ -614,7 +614,7 @@ HELP;
      *
      * @param array $objects Loaded Object classes
      * @param array $ideaItems Loaded IdeaItem files
-     * @param string|null $tableFilter Table name filter
+     * @param ?string $tableFilter Table name filter
      * @param array $brokenObjects Broken Object files
      * @return array<string, array{object_class: string, reflection: ReflectionClass}> IdeaItems to create
      */
@@ -777,7 +777,7 @@ HELP;
      * Create IdeaItem files
      *
      * @param array $toCreate IdeaItems to create
-     * @param string|null $ideaDir Idea directory
+     * @param ?string $ideaDir Idea directory
      * @param array $objects Loaded Object classes
      * @return int Number of files created
      */
@@ -859,7 +859,7 @@ HELP;
     /**
      * Load ObjectCollection classes from directory
      *
-     * @param string|null $objectDir Object directory (ObjectCollection is usually in ObjectCollection subdirectory)
+     * @param ?string $objectDir Object directory (ObjectCollection is usually in ObjectCollection subdirectory)
      * @param int $syntaxErrors Reference to syntax error counter
      * @param array $brokenObjectCollections Reference to broken files array
      * @return array<string, array{class: string, file: string, reflection: ReflectionClass}> Loaded ObjectCollection classes
@@ -968,7 +968,7 @@ HELP;
      *
      * @param array $objectCollections Loaded ObjectCollection classes
      * @param array $ideaCollections Loaded IdeaCollection files
-     * @param string|null $tableFilter Table name filter
+     * @param ?string $tableFilter Table name filter
      * @param array $brokenObjectCollections Broken ObjectCollection files
      * @return array<string, array{object_collection_class: string, reflection: ReflectionClass}> IdeaCollections to create
      */
@@ -1262,7 +1262,7 @@ HELP;
      * Create IdeaCollection files
      *
      * @param array $toCreate IdeaCollections to create
-     * @param string|null $ideaCollectionDir IdeaCollection directory
+     * @param ?string $ideaCollectionDir IdeaCollection directory
      * @param array $objectCollections Loaded ObjectCollection classes
      * @return int Number of files created
      */

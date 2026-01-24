@@ -72,7 +72,7 @@ final class Events implements \Iterator
      * Get Event entity by key
      *
      * @param int|string $key
-     * @return EntityEvent|null
+     * @return ?EntityEvent
      */
     public function get(int|string $key): ?EntityEvent
     {
@@ -83,7 +83,7 @@ final class Events implements \Iterator
     /**
      * Get first Event entity
      *
-     * @return EntityEvent|null
+     * @return ?EntityEvent
      */
     public function first(): ?EntityEvent
     {
@@ -94,7 +94,7 @@ final class Events implements \Iterator
     /**
      * Get last Event entity
      *
-     * @return EntityEvent|null
+     * @return ?EntityEvent
      */
     public function last(): ?EntityEvent
     {
@@ -151,7 +151,7 @@ final class Events implements \Iterator
     /**
      * Iterator support - get current Event
      *
-     * @return EntityEvent|null
+     * @return ?EntityEvent
      */
     public function current(): ?EntityEvent
     {

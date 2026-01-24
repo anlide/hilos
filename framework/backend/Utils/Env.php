@@ -152,7 +152,7 @@ class Env
      * This should be called at the start of the application.
      * It will copy .env.example to .env if needed and load the .env file.
      *
-     * @param string|null $rootPath Root path of the application (null = auto-detect from project root)
+     * @param ?string $rootPath Root path of the application (null = auto-detect from project root)
      * @return void
      */
     public static function init(?string $rootPath = null): void
@@ -179,7 +179,7 @@ class Env
      * Get value from .env.example file
      *
      * @param string $name Environment variable name
-     * @return string|null Value from .env.example or null if not found
+     * @return ?string Value from .env.example or null if not found
      */
     private static function getFromExample(string $name): ?string
     {

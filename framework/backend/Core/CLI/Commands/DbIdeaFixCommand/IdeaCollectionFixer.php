@@ -25,7 +25,7 @@ trait IdeaCollectionFixer
     /**
      * Load IdeaCollection files from directory
      *
-     * @param string|null $ideaCollectionDir IdeaCollection files directory
+     * @param ?string $ideaCollectionDir IdeaCollection files directory
      * @param int $syntaxErrors Reference to syntax error counter
      * @param array $brokenFiles Reference to broken files array
      * @return array<string, array{class: string, file: string, reflection: ReflectionClass, object_collection_class: string}> Loaded IdeaCollection files info
@@ -206,7 +206,7 @@ trait IdeaCollectionFixer
      *
      * @param array $objectCollections Loaded ObjectCollection classes
      * @param array $ideaCollections Loaded IdeaCollection files
-     * @param string|null $tableFilter Table name filter
+     * @param ?string $tableFilter Table name filter
      * @return array Fixes to apply
      */
     protected function prepareIdeaCollectionFixes(array $objectCollections, array $ideaCollections, ?string $tableFilter): array
@@ -556,7 +556,7 @@ trait IdeaCollectionFixer
      * Parse IdeaCollection file to extract current structure
      *
      * @param string $filePath IdeaCollection file path
-     * @return array|null Parsed structure or null if failed
+     * @return ?array Parsed structure or null if failed
      */
     protected function parseIdeaCollectionFile(string $filePath): ?array
     {
@@ -851,8 +851,8 @@ trait IdeaCollectionFixer
     /**
      * Find vendor/autoload.php path relative to current working directory or file location
      *
-     * @param string|null $referenceFile Optional reference file to search from
-     * @return string|null Path to autoload.php or null if not found
+     * @param ?string $referenceFile Optional reference file to search from
+     * @return ?string Path to autoload.php or null if not found
      */
     private function findAutoloadPath(?string $referenceFile = null): ?string
     {

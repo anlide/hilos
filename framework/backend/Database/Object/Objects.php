@@ -114,7 +114,7 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
      * Must be implemented by child classes
      *
      * @param int|string $key Object key (usually primary key)
-     * @return Object_|null
+     * @return ?Object_
      */
     abstract protected function lazyLoadObject(int|string $key): ?Object_;
 
@@ -289,7 +289,7 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
      * Supports lazy loading if enabled
      *
      * @param mixed $offset
-     * @return Object_|null
+     * @return ?Object_
      */
     public function offsetGet($offset): ?Object_
     {

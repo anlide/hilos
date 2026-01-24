@@ -41,7 +41,7 @@ final class Events extends IdeaCollection
     /**
      * Get current Event idea
      *
-     * @return IdeaEvent|null Current Event idea or null if invalid position
+     * @return ?IdeaEvent Current Event idea or null if invalid position
      */
     public function current(): ?IdeaEvent
     {
@@ -52,7 +52,7 @@ final class Events extends IdeaCollection
     /**
      * Get first Event idea
      *
-     * @return IdeaEvent|null First Event idea or null if collection is empty
+     * @return ?IdeaEvent First Event idea or null if collection is empty
      */
     public function first(): ?IdeaEvent
     {
@@ -63,7 +63,7 @@ final class Events extends IdeaCollection
     /**
      * Get last Event idea
      *
-     * @return IdeaEvent|null Last Event idea or null if collection is empty
+     * @return ?IdeaEvent Last Event idea or null if collection is empty
      */
     public function last(): ?IdeaEvent
     {
@@ -75,7 +75,7 @@ final class Events extends IdeaCollection
      * Get Event idea by offset
      *
      * @param mixed $offset Event ID
-     * @return IdeaEvent|null Event idea or null if not found
+     * @return ?IdeaEvent Event idea or null if not found
      */
     public function offsetGet(mixed $offset): ?IdeaEvent
     {

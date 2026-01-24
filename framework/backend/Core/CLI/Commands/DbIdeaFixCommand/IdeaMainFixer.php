@@ -44,8 +44,8 @@ trait IdeaMainFixer
     /**
      * Load Idea.php file
      *
-     * @param string|null $ideaFile Idea.php file path
-     * @return array|null Loaded Idea.php info or null if not found
+     * @param ?string $ideaFile Idea.php file path
+     * @return ?array Loaded Idea.php info or null if not found
      */
     protected function loadIdeaMain(?string $ideaFile): ?array
     {
@@ -77,7 +77,7 @@ trait IdeaMainFixer
      * Prepare fixes for Idea.php file
      *
      * @param array $objectCollections Loaded ObjectCollection classes
-     * @param array|null $ideaMain Loaded Idea.php info
+     * @param ?array $ideaMain Loaded Idea.php info
      * @return array Fixes to apply
      */
     protected function prepareIdeaMainFixes(array $objectCollections, ?array $ideaMain): array
@@ -238,7 +238,7 @@ trait IdeaMainFixer
      * Parse Idea.php file to extract current structure
      *
      * @param string $filePath Idea.php file path
-     * @return array|null Parsed structure or null if failed
+     * @return ?array Parsed structure or null if failed
      */
     protected function parseIdeaMainFile(string $filePath): ?array
     {
@@ -341,7 +341,7 @@ trait IdeaMainFixer
      *
      * @param string $content File content
      * @param string $methodName Method name
-     * @return array|null Array with 'start', 'end', 'body' keys or null if not found
+     * @return ?array Array with 'start', 'end', 'body' keys or null if not found
      */
     private function extractIdeaMainMethodBody(string $content, string $methodName): ?array
     {
@@ -385,7 +385,7 @@ trait IdeaMainFixer
      *
      * @param string $content File content
      * @param string $alias Alias or short class name
-     * @return string|null Full class name or null if not found
+     * @return ?string Full class name or null if not found
      */
     private function resolveIdeaMainClassNameFromUse(string $content, string $alias): ?string
     {
@@ -441,7 +441,7 @@ trait IdeaMainFixer
      *
      * @param string $objectCollectionClassName ObjectCollection class name
      * @param \ReflectionClass $reflection ObjectCollection reflection
-     * @return string|null IdeaCollection class name or null if cannot determine
+     * @return ?string IdeaCollection class name or null if cannot determine
      */
     private function determineIdeaCollectionClassNameFromObjectCollection(string $objectCollectionClassName, \ReflectionClass $reflection): ?string
     {

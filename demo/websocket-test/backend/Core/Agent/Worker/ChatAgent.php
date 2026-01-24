@@ -102,7 +102,7 @@ class ChatAgent extends AbstractAgent
      * @param ChatEventType $type Event type
      * @param ?int $userId User ID (null for system events)
      * @param ?array $data Event-specific data (optional)
-     * @param string|null $excludeClientId Client ID to exclude from receiving the event (optional)
+     * @param ?string $excludeClientId Client ID to exclude from receiving the event (optional)
      * @throws DatabaseException If database operation fails
      */
     private function addEvent(ChatEventType $type, ?int $userId = null, ?array $data = null, ?string $excludeClientId = null): void

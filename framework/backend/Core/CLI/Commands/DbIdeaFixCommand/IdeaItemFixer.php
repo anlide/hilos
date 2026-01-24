@@ -26,7 +26,7 @@ trait IdeaItemFixer
     /**
      * Load Idea item files from directory
      *
-     * @param string|null $ideaDir Idea files directory
+     * @param ?string $ideaDir Idea files directory
      * @param int $syntaxErrors Reference to syntax error counter
      * @param array $brokenFiles Reference to broken files array
      * @return array<string, array{class: string, file: string, reflection: ReflectionClass}> Loaded Idea item files info
@@ -215,7 +215,7 @@ trait IdeaItemFixer
      *
      * @param array $objects Loaded Object classes
      * @param array $IdeaItems Loaded Idea item files
-     * @param string|null $tableFilter Table name filter
+     * @param ?string $tableFilter Table name filter
      * @param array $brokenIdeaItems Reference to broken files array (will be populated with parse errors)
      * @return array Fixes to apply
      */
@@ -280,7 +280,7 @@ trait IdeaItemFixer
      *
      * @param array $IdeaItemInfo IdeaItem info
      * @param array $objectInfo Object info
-     * @param array|null $parseError Reference to store parse error message
+     * @param ?array $parseError Reference to store parse error message
      * @return array Fixes to apply
      */
     private function compareIdeaItemWithObject(array $IdeaItemInfo, array $objectInfo, ?string &$parseError = null): array
@@ -764,7 +764,7 @@ trait IdeaItemFixer
      *
      * @param string $content File content
      * @param string $methodName Method name
-     * @return array|null Array with 'start', 'end', 'body' keys or null if not found
+     * @return ?array Array with 'start', 'end', 'body' keys or null if not found
      */
     private function extractMethodBody(string $content, string $methodName): ?array
     {
@@ -807,7 +807,7 @@ trait IdeaItemFixer
      * Parse Idea item file to extract current structure
      *
      * @param string $filePath Idea item file path
-     * @return array|null Parsed structure or null if failed
+     * @return ?array Parsed structure or null if failed
      */
     protected function parseIdeaItemFile(string $filePath): ?array
     {
@@ -1646,7 +1646,7 @@ trait IdeaItemFixer
      *
      * @param array $objects Loaded Object classes (keyed by class name)
      * @param array $ideaItems Loaded IdeaItem files (keyed by object class name)
-     * @param string|null $ideaDir Idea directory (auto-detect if null)
+     * @param ?string $ideaDir Idea directory (auto-detect if null)
      * @return array IdeaItem files to delete (keyed by object class name)
      */
     protected function findIdeaItemsToDelete(array $objects, array $ideaItems, ?string &$ideaDir = null): array

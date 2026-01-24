@@ -57,7 +57,7 @@ final class Events extends Objects implements Iterator, ArrayAccess, Countable
     /**
      * Get current Event object
      *
-     * @return ObjectEvent|null Current Event object or null if invalid position
+     * @return ?ObjectEvent Current Event object or null if invalid position
      */
     public function current(): ?ObjectEvent
     {
@@ -85,7 +85,7 @@ final class Events extends Objects implements Iterator, ArrayAccess, Countable
      * Get Event object at offset
      *
      * @param mixed $offset
-     * @return ObjectEvent|null
+     * @return ?ObjectEvent
      */
     public function offsetGet($offset): ?ObjectEvent
     {
@@ -96,7 +96,7 @@ final class Events extends Objects implements Iterator, ArrayAccess, Countable
      * Lazy load Event object by key
      *
      * @param int|string $key Event ID
-     * @return ObjectEvent|null
+     * @return ?ObjectEvent
      * @throws DatabaseException
      */
     protected function lazyLoadObject(int|string $key): ?ObjectEvent

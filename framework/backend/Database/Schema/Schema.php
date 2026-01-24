@@ -45,7 +45,7 @@ class Schema
      * Initialize schema for a connection index
      * Reads all tables and their structure from database
      *
-     * @param int|null $index Connection index (default: current)
+     * @param ?int $index Connection index (default: current)
      * @throws DatabaseException
      */
     public static function initialize(?int $index = null): void
@@ -230,7 +230,7 @@ class Schema
      *
      * @param string $tableName Table name
      * @param ?int $index Connection index
-     * @return TableInfo|null Table structure or null if not found
+     * @return ?TableInfo Table structure or null if not found
      */
     public static function getTable(string $tableName, ?int $index = null): ?TableInfo
     {

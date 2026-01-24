@@ -85,7 +85,7 @@ final class EventBase
     /**
      * Constructs EventBase object
      *
-     * @param null|EventConfig $cfg Optional event configuration
+     * @param ?EventConfig $cfg Optional event configuration
      */
     public function __construct(?EventConfig $cfg = null) {}
 

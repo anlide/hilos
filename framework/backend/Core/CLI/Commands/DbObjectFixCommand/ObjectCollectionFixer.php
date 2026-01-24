@@ -24,7 +24,7 @@ trait ObjectCollectionFixer
     /**
      * Validate EntityCollection files (check for syntax errors)
      *
-     * @param string|null $entityCollectionDir EntityCollection files directory
+     * @param ?string $entityCollectionDir EntityCollection files directory
      * @param int $syntaxErrors Reference to syntax error counter
      * @param array $brokenFiles Reference to broken files array
      * @return bool True if all EntityCollection files are valid
@@ -97,7 +97,7 @@ trait ObjectCollectionFixer
     /**
      * Load ObjectCollection files from directory
      *
-     * @param string|null $objectCollectionDir ObjectCollection files directory
+     * @param ?string $objectCollectionDir ObjectCollection files directory
      * @param int $syntaxErrors Reference to syntax error counter
      * @param array $brokenFiles Reference to broken files array
      * @return array<string, array{class: string, file: string, reflection: ReflectionClass, object_class: string}> Loaded ObjectCollection files info
@@ -289,7 +289,7 @@ trait ObjectCollectionFixer
      *
      * @param array $objects Loaded Object classes
      * @param array $objectCollections Loaded ObjectCollection files
-     * @param string|null $tableFilter Table name filter
+     * @param ?string $tableFilter Table name filter
      * @return array Fixes to apply
      */
     protected function prepareObjectCollectionFixes(array $objects, array $objectCollections, ?string $tableFilter): array
@@ -467,7 +467,7 @@ trait ObjectCollectionFixer
      * Parse ObjectCollection file to extract current structure
      *
      * @param string $filePath ObjectCollection file path
-     * @return array|null Parsed structure or null if failed
+     * @return ?array Parsed structure or null if failed
      */
     protected function parseObjectCollectionFile(string $filePath, ?string $expectedObjectClass = null): ?array
     {
@@ -867,7 +867,7 @@ trait ObjectCollectionFixer
         $content .= "    /**\n";
         $content .= "     * Get current {$objectShortName} object\n";
         $content .= "     *\n";
-        $content .= "     * @return {$objectAlias}|null Current {$objectShortName} object or null if invalid position\n";
+        $content .= "     * @return ?{$objectAlias} Current {$objectShortName} object or null if invalid position\n";
         $content .= "     */\n";
         $content .= "    public function current(): ?{$objectAlias}\n";
         $content .= "    {\n";
@@ -893,7 +893,7 @@ trait ObjectCollectionFixer
         $content .= "     * Get {$objectShortName} object at offset\n";
         $content .= "     *\n";
         $content .= "     * @param mixed \$offset\n";
-        $content .= "     * @return {$objectAlias}|null\n";
+        $content .= "     * @return ?{$objectAlias}\n";
         $content .= "     */\n";
         $content .= "    public function offsetGet(\$offset): ?{$objectAlias}\n";
         $content .= "    {\n";
@@ -903,7 +903,7 @@ trait ObjectCollectionFixer
         $content .= "     * Lazy load {$objectShortName} object by key\n";
         $content .= "     *\n";
         $content .= "     * @param int|string \$key {$objectShortName} ID\n";
-        $content .= "     * @return {$objectAlias}|null\n";
+        $content .= "     * @return ?{$objectAlias}\n";
         $content .= "     * @throws DatabaseException\n";
         $content .= "     */\n";
         $content .= "    protected function lazyLoadObject(int|string \$key): ?{$objectAlias}\n";
@@ -969,7 +969,7 @@ trait ObjectCollectionFixer
      *
      * @param array $objects Loaded Object classes
      * @param array $objectCollections Loaded ObjectCollection files
-     * @param string|null $tableFilter Table name filter
+     * @param ?string $tableFilter Table name filter
      * @param array $brokenObjects Broken Object files
      * @return array<string, array{object_class: string, reflection: ReflectionClass}> ObjectCollections to create
      */
