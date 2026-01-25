@@ -39,6 +39,14 @@ abstract class IdeaActions
     private $createIdeaCallback = null;
 
     /**
+     * Callback for notifying IdeaCollection about mass changes (e.g. deleteAll()).
+     * Set by IdeaCollection via setClearCacheCallback().
+     *
+     * @var callable(): void|null
+     */
+    private $clearCacheCallback = null;
+
+    /**
      * Constructor
      *
      * @param IdeaCollection $collection IdeaCollection instance
@@ -60,6 +68,17 @@ abstract class IdeaActions
     }
 
     /**
+     * Set callback for clearing IdeaCollection cache.
+     * Called by IdeaCollection when Actions is created.
+     *
+     * @param callable(): void $callback
+     */
+    public function setClearCacheCallback(callable $callback): void
+    {
+        $this->clearCacheCallback = $callback;
+    }
+
+    /**
      * Create IdeaItem from Object using callback
      *
      * @param Object_ $object Object instance
@@ -73,6 +92,23 @@ abstract class IdeaActions
         }
 
         return ($this->createIdeaCallback)($object);
+    }
+
+    /**
+     * Clear IdeaCollection cache via callback.
+     *
+     * Used after mass-mutations on underlying ObjectCollection (e.g. deleteAll()),
+     * so IdeaCollection doesn't return stale IdeaItem instances from its internal cache.
+     *
+     * @throws RuntimeException If callback is not set
+     */
+    protected function clearCollectionCache(): void
+    {
+        if ($this->clearCacheCallback === null) {
+            throw new RuntimeException("clearCacheCallback is not set. IdeaCollection must call setClearCacheCallback() when creating Actions.");
+        }
+
+        ($this->clearCacheCallback)();
     }
 
     /**
@@ -117,7 +153,7 @@ abstract class IdeaActions
      * @throws RuntimeException If write is not allowed
      * @throws DatabaseException If data loading fails
      */
-    protected function ensureCanWriteAndLoaded(): void
+    protected function ensureCanWrite(): void
     {
         $objectCollection = $this->getObjectCollection();
         if ($objectCollection === null) {

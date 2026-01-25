@@ -170,6 +170,11 @@ abstract class IdeaCollection implements ArrayAccess, Countable, Iterator
             $this->_actions->setCreateIdeaCallback(function (Object_ &$object): IdeaItem {
                 return $this->createIdea($object);
             });
+
+            // Set callback for mass-mutations cache invalidation
+            $this->_actions->setClearCacheCallback(function (): void {
+                $this->clearCache();
+            });
         }
         return $this->_actions;
     }
@@ -625,5 +630,18 @@ abstract class IdeaCollection implements ArrayAccess, Countable, Iterator
     public function __debugInfo(): array
     {
         return $this->toArray();
+    }
+
+    /**
+     * Clear cached IdeaItem instances.
+     *
+     * Needed for mass-mutations on underlying ObjectCollection (e.g. deleteAll()),
+     * so IdeaCollection doesn't return stale items from its internal cache.
+     */
+    public function clearCache(): void
+    {
+        $this->items = [];
+        $this->position = 0;
+        $this->savedPosition = 0;
     }
 }

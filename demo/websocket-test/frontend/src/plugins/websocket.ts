@@ -90,7 +90,9 @@ export function createChatWebSocketPlugin() {
         }
         
         // Handle chat event messages (new events from server)
-        if (message.type === 'chat_event' || message.type === 'event') {
+        // Backend sends SignalName('new_event') for newly created events.
+        // Keep legacy aliases for compatibility.
+        if (message.type === 'new_event' || message.type === 'chat_event' || message.type === 'event') {
           const eventData = message.data as {
             id: number
             type: string
@@ -108,7 +110,12 @@ export function createChatWebSocketPlugin() {
             timestamp: timestampString,
             data: eventData.data,
           })
-          
+
+          // If history was cleared on server, mirror it locally:
+          // clear events array then add the single "chat_cleared" record back
+          if (event.type === 'chat_cleared') {
+            chatStore.clearEvents()
+          }
           chatStore.addEvent(event)
           return
         }

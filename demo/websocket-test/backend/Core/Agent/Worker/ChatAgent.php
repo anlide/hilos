@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Demo\WebSocketTest\Core\Agent\Worker;
 
 use Demo\WebSocketTest\Constants\AgentType;
+use Demo\WebSocketTest\Constants\ChatCronConstants;
 use Demo\WebSocketTest\Constants\ChatEventType;
 use Demo\WebSocketTest\Constants\HttpHeaders;
 use Demo\WebSocketTest\Constants\PageConstants;
@@ -483,7 +484,7 @@ class ChatAgent extends AbstractAgent
         Logger::logAgentInfo($this->getId(), "Cron signal received: source={$source}, name={$name}, data=" . json_encode($dataArray));
 
         // Handle cleanup cron task
-        if ($name === 'cleanup_history') {
+        if ($name === ChatCronConstants::CLEANUP_HISTORY) {
             $this->cleanupHistory();
         }
     }

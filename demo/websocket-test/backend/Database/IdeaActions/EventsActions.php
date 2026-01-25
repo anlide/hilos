@@ -6,6 +6,7 @@ use Demo\WebSocketTest\Database\Entity\Event;
 use Demo\WebSocketTest\Database\Idea\Event as IdeaEvent;
 use Demo\WebSocketTest\Database\IdeaCollection\Events as IdeaCollectionEvents;
 use Demo\WebSocketTest\Database\Object\Event as ObjectEvent;
+use Demo\WebSocketTest\Database\ObjectCollection\Events as ObjectCollectionEvents;
 use Hilos\Database\Idea\IdeaActions;
 use Hilos\Exception\DatabaseException;
 use RuntimeException;
@@ -46,7 +47,7 @@ final class EventsActions extends IdeaActions
     public function add(string $type, ?int $userId = null, ?array $data = null): IdeaEvent
     {
         // Check write permissions and load data if needed
-        $this->ensureCanWriteAndLoaded();
+        $this->ensureCanWrite();
         
         // Create and save ObjectEvent
         $objectEvent = ObjectEvent::create();
@@ -74,15 +75,21 @@ final class EventsActions extends IdeaActions
      */
     public function deleteAll(): void
     {
+        // Check write permissions and load data if needed
+        $this->ensureCanWrite();
+
         $objectCollection = $this->getObjectCollection();
         if ($objectCollection === null) {
             throw new DatabaseException("Cannot delete all: ObjectCollection is null");
         }
         
-        if (!($objectCollection instanceof \Demo\WebSocketTest\Database\ObjectCollection\Events)) {
-            throw new DatabaseException("ObjectCollection is not an instance of Events");
+        if (!($objectCollection instanceof ObjectCollectionEvents)) {
+            throw new DatabaseException("ObjectCollection is not an instance of ObjectCollectionEvents");
         }
         
         $objectCollection->deleteAll();
+
+        // Notify IdeaCollection about mass change: clear cached IdeaItem instances (via callback)
+        $this->clearCollectionCache();
     }
 }

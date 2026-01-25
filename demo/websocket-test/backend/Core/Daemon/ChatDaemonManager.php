@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\WebSocketTest\Core\Daemon;
 
+use Demo\WebSocketTest\Constants\ChatCronConstants;
 use Demo\WebSocketTest\Core\Router\ChatSignalRouter;
 use Demo\WebSocketTest\DTO\CronSignalDTO;
 use Hilos\Constants\SignalTypeConstants;
@@ -38,7 +39,7 @@ class ChatDaemonManager extends DaemonManager
 
         // Register cron rule for chat history cleanup (every 5 minutes)
         // Cron expression: "*/5 * * * *" means every 5 minutes
-        $this->addCronRule('cleanup_history', '*/5 * * * *');
+        $this->addCronRule(ChatCronConstants::CLEANUP_HISTORY, '*/5 * * * *');
     }
 
     /**
