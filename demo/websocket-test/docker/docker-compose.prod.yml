@@ -33,10 +33,10 @@ services:
     expose:
       - "${HTTP_STATUS_PORT:-8090}"
       - "${WORKER_COMM_PORT:-8091}"
+    restart: unless-stopped
     networks:
       hilos-demo-websocket-test-prod-network:
         ipv4_address: ${DOCKER_DAEMON_IP:-172.26.0.11}
-    restart: unless-stopped
 
   # Nginx for serving frontend production build
   websocket-test-frontend-prod:
@@ -49,9 +49,9 @@ services:
       - "${FRONTEND_PORT:-8080}:80"
     depends_on:
       - websocket-test-prod
+    restart: unless-stopped
     networks:
       - hilos-demo-websocket-test-prod-network
-    restart: unless-stopped
 
   websocket-test-cli-prod:
     build: .

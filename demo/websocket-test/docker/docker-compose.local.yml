@@ -40,9 +40,9 @@ services:
       - mysql-local
     ports:
       - "${PHPMYADMIN_PORT:-8080}:80"
+    restart: unless-stopped
     networks:
       - hilos-demo-websocket-test-local-network
-    restart: unless-stopped
 
   websocket-test-local:
     build: .
@@ -79,6 +79,7 @@ services:
       - "${HTTP_STATUS_PORT:-8090}:${HTTP_STATUS_PORT:-8090}"
       - "${WORKER_COMM_PORT:-8091}:${WORKER_COMM_PORT:-8091}"
       - "${WEBSOCKET_PORT:-8092}:${WEBSOCKET_PORT:-8092}"
+    restart: unless-stopped
     networks:
       hilos-demo-websocket-test-local-network:
         ipv4_address: ${DOCKER_DAEMON_IP:-172.26.0.11}
@@ -148,6 +149,7 @@ services:
     command: npm run dev
     ports:
       - "${FRONTEND_DEV_PORT:-5173}:5173"
+    restart: unless-stopped
     networks:
       - hilos-demo-websocket-test-local-network
 
