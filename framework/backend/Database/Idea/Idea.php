@@ -4,7 +4,13 @@ namespace Hilos\Database\Idea;
 
 use Hilos\Database\Object\Objects;
 use Hilos\Exception\DatabaseException;
-use RuntimeException;
+use Hilos\Exception\Idea\Collection\IdeaCollectionNotFoundException;
+use Hilos\Exception\Idea\Entity\IdeaEntityClassNotFoundException;
+use Hilos\Exception\Idea\Entity\IdeaEntityMappingNotFoundException;
+use Hilos\Exception\Idea\Entity\IdeaEntityTableConstantNotFoundException;
+use Hilos\Exception\Idea\Other\IdeaCloneException;
+use Hilos\Exception\Idea\Other\IdeaObjectCollectionNotFoundException;
+use Hilos\Exception\Idea\Other\IdeaUnknownLazyStrategyException;
 
 /**
  * Idea - Static access point for read-only data access
@@ -54,7 +60,7 @@ abstract class Idea
      */
     public function __clone(): void
     {
-        throw new RuntimeException('Idea cannot be cloned');
+        throw new IdeaCloneException('Idea cannot be cloned');
     }
 
     /**
@@ -82,13 +88,13 @@ abstract class Idea
      * @param string $name Collection name (e.g., 'users')
      * @param string $ideaCollectionClass Idea collection class name
      * @param ?string $actionsClass Actions class name (optional)
-     * @throws DatabaseException If Object collection not found in _objectCollections
+     * @throws IdeaObjectCollectionNotFoundException If Object collection not found in _objectCollections
      */
     public function setRepresent(string $name, string $ideaCollectionClass, ?string $actionsClass = null): void
     {
         // Get Object collection from _objectCollections
         if (!isset($this->_objectCollections[$name])) {
-            throw new DatabaseException("Object collection [{$name}] not found in _objectCollections. Create it before calling setRepresent().");
+            throw new IdeaObjectCollectionNotFoundException("Object collection [{$name}] not found in _objectCollections. Create it before calling setRepresent().");
         }
 
         $objectCollection = $this->_objectCollections[$name];
@@ -124,13 +130,15 @@ abstract class Idea
      *
      * @param string $name Collection name
      * @return IdeaCollection
+     * @throws IdeaCollectionNotFoundException
+     * @throws IdeaUnknownLazyStrategyException
      * @throws DatabaseException
      */
     public function __get(string $name)
     {
         // Early exit if collection doesn't exist
         if (!isset($this->_ideaCollections[$name])) {
-            throw new DatabaseException("Idea collection [{$name}] does not exist");
+            throw new IdeaCollectionNotFoundException("Idea collection [{$name}] does not exist");
         }
 
         switch ($this->_objectCollections[$name]->getLazyStrategy()) {
@@ -157,7 +165,7 @@ abstract class Idea
 
             default:
                 // Unknown strategy - no action needed
-                throw new DatabaseException("Unknown lazy loading strategy for collection [{$name}]");
+                throw new IdeaUnknownLazyStrategyException("Unknown lazy loading strategy for collection [{$name}]");
         }
 
         return $this->_ideaCollections[$name];
@@ -178,7 +186,9 @@ abstract class Idea
      *
      * @param string $collectionName Collection name
      * @return string Table name
-     * @throws DatabaseException If collection not found in mapping
+     * @throws IdeaEntityMappingNotFoundException If collection not found in mapping
+     * @throws IdeaEntityClassNotFoundException If entity class does not exist
+     * @throws IdeaEntityTableConstantNotFoundException If entity class does not have _table constant
      */
     public static function getTableName(string $collectionName): string
     {
@@ -186,11 +196,11 @@ abstract class Idea
         $entityClass = $entityMapping[$collectionName] ?? null;
 
         if ($entityClass === null) {
-            throw new DatabaseException("No entity mapping for collection: {$collectionName}");
+            throw new IdeaEntityMappingNotFoundException("No entity mapping for collection: {$collectionName}");
         }
 
         if (!class_exists($entityClass)) {
-            throw new DatabaseException("Entity class does not exist: {$entityClass}");
+            throw new IdeaEntityClassNotFoundException("Entity class does not exist: {$entityClass}");
         }
 
         // Get _table constant from Entity class
@@ -198,7 +208,7 @@ abstract class Idea
         $tableConstant = $reflection->getConstant('_table');
 
         if ($tableConstant === false) {
-            throw new DatabaseException("Entity class [{$entityClass}] does not have _table constant");
+            throw new IdeaEntityTableConstantNotFoundException("Entity class [{$entityClass}] does not have _table constant");
         }
 
         return $tableConstant;

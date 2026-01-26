@@ -10,6 +10,7 @@ use Demo\WebSocketTest\Database\Object\Event as ObjectEvent;
 use Hilos\Database\Database;
 use Hilos\Database\Object\Objects;
 use Hilos\Exception\DatabaseException;
+use Hilos\Exception\Idea\TruthSource\IdeaTruthSourceWriteNotAllowedException;
 use Iterator;
 use RuntimeException;
 
@@ -147,7 +148,7 @@ final class Events extends Objects implements Iterator, ArrayAccess, Countable
 
     /**
      * Get table name from Entity
-     * 
+     *
      * @return string Table name
      */
     public function getTableName(): string
@@ -170,7 +171,7 @@ final class Events extends Objects implements Iterator, ArrayAccess, Countable
     /**
      * Add event to collection and database
      * Creates ObjectEvent, saves to database, and adds to collection
-     * 
+     *
      * For LAZY_STRATEGY_NONE: Only allows write if truth source is registered.
      * Ensures all data is loaded before write operation.
      *
@@ -180,6 +181,7 @@ final class Events extends Objects implements Iterator, ArrayAccess, Countable
      * @return ObjectEvent Created event object
      * @throws DatabaseException
      * @throws RuntimeException If event ID is null after sync or if write is not allowed
+     * @throws IdeaTruthSourceWriteNotAllowedException If no truth source is registered for write
      */
     public function add(string $type, ?int $userId = null, ?array $data = null): ObjectEvent
     {
@@ -187,17 +189,17 @@ final class Events extends Objects implements Iterator, ArrayAccess, Countable
         if ($this->_lazyStrategy === Objects::LAZY_STRATEGY_NONE) {
             $table = EntityEvent::_table;
             $hasTruthSource = \Hilos\Database\Idea\TruthSourceRegistry::hasTruthSource($table);
-            
+
             if (!$hasTruthSource) {
-                throw new RuntimeException("Write operation not allowed: no truth source registered for table '{$table}'. Register via TruthSourceRegistry::register() first.");
+                throw new IdeaTruthSourceWriteNotAllowedException("Write operation not allowed: no truth source registered for table '{$table}'. Register via TruthSourceRegistry::register() first.");
             }
-            
+
             // Ensure all data is loaded before write (for consistency)
             if (!$this->_allLoaded) {
                 $this->loadAllFromDB();
             }
         }
-        
+
         $objectEvent = ObjectEvent::create();
         $objectEvent->userId = $userId;
         $objectEvent->type = $type;

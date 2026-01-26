@@ -4,7 +4,10 @@ namespace Hilos\Database\Idea;
 
 use Hilos\Database\Object\Object_;
 use Hilos\Exception\DatabaseException;
-use RuntimeException;
+use Hilos\Exception\Idea\Item\IdeaItemCloneException;
+use Hilos\Exception\Idea\Item\IdeaItemPropertyNotFoundException;
+use Hilos\Exception\Idea\Item\IdeaItemReadOnlyException;
+use Hilos\Exception\Idea\Item\IdeaItemUnserializeException;
 
 /**
  * Base class for individual Idea items
@@ -44,7 +47,7 @@ abstract class IdeaItem
      * Delegates to underlying Object instance.
      *
      * Supports composite keys via Object_::getIdString().
-     * @throws DatabaseException If ID is null
+     * @throws DatabaseException
      */
     public function getIdString(): string
     {
@@ -58,10 +61,11 @@ abstract class IdeaItem
      * Cloning IdeaItem would create duplicate references to the same Object,
      * which could lead to inconsistent state. If you need multiple IdeaItem
      * instances for the same Object, create them separately.
+     * @throws IdeaItemCloneException
      */
     public function __clone(): void
     {
-        throw new RuntimeException('IdeaItem cannot be cloned');
+        throw new IdeaItemCloneException('IdeaItem cannot be cloned');
     }
 
     /**
@@ -71,10 +75,11 @@ abstract class IdeaItem
      * Unserializing IdeaItem would create invalid references to Object instances
      * that may no longer exist or be in a different state. Object references cannot
      * be safely serialized/unserialized.
+     * @throws IdeaItemUnserializeException
      */
     public function __wakeup(): void
     {
-        throw new RuntimeException('IdeaItem cannot be unserialized');
+        throw new IdeaItemUnserializeException('IdeaItem cannot be unserialized');
     }
 
     /**
@@ -85,12 +90,12 @@ abstract class IdeaItem
      *
      * @param string $name Property name
      * @return never
-     * @throws RuntimeException Always throws exception for undeclared properties
+     * @throws IdeaItemPropertyNotFoundException Always throws exception for undeclared properties
      */
     public function __get(string $name)
     {
         $className = static::class;
-        throw new RuntimeException("Property [{$name}] does not exist on {$className}");
+        throw new IdeaItemPropertyNotFoundException("Property [{$name}] does not exist on {$className}");
     }
 
     /**
@@ -101,12 +106,12 @@ abstract class IdeaItem
      * @param string $name Property name
      * @param mixed $value Property value
      * @return never
-     * @throws RuntimeException Always throws exception (read-only)
+     * @throws IdeaItemReadOnlyException Always throws exception (read-only)
      */
     final public function __set(string $name, mixed $value): never
     {
         $className = static::class;
-        throw new RuntimeException("Cannot set property [{$name}] on {$className}: IdeaItem is read-only");
+        throw new IdeaItemReadOnlyException("Cannot set property [{$name}] on {$className}: IdeaItem is read-only");
     }
 
     /**

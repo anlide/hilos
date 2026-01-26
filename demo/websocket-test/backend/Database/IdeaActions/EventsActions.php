@@ -9,7 +9,10 @@ use Demo\WebSocketTest\Database\Object\Event as ObjectEvent;
 use Demo\WebSocketTest\Database\ObjectCollection\Events as ObjectCollectionEvents;
 use Hilos\Database\Idea\IdeaActions;
 use Hilos\Exception\DatabaseException;
-use RuntimeException;
+use Hilos\Exception\Idea\Actions\IdeaActionsCallbackNotSetException;
+use Hilos\Exception\Idea\Actions\IdeaActionsDuplicateIdException;
+use Hilos\Exception\Idea\Actions\IdeaActionsObjectCollectionNullException;
+use Hilos\Exception\Idea\Actions\IdeaActionsUnknownLazyStrategyException;
 
 /**
  * Events Actions
@@ -33,7 +36,7 @@ final class EventsActions extends IdeaActions
     /**
      * Add event to collection and database
      * Creates ObjectEvent, saves to database, and adds to collection
-     * 
+     *
      * For LAZY_STRATEGY_NONE: Only allows write if truth source is registered.
      * Ensures all data is loaded before write operation.
      *
@@ -42,13 +45,16 @@ final class EventsActions extends IdeaActions
      * @param ?array $data Event-specific data (optional, will be JSON encoded)
      * @return IdeaEvent Created event idea
      * @throws DatabaseException
-     * @throws RuntimeException If event ID is null after sync or if write is not allowed
+     * @throws IdeaActionsCallbackNotSetException
+     * @throws IdeaActionsUnknownLazyStrategyException
+     * @throws IdeaActionsObjectCollectionNullException
+     * @throws IdeaActionsDuplicateIdException
      */
     public function add(string $type, ?int $userId = null, ?array $data = null): IdeaEvent
     {
         // Check write permissions and load data if needed
         $this->ensureCanWrite();
-        
+
         // Create and save ObjectEvent
         $objectEvent = ObjectEvent::create();
         $objectEvent->userId = $userId;
@@ -71,6 +77,9 @@ final class EventsActions extends IdeaActions
      * Delete all events from database and collection
      * Clears collection cache - lazy load will reload on next access
      *
+     * @throws IdeaActionsUnknownLazyStrategyException
+     * @throws IdeaActionsObjectCollectionNullException
+     * @throws IdeaActionsCallbackNotSetException
      * @throws DatabaseException
      */
     public function deleteAll(): void
@@ -80,13 +89,13 @@ final class EventsActions extends IdeaActions
 
         $objectCollection = $this->getObjectCollection();
         if ($objectCollection === null) {
-            throw new DatabaseException("Cannot delete all: ObjectCollection is null");
+            throw new IdeaActionsObjectCollectionNullException("Cannot delete all: ObjectCollection is null");
         }
-        
+
         if (!($objectCollection instanceof ObjectCollectionEvents)) {
-            throw new DatabaseException("ObjectCollection is not an instance of ObjectCollectionEvents");
+            throw new \InvalidArgumentException("ObjectCollection is not an instance of ObjectCollectionEvents");
         }
-        
+
         $objectCollection->deleteAll();
 
         // Notify IdeaCollection about mass change: clear cached IdeaItem instances (via callback)

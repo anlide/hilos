@@ -2,17 +2,12 @@
 
 namespace Demo\WebSocketTest\Database\IdeaCollection;
 
-use Demo\WebSocketTest\Database\Idea;
 use Demo\WebSocketTest\Database\Idea\Moderator as IdeaModerator;
 use Demo\WebSocketTest\Database\Object\Moderator as ObjectModerator;
-use Demo\WebSocketTest\Database\ObjectCollection\Moderators as ObjectModerators;
 use Hilos\Database\Idea\IdeaActions;
 use Hilos\Database\Idea\IdeaCollection;
 use Hilos\Database\Object\Object_;
-use Hilos\Database\Object\Objects;
-use Hilos\Exception\DatabaseException;
 use InvalidArgumentException;
-use RuntimeException;
 
 /**
  * Moderators Idea Collection
@@ -31,7 +26,7 @@ final class Moderators extends IdeaCollection
 
     /**
      * Create Idea instance from Object
-     * 
+     *
      * @param Object_ $object Object instance (reference)
      * @return IdeaModerator
      */
@@ -45,7 +40,7 @@ final class Moderators extends IdeaCollection
 
     /**
      * Get current Moderator idea
-     * 
+     *
      * @return ?IdeaModerator Current Moderator idea or null if invalid position
      */
     public function current(): ?IdeaModerator
@@ -56,7 +51,7 @@ final class Moderators extends IdeaCollection
 
     /**
      * Get first Moderator idea
-     * 
+     *
      * @return ?IdeaModerator First Moderator idea or null if collection is empty
      */
     public function first(): ?IdeaModerator
@@ -67,7 +62,7 @@ final class Moderators extends IdeaCollection
 
     /**
      * Get last Moderator idea
-     * 
+     *
      * @return ?IdeaModerator Last Moderator idea or null if collection is empty
      */
     public function last(): ?IdeaModerator
@@ -78,7 +73,7 @@ final class Moderators extends IdeaCollection
 
     /**
      * Get Moderator idea by offset
-     * 
+     *
      * @param mixed $offset Moderator ID
      * @return ?IdeaModerator Moderator idea or null if not found
      */

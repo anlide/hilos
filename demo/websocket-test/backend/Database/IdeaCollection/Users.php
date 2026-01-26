@@ -10,7 +10,6 @@ use Hilos\Database\Idea\IdeaCollection;
 use Hilos\Database\Object\Object_;
 use Hilos\Exception\DatabaseException;
 use InvalidArgumentException;
-use RuntimeException;
 
 /**
  * Users Idea Collection
@@ -29,7 +28,7 @@ final class Users extends IdeaCollection
 
     /**
      * Create Idea instance from Object
-     * 
+     *
      * @param Object_ $object Object instance (reference)
      * @return IdeaUser
      */
@@ -58,7 +57,7 @@ final class Users extends IdeaCollection
         // Delegate to ObjectCollection
         $objectCollection = $this->getObjectCollection();
         if (!($objectCollection instanceof ObjectUsers)) {
-            throw new RuntimeException("Expected ObjectUsers instance");
+            throw new InvalidArgumentException("Expected ObjectUsers instance");
         }
 
         $objectUser = $objectCollection->findBySession($sessionToken);
@@ -81,7 +80,7 @@ final class Users extends IdeaCollection
 
     /**
      * Get current User idea
-     * 
+     *
      * @return ?IdeaUser Current User idea or null if invalid position
      */
     public function current(): ?IdeaUser
@@ -92,7 +91,7 @@ final class Users extends IdeaCollection
 
     /**
      * Get first User idea
-     * 
+     *
      * @return ?IdeaUser First User idea or null if collection is empty
      */
     public function first(): ?IdeaUser
@@ -103,7 +102,7 @@ final class Users extends IdeaCollection
 
     /**
      * Get last User idea
-     * 
+     *
      * @return ?IdeaUser Last User idea or null if collection is empty
      */
     public function last(): ?IdeaUser
@@ -114,7 +113,7 @@ final class Users extends IdeaCollection
 
     /**
      * Get User idea by offset
-     * 
+     *
      * @param mixed $offset User ID
      * @return ?IdeaUser User idea or null if not found
      */

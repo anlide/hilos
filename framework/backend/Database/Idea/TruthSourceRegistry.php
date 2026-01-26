@@ -2,7 +2,7 @@
 
 namespace Hilos\Database\Idea;
 
-use RuntimeException;
+use Hilos\Exception\Idea\TruthSource\IdeaTruthSourceWriteNotAllowedException;
 
 /**
  * Truth Source Registry
@@ -137,12 +137,12 @@ class TruthSourceRegistry
      * Throws exception if no truth source is registered
      *
      * @param string $table Table name
-     * @throws RuntimeException If write is not allowed (no truth source registered)
+     * @throws IdeaTruthSourceWriteNotAllowedException If write is not allowed (no truth source registered)
      */
     public static function checkCanWrite(string $table): void
     {
         if (!self::hasTruthSource($table)) {
-            throw new RuntimeException("Write operation not allowed: no truth source registered for table '{$table}'. Register via TruthSourceRegistry::register() first.");
+            throw new IdeaTruthSourceWriteNotAllowedException("Write operation not allowed: no truth source registered for table '{$table}'. Register via TruthSourceRegistry::register() first.");
         }
     }
 }

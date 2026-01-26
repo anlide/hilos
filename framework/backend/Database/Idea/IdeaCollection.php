@@ -4,11 +4,15 @@ namespace Hilos\Database\Idea;
 
 use ArrayAccess;
 use Countable;
-use Hilos\Exception\DatabaseException;
-use Iterator;
 use Hilos\Database\Object\Object_;
 use Hilos\Database\Object\Objects;
-use RuntimeException;
+use Hilos\Exception\Idea\Collection\IdeaCollectionActionsClassException;
+use Hilos\Exception\Idea\Collection\IdeaCollectionCloneException;
+use Hilos\Exception\Idea\Collection\IdeaCollectionDirectSetException;
+use Hilos\Exception\Idea\Collection\IdeaCollectionNotManualException;
+use Hilos\Exception\Idea\Collection\IdeaCollectionPropertyNotFoundException;
+use Hilos\Exception\Idea\Collection\IdeaCollectionUnserializeException;
+use Iterator;
 
 /**
  * Base Idea Collection class
@@ -29,6 +33,8 @@ use RuntimeException;
  */
 abstract class IdeaCollection implements ArrayAccess, Countable, Iterator
 {
+    public const string actions = 'actions';
+
     /**
      * Whether this is a manual collection (empty, populated manually)
      * If false, collection wraps ObjectCollection from IdeaStorage
@@ -87,10 +93,11 @@ abstract class IdeaCollection implements ArrayAccess, Countable, Iterator
      *
      * Magic methods in PHP must be public to be called.
      * IdeaCollection instances should not be cloned.
+     * @throws IdeaCollectionCloneException
      */
     public function __clone(): void
     {
-        throw new RuntimeException('IdeaCollection cannot be cloned');
+        throw new IdeaCollectionCloneException('IdeaCollection cannot be cloned');
     }
 
     /**
@@ -98,10 +105,11 @@ abstract class IdeaCollection implements ArrayAccess, Countable, Iterator
      *
      * Magic methods in PHP must be public to be called.
      * IdeaCollection instances cannot be safely unserialized.
+     * @throws IdeaCollectionUnserializeException
      */
     public function __wakeup(): void
     {
-        throw new RuntimeException('IdeaCollection cannot be unserialized');
+        throw new IdeaCollectionUnserializeException('IdeaCollection cannot be unserialized');
     }
 
     /**
@@ -154,14 +162,14 @@ abstract class IdeaCollection implements ArrayAccess, Countable, Iterator
      * Creates Actions instance lazily on first access
      *
      * @return IdeaActions
-     * @throws DatabaseException If Actions class is not set and default class cannot be used
+     * @throws IdeaCollectionActionsClassException If Actions class is not set and default class cannot be used
      */
     protected function getActions(): IdeaActions
     {
         if ($this->_actions === null) {
             $class = $this->_actionsClass ?? IdeaActions::class;
             if (!is_subclass_of($class, IdeaActions::class)) {
-                throw new DatabaseException("Actions class [{$class}] must extend IdeaActions");
+                throw new IdeaCollectionActionsClassException("Actions class [{$class}] must extend IdeaActions");
             }
             $this->_actions = new $class($this);
 
@@ -214,12 +222,12 @@ abstract class IdeaCollection implements ArrayAccess, Countable, Iterator
      * @param IdeaItem $item IdeaItem instance to add
      * @psalm-param T $item
      *
-     * @throws DatabaseException If collection is not manual, or item has no ID
+     * @throws IdeaCollectionNotManualException If collection is not manual, or item has no ID
      */
     public function add(IdeaItem $item): void
     {
         if (!$this->isManual) {
-            throw new DatabaseException("Can only add items to manual collections (created via initEmpty())");
+            throw new IdeaCollectionNotManualException("Can only add items to manual collections (created via initEmpty())");
         }
 
         $this->items[$item->getIdString()] = $item;
@@ -314,7 +322,7 @@ abstract class IdeaCollection implements ArrayAccess, Countable, Iterator
      *
      * @param callable $callback Callback function (IdeaItem, key) => bool
      * @return static New filtered manual collection
-     * @throws DatabaseException
+     * @throws IdeaCollectionNotManualException
      */
     public function filter(callable $callback): static
     {
@@ -334,8 +342,8 @@ abstract class IdeaCollection implements ArrayAccess, Countable, Iterator
             if ($objectCollection !== null) {
                 // For lazy collections with BATCH strategy, trigger full load
                 if ($objectCollection->allowLazyLoading &&
-                    $objectCollection->_lazyStrategy === Objects::LAZY_STRATEGY_BATCH &&
-                    !$objectCollection->_allLoaded) {
+                    $objectCollection->getLazyStrategy() === Objects::LAZY_STRATEGY_BATCH &&
+                    !$objectCollection->isAllLoaded()) {
                     $objectCollection->preloadAll();
                 }
 
@@ -502,11 +510,11 @@ abstract class IdeaCollection implements ArrayAccess, Countable, Iterator
     }
 
     /**
-     * @throws DatabaseException
+     * @throws IdeaCollectionDirectSetException
      */
     public function offsetSet(mixed $offset, mixed $value): void
     {
-        throw new DatabaseException("Cannot directly set Idea instances in collection");
+        throw new IdeaCollectionDirectSetException("Cannot directly set Idea instances in collection");
     }
 
     public function offsetUnset(mixed $offset): void
@@ -526,15 +534,16 @@ abstract class IdeaCollection implements ArrayAccess, Countable, Iterator
      *
      * @param string $name Property name
      * @return IdeaActions
-     * @throws DatabaseException
+     * @throws IdeaCollectionPropertyNotFoundException
+     * @throws IdeaCollectionActionsClassException
      */
     public function __get(string $name)
     {
-        if ($name === 'actions') {
+        if ($name === self::actions) {
             return $this->getActions();
         }
 
-        throw new DatabaseException("Property [{$name}] does not exist on " . static::class);
+        throw new IdeaCollectionPropertyNotFoundException("Property [{$name}] does not exist on " . static::class);
     }
 
     /**

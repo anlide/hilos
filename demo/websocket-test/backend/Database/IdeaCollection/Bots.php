@@ -2,17 +2,12 @@
 
 namespace Demo\WebSocketTest\Database\IdeaCollection;
 
-use Demo\WebSocketTest\Database\Idea;
 use Demo\WebSocketTest\Database\Idea\Bot as IdeaBot;
 use Demo\WebSocketTest\Database\Object\Bot as ObjectBot;
-use Demo\WebSocketTest\Database\ObjectCollection\Bots as ObjectBots;
 use Hilos\Database\Idea\IdeaActions;
 use Hilos\Database\Idea\IdeaCollection;
 use Hilos\Database\Object\Object_;
-use Hilos\Database\Object\Objects;
-use Hilos\Exception\DatabaseException;
 use InvalidArgumentException;
-use RuntimeException;
 
 /**
  * Bots Idea Collection
@@ -31,7 +26,7 @@ final class Bots extends IdeaCollection
 
     /**
      * Create Idea instance from Object
-     * 
+     *
      * @param Object_ $object Object instance (reference)
      * @return IdeaBot
      */
@@ -45,7 +40,7 @@ final class Bots extends IdeaCollection
 
     /**
      * Get current Bot idea
-     * 
+     *
      * @return ?IdeaBot Current Bot idea or null if invalid position
      */
     public function current(): ?IdeaBot
@@ -56,7 +51,7 @@ final class Bots extends IdeaCollection
 
     /**
      * Get first Bot idea
-     * 
+     *
      * @return ?IdeaBot First Bot idea or null if collection is empty
      */
     public function first(): ?IdeaBot
@@ -67,7 +62,7 @@ final class Bots extends IdeaCollection
 
     /**
      * Get last Bot idea
-     * 
+     *
      * @return ?IdeaBot Last Bot idea or null if collection is empty
      */
     public function last(): ?IdeaBot
@@ -78,7 +73,7 @@ final class Bots extends IdeaCollection
 
     /**
      * Get Bot idea by offset
-     * 
+     *
      * @param mixed $offset Bot ID
      * @return ?IdeaBot Bot idea or null if not found
      */

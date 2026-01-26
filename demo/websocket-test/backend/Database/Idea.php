@@ -19,6 +19,7 @@ use Demo\WebSocketTest\Database\ObjectCollection\Users as ObjectUsers;
 use Hilos\Database\Idea\Idea as BaseIdea;
 use Hilos\Database\Object\Objects;
 use Hilos\Exception\DatabaseException;
+use Hilos\Exception\Idea\Other\IdeaObjectCollectionNotFoundException;
 
 /**
  * Idea - Static access point for read-only data access
@@ -29,7 +30,7 @@ use Hilos\Exception\DatabaseException;
  *   Idea::init(); // Initialize with Object collections (mandatory)
  *   $user = Idea::$idea->users[123]; // Get User idea
  *   $users = Idea::$idea->users; // Get Users collection
- * 
+ *
  * @property-read IdeaUsers $users
  * @property-read IdeaEvents $events
  * @property-read IdeaBots $bots
@@ -47,8 +48,8 @@ final class Idea extends BaseIdea
      *
      * Overrides base class to create and configure Object collections for this application.
      * Object collections initialization is mandatory.
-     *
      * @throws DatabaseException
+     * @throws IdeaObjectCollectionNotFoundException
      */
     public static function init(): void
     {

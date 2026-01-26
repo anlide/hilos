@@ -5,7 +5,12 @@ namespace Hilos\Database\Idea;
 use Hilos\Database\Object\Object_;
 use Hilos\Database\Object\Objects;
 use Hilos\Exception\DatabaseException;
-use RuntimeException;
+use Hilos\Exception\Idea\Actions\IdeaActionsCallbackNotSetException;
+use Hilos\Exception\Idea\Actions\IdeaActionsDuplicateIdException;
+use Hilos\Exception\Idea\Actions\IdeaActionsObjectCollectionNullException;
+use Hilos\Exception\Idea\Actions\IdeaActionsTableNameUndeterminedException;
+use Hilos\Exception\Idea\Actions\IdeaActionsUnknownLazyStrategyException;
+use Hilos\Exception\Idea\TruthSource\IdeaTruthSourceWriteNotAllowedException;
 
 /**
  * Base class for Idea Actions
@@ -24,7 +29,7 @@ abstract class IdeaActions
 {
     /**
      * IdeaCollection instance this actions belong to
-     * Type is declared via @property-read in child classes
+     * Type is declared via property-read in child classes
      *
      * @var IdeaCollection
      */
@@ -83,12 +88,12 @@ abstract class IdeaActions
      *
      * @param Object_ $object Object instance
      * @return IdeaItem
-     * @throws RuntimeException If callback is not set
+     * @throws IdeaActionsCallbackNotSetException If callback is not set
      */
     protected function createIdeaFromObject(Object_ &$object): IdeaItem
     {
         if ($this->createIdeaCallback === null) {
-            throw new RuntimeException("createIdeaCallback is not set. IdeaCollection must call setCreateIdeaCallback() when creating Actions.");
+            throw new IdeaActionsCallbackNotSetException("createIdeaCallback is not set. IdeaCollection must call setCreateIdeaCallback() when creating Actions.");
         }
 
         return ($this->createIdeaCallback)($object);
@@ -100,12 +105,12 @@ abstract class IdeaActions
      * Used after mass-mutations on underlying ObjectCollection (e.g. deleteAll()),
      * so IdeaCollection doesn't return stale IdeaItem instances from its internal cache.
      *
-     * @throws RuntimeException If callback is not set
+     * @throws IdeaActionsCallbackNotSetException If callback is not set
      */
     protected function clearCollectionCache(): void
     {
         if ($this->clearCacheCallback === null) {
-            throw new RuntimeException("clearCacheCallback is not set. IdeaCollection must call setClearCacheCallback() when creating Actions.");
+            throw new IdeaActionsCallbackNotSetException("clearCacheCallback is not set. IdeaCollection must call setClearCacheCallback() when creating Actions.");
         }
 
         ($this->clearCacheCallback)();
@@ -127,22 +132,23 @@ abstract class IdeaActions
      * Uses Objects::getTableName() or creates temporary object if collection is empty
      *
      * @return string Table name
-     * @throws DatabaseException If table name cannot be determined
+     * @throws IdeaActionsObjectCollectionNullException If ObjectCollection is null
+     * @throws IdeaActionsTableNameUndeterminedException If table name cannot be determined
      */
     protected function getTableName(): string
     {
         $objectCollection = $this->getObjectCollection();
         if ($objectCollection === null) {
-            throw new DatabaseException("Cannot get table name: ObjectCollection is null");
+            throw new IdeaActionsObjectCollectionNullException("Cannot get table name: ObjectCollection is null");
         }
 
         try {
             return $objectCollection->getTableName();
-        } catch (DatabaseException $e) {
+        } catch (\Exception $e) {
             // Collection is empty, try to create temporary object to get table name
             // This requires ObjectCollection to have a way to create temporary objects
             // For now, re-throw the exception - child classes should override if needed
-            throw new DatabaseException("Cannot determine table name: collection is empty. Override getTableName() in Actions class if needed.", 0, $e);
+            throw new IdeaActionsTableNameUndeterminedException("Cannot determine table name: collection is empty. Override getTableName() in Actions class if needed.", 0, $e);
         }
     }
 
@@ -150,14 +156,17 @@ abstract class IdeaActions
      * Ensure write is allowed and data is loaded if needed
      * Checks TruthSourceRegistry and loads data based on lazy loading strategy
      *
-     * @throws RuntimeException If write is not allowed
-     * @throws DatabaseException If data loading fails
+     * @throws IdeaActionsObjectCollectionNullException If ObjectCollection is null
+     * @throws IdeaActionsUnknownLazyStrategyException If unknown lazy loading strategy
+     * @throws IdeaTruthSourceWriteNotAllowedException If write is not allowed
+     * @throws IdeaActionsTableNameUndeterminedException If table name cannot be determined
+     * @throws DatabaseException
      */
     protected function ensureCanWrite(): void
     {
         $objectCollection = $this->getObjectCollection();
         if ($objectCollection === null) {
-            throw new DatabaseException("Cannot ensure write: ObjectCollection is null");
+            throw new IdeaActionsObjectCollectionNullException("Cannot ensure write: ObjectCollection is null");
         }
 
         switch ($objectCollection->getLazyStrategy()) {
@@ -186,7 +195,7 @@ abstract class IdeaActions
 
             default:
                 // Unknown strategy - no action needed
-                throw new DatabaseException("Unknown lazy loading strategy for write check");
+                throw new IdeaActionsUnknownLazyStrategyException("Unknown lazy loading strategy for write check");
         }
     }
 
@@ -196,13 +205,16 @@ abstract class IdeaActions
      * Checks for duplicate IDs and throws exception if object already exists
      *
      * @param Object_ $object Object instance to add
-     * @throws DatabaseException If ObjectCollection is null, object ID is null, or object with same ID already exists
+     * @throws IdeaActionsObjectCollectionNullException If ObjectCollection is null
+     * @throws IdeaActionsDuplicateIdException If object with same ID already exists
+     * @throws DatabaseException
+     * @throws IdeaActionsTableNameUndeterminedException
      */
     protected function addObjectToCollection(Object_ &$object): void
     {
         $objectCollection = $this->getObjectCollection();
         if ($objectCollection === null) {
-            throw new DatabaseException("Cannot add object: ObjectCollection is null");
+            throw new IdeaActionsObjectCollectionNullException("Cannot add object: ObjectCollection is null");
         }
 
         // Get ID string (supports composite keys)
@@ -211,7 +223,7 @@ abstract class IdeaActions
         // Check if object with this ID already exists
         if (isset($objectCollection[$idString])) {
             $table = $this->getTableName();
-            throw new DatabaseException("Cannot add object to collection: object with ID '{$idString}' already exists in table '{$table}'");
+            throw new IdeaActionsDuplicateIdException("Cannot add object to collection: object with ID '{$idString}' already exists in table '{$table}'");
         }
 
         $objectCollection[$idString] = $object;

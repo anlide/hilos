@@ -8,7 +8,7 @@ use Demo\WebSocketTest\Database\Object\User as ObjectUser;
 use Demo\WebSocketTest\Database\ObjectCollection\Users as ObjectUsers;
 use Hilos\Database\Idea\IdeaActions;
 use Hilos\Exception\DatabaseException;
-use RuntimeException;
+use Hilos\Exception\Idea\Actions\IdeaActionsCallbackNotSetException;
 
 /**
  * Users Actions
@@ -24,7 +24,8 @@ final class UsersActions extends IdeaActions
      *
      * @param string $sessionToken Session token (32 hex characters)
      * @return IdeaUser Newly registered user idea
-     * @throws DatabaseException If registration fails
+     * @throws DatabaseException
+     * @throws IdeaActionsCallbackNotSetException
      */
     public function register(string $sessionToken): IdeaUser
     {
