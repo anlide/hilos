@@ -38,7 +38,7 @@ abstract class Object_
      * Sync changes to database
      * Saves only changed columns by comparing entity with entitySync
      * 
-     * @throws DatabaseException
+     * @throws DatabaseException If database operation fails
      */
     public function sync(): void
     {
@@ -69,7 +69,7 @@ abstract class Object_
     /**
      * Delete entity from database
      * 
-     * @throws DatabaseException
+     * @throws DatabaseException If database operation fails
      */
     public function delete(): void
     {

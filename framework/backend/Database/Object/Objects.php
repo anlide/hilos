@@ -95,6 +95,7 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
      * Initialize collection with all objects from database
      *
      * @return static
+     * @throws DatabaseException
      * @deprecated Use initDB(LAZY_STRATEGY_NONE) instead
      */
     public static function initFullDB(): static

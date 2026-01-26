@@ -12,7 +12,9 @@ use Hilos\Exception\DatabaseException;
 use Hilos\Exception\Idea\Actions\IdeaActionsCallbackNotSetException;
 use Hilos\Exception\Idea\Actions\IdeaActionsDuplicateIdException;
 use Hilos\Exception\Idea\Actions\IdeaActionsObjectCollectionNullException;
+use Hilos\Exception\Idea\Actions\IdeaActionsTableNameUndeterminedException;
 use Hilos\Exception\Idea\Actions\IdeaActionsUnknownLazyStrategyException;
+use Hilos\Exception\Idea\TruthSource\IdeaTruthSourceWriteNotAllowedException;
 
 /**
  * Events Actions
@@ -44,11 +46,13 @@ final class EventsActions extends IdeaActions
      * @param ?int $userId User ID (null for system events)
      * @param ?array $data Event-specific data (optional, will be JSON encoded)
      * @return IdeaEvent Created event idea
-     * @throws DatabaseException
-     * @throws IdeaActionsCallbackNotSetException
-     * @throws IdeaActionsUnknownLazyStrategyException
-     * @throws IdeaActionsObjectCollectionNullException
-     * @throws IdeaActionsDuplicateIdException
+     * @throws DatabaseException If database operation fails
+     * @throws IdeaActionsCallbackNotSetException If callback is not set
+     * @throws IdeaActionsUnknownLazyStrategyException If unknown lazy loading strategy
+     * @throws IdeaActionsObjectCollectionNullException If ObjectCollection is null
+     * @throws IdeaTruthSourceWriteNotAllowedException If write is not allowed
+     * @throws IdeaActionsTableNameUndeterminedException If table name cannot be determined
+     * @throws IdeaActionsDuplicateIdException If duplicate ID is detected
      */
     public function add(string $type, ?int $userId = null, ?array $data = null): IdeaEvent
     {
@@ -77,10 +81,12 @@ final class EventsActions extends IdeaActions
      * Delete all events from database and collection
      * Clears collection cache - lazy load will reload on next access
      *
-     * @throws IdeaActionsUnknownLazyStrategyException
-     * @throws IdeaActionsObjectCollectionNullException
-     * @throws IdeaActionsCallbackNotSetException
-     * @throws DatabaseException
+     * @throws IdeaActionsUnknownLazyStrategyException If unknown lazy loading strategy
+     * @throws IdeaActionsObjectCollectionNullException If ObjectCollection is null
+     * @throws IdeaTruthSourceWriteNotAllowedException If write is not allowed
+     * @throws IdeaActionsTableNameUndeterminedException If table name cannot be determined
+     * @throws IdeaActionsCallbackNotSetException If callback is not set
+     * @throws DatabaseException If database operation fails
      */
     public function deleteAll(): void
     {

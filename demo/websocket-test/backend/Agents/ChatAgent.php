@@ -26,6 +26,16 @@ use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Database\Idea\TruthSourceRegistry;
 use Hilos\DTO\BaseDTO;
 use Hilos\Exception\DatabaseException;
+use Hilos\Exception\Idea\Actions\IdeaActionsCallbackNotSetException;
+use Hilos\Exception\Idea\Actions\IdeaActionsDuplicateIdException;
+use Hilos\Exception\Idea\Actions\IdeaActionsObjectCollectionNullException;
+use Hilos\Exception\Idea\Actions\IdeaActionsTableNameUndeterminedException;
+use Hilos\Exception\Idea\Actions\IdeaActionsUnknownLazyStrategyException;
+use Hilos\Exception\Idea\Entity\IdeaEntityClassNotFoundException;
+use Hilos\Exception\Idea\Entity\IdeaEntityMappingNotFoundException;
+use Hilos\Exception\Idea\Entity\IdeaEntityTableConstantNotFoundException;
+use Hilos\Exception\Idea\TruthSource\IdeaTruthSourceWriteNotAllowedException;
+use Hilos\Exception\Page\PageNotFoundException;
 use Hilos\Logging\Logger\Logger;
 use RuntimeException;
 
@@ -99,6 +109,15 @@ class ChatAgent extends AbstractAgent implements ChatPageContextInterface
     /**
      * Called when agent is started
      * @throws DatabaseException If database operation fails
+     * @throws IdeaEntityMappingNotFoundException If collection not found in mapping
+     * @throws IdeaEntityClassNotFoundException If entity class does not exist
+     * @throws IdeaEntityTableConstantNotFoundException If entity class does not have _table constant
+     * @throws IdeaActionsCallbackNotSetException
+     * @throws IdeaActionsUnknownLazyStrategyException If unknown lazy loading strategy
+     * @throws IdeaActionsObjectCollectionNullException If ObjectCollection is null
+     * @throws IdeaTruthSourceWriteNotAllowedException If write is not allowed
+     * @throws IdeaActionsTableNameUndeterminedException If table name cannot be determined
+     * @throws IdeaActionsDuplicateIdException If duplicate ID encountered
      */
     public function onStart(): void
     {
@@ -137,6 +156,12 @@ class ChatAgent extends AbstractAgent implements ChatPageContextInterface
      * @param ?array $data Event-specific data (optional)
      * @param ?string $excludeClientId Client ID to exclude from receiving the event (optional)
      * @throws DatabaseException If database operation fails
+     * @throws IdeaActionsCallbackNotSetException If callback is not set
+     * @throws IdeaActionsUnknownLazyStrategyException If unknown lazy loading strategy
+     * @throws IdeaActionsObjectCollectionNullException If ObjectCollection is null
+     * @throws IdeaTruthSourceWriteNotAllowedException If write is not allowed
+     * @throws IdeaActionsTableNameUndeterminedException If table name cannot be determined
+     * @throws IdeaActionsDuplicateIdException If duplicate ID is detected
      */
     public function addEvent(ChatEventType $type, ?int $userId = null, ?array $data = null, ?string $excludeClientId = null): void
     {
@@ -163,6 +188,12 @@ class ChatAgent extends AbstractAgent implements ChatPageContextInterface
     /**
      * Cleanup chat history
      * @throws DatabaseException If database operation fails
+     * @throws IdeaActionsUnknownLazyStrategyException If unknown lazy loading strategy
+     * @throws IdeaActionsObjectCollectionNullException If ObjectCollection is null
+     * @throws IdeaTruthSourceWriteNotAllowedException If write is not allowed
+     * @throws IdeaActionsTableNameUndeterminedException If table name cannot be determined
+     * @throws IdeaActionsCallbackNotSetException If callback is not set
+     * @throws IdeaActionsDuplicateIdException If duplicate ID is detected
      */
     private function cleanupHistory(): void
     {
@@ -180,6 +211,7 @@ class ChatAgent extends AbstractAgent implements ChatPageContextInterface
      * @param SignalDataInterface $data Signal data
      * @throws RuntimeException If data is not WebSocketHandshakeSignalDTO or session token is invalid
      * @throws DatabaseException If user registration fails
+     * @throws PageNotFoundException If page handler not found
      */
     public function onSignalPageSubscribe(string $source, string $name, SignalDataInterface $data): void
     {
@@ -251,6 +283,7 @@ class ChatAgent extends AbstractAgent implements ChatPageContextInterface
      * @param string $sessionToken Validated session token
      * @return IdeaUser User idea
      * @throws DatabaseException If user registration fails
+     * @throws IdeaActionsCallbackNotSetException If callback is not set
      */
     private function getOrRegisterUserBySessionToken(string $sessionToken): IdeaUser
     {
@@ -327,7 +360,7 @@ class ChatAgent extends AbstractAgent implements ChatPageContextInterface
      * @param string $source Signal source
      * @param string $name Signal name
      * @param SignalDataInterface $data Signal data
-     * @throws DatabaseException If database operation fails
+     * @throws PageNotFoundException If page handler not found
      */
     public function onSignalPageUnsubscribe(string $source, string $name, SignalDataInterface $data): void
     {
@@ -377,7 +410,7 @@ class ChatAgent extends AbstractAgent implements ChatPageContextInterface
      * @param string $source Signal source
      * @param string $name Signal name
      * @param SignalDataInterface $data Signal data
-     * @throws DatabaseException If database operation fails
+     * @throws PageNotFoundException If page handler not found
      */
     public function onSignalAction(string $source, string $name, SignalDataInterface $data): void
     {
@@ -433,6 +466,12 @@ class ChatAgent extends AbstractAgent implements ChatPageContextInterface
      * @param string $name Signal name
      * @param SignalDataInterface $data Signal data
      * @throws DatabaseException If database operation fails
+     * @throws IdeaActionsUnknownLazyStrategyException If unknown lazy loading strategy
+     * @throws IdeaActionsObjectCollectionNullException If ObjectCollection is null
+     * @throws IdeaTruthSourceWriteNotAllowedException If write is not allowed
+     * @throws IdeaActionsTableNameUndeterminedException If table name cannot be determined
+     * @throws IdeaActionsCallbackNotSetException If callback is not set
+     * @throws IdeaActionsDuplicateIdException If duplicate ID is detected
      */
     public function onSignalCron(string $source, string $name, SignalDataInterface $data): void
     {
