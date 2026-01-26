@@ -72,9 +72,10 @@ export function createChatWebSocketPlugin() {
           const subscriptionData = message.data as {
             events: Array<{
               id: number
+              userId: number | null
               type: string
               timestamp: number
-              data: Record<string, unknown> | null
+              data: Record<string, unknown> | string | null
             }>
             startTime: number
             userId: number

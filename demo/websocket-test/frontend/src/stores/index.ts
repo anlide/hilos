@@ -65,9 +65,10 @@ export const useChatStore = defineStore('chat', {
     handleSubscriptionResponse(
       events: Array<{
         id: number
+        userId: number | null
         type: string
         timestamp: number
-        data: Record<string, unknown> | null
+        data: Record<string, unknown> | string | null
       }>,
       userId: number,
       username: string,
@@ -78,10 +79,25 @@ export const useChatStore = defineStore('chat', {
       this.clearEvents()
       
       for (const event of events) {
-        // userId can be null for system events, otherwise use from data or currentUserId
-        // Handle null data case
-        const eventData = event.data ?? {}
-        const userId = (eventData.userId as number | null | undefined) ?? this.currentUserId
+        // userId comes directly from event object (from Event::toArray())
+        // It can be null for system events, otherwise use from event.userId
+        // Use eventUserId to avoid shadowing the function parameter
+        const eventUserId = event.userId ?? this.currentUserId
+        
+        // Handle null data case and parse JSON string if needed
+        let eventData: Record<string, unknown> = {}
+        if (event.data !== null && event.data !== undefined) {
+          if (typeof event.data === 'string') {
+            // Parse JSON string (data comes as JSON string from Event::toArray())
+            try {
+              eventData = JSON.parse(event.data) ?? {}
+            } catch {
+              eventData = {}
+            }
+          } else {
+            eventData = event.data
+          }
+        }
         
         // Convert timestamp - handle both string and number formats
         let timestamp: number
@@ -96,7 +112,7 @@ export const useChatStore = defineStore('chat', {
         
         const eventObj = Event.fromObject({
           id: event.id,
-          userId: userId,
+          userId: eventUserId,
           type: event.type,
           timestamp: timestampString,
           data: eventData,
