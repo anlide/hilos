@@ -2,18 +2,18 @@
 
 declare(strict_types=1);
 
-namespace Demo\WebSocketTest\Core\Page\Pages;
+namespace Demo\WebSocketTest\Pages;
 
 use Demo\WebSocketTest\Constants\PageConstants;
 use Demo\WebSocketTest\Core\Page\AbstractChatPage;
 use Demo\WebSocketTest\Database\Idea\User as IdeaUser;
 
 /**
- * AdminBotsPage - Admin bots page handler
+ * ProfilePage - User profile page handler
  *
- * Handles subscription, unsubscription, and actions for the admin bots page.
+ * Handles subscription, unsubscription, and actions for the user profile page.
  */
-class AdminBotsPage extends AbstractChatPage
+class ProfilePage extends AbstractChatPage
 {
     /**
      * Get page name
@@ -22,7 +22,7 @@ class AdminBotsPage extends AbstractChatPage
      */
     public function getPageName(): string
     {
-        return PageConstants::ADMIN_BOTS;
+        return PageConstants::PROFILE;
     }
 
     /**
@@ -33,7 +33,7 @@ class AdminBotsPage extends AbstractChatPage
      */
     protected function handleSubscribe(string $clientId, IdeaUser $user): void
     {
-        // TODO: Implement admin bots page subscription logic
+        // TODO: Implement profile page subscription logic
     }
 
     /**
@@ -44,7 +44,7 @@ class AdminBotsPage extends AbstractChatPage
      */
     protected function handleUnsubscribe(string $clientId, int $userId): void
     {
-        // TODO: Implement admin bots page unsubscribe logic
+        // TODO: Implement profile page unsubscribe logic
     }
 
     /**
@@ -57,6 +57,6 @@ class AdminBotsPage extends AbstractChatPage
      */
     protected function handleAction(string $clientId, int $userId, string $action, string $payload): void
     {
-        // TODO: Implement admin bots page action logic
+        // TODO: Implement profile page action logic
     }
 }

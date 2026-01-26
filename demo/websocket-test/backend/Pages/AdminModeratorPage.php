@@ -2,18 +2,18 @@
 
 declare(strict_types=1);
 
-namespace Demo\WebSocketTest\Core\Page\Pages;
+namespace Demo\WebSocketTest\Pages;
 
 use Demo\WebSocketTest\Constants\PageConstants;
 use Demo\WebSocketTest\Core\Page\AbstractChatPage;
 use Demo\WebSocketTest\Database\Idea\User as IdeaUser;
 
 /**
- * UserPage - User page handler
+ * AdminModeratorPage - Admin moderator page handler
  *
- * Handles subscription, unsubscription, and actions for the user page.
+ * Handles subscription, unsubscription, and actions for the admin moderator page.
  */
-class UserPage extends AbstractChatPage
+class AdminModeratorPage extends AbstractChatPage
 {
     /**
      * Get page name
@@ -22,7 +22,7 @@ class UserPage extends AbstractChatPage
      */
     public function getPageName(): string
     {
-        return PageConstants::USER;
+        return PageConstants::ADMIN_MODERATOR;
     }
 
     /**
@@ -33,7 +33,7 @@ class UserPage extends AbstractChatPage
      */
     protected function handleSubscribe(string $clientId, IdeaUser $user): void
     {
-        // TODO: Implement user page subscription logic
+        // TODO: Implement admin moderator page subscription logic
     }
 
     /**
@@ -44,7 +44,7 @@ class UserPage extends AbstractChatPage
      */
     protected function handleUnsubscribe(string $clientId, int $userId): void
     {
-        // TODO: Implement user page unsubscribe logic
+        // TODO: Implement admin moderator page unsubscribe logic
     }
 
     /**
@@ -57,6 +57,6 @@ class UserPage extends AbstractChatPage
      */
     protected function handleAction(string $clientId, int $userId, string $action, string $payload): void
     {
-        // TODO: Implement user page action logic
+        // TODO: Implement admin moderator page action logic
     }
 }

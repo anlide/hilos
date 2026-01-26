@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Demo\WebSocketTest\Core\Page\Pages;
+namespace Demo\WebSocketTest\Pages;
 
 use Demo\WebSocketTest\Constants\PageConstants;
 use Demo\WebSocketTest\Core\Page\AbstractChatPage;

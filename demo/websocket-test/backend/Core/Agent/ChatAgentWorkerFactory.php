@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace Demo\WebSocketTest\Core\Agent;
 
 use Demo\WebSocketTest\Constants\AgentType;
-use Demo\WebSocketTest\Core\Agent\Worker\BotAgent;
-use Demo\WebSocketTest\Core\Agent\Worker\ChatAgent;
-use Demo\WebSocketTest\Core\Agent\Worker\ModeratorAgent;
+use Demo\WebSocketTest\Agents\BotAgent;
+use Demo\WebSocketTest\Agents\ChatAgent;
+use Demo\WebSocketTest\Agents\ModeratorAgent;
 use Hilos\Core\Agent\AbstractAgentWorkerFactory;
 use Hilos\Core\Agent\AgentInterface;
 use Hilos\Core\Router\SignalRouter;

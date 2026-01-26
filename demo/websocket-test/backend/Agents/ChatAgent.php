@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Demo\WebSocketTest\Core\Agent\Worker;
+namespace Demo\WebSocketTest\Agents;
 
 use Demo\WebSocketTest\Constants\AgentType;
 use Demo\WebSocketTest\Constants\ChatCronConstants;
@@ -21,7 +21,6 @@ use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalRouter;
-use Hilos\Core\Router\SignalSourceInterface;
 use Hilos\Core\Router\SignalType;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Database\Idea\TruthSourceRegistry;

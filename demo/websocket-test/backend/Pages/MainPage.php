@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Demo\WebSocketTest\Core\Page\Pages;
+namespace Demo\WebSocketTest\Pages;
 
 use Demo\WebSocketTest\Constants\ChatEventType;
 use Demo\WebSocketTest\Constants\ChatSignalConstants;

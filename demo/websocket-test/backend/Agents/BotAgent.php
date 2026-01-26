@@ -2,27 +2,26 @@
 
 declare(strict_types=1);
 
-namespace Demo\WebSocketTest\Core\Agent\Worker;
+namespace Demo\WebSocketTest\Agents;
 
 use Demo\WebSocketTest\Constants\AgentType;
-use Demo\WebSocketTest\Database\Idea;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Database\Idea\TruthSourceRegistry;
 use Hilos\Logging\Logger\Logger;
 
 /**
- * ModeratorAgent - Regular agent for content moderation
+ * BotAgent - Regular agent for bot management
  *
- * Runs in regular worker process. Manages content moderation and AI-based checks.
+ * Runs in regular worker process. Manages bot interactions and chat behavior.
  */
-class ModeratorAgent extends AbstractAgent
+class BotAgent extends AbstractAgent
 {
     /** @var string Agent type */
-    private const string AGENT_TYPE = AgentType::MODERATOR;
+    private const string AGENT_TYPE = AgentType::BOT;
 
     /**
-     * ModeratorAgent constructor
+     * BotAgent constructor
      *
      * @param SignalRouter $signalRouter Signal router instance
      */
@@ -44,9 +43,9 @@ class ModeratorAgent extends AbstractAgent
     /**
      * Get agent index
      *
-     * Moderator agent has no index (global singleton)
+     * Bot agent has no index (global singleton)
      *
-     * @return ?string Agent index (null for global moderator agent)
+     * @return ?string Agent index (null for global bot agent)
      */
     public function getIndex(): ?string
     {
@@ -60,8 +59,8 @@ class ModeratorAgent extends AbstractAgent
     {
         Logger::logAgentStart($this->getId(), $this->getType());
 
-        // Register this agent as truth source for moderator table (all keys)
-        TruthSourceRegistry::register('moderator', true, $this->getId());
+        // Register this agent as truth source for bot table (all keys)
+        TruthSourceRegistry::register('bot', true, $this->getId());
     }
 
     /**
@@ -70,7 +69,7 @@ class ModeratorAgent extends AbstractAgent
     public function onStop(): void
     {
         // Unregister as truth source
-        TruthSourceRegistry::unregister('moderator', $this->getId());
+        TruthSourceRegistry::unregister('bot', $this->getId());
         
         Logger::logAgentStop($this->getId(), $this->getType());
     }
@@ -80,7 +79,7 @@ class ModeratorAgent extends AbstractAgent
      */
     public function onTick(): void
     {
-        // TODO: Add moderator-specific logic here
-        // For example: process queued messages for moderation, run AI checks, etc.
+        // TODO: Add bot-specific logic here
+        // For example: process queued bot messages, handle bot responses, etc.
     }
 }
