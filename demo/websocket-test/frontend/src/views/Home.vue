@@ -1,13 +1,11 @@
 <template>
-  <div class="container-fluid py-4">
-    <div class="row">
-      <div class="col-12 col-lg-8 mx-auto">
-        <!-- Connection Status -->
-        <ChatConnection v-if="!chatStore.isConnected" />
-        
-        <!-- Chat Interface -->
-        <ChatWindow v-else @send="handleSendMessage" />
-      </div>
+  <div class="row">
+    <div class="col-12 col-lg-8 mx-auto">
+      <!-- Connection Status -->
+      <ChatConnection v-if="!chatStore.isConnected" />
+      
+      <!-- Chat Interface -->
+      <ChatWindow v-else @send="handleSendMessage" />
     </div>
   </div>
 </template>
