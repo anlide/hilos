@@ -57,7 +57,7 @@ abstract class AbstractAgent implements AgentInterface
      *
      * @return SignalSourceInterface Agent signal source
      */
-    protected function getAgentSignalSource(): SignalSourceInterface
+    public function getAgentSignalSource(): SignalSourceInterface
     {
         return new SignalSource(
             source: SignalSource::AGENT,

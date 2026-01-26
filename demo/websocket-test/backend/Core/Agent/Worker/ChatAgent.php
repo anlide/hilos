@@ -7,13 +7,12 @@ namespace Demo\WebSocketTest\Core\Agent\Worker;
 use Demo\WebSocketTest\Constants\AgentType;
 use Demo\WebSocketTest\Constants\ChatCronConstants;
 use Demo\WebSocketTest\Constants\ChatEventType;
-use Demo\WebSocketTest\Constants\ChatSignalConstants;
 use Demo\WebSocketTest\Constants\HttpHeaders;
-use Demo\WebSocketTest\Constants\PageConstants;
+use Demo\WebSocketTest\Core\Page\ChatPageContextInterface;
+use Demo\WebSocketTest\Core\Page\ChatPageFactory;
 use Demo\WebSocketTest\Database\Idea;
 use Demo\WebSocketTest\Database\Idea\User as IdeaUser;
 use Demo\WebSocketTest\DTO\ChatEventSignalData;
-use Demo\WebSocketTest\DTO\SubscriptionResponseSignalData;
 use Demo\WebSocketTest\DTO\WebSocketFrameSignalDTO;
 use Demo\WebSocketTest\DTO\WebSocketHandshakeSignalDTO;
 use Demo\WebSocketTest\DTO\WebSocketUnsubscribeSignalDTO;
@@ -22,6 +21,7 @@ use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalRouter;
+use Hilos\Core\Router\SignalSourceInterface;
 use Hilos\Core\Router\SignalType;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Database\Idea\TruthSourceRegistry;
@@ -36,10 +36,8 @@ use RuntimeException;
  * Runs in monopolistic worker process. Manages chat state and history.
  * State stored only in memory (no persistence).
  */
-class ChatAgent extends AbstractAgent
+class ChatAgent extends AbstractAgent implements ChatPageContextInterface
 {
-    private const string ACTION_MESSAGE = ChatSignalConstants::MESSAGE;
-
     /**
      * In-memory mapping between session token and user id.
      * Filled during handshake (page subscribe) and used later in unsubscribe/action signals.
@@ -55,6 +53,17 @@ class ChatAgent extends AbstractAgent
      * @var array<string,string>
      */
     private array $clientIdToSessionToken = [];
+
+    /**
+     * In-memory mapping between websocket client id and page name.
+     * Filled during subscribe and used later in unsubscribe/action signals.
+     *
+     * @var array<string,string>
+     */
+    private array $clientIdToPage = [];
+
+    /** @var ?ChatPageFactory Page factory instance */
+    private ?ChatPageFactory $pageFactory = null;
 
     /**
      * Constructor
@@ -100,6 +109,9 @@ class ChatAgent extends AbstractAgent
 
         // Add chat created event to history (system event with userId = null)
         Idea::$idea->events->actions->add(ChatEventType::CHAT_CREATED->value);
+
+        // Initialize page factory
+        $this->pageFactory = new ChatPageFactory($this->signalRouter, $this);
     }
 
     /**
@@ -127,7 +139,7 @@ class ChatAgent extends AbstractAgent
      * @param ?string $excludeClientId Client ID to exclude from receiving the event (optional)
      * @throws DatabaseException If database operation fails
      */
-    private function addEvent(ChatEventType $type, ?int $userId = null, ?array $data = null, ?string $excludeClientId = null): void
+    public function addEvent(ChatEventType $type, ?int $userId = null, ?array $data = null, ?string $excludeClientId = null): void
     {
         // Add event to collection (saves to database and adds to collection)
         $event = Idea::$idea->events->actions->add($type->value, $userId, $data);
@@ -193,10 +205,16 @@ class ChatAgent extends AbstractAgent
         // Get or register user from session token and remember mapping
         $sessionToken = $this->getValidatedSessionToken($handshakeData);
         $user = $this->getOrRegisterUserBySessionToken($sessionToken);
-        $this->rememberClientSessionUserMapping($clientId, $sessionToken, $user->id);
+        $this->rememberClientMapping($clientId, $sessionToken, $user->id, $page);
 
-        // Handle page-specific subscription logic
-        $this->handlePageSubscribe($page, $clientId, $user);
+        // Handle page-specific subscription logic via page handler
+        if ($this->pageFactory === null || !$this->pageFactory->hasPage($page)) {
+            Logger::logAgentError($this->getId(), "Unknown page subscription: {$page}");
+            throw new RuntimeException("Unknown page subscription: {$page}");
+        }
+
+        $pageInstance = $this->pageFactory->getPage($page);
+        $pageInstance->onSubscribe($clientId, $user);
     }
 
     /**
@@ -257,11 +275,13 @@ class ChatAgent extends AbstractAgent
      * @param string $clientId WebSocket client id
      * @param string $sessionToken Session token
      * @param int $userId User id
+     * @param string $page Page name
      */
-    private function rememberClientSessionUserMapping(string $clientId, string $sessionToken, int $userId): void
+    private function rememberClientMapping(string $clientId, string $sessionToken, int $userId, string $page): void
     {
         $this->clientIdToSessionToken[$clientId] = $sessionToken;
         $this->sessionTokenToUserId[$sessionToken] = $userId;
+        $this->clientIdToPage[$clientId] = $page;
     }
 
     /**
@@ -281,192 +301,25 @@ class ChatAgent extends AbstractAgent
     }
 
     /**
-     * Forget clientId -> sessionToken mapping (e.g. on disconnect).
+     * Resolve page name by clientId using internal mappings.
+     *
+     * @param string $clientId WebSocket client id
+     * @return ?string Resolved page name or null if unknown
+     */
+    private function resolvePageByClientId(string $clientId): ?string
+    {
+        return $this->clientIdToPage[$clientId] ?? null;
+    }
+
+    /**
+     * Forget clientId mappings (e.g. on disconnect).
      *
      * @param string $clientId WebSocket client id
      */
     private function forgetClientMapping(string $clientId): void
     {
         unset($this->clientIdToSessionToken[$clientId]);
-    }
-
-    /**
-     * Handle page-specific subscription logic
-     * Routes to page-specific handler based on page name
-     *
-     * @param string $page Page name
-     * @param string $clientId Client ID
-     * @param IdeaUser $user User idea
-     * @throws DatabaseException If page handling fails
-     */
-    private function handlePageSubscribe(string $page, string $clientId, IdeaUser $user): void
-    {
-        switch ($page) {
-            case PageConstants::MAIN:
-                $this->handleMainPageSubscribe($clientId, $user);
-                break;
-
-            case PageConstants::PROFILE:
-                $this->handleProfilePageSubscribe($clientId, $user);
-                break;
-
-            case PageConstants::USER:
-                $this->handleUserPageSubscribe($clientId, $user);
-                break;
-
-            case PageConstants::BOT:
-                $this->handleBotPageSubscribe($clientId, $user);
-                break;
-
-            case PageConstants::MODERATOR:
-                $this->handleModeratorPageSubscribe($clientId, $user);
-                break;
-
-            case PageConstants::ADMIN:
-                $this->handleAdminPageSubscribe($clientId, $user);
-                break;
-
-            case PageConstants::ADMIN_USERS:
-                $this->handleAdminUsersPageSubscribe($clientId, $user);
-                break;
-
-            case PageConstants::ADMIN_MODERATOR:
-                $this->handleAdminModeratorPageSubscribe($clientId, $user);
-                break;
-
-            case PageConstants::ADMIN_BOTS:
-                $this->handleAdminBotsPageSubscribe($clientId, $user);
-                break;
-
-            default:
-                // Unknown page - throw exception
-                Logger::logAgentError($this->getId(), "Unknown page subscription: {$page}");
-                throw new RuntimeException("Unknown page subscription: {$page}");
-        }
-    }
-
-    /**
-     * Handle main page subscription
-     * Adds user joined event and sends subscription response with chat history
-     *
-     * @param string $clientId Client ID
-     * @param IdeaUser $user User idea
-     * @throws DatabaseException If operation fails
-     */
-    private function handleMainPageSubscribe(string $clientId, IdeaUser $user): void
-    {
-        // Exclude the joining user from receiving their own join event
-        $this->addEvent(ChatEventType::USER_JOINED, $user->id, null, $clientId);
-
-        // Send subscription response with all events and user info
-        $subscriptionData = new SubscriptionResponseSignalData(
-            events: Idea::$idea->events->toArray(idAsIndex: false),
-            userId: $user->id,
-            username: $user->name,
-        );
-
-        // Wrap subscription data in WebSocketSignalData for WebSocket routing
-        $signalData = new WebSocketSignalData(
-            data: $subscriptionData,
-            targetClientId: $clientId,
-            targetGroup: null,
-            excludeClientId: null,
-        );
-
-        $this->signalRouter->queueSignal(
-            signalSource: $this->getAgentSignalSource(),
-            signalType: new SignalType(SignalTypeConstants::WS_USER),
-            signalName: new SignalName('subscription_response'),
-            signalData: $signalData,
-        );
-    }
-
-    /**
-     * Handle profile page subscription
-     *
-     * @param string $clientId Client ID
-     * @param IdeaUser $user User idea
-     */
-    private function handleProfilePageSubscribe(string $clientId, IdeaUser $user): void
-    {
-        // TODO: Implement profile page subscription logic
-    }
-
-    /**
-     * Handle user page subscription
-     *
-     * @param string $clientId Client ID
-     * @param IdeaUser $user User idea
-     */
-    private function handleUserPageSubscribe(string $clientId, IdeaUser $user): void
-    {
-        // TODO: Implement user page subscription logic
-    }
-
-    /**
-     * Handle bot page subscription
-     *
-     * @param string $clientId Client ID
-     * @param IdeaUser $user User idea
-     */
-    private function handleBotPageSubscribe(string $clientId, IdeaUser $user): void
-    {
-        // TODO: Implement bot page subscription logic
-    }
-
-    /**
-     * Handle moderator page subscription
-     *
-     * @param string $clientId Client ID
-     * @param IdeaUser $user User idea
-     */
-    private function handleModeratorPageSubscribe(string $clientId, IdeaUser $user): void
-    {
-        // TODO: Implement moderator page subscription logic
-    }
-
-    /**
-     * Handle admin page subscription
-     *
-     * @param string $clientId Client ID
-     * @param IdeaUser $user User idea
-     */
-    private function handleAdminPageSubscribe(string $clientId, IdeaUser $user): void
-    {
-        // TODO: Implement admin page subscription logic
-    }
-
-    /**
-     * Handle admin users page subscription
-     *
-     * @param string $clientId Client ID
-     * @param IdeaUser $user User idea
-     */
-    private function handleAdminUsersPageSubscribe(string $clientId, IdeaUser $user): void
-    {
-        // TODO: Implement admin users page subscription logic
-    }
-
-    /**
-     * Handle admin moderator page subscription
-     *
-     * @param string $clientId Client ID
-     * @param IdeaUser $user User idea
-     */
-    private function handleAdminModeratorPageSubscribe(string $clientId, IdeaUser $user): void
-    {
-        // TODO: Implement admin moderator page subscription logic
-    }
-
-    /**
-     * Handle admin bots page subscription
-     *
-     * @param string $clientId Client ID
-     * @param IdeaUser $user User idea
-     */
-    private function handleAdminBotsPageSubscribe(string $clientId, IdeaUser $user): void
-    {
-        // TODO: Implement admin bots page subscription logic
+        unset($this->clientIdToPage[$clientId]);
     }
 
     /**
@@ -504,114 +357,19 @@ class ChatAgent extends AbstractAgent
             return;
         }
 
-        $this->handlePageUnsubscribe($page, $clientId, $userId);
-        $this->forgetClientMapping($clientId);
-    }
+        // Resolve page from mapping (in case page name in signal doesn't match)
+        $resolvedPage = $this->resolvePageByClientId($clientId) ?? $page;
 
-    /**
-     * Handle page-specific unsubscribe logic.
-     *
-     * @param string $page Page name
-     * @param string $clientId Client id
-     * @param int $userId User id
-     * @throws DatabaseException If database operation fails
-     */
-    private function handlePageUnsubscribe(string $page, string $clientId, int $userId): void
-    {
-        switch ($page) {
-            case PageConstants::MAIN:
-                $this->handleMainPageUnsubscribe($clientId, $userId);
-                break;
-
-            case PageConstants::PROFILE:
-                $this->handleProfilePageUnsubscribe($clientId, $userId);
-                break;
-
-            case PageConstants::USER:
-                $this->handleUserPageUnsubscribe($clientId, $userId);
-                break;
-
-            case PageConstants::BOT:
-                $this->handleBotPageUnsubscribe($clientId, $userId);
-                break;
-
-            case PageConstants::MODERATOR:
-                $this->handleModeratorPageUnsubscribe($clientId, $userId);
-                break;
-
-            case PageConstants::ADMIN:
-                $this->handleAdminPageUnsubscribe($clientId, $userId);
-                break;
-
-            case PageConstants::ADMIN_USERS:
-                $this->handleAdminUsersPageUnsubscribe($clientId, $userId);
-                break;
-
-            case PageConstants::ADMIN_MODERATOR:
-                $this->handleAdminModeratorPageUnsubscribe($clientId, $userId);
-                break;
-
-            case PageConstants::ADMIN_BOTS:
-                $this->handleAdminBotsPageUnsubscribe($clientId, $userId);
-                break;
-
-            default:
-                Logger::logAgentError($this->getId(), "Unknown page unsubscribe: {$page}");
-                throw new RuntimeException("Unknown page unsubscribe: {$page}");
+        // Handle page-specific unsubscribe logic via page handler
+        if ($this->pageFactory === null || !$this->pageFactory->hasPage($resolvedPage)) {
+            Logger::logAgentError($this->getId(), "Unknown page unsubscribe: {$resolvedPage}");
+            $this->forgetClientMapping($clientId);
+            return;
         }
-    }
 
-    /**
-     * Handle main page unsubscribe.
-     *
-     * @param string $clientId Client id
-     * @param int $userId User id
-     * @throws DatabaseException If database operation fails
-     */
-    private function handleMainPageUnsubscribe(string $clientId, int $userId): void
-    {
-        // Add user left event (clientId must NOT be included in event data)
-        $this->addEvent(ChatEventType::USER_LEFT, $userId);
-    }
-
-    private function handleProfilePageUnsubscribe(string $clientId, int $userId): void
-    {
-        // TODO: Implement profile page unsubscribe logic
-    }
-
-    private function handleUserPageUnsubscribe(string $clientId, int $userId): void
-    {
-        // TODO: Implement user page unsubscribe logic
-    }
-
-    private function handleBotPageUnsubscribe(string $clientId, int $userId): void
-    {
-        // TODO: Implement bot page unsubscribe logic
-    }
-
-    private function handleModeratorPageUnsubscribe(string $clientId, int $userId): void
-    {
-        // TODO: Implement moderator page unsubscribe logic
-    }
-
-    private function handleAdminPageUnsubscribe(string $clientId, int $userId): void
-    {
-        // TODO: Implement admin page unsubscribe logic
-    }
-
-    private function handleAdminUsersPageUnsubscribe(string $clientId, int $userId): void
-    {
-        // TODO: Implement admin users page unsubscribe logic
-    }
-
-    private function handleAdminModeratorPageUnsubscribe(string $clientId, int $userId): void
-    {
-        // TODO: Implement admin moderator page unsubscribe logic
-    }
-
-    private function handleAdminBotsPageUnsubscribe(string $clientId, int $userId): void
-    {
-        // TODO: Implement admin bots page unsubscribe logic
+        $pageInstance = $this->pageFactory->getPage($resolvedPage);
+        $pageInstance->onUnsubscribe($clientId, $userId);
+        $this->forgetClientMapping($clientId);
     }
 
     /**
@@ -652,76 +410,21 @@ class ChatAgent extends AbstractAgent
             "Action signal received: source={$source}, name={$name}, client={$clientId}, userId={$userId}, payload=" . json_encode($payload),
         );
 
-        switch ($action) {
-            case self::ACTION_MESSAGE:
-                $this->handleActionMessage($clientId, $userId, $payload);
-                break;
-
-            default:
-                // TODO: add dedicated handlers per action (file/rename/etc)
-                Logger::logAgentError($this->getId(), "Unknown action: {$action}");
-                break;
-        }
-    }
-
-    /**
-     * Handle "message" action.
-     * Expects JSON payload like: { "type": "message", "content": "..." } (frontend)
-     *
-     * @param string $clientId Client id
-     * @param int $userId User id
-     * @param string $payload Raw websocket payload
-     * @throws DatabaseException If database operation fails
-     */
-    private function handleActionMessage(string $clientId, int $userId, string $payload): void
-    {
-        $payloadData = $this->tryDecodeJsonPayload($payload);
-        if ($payloadData === null) {
-            Logger::logAgentError($this->getId(), "Invalid JSON payload for message action (clientId={$clientId})");
+        // Resolve page from mapping
+        $page = $this->resolvePageByClientId($clientId);
+        if ($page === null) {
+            Logger::logAgentError($this->getId(), "Unable to resolve page for clientId={$clientId} (action)");
             return;
         }
 
-        // We accept both: {content:"..."} and {data:{message:"..."}} for forward/backward compatibility
-        $content = $payloadData['content'] ?? null;
-        if ($content === null && isset($payloadData['data']) && is_array($payloadData['data'])) {
-            $content = $payloadData['data']['message'] ?? null;
-        }
-
-        if (!is_string($content) || trim($content) === '') {
-            Logger::logAgentError($this->getId(), "Empty message content (clientId={$clientId}, userId={$userId})");
+        // Handle action via page handler
+        if ($this->pageFactory === null || !$this->pageFactory->hasPage($page)) {
+            Logger::logAgentError($this->getId(), "Unknown page for action: {$page}");
             return;
         }
 
-        $this->addEvent(ChatEventType::MESSAGE_SENT, $userId, [
-            'message' => $content,
-        ]);
-    }
-
-    /**
-     * Try to decode JSON payload into associative array.
-     *
-     * @param string $payload Raw websocket payload
-     * @return ?array<string,mixed> Decoded payload or null if invalid JSON
-     */
-    private function tryDecodeJsonPayload(string $payload): ?array
-    {
-        $payload = trim($payload);
-        if ($payload === '') {
-            return null;
-        }
-
-        try {
-            /** @var mixed $decoded */
-            $decoded = json_decode($payload, true, flags: JSON_THROW_ON_ERROR);
-        } catch (\JsonException) {
-            return null;
-        }
-
-        if (!is_array($decoded)) {
-            return null;
-        }
-
-        return $decoded;
+        $pageInstance = $this->pageFactory->getPage($page);
+        $pageInstance->onAction($clientId, $userId, $action, $payload);
     }
 
     /**
