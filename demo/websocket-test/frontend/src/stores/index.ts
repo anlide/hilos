@@ -79,40 +79,26 @@ export const useChatStore = defineStore('chat', {
       this.clearEvents()
       
       for (const event of events) {
-        // userId comes directly from event object (from Event::toArray())
-        // It can be null for system events, otherwise use from event.userId
-        // Use eventUserId to avoid shadowing the function parameter
-        const eventUserId = event.userId ?? this.currentUserId
-        
-        // Handle null data case and parse JSON string if needed
-        let eventData: Record<string, unknown> = {}
-        if (event.data !== null && event.data !== undefined) {
-          if (typeof event.data === 'string') {
-            // Parse JSON string (data comes as JSON string from Event::toArray())
-            try {
-              eventData = JSON.parse(event.data) ?? {}
-            } catch {
-              eventData = {}
-            }
-          } else {
-            eventData = event.data
-          }
+        const eventData = typeof event.data === 'string'
+          ? JSON.parse(event.data)
+          : (event.data ?? {})
+
+        const timestampSeconds = typeof event.timestamp === 'string'
+          ? Math.floor(Date.parse(event.timestamp) / 1000)
+          : event.timestamp
+
+        if (!Number.isFinite(timestampSeconds)) {
+          throw new Error(`Invalid event timestamp: ${String(event.timestamp)}`)
         }
-        
-        // Convert timestamp - handle both string and number formats
-        let timestamp: number
-        if (typeof event.timestamp === 'string') {
-          const parsed = Date.parse(event.timestamp)
-          timestamp = isNaN(parsed) ? 0 : Math.floor(parsed / 1000)
-        } else {
-          timestamp = event.timestamp
-        }
-        
-        const timestampString = new Date(timestamp * 1000).toISOString().slice(0, 19).replace('T', ' ')
+
+        const timestampString = new Date(timestampSeconds * 1000)
+          .toISOString()
+          .slice(0, 19)
+          .replace('T', ' ')
         
         const eventObj = Event.fromObject({
           id: event.id,
-          userId: eventUserId,
+          userId: event.userId,
           type: event.type,
           timestamp: timestampString,
           data: eventData,

@@ -1,23 +1,35 @@
 <template>
-  <!-- Message event -->
-  <div v-if="event.type === 'message_sent'" class="d-flex flex-column mb-2">
+  <!-- All events (messages and service messages) -->
+  <div 
+    class="d-flex flex-column mb-2 p-2 rounded" 
+    :class="getServiceMessageClass()"
+  >
     <div class="d-flex align-items-baseline gap-2">
-      <span class="fw-bold text-primary">{{ getUserName(event.userId) }}</span>
+      <RouterLink
+        v-if="getHeaderUserName()"
+        class="fw-bold text-decoration-none"
+        :class="isServiceMessage ? 'text-secondary' : 'text-primary'"
+        :to="{ name: 'user', params: { id: getHeaderUserId() } }"
+      >
+        {{ getHeaderUserName() }}
+      </RouterLink>
+      <span
+        v-if="getServiceTitle()"
+        class="fw-bold text-secondary"
+      >
+        {{ getServiceTitle() }}
+      </span>
       <small class="text-muted">{{ formatTime(event.timestamp) }}</small>
     </div>
-    <div class="ms-3">{{ getMessageText() }}</div>
-  </div>
-  
-  <!-- Notification events -->
-  <div v-else class="text-center my-2">
-    <small :class="getNotificationClass()">
-      <i :class="getNotificationIcon()"></i>
-      {{ getNotificationText() }}
-    </small>
+    <div v-if="getMessageText()" class="ms-3 mt-1">
+      {{ getMessageText() }}
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
+import { RouterLink } from 'vue-router'
 import { Event } from '@/types'
 import { useChatStore } from '@/stores'
 
@@ -28,6 +40,10 @@ interface Props {
 const props = defineProps<Props>()
 const chatStore = useChatStore()
 
+const isServiceMessage = computed(() => {
+  return props.event.type !== 'message_sent'
+})
+
 const formatTime = (timestamp: string): string => {
   const date = new Date(timestamp)
   return date.toLocaleTimeString('en-US', { 
@@ -37,72 +53,90 @@ const formatTime = (timestamp: string): string => {
   })
 }
 
-const getUserName = (userId: number): string => {
+const getParticipantName = (userId: number | null): string => {
+  if (userId === null) {
+    return 'Unknown user'
+  }
   const user = chatStore.users.find(u => u.id === userId)
   return user?.name || `User${userId}`
 }
 
-const getMessageText = (): string => {
-  return (props.event.data.message as string) || '(No message)'
+const getHeaderUserId = (): number | null => {
+  if (isServiceMessage.value) {
+    return props.event.userId
+  }
+
+  return props.event.userId
 }
 
-const getNotificationText = (): string => {
-  const { type, data } = props.event
-  const userName = getUserName(props.event.userId)
-  
-  switch (type) {
+const getHeaderUserName = (): string => {
+  if (getHeaderUserId() === null) {
+    return ''
+  }
+
+  return getParticipantName(getHeaderUserId())
+}
+
+const getServiceTitle = (): string => {
+  if (!isServiceMessage.value) {
+    return ''
+  }
+
+  switch (props.event.type) {
     case 'user_joined':
-      return `${userName} joined the chat`
+      return 'joined the chat'
     case 'user_left':
-      return `${userName} left the chat`
+      return 'left the chat'
     case 'user_renamed': {
+      const { data } = props.event
       const oldName = data.oldName as string | undefined
       const newName = data.newName as string | undefined
       if (oldName && newName) {
-        return `${oldName} renamed to ${newName}`
+        return `renamed from ${oldName} to ${newName}`
       }
-      return `${userName} renamed`
+      return 'renamed'
     }
     case 'chat_created':
       return 'Chat created'
     case 'chat_cleared':
       return 'Chat history cleared'
     default:
-      return `Event: ${type}`
+      return `Event: ${props.event.type}`
   }
 }
 
-const getNotificationClass = (): string => {
-  const base = 'badge '
-  switch (props.event.type) {
-    case 'user_joined':
-      return base + 'bg-success'
-    case 'user_left':
-      return base + 'bg-secondary'
-    case 'user_renamed':
-      return base + 'bg-info'
-    case 'chat_created':
-    case 'chat_cleared':
-      return base + 'bg-primary'
-    default:
-      return base + 'bg-secondary'
+const getMessageText = (): string => {
+  // For regular messages, show the message content
+  if (props.event.type === 'message_sent') {
+    return (props.event.data.message as string) || ''
   }
+  
+  // For service messages, only show explicit message payloads
+  if (props.event.data.message) {
+    return props.event.data.message as string
+  }
+
+  return ''
 }
 
-const getNotificationIcon = (): string => {
+const getServiceMessageClass = (): string => {
+  if (!isServiceMessage.value) {
+    return ''
+  }
+  
+  // Return Bootstrap utility classes for background colors
   switch (props.event.type) {
     case 'user_joined':
-      return 'bi bi-person-plus'
+      return 'bg-success bg-opacity-25'
     case 'user_left':
-      return 'bi bi-person-dash'
+      return 'bg-secondary bg-opacity-25'
     case 'user_renamed':
-      return 'bi bi-pencil'
+      return 'bg-info bg-opacity-25'
     case 'chat_created':
-      return 'bi bi-chat-dots'
     case 'chat_cleared':
-      return 'bi bi-trash'
+      return 'bg-primary bg-opacity-25'
     default:
-      return 'bi bi-info-circle'
+      return 'bg-secondary bg-opacity-25'
   }
 }
 </script>
