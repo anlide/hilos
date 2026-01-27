@@ -6,6 +6,12 @@ import { Event } from '@/types'
 
 type JsonRecord = Record<string, unknown>
 
+type UserPayload = {
+  id: number
+  name: string
+  lastActivity?: string | null
+}
+
 type RawMessage = {
   type: string
   data?: unknown
@@ -21,17 +27,23 @@ type SubscriptionEvent = {
 
 type SubscriptionResponseData = {
   events: SubscriptionEvent[]
+  users: UserPayload[]
   userId: number
   username: string
 }
 
+type EventUsersData = {
+  users?: UserPayload[]
+}
+
 type ChatEventDataByType = {
-  chat_created: Record<string, never>
-  chat_cleared: Record<string, never>
-  user_joined: { userId: number }
-  user_left: { userId: number }
-  user_renamed: { userId: number; username: string }
-  message_sent: { userId: number; message: string }
+  chat_started: EventUsersData
+  chat_stopped: EventUsersData
+  chat_cleared: EventUsersData
+  user_joined: { userId: number } & EventUsersData
+  user_left: { userId: number } & EventUsersData
+  user_renamed: { userId: number; username: string } & EventUsersData
+  message_sent: { userId: number; message: string } & EventUsersData
 }
 
 type KnownChatEventPayload = {
@@ -54,6 +66,30 @@ type ChatEventPayload = KnownChatEventPayload | UnknownChatEventPayload
 
 const isRecord = (value: unknown): value is JsonRecord =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
+
+const isUserPayload = (value: unknown): value is UserPayload => {
+  if (!isRecord(value) || typeof value.id !== 'number' || typeof value.name !== 'string') {
+    return false
+  }
+
+  if (value.lastActivity === undefined || value.lastActivity === null) {
+    return true
+  }
+
+  return typeof value.lastActivity === 'string'
+}
+
+const parseUserPayloads = (value: unknown): UserPayload[] | null | undefined => {
+  if (value === undefined) {
+    return undefined
+  }
+
+  if (!Array.isArray(value)) {
+    return null
+  }
+
+  return value.every(isUserPayload) ? value : null
+}
 
 const parseIncomingMessage = (data: string | object): RawMessage | null => {
   if (typeof data === 'string') {
@@ -84,7 +120,13 @@ const isSubscriptionResponseData = (data: unknown): data is SubscriptionResponse
     return false
   }
 
-  return Array.isArray(data.events) && typeof data.userId === 'number' && typeof data.username === 'string'
+  const users = parseUserPayloads(data.users)
+
+  return Array.isArray(data.events)
+    && users !== null
+    && users !== undefined
+    && typeof data.userId === 'number'
+    && typeof data.username === 'string'
 }
 
 const toChatEventPayload = (data: unknown): ChatEventPayload | null => {
@@ -98,7 +140,15 @@ const toChatEventPayload = (data: unknown): ChatEventPayload | null => {
   }
 
   const payloadData = isRecord(data.data) ? data.data : {}
-  const base = { id, type, timestamp, data: payloadData }
+  const users = parseUserPayloads(payloadData.users)
+  if (users === null) {
+    return null
+  }
+
+  const normalizedPayloadData = users === undefined
+    ? payloadData
+    : { ...payloadData, users }
+  const base = { id, type, timestamp, data: normalizedPayloadData }
 
   switch (type) {
     case 'user_joined':
@@ -117,7 +167,8 @@ const toChatEventPayload = (data: unknown): ChatEventPayload | null => {
         return base as ChatEventPayload
       }
       break
-    case 'chat_created':
+    case 'chat_started':
+    case 'chat_stopped':
     case 'chat_cleared':
       return base as ChatEventPayload
     default:
@@ -176,6 +227,7 @@ export function createChatWebSocketPlugin() {
             throw new Error('Invalid subscription_response payload')
           }
 
+          chatStore.upsertUsers(message.data.users)
           chatStore.handleSubscriptionResponse(
             message.data.events,
             message.data.userId,
@@ -193,22 +245,28 @@ export function createChatWebSocketPlugin() {
           switch (eventData.type) {
             case 'user_joined':
             case 'user_left':
-              eventPayloadData = { userId: eventData.data.userId }
+              eventPayloadData = { ...eventPayloadData, userId: eventData.data.userId }
               break
             case 'message_sent':
               eventPayloadData = {
+                ...eventPayloadData,
                 userId: eventData.data.userId,
                 message: eventData.data.message,
               }
               break
             case 'user_renamed':
               eventPayloadData = {
+                ...eventPayloadData,
                 userId: eventData.data.userId,
                 username: eventData.data.username,
               }
               break
             default:
               break
+          }
+
+          if (Array.isArray(eventPayloadData.users)) {
+            chatStore.upsertUsers(eventPayloadData.users as UserPayload[])
           }
 
           const userId = (eventPayloadData.userId as number | null) ?? chatStore.currentUserId

@@ -125,8 +125,8 @@ class ChatAgent extends AbstractAgent implements ChatPageContextInterface
         TruthSourceRegistry::register(Idea::getTableName(Idea::events), true, $this->getId());
         TruthSourceRegistry::register(Idea::getTableName(Idea::users), true, $this->getId());
 
-        // Add chat created event to history (system event with userId = null)
-        Idea::$idea->events->actions->add(ChatEventType::CHAT_CREATED->value);
+        // Add chat started event to history (system event with userId = null)
+        Idea::$idea->events->actions->add(ChatEventType::CHAT_STARTED->value);
 
         // Initialize page factory
         $this->pageFactory = new ChatPageFactory($this->signalRouter, $this);
@@ -137,6 +137,8 @@ class ChatAgent extends AbstractAgent implements ChatPageContextInterface
      */
     public function onStop(): void
     {
+        // Add chat stopped event to history (system event with userId = null)
+        Idea::$idea->events->actions->add(ChatEventType::CHAT_STOPPED->value);
         TruthSourceRegistry::unregisterAgent($this->getId());
     }
 
@@ -183,6 +185,35 @@ class ChatAgent extends AbstractAgent implements ChatPageContextInterface
                 excludeClientId: $excludeClientId,
             ),
         );
+    }
+
+    /**
+     * Get online user IDs (optionally for a specific page)
+     *
+     * @param ?string $page Page name to filter by (null for all pages)
+     * @return int[] Online user IDs
+     */
+    public function getOnlineUserIds(?string $page = null): array
+    {
+        $uniqueUserIds = [];
+
+        foreach ($this->clientIdToSessionToken as $clientId => $sessionToken) {
+            $userId = $this->sessionTokenToUserId[$sessionToken] ?? null;
+            if ($userId === null) {
+                continue;
+            }
+
+            if ($page !== null) {
+                $clientPage = $this->clientIdToPage[$clientId] ?? null;
+                if ($clientPage !== $page) {
+                    continue;
+                }
+            }
+
+            $uniqueUserIds[$userId] = true;
+        }
+
+        return array_map('intval', array_keys($uniqueUserIds));
     }
 
     /**

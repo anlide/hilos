@@ -209,5 +209,19 @@ final class User extends Object_
             self::lastActivity => $this->entity->last_activity,
         ];
     }
+
+    /**
+     * Get ID as string (for use as array key)
+     *
+     * @return string ID as string
+     * @throws DatabaseException If ID is null
+     */
+    public function getIdString(): string
+    {
+        if ($this->entity->id === null) {
+            throw new DatabaseException("Cannot get ID string: User ID is null");
+        }
+        return (string)$this->entity->id;
+    }
 }
 

@@ -131,6 +131,19 @@ export const useChatStore = defineStore('chat', {
         this.users.push(user)
       }
     },
+
+    /**
+     * Add or update multiple users
+     */
+    upsertUsers(users: Array<{ id: number; name: string; lastActivity?: string | null }>) {
+      for (const user of users) {
+        this.addUser(User.fromObject({
+          id: user.id,
+          name: user.name,
+          lastActivity: user.lastActivity ?? null,
+        }))
+      }
+    },
     
     /**
      * Clear events from database

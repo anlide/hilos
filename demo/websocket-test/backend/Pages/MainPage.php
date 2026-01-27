@@ -16,6 +16,7 @@ use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalType;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Exception\DatabaseException;
+use Hilos\Exception\Idea\Collection\IdeaCollectionNotManualException;
 use Hilos\Logging\Logger\Logger;
 
 /**
@@ -41,15 +42,25 @@ class MainPage extends AbstractChatPage
      * @param string $clientId Client ID
      * @param IdeaUser $user User idea
      * @throws DatabaseException If operation fails
+     * @throws IdeaCollectionNotManualException
      */
     protected function handleSubscribe(string $clientId, IdeaUser $user): void
     {
         // Exclude the joining user from receiving their own join event
-        $this->chatContext->addEvent(ChatEventType::USER_JOINED, $user->id, null, $clientId);
+        $this->chatContext->addEvent(ChatEventType::USER_JOINED, $user->id, [
+            'users' => [$this->toPublicUserArray($user->toArray(withId: true, idAsIndex: false))],
+        ], $clientId);
 
         // Send subscription response with all events and user info
+        $onlineUserIds = $this->chatContext->getOnlineUserIds(PageConstants::MAIN);
+
+        $onlineUsers = Idea::$idea->users->filter(
+            static fn (IdeaUser $idea): bool => $idea->id !== null && in_array($idea->id, $onlineUserIds, true)
+        );
+
         $subscriptionData = new SubscriptionResponseSignalData(
             events: Idea::$idea->events->toArray(idAsIndex: false),
+            users: $this->toPublicUserArrayList($onlineUsers->toArray(withId: true, idAsIndex: false)),
             userId: $user->id,
             username: $user->name,
         );
@@ -81,6 +92,29 @@ class MainPage extends AbstractChatPage
     {
         // Add user left event (clientId must NOT be included in event data)
         $this->chatContext->addEvent(ChatEventType::USER_LEFT, $userId);
+    }
+
+    /**
+     * Remove sensitive fields from user array
+     *
+     * @param array $user
+     * @return array
+     */
+    private function toPublicUserArray(array $user): array
+    {
+        unset($user['sessionToken']);
+        return $user;
+    }
+
+    /**
+     * Map user list to public arrays
+     *
+     * @param array $users
+     * @return array
+     */
+    private function toPublicUserArrayList(array $users): array
+    {
+        return array_map(fn (array $user): array => $this->toPublicUserArray($user), $users);
     }
 
     /**

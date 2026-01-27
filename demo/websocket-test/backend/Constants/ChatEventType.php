@@ -11,8 +11,11 @@ namespace Demo\WebSocketTest\Constants;
  */
 enum ChatEventType: string
 {
-    /** Chat was created/started */
-    case CHAT_CREATED = 'chat_created';
+    /** Chat was started */
+    case CHAT_STARTED = 'chat_started';
+
+    /** Chat was stopped */
+    case CHAT_STOPPED = 'chat_stopped';
 
     /** Chat history was cleared */
     case CHAT_CLEARED = 'chat_cleared';

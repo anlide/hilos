@@ -27,6 +27,14 @@ interface ChatPageContextInterface
     public function addEvent(ChatEventType $type, ?int $userId = null, ?array $data = null, ?string $excludeClientId = null): void;
 
     /**
+     * Get online user IDs (optionally for a specific page)
+     *
+     * @param ?string $page Page name to filter by (null for all pages)
+     * @return int[] Online user IDs
+     */
+    public function getOnlineUserIds(?string $page = null): array;
+
+    /**
      * Get agent signal source
      *
      * @return SignalSourceInterface Agent signal source

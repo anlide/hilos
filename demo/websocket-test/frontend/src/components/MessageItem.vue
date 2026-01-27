@@ -96,8 +96,10 @@ const getServiceTitle = (): string => {
       }
       return 'renamed'
     }
-    case 'chat_created':
-      return 'Chat created'
+    case 'chat_started':
+      return 'Chat started'
+    case 'chat_stopped':
+      return 'Chat stopped'
     case 'chat_cleared':
       return 'Chat history cleared'
     default:
@@ -132,7 +134,8 @@ const getServiceMessageClass = (): string => {
       return 'bg-secondary bg-opacity-25'
     case 'user_renamed':
       return 'bg-info bg-opacity-25'
-    case 'chat_created':
+    case 'chat_started':
+    case 'chat_stopped':
     case 'chat_cleared':
       return 'bg-primary bg-opacity-25'
     default:
