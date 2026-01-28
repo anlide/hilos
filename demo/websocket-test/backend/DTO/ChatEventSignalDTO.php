@@ -7,17 +7,19 @@ namespace Demo\WebSocketTest\DTO;
 use Demo\WebSocketTest\Database\Idea\Event as IdeaEvent;
 use Hilos\Core\Router\SignalData;
 use Hilos\Core\Router\SignalDataInterface;
+use Hilos\DTO\EntitiesChangesDTO;
 use RuntimeException;
 
 /**
- * ChatEventSignalData - Signal data for chat events
+ * ChatEventSignalDTO - Signal data for chat events
  *
  * Wraps IdeaEvent to be used as SignalDataInterface.
  */
-class ChatEventSignalData extends SignalData implements SignalDataInterface
+class ChatEventSignalDTO extends SignalData implements SignalDataInterface
 {
     public function __construct(
         public readonly IdeaEvent $event,
+        public readonly ?EntitiesChangesDTO $entities = null,
     ) {
         // Don't call parent::__construct() - we override toArray() to use event data
     }
@@ -44,12 +46,21 @@ class ChatEventSignalData extends SignalData implements SignalDataInterface
             $data['userId'] = $this->event->userId;
         }
 
-        return [
+        $payload = [
             'id' => $this->event->id,
             'type' => $this->event->type,
             'timestamp' => $timestamp,
             'data' => $data,
         ];
+
+        if ($this->entities !== null) {
+            $entities = $this->entities->toArray();
+            if ($entities !== []) {
+                $payload['entities'] = $entities;
+            }
+        }
+
+        return $payload;
     }
 
     /**
@@ -62,6 +73,6 @@ class ChatEventSignalData extends SignalData implements SignalDataInterface
     {
         // This is not used for deserialization from array
         // Events are created directly in ChatAgent
-        throw new RuntimeException('ChatEventSignalData::fromArray() is not implemented');
+        throw new RuntimeException('ChatEventSignalDTO::fromArray() is not implemented');
     }
 }

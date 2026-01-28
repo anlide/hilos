@@ -6,6 +6,7 @@ namespace Demo\WebSocketTest\Core\Page;
 
 use Demo\WebSocketTest\Constants\ChatEventType;
 use Hilos\Core\Router\SignalSourceInterface;
+use Hilos\DTO\EntitiesChangesDTO;
 use Hilos\Exception\DatabaseException;
 
 /**
@@ -21,10 +22,17 @@ interface ChatPageContextInterface
      * @param ChatEventType $type Event type
      * @param ?int $userId User ID (null for system events)
      * @param ?array $data Event-specific data (optional)
+     * @param ?EntitiesChangesDTO $entities Entity updates for broadcast (optional)
      * @param ?string $excludeClientId Client ID to exclude from receiving the event (optional)
      * @throws DatabaseException If database operation fails
      */
-    public function addEvent(ChatEventType $type, ?int $userId = null, ?array $data = null, ?string $excludeClientId = null): void;
+    public function addEvent(
+        ChatEventType $type,
+        ?int $userId = null,
+        ?array $data = null,
+        ?EntitiesChangesDTO $entities = null,
+        ?string $excludeClientId = null,
+    ): void;
 
     /**
      * Get online user IDs (optionally for a specific page)
@@ -33,6 +41,16 @@ interface ChatPageContextInterface
      * @return int[] Online user IDs
      */
     public function getOnlineUserIds(?string $page = null): array;
+
+    /**
+     * Check if user has another client on page
+     *
+     * @param int $userId User id
+     * @param string $page Page name
+     * @param string $excludeClientId Client id to exclude
+     * @return bool True if another client exists
+     */
+    public function hasOtherClientOnPage(int $userId, string $page, string $excludeClientId): bool;
 
     /**
      * Get agent signal source

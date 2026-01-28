@@ -15,9 +15,11 @@ use Hilos\Constants\SignalTypeConstants as HilosSignalTypeConstants;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalType;
 use Hilos\Core\Router\WebSocketSignalData;
+use Hilos\DTO\EntitiesChangesDTO;
 use Hilos\Exception\DatabaseException;
 use Hilos\Exception\Idea\Collection\IdeaCollectionNotManualException;
 use Hilos\Logging\Logger\Logger;
+use Hilos\Utils\Helpers\JsonHelper;
 
 /**
  * MainPage - Main chat page handler
@@ -46,10 +48,14 @@ class MainPage extends AbstractChatPage
      */
     protected function handleSubscribe(string $clientId, IdeaUser $user): void
     {
-        // Exclude the joining user from receiving their own join event
-        $this->chatContext->addEvent(ChatEventType::USER_JOINED, $user->id, [
-            'users' => [$this->toPublicUserArray($user->toArray(withId: true, idAsIndex: false))],
-        ], $clientId);
+        if (!$this->chatContext->hasOtherClientOnPage($user->id, PageConstants::MAIN, $clientId)) {
+            // Exclude the joining user from receiving their own join event
+            $publicUser = $this->toPublicUserArray($user->toArray(withId: true, idAsIndex: false));
+            $entities = new EntitiesChangesDTO(
+                full: ['users' => [$publicUser]],
+            );
+            $this->chatContext->addEvent(ChatEventType::USER_JOINED, $user->id, null, $entities, $clientId);
+        }
 
         // Send subscription response with all events and user info
         $onlineUserIds = $this->chatContext->getOnlineUserIds(PageConstants::MAIN);
@@ -58,9 +64,12 @@ class MainPage extends AbstractChatPage
             static fn (IdeaUser $idea): bool => $idea->id !== null && in_array($idea->id, $onlineUserIds, true)
         );
 
+        $subscriptionEntities = new EntitiesChangesDTO(
+            full: ['users' => $this->toPublicUserArrayList($onlineUsers->toArray(withId: true, idAsIndex: false))],
+        );
         $subscriptionData = new SubscriptionResponseSignalData(
             events: Idea::$idea->events->toArray(idAsIndex: false),
-            users: $this->toPublicUserArrayList($onlineUsers->toArray(withId: true, idAsIndex: false)),
+            entities: $subscriptionEntities,
             userId: $user->id,
             username: $user->name,
         );
@@ -147,7 +156,7 @@ class MainPage extends AbstractChatPage
      */
     private function handleMessageAction(string $clientId, int $userId, string $payload): void
     {
-        $payloadData = $this->tryDecodeJsonPayload($payload);
+        $payloadData = JsonHelper::tryDecode($payload);
         if ($payloadData === null) {
             Logger::logAgentError('MainPage', "Invalid JSON payload for message action (clientId={$clientId})");
             return;
@@ -167,31 +176,5 @@ class MainPage extends AbstractChatPage
         $this->chatContext->addEvent(ChatEventType::MESSAGE_SENT, $userId, [
             'message' => $content,
         ]);
-    }
-
-    /**
-     * Try to decode JSON payload into associative array.
-     *
-     * @param string $payload Raw websocket payload
-     * @return ?array<string,mixed> Decoded payload or null if invalid JSON
-     */
-    private function tryDecodeJsonPayload(string $payload): ?array
-    {
-        $payload = trim($payload);
-        if ($payload === '') {
-            return null;
-        }
-
-        try {
-            $decoded = json_decode($payload, true, flags: JSON_THROW_ON_ERROR);
-        } catch (\JsonException) {
-            return null;
-        }
-
-        if (!is_array($decoded)) {
-            return null;
-        }
-
-        return $decoded;
     }
 }

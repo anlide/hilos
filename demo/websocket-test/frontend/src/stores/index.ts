@@ -144,6 +144,17 @@ export const useChatStore = defineStore('chat', {
         }))
       }
     },
+
+    /**
+     * Remove users by id
+     */
+    removeUsers(userIds: number[]) {
+      if (userIds.length === 0) {
+        return
+      }
+      const ids = new Set(userIds)
+      this.users = this.users.filter(user => user.id === null || !ids.has(user.id))
+    },
     
     /**
      * Clear events from database

@@ -35,7 +35,7 @@
     @cancel="resetForm"
   >
     <template #header>
-      <h5 class="modal-title">Change Username</h5>
+      <ConflictHeader title="Change Username" :conflict="conflictState" />
     </template>
 
     <form @submit.prevent="handleSubmit">
@@ -57,15 +57,18 @@
     </form>
 
     <template #actions>
-      <button type="button" class="btn btn-secondary" @click="resetForm">Cancel</button>
-      <button
-        type="button"
-        class="btn btn-primary"
-        @click="handleSubmit"
-        :disabled="!isValidUsername"
+      <ConflictActions
+        :conflict="conflictState"
+        :disable-save="conflictState || !isValidUsername"
+        @save="handleSubmit"
+        @accept-mine="acceptMine"
+        @accept-theirs="acceptTheirs"
+        @merge="mergeChanges"
       >
-        Save
-      </button>
+        <template #leading>
+          <button type="button" class="btn btn-secondary" @click="resetForm">Cancel</button>
+        </template>
+      </ConflictActions>
     </template>
   </Modal>
 </template>
@@ -74,12 +77,15 @@
 import { ref, computed, watch } from 'vue'
 import { useChatStore } from '@/stores'
 import { useWebSocket } from '@hilos/sdk/plugins/websocket'
-import { Modal } from '@hilos/sdk/components'
+import { Modal, ConflictHeader, ConflictActions } from '@hilos/sdk/components'
 
 const chatStore = useChatStore()
 const websocket = useWebSocket()
 const showModal = ref(false)
 const localUsername = ref('')
+const conflictState = ref(false)
+const baselineUsername = ref('')
+const remoteUsername = ref('')
 
 const displayUsername = computed(() => {
   return chatStore.currentUsername || 'User'
@@ -93,29 +99,98 @@ const isValidUsername = computed(() => {
 // Initialize with current username from store when modal opens
 watch(showModal, (isOpen) => {
   if (isOpen) {
-    localUsername.value = chatStore.currentUsername || 'User'
+    const current = chatStore.currentUsername || 'User'
+    localUsername.value = current
+    baselineUsername.value = current
+    remoteUsername.value = current
+    conflictState.value = false
   }
 })
 
 // Watch for username changes from backend
 watch(() => chatStore.currentUsername, (newUsername) => {
-  if (newUsername && !showModal.value) {
-    // Only update if modal is not open
+  if (!newUsername) {
+    return
+  }
+
+  if (!showModal.value) {
     localUsername.value = newUsername
+    baselineUsername.value = newUsername
+    remoteUsername.value = newUsername
+    conflictState.value = false
+    return
+  }
+
+  const trimmedLocal = localUsername.value.trim()
+  const trimmedNew = newUsername.trim()
+
+  if (trimmedLocal === trimmedNew) {
+    baselineUsername.value = newUsername
+    remoteUsername.value = newUsername
+    conflictState.value = false
+    return
+  }
+
+  if (baselineUsername.value !== newUsername) {
+    conflictState.value = true
+    remoteUsername.value = newUsername
   }
 })
 
 const handleSubmit = () => {
-  if (isValidUsername.value) {
+  if (isValidUsername.value && !conflictState.value) {
     const trimmedUsername = localUsername.value.trim()
-    // TODO: Send username change to server via WebSocket
-    // Example: websocket.send({ type: 'change_username', content: trimmedUsername })
+    websocket.send({
+      type: 'rename',
+      username: trimmedUsername,
+    })
     showModal.value = false
+    conflictState.value = false
+    baselineUsername.value = trimmedUsername
+    remoteUsername.value = trimmedUsername
   }
 }
 
 const resetForm = () => {
-  localUsername.value = chatStore.currentUsername || 'User'
+  const current = chatStore.currentUsername || 'User'
+  localUsername.value = current
+  baselineUsername.value = current
+  remoteUsername.value = current
+  conflictState.value = false
   showModal.value = false
+}
+
+const acceptMine = () => {
+  const trimmed = localUsername.value.trim()
+  baselineUsername.value = trimmed
+  remoteUsername.value = trimmed
+  conflictState.value = false
+}
+
+const acceptTheirs = () => {
+  const trimmed = remoteUsername.value.trim()
+  if (trimmed !== '') {
+    localUsername.value = trimmed
+  }
+  baselineUsername.value = localUsername.value.trim()
+  remoteUsername.value = baselineUsername.value
+  conflictState.value = false
+}
+
+const mergeChanges = () => {
+  const local = localUsername.value.trim()
+  const remote = remoteUsername.value.trim()
+  if (remote === '') {
+    conflictState.value = false
+    return
+  }
+  if (local === '') {
+    localUsername.value = remote
+  } else if (local !== remote) {
+    localUsername.value = `${local} / ${remote}`
+  }
+  baselineUsername.value = localUsername.value.trim()
+  remoteUsername.value = baselineUsername.value
+  conflictState.value = false
 }
 </script>

@@ -62,8 +62,8 @@ const getParticipantName = (userId: number | null): string => {
 }
 
 const getHeaderUserId = (): number | null => {
-  if (isServiceMessage.value) {
-    return props.event.userId
+  if (props.event.type === 'user_renamed') {
+    return null
   }
 
   return props.event.userId

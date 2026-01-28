@@ -6,6 +6,7 @@ namespace Demo\WebSocketTest\DTO;
 
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\DTO\BaseDTO;
+use Hilos\DTO\EntitiesChangesDTO;
 use RuntimeException;
 
 /**
@@ -19,8 +20,8 @@ class SubscriptionResponseSignalData extends BaseDTO implements SignalDataInterf
     public function __construct(
         /** @var array<array{id: int, type: string, timestamp: int, data: array<string, mixed>}> Chat event history */
         public readonly array $events,
-        /** @var array<array{id: int, name: string, lastActivity: ?string}> Online users */
-        public readonly array $users,
+        /** @var EntitiesChangesDTO Entity changes payload */
+        public readonly EntitiesChangesDTO $entities,
         /** @var int User ID */
         public readonly int $userId,
         /** @var string Username */
@@ -37,7 +38,7 @@ class SubscriptionResponseSignalData extends BaseDTO implements SignalDataInterf
     {
         return [
             'events' => $this->events,
-            'users' => $this->users,
+            'entities' => $this->entities->toArray(),
             'userId' => $this->userId,
             'username' => $this->username,
         ];

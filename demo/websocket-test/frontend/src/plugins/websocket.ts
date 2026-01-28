@@ -27,7 +27,7 @@ type SubscriptionEvent = {
 
 type SubscriptionResponseData = {
   events: SubscriptionEvent[]
-  users: UserPayload[]
+  entities?: EntitiesPayload
   userId: number
   username: string
 }
@@ -42,7 +42,7 @@ type ChatEventDataByType = {
   chat_cleared: EventUsersData
   user_joined: { userId: number } & EventUsersData
   user_left: { userId: number } & EventUsersData
-  user_renamed: { userId: number; username: string } & EventUsersData
+  user_renamed: { userId: number; oldName?: string; newName?: string; username?: string } & EventUsersData
   message_sent: { userId: number; message: string } & EventUsersData
 }
 
@@ -63,6 +63,18 @@ type UnknownChatEventPayload = {
 }
 
 type ChatEventPayload = KnownChatEventPayload | UnknownChatEventPayload
+
+type EntitiesPayload = {
+  full?: {
+    users?: UserPayload[]
+  }
+  updates?: {
+    users?: UserPayload[]
+  }
+  deleted?: {
+    users?: number[]
+  }
+}
 
 const isRecord = (value: unknown): value is JsonRecord =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -89,6 +101,63 @@ const parseUserPayloads = (value: unknown): UserPayload[] | null | undefined => 
   }
 
   return value.every(isUserPayload) ? value : null
+}
+
+const parseUserIds = (value: unknown): number[] | null | undefined => {
+  if (value === undefined) {
+    return undefined
+  }
+
+  if (!Array.isArray(value)) {
+    return null
+  }
+
+  return value.every((item) => typeof item === 'number') ? value : null
+}
+
+const toEntitiesPayload = (data: unknown): EntitiesPayload | null => {
+  if (!isRecord(data) || data.entities === undefined) {
+    return null
+  }
+
+  if (!isRecord(data.entities)) {
+    return null
+  }
+
+  const entities = data.entities
+  const full = isRecord(entities.full) ? entities.full : undefined
+  const updates = isRecord(entities.updates) ? entities.updates : undefined
+  const deleted = isRecord(entities.deleted) ? entities.deleted : undefined
+
+  const fullUsers = parseUserPayloads(full?.users)
+  const updateUsers = parseUserPayloads(updates?.users)
+  const deletedUsers = parseUserIds(deleted?.users)
+
+  if (fullUsers === null || updateUsers === null || deletedUsers === null) {
+    return null
+  }
+
+  return {
+    full: fullUsers ? { users: fullUsers } : undefined,
+    updates: updateUsers ? { users: updateUsers } : undefined,
+    deleted: deletedUsers ? { users: deletedUsers } : undefined,
+  }
+}
+
+const applyEntitiesPayload = (entitiesPayload: EntitiesPayload | null, chatStore: ReturnType<typeof useChatStore>) => {
+  if (!entitiesPayload) {
+    return
+  }
+
+  if (entitiesPayload.full?.users) {
+    chatStore.upsertUsers(entitiesPayload.full.users)
+  }
+  if (entitiesPayload.updates?.users) {
+    chatStore.upsertUsers(entitiesPayload.updates.users)
+  }
+  if (entitiesPayload.deleted?.users) {
+    chatStore.removeUsers(entitiesPayload.deleted.users)
+  }
 }
 
 const parseIncomingMessage = (data: string | object): RawMessage | null => {
@@ -120,11 +189,12 @@ const isSubscriptionResponseData = (data: unknown): data is SubscriptionResponse
     return false
   }
 
-  const users = parseUserPayloads(data.users)
+  const entitiesPayload = toEntitiesPayload(data)
+  if (data.entities !== undefined && !entitiesPayload) {
+    return false
+  }
 
   return Array.isArray(data.events)
-    && users !== null
-    && users !== undefined
     && typeof data.userId === 'number'
     && typeof data.username === 'string'
 }
@@ -163,7 +233,7 @@ const toChatEventPayload = (data: unknown): ChatEventPayload | null => {
       }
       break
     case 'user_renamed':
-      if (typeof payloadData.userId === 'number' && typeof payloadData.username === 'string') {
+      if (typeof payloadData.userId === 'number') {
         return base as ChatEventPayload
       }
       break
@@ -227,7 +297,11 @@ export function createChatWebSocketPlugin() {
             throw new Error('Invalid subscription_response payload')
           }
 
-          chatStore.upsertUsers(message.data.users)
+          const entitiesPayload = toEntitiesPayload(message.data)
+          if (isRecord(message.data) && 'entities' in message.data && !entitiesPayload) {
+            throw new Error('Invalid subscription_response entities payload')
+          }
+          applyEntitiesPayload(entitiesPayload, chatStore)
           chatStore.handleSubscriptionResponse(
             message.data.events,
             message.data.userId,
@@ -235,11 +309,20 @@ export function createChatWebSocketPlugin() {
           )
           return
         }
+        case 'subscription_updated': {
+          return
+        }
         case 'new_event': {
           const eventData = toChatEventPayload(message.data)
           if (!eventData) {
             throw new Error('Invalid new_event payload')
           }
+
+          const entitiesPayload = toEntitiesPayload(message.data)
+          if (isRecord(message.data) && 'entities' in message.data && !entitiesPayload) {
+            throw new Error('Invalid new_event entities payload')
+          }
+          applyEntitiesPayload(entitiesPayload, chatStore)
 
           let eventPayloadData: JsonRecord = eventData.data
           switch (eventData.type) {
@@ -255,10 +338,18 @@ export function createChatWebSocketPlugin() {
               }
               break
             case 'user_renamed':
+              const normalizedOldName = typeof eventData.data.oldName === 'string'
+                ? eventData.data.oldName
+                : undefined
+              const normalizedNewName = typeof eventData.data.newName === 'string'
+                ? eventData.data.newName
+                : (typeof eventData.data.username === 'string' ? eventData.data.username : undefined)
+
               eventPayloadData = {
                 ...eventPayloadData,
                 userId: eventData.data.userId,
-                username: eventData.data.username,
+                oldName: normalizedOldName,
+                newName: normalizedNewName,
               }
               break
             default:
@@ -269,7 +360,9 @@ export function createChatWebSocketPlugin() {
             chatStore.upsertUsers(eventPayloadData.users as UserPayload[])
           }
 
-          const userId = (eventPayloadData.userId as number | null) ?? chatStore.currentUserId
+          const userId = typeof eventPayloadData.userId === 'number'
+            ? eventPayloadData.userId
+            : null
           const timestampString = new Date(eventData.timestamp * 1000).toISOString().slice(0, 19).replace('T', ' ')
 
           const event = Event.fromObject({
@@ -282,6 +375,22 @@ export function createChatWebSocketPlugin() {
 
           if (event.type === 'chat_cleared') {
             chatStore.clearEvents()
+          }
+          if (event.type === 'user_renamed') {
+            const newName = event.data.newName as string | undefined
+            const oldName = event.data.oldName as string | undefined
+            if (newName && event.userId !== null) {
+              const hasEntityUpdate = Boolean(
+                entitiesPayload?.full?.users?.some(user => user.id === event.userId)
+                || entitiesPayload?.updates?.users?.some(user => user.id === event.userId)
+              )
+              if (!hasEntityUpdate) {
+                chatStore.upsertUsers([{ id: event.userId, name: newName }])
+              }
+              if (event.userId === chatStore.currentUserId || (oldName && oldName === chatStore.currentUsername)) {
+                chatStore.currentUsername = newName
+              }
+            }
           }
           chatStore.addEvent(event)
           return

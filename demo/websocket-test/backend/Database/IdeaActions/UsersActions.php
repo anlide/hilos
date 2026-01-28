@@ -9,6 +9,11 @@ use Demo\WebSocketTest\Database\ObjectCollection\Users as ObjectUsers;
 use Hilos\Database\Idea\IdeaActions;
 use Hilos\Exception\DatabaseException;
 use Hilos\Exception\Idea\Actions\IdeaActionsCallbackNotSetException;
+use Hilos\Exception\Idea\Actions\IdeaActionsObjectCollectionNullException;
+use Hilos\Exception\Idea\Actions\IdeaActionsTableNameUndeterminedException;
+use Hilos\Exception\Idea\Actions\IdeaActionsUnknownLazyStrategyException;
+use Hilos\Exception\Idea\TruthSource\IdeaTruthSourceWriteNotAllowedException;
+use RuntimeException;
 
 /**
  * Users Actions
@@ -45,5 +50,50 @@ final class UsersActions extends IdeaActions
         /** @var IdeaUser $ideaUser */
         $ideaUser = $this->createIdeaFromObject($objectUser);
         return $ideaUser;
+    }
+
+    /**
+     * Rename user by id.
+     *
+     * @param int $userId User id
+     * @param string $newName New user name
+     * @return ?array{userId:int,oldName:string,newName:string,lastActivity:string} Rename info or null if no change
+     * @throws DatabaseException
+     * @throws IdeaActionsObjectCollectionNullException
+     * @throws IdeaActionsUnknownLazyStrategyException
+     * @throws IdeaTruthSourceWriteNotAllowedException
+     * @throws IdeaActionsTableNameUndeterminedException
+     * @throws RuntimeException
+     */
+    public function rename(int $userId, string $newName): ?array
+    {
+        $this->ensureCanWrite();
+
+        /** @var ObjectUsers $objectCollection */
+        $objectCollection = $this->getObjectCollection();
+
+        if (!isset($objectCollection[$userId])) {
+            throw new RuntimeException("User not found for rename (userId={$userId})");
+        }
+
+        $oldName = $objectCollection[$userId]->name;
+        if ($oldName === $newName) {
+            throw new RuntimeException("New name is the same as old name for rename (userId={$userId})");
+        }
+
+        $objectCollection[$userId]->name = $newName;
+        $objectCollection[$userId]->sync();
+
+        $lastActivity = $objectCollection[$userId]->lastActivity;
+        if ($lastActivity === null) {
+            throw new RuntimeException("User lastActivity is null after rename (userId={$userId})");
+        }
+
+        return [
+            'userId' => $userId,
+            'oldName' => $oldName,
+            'newName' => $newName,
+            'lastActivity' => $lastActivity,
+        ];
     }
 }
