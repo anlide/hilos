@@ -104,15 +104,91 @@
       </div>
     </div>
   </div>
+
+  <Modal
+    v-model="showModal"
+    :title="modalTitle"
+    modal-name="admin-bots-modal"
+    :modal-type="modalMode"
+    :confirm-on-close="isFormDirty"
+    @cancel="resetForm"
+    @ok="submitModal"
+  >
+    <form v-if="!isDeleteMode" @submit.prevent="submitModal">
+      <div class="mb-3">
+        <label class="form-label" for="bot-name">Name</label>
+        <input
+          id="bot-name"
+          v-model="formBot.name"
+          type="text"
+          class="form-control"
+          required
+          minlength="2"
+          maxlength="50"
+          data-autofocus
+        />
+      </div>
+      <div class="mb-3">
+        <label class="form-label" for="bot-type">Type</label>
+        <input
+          id="bot-type"
+          v-model="formBot.type"
+          type="text"
+          class="form-control"
+          required
+          maxlength="50"
+        />
+      </div>
+      <div class="mb-0">
+        <label class="form-label" for="bot-status">Status</label>
+        <select id="bot-status" v-model="formBot.status" class="form-select">
+          <option value="active">active</option>
+          <option value="inactive">inactive</option>
+          <option value="maintenance">maintenance</option>
+          <option value="error">error</option>
+        </select>
+      </div>
+    </form>
+    <div v-else class="text-muted">
+      Delete bot <strong>{{ selectedBot?.name }}</strong> (ID {{ selectedBot?.id }})?
+    </div>
+    <template #actions="{ requestClose }">
+      <button type="button" class="btn btn-secondary" @click="requestClose">Cancel</button>
+      <button
+        v-if="isDeleteMode"
+        type="button"
+        class="btn btn-danger"
+        @click="submitModal"
+      >
+        Delete
+      </button>
+      <button
+        v-else
+        type="button"
+        class="btn btn-primary"
+        :disabled="!isFormValid"
+        @click="submitModal"
+      >
+        Save
+      </button>
+    </template>
+  </Modal>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
-import { Table } from '@hilos/sdk/components'
+import { ref, onMounted, onUnmounted, computed } from 'vue'
+import { Table, Modal } from '@hilos/sdk/components'
+
+interface BotEntity {
+  id: number
+  name: string
+  type: string
+  status: string
+}
 
 // Snapshot data - represents table state at a specific point in time
 // Generate 30 bots to test pagination with fixed 25 per page
-const snapshotBots = ref(
+const snapshotBots = ref<BotEntity[]>(
   Array.from({ length: 30 }, (_, i) => ({
     id: i + 1,
     name: `Bot ${i + 1}`,
@@ -122,7 +198,7 @@ const snapshotBots = ref(
 )
 
 // Current displayed data (snapshot + pending changes)
-const bots = ref([...snapshotBots.value])
+const bots = ref<BotEntity[]>([...snapshotBots.value])
 
 // Pending changes tracking
 const pendingChanges = ref({
@@ -135,6 +211,46 @@ const changeMarkers = ref({
   added: [] as number[],
   updated: [] as number[],
   deleted: [] as number[]
+})
+
+const showModal = ref(false)
+const modalMode = ref<'custom' | 'add' | 'edit' | 'delete'>('custom')
+const selectedBot = ref<BotEntity | null>(null)
+const formBot = ref<BotEntity>({
+  id: 0,
+  name: '',
+  type: '',
+  status: 'inactive'
+})
+const baselineBot = ref<BotEntity | null>(null)
+
+const isDeleteMode = computed(() => modalMode.value === 'delete')
+const modalTitle = computed(() => {
+  switch (modalMode.value) {
+    case 'add':
+      return 'Add Bot'
+    case 'edit':
+      return 'Edit Bot'
+    case 'delete':
+      return 'Delete Bot'
+    default:
+      return 'Bot'
+  }
+})
+
+const cloneBot = (bot: BotEntity): BotEntity => {
+  return JSON.parse(JSON.stringify(bot)) as BotEntity
+}
+
+const isFormDirty = computed(() => {
+  if (isDeleteMode.value || !baselineBot.value) return false
+  return JSON.stringify(formBot.value) !== JSON.stringify(baselineBot.value)
+})
+
+const isFormValid = computed(() => {
+  const name = formBot.value.name.trim()
+  const type = formBot.value.type.trim()
+  return name.length >= 2 && name.length <= 50 && type.length > 0
 })
 
 // TEMPORARY: WebSocket emulation for debugging
@@ -162,9 +278,10 @@ const emulateWebSocketEvents = () => {
     setTimeout(() => {
       // Update existing bot
       const botIndex = bots.value.findIndex(b => b.id === 5)
-      if (botIndex !== -1) {
+      const bot = bots.value[botIndex]
+      if (bot && botIndex !== -1) {
         bots.value[botIndex] = {
-          ...bots.value[botIndex],
+          ...bot,
           name: 'Bot 5 (Updated)',
           status: 'maintenance'
         }
@@ -186,9 +303,10 @@ const emulateWebSocketEvents = () => {
     setTimeout(() => {
       // Another update
       const botIndex = bots.value.findIndex(b => b.id === 15)
-      if (botIndex !== -1) {
+      const bot = bots.value[botIndex]
+      if (bot && botIndex !== -1) {
         bots.value[botIndex] = {
-          ...bots.value[botIndex],
+          ...bot,
           status: 'active'
         }
         if (!changeMarkers.value.updated.includes(15)) {
@@ -238,17 +356,96 @@ const getStatusBadgeClass = (status: string | null | undefined): string => {
 }
 
 const handleAdd = () => {
-  console.log('Add bot clicked')
-  // TODO: Implement add bot logic
+  modalMode.value = 'add'
+  selectedBot.value = null
+  formBot.value = {
+    id: 0,
+    name: '',
+    type: '',
+    status: 'inactive'
+  }
+  baselineBot.value = cloneBot(formBot.value)
+  showModal.value = true
 }
 
 const handleEdit = (item: unknown) => {
-  console.log('Edit bot clicked', item)
-  // TODO: Implement edit bot logic
+  if (typeof item !== 'object' || item === null) return
+  const bot = item as BotEntity
+  modalMode.value = 'edit'
+  selectedBot.value = bot
+  formBot.value = cloneBot(bot)
+  baselineBot.value = cloneBot(bot)
+  showModal.value = true
 }
 
 const handleDelete = (item: unknown) => {
-  console.log('Delete bot clicked', item)
-  // TODO: Implement delete bot logic
+  if (typeof item !== 'object' || item === null) return
+  const bot = item as BotEntity
+  modalMode.value = 'delete'
+  selectedBot.value = bot
+  formBot.value = cloneBot(bot)
+  baselineBot.value = cloneBot(bot)
+  showModal.value = true
+}
+
+const submitModal = () => {
+  if (isDeleteMode.value) {
+    const id = selectedBot.value?.id
+    if (id === undefined) return
+    if (!changeMarkers.value.deleted.includes(id)) {
+      changeMarkers.value.deleted.push(id)
+      pendingChanges.value.deleted++
+    }
+    resetForm()
+    return
+  }
+
+  if (!isFormValid.value) return
+
+  if (modalMode.value === 'add') {
+    const maxId = bots.value.reduce((max, bot) => Math.max(max, bot.id), 0)
+    const newBot: BotEntity = {
+      id: maxId + 1,
+      name: formBot.value.name.trim(),
+      type: formBot.value.type.trim(),
+      status: formBot.value.status
+    }
+    bots.value.push(newBot)
+    changeMarkers.value.added.push(newBot.id)
+    pendingChanges.value.added++
+    resetForm()
+    return
+  }
+
+  if (modalMode.value === 'edit' && selectedBot.value) {
+    const index = bots.value.findIndex(b => b.id === selectedBot.value?.id)
+    if (index === -1) return
+    const existing = bots.value[index]
+    if (!existing) return
+    bots.value[index] = {
+      ...existing,
+      name: formBot.value.name.trim(),
+      type: formBot.value.type.trim(),
+      status: formBot.value.status
+    }
+    if (!changeMarkers.value.updated.includes(existing.id)) {
+      changeMarkers.value.updated.push(existing.id)
+      pendingChanges.value.updated++
+    }
+    resetForm()
+  }
+}
+
+const resetForm = () => {
+  showModal.value = false
+  modalMode.value = 'custom'
+  selectedBot.value = null
+  baselineBot.value = null
+  formBot.value = {
+    id: 0,
+    name: '',
+    type: '',
+    status: 'inactive'
+  }
 }
 </script>

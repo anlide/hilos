@@ -104,14 +104,65 @@
       </div>
     </div>
   </div>
+
+  <Modal
+    v-model="showModal"
+    :title="modalTitle"
+    modal-name="admin-users-modal"
+    modal-type="edit"
+    :confirm-on-close="isFormDirty"
+    @cancel="resetForm"
+    @ok="saveUser"
+  >
+    <form @submit.prevent="saveUser">
+      <div class="mb-3">
+        <label class="form-label" for="user-name">Name</label>
+        <input
+          id="user-name"
+          v-model="formUser.name"
+          type="text"
+          class="form-control"
+          required
+          minlength="2"
+          maxlength="50"
+          data-autofocus
+        />
+      </div>
+      <div class="mb-3">
+        <label class="form-label" for="user-presence">Presence</label>
+        <select id="user-presence" v-model="formUser.presence" class="form-select">
+          <option value="online">online</option>
+          <option value="unstable">unstable</option>
+          <option value="offline">offline</option>
+        </select>
+      </div>
+      <div class="mb-0">
+        <label class="form-label">Last Activity</label>
+        <div class="form-control-plaintext">{{ formatDate(formUser.lastActivity) }}</div>
+      </div>
+    </form>
+    <template #actions="{ requestClose }">
+      <button type="button" class="btn btn-secondary" @click="requestClose">Cancel</button>
+      <button type="button" class="btn btn-primary" :disabled="!isFormValid" @click="saveUser">
+        Save
+      </button>
+    </template>
+  </Modal>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
-import { Table } from '@hilos/sdk/components'
+import { ref, onMounted, onUnmounted, computed } from 'vue'
+import { Table, Modal } from '@hilos/sdk/components'
+
+interface UserEntity {
+  id: number
+  name: string
+  lastActivity: string
+  presence: string
+}
 
 // Snapshot data - represents table state at a specific point in time
-const snapshotUsers = ref([
+const snapshotUsers = ref<UserEntity[]>([
   {
     id: 1,
     name: 'User 1',
@@ -133,7 +184,7 @@ const snapshotUsers = ref([
 ])
 
 // Current displayed data (snapshot + pending changes)
-const users = ref([...snapshotUsers.value])
+const users = ref<UserEntity[]>([...snapshotUsers.value])
 
 // Pending changes tracking
 const pendingChanges = ref({
@@ -148,6 +199,32 @@ const changeMarkers = ref({
   deleted: [] as number[]
 })
 
+const showModal = ref(false)
+const selectedUser = ref<UserEntity | null>(null)
+const formUser = ref<UserEntity>({
+  id: 0,
+  name: '',
+  lastActivity: '',
+  presence: 'offline'
+})
+const baselineUser = ref<UserEntity | null>(null)
+
+const modalTitle = computed(() => 'Edit User')
+
+const cloneUser = (user: UserEntity): UserEntity => {
+  return JSON.parse(JSON.stringify(user)) as UserEntity
+}
+
+const isFormDirty = computed(() => {
+  if (!baselineUser.value) return false
+  return JSON.stringify(formUser.value) !== JSON.stringify(baselineUser.value)
+})
+
+const isFormValid = computed(() => {
+  const name = formUser.value.name.trim()
+  return name.length >= 2 && name.length <= 50
+})
+
 // TEMPORARY: WebSocket emulation for debugging
 // TODO: Replace with real WebSocket implementation
 let emulationTimeout: ReturnType<typeof setTimeout> | null = null
@@ -157,9 +234,10 @@ const emulateWebSocketEvents = () => {
   setTimeout(() => {
     // Update existing user
     const user2Index = users.value.findIndex(u => u.id === 2)
-    if (user2Index !== -1) {
+    const user2 = users.value[user2Index]
+    if (user2 && user2Index !== -1) {
       users.value[user2Index] = {
-        ...users.value[user2Index],
+        ...user2,
         name: 'User 2 (Updated)',
         presence: 'online'
       }
@@ -231,7 +309,44 @@ const getPresenceBadgeClass = (presence: string | null | undefined): string => {
 }
 
 const handleEdit = (item: unknown) => {
-  console.log('Edit user clicked', item)
-  // TODO: Implement edit user logic
+  if (typeof item !== 'object' || item === null) return
+  const user = item as UserEntity
+  selectedUser.value = user
+  formUser.value = cloneUser(user)
+  baselineUser.value = cloneUser(user)
+  showModal.value = true
+}
+
+const saveUser = () => {
+  if (!selectedUser.value || !isFormValid.value) return
+  const index = users.value.findIndex(u => u.id === selectedUser.value?.id)
+  if (index === -1) return
+  const existing = users.value[index]
+  if (!existing) return
+
+  users.value[index] = {
+    ...existing,
+    name: formUser.value.name.trim(),
+    presence: formUser.value.presence
+  }
+
+  if (!changeMarkers.value.updated.includes(selectedUser.value.id)) {
+    changeMarkers.value.updated.push(selectedUser.value.id)
+    pendingChanges.value.updated++
+  }
+
+  resetForm()
+}
+
+const resetForm = () => {
+  showModal.value = false
+  selectedUser.value = null
+  baselineUser.value = null
+  formUser.value = {
+    id: 0,
+    name: '',
+    lastActivity: '',
+    presence: 'offline'
+  }
 }
 </script>
