@@ -59,11 +59,8 @@
               <th>Status</th>
               <th>Actions</th>
             </template>
-            <template #row="{ item, handleEdit, handleDelete, showEditButton, showDeleteButton, changeType }">
+            <template #row="{ item, handleEdit, handleDelete, showEditButton, showDeleteButton }">
               <td>
-                <span v-if="changeType === 'added'" class="badge bg-success me-1">+</span>
-                <span v-else-if="changeType === 'updated'" class="badge bg-warning me-1">~</span>
-                <span v-else-if="changeType === 'deleted'" class="badge bg-danger me-1">-</span>
                 {{ item.id }}
               </td>
               <td>{{ item.name }}</td>
@@ -81,17 +78,23 @@
                     v-if="showEditButton"
                     type="button"
                     class="btn btn-sm btn-outline-primary"
+                    title="Edit"
+                    aria-label="Edit"
                     @click="handleEdit"
                   >
-                    Edit
+                    <i class="bi bi-pencil" aria-hidden="true"></i>
+                    <span class="visually-hidden">Edit</span>
                   </button>
                   <button
                     v-if="showDeleteButton"
                     type="button"
                     class="btn btn-sm btn-outline-danger"
+                    title="Delete"
+                    aria-label="Delete"
                     @click="handleDelete"
                   >
-                    Delete
+                    <i class="bi bi-trash" aria-hidden="true"></i>
+                    <span class="visually-hidden">Delete</span>
                   </button>
                 </div>
               </td>
@@ -197,8 +200,8 @@ const snapshotBots = ref<BotEntity[]>(
   }))
 )
 
-// Current displayed data (snapshot + pending changes)
-const bots = ref<BotEntity[]>([...snapshotBots.value])
+// Current displayed data (snapshot only)
+const bots = computed(() => snapshotBots.value)
 
 // Pending changes tracking
 const pendingChanges = ref({
@@ -212,6 +215,9 @@ const changeMarkers = ref({
   updated: [] as number[],
   deleted: [] as number[]
 })
+
+const pendingAdditions = ref<BotEntity[]>([])
+const pendingUpdates = ref<Record<number, Partial<BotEntity>>>({})
 
 const showModal = ref(false)
 const modalMode = ref<'custom' | 'add' | 'edit' | 'delete'>('custom')
@@ -242,6 +248,17 @@ const cloneBot = (bot: BotEntity): BotEntity => {
   return JSON.parse(JSON.stringify(bot)) as BotEntity
 }
 
+const markBotUpdated = (id: number, updates: Partial<BotEntity>) => {
+  pendingUpdates.value[id] = {
+    ...(pendingUpdates.value[id] || {}),
+    ...updates
+  }
+  if (!changeMarkers.value.updated.includes(id)) {
+    changeMarkers.value.updated.push(id)
+    pendingChanges.value.updated++
+  }
+}
+
 const isFormDirty = computed(() => {
   if (isDeleteMode.value || !baselineBot.value) return false
   return JSON.stringify(formBot.value) !== JSON.stringify(baselineBot.value)
@@ -268,25 +285,23 @@ const emulateWebSocketEvents = () => {
         type: 'AI Assistant',
         status: 'active'
       }
-      bots.value.push(newBot)
-      changeMarkers.value.added.push(31)
-      pendingChanges.value.added++
+      if (!changeMarkers.value.added.includes(31)) {
+        pendingAdditions.value.push(newBot)
+        changeMarkers.value.added.push(31)
+        pendingChanges.value.added++
+      }
     }, 3000)
   )
 
   emulationTimeouts.push(
     setTimeout(() => {
       // Update existing bot
-      const botIndex = bots.value.findIndex(b => b.id === 5)
-      const bot = bots.value[botIndex]
-      if (bot && botIndex !== -1) {
-        bots.value[botIndex] = {
-          ...bot,
+      const bot = snapshotBots.value.find(b => b.id === 5)
+      if (bot) {
+        markBotUpdated(5, {
           name: 'Bot 5 (Updated)',
           status: 'maintenance'
-        }
-        changeMarkers.value.updated.push(5)
-        pendingChanges.value.updated++
+        })
       }
     }, 5000)
   )
@@ -294,25 +309,21 @@ const emulateWebSocketEvents = () => {
   emulationTimeouts.push(
     setTimeout(() => {
       // Mark for deletion
-      changeMarkers.value.deleted.push(10)
-      pendingChanges.value.deleted++
+      if (!changeMarkers.value.deleted.includes(10)) {
+        changeMarkers.value.deleted.push(10)
+        pendingChanges.value.deleted++
+      }
     }, 8000)
   )
 
   emulationTimeouts.push(
     setTimeout(() => {
       // Another update
-      const botIndex = bots.value.findIndex(b => b.id === 15)
-      const bot = bots.value[botIndex]
-      if (bot && botIndex !== -1) {
-        bots.value[botIndex] = {
-          ...bot,
+      const bot = snapshotBots.value.find(b => b.id === 15)
+      if (bot) {
+        markBotUpdated(15, {
           status: 'active'
-        }
-        if (!changeMarkers.value.updated.includes(15)) {
-          changeMarkers.value.updated.push(15)
-          pendingChanges.value.updated++
-        }
+        })
       }
     }, 10000)
   )
@@ -320,14 +331,20 @@ const emulateWebSocketEvents = () => {
 
 const updateSnapshot = () => {
   // Apply all pending changes to snapshot
-  snapshotBots.value = bots.value.filter(b => !changeMarkers.value.deleted.includes(b.id))
+  const updatedSnapshot = snapshotBots.value.map(bot => {
+    const updates = pendingUpdates.value[bot.id]
+    return updates ? { ...bot, ...updates } : bot
+  })
+  const additions = pendingAdditions.value.filter(bot => !changeMarkers.value.deleted.includes(bot.id))
+  snapshotBots.value = [...updatedSnapshot, ...additions].filter(
+    bot => !changeMarkers.value.deleted.includes(bot.id)
+  )
   
   // Reset pending changes
   pendingChanges.value = { added: 0, updated: 0, deleted: 0 }
   changeMarkers.value = { added: [], updated: [], deleted: [] }
-  
-  // Update displayed data
-  bots.value = [...snapshotBots.value]
+  pendingAdditions.value = []
+  pendingUpdates.value = {}
 }
 
 onMounted(() => {
@@ -403,35 +420,28 @@ const submitModal = () => {
   if (!isFormValid.value) return
 
   if (modalMode.value === 'add') {
-    const maxId = bots.value.reduce((max, bot) => Math.max(max, bot.id), 0)
+    const maxId = snapshotBots.value.reduce((max, bot) => Math.max(max, bot.id), 0)
     const newBot: BotEntity = {
       id: maxId + 1,
       name: formBot.value.name.trim(),
       type: formBot.value.type.trim(),
       status: formBot.value.status
     }
-    bots.value.push(newBot)
-    changeMarkers.value.added.push(newBot.id)
-    pendingChanges.value.added++
+    if (!changeMarkers.value.added.includes(newBot.id)) {
+      pendingAdditions.value.push(newBot)
+      changeMarkers.value.added.push(newBot.id)
+      pendingChanges.value.added++
+    }
     resetForm()
     return
   }
 
   if (modalMode.value === 'edit' && selectedBot.value) {
-    const index = bots.value.findIndex(b => b.id === selectedBot.value?.id)
-    if (index === -1) return
-    const existing = bots.value[index]
-    if (!existing) return
-    bots.value[index] = {
-      ...existing,
+    markBotUpdated(selectedBot.value.id, {
       name: formBot.value.name.trim(),
       type: formBot.value.type.trim(),
       status: formBot.value.status
-    }
-    if (!changeMarkers.value.updated.includes(existing.id)) {
-      changeMarkers.value.updated.push(existing.id)
-      pendingChanges.value.updated++
-    }
+    })
     resetForm()
   }
 }

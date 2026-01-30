@@ -12,18 +12,39 @@
           />
         </div>
         <div v-if="hasPendingChanges" class="d-flex align-items-center gap-2 flex-wrap">
-          <span class="text-warning fw-bold small">
-            Snapshot outdated:
+          <span
+            v-if="pendingChanges.added > 0"
+            class="badge bg-success"
+            :title="`${pendingChanges.added} to add`"
+          >
+            <i class="bi bi-plus-lg" aria-hidden="true"></i>
+            <span class="visually-hidden">Pending additions</span>
           </span>
-          <span v-if="pendingChanges.added > 0" class="badge bg-success">{{ pendingChanges.added }} to add</span>
-          <span v-if="pendingChanges.updated > 0" class="badge bg-warning">{{ pendingChanges.updated }} to update</span>
-          <span v-if="pendingChanges.deleted > 0" class="badge bg-danger">{{ pendingChanges.deleted }} to delete</span>
+          <span
+            v-if="pendingChanges.updated > 0"
+            class="badge bg-warning"
+            :title="`${pendingChanges.updated} to update`"
+          >
+            <i class="bi bi-pencil" aria-hidden="true"></i>
+            <span class="visually-hidden">Pending updates</span>
+          </span>
+          <span
+            v-if="pendingChanges.deleted > 0"
+            class="badge bg-danger"
+            :title="`${pendingChanges.deleted} to delete`"
+          >
+            <i class="bi bi-trash" aria-hidden="true"></i>
+            <span class="visually-hidden">Pending deletions</span>
+          </span>
           <button
             type="button"
             class="btn btn-primary btn-sm"
+            title="Update Snapshot"
+            aria-label="Update Snapshot"
             @click="$emit('updateSnapshot')"
           >
-            Update Snapshot
+            <i class="bi bi-arrow-clockwise" aria-hidden="true"></i>
+            <span class="visually-hidden">Update Snapshot</span>
           </button>
         </div>
       </div>
@@ -33,9 +54,12 @@
             v-if="showAddButton"
             type="button"
             class="btn btn-primary btn-sm"
+            title="Add"
+            aria-label="Add"
             @click="$emit('add')"
           >
-            Add
+            <i class="bi bi-plus-lg" aria-hidden="true"></i>
+            <span class="visually-hidden">Add</span>
           </button>
         </slot>
       </div>

@@ -17,7 +17,7 @@
                 class="btn btn-primary"
                 @click="showModal = true"
               >
-                Изменить
+                Edit
               </button>
             </div>
           </div>

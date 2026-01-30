@@ -70,11 +70,8 @@
               </th>
               <th>Actions</th>
             </template>
-            <template #row="{ item, handleEdit, showEditButton, changeType }">
+            <template #row="{ item, handleEdit, showEditButton }">
               <td>
-                <span v-if="changeType === 'added'" class="badge bg-success me-1">+</span>
-                <span v-else-if="changeType === 'updated'" class="badge bg-warning me-1">~</span>
-                <span v-else-if="changeType === 'deleted'" class="badge bg-danger me-1">-</span>
                 {{ item.id }}
               </td>
               <td>{{ item.name }}</td>
@@ -89,9 +86,12 @@
                   <button
                     type="button"
                     class="btn btn-sm btn-outline-primary"
+                    title="Edit"
+                    aria-label="Edit"
                     @click="handleEdit"
                   >
-                    Edit
+                    <i class="bi bi-pencil" aria-hidden="true"></i>
+                    <span class="visually-hidden">Edit</span>
                   </button>
                 </div>
               </td>
@@ -183,8 +183,8 @@ const snapshotUsers = ref<UserEntity[]>([
   }
 ])
 
-// Current displayed data (snapshot + pending changes)
-const users = ref<UserEntity[]>([...snapshotUsers.value])
+// Current displayed data (snapshot only)
+const users = computed(() => snapshotUsers.value)
 
 // Pending changes tracking
 const pendingChanges = ref({
@@ -198,6 +198,9 @@ const changeMarkers = ref({
   updated: [] as number[],
   deleted: [] as number[]
 })
+
+const pendingAdditions = ref<UserEntity[]>([])
+const pendingUpdates = ref<Record<number, Partial<UserEntity>>>({})
 
 const showModal = ref(false)
 const selectedUser = ref<UserEntity | null>(null)
@@ -213,6 +216,17 @@ const modalTitle = computed(() => 'Edit User')
 
 const cloneUser = (user: UserEntity): UserEntity => {
   return JSON.parse(JSON.stringify(user)) as UserEntity
+}
+
+const markUserUpdated = (id: number, updates: Partial<UserEntity>) => {
+  pendingUpdates.value[id] = {
+    ...(pendingUpdates.value[id] || {}),
+    ...updates
+  }
+  if (!changeMarkers.value.updated.includes(id)) {
+    changeMarkers.value.updated.push(id)
+    pendingChanges.value.updated++
+  }
 }
 
 const isFormDirty = computed(() => {
@@ -233,16 +247,12 @@ const emulateWebSocketEvents = () => {
   // Simulate: User 2 updated, User 4 added, User 3 marked for deletion
   setTimeout(() => {
     // Update existing user
-    const user2Index = users.value.findIndex(u => u.id === 2)
-    const user2 = users.value[user2Index]
-    if (user2 && user2Index !== -1) {
-      users.value[user2Index] = {
-        ...user2,
+    const user2 = snapshotUsers.value.find(u => u.id === 2)
+    if (user2) {
+      markUserUpdated(2, {
         name: 'User 2 (Updated)',
         presence: 'online'
-      }
-      changeMarkers.value.updated.push(2)
-      pendingChanges.value.updated++
+      })
     }
 
     // Add new user
@@ -252,26 +262,36 @@ const emulateWebSocketEvents = () => {
       lastActivity: new Date().toISOString(),
       presence: 'online'
     }
-    users.value.push(newUser)
-    changeMarkers.value.added.push(4)
-    pendingChanges.value.added++
+    if (!changeMarkers.value.added.includes(4)) {
+      pendingAdditions.value.push(newUser)
+      changeMarkers.value.added.push(4)
+      pendingChanges.value.added++
+    }
 
     // Mark for deletion
-    changeMarkers.value.deleted.push(3)
-    pendingChanges.value.deleted++
+    if (!changeMarkers.value.deleted.includes(3)) {
+      changeMarkers.value.deleted.push(3)
+      pendingChanges.value.deleted++
+    }
   }, 5000)
 }
 
 const updateSnapshot = () => {
   // Apply all pending changes to snapshot
-  snapshotUsers.value = users.value.filter(u => !changeMarkers.value.deleted.includes(u.id))
+  const updatedSnapshot = snapshotUsers.value.map(user => {
+    const updates = pendingUpdates.value[user.id]
+    return updates ? { ...user, ...updates } : user
+  })
+  const additions = pendingAdditions.value.filter(user => !changeMarkers.value.deleted.includes(user.id))
+  snapshotUsers.value = [...updatedSnapshot, ...additions].filter(
+    user => !changeMarkers.value.deleted.includes(user.id)
+  )
   
   // Reset pending changes
   pendingChanges.value = { added: 0, updated: 0, deleted: 0 }
   changeMarkers.value = { added: [], updated: [], deleted: [] }
-  
-  // Update displayed data
-  users.value = [...snapshotUsers.value]
+  pendingAdditions.value = []
+  pendingUpdates.value = {}
 }
 
 onMounted(() => {
@@ -319,21 +339,10 @@ const handleEdit = (item: unknown) => {
 
 const saveUser = () => {
   if (!selectedUser.value || !isFormValid.value) return
-  const index = users.value.findIndex(u => u.id === selectedUser.value?.id)
-  if (index === -1) return
-  const existing = users.value[index]
-  if (!existing) return
-
-  users.value[index] = {
-    ...existing,
+  markUserUpdated(selectedUser.value.id, {
     name: formUser.value.name.trim(),
     presence: formUser.value.presence
-  }
-
-  if (!changeMarkers.value.updated.includes(selectedUser.value.id)) {
-    changeMarkers.value.updated.push(selectedUser.value.id)
-    pendingChanges.value.updated++
-  }
+  })
 
   resetForm()
 }

@@ -80,7 +80,7 @@
 // Note: Vue types are resolved by demo projects via tsconfig.app.json
 // IDE may show errors here, but TypeScript compiler in demo projects will resolve them correctly
 // @ts-expect-error - Vue types are provided by demo project's node_modules
-import { computed, onBeforeUnmount, ref, watch, withDefaults } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 
 const modalStack: string[] = []
 const stackVersion = ref(0)

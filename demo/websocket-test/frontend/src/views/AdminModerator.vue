@@ -58,11 +58,8 @@
               </th>
               <th>Actions</th>
             </template>
-            <template #row="{ item, changeType, handleEdit, handleDelete, showEditButton, showDeleteButton }">
+            <template #row="{ item, handleEdit, handleDelete, showEditButton, showDeleteButton }">
               <td>
-                <span v-if="changeType === 'added'" class="badge bg-success me-1">+</span>
-                <span v-else-if="changeType === 'updated'" class="badge bg-warning me-1">~</span>
-                <span v-else-if="changeType === 'deleted'" class="badge bg-danger me-1">-</span>
                 {{ item.userId }}
               </td>
               <td>{{ item.username }}</td>
@@ -78,17 +75,23 @@
                     v-if="showEditButton"
                     type="button"
                     class="btn btn-sm btn-outline-primary"
+                    title="Edit"
+                    aria-label="Edit"
                     @click="handleEdit"
                   >
-                    Edit
+                    <i class="bi bi-pencil" aria-hidden="true"></i>
+                    <span class="visually-hidden">Edit</span>
                   </button>
                   <button
                     v-if="showDeleteButton"
                     type="button"
                     class="btn btn-sm btn-outline-danger"
+                    title="Delete"
+                    aria-label="Delete"
                     @click="handleDelete"
                   >
-                    Delete
+                    <i class="bi bi-trash" aria-hidden="true"></i>
+                    <span class="visually-hidden">Delete</span>
                   </button>
                 </div>
               </td>
@@ -221,8 +224,8 @@ const snapshotModeratorData = ref<ModeratorAction[]>([
   }
 ])
 
-// Current displayed data (snapshot + pending changes)
-const moderatorData = ref<ModeratorAction[]>([...snapshotModeratorData.value])
+// Current displayed data (snapshot only)
+const moderatorData = computed(() => snapshotModeratorData.value)
 
 // Pending changes tracking
 const pendingChanges = ref({
@@ -236,6 +239,9 @@ const changeMarkers = ref({
   updated: [] as number[],
   deleted: [] as number[]
 })
+
+const pendingAdditions = ref<ModeratorAction[]>([])
+const pendingUpdates = ref<Record<number, Partial<ModeratorAction>>>({})
 
 const showModal = ref(false)
 const modalMode = ref<'custom' | 'add' | 'edit' | 'delete'>('custom')
@@ -267,6 +273,17 @@ const cloneAction = (action: ModeratorAction): ModeratorAction => {
   return JSON.parse(JSON.stringify(action)) as ModeratorAction
 }
 
+const markActionUpdated = (id: number, updates: Partial<ModeratorAction>) => {
+  pendingUpdates.value[id] = {
+    ...(pendingUpdates.value[id] || {}),
+    ...updates
+  }
+  if (!changeMarkers.value.updated.includes(id)) {
+    changeMarkers.value.updated.push(id)
+    pendingChanges.value.updated++
+  }
+}
+
 const isFormDirty = computed(() => {
   if (isDeleteMode.value || !baselineAction.value) return false
   return JSON.stringify(formAction.value) !== JSON.stringify(baselineAction.value)
@@ -292,24 +309,22 @@ const emulateWebSocketEvents = () => {
         timestamp: new Date().toISOString(),
         action: 'flagged'
       }
-      moderatorData.value.push(newAction)
-      changeMarkers.value.added.push(6)
-      pendingChanges.value.added++
+      if (!changeMarkers.value.added.includes(6)) {
+        pendingAdditions.value.push(newAction)
+        changeMarkers.value.added.push(6)
+        pendingChanges.value.added++
+      }
     }, 3000)
   )
 
   emulationTimeouts.push(
     setTimeout(() => {
       // Update existing action
-      const actionIndex = moderatorData.value.findIndex(a => a.id === 2)
-      const actionEntry = moderatorData.value[actionIndex]
-      if (actionEntry && actionIndex !== -1) {
-        moderatorData.value[actionIndex] = {
-          ...actionEntry,
+      const actionEntry = snapshotModeratorData.value.find(a => a.id === 2)
+      if (actionEntry) {
+        markActionUpdated(2, {
           action: 'approved'
-        }
-        changeMarkers.value.updated.push(2)
-        pendingChanges.value.updated++
+        })
       }
     }, 5000)
   )
@@ -317,22 +332,30 @@ const emulateWebSocketEvents = () => {
   emulationTimeouts.push(
     setTimeout(() => {
       // Mark for deletion
-      changeMarkers.value.deleted.push(5)
-      pendingChanges.value.deleted++
+      if (!changeMarkers.value.deleted.includes(5)) {
+        changeMarkers.value.deleted.push(5)
+        pendingChanges.value.deleted++
+      }
     }, 10000)
   )
 }
 
 const updateSnapshot = () => {
   // Apply all pending changes to snapshot
-  snapshotModeratorData.value = moderatorData.value.filter(a => !changeMarkers.value.deleted.includes(a.id))
+  const updatedSnapshot = snapshotModeratorData.value.map(action => {
+    const updates = pendingUpdates.value[action.id]
+    return updates ? { ...action, ...updates } : action
+  })
+  const additions = pendingAdditions.value.filter(action => !changeMarkers.value.deleted.includes(action.id))
+  snapshotModeratorData.value = [...updatedSnapshot, ...additions].filter(
+    action => !changeMarkers.value.deleted.includes(action.id)
+  )
   
   // Reset pending changes
   pendingChanges.value = { added: 0, updated: 0, deleted: 0 }
   changeMarkers.value = { added: [], updated: [], deleted: [] }
-  
-  // Update displayed data
-  moderatorData.value = [...snapshotModeratorData.value]
+  pendingAdditions.value = []
+  pendingUpdates.value = {}
 }
 
 onMounted(() => {
@@ -417,7 +440,7 @@ const submitModal = () => {
   if (!isFormValid.value) return
 
   if (modalMode.value === 'add') {
-    const maxId = moderatorData.value.reduce((max, entry) => Math.max(max, entry.id), 0)
+    const maxId = snapshotModeratorData.value.reduce((max, entry) => Math.max(max, entry.id), 0)
     const newAction: ModeratorAction = {
       id: maxId + 1,
       userId: formAction.value.userId,
@@ -425,28 +448,21 @@ const submitModal = () => {
       timestamp: new Date().toISOString(),
       action: formAction.value.action
     }
-    moderatorData.value.push(newAction)
-    changeMarkers.value.added.push(newAction.id)
-    pendingChanges.value.added++
+    if (!changeMarkers.value.added.includes(newAction.id)) {
+      pendingAdditions.value.push(newAction)
+      changeMarkers.value.added.push(newAction.id)
+      pendingChanges.value.added++
+    }
     resetForm()
     return
   }
 
   if (modalMode.value === 'edit' && selectedAction.value) {
-    const index = moderatorData.value.findIndex(a => a.id === selectedAction.value?.id)
-    if (index === -1) return
-    const existing = moderatorData.value[index]
-    if (!existing) return
-    moderatorData.value[index] = {
-      ...existing,
+    markActionUpdated(selectedAction.value.id, {
       userId: formAction.value.userId,
       username: formAction.value.username.trim(),
       action: formAction.value.action
-    }
-    if (!changeMarkers.value.updated.includes(existing.id)) {
-      changeMarkers.value.updated.push(existing.id)
-      pendingChanges.value.updated++
-    }
+    })
     resetForm()
   }
 }
