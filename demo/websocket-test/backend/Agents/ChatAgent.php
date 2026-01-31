@@ -14,18 +14,15 @@ use Demo\WebSocketTest\Core\Page\ChatPageFactory;
 use Demo\WebSocketTest\Database\Idea;
 use Demo\WebSocketTest\Database\Idea\User as IdeaUser;
 use Demo\WebSocketTest\DTO\ChatEventSignalDTO;
-use Demo\WebSocketTest\DTO\WebSocketFrameSignalDTO;
-use Demo\WebSocketTest\DTO\WebSocketHandshakeSignalDTO;
-use Demo\WebSocketTest\DTO\WebSocketSubscribeSignalDTO;
-use Demo\WebSocketTest\DTO\WebSocketUnsubscribeSignalDTO;
 use Hilos\Constants\SignalTypeConstants;
-use Hilos\Core\Agent\AbstractAgent;
+use Hilos\Core\Agent\AbstractPageAgent;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalType;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Database\Idea\TruthSourceRegistry;
+use Hilos\DTO\WebSocket\WebSocketHandshakeSignalDTO;
 use Hilos\DTO\BaseDTO;
 use Hilos\DTO\EntitiesChangesDTO;
 use Hilos\Exception\DatabaseException;
@@ -38,10 +35,8 @@ use Hilos\Exception\Idea\Entity\IdeaEntityClassNotFoundException;
 use Hilos\Exception\Idea\Entity\IdeaEntityMappingNotFoundException;
 use Hilos\Exception\Idea\Entity\IdeaEntityTableConstantNotFoundException;
 use Hilos\Exception\Idea\TruthSource\IdeaTruthSourceWriteNotAllowedException;
-use Hilos\Exception\Page\PageNotFoundException;
 use Hilos\Logging\Logger\Logger;
 use Hilos\Core\Router\SignalData;
-use Demo\WebSocketTest\DTO\WebSocketUpdateSubscriptionSignalDTO;
 use RuntimeException;
 
 /**
@@ -50,7 +45,7 @@ use RuntimeException;
  * Runs in monopolistic worker process. Manages chat state and history.
  * State stored only in memory (no persistence).
  */
-class ChatAgent extends AbstractAgent implements ChatPageContextInterface
+class ChatAgent extends AbstractPageAgent implements ChatPageContextInterface
 {
     /**
      * In-memory mapping between session token and user id.
@@ -69,22 +64,11 @@ class ChatAgent extends AbstractAgent implements ChatPageContextInterface
     private array $clientIdToSessionToken = [];
 
     /**
-     * In-memory mapping between websocket client id and page name.
-     * Filled during subscribe and used later in unsubscribe/action signals.
-     *
-     * @var array<string,string>
-     */
-    private array $clientIdToPage = [];
-
-    /**
      * Pending delayed page unsubscriptions (offline grace window).
      *
      * @var array<string,array{userId:int,page:string,queuedAt:int}>
      */
     private array $pendingPageUnsubscribes = [];
-
-    /** @var ?ChatPageFactory Page factory instance */
-    private ?ChatPageFactory $pageFactory = null;
 
     /**
      * Constructor
@@ -141,11 +125,19 @@ class ChatAgent extends AbstractAgent implements ChatPageContextInterface
         Idea::$idea->events->actions->add(ChatEventType::CHAT_STARTED->value);
 
         // Initialize page factory
-        $this->pageFactory = new ChatPageFactory($this->signalRouter, $this);
+        $this->setPageFactory(new ChatPageFactory($this->signalRouter, $this));
     }
 
     /**
      * Called when agent is stopped
+     *
+     * @throws DatabaseException If database operation fails
+     * @throws IdeaActionsCallbackNotSetException If callback is not set
+     * @throws IdeaActionsUnknownLazyStrategyException If unknown lazy loading strategy
+     * @throws IdeaActionsObjectCollectionNullException If ObjectCollection is null
+     * @throws IdeaTruthSourceWriteNotAllowedException If write is not allowed
+     * @throws IdeaActionsTableNameUndeterminedException If table name cannot be determined
+     * @throws IdeaActionsDuplicateIdException If duplicate ID is detected
      */
     public function onStop(): void
     {
@@ -188,12 +180,13 @@ class ChatAgent extends AbstractAgent implements ChatPageContextInterface
                 continue;
             }
 
-            if ($this->pageFactory !== null && $this->pageFactory->hasPage($page)) {
-                $pageInstance = $this->pageFactory->getPage($page);
+            $pageFactory = $this->getPageFactory();
+            if ($pageFactory !== null && $pageFactory->hasPage($page)) {
+                $pageInstance = $pageFactory->getPage($page);
                 $pageInstance->onUnsubscribe($clientId, $userId);
             }
 
-            $this->forgetClientMapping($clientId);
+            $this->removeClient($clientId);
         }
     }
 
@@ -251,17 +244,15 @@ class ChatAgent extends AbstractAgent implements ChatPageContextInterface
     {
         $uniqueUserIds = [];
 
-        foreach ($this->clientIdToSessionToken as $clientId => $sessionToken) {
-            $userId = $this->sessionTokenToUserId[$sessionToken] ?? null;
-            if ($userId === null) {
+        foreach ($this->getClientIdsForPage($page) as $clientId) {
+            $sessionToken = $this->clientIdToSessionToken[$clientId] ?? null;
+            if ($sessionToken === null) {
                 continue;
             }
 
-            if ($page !== null) {
-                $clientPage = $this->clientIdToPage[$clientId] ?? null;
-                if ($clientPage !== $page) {
-                    continue;
-                }
+            $userId = $this->sessionTokenToUserId[$sessionToken] ?? null;
+            if ($userId === null) {
+                continue;
             }
 
             $uniqueUserIds[$userId] = true;
@@ -280,18 +271,18 @@ class ChatAgent extends AbstractAgent implements ChatPageContextInterface
      */
     public function hasOtherClientOnPage(int $userId, string $page, string $excludeClientId): bool
     {
-        foreach ($this->clientIdToSessionToken as $clientId => $sessionToken) {
+        foreach ($this->getClientIdsForPage($page) as $clientId) {
             if ($clientId === $excludeClientId) {
+                continue;
+            }
+
+            $sessionToken = $this->clientIdToSessionToken[$clientId] ?? null;
+            if ($sessionToken === null) {
                 continue;
             }
 
             $mappedUserId = $this->sessionTokenToUserId[$sessionToken] ?? null;
             if ($mappedUserId === null || $mappedUserId !== $userId) {
-                continue;
-            }
-
-            $clientPage = $this->clientIdToPage[$clientId] ?? null;
-            if ($clientPage !== $page) {
                 continue;
             }
 
@@ -317,131 +308,6 @@ class ChatAgent extends AbstractAgent implements ChatPageContextInterface
 
         // Add ChatClearedEvent as a system event (userId = null for system events)
         $this->addEvent(ChatEventType::CHAT_CLEARED);
-    }
-
-    /**
-     * Handle page subscribe signal
-     *
-     * @param string $source Signal source
-     * @param string $name Signal name
-     * @param SignalDataInterface $data Signal data
-     * @throws RuntimeException If data is not WebSocketHandshakeSignalDTO or session token is invalid
-     * @throws DatabaseException If user registration fails
-     * @throws PageNotFoundException If page handler not found
-     */
-    public function onSignalPageSubscribe(string $source, string $name, SignalDataInterface $data): void
-    {
-        // Validate that data is WebSocketHandshakeSignalDTO
-        if ($data instanceof WebSocketHandshakeSignalDTO) {
-            // Prepare variables
-            $handshakeData = $data;
-            $clientId = $handshakeData->clientId;
-            $page = $name;
-            Logger::logAgentDebug($this->getId(), "Page subscribe signal received: source={$source}, client={$clientId}, page={$page}");
-
-            // Validate clientId
-            if ($clientId === '') {
-                throw new RuntimeException("Client ID is required but not provided or empty");
-            }
-
-            // Get or register user from session token and remember mapping
-            $sessionToken = $this->getValidatedSessionToken($handshakeData);
-            $user = $this->getOrRegisterUserBySessionToken($sessionToken);
-            $this->rememberClientMapping($clientId, $sessionToken, $user->id, $page);
-            unset($this->pendingPageUnsubscribes[$clientId]);
-
-            // Handle page-specific subscription logic via page handler
-            if ($this->pageFactory === null || !$this->pageFactory->hasPage($page)) {
-                Logger::logAgentError($this->getId(), "Unknown page subscription: {$page}");
-                throw new RuntimeException("Unknown page subscription: {$page}");
-            }
-
-            $pageInstance = $this->pageFactory->getPage($page);
-            $pageInstance->onSubscribe($clientId, $user);
-
-            $this->sendSubscriptionStatus($clientId, $page, 'subscribed');
-            return;
-        }
-
-        if (!($data instanceof WebSocketSubscribeSignalDTO)) {
-            $dataType = get_class($data);
-            Logger::logAgentError($this->getId(), "Invalid signal data type: expected WebSocketHandshakeSignalDTO or WebSocketSubscribeSignalDTO, got {$dataType}");
-            throw new RuntimeException("Expected WebSocketHandshakeSignalDTO or WebSocketSubscribeSignalDTO, got {$dataType}");
-        }
-
-        $subscribeData = $data;
-        $clientId = $subscribeData->clientId;
-        $page = $name;
-
-        Logger::logAgentDebug($this->getId(), "Page subscribe signal received: source={$source}, client={$clientId}, page={$page}");
-
-        if ($clientId === '') {
-            Logger::logAgentError($this->getId(), "Client ID is required but not provided or empty (page subscribe)");
-            return;
-        }
-
-        $userId = $this->resolveUserIdByClientId($clientId);
-        if ($userId === null) {
-            Logger::logAgentError($this->getId(), "Unable to resolve userId for clientId={$clientId} (page subscribe)");
-            return;
-        }
-
-        $user = Idea::$idea->users[$userId];
-        if (!$user instanceof IdeaUser) {
-            Logger::logAgentError($this->getId(), "Unable to resolve user for userId={$userId} (page subscribe)");
-            return;
-        }
-
-        $this->clientIdToPage[$clientId] = $page;
-        unset($this->pendingPageUnsubscribes[$clientId]);
-
-        if ($this->pageFactory === null || !$this->pageFactory->hasPage($page)) {
-            Logger::logAgentError($this->getId(), "Unknown page subscription: {$page}");
-            return;
-        }
-
-        $pageInstance = $this->pageFactory->getPage($page);
-        $pageInstance->onSubscribe($clientId, $user);
-
-        $this->sendSubscriptionStatus($clientId, $page, 'subscribed');
-    }
-
-    /**
-     * Handle page update subscription signal
-     *
-     * @param string $source Signal source
-     * @param string $name Signal name
-     * @param SignalDataInterface $data Signal data
-     */
-    public function onSignalPageUpdateSubscription(string $source, string $name, SignalDataInterface $data): void
-    {
-        if (!($data instanceof WebSocketUpdateSubscriptionSignalDTO)) {
-            $dataType = get_class($data);
-            Logger::logAgentError($this->getId(), "Invalid signal data type: expected WebSocketUpdateSubscriptionSignalDTO, got {$dataType}");
-            throw new RuntimeException("Expected WebSocketUpdateSubscriptionSignalDTO, got {$dataType}");
-        }
-
-        $updateData = $data;
-        $clientId = $updateData->clientId;
-        $page = $updateData->page ?? $name;
-
-        Logger::logAgentDebug($this->getId(), "Page update subscription signal received: source={$source}, client={$clientId}, page={$page}");
-
-        if ($clientId === '') {
-            Logger::logAgentError($this->getId(), "Client ID is required but not provided or empty (page update subscription)");
-            return;
-        }
-
-        if ($page !== null && $page !== '') {
-            $this->clientIdToPage[$clientId] = $page;
-        }
-        unset($this->pendingPageUnsubscribes[$clientId]);
-
-        if ($page === null || $page === '') {
-            return;
-        }
-
-        $this->sendSubscriptionStatus($clientId, $page, 'updated');
     }
 
     /**
@@ -505,11 +371,10 @@ class ChatAgent extends AbstractAgent implements ChatPageContextInterface
      * @param int $userId User id
      * @param string $page Page name
      */
-    private function rememberClientMapping(string $clientId, string $sessionToken, int $userId, string $page): void
+    private function rememberClientMapping(string $clientId, string $sessionToken, int $userId): void
     {
         $this->clientIdToSessionToken[$clientId] = $sessionToken;
         $this->sessionTokenToUserId[$sessionToken] = $userId;
-        $this->clientIdToPage[$clientId] = $page;
     }
 
     /**
@@ -529,17 +394,6 @@ class ChatAgent extends AbstractAgent implements ChatPageContextInterface
     }
 
     /**
-     * Resolve page name by clientId using internal mappings.
-     *
-     * @param string $clientId WebSocket client id
-     * @return ?string Resolved page name or null if unknown
-     */
-    private function resolvePageByClientId(string $clientId): ?string
-    {
-        return $this->clientIdToPage[$clientId] ?? null;
-    }
-
-    /**
      * Forget clientId mappings (e.g. on disconnect).
      *
      * @param string $clientId WebSocket client id
@@ -547,7 +401,6 @@ class ChatAgent extends AbstractAgent implements ChatPageContextInterface
     private function forgetClientMapping(string $clientId): void
     {
         unset($this->clientIdToSessionToken[$clientId]);
-        unset($this->clientIdToPage[$clientId]);
     }
 
     /**
@@ -578,117 +431,149 @@ class ChatAgent extends AbstractAgent implements ChatPageContextInterface
     }
 
     /**
-     * Handle page unsubscribe signal
+     * Provide user for handshake-based subscription.
      *
-     * @param string $source Signal source
-     * @param string $name Signal name
-     * @param SignalDataInterface $data Signal data
-     * @throws PageNotFoundException If page handler not found
+     * @param WebSocketHandshakeSignalDTO $data
+     * @param string $clientId
+     * @param string $page
+     * @return mixed
+     * @throws DatabaseException If user registration fails
      */
-    public function onSignalPageUnsubscribe(string $source, string $name, SignalDataInterface $data): void
+    protected function handleHandshakeSubscription(
+        WebSocketHandshakeSignalDTO $data,
+        string $clientId,
+        string $page,
+    ): mixed {
+        $sessionToken = $this->getValidatedSessionToken($data);
+        $user = $this->getOrRegisterUserBySessionToken($sessionToken);
+        $this->rememberClientMapping($clientId, $sessionToken, $user->id);
+        return $user;
+    }
+
+    /**
+     * Resolve user object by client id for non-handshake subscribe.
+     *
+     * @param string $clientId
+     * @return ?IdeaUser
+     */
+    protected function resolveUserForClient(string $clientId): mixed
     {
-        // Validate DTO type
-        if (!($data instanceof WebSocketUnsubscribeSignalDTO)) {
-            $dataType = get_class($data);
-            Logger::logAgentError($this->getId(), "Invalid signal data type: expected WebSocketUnsubscribeSignalDTO, got {$dataType}");
-            throw new RuntimeException("Expected WebSocketUnsubscribeSignalDTO, got {$dataType}");
-        }
-
-        $unsubscribeData = $data;
-        $clientId = $unsubscribeData->clientId;
-        $page = $name;
-
-        Logger::logAgentDebug($this->getId(), "Page unsubscribe signal received: source={$source}, client={$clientId}, page={$page}");
-
-        if ($clientId === '') {
-            Logger::logAgentError($this->getId(), "Client ID is required but not provided or empty (page unsubscribe)");
-            return;
-        }
-
         $userId = $this->resolveUserIdByClientId($clientId);
         if ($userId === null) {
-            Logger::logAgentError($this->getId(), "Unable to resolve userId for clientId={$clientId} (page unsubscribe)");
-            $this->forgetClientMapping($clientId);
-            return;
+            return null;
         }
 
-        // Resolve page from mapping (in case page name in signal doesn't match)
-        $resolvedPage = $this->resolvePageByClientId($clientId) ?? $page;
-
-        if ($resolvedPage === PageConstants::MAIN) {
-            $this->pendingPageUnsubscribes[$clientId] = [
-                'userId' => $userId,
-                'page' => $resolvedPage,
-                'queuedAt' => time(),
-            ];
-            return;
+        $user = Idea::$idea->users[$userId];
+        if (!$user instanceof IdeaUser) {
+            return null;
         }
 
-        // Handle page-specific unsubscribe logic via page handler
-        if ($this->pageFactory === null || !$this->pageFactory->hasPage($resolvedPage)) {
-            Logger::logAgentError($this->getId(), "Unknown page unsubscribe: {$resolvedPage}");
-            $this->forgetClientMapping($clientId);
-            return;
+        return $user;
+    }
+
+    /**
+     * Resolve user id by client id.
+     *
+     * @param string $clientId
+     * @return ?int
+     */
+    protected function resolveUserIdForClient(string $clientId): ?int
+    {
+        return $this->resolveUserIdByClientId($clientId);
+    }
+
+    /**
+     * Clear pending grace window on resubscribe/update.
+     *
+     * @param string $clientId
+     * @param ?string $page
+     * @return void
+     */
+    protected function onClientResubscribed(string $clientId, ?string $page): void
+    {
+        unset($this->pendingPageUnsubscribes[$clientId]);
+    }
+
+    /**
+     * Notify client on successful subscribe.
+     *
+     * @param string $clientId
+     * @param string $page
+     * @param mixed $user
+     * @return void
+     */
+    protected function onClientSubscribed(string $clientId, string $page, mixed $user): void
+    {
+        $this->sendSubscriptionStatus($clientId, $page, 'subscribed');
+    }
+
+    /**
+     * Notify client on subscription update.
+     *
+     * @param string $clientId
+     * @param string $page
+     * @return void
+     */
+    protected function onClientSubscriptionUpdated(string $clientId, string $page): void
+    {
+        $this->sendSubscriptionStatus($clientId, $page, 'updated');
+    }
+
+    /**
+     * Defer unsubscribe for main page (offline grace).
+     *
+     * @param string $clientId
+     * @param int $userId
+     * @param string $page
+     * @return bool
+     */
+    protected function beforePageUnsubscribe(string $clientId, int $userId, string $page): bool
+    {
+        if ($page !== PageConstants::MAIN) {
+            return false;
         }
 
-        $pageInstance = $this->pageFactory->getPage($resolvedPage);
-        $pageInstance->onUnsubscribe($clientId, $userId);
+        $this->pendingPageUnsubscribes[$clientId] = [
+            'userId' => $userId,
+            'page' => $page,
+            'queuedAt' => time(),
+        ];
+
+        return true;
+    }
+
+    /**
+     * Remove client-specific mappings after unsubscribe.
+     *
+     * @param string $clientId
+     * @return void
+     */
+    protected function onClientRemoved(string $clientId): void
+    {
         $this->forgetClientMapping($clientId);
     }
 
     /**
-     * Handle action signal
+     * Log action signal details before dispatch.
      *
-     * @param string $source Signal source
-     * @param string $name Signal name
-     * @param SignalDataInterface $data Signal data
-     * @throws PageNotFoundException If page handler not found
+     * @param string $source
+     * @param string $name
+     * @param string $clientId
+     * @param int $userId
+     * @param string $payload
+     * @return void
      */
-    public function onSignalAction(string $source, string $name, SignalDataInterface $data): void
-    {
-        // Validate DTO type
-        if (!($data instanceof WebSocketFrameSignalDTO)) {
-            $dataType = get_class($data);
-            Logger::logAgentError($this->getId(), "Invalid signal data type: expected WebSocketFrameSignalDTO, got {$dataType}");
-            throw new RuntimeException("Expected WebSocketFrameSignalDTO, got {$dataType}");
-        }
-
-        $frameData = $data;
-        $clientId = $frameData->clientId;
-        $action = $name; // action name is carried by signal name (e.g. message/file/rename)
-        $payload = $frameData->payload;
-
-        if ($clientId === '') {
-            Logger::logAgentError($this->getId(), "Client ID is required but not provided or empty (action)");
-            return;
-        }
-
-        $userId = $this->resolveUserIdByClientId($clientId);
-        if ($userId === null) {
-            Logger::logAgentError($this->getId(), "Unable to resolve userId for clientId={$clientId} (action)");
-            return;
-        }
-
+    protected function onActionReceived(
+        string $source,
+        string $name,
+        string $clientId,
+        int $userId,
+        string $payload,
+    ): void {
         Logger::logAgentInfo(
             $this->getId(),
             "Action signal received: source={$source}, name={$name}, client={$clientId}, userId={$userId}, payload=" . json_encode($payload),
         );
-
-        // Resolve page from mapping
-        $page = $this->resolvePageByClientId($clientId);
-        if ($page === null) {
-            Logger::logAgentError($this->getId(), "Unable to resolve page for clientId={$clientId} (action)");
-            return;
-        }
-
-        // Handle action via page handler
-        if ($this->pageFactory === null || !$this->pageFactory->hasPage($page)) {
-            Logger::logAgentError($this->getId(), "Unknown page for action: {$page}");
-            return;
-        }
-
-        $pageInstance = $this->pageFactory->getPage($page);
-        $pageInstance->onAction($clientId, $userId, $action, $payload);
     }
 
     /**
