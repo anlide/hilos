@@ -16,7 +16,6 @@ use Hilos\DTO\SignalDataDTO;
 class WebSocketHandshakeSignalDTO extends BaseDTO implements SignalDataDTO, SignalDataInterface
 {
     // Field name constants
-    public const string CLIENT_ID = 'clientId';
     public const string HEADERS = 'headers';
     public const string ACCEPT_KEY = 'acceptKey';
     public const string COOKIES = 'cookies';
@@ -24,7 +23,6 @@ class WebSocketHandshakeSignalDTO extends BaseDTO implements SignalDataDTO, Sign
     public const string QUERY_PARAMS = 'queryParams';
 
     public function __construct(
-        public readonly string $clientId,
         public readonly array $headers,
         public readonly string $acceptKey,
         public readonly array $cookies,
@@ -41,7 +39,6 @@ class WebSocketHandshakeSignalDTO extends BaseDTO implements SignalDataDTO, Sign
     public function toArray(): array
     {
         return [
-            self::CLIENT_ID => $this->clientId,
             self::HEADERS => $this->headers,
             self::ACCEPT_KEY => $this->acceptKey,
             self::COOKIES => $this->cookies,
@@ -59,7 +56,6 @@ class WebSocketHandshakeSignalDTO extends BaseDTO implements SignalDataDTO, Sign
     public static function fromArray(array $data): static
     {
         return new self(
-            clientId: $data[self::CLIENT_ID] ?? '',
             headers: $data[self::HEADERS] ?? [],
             acceptKey: $data[self::ACCEPT_KEY] ?? '',
             cookies: $data[self::COOKIES] ?? [],

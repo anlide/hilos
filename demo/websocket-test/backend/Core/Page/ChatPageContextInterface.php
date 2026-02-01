@@ -23,7 +23,7 @@ interface ChatPageContextInterface
      * @param ?int $userId User ID (null for system events)
      * @param ?array $data Event-specific data (optional)
      * @param ?EntitiesChangesDTO $entities Entity updates for broadcast (optional)
-     * @param ?string $excludeClientId Client ID to exclude from receiving the event (optional)
+     * @param ?string $excludeAcceptKey Accept key to exclude from receiving the event (optional)
      * @throws DatabaseException If database operation fails
      */
     public function addEvent(
@@ -31,26 +31,8 @@ interface ChatPageContextInterface
         ?int $userId = null,
         ?array $data = null,
         ?EntitiesChangesDTO $entities = null,
-        ?string $excludeClientId = null,
+        ?string $excludeAcceptKey = null,
     ): void;
-
-    /**
-     * Get online user IDs (optionally for a specific page)
-     *
-     * @param ?string $page Page name to filter by (null for all pages)
-     * @return int[] Online user IDs
-     */
-    public function getOnlineUserIds(?string $page = null): array;
-
-    /**
-     * Check if user has another client on page
-     *
-     * @param int $userId User id
-     * @param string $page Page name
-     * @param string $excludeClientId Client id to exclude
-     * @return bool True if another client exists
-     */
-    public function hasOtherClientOnPage(int $userId, string $page, string $excludeClientId): bool;
 
     /**
      * Get agent signal source

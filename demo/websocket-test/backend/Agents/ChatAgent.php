@@ -47,28 +47,8 @@ use RuntimeException;
  */
 class ChatAgent extends AbstractPageAgent implements ChatPageContextInterface
 {
-    /**
-     * In-memory mapping between session token and user id.
-     * Filled during handshake (page subscribe) and used later in unsubscribe/action signals.
-     *
-     * @var array<string,int>
-     */
-    private array $sessionTokenToUserId = [];
-
-    /**
-     * In-memory mapping between websocket client id and session token.
-     * Needed because unsubscribe/action signals do not carry session token.
-     *
-     * @var array<string,string>
-     */
-    private array $clientIdToSessionToken = [];
-
-    /**
-     * Pending delayed page unsubscriptions (offline grace window).
-     *
-     * @var array<string,array{userId:int,page:string,queuedAt:int}>
-     */
-    private array $pendingPageUnsubscribes = [];
+    /** @var ?ChatPageFactory Page factory instance */
+    private ?ChatPageFactory $pageFactory = null;
 
     /**
      * Constructor
@@ -103,6 +83,16 @@ class ChatAgent extends AbstractPageAgent implements ChatPageContextInterface
     }
 
     /**
+     * Get page factory for this agent.
+     *
+     * @return ?ChatPageFactory
+     */
+    protected function getPageFactory(): ?ChatPageFactory
+    {
+        return $this->pageFactory;
+    }
+
+    /**
      * Called when agent is started
      * @throws DatabaseException If database operation fails
      * @throws IdeaEntityMappingNotFoundException If collection not found in mapping
@@ -125,7 +115,7 @@ class ChatAgent extends AbstractPageAgent implements ChatPageContextInterface
         Idea::$idea->events->actions->add(ChatEventType::CHAT_STARTED->value);
 
         // Initialize page factory
-        $this->setPageFactory(new ChatPageFactory($this->signalRouter, $this));
+        $this->pageFactory = new ChatPageFactory($this->signalRouter, $this);
     }
 
     /**
@@ -160,34 +150,7 @@ class ChatAgent extends AbstractPageAgent implements ChatPageContextInterface
         // TODO: (green = online, yellow = unstable, grey = offline).
         // TODO: Ensure state is per user, not per client, and merges multiple tabs.
 
-        if ($this->pendingPageUnsubscribes === []) {
-            return;
-        }
-
-        $now = time();
-        foreach ($this->pendingPageUnsubscribes as $clientId => $pending) {
-            if ($now - $pending['queuedAt'] < 5) {
-                continue;
-            }
-
-            unset($this->pendingPageUnsubscribes[$clientId]);
-
-            $userId = $pending['userId'];
-            $page = $pending['page'];
-
-            if ($this->hasOtherClientOnPage($userId, $page, $clientId)) {
-                $this->forgetClientMapping($clientId);
-                continue;
-            }
-
-            $pageFactory = $this->getPageFactory();
-            if ($pageFactory !== null && $pageFactory->hasPage($page)) {
-                $pageInstance = $pageFactory->getPage($page);
-                $pageInstance->onUnsubscribe($clientId, $userId);
-            }
-
-            $this->removeClient($clientId);
-        }
+        // Presence tracking removed for now.
     }
 
     /**
@@ -197,7 +160,7 @@ class ChatAgent extends AbstractPageAgent implements ChatPageContextInterface
      * @param ?int $userId User ID (null for system events)
      * @param ?array $data Event-specific data (optional)
      * @param ?array $entities Entity updates for broadcast (optional)
-     * @param ?string $excludeClientId Client ID to exclude from receiving the event (optional)
+     * @param ?string $excludeAcceptKey Accept key to exclude from receiving the event (optional)
      * @throws DatabaseException If database operation fails
      * @throws IdeaActionsCallbackNotSetException If callback is not set
      * @throws IdeaActionsUnknownLazyStrategyException If unknown lazy loading strategy
@@ -211,7 +174,7 @@ class ChatAgent extends AbstractPageAgent implements ChatPageContextInterface
         ?int $userId = null,
         ?array $data = null,
         ?EntitiesChangesDTO $entities = null,
-        ?string $excludeClientId = null,
+        ?string $excludeAcceptKey = null,
     ): void
     {
         // Add event to collection (saves to database and adds to collection)
@@ -227,69 +190,11 @@ class ChatAgent extends AbstractPageAgent implements ChatPageContextInterface
             signalName: new SignalName('new_event'),
             signalData: new WebSocketSignalData(
                 data: $eventData,
-                targetClientId: null,
+                targetAcceptKey: null,
                 targetGroup: null,
-                excludeClientId: $excludeClientId,
+                excludeAcceptKey: $excludeAcceptKey,
             ),
         );
-    }
-
-    /**
-     * Get online user IDs (optionally for a specific page)
-     *
-     * @param ?string $page Page name to filter by (null for all pages)
-     * @return int[] Online user IDs
-     */
-    public function getOnlineUserIds(?string $page = null): array
-    {
-        $uniqueUserIds = [];
-
-        foreach ($this->getClientIdsForPage($page) as $clientId) {
-            $sessionToken = $this->clientIdToSessionToken[$clientId] ?? null;
-            if ($sessionToken === null) {
-                continue;
-            }
-
-            $userId = $this->sessionTokenToUserId[$sessionToken] ?? null;
-            if ($userId === null) {
-                continue;
-            }
-
-            $uniqueUserIds[$userId] = true;
-        }
-
-        return array_map('intval', array_keys($uniqueUserIds));
-    }
-
-    /**
-     * Check if user has another client on page
-     *
-     * @param int $userId User id
-     * @param string $page Page name
-     * @param string $excludeClientId Client id to exclude
-     * @return bool
-     */
-    public function hasOtherClientOnPage(int $userId, string $page, string $excludeClientId): bool
-    {
-        foreach ($this->getClientIdsForPage($page) as $clientId) {
-            if ($clientId === $excludeClientId) {
-                continue;
-            }
-
-            $sessionToken = $this->clientIdToSessionToken[$clientId] ?? null;
-            if ($sessionToken === null) {
-                continue;
-            }
-
-            $mappedUserId = $this->sessionTokenToUserId[$sessionToken] ?? null;
-            if ($mappedUserId === null || $mappedUserId !== $userId) {
-                continue;
-            }
-
-            return true;
-        }
-
-        return false;
     }
 
     /**
@@ -364,53 +269,13 @@ class ChatAgent extends AbstractPageAgent implements ChatPageContextInterface
     }
 
     /**
-     * Remember mapping for later signals (unsubscribe/action).
-     *
-     * @param string $clientId WebSocket client id
-     * @param string $sessionToken Session token
-     * @param int $userId User id
-     * @param string $page Page name
-     */
-    private function rememberClientMapping(string $clientId, string $sessionToken, int $userId): void
-    {
-        $this->clientIdToSessionToken[$clientId] = $sessionToken;
-        $this->sessionTokenToUserId[$sessionToken] = $userId;
-    }
-
-    /**
-     * Resolve userId by clientId using internal mappings.
-     *
-     * @param string $clientId WebSocket client id
-     * @return ?int Resolved user id or null if unknown
-     */
-    private function resolveUserIdByClientId(string $clientId): ?int
-    {
-        $sessionToken = $this->clientIdToSessionToken[$clientId] ?? null;
-        if ($sessionToken === null || $sessionToken === '') {
-            return null;
-        }
-
-        return $this->sessionTokenToUserId[$sessionToken] ?? null;
-    }
-
-    /**
-     * Forget clientId mappings (e.g. on disconnect).
-     *
-     * @param string $clientId WebSocket client id
-     */
-    private function forgetClientMapping(string $clientId): void
-    {
-        unset($this->clientIdToSessionToken[$clientId]);
-    }
-
-    /**
      * Send subscription status update to client
      *
-     * @param string $clientId Client id
+     * @param string $acceptKey Accept key
      * @param string $page Page name
      * @param string $status Subscription status
      */
-    private function sendSubscriptionStatus(string $clientId, string $page, string $status): void
+    private function sendSubscriptionStatus(string $acceptKey, string $page, string $status): void
     {
         $data = new SignalData([
             'page' => $page,
@@ -423,9 +288,9 @@ class ChatAgent extends AbstractPageAgent implements ChatPageContextInterface
             signalName: new SignalName('subscription_updated'),
             signalData: new WebSocketSignalData(
                 data: $data,
-                targetClientId: $clientId,
+                targetAcceptKey: $acceptKey,
                 targetGroup: null,
-                excludeClientId: null,
+                excludeAcceptKey: null,
             ),
         );
     }
@@ -434,131 +299,52 @@ class ChatAgent extends AbstractPageAgent implements ChatPageContextInterface
      * Provide user for handshake-based subscription.
      *
      * @param WebSocketHandshakeSignalDTO $data
-     * @param string $clientId
+     * @param string $acceptKey
      * @param string $page
      * @return mixed
      * @throws DatabaseException If user registration fails
      */
     protected function handleHandshakeSubscription(
         WebSocketHandshakeSignalDTO $data,
-        string $clientId,
+        string $acceptKey,
         string $page,
     ): mixed {
         $sessionToken = $this->getValidatedSessionToken($data);
-        $user = $this->getOrRegisterUserBySessionToken($sessionToken);
-        $this->rememberClientMapping($clientId, $sessionToken, $user->id);
-        return $user;
-    }
-
-    /**
-     * Resolve user object by client id for non-handshake subscribe.
-     *
-     * @param string $clientId
-     * @return ?IdeaUser
-     */
-    protected function resolveUserForClient(string $clientId): mixed
-    {
-        $userId = $this->resolveUserIdByClientId($clientId);
-        if ($userId === null) {
-            return null;
-        }
-
-        $user = Idea::$idea->users[$userId];
-        if (!$user instanceof IdeaUser) {
-            return null;
-        }
-
-        return $user;
-    }
-
-    /**
-     * Resolve user id by client id.
-     *
-     * @param string $clientId
-     * @return ?int
-     */
-    protected function resolveUserIdForClient(string $clientId): ?int
-    {
-        return $this->resolveUserIdByClientId($clientId);
-    }
-
-    /**
-     * Clear pending grace window on resubscribe/update.
-     *
-     * @param string $clientId
-     * @param ?string $page
-     * @return void
-     */
-    protected function onClientResubscribed(string $clientId, ?string $page): void
-    {
-        unset($this->pendingPageUnsubscribes[$clientId]);
+        return $this->getOrRegisterUserBySessionToken($sessionToken);
     }
 
     /**
      * Notify client on successful subscribe.
      *
-     * @param string $clientId
+     * @param string $acceptKey
      * @param string $page
      * @param mixed $user
      * @return void
      */
-    protected function onClientSubscribed(string $clientId, string $page, mixed $user): void
+    protected function onAcceptKeySubscribed(string $acceptKey, string $page, mixed $user): void
     {
-        $this->sendSubscriptionStatus($clientId, $page, 'subscribed');
+        $this->sendSubscriptionStatus($acceptKey, $page, 'subscribed');
     }
 
     /**
      * Notify client on subscription update.
      *
-     * @param string $clientId
+     * @param string $acceptKey
      * @param string $page
      * @return void
      */
-    protected function onClientSubscriptionUpdated(string $clientId, string $page): void
+    protected function onAcceptKeySubscriptionUpdated(string $acceptKey, string $page): void
     {
-        $this->sendSubscriptionStatus($clientId, $page, 'updated');
+        $this->sendSubscriptionStatus($acceptKey, $page, 'updated');
     }
 
     /**
-     * Defer unsubscribe for main page (offline grace).
-     *
-     * @param string $clientId
-     * @param int $userId
-     * @param string $page
-     * @return bool
-     */
-    protected function beforePageUnsubscribe(string $clientId, int $userId, string $page): bool
-    {
-        if ($page !== PageConstants::MAIN) {
-            return false;
-        }
-
-        $this->pendingPageUnsubscribes[$clientId] = [
-            'userId' => $userId,
-            'page' => $page,
-            'queuedAt' => time(),
-        ];
-
-        return true;
-    }
-
-    /**
-     * Remove client-specific mappings after unsubscribe.
-     *
-     * @param string $clientId
-     * @return void
-     */
-    protected function onClientRemoved(string $clientId): void
-    {
-        $this->forgetClientMapping($clientId);
-    }
-
     /**
      * Log action signal details before dispatch.
      *
      * @param string $source
      * @param string $name
-     * @param string $clientId
+     * @param string $acceptKey
      * @param int $userId
      * @param string $payload
      * @return void
@@ -566,13 +352,13 @@ class ChatAgent extends AbstractPageAgent implements ChatPageContextInterface
     protected function onActionReceived(
         string $source,
         string $name,
-        string $clientId,
+        string $acceptKey,
         int $userId,
         string $payload,
     ): void {
         Logger::logAgentInfo(
             $this->getId(),
-            "Action signal received: source={$source}, name={$name}, client={$clientId}, userId={$userId}, payload=" . json_encode($payload),
+            "Action signal received: source={$source}, name={$name}, acceptKey={$acceptKey}, userId={$userId}, payload=" . json_encode($payload),
         );
     }
 

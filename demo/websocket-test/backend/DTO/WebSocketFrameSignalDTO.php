@@ -25,7 +25,7 @@ class WebSocketFrameSignalDTO extends FrameworkWebSocketFrameSignalDTO implement
     public static function fromArray(array $data): static
     {
         return new self(
-            clientId: $data[self::CLIENT_ID] ?? '',
+            acceptKey: $data[self::ACCEPT_KEY] ?? '',
             payload: $data[self::PAYLOAD] ?? '',
         );
     }

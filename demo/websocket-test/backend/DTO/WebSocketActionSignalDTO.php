@@ -25,7 +25,7 @@ class WebSocketActionSignalDTO extends FrameworkWebSocketActionSignalDTO impleme
     public static function fromArray(array $data): static
     {
         return new self(
-            clientId: $data[self::CLIENT_ID] ?? '',
+            acceptKey: $data[self::ACCEPT_KEY] ?? '',
             action: $data[self::ACTION] ?? '',
             data: $data[self::DATA] ?? [],
             page: $data[self::PAGE] ?? null,

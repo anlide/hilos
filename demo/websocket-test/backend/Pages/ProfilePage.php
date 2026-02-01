@@ -34,10 +34,10 @@ class ProfilePage extends AbstractChatPage
     /**
      * Handle page-specific subscription logic
      *
-     * @param string $clientId Client ID
+     * @param string $acceptKey Accept key
      * @param IdeaUser $user User idea
      */
-    protected function handleSubscribe(string $clientId, IdeaUser $user): void
+    protected function handleSubscribe(string $acceptKey, IdeaUser $user): void
     {
         // TODO: Implement profile page subscription logic
     }
@@ -45,10 +45,10 @@ class ProfilePage extends AbstractChatPage
     /**
      * Handle page-specific unsubscription logic
      *
-     * @param string $clientId Client id
+     * @param string $acceptKey Accept key
      * @param int $userId User id
      */
-    protected function handleUnsubscribe(string $clientId, int $userId): void
+    protected function handleUnsubscribe(string $acceptKey, int $userId): void
     {
         // TODO: Implement profile page unsubscribe logic
     }
@@ -56,12 +56,12 @@ class ProfilePage extends AbstractChatPage
     /**
      * Handle page-specific action logic
      *
-     * @param string $clientId Client id
+     * @param string $acceptKey Accept key
      * @param int $userId User id
      * @param string $action Action name
      * @param string $payload Action payload
      */
-    protected function handleAction(string $clientId, int $userId, string $action, string $payload): void
+    protected function handleAction(string $acceptKey, int $userId, string $action, string $payload): void
     {
         if ($action !== ChatSignalConstants::RENAME) {
             Logger::logAgentError('ProfilePage', "Unknown action: {$action}");
@@ -70,19 +70,19 @@ class ProfilePage extends AbstractChatPage
 
         $payloadData = JsonHelper::tryDecode($payload);
         if ($payloadData === null) {
-            Logger::logAgentError('ProfilePage', "Invalid JSON payload for rename action (clientId={$clientId})");
+            Logger::logAgentError('ProfilePage', "Invalid JSON payload for rename action (acceptKey={$acceptKey})");
             return;
         }
 
         $rawName = $payloadData['username'] ?? $payloadData['name'] ?? null;
         if (!is_string($rawName)) {
-            Logger::logAgentError('ProfilePage', "Missing username in rename action (clientId={$clientId}, userId={$userId})");
+            Logger::logAgentError('ProfilePage', "Missing username in rename action (acceptKey={$acceptKey}, userId={$userId})");
             return;
         }
 
         $newName = trim($rawName);
         if ($newName === '' || strlen($newName) < 2 || strlen($newName) > 20) {
-            Logger::logAgentError('ProfilePage', "Invalid username length in rename action (clientId={$clientId}, userId={$userId})");
+            Logger::logAgentError('ProfilePage', "Invalid username length in rename action (acceptKey={$acceptKey}, userId={$userId})");
             return;
         }
 

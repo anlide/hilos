@@ -10,15 +10,15 @@ use Hilos\DTO\BaseDTO;
  * WebSocketSignalData - Signal data for WebSocket signals
  *
  * Contains both the actual signal data and targeting metadata
- * (targetClientId, targetGroup, excludeClientId).
+ * (targetAcceptKey, targetGroup, excludeAcceptKey).
  */
 class WebSocketSignalData extends BaseDTO implements SignalDataInterface
 {
     public function __construct(
         public readonly SignalDataInterface $data,
-        public readonly ?string $targetClientId = null,
+        public readonly ?string $targetAcceptKey = null,
         public readonly ?string $targetGroup = null,
-        public readonly ?string $excludeClientId = null,
+        public readonly ?string $excludeAcceptKey = null,
     ) {
     }
 
@@ -42,16 +42,16 @@ class WebSocketSignalData extends BaseDTO implements SignalDataInterface
             'dataType' => $dataType,
         ];
 
-        if ($this->targetClientId !== null) {
-            $result['targetClientId'] = $this->targetClientId;
+        if ($this->targetAcceptKey !== null) {
+            $result['targetAcceptKey'] = $this->targetAcceptKey;
         }
 
         if ($this->targetGroup !== null) {
             $result['targetGroup'] = $this->targetGroup;
         }
 
-        if ($this->excludeClientId !== null) {
-            $result['excludeClientId'] = $this->excludeClientId;
+        if ($this->excludeAcceptKey !== null) {
+            $result['excludeAcceptKey'] = $this->excludeAcceptKey;
         }
 
         return $result;
@@ -73,9 +73,9 @@ class WebSocketSignalData extends BaseDTO implements SignalDataInterface
 
         return new self(
             data: $signalData,
-            targetClientId: $data['targetClientId'] ?? null,
+            targetAcceptKey: $data['targetAcceptKey'] ?? null,
             targetGroup: $data['targetGroup'] ?? null,
-            excludeClientId: $data['excludeClientId'] ?? null,
+            excludeAcceptKey: $data['excludeAcceptKey'] ?? null,
         );
     }
 

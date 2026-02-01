@@ -6,7 +6,9 @@ namespace Hilos\Core\Daemon;
 
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Constants\WorkerConstants;
+use Hilos\Core\Agent\AgentInterface;
 use Hilos\Core\Agent\AgentManager;
+use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\DTO\Worker\AgentStartDTO;
 use Hilos\DTO\Worker\AgentStopDTO;
@@ -42,6 +44,13 @@ abstract class WorkerManager extends BaseManager
 
     /** @var SignalRouter Signal router instance */
     protected SignalRouter $signalRouter;
+
+    /**
+     * Page subscriptions by accept key (worker-local).
+     *
+     * @var array<string,string>
+     */
+    private array $pageSubscriptionsByAcceptKey = [];
 
     /**
      * WorkerManager constructor
@@ -360,9 +369,9 @@ abstract class WorkerManager extends BaseManager
         // Route to appropriate handler in agent based on signal type
         match ($signalType) {
             SignalTypeConstants::SYSTEM => $agent->onSignalSystem($source, $name, $signalData),
-            SignalTypeConstants::PAGE_SUBSCRIBE => $agent->onSignalPageSubscribe($source, $name, $signalData),
-            SignalTypeConstants::PAGE_UNSUBSCRIBE => $agent->onSignalPageUnsubscribe($source, $name, $signalData),
-            SignalTypeConstants::PAGE_UPDATE_SUBSCRIPTION => $agent->onSignalPageUpdateSubscription($source, $name, $signalData),
+            SignalTypeConstants::PAGE_SUBSCRIBE => $this->handlePageSubscribeSignal($agent, $source, $name, $signalData),
+            SignalTypeConstants::PAGE_UNSUBSCRIBE => $this->handlePageUnsubscribeSignal($agent, $source, $name, $signalData),
+            SignalTypeConstants::PAGE_UPDATE_SUBSCRIPTION => $this->handlePageUpdateSubscriptionSignal($agent, $source, $name, $signalData),
             SignalTypeConstants::GROUP_SUBSCRIBE => $agent->onSignalGroupSubscribe($source, $name, $signalData),
             SignalTypeConstants::GROUP_UNSUBSCRIBE => $agent->onSignalGroupUnsubscribe($source, $name, $signalData),
             SignalTypeConstants::GROUP_UPDATE_SUBSCRIPTION => $agent->onSignalGroupUpdateSubscription($source, $name, $signalData),
@@ -370,6 +379,165 @@ abstract class WorkerManager extends BaseManager
             SignalTypeConstants::CRON => $agent->onSignalCron($source, $name, $signalData),
             default => null, // Unknown signal type - ignore
         };
+    }
+
+    /**
+     * Handle page subscribe signal (worker-local hook point).
+     *
+     * @param AgentInterface $agent
+     * @param string $source
+     * @param string $name
+     * @param SignalDataInterface $signalData
+     * @return void
+     */
+    private function handlePageSubscribeSignal(
+        AgentInterface $agent,
+        string $source,
+        string $name,
+        SignalDataInterface $signalData,
+    ): void {
+        $acceptKey = $this->resolveAcceptKeyFromSignalData($signalData);
+        $page = $this->resolvePageNameFromSignalData($name, $signalData);
+
+        if ($acceptKey !== null && $acceptKey !== '' && $page !== null && $page !== '') {
+            $this->pageSubscriptionsByAcceptKey[$acceptKey] = $page;
+        }
+
+        $this->onPageSubscribed($acceptKey, $page, $signalData);
+        $agent->onSignalPageSubscribe($source, $name, $signalData);
+    }
+
+    /**
+     * Handle page unsubscribe signal (worker-local hook point).
+     *
+     * @param AgentInterface $agent
+     * @param string $source
+     * @param string $name
+     * @param SignalDataInterface $signalData
+     * @return void
+     */
+    private function handlePageUnsubscribeSignal(
+        AgentInterface $agent,
+        string $source,
+        string $name,
+        SignalDataInterface $signalData,
+    ): void {
+        $acceptKey = $this->resolveAcceptKeyFromSignalData($signalData);
+        $page = $acceptKey !== null ? ($this->pageSubscriptionsByAcceptKey[$acceptKey] ?? $name) : $name;
+
+        if ($acceptKey !== null) {
+            unset($this->pageSubscriptionsByAcceptKey[$acceptKey]);
+        }
+
+        $this->onPageUnsubscribed($acceptKey, $page, $signalData);
+        $agent->onSignalPageUnsubscribe($source, $name, $signalData);
+    }
+
+    /**
+     * Handle page update subscription signal (worker-local hook point).
+     *
+     * @param AgentInterface $agent
+     * @param string $source
+     * @param string $name
+     * @param SignalDataInterface $signalData
+     * @return void
+     */
+    private function handlePageUpdateSubscriptionSignal(
+        AgentInterface $agent,
+        string $source,
+        string $name,
+        SignalDataInterface $signalData,
+    ): void {
+        $acceptKey = $this->resolveAcceptKeyFromSignalData($signalData);
+        $page = $this->resolvePageNameFromSignalData($name, $signalData);
+
+        if ($acceptKey !== null && $acceptKey !== '' && $page !== null && $page !== '') {
+            $this->pageSubscriptionsByAcceptKey[$acceptKey] = $page;
+        }
+
+        $this->onPageSubscriptionUpdated($acceptKey, $page, $signalData);
+        $agent->onSignalPageUpdateSubscription($source, $name, $signalData);
+    }
+
+    /**
+     * Get mapped page for accept key (worker-local).
+     *
+     * @param string $acceptKey
+     * @return ?string
+     */
+    protected function getSubscribedPageForAcceptKey(string $acceptKey): ?string
+    {
+        return $this->pageSubscriptionsByAcceptKey[$acceptKey] ?? null;
+    }
+
+    /**
+     * Hook: page subscribe handled on worker.
+     *
+     * @param ?string $acceptKey
+     * @param ?string $page
+     * @param SignalDataInterface $signalData
+     * @return void
+     */
+    protected function onPageSubscribed(?string $acceptKey, ?string $page, SignalDataInterface $signalData): void
+    {
+        // Default: no-op
+    }
+
+    /**
+     * Hook: page unsubscribe handled on worker.
+     *
+     * @param ?string $acceptKey
+     * @param ?string $page
+     * @param SignalDataInterface $signalData
+     * @return void
+     */
+    protected function onPageUnsubscribed(?string $acceptKey, ?string $page, SignalDataInterface $signalData): void
+    {
+        // Default: no-op
+    }
+
+    /**
+     * Hook: page update subscription handled on worker.
+     *
+     * @param ?string $acceptKey
+     * @param ?string $page
+     * @param SignalDataInterface $signalData
+     * @return void
+     */
+    protected function onPageSubscriptionUpdated(?string $acceptKey, ?string $page, SignalDataInterface $signalData): void
+    {
+        // Default: no-op
+    }
+
+    /**
+     * Resolve accept key from signal data.
+     *
+     * @param SignalDataInterface $signalData
+     * @return ?string
+     */
+    private function resolveAcceptKeyFromSignalData(SignalDataInterface $signalData): ?string
+    {
+        if (property_exists($signalData, 'acceptKey') && is_string($signalData->acceptKey)) {
+            return $signalData->acceptKey;
+        }
+
+        return null;
+    }
+
+    /**
+     * Resolve page name from signal data or fallback name.
+     *
+     * @param string $fallbackName
+     * @param SignalDataInterface $signalData
+     * @return ?string
+     */
+    private function resolvePageNameFromSignalData(string $fallbackName, SignalDataInterface $signalData): ?string
+    {
+        if (property_exists($signalData, 'page') && is_string($signalData->page) && $signalData->page !== '') {
+            return $signalData->page;
+        }
+
+        return $fallbackName !== '' ? $fallbackName : null;
     }
 
     /**

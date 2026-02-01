@@ -14,11 +14,11 @@ use Hilos\Socket\Client\ClientInterface;
 interface WebSocketClientInterface extends ClientInterface
 {
     /**
-     * Get client ID
+     * Get accept key
      *
-     * @return string Client unique identifier
+     * @return string Accept key identifier
      */
-    public function getClientId(): string;
+    public function getAcceptKey(): string;
 
     /**
      * Send WebSocket text frame

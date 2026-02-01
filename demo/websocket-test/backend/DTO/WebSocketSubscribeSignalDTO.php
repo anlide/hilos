@@ -25,7 +25,7 @@ class WebSocketSubscribeSignalDTO extends FrameworkWebSocketSubscribeSignalDTO i
     public static function fromArray(array $data): static
     {
         return new self(
-            clientId: $data[self::CLIENT_ID] ?? '',
+            acceptKey: $data[self::ACCEPT_KEY] ?? '',
             page: $data[self::PAGE] ?? null,
             groups: $data[self::GROUPS] ?? [],
             params: $data[self::PARAMS] ?? [],

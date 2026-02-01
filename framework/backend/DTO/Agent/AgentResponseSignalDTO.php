@@ -27,18 +27,18 @@ class AgentResponseSignalDTO extends BaseDTO implements AgentMessageDTOInterface
     public const string SIGNAL_TYPE = 'signalType';
     public const string SIGNAL_NAME = 'signalName';
     public const string SIGNAL_DATA = 'signalData';
-    public const string TARGET_CLIENT_ID = 'targetClientId';
+    public const string TARGET_ACCEPT_KEY = 'targetAcceptKey';
     public const string TARGET_GROUP = 'targetGroup';
-    public const string EXCLUDE_CLIENT_ID = 'excludeClientId';
+    public const string EXCLUDE_ACCEPT_KEY = 'excludeAcceptKey';
 
     public function __construct(
         public readonly SignalSourceInterface $signalSource,
         public readonly SignalTypeInterface $signalType,
         public readonly SignalNameInterface $signalName,
         public readonly SignalDataInterface $signalData,
-        public readonly ?string $targetClientId = null,
+        public readonly ?string $targetAcceptKey = null,
         public readonly ?string $targetGroup = null,
-        public readonly ?string $excludeClientId = null,
+        public readonly ?string $excludeAcceptKey = null,
     ) {
     }
 
@@ -67,16 +67,16 @@ class AgentResponseSignalDTO extends BaseDTO implements AgentMessageDTOInterface
             self::SIGNAL_DATA => $dataArray,
         ];
 
-        if ($this->targetClientId !== null) {
-            $result[self::TARGET_CLIENT_ID] = $this->targetClientId;
+        if ($this->targetAcceptKey !== null) {
+            $result[self::TARGET_ACCEPT_KEY] = $this->targetAcceptKey;
         }
 
         if ($this->targetGroup !== null) {
             $result[self::TARGET_GROUP] = $this->targetGroup;
         }
 
-        if ($this->excludeClientId !== null) {
-            $result[self::EXCLUDE_CLIENT_ID] = $this->excludeClientId;
+        if ($this->excludeAcceptKey !== null) {
+            $result[self::EXCLUDE_ACCEPT_KEY] = $this->excludeAcceptKey;
         }
 
         return $result;
@@ -122,9 +122,9 @@ class AgentResponseSignalDTO extends BaseDTO implements AgentMessageDTOInterface
             signalType: $signalType,
             signalName: $signalName,
             signalData: $signalData,
-            targetClientId: $data[self::TARGET_CLIENT_ID] ?? null,
+            targetAcceptKey: $data[self::TARGET_ACCEPT_KEY] ?? null,
             targetGroup: $data[self::TARGET_GROUP] ?? null,
-            excludeClientId: $data[self::EXCLUDE_CLIENT_ID] ?? null,
+            excludeAcceptKey: $data[self::EXCLUDE_ACCEPT_KEY] ?? null,
         );
     }
 }

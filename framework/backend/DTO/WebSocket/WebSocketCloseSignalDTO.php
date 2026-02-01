@@ -16,10 +16,10 @@ use Hilos\DTO\SignalDataDTO;
 class WebSocketCloseSignalDTO extends BaseDTO implements SignalDataDTO, SignalDataInterface
 {
     // Field name constants
-    public const string CLIENT_ID = 'clientId';
+    public const string ACCEPT_KEY = 'acceptKey';
 
     public function __construct(
-        public readonly string $clientId,
+        public readonly string $acceptKey,
     ) {
     }
 
@@ -31,7 +31,7 @@ class WebSocketCloseSignalDTO extends BaseDTO implements SignalDataDTO, SignalDa
     public function toArray(): array
     {
         return [
-            self::CLIENT_ID => $this->clientId,
+            self::ACCEPT_KEY => $this->acceptKey,
         ];
     }
 
@@ -44,7 +44,7 @@ class WebSocketCloseSignalDTO extends BaseDTO implements SignalDataDTO, SignalDa
     public static function fromArray(array $data): static
     {
         return new self(
-            clientId: $data[self::CLIENT_ID] ?? '',
+            acceptKey: $data[self::ACCEPT_KEY] ?? '',
         );
     }
 }

@@ -16,13 +16,13 @@ use Hilos\DTO\SignalDataDTO;
 class WebSocketSubscribeSignalDTO extends BaseDTO implements SignalDataDTO, SignalDataInterface
 {
     // Field name constants
-    public const string CLIENT_ID = 'clientId';
+    public const string ACCEPT_KEY = 'acceptKey';
     public const string PAGE = 'page';
     public const string GROUPS = 'groups';
     public const string PARAMS = 'params';
 
     public function __construct(
-        public readonly string $clientId,
+        public readonly string $acceptKey,
         public readonly ?string $page = null,
         public readonly array $groups = [],
         public readonly array $params = [],
@@ -37,7 +37,7 @@ class WebSocketSubscribeSignalDTO extends BaseDTO implements SignalDataDTO, Sign
     public function toArray(): array
     {
         $result = [
-            self::CLIENT_ID => $this->clientId,
+            self::ACCEPT_KEY => $this->acceptKey,
         ];
 
         if ($this->page !== null) {
@@ -64,7 +64,7 @@ class WebSocketSubscribeSignalDTO extends BaseDTO implements SignalDataDTO, Sign
     public static function fromArray(array $data): static
     {
         return new self(
-            clientId: $data[self::CLIENT_ID] ?? '',
+            acceptKey: $data[self::ACCEPT_KEY] ?? '',
             page: $data[self::PAGE] ?? null,
             groups: $data[self::GROUPS] ?? [],
             params: $data[self::PARAMS] ?? [],

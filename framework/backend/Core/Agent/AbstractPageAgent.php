@@ -18,147 +18,110 @@ use RuntimeException;
 /**
  * AbstractPageAgent - Base agent with page routing helpers
  *
- * Centralizes WebSocket page routing logic and keeps page/client mapping
+ * Centralizes WebSocket page routing logic and keeps page/acceptKey mapping
  * at framework level. Domain agents provide user resolution and hooks.
  */
 abstract class AbstractPageAgent extends AbstractAgent
 {
     /** @var ?AbstractPageFactory Page factory instance */
-    private ?AbstractPageFactory $pageFactory = null;
+    abstract protected function getPageFactory(): ?AbstractPageFactory;
 
     /**
-     * In-memory mapping between websocket client id and page name.
+     * In-memory mapping between websocket accept key and page name.
      *
      * @var array<string,string>
      */
-    private array $clientIdToPage = [];
+    private array $acceptKeyToPage = [];
 
     /**
      * Provide user object for a handshake-based page subscribe.
      *
      * @param WebSocketHandshakeSignalDTO $data
-     * @param string $clientId
+     * @param string $acceptKey
      * @param string $page
      * @return mixed
      */
     abstract protected function handleHandshakeSubscription(
         WebSocketHandshakeSignalDTO $data,
-        string $clientId,
+        string $acceptKey,
         string $page,
     ): mixed;
 
     /**
-     * Resolve user object for a known client (non-handshake subscribe).
+     * Remember acceptKey -> page mapping.
      *
-     * @param string $clientId
-     * @return mixed|null
-     */
-    abstract protected function resolveUserForClient(string $clientId): mixed;
-
-    /**
-     * Resolve userId for a known client (unsubscribe/action).
-     *
-     * @param string $clientId
-     * @return ?int
-     */
-    abstract protected function resolveUserIdForClient(string $clientId): ?int;
-
-    /**
-     * Assign page factory used for page routing.
-     *
-     * @param AbstractPageFactory $pageFactory
-     * @return void
-     */
-    protected function setPageFactory(AbstractPageFactory $pageFactory): void
-    {
-        $this->pageFactory = $pageFactory;
-    }
-
-    /**
-     * Get page factory if configured.
-     *
-     * @return ?AbstractPageFactory
-     */
-    protected function getPageFactory(): ?AbstractPageFactory
-    {
-        return $this->pageFactory;
-    }
-
-    /**
-     * Remember client -> page mapping.
-     *
-     * @param string $clientId
+     * @param string $acceptKey
      * @param string $page
      * @return void
      */
-    protected function rememberClientPage(string $clientId, string $page): void
+    protected function rememberAcceptKeyPage(string $acceptKey, string $page): void
     {
-        $this->clientIdToPage[$clientId] = $page;
+        $this->acceptKeyToPage[$acceptKey] = $page;
     }
 
     /**
-     * Resolve page by client id.
+     * Resolve page by accept key.
      *
-     * @param string $clientId
+     * @param string $acceptKey
      * @return ?string
      */
-    protected function resolveClientPage(string $clientId): ?string
+    protected function resolveAcceptKeyPage(string $acceptKey): ?string
     {
-        return $this->clientIdToPage[$clientId] ?? null;
+        return $this->acceptKeyToPage[$acceptKey] ?? null;
     }
 
     /**
-     * Forget client -> page mapping.
+     * Forget acceptKey -> page mapping.
      *
-     * @param string $clientId
+     * @param string $acceptKey
      * @return void
      */
-    protected function forgetClientPage(string $clientId): void
+    protected function forgetAcceptKeyPage(string $acceptKey): void
     {
-        unset($this->clientIdToPage[$clientId]);
+        unset($this->acceptKeyToPage[$acceptKey]);
     }
 
     /**
-     * Get client ids filtered by page (or all).
+     * Get accept keys filtered by page (or all).
      *
      * @param ?string $page
      * @return string[]
      */
-    protected function getClientIdsForPage(?string $page = null): array
+    protected function getAcceptKeysForPage(?string $page = null): array
     {
         if ($page === null) {
-            return array_keys($this->clientIdToPage);
+            return array_keys($this->acceptKeyToPage);
         }
 
-        $clientIds = [];
-        foreach ($this->clientIdToPage as $clientId => $mappedPage) {
+        $acceptKeys = [];
+        foreach ($this->acceptKeyToPage as $acceptKey => $mappedPage) {
             if ($mappedPage === $page) {
-                $clientIds[] = $clientId;
+                $acceptKeys[] = $acceptKey;
             }
         }
 
-        return $clientIds;
+        return $acceptKeys;
     }
 
     /**
-     * Cleanup after client disconnects/unsubscribes.
+     * Cleanup after accept key disconnects/unsubscribes.
      *
-     * @param string $clientId
+     * @param string $acceptKey
      * @return void
      */
-    protected function removeClient(string $clientId): void
+    protected function removeAcceptKey(string $acceptKey): void
     {
-        $this->forgetClientPage($clientId);
-        $this->onClientRemoved($clientId);
+        $this->forgetAcceptKeyPage($acceptKey);
+        $this->onAcceptKeyRemoved($acceptKey);
     }
 
     /**
-     * Hook: called after client mapping is removed.
+     * Hook: called after acceptKey mapping is removed.
      *
-     * @param string $clientId
+     * @param string $acceptKey
      * @return void
      */
-    protected function onClientRemoved(string $clientId): void
+    protected function onAcceptKeyRemoved(string $acceptKey): void
     {
         // Default: no-op
     }
@@ -166,12 +129,12 @@ abstract class AbstractPageAgent extends AbstractAgent
     /**
      * Hook: called after successful page subscribe.
      *
-     * @param string $clientId
+     * @param string $acceptKey
      * @param string $page
      * @param mixed $user
      * @return void
      */
-    protected function onClientSubscribed(string $clientId, string $page, mixed $user): void
+    protected function onAcceptKeySubscribed(string $acceptKey, string $page, mixed $user): void
     {
         // Default: no-op
     }
@@ -179,11 +142,11 @@ abstract class AbstractPageAgent extends AbstractAgent
     /**
      * Hook: called after subscription update.
      *
-     * @param string $clientId
+     * @param string $acceptKey
      * @param string $page
      * @return void
      */
-    protected function onClientSubscriptionUpdated(string $clientId, string $page): void
+    protected function onAcceptKeySubscriptionUpdated(string $acceptKey, string $page): void
     {
         // Default: no-op
     }
@@ -191,11 +154,11 @@ abstract class AbstractPageAgent extends AbstractAgent
     /**
      * Hook: called when client re-subscribes or updates page.
      *
-     * @param string $clientId
+     * @param string $acceptKey
      * @param ?string $page
      * @return void
      */
-    protected function onClientResubscribed(string $clientId, ?string $page): void
+    protected function onAcceptKeyResubscribed(string $acceptKey, ?string $page): void
     {
         // Default: no-op
     }
@@ -204,12 +167,12 @@ abstract class AbstractPageAgent extends AbstractAgent
      * Hook: called before page unsubscribe is processed.
      * Return true to short-circuit default handling.
      *
-     * @param string $clientId
+     * @param string $acceptKey
      * @param int $userId
      * @param string $page
      * @return bool
      */
-    protected function beforePageUnsubscribe(string $clientId, int $userId, string $page): bool
+    protected function beforePageUnsubscribe(string $acceptKey, int $userId, string $page): bool
     {
         return false;
     }
@@ -219,7 +182,7 @@ abstract class AbstractPageAgent extends AbstractAgent
      *
      * @param string $source
      * @param string $name
-     * @param string $clientId
+     * @param string $acceptKey
      * @param int $userId
      * @param string $payload
      * @return void
@@ -227,7 +190,7 @@ abstract class AbstractPageAgent extends AbstractAgent
     protected function onActionReceived(
         string $source,
         string $name,
-        string $clientId,
+        string $acceptKey,
         int $userId,
         string $payload,
     ): void {
@@ -245,19 +208,19 @@ abstract class AbstractPageAgent extends AbstractAgent
     public function onSignalPageSubscribe(string $source, string $name, SignalDataInterface $data): void
     {
         if ($data instanceof WebSocketHandshakeSignalDTO) {
-            $clientId = $data->clientId;
+            $acceptKey = $data->acceptKey;
             $page = $name;
-            Logger::logAgentDebug($this->getId(), "Page subscribe signal received: source={$source}, client={$clientId}, page={$page}");
+            Logger::logAgentDebug($this->getId(), "Page subscribe signal received: source={$source}, acceptKey={$acceptKey}, page={$page}");
 
-            if ($clientId === '') {
-                throw new RuntimeException("Client ID is required but not provided or empty");
+            if ($acceptKey === '') {
+                throw new RuntimeException("Accept key is required but not provided or empty");
             }
 
-            $user = $this->handleHandshakeSubscription($data, $clientId, $page);
-            $this->rememberClientPage($clientId, $page);
-            $this->onClientResubscribed($clientId, $page);
-            $this->dispatchPageSubscribe($clientId, $page, $user, true);
-            $this->onClientSubscribed($clientId, $page, $user);
+            $user = $this->handleHandshakeSubscription($data, $acceptKey, $page);
+            $this->rememberAcceptKeyPage($acceptKey, $page);
+            $this->onAcceptKeyResubscribed($acceptKey, $page);
+            $this->dispatchPageSubscribe($acceptKey, $page, $user, true);
+            $this->onAcceptKeySubscribed($acceptKey, $page, $user);
             return;
         }
 
@@ -267,31 +230,8 @@ abstract class AbstractPageAgent extends AbstractAgent
             throw new RuntimeException("Expected WebSocketHandshakeSignalDTO or WebSocketSubscribeSignalDTO, got {$dataType}");
         }
 
-        $clientId = $data->clientId;
-        $page = $data->page ?? $name;
-
-        Logger::logAgentDebug($this->getId(), "Page subscribe signal received: source={$source}, client={$clientId}, page={$page}");
-
-        if ($clientId === '') {
-            Logger::logAgentError($this->getId(), "Client ID is required but not provided or empty (page subscribe)");
-            return;
-        }
-
-        $user = $this->resolveUserForClient($clientId);
-        if ($user === null) {
-            Logger::logAgentError($this->getId(), "Unable to resolve user for clientId={$clientId} (page subscribe)");
-            return;
-        }
-
-        if ($page === null || $page === '') {
-            Logger::logAgentError($this->getId(), "Page is required but not provided or empty (page subscribe)");
-            return;
-        }
-
-        $this->rememberClientPage($clientId, $page);
-        $this->onClientResubscribed($clientId, $page);
-        $this->dispatchPageSubscribe($clientId, $page, $user, false);
-        $this->onClientSubscribed($clientId, $page, $user);
+        // Non-handshake subscribe requires user resolution, which is disabled for now.
+        return;
     }
 
     /**
@@ -310,27 +250,27 @@ abstract class AbstractPageAgent extends AbstractAgent
             throw new RuntimeException("Expected WebSocketUpdateSubscriptionSignalDTO, got {$dataType}");
         }
 
-        $clientId = $data->clientId;
+        $acceptKey = $data->acceptKey;
         $page = $data->page ?? $name;
 
-        Logger::logAgentDebug($this->getId(), "Page update subscription signal received: source={$source}, client={$clientId}, page={$page}");
+        Logger::logAgentDebug($this->getId(), "Page update subscription signal received: source={$source}, acceptKey={$acceptKey}, page={$page}");
 
-        if ($clientId === '') {
-            Logger::logAgentError($this->getId(), "Client ID is required but not provided or empty (page update subscription)");
+        if ($acceptKey === '') {
+            Logger::logAgentError($this->getId(), "Accept key is required but not provided or empty (page update subscription)");
             return;
         }
 
         if ($page !== null && $page !== '') {
-            $this->rememberClientPage($clientId, $page);
+            $this->rememberAcceptKeyPage($acceptKey, $page);
         }
 
-        $this->onClientResubscribed($clientId, $page);
+        $this->onAcceptKeyResubscribed($acceptKey, $page);
 
         if ($page === null || $page === '') {
             return;
         }
 
-        $this->onClientSubscriptionUpdated($clientId, $page);
+        $this->onAcceptKeySubscriptionUpdated($acceptKey, $page);
     }
 
     /**
@@ -349,33 +289,29 @@ abstract class AbstractPageAgent extends AbstractAgent
             throw new RuntimeException("Expected WebSocketUnsubscribeSignalDTO, got {$dataType}");
         }
 
-        $clientId = $data->clientId;
+        $acceptKey = $data->acceptKey;
         $page = $name;
 
-        Logger::logAgentDebug($this->getId(), "Page unsubscribe signal received: source={$source}, client={$clientId}, page={$page}");
+        Logger::logAgentDebug($this->getId(), "Page unsubscribe signal received: source={$source}, acceptKey={$acceptKey}, page={$page}");
 
-        if ($clientId === '') {
-            Logger::logAgentError($this->getId(), "Client ID is required but not provided or empty (page unsubscribe)");
+        if ($acceptKey === '') {
+            Logger::logAgentError($this->getId(), "Accept key is required but not provided or empty (page unsubscribe)");
             return;
         }
 
-        $userId = $this->resolveUserIdForClient($clientId);
-        if ($userId === null) {
-            Logger::logAgentError($this->getId(), "Unable to resolve userId for clientId={$clientId} (page unsubscribe)");
-            $this->removeClient($clientId);
+        // Unsubscribe requires user resolution, which is disabled for now.
+        return;
+
+        $resolvedPage = $this->resolveAcceptKeyPage($acceptKey) ?? $page;
+
+        if ($this->beforePageUnsubscribe($acceptKey, $userId, $resolvedPage)) {
             return;
         }
 
-        $resolvedPage = $this->resolveClientPage($clientId) ?? $page;
-
-        if ($this->beforePageUnsubscribe($clientId, $userId, $resolvedPage)) {
-            return;
-        }
-
-        $pageFactory = $this->pageFactory;
+        $pageFactory = $this->getPageFactory();
         if ($pageFactory === null || !$pageFactory->hasPage($resolvedPage)) {
             Logger::logAgentError($this->getId(), "Unknown page unsubscribe: {$resolvedPage}");
-            $this->removeClient($clientId);
+            $this->removeAcceptKey($acceptKey);
             return;
         }
 
@@ -383,12 +319,12 @@ abstract class AbstractPageAgent extends AbstractAgent
             $pageInstance = $pageFactory->getPage($resolvedPage);
         } catch (PageNotFoundException $exception) {
             Logger::logAgentError($this->getId(), "Unknown page unsubscribe: {$resolvedPage}");
-            $this->removeClient($clientId);
+            $this->removeAcceptKey($acceptKey);
             return;
         }
 
-        $pageInstance->onUnsubscribe($clientId, $userId);
-        $this->removeClient($clientId);
+        $pageInstance->onUnsubscribe($acceptKey, $userId);
+        $this->removeAcceptKey($acceptKey);
     }
 
     /**
@@ -407,30 +343,27 @@ abstract class AbstractPageAgent extends AbstractAgent
             throw new RuntimeException("Expected WebSocketFrameSignalDTO, got {$dataType}");
         }
 
-        $clientId = $data->clientId;
+        $acceptKey = $data->acceptKey;
         $payload = $data->payload;
         $action = $name;
 
-        if ($clientId === '') {
-            Logger::logAgentError($this->getId(), "Client ID is required but not provided or empty (action)");
+        if ($acceptKey === '') {
+            Logger::logAgentError($this->getId(), "Accept key is required but not provided or empty (action)");
             return;
         }
 
-        $userId = $this->resolveUserIdForClient($clientId);
-        if ($userId === null) {
-            Logger::logAgentError($this->getId(), "Unable to resolve userId for clientId={$clientId} (action)");
-            return;
-        }
+        // Action requires user resolution, which is disabled for now.
+        return;
 
-        $this->onActionReceived($source, $name, $clientId, $userId, $payload);
+        $this->onActionReceived($source, $name, $acceptKey, $userId, $payload);
 
-        $page = $this->resolveClientPage($clientId);
+        $page = $this->resolveAcceptKeyPage($acceptKey);
         if ($page === null) {
-            Logger::logAgentError($this->getId(), "Unable to resolve page for clientId={$clientId} (action)");
+            Logger::logAgentError($this->getId(), "Unable to resolve page for acceptKey={$acceptKey} (action)");
             return;
         }
 
-        $pageFactory = $this->pageFactory;
+        $pageFactory = $this->getPageFactory();
         if ($pageFactory === null || !$pageFactory->hasPage($page)) {
             Logger::logAgentError($this->getId(), "Unknown page for action: {$page}");
             return;
@@ -443,21 +376,21 @@ abstract class AbstractPageAgent extends AbstractAgent
             return;
         }
 
-        $pageInstance->onAction($clientId, $userId, $action, $payload);
+        $pageInstance->onAction($acceptKey, $userId, $action, $payload);
     }
 
     /**
      * Dispatch page subscribe to page instance.
      *
-     * @param string $clientId
+     * @param string $acceptKey
      * @param string $page
      * @param mixed $user
      * @param bool $strict
      * @return void
      */
-    private function dispatchPageSubscribe(string $clientId, string $page, mixed $user, bool $strict): void
+    private function dispatchPageSubscribe(string $acceptKey, string $page, mixed $user, bool $strict): void
     {
-        $pageFactory = $this->pageFactory;
+        $pageFactory = $this->getPageFactory();
         if ($pageFactory === null || !$pageFactory->hasPage($page)) {
             Logger::logAgentError($this->getId(), "Unknown page subscription: {$page}");
             if ($strict) {
@@ -476,6 +409,6 @@ abstract class AbstractPageAgent extends AbstractAgent
             return;
         }
 
-        $pageInstance->onSubscribe($clientId, $user);
+        $pageInstance->onSubscribe($acceptKey, $user);
     }
 }

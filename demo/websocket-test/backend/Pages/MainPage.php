@@ -41,31 +41,23 @@ class MainPage extends AbstractChatPage
     /**
      * Handle page-specific subscription logic
      *
-     * @param string $clientId Client ID
+     * @param string $acceptKey Accept key
      * @param IdeaUser $user User idea
      * @throws DatabaseException If operation fails
      * @throws IdeaCollectionNotManualException
      */
-    protected function handleSubscribe(string $clientId, IdeaUser $user): void
+    protected function handleSubscribe(string $acceptKey, IdeaUser $user): void
     {
-        if (!$this->chatContext->hasOtherClientOnPage($user->id, PageConstants::MAIN, $clientId)) {
-            // Exclude the joining user from receiving their own join event
-            $publicUser = $this->toPublicUserArray($user->toArray(withId: true, idAsIndex: false));
-            $entities = new EntitiesChangesDTO(
-                full: ['users' => [$publicUser]],
-            );
-            $this->chatContext->addEvent(ChatEventType::USER_JOINED, $user->id, null, $entities, $clientId);
-        }
+        // Exclude the joining user from receiving their own join event
+        $publicUser = $this->toPublicUserArray($user->toArray(withId: true, idAsIndex: false));
+        $entities = new EntitiesChangesDTO(
+            full: ['users' => [$publicUser]],
+        );
+        $this->chatContext->addEvent(ChatEventType::USER_JOINED, $user->id, null, $entities, $acceptKey);
 
         // Send subscription response with all events and user info
-        $onlineUserIds = $this->chatContext->getOnlineUserIds(PageConstants::MAIN);
-
-        $onlineUsers = Idea::$idea->users->filter(
-            static fn (IdeaUser $idea): bool => $idea->id !== null && in_array($idea->id, $onlineUserIds, true)
-        );
-
         $subscriptionEntities = new EntitiesChangesDTO(
-            full: ['users' => $this->toPublicUserArrayList($onlineUsers->toArray(withId: true, idAsIndex: false))],
+            full: ['users' => []],
         );
         $subscriptionData = new SubscriptionResponseSignalData(
             events: Idea::$idea->events->toArray(idAsIndex: false),
@@ -77,9 +69,9 @@ class MainPage extends AbstractChatPage
         // Wrap subscription data in WebSocketSignalData for WebSocket routing
         $signalData = new WebSocketSignalData(
             data: $subscriptionData,
-            targetClientId: $clientId,
+            targetAcceptKey: $acceptKey,
             targetGroup: null,
-            excludeClientId: null,
+            excludeAcceptKey: null,
         );
 
         $this->signalRouter->queueSignal(
@@ -93,13 +85,13 @@ class MainPage extends AbstractChatPage
     /**
      * Handle page-specific unsubscription logic
      *
-     * @param string $clientId Client id
+     * @param string $acceptKey Accept key
      * @param int $userId User id
      * @throws DatabaseException If database operation fails
      */
-    protected function handleUnsubscribe(string $clientId, int $userId): void
+    protected function handleUnsubscribe(string $acceptKey, int $userId): void
     {
-        // Add user left event (clientId must NOT be included in event data)
+        // Add user left event (acceptKey must NOT be included in event data)
         $this->chatContext->addEvent(ChatEventType::USER_LEFT, $userId);
     }
 
@@ -129,17 +121,17 @@ class MainPage extends AbstractChatPage
     /**
      * Handle page-specific action logic
      *
-     * @param string $clientId Client id
+     * @param string $acceptKey Accept key
      * @param int $userId User id
      * @param string $action Action name
      * @param string $payload Action payload
      * @return void
      * @throws DatabaseException
      */
-    protected function handleAction(string $clientId, int $userId, string $action, string $payload): void
+    protected function handleAction(string $acceptKey, int $userId, string $action, string $payload): void
     {
         if ($action === ChatSignalConstants::MESSAGE) {
-            $this->handleMessageAction($clientId, $userId, $payload);
+            $this->handleMessageAction($acceptKey, $userId, $payload);
         } else {
             Logger::logAgentError('MainPage', "Unknown action: {$action}");
         }
@@ -149,16 +141,16 @@ class MainPage extends AbstractChatPage
      * Handle "message" action.
      * Expects JSON payload like: { "type": "message", "content": "..." } (frontend)
      *
-     * @param string $clientId Client id
+     * @param string $acceptKey Accept key
      * @param int $userId User id
      * @param string $payload Raw websocket payload
      * @throws DatabaseException If database operation fails
      */
-    private function handleMessageAction(string $clientId, int $userId, string $payload): void
+    private function handleMessageAction(string $acceptKey, int $userId, string $payload): void
     {
         $payloadData = JsonHelper::tryDecode($payload);
         if ($payloadData === null) {
-            Logger::logAgentError('MainPage', "Invalid JSON payload for message action (clientId={$clientId})");
+            Logger::logAgentError('MainPage', "Invalid JSON payload for message action (acceptKey={$acceptKey})");
             return;
         }
 
@@ -169,7 +161,7 @@ class MainPage extends AbstractChatPage
         }
 
         if (!is_string($content) || trim($content) === '') {
-            Logger::logAgentError('MainPage', "Empty message content (clientId={$clientId}, userId={$userId})");
+            Logger::logAgentError('MainPage', "Empty message content (acceptKey={$acceptKey}, userId={$userId})");
             return;
         }
 

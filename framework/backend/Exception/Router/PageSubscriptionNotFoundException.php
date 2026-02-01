@@ -9,9 +9,9 @@ namespace Hilos\Exception\Router;
  */
 class PageSubscriptionNotFoundException extends RouteException
 {
-    public function __construct(string $clientId, int $code = 0, ?\Throwable $previous = null)
+    public function __construct(string $acceptKey, int $code = 0, ?\Throwable $previous = null)
     {
-        $message = "Cannot update page subscription: no subscription found for client {$clientId}";
+        $message = "Cannot update page subscription: no subscription found for acceptKey {$acceptKey}";
         parent::__construct($message, $code, $previous);
     }
 }

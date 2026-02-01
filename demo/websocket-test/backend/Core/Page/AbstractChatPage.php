@@ -34,71 +34,71 @@ abstract class AbstractChatPage extends AbstractPage
     /**
      * Handle page subscription
      *
-     * @param string $clientId WebSocket client ID
+     * @param string $acceptKey WebSocket accept key
      * @param IdeaUser $user User idea
      * @return void
      */
-    public function onSubscribe(string $clientId, mixed $user): void
+    public function onSubscribe(string $acceptKey, mixed $user): void
     {
         if (!($user instanceof IdeaUser)) {
             throw new \InvalidArgumentException('Expected IdeaUser instance');
         }
 
-        $this->handleSubscribe($clientId, $user);
+        $this->handleSubscribe($acceptKey, $user);
     }
 
     /**
      * Handle page-specific subscription logic
      *
-     * @param string $clientId WebSocket client ID
+     * @param string $acceptKey WebSocket accept key
      * @param IdeaUser $user User idea
      * @return void
      */
-    abstract protected function handleSubscribe(string $clientId, IdeaUser $user): void;
+    abstract protected function handleSubscribe(string $acceptKey, IdeaUser $user): void;
 
     /**
      * Handle page-specific unsubscription logic
      *
-     * @param string $clientId WebSocket client ID
+     * @param string $acceptKey WebSocket accept key
      * @param int $userId User ID
      * @return void
      */
-    abstract protected function handleUnsubscribe(string $clientId, int $userId): void;
+    abstract protected function handleUnsubscribe(string $acceptKey, int $userId): void;
 
     /**
      * Handle page unsubscription
      *
-     * @param string $clientId WebSocket client ID
+     * @param string $acceptKey WebSocket accept key
      * @param int $userId User ID
      * @return void
      */
-    public function onUnsubscribe(string $clientId, int $userId): void
+    public function onUnsubscribe(string $acceptKey, int $userId): void
     {
-        $this->handleUnsubscribe($clientId, $userId);
+        $this->handleUnsubscribe($acceptKey, $userId);
     }
 
     /**
      * Handle page-specific action logic
      *
-     * @param string $clientId WebSocket client ID
+     * @param string $acceptKey WebSocket accept key
      * @param int $userId User ID
      * @param string $action Action name
      * @param string $payload Action payload (raw string, usually JSON)
      * @return void
      */
-    abstract protected function handleAction(string $clientId, int $userId, string $action, string $payload): void;
+    abstract protected function handleAction(string $acceptKey, int $userId, string $action, string $payload): void;
 
     /**
      * Handle action signal
      *
-     * @param string $clientId WebSocket client ID
+     * @param string $acceptKey WebSocket accept key
      * @param int $userId User ID
      * @param string $action Action name
      * @param string $payload Action payload (raw string, usually JSON)
      * @return void
      */
-    public function onAction(string $clientId, int $userId, string $action, string $payload): void
+    public function onAction(string $acceptKey, int $userId, string $action, string $payload): void
     {
-        $this->handleAction($clientId, $userId, $action, $payload);
+        $this->handleAction($acceptKey, $userId, $action, $payload);
     }
 }

@@ -39,7 +39,7 @@ class SignalRouter
 
     /**
      * User page subscriptions storage
-     * Format: [clientId => ['page' => string, 'params' => array]]
+     * Format: [acceptKey => ['page' => string, 'params' => array]]
      *
      * @var array
      */
@@ -47,7 +47,7 @@ class SignalRouter
 
     /**
      * User group subscriptions storage
-     * Format: [clientId => [groupName => params, ...]]
+     * Format: [acceptKey => [groupName => params, ...]]
      *
      * @var array
      */
@@ -155,13 +155,13 @@ class SignalRouter
     /**
      * Subscribe user to page
      *
-     * @param string $clientId Client identifier
+     * @param string $acceptKey Accept key identifier
      * @param string $page Page identifier
      * @param array $params Additional parameters
      */
-    public function subscribeToPage(string $clientId, string $page, array $params = []): void
+    public function subscribeToPage(string $acceptKey, string $page, array $params = []): void
     {
-        $this->subscriptions[$clientId] = [
+        $this->subscriptions[$acceptKey] = [
             'page' => $page,
             'params' => $params,
         ];
@@ -173,42 +173,42 @@ class SignalRouter
      * Updates parameters of existing page subscription.
      * Throws exception if current page doesn't match the page being updated.
      *
-     * @param string $clientId Client identifier
+     * @param string $acceptKey Accept key identifier
      * @param string $page Page identifier
      * @param array $params Additional parameters to update
      * @throws PageSubscriptionNotFoundException If no subscription found
      * @throws PageSubscriptionMismatchException If current page doesn't match the page being updated
      */
-    public function updatePageSubscription(string $clientId, string $page, array $params): void
+    public function updatePageSubscription(string $acceptKey, string $page, array $params): void
     {
-        if (!isset($this->subscriptions[$clientId])) {
-            throw new PageSubscriptionNotFoundException($clientId);
+        if (!isset($this->subscriptions[$acceptKey])) {
+            throw new PageSubscriptionNotFoundException($acceptKey);
         }
 
-        $currentPage = $this->subscriptions[$clientId]['page'] ?? null;
+        $currentPage = $this->subscriptions[$acceptKey]['page'] ?? null;
         if ($currentPage !== $page) {
             throw new PageSubscriptionMismatchException($currentPage ?? '', $page);
         }
 
         // Merge new params with existing params
-        $existingParams = $this->subscriptions[$clientId]['params'] ?? [];
-        $this->subscriptions[$clientId]['params'] = array_merge($existingParams, $params);
+        $existingParams = $this->subscriptions[$acceptKey]['params'] ?? [];
+        $this->subscriptions[$acceptKey]['params'] = array_merge($existingParams, $params);
     }
 
     /**
      * Subscribe user to group
      *
-     * @param string $clientId Client identifier
+     * @param string $acceptKey Accept key identifier
      * @param string $group Group identifier
      * @param array $params Additional parameters
      */
-    public function subscribeToGroup(string $clientId, string $group, array $params = []): void
+    public function subscribeToGroup(string $acceptKey, string $group, array $params = []): void
     {
-        if (!isset($this->subscriptionGroups[$clientId])) {
-            $this->subscriptionGroups[$clientId] = [];
+        if (!isset($this->subscriptionGroups[$acceptKey])) {
+            $this->subscriptionGroups[$acceptKey] = [];
         }
 
-        $this->subscriptionGroups[$clientId][$group] = $params;
+        $this->subscriptionGroups[$acceptKey][$group] = $params;
     }
 
     /**
@@ -217,47 +217,47 @@ class SignalRouter
      * Updates parameters of existing group subscription.
      * Throws exception if group is not currently subscribed.
      *
-     * @param string $clientId Client identifier
+     * @param string $acceptKey Accept key identifier
      * @param string $group Group identifier
      * @param array $params Additional parameters to update
      * @throws GroupSubscriptionNotFoundException If group is not currently subscribed
      */
-    public function updateGroupSubscription(string $clientId, string $group, array $params): void
+    public function updateGroupSubscription(string $acceptKey, string $group, array $params): void
     {
-        if (!isset($this->subscriptionGroups[$clientId]) || !isset($this->subscriptionGroups[$clientId][$group])) {
-            throw new GroupSubscriptionNotFoundException($clientId, $group);
+        if (!isset($this->subscriptionGroups[$acceptKey]) || !isset($this->subscriptionGroups[$acceptKey][$group])) {
+            throw new GroupSubscriptionNotFoundException($acceptKey, $group);
         }
 
         // Merge new params with existing params
-        $existingParams = $this->subscriptionGroups[$clientId][$group];
-        $this->subscriptionGroups[$clientId][$group] = array_merge($existingParams, $params);
+        $existingParams = $this->subscriptionGroups[$acceptKey][$group];
+        $this->subscriptionGroups[$acceptKey][$group] = array_merge($existingParams, $params);
     }
 
 
     /**
      * Unsubscribe user from page
      *
-     * @param string $clientId Client identifier
+     * @param string $acceptKey Accept key identifier
      */
-    public function unsubscribeFromPage(string $clientId): void
+    public function unsubscribeFromPage(string $acceptKey): void
     {
-        unset($this->subscriptions[$clientId]);
+        unset($this->subscriptions[$acceptKey]);
     }
 
     /**
      * Unsubscribe user from group
      *
-     * @param string $clientId Client identifier
+     * @param string $acceptKey Accept key identifier
      * @param string $group Group identifier
      */
-    public function unsubscribeFromGroup(string $clientId, string $group): void
+    public function unsubscribeFromGroup(string $acceptKey, string $group): void
     {
-        if (isset($this->subscriptionGroups[$clientId])) {
-            unset($this->subscriptionGroups[$clientId][$group]);
+        if (isset($this->subscriptionGroups[$acceptKey])) {
+            unset($this->subscriptionGroups[$acceptKey][$group]);
 
             // Clean up empty client entry
-            if (empty($this->subscriptionGroups[$clientId])) {
-                unset($this->subscriptionGroups[$clientId]);
+            if (empty($this->subscriptionGroups[$acceptKey])) {
+                unset($this->subscriptionGroups[$acceptKey]);
             }
         }
     }
@@ -266,12 +266,12 @@ class SignalRouter
     /**
      * Unsubscribe user from all subscriptions
      *
-     * @param string $clientId Client identifier
+     * @param string $acceptKey Accept key identifier
      */
-    public function unsubscribeFromAll(string $clientId): void
+    public function unsubscribeFromAll(string $acceptKey): void
     {
-        unset($this->subscriptions[$clientId]);
-        unset($this->subscriptionGroups[$clientId]);
+        unset($this->subscriptions[$acceptKey]);
+        unset($this->subscriptionGroups[$acceptKey]);
     }
 
     /**
@@ -279,7 +279,7 @@ class SignalRouter
      *
      * Returns array of destinations for signal based on routing configuration.
      * Each destination is an array with 'type', 'agentType' and 'agentIndex' (for agent routing)
-     * or 'type' and 'clientId' (for WebSocket routing).
+     * or 'type' and 'acceptKey' (for WebSocket routing).
      * Can return multiple destinations for signals that need to be delivered to multiple agents or clients.
      *
      * @param SignalDTO $signal Signal DTO
@@ -320,12 +320,12 @@ class SignalRouter
      * Get WebSocket destinations for signal
      *
      * Returns array of WebSocket client destinations based on signal type and subscriptions.
-     * For ws_user: returns single client with targetClientId
-     * For ws_all: returns all subscribed clients, excluding excludeClientId
-     * For ws_group: returns clients subscribed to targetGroup, excluding excludeClientId
+     * For ws_user: returns single client with targetAcceptKey
+     * For ws_all: returns all subscribed clients, excluding excludeAcceptKey
+     * For ws_group: returns clients subscribed to targetGroup, excluding excludeAcceptKey
      *
      * @param SignalDTO $signal Signal DTO
-     * @return array Array of destinations [['type' => 'websocket', 'clientId' => string], ...]
+     * @return array Array of destinations [['type' => 'websocket', 'acceptKey' => string], ...]
      */
     private function getWebSocketDestinations(SignalDTO $signal): array
     {
@@ -334,16 +334,16 @@ class SignalRouter
         $signalData = $signal->data;
 
         // Extract targeting info from WebSocketSignalData
-        $targetClientId = null;
+        $targetAcceptKey = null;
         $targetGroup = null;
-        $excludeClientId = null;
+        $excludeAcceptKey = null;
 
         #var_dump($signalData);
         #var_dump($signalData instanceof WebSocketSignalData);
         if ($signalData instanceof WebSocketSignalData) {
-            $targetClientId = $signalData->targetClientId;
+            $targetAcceptKey = $signalData->targetAcceptKey;
             $targetGroup = $signalData->targetGroup;
-            $excludeClientId = $signalData->excludeClientId;
+            $excludeAcceptKey = $signalData->excludeAcceptKey;
         }
 
         $destinations = [];
@@ -351,38 +351,38 @@ class SignalRouter
         switch ($signalType) {
             case SignalTypeConstants::WS_USER:
                 // Return single client destination
-                if ($targetClientId !== null && $targetClientId !== '') {
+                if ($targetAcceptKey !== null && $targetAcceptKey !== '') {
                     $destinations[] = [
                         'type' => 'websocket',
-                        'clientId' => $targetClientId,
+                        'acceptKey' => $targetAcceptKey,
                     ];
                 }
                 break;
 
             case SignalTypeConstants::WS_ALL:
-                // Return all subscribed clients, excluding excludeClientId
-                foreach ($this->subscriptions as $clientId => $subscription) {
-                    if ($excludeClientId !== null && $clientId === $excludeClientId) {
+                // Return all subscribed clients, excluding excludeAcceptKey
+                foreach ($this->subscriptions as $acceptKey => $subscription) {
+                    if ($excludeAcceptKey !== null && $acceptKey === $excludeAcceptKey) {
                         continue;
                     }
                     $destinations[] = [
                         'type' => 'websocket',
-                        'clientId' => $clientId,
+                        'acceptKey' => $acceptKey,
                     ];
                 }
                 break;
 
             case SignalTypeConstants::WS_GROUP:
-                // Return clients subscribed to targetGroup, excluding excludeClientId
+                // Return clients subscribed to targetGroup, excluding excludeAcceptKey
                 if ($targetGroup !== null && $targetGroup !== '') {
-                    foreach ($this->subscriptionGroups as $clientId => $groups) {
-                        if ($excludeClientId !== null && $clientId === $excludeClientId) {
+                    foreach ($this->subscriptionGroups as $acceptKey => $groups) {
+                        if ($excludeAcceptKey !== null && $acceptKey === $excludeAcceptKey) {
                             continue;
                         }
                         if (isset($groups[$targetGroup])) {
                             $destinations[] = [
                                 'type' => 'websocket',
-                                'clientId' => $clientId,
+                                'acceptKey' => $acceptKey,
                             ];
                         }
                     }

@@ -25,17 +25,17 @@ use Hilos\Utils\Helpers\JsonHelper;
  */
 class ChatWebSocketClient extends WebSocketClient
 {
-    /** @var string Client identifier (acceptKey from handshake) */
-    private string $clientId = '';
+    /** @var string Accept key identifier (from handshake) */
+    private string $acceptKey = '';
 
     /**
      * Get client ID
      *
-     * @return string Client ID
+     * @return string Accept key
      */
-    public function getClientId(): string
+    public function getAcceptKey(): string
     {
-        return $this->clientId;
+        return $this->acceptKey;
     }
 
     /**
@@ -49,7 +49,7 @@ class ChatWebSocketClient extends WebSocketClient
     protected function onFrame(string $payload): void
     {
         $dto = new WebSocketFrameSignalDTO(
-            clientId: $this->clientId,
+            acceptKey: $this->acceptKey,
             payload: $payload,
         );
 
@@ -66,7 +66,7 @@ class ChatWebSocketClient extends WebSocketClient
                 if ($type === SignalTypeConstants::PAGE_SUBSCRIBE) {
                     $params = is_array($decoded['params'] ?? null) ? $decoded['params'] : [];
                     $subscribeDto = new WebSocketSubscribeSignalDTO(
-                        clientId: $this->clientId,
+                        acceptKey: $this->acceptKey,
                         page: $page,
                         groups: [],
                         params: $params,
@@ -82,7 +82,7 @@ class ChatWebSocketClient extends WebSocketClient
                 }
 
                 $updateDto = new WebSocketUpdateSubscriptionSignalDTO(
-                    clientId: $this->clientId,
+                    acceptKey: $this->acceptKey,
                     page: $page,
                     groups: null,
                 );
@@ -119,7 +119,7 @@ class ChatWebSocketClient extends WebSocketClient
     protected function onFrameBinary(string $payload): void
     {
         $dto = new WebSocketFrameSignalDTO(
-            clientId: $this->clientId,
+            acceptKey: $this->acceptKey,
             payload: $payload,
         );
 
@@ -148,10 +148,9 @@ class ChatWebSocketClient extends WebSocketClient
         array $queryParams,
     ): void
     {
-        $this->clientId = $acceptKey;
+        $this->acceptKey = $acceptKey;
 
         $dto = new WebSocketHandshakeSignalDTO(
-            clientId: $this->clientId,
             headers: $headers,
             acceptKey: $acceptKey,
             cookies: $cookies,
@@ -175,7 +174,7 @@ class ChatWebSocketClient extends WebSocketClient
     protected function onClose(): void
     {
         $pageDto = new WebSocketUnsubscribeSignalDTO(
-            clientId: $this->clientId,
+            acceptKey: $this->acceptKey,
             page: true,
             groups: [],
         );
@@ -188,6 +187,6 @@ class ChatWebSocketClient extends WebSocketClient
         );
 
         // Unsubscribe from all subscriptions (clear after sending signal)
-        $this->signalRouter->unsubscribeFromAll($this->clientId);
+        $this->signalRouter->unsubscribeFromAll($this->acceptKey);
     }
 }

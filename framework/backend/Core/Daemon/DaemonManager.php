@@ -544,15 +544,15 @@ abstract class DaemonManager extends BaseManager
                             break;
                         }
 
-                        $clientId = $destination['clientId'] ?? '';
-                        if ($clientId === '') {
-                            Logger::error("Client ID is missing in WebSocket destination");
+                        $acceptKey = $destination['acceptKey'] ?? '';
+                        if ($acceptKey === '') {
+                            Logger::error("Accept key is missing in WebSocket destination");
                             break;
                         }
 
-                        Logger::debug("Dispatching signal to websocket: {$signalType}/{$signalName} -> WebSocket client: {$clientId}");
+                        Logger::debug("Dispatching signal to websocket: {$signalType}/{$signalName} -> WebSocket acceptKey: {$acceptKey}");
 
-                        $this->sendSignalToWebSocketClient($webSocketServer, $signal, $clientId);
+                        $this->sendSignalToWebSocketClient($webSocketServer, $signal, $acceptKey);
                         break;
 
                     default:
@@ -571,9 +571,9 @@ abstract class DaemonManager extends BaseManager
      *
      * @param WebSocketServer $server WebSocket server
      * @param SignalDTO $signal Signal DTO
-     * @param string $clientId Client ID
+     * @param string $acceptKey Accept key
      */
-    private function sendSignalToWebSocketClient(WebSocketServer $server, SignalDTO $signal, string $clientId): void
+    private function sendSignalToWebSocketClient(WebSocketServer $server, SignalDTO $signal, string $acceptKey): void
     {
         $signalName = $signal->signalName->getName();
         $signalData = $signal->data;
@@ -596,31 +596,31 @@ abstract class DaemonManager extends BaseManager
         $messageJson = json_encode($message, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 
         // Send to specific client
-        $this->sendToClient($server, $clientId, $messageJson);
+        $this->sendToClient($server, $acceptKey, $messageJson);
     }
 
     /**
      * Send message to specific client
      *
      * @param WebSocketServer $server WebSocket server
-     * @param string $clientId Client ID
+     * @param string $acceptKey Accept key
      * @param string $message Message JSON
      */
-    private function sendToClient(WebSocketServer $server, string $clientId, string $message): void
+    private function sendToClient(WebSocketServer $server, string $acceptKey, string $message): void
     {
         foreach ($server->getClients() as $client) {
-            if ($client instanceof WebSocketClientInterface && $client->getClientId() === $clientId) {
+            if ($client instanceof WebSocketClientInterface && $client->getAcceptKey() === $acceptKey) {
                 try {
-                    Logger::debug("Sending message to client {$clientId}: {$message}");
+                    Logger::debug("Sending message to acceptKey {$acceptKey}: {$message}");
                     $client->sendFrame($message);
                     return;
                 } catch (\Throwable $e) {
-                    Logger::error("Failed to send message to client {$clientId}: " . $e->getMessage());
+                    Logger::error("Failed to send message to acceptKey {$acceptKey}: " . $e->getMessage());
                 }
             }
         }
 
-        Logger::debug("Client not found: {$clientId}");
+        Logger::debug("Accept key not found: {$acceptKey}");
     }
 
     /**
@@ -628,20 +628,20 @@ abstract class DaemonManager extends BaseManager
      *
      * @param WebSocketServer $server WebSocket server
      * @param string $message Message JSON
-     * @param ?string $excludeClientId Client ID to exclude (optional)
+     * @param ?string $excludeAcceptKey Accept key to exclude (optional)
      */
-    private function sendToAllClients(WebSocketServer $server, string $message, ?string $excludeClientId = null): void
+    private function sendToAllClients(WebSocketServer $server, string $message, ?string $excludeAcceptKey = null): void
     {
         foreach ($server->getClients() as $client) {
             if ($client instanceof WebSocketClientInterface) {
-                if ($excludeClientId !== null && $client->getClientId() === $excludeClientId) {
+                if ($excludeAcceptKey !== null && $client->getAcceptKey() === $excludeAcceptKey) {
                     continue;
                 }
 
                 try {
                     $client->sendFrame($message);
                 } catch (\Throwable $e) {
-                    Logger::error("Failed to send message to client {$client->getClientId()}: " . $e->getMessage());
+                    Logger::error("Failed to send message to acceptKey {$client->getAcceptKey()}: " . $e->getMessage());
                 }
             }
         }
@@ -653,15 +653,15 @@ abstract class DaemonManager extends BaseManager
      * @param WebSocketServer $server WebSocket server
      * @param string $group Group name
      * @param string $message Message JSON
-     * @param ?string $excludeClientId Client ID to exclude (optional)
+     * @param ?string $excludeAcceptKey Accept key to exclude (optional)
      */
-    private function sendToGroup(WebSocketServer $server, string $group, string $message, ?string $excludeClientId = null): void
+    private function sendToGroup(WebSocketServer $server, string $group, string $message, ?string $excludeAcceptKey = null): void
     {
         // TODO: Implement proper group subscription tracking
         // For now, send to all clients (basic implementation)
         foreach ($server->getClients() as $client) {
             if ($client instanceof WebSocketClientInterface) {
-                if ($excludeClientId !== null && $client->getClientId() === $excludeClientId) {
+                if ($excludeAcceptKey !== null && $client->getAcceptKey() === $excludeAcceptKey) {
                     continue;
                 }
 
@@ -670,7 +670,7 @@ abstract class DaemonManager extends BaseManager
                 try {
                     $client->sendFrame($message);
                 } catch (\Throwable $e) {
-                    Logger::error("Failed to send message to client {$client->getClientId()}: " . $e->getMessage());
+                    Logger::error("Failed to send message to acceptKey {$client->getAcceptKey()}: " . $e->getMessage());
                 }
             }
         }
@@ -687,9 +687,9 @@ abstract class DaemonManager extends BaseManager
     private function updateSubscriptions(SignalDTO $signal): void
     {
         $dataArray = $signal->data->toArray();
-        $clientId = $dataArray['clientId'] ?? '';
+        $acceptKey = $dataArray['acceptKey'] ?? '';
 
-        if ($clientId === '') {
+        if ($acceptKey === '') {
             return;
         }
 
@@ -700,27 +700,27 @@ abstract class DaemonManager extends BaseManager
 
         switch ($signalType) {
             case SignalTypeConstants::PAGE_SUBSCRIBE:
-                $this->signalRouter->subscribeToPage($clientId, $signalName, $params);
+                $this->signalRouter->subscribeToPage($acceptKey, $signalName, $params);
                 break;
 
             case SignalTypeConstants::PAGE_UPDATE_SUBSCRIPTION:
-                $this->signalRouter->updatePageSubscription($clientId, $signalName, $params);
+                $this->signalRouter->updatePageSubscription($acceptKey, $signalName, $params);
                 break;
 
             case SignalTypeConstants::PAGE_UNSUBSCRIBE:
-                $this->signalRouter->unsubscribeFromPage($clientId);
+                $this->signalRouter->unsubscribeFromPage($acceptKey);
                 break;
 
             case SignalTypeConstants::GROUP_SUBSCRIBE:
-                $this->signalRouter->subscribeToGroup($clientId, $signalName, $params);
+                $this->signalRouter->subscribeToGroup($acceptKey, $signalName, $params);
                 break;
 
             case SignalTypeConstants::GROUP_UPDATE_SUBSCRIPTION:
-                $this->signalRouter->updateGroupSubscription($clientId, $signalName, $params);
+                $this->signalRouter->updateGroupSubscription($acceptKey, $signalName, $params);
                 break;
 
             case SignalTypeConstants::GROUP_UNSUBSCRIBE:
-                $this->signalRouter->unsubscribeFromGroup($clientId, $signalName);
+                $this->signalRouter->unsubscribeFromGroup($acceptKey, $signalName);
                 break;
         }
     }

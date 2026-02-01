@@ -25,7 +25,7 @@ class WebSocketUnsubscribeSignalDTO extends FrameworkWebSocketUnsubscribeSignalD
     public static function fromArray(array $data): static
     {
         return new self(
-            clientId: $data[self::CLIENT_ID] ?? '',
+            acceptKey: $data[self::ACCEPT_KEY] ?? '',
             page: $data[self::PAGE] ?? false,
             groups: $data[self::GROUPS] ?? [],
         );

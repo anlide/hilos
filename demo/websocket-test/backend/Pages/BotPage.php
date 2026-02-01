@@ -28,10 +28,10 @@ class BotPage extends AbstractChatPage
     /**
      * Handle page-specific subscription logic
      *
-     * @param string $clientId Client ID
+     * @param string $acceptKey Accept key
      * @param IdeaUser $user User idea
      */
-    protected function handleSubscribe(string $clientId, IdeaUser $user): void
+    protected function handleSubscribe(string $acceptKey, IdeaUser $user): void
     {
         // TODO: Implement bot page subscription logic
     }
@@ -39,10 +39,10 @@ class BotPage extends AbstractChatPage
     /**
      * Handle page-specific unsubscription logic
      *
-     * @param string $clientId Client id
+     * @param string $acceptKey Accept key
      * @param int $userId User id
      */
-    protected function handleUnsubscribe(string $clientId, int $userId): void
+    protected function handleUnsubscribe(string $acceptKey, int $userId): void
     {
         // TODO: Implement bot page unsubscribe logic
     }
@@ -50,12 +50,12 @@ class BotPage extends AbstractChatPage
     /**
      * Handle page-specific action logic
      *
-     * @param string $clientId Client id
+     * @param string $acceptKey Accept key
      * @param int $userId User id
      * @param string $action Action name
      * @param string $payload Action payload
      */
-    protected function handleAction(string $clientId, int $userId, string $action, string $payload): void
+    protected function handleAction(string $acceptKey, int $userId, string $action, string $payload): void
     {
         // TODO: Implement bot page action logic
     }

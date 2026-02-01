@@ -25,7 +25,7 @@ class WebSocketCloseSignalDTO extends FrameworkWebSocketCloseSignalDTO implement
     public static function fromArray(array $data): static
     {
         return new self(
-            clientId: $data[self::CLIENT_ID] ?? '',
+            acceptKey: $data[self::ACCEPT_KEY] ?? '',
         );
     }
 }

@@ -25,7 +25,6 @@ class WebSocketHandshakeSignalDTO extends FrameworkWebSocketHandshakeSignalDTO i
     public static function fromArray(array $data): static
     {
         return new self(
-            clientId: $data[self::CLIENT_ID] ?? '',
             headers: $data[self::HEADERS] ?? [],
             acceptKey: $data[self::ACCEPT_KEY] ?? '',
             cookies: $data[self::COOKIES] ?? [],
