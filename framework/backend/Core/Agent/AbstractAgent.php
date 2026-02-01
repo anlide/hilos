@@ -8,6 +8,9 @@ use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalSourceInterface;
 use Hilos\Core\Router\SignalDataInterface;
+use Hilos\DTO\WebSocket\WebSocketFrameSignalDTO;
+use Hilos\DTO\WebSocket\WebSocketHandshakeSignalDTO;
+use Hilos\DTO\WebSocket\WebSocketSubscribeSignalDTO;
 
 /**
  * AbstractAgent - Abstract base class for agents running in worker processes
@@ -121,20 +124,17 @@ abstract class AbstractAgent implements AgentInterface
     }
 
     /**
-     * Validate WebSocket handshake signal data
-     * Throws exception if data is not WebSocketHandshakeSignalDTO
+     * Default implementation - no handshake signal handling
      *
-     * @param SignalDataInterface $data Signal data to validate
-     * @param string $expectedClass Expected DTO class name
-     * @return void
-     * @throws \RuntimeException If data is not of expected type
+     * Child classes can override this method.
+     *
+     * @param string $source Signal source
+     * @param string $name Signal name
+     * @param WebSocketHandshakeSignalDTO $data Signal data
      */
-    protected function validateWebSocketHandshake(SignalDataInterface $data, string $expectedClass): void
+    public function onSignalHandshake(string $source, string $name, WebSocketHandshakeSignalDTO $data): void
     {
-        if (!($data instanceof $expectedClass)) {
-            $dataType = get_class($data);
-            throw new \RuntimeException("Invalid signal data type: expected {$expectedClass}, got {$dataType}");
-        }
+        // Default: do nothing
     }
 
     /**
@@ -144,9 +144,9 @@ abstract class AbstractAgent implements AgentInterface
      *
      * @param string $source Signal source
      * @param string $name Signal name
-     * @param SignalDataInterface $data Signal data
+     * @param WebSocketSubscribeSignalDTO $data Signal data
      */
-    public function onSignalPageSubscribe(string $source, string $name, SignalDataInterface $data): void
+    public function onSignalPageSubscribe(string $source, string $name, WebSocketSubscribeSignalDTO $data): void
     {
         // Default: do nothing
     }
@@ -228,9 +228,9 @@ abstract class AbstractAgent implements AgentInterface
      *
      * @param string $source Signal source
      * @param string $name Signal name
-     * @param SignalDataInterface $data Signal data
+     * @param WebSocketFrameSignalDTO $data Signal data
      */
-    public function onSignalAction(string $source, string $name, SignalDataInterface $data): void
+    public function onSignalAction(string $source, string $name, WebSocketFrameSignalDTO $data): void
     {
         // Default: do nothing
     }

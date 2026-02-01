@@ -5,6 +5,9 @@ declare(strict_types=1);
 namespace Hilos\Core\Agent;
 
 use Hilos\Core\Router\SignalDataInterface;
+use Hilos\DTO\WebSocket\WebSocketFrameSignalDTO;
+use Hilos\DTO\WebSocket\WebSocketHandshakeSignalDTO;
+use Hilos\DTO\WebSocket\WebSocketSubscribeSignalDTO;
 
 /**
  * AgentInterface - Interface for agents running in worker processes
@@ -67,13 +70,22 @@ interface AgentInterface
     public function onSignalSystem(string $source, string $name, SignalDataInterface $data): void;
 
     /**
+     * Handle handshake signal
+     *
+     * @param string $source Signal source
+     * @param string $name Signal name
+     * @param WebSocketHandshakeSignalDTO $data Signal data
+     */
+    public function onSignalHandshake(string $source, string $name, WebSocketHandshakeSignalDTO $data): void;
+
+    /**
      * Handle page subscribe signal
      *
      * @param string $source Signal source
      * @param string $name Signal name
-     * @param SignalDataInterface $data Signal data
+     * @param WebSocketSubscribeSignalDTO $data Signal data
      */
-    public function onSignalPageSubscribe(string $source, string $name, SignalDataInterface $data): void;
+    public function onSignalPageSubscribe(string $source, string $name, WebSocketSubscribeSignalDTO $data): void;
 
     /**
      * Handle page unsubscribe signal
@@ -125,9 +137,9 @@ interface AgentInterface
      *
      * @param string $source Signal source
      * @param string $name Signal name
-     * @param SignalDataInterface $data Signal data
+     * @param WebSocketFrameSignalDTO $data Signal data
      */
-    public function onSignalAction(string $source, string $name, SignalDataInterface $data): void;
+    public function onSignalAction(string $source, string $name, WebSocketFrameSignalDTO $data): void;
 
     /**
      * Handle cron signal

@@ -14,6 +14,11 @@ use Hilos\DTO\Worker\AgentStartDTO;
 use Hilos\DTO\Worker\AgentStopDTO;
 use Hilos\DTO\Worker\WorkerAgentMessageDTO;
 use Hilos\DTO\Worker\WorkerDTO;
+use Hilos\DTO\WebSocket\WebSocketFrameSignalDTO;
+use Hilos\DTO\WebSocket\WebSocketHandshakeSignalDTO;
+use Hilos\DTO\WebSocket\WebSocketSubscribeSignalDTO;
+use Hilos\DTO\WebSocket\WebSocketUnsubscribeSignalDTO;
+use Hilos\DTO\WebSocket\WebSocketUpdateSubscriptionSignalDTO;
 use Hilos\Exception\MissingEnvironmentVariableException;
 use Hilos\Exception\SocketException;
 use Hilos\Exception\Worker\AgentCreationFailedException;
@@ -226,7 +231,11 @@ abstract class WorkerManager extends BaseManager
                 break;
 
             case WorkerConstants::MESSAGE_AGENT_MESSAGE:
-                $this->handleAgentMessage($data);
+                if ($data instanceof WorkerAgentMessageDTO) {
+                    $this->handleAgentMessage($data);
+                } else {
+                    Logger::error("handleAgentMessage - not WorkerAgentMessageDTO, type=" . get_class($data));
+                }
                 break;
 
             default:
@@ -326,15 +335,10 @@ abstract class WorkerManager extends BaseManager
     /**
      * Handle agent message
      *
-     * @param WorkerDTO $data Message data
+     * @param WorkerAgentMessageDTO $data Message data
      */
-    private function handleAgentMessage(WorkerDTO $data): void
+    private function handleAgentMessage(WorkerAgentMessageDTO $data): void
     {
-        if (!($data instanceof WorkerAgentMessageDTO)) {
-            Logger::error("handleAgentMessage - not WorkerAgentMessageDTO, type=" . get_class($data));
-            return;
-        }
-
         $agentId = $data->agentId;
 
         // Parse agentId to extract agentType and agentIndex
@@ -367,18 +371,86 @@ abstract class WorkerManager extends BaseManager
 
         Logger::debug('Signal routing: agentId=' . $agentId . ', signalType=' . $signalType . ', signalName=' . $name);
         // Route to appropriate handler in agent based on signal type
-        match ($signalType) {
-            SignalTypeConstants::SYSTEM => $agent->onSignalSystem($source, $name, $signalData),
-            SignalTypeConstants::PAGE_SUBSCRIBE => $this->handlePageSubscribeSignal($agent, $source, $name, $signalData),
-            SignalTypeConstants::PAGE_UNSUBSCRIBE => $this->handlePageUnsubscribeSignal($agent, $source, $name, $signalData),
-            SignalTypeConstants::PAGE_UPDATE_SUBSCRIPTION => $this->handlePageUpdateSubscriptionSignal($agent, $source, $name, $signalData),
-            SignalTypeConstants::GROUP_SUBSCRIBE => $agent->onSignalGroupSubscribe($source, $name, $signalData),
-            SignalTypeConstants::GROUP_UNSUBSCRIBE => $agent->onSignalGroupUnsubscribe($source, $name, $signalData),
-            SignalTypeConstants::GROUP_UPDATE_SUBSCRIPTION => $agent->onSignalGroupUpdateSubscription($source, $name, $signalData),
-            SignalTypeConstants::ACTION => $agent->onSignalAction($source, $name, $signalData),
-            SignalTypeConstants::CRON => $agent->onSignalCron($source, $name, $signalData),
-            default => null, // Unknown signal type - ignore
-        };
+        switch ($signalType) {
+            case SignalTypeConstants::SYSTEM:
+                $agent->onSignalSystem($source, $name, $signalData);
+                break;
+            case SignalTypeConstants::HANDSHAKE:
+                if ($signalData instanceof WebSocketHandshakeSignalDTO) {
+                    $this->handleHandshakeSignal($agent, $source, $name, $signalData);
+                } else {
+                    Logger::error("handleHandshakeSignal - invalid signal data type: " . get_class($signalData));
+                }
+                break;
+            case SignalTypeConstants::PAGE_SUBSCRIBE:
+                if ($signalData instanceof WebSocketSubscribeSignalDTO) {
+                    $this->handlePageSubscribeSignal($agent, $source, $name, $signalData);
+                } else {
+                    Logger::error("handlePageSubscribeSignal - invalid signal data type: " . get_class($signalData));
+                }
+                break;
+            case SignalTypeConstants::PAGE_UNSUBSCRIBE:
+                if ($signalData instanceof WebSocketUnsubscribeSignalDTO) {
+                    $this->handlePageUnsubscribeSignal($agent, $source, $name, $signalData);
+                } else {
+                    Logger::error("handlePageUnsubscribeSignal - invalid signal data type: " . get_class($signalData));
+                }
+                break;
+            case SignalTypeConstants::PAGE_UPDATE_SUBSCRIPTION:
+                if ($signalData instanceof WebSocketUpdateSubscriptionSignalDTO) {
+                    $this->handlePageUpdateSubscriptionSignal($agent, $source, $name, $signalData);
+                } else {
+                    Logger::error("handlePageUpdateSubscriptionSignal - invalid signal data type: " . get_class($signalData));
+                }
+                break;
+            case SignalTypeConstants::GROUP_SUBSCRIBE:
+                $agent->onSignalGroupSubscribe($source, $name, $signalData);
+                break;
+            case SignalTypeConstants::GROUP_UNSUBSCRIBE:
+                $agent->onSignalGroupUnsubscribe($source, $name, $signalData);
+                break;
+            case SignalTypeConstants::GROUP_UPDATE_SUBSCRIPTION:
+                $agent->onSignalGroupUpdateSubscription($source, $name, $signalData);
+                break;
+            case SignalTypeConstants::ACTION:
+                if ($signalData instanceof WebSocketFrameSignalDTO) {
+                    $agent->onSignalAction($source, $name, $signalData);
+                } else {
+                    Logger::error("onSignalAction - invalid signal data type: " . get_class($signalData));
+                }
+                break;
+            case SignalTypeConstants::CRON:
+                $agent->onSignalCron($source, $name, $signalData);
+                break;
+            default:
+                // Unknown signal type - ignore
+                break;
+        }
+    }
+
+    /**
+     * Handle handshake signal (worker-local hook point).
+     *
+     * @param AgentInterface $agent
+     * @param string $source
+     * @param string $name
+     * @param WebSocketHandshakeSignalDTO $signalData
+     * @return void
+     */
+    private function handleHandshakeSignal(
+        AgentInterface $agent,
+        string $source,
+        string $name,
+        WebSocketHandshakeSignalDTO $signalData,
+    ): void {
+        $acceptKey = $signalData->acceptKey;
+        $page = $this->resolvePageNameFromSignalData($name, $signalData);
+
+        if ($acceptKey !== '' && $page !== null && $page !== '') {
+            $this->pageSubscriptionsByAcceptKey[$acceptKey] = $page;
+        }
+
+        $agent->onSignalHandshake($source, $name, $signalData);
     }
 
     /**
@@ -387,19 +459,19 @@ abstract class WorkerManager extends BaseManager
      * @param AgentInterface $agent
      * @param string $source
      * @param string $name
-     * @param SignalDataInterface $signalData
+     * @param WebSocketSubscribeSignalDTO $signalData
      * @return void
      */
     private function handlePageSubscribeSignal(
         AgentInterface $agent,
         string $source,
         string $name,
-        SignalDataInterface $signalData,
+        WebSocketSubscribeSignalDTO $signalData,
     ): void {
-        $acceptKey = $this->resolveAcceptKeyFromSignalData($signalData);
+        $acceptKey = $signalData->acceptKey;
         $page = $this->resolvePageNameFromSignalData($name, $signalData);
 
-        if ($acceptKey !== null && $acceptKey !== '' && $page !== null && $page !== '') {
+        if ($acceptKey !== '' && $page !== null && $page !== '') {
             $this->pageSubscriptionsByAcceptKey[$acceptKey] = $page;
         }
 
@@ -413,21 +485,18 @@ abstract class WorkerManager extends BaseManager
      * @param AgentInterface $agent
      * @param string $source
      * @param string $name
-     * @param SignalDataInterface $signalData
+     * @param WebSocketUnsubscribeSignalDTO $signalData
      * @return void
      */
     private function handlePageUnsubscribeSignal(
         AgentInterface $agent,
         string $source,
         string $name,
-        SignalDataInterface $signalData,
+        WebSocketUnsubscribeSignalDTO $signalData,
     ): void {
-        $acceptKey = $this->resolveAcceptKeyFromSignalData($signalData);
-        $page = $acceptKey !== null ? ($this->pageSubscriptionsByAcceptKey[$acceptKey] ?? $name) : $name;
-
-        if ($acceptKey !== null) {
-            unset($this->pageSubscriptionsByAcceptKey[$acceptKey]);
-        }
+        $acceptKey = $signalData->acceptKey;
+        $page = $this->pageSubscriptionsByAcceptKey[$acceptKey] ?? $name;
+        unset($this->pageSubscriptionsByAcceptKey[$acceptKey]);
 
         $this->onPageUnsubscribed($acceptKey, $page, $signalData);
         $agent->onSignalPageUnsubscribe($source, $name, $signalData);
@@ -439,19 +508,19 @@ abstract class WorkerManager extends BaseManager
      * @param AgentInterface $agent
      * @param string $source
      * @param string $name
-     * @param SignalDataInterface $signalData
+     * @param WebSocketUpdateSubscriptionSignalDTO $signalData
      * @return void
      */
     private function handlePageUpdateSubscriptionSignal(
         AgentInterface $agent,
         string $source,
         string $name,
-        SignalDataInterface $signalData,
+        WebSocketUpdateSubscriptionSignalDTO $signalData,
     ): void {
-        $acceptKey = $this->resolveAcceptKeyFromSignalData($signalData);
+        $acceptKey = $signalData->acceptKey;
         $page = $this->resolvePageNameFromSignalData($name, $signalData);
 
-        if ($acceptKey !== null && $acceptKey !== '' && $page !== null && $page !== '') {
+        if ($acceptKey !== '' && $page !== null && $page !== '') {
             $this->pageSubscriptionsByAcceptKey[$acceptKey] = $page;
         }
 
@@ -507,21 +576,6 @@ abstract class WorkerManager extends BaseManager
     protected function onPageSubscriptionUpdated(?string $acceptKey, ?string $page, SignalDataInterface $signalData): void
     {
         // Default: no-op
-    }
-
-    /**
-     * Resolve accept key from signal data.
-     *
-     * @param SignalDataInterface $signalData
-     * @return ?string
-     */
-    private function resolveAcceptKeyFromSignalData(SignalDataInterface $signalData): ?string
-    {
-        if (property_exists($signalData, 'acceptKey') && is_string($signalData->acceptKey)) {
-            return $signalData->acceptKey;
-        }
-
-        return null;
     }
 
     /**

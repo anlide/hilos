@@ -8,15 +8,12 @@ use Demo\WebSocketTest\Constants\ChatSignalConstants;
 use Demo\WebSocketTest\Constants\PageConstants;
 use Demo\WebSocketTest\DTO\WebSocketFrameSignalDTO;
 use Demo\WebSocketTest\DTO\WebSocketHandshakeSignalDTO;
-use Demo\WebSocketTest\DTO\WebSocketSubscribeSignalDTO;
 use Demo\WebSocketTest\DTO\WebSocketUnsubscribeSignalDTO;
-use Demo\WebSocketTest\DTO\WebSocketUpdateSubscriptionSignalDTO;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
 use Hilos\Socket\Client\WebSocketClient;
-use Hilos\Utils\Helpers\JsonHelper;
 
 /**
  * ChatWebSocketClient - WebSocket client for chat demo
@@ -39,63 +36,18 @@ class ChatWebSocketClient extends WebSocketClient
     }
 
     /**
-     * Handle received WebSocket text frame
+     * Hook: resolve action name from parsed payload.
      *
-     * Parses JSON payload and routes to appropriate signal type (subscribe, action, unsubscribe, update_subscription).
-     * Falls back to legacy SIGNAL_FRAME if payload is not valid JSON or doesn't contain 'type' field.
-     *
-     * @param string $payload Frame payload (UTF-8 text, expected JSON)
+     * @param string $payload
+     * @param ?array<string,mixed> $decoded
+     * @return ?string
      */
-    protected function onFrame(string $payload): void
+    protected function onActionParsed(string $payload, ?array $decoded): ?string
     {
-        $dto = new WebSocketFrameSignalDTO(
-            acceptKey: $this->acceptKey,
-            payload: $payload,
-        );
-
         $actionName = ChatSignalConstants::MESSAGE;
-        $decoded = JsonHelper::tryDecode($payload);
+
         if (is_array($decoded) && isset($decoded['type']) && is_string($decoded['type'])) {
             $type = strtolower($decoded['type']);
-            if ($type === SignalTypeConstants::PAGE_SUBSCRIBE || $type === SignalTypeConstants::PAGE_UPDATE_SUBSCRIPTION) {
-                $page = $decoded['page'] ?? null;
-                if (!is_string($page) || $page === '') {
-                    throw new \RuntimeException("Page is required for {$type} signal");
-                }
-
-                if ($type === SignalTypeConstants::PAGE_SUBSCRIBE) {
-                    $params = is_array($decoded['params'] ?? null) ? $decoded['params'] : [];
-                    $subscribeDto = new WebSocketSubscribeSignalDTO(
-                        acceptKey: $this->acceptKey,
-                        page: $page,
-                        groups: [],
-                        params: $params,
-                    );
-
-                    $this->signalRouter->queueSignal(
-                        new SignalSource(SignalSource::WEBSOCKET),
-                        new SignalType(SignalTypeConstants::PAGE_SUBSCRIBE),
-                        new SignalName($page),
-                        $subscribeDto,
-                    );
-                    return;
-                }
-
-                $updateDto = new WebSocketUpdateSubscriptionSignalDTO(
-                    acceptKey: $this->acceptKey,
-                    page: $page,
-                    groups: null,
-                );
-
-                $this->signalRouter->queueSignal(
-                    new SignalSource(SignalSource::WEBSOCKET),
-                    new SignalType(SignalTypeConstants::PAGE_UPDATE_SUBSCRIPTION),
-                    new SignalName($page),
-                    $updateDto,
-                );
-                return;
-            }
-
             $actionName = match ($type) {
                 ChatSignalConstants::RENAME => ChatSignalConstants::RENAME,
                 ChatSignalConstants::MESSAGE => ChatSignalConstants::MESSAGE,
@@ -103,12 +55,7 @@ class ChatWebSocketClient extends WebSocketClient
             };
         }
 
-        $this->signalRouter->queueSignal(
-            new SignalSource(SignalSource::WEBSOCKET),
-            new SignalType(SignalTypeConstants::ACTION),
-            new SignalName($actionName),
-            $dto,
-        );
+        return $actionName;
     }
 
     /**
@@ -160,7 +107,7 @@ class ChatWebSocketClient extends WebSocketClient
 
         $this->signalRouter->queueSignal(
             new SignalSource(SignalSource::WEBSOCKET),
-            new SignalType(SignalTypeConstants::PAGE_SUBSCRIBE),
+            new SignalType(SignalTypeConstants::HANDSHAKE),
             new SignalName(PageConstants::MAIN),
             $dto,
         );

@@ -198,38 +198,40 @@ abstract class AbstractPageAgent extends AbstractAgent
     }
 
     /**
+     * Handle handshake signal with shared routing logic.
+     *
+     * @param string $source
+     * @param string $name
+     * @param WebSocketHandshakeSignalDTO $data
+     * @return void
+     */
+    public function onSignalHandshake(string $source, string $name, WebSocketHandshakeSignalDTO $data): void
+    {
+        $acceptKey = $data->acceptKey;
+        $page = $name;
+        Logger::logAgentDebug($this->getId(), "Handshake signal received: source={$source}, acceptKey={$acceptKey}, page={$page}");
+
+        if ($acceptKey === '') {
+            throw new RuntimeException("Accept key is required but not provided or empty");
+        }
+
+        $user = $this->handleHandshakeSubscription($data, $acceptKey, $page);
+        $this->rememberAcceptKeyPage($acceptKey, $page);
+        $this->onAcceptKeyResubscribed($acceptKey, $page);
+        $this->dispatchPageSubscribe($acceptKey, $page, $user, true);
+        $this->onAcceptKeySubscribed($acceptKey, $page, $user);
+    }
+
+    /**
      * Handle page subscribe signal with shared routing logic.
      *
      * @param string $source
      * @param string $name
-     * @param SignalDataInterface $data
+     * @param WebSocketSubscribeSignalDTO $data
      * @return void
      */
-    public function onSignalPageSubscribe(string $source, string $name, SignalDataInterface $data): void
+    public function onSignalPageSubscribe(string $source, string $name, WebSocketSubscribeSignalDTO $data): void
     {
-        if ($data instanceof WebSocketHandshakeSignalDTO) {
-            $acceptKey = $data->acceptKey;
-            $page = $name;
-            Logger::logAgentDebug($this->getId(), "Page subscribe signal received: source={$source}, acceptKey={$acceptKey}, page={$page}");
-
-            if ($acceptKey === '') {
-                throw new RuntimeException("Accept key is required but not provided or empty");
-            }
-
-            $user = $this->handleHandshakeSubscription($data, $acceptKey, $page);
-            $this->rememberAcceptKeyPage($acceptKey, $page);
-            $this->onAcceptKeyResubscribed($acceptKey, $page);
-            $this->dispatchPageSubscribe($acceptKey, $page, $user, true);
-            $this->onAcceptKeySubscribed($acceptKey, $page, $user);
-            return;
-        }
-
-        if (!($data instanceof WebSocketSubscribeSignalDTO)) {
-            $dataType = get_class($data);
-            Logger::logAgentError($this->getId(), "Invalid signal data type: expected WebSocketHandshakeSignalDTO or WebSocketSubscribeSignalDTO, got {$dataType}");
-            throw new RuntimeException("Expected WebSocketHandshakeSignalDTO or WebSocketSubscribeSignalDTO, got {$dataType}");
-        }
-
         // Non-handshake subscribe requires user resolution, which is disabled for now.
         return;
     }
@@ -332,17 +334,11 @@ abstract class AbstractPageAgent extends AbstractAgent
      *
      * @param string $source
      * @param string $name
-     * @param SignalDataInterface $data
+     * @param WebSocketFrameSignalDTO $data
      * @return void
      */
-    public function onSignalAction(string $source, string $name, SignalDataInterface $data): void
+    public function onSignalAction(string $source, string $name, WebSocketFrameSignalDTO $data): void
     {
-        if (!($data instanceof WebSocketFrameSignalDTO)) {
-            $dataType = get_class($data);
-            Logger::logAgentError($this->getId(), "Invalid signal data type: expected WebSocketFrameSignalDTO, got {$dataType}");
-            throw new RuntimeException("Expected WebSocketFrameSignalDTO, got {$dataType}");
-        }
-
         $acceptKey = $data->acceptKey;
         $payload = $data->payload;
         $action = $name;

@@ -4,7 +4,15 @@ declare(strict_types=1);
 
 namespace Hilos\Socket\Client;
 
+use Hilos\Constants\SignalTypeConstants;
 use Hilos\Constants\HttpConstants;
+use Hilos\Core\Router\SignalName;
+use Hilos\Core\Router\SignalSource;
+use Hilos\Core\Router\SignalType;
+use Hilos\DTO\WebSocket\WebSocketFrameSignalDTO;
+use Hilos\DTO\WebSocket\WebSocketSubscribeSignalDTO;
+use Hilos\DTO\WebSocket\WebSocketUnsubscribeSignalDTO;
+use Hilos\DTO\WebSocket\WebSocketUpdateSubscriptionSignalDTO;
 use Hilos\DTO\WebSocketFrameDTO;
 use Hilos\Exception\Socket\WebSocket\HandshakeFailedException;
 use Hilos\Exception\Socket\WebSocket\InvalidFrameSequenceException;
@@ -13,6 +21,7 @@ use Hilos\Exception\Socket\WebSocket\UnknownOpcodeException;
 use Hilos\Exception\Socket\WebSocket\UnsupportedProtocolVersionException;
 use Hilos\Exception\SocketException;
 use Hilos\Socket\Client\Interface\WebSocketClientInterface;
+use Hilos\Utils\Helpers\JsonHelper;
 use RuntimeException;
 
 /**
@@ -305,7 +314,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
     {
         $queryParams = [];
         $queryPos = strpos($path, '?');
-        
+
         if ($queryPos !== false) {
             $queryString = substr($path, $queryPos + 1);
             parse_str($queryString, $queryParams);
@@ -485,11 +494,127 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
     /**
      * Handle received WebSocket text frame
      *
-     * Must be implemented by child classes to process incoming text frames.
-     *
      * @param string $payload Frame payload (UTF-8 text)
      */
-    abstract protected function onFrame(string $payload): void;
+    protected function onFrame(string $payload): void
+    {
+        $acceptKey = $this->getAcceptKey();
+        $decoded = JsonHelper::tryDecode($payload);
+
+        if (is_array($decoded) && isset($decoded['type']) && is_string($decoded['type'])) {
+            $type = strtolower($decoded['type']);
+
+            if ($type === SignalTypeConstants::PAGE_SUBSCRIBE || $type === SignalTypeConstants::PAGE_UPDATE_SUBSCRIPTION) {
+                $page = $decoded['page'] ?? null;
+                if (!is_string($page) || $page === '') {
+                    throw new RuntimeException("Page is required for {$type} signal");
+                }
+
+                if ($type === SignalTypeConstants::PAGE_SUBSCRIBE) {
+                    $params = is_array($decoded['params'] ?? null) ? $decoded['params'] : [];
+                    $groups = is_array($decoded['groups'] ?? null) ? $decoded['groups'] : [];
+                    $subscribeDto = new WebSocketSubscribeSignalDTO(
+                        acceptKey: $acceptKey,
+                        page: $page,
+                        groups: $groups,
+                        params: $params,
+                    );
+
+                    $this->signalRouter->queueSignal(
+                        new SignalSource(SignalSource::WEBSOCKET),
+                        new SignalType(SignalTypeConstants::PAGE_SUBSCRIBE),
+                        new SignalName($page),
+                        $subscribeDto,
+                    );
+                    $this->onPageSubscribeParsed($page, $decoded);
+                    return;
+                }
+
+                $groups = is_array($decoded['groups'] ?? null) ? $decoded['groups'] : null;
+                $updateDto = new WebSocketUpdateSubscriptionSignalDTO(
+                    acceptKey: $acceptKey,
+                    page: $page,
+                    groups: $groups,
+                );
+
+                $this->signalRouter->queueSignal(
+                    new SignalSource(SignalSource::WEBSOCKET),
+                    new SignalType(SignalTypeConstants::PAGE_UPDATE_SUBSCRIPTION),
+                    new SignalName($page),
+                    $updateDto,
+                );
+                return;
+            }
+
+            if ($type === SignalTypeConstants::PAGE_UNSUBSCRIBE) {
+                $pageValue = $decoded['page'] ?? false;
+                $groups = is_array($decoded['groups'] ?? null) ? $decoded['groups'] : [];
+                $page = is_string($pageValue) ? $pageValue : '';
+                $pageFlag = is_string($pageValue) || ((is_bool($pageValue) && $pageValue));
+
+                $unsubscribeDto = new WebSocketUnsubscribeSignalDTO(
+                    acceptKey: $acceptKey,
+                    page: $pageFlag,
+                    groups: $groups,
+                );
+
+                $this->signalRouter->queueSignal(
+                    new SignalSource(SignalSource::WEBSOCKET),
+                    new SignalType(SignalTypeConstants::PAGE_UNSUBSCRIBE),
+                    new SignalName($page),
+                    $unsubscribeDto,
+                );
+                return;
+            }
+        }
+
+        $actionName = $this->onActionParsed($payload, $decoded);
+        if ($actionName === null || $actionName === '') {
+            return;
+        }
+
+        $dto = new WebSocketFrameSignalDTO(
+            acceptKey: $acceptKey,
+            payload: $payload,
+        );
+
+        $this->signalRouter->queueSignal(
+            new SignalSource(SignalSource::WEBSOCKET),
+            new SignalType(SignalTypeConstants::ACTION),
+            new SignalName($actionName),
+            $dto,
+        );
+    }
+
+    /**
+     * Hook: called after page subscribe payload is parsed and queued.
+     *
+     * @param string $page
+     * @param array<string,mixed> $decoded
+     * @return void
+     */
+    protected function onPageSubscribeParsed(string $page, array $decoded): void
+    {
+        // Default: no-op
+    }
+
+    /**
+     * Hook: resolve action name from parsed payload.
+     *
+     * Return null to skip action dispatch.
+     *
+     * @param string $payload
+     * @param ?array<string,mixed> $decoded
+     * @return ?string
+     */
+    protected function onActionParsed(string $payload, ?array $decoded): ?string
+    {
+        if (is_array($decoded) && isset($decoded['type']) && is_string($decoded['type'])) {
+            return strtolower($decoded['type']);
+        }
+
+        return null;
+    }
 
     /**
      * Handle received WebSocket binary frame
