@@ -27,7 +27,7 @@ class WebSocketUnsubscribeSignalDTO extends FrameworkWebSocketUnsubscribeSignalD
         return new self(
             acceptKey: $data[self::ACCEPT_KEY] ?? '',
             page: $data[self::PAGE] ?? false,
-            groups: $data[self::GROUPS] ?? [],
+            group: $data[self::GROUP] ?? '',
         );
     }
 }

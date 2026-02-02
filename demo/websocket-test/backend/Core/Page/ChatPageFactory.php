@@ -26,19 +26,14 @@ use Hilos\Exception\Page\PageNotFoundException;
  */
 class ChatPageFactory extends AbstractPageFactory
 {
-    /** @var ChatPageContextInterface Chat agent context */
-    private ChatPageContextInterface $chatContext;
-
     /**
      * Constructor
      *
      * @param SignalRouter $signalRouter Signal router instance
-     * @param ChatPageContextInterface $chatContext Chat agent context
      */
-    public function __construct(SignalRouter $signalRouter, ChatPageContextInterface $chatContext)
+    public function __construct(SignalRouter $signalRouter)
     {
         parent::__construct($signalRouter);
-        $this->chatContext = $chatContext;
     }
 
     /**
@@ -51,15 +46,15 @@ class ChatPageFactory extends AbstractPageFactory
     protected function createPage(string $pageName): AbstractPage
     {
         return match ($pageName) {
-            PageConstants::MAIN => new MainPage($this->signalRouter, $this->chatContext),
-            PageConstants::PROFILE => new ProfilePage($this->signalRouter, $this->chatContext),
-            PageConstants::USER => new UserPage($this->signalRouter, $this->chatContext),
-            PageConstants::BOT => new BotPage($this->signalRouter, $this->chatContext),
-            PageConstants::MODERATOR => new ModeratorPage($this->signalRouter, $this->chatContext),
-            PageConstants::ADMIN => new AdminPage($this->signalRouter, $this->chatContext),
-            PageConstants::ADMIN_USERS => new AdminUsersPage($this->signalRouter, $this->chatContext),
-            PageConstants::ADMIN_MODERATOR => new AdminModeratorPage($this->signalRouter, $this->chatContext),
-            PageConstants::ADMIN_BOTS => new AdminBotsPage($this->signalRouter, $this->chatContext),
+            PageConstants::MAIN => new MainPage($this->signalRouter),
+            PageConstants::PROFILE => new ProfilePage($this->signalRouter),
+            PageConstants::USER => new UserPage($this->signalRouter),
+            PageConstants::BOT => new BotPage($this->signalRouter),
+            PageConstants::MODERATOR => new ModeratorPage($this->signalRouter),
+            PageConstants::ADMIN => new AdminPage($this->signalRouter),
+            PageConstants::ADMIN_USERS => new AdminUsersPage($this->signalRouter),
+            PageConstants::ADMIN_MODERATOR => new AdminModeratorPage($this->signalRouter),
+            PageConstants::ADMIN_BOTS => new AdminBotsPage($this->signalRouter),
             default => throw new PageNotFoundException($pageName),
         };
     }

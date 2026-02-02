@@ -10,12 +10,12 @@ use Hilos\DTO\EntitiesChangesDTO;
 use RuntimeException;
 
 /**
- * SubscriptionResponseSignalData - Signal data for subscription response
+ * HandshakeResponseSignalData - Signal data for handshake response
  *
- * Contains chat history events and user info for new subscribers.
+ * Contains chat history events and user info for new clients.
  * Target client ID is handled by WebSocketSignalData wrapper for routing.
  */
-class SubscriptionResponseSignalData extends BaseDTO implements SignalDataInterface
+class HandshakeResponseSignalData extends BaseDTO implements SignalDataInterface
 {
     public function __construct(
         /** @var array<array{id: int, type: string, timestamp: int, data: array<string, mixed>}> Chat event history */
@@ -54,6 +54,6 @@ class SubscriptionResponseSignalData extends BaseDTO implements SignalDataInterf
     {
         // This is not used for deserialization from array
         // Response is created directly in ChatAgent
-        throw new RuntimeException('SubscriptionResponseSignalData::fromArray() is not implemented');
+        throw new RuntimeException('HandshakeResponseSignalData::fromArray() is not implemented');
     }
 }

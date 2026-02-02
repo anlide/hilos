@@ -40,10 +40,8 @@ abstract class AbstractPage
      * Called when a client subscribes to this page.
      *
      * @param string $acceptKey WebSocket accept key
-     * @param mixed $user User object (type depends on implementation)
-     * @return void
      */
-    abstract public function onSubscribe(string $acceptKey, mixed $user): void;
+    abstract public function onSubscribe(string $acceptKey): void;
 
     /**
      * Handle page unsubscription
@@ -51,10 +49,8 @@ abstract class AbstractPage
      * Called when a client unsubscribes from this page.
      *
      * @param string $acceptKey WebSocket accept key
-     * @param int $userId User ID
-     * @return void
      */
-    abstract public function onUnsubscribe(string $acceptKey, int $userId): void;
+    abstract public function onUnsubscribe(string $acceptKey): void;
 
     /**
      * Handle action signal
@@ -62,10 +58,8 @@ abstract class AbstractPage
      * Called when a client sends an action signal on this page.
      *
      * @param string $acceptKey WebSocket accept key
-     * @param int $userId User ID
      * @param string $action Action name
      * @param string $payload Action payload (raw string, usually JSON)
-     * @return void
      */
-    abstract public function onAction(string $acceptKey, int $userId, string $action, string $payload): void;
+    abstract public function onAction(string $acceptKey, string $action, string $payload): void;
 }

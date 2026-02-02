@@ -1,6 +1,7 @@
 import { createWebSocketPlugin } from '@hilos/sdk/plugins/websocket'
 import { config } from '@/config'
 import { useChatStore } from '@/stores'
+import { HANDSHAKE_RESPONSE } from '@/constants'
 import { localStorageService } from '@/services/LocalStorageService'
 import { Event } from '@/types'
 
@@ -292,14 +293,14 @@ export function createChatWebSocketPlugin() {
       }
 
       switch (message.type) {
-        case 'subscription_response': {
+        case HANDSHAKE_RESPONSE: {
           if (!isSubscriptionResponseData(message.data)) {
-            throw new Error('Invalid subscription_response payload')
+            throw new Error('Invalid handshake_response payload')
           }
 
           const entitiesPayload = toEntitiesPayload(message.data)
           if (isRecord(message.data) && 'entities' in message.data && !entitiesPayload) {
-            throw new Error('Invalid subscription_response entities payload')
+            throw new Error('Invalid handshake_response entities payload')
           }
           applyEntitiesPayload(entitiesPayload, chatStore)
           chatStore.handleSubscriptionResponse(

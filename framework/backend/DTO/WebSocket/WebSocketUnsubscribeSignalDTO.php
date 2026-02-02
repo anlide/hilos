@@ -18,12 +18,12 @@ class WebSocketUnsubscribeSignalDTO extends BaseDTO implements SignalDataDTO, Si
     // Field name constants
     public const string ACCEPT_KEY = 'acceptKey';
     public const string PAGE = 'page';
-    public const string GROUPS = 'groups';
+    public const string GROUP = 'group';
 
     public function __construct(
         public readonly string $acceptKey,
         public readonly bool $page = false,
-        public readonly array $groups = [],
+        public readonly string $group = '',
     ) {
     }
 
@@ -42,8 +42,8 @@ class WebSocketUnsubscribeSignalDTO extends BaseDTO implements SignalDataDTO, Si
             $result[self::PAGE] = true;
         }
 
-        if (!empty($this->groups)) {
-            $result[self::GROUPS] = $this->groups;
+        if ($this->group !== '') {
+            $result[self::GROUP] = $this->group;
         }
 
         return $result;
@@ -60,7 +60,7 @@ class WebSocketUnsubscribeSignalDTO extends BaseDTO implements SignalDataDTO, Si
         return new self(
             acceptKey: $data[self::ACCEPT_KEY] ?? '',
             page: $data[self::PAGE] ?? false,
-            groups: $data[self::GROUPS] ?? [],
+            group: $data[self::GROUP] ?? '',
         );
     }
 }

@@ -34,7 +34,6 @@ class Database extends BaseDatabase
      * @param bool $initIdea If true, initialize Idea with storage. Set to false for commands
      *                       that need to work with broken Idea files (e.g., db:idea:fix)
      * @param bool $retryConnection If true, retry connection on temporary errors (useful for Docker startup)
-     * @return void
      * @throws DatabaseException
      * @throws MissingEnvironmentVariableException
      */

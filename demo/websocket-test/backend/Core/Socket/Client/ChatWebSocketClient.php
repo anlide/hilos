@@ -5,14 +5,7 @@ declare(strict_types=1);
 namespace Demo\WebSocketTest\Core\Socket\Client;
 
 use Demo\WebSocketTest\Constants\ChatSignalConstants;
-use Demo\WebSocketTest\Constants\PageConstants;
-use Demo\WebSocketTest\DTO\WebSocketFrameSignalDTO;
-use Demo\WebSocketTest\DTO\WebSocketHandshakeSignalDTO;
-use Demo\WebSocketTest\DTO\WebSocketUnsubscribeSignalDTO;
-use Hilos\Constants\SignalTypeConstants;
-use Hilos\Core\Router\SignalName;
-use Hilos\Core\Router\SignalSource;
-use Hilos\Core\Router\SignalType;
+use Hilos\Constants\SignalPayloadConstants;
 use Hilos\Socket\Client\WebSocketClient;
 
 /**
@@ -22,19 +15,6 @@ use Hilos\Socket\Client\WebSocketClient;
  */
 class ChatWebSocketClient extends WebSocketClient
 {
-    /** @var string Accept key identifier (from handshake) */
-    private string $acceptKey = '';
-
-    /**
-     * Get client ID
-     *
-     * @return string Accept key
-     */
-    public function getAcceptKey(): string
-    {
-        return $this->acceptKey;
-    }
-
     /**
      * Hook: resolve action name from parsed payload.
      *
@@ -46,36 +26,17 @@ class ChatWebSocketClient extends WebSocketClient
     {
         $actionName = ChatSignalConstants::MESSAGE;
 
-        if (is_array($decoded) && isset($decoded['type']) && is_string($decoded['type'])) {
-            $type = strtolower($decoded['type']);
-            $actionName = match ($type) {
+        if (is_array($decoded) && isset($decoded[SignalPayloadConstants::FIELD_ACTION]) && is_string($decoded[SignalPayloadConstants::FIELD_ACTION])) {
+            $action = strtolower($decoded[SignalPayloadConstants::FIELD_ACTION]);
+            $actionName = match ($action) {
                 ChatSignalConstants::RENAME => ChatSignalConstants::RENAME,
                 ChatSignalConstants::MESSAGE => ChatSignalConstants::MESSAGE,
-                default => throw new \RuntimeException("Unknown websocket action type: {$type}"),
+                ChatSignalConstants::FILE => ChatSignalConstants::FILE,
+                default => throw new \RuntimeException("Unknown websocket action type: {$action}"),
             };
         }
 
         return $actionName;
-    }
-
-    /**
-     * Handle received WebSocket binary frame
-     *
-     * @param string $payload Frame payload (binary data)
-     */
-    protected function onFrameBinary(string $payload): void
-    {
-        $dto = new WebSocketFrameSignalDTO(
-            acceptKey: $this->acceptKey,
-            payload: $payload,
-        );
-
-        $this->signalRouter->queueSignal(
-            new SignalSource(SignalSource::WEBSOCKET),
-            new SignalType(SignalTypeConstants::ACTION),
-            new SignalName(ChatSignalConstants::FILE),
-            $dto,
-        );
     }
 
     /**
@@ -95,45 +56,6 @@ class ChatWebSocketClient extends WebSocketClient
         array $queryParams,
     ): void
     {
-        $this->acceptKey = $acceptKey;
-
-        $dto = new WebSocketHandshakeSignalDTO(
-            headers: $headers,
-            acceptKey: $acceptKey,
-            cookies: $cookies,
-            clientIp: $clientIp,
-            queryParams: $queryParams,
-        );
-
-        $this->signalRouter->queueSignal(
-            new SignalSource(SignalSource::WEBSOCKET),
-            new SignalType(SignalTypeConstants::HANDSHAKE),
-            new SignalName(PageConstants::MAIN),
-            $dto,
-        );
-    }
-
-    /**
-     * Called when socket connection is successfully closed
-     *
-     * Automatically unsubscribes user from all subscriptions (page and groups).
-     */
-    protected function onClose(): void
-    {
-        $pageDto = new WebSocketUnsubscribeSignalDTO(
-            acceptKey: $this->acceptKey,
-            page: true,
-            groups: [],
-        );
-
-        $this->signalRouter->queueSignal(
-            new SignalSource(SignalSource::WEBSOCKET),
-            new SignalType(SignalTypeConstants::PAGE_UNSUBSCRIBE),
-            new SignalName(PageConstants::MAIN),
-            $pageDto,
-        );
-
-        // Unsubscribe from all subscriptions (clear after sending signal)
-        $this->signalRouter->unsubscribeFromAll($this->acceptKey);
+        // No additional handshake handling needed for chat demo
     }
 }

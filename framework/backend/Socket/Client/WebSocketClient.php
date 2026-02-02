@@ -4,23 +4,26 @@ declare(strict_types=1);
 
 namespace Hilos\Socket\Client;
 
+use Hilos\Constants\SignalPayloadConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Constants\HttpConstants;
-use Hilos\Core\Router\SignalName;
-use Hilos\Core\Router\SignalSource;
-use Hilos\Core\Router\SignalType;
-use Hilos\DTO\WebSocket\WebSocketFrameSignalDTO;
+use Hilos\DTO\WebSocket\WebSocketActionSignalDTO;
+use Hilos\DTO\WebSocket\WebSocketHandshakeSignalDTO;
 use Hilos\DTO\WebSocket\WebSocketSubscribeSignalDTO;
 use Hilos\DTO\WebSocket\WebSocketUnsubscribeSignalDTO;
 use Hilos\DTO\WebSocket\WebSocketUpdateSubscriptionSignalDTO;
 use Hilos\DTO\WebSocketFrameDTO;
 use Hilos\Exception\Socket\WebSocket\HandshakeFailedException;
+use Hilos\Exception\Socket\WebSocket\InvalidFrameException;
 use Hilos\Exception\Socket\WebSocket\InvalidFrameSequenceException;
 use Hilos\Exception\Socket\WebSocket\ReservedOpcodeException;
 use Hilos\Exception\Socket\WebSocket\UnknownOpcodeException;
 use Hilos\Exception\Socket\WebSocket\UnsupportedProtocolVersionException;
 use Hilos\Exception\SocketException;
 use Hilos\Socket\Client\Interface\WebSocketClientInterface;
+use Hilos\Core\Router\SignalName;
+use Hilos\Core\Router\SignalSource;
+use Hilos\Core\Router\SignalType;
 use Hilos\Utils\Helpers\JsonHelper;
 use RuntimeException;
 
@@ -32,6 +35,20 @@ use RuntimeException;
  */
 abstract class WebSocketClient extends AbstractClient implements WebSocketClientInterface
 {
+ 
+    /** @var string Accept key identifier (from handshake) */
+    public string $acceptKey {
+        get {
+            return $this->acceptKeyValue;
+        }
+        set {
+            $this->acceptKeyValue = $value;
+        }
+    }
+
+    /** @var string Backing storage for accept key */
+    private string $acceptKeyValue = '';
+
     /** WebSocket protocol magic string for handshake */
     private const string WS_MAGIC_STRING = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
 
@@ -76,6 +93,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
     /** @var string Accumulated payload for fragmented message */
     private string $fragmentedPayload = '';
 
+
     /**
      * Process read buffer - parse WebSocket frames
      *
@@ -85,6 +103,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
      * @throws SocketException
      * @throws UnknownOpcodeException
      * @throws UnsupportedProtocolVersionException
+     * @throws InvalidFrameException When frame payload is invalid
      */
     protected function processReadBuffer(): void
     {
@@ -103,7 +122,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
 
             try {
                 $this->handleFrame($frame);
-            } catch (UnknownOpcodeException|ReservedOpcodeException $exception) {
+            } catch (UnknownOpcodeException|ReservedOpcodeException|InvalidFrameException $exception) {
                 // Log and close connection on unknown/reserved opcode
                 $this->shouldClose = true;
                 throw $exception;
@@ -118,6 +137,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
      * @throws UnknownOpcodeException When opcode is unknown
      * @throws ReservedOpcodeException When opcode is reserved
      * @throws InvalidFrameSequenceException When frame sequence is invalid
+     * @throws InvalidFrameException When frame payload is invalid
      */
     private function handleFrame(WebSocketFrameDTO $frame): void
     {
@@ -264,7 +284,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
         $acceptKey = base64_encode(sha1($key . self::WS_MAGIC_STRING, true));
 
         // Call onHandshake callback before completing handshake
-        $this->onHandshake(
+        $this->handleHandshakeInternal(
             $headers,
             $acceptKey,
             $this->parseCookies($headers),
@@ -495,46 +515,62 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
      * Handle received WebSocket text frame
      *
      * @param string $payload Frame payload (UTF-8 text)
+     * @throws InvalidFrameException When frame payload is invalid
      */
     protected function onFrame(string $payload): void
     {
-        $acceptKey = $this->getAcceptKey();
+        $acceptKey = $this->acceptKey;
         $decoded = JsonHelper::tryDecode($payload);
 
-        if (is_array($decoded) && isset($decoded['type']) && is_string($decoded['type'])) {
-            $type = strtolower($decoded['type']);
+        $type = is_array($decoded) && isset($decoded[SignalPayloadConstants::FIELD_TYPE]) && is_string($decoded[SignalPayloadConstants::FIELD_TYPE])
+            ? strtolower($decoded[SignalPayloadConstants::FIELD_TYPE])
+            : SignalTypeConstants::ACTION;
 
-            if ($type === SignalTypeConstants::PAGE_SUBSCRIBE || $type === SignalTypeConstants::PAGE_UPDATE_SUBSCRIPTION) {
-                $page = $decoded['page'] ?? null;
+        switch ($type) {
+            case SignalTypeConstants::PAGE_SUBSCRIBE: {
+                $page = $decoded[SignalPayloadConstants::FIELD_PAGE] ?? '';
                 if (!is_string($page) || $page === '') {
-                    throw new RuntimeException("Page is required for {$type} signal");
+                    throw new InvalidFrameException("Page is required for {$type} signal");
                 }
 
-                if ($type === SignalTypeConstants::PAGE_SUBSCRIBE) {
-                    $params = is_array($decoded['params'] ?? null) ? $decoded['params'] : [];
-                    $groups = is_array($decoded['groups'] ?? null) ? $decoded['groups'] : [];
-                    $subscribeDto = new WebSocketSubscribeSignalDTO(
-                        acceptKey: $acceptKey,
-                        page: $page,
-                        groups: $groups,
-                        params: $params,
-                    );
+                $params = is_array($decoded[SignalPayloadConstants::FIELD_PARAMS] ?? null) ? $decoded[SignalPayloadConstants::FIELD_PARAMS] : [];
+                $group = $decoded[SignalPayloadConstants::FIELD_GROUP] ?? '';
+                if (!is_string($group)) {
+                    throw new InvalidFrameException("Group must be a string for {$type} signal");
+                }
+                $subscribeDto = new WebSocketSubscribeSignalDTO(
+                    acceptKey: $acceptKey,
+                    page: $page,
+                    group: $group,
+                    params: $params,
+                );
 
-                    $this->signalRouter->queueSignal(
-                        new SignalSource(SignalSource::WEBSOCKET),
-                        new SignalType(SignalTypeConstants::PAGE_SUBSCRIBE),
-                        new SignalName($page),
-                        $subscribeDto,
-                    );
-                    $this->onPageSubscribeParsed($page, $decoded);
-                    return;
+                $this->signalRouter->queueSignal(
+                    new SignalSource(SignalSource::WEBSOCKET),
+                    new SignalType(SignalTypeConstants::PAGE_SUBSCRIBE),
+                    new SignalName($page),
+                    $subscribeDto,
+                );
+                $this->onPageSubscribeParsed($page, $decoded ?? []);
+                break;
+            }
+
+            case SignalTypeConstants::PAGE_UPDATE_SUBSCRIPTION: {
+                $page = $decoded[SignalPayloadConstants::FIELD_PAGE] ?? '';
+                if (!is_string($page) || $page === '') {
+                    throw new InvalidFrameException("Page is required for {$type} signal");
                 }
 
-                $groups = is_array($decoded['groups'] ?? null) ? $decoded['groups'] : null;
+                $params = is_array($decoded[SignalPayloadConstants::FIELD_PARAMS] ?? null) ? $decoded[SignalPayloadConstants::FIELD_PARAMS] : [];
+                $group = $decoded[SignalPayloadConstants::FIELD_GROUP] ?? '';
+                if (!is_string($group)) {
+                    throw new InvalidFrameException("Group must be a string for {$type} signal");
+                }
                 $updateDto = new WebSocketUpdateSubscriptionSignalDTO(
                     acceptKey: $acceptKey,
                     page: $page,
-                    groups: $groups,
+                    group: $group,
+                    params: $params,
                 );
 
                 $this->signalRouter->queueSignal(
@@ -543,19 +579,23 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
                     new SignalName($page),
                     $updateDto,
                 );
-                return;
+                $this->onPageUpdateSubscriptionParsed($page, $decoded ?? []);
+                break;
             }
 
-            if ($type === SignalTypeConstants::PAGE_UNSUBSCRIBE) {
-                $pageValue = $decoded['page'] ?? false;
-                $groups = is_array($decoded['groups'] ?? null) ? $decoded['groups'] : [];
+            case SignalTypeConstants::PAGE_UNSUBSCRIBE: {
+                $pageValue = $decoded[SignalPayloadConstants::FIELD_PAGE] ?? false;
                 $page = is_string($pageValue) ? $pageValue : '';
                 $pageFlag = is_string($pageValue) || ((is_bool($pageValue) && $pageValue));
+                $group = $decoded[SignalPayloadConstants::FIELD_GROUP] ?? '';
+                if (!is_string($group)) {
+                    throw new InvalidFrameException("Group must be a string for {$type} signal");
+                }
 
                 $unsubscribeDto = new WebSocketUnsubscribeSignalDTO(
                     acceptKey: $acceptKey,
                     page: $pageFlag,
-                    groups: $groups,
+                    group: $group,
                 );
 
                 $this->signalRouter->queueSignal(
@@ -564,26 +604,105 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
                     new SignalName($page),
                     $unsubscribeDto,
                 );
-                return;
+                $this->onPageUnsubscribeParsed($page, $decoded ?? []);
+                break;
             }
+
+            case SignalTypeConstants::GROUP_SUBSCRIBE:
+            case SignalTypeConstants::GROUP_UPDATE_SUBSCRIPTION:
+            case SignalTypeConstants::GROUP_UNSUBSCRIBE: {
+                $group = $decoded[SignalPayloadConstants::FIELD_GROUP] ?? '';
+                if (!is_string($group) || $group === '') {
+                    throw new InvalidFrameException("Group is required for {$type} signal");
+                }
+                $params = is_array($decoded[SignalPayloadConstants::FIELD_PARAMS] ?? null) ? $decoded[SignalPayloadConstants::FIELD_PARAMS] : [];
+                $dto = match ($type) {
+                    SignalTypeConstants::GROUP_SUBSCRIBE => new WebSocketSubscribeSignalDTO(
+                        acceptKey: $acceptKey,
+                        page: '',
+                        group: $group,
+                        params: $params,
+                    ),
+                    SignalTypeConstants::GROUP_UPDATE_SUBSCRIPTION => new WebSocketUpdateSubscriptionSignalDTO(
+                        acceptKey: $acceptKey,
+                        page: '',
+                        group: $group,
+                        params: $params,
+                    ),
+                    SignalTypeConstants::GROUP_UNSUBSCRIBE => new WebSocketUnsubscribeSignalDTO(
+                        acceptKey: $acceptKey,
+                        page: false,
+                        group: $group,
+                    ),
+                    default => null,
+                };
+
+                if ($dto === null) {
+                    break;
+                }
+
+                $this->signalRouter->queueSignal(
+                    new SignalSource(SignalSource::WEBSOCKET),
+                    new SignalType($type),
+                    new SignalName($group),
+                    $dto,
+                );
+
+                match ($type) {
+                    SignalTypeConstants::GROUP_SUBSCRIBE => $this->onGroupSubscribeParsed($group, $decoded ?? []),
+                    SignalTypeConstants::GROUP_UPDATE_SUBSCRIPTION => $this->onGroupUpdateSubscriptionParsed($group, $decoded ?? []),
+                    SignalTypeConstants::GROUP_UNSUBSCRIBE => $this->onGroupUnsubscribeParsed($group, $decoded ?? []),
+                    default => null,
+                };
+                break;
+            }
+
+            case SignalTypeConstants::ACTION: {
+                $actionName = $this->onActionParsed($payload, $decoded);
+                if ($actionName === null || $actionName === '') {
+                    throw new InvalidFrameException("Action name is required for {$type} signal");
+                }
+
+                $actionData = [];
+                if (is_array($decoded)) {
+                    $actionData = is_array($decoded[SignalPayloadConstants::FIELD_DATA] ?? null)
+                        ? $decoded[SignalPayloadConstants::FIELD_DATA]
+                        : $decoded;
+                    unset(
+                        $actionData[SignalPayloadConstants::FIELD_TYPE],
+                        $actionData[SignalPayloadConstants::FIELD_ACTION],
+                        $actionData[SignalPayloadConstants::FIELD_DATA],
+                        $actionData[SignalPayloadConstants::FIELD_PAGE],
+                        $actionData[SignalPayloadConstants::FIELD_GROUP],
+                    );
+                }
+
+                $dto = new WebSocketActionSignalDTO(
+                    acceptKey: $acceptKey,
+                    action: $actionName,
+                    data: $actionData,
+                    page: is_array($decoded) && isset($decoded[SignalPayloadConstants::FIELD_PAGE]) && is_string($decoded[SignalPayloadConstants::FIELD_PAGE])
+                        ? $decoded[SignalPayloadConstants::FIELD_PAGE]
+                        : null,
+                    group: is_array($decoded) && isset($decoded[SignalPayloadConstants::FIELD_GROUP]) && is_string($decoded[SignalPayloadConstants::FIELD_GROUP])
+                        ? $decoded[SignalPayloadConstants::FIELD_GROUP]
+                        : null,
+                );
+
+                $this->signalRouter->queueSignal(
+                    new SignalSource(SignalSource::WEBSOCKET),
+                    new SignalType(SignalTypeConstants::ACTION),
+                    new SignalName($actionName),
+                    $dto,
+                );
+                $this->onActionQueued($actionName, $decoded);
+                break;
+            }
+
+            default:
+                $this->onUnknownFrame($payload, $decoded, $type);
+                break;
         }
-
-        $actionName = $this->onActionParsed($payload, $decoded);
-        if ($actionName === null || $actionName === '') {
-            return;
-        }
-
-        $dto = new WebSocketFrameSignalDTO(
-            acceptKey: $acceptKey,
-            payload: $payload,
-        );
-
-        $this->signalRouter->queueSignal(
-            new SignalSource(SignalSource::WEBSOCKET),
-            new SignalType(SignalTypeConstants::ACTION),
-            new SignalName($actionName),
-            $dto,
-        );
     }
 
     /**
@@ -591,9 +710,63 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
      *
      * @param string $page
      * @param array<string,mixed> $decoded
-     * @return void
      */
     protected function onPageSubscribeParsed(string $page, array $decoded): void
+    {
+        // Default: no-op
+    }
+
+    /**
+     * Hook: called after page update subscription payload is parsed and queued.
+     *
+     * @param string $page
+     * @param array<string,mixed> $decoded
+     */
+    protected function onPageUpdateSubscriptionParsed(string $page, array $decoded): void
+    {
+        // Default: no-op
+    }
+
+    /**
+     * Hook: called after page unsubscribe payload is parsed and queued.
+     *
+     * @param string $page
+     * @param array<string,mixed> $decoded
+     */
+    protected function onPageUnsubscribeParsed(string $page, array $decoded): void
+    {
+        // Default: no-op
+    }
+
+    /**
+     * Hook: called after group subscribe payload is parsed and queued.
+     *
+     * @param string $group
+     * @param array<string,mixed> $decoded
+     */
+    protected function onGroupSubscribeParsed(string $group, array $decoded): void
+    {
+        // Default: no-op
+    }
+
+    /**
+     * Hook: called after group update subscription payload is parsed and queued.
+     *
+     * @param string $group
+     * @param array<string,mixed> $decoded
+     */
+    protected function onGroupUpdateSubscriptionParsed(string $group, array $decoded): void
+    {
+        // Default: no-op
+    }
+
+    /**
+     * Hook: called after group unsubscribe payload is parsed and queued.
+     *
+     * @param string $group
+     * @param array<string,mixed> $decoded
+     */
+    protected function onGroupUnsubscribeParsed(string $group, array $decoded): void
     {
         // Default: no-op
     }
@@ -609,21 +782,99 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
      */
     protected function onActionParsed(string $payload, ?array $decoded): ?string
     {
-        if (is_array($decoded) && isset($decoded['type']) && is_string($decoded['type'])) {
-            return strtolower($decoded['type']);
+        if (is_array($decoded) && isset($decoded[SignalPayloadConstants::FIELD_ACTION]) && is_string($decoded[SignalPayloadConstants::FIELD_ACTION])) {
+            return strtolower($decoded[SignalPayloadConstants::FIELD_ACTION]);
         }
 
         return null;
     }
 
     /**
-     * Handle received WebSocket binary frame
+     * Hook: called after action payload is parsed and queued.
      *
-     * Must be implemented by child classes to process incoming binary frames.
+     * @param string $actionName
+     * @param ?array<string,mixed> $decoded
+     */
+    protected function onActionQueued(string $actionName, ?array $decoded): void
+    {
+        // Default: no-op
+    }
+
+    /**
+     * Hook: called when message type is unknown.
+     *
+     * @param string $payload
+     * @param ?array<string,mixed> $decoded
+     * @param string $type
+     */
+    protected function onUnknownFrame(string $payload, ?array $decoded, string $type): void
+    {
+        throw new InvalidFrameException("Unknown message type: {$type}");
+    }
+
+    /**
+     * Handle received WebSocket binary frame
      *
      * @param string $payload Frame payload (binary data)
      */
-    abstract protected function onFrameBinary(string $payload): void;
+    protected function onFrameBinary(string $payload): void
+    {
+        $actionName = $this->onActionParsed($payload, [SignalPayloadConstants::FIELD_ACTION => SignalPayloadConstants::BINARY_ACTION_TYPE]);
+        if ($actionName === null || $actionName === '') {
+            return;
+        }
+
+        $dto = new WebSocketActionSignalDTO(
+            acceptKey: $this->acceptKey,
+            action: $actionName,
+            data: ['payload' => $payload],
+        );
+
+        $this->signalRouter->queueSignal(
+            new SignalSource(SignalSource::WEBSOCKET),
+            new SignalType(SignalTypeConstants::ACTION),
+            new SignalName($actionName),
+            $dto,
+        );
+    }
+
+    /**
+     * Handle handshake with framework hook dispatch.
+     *
+     * This method is final to ensure framework-level handshake logic is always executed.
+     * Child classes should override onHandshake() for custom behavior.
+     *
+     * @param array $headers All HTTP headers from handshake request (key-value pairs)
+     * @param string $acceptKey Sec-WebSocket-Accept value (computed from key, can be used as connection identifier)
+     * @param array $cookies Parsed cookies from Cookie header (key-value pairs)
+     * @param string $clientIp Client IP address (IPv4 or IPv6, empty if unavailable)
+     * @param array $queryParams Query parameters (GET parameters) from request URL
+     */
+    final protected function handleHandshakeInternal(
+        array $headers,
+        string $acceptKey,
+        array $cookies,
+        string $clientIp,
+        array $queryParams,
+    ): void {
+        $this->acceptKey = $acceptKey;
+        $this->onHandshake($headers, $acceptKey, $cookies, $clientIp, $queryParams);
+
+        $dto = new WebSocketHandshakeSignalDTO(
+            headers: $headers,
+            acceptKey: $acceptKey,
+            cookies: $cookies,
+            clientIp: $clientIp,
+            queryParams: $queryParams,
+        );
+
+        $this->signalRouter->queueSignal(
+            new SignalSource(SignalSource::WEBSOCKET),
+            new SignalType(SignalTypeConstants::HANDSHAKE),
+            new SignalName(SignalTypeConstants::HANDSHAKE),
+            $dto,
+        );
+    }
 
     /**
      * Called when WebSocket handshake is completed
@@ -666,5 +917,23 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
 
         // WebSocket client cleanup if needed
         // Can be overridden in child classes
+        if ($this->acceptKey === '') {
+            return;
+        }
+
+        $pageDto = new WebSocketUnsubscribeSignalDTO(
+            acceptKey: $this->acceptKey,
+            page: true,
+            group: '',
+        );
+
+        $this->signalRouter->queueSignal(
+            new SignalSource(SignalSource::WEBSOCKET),
+            new SignalType(SignalTypeConstants::PAGE_UNSUBSCRIBE),
+            new SignalName(''),
+            $pageDto,
+        );
+
+        $this->signalRouter->unsubscribeFromAll($this->acceptKey);
     }
 }

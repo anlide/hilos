@@ -153,7 +153,6 @@ class Env
      * It will copy .env.example to .env if needed and load the .env file.
      *
      * @param ?string $rootPath Root path of the application (null = auto-detect from project root)
-     * @return void
      */
     public static function init(?string $rootPath = null): void
     {
@@ -238,8 +237,6 @@ class Env
      *
      * Called when SIGHUP signal is received to reload environment variables
      * from .env file without restarting the application.
-     *
-     * @return void
      */
     public static function clearCache(): void
     {
@@ -251,8 +248,6 @@ class Env
      * Reload environment configuration
      *
      * Clears caches and reloads .env file with auto-detection of project root.
-     *
-     * @return void
      */
     public static function reload(): void
     {

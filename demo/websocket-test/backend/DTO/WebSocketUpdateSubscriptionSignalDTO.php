@@ -26,8 +26,9 @@ class WebSocketUpdateSubscriptionSignalDTO extends FrameworkWebSocketUpdateSubsc
     {
         return new self(
             acceptKey: $data[self::ACCEPT_KEY] ?? '',
-            page: $data[self::PAGE] ?? null,
-            groups: $data[self::GROUPS] ?? null,
+            page: $data[self::PAGE] ?? '',
+            group: $data[self::GROUP] ?? '',
+            params: $data[self::PARAMS] ?? [],
         );
     }
 }

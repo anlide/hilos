@@ -77,6 +77,7 @@
 import { ref, computed, watch } from 'vue'
 import { useChatStore } from '@/stores'
 import { useWebSocket } from '@hilos/sdk/plugins/websocket'
+import { sendAction } from '@/services/websocketActions'
 import { Modal, ConflictHeader, ConflictActions } from '@hilos/sdk/components'
 
 const chatStore = useChatStore()
@@ -140,10 +141,7 @@ watch(() => chatStore.currentUsername, (newUsername) => {
 const handleSubmit = () => {
   if (isValidUsername.value && !conflictState.value) {
     const trimmedUsername = localUsername.value.trim()
-    websocket.send({
-      type: 'rename',
-      username: trimmedUsername,
-    })
+    sendAction(websocket, 'rename', { username: trimmedUsername })
     showModal.value = false
     conflictState.value = false
     baselineUsername.value = trimmedUsername

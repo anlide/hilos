@@ -60,7 +60,7 @@ export const useChatStore = defineStore('chat', {
     },
     
     /**
-     * Handle subscription_response
+     * Handle handshake_response
      */
     handleSubscriptionResponse(
       events: Array<{

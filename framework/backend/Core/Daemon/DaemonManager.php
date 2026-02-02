@@ -14,11 +14,14 @@ use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\DTO\BaseDTO;
 use Hilos\DTO\SignalDTO;
+use Hilos\DTO\WebSocket\WebSocketSubscribeSignalDTO;
+use Hilos\DTO\WebSocket\WebSocketUnsubscribeSignalDTO;
+use Hilos\DTO\WebSocket\WebSocketUpdateSubscriptionSignalDTO;
 use Hilos\DTO\Worker\DaemonAgentMessageDTO;
 use Hilos\Exception\Worker\AgentDaemonCreationFailedException;
 use Hilos\Exception\Worker\NoSuitableWorkerException;
 use Hilos\Logging\Logger\Logger;
-use Hilos\Socket\Client\Interface\WebSocketClientInterface;
+use Hilos\Socket\Client\WebSocketClient;
 use Hilos\Socket\Server\ServerInterface;
 use Hilos\Socket\Server\WebSocketServer;
 use Hilos\Socket\Server\WorkerServer;
@@ -609,7 +612,7 @@ abstract class DaemonManager extends BaseManager
     private function sendToClient(WebSocketServer $server, string $acceptKey, string $message): void
     {
         foreach ($server->getClients() as $client) {
-            if ($client instanceof WebSocketClientInterface && $client->getAcceptKey() === $acceptKey) {
+            if ($client instanceof WebSocketClient && $client->acceptKey === $acceptKey) {
                 try {
                     Logger::debug("Sending message to acceptKey {$acceptKey}: {$message}");
                     $client->sendFrame($message);
@@ -633,15 +636,15 @@ abstract class DaemonManager extends BaseManager
     private function sendToAllClients(WebSocketServer $server, string $message, ?string $excludeAcceptKey = null): void
     {
         foreach ($server->getClients() as $client) {
-            if ($client instanceof WebSocketClientInterface) {
-                if ($excludeAcceptKey !== null && $client->getAcceptKey() === $excludeAcceptKey) {
+            if ($client instanceof WebSocketClient) {
+                if ($excludeAcceptKey !== null && $client->acceptKey === $excludeAcceptKey) {
                     continue;
                 }
 
                 try {
                     $client->sendFrame($message);
                 } catch (\Throwable $e) {
-                    Logger::error("Failed to send message to acceptKey {$client->getAcceptKey()}: " . $e->getMessage());
+                    Logger::error("Failed to send message to acceptKey {$client->acceptKey}: " . $e->getMessage());
                 }
             }
         }
@@ -660,8 +663,8 @@ abstract class DaemonManager extends BaseManager
         // TODO: Implement proper group subscription tracking
         // For now, send to all clients (basic implementation)
         foreach ($server->getClients() as $client) {
-            if ($client instanceof WebSocketClientInterface) {
-                if ($excludeAcceptKey !== null && $client->getAcceptKey() === $excludeAcceptKey) {
+            if ($client instanceof WebSocketClient) {
+                if ($excludeAcceptKey !== null && $client->acceptKey === $excludeAcceptKey) {
                     continue;
                 }
 
@@ -670,7 +673,7 @@ abstract class DaemonManager extends BaseManager
                 try {
                     $client->sendFrame($message);
                 } catch (\Throwable $e) {
-                    Logger::error("Failed to send message to acceptKey {$client->getAcceptKey()}: " . $e->getMessage());
+                    Logger::error("Failed to send message to acceptKey {$client->acceptKey}: " . $e->getMessage());
                 }
             }
         }
@@ -686,41 +689,50 @@ abstract class DaemonManager extends BaseManager
      */
     private function updateSubscriptions(SignalDTO $signal): void
     {
-        $dataArray = $signal->data->toArray();
-        $acceptKey = $dataArray['acceptKey'] ?? '';
-
-        if ($acceptKey === '') {
-            return;
-        }
-
-        $params = $dataArray['params'] ?? [];
-
         $signalType = $signal->signalType->getType();
         $signalName = $signal->signalName->getName();
 
         switch ($signalType) {
             case SignalTypeConstants::PAGE_SUBSCRIBE:
-                $this->signalRouter->subscribeToPage($acceptKey, $signalName, $params);
+                if (!($signal->data instanceof WebSocketSubscribeSignalDTO)) {
+                    return;
+                }
+                $this->signalRouter->subscribeToPage($signal->data->page, $signal->data);
                 break;
 
             case SignalTypeConstants::PAGE_UPDATE_SUBSCRIPTION:
-                $this->signalRouter->updatePageSubscription($acceptKey, $signalName, $params);
+                if (!($signal->data instanceof WebSocketUpdateSubscriptionSignalDTO)) {
+                    return;
+                }
+                $this->signalRouter->updatePageSubscription($signal->data->page, $signal->data);
                 break;
 
             case SignalTypeConstants::PAGE_UNSUBSCRIBE:
-                $this->signalRouter->unsubscribeFromPage($acceptKey);
+                if (!($signal->data instanceof WebSocketUnsubscribeSignalDTO)) {
+                    return;
+                }
+                $this->signalRouter->unsubscribeFromPage('', $signal->data);
                 break;
 
             case SignalTypeConstants::GROUP_SUBSCRIBE:
-                $this->signalRouter->subscribeToGroup($acceptKey, $signalName, $params);
+                if (!($signal->data instanceof WebSocketSubscribeSignalDTO)) {
+                    return;
+                }
+                $this->signalRouter->subscribeToGroup($signal->data->group, $signal->data);
                 break;
 
             case SignalTypeConstants::GROUP_UPDATE_SUBSCRIPTION:
-                $this->signalRouter->updateGroupSubscription($acceptKey, $signalName, $params);
+                if (!($signal->data instanceof WebSocketUpdateSubscriptionSignalDTO)) {
+                    return;
+                }
+                $this->signalRouter->updateGroupSubscription($signal->data->group, $signal->data);
                 break;
 
             case SignalTypeConstants::GROUP_UNSUBSCRIBE:
-                $this->signalRouter->unsubscribeFromGroup($acceptKey, $signalName);
+                if (!($signal->data instanceof WebSocketUnsubscribeSignalDTO)) {
+                    return;
+                }
+                $this->signalRouter->unsubscribeFromGroup($signal->data->group, $signal->data);
                 break;
         }
     }

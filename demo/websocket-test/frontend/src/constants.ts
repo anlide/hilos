@@ -1,0 +1,8 @@
+export const HANDSHAKE_RESPONSE = 'handshake_response'
+export const MESSAGE_TYPE_FIELD = 'type'
+export const MESSAGE_PAGE_FIELD = 'page'
+export const MESSAGE_PARAMS_FIELD = 'params'
+export const MESSAGE_GROUP_FIELD = 'group'
+export const MESSAGE_ACTION_FIELD = 'action'
+export const MESSAGE_DATA_FIELD = 'data'
+export const MESSAGE_ACTION_TYPE = 'action'

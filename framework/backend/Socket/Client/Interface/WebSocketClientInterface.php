@@ -14,13 +14,6 @@ use Hilos\Socket\Client\ClientInterface;
 interface WebSocketClientInterface extends ClientInterface
 {
     /**
-     * Get accept key
-     *
-     * @return string Accept key identifier
-     */
-    public function getAcceptKey(): string;
-
-    /**
      * Send WebSocket text frame
      *
      * @param string $data Text data to send (UTF-8)

@@ -50,6 +50,7 @@ import { ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useWebSocket } from '@hilos/sdk/plugins/websocket'
 import { useChatStore } from '@/stores'
+import { MESSAGE_PAGE_FIELD, MESSAGE_PARAMS_FIELD, MESSAGE_TYPE_FIELD } from '@/constants'
 
 type RouteSnapshot = {
   page: string
@@ -100,10 +101,11 @@ const queueSubscription = (snapshot: RouteSnapshot, update: boolean) => {
     return
   }
 
+  const hasParams = Object.keys(snapshot.params).length > 0
   websocket.send({
-    type: update ? 'page_update_subscription' : 'page_subscribe',
-    page: snapshot.page,
-    params: snapshot.params,
+    [MESSAGE_TYPE_FIELD]: update ? 'page_update_subscription' : 'page_subscribe',
+    [MESSAGE_PAGE_FIELD]: snapshot.page,
+    ...(hasParams ? { [MESSAGE_PARAMS_FIELD]: snapshot.params } : {}),
   })
 
   lastSnapshot.value = snapshot
@@ -136,6 +138,15 @@ watch(() => [route.name, route.params], handleRouteChange, { deep: true, immedia
 watch(() => chatStore.isConnected, (isConnected) => {
   if (isConnected && pendingSnapshot.value) {
     queueSubscription(pendingSnapshot.value, pendingUpdate.value)
+    return
+  }
+  if (isConnected) {
+    const page = resolvePage(route.name)
+    if (!page) {
+      return
+    }
+    const params = normalizeParams(route.params as Record<string, unknown>)
+    queueSubscription({ page, params }, false)
   }
 })
 </script>

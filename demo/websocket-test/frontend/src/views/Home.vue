@@ -15,14 +15,12 @@ import { useChatStore } from '@/stores'
 import { useWebSocket } from '@hilos/sdk/plugins/websocket'
 import ChatConnection from '@/components/ChatConnection.vue'
 import ChatWindow from '@/components/ChatWindow.vue'
+import { sendAction } from '@/services/websocketActions'
 
 const chatStore = useChatStore()
 const websocket = useWebSocket()
 
 const handleSendMessage = (message: string) => {
-  websocket.send({
-    type: 'message',
-    content: message,
-  })
+  sendAction(websocket, 'message', { content: message })
 }
 </script>
