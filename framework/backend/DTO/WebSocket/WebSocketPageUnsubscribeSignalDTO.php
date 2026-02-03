@@ -9,21 +9,16 @@ use Hilos\DTO\BaseDTO;
 use Hilos\DTO\SignalDataDTO;
 
 /**
- * WebSocketActionSignalDTO - DTO for WebSocket action signal
+ * WebSocketPageUnsubscribeSignalDTO - DTO for WebSocket page unsubscribe signal
  *
- * Represents an action signal sent from WebSocket client.
+ * Represents a page unsubscribe signal sent from WebSocket client.
  */
-class WebSocketActionSignalDTO extends BaseDTO implements SignalDataDTO, SignalDataInterface
+class WebSocketPageUnsubscribeSignalDTO extends BaseDTO implements SignalDataDTO, SignalDataInterface
 {
     // Field name constants
     public const string ACCEPT_KEY = 'acceptKey';
-    public const string ACTION = 'action';
-    public const string DATA = 'data';
-
     public function __construct(
         public readonly string $acceptKey,
-        public readonly string $action,
-        public readonly array $data = [],
     ) {
     }
 
@@ -36,12 +31,7 @@ class WebSocketActionSignalDTO extends BaseDTO implements SignalDataDTO, SignalD
     {
         $result = [
             self::ACCEPT_KEY => $this->acceptKey,
-            self::ACTION => $this->action,
         ];
-
-        if (!empty($this->data)) {
-            $result[self::DATA] = $this->data;
-        }
 
         return $result;
     }
@@ -56,8 +46,6 @@ class WebSocketActionSignalDTO extends BaseDTO implements SignalDataDTO, SignalD
     {
         return new self(
             acceptKey: $data[self::ACCEPT_KEY] ?? '',
-            action: $data[self::ACTION] ?? '',
-            data: $data[self::DATA] ?? [],
         );
     }
 }

@@ -11,10 +11,14 @@ use Hilos\Core\Agent\AgentManager;
 use Hilos\Core\Page\PageSignalRouter;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\DTO\WebSocket\WebSocketActionSignalDTO;
+use Hilos\DTO\WebSocket\WebSocketFrameBinarySignalDTO;
 use Hilos\DTO\WebSocket\WebSocketHandshakeSignalDTO;
-use Hilos\DTO\WebSocket\WebSocketSubscribeSignalDTO;
-use Hilos\DTO\WebSocket\WebSocketUnsubscribeSignalDTO;
-use Hilos\DTO\WebSocket\WebSocketUpdateSubscriptionSignalDTO;
+use Hilos\DTO\WebSocket\WebSocketGroupSubscribeSignalDTO;
+use Hilos\DTO\WebSocket\WebSocketGroupUnsubscribeSignalDTO;
+use Hilos\DTO\WebSocket\WebSocketGroupUpdateSubscriptionSignalDTO;
+use Hilos\DTO\WebSocket\WebSocketPageSubscribeSignalDTO;
+use Hilos\DTO\WebSocket\WebSocketPageUnsubscribeSignalDTO;
+use Hilos\DTO\WebSocket\WebSocketPageUpdateSubscriptionSignalDTO;
 use Hilos\DTO\Worker\AgentStartDTO;
 use Hilos\DTO\Worker\AgentStopDTO;
 use Hilos\DTO\Worker\CronSignalDTO;
@@ -150,6 +154,8 @@ abstract class WorkerManager extends BaseManager
                         $this->handleDaemonMessage($message);
                     } catch (AgentCreationFailedException $e) {
                         $this->logError("Failed to handle daemon message: " . $e->getMessage());
+                    } catch (PageSignalRouterNotFoundException $e) {
+                        $this->logError("Failed to route signal: " . $e->getMessage());
                     }
                 }
 
@@ -210,6 +216,7 @@ abstract class WorkerManager extends BaseManager
      *
      * @param WorkerDTO $data Message data
      * @throws AgentCreationFailedException If agent creation fails
+     * @throws PageSignalRouterNotFoundException If page router is not found for agent
      */
     public function handleDaemonMessage(WorkerDTO $data): void
     {
@@ -335,6 +342,7 @@ abstract class WorkerManager extends BaseManager
      * Handle agent message
      *
      * @param WorkerAgentMessageDTO $data Message data
+     * @throws PageSignalRouterNotFoundException If page router is not found for agent
      */
     private function handleAgentMessage(WorkerAgentMessageDTO $data): void
     {
@@ -395,8 +403,16 @@ abstract class WorkerManager extends BaseManager
                 }
                 break;
 
+            case SignalTypeConstants::FRAME_BINARY:
+                if ($signalData instanceof WebSocketFrameBinarySignalDTO) {
+                    $agent->onSignalFrameBinary($signalData, $source, $name);
+                } else {
+                    Logger::error("handleFrameBinarySignal - invalid signal data type: " . get_class($signalData));
+                }
+                break;
+
             case SignalTypeConstants::PAGE_SUBSCRIBE:
-                if ($signalData instanceof WebSocketSubscribeSignalDTO) {
+                if ($signalData instanceof WebSocketPageSubscribeSignalDTO) {
                     $this->onPageSubscribed($signalData, $source, $name);
                     $agent->onSignalPageSubscribe($signalData, $source, $name);
                     $pageRouter->dispatchPageSubscribe($signalData, $source, $name);
@@ -406,7 +422,7 @@ abstract class WorkerManager extends BaseManager
                 break;
 
             case SignalTypeConstants::PAGE_UPDATE_SUBSCRIPTION:
-                if ($signalData instanceof WebSocketUpdateSubscriptionSignalDTO) {
+                if ($signalData instanceof WebSocketPageUpdateSubscriptionSignalDTO) {
                     $this->onPageSubscriptionUpdated($signalData, $source, $name);
                     $agent->onSignalPageUpdateSubscription($signalData, $source, $name);
                     $pageRouter->dispatchPageUpdateSubscription($signalData, $source, $name);
@@ -416,7 +432,7 @@ abstract class WorkerManager extends BaseManager
                 break;
 
             case SignalTypeConstants::PAGE_UNSUBSCRIBE:
-                if ($signalData instanceof WebSocketUnsubscribeSignalDTO) {
+                if ($signalData instanceof WebSocketPageUnsubscribeSignalDTO) {
                     $this->onPageUnsubscribed($signalData, $source, $name);
                     $agent->onSignalPageUnsubscribe($signalData, $source, $name);
                     $pageRouter->dispatchPageUnsubscribe($signalData, $source, $name);
@@ -426,7 +442,7 @@ abstract class WorkerManager extends BaseManager
                 break;
 
             case SignalTypeConstants::GROUP_SUBSCRIBE:
-                if ($signalData instanceof WebSocketSubscribeSignalDTO) {
+                if ($signalData instanceof WebSocketGroupSubscribeSignalDTO) {
                     $this->onGroupSubscribed($signalData, $source, $name);
                     $agent->onSignalGroupSubscribe($signalData, $source, $name);
                 } else {
@@ -435,7 +451,7 @@ abstract class WorkerManager extends BaseManager
                 break;
 
             case SignalTypeConstants::GROUP_UNSUBSCRIBE:
-                if ($signalData instanceof WebSocketUnsubscribeSignalDTO) {
+                if ($signalData instanceof WebSocketGroupUnsubscribeSignalDTO) {
                     $this->onGroupUnsubscribed($signalData, $source, $name);
                     $agent->onSignalGroupUnsubscribe($signalData, $source, $name);
                 } else {
@@ -444,7 +460,7 @@ abstract class WorkerManager extends BaseManager
                 break;
 
             case SignalTypeConstants::GROUP_UPDATE_SUBSCRIPTION:
-                if ($signalData instanceof WebSocketUpdateSubscriptionSignalDTO) {
+                if ($signalData instanceof WebSocketGroupUpdateSubscriptionSignalDTO) {
                     $this->onGroupSubscriptionUpdated($signalData, $source, $name);
                     $agent->onSignalGroupUpdateSubscription($signalData, $source, $name);
                 } else {
@@ -461,11 +477,11 @@ abstract class WorkerManager extends BaseManager
     /**
      * Hook: page subscribe handled on worker.
      *
-     * @param WebSocketSubscribeSignalDTO $signalData
+     * @param WebSocketPageSubscribeSignalDTO $signalData
      * @param string $source
      * @param string $name
      */
-    protected function onPageSubscribed(WebSocketSubscribeSignalDTO $signalData, string $source, string $name): void
+    protected function onPageSubscribed(WebSocketPageSubscribeSignalDTO $signalData, string $source, string $name): void
     {
         // Default: no-op
     }
@@ -473,11 +489,11 @@ abstract class WorkerManager extends BaseManager
     /**
      * Hook: page unsubscribe handled on worker.
      *
-     * @param WebSocketUnsubscribeSignalDTO $signalData
+     * @param WebSocketPageUnsubscribeSignalDTO $signalData
      * @param string $source
      * @param string $name
      */
-    protected function onPageUnsubscribed(WebSocketUnsubscribeSignalDTO $signalData, string $source, string $name): void
+    protected function onPageUnsubscribed(WebSocketPageUnsubscribeSignalDTO $signalData, string $source, string $name): void
     {
         // Default: no-op
     }
@@ -485,11 +501,11 @@ abstract class WorkerManager extends BaseManager
     /**
      * Hook: page update subscription handled on worker.
      *
-     * @param WebSocketUpdateSubscriptionSignalDTO $signalData
+     * @param WebSocketPageUpdateSubscriptionSignalDTO $signalData
      * @param string $source
      * @param string $name
      */
-    protected function onPageSubscriptionUpdated(WebSocketUpdateSubscriptionSignalDTO $signalData, string $source, string $name): void
+    protected function onPageSubscriptionUpdated(WebSocketPageUpdateSubscriptionSignalDTO $signalData, string $source, string $name): void
     {
         // Default: no-op
     }
@@ -497,11 +513,11 @@ abstract class WorkerManager extends BaseManager
     /**
      * Hook: group subscribe handled on worker.
      *
-     * @param WebSocketSubscribeSignalDTO $signalData
+     * @param WebSocketGroupSubscribeSignalDTO $signalData
      * @param string $source
      * @param string $name
      */
-    protected function onGroupSubscribed(WebSocketSubscribeSignalDTO $signalData, string $source, string $name): void
+    protected function onGroupSubscribed(WebSocketGroupSubscribeSignalDTO $signalData, string $source, string $name): void
     {
         // Default: no-op
     }
@@ -509,11 +525,11 @@ abstract class WorkerManager extends BaseManager
     /**
      * Hook: group unsubscribe handled on worker.
      *
-     * @param WebSocketUnsubscribeSignalDTO $signalData
+     * @param WebSocketGroupUnsubscribeSignalDTO $signalData
      * @param string $source
      * @param string $name
      */
-    protected function onGroupUnsubscribed(WebSocketUnsubscribeSignalDTO $signalData, string $source, string $name): void
+    protected function onGroupUnsubscribed(WebSocketGroupUnsubscribeSignalDTO $signalData, string $source, string $name): void
     {
         // Default: no-op
     }
@@ -521,11 +537,11 @@ abstract class WorkerManager extends BaseManager
     /**
      * Hook: group update subscription handled on worker.
      *
-     * @param WebSocketUpdateSubscriptionSignalDTO $signalData
+     * @param WebSocketGroupUpdateSubscriptionSignalDTO $signalData
      * @param string $source
      * @param string $name
      */
-    protected function onGroupSubscriptionUpdated(WebSocketUpdateSubscriptionSignalDTO $signalData, string $source, string $name): void
+    protected function onGroupSubscriptionUpdated(WebSocketGroupUpdateSubscriptionSignalDTO $signalData, string $source, string $name): void
     {
         // Default: no-op
     }

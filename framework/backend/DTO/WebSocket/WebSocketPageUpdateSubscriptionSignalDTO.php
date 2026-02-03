@@ -9,21 +9,21 @@ use Hilos\DTO\BaseDTO;
 use Hilos\DTO\SignalDataDTO;
 
 /**
- * WebSocketActionSignalDTO - DTO for WebSocket action signal
+ * WebSocketPageUpdateSubscriptionSignalDTO - DTO for WebSocket page update subscription signal
  *
- * Represents an action signal sent from WebSocket client.
+ * Represents a page subscription update signal sent from WebSocket client.
  */
-class WebSocketActionSignalDTO extends BaseDTO implements SignalDataDTO, SignalDataInterface
+class WebSocketPageUpdateSubscriptionSignalDTO extends BaseDTO implements SignalDataDTO, SignalDataInterface
 {
     // Field name constants
     public const string ACCEPT_KEY = 'acceptKey';
-    public const string ACTION = 'action';
-    public const string DATA = 'data';
+    public const string PAGE = 'page';
+    public const string PARAMS = 'params';
 
     public function __construct(
         public readonly string $acceptKey,
-        public readonly string $action,
-        public readonly array $data = [],
+        public readonly string $page = '',
+        public readonly array $params = [],
     ) {
     }
 
@@ -36,11 +36,14 @@ class WebSocketActionSignalDTO extends BaseDTO implements SignalDataDTO, SignalD
     {
         $result = [
             self::ACCEPT_KEY => $this->acceptKey,
-            self::ACTION => $this->action,
         ];
 
-        if (!empty($this->data)) {
-            $result[self::DATA] = $this->data;
+        if ($this->page !== '') {
+            $result[self::PAGE] = $this->page;
+        }
+
+        if (!empty($this->params)) {
+            $result[self::PARAMS] = $this->params;
         }
 
         return $result;
@@ -56,8 +59,8 @@ class WebSocketActionSignalDTO extends BaseDTO implements SignalDataDTO, SignalD
     {
         return new self(
             acceptKey: $data[self::ACCEPT_KEY] ?? '',
-            action: $data[self::ACTION] ?? '',
-            data: $data[self::DATA] ?? [],
+            page: $data[self::PAGE] ?? '',
+            params: $data[self::PARAMS] ?? [],
         );
     }
 }

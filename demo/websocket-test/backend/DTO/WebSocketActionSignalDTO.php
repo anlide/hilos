@@ -28,8 +28,6 @@ class WebSocketActionSignalDTO extends FrameworkWebSocketActionSignalDTO impleme
             acceptKey: $data[self::ACCEPT_KEY] ?? '',
             action: $data[self::ACTION] ?? '',
             data: $data[self::DATA] ?? [],
-            page: $data[self::PAGE] ?? null,
-            group: $data[self::GROUP] ?? null,
         );
     }
 }

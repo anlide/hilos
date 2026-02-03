@@ -9,21 +9,21 @@ use Hilos\DTO\BaseDTO;
 use Hilos\DTO\SignalDataDTO;
 
 /**
- * WebSocketUnsubscribeSignalDTO - DTO for WebSocket unsubscribe signal
+ * WebSocketGroupSubscribeSignalDTO - DTO for WebSocket group subscribe signal
  *
- * Represents an unsubscribe signal sent from WebSocket client.
+ * Represents a group subscription signal sent from WebSocket client.
  */
-class WebSocketUnsubscribeSignalDTO extends BaseDTO implements SignalDataDTO, SignalDataInterface
+class WebSocketGroupSubscribeSignalDTO extends BaseDTO implements SignalDataDTO, SignalDataInterface
 {
     // Field name constants
     public const string ACCEPT_KEY = 'acceptKey';
-    public const string PAGE = 'page';
     public const string GROUP = 'group';
+    public const string PARAMS = 'params';
 
     public function __construct(
         public readonly string $acceptKey,
-        public readonly bool $page = false,
         public readonly string $group = '',
+        public readonly array $params = [],
     ) {
     }
 
@@ -38,12 +38,12 @@ class WebSocketUnsubscribeSignalDTO extends BaseDTO implements SignalDataDTO, Si
             self::ACCEPT_KEY => $this->acceptKey,
         ];
 
-        if ($this->page) {
-            $result[self::PAGE] = true;
-        }
-
         if ($this->group !== '') {
             $result[self::GROUP] = $this->group;
+        }
+
+        if (!empty($this->params)) {
+            $result[self::PARAMS] = $this->params;
         }
 
         return $result;
@@ -59,8 +59,8 @@ class WebSocketUnsubscribeSignalDTO extends BaseDTO implements SignalDataDTO, Si
     {
         return new self(
             acceptKey: $data[self::ACCEPT_KEY] ?? '',
-            page: $data[self::PAGE] ?? false,
             group: $data[self::GROUP] ?? '',
+            params: $data[self::PARAMS] ?? [],
         );
     }
 }

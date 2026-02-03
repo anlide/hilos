@@ -7,9 +7,12 @@ namespace Hilos\Core\Router;
 use Hilos\Constants\SignalPayloadConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\DTO\SignalDTO;
-use Hilos\DTO\WebSocket\WebSocketSubscribeSignalDTO;
-use Hilos\DTO\WebSocket\WebSocketUnsubscribeSignalDTO;
-use Hilos\DTO\WebSocket\WebSocketUpdateSubscriptionSignalDTO;
+use Hilos\DTO\WebSocket\WebSocketGroupSubscribeSignalDTO;
+use Hilos\DTO\WebSocket\WebSocketGroupUnsubscribeSignalDTO;
+use Hilos\DTO\WebSocket\WebSocketGroupUpdateSubscriptionSignalDTO;
+use Hilos\DTO\WebSocket\WebSocketPageSubscribeSignalDTO;
+use Hilos\DTO\WebSocket\WebSocketPageUnsubscribeSignalDTO;
+use Hilos\DTO\WebSocket\WebSocketPageUpdateSubscriptionSignalDTO;
 use Hilos\Exception\Router\GroupSubscriptionNotFoundException;
 use Hilos\Exception\Router\PageSubscriptionMismatchException;
 use Hilos\Exception\Router\PageSubscriptionNotFoundException;
@@ -159,11 +162,10 @@ class SignalRouter
     /**
      * Subscribe user to page
      *
-     * @param string $acceptKey Accept key identifier
      * @param string $page Page identifier
-     * @param array $params Additional parameters
+     * @param WebSocketPageSubscribeSignalDTO $data
      */
-    public function subscribeToPage(string $page, WebSocketSubscribeSignalDTO $data): void
+    public function subscribeToPage(string $page, WebSocketPageSubscribeSignalDTO $data): void
     {
         $acceptKey = $data->acceptKey;
         if ($acceptKey === '') {
@@ -181,13 +183,12 @@ class SignalRouter
      * Updates parameters of existing page subscription.
      * Throws exception if current page doesn't match the page being updated.
      *
-     * @param string $acceptKey Accept key identifier
      * @param string $page Page identifier
-     * @param array $params Additional parameters to update
-     * @throws PageSubscriptionNotFoundException If no subscription found
+     * @param WebSocketPageUpdateSubscriptionSignalDTO $data
      * @throws PageSubscriptionMismatchException If current page doesn't match the page being updated
+     * @throws PageSubscriptionNotFoundException If no subscription found
      */
-    public function updatePageSubscription(string $page, WebSocketUpdateSubscriptionSignalDTO $data): void
+    public function updatePageSubscription(string $page, WebSocketPageUpdateSubscriptionSignalDTO $data): void
     {
         $acceptKey = $data->acceptKey;
         if ($acceptKey === '') {
@@ -210,11 +211,10 @@ class SignalRouter
     /**
      * Subscribe user to group
      *
-     * @param string $acceptKey Accept key identifier
      * @param string $group Group identifier
-     * @param array $params Additional parameters
+     * @param WebSocketGroupSubscribeSignalDTO $data
      */
-    public function subscribeToGroup(string $group, WebSocketSubscribeSignalDTO $data): void
+    public function subscribeToGroup(string $group, WebSocketGroupSubscribeSignalDTO $data): void
     {
         $acceptKey = $data->acceptKey;
         if ($acceptKey === '') {
@@ -233,12 +233,11 @@ class SignalRouter
      * Updates parameters of existing group subscription.
      * Throws exception if group is not currently subscribed.
      *
-     * @param string $acceptKey Accept key identifier
      * @param string $group Group identifier
-     * @param array $params Additional parameters to update
+     * @param WebSocketGroupUpdateSubscriptionSignalDTO $data
      * @throws GroupSubscriptionNotFoundException If group is not currently subscribed
      */
-    public function updateGroupSubscription(string $group, WebSocketUpdateSubscriptionSignalDTO $data): void
+    public function updateGroupSubscription(string $group, WebSocketGroupUpdateSubscriptionSignalDTO $data): void
     {
         $acceptKey = $data->acceptKey;
         if ($acceptKey === '') {
@@ -257,24 +256,34 @@ class SignalRouter
     /**
      * Unsubscribe user from page
      *
-     * @param string $acceptKey Accept key identifier
+     * @param string $page
+     * @param WebSocketPageUnsubscribeSignalDTO $data
      */
-    public function unsubscribeFromPage(string $page, WebSocketUnsubscribeSignalDTO $data): void
+    public function unsubscribeFromPage(string $page, WebSocketPageUnsubscribeSignalDTO $data): void
     {
         $acceptKey = $data->acceptKey;
         if ($acceptKey === '') {
             return;
         }
+        if (!isset($this->subscriptionPages[$acceptKey])) {
+            return;
+        }
+
+        $currentPage = $this->subscriptionPages[$acceptKey][SignalPayloadConstants::SUBSCRIPTION_PAGE_KEY] ?? null;
+        if ($currentPage !== $page) {
+            return;
+        }
+
         unset($this->subscriptionPages[$acceptKey]);
     }
 
     /**
      * Unsubscribe user from group
      *
-     * @param string $acceptKey Accept key identifier
      * @param string $group Group identifier
+     * @param WebSocketGroupUnsubscribeSignalDTO $data
      */
-    public function unsubscribeFromGroup(string $group, WebSocketUnsubscribeSignalDTO $data): void
+    public function unsubscribeFromGroup(string $group, WebSocketGroupUnsubscribeSignalDTO $data): void
     {
         $acceptKey = $data->acceptKey;
         if ($acceptKey === '') {

@@ -27,6 +27,7 @@ class SignalTypeConstants
 
     // User actions signal types
     public const string ACTION = 'action';
+    public const string FRAME_BINARY = 'frame_binary';
 
     // Cron actions signal types
     public const string CRON = 'cron';

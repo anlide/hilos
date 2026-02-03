@@ -14,9 +14,12 @@ use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\DTO\BaseDTO;
 use Hilos\DTO\SignalDTO;
-use Hilos\DTO\WebSocket\WebSocketSubscribeSignalDTO;
-use Hilos\DTO\WebSocket\WebSocketUnsubscribeSignalDTO;
-use Hilos\DTO\WebSocket\WebSocketUpdateSubscriptionSignalDTO;
+use Hilos\DTO\WebSocket\WebSocketGroupSubscribeSignalDTO;
+use Hilos\DTO\WebSocket\WebSocketGroupUnsubscribeSignalDTO;
+use Hilos\DTO\WebSocket\WebSocketGroupUpdateSubscriptionSignalDTO;
+use Hilos\DTO\WebSocket\WebSocketPageSubscribeSignalDTO;
+use Hilos\DTO\WebSocket\WebSocketPageUnsubscribeSignalDTO;
+use Hilos\DTO\WebSocket\WebSocketPageUpdateSubscriptionSignalDTO;
 use Hilos\DTO\Worker\DaemonAgentMessageDTO;
 use Hilos\Exception\Worker\AgentDaemonCreationFailedException;
 use Hilos\Exception\Worker\NoSuitableWorkerException;
@@ -694,42 +697,46 @@ abstract class DaemonManager extends BaseManager
 
         switch ($signalType) {
             case SignalTypeConstants::PAGE_SUBSCRIBE:
-                if (!($signal->data instanceof WebSocketSubscribeSignalDTO)) {
+                if (!($signal->data instanceof WebSocketPageSubscribeSignalDTO)) {
                     return;
                 }
                 $this->signalRouter->subscribeToPage($signal->data->page, $signal->data);
                 break;
 
             case SignalTypeConstants::PAGE_UPDATE_SUBSCRIPTION:
-                if (!($signal->data instanceof WebSocketUpdateSubscriptionSignalDTO)) {
+                if (!($signal->data instanceof WebSocketPageUpdateSubscriptionSignalDTO)) {
                     return;
                 }
                 $this->signalRouter->updatePageSubscription($signal->data->page, $signal->data);
                 break;
 
             case SignalTypeConstants::PAGE_UNSUBSCRIBE:
-                if (!($signal->data instanceof WebSocketUnsubscribeSignalDTO)) {
+                if (!($signal->data instanceof WebSocketPageUnsubscribeSignalDTO)) {
                     return;
                 }
-                $this->signalRouter->unsubscribeFromPage('', $signal->data);
+                $page = $signal->signalName->getName();
+                if ($page === '') {
+                    return;
+                }
+                $this->signalRouter->unsubscribeFromPage($page, $signal->data);
                 break;
 
             case SignalTypeConstants::GROUP_SUBSCRIBE:
-                if (!($signal->data instanceof WebSocketSubscribeSignalDTO)) {
+                if (!($signal->data instanceof WebSocketGroupSubscribeSignalDTO)) {
                     return;
                 }
                 $this->signalRouter->subscribeToGroup($signal->data->group, $signal->data);
                 break;
 
             case SignalTypeConstants::GROUP_UPDATE_SUBSCRIPTION:
-                if (!($signal->data instanceof WebSocketUpdateSubscriptionSignalDTO)) {
+                if (!($signal->data instanceof WebSocketGroupUpdateSubscriptionSignalDTO)) {
                     return;
                 }
                 $this->signalRouter->updateGroupSubscription($signal->data->group, $signal->data);
                 break;
 
             case SignalTypeConstants::GROUP_UNSUBSCRIBE:
-                if (!($signal->data instanceof WebSocketUnsubscribeSignalDTO)) {
+                if (!($signal->data instanceof WebSocketGroupUnsubscribeSignalDTO)) {
                     return;
                 }
                 $this->signalRouter->unsubscribeFromGroup($signal->data->group, $signal->data);

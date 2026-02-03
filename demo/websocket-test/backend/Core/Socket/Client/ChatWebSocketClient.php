@@ -16,27 +16,19 @@ use Hilos\Socket\Client\WebSocketClient;
 class ChatWebSocketClient extends WebSocketClient
 {
     /**
-     * Hook: resolve action name from parsed payload.
+     * Hook: validate action name from parsed payload.
      *
-     * @param string $payload
-     * @param ?array<string,mixed> $decoded
-     * @return ?string
+     * @param string $actionName
      */
-    protected function onActionParsed(string $payload, ?array $decoded): ?string
+    protected function onActionValidated(string $actionName): void
     {
-        $actionName = ChatSignalConstants::MESSAGE;
-
-        if (is_array($decoded) && isset($decoded[SignalPayloadConstants::FIELD_ACTION]) && is_string($decoded[SignalPayloadConstants::FIELD_ACTION])) {
-            $action = strtolower($decoded[SignalPayloadConstants::FIELD_ACTION]);
-            $actionName = match ($action) {
-                ChatSignalConstants::RENAME => ChatSignalConstants::RENAME,
-                ChatSignalConstants::MESSAGE => ChatSignalConstants::MESSAGE,
-                ChatSignalConstants::FILE => ChatSignalConstants::FILE,
-                default => throw new \RuntimeException("Unknown websocket action type: {$action}"),
-            };
+        if (!in_array($actionName, [
+            ChatSignalConstants::RENAME,
+            ChatSignalConstants::MESSAGE,
+            ChatSignalConstants::FILE,
+        ], true)) {
+            throw new \RuntimeException("Unknown websocket action type: {$actionName}");
         }
-
-        return $actionName;
     }
 
     /**

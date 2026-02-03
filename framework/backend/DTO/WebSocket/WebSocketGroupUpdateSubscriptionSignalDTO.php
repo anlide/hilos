@@ -9,21 +9,19 @@ use Hilos\DTO\BaseDTO;
 use Hilos\DTO\SignalDataDTO;
 
 /**
- * WebSocketUpdateSubscriptionSignalDTO - DTO for WebSocket update subscription signal
+ * WebSocketGroupUpdateSubscriptionSignalDTO - DTO for WebSocket group update subscription signal
  *
- * Represents an update subscription signal sent from WebSocket client.
+ * Represents a group subscription update signal sent from WebSocket client.
  */
-class WebSocketUpdateSubscriptionSignalDTO extends BaseDTO implements SignalDataDTO, SignalDataInterface
+class WebSocketGroupUpdateSubscriptionSignalDTO extends BaseDTO implements SignalDataDTO, SignalDataInterface
 {
     // Field name constants
     public const string ACCEPT_KEY = 'acceptKey';
-    public const string PAGE = 'page';
     public const string GROUP = 'group';
     public const string PARAMS = 'params';
 
     public function __construct(
         public readonly string $acceptKey,
-        public readonly string $page = '',
         public readonly string $group = '',
         public readonly array $params = [],
     ) {
@@ -39,10 +37,6 @@ class WebSocketUpdateSubscriptionSignalDTO extends BaseDTO implements SignalData
         $result = [
             self::ACCEPT_KEY => $this->acceptKey,
         ];
-
-        if ($this->page !== '') {
-            $result[self::PAGE] = $this->page;
-        }
 
         if ($this->group !== '') {
             $result[self::GROUP] = $this->group;
@@ -65,7 +59,6 @@ class WebSocketUpdateSubscriptionSignalDTO extends BaseDTO implements SignalData
     {
         return new self(
             acceptKey: $data[self::ACCEPT_KEY] ?? '',
-            page: $data[self::PAGE] ?? '',
             group: $data[self::GROUP] ?? '',
             params: $data[self::PARAMS] ?? [],
         );

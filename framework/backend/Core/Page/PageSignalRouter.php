@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace Hilos\Core\Page;
 
 use Hilos\DTO\WebSocket\WebSocketActionSignalDTO;
-use Hilos\DTO\WebSocket\WebSocketSubscribeSignalDTO;
-use Hilos\DTO\WebSocket\WebSocketUnsubscribeSignalDTO;
-use Hilos\DTO\WebSocket\WebSocketUpdateSubscriptionSignalDTO;
+use Hilos\DTO\WebSocket\WebSocketPageSubscribeSignalDTO;
+use Hilos\DTO\WebSocket\WebSocketPageUnsubscribeSignalDTO;
+use Hilos\DTO\WebSocket\WebSocketPageUpdateSubscriptionSignalDTO;
 use Hilos\Exception\Page\PageNotFoundException;
 use Hilos\Logging\Logger\Logger;
 
@@ -33,11 +33,11 @@ class PageSignalRouter
     /**
      * Dispatch page subscribe signal to page handler
      *
-     * @param WebSocketSubscribeSignalDTO $data Signal data
+     * @param WebSocketPageSubscribeSignalDTO $data Signal data
      * @param string $source Signal source
      * @param string $name Signal name (page name fallback)
      */
-    public function dispatchPageSubscribe(WebSocketSubscribeSignalDTO $data, string $source, string $name): void
+    public function dispatchPageSubscribe(WebSocketPageSubscribeSignalDTO $data, string $source, string $name): void
     {
         $page = $data->page !== '' ? $data->page : $name;
         if ($page === '') {
@@ -56,11 +56,11 @@ class PageSignalRouter
     /**
      * Dispatch page update subscription signal to page handler
      *
-     * @param WebSocketUpdateSubscriptionSignalDTO $data Signal data
+     * @param WebSocketPageUpdateSubscriptionSignalDTO $data Signal data
      * @param string $source Signal source
      * @param string $name Signal name (page name)
      */
-    public function dispatchPageUpdateSubscription(WebSocketUpdateSubscriptionSignalDTO $data, string $source, string $name): void
+    public function dispatchPageUpdateSubscription(WebSocketPageUpdateSubscriptionSignalDTO $data, string $source, string $name): void
     {
         // Default: no-op (routing only, no page-level update yet).
     }
@@ -68,24 +68,14 @@ class PageSignalRouter
     /**
      * Dispatch page unsubscribe signal to page handler
      *
-     * @param WebSocketUnsubscribeSignalDTO $data Signal data
+     * @param WebSocketPageUnsubscribeSignalDTO $data Signal data
      * @param string $source Signal source
      * @param string $name Signal name (page name)
      */
-    public function dispatchPageUnsubscribe(WebSocketUnsubscribeSignalDTO $data, string $source, string $name): void
+    public function dispatchPageUnsubscribe(WebSocketPageUnsubscribeSignalDTO $data, string $source, string $name): void
     {
-        $page = $name;
-        if ($page === '') {
-            Logger::error('Page unsubscribe without page name');
-            return;
-        }
-
-        $pageInstance = $this->resolvePage($page);
-        if ($pageInstance === null) {
-            return;
-        }
-
-        $pageInstance->onUnsubscribe($data->acceptKey);
+        // TODO: Page name is no longer available for unsubscribe.
+        // $pageInstance->onUnsubscribe($data->acceptKey);
     }
 
     /**
@@ -98,10 +88,7 @@ class PageSignalRouter
      */
     public function dispatchAction(WebSocketActionSignalDTO $data, string $source): void
     {
-        $page = $data->page;
-        if ($page === null || $page === '') {
-            $page = $this->actionRoutes->getPageForAction($data->action) ?? '';
-        }
+        $page = $this->actionRoutes->getPageForAction($data->action) ?? '';
 
         if ($page === '') {
             Logger::error("Action routing failed: action={$data->action}, acceptKey={$data->acceptKey}");

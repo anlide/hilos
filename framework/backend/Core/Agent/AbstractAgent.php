@@ -9,10 +9,14 @@ use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalSourceInterface;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\DTO\WebSocket\WebSocketActionSignalDTO;
+use Hilos\DTO\WebSocket\WebSocketFrameBinarySignalDTO;
 use Hilos\DTO\WebSocket\WebSocketHandshakeSignalDTO;
-use Hilos\DTO\WebSocket\WebSocketSubscribeSignalDTO;
-use Hilos\DTO\WebSocket\WebSocketUnsubscribeSignalDTO;
-use Hilos\DTO\WebSocket\WebSocketUpdateSubscriptionSignalDTO;
+use Hilos\DTO\WebSocket\WebSocketGroupSubscribeSignalDTO;
+use Hilos\DTO\WebSocket\WebSocketGroupUnsubscribeSignalDTO;
+use Hilos\DTO\WebSocket\WebSocketGroupUpdateSubscriptionSignalDTO;
+use Hilos\DTO\WebSocket\WebSocketPageSubscribeSignalDTO;
+use Hilos\DTO\WebSocket\WebSocketPageUnsubscribeSignalDTO;
+use Hilos\DTO\WebSocket\WebSocketPageUpdateSubscriptionSignalDTO;
 
 /**
  * AbstractAgent - Abstract base class for agents running in worker processes
@@ -146,9 +150,9 @@ abstract class AbstractAgent implements AgentInterface
      *
      * @param string $source Signal source
      * @param string $name Signal name
-     * @param WebSocketSubscribeSignalDTO $data Signal data
+     * @param WebSocketPageSubscribeSignalDTO $data Signal data
      */
-    public function onSignalPageSubscribe(WebSocketSubscribeSignalDTO $data, string $source, string $name): void
+    public function onSignalPageSubscribe(WebSocketPageSubscribeSignalDTO $data, string $source, string $name): void
     {
         // Default: do nothing
     }
@@ -160,9 +164,9 @@ abstract class AbstractAgent implements AgentInterface
      *
      * @param string $source Signal source
      * @param string $name Signal name
-     * @param WebSocketUnsubscribeSignalDTO $data Signal data
+     * @param WebSocketPageUnsubscribeSignalDTO $data Signal data
      */
-    public function onSignalPageUnsubscribe(WebSocketUnsubscribeSignalDTO $data, string $source, string $name): void
+    public function onSignalPageUnsubscribe(WebSocketPageUnsubscribeSignalDTO $data, string $source, string $name): void
     {
         // Default: do nothing
     }
@@ -174,9 +178,9 @@ abstract class AbstractAgent implements AgentInterface
      *
      * @param string $source Signal source
      * @param string $name Signal name
-     * @param WebSocketUpdateSubscriptionSignalDTO $data Signal data
+     * @param WebSocketPageUpdateSubscriptionSignalDTO $data Signal data
      */
-    public function onSignalPageUpdateSubscription(WebSocketUpdateSubscriptionSignalDTO $data, string $source, string $name): void
+    public function onSignalPageUpdateSubscription(WebSocketPageUpdateSubscriptionSignalDTO $data, string $source, string $name): void
     {
         // Default: do nothing
     }
@@ -188,9 +192,9 @@ abstract class AbstractAgent implements AgentInterface
      *
      * @param string $source Signal source
      * @param string $name Signal name
-     * @param SignalDataInterface $data Signal data
+     * @param WebSocketGroupSubscribeSignalDTO $data Signal data
      */
-    public function onSignalGroupSubscribe(WebSocketSubscribeSignalDTO $data, string $source, string $name): void
+    public function onSignalGroupSubscribe(WebSocketGroupSubscribeSignalDTO $data, string $source, string $name): void
     {
         // Default: do nothing
     }
@@ -202,9 +206,9 @@ abstract class AbstractAgent implements AgentInterface
      *
      * @param string $source Signal source
      * @param string $name Signal name
-     * @param SignalDataInterface $data Signal data
+     * @param WebSocketGroupUnsubscribeSignalDTO $data Signal data
      */
-    public function onSignalGroupUnsubscribe(WebSocketUnsubscribeSignalDTO $data, string $source, string $name): void
+    public function onSignalGroupUnsubscribe(WebSocketGroupUnsubscribeSignalDTO $data, string $source, string $name): void
     {
         // Default: do nothing
     }
@@ -216,9 +220,9 @@ abstract class AbstractAgent implements AgentInterface
      *
      * @param string $source Signal source
      * @param string $name Signal name
-     * @param SignalDataInterface $data Signal data
+     * @param WebSocketGroupUpdateSubscriptionSignalDTO $data Signal data
      */
-    public function onSignalGroupUpdateSubscription(WebSocketUpdateSubscriptionSignalDTO $data, string $source, string $name): void
+    public function onSignalGroupUpdateSubscription(WebSocketGroupUpdateSubscriptionSignalDTO $data, string $source, string $name): void
     {
         // Default: do nothing
     }
@@ -233,6 +237,20 @@ abstract class AbstractAgent implements AgentInterface
      * @param WebSocketActionSignalDTO $data Signal data
      */
     public function onSignalAction(WebSocketActionSignalDTO $data, string $source, string $name): void
+    {
+        // Default: do nothing
+    }
+
+    /**
+     * Default implementation - no binary frame signal handling
+     *
+     * Child classes can override this method.
+     *
+     * @param string $source Signal source
+     * @param string $name Signal name
+     * @param WebSocketFrameBinarySignalDTO $data Signal data
+     */
+    public function onSignalFrameBinary(WebSocketFrameBinarySignalDTO $data, string $source, string $name): void
     {
         // Default: do nothing
     }
