@@ -9,12 +9,12 @@ use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\Process;
-use Hilos\Core\Router\SignalData;
 use Hilos\Core\Router\SignalName;
-use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalRouter;
+use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
 use Hilos\DTO\Worker\DaemonAgentMessageDTO;
+use Hilos\DTO\Worker\SystemSignalDTO;
 use Hilos\Exception\MissingEnvironmentVariableException;
 use Hilos\Exception\Process\CouldNotStartException;
 use Hilos\Exception\Process\FailedToClosePipeException;
@@ -362,7 +362,7 @@ abstract class WorkerServer extends AbstractServer
                     new SignalSource(SignalSource::DAEMON),
                     new SignalType(SignalTypeConstants::SYSTEM),
                     new SignalName(SignalConstants::WORKERS_READY),
-                    new SignalData(),
+                    new SystemSignalDTO(systemName: SignalConstants::WORKERS_READY),
                 );
             }
         }

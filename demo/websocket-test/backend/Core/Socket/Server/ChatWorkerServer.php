@@ -6,10 +6,10 @@ namespace Demo\WebSocketTest\Core\Socket\Server;
 
 use Demo\WebSocketTest\Constants\ChatSignalConstants;
 use Hilos\Constants\SignalTypeConstants;
-use Hilos\Core\Router\SignalData;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
+use Hilos\DTO\Worker\SystemSignalDTO;
 use Hilos\Socket\Server\WorkerServer;
 
 /**
@@ -38,7 +38,7 @@ class ChatWorkerServer extends WorkerServer
             new SignalSource(SignalSource::DAEMON),
             new SignalType(SignalTypeConstants::SYSTEM),
             new SignalName(ChatSignalConstants::START),
-            new SignalData(),
+            new SystemSignalDTO(systemName: ChatSignalConstants::START),
         );
     }
 }

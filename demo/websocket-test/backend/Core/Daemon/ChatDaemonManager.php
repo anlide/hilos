@@ -6,7 +6,6 @@ namespace Demo\WebSocketTest\Core\Daemon;
 
 use Demo\WebSocketTest\Constants\ChatCronConstants;
 use Demo\WebSocketTest\Core\Router\ChatSignalRouter;
-use Demo\WebSocketTest\DTO\CronSignalDTO;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\Daemon\Cron\CronRule;
@@ -15,6 +14,7 @@ use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
+use Hilos\DTO\Worker\CronSignalDTO;
 
 /**
  * ChatDaemonManager - Main daemon manager for chat demo
