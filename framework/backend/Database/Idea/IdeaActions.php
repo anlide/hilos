@@ -23,6 +23,7 @@ use Hilos\Exception\Idea\TruthSource\IdeaTruthSourceWriteNotAllowedException;
  *   $user = Idea::$db->users->actions->register($sessionToken);
  *   $event = Idea::$db->events->actions->add($type, $userId, $data);
  *
+ * @template T of IdeaItem
  * @property-read IdeaCollection $collection IdeaCollection instance this actions belong to
  */
 abstract class IdeaActions
@@ -87,7 +88,7 @@ abstract class IdeaActions
      * Create IdeaItem from Object using callback
      *
      * @param Object_ $object Object instance
-     * @return IdeaItem
+     * @return T Idea item (subtype of IdeaItem, bound in child class)
      * @throws IdeaActionsCallbackNotSetException If callback is not set
      */
     protected function createIdeaFromObject(Object_ &$object): IdeaItem

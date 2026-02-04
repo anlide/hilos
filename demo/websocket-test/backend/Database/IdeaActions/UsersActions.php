@@ -20,6 +20,7 @@ use RuntimeException;
  * Users Actions
  * Provides write operations for Users collection
  *
+ * @extends IdeaActions<IdeaUser>
  * @property-read IdeaCollectionUsers $collection
  */
 final class UsersActions extends IdeaActions

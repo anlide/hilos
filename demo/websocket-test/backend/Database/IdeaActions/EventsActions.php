@@ -20,6 +20,7 @@ use Hilos\Exception\Idea\TruthSource\IdeaTruthSourceWriteNotAllowedException;
  * Events Actions
  * Provides write operations for Events collection
  *
+ * @extends IdeaActions<IdeaEvent>
  * @property-read IdeaCollectionEvents $collection
  */
 final class EventsActions extends IdeaActions
@@ -72,9 +73,7 @@ final class EventsActions extends IdeaActions
         $this->addObjectToCollection($objectEvent);
 
         // Create and return IdeaEvent using callback
-        /** @var IdeaEvent $ideaEvent */
-        $ideaEvent = $this->createIdeaFromObject($objectEvent);
-        return $ideaEvent;
+        return $this->createIdeaFromObject($objectEvent);
     }
 
     /**
