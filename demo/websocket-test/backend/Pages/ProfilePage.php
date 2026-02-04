@@ -4,8 +4,15 @@ declare(strict_types=1);
 
 namespace Demo\WebSocketTest\Pages;
 
+use Demo\WebSocketTest\Constants\ChatEventType;
+use Demo\WebSocketTest\Constants\ChatSignalConstants;
 use Demo\WebSocketTest\Constants\PageConstants;
 use Demo\WebSocketTest\Core\Page\AbstractChatPage;
+use Demo\WebSocketTest\Database\Idea;
+use Demo\WebSocketTest\DTO\Action\RenameActionDTO;
+use Hilos\DTO\Action\ActionPayloadDTO;
+use Hilos\DTO\EntitiesChangesDTO;
+use Hilos\Logging\Logger\Logger;
 
 /**
  * ProfilePage - User profile page handler
@@ -49,11 +56,60 @@ class ProfilePage extends AbstractChatPage
      *
      * @param string $acceptKey Accept key
      * @param string $action Action name
-     * @param string $payload Action payload
+     * @param ActionPayloadDTO $dto Action payload DTO
      */
-    public function onAction(string $acceptKey, string $action, string $payload): void
+    public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): void
     {
-        // TODO: Implement other profile page actions
-        // Idea::$db->users->actions->rename($userId, $newName);
+        switch ($action) {
+            case ChatSignalConstants::RENAME:
+                if ($dto instanceof RenameActionDTO) {
+                    $this->handleRename($acceptKey, $dto);
+                }
+                break;
+
+            default:
+                Logger::logAgentError('ProfilePage', "Unknown action: {$action}");
+        }
+    }
+
+    /**
+     * Handle rename action
+     *
+     * @param string $acceptKey Accept key
+     * @param RenameActionDTO $dto Rename DTO
+     */
+    private function handleRename(string $acceptKey, RenameActionDTO $dto): void
+    {
+        if (!$dto->isValid()) {
+            Logger::logAgentError('ProfilePage', "Empty new name (acceptKey={$acceptKey})");
+            return;
+        }
+
+        $userId = Idea::$rt->connections->getUserId($acceptKey);
+        if ($userId === null) {
+            Logger::logAgentError('ProfilePage', "User not found for acceptKey={$acceptKey}");
+            return;
+        }
+
+        $renameResult = Idea::$db->users->actions->rename($userId, $dto->newName);
+        if ($renameResult === null) {
+            return; // No change
+        }
+
+        // Build entities update
+        $user = Idea::$db->users[$userId];
+        if ($user !== null) {
+            $publicUser = $user->toArray(idAsIndex: false);
+            unset($publicUser['sessionToken']);
+
+            $entities = new EntitiesChangesDTO(
+                partial: ['users' => [$publicUser]],
+            );
+
+            $this->getChatAgent()->addEvent(ChatEventType::USER_RENAMED, $userId, [
+                'oldName' => $renameResult['oldName'],
+                'newName' => $renameResult['newName'],
+            ], $entities);
+        }
     }
 }

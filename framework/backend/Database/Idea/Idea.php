@@ -11,6 +11,7 @@ use Hilos\Exception\Idea\Entity\IdeaEntityTableConstantNotFoundException;
 use Hilos\Exception\Idea\Other\IdeaCloneException;
 use Hilos\Exception\Idea\Other\IdeaObjectCollectionNotFoundException;
 use Hilos\Exception\Idea\Other\IdeaUnknownLazyStrategyException;
+use Hilos\Runtime\Idea\IdeaRt;
 
 /**
  * Idea - Static access point for application data
@@ -22,15 +23,15 @@ use Hilos\Exception\Idea\Other\IdeaUnknownLazyStrategyException;
  * Usage:
  *   Idea::init(); // Initialize (mandatory)
  *   $user = Idea::$db->users[123]; // Get User from database layer
- *   $userId = Idea::$rt->connections->getUserId($acceptKey); // Get from runtime layer
+ *   $conn = Idea::$rt->connections[$acceptKey]; // Get from runtime layer
  */
 abstract class Idea
 {
     /** @var ?static Database layer singleton (Idea/Object/Entity collections) */
     public static ?self $db = null;
 
-    /** @var ?object Runtime layer singleton for transient application data (defined in child classes) */
-    public static ?object $rt = null;
+    /** @var ?IdeaRt Runtime layer singleton for transient application data */
+    public static ?IdeaRt $rt = null;
 
     /**
      * Object collections (references to Objects instances)
@@ -69,10 +70,11 @@ abstract class Idea
     }
 
     /**
-     * Initialize Idea with Object collections
+     * Initialize Idea with Object collections and Runtime
      *
      * Object collections initialization is mandatory and must be implemented in child classes.
      * Child classes should override this method to create and register Object collections.
+     * Runtime is optional - override createRuntime() to provide application-specific runtime.
      */
     public static function init(): void
     {
@@ -80,9 +82,26 @@ abstract class Idea
             self::$db = new static();
         }
 
+        if (self::$rt === null) {
+            self::$rt = static::createRuntime();
+        }
+
         // Object collections must be initialized in child class
         // Child classes should override this method to create Object collections
         // and register them via setRepresent() method
+    }
+
+    /**
+     * Create runtime instance
+     *
+     * Override in child class to provide application-specific runtime.
+     * Return null if runtime is not needed.
+     *
+     * @return ?IdeaRt Runtime instance or null
+     */
+    protected static function createRuntime(): ?IdeaRt
+    {
+        return null;
     }
 
     /**

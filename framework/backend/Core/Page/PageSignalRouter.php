@@ -82,6 +82,7 @@ class PageSignalRouter
      * Dispatch action signal to page handler
      *
      * Resolves page from payload or action route configuration.
+     * Creates ActionPayloadDTO via PageFactory.
      *
      * @param WebSocketActionSignalDTO $data Signal data
      * @param string $source Signal source
@@ -100,12 +101,10 @@ class PageSignalRouter
             return;
         }
 
-        $payload = json_encode($data->data);
-        if ($payload === false) {
-            $payload = '{}';
-        }
+        // Create typed DTO via PageFactory
+        $dto = $this->pageFactory->createActionPayloadDTO($data->action, $data->data);
 
-        $pageInstance->onAction($data->acceptKey, $data->action, $payload);
+        $pageInstance->onAction($data->acceptKey, $data->action, $dto);
     }
 
     /**

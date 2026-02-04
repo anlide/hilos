@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Hilos\Core\Page;
 
 use Hilos\Core\Router\SignalRouter;
+use Hilos\DTO\Action\ActionPayloadDTO;
+use Hilos\DTO\Action\UnknownActionPayloadDTO;
 use Hilos\Exception\Page\PageNotFoundException;
 
 /**
@@ -18,6 +20,9 @@ abstract class AbstractPageFactory
     /** @var SignalRouter Signal router instance */
     protected SignalRouter $signalRouter;
 
+    /** @var PageAgentInterface Agent instance for pages */
+    protected PageAgentInterface $agent;
+
     /** @var array<string, AbstractPage> Cached page instances */
     private array $pages = [];
 
@@ -25,10 +30,12 @@ abstract class AbstractPageFactory
      * Constructor
      *
      * @param SignalRouter $signalRouter Signal router instance
+     * @param PageAgentInterface $agent Agent instance
      */
-    public function __construct(SignalRouter $signalRouter)
+    public function __construct(SignalRouter $signalRouter, PageAgentInterface $agent)
     {
         $this->signalRouter = $signalRouter;
+        $this->agent = $agent;
     }
 
     /**
@@ -67,4 +74,19 @@ abstract class AbstractPageFactory
      * @return bool True if page can be created
      */
     abstract public function hasPage(string $pageName): bool;
+
+    /**
+     * Create ActionPayloadDTO from action and data
+     *
+     * Override in child class to create specific DTOs for known actions.
+     * Default implementation returns UnknownActionPayloadDTO.
+     *
+     * @param string $action Action name
+     * @param array $data Payload data
+     * @return ActionPayloadDTO Action payload DTO
+     */
+    public function createActionPayloadDTO(string $action, array $data): ActionPayloadDTO
+    {
+        return new UnknownActionPayloadDTO($action, $data);
+    }
 }

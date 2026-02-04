@@ -16,17 +16,19 @@ use Demo\WebSocketTest\Database\ObjectCollection\Bots as ObjectBots;
 use Demo\WebSocketTest\Database\ObjectCollection\Events as ObjectEvents;
 use Demo\WebSocketTest\Database\ObjectCollection\Moderators as ObjectModerators;
 use Demo\WebSocketTest\Database\ObjectCollection\Users as ObjectUsers;
+use Demo\WebSocketTest\Runtime\ChatRuntime;
 use Hilos\Database\Idea\Idea as BaseIdea;
 use Hilos\Database\Object\Objects;
 use Hilos\Exception\DatabaseException;
 use Hilos\Exception\Idea\Other\IdeaObjectCollectionNotFoundException;
+use Hilos\Runtime\Idea\IdeaRt;
 
 /**
  * Idea - Application-specific data access point
  *
  * Extends framework Idea class to provide:
  *   - $db: Database collections (users, events, bots, moderators)
- *   - $rt: Runtime data (TODO: connections, sessions, etc.)
+ *   - $rt: Runtime data (connections)
  *
  * @property-read IdeaUsers $users
  * @property-read IdeaEvents $events
@@ -80,5 +82,15 @@ final class Idea extends BaseIdea
             self::bots => EntityBot::class,
             self::moderators => EntityModerator::class,
         ];
+    }
+
+    /**
+     * Create runtime instance
+     *
+     * @return ?IdeaRt ChatRuntime instance
+     */
+    protected static function createRuntime(): ?IdeaRt
+    {
+        return ChatRuntime::init();
     }
 }

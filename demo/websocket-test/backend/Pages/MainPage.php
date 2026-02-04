@@ -4,9 +4,14 @@ declare(strict_types=1);
 
 namespace Demo\WebSocketTest\Pages;
 
+use Demo\WebSocketTest\Constants\ChatEventType;
 use Demo\WebSocketTest\Constants\ChatSignalConstants;
 use Demo\WebSocketTest\Constants\PageConstants;
 use Demo\WebSocketTest\Core\Page\AbstractChatPage;
+use Demo\WebSocketTest\Database\Idea;
+use Demo\WebSocketTest\DTO\Action\FileActionDTO;
+use Demo\WebSocketTest\DTO\Action\MessageActionDTO;
+use Hilos\DTO\Action\ActionPayloadDTO;
 use Hilos\Logging\Logger\Logger;
 
 /**
@@ -51,14 +56,75 @@ class MainPage extends AbstractChatPage
      *
      * @param string $acceptKey Accept key
      * @param string $action Action name
-     * @param string $payload Action payload
+     * @param ActionPayloadDTO $dto Action payload DTO
      */
-    public function onAction(string $acceptKey, string $action, string $payload): void
+    public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): void
     {
-        if ($action === ChatSignalConstants::MESSAGE) {
-            // TODO: handle add message action
-        } else {
-            Logger::logAgentError('MainPage', "Unknown action: {$action}");
+        switch ($action) {
+            case ChatSignalConstants::MESSAGE:
+                if ($dto instanceof MessageActionDTO) {
+                    $this->handleMessage($acceptKey, $dto);
+                }
+                break;
+
+            case ChatSignalConstants::FILE:
+                if ($dto instanceof FileActionDTO) {
+                    $this->handleFile($acceptKey, $dto);
+                }
+                break;
+
+            default:
+                Logger::logAgentError('MainPage', "Unknown action: {$action}");
         }
+    }
+
+    /**
+     * Handle message action
+     *
+     * @param string $acceptKey Accept key
+     * @param MessageActionDTO $dto Message DTO
+     */
+    private function handleMessage(string $acceptKey, MessageActionDTO $dto): void
+    {
+        if (!$dto->isValid()) {
+            Logger::logAgentError('MainPage', "Empty message content (acceptKey={$acceptKey})");
+            return;
+        }
+
+        $userId = Idea::$rt->connections->getUserId($acceptKey);
+        if ($userId === null) {
+            Logger::logAgentError('MainPage', "User not found for acceptKey={$acceptKey}");
+            return;
+        }
+
+        $this->getChatAgent()->addEvent(ChatEventType::MESSAGE_SENT, $userId, [
+            'message' => $dto->content,
+        ]);
+    }
+
+    /**
+     * Handle file action
+     *
+     * @param string $acceptKey Accept key
+     * @param FileActionDTO $dto File DTO
+     */
+    private function handleFile(string $acceptKey, FileActionDTO $dto): void
+    {
+        if (!$dto->isValid()) {
+            Logger::logAgentError('MainPage', "Invalid file data (acceptKey={$acceptKey})");
+            return;
+        }
+
+        $userId = Idea::$rt->connections->getUserId($acceptKey);
+        if ($userId === null) {
+            Logger::logAgentError('MainPage', "User not found for acceptKey={$acceptKey}");
+            return;
+        }
+
+        $this->getChatAgent()->addEvent(ChatEventType::FILE_SHARED, $userId, [
+            'filename' => $dto->filename,
+            'mimeType' => $dto->mimeType,
+            'size' => $dto->size,
+        ]);
     }
 }

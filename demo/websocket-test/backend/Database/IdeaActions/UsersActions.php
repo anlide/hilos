@@ -9,6 +9,7 @@ use Demo\WebSocketTest\Database\ObjectCollection\Users as ObjectUsers;
 use Hilos\Database\Idea\IdeaActions;
 use Hilos\Exception\DatabaseException;
 use Hilos\Exception\Idea\Actions\IdeaActionsCallbackNotSetException;
+use Hilos\Exception\Idea\Actions\IdeaActionsDuplicateIdException;
 use Hilos\Exception\Idea\Actions\IdeaActionsObjectCollectionNullException;
 use Hilos\Exception\Idea\Actions\IdeaActionsTableNameUndeterminedException;
 use Hilos\Exception\Idea\Actions\IdeaActionsUnknownLazyStrategyException;
@@ -31,25 +32,20 @@ final class UsersActions extends IdeaActions
      * @return IdeaUser Newly registered user idea
      * @throws DatabaseException
      * @throws IdeaActionsCallbackNotSetException
+     * @throws IdeaActionsObjectCollectionNullException
+     * @throws IdeaActionsDuplicateIdException
+     * @throws IdeaActionsTableNameUndeterminedException
      */
     public function register(string $sessionToken): IdeaUser
     {
         // Create ObjectUser through ObjectUser::register()
         $objectUser = ObjectUser::register($sessionToken);
 
-        // Get ObjectCollection (returns reference to storage)
-        /** @var ObjectUsers $objectCollection */
-        $objectCollection = $this->getObjectCollection();
+        // Add to collection
+        $this->addObjectToCollection($objectUser);
 
-        // Add ObjectUser to ObjectCollection (modifies storage directly via reference)
-        if ($objectUser->id !== null) {
-            $objectCollection[$objectUser->id] = $objectUser;
-        }
-
-        // Create and return IdeaUser using callback
-        /** @var IdeaUser $ideaUser */
-        $ideaUser = $this->createIdeaFromObject($objectUser);
-        return $ideaUser;
+        // Return IdeaItem wrapper
+        return $this->createIdeaFromObject($objectUser);
     }
 
     /**

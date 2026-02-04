@@ -65,7 +65,7 @@ class ChatWorkerManager extends WorkerManager
             throw new PageSignalRouterNotFoundException($agent::class);
         }
 
-        $pageFactory = new ChatPageFactory($this->signalRouter);
+        $pageFactory = new ChatPageFactory($this->signalRouter, $agent);
         $actionRoutes = new ActionRouteConfig([
             ChatSignalConstants::MESSAGE => PageConstants::MAIN,
             ChatSignalConstants::RENAME => PageConstants::PROFILE,

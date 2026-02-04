@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Agent;
 
+use Hilos\Core\Page\PageAgentInterface;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalSourceInterface;
@@ -27,7 +28,7 @@ use Hilos\DTO\WebSocket\WebSocketPageUpdateSubscriptionSignalDTO;
  * - doTick() - agent work logic (override this instead of tick())
  * - Signal handling methods (can override onSignal* methods for specific signal types)
  */
-abstract class AbstractAgent implements AgentInterface
+abstract class AbstractAgent implements AgentInterface, PageAgentInterface
 {
     /** @var SignalRouter Signal router for queuing signals */
     protected SignalRouter $signalRouter;

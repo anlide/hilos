@@ -4,7 +4,11 @@ declare(strict_types=1);
 
 namespace Demo\WebSocketTest\Core\Page;
 
+use Demo\WebSocketTest\Constants\ChatSignalConstants;
 use Demo\WebSocketTest\Constants\PageConstants;
+use Demo\WebSocketTest\DTO\Action\FileActionDTO;
+use Demo\WebSocketTest\DTO\Action\MessageActionDTO;
+use Demo\WebSocketTest\DTO\Action\RenameActionDTO;
 use Demo\WebSocketTest\Pages\AdminBotsPage;
 use Demo\WebSocketTest\Pages\AdminModeratorPage;
 use Demo\WebSocketTest\Pages\AdminPage;
@@ -16,7 +20,7 @@ use Demo\WebSocketTest\Pages\ProfilePage;
 use Demo\WebSocketTest\Pages\UserPage;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Page\AbstractPageFactory;
-use Hilos\Core\Router\SignalRouter;
+use Hilos\DTO\Action\ActionPayloadDTO;
 use Hilos\Exception\Page\PageNotFoundException;
 
 /**
@@ -27,16 +31,6 @@ use Hilos\Exception\Page\PageNotFoundException;
 class ChatPageFactory extends AbstractPageFactory
 {
     /**
-     * Constructor
-     *
-     * @param SignalRouter $signalRouter Signal router instance
-     */
-    public function __construct(SignalRouter $signalRouter)
-    {
-        parent::__construct($signalRouter);
-    }
-
-    /**
      * Create page instance
      *
      * @param string $pageName Page name/identifier
@@ -46,15 +40,15 @@ class ChatPageFactory extends AbstractPageFactory
     protected function createPage(string $pageName): AbstractPage
     {
         return match ($pageName) {
-            PageConstants::MAIN => new MainPage($this->signalRouter),
-            PageConstants::PROFILE => new ProfilePage($this->signalRouter),
-            PageConstants::USER => new UserPage($this->signalRouter),
-            PageConstants::BOT => new BotPage($this->signalRouter),
-            PageConstants::MODERATOR => new ModeratorPage($this->signalRouter),
-            PageConstants::ADMIN => new AdminPage($this->signalRouter),
-            PageConstants::ADMIN_USERS => new AdminUsersPage($this->signalRouter),
-            PageConstants::ADMIN_MODERATOR => new AdminModeratorPage($this->signalRouter),
-            PageConstants::ADMIN_BOTS => new AdminBotsPage($this->signalRouter),
+            PageConstants::MAIN => new MainPage($this->signalRouter, $this->agent),
+            PageConstants::PROFILE => new ProfilePage($this->signalRouter, $this->agent),
+            PageConstants::USER => new UserPage($this->signalRouter, $this->agent),
+            PageConstants::BOT => new BotPage($this->signalRouter, $this->agent),
+            PageConstants::MODERATOR => new ModeratorPage($this->signalRouter, $this->agent),
+            PageConstants::ADMIN => new AdminPage($this->signalRouter, $this->agent),
+            PageConstants::ADMIN_USERS => new AdminUsersPage($this->signalRouter, $this->agent),
+            PageConstants::ADMIN_MODERATOR => new AdminModeratorPage($this->signalRouter, $this->agent),
+            PageConstants::ADMIN_BOTS => new AdminBotsPage($this->signalRouter, $this->agent),
             default => throw new PageNotFoundException($pageName),
         };
     }
@@ -78,5 +72,22 @@ class ChatPageFactory extends AbstractPageFactory
             PageConstants::ADMIN_MODERATOR,
             PageConstants::ADMIN_BOTS,
         ], true);
+    }
+
+    /**
+     * Create ActionPayloadDTO for chat actions
+     *
+     * @param string $action Action name
+     * @param array $data Payload data
+     * @return ActionPayloadDTO Action payload DTO
+     */
+    public function createActionPayloadDTO(string $action, array $data): ActionPayloadDTO
+    {
+        return match ($action) {
+            ChatSignalConstants::MESSAGE => MessageActionDTO::fromArray($data),
+            ChatSignalConstants::RENAME => RenameActionDTO::fromArray($data),
+            ChatSignalConstants::FILE => FileActionDTO::fromArray($data),
+            default => parent::createActionPayloadDTO($action, $data),
+        };
     }
 }

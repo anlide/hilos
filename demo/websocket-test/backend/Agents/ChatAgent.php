@@ -9,9 +9,12 @@ use Demo\WebSocketTest\Constants\ChatCronConstants;
 use Demo\WebSocketTest\Constants\ChatEventType;
 use Demo\WebSocketTest\Constants\ChatSignalConstants;
 use Demo\WebSocketTest\Constants\HttpHeaders;
+use Demo\WebSocketTest\Core\Page\ChatPageAgentInterface;
 use Demo\WebSocketTest\Database\Idea;
 use Demo\WebSocketTest\DTO\ChatEventSignalDTO;
 use Demo\WebSocketTest\DTO\HandshakeResponseSignalData;
+use Demo\WebSocketTest\Runtime\ChatRuntime;
+use Demo\WebSocketTest\Runtime\Idea\Connection as RuntimeIdeaConnection;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Router\SignalDataInterface;
@@ -33,7 +36,12 @@ use Hilos\Exception\Idea\Entity\IdeaEntityClassNotFoundException;
 use Hilos\Exception\Idea\Entity\IdeaEntityMappingNotFoundException;
 use Hilos\Exception\Idea\Entity\IdeaEntityTableConstantNotFoundException;
 use Hilos\Exception\Idea\TruthSource\IdeaTruthSourceWriteNotAllowedException;
+use Hilos\Exception\Runtime\Actions\IdeaRtActionsCallbackNotSetException;
+use Hilos\Exception\Runtime\Actions\IdeaRtActionsCollectionNameNullException;
+use Hilos\Exception\Runtime\Actions\IdeaRtActionsStateCollectionNullException;
+use Hilos\Exception\Runtime\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\Logging\Logger\Logger;
+use Hilos\Runtime\RtTruthSourceRegistry;
 
 /**
  * ChatAgent - Monopolistic agent for chat management
@@ -41,7 +49,7 @@ use Hilos\Logging\Logger\Logger;
  * Runs in monopolistic worker process. Manages chat state and history.
  * State stored only in memory (no persistence).
  */
-class ChatAgent extends AbstractAgent
+class ChatAgent extends AbstractAgent implements ChatPageAgentInterface
 {
     /**
      * Constructor
@@ -90,24 +98,35 @@ class ChatAgent extends AbstractAgent
      */
     public function onStart(): void
     {
-        // Register this agent as truth source for event and user tables (all keys)
+        // Register this agent as truth source for database tables (all keys)
         TruthSourceRegistry::register(Idea::getTableName(Idea::events), true, $this->getId());
         TruthSourceRegistry::register(Idea::getTableName(Idea::users), true, $this->getId());
 
+        // Register this agent as truth source for runtime collections (all keys)
+        RtTruthSourceRegistry::register(ChatRuntime::connections, true, $this->getId());
+
         // Add chat started event to history (system event with userId = null)
         Idea::$db->events->actions->add(ChatEventType::CHAT_STARTED->value);
-
-        // Page factory removed - will be redesigned separately.
     }
 
     /**
      * Handle handshake signal.
      *
+     * @param WebSocketHandshakeSignalDTO $data
      * @param string $source
      * @param string $name
-     * @param WebSocketHandshakeSignalDTO $data
+     * @return void Created connection wrapper
      * @throws DatabaseException If database operation fails
      * @throws IdeaActionsCallbackNotSetException If callback is not set
+     * @throws IdeaActionsDuplicateIdException If duplicate ID is detected
+     * @throws IdeaActionsObjectCollectionNullException If ObjectCollection is null
+     * @throws IdeaActionsTableNameUndeterminedException If table name cannot be determined
+     * @throws IdeaActionsUnknownLazyStrategyException If unknown lazy loading strategy
+     * @throws IdeaRtActionsCallbackNotSetException If callback for creating IdeaRtItem is not set
+     * @throws IdeaRtActionsCollectionNameNullException If collection name is null
+     * @throws IdeaRtActionsStateCollectionNullException If state collection is null
+     * @throws IdeaTruthSourceWriteNotAllowedException If write is not allowed
+     * @throws RtTruthSourceWriteNotAllowedException If no truth source registered
      */
     public function onSignalHandshake(WebSocketHandshakeSignalDTO $data, string $source, string $name): void
     {
@@ -122,9 +141,8 @@ class ChatAgent extends AbstractAgent
             $user = Idea::$db->users->actions->register($sessionToken);
         }
 
-        if ($user->id === null) {
-            return;
-        }
+        // Register connection in runtime
+        Idea::$rt->connections->actions->register($data->acceptKey, $user->id);
 
         $publicUser = $user->toArray(idAsIndex: false);
         unset($publicUser['sessionToken']);
@@ -167,12 +185,22 @@ class ChatAgent extends AbstractAgent
      * @throws IdeaTruthSourceWriteNotAllowedException If write is not allowed
      * @throws IdeaActionsTableNameUndeterminedException If table name cannot be determined
      * @throws IdeaActionsDuplicateIdException If duplicate ID is detected
+     * @throws IdeaRtActionsStateCollectionNullException If state collection is null
+     * @throws IdeaRtActionsCallbackNotSetException If runtime callback is not set
+     * @throws IdeaRtActionsCollectionNameNullException If collection name is null
+     * @throws RtTruthSourceWriteNotAllowedException If no runtime truth source registered
      */
     public function onStop(): void
     {
         // Add chat stopped event to history (system event with userId = null)
         Idea::$db->events->actions->add(ChatEventType::CHAT_STOPPED->value);
+
+        // Clear all connections before unregistering
+        Idea::$rt->connections->actions->clear();
+
+        // Unregister from both database and runtime truth source registries
         TruthSourceRegistry::unregisterAgent($this->getId());
+        RtTruthSourceRegistry::unregisterAgent($this->getId());
     }
 
     /**

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Core\Page;
 
 use Hilos\Core\Router\SignalRouter;
+use Hilos\DTO\Action\ActionPayloadDTO;
 
 /**
  * AbstractPage - Abstract base class for page handlers
@@ -17,14 +18,19 @@ abstract class AbstractPage
     /** @var SignalRouter Signal router for sending signals */
     protected SignalRouter $signalRouter;
 
+    /** @var PageAgentInterface Agent instance for page operations */
+    protected PageAgentInterface $agent;
+
     /**
      * Constructor
      *
      * @param SignalRouter $signalRouter Signal router instance
+     * @param PageAgentInterface $agent Agent instance
      */
-    public function __construct(SignalRouter $signalRouter)
+    public function __construct(SignalRouter $signalRouter, PageAgentInterface $agent)
     {
         $this->signalRouter = $signalRouter;
+        $this->agent = $agent;
     }
 
     /**
@@ -59,7 +65,7 @@ abstract class AbstractPage
      *
      * @param string $acceptKey WebSocket accept key
      * @param string $action Action name
-     * @param string $payload Action payload (raw string, usually JSON)
+     * @param ActionPayloadDTO $dto Action payload DTO
      */
-    abstract public function onAction(string $acceptKey, string $action, string $payload): void;
+    abstract public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): void;
 }

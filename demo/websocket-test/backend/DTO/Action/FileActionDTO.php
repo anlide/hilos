@@ -1,0 +1,78 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Demo\WebSocketTest\DTO\Action;
+
+use Demo\WebSocketTest\Constants\ChatSignalConstants;
+
+/**
+ * FileActionDTO - DTO for file action payload
+ *
+ * Represents a file upload/share request.
+ */
+class FileActionDTO extends ChatActionPayloadDTO
+{
+    /**
+     * Constructor
+     *
+     * @param string $filename Filename
+     * @param string $mimeType MIME type
+     * @param int $size File size in bytes
+     */
+    public function __construct(
+        public readonly string $filename,
+        public readonly string $mimeType,
+        public readonly int $size,
+    ) {
+    }
+
+    /**
+     * Get action name
+     *
+     * @return string Action name
+     */
+    public function getAction(): string
+    {
+        return ChatSignalConstants::FILE;
+    }
+
+    /**
+     * Create from array
+     *
+     * @param array $data Payload data
+     * @return static
+     */
+    public static function fromArray(array $data): static
+    {
+        return new static(
+            filename: is_string($data['filename'] ?? null) ? $data['filename'] : '',
+            mimeType: is_string($data['mimeType'] ?? null) ? $data['mimeType'] : '',
+            size: is_int($data['size'] ?? null) ? $data['size'] : 0,
+        );
+    }
+
+    /**
+     * Convert to array
+     *
+     * @return array
+     */
+    public function toArray(): array
+    {
+        return [
+            'filename' => $this->filename,
+            'mimeType' => $this->mimeType,
+            'size' => $this->size,
+        ];
+    }
+
+    /**
+     * Check if file data is valid
+     *
+     * @return bool True if valid
+     */
+    public function isValid(): bool
+    {
+        return $this->filename !== '' && $this->size > 0;
+    }
+}

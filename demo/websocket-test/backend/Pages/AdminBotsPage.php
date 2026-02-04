@@ -6,6 +6,7 @@ namespace Demo\WebSocketTest\Pages;
 
 use Demo\WebSocketTest\Constants\PageConstants;
 use Demo\WebSocketTest\Core\Page\AbstractChatPage;
+use Hilos\DTO\Action\ActionPayloadDTO;
 
 /**
  * AdminBotsPage - Admin bots page handler
@@ -49,9 +50,9 @@ class AdminBotsPage extends AbstractChatPage
      *
      * @param string $acceptKey Accept key
      * @param string $action Action name
-     * @param string $payload Action payload
+     * @param ActionPayloadDTO $dto Action payload DTO
      */
-    public function onAction(string $acceptKey, string $action, string $payload): void
+    public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): void
     {
         // TODO: Implement admin bots page action logic
     }
