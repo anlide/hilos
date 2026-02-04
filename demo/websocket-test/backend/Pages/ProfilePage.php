@@ -103,7 +103,7 @@ class ProfilePage extends AbstractChatPage
             unset($publicUser['sessionToken']);
 
             $entities = new EntitiesChangesDTO(
-                partial: ['users' => [$publicUser]],
+                updates: ['users' => [$publicUser]],
             );
 
             $this->getChatAgent()->addEvent(ChatEventType::USER_RENAMED, $userId, [
