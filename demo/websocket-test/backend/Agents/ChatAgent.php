@@ -95,7 +95,7 @@ class ChatAgent extends AbstractAgent
         TruthSourceRegistry::register(Idea::getTableName(Idea::users), true, $this->getId());
 
         // Add chat started event to history (system event with userId = null)
-        Idea::$idea->events->actions->add(ChatEventType::CHAT_STARTED->value);
+        Idea::$db->events->actions->add(ChatEventType::CHAT_STARTED->value);
 
         // Page factory removed - will be redesigned separately.
     }
@@ -117,9 +117,9 @@ class ChatAgent extends AbstractAgent
             return;
         }
 
-        $user = Idea::$idea->users->findBySession($sessionToken);
+        $user = Idea::$db->users->findBySession($sessionToken);
         if ($user === null) {
-            $user = Idea::$idea->users->actions->register($sessionToken);
+            $user = Idea::$db->users->actions->register($sessionToken);
         }
 
         if ($user->id === null) {
@@ -134,13 +134,13 @@ class ChatAgent extends AbstractAgent
 
         $this->addEvent(ChatEventType::USER_JOINED, $user->id, null, $entities, $data->acceptKey);
 
-        $users = Idea::$idea->users->toArray(idAsIndex: false);
+        $users = Idea::$db->users->toArray(idAsIndex: false);
         $publicUsers = $this->toPublicUserArrayList($users);
         $subscriptionEntities = new EntitiesChangesDTO(
             full: ['users' => $publicUsers],
         );
         $subscriptionData = new HandshakeResponseSignalData(
-            events: Idea::$idea->events->toArray(idAsIndex: false),
+            events: Idea::$db->events->toArray(idAsIndex: false),
             entities: $subscriptionEntities,
             userId: $user->id,
             username: $user->name,
@@ -171,7 +171,7 @@ class ChatAgent extends AbstractAgent
     public function onStop(): void
     {
         // Add chat stopped event to history (system event with userId = null)
-        Idea::$idea->events->actions->add(ChatEventType::CHAT_STOPPED->value);
+        Idea::$db->events->actions->add(ChatEventType::CHAT_STOPPED->value);
         TruthSourceRegistry::unregisterAgent($this->getId());
     }
 
@@ -217,7 +217,7 @@ class ChatAgent extends AbstractAgent
     ): void
     {
         // Add event to collection (saves to database and adds to collection)
-        $event = Idea::$idea->events->actions->add($type->value, $userId, $data);
+        $event = Idea::$db->events->actions->add($type->value, $userId, $data);
 
         // Broadcast event to all connected clients via SignalRouter
         $eventData = new ChatEventSignalDTO($event, $entities);
@@ -280,7 +280,7 @@ class ChatAgent extends AbstractAgent
     {
         // Handle cleanup cron task
         if ($name === ChatCronConstants::CLEANUP_HISTORY) {
-            Idea::$idea->events->actions->deleteAll();
+            Idea::$db->events->actions->deleteAll();
 
             // Add ChatClearedEvent as a system event (userId = null for system events)
             $this->addEvent(ChatEventType::CHAT_CLEARED);

@@ -22,14 +22,11 @@ use Hilos\Exception\DatabaseException;
 use Hilos\Exception\Idea\Other\IdeaObjectCollectionNotFoundException;
 
 /**
- * Idea - Static access point for read-only data access
+ * Idea - Application-specific data access point
  *
- * Extends framework Idea class to provide application-specific initialization.
- *
- * Usage:
- *   Idea::init(); // Initialize with Object collections (mandatory)
- *   $user = Idea::$idea->users[123]; // Get User idea
- *   $users = Idea::$idea->users; // Get Users collection
+ * Extends framework Idea class to provide:
+ *   - $db: Database collections (users, events, bots, moderators)
+ *   - $rt: Runtime data (TODO: connections, sessions, etc.)
  *
  * @property-read IdeaUsers $users
  * @property-read IdeaEvents $events
@@ -57,16 +54,16 @@ final class Idea extends BaseIdea
         parent::init();
 
         // Create Object collections with lazy loading strategies
-        self::$idea->_objectCollections[self::users] = ObjectUsers::initDB(Objects::LAZY_STRATEGY_KEY);
-        self::$idea->_objectCollections[self::events] = ObjectEvents::initDB(Objects::LAZY_STRATEGY_NONE);
-        self::$idea->_objectCollections[self::bots] = ObjectBots::initDB(Objects::LAZY_STRATEGY_KEY);
-        self::$idea->_objectCollections[self::moderators] = ObjectModerators::initDB(Objects::LAZY_STRATEGY_KEY);
+        self::$db->_objectCollections[self::users] = ObjectUsers::initDB(Objects::LAZY_STRATEGY_KEY);
+        self::$db->_objectCollections[self::events] = ObjectEvents::initDB(Objects::LAZY_STRATEGY_NONE);
+        self::$db->_objectCollections[self::bots] = ObjectBots::initDB(Objects::LAZY_STRATEGY_KEY);
+        self::$db->_objectCollections[self::moderators] = ObjectModerators::initDB(Objects::LAZY_STRATEGY_KEY);
 
         // Configure collections using parent's setRepresent method
-        self::$idea->setRepresent(self::users, IdeaUsers::class, UsersActions::class);
-        self::$idea->setRepresent(self::events, IdeaEvents::class, EventsActions::class);
-        self::$idea->setRepresent(self::bots, IdeaBots::class);
-        self::$idea->setRepresent(self::moderators, IdeaModerators::class);
+        self::$db->setRepresent(self::users, IdeaUsers::class, UsersActions::class);
+        self::$db->setRepresent(self::events, IdeaEvents::class, EventsActions::class);
+        self::$db->setRepresent(self::bots, IdeaBots::class);
+        self::$db->setRepresent(self::moderators, IdeaModerators::class);
     }
 
     /**

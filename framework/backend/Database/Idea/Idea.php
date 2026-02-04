@@ -13,20 +13,24 @@ use Hilos\Exception\Idea\Other\IdeaObjectCollectionNotFoundException;
 use Hilos\Exception\Idea\Other\IdeaUnknownLazyStrategyException;
 
 /**
- * Idea - Static access point for read-only data access
+ * Idea - Static access point for application data
  *
- * Provides global access to Idea collections through Object collections
- * All data access is read-only through Idea objects
+ * Provides global access to two data layers:
+ *   - $db: Database layer (Idea collections, Object collections, Entity layer)
+ *   - $rt: Runtime layer for transient application data (connections, sessions, state)
  *
  * Usage:
- *   Idea::init(); // Initialize with Object collections (mandatory)
- *   $user = Idea::$idea->users[123]; // Get User idea
- *   $users = Idea::$idea->users; // Get Users collection
+ *   Idea::init(); // Initialize (mandatory)
+ *   $user = Idea::$db->users[123]; // Get User from database layer
+ *   $userId = Idea::$rt->connections->getUserId($acceptKey); // Get from runtime layer
  */
 abstract class Idea
 {
-    /** @var ?static Singleton instance (may be instance of child class) */
-    public static ?self $idea = null;
+    /** @var ?static Database layer singleton (Idea/Object/Entity collections) */
+    public static ?self $db = null;
+
+    /** @var ?object Runtime layer singleton for transient application data (defined in child classes) */
+    public static ?object $rt = null;
 
     /**
      * Object collections (references to Objects instances)
@@ -57,6 +61,7 @@ abstract class Idea
      *
      * Magic methods in PHP must be public to be called.
      * Idea is a singleton and should not be cloned.
+     * @throws IdeaCloneException
      */
     public function __clone(): void
     {
@@ -71,8 +76,8 @@ abstract class Idea
      */
     public static function init(): void
     {
-        if (self::$idea === null) {
-            self::$idea = new static();
+        if (self::$db === null) {
+            self::$db = new static();
         }
 
         // Object collections must be initialized in child class

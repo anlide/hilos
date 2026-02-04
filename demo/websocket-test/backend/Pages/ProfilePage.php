@@ -54,6 +54,6 @@ class ProfilePage extends AbstractChatPage
     public function onAction(string $acceptKey, string $action, string $payload): void
     {
         // TODO: Implement other profile page actions
-        // Idea::$idea->users->actions->rename($userId, $newName);
+        // Idea::$db->users->actions->rename($userId, $newName);
     }
 }

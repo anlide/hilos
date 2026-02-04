@@ -300,13 +300,13 @@ trait IdeaMainFixer
             $initBody = $initMethod['body'];
 
             // Extract setRepresent() calls:
-            // self::$idea->setRepresent(
+            // self::$db->setRepresent(
             //     name: self::propertyName,
             //     objectCollection: $storage->propertyName,
             //     ideaCollectionClass: IdeaCollectionClass::class
             // );
             // Pattern matches multiline calls
-            if (preg_match_all('/self::\$idea->setRepresent\s*\(\s*name:\s*self::(\w+)\s*,\s*objectCollection:\s*\$storage->(\w+)\s*,\s*ideaCollectionClass:\s*([\w\\\\]+)::class\s*\)/s', $initBody, $setRepresentMatches, PREG_SET_ORDER)) {
+            if (preg_match_all('/self::\$db->setRepresent\s*\(\s*name:\s*self::(\w+)\s*,\s*objectCollection:\s*\$storage->(\w+)\s*,\s*ideaCollectionClass:\s*([\w\\\\]+)::class\s*\)/s', $initBody, $setRepresentMatches, PREG_SET_ORDER)) {
                 foreach ($setRepresentMatches as $match) {
                     $constantName = trim($match[1]);
                     $propertyName = trim($match[2]);

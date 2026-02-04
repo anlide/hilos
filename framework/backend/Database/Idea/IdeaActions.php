@@ -20,8 +20,8 @@ use Hilos\Exception\Idea\TruthSource\IdeaTruthSourceWriteNotAllowedException;
  * Each IdeaCollection can have its own Actions class with collection-specific methods.
  *
  * Usage:
- *   $user = Idea::$idea->users->actions->register($sessionToken);
- *   $event = Idea::$idea->events->actions->add($type, $userId, $data);
+ *   $user = Idea::$db->users->actions->register($sessionToken);
+ *   $event = Idea::$db->events->actions->add($type, $userId, $data);
  *
  * @property-read IdeaCollection $collection IdeaCollection instance this actions belong to
  */
