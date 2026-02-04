@@ -27,8 +27,7 @@ abstract class RtStates implements Iterator, ArrayAccess, Countable
     /**
      * State objects storage
      *
-     * @var array<string, RtState>
-     * @psalm-var array<string, T>
+     * @var array<string, T>
      */
     protected array $states = [];
 
@@ -96,8 +95,7 @@ abstract class RtStates implements Iterator, ArrayAccess, Countable
     /**
      * Add state to collection
      *
-     * @param RtState $state State instance to add
-     * @psalm-param T $state
+     * @param T $state State instance to add
      */
     public function add(RtState $state): void
     {
@@ -129,8 +127,7 @@ abstract class RtStates implements Iterator, ArrayAccess, Countable
      * Get state by ID
      *
      * @param string $id State ID
-     * @return ?RtState
-     * @psalm-return ?T
+     * @return ?T
      */
     public function get(string $id): ?RtState
     {
@@ -169,8 +166,7 @@ abstract class RtStates implements Iterator, ArrayAccess, Countable
     /**
      * Get first state
      *
-     * @return ?RtState
-     * @psalm-return ?T
+     * @return ?T
      */
     public function first(): ?RtState
     {
@@ -182,8 +178,7 @@ abstract class RtStates implements Iterator, ArrayAccess, Countable
     /**
      * Get last state
      *
-     * @return ?RtState
-     * @psalm-return ?T
+     * @return ?T
      */
     public function last(): ?RtState
     {
@@ -221,8 +216,7 @@ abstract class RtStates implements Iterator, ArrayAccess, Countable
 
     /**
      * @param mixed $offset
-     * @return ?RtState
-     * @psalm-return ?T
+     * @return ?T
      */
     public function offsetGet(mixed $offset): ?RtState
     {
@@ -261,8 +255,7 @@ abstract class RtStates implements Iterator, ArrayAccess, Countable
     // ==================== Iterator ====================
 
     /**
-     * @return ?RtState
-     * @psalm-return ?T
+     * @return ?T
      */
     public function current(): ?RtState
     {

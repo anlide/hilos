@@ -6,6 +6,7 @@ use ArrayAccess;
 use Countable;
 use Hilos\Database\Object\Object_;
 use Hilos\Database\Object\Objects;
+use Hilos\Exception\DatabaseException;
 use Hilos\Exception\Idea\Collection\IdeaCollectionActionsClassException;
 use Hilos\Exception\Idea\Collection\IdeaCollectionCloneException;
 use Hilos\Exception\Idea\Collection\IdeaCollectionDirectSetException;
@@ -26,10 +27,8 @@ use Iterator;
  * Each IdeaItem references a specific Object stored in ObjectCollection in Idea.
  *
  * @template T of IdeaItem
- * @implements ArrayAccess<int|string, IdeaItem>
- * @implements Iterator<int|string, IdeaItem>
- * @psalm-implements ArrayAccess<int|string, T>
- * @psalm-implements Iterator<int|string, T>
+ * @implements ArrayAccess<int|string, T>
+ * @implements Iterator<int|string, T>
  */
 abstract class IdeaCollection implements ArrayAccess, Countable, Iterator
 {
@@ -50,8 +49,7 @@ abstract class IdeaCollection implements ArrayAccess, Countable, Iterator
      * Cached IdeaItem instances for iteration
      * Key is the primary key ID, value is IdeaItem instance
      *
-     * @var array<int|string, IdeaItem>
-     * @psalm-var array<int|string, T>
+     * @var array<int|string, T>
      */
     private array $items = [];
 
@@ -210,8 +208,7 @@ abstract class IdeaCollection implements ArrayAccess, Countable, Iterator
      * Must be implemented by child classes
      *
      * @param Object_ $object Object instance (reference)
-     * @return IdeaItem
-     * @psalm-return T
+     * @return T
      */
     abstract protected function createIdea(Object_ &$object): IdeaItem;
 
@@ -219,10 +216,10 @@ abstract class IdeaCollection implements ArrayAccess, Countable, Iterator
      * Add IdeaItem to manual collection
      * Only works for manual collections (created via initEmpty())
      *
-     * @param IdeaItem $item IdeaItem instance to add
-     * @psalm-param T $item
+     * @param T $item IdeaItem instance to add
      *
      * @throws IdeaCollectionNotManualException If collection is not manual, or item has no ID
+     * @throws DatabaseException If IdeaItem has no associated Object ID
      */
     public function add(IdeaItem $item): void
     {
@@ -239,8 +236,7 @@ abstract class IdeaCollection implements ArrayAccess, Countable, Iterator
      * Uses cached IdeaItem if available, otherwise creates new instance
      *
      * @param int|string $key Primary key ID
-     * @return ?IdeaItem
-     * @psalm-return ?T
+     * @return ?T
      */
     protected function getIdeaForKey(int|string $key): ?IdeaItem
     {
@@ -322,7 +318,8 @@ abstract class IdeaCollection implements ArrayAccess, Countable, Iterator
      *
      * @param callable $callback Callback function (IdeaItem, key) => bool
      * @return static New filtered manual collection
-     * @throws IdeaCollectionNotManualException
+     * @throws IdeaCollectionNotManualException If trying to add to non-manual collection
+     * @throws DatabaseException If IdeaItem has no associated Object ID
      */
     public function filter(callable $callback): static
     {
@@ -363,8 +360,7 @@ abstract class IdeaCollection implements ArrayAccess, Countable, Iterator
     /**
      * Map collection
      *
-     * @param callable(IdeaItem, int|string): mixed $callback Callback (idea, key) => any
-     * @psalm-param callable(T, int|string): mixed $callback
+     * @param callable(T, int|string): mixed $callback Callback (idea, key) => any
      * @return array<int|string, mixed>
      */
     public function map(callable $callback): array
@@ -379,8 +375,7 @@ abstract class IdeaCollection implements ArrayAccess, Countable, Iterator
     /**
      * Get first Idea
      *
-     * @return ?IdeaItem
-     * @psalm-return ?T
+     * @return ?T
      */
     public function first(): ?IdeaItem
     {
@@ -407,8 +402,7 @@ abstract class IdeaCollection implements ArrayAccess, Countable, Iterator
     /**
      * Get last Idea
      *
-     * @return ?IdeaItem
-     * @psalm-return ?T
+     * @return ?T
      */
     public function last(): ?IdeaItem
     {
@@ -499,10 +493,8 @@ abstract class IdeaCollection implements ArrayAccess, Countable, Iterator
     }
 
     /**
-     * @return ?IdeaItem
-     * @psalm-return ?T
-     *
      * @param mixed $offset Primary key ID
+     * @return ?T
      */
     public function offsetGet(mixed $offset): ?IdeaItem
     {
@@ -564,8 +556,7 @@ abstract class IdeaCollection implements ArrayAccess, Countable, Iterator
     /**
      * Get current element.
      *
-     * @return ?IdeaItem
-     * @psalm-return ?T
+     * @return ?T
      */
     public function current(): ?IdeaItem
     {

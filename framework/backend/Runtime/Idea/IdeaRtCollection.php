@@ -37,8 +37,7 @@ abstract class IdeaRtCollection implements ArrayAccess, Countable, Iterator
     /**
      * Cached IdeaRtItem instances
      *
-     * @var array<string, IdeaRtItem>
-     * @psalm-var array<string, T>
+     * @var array<string, T>
      */
     private array $items = [];
 
@@ -209,8 +208,7 @@ abstract class IdeaRtCollection implements ArrayAccess, Countable, Iterator
      * Must be implemented by child classes.
      *
      * @param RtState $state RtState instance (reference)
-     * @return IdeaRtItem
-     * @psalm-return T
+     * @return T
      */
     abstract protected function createRtItem(RtState &$state): IdeaRtItem;
 
@@ -220,8 +218,7 @@ abstract class IdeaRtCollection implements ArrayAccess, Countable, Iterator
      * Uses cached item if available, otherwise creates new instance.
      *
      * @param string $key State ID
-     * @return ?IdeaRtItem
-     * @psalm-return ?T
+     * @return ?T
      */
     protected function getRtItemForKey(string $key): ?IdeaRtItem
     {
@@ -279,8 +276,7 @@ abstract class IdeaRtCollection implements ArrayAccess, Countable, Iterator
     /**
      * Get first item
      *
-     * @return ?IdeaRtItem
-     * @psalm-return ?T
+     * @return ?T
      */
     public function first(): ?IdeaRtItem
     {
@@ -300,8 +296,7 @@ abstract class IdeaRtCollection implements ArrayAccess, Countable, Iterator
     /**
      * Get last item
      *
-     * @return ?IdeaRtItem
-     * @psalm-return ?T
+     * @return ?T
      */
     public function last(): ?IdeaRtItem
     {
@@ -370,8 +365,7 @@ abstract class IdeaRtCollection implements ArrayAccess, Countable, Iterator
 
     /**
      * @param mixed $offset
-     * @return ?IdeaRtItem
-     * @psalm-return ?T
+     * @return ?T
      */
     public function offsetGet(mixed $offset): ?IdeaRtItem
     {
@@ -417,8 +411,7 @@ abstract class IdeaRtCollection implements ArrayAccess, Countable, Iterator
     // ==================== Iterator ====================
 
     /**
-     * @return ?IdeaRtItem
-     * @psalm-return ?T
+     * @return ?T
      */
     public function current(): ?IdeaRtItem
     {
