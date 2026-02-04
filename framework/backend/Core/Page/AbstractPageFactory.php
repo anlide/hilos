@@ -14,13 +14,15 @@ use Hilos\Exception\Page\PageNotFoundException;
  *
  * Provides base implementation for page factories.
  * Child classes must implement createPage() to create specific page instances.
+ *
+ * @template TAgent of PageAgentInterface
  */
 abstract class AbstractPageFactory
 {
     /** @var SignalRouter Signal router instance */
     protected SignalRouter $signalRouter;
 
-    /** @var PageAgentInterface Agent instance for pages */
+    /** @var TAgent Agent instance for pages */
     protected PageAgentInterface $agent;
 
     /** @var array<string, AbstractPage> Cached page instances */

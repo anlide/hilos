@@ -27,6 +27,8 @@ use Hilos\Exception\Page\PageNotFoundException;
  * ChatPageFactory - Factory for creating chat page instances
  *
  * Creates and manages chat page instances.
+ *
+ * @extends AbstractPageFactory<ChatPageAgentInterface>
  */
 class ChatPageFactory extends AbstractPageFactory
 {
