@@ -25,13 +25,15 @@
           required
           maxlength="500"
         />
-        <button 
-          type="submit" 
-          class="btn btn-primary"
+        <LoadingButton
+          type="submit"
+          variant="btn-primary"
+          :loading="submitLoading"
           :disabled="!chatStore.isConnected || !message.trim()"
+          :loading-delay="300"
         >
           Send
-        </button>
+        </LoadingButton>
       </form>
     </div>
   </div>
@@ -41,14 +43,18 @@
 import { ref, watch, nextTick, onMounted } from 'vue'
 import { useChatStore } from '@/stores'
 import MessageItem from './MessageItem.vue'
+import { LoadingButton } from '@hilos/sdk/components'
 
 const chatStore = useChatStore()
 const messagesContainer = ref<HTMLElement | null>(null)
 const message = ref('')
 
+/** Payload: message to send and done() to call when send is complete (e.g. after ws response) */
 const emit = defineEmits<{
-  send: [message: string]
+  send: [payload: { message: string; done: () => void }]
 }>()
+
+const submitLoading = ref(false)
 
 const scrollToBottom = () => {
   nextTick(() => {
@@ -59,10 +65,16 @@ const scrollToBottom = () => {
 }
 
 const handleSubmit = () => {
-  if (message.value.trim() && chatStore.isConnected) {
-    emit('send', message.value.trim())
-    message.value = ''
-  }
+  if (!message.value.trim() || !chatStore.isConnected) return
+  const text = message.value.trim()
+  message.value = ''
+  submitLoading.value = true
+  emit('send', {
+    message: text,
+    done: () => {
+      submitLoading.value = false
+    },
+  })
 }
 
 watch(() => chatStore.events.length, scrollToBottom)

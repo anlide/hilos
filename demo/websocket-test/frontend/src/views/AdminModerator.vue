@@ -160,22 +160,24 @@
       >
         Delete
       </button>
-      <button
+      <LoadingButton
         v-else
         type="button"
-        class="btn btn-primary"
+        variant="btn-primary"
+        :loading="saveLoading"
         :disabled="!isFormValid"
+        :loading-delay="300"
         @click="submitModal"
       >
         Save
-      </button>
+      </LoadingButton>
     </template>
   </Modal>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed } from 'vue'
-import { Table, Modal } from '@hilos/sdk/components'
+import { Table, Modal, LoadingButton } from '@hilos/sdk/components'
 
 interface ModeratorAction {
   id: number
@@ -425,6 +427,8 @@ const handleDelete = (item: unknown) => {
   showModal.value = true
 }
 
+const saveLoading = ref(false)
+
 const submitModal = () => {
   if (isDeleteMode.value) {
     const id = selectedAction.value?.id
@@ -439,6 +443,7 @@ const submitModal = () => {
 
   if (!isFormValid.value) return
 
+  saveLoading.value = true
   if (modalMode.value === 'add') {
     const maxId = snapshotModeratorData.value.reduce((max, entry) => Math.max(max, entry.id), 0)
     const newAction: ModeratorAction = {
@@ -472,6 +477,7 @@ const resetForm = () => {
   modalMode.value = 'custom'
   selectedAction.value = null
   baselineAction.value = null
+  saveLoading.value = false
   formAction.value = {
     id: 0,
     userId: 0,

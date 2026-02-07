@@ -68,6 +68,18 @@
         <template #leading>
           <button type="button" class="btn btn-secondary" @click="resetForm">Cancel</button>
         </template>
+        <template #save-button="{ disabled, onSave }">
+          <LoadingButton
+            type="button"
+            variant="btn-primary"
+            :loading="saveLoading"
+            :disabled="disabled"
+            :loading-delay="300"
+            @click="onSave"
+          >
+            Save
+          </LoadingButton>
+        </template>
       </ConflictActions>
     </template>
   </Modal>
@@ -78,7 +90,7 @@ import { ref, computed, watch } from 'vue'
 import { useChatStore } from '@/stores'
 import { useWebSocket } from '@hilos/sdk/plugins/websocket'
 import { sendAction } from '@/services/websocketActions'
-import { Modal, ConflictHeader, ConflictActions } from '@hilos/sdk/components'
+import { Modal, ConflictHeader, ConflictActions, LoadingButton } from '@hilos/sdk/components'
 
 const chatStore = useChatStore()
 const websocket = useWebSocket()
@@ -87,6 +99,9 @@ const localUsername = ref('')
 const conflictState = ref(false)
 const baselineUsername = ref('')
 const remoteUsername = ref('')
+const saveLoading = ref(false)
+/** Set when rename is sent; cleared when store gets the new username */
+const pendingRenameUsername = ref<string | null>(null)
 
 const displayUsername = computed(() => {
   return chatStore.currentUsername || 'User'
@@ -105,6 +120,8 @@ watch(showModal, (isOpen) => {
     baselineUsername.value = current
     remoteUsername.value = current
     conflictState.value = false
+    pendingRenameUsername.value = null
+    saveLoading.value = false
   }
 })
 
@@ -129,6 +146,11 @@ watch(() => chatStore.currentUsername, (newUsername) => {
     baselineUsername.value = newUsername
     remoteUsername.value = newUsername
     conflictState.value = false
+    if (pendingRenameUsername.value !== null && newUsername.trim() === pendingRenameUsername.value) {
+      saveLoading.value = false
+      pendingRenameUsername.value = null
+      showModal.value = false
+    }
     return
   }
 
@@ -139,14 +161,11 @@ watch(() => chatStore.currentUsername, (newUsername) => {
 })
 
 const handleSubmit = () => {
-  if (isValidUsername.value && !conflictState.value) {
-    const trimmedUsername = localUsername.value.trim()
-    sendAction(websocket, 'rename', { username: trimmedUsername })
-    showModal.value = false
-    conflictState.value = false
-    baselineUsername.value = trimmedUsername
-    remoteUsername.value = trimmedUsername
-  }
+  if (!isValidUsername.value || conflictState.value) return
+  const trimmedUsername = localUsername.value.trim()
+  saveLoading.value = true
+  pendingRenameUsername.value = trimmedUsername
+  sendAction(websocket, 'rename', { username: trimmedUsername })
 }
 
 const resetForm = () => {
@@ -155,6 +174,8 @@ const resetForm = () => {
   baselineUsername.value = current
   remoteUsername.value = current
   conflictState.value = false
+  pendingRenameUsername.value = null
+  saveLoading.value = false
   showModal.value = false
 }
 

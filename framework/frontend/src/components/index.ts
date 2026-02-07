@@ -9,4 +9,5 @@ export { default as ConflictHeader } from './ConflictHeader.vue'
 export { default as ConflictActions } from './ConflictActions.vue'
 // @ts-ignore
 export { default as Table } from './Table.vue'
-
+// @ts-ignore
+export { default as LoadingButton } from './LoadingButton.vue'

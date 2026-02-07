@@ -165,22 +165,24 @@
       >
         Delete
       </button>
-      <button
+      <LoadingButton
         v-else
         type="button"
-        class="btn btn-primary"
+        variant="btn-primary"
+        :loading="saveLoading"
         :disabled="!isFormValid"
+        :loading-delay="300"
         @click="submitModal"
       >
         Save
-      </button>
+      </LoadingButton>
     </template>
   </Modal>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed } from 'vue'
-import { Table, Modal } from '@hilos/sdk/components'
+import { Table, Modal, LoadingButton } from '@hilos/sdk/components'
 
 interface BotEntity {
   id: number
@@ -405,6 +407,8 @@ const handleDelete = (item: unknown) => {
   showModal.value = true
 }
 
+const saveLoading = ref(false)
+
 const submitModal = () => {
   if (isDeleteMode.value) {
     const id = selectedBot.value?.id
@@ -419,6 +423,7 @@ const submitModal = () => {
 
   if (!isFormValid.value) return
 
+  saveLoading.value = true
   if (modalMode.value === 'add') {
     const maxId = snapshotBots.value.reduce((max, bot) => Math.max(max, bot.id), 0)
     const newBot: BotEntity = {
@@ -451,6 +456,7 @@ const resetForm = () => {
   modalMode.value = 'custom'
   selectedBot.value = null
   baselineBot.value = null
+  saveLoading.value = false
   formBot.value = {
     id: 0,
     name: '',

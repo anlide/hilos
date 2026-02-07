@@ -1,14 +1,20 @@
 <template>
   <div class="d-flex align-items-center gap-2 flex-wrap">
     <slot name="leading" />
-    <button
-      type="button"
-      class="btn btn-primary"
+    <slot
+      name="save-button"
       :disabled="disableSave"
-      @click="$emit('save')"
+      :on-save="() => $emit('save')"
     >
-      {{ saveLabel }}
-    </button>
+      <button
+        type="button"
+        class="btn btn-primary"
+        :disabled="disableSave"
+        @click="$emit('save')"
+      >
+        {{ saveLabel }}
+      </button>
+    </slot>
     <template v-if="conflict">
       <button
         type="button"

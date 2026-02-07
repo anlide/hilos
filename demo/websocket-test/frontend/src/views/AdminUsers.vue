@@ -143,16 +143,23 @@
     </form>
     <template #actions="{ requestClose }">
       <button type="button" class="btn btn-secondary" @click="requestClose">Cancel</button>
-      <button type="button" class="btn btn-primary" :disabled="!isFormValid" @click="saveUser">
+      <LoadingButton
+        type="button"
+        variant="btn-primary"
+        :loading="saveLoading"
+        :disabled="!isFormValid"
+        :loading-delay="300"
+        @click="saveUser"
+      >
         Save
-      </button>
+      </LoadingButton>
     </template>
   </Modal>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed } from 'vue'
-import { Table, Modal } from '@hilos/sdk/components'
+import { Table, Modal, LoadingButton } from '@hilos/sdk/components'
 
 interface UserEntity {
   id: number
@@ -337,8 +344,11 @@ const handleEdit = (item: unknown) => {
   showModal.value = true
 }
 
+const saveLoading = ref(false)
+
 const saveUser = () => {
   if (!selectedUser.value || !isFormValid.value) return
+  saveLoading.value = true
   markUserUpdated(selectedUser.value.id, {
     name: formUser.value.name.trim(),
     presence: formUser.value.presence
@@ -351,6 +361,7 @@ const resetForm = () => {
   showModal.value = false
   selectedUser.value = null
   baselineUser.value = null
+  saveLoading.value = false
   formUser.value = {
     id: 0,
     name: '',
