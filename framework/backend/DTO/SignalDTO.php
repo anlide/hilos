@@ -248,7 +248,7 @@ class SignalDTO extends BaseDTO
      * by analyzing namespace structure.
      *
      * Examples:
-     * - Custom\WebSocketTest\DTO\WebSocketHandshakeSignalDTO -> Hilos\DTO\WebSocket\WebSocketHandshakeSignalDTO
+     * - Custom\Chat\DTO\WebSocketHandshakeSignalDTO -> Hilos\DTO\WebSocket\WebSocketHandshakeSignalDTO
      * - Custom\SomeApp\DTO\Agent\AgentSignalDTO -> Hilos\DTO\Agent\AgentSignalDTO
      * - Custom\SomeApp\DTO\SomeDTO -> Hilos\DTO\SomeDTO
      *
@@ -262,7 +262,7 @@ class SignalDTO extends BaseDTO
             return null;
         }
 
-        // Parse namespace structure: Custom\WebSocketTest\DTO\WebSocketHandshakeSignalDTO
+        // Parse namespace structure: Custom\Chat\DTO\WebSocketHandshakeSignalDTO
         $parts = explode('\\', $customClass);
         $className = end($parts); // Last part is class name
 

@@ -1,0 +1,65 @@
+{
+    "name": "anlide/hilos-demo-chat",
+    "description": "Real-time chat with WebSocket and enhanced capabilities demo project for Hilos v2 framework",
+    "type": "project",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Alexander Baranov",
+            "email": "alexander.baranov@anlide.online"
+        }
+    ],
+    "repositories": [
+        {
+            "type": "path",
+            "url": "/hilos",
+            "options": {
+                "symlink": true
+            }
+        }
+    ],
+    "require": {
+        "php": ">=8.4",
+        "anlide/hilos": "^2.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "Demo\\Chat\\": "backend/"
+        }
+    },
+    "scripts": {
+        "post-install-cmd": [
+            "@php scripts/link-frontend-sdk.php"
+        ],
+        "post-update-cmd": [
+            "@php scripts/link-frontend-sdk.php"
+        ],
+        "setup-env": "docker-compose -f docker/docker-compose.local.yml run --rm chat-cli-local sh -c \"if [ ! -f ../.env ] && [ -f ../.env.example ]; then cp ../.env.example ../.env && echo '.env file created from .env.example'; else echo '.env file already exists or .env.example not found'; fi\"",
+        "install-deps": "docker-compose -f docker/docker-compose.local.yml run --rm chat-cli-local composer install",
+        "daemon-start": "docker-compose -f docker/docker-compose.local.yml up -d",
+        "daemon-stop": "docker-compose -f docker/docker-compose.local.yml stop",
+        "daemon-restart": "docker-compose -f docker/docker-compose.local.yml restart chat-local",
+        "daemon-status": "docker-compose -f docker/docker-compose.local.yml run --rm chat-cli-local php backend/Bootstrap/cli.php daemon:status",
+        "daemon-monitor": "docker-compose -f docker/docker-compose.local.yml run --rm chat-cli-local php backend/Bootstrap/cli.php daemon:monitor",
+        "cli": "docker-compose -f docker/docker-compose.local.yml run --rm chat-cli-local php backend/Bootstrap/cli.php",
+        "migration:up": "docker-compose -f docker/docker-compose.local.yml run --rm chat-cli-local php backend/Bootstrap/cli.php migration:up",
+        "migration:down": "docker-compose -f docker/docker-compose.local.yml run --rm chat-cli-local php backend/Bootstrap/cli.php migration:down",
+        "migration:status": "docker-compose -f docker/docker-compose.local.yml run --rm chat-cli-local php backend/Bootstrap/cli.php migration:status",
+        "migration:retry": "docker-compose -f docker/docker-compose.local.yml run --rm chat-cli-local php backend/Bootstrap/cli.php migration:retry",
+        "db:schema:status": "docker-compose -f docker/docker-compose.local.yml run --rm chat-cli-local php backend/Bootstrap/cli.php db:schema:status",
+        "db:entity:diff": "docker-compose -f docker/docker-compose.local.yml run --rm chat-cli-local php backend/Bootstrap/cli.php db:entity:diff",
+        "db:entity:fix": "docker-compose -f docker/docker-compose.local.yml run --rm chat-cli-local php backend/Bootstrap/cli.php db:entity:fix",
+        "db:entity:fix-dry-run": "docker-compose -f docker/docker-compose.local.yml run --rm chat-cli-local php backend/Bootstrap/cli.php db:entity:fix --dry-run",
+        "db:object:fix": "docker-compose -f docker/docker-compose.local.yml run --rm chat-cli-local php backend/Bootstrap/cli.php db:object:fix",
+        "db:object:fix-dry-run": "docker-compose -f docker/docker-compose.local.yml run --rm chat-cli-local php backend/Bootstrap/cli.php db:object:fix --dry-run",
+        "db:idea:fix": "docker-compose -f docker/docker-compose.local.yml run --rm chat-cli-local php backend/Bootstrap/cli.php db:idea:fix",
+        "db:idea:fix-dry-run": "docker-compose -f docker/docker-compose.local.yml run --rm chat-cli-local php backend/Bootstrap/cli.php db:idea:fix --dry-run",
+        "pma": "docker-compose -f docker/docker-compose.local.yml up -d phpmyadmin-local && echo phpMyAdmin is running at http://localhost:8080",
+        "pma-stop": "docker-compose -f docker/docker-compose.local.yml stop phpmyadmin-local",
+        "frontend-install": "docker-compose -f docker/docker-compose.local.yml run --rm chat-frontend-local npm install",
+        "frontend-build": "docker-compose -f docker/docker-compose.local.yml run --rm chat-frontend-local npm run build",
+        "frontend-dev": "docker-compose -f docker/docker-compose.local.yml up -d chat-frontend-local",
+        "frontend-stop": "docker-compose -f docker/docker-compose.local.yml stop chat-frontend-local"
+    }
+}
+

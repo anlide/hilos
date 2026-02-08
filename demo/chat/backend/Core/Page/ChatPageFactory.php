@@ -1,0 +1,95 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Demo\Chat\Core\Page;
+
+use Demo\Chat\Constants\ChatSignalConstants;
+use Demo\Chat\Constants\PageConstants;
+use Demo\Chat\DTO\Action\FileActionDTO;
+use Demo\Chat\DTO\Action\MessageActionDTO;
+use Demo\Chat\DTO\Action\RenameActionDTO;
+use Demo\Chat\Pages\AdminBotsPage;
+use Demo\Chat\Pages\AdminModeratorPage;
+use Demo\Chat\Pages\AdminPage;
+use Demo\Chat\Pages\AdminUsersPage;
+use Demo\Chat\Pages\BotPage;
+use Demo\Chat\Pages\MainPage;
+use Demo\Chat\Pages\ModeratorPage;
+use Demo\Chat\Pages\ProfilePage;
+use Demo\Chat\Pages\UserPage;
+use Hilos\Core\Page\AbstractPage;
+use Hilos\Core\Page\AbstractPageFactory;
+use Hilos\DTO\Action\ActionPayloadDTO;
+use Hilos\Exception\Page\PageNotFoundException;
+
+/**
+ * ChatPageFactory - Factory for creating chat page instances
+ *
+ * Creates and manages chat page instances.
+ *
+ * @extends AbstractPageFactory<ChatPageAgentInterface>
+ */
+class ChatPageFactory extends AbstractPageFactory
+{
+    /**
+     * Create page instance
+     *
+     * @param string $pageName Page name/identifier
+     * @return AbstractPage Page instance
+     * @throws PageNotFoundException If page cannot be created
+     */
+    protected function createPage(string $pageName): AbstractPage
+    {
+        return match ($pageName) {
+            PageConstants::MAIN => new MainPage($this->signalRouter, $this->agent),
+            PageConstants::PROFILE => new ProfilePage($this->signalRouter, $this->agent),
+            PageConstants::USER => new UserPage($this->signalRouter, $this->agent),
+            PageConstants::BOT => new BotPage($this->signalRouter, $this->agent),
+            PageConstants::MODERATOR => new ModeratorPage($this->signalRouter, $this->agent),
+            PageConstants::ADMIN => new AdminPage($this->signalRouter, $this->agent),
+            PageConstants::ADMIN_USERS => new AdminUsersPage($this->signalRouter, $this->agent),
+            PageConstants::ADMIN_MODERATOR => new AdminModeratorPage($this->signalRouter, $this->agent),
+            PageConstants::ADMIN_BOTS => new AdminBotsPage($this->signalRouter, $this->agent),
+            default => throw new PageNotFoundException($pageName),
+        };
+    }
+
+    /**
+     * Check if page exists
+     *
+     * @param string $pageName Page name/identifier
+     * @return bool True if page can be created
+     */
+    public function hasPage(string $pageName): bool
+    {
+        return in_array($pageName, [
+            PageConstants::MAIN,
+            PageConstants::PROFILE,
+            PageConstants::USER,
+            PageConstants::BOT,
+            PageConstants::MODERATOR,
+            PageConstants::ADMIN,
+            PageConstants::ADMIN_USERS,
+            PageConstants::ADMIN_MODERATOR,
+            PageConstants::ADMIN_BOTS,
+        ], true);
+    }
+
+    /**
+     * Create ActionPayloadDTO for chat actions
+     *
+     * @param string $action Action name
+     * @param array $data Payload data
+     * @return ActionPayloadDTO Action payload DTO
+     */
+    public function createActionPayloadDTO(string $action, array $data): ActionPayloadDTO
+    {
+        return match ($action) {
+            ChatSignalConstants::MESSAGE => MessageActionDTO::fromArray($data),
+            ChatSignalConstants::RENAME => RenameActionDTO::fromArray($data),
+            ChatSignalConstants::FILE => FileActionDTO::fromArray($data),
+            default => parent::createActionPayloadDTO($action, $data),
+        };
+    }
+}

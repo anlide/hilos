@@ -27,15 +27,14 @@ if ($isDocker && $currentDir === '/app') {
 } else {
     // Running locally - find frontend directories
     $scriptDir = __DIR__;
-    $frameworkRoot = dirname($scriptDir);
-    $projectRoot = dirname($frameworkRoot);
+    $projectRoot = dirname($scriptDir);
     
     // Check if we're in a demo project
     if (strpos($currentDir, '/demo/') !== false || strpos($currentDir, '\\demo\\') !== false) {
         // We're inside a demo project
         $demoProjectRoot = $currentDir;
         while ($demoProjectRoot !== '/' && $demoProjectRoot !== '' && $demoProjectRoot !== 'C:\\' && $demoProjectRoot !== 'c:\\') {
-            if (basename($demoProjectRoot) === 'demo' || (file_exists($demoProjectRoot . '/composer.json') && basename(dirname($demoProjectRoot)) === 'demo')) {
+            if (basename($demoProjectRoot) === 'demo' || file_exists($demoProjectRoot . '/composer.json')) {
                 break;
             }
             $demoProjectRoot = dirname($demoProjectRoot);
@@ -49,10 +48,8 @@ if ($isDocker && $currentDir === '/app') {
         // Check all demo projects
         $demoFrontendPath = $projectRoot . '/demo/*/frontend';
         $demoMatches = glob($demoFrontendPath);
-        if ($demoMatches !== false) {
-            foreach ($demoMatches as $demoPath) {
-                $frontendDirs[] = $demoPath;
-            }
+        foreach ($demoMatches as $demoPath) {
+            $frontendDirs[] = $demoPath;
         }
     }
 }

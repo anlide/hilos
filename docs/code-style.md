@@ -53,4 +53,4 @@ Code style guidelines for Hilos projects.
    - .env usage
    - docker-compose naming (local, dev, prod)
 
-*Consider referencing existing demos (e.g. websocket-test) as style examples.*
+*Consider referencing existing demos (e.g. chat) as style examples.*

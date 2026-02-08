@@ -76,6 +76,14 @@ Hilos is designed to run in Docker. If you need to run it outside Docker, you wi
 composer require anlide/hilos
 ```
 
+```bash
+composer run setup-env
+```
+
+```bash
+composer run install-deps
+```
+
 ### Example Projects
 
 #### By complexity level (1/5 — beginner, 5/5 — advanced)
@@ -96,7 +104,7 @@ composer require anlide/hilos
 - [file-gallery-manager](demo/file-gallery-manager/README.md) — File gallery, upload, image processing
 - [online-testing](demo/online-testing/README.md) — Online testing system
 - [personal-homepage](demo/personal-homepage/README.md) — Personal page with i18n and AI
-- [websocket-test](demo/websocket-test/README.md) — Chat with WebSocket, AI moderation
+- [chat](demo/chat/README.md) — Chat with WebSocket, AI moderation
 
 **4/5 — Advanced**
 - [ai-bots-battle](demo/ai-bots-battle/README.md) — Turn-based battle of two AI bots

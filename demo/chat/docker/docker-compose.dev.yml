@@ -1,0 +1,89 @@
+# Docker Compose configuration for Chat Demo Project
+# Load environment variables from .env file in project root
+
+name: hilos-chat-dev
+
+services:
+  chat-dev:
+    build: .
+    env_file:
+      - ../.env
+    container_name: chat-daemon-dev
+    volumes:
+      - ..:/app
+      # Mount framework package to /hilos for composer path repository
+      - ../../../composer.json:/hilos/composer.json:ro
+      - ../../../composer.lock:/hilos/composer.lock:ro
+      - ../../../framework:/hilos/framework:ro
+      - ../data/logs:/var/log/hilos
+    working_dir: /app
+    environment:
+      - PHP_INI_SCAN_DIR=/usr/local/etc/php/conf.d
+      - HTTP_STATUS_HOST=${HTTP_STATUS_HOST:-0.0.0.0}
+      - HTTP_STATUS_PORT=${HTTP_STATUS_PORT:-8090}
+      - WORKER_COMM_HOST=${WORKER_COMM_HOST:-0.0.0.0}
+      - WORKER_COMM_PORT=${WORKER_COMM_PORT:-8091}
+      # WebSocket ports (when implemented)
+      # - WEBSOCKET_HOST=${WEBSOCKET_HOST:-0.0.0.0}
+      # - WEBSOCKET_PORT=${WEBSOCKET_PORT:-8092}
+    command: ["php", "backend/Bootstrap/docker.php"]
+    stop_grace_period: 25s
+    expose:
+      - "${HTTP_STATUS_PORT:-8090}"
+      - "${WORKER_COMM_PORT:-8091}"
+    restart: unless-stopped
+    networks:
+      hilos-demo-chat-dev-network:
+        ipv4_address: ${DOCKER_DAEMON_IP:-172.26.0.11}
+
+  chat-cli-dev:
+    build: .
+    env_file:
+      - ../.env
+    container_name: chat-cli-dev
+    volumes:
+      - ..:/app
+      # Mount framework package to /hilos for composer path repository
+      - ../../../composer.json:/hilos/composer.json:ro
+      - ../../../composer.lock:/hilos/composer.lock:ro
+      - ../../../framework:/hilos/framework:ro
+      - ../../../scripts:/hilos/scripts:ro
+    working_dir: /app
+    environment:
+      - TERM=xterm-256color
+      - HILOS_DAEMON_HOST=${HILOS_DAEMON_HOST:-172.26.0.11}
+      - HTTP_STATUS_PORT=${HTTP_STATUS_PORT:-8090}
+      - WORKER_COMM_PORT=${WORKER_COMM_PORT:-8091}
+    profiles:
+      - composer
+    networks:
+      - hilos-demo-chat-dev-network
+
+  chat-monitor-dev:
+    build: .
+    env_file:
+      - ../.env
+    container_name: chat-monitor-dev
+    volumes:
+      - ..:/app
+      # Mount framework package to /hilos for composer path repository
+      - ../../../composer.json:/hilos/composer.json:ro
+      - ../../../composer.lock:/hilos/composer.lock:ro
+      - ../../../framework:/hilos/framework:ro
+    working_dir: /app
+    environment:
+      - HILOS_DAEMON_HOST=${HILOS_DAEMON_HOST:-172.26.0.11}
+      - HTTP_STATUS_PORT=${HTTP_STATUS_PORT:-8090}
+      - WORKER_COMM_PORT=${WORKER_COMM_PORT:-8091}
+    profiles:
+      - monitor
+    restart: unless-stopped
+    networks:
+      - hilos-demo-chat-dev-network
+
+networks:
+  hilos-demo-chat-dev-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: ${DOCKER_NETWORK_SUBNET:-172.26.0.0/16}

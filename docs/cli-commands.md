@@ -84,7 +84,7 @@ php cli.php db:idea:fix [options]       # Fix Idea files to match Object files
 
 ## Project-level Composer Scripts (demo example)
 
-Demo projects (e.g. `websocket-test`) define Composer scripts that run commands inside Docker. Run them from the demo project root:
+Demo projects (e.g. `chat`) define Composer scripts that run commands inside Docker. Run them from the demo project root:
 
 ```bash
 # Setup & dependencies

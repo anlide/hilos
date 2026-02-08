@@ -1,0 +1,102 @@
+# Docker Compose configuration for PRODUCTION (Linux)
+# Both frontend (nginx) and backend run in Docker
+
+name: hilos-chat-prod
+
+services:
+  chat-prod:
+    build: .
+    env_file:
+      - ../.env
+    container_name: chat-daemon-prod
+    volumes:
+      - ..:/app
+      # Mount framework package to /hilos for composer path repository
+      - ../../../composer.json:/hilos/composer.json:ro
+      - ../../../composer.lock:/hilos/composer.lock:ro
+      - ../../../framework:/hilos/framework:ro
+      - ../data/logs:/var/log/hilos
+    working_dir: /app
+    environment:
+      - PHP_INI_SCAN_DIR=/usr/local/etc/php/conf.d
+      - HTTP_STATUS_HOST=${HTTP_STATUS_HOST:-0.0.0.0}
+      - HTTP_STATUS_PORT=${HTTP_STATUS_PORT:-8090}
+      - WORKER_COMM_HOST=${WORKER_COMM_HOST:-0.0.0.0}
+      - WORKER_COMM_PORT=${WORKER_COMM_PORT:-8091}
+      - WEBSOCKET_HOST=${WEBSOCKET_HOST:-0.0.0.0}
+      - WEBSOCKET_PORT=${WEBSOCKET_PORT:-8092}
+    command: ["php", "backend/Bootstrap/docker.php"]
+    stop_grace_period: 25s
+    ports:
+      # Expose WebSocket port to host for frontend access
+      - "${WEBSOCKET_PORT:-8092}:${WEBSOCKET_PORT:-8092}"
+    expose:
+      - "${HTTP_STATUS_PORT:-8090}"
+      - "${WORKER_COMM_PORT:-8091}"
+    restart: unless-stopped
+    networks:
+      hilos-demo-chat-prod-network:
+        ipv4_address: ${DOCKER_DAEMON_IP:-172.26.0.11}
+
+  # Nginx for serving frontend production build
+  chat-frontend-prod:
+    image: nginx:alpine
+    container_name: chat-frontend-prod
+    volumes:
+      - ../frontend/dist:/usr/share/nginx/html:ro
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    ports:
+      - "${FRONTEND_PORT:-8080}:80"
+    depends_on:
+      - chat-prod
+    restart: unless-stopped
+    networks:
+      - hilos-demo-chat-prod-network
+
+  chat-cli-prod:
+    build: .
+    env_file:
+      - ../.env
+    container_name: chat-cli-prod
+    volumes:
+      - ..:/app
+      - ../../../composer.json:/hilos/composer.json:ro
+      - ../../../composer.lock:/hilos/composer.lock:ro
+      - ../../../framework:/hilos/framework:ro
+    working_dir: /app
+    environment:
+      - TERM=xterm-256color
+      - HILOS_DAEMON_HOST=${HILOS_DAEMON_HOST:-172.26.0.11}
+      - HTTP_STATUS_PORT=${HTTP_STATUS_PORT:-8090}
+      - WORKER_COMM_PORT=${WORKER_COMM_PORT:-8091}
+    profiles:
+      - composer
+    networks:
+      - hilos-demo-chat-prod-network
+
+  chat-monitor-prod:
+    build: .
+    env_file:
+      - ../.env
+    container_name: chat-monitor-prod
+    volumes:
+      - ..:/app
+      - ../../../composer.json:/hilos/composer.json:ro
+      - ../../../composer.lock:/hilos/composer.lock:ro
+      - ../../../framework:/hilos/framework:ro
+    working_dir: /app
+    environment:
+      - HILOS_DAEMON_HOST=${HILOS_DAEMON_HOST:-172.26.0.11}
+      - HTTP_STATUS_PORT=${HTTP_STATUS_PORT:-8090}
+      - WORKER_COMM_PORT=${WORKER_COMM_PORT:-8091}
+    profiles:
+      - monitor
+    networks:
+      - hilos-demo-chat-prod-network
+
+networks:
+  hilos-demo-chat-prod-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: ${DOCKER_NETWORK_SUBNET:-172.26.0.0/16}

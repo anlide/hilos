@@ -132,7 +132,7 @@ class CliMonitorManager extends BaseManager
             Logger::info("This command requires a TTY (terminal) to work properly.");
             Logger::info("");
             Logger::info("Solutions:");
-            Logger::info("1. On Windows: Use PowerShell script from your project (e.g., demo/websocket-test/scripts/monitor.ps1)");
+            Logger::info("1. On Windows: Use PowerShell script from your project (e.g., demo/chat/scripts/monitor.ps1)");
             Logger::info("2. On Linux: Ensure you're running in a terminal");
             Logger::info("3. For production monitoring: Use daemon:status command");
             Logger::info("");
