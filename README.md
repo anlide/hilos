@@ -1,24 +1,28 @@
 # Hilos Framework v2
 
-[![PHP Version](https://img.shields.io/badge/PHP-8.4%2B-blue.svg)](https://www.php.net/)
-[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-
 **High-performance cluster framework with lightweight daemon for PHP**
 
 Hilos is an event-driven, non-blocking framework designed for building scalable real-time applications. It features a daemon-worker architecture with agent-based task distribution, built-in WebSocket and HTTP servers, and a powerful ORM system.
 
+## 🤖 For AI Agents
+
+**[→ Documentation for AI Agents](docs/ai-agents.md)**
+
 ## ✨ Key Features
 
+- **🐳 Docker-first**: Designed for development and deployment in Docker
 - **🚀 Daemon-Worker Architecture**: Lightweight daemon process managing multiple worker processes
 - **⚡ Event-Driven**: Epoll-based event loop for non-blocking I/O operations
 - **🌐 WebSocket & HTTP Servers**: Built-in servers for real-time and RESTful applications
 - **🤖 Agent System**: Distributed task execution through agents in worker processes
 - **📡 Signal Routing**: Flexible signal-based communication between components
-- **💾 Advanced ORM**: Entity/Object/Idea pattern for database operations
+- **💾 Advanced ORM**: Entity/Object/Idea pattern for database operations; runtime data seamlessly complements database data
 - **🔄 Database Migrations**: Version-controlled schema management
 - **⏰ Cron Jobs**: Built-in cron scheduler
 - **📝 Comprehensive Logging**: Structured logging with rotation and agent-specific logs
 - **🛠️ CLI Tools**: Command-line interface for management and migrations
+- **⚠️ Exception Handling**: Well-designed exception hierarchy for reliable error handling
+- **🖥️ Vue + TypeScript Frontend**: Frontend SDK that harmoniously extends the backend
 
 ## 🏗️ Architecture
 
@@ -52,14 +56,16 @@ Hilos follows a daemon-worker architecture pattern:
 
 ## 📋 Requirements
 
+Hilos is designed to run in Docker. If you need to run it outside Docker, you will need:
+
 - PHP 8.4 or higher
 - PHP Extensions:
-  - `ext-posix` - Process control
-  - `ext-pcntl` - Process forking
-  - `ext-sockets` - Socket operations
-  - `ext-mysqli` - MySQL database
-  - `ext-mbstring` - String operations
-  - `ext-ctype` - Character type checking
+  - `ext-posix` — Process control
+  - `ext-pcntl` — Process forking
+  - `ext-sockets` — Socket operations
+  - `ext-mysqli` — MySQL database
+  - `ext-mbstring` — String operations
+  - `ext-ctype` — Character type checking
 - PHP Event extension (for epoll-based event loop)
 
 ## 🚀 Quick Start
@@ -70,196 +76,123 @@ Hilos follows a daemon-worker architecture pattern:
 composer require anlide/hilos
 ```
 
-### Basic Usage
+### Example Projects
 
-Create a daemon class:
+#### By complexity level (1/5 — beginner, 5/5 — advanced)
 
-```php
-<?php
+**1/5 — Introduction to basics**
+- [simple-visitor-counter](demo/simple-visitor-counter/README.md) — Real-time active visitor counter
+- [simple-rock-paper-scissors](demo/simple-rock-paper-scissors/README.md) — Rock-paper-scissors for multiple players
 
-use Hilos\Core\Daemon\DaemonManager;
-use Hilos\Core\Router\SignalRouter;
-use Hilos\Socket\Server\HttpServer;
+**2/5 — Beginner level**
+- [hilos-website](demo/hilos-website/README.md) — Static site with dynamic content
+- [simple-booking-system](demo/simple-booking-system/README.md) — Resource booking (rooms, equipment)
+- [simple-event-calendar](demo/simple-event-calendar/README.md) — Event calendar with synchronization
+- [simple-poll](demo/simple-poll/README.md) — Polls with real-time results display
+- [simple-todo](demo/simple-todo/README.md) — Todo list with cross-user synchronization
 
-class MyDaemon extends DaemonManager
-{
-    protected function createSignalRouter(): SignalRouter
-    {
-        return new MySignalRouter();
-    }
+**3/5 — Intermediate level**
+- [dkp-system](demo/dkp-system/README.md) — DKP system for guild in online game
+- [file-gallery-manager](demo/file-gallery-manager/README.md) — File gallery, upload, image processing
+- [online-testing](demo/online-testing/README.md) — Online testing system
+- [personal-homepage](demo/personal-homepage/README.md) — Personal page with i18n and AI
+- [websocket-test](demo/websocket-test/README.md) — Chat with WebSocket, AI moderation
 
-    protected function onStart(): void
-    {
-        // Register HTTP server
-        $this->registerServer(new HttpServer('0.0.0.0', 8080, $this->signalRouter));
-    }
+**4/5 — Advanced**
+- [ai-bots-battle](demo/ai-bots-battle/README.md) — Turn-based battle of two AI bots
+- [binance-btc-tracker](demo/binance-btc-tracker/README.md) — BTC tracking with Binance API and indicators
+- [mail-monitor](demo/mail-monitor/README.md) — Mail server monitoring (Postfix/Dovecot)
+- [solar-system-model](demo/solar-system-model/README.md) — 3D Solar System model with admin panel
+- [traivan-map-analyzer](demo/traivan-map-analyzer/README.md) — Traivan map.sql analysis, multi-threaded processing
 
-    protected function onTick(): void
-    {
-        // Your periodic tasks here
-    }
-}
-
-// Start daemon
-$daemon = new MyDaemon();
-$daemon->run();
-```
-
-Create a worker class:
-
-```php
-<?php
-
-use Hilos\Core\Daemon\WorkerManager;
-use Hilos\Core\Agent\AgentManager;
-
-class MyWorker extends WorkerManager
-{
-    protected function createAgentManager(SignalRouter $signalRouter): AgentManager
-    {
-        return new MyAgentManager($signalRouter);
-    }
-}
-
-// Start worker
-$worker = new MyWorker();
-$worker->run();
-```
-
-### Example Project
-
-See the [websocket-test](demo/websocket-test/) demo project for a complete working example:
-
-- Real-time chat application
-- WebSocket server implementation
-- Agent-based architecture
-- Database integration
-- Vue 3 + TypeScript frontend
-
-```bash
-cd demo/websocket-test
-composer install
-composer run daemon-start
-```
+**5/5 — High complexity**
+- [ecommerce-shop](demo/ecommerce-shop/README.md) — Full-featured e-commerce shop
+- [pmd](demo/pmd/README.md) — MySQL web interface (PhpMyAdmin-like) with WebSocket
+- [project-management-platform](demo/project-management-platform/README.md) — Project management platform (Jira-like)
+- [roblox-game-server](demo/roblox-game-server/README.md) — Roblox game server, PvP arena
 
 ## 📁 Project Structure
 
 ```
 hilos/
-├── framework/                   # Core framework code
-│   ├── backend/                 # PHP backend (main framework)
-│   │   ├── API/                 # HTTP routing and async client
-│   │   ├── Constants/           # Centralized constants
-│   │   ├── Core/                # Core components (Daemon, Worker, Agent, Router)
-│   │   ├── Database/            # ORM system (Entity, Object, Idea, Migrations)
-│   │   ├── DTO/                 # Data Transfer Objects
-│   │   ├── Exception/           # Exception hierarchy
-│   │   ├── Logging/             # Logging system
-│   │   ├── Socket/              # Socket servers and clients
-│   │   └── Utils/               # Utility classes
-│   └── frontend/                # TypeScript/Vue frontend SDK (minimal)
-├── demo/                        # Example projects
-│   └── websocket-test/          # Working chat application example
-└── FEATURES.md                  # Complete feature list
+├── framework/                      # Core framework
+│   ├── backend/                    # PHP backend
+│   │   ├── API/                    # HTTP routing, async client
+│   │   ├── Constants/              # Constants
+│   │   ├── Core/                   # Daemon, Worker, Agent, Router, CLI, Page, EventLoop
+│   │   ├── Database/               # ORM (Entity, Object, Idea, Migrations, Schema, Filter)
+│   │   ├── DTO/                    # Data Transfer Objects
+│   │   ├── Exception/              # Exception hierarchy
+│   │   ├── Logging/                # Logging
+│   │   ├── Runtime/                # Runtime (IdeaRt, RtState)
+│   │   ├── Socket/                 # Servers and clients (HTTP, WebSocket, Worker)
+│   │   └── Utils/                  # Utilities
+│   ├── frontend/                   # TypeScript/Vue SDK
+│   │   └── src/
+│   │       ├── components/         # Vue components
+│   │       ├── plugins/            # Plugins (websocket)
+│   │       ├── router/             # Router
+│   │       ├── services/           # Services (WebSocket)
+│   │       ├── stores/             # Pinia stores
+│   │       └── types/              # Types
+│   ├── scripts/                    # Scripts (link-frontend-sdk)
+│   └── Stubs/                      # Stubs (event.php)
+├── demo/                           # 21 demo projects
+├── docs/                           # Documentation
+└── LICENSE
 ```
 
 ## 🔧 Core Components
 
-### Daemon Manager
-Main process managing servers, workers, and signal routing.
+### Backend
+- **Daemon Manager** — Main process, server/worker management, signal routing
+- **Worker Manager** — Worker process, agent execution
+- **Agent System** — Agent, Agent Daemon, Agent Manager
+- **Signal Router** — Signal routing, subscriptions (page, group, user)
+- **Database Layer** — Entity/Object/Idea, migrations, Schema, Filter
+- **Servers** — HttpServer, WebSocketServer, WorkerServer
+- **API** — HttpRouter, AsyncHttpClient
+- **Runtime** — IdeaRt, RtState for reactive state
+- **Page** — AbstractPage, PageSignalRouter
 
-### Worker Manager
-Worker process executing agents and handling business logic.
-
-### Agent System
-- **Agent**: Unit of work in worker processes
-- **Agent Daemon**: Agent representation in daemon process
-- **Agent Manager**: Factory for creating and managing agents
-
-### Signal Router
-Flexible routing system for inter-component communication:
-- System signals
-- Page subscriptions (WebSocket)
-- Group subscriptions
-- User-specific messages
-
-### Database Layer
-Three-layer ORM pattern:
-- **Entity**: Database row representation
-- **Object**: Writable layer with change tracking
-- **Idea**: Read-only layer for data access
-
-### Servers
-- **HttpServer**: Full-featured HTTP server with routing
-- **WebSocketServer**: WebSocket server with subscription management
-- **WorkerServer**: Server for worker process management
+### Frontend SDK
+- **Modal** — Modal dialog
+- **ConflictHeader**, **ConflictActions** — Components for concurrent editing conflicts
+- **Table** — Table component
+- **LoadingButton** — Button with loading indicator
+- **WebSocketService** — WebSocket service
+- **WebSocket plugin** — Vue plugin for WebSocket
 
 ## 📚 Documentation
 
-- **[FEATURES.md](FEATURES.md)**: Complete list of all framework features
-- **[Demo Projects](demo/)**: Example implementations
-- **[WebSocket Test Demo](demo/websocket-test/)**: Working chat application
-
-## 🛠️ CLI Commands
-
-Hilos includes a command-line interface for management:
-
-```bash
-# Database migrations
-php cli.php migration:up          # Apply migrations
-php cli.php migration:down        # Rollback migrations
-php cli.php migration:status      # Check migration status
-php cli.php migration:retry       # Retry failed migration
-
-# Database schema
-php cli.php db:schema:status      # Check schema status
-php cli.php db:entity:fix         # Fix Entity classes
-php cli.php db:object:fix         # Fix Object classes
-php cli.php db:idea:fix           # Fix Idea classes
-
-# System
-php cli.php status                # Daemon status
-php cli.php monitor               # Monitor daemon
-php cli.php help                  # Show help
-```
+- **[docs/ai-agents.md](docs/ai-agents.md)** — Instructions for AI agents
+- **[docs/quality.md](docs/quality.md)** — Application quality guidelines
+- **[docs/code-style.md](docs/code-style.md)** — Code style guide
+- **[docs/reference.md](docs/reference.md)** — API reference
+- **[docs/cli-commands.md](docs/cli-commands.md)** — CLI commands
 
 ## 🎯 Use Cases
 
-Hilos is ideal for:
+Hilos is suitable for:
 
-- **Real-time Applications**: Chat, gaming, live updates
-- **High-Performance APIs**: RESTful and WebSocket APIs
-- **Background Processing**: Task queues, scheduled jobs
-- **Microservices**: Distributed service architecture
-- **IoT Applications**: Device communication and control
+- **Real-time applications**: Chat, games, live updates
+- **High-load APIs**: REST and WebSocket
+- **Background processing**: Task queues, cron
+- **Microservices**: Distributed architecture
+- **IoT**: Device communication
 
 ## 🚦 Performance
 
-- **Non-blocking I/O**: All socket operations are non-blocking
-- **Event-driven**: Efficient event loop using epoll
-- **Low Latency**: Optimized for minimal delays
-- **Scalable**: Support for multiple workers and agents
-- **Resource Efficient**: Lightweight daemon process
+- **Non-blocking I/O** — All socket operations are non-blocking
+- **Event-driven** — Epoll-based event loop
+- **Low Latency** — Minimized delays
+- **Scalable** — Multiple workers and agents
+- **Resource Efficient** — Lightweight daemon process
 
-## 🤝 Contributing
+## 🎯 Mission
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+The mission of Hilos is to make the internet better. We aim for end users to enjoy higher-quality products, for companies to have high-quality internal tools, and for applications that were previously built outside PHP due to multi-threading limitations to be built in PHP and run reliably. Hilos enables PHP developers to build real-time, multi-threaded applications without switching to other languages.
 
 ## 📄 License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 👤 Author
-
-**Alexander Baranov**
-- Email: alexander.baranov@anlide.online
-
-## 🔗 Links
-
-- [Full Feature List](FEATURES.md)
-- [Example Projects](demo/)
-- [WebSocket Test Demo](demo/websocket-test/)
-
----
-
-**Note**: This is a high-performance framework designed for production use. Make sure to understand the architecture and follow best practices when building applications with Hilos.
+MIT — see [LICENSE](LICENSE)
