@@ -4,6 +4,7 @@ namespace Demo\Chat\Database\Idea;
 
 use Demo\Chat\Database\Object\Event as ObjectEvent;
 use Hilos\Database\Idea\IdeaItem;
+use Hilos\Exception\Idea\Item\IdeaItemPropertyNotFoundException;
 use RuntimeException;
 
 /**
@@ -36,6 +37,7 @@ final class Event extends IdeaItem
      * @param string $name Property name
      * @return int|string|null Property value
      * @throws RuntimeException If property does not exist
+     * @throws IdeaItemPropertyNotFoundException If property is not defined in IdeaItem
      */
     public function __get(string $name): int|string|null
     {
@@ -72,8 +74,6 @@ final class Event extends IdeaItem
         $data[ObjectEvent::type] = $this->_object->type;
         $data[ObjectEvent::timestamp] = $this->_object->timestamp;
         $data[ObjectEvent::data] = $this->_object->data;
-        $data['debug1'] = spl_object_id($this->_object);
-        $data['debug2'] = spl_object_id($this);
 
         return $data;
     }

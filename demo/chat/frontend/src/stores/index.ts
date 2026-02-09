@@ -77,6 +77,26 @@ export const useChatStore = defineStore('chat', {
         this.events.shift()
       }
     },
+
+    /**
+     * Add or update events by id. Events in the list overwrite existing by id;
+     * events already in the store but not in the list are left unchanged.
+     */
+    upsertEvents(events: Event[]) {
+      for (const event of events) {
+        const id = event.id
+        if (id === null) {
+          this.addEvent(event)
+          continue
+        }
+        const existingIndex = this.events.findIndex((ev) => ev.id === id)
+        if (existingIndex >= 0) {
+          this.events[existingIndex] = event
+        } else {
+          this.addEvent(event)
+        }
+      }
+    },
     
     /**
      * Add User from database to store

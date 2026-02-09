@@ -1,0 +1,73 @@
+import { EntitiesReceiver } from '@hilos/sdk/entities'
+import {
+  parseUserPayloads,
+  parseEventPayloads,
+  eventPayloadToEvent,
+} from './parsers'
+
+/** Store interface required for applying entity changes (avoids importing store here). */
+interface ChatStoreForEntities {
+  upsertUsers(users: Array<{ id: number; name: string; lastActivity?: string | null }>): void
+  upsertEvents(events: ReturnType<typeof eventPayloadToEvent>[]): void
+  addEvent(event: ReturnType<typeof eventPayloadToEvent>): void
+  removeEventsById(ids: number[]): void
+  removeUsers(ids: number[]): void
+}
+
+/**
+ * Chat-specific entities receiver. Parses users/events from transport and applies to chat store.
+ */
+export class ChatEntitiesReceiver extends EntitiesReceiver {
+  protected override applyFull(collectionKey: string, rawItems: unknown[], context?: unknown): void {
+    const store = context as ChatStoreForEntities | undefined
+    if (!store) return
+
+    if (collectionKey === 'users') {
+      const users = parseUserPayloads(rawItems)
+      if (users !== null) {
+        store.upsertUsers(users)
+      }
+      return
+    }
+
+    if (collectionKey === 'events') {
+      const events = parseEventPayloads(rawItems)
+      if (events !== null) {
+        store.upsertEvents(events.map(eventPayloadToEvent))
+      }
+    }
+  }
+
+  protected override applyUpdates(collectionKey: string, rawItems: unknown[], context?: unknown): void {
+    const store = context as ChatStoreForEntities | undefined
+    if (!store) return
+
+    if (collectionKey === 'users') {
+      const users = parseUserPayloads(rawItems)
+      if (users !== null) {
+        store.upsertUsers(users)
+      }
+      return
+    }
+
+    if (collectionKey === 'events') {
+      const events = parseEventPayloads(rawItems)
+      if (events !== null) {
+        for (const p of events) {
+          store.addEvent(eventPayloadToEvent(p))
+        }
+      }
+    }
+  }
+
+  protected override applyDeleted(collectionKey: string, ids: number[], context?: unknown): void {
+    const store = context as ChatStoreForEntities | undefined
+    if (!store) return
+
+    if (collectionKey === 'users') {
+      store.removeUsers(ids)
+    } else if (collectionKey === 'events') {
+      store.removeEventsById(ids)
+    }
+  }
+}

@@ -3,7 +3,7 @@
 namespace Hilos\Database\Idea;
 
 use Hilos\Database\Object\Object_;
-use Hilos\Exception\DatabaseException;
+use Hilos\Exception\Database\Object\ObjectGetIdStringNotImplementedException;
 use Hilos\Exception\Idea\Item\IdeaItemCloneException;
 use Hilos\Exception\Idea\Item\IdeaItemPropertyNotFoundException;
 use Hilos\Exception\Idea\Item\IdeaItemReadOnlyException;
@@ -47,7 +47,7 @@ abstract class IdeaItem
      * Delegates to underlying Object instance.
      *
      * Supports composite keys via Object_::getIdString().
-     * @throws DatabaseException
+     * @throws ObjectGetIdStringNotImplementedException If Object does not implement getIdString()
      */
     public function getIdString(): string
     {

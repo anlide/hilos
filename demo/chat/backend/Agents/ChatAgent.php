@@ -11,10 +11,11 @@ use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\HttpHeaders;
 use Demo\Chat\Core\Page\ChatPageAgentInterface;
 use Demo\Chat\Database\Idea;
+use Demo\Chat\Database\IdeaCollection\Events as IdeaEvents;
+use Demo\Chat\Database\IdeaCollection\Users as IdeaUsers;
 use Demo\Chat\DTO\ChatEventSignalDTO;
 use Demo\Chat\DTO\HandshakeResponseSignalData;
 use Demo\Chat\Runtime\ChatRuntime;
-use Demo\Chat\Runtime\Idea\Connection as RuntimeIdeaConnection;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Router\SignalDataInterface;
@@ -23,7 +24,6 @@ use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalType;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Database\Idea\TruthSourceRegistry;
-use Hilos\DTO\BaseDTO;
 use Hilos\DTO\EntitiesChangesDTO;
 use Hilos\DTO\WebSocket\WebSocketHandshakeSignalDTO;
 use Hilos\Exception\DatabaseException;
@@ -143,19 +143,21 @@ class ChatAgent extends AbstractAgent implements ChatPageAgentInterface
             $user = Idea::$db->users->actions->register($sessionToken);
         }
 
+        $wasAlreadyKnown = isset(Idea::$rt->connections->relevantUsers[$user->id]);
+
         // Register connection in runtime
         Idea::$rt->connections->actions->register($data->acceptKey, $user->id);
 
-        $entities = new EntitiesChangesDTO(
-            full: [Idea::users => [$user->toArray(toFrontend: true)]],
-        );
+        $entities = !$wasAlreadyKnown
+            ? new EntitiesChangesDTO()->withFull(Idea::users, IdeaUsers::fromSingleItem($user))
+            : null;
 
         $this->addEvent(ChatEventType::USER_JOINED, $user->id, null, $entities, $data->acceptKey);
 
         $subscriptionEntities = new EntitiesChangesDTO(
             full: [
-                Idea::users => Idea::$rt->connections->relevantUsers->toArray(idAsIndex: false, toFrontend: true),
-                Idea::events => Idea::$db->events->toArray(idAsIndex: false, toFrontend: true),
+                Idea::users => Idea::$rt->connections->relevantUsers,
+                Idea::events => Idea::$db->events,
             ],
         );
         $subscriptionData = new HandshakeResponseSignalData(entities: $subscriptionEntities, userId: $user->id);
@@ -230,6 +232,7 @@ class ChatAgent extends AbstractAgent implements ChatPageAgentInterface
      * @throws IdeaActionsTableNameUndeterminedException If table name cannot be determined
      * @throws IdeaActionsUnknownLazyStrategyException If unknown lazy loading strategy
      * @throws IdeaTruthSourceWriteNotAllowedException If write is not allowed
+     * @throws IdeaCollectionNotManualException If collection is not manual, or item has no ID
      */
     public function addEvent(
         ChatEventType $type,
@@ -244,7 +247,7 @@ class ChatAgent extends AbstractAgent implements ChatPageAgentInterface
         $base = $entities ?? new EntitiesChangesDTO();
         $mergedEntities = $base->withFullAppended(
             Idea::events,
-            $event->toArray(toFrontend: true),
+            IdeaEvents::fromSingleItem($event),
         );
 
         $eventData = new ChatEventSignalDTO($mergedEntities);

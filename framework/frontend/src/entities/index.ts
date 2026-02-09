@@ -1,0 +1,1 @@
+export { EntitiesReceiver } from './EntitiesReceiver'

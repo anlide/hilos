@@ -6,6 +6,7 @@ use ArrayAccess;
 use Countable;
 use Hilos\Database\Object\Object_;
 use Hilos\Database\Object\Objects;
+use Hilos\Exception\Database\Object\ObjectGetIdStringNotImplementedException;
 use Hilos\Exception\DatabaseException;
 use Hilos\Exception\Idea\Collection\IdeaCollectionActionsClassException;
 use Hilos\Exception\Idea\Collection\IdeaCollectionCloneException;
@@ -84,6 +85,22 @@ abstract class IdeaCollection implements ArrayAccess, Countable, Iterator
         $instance = new static();
         $instance->isManual = true;
         return $instance;
+    }
+
+    /**
+     * Create a manual collection containing only the given item.
+     * Use when a single IdeaItem must be represented as an IdeaCollection (e.g. for DTO full payload).
+     *
+     * @param IdeaItem $item Single item to wrap
+     * @return static New manual collection with one item
+     * @throws IdeaCollectionNotManualException Never (initEmpty is manual)
+     * @throws ObjectGetIdStringNotImplementedException If IdeaItem's Object does not implement getIdString() (required for manual collections to use ID as key)
+     */
+    public static function fromSingleItem(IdeaItem $item): static
+    {
+        $collection = static::initEmpty();
+        $collection->add($item);
+        return $collection;
     }
 
     /**
@@ -219,7 +236,7 @@ abstract class IdeaCollection implements ArrayAccess, Countable, Iterator
      * @param T $item IdeaItem instance to add
      *
      * @throws IdeaCollectionNotManualException If collection is not manual, or item has no ID
-     * @throws DatabaseException If IdeaItem has no associated Object ID
+     * @throws ObjectGetIdStringNotImplementedException If IdeaItem's Object does not implement getIdString() (required for manual collections to use ID as key)
      */
     public function add(IdeaItem $item): void
     {
@@ -228,6 +245,29 @@ abstract class IdeaCollection implements ArrayAccess, Countable, Iterator
         }
 
         $this->items[$item->getIdString()] = $item;
+    }
+
+    /**
+     * Return a new manual collection containing all items from this collection plus all items from $other that are not already present (by ID).
+     * Used when appending to a full snapshot in DTO.
+     *
+     * @param IdeaCollection $other Collection whose items to merge in (only those not already in $this)
+     * @return static New manual collection
+     * @throws IdeaCollectionNotManualException Never (initEmpty is manual)
+     * @throws ObjectGetIdStringNotImplementedException If an item's Object does not implement getIdString()
+     */
+    public function mergeWith(IdeaCollection $other): static
+    {
+        $result = static::initEmpty();
+        foreach ($this as $item) {
+            $result->add($item);
+        }
+        foreach ($other as $key => $item) {
+            if (!$result->offsetExists($key)) {
+                $result->add($item);
+            }
+        }
+        return $result;
     }
 
     /**
