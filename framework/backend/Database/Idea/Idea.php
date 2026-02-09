@@ -20,6 +20,8 @@ use Hilos\Runtime\Idea\IdeaRt;
  *   - $db: Database layer (Idea collections, Object collections, Entity layer)
  *   - $rt: Runtime layer for transient application data (connections, sessions, state)
  *
+ * @template TRuntime of IdeaRt
+ *
  * Usage:
  *   Idea::init(); // Initialize (mandatory)
  *   $user = Idea::$db->users[123]; // Get User from database layer
@@ -30,7 +32,7 @@ abstract class Idea
     /** @var ?static Database layer singleton (Idea/Object/Entity collections) */
     public static ?self $db = null;
 
-    /** @var ?IdeaRt Runtime layer singleton for transient application data */
+    /** @var ?TRuntime Runtime layer singleton for transient application data */
     public static ?IdeaRt $rt = null;
 
     /**

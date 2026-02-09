@@ -5,6 +5,7 @@ namespace Hilos\Database\Object;
 use Exception;
 use Hilos\Database\Entity\Entity;
 use Hilos\Exception\DatabaseException;
+use Hilos\Exception\Database\Object\ObjectGetIdStringNotImplementedException;
 
 /**
  * Base Object class
@@ -143,11 +144,11 @@ abstract class Object_
      * Must be overridden in child classes
      * 
      * @return string ID as string (for simple keys) or composite key representation
-     * @throws DatabaseException If ID is not set or method is not overridden
+     * @throws ObjectGetIdStringNotImplementedException If method is not overridden in child class
      */
     public function getIdString(): string
     {
-        throw new DatabaseException("getIdString() must be implemented in child class: " . static::class);
+        throw new ObjectGetIdStringNotImplementedException("getIdString() must be implemented in child class: " . static::class);
     }
 
     /**

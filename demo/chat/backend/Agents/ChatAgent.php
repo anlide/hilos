@@ -32,6 +32,7 @@ use Hilos\Exception\Idea\Actions\IdeaActionsDuplicateIdException;
 use Hilos\Exception\Idea\Actions\IdeaActionsObjectCollectionNullException;
 use Hilos\Exception\Idea\Actions\IdeaActionsTableNameUndeterminedException;
 use Hilos\Exception\Idea\Actions\IdeaActionsUnknownLazyStrategyException;
+use Hilos\Exception\Idea\Collection\IdeaCollectionNotManualException;
 use Hilos\Exception\Idea\Entity\IdeaEntityClassNotFoundException;
 use Hilos\Exception\Idea\Entity\IdeaEntityMappingNotFoundException;
 use Hilos\Exception\Idea\Entity\IdeaEntityTableConstantNotFoundException;
@@ -127,6 +128,7 @@ class ChatAgent extends AbstractAgent implements ChatPageAgentInterface
      * @throws IdeaRtActionsStateCollectionNullException If state collection is null
      * @throws IdeaTruthSourceWriteNotAllowedException If write is not allowed
      * @throws RtTruthSourceWriteNotAllowedException If no truth source registered
+     * @throws IdeaCollectionNotManualException If collection is not manual, or item has no ID
      */
     public function onSignalHandshake(WebSocketHandshakeSignalDTO $data, string $source, string $name): void
     {
@@ -144,26 +146,19 @@ class ChatAgent extends AbstractAgent implements ChatPageAgentInterface
         // Register connection in runtime
         Idea::$rt->connections->actions->register($data->acceptKey, $user->id);
 
-        $publicUser = $user->toArray(idAsIndex: false);
-        unset($publicUser['sessionToken']);
         $entities = new EntitiesChangesDTO(
-            full: ['users' => [$publicUser]],
+            full: [Idea::users => [$user->toArray(toFrontend: true)]],
         );
 
         $this->addEvent(ChatEventType::USER_JOINED, $user->id, null, $entities, $data->acceptKey);
 
-        $users = Idea::$db->users->toArray(idAsIndex: false);
-        $publicUsers = $this->toPublicUserArrayList($users);
         $subscriptionEntities = new EntitiesChangesDTO(
-            full: ['users' => $publicUsers],
+            full: [
+                Idea::users => Idea::$rt->connections->relevantUsers->toArray(idAsIndex: false, toFrontend: true),
+                Idea::events => Idea::$db->events->toArray(idAsIndex: false, toFrontend: true),
+            ],
         );
-        $subscriptionData = new HandshakeResponseSignalData(
-            events: Idea::$db->events->toArray(idAsIndex: false),
-            entities: $subscriptionEntities,
-            userId: $user->id,
-            username: $user->name,
-        );
-
+        $subscriptionData = new HandshakeResponseSignalData(entities: $subscriptionEntities, userId: $user->id);
         $this->signalRouter->queueSignal(
             signalSource: $this->getAgentSignalSource(),
             signalType: new SignalType(SignalTypeConstants::WS_USER),
@@ -244,11 +239,15 @@ class ChatAgent extends AbstractAgent implements ChatPageAgentInterface
         ?string $excludeAcceptKey = null,
     ): void
     {
-        // Add event to collection (saves to database and adds to collection)
         $event = Idea::$db->events->actions->add($type->value, $userId, $data);
 
-        // Broadcast event to all connected clients via SignalRouter
-        $eventData = new ChatEventSignalDTO($event, $entities);
+        $base = $entities ?? new EntitiesChangesDTO();
+        $mergedEntities = $base->withFullAppended(
+            Idea::events,
+            $event->toArray(toFrontend: true),
+        );
+
+        $eventData = new ChatEventSignalDTO($mergedEntities);
 
         // Wrap event data in WebSocketSignalData for WebSocket routing
         $this->signalRouter->queueSignal(
@@ -257,37 +256,9 @@ class ChatAgent extends AbstractAgent implements ChatPageAgentInterface
             signalName: new SignalName(ChatSignalConstants::NEW_EVENT),
             signalData: new WebSocketSignalData(
                 data: $eventData,
-                targetAcceptKey: null,
-                targetGroup: null,
                 excludeAcceptKey: $excludeAcceptKey,
             ),
         );
-    }
-
-    /**
-     * Map user list to public arrays
-     *
-     * @param array $users
-     * @return array
-     */
-    private function toPublicUserArrayList(array $users): array
-    {
-        return array_map(
-            fn (array $user): array => $this->toPublicUserArray($user),
-            $users,
-        );
-    }
-
-    /**
-     * Map user to public array
-     *
-     * @param array $user
-     * @return array
-     */
-    private function toPublicUserArray(array $user): array
-    {
-        unset($user['sessionToken']);
-        return $user;
     }
 
     /**

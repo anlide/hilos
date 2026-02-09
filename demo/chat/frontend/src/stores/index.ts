@@ -60,52 +60,11 @@ export const useChatStore = defineStore('chat', {
     },
     
     /**
-     * Handle handshake_response
+     * Handle handshake_response (set current user; events/users already applied via entities)
      */
-    handleSubscriptionResponse(
-      events: Array<{
-        id: number
-        userId: number | null
-        type: string
-        timestamp: number
-        data: Record<string, unknown> | string | null
-      }>,
-      userId: number,
-      username: string,
-    ) {
+    handleSubscriptionResponse(userId: number, username: string) {
       this.currentUserId = userId
       this.currentUsername = username
-      
-      this.clearEvents()
-      
-      for (const event of events) {
-        const eventData = typeof event.data === 'string'
-          ? JSON.parse(event.data)
-          : (event.data ?? {})
-
-        const timestampSeconds = typeof event.timestamp === 'string'
-          ? Math.floor(Date.parse(event.timestamp) / 1000)
-          : event.timestamp
-
-        if (!Number.isFinite(timestampSeconds)) {
-          throw new Error(`Invalid event timestamp: ${String(event.timestamp)}`)
-        }
-
-        const timestampString = new Date(timestampSeconds * 1000)
-          .toISOString()
-          .slice(0, 19)
-          .replace('T', ' ')
-        
-        const eventObj = Event.fromObject({
-          id: event.id,
-          userId: event.userId,
-          type: event.type,
-          timestamp: timestampString,
-          data: eventData,
-        })
-        
-        this.addEvent(eventObj)
-      }
     },
     
     /**
@@ -157,10 +116,21 @@ export const useChatStore = defineStore('chat', {
     },
     
     /**
-     * Clear events from database
+     * Clear events from store
      */
     clearEvents() {
       this.events = []
+    },
+
+    /**
+     * Remove events by id (e.g. from entities.deleted.events)
+     */
+    removeEventsById(eventIds: number[]) {
+      if (eventIds.length === 0) {
+        return
+      }
+      const ids = new Set(eventIds)
+      this.events = this.events.filter(ev => ev.id === null || !ids.has(ev.id))
     },
   }
 })

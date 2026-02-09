@@ -122,7 +122,8 @@ abstract class IdeaItem
      * @param bool $idAsIndex Use ID as array index
      * @param bool $withBridges Include bridge/junction table data
      * @param bool $withCalculation Include calculated fields
+     * @param bool $toFrontend When true, exclude fields that must not be sent to frontend (e.g. sessionToken)
      * @return array
      */
-    abstract public function toArray(bool $withId = true, bool $idAsIndex = true, bool $withBridges = false, bool $withCalculation = false): array;
+    abstract public function toArray(bool $withId = true, bool $idAsIndex = true, bool $withBridges = false, bool $withCalculation = false, bool $toFrontend = false): array;
 }

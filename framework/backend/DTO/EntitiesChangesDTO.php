@@ -27,6 +27,23 @@ class EntitiesChangesDTO extends BaseDTO
     }
 
     /**
+     * Return new DTO with one item appended to full[$collection].
+     * Does not serialize/deserialize; only merges the target collection.
+     *
+     * @param string $collection Collection key (e.g. 'events', 'users')
+     * @param array<string, mixed> $item Item to append
+     * @return static New DTO instance
+     */
+    public function withFullAppended(string $collection, array $item): static
+    {
+        $full = $this->full;
+        $list = $full[$collection] ?? [];
+        $list[] = $item;
+        $full[$collection] = $list;
+        return new static(full: $full, updates: $this->updates, deleted: $this->deleted);
+    }
+
+    /**
      * Convert DTO to array
      *
      * @return array DTO data as array

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Runtime\Idea;
 
+use Demo\Chat\Database\Idea;
+use Demo\Chat\Database\Idea\User as IdeaUser;
 use Demo\Chat\Runtime\State\Connection as StateConnection;
 use Hilos\Runtime\Idea\IdeaRtItem;
 
@@ -18,6 +20,7 @@ use Hilos\Runtime\Idea\IdeaRtItem;
  * @property-read string $acceptKey WebSocket accept key
  * @property-read int $userId User ID
  * @property-read int $connectedAt Unix timestamp when connected
+ * @property-read ?IdeaUser $user IdeaUser for this connection (null if user not found)
  */
 final class Connection extends IdeaRtItem
 {
@@ -35,9 +38,9 @@ final class Connection extends IdeaRtItem
      * Property getter
      *
      * @param string $name Property name
-     * @return string|int
+     * @return string|int|IdeaUser|null
      */
-    public function __get(string $name): string|int
+    public function __get(string $name): string|int|IdeaUser|null
     {
         /** @var StateConnection $state */
         $state = $this->_state;
@@ -46,6 +49,7 @@ final class Connection extends IdeaRtItem
             StateConnection::acceptKey => $state->getAcceptKey(),
             StateConnection::userId => $state->getUserId(),
             StateConnection::connectedAt => $state->getConnectedAt(),
+            'user' => Idea::$db->users[$state->getUserId()] ?? null,
             default => parent::__get($name),
         };
     }
@@ -53,7 +57,7 @@ final class Connection extends IdeaRtItem
     /**
      * Convert to array
      *
-     * @return array
+     * @return array<string, mixed>
      */
     public function toArray(): array
     {

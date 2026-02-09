@@ -86,8 +86,8 @@ final class Moderators extends IdeaCollection
     /**
      * Convert to array with additional options
      */
-    public function toArray(bool $withId = true, bool $idAsIndex = true, bool $withBridges = false, bool $withCalculation = false): array
+    public function toArray(bool $withId = true, bool $idAsIndex = true, bool $withBridges = false, bool $withCalculation = false, bool $toFrontend = false): array
     {
-        return parent::toArray($withId, $idAsIndex, $withBridges, $withCalculation);
+        return parent::toArray($withId, $idAsIndex, $withBridges, $withCalculation, $toFrontend);
     }
 }

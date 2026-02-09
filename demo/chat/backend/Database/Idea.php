@@ -21,6 +21,7 @@ use Hilos\Database\Idea\Idea as BaseIdea;
 use Hilos\Database\Object\Objects;
 use Hilos\Exception\DatabaseException;
 use Hilos\Exception\Idea\Other\IdeaObjectCollectionNotFoundException;
+use Hilos\Exception\Runtime\Rt\IdeaRtStateCollectionNotFoundException;
 use Hilos\Runtime\Idea\IdeaRt;
 
 /**
@@ -29,6 +30,8 @@ use Hilos\Runtime\Idea\IdeaRt;
  * Extends framework Idea class to provide:
  *   - $db: Database collections (users, events, bots, moderators)
  *   - $rt: Runtime data (connections)
+ *
+ * @extends BaseIdea<ChatRuntime>
  *
  * @property-read IdeaUsers $users
  * @property-read IdeaEvents $events
@@ -88,6 +91,7 @@ final class Idea extends BaseIdea
      * Create runtime instance
      *
      * @return ?IdeaRt ChatRuntime instance
+     * @throws IdeaRtStateCollectionNotFoundException
      */
     protected static function createRuntime(): ?IdeaRt
     {

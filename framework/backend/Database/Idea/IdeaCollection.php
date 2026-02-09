@@ -275,15 +275,16 @@ abstract class IdeaCollection implements ArrayAccess, Countable, Iterator
      * @param bool $idAsIndex Use ID as array index
      * @param bool $withBridges Include bridge/junction table data
      * @param bool $withCalculation Include calculated fields
+     * @param bool $toFrontend When true, exclude fields that must not be sent to frontend (e.g. sessionToken)
      */
-    public function toArray(bool $withId = true, bool $idAsIndex = true, bool $withBridges = false, bool $withCalculation = false): array
+    public function toArray(bool $withId = true, bool $idAsIndex = true, bool $withBridges = false, bool $withCalculation = false, bool $toFrontend = false): array
     {
         $result = [];
 
         if ($this->isManual) {
             // For manual collections, iterate over cached items
             foreach ($this->items as $key => $idea) {
-                $data = $idea->toArray($withId, $idAsIndex, $withBridges, $withCalculation);
+                $data = $idea->toArray($withId, $idAsIndex, $withBridges, $withCalculation, $toFrontend);
                 if ($idAsIndex) {
                     $result[$key] = $data;
                 } else {
@@ -297,7 +298,7 @@ abstract class IdeaCollection implements ArrayAccess, Countable, Iterator
                 foreach ($objectCollection as $key => $object) {
                     $idea = $this->getIdeaForKey($key);
                     if ($idea !== null) {
-                        $data = $idea->toArray($withId, $idAsIndex, $withBridges, $withCalculation);
+                        $data = $idea->toArray($withId, $idAsIndex, $withBridges, $withCalculation, $toFrontend);
                         if ($idAsIndex) {
                             $result[$key] = $data;
                         } else {
@@ -610,6 +611,7 @@ abstract class IdeaCollection implements ArrayAccess, Countable, Iterator
             $this->items = [];
             foreach ($objectCollection as $key => $object) {
                 $this->items[$key] = $this->createIdea($object);
+                unset($object);
             }
             $objectCollection->rewind();
         }

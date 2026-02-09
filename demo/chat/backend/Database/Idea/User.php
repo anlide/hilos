@@ -62,9 +62,10 @@ final class User extends IdeaItem
      * @param bool $idAsIndex Use ID as array key
      * @param bool $withBridges Include bridge/junction table data
      * @param bool $withCalculation Include calculated fields
+     * @param bool $toFrontend When true, exclude sessionToken (must not be sent to frontend)
      * @return array<string, mixed> Array representation
      */
-    public function toArray(bool $withId = true, bool $idAsIndex = true, bool $withBridges = false, bool $withCalculation = false): array
+    public function toArray(bool $withId = true, bool $idAsIndex = true, bool $withBridges = false, bool $withCalculation = false, bool $toFrontend = false): array
     {
         $data = [];
 
@@ -73,7 +74,9 @@ final class User extends IdeaItem
         }
 
         $data[ObjectUser::name] = $this->_object->name;
-        $data[ObjectUser::sessionToken] = $this->_object->sessionToken;
+        if (!$toFrontend) {
+            $data[ObjectUser::sessionToken] = $this->_object->sessionToken;
+        }
         $data[ObjectUser::lastActivity] = $this->_object->lastActivity;
 
         return $data;

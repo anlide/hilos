@@ -12,20 +12,17 @@ use RuntimeException;
 /**
  * HandshakeResponseSignalData - Signal data for handshake response
  *
- * Contains chat history events and user info for new clients.
+ * Contains entity snapshot (events + users) and current userId.
+ * Username is derived from entities.full.users on frontend.
  * Target client ID is handled by WebSocketSignalData wrapper for routing.
  */
 class HandshakeResponseSignalData extends BaseDTO implements SignalDataInterface
 {
     public function __construct(
-        /** @var array<array{id: int, type: string, timestamp: int, data: array<string, mixed>}> Chat event history */
-        public readonly array $events,
-        /** @var EntitiesChangesDTO Entity changes payload */
+        /** @var EntitiesChangesDTO Entity changes payload (full snapshot: events, users) */
         public readonly EntitiesChangesDTO $entities,
-        /** @var int User ID */
+        /** @var int Current user ID */
         public readonly int $userId,
-        /** @var string Username */
-        public readonly string $username,
     ) {
     }
 
@@ -37,10 +34,8 @@ class HandshakeResponseSignalData extends BaseDTO implements SignalDataInterface
     public function toArray(): array
     {
         return [
-            'events' => $this->events,
             'entities' => $this->entities->toArray(),
             'userId' => $this->userId,
-            'username' => $this->username,
         ];
     }
 

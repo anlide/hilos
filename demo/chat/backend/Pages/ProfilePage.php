@@ -99,11 +99,10 @@ class ProfilePage extends AbstractChatPage
         // Build entities update
         $user = Idea::$db->users[$userId];
         if ($user !== null) {
-            $publicUser = $user->toArray(idAsIndex: false);
-            unset($publicUser['sessionToken']);
+            $publicUser = $user->toArray(idAsIndex: false, toFrontend: true);
 
             $entities = new EntitiesChangesDTO(
-                updates: ['users' => [$publicUser]],
+                updates: [Idea::users => [$publicUser]],
             );
 
             $this->getChatAgent()->addEvent(ChatEventType::USER_RENAMED, $userId, [

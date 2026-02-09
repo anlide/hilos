@@ -57,9 +57,10 @@ final class Event extends IdeaItem
      * @param bool $idAsIndex Use ID as array key
      * @param bool $withBridges Include bridge/junction table data
      * @param bool $withCalculation Include calculated fields
+     * @param bool $toFrontend When true, exclude fields that must not be sent to frontend
      * @return array<string, mixed> Array representation
      */
-    public function toArray(bool $withId = true, bool $idAsIndex = true, bool $withBridges = false, bool $withCalculation = false): array
+    public function toArray(bool $withId = true, bool $idAsIndex = true, bool $withBridges = false, bool $withCalculation = false, bool $toFrontend = false): array
     {
         $data = [];
 
@@ -71,6 +72,8 @@ final class Event extends IdeaItem
         $data[ObjectEvent::type] = $this->_object->type;
         $data[ObjectEvent::timestamp] = $this->_object->timestamp;
         $data[ObjectEvent::data] = $this->_object->data;
+        $data['debug1'] = spl_object_id($this->_object);
+        $data['debug2'] = spl_object_id($this);
 
         return $data;
     }

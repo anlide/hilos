@@ -70,6 +70,7 @@ export default defineConfig({
     // This is critical when framework code imports dependencies like vue-router, pinia, vue
     // Without this, Vite searches node_modules relative to framework path (/hilos/framework/...)
     // instead of project path (/app/...)
+    // @ts-expect-error - resolve.modules is a valid Rollup resolver option but not in Vite's ResolveOptions type
     modules: [
       fileURLToPath(new URL('./node_modules', import.meta.url)), // Project's node_modules first
       'node_modules' // Fallback
