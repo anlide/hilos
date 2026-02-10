@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Demo\Chat\Runtime\Idea;
 
 use Demo\Chat\Database\Idea;
-use Demo\Chat\Database\Idea\User as IdeaUser;
 use Demo\Chat\Database\IdeaCollection\Users as IdeaUsers;
 use Demo\Chat\Runtime\IdeaActions\ConnectionsActions;
 use Demo\Chat\Runtime\State\Connection as StateConnection;

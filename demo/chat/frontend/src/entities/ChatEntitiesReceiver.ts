@@ -1,13 +1,11 @@
 import { EntitiesReceiver } from '@hilos/sdk/entities'
-import {
-  parseUserPayloads,
-  parseEventPayloads,
-  eventPayloadToEvent,
-} from './parsers'
+import { parseUserPayloads, parseEventPayloads, eventPayloadToEvent } from './parsers'
+import { parsePartialUserPayloads } from './partialUserPayload'
 
 /** Store interface required for applying entity changes (avoids importing store here). */
 interface ChatStoreForEntities {
   upsertUsers(users: Array<{ id: number; name: string; lastActivity?: string | null }>): void
+  patchUsers(partials: Array<{ id: number; name?: string; lastActivity?: string | null }>): void
   upsertEvents(events: ReturnType<typeof eventPayloadToEvent>[]): void
   addEvent(event: ReturnType<typeof eventPayloadToEvent>): void
   clearEvents(): void
@@ -55,9 +53,14 @@ export class ChatEntitiesReceiver extends EntitiesReceiver {
     if (!store) return
 
     if (collectionKey === 'users') {
-      const users = parseUserPayloads(rawItems)
-      if (users !== null) {
-        store.upsertUsers(users)
+      const partials = parsePartialUserPayloads(rawItems)
+      if (partials !== null) {
+        store.patchUsers(partials)
+      } else {
+        const users = parseUserPayloads(rawItems)
+        if (users !== null) {
+          store.upsertUsers(users)
+        }
       }
       return
     }

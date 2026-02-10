@@ -1,5 +1,6 @@
 export const HANDSHAKE_RESPONSE = 'handshake_response'
 export const SUBSCRIPTION_PAGE_MAIN = 'subscription_page_main'
+export const SUBSCRIPTION_PAGE_PROFILE = 'subscription_page_profile'
 export const MESSAGE_TYPE_FIELD = 'type'
 export const MESSAGE_PAGE_FIELD = 'page'
 export const MESSAGE_PARAMS_FIELD = 'params'

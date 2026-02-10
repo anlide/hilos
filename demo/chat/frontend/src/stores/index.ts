@@ -125,6 +125,34 @@ export const useChatStore = defineStore('chat', {
     },
 
     /**
+     * Apply partial user updates (e.g. from entities.updates.users: only id + changed fields).
+     * Merges into existing user by id; adds new user if missing and name is provided.
+     */
+    patchUsers(partials: Array<{ id: number; name?: string; lastActivity?: string | null }>) {
+      for (const p of partials) {
+        const idx = this.users.findIndex((user) => user.id === p.id)
+        if (idx >= 0) {
+          const existing = this.users[idx]!
+          // Only apply fields present in patch; absent = keep existing (no overwrite)
+          this.users[idx] = User.fromObject({
+            id: existing.id,
+            name: p.name ?? existing.name,
+            sessionToken: existing.sessionToken,
+            lastActivity: p.lastActivity ?? existing.lastActivity ?? null,
+          })
+        } else if (p.name !== undefined) {
+          this.addUser(
+            User.fromObject({
+              id: p.id,
+              name: p.name,
+              lastActivity: p.lastActivity ?? null,
+            })
+          )
+        }
+      }
+    },
+
+    /**
      * Remove users by id
      */
     removeUsers(userIds: number[]) {

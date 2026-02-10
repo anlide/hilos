@@ -18,4 +18,5 @@ class ChatSignalConstants
     public const string HANDSHAKE_RESPONSE = 'handshake_response';
     public const string NEW_EVENT = 'new_event';
     public const string SUBSCRIPTION_PAGE_MAIN = 'subscription_page_main';
+    public const string SUBSCRIPTION_PAGE_PROFILE = 'subscription_page_profile';
 }

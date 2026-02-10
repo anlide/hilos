@@ -452,6 +452,7 @@ abstract class IdeaRtCollection implements ArrayAccess, Countable, Iterator
             $this->items = [];
             foreach ($stateCollection as $key => $state) {
                 $this->items[$key] = $this->createRtItem($state);
+                unset($state);
             }
             $stateCollection->rewind();
         }

@@ -165,7 +165,7 @@ const handleSubmit = () => {
   const trimmedUsername = localUsername.value.trim()
   saveLoading.value = true
   pendingRenameUsername.value = trimmedUsername
-  sendAction(websocket, 'rename', { username: trimmedUsername })
+  sendAction(websocket, 'rename', { newName: trimmedUsername })
 }
 
 const resetForm = () => {

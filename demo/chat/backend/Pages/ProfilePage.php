@@ -10,6 +10,11 @@ use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Page\AbstractChatPage;
 use Demo\Chat\Database\Idea;
 use Demo\Chat\DTO\Action\RenameActionDTO;
+use Hilos\Constants\SignalTypeConstants;
+use Hilos\Core\Router\SignalData;
+use Hilos\Core\Router\SignalName;
+use Hilos\Core\Router\SignalType;
+use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\DTO\Action\ActionPayloadDTO;
 use Hilos\DTO\EntitiesChangesDTO;
 use Hilos\Logging\Logger\Logger;
@@ -38,7 +43,15 @@ class ProfilePage extends AbstractChatPage
      */
     public function onSubscribe(string $acceptKey): void
     {
-        // TODO: Implement profile page subscription logic
+        $this->signalRouter->queueSignal(
+            signalSource: $this->agent->getAgentSignalSource(),
+            signalType: new SignalType(SignalTypeConstants::WS_USER),
+            signalName: new SignalName(ChatSignalConstants::SUBSCRIPTION_PAGE_PROFILE),
+            signalData: new WebSocketSignalData(
+                data: new SignalData(),
+                targetAcceptKey: $acceptKey,
+            ),
+        );
     }
 
     /**
@@ -91,24 +104,20 @@ class ProfilePage extends AbstractChatPage
             return;
         }
 
-        $renameResult = Idea::$db->users->actions->rename($userId, $dto->newName);
-        if ($renameResult === null) {
-            return; // No change
-        }
+        $oldName = Idea::$db->users[$userId]->name;
+        Idea::$db->users->actions->rename($userId, $dto->newName);
 
-        // Build entities update
-        $user = Idea::$db->users[$userId];
-        if ($user !== null) {
-            $publicUser = $user->toArray(idAsIndex: false, toFrontend: true);
+        $entities = new EntitiesChangesDTO(
+            updates: [
+                Idea::users => [
+                    ['id' => $userId, 'name' => $userId, $dto->newName],
+                ],
+            ],
+        );
 
-            $entities = new EntitiesChangesDTO(
-                updates: [Idea::users => [$publicUser]],
-            );
-
-            $this->getChatAgent()->addEvent(ChatEventType::USER_RENAMED, $userId, [
-                'oldName' => $renameResult['oldName'],
-                'newName' => $renameResult['newName'],
-            ], $entities);
-        }
+        $this->getChatAgent()->addEvent(ChatEventType::USER_RENAMED, $userId, [
+            'oldName' => $oldName,
+            'newName' => $dto->newName,
+        ], $entities);
     }
 }

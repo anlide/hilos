@@ -2,10 +2,10 @@ import {createWebSocketPlugin} from '@hilos/sdk/plugins/websocket'
 import {extractEntitiesEnvelope, hasEntities} from '@hilos/sdk/types'
 import {config} from '@/config'
 import {useChatStore} from '@/stores'
-import {HANDSHAKE_RESPONSE, SUBSCRIPTION_PAGE_MAIN} from '@/constants'
+import {HANDSHAKE_RESPONSE, SUBSCRIPTION_PAGE_MAIN, SUBSCRIPTION_PAGE_PROFILE} from '@/constants'
 import {localStorageService} from '@/services/LocalStorageService'
 import {ChatEntitiesReceiver} from '@/entities/ChatEntitiesReceiver'
-import {eventPayloadToEvent, isRecord, parseEventPayloads, parseUserPayloads} from '@/entities/parsers'
+import {eventPayloadToEvent, isRecord, parseEventPayloads} from '@/entities/parsers'
 
 type RawMessage = {
   type: string
@@ -100,42 +100,35 @@ export function createChatWebSocketPlugin() {
           // Entities (events + users) already applied above via hasEntities
           return
         }
+        case SUBSCRIPTION_PAGE_PROFILE: {
+          // Empty subscription response; entities already applied above if present
+          return
+        }
         case 'subscription_updated': {
           return
         }
         case 'new_event': {
           const envelope = extractEntitiesEnvelope(message.data)
-          // Backend sends new event in full.events (withFullAppended), not in updates.events
           const fromUpdates = parseEventPayloads(envelope?.updates?.events) ?? []
           const fromFull = parseEventPayloads(envelope?.full?.events) ?? []
           const eventPayloads = fromUpdates.length > 0 ? fromUpdates : fromFull
 
           for (const eventPayload of eventPayloads) {
             const event = eventPayloadToEvent(eventPayload)
-
             if (event.type === 'user_renamed') {
               const newName =
-                  typeof event.data.newName === 'string'
-                      ? event.data.newName
-                      : typeof event.data.username === 'string'
-                          ? event.data.username
-                          : undefined
+                typeof event.data.newName === 'string'
+                  ? event.data.newName
+                  : typeof event.data.username === 'string'
+                    ? event.data.username
+                    : undefined
               const oldName = event.data.oldName as string | undefined
-              if (newName && event.userId !== null) {
-                const fullUsers = parseUserPayloads(envelope?.full?.users)
-                const updateUsers = parseUserPayloads(envelope?.updates?.users)
-                const hasEntityUpdate = Boolean(
-                    fullUsers?.some((u) => u.id === event.userId) || updateUsers?.some((u) => u.id === event.userId)
-                )
-                if (!hasEntityUpdate) {
-                  chatStore.upsertUsers([{id: event.userId, name: newName}])
-                }
-                if (
-                    event.userId === chatStore.currentUserId ||
-                    (oldName && oldName === chatStore.currentUsername)
-                ) {
-                  chatStore.currentUsername = newName
-                }
+              if (
+                newName &&
+                (event.userId === chatStore.currentUserId ||
+                  (oldName && oldName === chatStore.currentUsername))
+              ) {
+                chatStore.currentUsername = newName
               }
             }
           }
