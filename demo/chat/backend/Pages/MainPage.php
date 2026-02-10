@@ -11,7 +11,13 @@ use Demo\Chat\Core\Page\AbstractChatPage;
 use Demo\Chat\Database\Idea;
 use Demo\Chat\DTO\Action\FileActionDTO;
 use Demo\Chat\DTO\Action\MessageActionDTO;
+use Demo\Chat\DTO\ChatEventSignalDTO;
+use Hilos\Constants\SignalTypeConstants;
+use Hilos\Core\Router\SignalName;
+use Hilos\Core\Router\SignalType;
 use Hilos\DTO\Action\ActionPayloadDTO;
+use Hilos\DTO\EntitiesChangesDTO;
+use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Logging\Logger\Logger;
 
 /**
@@ -34,11 +40,27 @@ class MainPage extends AbstractChatPage
     /**
      * Handle page-specific subscription logic
      *
+     * When client subscribes to main page, send full events + users snapshot.
+     *
      * @param string $acceptKey Accept key
      */
     public function onSubscribe(string $acceptKey): void
     {
-        // nothing special on subscribe
+        $entities = new EntitiesChangesDTO(
+            full: [
+                Idea::users => Idea::$rt->connections->relevantUsers,
+                Idea::events => Idea::$db->events,
+            ],
+        );
+        $this->signalRouter->queueSignal(
+            signalSource: $this->agent->getAgentSignalSource(),
+            signalType: new SignalType(SignalTypeConstants::WS_USER),
+            signalName: new SignalName(ChatSignalConstants::SUBSCRIPTION_PAGE_MAIN),
+            signalData: new WebSocketSignalData(
+                data: new ChatEventSignalDTO($entities),
+                targetAcceptKey: $acceptKey,
+            ),
+        );
     }
 
     /**

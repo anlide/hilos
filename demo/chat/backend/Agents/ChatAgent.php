@@ -154,13 +154,9 @@ class ChatAgent extends AbstractAgent implements ChatPageAgentInterface
 
         $this->addEvent(ChatEventType::USER_JOINED, $user->id, null, $entities, $data->acceptKey);
 
-        $subscriptionEntities = new EntitiesChangesDTO(
-            full: [
-                Idea::users => Idea::$rt->connections->relevantUsers,
-                Idea::events => Idea::$db->events,
-            ],
-        );
-        $subscriptionData = new HandshakeResponseSignalData(entities: $subscriptionEntities, userId: $user->id);
+        // Handshake sends only the current (authorized) user; events + all users are sent from MainPage on subscribe
+        $handshakeEntities = new EntitiesChangesDTO()->withFull(Idea::users, IdeaUsers::fromSingleItem($user));
+        $subscriptionData = new HandshakeResponseSignalData(entities: $handshakeEntities, userId: $user->id);
         $this->signalRouter->queueSignal(
             signalSource: $this->getAgentSignalSource(),
             signalType: new SignalType(SignalTypeConstants::WS_USER),

@@ -2,7 +2,7 @@ import {createWebSocketPlugin} from '@hilos/sdk/plugins/websocket'
 import {extractEntitiesEnvelope, hasEntities} from '@hilos/sdk/types'
 import {config} from '@/config'
 import {useChatStore} from '@/stores'
-import {HANDSHAKE_RESPONSE} from '@/constants'
+import {HANDSHAKE_RESPONSE, SUBSCRIPTION_PAGE_MAIN} from '@/constants'
 import {localStorageService} from '@/services/LocalStorageService'
 import {ChatEntitiesReceiver} from '@/entities/ChatEntitiesReceiver'
 import {eventPayloadToEvent, isRecord, parseEventPayloads, parseUserPayloads} from '@/entities/parsers'
@@ -94,6 +94,10 @@ export function createChatWebSocketPlugin() {
           const currentUserId = message.data.userId
           const currentUser = chatStore.users.find((u) => u.id === currentUserId)
           chatStore.handleSubscriptionResponse(currentUserId, currentUser?.name ?? '')
+          return
+        }
+        case SUBSCRIPTION_PAGE_MAIN: {
+          // Entities (events + users) already applied above via hasEntities
           return
         }
         case 'subscription_updated': {

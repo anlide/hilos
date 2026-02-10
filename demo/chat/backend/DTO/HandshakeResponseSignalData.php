@@ -12,14 +12,14 @@ use RuntimeException;
 /**
  * HandshakeResponseSignalData - Signal data for handshake response
  *
- * Contains entity snapshot (events + users) and current userId.
- * Username is derived from entities.full.users on frontend.
+ * Contains only the current (authorized) user in entities and current userId.
+ * Full events + users are sent from MainPage on subscribe (main_page_initial).
  * Target client ID is handled by WebSocketSignalData wrapper for routing.
  */
 class HandshakeResponseSignalData extends BaseDTO implements SignalDataInterface
 {
     public function __construct(
-        /** @var EntitiesChangesDTO Entity changes payload (full snapshot: events, users) */
+        /** @var EntitiesChangesDTO Entity payload: only current user (full.users) */
         public readonly EntitiesChangesDTO $entities,
         /** @var int Current user ID */
         public readonly int $userId,
