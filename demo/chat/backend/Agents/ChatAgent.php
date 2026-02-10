@@ -273,6 +273,7 @@ class ChatAgent extends AbstractAgent implements ChatPageAgentInterface
      * @throws IdeaActionsTableNameUndeterminedException If table name cannot be determined
      * @throws IdeaActionsCallbackNotSetException If callback is not set
      * @throws IdeaActionsDuplicateIdException If duplicate ID is detected
+     * @throws IdeaCollectionNotManualException If collection is not manual, or item has no ID
      */
     public function onSignalCron(SignalDataInterface $data, string $source, string $name): void
     {
@@ -280,8 +281,10 @@ class ChatAgent extends AbstractAgent implements ChatPageAgentInterface
         if ($name === ChatCronConstants::CLEANUP_HISTORY) {
             Idea::$db->events->actions->deleteAll();
 
-            // Add ChatClearedEvent as a system event (userId = null for system events)
-            $this->addEvent(ChatEventType::CHAT_CLEARED);
+            // Add ChatClearedEvent as a system event (userId = null for system events).
+            // Entities with replaceFull so frontend replaces events list with this single event.
+            $entities = new EntitiesChangesDTO(replaceFullKeys: ['events']);
+            $this->addEvent(ChatEventType::CHAT_CLEARED, null, null, $entities);
         }
     }
 }

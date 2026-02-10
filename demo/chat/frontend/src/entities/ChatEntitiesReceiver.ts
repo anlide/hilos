@@ -10,6 +10,7 @@ interface ChatStoreForEntities {
   upsertUsers(users: Array<{ id: number; name: string; lastActivity?: string | null }>): void
   upsertEvents(events: ReturnType<typeof eventPayloadToEvent>[]): void
   addEvent(event: ReturnType<typeof eventPayloadToEvent>): void
+  clearEvents(): void
   removeEventsById(ids: number[]): void
   removeUsers(ids: number[]): void
 }
@@ -18,7 +19,12 @@ interface ChatStoreForEntities {
  * Chat-specific entities receiver. Parses users/events from transport and applies to chat store.
  */
 export class ChatEntitiesReceiver extends EntitiesReceiver {
-  protected override applyFull(collectionKey: string, rawItems: unknown[], context?: unknown): void {
+  protected override applyFull(
+    collectionKey: string,
+    rawItems: unknown[],
+    context?: unknown,
+    replace?: boolean,
+  ): void {
     const store = context as ChatStoreForEntities | undefined
     if (!store) return
 
@@ -33,7 +39,13 @@ export class ChatEntitiesReceiver extends EntitiesReceiver {
     if (collectionKey === 'events') {
       const events = parseEventPayloads(rawItems)
       if (events !== null) {
-        store.upsertEvents(events.map(eventPayloadToEvent))
+        const mapped = events.map(eventPayloadToEvent)
+        if (replace) {
+          store.clearEvents()
+          store.upsertEvents(mapped)
+        } else {
+          store.upsertEvents(mapped)
+        }
       }
     }
   }

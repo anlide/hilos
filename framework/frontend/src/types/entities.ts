@@ -7,6 +7,7 @@ export interface EntitiesEnvelope {
   full?: Record<string, unknown[]>
   updates?: Record<string, unknown[]>
   deleted?: Record<string, number[]>
+  replaceFull?: string[]
 }
 
 /**
@@ -46,6 +47,9 @@ export function extractEntitiesEnvelope(payload: unknown): EntitiesEnvelope | nu
   const full = isRecord(entities.full) ? (entities.full as Record<string, unknown[]>) : undefined
   const updates = isRecord(entities.updates) ? (entities.updates as Record<string, unknown[]>) : undefined
   const deleted = isRecord(entities.deleted) ? (entities.deleted as Record<string, unknown>) : undefined
+  const replaceFull = Array.isArray(entities.replaceFull)
+    ? (entities.replaceFull as unknown[]).filter((k): k is string => typeof k === 'string')
+    : undefined
 
   const result: EntitiesEnvelope = {}
 
@@ -74,6 +78,10 @@ export function extractEntitiesEnvelope(payload: unknown): EntitiesEnvelope | nu
         result.deleted[key] = val
       }
     }
+  }
+
+  if (replaceFull !== undefined && replaceFull.length > 0) {
+    result.replaceFull = replaceFull
   }
 
   return result

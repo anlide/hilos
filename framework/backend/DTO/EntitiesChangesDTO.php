@@ -28,16 +28,26 @@ class EntitiesChangesDTO extends BaseDTO
     private readonly array $full;
 
     /**
+     * Collection keys for which full is a full replace (not merge). Empty = current append behavior.
+     *
+     * @var array<int, string>
+     */
+    private readonly array $replaceFullKeys;
+
+    /**
      * @param array<string, IdeaCollection> $full Full snapshot: collection key => one collection
      * @param array<string, array<int, array<string, mixed>>> $updates
      * @param array<string, array<int, int|string>> $deleted
+     * @param array<int, string> $replaceFullKeys Keys where full means replace entire collection
      */
     public function __construct(
         array $full = [],
         public readonly array $updates = [],
         public readonly array $deleted = [],
+        array $replaceFullKeys = [],
     ) {
         $this->full = $full;
+        $this->replaceFullKeys = $replaceFullKeys;
     }
 
     /**
@@ -51,7 +61,7 @@ class EntitiesChangesDTO extends BaseDTO
     {
         $full = $this->full;
         $full[$key] = $collection;
-        return new static(full: $full, updates: $this->updates, deleted: $this->deleted);
+        return new static(full: $full, updates: $this->updates, deleted: $this->deleted, replaceFullKeys: $this->replaceFullKeys);
     }
 
     /**
@@ -70,7 +80,7 @@ class EntitiesChangesDTO extends BaseDTO
         $merged = $existing !== null ? $existing->mergeWith($toAppend) : $toAppend;
         $full = $this->full;
         $full[$collection] = $merged;
-        return new static(full: $full, updates: $this->updates, deleted: $this->deleted);
+        return new static(full: $full, updates: $this->updates, deleted: $this->deleted, replaceFullKeys: $this->replaceFullKeys);
     }
 
     /**
@@ -98,6 +108,10 @@ class EntitiesChangesDTO extends BaseDTO
             $payload['deleted'] = $this->deleted;
         }
 
+        if ($this->replaceFullKeys !== []) {
+            $payload['replaceFull'] = $this->replaceFullKeys;
+        }
+
         return $payload;
     }
 
@@ -110,10 +124,20 @@ class EntitiesChangesDTO extends BaseDTO
      */
     public static function fromArray(array $data): static
     {
+        $replaceFullKeys = [];
+        if (isset($data['replaceFull']) && is_array($data['replaceFull'])) {
+            foreach ($data['replaceFull'] as $key) {
+                if (is_string($key)) {
+                    $replaceFullKeys[] = $key;
+                }
+            }
+        }
+
         return new static(
             full: [],
             updates: isset($data['updates']) && is_array($data['updates']) ? $data['updates'] : [],
             deleted: isset($data['deleted']) && is_array($data['deleted']) ? $data['deleted'] : [],
+            replaceFullKeys: $replaceFullKeys,
         );
     }
 }

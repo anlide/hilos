@@ -113,10 +113,6 @@ export function createChatWebSocketPlugin() {
           for (const eventPayload of eventPayloads) {
             const event = eventPayloadToEvent(eventPayload)
 
-            if (event.type === 'chat_cleared') {
-              chatStore.clearEvents()
-              chatStore.addEvent(event)
-            }
             if (event.type === 'user_renamed') {
               const newName =
                   typeof event.data.newName === 'string'

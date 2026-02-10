@@ -26,8 +26,10 @@ export abstract class EntitiesReceiver {
     }
 
     if (envelope.full !== undefined) {
+      const replaceSet = new Set(envelope.replaceFull ?? [])
       for (const [collectionKey, rawItems] of Object.entries(envelope.full)) {
-        this.applyFull(collectionKey, rawItems, context)
+        const replace = replaceSet.has(collectionKey)
+        this.applyFull(collectionKey, rawItems, context, replace)
       }
     }
 
@@ -45,14 +47,21 @@ export abstract class EntitiesReceiver {
   }
 
   /**
-   * Handle full snapshot for a collection (replace/set entire list).
+   * Handle full snapshot for a collection (replace or merge).
    * Override in project: parse rawItems into typed entities and write to store.
+   * When replace is true, replace entire collection with rawItems; when false, merge/append.
    *
    * @param _collectionKey - Collection name (e.g. 'users', 'events')
    * @param _rawItems - Array of raw items from transport
    * @param _context - Application context (e.g. store)
+   * @param _replace - If true, replace entire collection; if false, merge/append (default behavior)
    */
-  protected applyFull(_collectionKey: string, _rawItems: unknown[], _context?: unknown): void {
+  protected applyFull(
+    _collectionKey: string,
+    _rawItems: unknown[],
+    _context?: unknown,
+    _replace?: boolean,
+  ): void {
     // Override in subclass
   }
 
