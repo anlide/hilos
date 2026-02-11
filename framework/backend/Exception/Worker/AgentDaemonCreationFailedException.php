@@ -4,12 +4,13 @@ declare(strict_types=1);
 
 namespace Hilos\Exception\Worker;
 
+use Hilos\Exception\HilosException;
 use Throwable;
 
 /**
  * Exception thrown when agent daemon creation fails
  */
-class AgentDaemonCreationFailedException extends \Exception
+class AgentDaemonCreationFailedException extends HilosException
 {
     public function __construct(string $agentType, ?string $agentIndex = null, ?Throwable $previous = null)
     {

@@ -1,12 +1,12 @@
 <?php
 
-namespace Hilos\Exception;
+declare(strict_types=1);
 
-use Exception;
+namespace Hilos\Exception;
 
 /**
  * Base exception for Runtime system
  */
-class RuntimeException extends Exception
+class RuntimeException extends HilosException
 {
 }

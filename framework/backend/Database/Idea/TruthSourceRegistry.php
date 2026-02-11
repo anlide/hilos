@@ -13,7 +13,7 @@ use Hilos\Exception\Idea\TruthSource\IdeaTruthSourceWriteNotAllowedException;
  *
  * Usage:
  *   // In Agent::onStart()
- *   TruthSourceRegistry::register(Idea::getTableName(Idea::users), true, $this->getId());
+ *   TruthSourceRegistry::register(Idea::users, true, $this->getId());
  *
  *   // In Agent::onStop()
  *   TruthSourceRegistry::unregisterAgent($this->getId());

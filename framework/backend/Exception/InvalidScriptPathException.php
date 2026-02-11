@@ -12,7 +12,7 @@ use Throwable;
  * This exception is used when a script path fails validation,
  * such as when the path doesn't exist, is not a file, or has wrong extension.
  */
-class InvalidScriptPathException extends \Exception
+class InvalidScriptPathException extends HilosException
 {
     public function __construct(string $message, ?Throwable $previous = null)
     {

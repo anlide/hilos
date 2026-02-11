@@ -4,12 +4,13 @@ declare(strict_types=1);
 
 namespace Hilos\Exception\Worker;
 
+use Hilos\Exception\HilosException;
 use Throwable;
 
 /**
  * Exception thrown when agent daemon factory is not configured
  */
-class AgentDaemonFactoryNotConfiguredException extends \Exception
+class AgentDaemonFactoryNotConfiguredException extends HilosException
 {
     public function __construct(?Throwable $previous = null)
     {

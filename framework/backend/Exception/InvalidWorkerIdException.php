@@ -9,7 +9,7 @@ use Throwable;
 /**
  * Exception thrown when worker ID is missing or invalid
  */
-class InvalidWorkerIdException extends \Exception
+class InvalidWorkerIdException extends HilosException
 {
     public function __construct(string $reason, ?Throwable $previous = null)
     {

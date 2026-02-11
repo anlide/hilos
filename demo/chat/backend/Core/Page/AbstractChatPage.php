@@ -13,33 +13,16 @@ use Hilos\Core\Router\SignalRouter;
  *
  * Provides base implementation for chat-specific page logic.
  * Child classes must implement page-specific subscribe, unsubscribe, and action handlers.
- *
- * @property ChatPageAgentInterface $agent
  */
 abstract class AbstractChatPage extends AbstractPage
 {
-    /** @var ChatPageAgentInterface Agent instance (typed for chat) */
-    protected PageAgentInterface $agent;
-
     /**
-     * Constructor
+     * Get chat agent (same as $this->agent, typed for convenience)
      *
-     * @param SignalRouter $signalRouter Signal router instance
-     * @param ChatPageAgentInterface $agent Chat agent instance
+     * @return PageAgentInterface
      */
-    public function __construct(SignalRouter $signalRouter, ChatPageAgentInterface $agent)
+    protected function getChatAgent(): PageAgentInterface
     {
-        parent::__construct($signalRouter, $agent);
-    }
-
-    /**
-     * Get typed chat agent
-     *
-     * @return ChatPageAgentInterface
-     */
-    protected function getChatAgent(): ChatPageAgentInterface
-    {
-        /** @var ChatPageAgentInterface */
         return $this->agent;
     }
 }

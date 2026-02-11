@@ -9,12 +9,9 @@ use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Page\AbstractChatPage;
 use Demo\Chat\Database\Idea;
+use Demo\Chat\Database\IdeaCollection\Events as IdeaEvents;
 use Demo\Chat\DTO\Action\RenameActionDTO;
-use Hilos\Constants\SignalTypeConstants;
-use Hilos\Core\Router\SignalData;
-use Hilos\Core\Router\SignalName;
-use Hilos\Core\Router\SignalType;
-use Hilos\Core\Router\WebSocketSignalData;
+use Demo\Chat\DTO\ChatEventSignalDTO;
 use Hilos\DTO\Action\ActionPayloadDTO;
 use Hilos\DTO\EntitiesChangesDTO;
 use Hilos\Exception\DatabaseException;
@@ -48,14 +45,10 @@ class ProfilePage extends AbstractChatPage
      */
     public function onSubscribe(string $acceptKey): void
     {
-        $this->signalRouter->queueSignal(
-            signalSource: $this->agent->getAgentSignalSource(),
-            signalType: new SignalType(SignalTypeConstants::WS_USER),
-            signalName: new SignalName(ChatSignalConstants::SUBSCRIPTION_PAGE_PROFILE),
-            signalData: new WebSocketSignalData(
-                data: new SignalData(),
-                targetAcceptKey: $acceptKey,
-            ),
+        $this->getChatAgent()->sendToUser(
+            ChatSignalConstants::SUBSCRIPTION_PAGE_PROFILE,
+            $acceptKey,
+            new ChatEventSignalDTO(new EntitiesChangesDTO()),
         );
     }
 
@@ -121,17 +114,17 @@ class ProfilePage extends AbstractChatPage
         $oldName = Idea::$db->users[Idea::$rt->connections[$acceptKey]->userId]->name;
         Idea::$db->users->actions->rename(Idea::$rt->connections[$acceptKey]->userId, $dto->newName);
 
-        $entities = new EntitiesChangesDTO(
-            updates: [
-                Idea::users => [
-                    ['id' => Idea::$rt->connections[$acceptKey]->userId, 'name' => $dto->newName],
-                ],
-            ],
-        );
-
-        $this->getChatAgent()->addEvent(ChatEventType::USER_RENAMED, Idea::$rt->connections[$acceptKey]->userId, [
+        $userId = Idea::$rt->connections[$acceptKey]->userId;
+        $event = Idea::$db->events->actions->add(ChatEventType::USER_RENAMED->value, $userId, [
             'oldName' => $oldName,
             'newName' => $dto->newName,
-        ], $entities);
+        ]);
+        $this->getChatAgent()->sendToAllUsers(
+            ChatSignalConstants::NEW_EVENT,
+            new ChatEventSignalDTO(new EntitiesChangesDTO(
+                full: [Idea::events => IdeaEvents::fromSingleItem($event)],
+                updates: [Idea::users => [['id' => $userId, 'name' => $dto->newName]]],
+            )),
+        );
     }
 }

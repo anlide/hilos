@@ -4,12 +4,13 @@ declare(strict_types=1);
 
 namespace Hilos\Exception\Worker;
 
+use Hilos\Exception\HilosException;
 use Throwable;
 
 /**
  * Exception thrown when agent does not exist after startAgent() call
  */
-class AgentNotFoundException extends \Exception
+class AgentNotFoundException extends HilosException
 {
     public function __construct(string $agentId, ?Throwable $previous = null)
     {

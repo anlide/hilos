@@ -9,39 +9,20 @@ use Demo\Chat\Constants\ChatCronConstants;
 use Demo\Chat\Constants\ChatEventType;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\HttpHeaders;
-use Demo\Chat\Core\Page\ChatPageAgentInterface;
 use Demo\Chat\Database\Idea;
 use Demo\Chat\Database\IdeaCollection\Events as IdeaEvents;
 use Demo\Chat\Database\IdeaCollection\Users as IdeaUsers;
 use Demo\Chat\DTO\ChatEventSignalDTO;
 use Demo\Chat\DTO\HandshakeResponseSignalData;
 use Demo\Chat\Runtime\ChatRuntime;
-use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Router\SignalDataInterface;
-use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalRouter;
-use Hilos\Core\Router\SignalType;
-use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Database\Idea\TruthSourceRegistry;
 use Hilos\DTO\EntitiesChangesDTO;
 use Hilos\DTO\WebSocket\WebSocketCloseSignalDTO;
 use Hilos\DTO\WebSocket\WebSocketHandshakeSignalDTO;
-use Hilos\Exception\DatabaseException;
-use Hilos\Exception\Idea\Actions\IdeaActionsCallbackNotSetException;
-use Hilos\Exception\Idea\Actions\IdeaActionsDuplicateIdException;
-use Hilos\Exception\Idea\Actions\IdeaActionsObjectCollectionNullException;
-use Hilos\Exception\Idea\Actions\IdeaActionsTableNameUndeterminedException;
-use Hilos\Exception\Idea\Actions\IdeaActionsUnknownLazyStrategyException;
-use Hilos\Exception\Idea\Collection\IdeaCollectionNotManualException;
-use Hilos\Exception\Idea\Entity\IdeaEntityClassNotFoundException;
-use Hilos\Exception\Idea\Entity\IdeaEntityMappingNotFoundException;
-use Hilos\Exception\Idea\Entity\IdeaEntityTableConstantNotFoundException;
-use Hilos\Exception\Idea\TruthSource\IdeaTruthSourceWriteNotAllowedException;
-use Hilos\Exception\Runtime\Actions\IdeaRtActionsCallbackNotSetException;
-use Hilos\Exception\Runtime\Actions\IdeaRtActionsCollectionNameNullException;
-use Hilos\Exception\Runtime\Actions\IdeaRtActionsStateCollectionNullException;
-use Hilos\Exception\Runtime\TruthSource\RtTruthSourceWriteNotAllowedException;
+use Hilos\Exception\HilosException;
 use Hilos\Logging\Logger\Logger;
 use Hilos\Runtime\RtTruthSourceRegistry;
 
@@ -51,7 +32,7 @@ use Hilos\Runtime\RtTruthSourceRegistry;
  * Runs in monopolistic worker process. Manages chat state and history.
  * State stored only in memory (no persistence).
  */
-class ChatAgent extends AbstractAgent implements ChatPageAgentInterface
+class ChatAgent extends AbstractAgent
 {
     /**
      * Constructor
@@ -87,22 +68,14 @@ class ChatAgent extends AbstractAgent implements ChatPageAgentInterface
 
     /**
      * Called when agent is started
-     * @throws DatabaseException If database operation fails
-     * @throws IdeaEntityMappingNotFoundException If collection not found in mapping
-     * @throws IdeaEntityClassNotFoundException If entity class does not exist
-     * @throws IdeaEntityTableConstantNotFoundException If entity class does not have _table constant
-     * @throws IdeaActionsCallbackNotSetException
-     * @throws IdeaActionsUnknownLazyStrategyException If unknown lazy loading strategy
-     * @throws IdeaActionsObjectCollectionNullException If ObjectCollection is null
-     * @throws IdeaTruthSourceWriteNotAllowedException If write is not allowed
-     * @throws IdeaActionsTableNameUndeterminedException If table name cannot be determined
-     * @throws IdeaActionsDuplicateIdException If duplicate ID encountered
+     *
+     * @throws HilosException If database operation fails or truth source registration fails
      */
     public function onStart(): void
     {
         // Register this agent as truth source for database tables (all keys)
-        TruthSourceRegistry::register(Idea::getTableName(Idea::events), true, $this->getId());
-        TruthSourceRegistry::register(Idea::getTableName(Idea::users), true, $this->getId());
+        TruthSourceRegistry::register(Idea::events, true, $this->getId());
+        TruthSourceRegistry::register(Idea::users, true, $this->getId());
 
         // Register this agent as truth source for runtime collections (all keys)
         RtTruthSourceRegistry::register(ChatRuntime::connections, true, $this->getId());
@@ -117,19 +90,7 @@ class ChatAgent extends AbstractAgent implements ChatPageAgentInterface
      * @param WebSocketHandshakeSignalDTO $data
      * @param string $source
      * @param string $name
-     * @return void Created connection wrapper
-     * @throws DatabaseException If database operation fails
-     * @throws IdeaActionsCallbackNotSetException If callback is not set
-     * @throws IdeaActionsDuplicateIdException If duplicate ID is detected
-     * @throws IdeaActionsObjectCollectionNullException If ObjectCollection is null
-     * @throws IdeaActionsTableNameUndeterminedException If table name cannot be determined
-     * @throws IdeaActionsUnknownLazyStrategyException If unknown lazy loading strategy
-     * @throws IdeaRtActionsCallbackNotSetException If callback for creating IdeaRtItem is not set
-     * @throws IdeaRtActionsCollectionNameNullException If collection name is null
-     * @throws IdeaRtActionsStateCollectionNullException If state collection is null
-     * @throws IdeaTruthSourceWriteNotAllowedException If write is not allowed
-     * @throws RtTruthSourceWriteNotAllowedException If no truth source registered
-     * @throws IdeaCollectionNotManualException If collection is not manual, or item has no ID
+     * @throws HilosException If database, runtime or truth source check fails
      */
     public function onSignalHandshake(WebSocketHandshakeSignalDTO $data, string $source, string $name): void
     {
@@ -144,27 +105,23 @@ class ChatAgent extends AbstractAgent implements ChatPageAgentInterface
             $user = Idea::$db->users->actions->register($sessionToken);
         }
 
-        $wasAlreadyKnown = isset(Idea::$rt->connections->relevantUsers[$user->id]);
-
-        // Register connection in runtime
         Idea::$rt->connections->actions->register($data->acceptKey, $user->id);
+        $event = Idea::$db->events->actions->add(ChatEventType::USER_JOINED->value, $user->id);
 
-        $entities = !$wasAlreadyKnown
-            ? new EntitiesChangesDTO()->withFull(Idea::users, IdeaUsers::fromSingleItem($user))
-            : null;
+        $userEntities = new EntitiesChangesDTO(full: [Idea::users => IdeaUsers::fromSingleItem($user)]);
 
-        $this->addEvent(ChatEventType::USER_JOINED, $user->id, null, $entities, $data->acceptKey);
+        $this->sendToAllUsers(
+            ChatSignalConstants::NEW_EVENT,
+            new ChatEventSignalDTO($userEntities->withFullAppended(Idea::events, IdeaEvents::fromSingleItem($event))),
+            $data->acceptKey,
+        );
 
-        // Handshake sends only the current (authorized) user; events + all users are sent from MainPage on subscribe
-        $handshakeEntities = new EntitiesChangesDTO()->withFull(Idea::users, IdeaUsers::fromSingleItem($user));
-        $subscriptionData = new HandshakeResponseSignalData(entities: $handshakeEntities, userId: $user->id);
-        $this->signalRouter->queueSignal(
-            signalSource: $this->getAgentSignalSource(),
-            signalType: new SignalType(SignalTypeConstants::WS_USER),
-            signalName: new SignalName(ChatSignalConstants::HANDSHAKE_RESPONSE),
-            signalData: new WebSocketSignalData(
-                data: $subscriptionData,
-                targetAcceptKey: $data->acceptKey,
+        $this->sendToUser(
+            ChatSignalConstants::HANDSHAKE_RESPONSE,
+            $data->acceptKey,
+            new HandshakeResponseSignalData(
+                entities: $userEntities,
+                userId: $user->id,
             ),
         );
     }
@@ -176,9 +133,7 @@ class ChatAgent extends AbstractAgent implements ChatPageAgentInterface
      * @param WebSocketCloseSignalDTO $data
      * @param string $source
      * @param string $name
-     * @throws RtTruthSourceWriteNotAllowedException If no truth source registered
-     * @throws IdeaRtActionsStateCollectionNullException If state collection is null
-     * @throws IdeaRtActionsCollectionNameNullException If collection name is null
+     * @throws HilosException If runtime unregister fails
      */
     public function onSignalConnectionClose(WebSocketCloseSignalDTO $data, string $source, string $name): void
     {
@@ -188,17 +143,7 @@ class ChatAgent extends AbstractAgent implements ChatPageAgentInterface
     /**
      * Called when agent is stopped
      *
-     * @throws DatabaseException If database operation fails
-     * @throws IdeaActionsCallbackNotSetException If callback is not set
-     * @throws IdeaActionsUnknownLazyStrategyException If unknown lazy loading strategy
-     * @throws IdeaActionsObjectCollectionNullException If ObjectCollection is null
-     * @throws IdeaTruthSourceWriteNotAllowedException If write is not allowed
-     * @throws IdeaActionsTableNameUndeterminedException If table name cannot be determined
-     * @throws IdeaActionsDuplicateIdException If duplicate ID is detected
-     * @throws IdeaRtActionsStateCollectionNullException If state collection is null
-     * @throws IdeaRtActionsCallbackNotSetException If runtime callback is not set
-     * @throws IdeaRtActionsCollectionNameNullException If collection name is null
-     * @throws RtTruthSourceWriteNotAllowedException If no runtime truth source registered
+     * @throws HilosException If database operation or unregistration fails
      */
     public function onStop(): void
     {
@@ -231,66 +176,12 @@ class ChatAgent extends AbstractAgent implements ChatPageAgentInterface
     }
 
     /**
-     * Add event to history
-     *
-     * @param ChatEventType $type Event type
-     * @param ?int $userId User ID (null for system events)
-     * @param ?array $data Event-specific data (optional)
-     * @param ?EntitiesChangesDTO $entities Entity updates for broadcast (optional)
-     * @param ?string $excludeAcceptKey Accept key to exclude from receiving the event (optional)
-     * @throws DatabaseException If database operation fails
-     * @throws IdeaActionsCallbackNotSetException If callback is not set
-     * @throws IdeaActionsDuplicateIdException If duplicate ID is detected
-     * @throws IdeaActionsObjectCollectionNullException If ObjectCollection is null
-     * @throws IdeaActionsTableNameUndeterminedException If table name cannot be determined
-     * @throws IdeaActionsUnknownLazyStrategyException If unknown lazy loading strategy
-     * @throws IdeaTruthSourceWriteNotAllowedException If write is not allowed
-     * @throws IdeaCollectionNotManualException If collection is not manual, or item has no ID
-     */
-    public function addEvent(
-        ChatEventType $type,
-        ?int $userId = null,
-        ?array $data = null,
-        ?EntitiesChangesDTO $entities = null,
-        ?string $excludeAcceptKey = null,
-    ): void
-    {
-        $event = Idea::$db->events->actions->add($type->value, $userId, $data);
-
-        $base = $entities ?? new EntitiesChangesDTO();
-        $mergedEntities = $base->withFullAppended(
-            Idea::events,
-            IdeaEvents::fromSingleItem($event),
-        );
-
-        $eventData = new ChatEventSignalDTO($mergedEntities);
-
-        // Wrap event data in WebSocketSignalData for WebSocket routing
-        $this->signalRouter->queueSignal(
-            signalSource: $this->getAgentSignalSource(),
-            signalType: new SignalType(SignalTypeConstants::WS_ALL),
-            signalName: new SignalName(ChatSignalConstants::NEW_EVENT),
-            signalData: new WebSocketSignalData(
-                data: $eventData,
-                excludeAcceptKey: $excludeAcceptKey,
-            ),
-        );
-    }
-
-    /**
      * Handle cron signal
      *
      * @param string $source Signal source
      * @param string $name Signal name
      * @param SignalDataInterface $data Signal data
-     * @throws DatabaseException If database operation fails
-     * @throws IdeaActionsUnknownLazyStrategyException If unknown lazy loading strategy
-     * @throws IdeaActionsObjectCollectionNullException If ObjectCollection is null
-     * @throws IdeaTruthSourceWriteNotAllowedException If write is not allowed
-     * @throws IdeaActionsTableNameUndeterminedException If table name cannot be determined
-     * @throws IdeaActionsCallbackNotSetException If callback is not set
-     * @throws IdeaActionsDuplicateIdException If duplicate ID is detected
-     * @throws IdeaCollectionNotManualException If collection is not manual, or item has no ID
+     * @throws HilosException If database or truth source check fails
      */
     public function onSignalCron(SignalDataInterface $data, string $source, string $name): void
     {
@@ -298,10 +189,17 @@ class ChatAgent extends AbstractAgent implements ChatPageAgentInterface
         if ($name === ChatCronConstants::CLEANUP_HISTORY) {
             Idea::$db->events->actions->deleteAll();
 
-            // Add ChatClearedEvent as a system event (userId = null for system events).
-            // Entities with replaceFull so frontend replaces events list with this single event.
-            $entities = new EntitiesChangesDTO(replaceFullKeys: [Idea::events]);
-            $this->addEvent(ChatEventType::CHAT_CLEARED, null, null, $entities);
+            $event = Idea::$db->events->actions->add(ChatEventType::CHAT_CLEARED->value);
+
+            $this->sendToAllUsers(
+                ChatSignalConstants::NEW_EVENT,
+                new ChatEventSignalDTO(
+                    new EntitiesChangesDTO(
+                        full: [Idea::events => IdeaEvents::fromSingleItem($event)],
+                        replaceFullKeys: [Idea::events],
+                    ),
+                ),
+            );
         }
     }
 }

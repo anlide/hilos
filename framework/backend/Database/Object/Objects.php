@@ -385,6 +385,14 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
     abstract public function getTableName(): string;
 
     /**
+     * Get collection key (Idea key, e.g. 'events', 'users')
+     * Used for TruthSourceRegistry. Must be implemented in child classes.
+     *
+     * @return string Collection key
+     */
+    abstract public function getCollectionKey(): string;
+
+    /**
      * Filter collection by filter criteria
      * Uses truth source to avoid loading from DB if keys are already in memory
      * Currently works for LAZY_STRATEGY_NONE (when all objects are already loaded)
@@ -395,8 +403,8 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
      */
     public function filter(FilterInterface $filter): FilteredCollection
     {
-        $table = $this->getTableName();
-        $truthSourceKeys = TruthSourceRegistry::getTruthSourceKeys($table);
+        $collectionKey = $this->getCollectionKey();
+        $truthSourceKeys = TruthSourceRegistry::getTruthSourceKeys($collectionKey);
 
         $filteredObjects = [];
 

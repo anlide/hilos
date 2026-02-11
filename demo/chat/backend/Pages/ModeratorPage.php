@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Pages;
 
+use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Page\AbstractChatPage;
+use Demo\Chat\DTO\ChatEventSignalDTO;
 use Hilos\DTO\Action\ActionPayloadDTO;
+use Hilos\DTO\EntitiesChangesDTO;
 
 /**
  * ModeratorPage - Moderator page handler
@@ -32,7 +35,11 @@ class ModeratorPage extends AbstractChatPage
      */
     public function onSubscribe(string $acceptKey): void
     {
-        // TODO: Implement moderator page subscription logic
+        $this->getChatAgent()->sendToUser(
+            ChatSignalConstants::SUBSCRIPTION_PAGE_MODERATOR,
+            $acceptKey,
+            new ChatEventSignalDTO(new EntitiesChangesDTO()),
+        );
     }
 
     /**

@@ -2,18 +2,16 @@
 
 namespace Hilos\Exception;
 
-use Exception;
-
 /**
  * Base SQL exception class
  */
-class DatabaseException extends Exception
+class DatabaseException extends HilosException
 {
     protected int $mysqlErrorCode = 0;
     protected string $mysqlErrorMessage = '';
     protected string $query = '';
 
-    public function __construct(string $message = '', int $code = 0, ?Exception $previous = null)
+    public function __construct(string $message = '', int $code = 0, ?\Throwable $previous = null)
     {
         parent::__construct($message, $code, $previous);
     }

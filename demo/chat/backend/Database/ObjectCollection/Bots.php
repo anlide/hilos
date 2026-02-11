@@ -6,6 +6,7 @@ use ArrayAccess;
 use Countable;
 use Demo\Chat\Database\Entity\Bot as EntityBot;
 use Demo\Chat\Database\EntityCollection\Bots as EntityBots;
+use Demo\Chat\Database\Idea;
 use Demo\Chat\Database\Object\Bot as ObjectBot;
 use Hilos\Database\Database;
 use Hilos\Database\Object\Objects;
@@ -61,6 +62,11 @@ final class Bots extends Objects implements Iterator, ArrayAccess, Countable
     public function getTableName(): string
     {
         return EntityBot::_table;
+    }
+
+    public function getCollectionKey(): string
+    {
+        return Idea::bots;
     }
 
     /**

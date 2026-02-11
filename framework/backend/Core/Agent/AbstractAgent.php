@@ -4,11 +4,15 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Agent;
 
+use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Page\PageAgentInterface;
+use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalSourceInterface;
 use Hilos\Core\Router\SignalDataInterface;
+use Hilos\Core\Router\SignalType;
+use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\DTO\WebSocket\WebSocketActionSignalDTO;
 use Hilos\DTO\WebSocket\WebSocketFrameBinarySignalDTO;
 use Hilos\DTO\WebSocket\WebSocketCloseSignalDTO;
@@ -74,6 +78,58 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface
             source: SignalSource::AGENT,
             type: $this->getType(),
             index: $this->getIndex(),
+        );
+    }
+
+    /**
+     * Send signal to a specific user (WebSocket connection by acceptKey).
+     *
+     * @param string $signalName Signal name (e.g. ChatSignalConstants::HANDSHAKE_RESPONSE)
+     * @param string $targetAcceptKey Target connection acceptKey
+     * @param SignalDataInterface $data Signal payload
+     */
+    public function sendToUser(string $signalName, string $targetAcceptKey, SignalDataInterface $data): void
+    {
+        $this->signalRouter->queueSignal(
+            signalSource: $this->getAgentSignalSource(),
+            signalType: new SignalType(SignalTypeConstants::WS_USER),
+            signalName: new SignalName($signalName),
+            signalData: new WebSocketSignalData(data: $data, targetAcceptKey: $targetAcceptKey),
+        );
+    }
+
+    /**
+     * Send signal to all users (broadcast). Optionally exclude one connection.
+     *
+     * @param string $signalName Signal name
+     * @param SignalDataInterface $data Signal payload
+     * @param ?string $excludeAcceptKey Optional acceptKey to exclude from delivery
+     */
+    public function sendToAllUsers(string $signalName, SignalDataInterface $data, ?string $excludeAcceptKey = null): void
+    {
+        $this->signalRouter->queueSignal(
+            signalSource: $this->getAgentSignalSource(),
+            signalType: new SignalType(SignalTypeConstants::WS_ALL),
+            signalName: new SignalName($signalName),
+            signalData: new WebSocketSignalData(data: $data, excludeAcceptKey: $excludeAcceptKey),
+        );
+    }
+
+    /**
+     * Send signal to all users subscribed to a group.
+     *
+     * @param string $signalName Signal name
+     * @param string $targetGroup Group name
+     * @param SignalDataInterface $data Signal payload
+     * @param ?string $excludeAcceptKey Optional acceptKey to exclude from delivery
+     */
+    public function sendToGroup(string $signalName, string $targetGroup, SignalDataInterface $data, ?string $excludeAcceptKey = null): void
+    {
+        $this->signalRouter->queueSignal(
+            signalSource: $this->getAgentSignalSource(),
+            signalType: new SignalType(SignalTypeConstants::WS_GROUP),
+            signalName: new SignalName($signalName),
+            signalData: new WebSocketSignalData(data: $data, targetGroup: $targetGroup, excludeAcceptKey: $excludeAcceptKey),
         );
     }
 

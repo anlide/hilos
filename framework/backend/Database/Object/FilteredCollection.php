@@ -41,9 +41,18 @@ class FilteredCollection extends Objects
      * Get table name from Entity
      * Delegates to source collection
      */
-    protected function getTableName(): string
+    public function getTableName(): string
     {
         return $this->sourceCollection->getTableName();
+    }
+
+    /**
+     * Get collection key
+     * Delegates to source collection
+     */
+    public function getCollectionKey(): string
+    {
+        return $this->sourceCollection->getCollectionKey();
     }
 
     // Override methods to work with filtered objects only
@@ -100,7 +109,7 @@ class FilteredCollection extends Objects
     }
 
     // Abstract methods - must implement but not used in filtered collection
-    public static function initEmpty(): self
+    public static function initEmpty(): static
     {
         throw new \RuntimeException("FilteredCollection cannot be initialized directly");
     }

@@ -4,6 +4,7 @@ namespace Demo\Chat\Database\ObjectCollection;
 
 use ArrayAccess;
 use Countable;
+use Demo\Chat\Database\Idea;
 use Demo\Chat\Database\Entity\Event as EntityEvent;
 use Demo\Chat\Database\EntityCollection\Events as EntityEvents;
 use Demo\Chat\Database\Object\Event as ObjectEvent;
@@ -156,6 +157,11 @@ final class Events extends Objects implements Iterator, ArrayAccess, Countable
         return EntityEvent::_table;
     }
 
+    public function getCollectionKey(): string
+    {
+        return Idea::events;
+    }
+
     /**
      * Delete all events from database
      * Clears collection cache - lazy load will reload on next access
@@ -187,11 +193,10 @@ final class Events extends Objects implements Iterator, ArrayAccess, Countable
     {
         // For LAZY_STRATEGY_NONE: Check if truth source is registered
         if ($this->_lazyStrategy === Objects::LAZY_STRATEGY_NONE) {
-            $table = EntityEvent::_table;
-            $hasTruthSource = \Hilos\Database\Idea\TruthSourceRegistry::hasTruthSource($table);
+            $hasTruthSource = \Hilos\Database\Idea\TruthSourceRegistry::hasTruthSource(Idea::events);
 
             if (!$hasTruthSource) {
-                throw new IdeaTruthSourceWriteNotAllowedException("Write operation not allowed: no truth source registered for table '{$table}'. Register via TruthSourceRegistry::register() first.");
+                throw new IdeaTruthSourceWriteNotAllowedException("Write operation not allowed: no truth source registered for collection '" . Idea::events . "'. Register via TruthSourceRegistry::register() first.");
             }
 
             // Ensure all data is loaded before write (for consistency)

@@ -19,4 +19,11 @@ class ChatSignalConstants
     public const string NEW_EVENT = 'new_event';
     public const string SUBSCRIPTION_PAGE_MAIN = 'subscription_page_main';
     public const string SUBSCRIPTION_PAGE_PROFILE = 'subscription_page_profile';
+    public const string SUBSCRIPTION_PAGE_USER = 'subscription_page_user';
+    public const string SUBSCRIPTION_PAGE_BOT = 'subscription_page_bot';
+    public const string SUBSCRIPTION_PAGE_MODERATOR = 'subscription_page_moderator';
+    public const string SUBSCRIPTION_PAGE_ADMIN = 'subscription_page_admin';
+    public const string SUBSCRIPTION_PAGE_ADMIN_USERS = 'subscription_page_admin_users';
+    public const string SUBSCRIPTION_PAGE_ADMIN_MODERATOR = 'subscription_page_admin_moderator';
+    public const string SUBSCRIPTION_PAGE_ADMIN_BOTS = 'subscription_page_admin_bots';
 }

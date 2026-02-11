@@ -9,7 +9,7 @@ use Throwable;
 /**
  * Exception thrown when a required environment variable is missing
  */
-class MissingEnvironmentVariableException extends \Exception
+class MissingEnvironmentVariableException extends HilosException
 {
     public function __construct(string $variableName, ?Throwable $previous = null)
     {

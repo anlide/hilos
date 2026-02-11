@@ -4,12 +4,13 @@ declare(strict_types=1);
 
 namespace Hilos\Exception\Worker;
 
+use Hilos\Exception\HilosException;
 use Throwable;
 
 /**
  * Exception thrown when worker client is not found for agent
  */
-class WorkerClientNotFoundException extends \Exception
+class WorkerClientNotFoundException extends HilosException
 {
     public function __construct(string $agentId, int $workerIndex, bool $isMonopolistic, ?Throwable $previous = null)
     {

@@ -4,13 +4,12 @@ declare(strict_types=1);
 
 namespace Hilos\Exception;
 
-use Exception;
 use Throwable;
 
 /**
  * Base exception for socket-related errors
  */
-class SocketException extends Exception
+class SocketException extends HilosException
 {
     public function __construct(string $message, int $code = 0, ?Throwable $previous = null)
     {

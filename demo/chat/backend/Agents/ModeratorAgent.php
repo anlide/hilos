@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Demo\Chat\Agents;
 
 use Demo\Chat\Constants\AgentType;
+use Demo\Chat\Database\Idea;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Database\Idea\TruthSourceRegistry;
@@ -59,8 +60,8 @@ class ModeratorAgent extends AbstractAgent
     {
         Logger::logAgentStart($this->getId(), $this->getType());
 
-        // Register this agent as truth source for moderator table (all keys)
-        TruthSourceRegistry::register('moderator', true, $this->getId());
+        // Register this agent as truth source for moderator collection (all keys)
+        TruthSourceRegistry::register(Idea::moderators, true, $this->getId());
     }
 
     /**
@@ -69,7 +70,7 @@ class ModeratorAgent extends AbstractAgent
     public function onStop(): void
     {
         // Unregister as truth source
-        TruthSourceRegistry::unregister('moderator', $this->getId());
+        TruthSourceRegistry::unregister(Idea::moderators, $this->getId());
         
         Logger::logAgentStop($this->getId(), $this->getType());
     }

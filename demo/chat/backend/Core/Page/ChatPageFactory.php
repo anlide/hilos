@@ -20,6 +20,7 @@ use Demo\Chat\Pages\ProfilePage;
 use Demo\Chat\Pages\UserPage;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Page\AbstractPageFactory;
+use Hilos\Core\Page\PageAgentInterface;
 use Hilos\DTO\Action\ActionPayloadDTO;
 use Hilos\Exception\Page\PageNotFoundException;
 
@@ -28,7 +29,7 @@ use Hilos\Exception\Page\PageNotFoundException;
  *
  * Creates and manages chat page instances.
  *
- * @extends AbstractPageFactory<ChatPageAgentInterface>
+ * @extends AbstractPageFactory<PageAgentInterface>
  */
 class ChatPageFactory extends AbstractPageFactory
 {

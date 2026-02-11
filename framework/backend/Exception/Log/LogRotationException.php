@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Exception\Log;
 
+use Hilos\Exception\HilosException;
 use Throwable;
 
 /**
@@ -12,7 +13,7 @@ use Throwable;
  * This exception is used when operations related to log rotation fail,
  * such as creating archive directories or moving log files.
  */
-class LogRotationException extends \Exception
+class LogRotationException extends HilosException
 {
     public function __construct(string $message, ?Throwable $previous = null)
     {

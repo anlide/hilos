@@ -4,13 +4,13 @@ declare(strict_types=1);
 
 namespace Hilos\Exception\Router;
 
-use Exception;
+use Hilos\Exception\HilosException;
 use Throwable;
 
 /**
  * Base exception for router-related errors
  */
-class RouteException extends Exception
+class RouteException extends HilosException
 {
     public function __construct(string $message, int $code = 0, ?Throwable $previous = null)
     {

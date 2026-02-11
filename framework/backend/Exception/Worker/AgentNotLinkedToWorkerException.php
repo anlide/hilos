@@ -4,12 +4,13 @@ declare(strict_types=1);
 
 namespace Hilos\Exception\Worker;
 
+use Hilos\Exception\HilosException;
 use Throwable;
 
 /**
  * Exception thrown when agent daemon is not linked to worker client
  */
-class AgentNotLinkedToWorkerException extends \Exception
+class AgentNotLinkedToWorkerException extends HilosException
 {
     public function __construct(string $agentId, ?Throwable $previous = null)
     {

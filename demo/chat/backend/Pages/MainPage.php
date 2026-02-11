@@ -9,15 +9,12 @@ use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Page\AbstractChatPage;
 use Demo\Chat\Database\Idea;
+use Demo\Chat\Database\IdeaCollection\Events as IdeaEvents;
 use Demo\Chat\DTO\Action\FileActionDTO;
 use Demo\Chat\DTO\Action\MessageActionDTO;
 use Demo\Chat\DTO\ChatEventSignalDTO;
-use Hilos\Constants\SignalTypeConstants;
-use Hilos\Core\Router\SignalName;
-use Hilos\Core\Router\SignalType;
 use Hilos\DTO\Action\ActionPayloadDTO;
 use Hilos\DTO\EntitiesChangesDTO;
-use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Logging\Logger\Logger;
 
 /**
@@ -40,25 +37,20 @@ class MainPage extends AbstractChatPage
     /**
      * Handle page-specific subscription logic
      *
-     * When client subscribes to main page, send full events + users snapshot.
-     *
      * @param string $acceptKey Accept key
      */
     public function onSubscribe(string $acceptKey): void
     {
-        $entities = new EntitiesChangesDTO(
-            full: [
-                Idea::users => Idea::$rt->connections->relevantUsers,
-                Idea::events => Idea::$db->events,
-            ],
-        );
-        $this->signalRouter->queueSignal(
-            signalSource: $this->agent->getAgentSignalSource(),
-            signalType: new SignalType(SignalTypeConstants::WS_USER),
-            signalName: new SignalName(ChatSignalConstants::SUBSCRIPTION_PAGE_MAIN),
-            signalData: new WebSocketSignalData(
-                data: new ChatEventSignalDTO($entities),
-                targetAcceptKey: $acceptKey,
+        $this->getChatAgent()->sendToUser(
+            ChatSignalConstants::SUBSCRIPTION_PAGE_MAIN,
+            $acceptKey,
+            new ChatEventSignalDTO(
+                new EntitiesChangesDTO(
+                    full: [
+                        Idea::users => Idea::$rt->connections->relevantUsers,
+                        Idea::events => Idea::$db->events,
+                    ],
+                ),
             ),
         );
     }
@@ -118,9 +110,12 @@ class MainPage extends AbstractChatPage
             return;
         }
 
-        $this->getChatAgent()->addEvent(ChatEventType::MESSAGE_SENT, Idea::$rt->connections[$acceptKey]->userId, [
-            'message' => $dto->content,
-        ]);
+        $userId = Idea::$rt->connections[$acceptKey]->userId;
+        $event = Idea::$db->events->actions->add(ChatEventType::MESSAGE_SENT->value, $userId, ['message' => $dto->content]);
+        $this->getChatAgent()->sendToAllUsers(
+            ChatSignalConstants::NEW_EVENT,
+            new ChatEventSignalDTO(new EntitiesChangesDTO(full: [Idea::events => IdeaEvents::fromSingleItem($event)])),
+        );
     }
 
     /**
@@ -141,10 +136,15 @@ class MainPage extends AbstractChatPage
             return;
         }
 
-        $this->getChatAgent()->addEvent(ChatEventType::FILE_SHARED, Idea::$rt->connections[$acceptKey]->userId, [
+        $userId = Idea::$rt->connections[$acceptKey]->userId;
+        $event = Idea::$db->events->actions->add(ChatEventType::FILE_SHARED->value, $userId, [
             'filename' => $dto->filename,
             'mimeType' => $dto->mimeType,
             'size' => $dto->size,
         ]);
+        $this->getChatAgent()->sendToAllUsers(
+            ChatSignalConstants::NEW_EVENT,
+            new ChatEventSignalDTO(new EntitiesChangesDTO(full: [Idea::events => IdeaEvents::fromSingleItem($event)])),
+        );
     }
 }

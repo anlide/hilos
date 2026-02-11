@@ -6,6 +6,7 @@ use ArrayAccess;
 use Countable;
 use Demo\Chat\Database\Entity\Moderator as EntityModerator;
 use Demo\Chat\Database\EntityCollection\Moderators as EntityModerators;
+use Demo\Chat\Database\Idea;
 use Demo\Chat\Database\Object\Moderator as ObjectModerator;
 use Hilos\Database\Database;
 use Hilos\Database\Object\Objects;
@@ -61,6 +62,11 @@ final class Moderators extends Objects implements Iterator, ArrayAccess, Countab
     public function getTableName(): string
     {
         return EntityModerator::_table;
+    }
+
+    public function getCollectionKey(): string
+    {
+        return Idea::moderators;
     }
 
     /**

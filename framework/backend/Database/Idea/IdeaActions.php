@@ -172,9 +172,9 @@ abstract class IdeaActions
 
         switch ($objectCollection->getLazyStrategy()) {
             case Objects::LAZY_STRATEGY_NONE:
-                // Check write permission
-                $table = $this->getTableName();
-                TruthSourceRegistry::checkCanWrite($table);
+                // Check write permission (by collection key)
+                $collectionKey = $objectCollection->getCollectionKey();
+                TruthSourceRegistry::checkCanWrite($collectionKey);
 
                 // Load all data if not loaded yet
                 if (!$objectCollection->isAllLoaded()) {

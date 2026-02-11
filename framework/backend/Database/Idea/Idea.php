@@ -5,9 +5,6 @@ namespace Hilos\Database\Idea;
 use Hilos\Database\Object\Objects;
 use Hilos\Exception\DatabaseException;
 use Hilos\Exception\Idea\Collection\IdeaCollectionNotFoundException;
-use Hilos\Exception\Idea\Entity\IdeaEntityClassNotFoundException;
-use Hilos\Exception\Idea\Entity\IdeaEntityMappingNotFoundException;
-use Hilos\Exception\Idea\Entity\IdeaEntityTableConstantNotFoundException;
 use Hilos\Exception\Idea\Other\IdeaCloneException;
 use Hilos\Exception\Idea\Other\IdeaObjectCollectionNotFoundException;
 use Hilos\Exception\Idea\Other\IdeaUnknownLazyStrategyException;
@@ -205,40 +202,6 @@ abstract class Idea
      * @return array<string, string> Mapping of collection name => Entity class name
      */
     abstract protected static function getEntityMapping(): array;
-
-    /**
-     * Get table name for collection
-     * Uses entity mapping to get table name from Entity class
-     *
-     * @param string $collectionName Collection name
-     * @return string Table name
-     * @throws IdeaEntityMappingNotFoundException If collection not found in mapping
-     * @throws IdeaEntityClassNotFoundException If entity class does not exist
-     * @throws IdeaEntityTableConstantNotFoundException If entity class does not have _table constant
-     */
-    public static function getTableName(string $collectionName): string
-    {
-        $entityMapping = static::getEntityMapping();
-        $entityClass = $entityMapping[$collectionName] ?? null;
-
-        if ($entityClass === null) {
-            throw new IdeaEntityMappingNotFoundException("No entity mapping for collection: {$collectionName}");
-        }
-
-        if (!class_exists($entityClass)) {
-            throw new IdeaEntityClassNotFoundException("Entity class does not exist: {$entityClass}");
-        }
-
-        // Get _table constant from Entity class
-        $reflection = new \ReflectionClass($entityClass);
-        $tableConstant = $reflection->getConstant('_table');
-
-        if ($tableConstant === false) {
-            throw new IdeaEntityTableConstantNotFoundException("Entity class [{$entityClass}] does not have _table constant");
-        }
-
-        return $tableConstant;
-    }
 
     /**
      * Convert all collections to array
