@@ -25,6 +25,7 @@ use Hilos\Core\Router\SignalType;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Database\Idea\TruthSourceRegistry;
 use Hilos\DTO\EntitiesChangesDTO;
+use Hilos\DTO\WebSocket\WebSocketCloseSignalDTO;
 use Hilos\DTO\WebSocket\WebSocketHandshakeSignalDTO;
 use Hilos\Exception\DatabaseException;
 use Hilos\Exception\Idea\Actions\IdeaActionsCallbackNotSetException;
@@ -166,6 +167,20 @@ class ChatAgent extends AbstractAgent implements ChatPageAgentInterface
                 targetAcceptKey: $data->acceptKey,
             ),
         );
+    }
+
+    /**
+     * Handle connection close signal (WebSocket connection closed).
+     * Unregisters connection from runtime so that relevantUsers and state stay correct.
+     *
+     * @param WebSocketCloseSignalDTO $data
+     * @param string $source
+     * @param string $name
+     * @throws RtTruthSourceWriteNotAllowedException If no truth source registered
+     */
+    public function onSignalConnectionClose(WebSocketCloseSignalDTO $data, string $source, string $name): void
+    {
+        Idea::$rt->connections->actions->unregister($data->acceptKey);
     }
 
     /**

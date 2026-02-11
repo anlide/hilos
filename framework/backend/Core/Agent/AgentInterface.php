@@ -6,6 +6,7 @@ namespace Hilos\Core\Agent;
 
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\DTO\WebSocket\WebSocketActionSignalDTO;
+use Hilos\DTO\WebSocket\WebSocketCloseSignalDTO;
 use Hilos\DTO\WebSocket\WebSocketFrameBinarySignalDTO;
 use Hilos\DTO\WebSocket\WebSocketHandshakeSignalDTO;
 use Hilos\DTO\WebSocket\WebSocketGroupSubscribeSignalDTO;
@@ -83,6 +84,15 @@ interface AgentInterface
      * @param WebSocketHandshakeSignalDTO $data Signal data
      */
     public function onSignalHandshake(WebSocketHandshakeSignalDTO $data, string $source, string $name): void;
+
+    /**
+     * Handle connection close signal (WebSocket connection closed)
+     *
+     * @param string $source Signal source
+     * @param string $name Signal name
+     * @param WebSocketCloseSignalDTO $data Signal data
+     */
+    public function onSignalConnectionClose(WebSocketCloseSignalDTO $data, string $source, string $name): void;
 
     /**
      * Handle page subscribe signal

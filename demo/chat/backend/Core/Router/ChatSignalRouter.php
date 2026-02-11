@@ -97,6 +97,7 @@ class ChatSignalRouter extends SignalRouter
             SignalSource::WEBSOCKET => [
                 // Page subscription signals - routing to CHAT agent
                 SignalTypeConstants::HANDSHAKE => AgentType::CHAT,
+                SignalTypeConstants::CONNECTION_CLOSE => AgentType::CHAT,
                 SignalTypeConstants::PAGE_SUBSCRIBE => AgentType::CHAT,
                 SignalTypeConstants::PAGE_UNSUBSCRIBE => AgentType::CHAT,
                 SignalTypeConstants::PAGE_UPDATE_SUBSCRIPTION => AgentType::CHAT,

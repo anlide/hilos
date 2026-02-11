@@ -14,6 +14,7 @@ use Hilos\DTO\WebSocket\WebSocketGroupSubscribeSignalDTO;
 use Hilos\DTO\WebSocket\WebSocketGroupUnsubscribeSignalDTO;
 use Hilos\DTO\WebSocket\WebSocketGroupUpdateSubscriptionSignalDTO;
 use Hilos\DTO\WebSocket\WebSocketPageSubscribeSignalDTO;
+use Hilos\DTO\WebSocket\WebSocketCloseSignalDTO;
 use Hilos\DTO\WebSocket\WebSocketPageUnsubscribeSignalDTO;
 use Hilos\DTO\WebSocket\WebSocketPageUpdateSubscriptionSignalDTO;
 use Hilos\DTO\WebSocketFrameDTO;
@@ -893,6 +894,14 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
         if ($this->acceptKey === '') {
             return;
         }
+
+        $closeDto = new WebSocketCloseSignalDTO(acceptKey: $this->acceptKey);
+        $this->signalRouter->queueSignal(
+            new SignalSource(SignalSource::WEBSOCKET),
+            new SignalType(SignalTypeConstants::CONNECTION_CLOSE),
+            new SignalName(SignalName::EMPTY),
+            $closeDto,
+        );
 
         $pageDto = new WebSocketPageUnsubscribeSignalDTO(
             acceptKey: $this->acceptKey,

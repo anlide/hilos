@@ -11,6 +11,7 @@ use Hilos\Core\Agent\AgentManager;
 use Hilos\Core\Page\PageSignalRouter;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\DTO\WebSocket\WebSocketActionSignalDTO;
+use Hilos\DTO\WebSocket\WebSocketCloseSignalDTO;
 use Hilos\DTO\WebSocket\WebSocketFrameBinarySignalDTO;
 use Hilos\DTO\WebSocket\WebSocketHandshakeSignalDTO;
 use Hilos\DTO\WebSocket\WebSocketGroupSubscribeSignalDTO;
@@ -390,6 +391,14 @@ abstract class WorkerManager extends BaseManager
                     $agent->onSignalHandshake($signalData, $source, $name);
                 } else {
                     Logger::error("onSignalHandshake - invalid signal data type: " . get_class($signalData));
+                }
+                break;
+
+            case SignalTypeConstants::CONNECTION_CLOSE:
+                if ($signalData instanceof WebSocketCloseSignalDTO) {
+                    $agent->onSignalConnectionClose($signalData, $source, $name);
+                } else {
+                    Logger::error("onSignalConnectionClose - invalid signal data type: " . get_class($signalData));
                 }
                 break;
 

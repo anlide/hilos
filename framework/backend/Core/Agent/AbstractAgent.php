@@ -11,6 +11,7 @@ use Hilos\Core\Router\SignalSourceInterface;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\DTO\WebSocket\WebSocketActionSignalDTO;
 use Hilos\DTO\WebSocket\WebSocketFrameBinarySignalDTO;
+use Hilos\DTO\WebSocket\WebSocketCloseSignalDTO;
 use Hilos\DTO\WebSocket\WebSocketHandshakeSignalDTO;
 use Hilos\DTO\WebSocket\WebSocketGroupSubscribeSignalDTO;
 use Hilos\DTO\WebSocket\WebSocketGroupUnsubscribeSignalDTO;
@@ -140,6 +141,20 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface
      * @param WebSocketHandshakeSignalDTO $data Signal data
      */
     public function onSignalHandshake(WebSocketHandshakeSignalDTO $data, string $source, string $name): void
+    {
+        // Default: do nothing
+    }
+
+    /**
+     * Default implementation - no connection close signal handling
+     *
+     * Child classes can override this method.
+     *
+     * @param string $source Signal source
+     * @param string $name Signal name
+     * @param WebSocketCloseSignalDTO $data Signal data
+     */
+    public function onSignalConnectionClose(WebSocketCloseSignalDTO $data, string $source, string $name): void
     {
         // Default: do nothing
     }

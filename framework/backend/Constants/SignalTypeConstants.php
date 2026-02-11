@@ -16,6 +16,7 @@ class SignalTypeConstants
 
     // Page subscription signal types
     public const string HANDSHAKE = 'handshake';
+    public const string CONNECTION_CLOSE = 'connection_close';
     public const string PAGE_SUBSCRIBE = 'page_subscribe';
     public const string PAGE_UNSUBSCRIBE = 'page_unsubscribe';
     public const string PAGE_UPDATE_SUBSCRIPTION = 'page_update_subscription';
