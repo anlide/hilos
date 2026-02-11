@@ -45,56 +45,54 @@ class Connections extends IdeaRtCollection
     }
 
     /**
-     * Find connection by userId
-     *
-     * @param int $userId User ID
+     * @param mixed $offset
      * @return ?Connection
      */
-    public function findByUserId(int $userId): ?Connection
+    public function offsetGet(mixed $offset): ?Connection
     {
-        /** @var ?StateConnections $stateCollection */
-        $stateCollection = $this->getStateCollection();
-        if ($stateCollection === null) {
-            return null;
-        }
-
-        $state = $stateCollection->findByUserId($userId);
-        if ($state === null) {
-            return null;
-        }
-
-        return $this->getRtItemForKey($state->getId());
+        return parent::offsetGet($offset);
     }
 
     /**
-     * Get user ID by accept key
-     *
-     * Convenience method for common lookup pattern.
-     *
-     * @param string $acceptKey WebSocket accept key
-     * @return ?int User ID or null if not found
+     * @return ?Connection
      */
-    public function getUserId(string $acceptKey): ?int
+    public function first(): ?Connection
     {
-        $connection = $this[$acceptKey];
-        return $connection?->userId;
+        return parent::first();
     }
 
     /**
-     * Check if user has any active connections
-     *
-     * @param int $userId User ID
-     * @return bool
+     * @return ?Connection
      */
-    public function hasUserConnections(int $userId): bool
+    public function last(): ?Connection
     {
-        /** @var ?StateConnections $stateCollection */
-        $stateCollection = $this->getStateCollection();
-        if ($stateCollection === null) {
-            return false;
-        }
+        return parent::last();
+    }
 
-        return $stateCollection->hasUserConnections($userId);
+    /**
+     * @return ?Connection
+     */
+    public function current(): ?Connection
+    {
+        return parent::current();
+    }
+
+    /**
+     * @param string $key
+     * @return ?Connection
+     */
+    protected function getRtItemForKey(string $key): ?Connection
+    {
+        return parent::getRtItemForKey($key);
+    }
+
+    /**
+     * @return ConnectionsActions
+     * @throws IdeaRtCollectionActionsClassException
+     */
+    protected function getActions(): ConnectionsActions
+    {
+        return parent::getActions();
     }
 
     /**
@@ -105,7 +103,7 @@ class Connections extends IdeaRtCollection
      * @throws IdeaCollectionNotManualException If collection is not manual, or item has no ID
      * @throws DatabaseException If IdeaItem has no associated Object ID
      */
-    public function getRelevantUsers(): IdeaUsers
+    private function getRelevantUsers(): IdeaUsers
     {
         $userIds = [];
 

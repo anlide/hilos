@@ -177,6 +177,8 @@ class ChatAgent extends AbstractAgent implements ChatPageAgentInterface
      * @param string $source
      * @param string $name
      * @throws RtTruthSourceWriteNotAllowedException If no truth source registered
+     * @throws IdeaRtActionsStateCollectionNullException If state collection is null
+     * @throws IdeaRtActionsCollectionNameNullException If collection name is null
      */
     public function onSignalConnectionClose(WebSocketCloseSignalDTO $data, string $source, string $name): void
     {
@@ -298,7 +300,7 @@ class ChatAgent extends AbstractAgent implements ChatPageAgentInterface
 
             // Add ChatClearedEvent as a system event (userId = null for system events).
             // Entities with replaceFull so frontend replaces events list with this single event.
-            $entities = new EntitiesChangesDTO(replaceFullKeys: ['events']);
+            $entities = new EntitiesChangesDTO(replaceFullKeys: [Idea::events]);
             $this->addEvent(ChatEventType::CHAT_CLEARED, null, null, $entities);
         }
     }

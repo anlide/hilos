@@ -113,13 +113,12 @@ class MainPage extends AbstractChatPage
             return;
         }
 
-        $userId = Idea::$rt->connections->getUserId($acceptKey);
-        if ($userId === null) {
+        if (!isset(Idea::$rt->connections[$acceptKey])) {
             Logger::logAgentError('MainPage', "User not found for acceptKey={$acceptKey}");
             return;
         }
 
-        $this->getChatAgent()->addEvent(ChatEventType::MESSAGE_SENT, $userId, [
+        $this->getChatAgent()->addEvent(ChatEventType::MESSAGE_SENT, Idea::$rt->connections[$acceptKey]->userId, [
             'message' => $dto->content,
         ]);
     }
@@ -137,13 +136,12 @@ class MainPage extends AbstractChatPage
             return;
         }
 
-        $userId = Idea::$rt->connections->getUserId($acceptKey);
-        if ($userId === null) {
+        if (!isset(Idea::$rt->connections[$acceptKey])) {
             Logger::logAgentError('MainPage', "User not found for acceptKey={$acceptKey}");
             return;
         }
 
-        $this->getChatAgent()->addEvent(ChatEventType::FILE_SHARED, $userId, [
+        $this->getChatAgent()->addEvent(ChatEventType::FILE_SHARED, Idea::$rt->connections[$acceptKey]->userId, [
             'filename' => $dto->filename,
             'mimeType' => $dto->mimeType,
             'size' => $dto->size,

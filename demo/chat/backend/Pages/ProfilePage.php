@@ -17,6 +17,11 @@ use Hilos\Core\Router\SignalType;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\DTO\Action\ActionPayloadDTO;
 use Hilos\DTO\EntitiesChangesDTO;
+use Hilos\Exception\DatabaseException;
+use Hilos\Exception\Idea\Actions\IdeaActionsObjectCollectionNullException;
+use Hilos\Exception\Idea\Actions\IdeaActionsTableNameUndeterminedException;
+use Hilos\Exception\Idea\Actions\IdeaActionsUnknownLazyStrategyException;
+use Hilos\Exception\Idea\TruthSource\IdeaTruthSourceWriteNotAllowedException;
 use Hilos\Logging\Logger\Logger;
 
 /**
@@ -70,6 +75,11 @@ class ProfilePage extends AbstractChatPage
      * @param string $acceptKey Accept key
      * @param string $action Action name
      * @param ActionPayloadDTO $dto Action payload DTO
+     * @throws DatabaseException
+     * @throws IdeaActionsObjectCollectionNullException
+     * @throws IdeaActionsUnknownLazyStrategyException
+     * @throws IdeaTruthSourceWriteNotAllowedException
+     * @throws IdeaActionsTableNameUndeterminedException
      */
     public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): void
     {
@@ -90,6 +100,11 @@ class ProfilePage extends AbstractChatPage
      *
      * @param string $acceptKey Accept key
      * @param RenameActionDTO $dto Rename DTO
+     * @throws DatabaseException
+     * @throws IdeaActionsObjectCollectionNullException
+     * @throws IdeaActionsUnknownLazyStrategyException
+     * @throws IdeaTruthSourceWriteNotAllowedException
+     * @throws IdeaActionsTableNameUndeterminedException
      */
     private function handleRename(string $acceptKey, RenameActionDTO $dto): void
     {
@@ -98,24 +113,23 @@ class ProfilePage extends AbstractChatPage
             return;
         }
 
-        $userId = Idea::$rt->connections->getUserId($acceptKey);
-        if ($userId === null) {
+        if (!isset(Idea::$rt->connections[$acceptKey])) {
             Logger::logAgentError('ProfilePage', "User not found for acceptKey={$acceptKey}");
             return;
         }
 
-        $oldName = Idea::$db->users[$userId]->name;
-        Idea::$db->users->actions->rename($userId, $dto->newName);
+        $oldName = Idea::$db->users[Idea::$rt->connections[$acceptKey]->userId]->name;
+        Idea::$db->users->actions->rename(Idea::$rt->connections[$acceptKey]->userId, $dto->newName);
 
         $entities = new EntitiesChangesDTO(
             updates: [
                 Idea::users => [
-                    ['id' => $userId, 'name' => $userId, $dto->newName],
+                    ['id' => Idea::$rt->connections[$acceptKey]->userId, 'name' => $dto->newName],
                 ],
             ],
         );
 
-        $this->getChatAgent()->addEvent(ChatEventType::USER_RENAMED, $userId, [
+        $this->getChatAgent()->addEvent(ChatEventType::USER_RENAMED, Idea::$rt->connections[$acceptKey]->userId, [
             'oldName' => $oldName,
             'newName' => $dto->newName,
         ], $entities);

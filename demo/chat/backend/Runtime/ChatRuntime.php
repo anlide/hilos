@@ -20,7 +20,7 @@ use Hilos\Runtime\Idea\IdeaRt;
  *
  * Usage:
  *   Idea::$rt->connections[$acceptKey];  // Get connection by accept key
- *   Idea::$rt->connections->getUserId($acceptKey);  // Get user ID
+ *   Idea::$rt->connections[$acceptKey]?->userId;  // Get user ID
  *   Idea::$rt->connections->actions->register($acceptKey, $userId);  // Register connection
  *
  * @property-read IdeaConnections $connections Active connections collection

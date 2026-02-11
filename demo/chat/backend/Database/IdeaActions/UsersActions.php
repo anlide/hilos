@@ -54,7 +54,6 @@ final class UsersActions extends IdeaActions
      *
      * @param int $userId User id
      * @param string $newName New user name
-     * @return ?array{userId:int,oldName:string,newName:string,lastActivity:string} Rename info or null if no change
      * @throws DatabaseException
      * @throws IdeaActionsObjectCollectionNullException
      * @throws IdeaActionsUnknownLazyStrategyException
@@ -62,7 +61,7 @@ final class UsersActions extends IdeaActions
      * @throws IdeaActionsTableNameUndeterminedException
      * @throws RuntimeException
      */
-    public function rename(int $userId, string $newName): ?array
+    public function rename(int $userId, string $newName): void
     {
         $this->ensureCanWrite();
 
@@ -85,12 +84,5 @@ final class UsersActions extends IdeaActions
         if ($lastActivity === null) {
             throw new RuntimeException("User lastActivity is null after rename (userId={$userId})");
         }
-
-        return [
-            'userId' => $userId,
-            'oldName' => $oldName,
-            'newName' => $newName,
-            'lastActivity' => $lastActivity,
-        ];
     }
 }
