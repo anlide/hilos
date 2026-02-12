@@ -17,6 +17,8 @@ use Demo\Chat\Database\ObjectCollection\Events as ObjectEvents;
 use Demo\Chat\Database\ObjectCollection\Moderators as ObjectModerators;
 use Demo\Chat\Database\ObjectCollection\Users as ObjectUsers;
 use Demo\Chat\Runtime\ChatRuntime;
+use Hilos\Core\Table\DataSource\EntityTableDataSource;
+use Hilos\Core\Table\IdeaTable;
 use Hilos\Database\Idea\Idea as BaseIdea;
 use Hilos\Database\Object\Objects;
 use Hilos\Exception\DatabaseException;
@@ -48,23 +50,26 @@ final class Idea extends BaseIdea
     /**
      * Initialize Idea with Object collections
      *
-     * Overrides base class to create and configure Object collections for this application.
-     * Object collections initialization is mandatory.
      * @throws DatabaseException
      * @throws IdeaObjectCollectionNotFoundException
      */
     public static function init(): void
     {
-        // Create singleton instance if not exists
         parent::init();
+    }
 
-        // Create Object collections with lazy loading strategies
+    /**
+     * Configure database collections (Object + Idea) and table layer is created after this.
+     *
+     * @throws IdeaObjectCollectionNotFoundException
+     */
+    protected static function configureCollections(): void
+    {
         self::$db->_objectCollections[self::users] = ObjectUsers::initDB(Objects::LAZY_STRATEGY_KEY);
         self::$db->_objectCollections[self::events] = ObjectEvents::initDB(Objects::LAZY_STRATEGY_NONE);
         self::$db->_objectCollections[self::bots] = ObjectBots::initDB(Objects::LAZY_STRATEGY_KEY);
         self::$db->_objectCollections[self::moderators] = ObjectModerators::initDB(Objects::LAZY_STRATEGY_KEY);
 
-        // Configure collections using parent's setRepresent method
         self::$db->setRepresent(self::users, IdeaUsers::class, UsersActions::class);
         self::$db->setRepresent(self::events, IdeaEvents::class, EventsActions::class);
         self::$db->setRepresent(self::bots, IdeaBots::class);
@@ -96,5 +101,17 @@ final class Idea extends BaseIdea
     protected static function createRuntime(): ?IdeaRt
     {
         return ChatRuntime::init();
+    }
+
+    /**
+     * Create table layer with registered table data sources.
+     *
+     * @return IdeaTable Table layer (e.g. Idea::$table->users->loadPage(N, M))
+     */
+    protected static function createTable(): ?IdeaTable
+    {
+        $table = new IdeaTable();
+        $table->register(self::users, new EntityTableDataSource(self::$db->users));
+        return $table;
     }
 }

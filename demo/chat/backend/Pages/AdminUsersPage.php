@@ -7,14 +7,18 @@ namespace Demo\Chat\Pages;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Page\AbstractChatPage;
+use Demo\Chat\Database\Idea;
 use Demo\Chat\DTO\ChatEventSignalDTO;
+use Hilos\Core\Table\TablePayloadBuilder;
 use Hilos\DTO\Action\ActionPayloadDTO;
 use Hilos\DTO\EntitiesChangesDTO;
+use Hilos\Logging\Logger\Logger;
 
 /**
  * AdminUsersPage - Admin users page handler
  *
  * Handles subscription, unsubscription, and actions for the admin users page.
+ * Subscription response includes the users table (Idea::$table->users).
  */
 class AdminUsersPage extends AbstractChatPage
 {
@@ -31,14 +35,19 @@ class AdminUsersPage extends AbstractChatPage
     /**
      * Handle page-specific subscription logic
      *
+     * Returns users table data (full snapshot) in the subscription response.
+     *
      * @param string $acceptKey Accept key
      */
     public function onSubscribe(string $acceptKey): void
     {
+        $tablesPayload = TablePayloadBuilder::buildFull([Idea::users]);
+        Logger::logAgentInfo('chat', json_encode($tablesPayload->toArray()));
+
         $this->getChatAgent()->sendToUser(
             ChatSignalConstants::SUBSCRIPTION_PAGE_ADMIN_USERS,
             $acceptKey,
-            new ChatEventSignalDTO(new EntitiesChangesDTO()),
+            new ChatEventSignalDTO(new EntitiesChangesDTO(), $tablesPayload),
         );
     }
 

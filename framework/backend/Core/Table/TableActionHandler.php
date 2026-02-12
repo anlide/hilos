@@ -1,0 +1,50 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Hilos\Core\Table;
+
+use Hilos\Database\Idea\Idea;
+use Hilos\DTO\Action\ActionPayloadDTO;
+use Hilos\DTO\Table\TableDataDTO;
+use Hilos\DTO\Table\TablesPayloadDTO;
+
+/**
+ * Handles table-scoped actions: load_page, refresh_snapshot.
+ *
+ * Uses Idea::$table to resolve table by key. Returns DTO to send back to client.
+ */
+class TableActionHandler
+{
+    /**
+     * Handle table action. Returns payload to send to user, or null if not a table action / unknown.
+     *
+     * @return TableDataDTO|TablesPayloadDTO|null Single table payload, or null if unhandled/error
+     */
+    public static function handle(string $action, ActionPayloadDTO $dto): TableDataDTO|TablesPayloadDTO|null
+    {
+        $table = Idea::$table;
+        if ($table === null) {
+            return null;
+        }
+
+        $data = $dto->toArray();
+        $tableKey = $data[TableActionConstants::PAYLOAD_KEY_TABLE_KEY] ?? '';
+
+        if ($tableKey === '') {
+            return null;
+        }
+
+        if ($action === TableActionConstants::ACTION_REFRESH_SNAPSHOT) {
+            return TablePayloadBuilder::buildOneFull($tableKey);
+        }
+
+        if ($action === TableActionConstants::ACTION_LOAD_PAGE) {
+            $offset = (int) ($data[TableActionConstants::PAYLOAD_KEY_OFFSET] ?? 0);
+            $limit = (int) ($data[TableActionConstants::PAYLOAD_KEY_LIMIT] ?? 20);
+            return TablePayloadBuilder::buildPage($tableKey, $offset, $limit);
+        }
+
+        return null;
+    }
+}

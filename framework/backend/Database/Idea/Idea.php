@@ -2,6 +2,7 @@
 
 namespace Hilos\Database\Idea;
 
+use Hilos\Core\Table\IdeaTable;
 use Hilos\Database\Object\Objects;
 use Hilos\Exception\DatabaseException;
 use Hilos\Exception\Idea\Collection\IdeaCollectionNotFoundException;
@@ -13,9 +14,10 @@ use Hilos\Runtime\Idea\IdeaRt;
 /**
  * Idea - Static access point for application data
  *
- * Provides global access to two data layers:
+ * Provides global access to three data layers:
  *   - $db: Database layer (Idea collections, Object collections, Entity layer)
  *   - $rt: Runtime layer for transient application data (connections, sessions, state)
+ *   - $table: Table layer for UI tables (per-worker; Entity/Sql/Other data sources)
  *
  * @template TRuntime of IdeaRt
  *
@@ -23,6 +25,7 @@ use Hilos\Runtime\Idea\IdeaRt;
  *   Idea::init(); // Initialize (mandatory)
  *   $user = Idea::$db->users[123]; // Get User from database layer
  *   $conn = Idea::$rt->connections[$acceptKey]; // Get from runtime layer
+ *   Idea::$table->users->loadPage(0, 20); // Table data for pagination / subscription
  */
 abstract class Idea
 {
@@ -31,6 +34,9 @@ abstract class Idea
 
     /** @var ?TRuntime Runtime layer singleton for transient application data */
     public static ?IdeaRt $rt = null;
+
+    /** @var ?IdeaTable Table layer singleton (per worker; named table data sources) */
+    public static ?IdeaTable $table = null;
 
     /**
      * Object collections (references to Objects instances)
@@ -85,9 +91,21 @@ abstract class Idea
             self::$rt = static::createRuntime();
         }
 
-        // Object collections must be initialized in child class
-        // Child classes should override this method to create Object collections
-        // and register them via setRepresent() method
+        static::configureCollections();
+
+        if (self::$table === null) {
+            self::$table = static::createTable();
+        }
+    }
+
+    /**
+     * Configure database collections (Object collections + setRepresent).
+     *
+     * Override in child class to set _objectCollections and call setRepresent().
+     * Called from init() before createTable() so that createTable() can use self::$db->users etc.
+     */
+    protected static function configureCollections(): void
+    {
     }
 
     /**
@@ -99,6 +117,19 @@ abstract class Idea
      * @return ?IdeaRt Runtime instance or null
      */
     protected static function createRuntime(): ?IdeaRt
+    {
+        return null;
+    }
+
+    /**
+     * Create table layer instance
+     *
+     * Override in child class to register table data sources (e.g. users, events).
+     * Return null if no tables are used.
+     *
+     * @return ?IdeaTable Table layer instance or null
+     */
+    protected static function createTable(): ?IdeaTable
     {
         return null;
     }
