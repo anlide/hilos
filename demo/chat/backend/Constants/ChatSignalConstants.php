@@ -26,4 +26,7 @@ class ChatSignalConstants
     public const string SUBSCRIPTION_PAGE_ADMIN_USERS = 'subscription_page_admin_users';
     public const string SUBSCRIPTION_PAGE_ADMIN_MODERATOR = 'subscription_page_admin_moderator';
     public const string SUBSCRIPTION_PAGE_ADMIN_BOTS = 'subscription_page_admin_bots';
+
+    /** Signal for table action response (load_page, refresh_snapshot) */
+    public const string TABLE_UPDATE = 'table_update';
 }

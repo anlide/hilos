@@ -28,7 +28,8 @@ class TableActionHandler
             return null;
         }
 
-        $data = $dto->toArray();
+        $arr = $dto->toArray();
+        $data = $arr[TableActionConstants::PAYLOAD_KEY_DATA] ?? $arr;
         $tableKey = $data[TableActionConstants::PAYLOAD_KEY_TABLE_KEY] ?? '';
 
         if ($tableKey === '') {
@@ -40,8 +41,8 @@ class TableActionHandler
         }
 
         if ($action === TableActionConstants::ACTION_LOAD_PAGE) {
-            $offset = (int) ($data[TableActionConstants::PAYLOAD_KEY_OFFSET] ?? 0);
-            $limit = (int) ($data[TableActionConstants::PAYLOAD_KEY_LIMIT] ?? 20);
+            $offset = (int) ($data[TableActionConstants::PAYLOAD_KEY_OFFSET] ?? TableActionConstants::DEFAULT_PAGE_OFFSET);
+            $limit = (int) ($data[TableActionConstants::PAYLOAD_KEY_LIMIT] ?? TableActionConstants::DEFAULT_PAGE_LIMIT);
             return TablePayloadBuilder::buildPage($tableKey, $offset, $limit);
         }
 

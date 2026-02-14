@@ -9,8 +9,11 @@ use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Page\AbstractChatPage;
 use Demo\Chat\Database\Idea;
 use Demo\Chat\DTO\ChatEventSignalDTO;
+use Hilos\Core\Table\TableActionHandler;
 use Hilos\Core\Table\TablePayloadBuilder;
 use Hilos\DTO\Action\ActionPayloadDTO;
+use Hilos\DTO\Table\TableDataDTO;
+use Hilos\DTO\Table\TablesPayloadDTO;
 use Hilos\DTO\EntitiesChangesDTO;
 use Hilos\Logging\Logger\Logger;
 
@@ -64,12 +67,27 @@ class AdminUsersPage extends AbstractChatPage
     /**
      * Handle page-specific action logic
      *
+     * Delegates table actions (load_page, refresh_snapshot) to TableActionHandler.
+     *
      * @param string $acceptKey Accept key
      * @param string $action Action name
      * @param ActionPayloadDTO $dto Action payload DTO
      */
     public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): void
     {
-        // TODO: Implement admin users page action logic
+        $result = TableActionHandler::handle($action, $dto);
+        if ($result === null) {
+            return;
+        }
+
+        $tablesPayload = $result instanceof TableDataDTO
+            ? new TablesPayloadDTO(tables: [$result->key => $result])
+            : $result;
+
+        $this->getChatAgent()->sendToUser(
+            ChatSignalConstants::TABLE_UPDATE,
+            $acceptKey,
+            new ChatEventSignalDTO(new EntitiesChangesDTO(), $tablesPayload),
+        );
     }
 }

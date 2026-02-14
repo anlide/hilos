@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\DTO\Table;
 
+use Hilos\Core\Table\TableActionConstants;
 use Hilos\DTO\BaseDTO;
 
 /**
@@ -38,7 +39,7 @@ class TablesPayloadDTO extends BaseDTO
         $tables = [];
         foreach ($data as $key => $row) {
             if (is_array($row)) {
-                $tables[$key] = TableDataDTO::fromArray(['key' => $key] + $row);
+                $tables[$key] = TableDataDTO::fromArray([TableActionConstants::PAYLOAD_KEY_RESPONSE_TABLE_KEY => $key] + $row);
             }
         }
         return new static(tables: $tables);

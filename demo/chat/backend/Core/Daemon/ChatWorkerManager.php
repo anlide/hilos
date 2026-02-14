@@ -14,6 +14,7 @@ use Hilos\Core\Agent\AgentInterface;
 use Hilos\Core\Agent\AgentManager;
 use Hilos\Core\Daemon\WorkerManager;
 use Hilos\Core\Page\ActionRouteConfig;
+use Hilos\Core\Table\TableActionConstants;
 use Hilos\Core\Page\PageSignalRouter;
 use Hilos\Exception\Page\PageSignalRouterNotFoundException;
 use Hilos\Core\Router\SignalRouter;
@@ -70,6 +71,8 @@ class ChatWorkerManager extends WorkerManager
             ChatSignalConstants::MESSAGE => PageConstants::MAIN,
             ChatSignalConstants::RENAME => PageConstants::PROFILE,
             ChatSignalConstants::FILE => PageConstants::MAIN,
+            TableActionConstants::ACTION_LOAD_PAGE => PageConstants::ADMIN_USERS,
+            TableActionConstants::ACTION_REFRESH_SNAPSHOT => PageConstants::ADMIN_USERS,
         ]);
 
         return new PageSignalRouter($pageFactory, $actionRoutes);

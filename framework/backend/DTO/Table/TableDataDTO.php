@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\DTO\Table;
 
+use Hilos\Core\Table\TableActionConstants;
 use Hilos\Core\Table\TableType;
 use Hilos\DTO\BaseDTO;
 
@@ -37,16 +38,16 @@ class TableDataDTO extends BaseDTO
     public function toArray(): array
     {
         $data = [
-            'type' => $this->type->value,
-            'rows' => $this->rows,
-            'supportsSnapshot' => $this->supportsSnapshot,
-            'totalCount' => $this->totalCount,
-            'isPage' => $this->isPage,
-            'offset' => $this->offset,
-            'limit' => $this->limit,
+            TableActionConstants::PAYLOAD_KEY_TYPE => $this->type->value,
+            TableActionConstants::PAYLOAD_KEY_ROWS => $this->rows,
+            TableActionConstants::PAYLOAD_KEY_SUPPORTS_SNAPSHOT => $this->supportsSnapshot,
+            TableActionConstants::PAYLOAD_KEY_TOTAL_COUNT => $this->totalCount,
+            TableActionConstants::PAYLOAD_KEY_IS_PAGE => $this->isPage,
+            TableActionConstants::PAYLOAD_KEY_OFFSET => $this->offset,
+            TableActionConstants::PAYLOAD_KEY_LIMIT => $this->limit,
         ];
         if ($this->key !== '') {
-            $data['key'] = $this->key;
+            $data[TableActionConstants::PAYLOAD_KEY_RESPONSE_TABLE_KEY] = $this->key;
         }
         return $data;
     }
@@ -54,14 +55,14 @@ class TableDataDTO extends BaseDTO
     public static function fromArray(array $data): static
     {
         return new static(
-            key: $data['key'] ?? '',
-            type: TableType::from($data['type'] ?? 'entity'),
-            rows: $data['rows'] ?? [],
-            supportsSnapshot: (bool) ($data['supportsSnapshot'] ?? false),
-            totalCount: (int) ($data['totalCount'] ?? -1),
-            isPage: (bool) ($data['isPage'] ?? false),
-            offset: (int) ($data['offset'] ?? 0),
-            limit: (int) ($data['limit'] ?? 0),
+            key: $data[TableActionConstants::PAYLOAD_KEY_RESPONSE_TABLE_KEY] ?? '',
+            type: TableType::from($data[TableActionConstants::PAYLOAD_KEY_TYPE] ?? TableActionConstants::DEFAULT_TYPE),
+            rows: $data[TableActionConstants::PAYLOAD_KEY_ROWS] ?? [],
+            supportsSnapshot: (bool) ($data[TableActionConstants::PAYLOAD_KEY_SUPPORTS_SNAPSHOT] ?? false),
+            totalCount: (int) ($data[TableActionConstants::PAYLOAD_KEY_TOTAL_COUNT] ?? -1),
+            isPage: (bool) ($data[TableActionConstants::PAYLOAD_KEY_IS_PAGE] ?? false),
+            offset: (int) ($data[TableActionConstants::PAYLOAD_KEY_OFFSET] ?? 0),
+            limit: (int) ($data[TableActionConstants::PAYLOAD_KEY_LIMIT] ?? 0),
         );
     }
 }
