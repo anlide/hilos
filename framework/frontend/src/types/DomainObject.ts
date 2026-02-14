@@ -5,4 +5,3 @@
 export abstract class DomainObject {
   // Empty base class - extend in demo projects
 }
-

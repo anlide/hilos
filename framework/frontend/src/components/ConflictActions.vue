@@ -2,38 +2,38 @@
   <div class="d-flex align-items-center gap-2 flex-wrap">
     <slot name="leading" />
     <slot
-      name="save-button"
-      :disabled="disableSave"
-      :on-save="() => $emit('save')"
+        name="save-button"
+        :disabled="disableSave"
+        :on-save="() => $emit('save')"
     >
       <button
-        type="button"
-        class="btn btn-primary"
-        :disabled="disableSave"
-        @click="$emit('save')"
+          type="button"
+          class="btn btn-primary"
+          :disabled="disableSave"
+          @click="$emit('save')"
       >
         {{ saveLabel }}
       </button>
     </slot>
     <template v-if="conflict">
       <button
-        type="button"
-        class="btn btn-outline-danger"
-        @click="$emit('accept-mine')"
+          type="button"
+          class="btn btn-outline-danger"
+          @click="$emit('accept-mine')"
       >
         Accept mine
       </button>
       <button
-        type="button"
-        class="btn btn-outline-secondary"
-        @click="$emit('accept-theirs')"
+          type="button"
+          class="btn btn-outline-secondary"
+          @click="$emit('accept-theirs')"
       >
         Accept theirs
       </button>
       <button
-        type="button"
-        class="btn btn-outline-warning"
-        @click="$emit('merge')"
+          type="button"
+          class="btn btn-outline-warning"
+          @click="$emit('merge')"
       >
         Merge changes
       </button>

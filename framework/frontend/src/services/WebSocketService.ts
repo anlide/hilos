@@ -10,7 +10,7 @@ export class WebSocketService {
   private pingTimer: number | null = null
   private isReconnecting = false
   private options: Required<Omit<WebSocketOptions, 'url' | 'queryParams' | 'onOpen' | 'onClose' | 'onError' | 'onMessage'>> & Pick<WebSocketOptions, 'url' | 'queryParams' | 'onOpen' | 'onClose' | 'onError' | 'onMessage'>
-  
+
   private readonly defaultReconnectDelay = 3000 // 3 seconds
   private readonly defaultPingInterval = 40000 // 40 seconds
   private readonly defaultPingMessage = 'ping'
@@ -28,7 +28,7 @@ export class WebSocketService {
         url += (url.includes('?') ? '&' : '?') + queryString
       }
     }
-    
+
     this.options = {
       url: url,
       autoConnect: options.autoConnect ?? true,
@@ -59,19 +59,19 @@ export class WebSocketService {
 
     try {
       this.ws = new WebSocket(this.options.url)
-      
+
       this.ws.onopen = () => {
         this.isReconnecting = false
-        
+
         // Start ping interval
         this.startPingInterval()
-        
+
         // Call custom onOpen callback if provided
         if (this.options.onOpen) {
           this.options.onOpen()
         }
       }
-      
+
       this.ws.onmessage = (event) => {
         try {
           const data = event.data
@@ -98,26 +98,26 @@ export class WebSocketService {
           console.error('Error processing message:', error)
         }
       }
-      
+
       this.ws.onerror = (error) => {
         console.error('WebSocket error:', error)
         if (this.options.onError) {
           this.options.onError(error)
         }
       }
-      
+
       this.ws.onclose = () => {
         // Stop ping interval
         this.stopPingInterval()
-        
+
         // Clean up current connection
         this.ws = null
-        
+
         // Call custom onClose callback if provided
         if (this.options.onClose) {
           this.options.onClose()
         }
-        
+
         // Only reconnect if not already reconnecting
         if (!this.isReconnecting) {
           // Attempt to reconnect
@@ -148,7 +148,7 @@ export class WebSocketService {
     }
 
     this.isReconnecting = true
-    
+
     this.reconnectTimer = window.setTimeout(() => {
       this.isReconnecting = false
       this.reconnectTimer = null
@@ -188,7 +188,7 @@ export class WebSocketService {
    */
   private startPingInterval(): void {
     this.stopPingInterval() // Clear any existing interval
-    
+
     if (this.options.pingInterval > 0) {
       this.pingTimer = window.setInterval(() => {
         this.sendPing()
@@ -214,9 +214,9 @@ export class WebSocketService {
       clearTimeout(this.reconnectTimer)
       this.reconnectTimer = null
     }
-    
+
     this.stopPingInterval()
-    
+
     if (this.ws) {
       this.ws.close()
       this.ws = null
@@ -237,4 +237,3 @@ export class WebSocketService {
     return this.ws?.readyState ?? null
   }
 }
-

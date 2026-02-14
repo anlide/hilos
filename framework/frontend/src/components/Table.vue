@@ -9,44 +9,44 @@
             <span class="visually-hidden">Search</span>
           </span>
           <input
-            v-model="searchQuery"
-            type="text"
-            class="form-control"
-            :placeholder="searchPlaceholder"
-            :aria-label="searchPlaceholder || 'Search'"
+              v-model="searchQuery"
+              type="text"
+              class="form-control"
+              :placeholder="searchPlaceholder"
+              :aria-label="searchPlaceholder || 'Search'"
           />
         </div>
         <div v-if="hasPendingChanges" class="d-flex align-items-center gap-2 flex-wrap">
           <span
-            v-if="pendingChanges.added > 0"
-            class="badge bg-success"
-            :title="`${pendingChanges.added} to add`"
+              v-if="pendingChanges.added > 0"
+              class="badge bg-success"
+              :title="`${pendingChanges.added} to add`"
           >
             <i class="bi bi-plus-lg" aria-hidden="true"></i>
             <span class="visually-hidden">Pending additions</span>
           </span>
           <span
-            v-if="pendingChanges.updated > 0"
-            class="badge bg-warning"
-            :title="`${pendingChanges.updated} to update`"
+              v-if="pendingChanges.updated > 0"
+              class="badge bg-warning"
+              :title="`${pendingChanges.updated} to update`"
           >
             <i class="bi bi-pencil" aria-hidden="true"></i>
             <span class="visually-hidden">Pending updates</span>
           </span>
           <span
-            v-if="pendingChanges.deleted > 0"
-            class="badge bg-danger"
-            :title="`${pendingChanges.deleted} to delete`"
+              v-if="pendingChanges.deleted > 0"
+              class="badge bg-danger"
+              :title="`${pendingChanges.deleted} to delete`"
           >
             <i class="bi bi-trash" aria-hidden="true"></i>
             <span class="visually-hidden">Pending deletions</span>
           </span>
           <button
-            type="button"
-            class="btn btn-primary btn-sm"
-            title="Update Snapshot"
-            aria-label="Update Snapshot"
-            @click="$emit('updateSnapshot')"
+              type="button"
+              class="btn btn-primary btn-sm"
+              title="Update Snapshot"
+              aria-label="Update Snapshot"
+              @click="$emit('updateSnapshot')"
           >
             <i class="bi bi-arrow-clockwise" aria-hidden="true"></i>
             <span class="visually-hidden">Update Snapshot</span>
@@ -56,12 +56,12 @@
       <div v-if="showActions" class="d-flex gap-2">
         <slot name="actions">
           <button
-            v-if="showAddButton"
-            type="button"
-            class="btn btn-primary btn-sm"
-            title="Add"
-            aria-label="Add"
-            @click="$emit('add')"
+              v-if="showAddButton"
+              type="button"
+              class="btn btn-primary btn-sm"
+              title="Add"
+              aria-label="Add"
+              @click="$emit('add')"
           >
             <i class="bi bi-plus-lg" aria-hidden="true"></i>
             <span class="visually-hidden">Add</span>
@@ -74,41 +74,41 @@
     <div class="table-responsive">
       <table class="table table-striped table-hover" aria-label="Data table" :aria-rowcount="filteredItems.length" :items="items">
         <thead>
-          <tr>
-            <slot name="header" :sort="sortState" :handleSort="handleSort" :isFieldSortable="isFieldSortable">
-              <!-- Default header if no slot provided -->
-            </slot>
-          </tr>
+        <tr>
+          <slot name="header" :sort="sortState" :handleSort="handleSort" :isFieldSortable="isFieldSortable">
+            <!-- Default header if no slot provided -->
+          </slot>
+        </tr>
         </thead>
         <tbody>
-          <template v-if="paginatedItems.length > 0">
-            <tr 
-              v-for="(item, index) in paginatedItems" 
+        <template v-if="paginatedItems.length > 0">
+          <tr
+              v-for="(item, index) in paginatedItems"
               :key="getItemKey(item, index)"
               :class="getRowChangeClass(item)"
-            >
-            <slot 
-              name="row" 
-              :item="item" 
-              :index="index" 
-              :handleEdit="showEditButton ? () => $emit('edit', item) : undefined"
-              :handleDelete="showDeleteButton ? () => $emit('delete', item) : undefined"
-              :showEditButton="showEditButton"
-              :showDeleteButton="showDeleteButton"
-              :changeType="getChangeType(item)"
+          >
+            <slot
+                name="row"
+                :item="item"
+                :index="index"
+                :handleEdit="showEditButton ? () => $emit('edit', item) : undefined"
+                :handleDelete="showDeleteButton ? () => $emit('delete', item) : undefined"
+                :showEditButton="showEditButton"
+                :showDeleteButton="showDeleteButton"
+                :changeType="getChangeType(item)"
             >
               <!-- Default row if no slot provided -->
             </slot>
-            </tr>
-          </template>
-          <tr v-else>
-            <td :colspan="colspan" class="text-center text-muted py-4">
-              <slot name="empty">
-                <i class="bi bi-inbox display-4" aria-hidden="true"></i>
-                <span class="visually-hidden">No data available</span>
-              </slot>
-            </td>
           </tr>
+        </template>
+        <tr v-else>
+          <td :colspan="colspan" class="text-center text-muted py-4">
+            <slot name="empty">
+              <i class="bi bi-inbox display-4" aria-hidden="true"></i>
+              <span class="visually-hidden">No data available</span>
+            </slot>
+          </td>
+        </tr>
         </tbody>
       </table>
     </div>
@@ -252,12 +252,12 @@ const getItemKey = (item: unknown, index: number): string | number => {
   if (typeof props.itemKey === 'function') {
     return props.itemKey(item, index)
   }
-  
+
   if (typeof item === 'object' && item !== null && props.itemKey in item) {
     const key = (item as Record<string, unknown>)[props.itemKey]
     return key !== null && key !== undefined ? String(key) : `row-${index}`
   }
-  
+
   return `row-${index}`
 }
 
@@ -267,14 +267,14 @@ const getItemId = (item: unknown): string | number | null => {
     if (typeof result === 'string') return result
     return result
   }
-  
+
   if (typeof item === 'object' && item !== null && props.itemKey in item) {
     const key = (item as Record<string, unknown>)[props.itemKey]
     if (key !== null && key !== undefined && (typeof key === 'string' || typeof key === 'number')) {
       return key
     }
   }
-  
+
   return null
 }
 
@@ -286,10 +286,10 @@ const hasPendingChanges = computed(() => {
 const getChangeType = (item: unknown): 'added' | 'updated' | 'deleted' | null => {
   const id = getItemId(item)
   if (id === null) return null
-  
+
   const idStr = String(id)
   const markers = props.changeMarkers
-  
+
   if (markers.added?.includes(idStr) || markers.added?.includes(id)) {
     return 'added'
   }
@@ -299,7 +299,7 @@ const getChangeType = (item: unknown): 'added' | 'updated' | 'deleted' | null =>
   if (markers.deleted?.includes(idStr) || markers.deleted?.includes(id)) {
     return 'deleted'
   }
-  
+
   return null
 }
 
@@ -319,12 +319,12 @@ const getRowChangeClass = (item: unknown): string => {
 
 const handleSort = (field: string): void => {
   if (!props.sortable) return
-  
+
   // Check if field is allowed for sorting
   if (props.sortableFields.length > 0 && !props.sortableFields.includes(field)) {
     return
   }
-  
+
   if (sortState.value.field === field) {
     if (sortState.value.direction === 'asc') {
       sortState.value.direction = 'desc'
@@ -348,17 +348,17 @@ const isFieldSortable = (field: string): boolean => {
 
 const filteredItems = computed(() => {
   let result = [...props.items]
-  
+
   // Apply search
   if (props.searchable && searchQuery.value.trim()) {
     const query = searchQuery.value.toLowerCase().trim()
     const fields = props.searchFields.length > 0 ? props.searchFields : []
-    
+
     result = result.filter((item) => {
       if (typeof item !== 'object' || item === null) return false
-      
+
       const obj = item as Record<string, unknown>
-      
+
       if (fields.length > 0) {
         return fields.some((field: string) => {
           const value = obj[field]
@@ -373,29 +373,29 @@ const filteredItems = computed(() => {
       }
     })
   }
-  
+
   // Apply sorting
   if (props.sortable && sortState.value.field && sortState.value.direction) {
     const field = sortState.value.field
     const direction = sortState.value.direction
-    
+
     result.sort((a, b) => {
       if (typeof a !== 'object' || a === null || typeof b !== 'object' || b === null) return 0
-      
+
       const aVal = (a as Record<string, unknown>)[field]
       const bVal = (b as Record<string, unknown>)[field]
-      
+
       if (aVal === null || aVal === undefined) return 1
       if (bVal === null || bVal === undefined) return -1
-      
+
       const aStr = String(aVal)
       const bStr = String(bVal)
-      
+
       const comparison = aStr.localeCompare(bStr, undefined, { numeric: true, sensitivity: 'base' })
       return direction === 'asc' ? comparison : -comparison
     })
   }
-  
+
   return result
 })
 
@@ -423,7 +423,7 @@ const visiblePages = computed(() => {
   const pages: number[] = []
   const total = totalPages.value
   const current = currentPage.value
-  
+
   if (total <= 7) {
     // Show all pages if 7 or fewer
     for (let i = 1; i <= total; i++) {
@@ -443,7 +443,7 @@ const visiblePages = computed(() => {
       pages.push(total)
     }
   }
-  
+
   return pages
 })
 

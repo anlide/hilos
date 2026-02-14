@@ -111,4 +111,3 @@ export type WebSocketEventHandler = (event: Event) => void
 export type WebSocketCloseHandler = (event: CloseEvent) => void
 
 export type WebSocketMessageHandler = (event: MessageEvent) => void
-

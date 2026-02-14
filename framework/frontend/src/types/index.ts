@@ -15,4 +15,3 @@ export * from './websocket-messages'
 // Entities transport (full/updates/deleted envelope)
 export type { EntitiesEnvelope } from './entities'
 export { extractEntitiesEnvelope, hasEntities } from './entities'
-

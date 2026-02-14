@@ -9,8 +9,8 @@ import { createRouter, createWebHistory, type RouteRecordRaw, type Router } from
  * Can be extended in demo projects
  */
 export function createBaseRouter(
-  routes: RouteRecordRaw[] = [],
-  base: string = '/'
+    routes: RouteRecordRaw[] = [],
+    base: string = '/'
 ): Router {
   return createRouter({
     history: createWebHistory(base),
@@ -22,9 +22,8 @@ export function createBaseRouter(
  * Helper to merge routes from framework and demo
  */
 export function mergeRoutes(
-  baseRoutes: RouteRecordRaw[],
-  demoRoutes: RouteRecordRaw[]
+    baseRoutes: RouteRecordRaw[],
+    demoRoutes: RouteRecordRaw[]
 ): RouteRecordRaw[] {
   return [...baseRoutes, ...demoRoutes]
 }
-

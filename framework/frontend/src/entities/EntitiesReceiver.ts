@@ -57,10 +57,10 @@ export abstract class EntitiesReceiver {
    * @param _replace - If true, replace entire collection; if false, merge/append (default behavior)
    */
   protected applyFull(
-    _collectionKey: string,
-    _rawItems: unknown[],
-    _context?: unknown,
-    _replace?: boolean,
+      _collectionKey: string,
+      _rawItems: unknown[],
+      _context?: unknown,
+      _replace?: boolean,
   ): void {
     // Override in subclass
   }

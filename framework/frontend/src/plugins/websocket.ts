@@ -1,8 +1,6 @@
 // Note: Vue types are resolved by demo projects via tsconfig.app.json
 // IDE may show errors here, but TypeScript compiler in demo projects will resolve them correctly
-// @ts-expect-error - Vue types are provided by demo project's node_modules
 import type { App } from 'vue'
-// @ts-expect-error - Vue types are provided by demo project's node_modules
 import { getCurrentInstance } from 'vue'
 import type { WebSocketOptions } from '../types/websocket'
 import { WebSocketService } from '../services/WebSocketService'
@@ -17,7 +15,7 @@ export function createWebSocketPlugin(options: WebSocketOptions) {
     install(app: App) {
       // Provide service instance to app
       app.config.globalProperties.$websocket = service
-      
+
       // Auto-connect if enabled
       if (options.autoConnect !== false) {
         service.connect()
@@ -37,7 +35,7 @@ export function useWebSocket(): WebSocketService {
   if (app && '$websocket' in app.config.globalProperties) {
     return app.config.globalProperties.$websocket as WebSocketService
   }
-  
+
   throw new Error('WebSocket plugin is not installed. Make sure to call app.use(createWebSocketPlugin(...)) in main.ts')
 }
 

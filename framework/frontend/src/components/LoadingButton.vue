@@ -1,24 +1,24 @@
 <template>
   <button
-    :type="type"
-    class="btn position-relative"
-    :class="buttonClass"
-    :disabled="isDisabled"
-    @click="handleClick"
+      :type="type"
+      class="btn position-relative"
+      :class="buttonClass"
+      :disabled="isDisabled"
+      @click="handleClick"
   >
     <span>
       <slot />
     </span>
     <!-- Spinner overlay shown after loadingDelay when loading -->
     <span
-      v-if="showSpinner"
-      class="position-absolute top-50 start-50 translate-middle"
-      aria-hidden="true"
+        v-if="showSpinner"
+        class="position-absolute top-50 start-50 translate-middle"
+        aria-hidden="true"
     >
       <span
-        class="spinner-border spinner-border-sm"
-        role="status"
-        aria-label="Loading"
+          class="spinner-border spinner-border-sm"
+          role="status"
+          aria-label="Loading"
       >
         <span class="visually-hidden">Loading</span>
       </span>
@@ -30,21 +30,21 @@
 import { ref, watch, onBeforeUnmount, computed } from 'vue'
 
 const props = withDefaults(
-  defineProps<{
-    loading?: boolean
-    disabled?: boolean
-    loadingDelay?: number
-    /** Bootstrap button variant classes, e.g. 'btn-primary' */
-    variant?: string
-    type?: 'button' | 'submit' | 'reset'
-  }>(),
-  {
-    loading: false,
-    disabled: false,
-    loadingDelay: 300,
-    variant: 'btn-primary',
-    type: 'button',
-  }
+    defineProps<{
+      loading?: boolean
+      disabled?: boolean
+      loadingDelay?: number
+      /** Bootstrap button variant classes, e.g. 'btn-primary' */
+      variant?: string
+      type?: 'button' | 'submit' | 'reset'
+    }>(),
+    {
+      loading: false,
+      disabled: false,
+      loadingDelay: 300,
+      variant: 'btn-primary',
+      type: 'button',
+    }
 )
 
 const emit = defineEmits<{
@@ -75,15 +75,15 @@ function clearLoadingDelayTimer() {
 }
 
 watch(
-  () => props.loading,
-  (isLoading) => {
-    if (isLoading) {
-      startLoadingDelayTimer()
-    } else {
-      clearLoadingDelayTimer()
-      showSpinner.value = false
+    () => props.loading,
+    (isLoading) => {
+      if (isLoading) {
+        startLoadingDelayTimer()
+      } else {
+        clearLoadingDelayTimer()
+        showSpinner.value = false
+      }
     }
-  }
 )
 
 onBeforeUnmount(clearLoadingDelayTimer)

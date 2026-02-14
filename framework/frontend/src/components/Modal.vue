@@ -1,16 +1,16 @@
 <template>
   <Teleport to="body">
     <div
-      class="modal fade"
-      :class="{ show: visible }"
-      tabindex="-1"
-      role="dialog"
-      :style="modalStyle"
-      :data-modal-id="modalId"
-      :data-modal-name="modalName || null"
-      :data-modal-type="modalType"
-      @click="onBackdropClick"
-      @keydown.esc="onEscFromModal"
+        class="modal fade"
+        :class="{ show: visible }"
+        tabindex="-1"
+        role="dialog"
+        :style="modalStyle"
+        :data-modal-id="modalId"
+        :data-modal-name="modalName || null"
+        :data-modal-type="modalType"
+        @click="onBackdropClick"
+        @keydown.esc="onEscFromModal"
     >
       <div class="modal-dialog" role="document">
         <div class="modal-content">
@@ -42,16 +42,16 @@
 
     <!-- Confirm close modal -->
     <div
-      v-if="confirmVisible"
-      class="modal fade confirm-modal"
-      :class="{ show: confirmVisible }"
-      tabindex="-1"
-      role="dialog"
-      :style="confirmStyle"
-      :data-modal-id="confirmModalId"
-      :data-modal-type="'confirm'"
-      @click="onConfirmBackdropClick"
-      @keydown.esc="onEscFromConfirm"
+        v-if="confirmVisible"
+        class="modal fade confirm-modal"
+        :class="{ show: confirmVisible }"
+        tabindex="-1"
+        role="dialog"
+        :style="confirmStyle"
+        :data-modal-id="confirmModalId"
+        :data-modal-type="'confirm'"
+        @click="onConfirmBackdropClick"
+        @keydown.esc="onEscFromConfirm"
     >
       <div class="modal-dialog" role="document">
         <div class="modal-content">
@@ -79,7 +79,6 @@
 <script lang="ts" setup>
 // Note: Vue types are resolved by demo projects via tsconfig.app.json
 // IDE may show errors here, but TypeScript compiler in demo projects will resolve them correctly
-// @ts-expect-error - Vue types are provided by demo project's node_modules
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 
 const modalStack: string[] = []
@@ -193,7 +192,7 @@ const onBackdropClick = (event: MouseEvent) => {
   const target = event.target as HTMLElement | null
   const currentTarget = event.currentTarget as HTMLElement | null
   const dialog = currentTarget?.querySelector('.modal-dialog') || null
-  if (props.closeOnBackdrop === false) return
+  if (!props.closeOnBackdrop) return
   if (!isTopmost(modalId)) return
 
   if (!currentTarget) return
@@ -220,7 +219,7 @@ const onConfirmBackdropClick = (event: MouseEvent) => {
 }
 
 const onEscFromModal = () => {
-  if (props.closeOnEsc === false) return
+  if (!props.closeOnEsc) return
   if (!isTopmost(modalId)) return
   requestClose()
 }
@@ -250,7 +249,7 @@ const onKeydown = (e: KeyboardEvent) => {
       onConfirmCancel()
       return
     }
-    if (props.closeOnEsc !== false && isTopmost(modalId)) {
+    if (props.closeOnEsc && isTopmost(modalId)) {
       requestClose()
     }
     return
@@ -323,7 +322,7 @@ const setAutoFocus = (id: string) => {
   }
 
   const autofocusElements = Array.from(focusableElements).filter(el =>
-    el.hasAttribute('data-autofocus')
+      el.hasAttribute('data-autofocus')
   )
 
   if (autofocusElements.length > 0) {
@@ -334,36 +333,36 @@ const setAutoFocus = (id: string) => {
 }
 
 watch(
-  () => visible.value,
-  (val: boolean) => {
-    if (val) {
-      pushStack(modalId)
-      updateBodyScrollLock()
-      document.addEventListener('keydown', onKeydown)
-      setTimeout(() => setAutoFocus(modalId), 0)
-    } else {
-      removeStack(modalId)
-      updateBodyScrollLock()
-      document.removeEventListener('keydown', onKeydown)
-      confirmVisible.value = false
-    }
-  },
-  { immediate: true }
+    () => visible.value,
+    (val: boolean) => {
+      if (val) {
+        pushStack(modalId)
+        updateBodyScrollLock()
+        document.addEventListener('keydown', onKeydown)
+        setTimeout(() => setAutoFocus(modalId), 0)
+      } else {
+        removeStack(modalId)
+        updateBodyScrollLock()
+        document.removeEventListener('keydown', onKeydown)
+        confirmVisible.value = false
+      }
+    },
+    { immediate: true }
 )
 
 watch(
-  () => confirmVisible.value,
-  (val: boolean) => {
-    if (val) {
-      pushStack(confirmModalId)
-      updateBodyScrollLock()
-      document.addEventListener('keydown', onKeydown)
-      setTimeout(() => setAutoFocus(confirmModalId), 0)
-    } else {
-      removeStack(confirmModalId)
-      updateBodyScrollLock()
+    () => confirmVisible.value,
+    (val: boolean) => {
+      if (val) {
+        pushStack(confirmModalId)
+        updateBodyScrollLock()
+        document.addEventListener('keydown', onKeydown)
+        setTimeout(() => setAutoFocus(confirmModalId), 0)
+      } else {
+        removeStack(confirmModalId)
+        updateBodyScrollLock()
+      }
     }
-  }
 )
 
 onBeforeUnmount(() => {
@@ -399,4 +398,3 @@ body.modal-open {
   overflow: hidden;
 }
 </style>
-

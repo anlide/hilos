@@ -23,4 +23,3 @@ export interface WebSocketOptions {
   /** Callback when message is received */
   onMessage?: (data: string | object) => void
 }
-

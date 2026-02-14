@@ -48,8 +48,8 @@ export function extractEntitiesEnvelope(payload: unknown): EntitiesEnvelope | nu
   const updates = isRecord(entities.updates) ? (entities.updates as Record<string, unknown[]>) : undefined
   const deleted = isRecord(entities.deleted) ? (entities.deleted as Record<string, unknown>) : undefined
   const replaceFull = Array.isArray(entities.replaceFull)
-    ? (entities.replaceFull as unknown[]).filter((k): k is string => typeof k === 'string')
-    : undefined
+      ? (entities.replaceFull as unknown[]).filter((k): k is string => typeof k === 'string')
+      : undefined
 
   const result: EntitiesEnvelope = {}
 
