@@ -4,6 +4,9 @@
 # Vendor
 vendor/
 
+# Node
+node_modules/
+
 # IDE
 .vscode/
 .idea/

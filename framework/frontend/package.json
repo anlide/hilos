@@ -1,0 +1,9 @@
+{
+  "name": "@hilos/framework-frontend",
+  "private": true,
+  "description": "Framework frontend — Vue only as devDependency for IDE/type-check when developing the framework",
+  "devDependencies": {
+    "vue": "^3.5.22",
+    "vue-tsc": "^3.1.0"
+  }
+}

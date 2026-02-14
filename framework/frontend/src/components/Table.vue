@@ -3,12 +3,17 @@
     <!-- Search, Controls and Snapshot Update Banner -->
     <div v-if="searchable || showActions || hasPendingChanges" class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
       <div class="d-flex align-items-center gap-2 flex-wrap flex-grow-1">
-        <div v-if="searchable" class="flex-grow-1" style="min-width: 200px;">
+        <div v-if="searchable" class="flex-grow-1 input-group">
+          <span class="input-group-text">
+            <i class="bi bi-search" aria-hidden="true"></i>
+            <span class="visually-hidden">Search</span>
+          </span>
           <input
             v-model="searchQuery"
             type="text"
             class="form-control"
             :placeholder="searchPlaceholder"
+            :aria-label="searchPlaceholder || 'Search'"
           />
         </div>
         <div v-if="hasPendingChanges" class="d-flex align-items-center gap-2 flex-wrap">
@@ -67,7 +72,7 @@
 
     <!-- Table -->
     <div class="table-responsive">
-      <table class="table table-striped table-hover">
+      <table class="table table-striped table-hover" aria-label="Data table" :aria-rowcount="filteredItems.length" :items="items">
         <thead>
           <tr>
             <slot name="header" :sort="sortState" :handleSort="handleSort" :isFieldSortable="isFieldSortable">
@@ -99,7 +104,8 @@
           <tr v-else>
             <td :colspan="colspan" class="text-center text-muted py-4">
               <slot name="empty">
-                No data available
+                <i class="bi bi-inbox display-4" aria-hidden="true"></i>
+                <span class="visually-hidden">No data available</span>
               </slot>
             </td>
           </tr>
@@ -110,45 +116,57 @@
     <!-- Pagination -->
     <div v-if="paginated" class="d-flex justify-content-between align-items-center mt-3 flex-wrap gap-2">
       <div v-if="fixedItemsPerPage === undefined" class="d-flex align-items-center gap-2">
-        <label class="mb-0">Items per page:</label>
-        <select v-model="itemsPerPage" class="form-select form-select-sm d-inline-block w-auto">
+        <label for="table-items-per-page" class="mb-0 d-flex align-items-center gap-1" title="Items per page">
+          <i class="bi bi-list-ul" aria-hidden="true"></i>
+          <span class="visually-hidden">Items per page</span>
+        </label>
+        <select id="table-items-per-page" v-model="itemsPerPage" class="form-select form-select-sm d-inline-block w-auto" aria-label="Items per page">
           <option v-for="option in itemsPerPageOptions" :key="option" :value="option">
             {{ option }}
           </option>
         </select>
       </div>
       <div v-else class="d-flex align-items-center gap-2">
-        <span class="text-muted">Items per page: {{ fixedItemsPerPage }}</span>
+        <span class="text-muted d-flex align-items-center gap-1">
+          <i class="bi bi-list-ul" aria-hidden="true"></i>
+          <span class="visually-hidden">Items per page:</span>
+          {{ fixedItemsPerPage }}
+        </span>
       </div>
       <div class="d-flex align-items-center gap-2">
-        <span class="text-muted">
-          Showing {{ startIndex + 1 }}-{{ endIndex }} of {{ filteredItems.length }}
+        <span class="text-muted d-flex align-items-center gap-1">
+          <i class="bi bi-collection" aria-hidden="true"></i>
+          <span class="visually-hidden">Showing</span>
+          {{ startIndex + 1 }}–{{ endIndex }}
+          <i class="bi bi-slash" aria-hidden="true"></i>
+          <span class="visually-hidden">of</span>
+          {{ filteredItems.length }}
         </span>
-        <nav>
+        <nav aria-label="Pagination">
           <ul class="pagination pagination-sm mb-0">
             <li class="page-item" :class="{ disabled: currentPage === 1 }">
-              <button class="page-link" @click="currentPage = 1" :disabled="currentPage === 1">
-                First
+              <button type="button" class="page-link" @click="currentPage = 1" :disabled="currentPage === 1" aria-label="First page">
+                <i class="bi bi-chevron-double-left" aria-hidden="true"></i>
               </button>
             </li>
             <li class="page-item" :class="{ disabled: currentPage === 1 }">
-              <button class="page-link" @click="currentPage--" :disabled="currentPage === 1">
-                Previous
+              <button type="button" class="page-link" @click="currentPage--" :disabled="currentPage === 1" aria-label="Previous">
+                <i class="bi bi-chevron-left" aria-hidden="true"></i>
               </button>
             </li>
             <li class="page-item" :class="{ active: page === currentPage }" v-for="page in visiblePages" :key="page">
-              <button class="page-link" @click="currentPage = page">
+              <button type="button" class="page-link" @click="currentPage = page" :aria-label="`Page ${page}`" :aria-current="page === currentPage ? 'page' : undefined">
                 {{ page }}
               </button>
             </li>
             <li class="page-item" :class="{ disabled: currentPage === totalPages }">
-              <button class="page-link" @click="currentPage++" :disabled="currentPage === totalPages">
-                Next
+              <button type="button" class="page-link" @click="currentPage++" :disabled="currentPage === totalPages" aria-label="Next">
+                <i class="bi bi-chevron-right" aria-hidden="true"></i>
               </button>
             </li>
             <li class="page-item" :class="{ disabled: currentPage === totalPages }">
-              <button class="page-link" @click="currentPage = totalPages" :disabled="currentPage === totalPages">
-                Last
+              <button type="button" class="page-link" @click="currentPage = totalPages" :disabled="currentPage === totalPages" aria-label="Last page">
+                <i class="bi bi-chevron-double-right" aria-hidden="true"></i>
               </button>
             </li>
           </ul>
@@ -159,7 +177,6 @@
 </template>
 
 <script setup lang="ts">
-// @ts-expect-error - Vue types are provided by demo project's node_modules
 import { computed, ref, watch } from 'vue'
 
 interface Props {
@@ -184,9 +201,9 @@ interface Props {
     deleted: number
   }
   changeMarkers?: {
-    added?: string[] | number[]
-    updated?: string[] | number[]
-    deleted?: string[] | number[]
+    added?: (string | number)[]
+    updated?: (string | number)[]
+    deleted?: (string | number)[]
   }
 }
 
@@ -209,7 +226,7 @@ const props = withDefaults(defineProps<Props>(), {
   changeMarkers: () => ({ added: [], updated: [], deleted: [] }),
 })
 
-const emit = defineEmits<{
+defineEmits<{
   add: []
   edit: [item: unknown]
   delete: [item: unknown]
@@ -246,11 +263,9 @@ const getItemKey = (item: unknown, index: number): string | number => {
 
 const getItemId = (item: unknown): string | number | null => {
   if (typeof props.itemKey === 'function') {
-    const result = props.itemKey(item, 0)
-    if (typeof result === 'string' || typeof result === 'number') {
-      return result
-    }
-    return null
+    const result: string | number = props.itemKey(item, 0)
+    if (typeof result === 'string') return result
+    return result
   }
   
   if (typeof item === 'object' && item !== null && props.itemKey in item) {
