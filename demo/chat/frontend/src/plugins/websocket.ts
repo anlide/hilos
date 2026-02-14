@@ -2,7 +2,7 @@ import {createWebSocketPlugin} from '@hilos/sdk/plugins/websocket'
 import {extractEntitiesEnvelope, hasEntities} from '@hilos/sdk/types'
 import {config} from '@/config'
 import {useChatStore} from '@/stores'
-import {HANDSHAKE_RESPONSE, SUBSCRIPTION_PAGE_MAIN, SUBSCRIPTION_PAGE_PROFILE} from '@/constants'
+import {HANDSHAKE_RESPONSE, SUBSCRIPTION_PAGE_MAIN, SUBSCRIPTION_PAGE_PROFILE, SUBSCRIPTION_PAGE_ADMIN_USERS, TABLE_UPDATE} from '@/constants'
 import {localStorageService} from '@/services/LocalStorageService'
 import {ChatEntitiesReceiver} from '@/entities/ChatEntitiesReceiver'
 import {eventPayloadToEvent, isRecord, parseEventPayloads} from '@/entities/parsers'
@@ -102,6 +102,18 @@ export function createChatWebSocketPlugin() {
         }
         case SUBSCRIPTION_PAGE_PROFILE: {
           // Empty subscription response; entities already applied above if present
+          return
+        }
+        case SUBSCRIPTION_PAGE_ADMIN_USERS: {
+          if (message.data && typeof message.data === 'object' && 'tables' in message.data && message.data.tables) {
+            chatStore.applyTablesPayload(message.data.tables as Record<string, unknown>)
+          }
+          return
+        }
+        case TABLE_UPDATE: {
+          if (message.data && typeof message.data === 'object' && 'tables' in message.data && message.data.tables) {
+            chatStore.applyTablesPayload(message.data.tables as Record<string, unknown>)
+          }
           return
         }
         case 'subscription_updated': {

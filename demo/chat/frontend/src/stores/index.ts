@@ -1,5 +1,16 @@
 import { defineStore } from 'pinia'
 import { Event, User } from '@/types'
+import { TableActionConstants } from '@hilos/sdk/constants'
+
+/** Table payload from backend (TableDataDTO). Used for admin tables (e.g. users). */
+export interface TableDataState {
+  rows: unknown[]
+  totalCount: number
+  isPage: boolean
+  offset: number
+  limit: number
+  supportsSnapshot: boolean
+}
 
 /**
  * WebSocket chat store - uses base connection store pattern from framework
@@ -14,6 +25,8 @@ export const useChatStore = defineStore('chat', {
     events: [] as Event[],
     // Users from database (User)
     users: [] as User[],
+    // Table data from backend (keyed by table key, e.g. 'users')
+    tableData: {} as Record<string, TableDataState>,
     // Current user information
     currentUserId: null as number | null,
     currentUsername: null as string | null,
@@ -179,6 +192,36 @@ export const useChatStore = defineStore('chat', {
       }
       const ids = new Set(eventIds)
       this.events = this.events.filter(ev => ev.id === null || !ids.has(ev.id))
+    },
+
+    /**
+     * Set data for one table (from subscription_page_* or table_update signal).
+     */
+    setTableData(tableKey: string, data: TableDataState) {
+      this.tableData = { ...this.tableData, [tableKey]: data }
+    },
+
+    /**
+     * Apply tables payload from signal (data.tables = { users: {...}, ... }).
+     */
+    applyTablesPayload(tables: Record<string, unknown>) {
+      if (typeof tables !== 'object' || tables === null) {
+        return
+      }
+      for (const [key, raw] of Object.entries(tables)) {
+        if (typeof raw !== 'object' || raw === null || !Array.isArray((raw as Record<string, unknown>)[TableActionConstants.PAYLOAD_KEY_ROWS])) {
+          continue
+        }
+        const row = raw as Record<string, unknown>
+        this.setTableData(key, {
+          rows: (row[TableActionConstants.PAYLOAD_KEY_ROWS] as unknown[]) ?? [],
+          totalCount: Number(row[TableActionConstants.PAYLOAD_KEY_TOTAL_COUNT]) ?? -1,
+          isPage: Boolean(row[TableActionConstants.PAYLOAD_KEY_IS_PAGE]),
+          offset: Number(row[TableActionConstants.PAYLOAD_KEY_OFFSET]) ?? 0,
+          limit: Number(row[TableActionConstants.PAYLOAD_KEY_LIMIT]) ?? 0,
+          supportsSnapshot: Boolean(row[TableActionConstants.PAYLOAD_KEY_SUPPORTS_SNAPSHOT]),
+        })
+      }
     },
   }
 })

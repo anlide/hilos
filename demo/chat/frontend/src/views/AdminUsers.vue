@@ -2,8 +2,19 @@
   <div class="row">
     <div class="col-12 col-lg-10 mx-auto">
       <div class="card">
-        <div class="card-header">
+        <div class="card-header d-flex justify-content-between align-items-center">
           <h5 class="mb-0">Admin Users</h5>
+          <button
+            v-if="usersTableMeta"
+            type="button"
+            class="btn btn-outline-light btn-sm"
+            title="Refresh table from server"
+            aria-label="Refresh table"
+            @click="updateSnapshot"
+          >
+            <i class="bi bi-arrow-clockwise" aria-hidden="true"></i>
+            Refresh
+          </button>
         </div>
         <div class="card-body">
           <Table
@@ -158,40 +169,31 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, computed } from 'vue'
+import { ref, computed } from 'vue'
+import { useWebSocket } from '@hilos/sdk/plugins/websocket'
 import { Table, Modal, LoadingButton } from '@hilos/sdk/components'
+import { useChatStore } from '@/stores'
+import { sendAction } from '@/services/websocketActions'
+import { TableActionConstants } from '@hilos/sdk/constants'
 
 interface UserEntity {
   id: number
   name: string
   lastActivity: string
-  presence: string
+  presence?: string
 }
 
-// Snapshot data - represents table state at a specific point in time
-const snapshotUsers = ref<UserEntity[]>([
-  {
-    id: 1,
-    name: 'User 1',
-    lastActivity: '2025-01-29T10:00:00Z',
-    presence: 'online'
-  },
-  {
-    id: 2,
-    name: 'User 2',
-    lastActivity: '2025-01-29T09:30:00Z',
-    presence: 'unstable'
-  },
-  {
-    id: 3,
-    name: 'User 3',
-    lastActivity: '2025-01-29T08:00:00Z',
-    presence: 'offline'
-  }
-])
+const chatStore = useChatStore()
+const websocket = useWebSocket()
 
-// Current displayed data (snapshot only)
-const users = computed(() => snapshotUsers.value)
+// Table data from backend (subscription_page_admin_users / table_update)
+const usersTableKey = 'users'
+const usersTableMeta = computed(() => chatStore.tableData[usersTableKey])
+const users = computed(() => {
+  const data = usersTableMeta.value
+  if (!data || !Array.isArray(data.rows)) return []
+  return data.rows as UserEntity[]
+})
 
 // Pending changes tracking
 const pendingChanges = ref({
@@ -205,9 +207,6 @@ const changeMarkers = ref({
   updated: [] as number[],
   deleted: [] as number[]
 })
-
-const pendingAdditions = ref<UserEntity[]>([])
-const pendingUpdates = ref<Record<number, Partial<UserEntity>>>({})
 
 const showModal = ref(false)
 const selectedUser = ref<UserEntity | null>(null)
@@ -225,17 +224,6 @@ const cloneUser = (user: UserEntity): UserEntity => {
   return JSON.parse(JSON.stringify(user)) as UserEntity
 }
 
-const markUserUpdated = (id: number, updates: Partial<UserEntity>) => {
-  pendingUpdates.value[id] = {
-    ...(pendingUpdates.value[id] || {}),
-    ...updates
-  }
-  if (!changeMarkers.value.updated.includes(id)) {
-    changeMarkers.value.updated.push(id)
-    pendingChanges.value.updated++
-  }
-}
-
 const isFormDirty = computed(() => {
   if (!baselineUser.value) return false
   return JSON.stringify(formUser.value) !== JSON.stringify(baselineUser.value)
@@ -246,71 +234,12 @@ const isFormValid = computed(() => {
   return name.length >= 2 && name.length <= 50
 })
 
-// TEMPORARY: WebSocket emulation for debugging
-// TODO: Replace with real WebSocket implementation
-let emulationTimeout: ReturnType<typeof setTimeout> | null = null
-
-const emulateWebSocketEvents = () => {
-  // Simulate: User 2 updated, User 4 added, User 3 marked for deletion
-  setTimeout(() => {
-    // Update existing user
-    const user2 = snapshotUsers.value.find(u => u.id === 2)
-    if (user2) {
-      markUserUpdated(2, {
-        name: 'User 2 (Updated)',
-        presence: 'online'
-      })
-    }
-
-    // Add new user
-    const newUser = {
-      id: 4,
-      name: 'User 4 (New)',
-      lastActivity: new Date().toISOString(),
-      presence: 'online'
-    }
-    if (!changeMarkers.value.added.includes(4)) {
-      pendingAdditions.value.push(newUser)
-      changeMarkers.value.added.push(4)
-      pendingChanges.value.added++
-    }
-
-    // Mark for deletion
-    if (!changeMarkers.value.deleted.includes(3)) {
-      changeMarkers.value.deleted.push(3)
-      pendingChanges.value.deleted++
-    }
-  }, 5000)
-}
-
+/** Request fresh table data from backend; response comes via table_update signal. */
 const updateSnapshot = () => {
-  // Apply all pending changes to snapshot
-  const updatedSnapshot = snapshotUsers.value.map(user => {
-    const updates = pendingUpdates.value[user.id]
-    return updates ? { ...user, ...updates } : user
+  sendAction(websocket, TableActionConstants.ACTION_REFRESH_SNAPSHOT, {
+    [TableActionConstants.PAYLOAD_KEY_TABLE_KEY]: usersTableKey,
   })
-  const additions = pendingAdditions.value.filter(user => !changeMarkers.value.deleted.includes(user.id))
-  snapshotUsers.value = [...updatedSnapshot, ...additions].filter(
-    user => !changeMarkers.value.deleted.includes(user.id)
-  )
-  
-  // Reset pending changes
-  pendingChanges.value = { added: 0, updated: 0, deleted: 0 }
-  changeMarkers.value = { added: [], updated: [], deleted: [] }
-  pendingAdditions.value = []
-  pendingUpdates.value = {}
 }
-
-onMounted(() => {
-  // TEMPORARY: Start WebSocket emulation after 5 seconds
-  emulationTimeout = setTimeout(emulateWebSocketEvents, 5000)
-})
-
-onUnmounted(() => {
-  if (emulationTimeout) {
-    clearTimeout(emulationTimeout)
-  }
-})
 
 const formatDate = (dateStr: string | null | undefined): string => {
   if (!dateStr) return 'Never'
@@ -349,11 +278,7 @@ const saveLoading = ref(false)
 const saveUser = () => {
   if (!selectedUser.value || !isFormValid.value) return
   saveLoading.value = true
-  markUserUpdated(selectedUser.value.id, {
-    name: formUser.value.name.trim(),
-    presence: formUser.value.presence
-  })
-
+  // TODO: send update user action to backend when API is available
   resetForm()
 }
 
