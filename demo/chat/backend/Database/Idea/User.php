@@ -2,7 +2,10 @@
 
 namespace Demo\Chat\Database\Idea;
 
+use Demo\Chat\Database\Idea;
 use Demo\Chat\Database\Object\User as ObjectUser;
+use Demo\Chat\Runtime\Idea\Connection;
+use Demo\Chat\Runtime\Idea\Connections;
 use Hilos\Database\Idea\IdeaItem;
 use Hilos\Exception\Idea\Item\IdeaItemPropertyNotFoundException;
 use RuntimeException;
@@ -20,6 +23,7 @@ use RuntimeException;
  * @property-read string $name User name
  * @property-read ?string $sessionToken User session token (32 hex characters)
  * @property-read ?string $lastActivity Last activity timestamp
+ * @property-read Connections $connections Connections for this user (online check)
  */
 final class User extends IdeaItem
 {
@@ -39,17 +43,18 @@ final class User extends IdeaItem
      * Supports lazy loading of related collections.
      *
      * @param string $name Property name
-     * @return int|string|null Property value or IdeaCollection for relationships
+     * @return int|string|Connections|null Property value or IdeaCollection for relationships
      * @throws RuntimeException If property does not exist
      * @throws IdeaItemPropertyNotFoundException
      */
-    public function __get(string $name): int|string|null
+    public function __get(string $name): int|string|Connections|null
     {
         return match ($name) {
             ObjectUser::id => $this->_object->id,
             ObjectUser::name => $this->_object->name,
             ObjectUser::sessionToken => $this->_object->sessionToken,
             ObjectUser::lastActivity => $this->_object->lastActivity,
+            'connections' => Idea::$rt->connections->forUser($this->id),
 
             default => parent::__get($name),
         };
@@ -78,6 +83,9 @@ final class User extends IdeaItem
             $data[ObjectUser::sessionToken] = $this->_object->sessionToken;
         }
         $data[ObjectUser::lastActivity] = $this->_object->lastActivity;
+        if ($toFrontend) {
+            $data['presence'] = count($this->connections) > 0 ? 'online' : 'offline';
+        }
 
         return $data;
     }

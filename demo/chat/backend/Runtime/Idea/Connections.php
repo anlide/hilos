@@ -33,6 +33,32 @@ class Connections extends IdeaRtCollection
     public const string relevantUsers = 'relevantUsers';
 
     /**
+     * Get connections for a specific user
+     *
+     * Uses State\Connections::findAllByUserId to get original state objects,
+     * then creates a filtered Idea\Connections wrapping references to those originals.
+     *
+     * @param int $userId User ID
+     * @return self Connections collection filtered by user
+     */
+    public function forUser(int $userId): self
+    {
+        $stateConnections = $this->getStateCollection();
+        if (!$stateConnections instanceof StateConnections) {
+            return self::init();
+        }
+
+        $filteredState = StateConnections::init();
+        foreach ($stateConnections->findAllByUserId($userId) as $stateConnection) {
+            $filteredState->add($stateConnection);
+        }
+
+        $collection = self::init();
+        $collection->setStateCollection($filteredState);
+        return $collection;
+    }
+
+    /**
      * Create IdeaRtItem from RtState
      *
      * @param RtState $state StateConnection instance

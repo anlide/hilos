@@ -140,12 +140,12 @@
         />
       </div>
       <div class="mb-3">
-        <label class="form-label" for="user-presence">Presence</label>
-        <select id="user-presence" v-model="formUser.presence" class="form-select">
-          <option value="online">online</option>
-          <option value="unstable">unstable</option>
-          <option value="offline">offline</option>
-        </select>
+        <label class="form-label">Presence</label>
+        <div class="form-control-plaintext">
+          <span class="badge" :class="getPresenceBadgeClass(formUser.presence)">
+            {{ formUser.presence || 'offline' }}
+          </span>
+        </div>
       </div>
       <div class="mb-0">
         <label class="form-label">Last Activity</label>

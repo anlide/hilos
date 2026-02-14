@@ -38,6 +38,16 @@ abstract class IdeaRtItem
     }
 
     /**
+     * Get underlying RtState reference (for use by IdeaRtCollection when creating filtered views)
+     *
+     * @return TState
+     */
+    public function getState(): RtState
+    {
+        return $this->_state;
+    }
+
+    /**
      * Get ID string (for use as array key)
      *
      * @return string
