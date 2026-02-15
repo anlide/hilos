@@ -33,6 +33,20 @@ class Connections extends IdeaRtCollection
     public const string relevantUsers = 'relevantUsers';
 
     /**
+     * State collection for Connections is always StateConnections (never null when collection is in use).
+     *
+     * @return StateConnections
+     */
+    public function getStateCollection(): StateConnections
+    {
+        $state = parent::getStateCollection();
+        if (!$state instanceof StateConnections) {
+            throw new \LogicException('Connections state must be StateConnections');
+        }
+        return $state;
+    }
+
+    /**
      * Get connections for a specific user
      *
      * Uses State\Connections::findAllByUserId to get original state objects,
@@ -44,9 +58,6 @@ class Connections extends IdeaRtCollection
     public function forUser(int $userId): self
     {
         $stateConnections = $this->getStateCollection();
-        if (!$stateConnections instanceof StateConnections) {
-            return self::init();
-        }
 
         $filteredState = StateConnections::init();
         foreach ($stateConnections->findAllByUserId($userId) as $stateConnection) {
