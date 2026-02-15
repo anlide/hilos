@@ -176,12 +176,12 @@
   </div>
 </template>
 
-<script setup lang="ts">
+<script setup lang="ts" generic="T = unknown">
 import { computed, ref, watch } from 'vue'
 
 interface Props {
-  items: unknown[]
-  itemKey?: string | ((item: unknown, index: number) => string | number)
+  items: T[]
+  itemKey?: string | ((item: T, index: number) => string | number)
   colspan?: number
   searchable?: boolean
   searchPlaceholder?: string
@@ -228,9 +228,24 @@ const props = withDefaults(defineProps<Props>(), {
 
 defineEmits<{
   add: []
-  edit: [item: unknown]
-  delete: [item: unknown]
+  edit: [item: T]
+  delete: [item: T]
   updateSnapshot: []
+}>()
+
+defineSlots<{
+  header?: (props: { sort: { field: string | null; direction: 'asc' | 'desc' | null }; handleSort: (field: string) => void; isFieldSortable: (field: string) => boolean }) => any
+  row?: (props: {
+    item: T
+    index: number
+    handleEdit: (() => void) | undefined
+    handleDelete: (() => void) | undefined
+    showEditButton: boolean
+    showDeleteButton: boolean
+    changeType: 'added' | 'updated' | 'deleted' | null
+  }) => any
+  empty?: () => any
+  actions?: () => any
 }>()
 
 const searchQuery = ref('')
@@ -248,12 +263,12 @@ watch(() => props.fixedItemsPerPage, (newValue: number | undefined) => {
   }
 }, { immediate: true })
 
-const getItemKey = (item: unknown, index: number): string | number => {
+const getItemKey = (item: T, index: number): string | number => {
   if (typeof props.itemKey === 'function') {
     return props.itemKey(item, index)
   }
 
-  if (typeof item === 'object' && item !== null && props.itemKey in item) {
+  if (typeof item === 'object' && item !== null && props.itemKey in (item as object)) {
     const key = (item as Record<string, unknown>)[props.itemKey]
     return key !== null && key !== undefined ? String(key) : `row-${index}`
   }
@@ -261,14 +276,14 @@ const getItemKey = (item: unknown, index: number): string | number => {
   return `row-${index}`
 }
 
-const getItemId = (item: unknown): string | number | null => {
+const getItemId = (item: T): string | number | null => {
   if (typeof props.itemKey === 'function') {
     const result: string | number = props.itemKey(item, 0)
     if (typeof result === 'string') return result
     return result
   }
 
-  if (typeof item === 'object' && item !== null && props.itemKey in item) {
+  if (typeof item === 'object' && item !== null && props.itemKey in (item as object)) {
     const key = (item as Record<string, unknown>)[props.itemKey]
     if (key !== null && key !== undefined && (typeof key === 'string' || typeof key === 'number')) {
       return key
@@ -283,7 +298,7 @@ const hasPendingChanges = computed(() => {
   return changes.added > 0 || changes.updated > 0 || changes.deleted > 0
 })
 
-const getChangeType = (item: unknown): 'added' | 'updated' | 'deleted' | null => {
+const getChangeType = (item: T): 'added' | 'updated' | 'deleted' | null => {
   const id = getItemId(item)
   if (id === null) return null
 
@@ -303,7 +318,7 @@ const getChangeType = (item: unknown): 'added' | 'updated' | 'deleted' | null =>
   return null
 }
 
-const getRowChangeClass = (item: unknown): string => {
+const getRowChangeClass = (item: T): string => {
   const changeType = getChangeType(item)
   switch (changeType) {
     case 'added':

@@ -81,25 +81,25 @@
               </th>
               <th>Actions</th>
             </template>
-            <template #row="{ item, handleEdit, showEditButton }">
+            <template #row="row">
               <td>
-                {{ item.id }}
+                {{ row.item.id }}
               </td>
-              <td>{{ item.name }}</td>
-              <td>{{ formatDate(item.lastActivity) }}</td>
+              <td>{{ row.item.name }}</td>
+              <td>{{ formatDate(row.item.lastActivity) }}</td>
               <td>
-                <span class="badge" :class="getPresenceBadgeClass(item.presence)">
-                  {{ item.presence || 'offline' }}
+                <span class="badge" :class="getPresenceBadgeClass(row.item.presence)">
+                  {{ row.item.presence || 'offline' }}
                 </span>
               </td>
               <td>
-                <div v-if="showEditButton" class="d-flex gap-1">
+                <div v-if="row.showEditButton" class="d-flex gap-1">
                   <button
                     type="button"
                     class="btn btn-sm btn-outline-primary"
                     title="Edit"
                     aria-label="Edit"
-                    @click="handleEdit"
+                    @click="row.handleEdit"
                   >
                     <i class="bi bi-pencil" aria-hidden="true"></i>
                     <span class="visually-hidden">Edit</span>
