@@ -375,15 +375,11 @@ onBeforeUnmount(() => {
 
 <style scoped>
 /*
-  Use Bootstrap Modal class, but "highlight background":
-  1) background-color: rgba(0,0,0,0.5) - semi-transparent black background
-  2) backdrop-filter: blur(2px) - light blur (can be disabled if not needed)
-  3) z-index: 1050 - matches base z-index of dropdowns and other elements
+  Backdrop: background + blur. z-index comes from Bootstrap .modal and inline modalStyle/confirmStyle.
 */
 .modal {
   background-color: rgba(0, 0, 0, 0.5);
   backdrop-filter: blur(2px);
-  z-index: 1050;
 }
 
 /* When modal is active, .show class is added */
@@ -393,8 +389,5 @@ onBeforeUnmount(() => {
 /* Here you can leave everything as is - Bootstrap will set needed sizes */
 /* .modal-content, .modal-header, .modal-body, .modal-footer - all pulled from Bootstrap CSS */
 
-/* Prevent main page scrolling when modal is open */
-body.modal-open {
-  overflow: hidden;
-}
+/* body.modal-open { overflow: hidden } — provided by Bootstrap CSS when we add the class */
 </style>
