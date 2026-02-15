@@ -139,14 +139,6 @@
           data-autofocus
         />
       </div>
-      <div class="mb-3">
-        <label class="form-label">Presence</label>
-        <div class="form-control-plaintext">
-          <span class="badge" :class="getPresenceBadgeClass(formUser.presence)">
-            {{ formUser.presence || 'offline' }}
-          </span>
-        </div>
-      </div>
       <div class="mb-0">
         <label class="form-label">Last Activity</label>
         <div class="form-control-plaintext">{{ formatDate(formUser.lastActivity) }}</div>
@@ -193,7 +185,12 @@ const usersTableMeta = computed(() => chatStore.tableData[usersTableKey])
 const users = computed(() => {
   const data = usersTableMeta.value
   if (!data || !Array.isArray(data.rows)) return []
-  return data.rows as UserEntity[]
+  const rows = data.rows as UserEntity[]
+  return rows.map((row) => {
+    const liveUser = chatStore.users.find((u) => u.id === row.id)
+    const presence = liveUser?.presence ?? row.presence
+    return { ...row, presence }
+  })
 })
 
 // Pending changes tracking
