@@ -33,17 +33,14 @@ class Connections extends IdeaRtCollection
     public const string relevantUsers = 'relevantUsers';
 
     /**
-     * State collection for Connections is always StateConnections (never null when collection is in use).
+     * State is always StateConnections (set in setRepresent / forUser).
      *
      * @return StateConnections
      */
     public function getStateCollection(): StateConnections
     {
-        $state = parent::getStateCollection();
-        if (!$state instanceof StateConnections) {
-            throw new \LogicException('Connections state must be StateConnections');
-        }
-        return $state;
+        /** @var StateConnections */
+        return parent::getStateCollection();
     }
 
     /**
@@ -167,15 +164,16 @@ class Connections extends IdeaRtCollection
      * Magic getter for actions and relevantUsers
      *
      * @param string $name Property name
-     * @return IdeaUsers|IdeaRtActions
+     * @return ConnectionsActions|IdeaUsers
      * @throws IdeaCollectionNotManualException If collection is not manual, or item has no ID
      * @throws DatabaseException If IdeaItem has no associated Object ID
      * @throws IdeaRtCollectionPropertyNotFoundException
      * @throws IdeaRtCollectionActionsClassException
      */
-    public function __get(string $name)
+    public function __get(string $name): ConnectionsActions|IdeaUsers
     {
         return match ($name) {
+            self::actions => $this->getActions(),
             self::relevantUsers => $this->getRelevantUsers(),
             default => parent::__get($name),
         };

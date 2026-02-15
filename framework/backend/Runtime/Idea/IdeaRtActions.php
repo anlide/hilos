@@ -123,9 +123,10 @@ abstract class IdeaRtActions
     /**
      * Get state collection for this Actions
      *
-     * @return ?RtStates State collection instance
+     * @return RtStates State collection instance
+     * @throws IdeaRtActionsStateCollectionNullException If state collection is null
      */
-    protected function getStateCollection(): ?RtStates
+    protected function getStateCollection(): RtStates
     {
         return $this->collection->getStateCollection();
     }
@@ -172,15 +173,7 @@ abstract class IdeaRtActions
     protected function addStateToCollection(RtState $state): void
     {
         $this->ensureCanWrite();
-
-        $stateCollection = $this->getStateCollection();
-        if ($stateCollection === null) {
-            throw new IdeaRtActionsStateCollectionNullException(
-                "Cannot add state: state collection is null"
-            );
-        }
-
-        $stateCollection->add($state);
+        $this->getStateCollection()->add($state);
     }
 
     /**
@@ -194,15 +187,7 @@ abstract class IdeaRtActions
     protected function removeStateFromCollection(string $id): void
     {
         $this->ensureCanWrite();
-
-        $stateCollection = $this->getStateCollection();
-        if ($stateCollection === null) {
-            throw new IdeaRtActionsStateCollectionNullException(
-                "Cannot remove state: state collection is null"
-            );
-        }
-
-        $stateCollection->remove($id);
+        $this->getStateCollection()->remove($id);
     }
 
     /**
@@ -216,15 +201,7 @@ abstract class IdeaRtActions
     protected function clearAllStates(): void
     {
         $this->ensureCanWrite();
-
-        $stateCollection = $this->getStateCollection();
-        if ($stateCollection === null) {
-            throw new IdeaRtActionsStateCollectionNullException(
-                "Cannot clear states: state collection is null"
-            );
-        }
-
-        $stateCollection->clear();
+        $this->getStateCollection()->clear();
         $this->clearCollectionCache();
     }
 }

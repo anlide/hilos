@@ -4,6 +4,7 @@ namespace Hilos\Runtime\Idea;
 
 use ArrayAccess;
 use Countable;
+use Hilos\Exception\Runtime\Actions\IdeaRtActionsStateCollectionNullException;
 use Hilos\Exception\Runtime\Collection\IdeaRtCollectionActionsClassException;
 use Hilos\Exception\Runtime\Collection\IdeaRtCollectionCloneException;
 use Hilos\Exception\Runtime\Collection\IdeaRtCollectionDirectSetException;
@@ -195,10 +196,18 @@ abstract class IdeaRtCollection implements ArrayAccess, Countable, Iterator
     /**
      * Get state collection
      *
-     * @return ?RtStates
+     * Collection must be initialized with setStateCollection() before use.
+     *
+     * @return RtStates
+     * @throws IdeaRtActionsStateCollectionNullException If state collection was not set
      */
-    public function getStateCollection(): ?RtStates
+    public function getStateCollection(): RtStates
     {
+        if ($this->_stateCollection === null) {
+            throw new IdeaRtActionsStateCollectionNullException(
+                'State collection is null. Call setStateCollection() before using the collection.'
+            );
+        }
         return $this->_stateCollection;
     }
 
@@ -229,10 +238,6 @@ abstract class IdeaRtCollection implements ArrayAccess, Countable, Iterator
 
         // Get from state collection
         $stateCollection = $this->getStateCollection();
-        if ($stateCollection === null) {
-            return null;
-        }
-
         $state = $stateCollection[$key] ?? null;
         if ($state === null) {
             return null;
@@ -254,18 +259,16 @@ abstract class IdeaRtCollection implements ArrayAccess, Countable, Iterator
     public function toArray(bool $idAsIndex = true): array
     {
         $result = [];
-
         $stateCollection = $this->getStateCollection();
-        if ($stateCollection !== null) {
-            foreach ($stateCollection as $key => $state) {
-                $item = $this->getRtItemForKey($key);
-                if ($item !== null) {
-                    $data = $item->toArray();
-                    if ($idAsIndex) {
-                        $result[$key] = $data;
-                    } else {
-                        $result[] = $data;
-                    }
+
+        foreach ($stateCollection as $key => $state) {
+            $item = $this->getRtItemForKey($key);
+            if ($item !== null) {
+                $data = $item->toArray();
+                if ($idAsIndex) {
+                    $result[$key] = $data;
+                } else {
+                    $result[] = $data;
                 }
             }
         }
@@ -281,10 +284,6 @@ abstract class IdeaRtCollection implements ArrayAccess, Countable, Iterator
     public function first(): ?IdeaRtItem
     {
         $stateCollection = $this->getStateCollection();
-        if ($stateCollection === null) {
-            return null;
-        }
-
         $firstState = $stateCollection->first();
         if ($firstState === null) {
             return null;
@@ -301,10 +300,6 @@ abstract class IdeaRtCollection implements ArrayAccess, Countable, Iterator
     public function last(): ?IdeaRtItem
     {
         $stateCollection = $this->getStateCollection();
-        if ($stateCollection === null) {
-            return null;
-        }
-
         $lastState = $stateCollection->last();
         if ($lastState === null) {
             return null;
@@ -360,7 +355,7 @@ abstract class IdeaRtCollection implements ArrayAccess, Countable, Iterator
     public function offsetExists(mixed $offset): bool
     {
         $stateCollection = $this->getStateCollection();
-        return $stateCollection !== null && isset($stateCollection[$offset]);
+        return isset($stateCollection[$offset]);
     }
 
     /**
@@ -390,11 +385,7 @@ abstract class IdeaRtCollection implements ArrayAccess, Countable, Iterator
     public function offsetUnset(mixed $offset): void
     {
         unset($this->items[$offset]);
-
-        $stateCollection = $this->getStateCollection();
-        if ($stateCollection !== null) {
-            $stateCollection->remove($offset);
-        }
+        $this->getStateCollection()->remove($offset);
     }
 
     // ==================== Countable ====================
@@ -404,8 +395,7 @@ abstract class IdeaRtCollection implements ArrayAccess, Countable, Iterator
      */
     public function count(): int
     {
-        $stateCollection = $this->getStateCollection();
-        return $stateCollection !== null ? $stateCollection->count() : 0;
+        return $this->getStateCollection()->count();
     }
 
     // ==================== Iterator ====================
@@ -446,16 +436,13 @@ abstract class IdeaRtCollection implements ArrayAccess, Countable, Iterator
     {
         $this->position = 0;
 
-        // Rebuild items cache from state collection
         $stateCollection = $this->getStateCollection();
-        if ($stateCollection !== null) {
-            $this->items = [];
-            foreach ($stateCollection as $key => $state) {
-                $this->items[$key] = $this->createRtItem($state);
-                unset($state);
-            }
-            $stateCollection->rewind();
+        $this->items = [];
+        foreach ($stateCollection as $key => $state) {
+            $this->items[$key] = $this->createRtItem($state);
+            unset($state);
         }
+        $stateCollection->rewind();
     }
 
     /**
