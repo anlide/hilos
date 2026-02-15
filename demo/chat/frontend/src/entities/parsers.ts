@@ -11,6 +11,7 @@ export type UserPayload = {
   id: number
   name: string
   lastActivity?: string | null
+  presence?: 'online' | 'offline'
 }
 
 export type EventPayload = {
@@ -28,7 +29,14 @@ export const isUserPayload = (value: unknown): value is UserPayload => {
   if (!isRecord(value) || typeof value.id !== 'number' || typeof value.name !== 'string') {
     return false
   }
-  return !(value.lastActivity !== undefined && value.lastActivity !== null && typeof value.lastActivity !== 'string');
+  if (value.lastActivity !== undefined && value.lastActivity !== null && typeof value.lastActivity !== 'string') {
+    return false
+  }
+  return !(
+    value.presence !== undefined &&
+    value.presence !== 'online' &&
+    value.presence !== 'offline'
+  )
 }
 
 export function parseUserPayloads(value: unknown): UserPayload[] | null {

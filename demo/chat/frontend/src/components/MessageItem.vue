@@ -83,10 +83,8 @@ const getServiceTitle = (): string => {
   }
 
   switch (props.event.type) {
-    case 'user_joined':
-      return 'joined the chat'
-    case 'user_left':
-      return 'left the chat'
+    case 'user_registered':
+      return 'registered in chat'
     case 'user_renamed': {
       const { data } = props.event
       const oldName = data.oldName as string | undefined
@@ -128,10 +126,8 @@ const getServiceMessageClass = (): string => {
   
   // Return Bootstrap utility classes for background colors
   switch (props.event.type) {
-    case 'user_joined':
+    case 'user_registered':
       return 'bg-success bg-opacity-25'
-    case 'user_left':
-      return 'bg-secondary bg-opacity-25'
     case 'user_renamed':
       return 'bg-info bg-opacity-25'
     case 'chat_started':

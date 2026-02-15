@@ -101,20 +101,31 @@ class ChatAgent extends AbstractAgent
         }
 
         $user = Idea::$db->users->findBySession($sessionToken);
+        $wasRegisteredNow = false;
         if ($user === null) {
             $user = Idea::$db->users->actions->register($sessionToken);
+            $wasRegisteredNow = true;
         }
 
+        $hadNoConnections = count(Idea::$rt->connections->forUser($user->id)) === 0;
         Idea::$rt->connections->actions->register($data->acceptKey, $user->id);
-        $event = Idea::$db->events->actions->add(ChatEventType::USER_JOINED->value, $user->id);
 
         $userEntities = new EntitiesChangesDTO(full: [Idea::users => IdeaUsers::fromSingleItem($user)]);
+        $newEvents = IdeaEvents::initEmpty();
+        if ($wasRegisteredNow) {
+            $newEvents->add(Idea::$db->events->actions->add(ChatEventType::USER_REGISTERED->value, $user->id));
+        }
+        if ($hadNoConnections) {
+            $newEvents->add(Idea::$db->events->actions->add(ChatEventType::USER_ONLINE->value, $user->id));
+        }
 
-        $this->sendToAllUsers(
-            ChatSignalConstants::NEW_EVENT,
-            new ChatEventSignalDTO($userEntities->withFullAppended(Idea::events, IdeaEvents::fromSingleItem($event))),
-            $data->acceptKey,
-        );
+        if (count($newEvents) > 0) {
+            $this->sendToAllUsers(
+                ChatSignalConstants::NEW_EVENT,
+                new ChatEventSignalDTO($userEntities->withFullAppended(Idea::events, $newEvents)),
+                $data->acceptKey,
+            );
+        }
 
         $this->sendToUser(
             ChatSignalConstants::HANDSHAKE_RESPONSE,
@@ -137,7 +148,32 @@ class ChatAgent extends AbstractAgent
      */
     public function onSignalConnectionClose(WebSocketCloseSignalDTO $data, string $source, string $name): void
     {
+        if (!isset(Idea::$rt->connections[$data->acceptKey])) {
+            return;
+        }
+
+        $userId = Idea::$rt->connections[$data->acceptKey]->userId;
         Idea::$rt->connections->actions->unregister($data->acceptKey);
+
+        if (count(Idea::$rt->connections->forUser($userId)) === 0) {
+            $event = Idea::$db->events->actions->add(ChatEventType::USER_OFFLINE->value, $userId);
+            $user = Idea::$db->users[$userId] ?? null;
+            if ($user === null) {
+                return;
+            }
+
+            $this->sendToAllUsers(
+                ChatSignalConstants::NEW_EVENT,
+                new ChatEventSignalDTO(
+                    new EntitiesChangesDTO(
+                        full: [
+                            Idea::users => IdeaUsers::fromSingleItem($user),
+                            Idea::events => IdeaEvents::fromSingleItem($event),
+                        ],
+                    ),
+                ),
+            );
+        }
     }
 
     /**

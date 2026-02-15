@@ -14,18 +14,21 @@ export class User extends DomainObject {
   name: string
   sessionToken: string | null
   lastActivity: string | null
+  presence: 'online' | 'offline'
 
   constructor(
     id: number | null,
     name: string,
     sessionToken: string | null,
-    lastActivity: string | null
+    lastActivity: string | null,
+    presence: 'online' | 'offline'
   ) {
     super()
     this.id = id
     this.name = name
     this.sessionToken = sessionToken
     this.lastActivity = lastActivity
+    this.presence = presence
   }
 
   /**
@@ -36,12 +39,14 @@ export class User extends DomainObject {
     name: string
     sessionToken?: string | null
     lastActivity?: string | null
+    presence?: 'online' | 'offline'
   }): User {
     return new User(
       data.id ?? null,
       data.name,
       data.sessionToken ?? null,
-      data.lastActivity ?? null
+      data.lastActivity ?? null,
+      data.presence ?? 'offline'
     )
   }
 }

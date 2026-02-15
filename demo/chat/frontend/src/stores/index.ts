@@ -45,6 +45,9 @@ export const useChatStore = defineStore('chat', {
     hasError(): boolean {
       return this.error !== null
     },
+    onlineUsers(): User[] {
+      return this.users.filter((user) => user.presence === 'online')
+    },
   },
   
   actions: {
@@ -127,12 +130,13 @@ export const useChatStore = defineStore('chat', {
     /**
      * Add or update multiple users
      */
-    upsertUsers(users: Array<{ id: number; name: string; lastActivity?: string | null }>) {
+    upsertUsers(users: Array<{ id: number; name: string; lastActivity?: string | null; presence?: 'online' | 'offline' }>) {
       for (const user of users) {
         this.addUser(User.fromObject({
           id: user.id,
           name: user.name,
           lastActivity: user.lastActivity ?? null,
+          presence: user.presence ?? 'offline',
         }))
       }
     },
@@ -141,7 +145,7 @@ export const useChatStore = defineStore('chat', {
      * Apply partial user updates (e.g. from entities.updates.users: only id + changed fields).
      * Merges into existing user by id; adds new user if missing and name is provided.
      */
-    patchUsers(partials: Array<{ id: number; name?: string; lastActivity?: string | null }>) {
+    patchUsers(partials: Array<{ id: number; name?: string; lastActivity?: string | null; presence?: 'online' | 'offline' }>) {
       for (const p of partials) {
         const idx = this.users.findIndex((user) => user.id === p.id)
         if (idx >= 0) {
@@ -152,6 +156,7 @@ export const useChatStore = defineStore('chat', {
             name: p.name ?? existing.name,
             sessionToken: existing.sessionToken,
             lastActivity: p.lastActivity ?? existing.lastActivity ?? null,
+            presence: p.presence ?? existing.presence,
           })
         } else if (p.name !== undefined) {
           this.addUser(
@@ -159,6 +164,7 @@ export const useChatStore = defineStore('chat', {
               id: p.id,
               name: p.name,
               lastActivity: p.lastActivity ?? null,
+              presence: p.presence ?? 'offline',
             })
           )
         }

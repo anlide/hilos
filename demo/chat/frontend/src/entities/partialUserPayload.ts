@@ -9,6 +9,7 @@ export type PartialUserPayload = {
   id: number
   name?: string
   lastActivity?: string | null
+  presence?: 'online' | 'offline'
 }
 
 function isRecord(value: unknown): value is JsonRecord {
@@ -29,7 +30,9 @@ export function isPartialUserPayload(value: unknown): value is PartialUserPayloa
   ) {
     return false
   }
-  return true
+  return !(value.presence !== undefined &&
+      value.presence !== 'online' &&
+      value.presence !== 'offline');
 }
 
 /**

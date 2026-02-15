@@ -20,11 +20,14 @@ enum ChatEventType: string
     /** Chat history was cleared */
     case CHAT_CLEARED = 'chat_cleared';
 
-    /** User joined the chat */
-    case USER_JOINED = 'user_joined';
+    /** User registered in chat */
+    case USER_REGISTERED = 'user_registered';
 
-    /** User left the chat */
-    case USER_LEFT = 'user_left';
+    /** User became online (first active connection) */
+    case USER_ONLINE = 'user_online';
+
+    /** User became offline (no active connections left) */
+    case USER_OFFLINE = 'user_offline';
 
     /** User renamed themselves */
     case USER_RENAMED = 'user_renamed';

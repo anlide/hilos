@@ -4,8 +4,8 @@ import { parsePartialUserPayloads } from './partialUserPayload'
 
 /** Store interface required for applying entity changes (avoids importing store here). */
 interface ChatStoreForEntities {
-  upsertUsers(users: Array<{ id: number; name: string; lastActivity?: string | null }>): void
-  patchUsers(partials: Array<{ id: number; name?: string; lastActivity?: string | null }>): void
+  upsertUsers(users: Array<{ id: number; name: string; lastActivity?: string | null; presence?: 'online' | 'offline' }>): void
+  patchUsers(partials: Array<{ id: number; name?: string; lastActivity?: string | null; presence?: 'online' | 'offline' }>): void
   upsertEvents(events: ReturnType<typeof eventPayloadToEvent>[]): void
   addEvent(event: ReturnType<typeof eventPayloadToEvent>): void
   clearEvents(): void

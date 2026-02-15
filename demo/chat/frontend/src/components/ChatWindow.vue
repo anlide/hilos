@@ -3,14 +3,14 @@
     <div class="card-body p-0 overflow-auto min-vh-50" ref="messagesContainer">
       <div class="list-group list-group-flush">
         <div
-          v-for="event in chatStore.events"
+          v-for="event in visibleEvents"
           :key="event.id || `event-${event.timestamp}-${event.userId}`"
           class="list-group-item border-0"
         >
           <MessageItem :event="event" />
         </div>
       </div>
-      <div v-if="chatStore.events.length === 0" class="text-center text-muted p-5">
+      <div v-if="visibleEvents.length === 0" class="text-center text-muted p-5">
         <p class="mb-0">No events yet. Start chatting!</p>
       </div>
     </div>
@@ -40,7 +40,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, nextTick, onMounted } from 'vue'
+import { computed, ref, watch, nextTick, onMounted } from 'vue'
 import { useChatStore } from '@/stores'
 import MessageItem from './MessageItem.vue'
 import { LoadingButton } from '@hilos/sdk/components'
@@ -55,6 +55,8 @@ const emit = defineEmits<{
 }>()
 
 const submitLoading = ref(false)
+const hiddenEventTypes = new Set(['user_online', 'user_offline'])
+const visibleEvents = computed(() => chatStore.events.filter((event) => !hiddenEventTypes.has(event.type)))
 
 const scrollToBottom = () => {
   nextTick(() => {
@@ -77,6 +79,6 @@ const handleSubmit = () => {
   })
 }
 
-watch(() => chatStore.events.length, scrollToBottom)
+watch(() => visibleEvents.value.length, scrollToBottom)
 onMounted(scrollToBottom)
 </script>
