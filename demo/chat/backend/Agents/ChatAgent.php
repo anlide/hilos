@@ -9,9 +9,9 @@ use Demo\Chat\Constants\ChatCronConstants;
 use Demo\Chat\Constants\ChatEventType;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\HttpHeaders;
-use Demo\Chat\Database\Idea;
-use Demo\Chat\Database\IdeaCollection\Events as IdeaEvents;
-use Demo\Chat\Database\IdeaCollection\Users as IdeaUsers;
+use Demo\Chat\Hilos\Database\Hilos;
+use Demo\Chat\Hilos\Database\DbCollection\Events;
+use Demo\Chat\Hilos\Database\DbCollection\Users;
 use Demo\Chat\DTO\ChatEventSignalDTO;
 use Demo\Chat\DTO\HandshakeResponseSignalData;
 use Demo\Chat\Runtime\ChatRuntime;
@@ -74,14 +74,14 @@ class ChatAgent extends AbstractAgent
     public function onStart(): void
     {
         // Register this agent as truth source for database tables (all keys)
-        TruthSourceRegistry::register(Idea::events, true, $this->getId());
-        TruthSourceRegistry::register(Idea::users, true, $this->getId());
+        TruthSourceRegistry::register(Hilos::events, true, $this->getId());
+        TruthSourceRegistry::register(Hilos::users, true, $this->getId());
 
         // Register this agent as truth source for runtime collections (all keys)
         RtTruthSourceRegistry::register(ChatRuntime::connections, true, $this->getId());
 
         // Add chat started event to history (system event with userId = null)
-        Idea::$db->events->actions->add(ChatEventType::CHAT_STARTED->value);
+        Hilos::$db->events->actions->add(ChatEventType::CHAT_STARTED->value);
     }
 
     /**
@@ -100,29 +100,29 @@ class ChatAgent extends AbstractAgent
             return;
         }
 
-        $user = Idea::$db->users->findBySession($sessionToken);
+        $user = Hilos::$db->users->findBySession($sessionToken);
         $wasRegisteredNow = false;
         if ($user === null) {
-            $user = Idea::$db->users->actions->register($sessionToken);
+            $user = Hilos::$db->users->actions->register($sessionToken);
             $wasRegisteredNow = true;
         }
 
-        $hadNoConnections = count(Idea::$rt->connections->forUser($user->id)) === 0;
-        Idea::$rt->connections->actions->register($data->acceptKey, $user->id);
+        $hadNoConnections = count(Hilos::$rt->connections->forUser($user->id)) === 0;
+        Hilos::$rt->connections->actions->register($data->acceptKey, $user->id);
 
-        $userEntities = new EntitiesChangesDTO(full: [Idea::users => IdeaUsers::fromSingleItem($user)]);
-        $newEvents = IdeaEvents::initEmpty();
+        $userEntities = new EntitiesChangesDTO(full: [Hilos::users => Users::fromSingleItem($user)]);
+        $newEvents = Events::initEmpty();
         if ($wasRegisteredNow) {
-            $newEvents->add(Idea::$db->events->actions->add(ChatEventType::USER_REGISTERED->value, $user->id));
+            $newEvents->add(Hilos::$db->events->actions->add(ChatEventType::USER_REGISTERED->value, $user->id));
         }
         if ($hadNoConnections) {
-            $newEvents->add(Idea::$db->events->actions->add(ChatEventType::USER_ONLINE->value, $user->id));
+            $newEvents->add(Hilos::$db->events->actions->add(ChatEventType::USER_ONLINE->value, $user->id));
         }
 
         if (count($newEvents) > 0) {
             $this->sendToAllUsers(
                 ChatSignalConstants::NEW_EVENT,
-                new ChatEventSignalDTO($userEntities->withFullAppended(Idea::events, $newEvents)),
+                new ChatEventSignalDTO($userEntities->withFullAppended(Hilos::events, $newEvents)),
                 $data->acceptKey,
             );
         }
@@ -148,16 +148,16 @@ class ChatAgent extends AbstractAgent
      */
     public function onSignalConnectionClose(WebSocketCloseSignalDTO $data, string $source, string $name): void
     {
-        if (!isset(Idea::$rt->connections[$data->acceptKey])) {
+        if (!isset(Hilos::$rt->connections[$data->acceptKey])) {
             return;
         }
 
-        $userId = Idea::$rt->connections[$data->acceptKey]->userId;
-        Idea::$rt->connections->actions->unregister($data->acceptKey);
+        $userId = Hilos::$rt->connections[$data->acceptKey]->userId;
+        Hilos::$rt->connections->actions->unregister($data->acceptKey);
 
-        if (count(Idea::$rt->connections->forUser($userId)) === 0) {
-            $event = Idea::$db->events->actions->add(ChatEventType::USER_OFFLINE->value, $userId);
-            $user = Idea::$db->users[$userId] ?? null;
+        if (count(Hilos::$rt->connections->forUser($userId)) === 0) {
+            $event = Hilos::$db->events->actions->add(ChatEventType::USER_OFFLINE->value, $userId);
+            $user = Hilos::$db->users[$userId] ?? null;
             if ($user === null) {
                 return;
             }
@@ -167,8 +167,8 @@ class ChatAgent extends AbstractAgent
                 new ChatEventSignalDTO(
                     new EntitiesChangesDTO(
                         full: [
-                            Idea::users => IdeaUsers::fromSingleItem($user),
-                            Idea::events => IdeaEvents::fromSingleItem($event),
+                            Hilos::users => Users::fromSingleItem($user),
+                            Hilos::events => Events::fromSingleItem($event),
                         ],
                     ),
                 ),
@@ -184,10 +184,10 @@ class ChatAgent extends AbstractAgent
     public function onStop(): void
     {
         // Add chat stopped event to history (system event with userId = null)
-        Idea::$db->events->actions->add(ChatEventType::CHAT_STOPPED->value);
+        Hilos::$db->events->actions->add(ChatEventType::CHAT_STOPPED->value);
 
         // Clear all connections before unregistering
-        Idea::$rt->connections->actions->clear();
+        Hilos::$rt->connections->actions->clear();
 
         // Unregister from both database and runtime truth source registries
         TruthSourceRegistry::unregisterAgent($this->getId());
@@ -223,16 +223,16 @@ class ChatAgent extends AbstractAgent
     {
         // Handle cleanup cron task
         if ($name === ChatCronConstants::CLEANUP_HISTORY) {
-            Idea::$db->events->actions->deleteAll();
+            Hilos::$db->events->actions->deleteAll();
 
-            $event = Idea::$db->events->actions->add(ChatEventType::CHAT_CLEARED->value);
+            $event = Hilos::$db->events->actions->add(ChatEventType::CHAT_CLEARED->value);
 
             $this->sendToAllUsers(
                 ChatSignalConstants::NEW_EVENT,
                 new ChatEventSignalDTO(
                     new EntitiesChangesDTO(
-                        full: [Idea::events => IdeaEvents::fromSingleItem($event)],
-                        replaceFullKeys: [Idea::events],
+                        full: [Hilos::events => Events::fromSingleItem($event)],
+                        replaceFullKeys: [Hilos::events],
                     ),
                 ),
             );

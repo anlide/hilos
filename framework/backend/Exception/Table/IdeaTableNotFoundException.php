@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace Hilos\Exception\Table;
 
-use Hilos\Exception\HilosException;
-
 /**
  * Exception: table not found in Idea::$table
+ *
+ * @deprecated Use Hilos\Exception\Table\TableNotFoundException instead.
  */
-class IdeaTableNotFoundException extends HilosException
+class IdeaTableNotFoundException extends TableNotFoundException
 {
 }

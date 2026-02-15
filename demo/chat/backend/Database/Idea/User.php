@@ -2,22 +2,23 @@
 
 namespace Demo\Chat\Database\Idea;
 
-use Demo\Chat\Database\Idea;
+use Demo\Chat\Hilos\Database\Hilos;
 use Demo\Chat\Database\Object\User as ObjectUser;
 use Demo\Chat\Runtime\Idea\Connection;
 use Demo\Chat\Runtime\Idea\Connections;
-use Hilos\Database\Idea\IdeaItem;
+use Hilos\Hilos\Database\DbItem;
 use Hilos\Exception\Idea\Item\IdeaItemPropertyNotFoundException;
 use RuntimeException;
 
 /**
  * User Idea
+ * @deprecated Use Demo\Chat\Hilos\Database\Db\User.
  * High-level abstraction with lazy loading and relationships
  *
  * Stores reference to ObjectUser instance.
  * Object instances are stored in ObjectCollection in Idea.
  *
- * @extends IdeaItem<ObjectUser>
+ * @extends DbItem<ObjectUser>
  *
  * @property-read ?int $id User ID (primary key)
  * @property-read string $name User name
@@ -25,7 +26,7 @@ use RuntimeException;
  * @property-read ?string $lastActivity Last activity timestamp
  * @property-read Connections $connections Connections for this user (online check)
  */
-final class User extends IdeaItem
+final class User extends DbItem
 {
     /**
      * Public constructor - creates IdeaUser from ObjectUser instance
@@ -54,7 +55,7 @@ final class User extends IdeaItem
             ObjectUser::name => $this->_object->name,
             ObjectUser::sessionToken => $this->_object->sessionToken,
             ObjectUser::lastActivity => $this->_object->lastActivity,
-            'connections' => Idea::$rt->connections->forUser($this->id),
+            Hilos::connections => Hilos::$rt->connections->forUser($this->id),
 
             default => parent::__get($name),
         };

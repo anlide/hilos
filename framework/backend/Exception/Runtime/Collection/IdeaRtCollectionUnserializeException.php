@@ -6,6 +6,8 @@ use Hilos\Exception\Runtime\IdeaRtCollectionException;
 
 /**
  * Exception: Attempt to unserialize IdeaRtCollection
+ *
+ * @deprecated Idea layer is deprecated; use Hilos\Exception\Runtime\Collection\* instead.
  */
 class IdeaRtCollectionUnserializeException extends IdeaRtCollectionException
 {

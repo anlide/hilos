@@ -14,6 +14,8 @@ use Hilos\Runtime\Idea\IdeaRt;
 /**
  * Idea - Static access point for application data
  *
+ * @deprecated Use Hilos\Database\Hilos\Hilos (and DbContext) instead.
+ *
  * Provides global access to three data layers:
  *   - $db: Database layer (Idea collections, Object collections, Entity layer)
  *   - $rt: Runtime layer for transient application data (connections, sessions, state)

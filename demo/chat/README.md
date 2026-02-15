@@ -66,3 +66,8 @@ For detailed instructions on:
 - Frontend development and build: see [frontend/README.md](frontend/README.md)
 - Backend setup: see framework documentation
 - Docker configuration: see `docker/` directory
+
+## Refactor Notes
+
+- TODO(hilos-refactor): rename legacy CLI commands `db:idea:*` to `db:hilos:*`.
+- TODO(hilos-refactor): update bootstrap/CLI parameter naming from `initIdea` to `initHilos` after command migration.

@@ -4,28 +4,28 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Runtime;
 
-use Demo\Chat\Runtime\Idea\Connections as IdeaConnections;
-use Demo\Chat\Runtime\IdeaActions\ConnectionsActions;
+use Demo\Chat\Hilos\Runtime\Rt\Connections;
+use Demo\Chat\Hilos\Runtime\RtActions\ConnectionsActions;
 use Demo\Chat\Runtime\State\Connections as StateConnections;
-use Hilos\Exception\Runtime\Rt\IdeaRtStateCollectionNotFoundException;
-use Hilos\Runtime\Idea\IdeaRt;
+use Hilos\Exception\Hilos\Runtime\Rt\StateCollectionNotFoundException;
+use Hilos\Hilos\Runtime\RtContext;
 
 /**
  * ChatRuntime - application-specific runtime data access
  *
- * Extends framework IdeaRt to provide chat-specific runtime collections.
+ * Extends framework runtime context to provide chat-specific runtime collections.
  *
  * Available collections:
  *   - connections: Active WebSocket connections (acceptKey → userId mapping)
  *
  * Usage:
- *   Idea::$rt->connections[$acceptKey];  // Get connection by accept key
- *   Idea::$rt->connections[$acceptKey]?->userId;  // Get user ID
- *   Idea::$rt->connections->actions->register($acceptKey, $userId);  // Register connection
+ *   Hilos::$rt->connections[$acceptKey];  // Get connection by accept key
+ *   Hilos::$rt->connections[$acceptKey]?->userId;  // Get user ID
+ *   Hilos::$rt->connections->actions->register($acceptKey, $userId);  // Register connection
  *
- * @property-read IdeaConnections $connections Active connections collection
+ * @property-read Connections $connections Active connections collection
  */
-final class ChatRuntime extends IdeaRt
+final class ChatRuntime extends RtContext
 {
     public const string connections = 'connections';
 
@@ -33,7 +33,7 @@ final class ChatRuntime extends IdeaRt
      * Initialize runtime with state collections
      *
      * @return static
-     * @throws IdeaRtStateCollectionNotFoundException
+     * @throws StateCollectionNotFoundException
      */
     public static function init(): static
     {
@@ -42,8 +42,8 @@ final class ChatRuntime extends IdeaRt
         // Create state collections
         $instance->_stateCollections[self::connections] = StateConnections::init();
 
-        // Configure Idea collections
-        $instance->setRepresent(self::connections, IdeaConnections::class, ConnectionsActions::class);
+        // Configure runtime collection wrappers
+        $instance->setRepresent(self::connections, Connections::class, ConnectionsActions::class);
 
         return $instance;
     }

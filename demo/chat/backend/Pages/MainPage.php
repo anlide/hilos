@@ -8,8 +8,8 @@ use Demo\Chat\Constants\ChatEventType;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Page\AbstractChatPage;
-use Demo\Chat\Database\Idea;
-use Demo\Chat\Database\IdeaCollection\Events as IdeaEvents;
+use Demo\Chat\Hilos\Database\Hilos;
+use Demo\Chat\Hilos\Database\DbCollection\Events;
 use Demo\Chat\DTO\Action\FileActionDTO;
 use Demo\Chat\DTO\Action\MessageActionDTO;
 use Demo\Chat\DTO\ChatEventSignalDTO;
@@ -47,8 +47,8 @@ class MainPage extends AbstractChatPage
             new ChatEventSignalDTO(
                 new EntitiesChangesDTO(
                     full: [
-                        Idea::users => Idea::$rt->connections->relevantUsers,
-                        Idea::events => Idea::$db->events,
+                        Hilos::users => Hilos::$rt->connections->relevantUsers,
+                        Hilos::events => Hilos::$db->events,
                     ],
                 ),
             ),
@@ -105,16 +105,16 @@ class MainPage extends AbstractChatPage
             return;
         }
 
-        if (!isset(Idea::$rt->connections[$acceptKey])) {
+        if (!isset(Hilos::$rt->connections[$acceptKey])) {
             Logger::logAgentError('MainPage', "User not found for acceptKey={$acceptKey}");
             return;
         }
 
-        $userId = Idea::$rt->connections[$acceptKey]->userId;
-        $event = Idea::$db->events->actions->add(ChatEventType::MESSAGE_SENT->value, $userId, ['message' => $dto->content]);
+        $userId = Hilos::$rt->connections[$acceptKey]->userId;
+        $event = Hilos::$db->events->actions->add(ChatEventType::MESSAGE_SENT->value, $userId, ['message' => $dto->content]);
         $this->getChatAgent()->sendToAllUsers(
             ChatSignalConstants::NEW_EVENT,
-            new ChatEventSignalDTO(new EntitiesChangesDTO(full: [Idea::events => IdeaEvents::fromSingleItem($event)])),
+            new ChatEventSignalDTO(new EntitiesChangesDTO(full: [Hilos::events => Events::fromSingleItem($event)])),
         );
     }
 
@@ -131,20 +131,20 @@ class MainPage extends AbstractChatPage
             return;
         }
 
-        if (!isset(Idea::$rt->connections[$acceptKey])) {
+        if (!isset(Hilos::$rt->connections[$acceptKey])) {
             Logger::logAgentError('MainPage', "User not found for acceptKey={$acceptKey}");
             return;
         }
 
-        $userId = Idea::$rt->connections[$acceptKey]->userId;
-        $event = Idea::$db->events->actions->add(ChatEventType::FILE_SHARED->value, $userId, [
+        $userId = Hilos::$rt->connections[$acceptKey]->userId;
+        $event = Hilos::$db->events->actions->add(ChatEventType::FILE_SHARED->value, $userId, [
             'filename' => $dto->filename,
             'mimeType' => $dto->mimeType,
             'size' => $dto->size,
         ]);
         $this->getChatAgent()->sendToAllUsers(
             ChatSignalConstants::NEW_EVENT,
-            new ChatEventSignalDTO(new EntitiesChangesDTO(full: [Idea::events => IdeaEvents::fromSingleItem($event)])),
+            new ChatEventSignalDTO(new EntitiesChangesDTO(full: [Hilos::events => Events::fromSingleItem($event)])),
         );
     }
 }

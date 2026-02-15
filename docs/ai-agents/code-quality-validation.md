@@ -5,7 +5,7 @@
 Instructions for AI agents to validate code quality. Use these rules to:
 - Review code produced by other AI agents
 - Review code written by humans
-- Validate output of CLI code generation tools (e.g. `db:entity:fix`, `db:object:fix`, `db:idea:fix`)
+- Validate output of CLI code generation tools (e.g. `db:entity:fix`, `db:object:fix`, legacy `db:idea:fix`)
 
 ---
 
@@ -27,7 +27,7 @@ Instructions for AI agents to validate code quality. Use these rules to:
 3. **ORM validation**
    - Entity ↔ schema consistency (run `db:entity:diff`)
    - Object ↔ Entity consistency
-   - Idea ↔ Object consistency
+   - Db ↔ Object consistency
    - Custom methods preserved after `*:fix`
 
 4. **Hilos-specific rules**
@@ -37,5 +37,5 @@ Instructions for AI agents to validate code quality. Use these rules to:
    - See [quality.md](/docs/quality.md) for application quality
 
 5. **Automation hints**
-   - Commands: `db:entity:diff`, `db:object:fix --dry-run`, `db:idea:fix --dry-run`
+   - Commands: `db:entity:diff`, `db:object:fix --dry-run`, legacy `db:idea:fix --dry-run`
    - Linters, formatters (if configured)

@@ -9,7 +9,7 @@ use Hilos\Core\Table\TableType;
 /**
  * Data source for a table. One implementation per TableType (Entity, Sql, Other).
  *
- * Tables are stored in Idea::$table (per-worker); access e.g. Idea::$table->users->loadPage(N, M).
+ * Tables are stored in Hilos::$table (per-worker); access e.g. Hilos::$table->users->loadPage(N, M).
  */
 interface TableDataSourceInterface
 {

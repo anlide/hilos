@@ -4,25 +4,26 @@ namespace Demo\Chat\Database\IdeaCollection;
 
 use Demo\Chat\Database\Idea\Moderator as IdeaModerator;
 use Demo\Chat\Database\Object\Moderator as ObjectModerator;
-use Hilos\Database\Idea\IdeaActions;
-use Hilos\Database\Idea\IdeaCollection;
+use Hilos\Hilos\Database\DbActions;
+use Hilos\Hilos\Database\DbCollection;
 use Hilos\Database\Object\Object_;
 use InvalidArgumentException;
 
 /**
  * Moderators Idea Collection
+ * @deprecated Use Demo\Chat\Hilos\Database\DbCollection\Moderators.
  * Collection of Moderator ideas with additional filtering methods
  *
- * @extends IdeaCollection<IdeaModerator>
- * @property-read IdeaActions $actions Actions for write operations
+ * @extends DbCollection<IdeaModerator>
+ * @property-read DbActions $actions Actions for write operations
  */
-final class Moderators extends IdeaCollection
+final class Moderators extends DbCollection
 {
     // init() and initEmpty() are inherited from IdeaCollection
     // Override only if custom initialization logic is needed
 
     // getObjectCollection() is inherited from IdeaCollection
-    // ObjectCollection is set via setObjectCollection() by Idea::setRepresent()
+    // ObjectCollection is set via setObjectCollection() by Hilos::setRepresent()
 
     /**
      * Create Idea instance from Object

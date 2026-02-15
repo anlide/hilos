@@ -4,31 +4,32 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Runtime\Idea;
 
-use Demo\Chat\Database\Idea;
+use Demo\Chat\Hilos\Database\Hilos;
 use Demo\Chat\Database\IdeaCollection\Users as IdeaUsers;
 use Demo\Chat\Runtime\IdeaActions\ConnectionsActions;
 use Demo\Chat\Runtime\State\Connection as StateConnection;
 use Demo\Chat\Runtime\State\Connections as StateConnections;
+use Hilos\Hilos\Runtime\RtActions;
+use Hilos\Hilos\Runtime\RtCollection;
+use Hilos\Hilos\Runtime\RtItem;
 use Hilos\Exception\DatabaseException;
 use Hilos\Exception\Idea\Collection\IdeaCollectionNotManualException;
 use Hilos\Exception\Runtime\Collection\IdeaRtCollectionActionsClassException;
 use Hilos\Exception\Runtime\Collection\IdeaRtCollectionPropertyNotFoundException;
-use Hilos\Runtime\Idea\IdeaRtActions;
-use Hilos\Runtime\Idea\IdeaRtCollection;
-use Hilos\Runtime\Idea\IdeaRtItem;
 use Hilos\Runtime\State\RtState;
 
 /**
  * Connections Idea collection - read-only wrapper around Connections state
+ * @deprecated Use Demo\Chat\Hilos\Runtime\Rt\Connections.
  *
  * Provides high-level access to connection data.
  * Write operations go through ConnectionsActions.
  *
- * @extends IdeaRtCollection<Connection>
+ * @extends RtCollection<Connection>
  * @property-read ConnectionsActions $actions Actions for write operations
  * @property-read IdeaUsers $relevantUsers Users who are online or mentioned in events
  */
-class Connections extends IdeaRtCollection
+class Connections extends RtCollection
 {
     public const string relevantUsers = 'relevantUsers';
 
@@ -70,9 +71,9 @@ class Connections extends IdeaRtCollection
      * Create IdeaRtItem from RtState
      *
      * @param RtState $state StateConnection instance
-     * @return IdeaRtItem Connection instance
+     * @return RtItem Connection instance
      */
-    protected function createRtItem(RtState &$state): IdeaRtItem
+    protected function createRtItem(RtState &$state): RtItem
     {
         /** @var StateConnection $state */
         return new Connection($state);
@@ -144,7 +145,7 @@ class Connections extends IdeaRtCollection
         foreach ($this as $connection) {
             $userIds[$connection->userId] = true;
         }
-        foreach (Idea::$db->events as $event) {
+        foreach (Hilos::$db->events as $event) {
             if ($event->userId !== null) {
                 $userIds[$event->userId] = true;
             }
@@ -152,8 +153,8 @@ class Connections extends IdeaRtCollection
 
         $collection = IdeaUsers::initEmpty();
         foreach (array_keys($userIds) as $userId) {
-            if (isset(Idea::$db->users[$userId])) {
-                $collection->add(Idea::$db->users[$userId]);
+            if (isset(Hilos::$db->users[$userId])) {
+                $collection->add(Hilos::$db->users[$userId]);
             }
         }
 

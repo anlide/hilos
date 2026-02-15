@@ -3,17 +3,18 @@
 namespace Demo\Chat\Database\Idea;
 
 use Demo\Chat\Database\Object\Bot as ObjectBot;
-use Hilos\Database\Idea\IdeaItem;
+use Hilos\Hilos\Database\DbItem;
 use RuntimeException;
 
 /**
  * Bot Idea
+ * @deprecated Use Demo\Chat\Hilos\Database\Db\Bot.
  * High-level abstraction with lazy loading and relationships
  *
  * Stores reference to ObjectBot instance.
  * Object instances are stored in ObjectCollection in Idea.
  *
- * @extends IdeaItem<ObjectBot>
+ * @extends DbItem<ObjectBot>
  *
  * @property-read ?int $idBot Bot ID (primary key)
  * @property-read string $name Bot name
@@ -25,7 +26,7 @@ use RuntimeException;
  * @property-read string $createdAt Creation timestamp
  * @property-read string $updatedAt Last update timestamp
  */
-final class Bot extends IdeaItem
+final class Bot extends DbItem
 {
     /**
      * Public constructor - creates IdeaBot from ObjectBot instance

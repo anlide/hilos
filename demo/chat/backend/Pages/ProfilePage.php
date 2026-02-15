@@ -8,17 +8,17 @@ use Demo\Chat\Constants\ChatEventType;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Page\AbstractChatPage;
-use Demo\Chat\Database\Idea;
-use Demo\Chat\Database\IdeaCollection\Events as IdeaEvents;
+use Demo\Chat\Hilos\Database\Hilos;
+use Demo\Chat\Hilos\Database\DbCollection\Events;
 use Demo\Chat\DTO\Action\RenameActionDTO;
 use Demo\Chat\DTO\ChatEventSignalDTO;
 use Hilos\DTO\Action\ActionPayloadDTO;
 use Hilos\DTO\EntitiesChangesDTO;
 use Hilos\Exception\DatabaseException;
-use Hilos\Exception\Idea\Actions\IdeaActionsObjectCollectionNullException;
-use Hilos\Exception\Idea\Actions\IdeaActionsTableNameUndeterminedException;
-use Hilos\Exception\Idea\Actions\IdeaActionsUnknownLazyStrategyException;
-use Hilos\Exception\Idea\TruthSource\IdeaTruthSourceWriteNotAllowedException;
+use Hilos\Exception\Hilos\Database\Actions\ObjectCollectionNullException;
+use Hilos\Exception\Hilos\Database\Actions\TableNameUndeterminedException;
+use Hilos\Exception\Hilos\Database\Actions\UnknownLazyStrategyException;
+use Hilos\Exception\Hilos\Database\TruthSource\WriteNotAllowedException;
 use Hilos\Logging\Logger\Logger;
 
 /**
@@ -69,10 +69,10 @@ class ProfilePage extends AbstractChatPage
      * @param string $action Action name
      * @param ActionPayloadDTO $dto Action payload DTO
      * @throws DatabaseException
-     * @throws IdeaActionsObjectCollectionNullException
-     * @throws IdeaActionsUnknownLazyStrategyException
-     * @throws IdeaTruthSourceWriteNotAllowedException
-     * @throws IdeaActionsTableNameUndeterminedException
+     * @throws ObjectCollectionNullException
+     * @throws UnknownLazyStrategyException
+     * @throws WriteNotAllowedException
+     * @throws TableNameUndeterminedException
      */
     public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): void
     {
@@ -94,10 +94,10 @@ class ProfilePage extends AbstractChatPage
      * @param string $acceptKey Accept key
      * @param RenameActionDTO $dto Rename DTO
      * @throws DatabaseException
-     * @throws IdeaActionsObjectCollectionNullException
-     * @throws IdeaActionsUnknownLazyStrategyException
-     * @throws IdeaTruthSourceWriteNotAllowedException
-     * @throws IdeaActionsTableNameUndeterminedException
+     * @throws ObjectCollectionNullException
+     * @throws UnknownLazyStrategyException
+     * @throws WriteNotAllowedException
+     * @throws TableNameUndeterminedException
      */
     private function handleRename(string $acceptKey, RenameActionDTO $dto): void
     {
@@ -106,24 +106,24 @@ class ProfilePage extends AbstractChatPage
             return;
         }
 
-        if (!isset(Idea::$rt->connections[$acceptKey])) {
+        if (!isset(Hilos::$rt->connections[$acceptKey])) {
             Logger::logAgentError('ProfilePage', "User not found for acceptKey={$acceptKey}");
             return;
         }
 
-        $oldName = Idea::$db->users[Idea::$rt->connections[$acceptKey]->userId]->name;
-        Idea::$db->users->actions->rename(Idea::$rt->connections[$acceptKey]->userId, $dto->newName);
+        $oldName = Hilos::$db->users[Hilos::$rt->connections[$acceptKey]->userId]->name;
+        Hilos::$db->users->actions->rename(Hilos::$rt->connections[$acceptKey]->userId, $dto->newName);
 
-        $userId = Idea::$rt->connections[$acceptKey]->userId;
-        $event = Idea::$db->events->actions->add(ChatEventType::USER_RENAMED->value, $userId, [
+        $userId = Hilos::$rt->connections[$acceptKey]->userId;
+        $event = Hilos::$db->events->actions->add(ChatEventType::USER_RENAMED->value, $userId, [
             'oldName' => $oldName,
             'newName' => $dto->newName,
         ]);
         $this->getChatAgent()->sendToAllUsers(
             ChatSignalConstants::NEW_EVENT,
             new ChatEventSignalDTO(new EntitiesChangesDTO(
-                full: [Idea::events => IdeaEvents::fromSingleItem($event)],
-                updates: [Idea::users => [['id' => $userId, 'name' => $dto->newName]]],
+                full: [Hilos::events => Events::fromSingleItem($event)],
+                updates: [Hilos::users => [['id' => $userId, 'name' => $dto->newName]]],
             )),
         );
     }

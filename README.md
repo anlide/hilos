@@ -16,7 +16,7 @@ Hilos is an event-driven, non-blocking framework designed for building scalable 
 - **🌐 WebSocket & HTTP Servers**: Built-in servers for real-time and RESTful applications
 - **🤖 Agent System**: Distributed task execution through agents in worker processes
 - **📡 Signal Routing**: Flexible signal-based communication between components
-- **💾 Advanced ORM**: Entity/Object/Idea pattern for database operations; runtime data seamlessly complements database data
+- **💾 Advanced ORM**: Entity/Object/Db pattern for database operations; runtime data seamlessly complements database data
 - **🔄 Database Migrations**: Version-controlled schema management
 - **⏰ Cron Jobs**: Built-in cron scheduler
 - **📝 Comprehensive Logging**: Structured logging with rotation and agent-specific logs
@@ -128,11 +128,11 @@ hilos/
 │   │   ├── API/                    # HTTP routing, async client
 │   │   ├── Constants/              # Constants
 │   │   ├── Core/                   # Daemon, Worker, Agent, Router, CLI, Page, EventLoop
-│   │   ├── Database/               # ORM (Entity, Object, Idea, Migrations, Schema, Filter)
+│   │   ├── Database/               # ORM (Entity, Object, Db, Migrations, Schema, Filter)
 │   │   ├── DTO/                    # Data Transfer Objects
 │   │   ├── Exception/              # Exception hierarchy
 │   │   ├── Logging/                # Logging
-│   │   ├── Runtime/                # Runtime (IdeaRt, RtState)
+│   │   ├── Runtime/                # Runtime (RtContext, RtState)
 │   │   ├── Socket/                 # Servers and clients (HTTP, WebSocket, Worker)
 │   │   └── Utils/                  # Utilities
 │   ├── frontend/                   # TypeScript/Vue SDK
@@ -157,10 +157,10 @@ hilos/
 - **Worker Manager** — Worker process, agent execution
 - **Agent System** — Agent, Agent Daemon, Agent Manager
 - **Signal Router** — Signal routing, subscriptions (page, group, user)
-- **Database Layer** — Entity/Object/Idea, migrations, Schema, Filter
+- **Database Layer** — Entity/Object/Db, migrations, Schema, Filter
 - **Servers** — HttpServer, WebSocketServer, WorkerServer
 - **API** — HttpRouter, AsyncHttpClient
-- **Runtime** — IdeaRt, RtState for reactive state
+- **Runtime** — RtContext, RtState for reactive state
 - **Page** — AbstractPage, PageSignalRouter
 
 ### Frontend SDK

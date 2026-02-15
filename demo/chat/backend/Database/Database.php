@@ -31,13 +31,13 @@ class Database extends BaseDatabase
      * - DB_PASSWORD: Database password (default: empty)
      * - DB_DATABASE: Database name (default: hilos_demo)
      *
-     * @param bool $initIdea If true, initialize Idea with storage. Set to false for commands
-     *                       that need to work with broken Idea files (e.g., db:idea:fix)
+     * @param bool $initHilos If true, initialize Hilos with storage.
+     *                       Set to false for legacy commands that need to work with broken context files (e.g., db:idea:fix)
      * @param bool $retryConnection If true, retry connection on temporary errors (useful for Docker startup)
      * @throws DatabaseException
      * @throws MissingEnvironmentVariableException
      */
-    public static function initialize(bool $initIdea = true, bool $retryConnection = false): void
+    public static function initialize(bool $initHilos = true, bool $retryConnection = false): void
     {
         // Configure primary database connection (index 0)
         self::configure(
@@ -59,11 +59,11 @@ class Database extends BaseDatabase
         // Initialize database schema structure
         Schema::initialize(0);
 
-        // Initialize Idea with storage (for read-only data access)
-        // Idea depends on Database, so initialize it here
-        // Can be skipped for commands that need to work with broken Idea files
-        if ($initIdea) {
-            Idea::init();
+        // Initialize Hilos facade with storage (for read-only data access).
+        // Hilos depends on Database, so initialize it here.
+        // Can be skipped for commands that need to work with broken database context files.
+        if ($initHilos) {
+            \Demo\Chat\Hilos\Database\Hilos::init();
         }
 
         // Additional database connections can be configured here

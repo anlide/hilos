@@ -4,25 +4,26 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Runtime\Idea;
 
-use Demo\Chat\Database\Idea;
+use Demo\Chat\Hilos\Database\Hilos;
 use Demo\Chat\Database\Idea\User as IdeaUser;
 use Demo\Chat\Runtime\State\Connection as StateConnection;
-use Hilos\Runtime\Idea\IdeaRtItem;
+use Hilos\Hilos\Runtime\RtItem;
 
 /**
  * Connection Idea - read-only wrapper around Connection state
+ * @deprecated Use Demo\Chat\Hilos\Runtime\Rt\Connection.
  *
  * Provides high-level access to connection data.
  * Stores only reference to StateConnection for memory efficiency.
  *
- * @extends IdeaRtItem<StateConnection>
+ * @extends RtItem<StateConnection>
  *
  * @property-read string $acceptKey WebSocket accept key
  * @property-read int $userId User ID
  * @property-read int $connectedAt Unix timestamp when connected
  * @property-read ?IdeaUser $user IdeaUser for this connection (null if user not found)
  */
-final class Connection extends IdeaRtItem
+final class Connection extends RtItem
 {
     /**
      * Constructor
@@ -49,7 +50,7 @@ final class Connection extends IdeaRtItem
             StateConnection::acceptKey => $state->getAcceptKey(),
             StateConnection::userId => $state->getUserId(),
             StateConnection::connectedAt => $state->getConnectedAt(),
-            'user' => Idea::$db->users[$state->getUserId()] ?? null,
+            Hilos::user => Hilos::$db->users[$state->getUserId()] ?? null,
             default => parent::__get($name),
         };
     }

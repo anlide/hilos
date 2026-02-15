@@ -28,15 +28,16 @@ try {
     Migration::setMigrationName('Schema');
     Migration::setRoutinesPath(__DIR__ . '/../Database/Migration/Routines');
 
-    // Determine which command is being executed
-    // Some commands (like db:idea:fix) need to work with potentially broken Idea files,
-    // so we skip Idea initialization for them
+    // Determine which command is being executed.
+    // TODO(hilos-refactor): rename legacy CLI commands db:idea:* to db:hilos:* and remove this compatibility branch.
+    // Some legacy commands (like db:idea:fix) need to work with potentially broken context files,
+    // so we skip Hilos initialization for them.
     $command = $argv[1] ?? '';
-    $commandsWithoutIdea = ['db:idea:fix'];
-    $initIdea = !in_array($command, $commandsWithoutIdea);
+    $commandsWithoutHilosInit = ['db:idea:fix'];
+    $initHilos = !in_array($command, $commandsWithoutHilosInit);
 
     // Initialize database connection and schema
-    Database::initialize(initIdea: $initIdea);
+    Database::initialize(initHilos: $initHilos);
 
     // Create CLI manager instance with command line arguments
     $cliManager = new CliManager($argv);

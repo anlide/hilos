@@ -4,7 +4,7 @@ namespace Demo\Chat\Database\ObjectCollection;
 
 use ArrayAccess;
 use Countable;
-use Demo\Chat\Database\Idea;
+use Demo\Chat\Hilos\Database\Hilos;
 use Demo\Chat\Database\Entity\User as EntityUser;
 use Demo\Chat\Database\EntityCollection\Users as EntityUsers;
 use Demo\Chat\Database\Object\User as ObjectUser;
@@ -157,7 +157,7 @@ final class Users extends Objects implements Iterator, ArrayAccess, Countable
 
     public function getCollectionKey(): string
     {
-        return Idea::users;
+        return Hilos::users;
     }
 
     /**

@@ -7,7 +7,7 @@ use Demo\Chat\Database\Idea\Event as IdeaEvent;
 use Demo\Chat\Database\IdeaCollection\Events as IdeaCollectionEvents;
 use Demo\Chat\Database\Object\Event as ObjectEvent;
 use Demo\Chat\Database\ObjectCollection\Events as ObjectCollectionEvents;
-use Hilos\Database\Idea\IdeaActions;
+use Hilos\Hilos\Database\DbActions;
 use Hilos\Exception\DatabaseException;
 use Hilos\Exception\Idea\Actions\IdeaActionsCallbackNotSetException;
 use Hilos\Exception\Idea\Actions\IdeaActionsDuplicateIdException;
@@ -18,12 +18,13 @@ use Hilos\Exception\Idea\TruthSource\IdeaTruthSourceWriteNotAllowedException;
 
 /**
  * Events Actions
+ * @deprecated Use Demo\Chat\Hilos\Database\DbActions\EventsActions.
  * Provides write operations for Events collection
  *
- * @extends IdeaActions<IdeaEvent>
+ * @extends DbActions<IdeaEvent>
  * @property-read IdeaCollectionEvents $collection
  */
-final class EventsActions extends IdeaActions
+final class EventsActions extends DbActions
 {
     /**
      * Get table name for Events collection

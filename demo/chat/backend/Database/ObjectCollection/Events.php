@@ -4,14 +4,14 @@ namespace Demo\Chat\Database\ObjectCollection;
 
 use ArrayAccess;
 use Countable;
-use Demo\Chat\Database\Idea;
+use Demo\Chat\Hilos\Database\Hilos;
 use Demo\Chat\Database\Entity\Event as EntityEvent;
 use Demo\Chat\Database\EntityCollection\Events as EntityEvents;
 use Demo\Chat\Database\Object\Event as ObjectEvent;
 use Hilos\Database\Database;
 use Hilos\Database\Object\Objects;
 use Hilos\Exception\DatabaseException;
-use Hilos\Exception\Idea\TruthSource\IdeaTruthSourceWriteNotAllowedException;
+use Hilos\Exception\Hilos\Database\TruthSource\WriteNotAllowedException;
 use Iterator;
 use RuntimeException;
 
@@ -159,7 +159,7 @@ final class Events extends Objects implements Iterator, ArrayAccess, Countable
 
     public function getCollectionKey(): string
     {
-        return Idea::events;
+        return Hilos::events;
     }
 
     /**
@@ -187,16 +187,16 @@ final class Events extends Objects implements Iterator, ArrayAccess, Countable
      * @return ObjectEvent Created event object
      * @throws DatabaseException
      * @throws RuntimeException If event ID is null after sync or if write is not allowed
-     * @throws IdeaTruthSourceWriteNotAllowedException If no truth source is registered for write
+     * @throws WriteNotAllowedException If no truth source is registered for write
      */
     public function add(string $type, ?int $userId = null, ?array $data = null): ObjectEvent
     {
         // For LAZY_STRATEGY_NONE: Check if truth source is registered
         if ($this->_lazyStrategy === Objects::LAZY_STRATEGY_NONE) {
-            $hasTruthSource = \Hilos\Database\Idea\TruthSourceRegistry::hasTruthSource(Idea::events);
+            $hasTruthSource = \Hilos\Database\Idea\TruthSourceRegistry::hasTruthSource(Hilos::events);
 
             if (!$hasTruthSource) {
-                throw new IdeaTruthSourceWriteNotAllowedException("Write operation not allowed: no truth source registered for collection '" . Idea::events . "'. Register via TruthSourceRegistry::register() first.");
+                throw new WriteNotAllowedException("Write operation not allowed: no truth source registered for collection '" . Hilos::events . "'. Register via TruthSourceRegistry::register() first.");
             }
 
             // Ensure all data is loaded before write (for consistency)

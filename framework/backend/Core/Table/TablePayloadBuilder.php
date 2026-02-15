@@ -5,29 +5,29 @@ declare(strict_types=1);
 namespace Hilos\Core\Table;
 
 use Hilos\Core\Table\TableType;
-use Hilos\Database\Idea\Idea;
+use Hilos\Hilos\Database\Hilos;
 use Hilos\DTO\Table\TableDataDTO;
 use Hilos\DTO\Table\TablesPayloadDTO;
 
 /**
  * Builds table payload for subscription (initial load) or for a single table (refresh / page).
  *
- * Uses Idea::$table to resolve table data sources by key.
- * When Idea::$table is null, still returns payload with requested keys and empty rows so the client always gets the structure.
+ * Uses Hilos::$table to resolve table data sources by key.
+ * When Hilos::$table is null, still returns payload with requested keys and empty rows so the client always gets the structure.
  */
 class TablePayloadBuilder
 {
     /**
      * Build full payload for several tables (e.g. on subscribe).
      * Each table: loadFull(), totalCount, meta.
-     * When Idea::$table is null, returns placeholder entries (empty rows) for each key so response always has tables.key.
+     * When Hilos::$table is null, returns placeholder entries (empty rows) for each key so response always has tables.key.
      *
      * @param array<string> $tableKeys
      */
     public static function buildFull(array $tableKeys): TablesPayloadDTO
     {
         $tables = [];
-        $table = Idea::$table;
+        $table = Hilos::$table;
         foreach ($tableKeys as $key) {
             if ($table !== null) {
                 $source = $table->get($key);
@@ -62,7 +62,7 @@ class TablePayloadBuilder
      */
     public static function buildPage(string $tableKey, int $offset, int $limit): ?TableDataDTO
     {
-        $table = Idea::$table;
+        $table = Hilos::$table;
         if ($table === null) {
             return null;
         }
@@ -87,7 +87,7 @@ class TablePayloadBuilder
      */
     public static function buildOneFull(string $tableKey): ?TableDataDTO
     {
-        $table = Idea::$table;
+        $table = Hilos::$table;
         if ($table === null) {
             return null;
         }

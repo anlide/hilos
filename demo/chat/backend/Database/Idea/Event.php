@@ -3,15 +3,16 @@
 namespace Demo\Chat\Database\Idea;
 
 use Demo\Chat\Database\Object\Event as ObjectEvent;
-use Hilos\Database\Idea\IdeaItem;
+use Hilos\Hilos\Database\DbItem;
 use Hilos\Exception\Idea\Item\IdeaItemPropertyNotFoundException;
 use RuntimeException;
 
 /**
  * Event Idea
+ * @deprecated Use Demo\Chat\Hilos\Database\Db\Event.
  * High-level abstraction with lazy loading and relationships
  *
- * @extends IdeaItem<ObjectEvent>
+ * @extends DbItem<ObjectEvent>
  *
  * @property-read ?int $id
  * @property-read ?int $userId
@@ -19,7 +20,7 @@ use RuntimeException;
  * @property-read string $timestamp
  * @property-read ?string $data
  */
-final class Event extends IdeaItem
+final class Event extends DbItem
 {
     /**
      * Public constructor - creates IdeaEvent from ObjectEvent instance

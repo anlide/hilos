@@ -4,25 +4,26 @@ namespace Demo\Chat\Database\IdeaCollection;
 
 use Demo\Chat\Database\Idea\Bot as IdeaBot;
 use Demo\Chat\Database\Object\Bot as ObjectBot;
-use Hilos\Database\Idea\IdeaActions;
-use Hilos\Database\Idea\IdeaCollection;
+use Hilos\Hilos\Database\DbActions;
+use Hilos\Hilos\Database\DbCollection;
 use Hilos\Database\Object\Object_;
 use InvalidArgumentException;
 
 /**
  * Bots Idea Collection
+ * @deprecated Use Demo\Chat\Hilos\Database\DbCollection\Bots.
  * Collection of Bot ideas with additional filtering methods
  *
- * @extends IdeaCollection<IdeaBot>
- * @property-read IdeaActions $actions Actions for write operations
+ * @extends DbCollection<IdeaBot>
+ * @property-read DbActions $actions Actions for write operations
  */
-final class Bots extends IdeaCollection
+final class Bots extends DbCollection
 {
     // init() and initEmpty() are inherited from IdeaCollection
     // Override only if custom initialization logic is needed
 
     // getObjectCollection() is inherited from IdeaCollection
-    // ObjectCollection is set via setObjectCollection() by Idea::setRepresent()
+    // ObjectCollection is set via setObjectCollection() by Hilos::setRepresent()
 
     /**
      * Create Idea instance from Object

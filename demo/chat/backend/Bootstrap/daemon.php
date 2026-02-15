@@ -34,7 +34,7 @@ Env::init(__DIR__);
 #Logger::setDebugEnabled(true);
 
 try {
-    // Initialize database connection, schema and Idea
+    // Initialize database connection, schema and Hilos context.
     Database::initialize();
 
     // Create chat daemon manager instance first (creates signalRouter)

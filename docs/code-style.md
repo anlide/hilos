@@ -12,7 +12,7 @@ Code style guidelines for Hilos projects.
    - PSR-12 / PSR-1 compliance
    - `declare(strict_types=1)` usage
    - Namespace conventions (Hilos\\, App\\, Demo\\)
-   - Class naming: PascalCase, suffixes (Entity, Object, Idea, Command, etc.)
+   - Class naming: PascalCase, suffixes (Entity, Object, Db, Command, etc.)
    - Method naming: camelCase
    - Property visibility (private/protected/public)
    - PHPDoc: blocks, `@param`, `@return`, `@throws`
@@ -28,7 +28,7 @@ Code style guidelines for Hilos projects.
 
 3. **File & Directory Structure**
    - Backend: backend/, Bootstrap/, Database/, etc.
-   - Entity/Object/Idea placement
+   - Entity/Object/Db placement
    - Migration files naming (e.g. `001_initial.sql`)
 
 4. **Naming Conventions**
@@ -43,10 +43,10 @@ Code style guidelines for Hilos projects.
    - Log levels (debug, info, error)
 
 6. **Database & ORM**
-   - Entity → Object → Idea flow
-   - **Runtime (ORM part):** `Runtime/Idea/`, `Runtime/State/` (IdeaRt, RtState, RtStates)
+   - Entity -> Object -> Db flow
+   - **Runtime (ORM part):** `Runtime/Rt/`, `Runtime/State/` (RtContext, RtState, RtStates)
    - **Frontend ORM subset:** `framework/frontend/src/stores`, `framework/frontend/src/types` (part of ORM, implementation in progress)
-   - When to use `db:entity:fix`, `db:object:fix`, `db:idea:fix`
+   - When to use `db:entity:fix`, `db:object:fix`, legacy `db:idea:fix`
    - Custom methods preservation
 
 7. **Docker & Environment**

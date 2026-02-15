@@ -5,17 +5,17 @@ declare(strict_types=1);
 namespace Hilos\Core\Table\DataSource;
 
 use Hilos\Core\Table\TableType;
-use Hilos\Database\Idea\IdeaCollection;
+use Hilos\Hilos\Database\DbCollection;
 
 /**
- * Table data source backed by an IdeaCollection (Entity type).
+ * Table data source backed by a DbCollection (Entity type).
  *
- * Demo: Idea::$table->register(Idea::users, new EntityTableDataSource(Idea::$db->users)).
+ * Example: Hilos::$table->register(Hilos::users, new EntityTableDataSource(Hilos::$db->users)).
  */
 class EntityTableDataSource implements TableDataSourceInterface
 {
     public function __construct(
-        private readonly IdeaCollection $collection,
+        private readonly DbCollection $collection,
     ) {
     }
 

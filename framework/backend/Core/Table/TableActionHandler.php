@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Table;
 
-use Hilos\Database\Idea\Idea;
+use Hilos\Hilos\Database\Hilos;
 use Hilos\DTO\Action\ActionPayloadDTO;
 use Hilos\DTO\Table\TableDataDTO;
 use Hilos\DTO\Table\TablesPayloadDTO;
@@ -12,7 +12,7 @@ use Hilos\DTO\Table\TablesPayloadDTO;
 /**
  * Handles table-scoped actions: load_page, refresh_snapshot.
  *
- * Uses Idea::$table to resolve table by key. Returns DTO to send back to client.
+ * Uses Hilos::$table to resolve table by key. Returns DTO to send back to client.
  */
 class TableActionHandler
 {
@@ -23,11 +23,6 @@ class TableActionHandler
      */
     public static function handle(string $action, ActionPayloadDTO $dto): TableDataDTO|TablesPayloadDTO|null
     {
-        $table = Idea::$table;
-        if ($table === null) {
-            return null;
-        }
-
         $arr = $dto->toArray();
         $data = $arr[TableActionConstants::PAYLOAD_KEY_DATA] ?? $arr;
         $tableKey = $data[TableActionConstants::PAYLOAD_KEY_TABLE_KEY] ?? '';

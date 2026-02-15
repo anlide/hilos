@@ -5,24 +5,25 @@ namespace Demo\Chat\Database\IdeaCollection;
 use Demo\Chat\Database\Idea\Event as IdeaEvent;
 use Demo\Chat\Database\IdeaActions\EventsActions as IdeaActionsEvents;
 use Demo\Chat\Database\Object\Event as ObjectEvent;
-use Hilos\Database\Idea\IdeaCollection;
+use Hilos\Hilos\Database\DbCollection;
 use Hilos\Database\Object\Object_;
 use InvalidArgumentException;
 
 /**
  * Events Idea Collection
+ * @deprecated Use Demo\Chat\Hilos\Database\DbCollection\Events.
  * Collection of Event ideas with additional filtering methods
  *
- * @extends IdeaCollection<IdeaEvent>
+ * @extends DbCollection<IdeaEvent>
  * @property-read IdeaActionsEvents $actions Actions for write operations
  */
-final class Events extends IdeaCollection
+final class Events extends DbCollection
 {
     // init() and initEmpty() are inherited from IdeaCollection
     // Override only if custom initialization logic is needed
 
     // getObjectCollection() is inherited from IdeaCollection
-    // ObjectCollection is set via setObjectCollection() by Idea::setRepresent()
+    // ObjectCollection is set via setObjectCollection() by Hilos::setRepresent()
 
     /**
      * Create Idea instance from Object

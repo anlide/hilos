@@ -10,18 +10,19 @@ use Hilos\Exception\Runtime\Actions\IdeaRtActionsCallbackNotSetException;
 use Hilos\Exception\Runtime\Actions\IdeaRtActionsCollectionNameNullException;
 use Hilos\Exception\Runtime\Actions\IdeaRtActionsStateCollectionNullException;
 use Hilos\Exception\Runtime\TruthSource\RtTruthSourceWriteNotAllowedException;
-use Hilos\Runtime\Idea\IdeaRtActions;
+use Hilos\Hilos\Runtime\RtActions;
 
 /**
  * ConnectionsActions - write operations for connections runtime data
+ * @deprecated Use Demo\Chat\Hilos\Runtime\RtActions\ConnectionsActions.
  *
  * All modifications to connection data must go through this class.
  *
  * Usage:
- *   Idea::$rt->connections->actions->register($acceptKey, $userId);
- *   Idea::$rt->connections->actions->unregister($acceptKey);
+ *   Hilos::$rt->connections->actions->register($acceptKey, $userId);
+ *   Hilos::$rt->connections->actions->unregister($acceptKey);
  */
-class ConnectionsActions extends IdeaRtActions
+class ConnectionsActions extends RtActions
 {
     /**
      * Register new connection

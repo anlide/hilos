@@ -3,17 +3,18 @@
 namespace Demo\Chat\Database\Idea;
 
 use Demo\Chat\Database\Object\Moderator as ObjectModerator;
-use Hilos\Database\Idea\IdeaItem;
+use Hilos\Hilos\Database\DbItem;
 use RuntimeException;
 
 /**
  * Moderator Idea
+ * @deprecated Use Demo\Chat\Hilos\Database\Db\Moderator.
  * High-level abstraction with lazy loading and relationships
  *
  * Stores reference to ObjectModerator instance.
  * Object instances are stored in ObjectCollection in Idea.
  *
- * @extends IdeaItem<ObjectModerator>
+ * @extends DbItem<ObjectModerator>
  *
  * @property-read ?int $idModerator Moderator ID (primary key)
  * @property-read string $name Moderator name
@@ -28,7 +29,7 @@ use RuntimeException;
  * @property-read string $createdAt Creation timestamp
  * @property-read string $updatedAt Last update timestamp
  */
-final class Moderator extends IdeaItem
+final class Moderator extends DbItem
 {
     /**
      * Public constructor - creates IdeaModerator from ObjectModerator instance

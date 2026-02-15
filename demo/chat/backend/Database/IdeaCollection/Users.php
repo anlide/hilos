@@ -6,25 +6,26 @@ use Demo\Chat\Database\Idea\User as IdeaUser;
 use Demo\Chat\Database\IdeaActions\UsersActions as IdeaUsersActions;
 use Demo\Chat\Database\Object\User as ObjectUser;
 use Demo\Chat\Database\ObjectCollection\Users as ObjectUsers;
-use Hilos\Database\Idea\IdeaCollection;
+use Hilos\Hilos\Database\DbCollection;
 use Hilos\Database\Object\Object_;
 use Hilos\Exception\DatabaseException;
 use InvalidArgumentException;
 
 /**
  * Users Idea Collection
+ * @deprecated Use Demo\Chat\Hilos\Database\DbCollection\Users.
  * Collection of User ideas with additional filtering methods
  *
- * @extends IdeaCollection<IdeaUser>
+ * @extends DbCollection<IdeaUser>
  * @property-read IdeaUsersActions $actions Actions for write operations
  */
-final class Users extends IdeaCollection
+final class Users extends DbCollection
 {
     // init() and initEmpty() are inherited from IdeaCollection
     // Override only if custom initialization logic is needed
 
     // getObjectCollection() is inherited from IdeaCollection
-    // ObjectCollection is set via setObjectCollection() by Idea::setRepresent()
+    // ObjectCollection is set via setObjectCollection() by Hilos::setRepresent()
 
     /**
      * Create Idea instance from Object

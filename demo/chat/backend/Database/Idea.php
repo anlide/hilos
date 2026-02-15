@@ -29,6 +29,8 @@ use Hilos\Runtime\Idea\IdeaRt;
 /**
  * Idea - Application-specific data access point
  *
+ * @deprecated Use Demo\Chat\Database\Hilos (and DbChat) instead.
+ *
  * Extends framework Idea class to provide:
  *   - $db: Database collections (users, events, bots, moderators)
  *   - $rt: Runtime data (connections)

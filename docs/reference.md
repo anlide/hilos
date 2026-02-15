@@ -16,8 +16,8 @@ API and component reference documentation.
    - CliManager, CLI commands → [cli-commands.md](cli-commands.md)
 
 2. **ORM system**
-   - **Database layer:** Entity, EntityCollection, Object, ObjectCollection, Idea, IdeaCollection, IdeaStorage
-   - **Runtime layer:** IdeaRt, IdeaRtCollection, IdeaRtItem, RtState, RtStates, IdeaRtActions — runtime data complementing DB
+   - **Database layer:** Entity, EntityCollection, Object, ObjectCollection, Db, DbCollection, DbContext
+   - **Runtime layer:** RtContext, RtCollection, RtItem, RtState, RtStates, RtActions — runtime data complementing DB
    - Schema, TableInfo, IndexInfo, Filter, migrations
    - Generator, PhpType
    - *Frontend ORM subset:* `framework/frontend/src/stores`, `framework/frontend/src/types` (part of ORM, implementation in progress)
@@ -40,3 +40,5 @@ API and component reference documentation.
 6. **Constants + DTO**
    - CliCommands, DaemonConstants, EnvConstants, ExitCode, WorkerConstants
    - DaemonStatusDTO, WorkerRegisterDTO, SignalDTO, WebSocket\*, etc.
+
+> TODO(hilos-refactor): remove remaining legacy Idea-class references from generated/compatibility sections.

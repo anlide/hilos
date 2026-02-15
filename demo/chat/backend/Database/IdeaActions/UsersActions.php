@@ -6,7 +6,7 @@ use Demo\Chat\Database\Idea\User as IdeaUser;
 use Demo\Chat\Database\IdeaCollection\Users as IdeaCollectionUsers;
 use Demo\Chat\Database\Object\User as ObjectUser;
 use Demo\Chat\Database\ObjectCollection\Users as ObjectUsers;
-use Hilos\Database\Idea\IdeaActions;
+use Hilos\Hilos\Database\DbActions;
 use Hilos\Exception\DatabaseException;
 use Hilos\Exception\Idea\Actions\IdeaActionsCallbackNotSetException;
 use Hilos\Exception\Idea\Actions\IdeaActionsDuplicateIdException;
@@ -18,12 +18,13 @@ use RuntimeException;
 
 /**
  * Users Actions
+ * @deprecated Use Demo\Chat\Hilos\Database\DbActions\UsersActions.
  * Provides write operations for Users collection
  *
- * @extends IdeaActions<IdeaUser>
+ * @extends DbActions<IdeaUser>
  * @property-read IdeaCollectionUsers $collection
  */
-final class UsersActions extends IdeaActions
+final class UsersActions extends DbActions
 {
     /**
      * Register new user
