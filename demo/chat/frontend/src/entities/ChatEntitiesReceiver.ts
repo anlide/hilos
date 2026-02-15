@@ -1,11 +1,12 @@
 import { EntitiesReceiver } from '@hilos/sdk/entities'
+import type { Presence } from '@/types/domain/Presence'
 import { parseUserPayloads, parseEventPayloads, eventPayloadToEvent } from './parsers'
 import { parsePartialUserPayloads } from './partialUserPayload'
 
 /** Store interface required for applying entity changes (avoids importing store here). */
 interface ChatStoreForEntities {
-  upsertUsers(users: Array<{ id: number; name: string; lastActivity?: string | null; presence?: 'online' | 'offline' }>): void
-  patchUsers(partials: Array<{ id: number; name?: string; lastActivity?: string | null; presence?: 'online' | 'offline' }>): void
+  upsertUsers(users: Array<{ id: number; name: string; lastActivity?: string | null; presence?: Presence }>): void
+  patchUsers(partials: Array<{ id: number; name?: string; lastActivity?: string | null; presence?: Presence }>): void
   upsertEvents(events: ReturnType<typeof eventPayloadToEvent>[]): void
   addEvent(event: ReturnType<typeof eventPayloadToEvent>): void
   clearEvents(): void

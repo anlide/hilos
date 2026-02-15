@@ -175,12 +175,13 @@ import { Table, Modal, LoadingButton } from '@hilos/sdk/components'
 import { useChatStore } from '@/stores'
 import { sendAction } from '@/services/websocketActions'
 import { TableActionConstants } from '@hilos/sdk/constants'
+import type { Presence } from '@/types/domain/Presence'
 
 interface UserEntity {
   id: number
   name: string
   lastActivity: string
-  presence?: string
+  presence?: Presence
 }
 
 const chatStore = useChatStore()

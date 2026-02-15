@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { Event, User } from '@/types'
+import type { Presence } from '@/types/domain/Presence'
 import { TableActionConstants } from '@hilos/sdk/constants'
 
 /** Table payload from backend (TableDataDTO). Used for admin tables (e.g. users). */
@@ -130,7 +131,7 @@ export const useChatStore = defineStore('chat', {
     /**
      * Add or update multiple users
      */
-    upsertUsers(users: Array<{ id: number; name: string; lastActivity?: string | null; presence?: 'online' | 'offline' }>) {
+    upsertUsers(users: Array<{ id: number; name: string; lastActivity?: string | null; presence?: Presence }>) {
       for (const user of users) {
         this.addUser(User.fromObject({
           id: user.id,
@@ -145,7 +146,7 @@ export const useChatStore = defineStore('chat', {
      * Apply partial user updates (e.g. from entities.updates.users: only id + changed fields).
      * Merges into existing user by id; adds new user if missing and name is provided.
      */
-    patchUsers(partials: Array<{ id: number; name?: string; lastActivity?: string | null; presence?: 'online' | 'offline' }>) {
+    patchUsers(partials: Array<{ id: number; name?: string; lastActivity?: string | null; presence?: Presence }>) {
       for (const p of partials) {
         const idx = this.users.findIndex((user) => user.id === p.id)
         if (idx >= 0) {

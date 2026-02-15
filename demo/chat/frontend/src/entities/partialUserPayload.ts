@@ -3,13 +3,15 @@
  * Used for incremental updates (rename: [{ id, name }]).
  */
 
+import { type Presence, isPresence } from '@/types/domain/Presence'
+
 type JsonRecord = Record<string, unknown>
 
 export type PartialUserPayload = {
   id: number
   name?: string
   lastActivity?: string | null
-  presence?: 'online' | 'offline'
+  presence?: Presence
 }
 
 function isRecord(value: unknown): value is JsonRecord {
@@ -30,9 +32,7 @@ export function isPartialUserPayload(value: unknown): value is PartialUserPayloa
   ) {
     return false
   }
-  return !(value.presence !== undefined &&
-      value.presence !== 'online' &&
-      value.presence !== 'offline');
+  return value.presence === undefined || isPresence(value.presence)
 }
 
 /**

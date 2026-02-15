@@ -4,6 +4,7 @@
  */
 
 import { Event } from '@/types/domain/Event'
+import { type Presence, isPresence } from '@/types/domain/Presence'
 
 type JsonRecord = Record<string, unknown>
 
@@ -11,7 +12,7 @@ export type UserPayload = {
   id: number
   name: string
   lastActivity?: string | null
-  presence?: 'online' | 'offline'
+  presence?: Presence
 }
 
 export type EventPayload = {
@@ -32,11 +33,7 @@ export const isUserPayload = (value: unknown): value is UserPayload => {
   if (value.lastActivity !== undefined && value.lastActivity !== null && typeof value.lastActivity !== 'string') {
     return false
   }
-  return !(
-    value.presence !== undefined &&
-    value.presence !== 'online' &&
-    value.presence !== 'offline'
-  )
+  return value.presence === undefined || isPresence(value.presence)
 }
 
 export function parseUserPayloads(value: unknown): UserPayload[] | null {

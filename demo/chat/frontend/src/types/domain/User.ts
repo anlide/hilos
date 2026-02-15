@@ -1,4 +1,5 @@
 import { DomainObject } from '@hilos/sdk/types'
+import type { Presence } from '@/types'
 
 /**
  * User - соответствует структуре User из БД
@@ -14,14 +15,14 @@ export class User extends DomainObject {
   name: string
   sessionToken: string | null
   lastActivity: string | null
-  presence: 'online' | 'offline'
+  presence: Presence
 
   constructor(
     id: number | null,
     name: string,
     sessionToken: string | null,
     lastActivity: string | null,
-    presence: 'online' | 'offline'
+    presence: Presence
   ) {
     super()
     this.id = id
@@ -39,7 +40,7 @@ export class User extends DomainObject {
     name: string
     sessionToken?: string | null
     lastActivity?: string | null
-    presence?: 'online' | 'offline'
+    presence?: Presence
   }): User {
     return new User(
       data.id ?? null,
