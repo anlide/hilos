@@ -9,7 +9,7 @@ use Hilos\Exception\Idea\Collection\IdeaCollectionNotFoundException;
 use Hilos\Exception\Idea\Other\IdeaCloneException;
 use Hilos\Exception\Idea\Other\IdeaObjectCollectionNotFoundException;
 use Hilos\Exception\Idea\Other\IdeaUnknownLazyStrategyException;
-use Hilos\Runtime\Idea\IdeaRt;
+use Hilos\Hilos\Runtime\Context\RtContext;
 
 /**
  * Idea - Static access point for application data
@@ -21,7 +21,7 @@ use Hilos\Runtime\Idea\IdeaRt;
  *   - $rt: Runtime layer for transient application data (connections, sessions, state)
  *   - $table: Table layer for UI tables (per-worker; Entity/Sql/Other data sources)
  *
- * @template TRuntime of IdeaRt
+ * @template TRuntime of RtContext
  *
  * Usage:
  *   Idea::init(); // Initialize (mandatory)
@@ -35,7 +35,7 @@ abstract class Idea
     public static ?self $db = null;
 
     /** @var ?TRuntime Runtime layer singleton for transient application data */
-    public static ?IdeaRt $rt = null;
+    public static ?RtContext $rt = null;
 
     /** @var ?IdeaTable Table layer singleton (per worker; named table data sources) */
     public static ?IdeaTable $table = null;
@@ -116,9 +116,9 @@ abstract class Idea
      * Override in child class to provide application-specific runtime.
      * Return null if runtime is not needed.
      *
-     * @return ?IdeaRt Runtime instance or null
+     * @return ?RtContext Runtime instance or null
      */
-    protected static function createRuntime(): ?IdeaRt
+    protected static function createRuntime(): ?RtContext
     {
         return null;
     }

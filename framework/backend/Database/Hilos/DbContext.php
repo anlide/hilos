@@ -2,7 +2,7 @@
 
 namespace Hilos\Database\Hilos;
 
-use Hilos\Hilos\Database\DbCollection;
+use Hilos\Hilos\Database\Collection\DbCollection;
 use Hilos\Database\Object\Objects;
 use Hilos\Exception\DatabaseException;
 use Hilos\Exception\Hilos\Database\CollectionNotFoundException;

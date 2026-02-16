@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Core\Table\DataSource;
 
 use Hilos\Core\Table\TableType;
-use Hilos\Hilos\Database\DbCollection;
+use Hilos\Hilos\Database\Collection\DbCollection;
 
 /**
  * Table data source backed by a DbCollection (Entity type).

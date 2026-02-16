@@ -6,25 +6,26 @@ use Demo\Chat\Database\Entity\Bot as EntityBot;
 use Demo\Chat\Database\Entity\Event as EntityEvent;
 use Demo\Chat\Database\Entity\Moderator as EntityModerator;
 use Demo\Chat\Database\Entity\User as EntityUser;
-use Demo\Chat\Hilos\Database\DbActions\EventsActions;
-use Demo\Chat\Hilos\Database\DbActions\UsersActions;
-use Demo\Chat\Hilos\Database\DbCollection\Bots;
-use Demo\Chat\Hilos\Database\DbCollection\Events;
-use Demo\Chat\Hilos\Database\DbCollection\Moderators;
-use Demo\Chat\Hilos\Database\DbCollection\Users;
+use Demo\Chat\Hilos\Database\Actions\EventsActions;
+use Demo\Chat\Hilos\Database\Actions\UsersActions;
+use Demo\Chat\Hilos\Database\Collection\Bots;
+use Demo\Chat\Hilos\Database\Collection\Events;
+use Demo\Chat\Hilos\Database\Collection\Moderators;
+use Demo\Chat\Hilos\Database\Collection\Users;
 use Demo\Chat\Database\ObjectCollection\Bots as ObjectBots;
 use Demo\Chat\Database\ObjectCollection\Events as ObjectEvents;
 use Demo\Chat\Database\ObjectCollection\Moderators as ObjectModerators;
 use Demo\Chat\Database\ObjectCollection\Users as ObjectUsers;
-use Demo\Chat\Runtime\ChatRuntime;
+use Demo\Chat\Hilos\Runtime\Context\ChatRuntime;
 use Hilos\Core\Table\DataSource\EntityTableDataSource;
 use Hilos\Hilos\Database\Hilos as BaseHilos;
-use Hilos\Hilos\Runtime\RtContext;
+use Hilos\Hilos\Runtime\Context\RtContext;
 use Hilos\Hilos\Table\TableHub;
 use Hilos\Database\Object\Objects;
 use Hilos\Exception\DatabaseException;
 use Hilos\Exception\Hilos\Database\ObjectCollectionNotFoundException;
 use Hilos\Exception\Hilos\Runtime\Rt\StateCollectionNotFoundException;
+
 /**
  * DbChat - App-specific database context.
  *

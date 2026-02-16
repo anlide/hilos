@@ -1,0 +1,93 @@
+<?php
+
+namespace Hilos\Hilos\Runtime\Base;
+
+use Hilos\Exception\Runtime\Rt\IdeaRtCloneException;
+use Hilos\Exception\Runtime\Rt\IdeaRtCollectionNotFoundException;
+use Hilos\Exception\Runtime\Rt\IdeaRtStateCollectionNotFoundException;
+use Hilos\Hilos\Runtime\State\Collection\RtStates;
+
+/**
+ * Base class for runtime data access (context).
+ *
+ * Manages state collections (RtStates) and their RtCollection wrappers.
+ * Runtime data is transient - it lives only in memory for the process lifetime.
+ *
+ * Child classes must override init() and use setRepresent() to register collections.
+ */
+abstract class RtContextBase
+{
+    /** @var array<string, RtStates> */
+    protected array $_stateCollections = [];
+
+    /** @var array<string, RtCollectionBase> */
+    protected array $_rtCollections = [];
+
+    protected function __construct()
+    {
+    }
+
+    /** @throws IdeaRtCloneException */
+    public function __clone(): void
+    {
+        throw new IdeaRtCloneException('Runtime context cannot be cloned');
+    }
+
+    public static function init(): static
+    {
+        return new static();
+    }
+
+    /**
+     * @param string $rtCollectionClass RtCollectionBase class name
+     * @param ?string $actionsClass RtActionsBase class name (optional)
+     * @throws IdeaRtStateCollectionNotFoundException
+     */
+    public function setRepresent(string $name, string $rtCollectionClass, ?string $actionsClass = null): void
+    {
+        if (!isset($this->_stateCollections[$name])) {
+            throw new IdeaRtStateCollectionNotFoundException(
+                "State collection [{$name}] not found in _stateCollections. Create it before calling setRepresent()."
+            );
+        }
+
+        $stateCollection = $this->_stateCollections[$name];
+
+        if (is_subclass_of($rtCollectionClass, RtCollectionBase::class)) {
+            $rtCollection = $rtCollectionClass::init();
+            $rtCollection->setStateCollection($stateCollection);
+            $rtCollection->setCollectionName($name);
+            if ($actionsClass !== null) {
+                $rtCollection->setActionsClass($actionsClass);
+            }
+            $this->_rtCollections[$name] = $rtCollection;
+        }
+    }
+
+    public function getStateCollection(string $name): ?RtStates
+    {
+        return $this->_stateCollections[$name] ?? null;
+    }
+
+    /** @throws IdeaRtCollectionNotFoundException */
+    public function __get(string $name): RtCollectionBase
+    {
+        if (!isset($this->_rtCollections[$name])) {
+            throw new IdeaRtCollectionNotFoundException("Runtime collection [{$name}] does not exist");
+        }
+        return $this->_rtCollections[$name];
+    }
+
+    public function toArray(): array
+    {
+        return array_map(
+            fn(RtCollectionBase $collection) => $collection->toArray(),
+            $this->_rtCollections
+        );
+    }
+
+    public function __debugInfo(): array
+    {
+        return $this->toArray();
+    }
+}

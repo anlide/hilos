@@ -16,7 +16,7 @@ use Demo\Chat\Database\ObjectCollection\Bots as ObjectBots;
 use Demo\Chat\Database\ObjectCollection\Events as ObjectEvents;
 use Demo\Chat\Database\ObjectCollection\Moderators as ObjectModerators;
 use Demo\Chat\Database\ObjectCollection\Users as ObjectUsers;
-use Demo\Chat\Runtime\ChatRuntime;
+use Demo\Chat\Hilos\Runtime\Context\ChatRuntime;
 use Hilos\Core\Table\DataSource\EntityTableDataSource;
 use Hilos\Core\Table\IdeaTable;
 use Hilos\Database\Idea\Idea as BaseIdea;
@@ -24,7 +24,8 @@ use Hilos\Database\Object\Objects;
 use Hilos\Exception\DatabaseException;
 use Hilos\Exception\Idea\Other\IdeaObjectCollectionNotFoundException;
 use Hilos\Exception\Runtime\Rt\IdeaRtStateCollectionNotFoundException;
-use Hilos\Runtime\Idea\IdeaRt;
+use Hilos\Hilos\Runtime\Context\RtContext;
+use Hilos\Hilos\Database\Collection\DbCollection;
 
 /**
  * Idea - Application-specific data access point
@@ -97,10 +98,10 @@ final class Idea extends BaseIdea
     /**
      * Create runtime instance
      *
-     * @return ?IdeaRt ChatRuntime instance
+     * @return ?RtContext ChatRuntime instance
      * @throws IdeaRtStateCollectionNotFoundException
      */
-    protected static function createRuntime(): ?IdeaRt
+    protected static function createRuntime(): ?RtContext
     {
         return ChatRuntime::init();
     }
@@ -113,7 +114,9 @@ final class Idea extends BaseIdea
     protected static function createTable(): ?IdeaTable
     {
         $table = new IdeaTable();
-        $table->register(self::users, new EntityTableDataSource(self::$db->users));
+        /** @var DbCollection $users */
+        $users = self::$db->users;
+        $table->register(self::users, new EntityTableDataSource($users));
         return $table;
     }
 }

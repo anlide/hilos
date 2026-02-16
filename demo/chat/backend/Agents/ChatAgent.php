@@ -10,11 +10,11 @@ use Demo\Chat\Constants\ChatEventType;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\HttpHeaders;
 use Demo\Chat\Hilos\Database\Hilos;
-use Demo\Chat\Hilos\Database\DbCollection\Events;
-use Demo\Chat\Hilos\Database\DbCollection\Users;
+use Demo\Chat\Hilos\Database\Collection\Events;
+use Demo\Chat\Hilos\Database\Collection\Users;
 use Demo\Chat\DTO\ChatEventSignalDTO;
 use Demo\Chat\DTO\HandshakeResponseSignalData;
-use Demo\Chat\Runtime\ChatRuntime;
+use Demo\Chat\Hilos\Runtime\Context\ChatRuntime;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\SignalRouter;
@@ -24,7 +24,7 @@ use Hilos\DTO\WebSocket\WebSocketCloseSignalDTO;
 use Hilos\DTO\WebSocket\WebSocketHandshakeSignalDTO;
 use Hilos\Exception\HilosException;
 use Hilos\Logging\Logger\Logger;
-use Hilos\Runtime\RtTruthSourceRegistry;
+use Hilos\Hilos\TruthSource\RtTruthSourceRegistry;
 
 /**
  * ChatAgent - Monopolistic agent for chat management

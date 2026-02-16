@@ -9,7 +9,7 @@ use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Page\AbstractChatPage;
 use Demo\Chat\Hilos\Database\Hilos;
-use Demo\Chat\Hilos\Database\DbCollection\Events;
+use Demo\Chat\Hilos\Database\Collection\Events;
 use Demo\Chat\DTO\Action\RenameActionDTO;
 use Demo\Chat\DTO\ChatEventSignalDTO;
 use Hilos\DTO\Action\ActionPayloadDTO;
