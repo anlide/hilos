@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Core\CLI\Commands\DbObjectFixCommand;
 
-use Hilos\Database\Object\Object_;
+use Hilos\Database\Object\Item\Object_;
 use Hilos\Utils\Helpers\StringHelper;
 use ReflectionClass;
 
@@ -258,7 +258,7 @@ trait ObjectCollectionFixer
                 if (strpos($fullClassName, '\\Object\\') !== false &&
                     strpos($fullClassName, '\\ObjectCollection\\') === false &&
                     strpos($fullClassName, '\\Object\\Objects') === false &&
-                    strpos($fullClassName, '\\Object\\Object_') === false) {
+                    strpos($fullClassName, '\\Object\\Item\\Object_') === false) {
                     return $fullClassName;
                 }
             }
@@ -491,14 +491,14 @@ trait ObjectCollectionFixer
 
                 // Skip base classes
                 if ($fullClassName === 'Hilos\\Database\\Object\\Objects' ||
-                    $fullClassName === 'Hilos\\Database\\Object\\Object_') {
+                    $fullClassName === 'Hilos\\Database\\Object\\Item\\Object_') {
                     continue;
                 }
 
                 if (str_contains($fullClassName, '\\Object\\') && 
                     !str_contains($fullClassName, '\\ObjectCollection\\') &&
                     !str_contains($fullClassName, '\\Object\\Objects') &&
-                    !str_contains($fullClassName, '\\Object\\Object_')) {
+                    !str_contains($fullClassName, '\\Object\\Item\\Object_')) {
                     $foundObjectClasses[] = [
                         'class' => $fullClassName,
                         'alias' => $alias ?? $this->getShortClassName($fullClassName),

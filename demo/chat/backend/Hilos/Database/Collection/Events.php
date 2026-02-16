@@ -4,8 +4,8 @@ namespace Demo\Chat\Hilos\Database\Collection;
 
 use Demo\Chat\Hilos\Database\Item\Event;
 use Demo\Chat\Hilos\Database\Actions\EventsActions;
-use Demo\Chat\Database\Object\Event as ObjectEvent;
-use Hilos\Database\Object\Object_;
+use Demo\Chat\Database\Object\Item\Event as ObjectEvent;
+use Hilos\Database\Object\Item\Object_;
 use Hilos\Hilos\Database\Collection\DbCollection;
 use InvalidArgumentException;
 

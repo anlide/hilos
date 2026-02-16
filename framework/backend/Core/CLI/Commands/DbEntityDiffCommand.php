@@ -7,7 +7,7 @@ namespace Hilos\Core\CLI\Commands;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\ExitCode;
 use Hilos\Database\Database;
-use Hilos\Database\Entity\Entity;
+use Hilos\Database\Entity\Item\Entity;
 use Hilos\Database\Schema\Schema;
 use Hilos\Database\Schema\TableInfo;
 use ReflectionClass;

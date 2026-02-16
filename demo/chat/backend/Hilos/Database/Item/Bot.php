@@ -2,7 +2,7 @@
 
 namespace Demo\Chat\Hilos\Database\Item;
 
-use Demo\Chat\Database\Object\Bot as ObjectBot;
+use Demo\Chat\Database\Object\Item\Bot as ObjectBot;
 use Hilos\Hilos\Database\Item\DbItem;
 use RuntimeException;
 

@@ -2,7 +2,7 @@
 
 namespace Hilos\Database\Filter;
 
-use Hilos\Database\Object\Object_;
+use Hilos\Database\Object\Item\Object_;
 
 /**
  * Interface for filter criteria

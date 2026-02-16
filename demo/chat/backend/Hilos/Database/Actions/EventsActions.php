@@ -2,9 +2,9 @@
 
 namespace Demo\Chat\Hilos\Database\Actions;
 
-use Demo\Chat\Database\Entity\Event;
-use Demo\Chat\Database\Object\Event as ObjectEvent;
-use Demo\Chat\Database\ObjectCollection\Events as ObjectCollectionEvents;
+use Demo\Chat\Database\Entity\Item\Event;
+use Demo\Chat\Database\Object\Item\Event as ObjectEvent;
+use Demo\Chat\Database\Object\Collection\Events as ObjectCollectionEvents;
 use Demo\Chat\Hilos\Database\Item\Event as DbEvent;
 use Demo\Chat\Hilos\Database\Collection\Events as DbCollectionEvents;
 use Hilos\Exception\DatabaseException;

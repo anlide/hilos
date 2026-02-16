@@ -2,7 +2,7 @@
 
 namespace Demo\Chat\Hilos\Database\Item;
 
-use Demo\Chat\Database\Object\Moderator as ObjectModerator;
+use Demo\Chat\Database\Object\Item\Moderator as ObjectModerator;
 use Hilos\Hilos\Database\Item\DbItem;
 use RuntimeException;
 

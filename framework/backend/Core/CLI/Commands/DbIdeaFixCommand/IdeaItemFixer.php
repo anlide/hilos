@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Core\CLI\Commands\DbIdeaFixCommand;
 
 use Hilos\Database\Idea\IdeaItem;
-use Hilos\Database\Object\Object_;
+use Hilos\Database\Object\Item\Object_;
 use Hilos\Utils\Helpers\StringHelper;
 use ReflectionClass;
 
@@ -178,7 +178,7 @@ trait IdeaItemFixer
                 if (strpos($fullClassName, '\\Object\\') !== false &&
                     strpos($fullClassName, '\\ObjectCollection\\') === false &&
                     strpos($fullClassName, '\\Object\\Objects') === false &&
-                    strpos($fullClassName, '\\Object\\Object_') === false) {
+                    strpos($fullClassName, '\\Object\\Item\\Object_') === false) {
                     // Found Object class - return it
                     return $fullClassName;
                 }
@@ -1495,7 +1495,7 @@ trait IdeaItemFixer
                 if (strpos($fullClassName, '\\Object\\') !== false &&
                     strpos($fullClassName, '\\ObjectCollection\\') === false &&
                     strpos($fullClassName, '\\Object\\Objects') === false &&
-                    strpos($fullClassName, '\\Object\\Object_') === false) {
+                    strpos($fullClassName, '\\Object\\Item\\Object_') === false) {
                     // If it's not the current Object class, it needs to be removed
                     if ($fullClassName !== $objectClassName) {
                         return true;

@@ -10,7 +10,7 @@ use Hilos\Core\CLI\Commands\DbIdeaFixCommand\IdeaItemFixer;
 use Hilos\Core\CLI\Commands\DbIdeaFixCommand\IdeaCollectionFixer;
 use Hilos\Core\CLI\Commands\DbIdeaFixCommand\IdeaMainFixer;
 use Hilos\Core\CLI\Commands\DbIdeaFixCommand\IdeaStorageFixer;
-use Hilos\Database\Object\Object_;
+use Hilos\Database\Object\Item\Object_;
 use Hilos\Database\Object\Objects;
 use Hilos\Utils\Helpers\StringHelper;
 use ReflectionClass;

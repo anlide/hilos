@@ -2,7 +2,7 @@
 
 namespace Hilos\Database\Idea;
 
-use Hilos\Database\Object\Object_;
+use Hilos\Database\Object\Item\Object_;
 use Hilos\Exception\Database\Object\ObjectGetIdStringNotImplementedException;
 use Hilos\Exception\Idea\Item\IdeaItemCloneException;
 use Hilos\Exception\Idea\Item\IdeaItemPropertyNotFoundException;

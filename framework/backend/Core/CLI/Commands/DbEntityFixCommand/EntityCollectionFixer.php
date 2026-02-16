@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Core\CLI\Commands\DbEntityFixCommand;
 
-use Hilos\Database\Entity\Entity;
+use Hilos\Database\Entity\Item\Entity;
 use Hilos\Utils\Helpers\StringHelper;
 use ReflectionClass;
 
@@ -380,8 +380,8 @@ trait EntityCollectionFixer
                 $alias = $useMatch[2] ?? null;
 
                 // Skip base classes
-                if ($fullClassName === 'Hilos\\Database\\Entity\\EntityCollection' ||
-                    $fullClassName === 'Hilos\\Database\\Entity\\Entity') {
+                if ($fullClassName === 'Hilos\\Database\\Entity\\Collection\\EntityCollection' ||
+                    $fullClassName === 'Hilos\\Database\\Entity\\Item\\Entity') {
                     continue;
                 }
 
@@ -556,7 +556,7 @@ trait EntityCollectionFixer
             $newUse = "use {$entityClassName} as {$entityAlias};";
 
             // Add EntityCollection import if not present
-            $entityCollectionUse = "use Hilos\\Database\\Entity\\EntityCollection;";
+            $entityCollectionUse = "use Hilos\\Database\\Entity\\Collection\\EntityCollection;";
             if (!str_contains($useStatements, $entityCollectionUse)) {
                 $newUse .= "\n" . $entityCollectionUse;
             }
@@ -587,7 +587,7 @@ trait EntityCollectionFixer
             // Insert after namespace
             if (preg_match('/(namespace\s+[^;]+;\n\n)/', $content, $nsMatch)) {
                 $newUse = "use {$entityClassName} as {$entityAlias};\n";
-                $newUse .= "use Hilos\\Database\\Entity\\EntityCollection;\n";
+                $newUse .= "use Hilos\\Database\\Entity\\Collection\\EntityCollection;\n";
                 $newUse .= "use Hilos\\Exception\\DatabaseException;\n";
                 $content = str_replace($nsMatch[1], $nsMatch[1] . $newUse, $content);
             }
@@ -646,7 +646,7 @@ trait EntityCollectionFixer
         $content = "<?php\n\n";
         $content .= "namespace {$namespace};\n\n";
         $content .= "use {$entityClassName} as {$entityAlias};\n";
-        $content .= "use Hilos\\Database\\Entity\\EntityCollection;\n";
+        $content .= "use Hilos\\Database\\Entity\\Collection\\EntityCollection;\n";
         $content .= "use Hilos\\Exception\\DatabaseException;\n\n";
         $content .= "/**\n";
         $content .= " * {$entityCollectionShortName} Entity Collection\n";

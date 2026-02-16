@@ -3,8 +3,8 @@
 namespace Demo\Chat\Hilos\Database\Collection;
 
 use Demo\Chat\Hilos\Database\Item\Moderator;
-use Demo\Chat\Database\Object\Moderator as ObjectModerator;
-use Hilos\Database\Object\Object_;
+use Demo\Chat\Database\Object\Item\Moderator as ObjectModerator;
+use Hilos\Database\Object\Item\Object_;
 use Hilos\Hilos\Database\Actions\DbActions;
 use Hilos\Hilos\Database\Collection\DbCollection;
 use InvalidArgumentException;

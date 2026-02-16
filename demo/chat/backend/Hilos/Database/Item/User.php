@@ -2,7 +2,7 @@
 
 namespace Demo\Chat\Hilos\Database\Item;
 
-use Demo\Chat\Database\Object\User as ObjectUser;
+use Demo\Chat\Database\Object\Item\User as ObjectUser;
 use Demo\Chat\Hilos\Database\Hilos;
 use Demo\Chat\Hilos\Runtime\Collection\Connections;
 use Hilos\Hilos\Database\Item\DbItem;

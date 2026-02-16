@@ -394,7 +394,7 @@ trait IdeaCollectionFixer
                 if (strpos($fullClassName, '\\Object\\') !== false &&
                     strpos($fullClassName, '\\ObjectCollection\\') === false &&
                     strpos($fullClassName, '\\Object\\Objects') === false &&
-                    strpos($fullClassName, '\\Object\\Object_') === false) {
+                    strpos($fullClassName, '\\Object\\Item\\Object_') === false) {
                     return $fullClassName;
                 }
             }

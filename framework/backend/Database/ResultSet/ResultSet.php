@@ -2,8 +2,8 @@
 
 namespace Hilos\Database\ResultSet;
 
-use Hilos\Database\Entity\Entity;
-use Hilos\Database\Entity\EntityCollection;
+use Hilos\Database\Entity\Item\Entity;
+use Hilos\Database\Entity\Collection\EntityCollection;
 use mysqli_result;
 use RuntimeException;
 

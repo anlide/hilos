@@ -2,8 +2,8 @@
 
 namespace Demo\Chat\Hilos\Database\Actions;
 
-use Demo\Chat\Database\Object\User as ObjectUser;
-use Demo\Chat\Database\ObjectCollection\Users as ObjectUsers;
+use Demo\Chat\Database\Object\Item\User as ObjectUser;
+use Demo\Chat\Database\Object\Collection\Users as ObjectUsers;
 use Demo\Chat\Hilos\Database\Item\User;
 use Demo\Chat\Hilos\Database\Collection\Users as DbCollectionUsers;
 use Hilos\Exception\DatabaseException;

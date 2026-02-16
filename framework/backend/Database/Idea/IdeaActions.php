@@ -2,7 +2,7 @@
 
 namespace Hilos\Database\Idea;
 
-use Hilos\Database\Object\Object_;
+use Hilos\Database\Object\Item\Object_;
 use Hilos\Database\Object\Objects;
 use Hilos\Exception\DatabaseException;
 use Hilos\Exception\Idea\Actions\IdeaActionsCallbackNotSetException;

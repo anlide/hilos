@@ -2,7 +2,7 @@
 
 namespace Demo\Chat\Hilos\Database\Item;
 
-use Demo\Chat\Database\Object\Event as ObjectEvent;
+use Demo\Chat\Database\Object\Item\Event as ObjectEvent;
 use Hilos\Hilos\Database\Item\DbItem;
 use RuntimeException;
 

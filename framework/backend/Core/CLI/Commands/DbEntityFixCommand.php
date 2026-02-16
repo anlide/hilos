@@ -8,7 +8,7 @@ use Hilos\Constants\CliCommands;
 use Hilos\Constants\ExitCode;
 use Hilos\Core\CLI\Commands\DbEntityFixCommand\EntityCollectionFixer;
 use Hilos\Database\Database;
-use Hilos\Database\Entity\Entity;
+use Hilos\Database\Entity\Item\Entity;
 use Hilos\Database\Generator;
 use Hilos\Database\PhpType;
 use Hilos\Database\Schema\IndexInfo;
@@ -1059,7 +1059,7 @@ HELP;
             if (preg_match('/(use\s+Hilos\\\Database\\\Entity\\\Entity;)/', $content, $matches)) {
                 $content = str_replace($matches[1], $matches[1] . "\nuse Hilos\\Database\\PhpType;", $content);
             } elseif (preg_match('/(namespace\s+[^;]+;\s*\n\n)/', $content, $matches)) {
-                $content = str_replace($matches[1], $matches[1] . "use Hilos\\Database\\Entity\\Entity;\nuse Hilos\\Database\\PhpType;\n\n", $content);
+                $content = str_replace($matches[1], $matches[1] . "use Hilos\\Database\\Entity\\Item\\Entity;\nuse Hilos\\Database\\PhpType;\n\n", $content);
             }
         }
 

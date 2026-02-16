@@ -153,7 +153,7 @@ class Generator
         // Generate code
         $code = "<?php\n\n";
         $code .= "namespace {$namespace};\n\n";
-        $code .= "use Hilos\\Database\\Entity\\Entity;\n";
+        $code .= "use Hilos\\Database\\Entity\\Item\\Entity;\n";
         $code .= "use Hilos\\Database\\PhpType;\n";
         
         // Add Entity imports for foreign keys
@@ -246,7 +246,7 @@ class Generator
 
         $code = "<?php\n\n";
         $code .= "namespace {$namespace};\n\n";
-        $code .= "use Hilos\\Database\\Object\\Object_;\n";
+        $code .= "use Hilos\\Database\\Object\\Item\\Object_;\n";
         $code .= "use {$entityNamespace}\\{$className} as Entity{$className};\n\n";
         $code .= "/**\n";
         $code .= " * {$className} Object\n";

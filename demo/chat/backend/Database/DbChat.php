@@ -2,20 +2,20 @@
 
 namespace Demo\Chat\Database;
 
-use Demo\Chat\Database\Entity\Bot as EntityBot;
-use Demo\Chat\Database\Entity\Event as EntityEvent;
-use Demo\Chat\Database\Entity\Moderator as EntityModerator;
-use Demo\Chat\Database\Entity\User as EntityUser;
+use Demo\Chat\Database\Entity\Item\Bot as EntityBot;
+use Demo\Chat\Database\Entity\Item\Event as EntityEvent;
+use Demo\Chat\Database\Entity\Item\Moderator as EntityModerator;
+use Demo\Chat\Database\Entity\Item\User as EntityUser;
 use Demo\Chat\Hilos\Database\Actions\EventsActions;
 use Demo\Chat\Hilos\Database\Actions\UsersActions;
 use Demo\Chat\Hilos\Database\Collection\Bots;
 use Demo\Chat\Hilos\Database\Collection\Events;
 use Demo\Chat\Hilos\Database\Collection\Moderators;
 use Demo\Chat\Hilos\Database\Collection\Users;
-use Demo\Chat\Database\ObjectCollection\Bots as ObjectBots;
-use Demo\Chat\Database\ObjectCollection\Events as ObjectEvents;
-use Demo\Chat\Database\ObjectCollection\Moderators as ObjectModerators;
-use Demo\Chat\Database\ObjectCollection\Users as ObjectUsers;
+use Demo\Chat\Database\Object\Collection\Bots as ObjectBots;
+use Demo\Chat\Database\Object\Collection\Events as ObjectEvents;
+use Demo\Chat\Database\Object\Collection\Moderators as ObjectModerators;
+use Demo\Chat\Database\Object\Collection\Users as ObjectUsers;
 use Demo\Chat\Hilos\Runtime\Context\ChatRuntime;
 use Hilos\Core\Table\DataSource\EntityTableDataSource;
 use Hilos\Hilos\Database\Hilos as BaseHilos;

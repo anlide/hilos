@@ -3,6 +3,7 @@
 namespace Hilos\Database\Object;
 
 use Hilos\Database\Filter\FilterInterface;
+use Hilos\Database\Object\Item\Object_;
 
 /**
  * Filtered collection wrapper

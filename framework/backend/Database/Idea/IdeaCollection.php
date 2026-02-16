@@ -4,7 +4,7 @@ namespace Hilos\Database\Idea;
 
 use ArrayAccess;
 use Countable;
-use Hilos\Database\Object\Object_;
+use Hilos\Database\Object\Item\Object_;
 use Hilos\Database\Object\Objects;
 use Hilos\Exception\Database\Object\ObjectGetIdStringNotImplementedException;
 use Hilos\Exception\DatabaseException;

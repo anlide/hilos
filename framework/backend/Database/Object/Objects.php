@@ -7,7 +7,8 @@ use Countable;
 use Hilos\Database\Filter\FilterInterface;
 use Hilos\Database\Idea\TruthSourceRegistry;
 use Hilos\Database\Database;
-use Hilos\Database\Entity\Entity;
+use Hilos\Database\Entity\Item\Entity;
+use Hilos\Database\Object\Item\Object_;
 use Hilos\Database\SqlParamCollection;
 use Hilos\Exception\DatabaseException;
 use InvalidArgumentException;
@@ -18,7 +19,7 @@ use ReflectionClass;
  * Abstract base class for Object collections
  * Provides lazy loading support and common collection operations
  *
- * @template T of Object_
+ * @template T of \Hilos\Database\Object\Item\Object_
  * @implements ArrayAccess<int|string, T>
  * @implements Iterator<int|string, T>
  *
@@ -36,7 +37,7 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
     public const int LAZY_STRATEGY_BATCH = 2;          // Lazy load by key, but load all on iteration
     public const int LAZY_STRATEGY_FULL_ON_ACCESS = 3; // Load all on first access
 
-    /** @var Object_[] */
+    /** @var \Hilos\Database\Object\Item\Object_[] */
     protected array $objects = [];
 
     /** @var bool */

@@ -8,7 +8,7 @@ use Hilos\Constants\CliCommands;
 use Hilos\Constants\ExitCode;
 use Hilos\Core\CLI\Commands\DbObjectFixCommand\ObjectCollectionFixer;
 use Hilos\Database\Database;
-use Hilos\Database\Entity\Entity;
+use Hilos\Database\Entity\Item\Entity;
 use Hilos\Database\Generator;
 use Hilos\Database\PhpType;
 use Hilos\Utils\Helpers\StringHelper;
@@ -2271,7 +2271,7 @@ HELP;
                     if (strpos($fullClassName, '\\Object\\') !== false &&
                         strpos($fullClassName, '\\ObjectCollection\\') === false &&
                         strpos($fullClassName, '\\Object\\Objects') === false &&
-                        strpos($fullClassName, '\\Object\\Object_') === false) {
+                        strpos($fullClassName, '\\Object\\Item\\Object_') === false) {
                         // Check if this Object class is in the deleted list
                         if (isset($deletedObjectClasses[$fullClassName])) {
                             // Extract ObjectCollection class name
@@ -2437,7 +2437,7 @@ HELP;
 
         $code = "<?php\n\n";
         $code .= "namespace {$namespace};\n\n";
-        $code .= "use Hilos\\Database\\Object\\Object_;\n";
+        $code .= "use Hilos\\Database\\Object\\Item\\Object_;\n";
         $code .= "use {$entityClassName} as Entity{$className};\n\n";
         $code .= "/**\n";
         $code .= " * {$className} Object\n";

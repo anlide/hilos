@@ -3,8 +3,8 @@
 namespace Demo\Chat\Hilos\Database\Collection;
 
 use Demo\Chat\Hilos\Database\Item\Bot;
-use Demo\Chat\Database\Object\Bot as ObjectBot;
-use Hilos\Database\Object\Object_;
+use Demo\Chat\Database\Object\Item\Bot as ObjectBot;
+use Hilos\Database\Object\Item\Object_;
 use Hilos\Hilos\Database\Actions\DbActions;
 use Hilos\Hilos\Database\Collection\DbCollection;
 use InvalidArgumentException;
