@@ -6,9 +6,9 @@ namespace Hilos\Core\Agent\Daemon;
 
 use Hilos\Core\Agent\Exception\AgentDaemonCreationFailedException;
 use Hilos\Core\Router\SignalRouter;
-use Hilos\DTO\Worker\WorkerAgentMessageDTO;
-use Hilos\DTO\Worker\WorkerAgentStartedDTO;
-use Hilos\DTO\Worker\WorkerAgentStoppedDTO;
+use Hilos\Socket\Worker\DTO\WorkerAgentMessageDTO;
+use Hilos\Socket\Worker\DTO\WorkerAgentStartedDTO;
+use Hilos\Socket\Worker\DTO\WorkerAgentStoppedDTO;
 use Hilos\Utils\Logger;
 
 /**

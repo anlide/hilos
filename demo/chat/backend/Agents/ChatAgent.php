@@ -20,10 +20,10 @@ use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Database\Idea\TruthSourceRegistry;
 use Hilos\DTO\EntitiesChangesDTO;
-use Hilos\DTO\WebSocket\WebSocketCloseSignalDTO;
-use Hilos\DTO\WebSocket\WebSocketHandshakeSignalDTO;
 use Hilos\Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\HilosException;
+use Hilos\Socket\WebSocket\DTO\WebSocketCloseSignalDTO;
+use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
 use Hilos\Utils\Logger;
 
 /**

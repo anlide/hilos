@@ -9,8 +9,8 @@ use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
-use Hilos\DTO\Worker\SystemSignalDTO;
 use Hilos\Socket\Server\WorkerServer;
+use Hilos\Socket\Worker\DTO\SystemSignalDTO;
 
 /**
  * ChatWorkerServer - Worker server with chat-specific agent daemon factory

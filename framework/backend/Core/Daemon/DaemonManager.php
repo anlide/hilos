@@ -16,17 +16,17 @@ use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\DTO\BaseDTO;
 use Hilos\DTO\SignalDTO;
-use Hilos\DTO\WebSocket\WebSocketGroupSubscribeSignalDTO;
-use Hilos\DTO\WebSocket\WebSocketGroupUnsubscribeSignalDTO;
-use Hilos\DTO\WebSocket\WebSocketGroupUpdateSubscriptionSignalDTO;
-use Hilos\DTO\WebSocket\WebSocketPageSubscribeSignalDTO;
-use Hilos\DTO\WebSocket\WebSocketPageUnsubscribeSignalDTO;
-use Hilos\DTO\WebSocket\WebSocketPageUpdateSubscriptionSignalDTO;
-use Hilos\DTO\Worker\DaemonAgentMessageDTO;
 use Hilos\Socket\Client\WebSocketClient;
 use Hilos\Socket\Server\ServerInterface;
 use Hilos\Socket\Server\WebSocketServer;
 use Hilos\Socket\Server\WorkerServer;
+use Hilos\Socket\WebSocket\DTO\WebSocketGroupSubscribeSignalDTO;
+use Hilos\Socket\WebSocket\DTO\WebSocketGroupUnsubscribeSignalDTO;
+use Hilos\Socket\WebSocket\DTO\WebSocketGroupUpdateSubscriptionSignalDTO;
+use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
+use Hilos\Socket\WebSocket\DTO\WebSocketPageUnsubscribeSignalDTO;
+use Hilos\Socket\WebSocket\DTO\WebSocketPageUpdateSubscriptionSignalDTO;
+use Hilos\Socket\Worker\DTO\DaemonAgentMessageDTO;
 use Hilos\Utils\Logger;
 
 /**

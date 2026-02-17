@@ -10,12 +10,12 @@ use Hilos\API\Router\Exception\PageSubscriptionNotFoundException;
 use Hilos\Constants\SignalPayloadConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\DTO\SignalDTO;
-use Hilos\DTO\WebSocket\WebSocketGroupSubscribeSignalDTO;
-use Hilos\DTO\WebSocket\WebSocketGroupUnsubscribeSignalDTO;
-use Hilos\DTO\WebSocket\WebSocketGroupUpdateSubscriptionSignalDTO;
-use Hilos\DTO\WebSocket\WebSocketPageSubscribeSignalDTO;
-use Hilos\DTO\WebSocket\WebSocketPageUnsubscribeSignalDTO;
-use Hilos\DTO\WebSocket\WebSocketPageUpdateSubscriptionSignalDTO;
+use Hilos\Socket\WebSocket\DTO\WebSocketGroupSubscribeSignalDTO;
+use Hilos\Socket\WebSocket\DTO\WebSocketGroupUnsubscribeSignalDTO;
+use Hilos\Socket\WebSocket\DTO\WebSocketGroupUpdateSubscriptionSignalDTO;
+use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
+use Hilos\Socket\WebSocket\DTO\WebSocketPageUnsubscribeSignalDTO;
+use Hilos\Socket\WebSocket\DTO\WebSocketPageUpdateSubscriptionSignalDTO;
 use Hilos\Utils\Logger;
 
 /**

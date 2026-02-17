@@ -7,16 +7,16 @@ namespace Hilos\Socket\Client;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\Agent\Exception\AgentDaemonCreationFailedException;
 use Hilos\Core\Router\SignalRouter;
-use Hilos\DTO\Worker\AgentStartDTO;
-use Hilos\DTO\Worker\AgentStopDTO;
-use Hilos\DTO\Worker\WorkerAgentMessageDTO;
-use Hilos\DTO\Worker\WorkerAgentStartedDTO;
-use Hilos\DTO\Worker\WorkerAgentStoppedDTO;
-use Hilos\DTO\Worker\WorkerDTO;
-use Hilos\DTO\Worker\WorkerRegisterDTO;
-use Hilos\DTO\Worker\WorkerRegisteredDTO;
 use Hilos\Socket\Client\Interface\WorkerClientInterface;
 use Hilos\Socket\SocketException;
+use Hilos\Socket\Worker\DTO\AgentStartDTO;
+use Hilos\Socket\Worker\DTO\AgentStopDTO;
+use Hilos\Socket\Worker\DTO\WorkerAgentMessageDTO;
+use Hilos\Socket\Worker\DTO\WorkerAgentStartedDTO;
+use Hilos\Socket\Worker\DTO\WorkerAgentStoppedDTO;
+use Hilos\Socket\Worker\DTO\WorkerRegisterDTO;
+use Hilos\Socket\Worker\DTO\WorkerRegisteredDTO;
+use Hilos\Socket\Worker\WorkerDTO;
 use Hilos\Utils\Logger;
 
 /**

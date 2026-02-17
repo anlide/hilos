@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Hilos\Socket\Worker;
 
 use Hilos\Constants\EnvConstants;
-use Hilos\DTO\Worker\WorkerDTO;
 use Hilos\Socket\AbstractSocket;
 use Hilos\Socket\SocketException;
 use Hilos\Socket\SocketOperation;

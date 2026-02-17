@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Daemon\Master;
 
-use Hilos\DTO\DaemonStatusDTO;
+use Hilos\Core\CLI\DTO\DaemonStatusDTO;
 
 /**
  * DaemonStatus - Holds daemon status information

@@ -6,8 +6,8 @@ namespace Demo\Chat\DTO;
 
 use Hilos\Core\Router\SignalData;
 use Hilos\Core\Router\SignalDataInterface;
+use Hilos\Core\Table\DTO\TablesPayloadDTO;
 use Hilos\DTO\EntitiesChangesDTO;
-use Hilos\DTO\Table\TablesPayloadDTO;
 use RuntimeException;
 
 /**

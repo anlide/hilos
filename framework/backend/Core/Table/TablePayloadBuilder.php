@@ -4,10 +4,9 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Table;
 
-use Hilos\Core\Table\TableType;
+use Hilos\Core\Table\DTO\TableDataDTO;
+use Hilos\Core\Table\DTO\TablesPayloadDTO;
 use Hilos\Hilos;
-use Hilos\DTO\Table\TableDataDTO;
-use Hilos\DTO\Table\TablesPayloadDTO;
 
 /**
  * Builds table payload for subscription (initial load) or for a single table (refresh / page).

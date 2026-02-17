@@ -6,23 +6,23 @@ namespace Hilos\Core\Agent;
 
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Page\PageAgentInterface;
+use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalSourceInterface;
-use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\SignalType;
 use Hilos\Core\Router\WebSocketSignalData;
-use Hilos\DTO\WebSocket\WebSocketActionSignalDTO;
-use Hilos\DTO\WebSocket\WebSocketFrameBinarySignalDTO;
-use Hilos\DTO\WebSocket\WebSocketCloseSignalDTO;
-use Hilos\DTO\WebSocket\WebSocketHandshakeSignalDTO;
-use Hilos\DTO\WebSocket\WebSocketGroupSubscribeSignalDTO;
-use Hilos\DTO\WebSocket\WebSocketGroupUnsubscribeSignalDTO;
-use Hilos\DTO\WebSocket\WebSocketGroupUpdateSubscriptionSignalDTO;
-use Hilos\DTO\WebSocket\WebSocketPageSubscribeSignalDTO;
-use Hilos\DTO\WebSocket\WebSocketPageUnsubscribeSignalDTO;
-use Hilos\DTO\WebSocket\WebSocketPageUpdateSubscriptionSignalDTO;
+use Hilos\Socket\WebSocket\DTO\WebSocketActionSignalDTO;
+use Hilos\Socket\WebSocket\DTO\WebSocketCloseSignalDTO;
+use Hilos\Socket\WebSocket\DTO\WebSocketFrameBinarySignalDTO;
+use Hilos\Socket\WebSocket\DTO\WebSocketGroupSubscribeSignalDTO;
+use Hilos\Socket\WebSocket\DTO\WebSocketGroupUnsubscribeSignalDTO;
+use Hilos\Socket\WebSocket\DTO\WebSocketGroupUpdateSubscriptionSignalDTO;
+use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
+use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
+use Hilos\Socket\WebSocket\DTO\WebSocketPageUnsubscribeSignalDTO;
+use Hilos\Socket\WebSocket\DTO\WebSocketPageUpdateSubscriptionSignalDTO;
 
 /**
  * AbstractAgent - Abstract base class for agents running in worker processes

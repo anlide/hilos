@@ -5,10 +5,10 @@ declare(strict_types=1);
 namespace Hilos\Core\Page;
 
 use Hilos\Core\Page\Exception\PageNotFoundException;
-use Hilos\DTO\WebSocket\WebSocketActionSignalDTO;
-use Hilos\DTO\WebSocket\WebSocketPageSubscribeSignalDTO;
-use Hilos\DTO\WebSocket\WebSocketPageUnsubscribeSignalDTO;
-use Hilos\DTO\WebSocket\WebSocketPageUpdateSubscriptionSignalDTO;
+use Hilos\Socket\WebSocket\DTO\WebSocketActionSignalDTO;
+use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
+use Hilos\Socket\WebSocket\DTO\WebSocketPageUnsubscribeSignalDTO;
+use Hilos\Socket\WebSocket\DTO\WebSocketPageUpdateSubscriptionSignalDTO;
 use Hilos\Utils\Logger;
 
 /**

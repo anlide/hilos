@@ -14,7 +14,7 @@ use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
-use Hilos\DTO\Worker\CronSignalDTO;
+use Hilos\Socket\Worker\DTO\CronSignalDTO;
 
 /**
  * ChatDaemonManager - Main daemon manager for chat demo
