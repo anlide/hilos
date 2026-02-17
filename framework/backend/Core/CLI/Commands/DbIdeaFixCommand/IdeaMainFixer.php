@@ -13,6 +13,8 @@ namespace Hilos\Core\CLI\Commands\DbIdeaFixCommand;
  * - Compare Idea.php constants with ObjectCollection classes
  * - Update init() method to call setRepresent() for all collections
  * - Preserve user-defined initialization logic
+ *
+ * @deprecated Idea layer removed; command no longer registered. Kept for reference.
  */
 trait IdeaMainFixer
 {

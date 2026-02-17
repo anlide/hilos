@@ -8,6 +8,7 @@ use Demo\Chat\Database\Entity\Collection\Events as EntityEvents;
 use Demo\Chat\Database\Entity\Item\Event as EntityEvent;
 use Demo\Chat\Database\Object\Item\Event as ObjectEvent;
 use Demo\Chat\Hilos;
+use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Database;
 use Hilos\Database\Object\Objects;
 use Hilos\Hilos\TruthSource\Exception\WriteNotAllowedException;
@@ -114,7 +115,7 @@ final class Events extends Objects implements Iterator, ArrayAccess, Countable
     public function add(string $type, ?int $userId = null, ?array $data = null): ObjectEvent
     {
         if ($this->_lazyStrategy === Objects::LAZY_STRATEGY_NONE) {
-            $hasTruthSource = \Hilos\Database\Idea\TruthSourceRegistry::hasTruthSource(Hilos::events);
+            $hasTruthSource = TruthSourceRegistry::hasTruthSource(Hilos::events);
 
             if (!$hasTruthSource) {
                 throw new WriteNotAllowedException("Write operation not allowed: no truth source registered for collection '" . Hilos::events . "'. Register via TruthSourceRegistry::register() first.");

@@ -20,6 +20,8 @@ use ReflectionClass;
  * - Compare Idea item toArray() method with Object properties
  * - Update PHPDoc @property-read annotations
  * - Preserve user-defined methods (lazy loading, relationships, etc.)
+ *
+ * @deprecated Idea layer removed; command no longer registered. Kept for reference.
  */
 trait IdeaItemFixer
 {

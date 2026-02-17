@@ -22,6 +22,8 @@ use RuntimeException;
  * Automatically updates Idea class definitions to match Object structure.
  * Idea is isolated from Entity and works only with Object classes.
  * Adds missing properties, updates types, and maintains user-defined methods.
+ *
+ * @deprecated Idea layer removed; command no longer registered. Kept for reference.
  */
 class DbIdeaFixCommand implements CommandInterface
 {

@@ -15,6 +15,8 @@ namespace Hilos\Core\CLI\Commands\DbIdeaFixCommand;
  * - Update initAgain() method to reload all ObjectCollections
  * - Update reloadCollection() method match expression
  * - Preserve lazy loading strategies and user comments
+ *
+ * @deprecated Idea layer removed; command no longer registered. Kept for reference.
  */
 trait IdeaStorageFixer
 {

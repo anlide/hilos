@@ -15,7 +15,7 @@ use Hilos\Hilos\Table\Exception\TableNotFoundException;
  * Child Hilos context (e.g. Demo) overrides createTable(), instantiates table hub,
  * registers tables via register(), returns instance.
  */
-class IdeaTable
+class Table
 {
     /** @var array<string, TableDataSourceInterface> */
     private array $_tables = [];

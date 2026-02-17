@@ -8,7 +8,7 @@ use Demo\Chat\Constants\AgentType;
 use Demo\Chat\Hilos;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Router\SignalRouter;
-use Hilos\Database\Idea\TruthSourceRegistry;
+use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Utils\Logger;
 
 /**

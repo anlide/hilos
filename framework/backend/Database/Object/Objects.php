@@ -6,7 +6,7 @@ use ArrayAccess;
 use Countable;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Filter\FilterInterface;
-use Hilos\Database\Idea\TruthSourceRegistry;
+use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Object\Item\Object_;
 use InvalidArgumentException;
 use Iterator;

@@ -19,6 +19,8 @@ use ReflectionClass;
  * - Compare IdeaCollection objectToIdea() method with Object class
  * - Update imports to match Object and Idea classes
  * - Preserve user-defined methods (filtering, searching, etc.)
+ *
+ * @deprecated Idea layer removed; command no longer registered. Kept for reference.
  */
 trait IdeaCollectionFixer
 {

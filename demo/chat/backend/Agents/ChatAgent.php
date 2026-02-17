@@ -19,7 +19,7 @@ use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Router\DTO\EntitiesChangesDTO;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\SignalRouter;
-use Hilos\Database\Idea\TruthSourceRegistry;
+use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\HilosException;
 use Hilos\Socket\WebSocket\DTO\WebSocketCloseSignalDTO;

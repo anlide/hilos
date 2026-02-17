@@ -9,7 +9,6 @@ use Hilos\Constants\ExitCode;
 use Hilos\Core\CLI\Commands\CommandInterface;
 use Hilos\Core\CLI\Commands\DbEntityDiffCommand;
 use Hilos\Core\CLI\Commands\DbEntityFixCommand;
-use Hilos\Core\CLI\Commands\DbIdeaFixCommand;
 use Hilos\Core\CLI\Commands\DbObjectFixCommand;
 use Hilos\Core\CLI\Commands\DbSchemaStatusCommand;
 use Hilos\Core\CLI\Commands\HelpCommand;
@@ -94,7 +93,6 @@ class CliManager
         $this->commands[CliCommands::DB_ENTITY_DIFF] = new DbEntityDiffCommand();
         $this->commands[CliCommands::DB_ENTITY_FIX] = new DbEntityFixCommand();
         $this->commands[CliCommands::DB_OBJECT_FIX] = new DbObjectFixCommand();
-        $this->commands[CliCommands::DB_IDEA_FIX] = new DbIdeaFixCommand();
         $this->commands[CliCommands::HELP] = new HelpCommand($this->commands);
     }
 

@@ -1,8 +1,9 @@
 <?php
 
-namespace Hilos\Database\Idea;
+declare(strict_types=1);
 
-use Hilos\Core\TruthSource\AbstractTruthSourceRegistry;
+namespace Hilos\Core\TruthSource;
+
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 
 /**
@@ -13,12 +14,12 @@ use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
  *
  * Usage:
  *   // In Agent::onStart()
- *   TruthSourceRegistry::register(Idea::users, true, $this->getId());
+ *   TruthSourceRegistry::register(Hilos::users, true, $this->getId());
  *
  *   // In Agent::onStop()
  *   TruthSourceRegistry::unregisterAgent($this->getId());
  *
- *   // In IdeaActions (automatic check)
+ *   // In DbActions (automatic check)
  *   TruthSourceRegistry::checkCanWrite($tableName);
  */
 class TruthSourceRegistry extends AbstractTruthSourceRegistry
