@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Socket\Client;
 
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
+use Hilos\Core\Agent\Exception\AgentDaemonCreationFailedException;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\DTO\Worker\AgentStartDTO;
 use Hilos\DTO\Worker\AgentStopDTO;
@@ -14,9 +15,8 @@ use Hilos\DTO\Worker\WorkerAgentStoppedDTO;
 use Hilos\DTO\Worker\WorkerDTO;
 use Hilos\DTO\Worker\WorkerRegisterDTO;
 use Hilos\DTO\Worker\WorkerRegisteredDTO;
-use Hilos\Exception\SocketException;
-use Hilos\Exception\Worker\AgentDaemonCreationFailedException;
 use Hilos\Socket\Client\Interface\WorkerClientInterface;
+use Hilos\Socket\SocketException;
 use Hilos\Utils\Logger;
 
 /**

@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Utils\Helpers;
 
 use Hilos\Constants\WorkerConstants;
-use Hilos\Exception\InvalidWorkerIdException;
+use Hilos\Utils\Helpers\Exception\InvalidWorkerIdException;
 
 /**
  * ArgumentHelper - Command line argument parsing utilities
@@ -88,19 +88,6 @@ class ArgumentHelper
 
         // Worker ID argument not found
         throw new InvalidWorkerIdException('--worker-id argument is missing');
-    }
-
-    /**
-     * Get worker index from command line arguments (alias for getWorkerIndex)
-     *
-     * @param array<string> $argv Command line arguments
-     * @return int Worker index (positive integer)
-     * @throws InvalidWorkerIdException If worker index is missing or not a positive integer
-     * @deprecated Use getWorkerIndex() instead. This method is kept for backward compatibility.
-     */
-    public static function getWorkerId(array $argv): int
-    {
-        return self::getWorkerIndex($argv);
     }
 
     /**

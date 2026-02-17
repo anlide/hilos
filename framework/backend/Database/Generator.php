@@ -2,9 +2,6 @@
 
 namespace Hilos\Database;
 
-use Hilos\Database\SqlParamCollection;
-use Hilos\Exception\DatabaseException;
-
 /**
  * Code generator for Entity, Object and Idea classes
  * Generates PHP classes from existing database tables

@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Page;
 
+use Hilos\Core\Page\Exception\PageNotFoundException;
 use Hilos\DTO\WebSocket\WebSocketActionSignalDTO;
 use Hilos\DTO\WebSocket\WebSocketPageSubscribeSignalDTO;
 use Hilos\DTO\WebSocket\WebSocketPageUnsubscribeSignalDTO;
 use Hilos\DTO\WebSocket\WebSocketPageUpdateSubscriptionSignalDTO;
-use Hilos\Exception\Page\PageNotFoundException;
 use Hilos\Utils\Logger;
 
 /**

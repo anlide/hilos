@@ -2,9 +2,9 @@
 
 namespace Demo\Chat\Database\Object\Item;
 
-use Hilos\Database\Object\Item\Object_;
 use Demo\Chat\Database\Entity\Item\Event as EntityEvent;
-use Hilos\Exception\DatabaseException;
+use Hilos\Database\DatabaseException;
+use Hilos\Database\Object\Item\Object_;
 
 /**
  * Event Object

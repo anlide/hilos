@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace Hilos\Socket\Server;
 
 use Hilos\Core\Router\SignalRouter;
-use Hilos\Exception\SocketException;
 use Hilos\Socket\AbstractSocket;
 use Hilos\Socket\Client\ClientInterface;
+use Hilos\Socket\SocketException;
 use Hilos\Socket\SocketOperation;
 
 /**

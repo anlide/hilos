@@ -3,7 +3,7 @@
 namespace Hilos\Hilos\TruthSource;
 
 use Hilos\Core\TruthSource\AbstractTruthSourceRegistry;
-use Hilos\Exception\Runtime\TruthSource\RtTruthSourceWriteNotAllowedException;
+use Hilos\Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 
 /**
  * Runtime Truth Source Registry

@@ -4,7 +4,6 @@ namespace Demo\Chat\Database\Entity\Collection;
 
 use Demo\Chat\Database\Entity\Item\Moderator as EntityModerator;
 use Hilos\Database\Entity\Collection\EntityCollection;
-use Hilos\Exception\DatabaseException;
 
 /**
  * Moderators Entity Collection

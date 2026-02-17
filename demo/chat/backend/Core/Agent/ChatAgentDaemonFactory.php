@@ -10,7 +10,7 @@ use Demo\Chat\Core\Agent\Daemon\ChatAgentDaemon;
 use Demo\Chat\Core\Agent\Daemon\ModeratorAgentDaemon;
 use Hilos\Core\Agent\Daemon\AbstractAgentDaemonFactory;
 use Hilos\Core\Agent\Daemon\AgentDaemonInterface;
-use Hilos\Exception\Worker\AgentDaemonCreationFailedException;
+use Hilos\Core\Agent\Exception\AgentDaemonCreationFailedException;
 
 /**
  * ChatAgentDaemonFactory - Factory for creating chat-specific agent daemon proxies

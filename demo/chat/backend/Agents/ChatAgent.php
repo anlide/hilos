@@ -22,8 +22,8 @@ use Hilos\Database\Idea\TruthSourceRegistry;
 use Hilos\DTO\EntitiesChangesDTO;
 use Hilos\DTO\WebSocket\WebSocketCloseSignalDTO;
 use Hilos\DTO\WebSocket\WebSocketHandshakeSignalDTO;
-use Hilos\Exception\HilosException;
 use Hilos\Hilos\TruthSource\RtTruthSourceRegistry;
+use Hilos\HilosException;
 use Hilos\Utils\Logger;
 
 /**

@@ -4,8 +4,8 @@ namespace Hilos\Hilos\Runtime\State\Collection;
 
 use ArrayAccess;
 use Countable;
-use Hilos\Exception\Runtime\State\RtStatesCloneException;
-use Hilos\Exception\Runtime\State\RtStatesUnserializeException;
+use Hilos\Hilos\Runtime\Exception\State\RtStatesCloneException;
+use Hilos\Hilos\Runtime\Exception\State\RtStatesUnserializeException;
 use Hilos\Hilos\Runtime\State\Item\RtState;
 use Iterator;
 

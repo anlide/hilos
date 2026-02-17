@@ -4,8 +4,8 @@ namespace Hilos\Database;
 
 use ArrayAccess;
 use Countable;
+use Hilos\Database\Exception\DatabaseParamsException;
 use Iterator;
-use Hilos\Exception\Database\DatabaseParamsException;
 
 /**
  * Type-safe collection of SQL parameters

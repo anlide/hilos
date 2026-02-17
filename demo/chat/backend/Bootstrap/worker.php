@@ -8,9 +8,9 @@ use Demo\Chat\Core\Daemon\ChatWorkerManager;
 use Demo\Chat\Database\Database;
 use Hilos\Constants\ErrorConstants;
 use Hilos\Constants\ExitCode;
-use Hilos\Exception\InvalidWorkerIdException;
 use Hilos\Utils\Env;
 use Hilos\Utils\Helpers\ArgumentHelper;
+use Hilos\Utils\Helpers\Exception\InvalidWorkerIdException;
 use Hilos\Utils\Logger;
 
 /**

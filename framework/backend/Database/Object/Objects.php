@@ -4,16 +4,12 @@ namespace Hilos\Database\Object;
 
 use ArrayAccess;
 use Countable;
+use Hilos\Database\DatabaseException;
 use Hilos\Database\Filter\FilterInterface;
 use Hilos\Database\Idea\TruthSourceRegistry;
-use Hilos\Database\Database;
-use Hilos\Database\Entity\Item\Entity;
 use Hilos\Database\Object\Item\Object_;
-use Hilos\Database\SqlParamCollection;
-use Hilos\Exception\DatabaseException;
 use InvalidArgumentException;
 use Iterator;
-use ReflectionClass;
 
 /**
  * Abstract base class for Object collections

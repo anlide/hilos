@@ -6,10 +6,10 @@ namespace Demo\Chat\Hilos\Runtime\Actions;
 
 use Demo\Chat\Hilos\Runtime\Item\Connection as RuntimeConnection;
 use Demo\Chat\Hilos\Runtime\State\Item\Connection as StateConnection;
-use Hilos\Exception\Hilos\Runtime\Actions\RtActionsCallbackNotSetException;
-use Hilos\Exception\Hilos\Runtime\Actions\RtActionsCollectionNameNullException;
-use Hilos\Exception\Hilos\Runtime\Actions\RtActionsStateCollectionNullException;
-use Hilos\Exception\Runtime\TruthSource\RtTruthSourceWriteNotAllowedException;
+use Hilos\Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
+use Hilos\Hilos\Runtime\Actions\Exception\RtActionsCallbackNotSetException;
+use Hilos\Hilos\Runtime\Actions\Exception\RtActionsCollectionNameNullException;
+use Hilos\Hilos\Runtime\Actions\Exception\RtActionsStateCollectionNullException;
 use Hilos\Hilos\Runtime\Actions\RtActions;
 
 /**

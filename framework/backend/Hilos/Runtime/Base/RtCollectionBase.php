@@ -4,12 +4,12 @@ namespace Hilos\Hilos\Runtime\Base;
 
 use ArrayAccess;
 use Countable;
-use Hilos\Exception\Runtime\Actions\IdeaRtActionsStateCollectionNullException;
-use Hilos\Exception\Runtime\Collection\IdeaRtCollectionActionsClassException;
-use Hilos\Exception\Runtime\Collection\IdeaRtCollectionCloneException;
-use Hilos\Exception\Runtime\Collection\IdeaRtCollectionDirectSetException;
-use Hilos\Exception\Runtime\Collection\IdeaRtCollectionPropertyNotFoundException;
-use Hilos\Exception\Runtime\Collection\IdeaRtCollectionUnserializeException;
+use Hilos\Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
+use Hilos\Hilos\Runtime\Exception\Collection\RtCollectionActionsClassException;
+use Hilos\Hilos\Runtime\Exception\Collection\RtCollectionCloneException;
+use Hilos\Hilos\Runtime\Exception\Collection\RtCollectionDirectSetException;
+use Hilos\Hilos\Runtime\Exception\Collection\RtCollectionPropertyNotFoundException;
+use Hilos\Hilos\Runtime\Exception\Collection\RtCollectionUnserializeException;
 use Hilos\Hilos\Runtime\State\Item\RtState;
 use Hilos\Hilos\Runtime\State\Collection\RtStates;
 use Iterator;
@@ -42,16 +42,16 @@ abstract class RtCollectionBase implements ArrayAccess, Countable, Iterator
         return new static();
     }
 
-    /** @throws IdeaRtCollectionCloneException */
+    /** @throws RtCollectionCloneException */
     public function __clone(): void
     {
-        throw new IdeaRtCollectionCloneException('RtCollection cannot be cloned');
+        throw new RtCollectionCloneException('RtCollection cannot be cloned');
     }
 
-    /** @throws IdeaRtCollectionUnserializeException */
+    /** @throws RtCollectionUnserializeException */
     public function __wakeup(): void
     {
-        throw new IdeaRtCollectionUnserializeException('RtCollection cannot be unserialized');
+        throw new RtCollectionUnserializeException('RtCollection cannot be unserialized');
     }
 
     public function setStateCollection(RtStates &$stateCollection): void
@@ -74,19 +74,19 @@ abstract class RtCollectionBase implements ArrayAccess, Countable, Iterator
         $this->_actionsClass = $actionsClass;
     }
 
-    /** @throws IdeaRtCollectionActionsClassException */
+    /** @throws RtCollectionActionsClassException */
     protected function getActions(): RtActionsBase
     {
         if ($this->_actions === null) {
             if ($this->_actionsClass === null) {
-                throw new IdeaRtCollectionActionsClassException(
+                throw new RtCollectionActionsClassException(
                     "Actions class is not set for " . static::class
                 );
             }
 
             $class = $this->_actionsClass;
             if (!is_subclass_of($class, RtActionsBase::class)) {
-                throw new IdeaRtCollectionActionsClassException(
+                throw new RtCollectionActionsClassException(
                     "Actions class [{$class}] must extend RtActionsBase"
                 );
             }
@@ -105,11 +105,11 @@ abstract class RtCollectionBase implements ArrayAccess, Countable, Iterator
         return $this->_actions;
     }
 
-    /** @throws IdeaRtActionsStateCollectionNullException */
+    /** @throws RtActionsStateCollectionNullException */
     public function getStateCollection(): RtStates
     {
         if ($this->_stateCollection === null) {
-            throw new IdeaRtActionsStateCollectionNullException(
+            throw new RtActionsStateCollectionNullException(
                 'State collection is null. Call setStateCollection() before using the collection.'
             );
         }
@@ -183,13 +183,13 @@ abstract class RtCollectionBase implements ArrayAccess, Countable, Iterator
         $this->position = 0;
     }
 
-    /** @throws IdeaRtCollectionPropertyNotFoundException */
+    /** @throws RtCollectionPropertyNotFoundException */
     public function __get(string $name)
     {
         if ($name === self::actions) {
             return $this->getActions();
         }
-        throw new IdeaRtCollectionPropertyNotFoundException(
+        throw new RtCollectionPropertyNotFoundException(
             "Property [{$name}] does not exist on " . static::class
         );
     }
@@ -210,10 +210,10 @@ abstract class RtCollectionBase implements ArrayAccess, Countable, Iterator
         return $this->getRtItemForKey($offset);
     }
 
-    /** @throws IdeaRtCollectionDirectSetException */
+    /** @throws RtCollectionDirectSetException */
     public function offsetSet(mixed $offset, mixed $value): void
     {
-        throw new IdeaRtCollectionDirectSetException(
+        throw new RtCollectionDirectSetException(
             "Cannot directly set items in collection. Use actions for modifications."
         );
     }

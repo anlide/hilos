@@ -6,7 +6,7 @@ namespace Demo\Chat\Core\Agent;
 
 use Hilos\Core\Agent\AgentInterface;
 use Hilos\Core\Agent\AgentManager;
-use Hilos\Exception\Worker\AgentCreationFailedException;
+use Hilos\Core\Agent\Exception\AgentCreationFailedException;
 
 /**
  * ChatAgentManager - Agent manager for chat demo (worker side)

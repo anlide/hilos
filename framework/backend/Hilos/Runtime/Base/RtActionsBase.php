@@ -2,10 +2,10 @@
 
 namespace Hilos\Hilos\Runtime\Base;
 
-use Hilos\Exception\Runtime\Actions\IdeaRtActionsCallbackNotSetException;
-use Hilos\Exception\Runtime\Actions\IdeaRtActionsCollectionNameNullException;
-use Hilos\Exception\Runtime\Actions\IdeaRtActionsStateCollectionNullException;
-use Hilos\Exception\Runtime\TruthSource\RtTruthSourceWriteNotAllowedException;
+use Hilos\Hilos\Runtime\Exception\Actions\RtActionsCallbackNotSetException;
+use Hilos\Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
+use Hilos\Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
+use Hilos\Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\Hilos\Runtime\State\Item\RtState;
 use Hilos\Hilos\Runtime\State\Collection\RtStates;
 use Hilos\Hilos\TruthSource\RtTruthSourceRegistry;
@@ -42,29 +42,29 @@ abstract class RtActionsBase
         $this->clearCacheCallback = $callback;
     }
 
-    /** @throws IdeaRtActionsCallbackNotSetException */
+    /** @throws RtActionsCallbackNotSetException */
     protected function createRtItemFromState(RtState &$state): RtItemBase
     {
         if ($this->createRtItemCallback === null) {
-            throw new IdeaRtActionsCallbackNotSetException(
+            throw new RtActionsCallbackNotSetException(
                 "createRtItemCallback is not set. RtCollection must call setCreateRtItemCallback() when creating Actions."
             );
         }
         return ($this->createRtItemCallback)($state);
     }
 
-    /** @throws IdeaRtActionsCallbackNotSetException */
+    /** @throws RtActionsCallbackNotSetException */
     protected function clearCollectionCache(): void
     {
         if ($this->clearCacheCallback === null) {
-            throw new IdeaRtActionsCallbackNotSetException(
+            throw new RtActionsCallbackNotSetException(
                 "clearCacheCallback is not set. RtCollection must call setClearCacheCallback() when creating Actions."
             );
         }
         ($this->clearCacheCallback)();
     }
 
-    /** @throws IdeaRtActionsStateCollectionNullException */
+    /** @throws RtActionsStateCollectionNullException */
     protected function getStateCollection(): RtStates
     {
         return $this->collection->getStateCollection();
@@ -75,13 +75,13 @@ abstract class RtActionsBase
         return $this->collection->getCollectionName();
     }
 
-    /** @throws IdeaRtActionsCollectionNameNullException */
+    /** @throws RtActionsCollectionNameNullException */
     /** @throws RtTruthSourceWriteNotAllowedException */
     protected function ensureCanWrite(): void
     {
         $collectionName = $this->getCollectionName();
         if ($collectionName === null) {
-            throw new IdeaRtActionsCollectionNameNullException(
+            throw new RtActionsCollectionNameNullException(
                 "Cannot ensure write: collection name is null"
             );
         }

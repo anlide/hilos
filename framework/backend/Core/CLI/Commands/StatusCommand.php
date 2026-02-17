@@ -12,8 +12,8 @@ use Hilos\Constants\ExitCode;
 use Hilos\Constants\HttpConstants;
 use Hilos\Core\Daemon\Master\DaemonStatus;
 use Hilos\DTO\DaemonStatusDTO;
-use Hilos\Exception\MissingEnvironmentVariableException;
 use Hilos\Utils\Env;
+use Hilos\Utils\Exception\MissingEnvironmentVariableException;
 use Hilos\Utils\Helpers\StringHelper;
 
 /**

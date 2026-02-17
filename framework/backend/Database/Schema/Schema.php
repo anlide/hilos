@@ -4,8 +4,8 @@ namespace Hilos\Database\Schema;
 
 use Hilos\Database\ColumnType;
 use Hilos\Database\Database;
+use Hilos\Database\DatabaseException;
 use Hilos\Database\SqlParamCollection;
-use Hilos\Exception\DatabaseException;
 
 /**
  * Schema - Database structure storage and management

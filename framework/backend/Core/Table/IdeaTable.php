@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Core\Table;
 
 use Hilos\Core\Table\DataSource\TableDataSourceInterface;
-use Hilos\Exception\Hilos\Table\TableNotFoundException;
+use Hilos\Hilos\Table\Exception\TableNotFoundException;
 
 /**
  * Table layer for Hilos. Holds named table data sources (Entity / Sql / Other).

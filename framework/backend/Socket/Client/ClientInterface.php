@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Socket\Client;
 
-use Hilos\Exception\SocketException;
+use Hilos\Socket\SocketException;
 
 /**
  * ClientInterface - Interface for all client implementations

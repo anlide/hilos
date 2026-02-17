@@ -2,8 +2,6 @@
 
 namespace Hilos\Database;
 
-use Hilos\Exception\DatabaseException;
-
 /**
  * Database migration management system
  * Handles up/down migrations with SQL files

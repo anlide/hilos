@@ -2,12 +2,12 @@
 
 namespace Hilos\Database\Entity\Item;
 
-use Hilos\Database\Entity\Collection\EntityCollection;
 use Hilos\Database\Database;
+use Hilos\Database\DatabaseException;
+use Hilos\Database\Entity\Collection\EntityCollection;
 use Hilos\Database\PhpType;
 use Hilos\Database\SqlParam;
 use Hilos\Database\SqlParamCollection;
-use Hilos\Exception\DatabaseException;
 
 /**
  * Base Entity class

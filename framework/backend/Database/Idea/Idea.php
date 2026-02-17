@@ -3,12 +3,12 @@
 namespace Hilos\Database\Idea;
 
 use Hilos\Core\Table\IdeaTable;
+use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Objects;
-use Hilos\Exception\DatabaseException;
-use Hilos\Exception\Idea\Collection\IdeaCollectionNotFoundException;
-use Hilos\Exception\Idea\Other\IdeaCloneException;
-use Hilos\Exception\Idea\Other\IdeaObjectCollectionNotFoundException;
-use Hilos\Exception\Idea\Other\IdeaUnknownLazyStrategyException;
+use Hilos\Database\Exception\CloneNotAllowedException;
+use Hilos\Database\Exception\CollectionNotFoundException;
+use Hilos\Database\Exception\ObjectCollectionNotFoundException;
+use Hilos\Database\Exception\UnknownLazyStrategyException;
 use Hilos\Hilos\Runtime\Context\RtContext;
 
 /**
@@ -69,11 +69,11 @@ abstract class Idea
      *
      * Magic methods in PHP must be public to be called.
      * Idea is a singleton and should not be cloned.
-     * @throws IdeaCloneException
+     * @throws CloneNotAllowedException
      */
     public function __clone(): void
     {
-        throw new IdeaCloneException('Idea cannot be cloned');
+        throw new CloneNotAllowedException('Idea cannot be cloned');
     }
 
     /**
@@ -144,13 +144,13 @@ abstract class Idea
      * @param string $name Collection name (e.g., 'users')
      * @param string $ideaCollectionClass Idea collection class name
      * @param ?string $actionsClass Actions class name (optional)
-     * @throws IdeaObjectCollectionNotFoundException If Object collection not found in _objectCollections
+     * @throws ObjectCollectionNotFoundException If Object collection not found in _objectCollections
      */
     public function setRepresent(string $name, string $ideaCollectionClass, ?string $actionsClass = null): void
     {
         // Get Object collection from _objectCollections
         if (!isset($this->_objectCollections[$name])) {
-            throw new IdeaObjectCollectionNotFoundException("Object collection [{$name}] not found in _objectCollections. Create it before calling setRepresent().");
+            throw new ObjectCollectionNotFoundException("Object collection [{$name}] not found in _objectCollections. Create it before calling setRepresent().");
         }
 
         $objectCollection = $this->_objectCollections[$name];
@@ -186,15 +186,15 @@ abstract class Idea
      *
      * @param string $name Collection name
      * @return IdeaCollection
-     * @throws IdeaCollectionNotFoundException
-     * @throws IdeaUnknownLazyStrategyException
+     * @throws CollectionNotFoundException
+     * @throws UnknownLazyStrategyException
      * @throws DatabaseException
      */
     public function __get(string $name)
     {
         // Early exit if collection doesn't exist
         if (!isset($this->_ideaCollections[$name])) {
-            throw new IdeaCollectionNotFoundException("Idea collection [{$name}] does not exist");
+            throw new CollectionNotFoundException("Idea collection [{$name}] does not exist");
         }
 
         switch ($this->_objectCollections[$name]->getLazyStrategy()) {
@@ -221,7 +221,7 @@ abstract class Idea
 
             default:
                 // Unknown strategy - no action needed
-                throw new IdeaUnknownLazyStrategyException("Unknown lazy loading strategy for collection [{$name}]");
+                throw new UnknownLazyStrategyException("Unknown lazy loading strategy for collection [{$name}]");
         }
 
         return $this->_ideaCollections[$name];

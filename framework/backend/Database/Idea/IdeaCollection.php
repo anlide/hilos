@@ -4,16 +4,16 @@ namespace Hilos\Database\Idea;
 
 use ArrayAccess;
 use Countable;
+use Hilos\Database\DatabaseException;
+use Hilos\Database\Idea\Exception\Collection\ActionsClassException;
+use Hilos\Database\Idea\Exception\Collection\CloneException;
+use Hilos\Database\Idea\Exception\Collection\DirectSetException;
+use Hilos\Database\Idea\Exception\Collection\NotManualException;
+use Hilos\Database\Idea\Exception\Collection\PropertyNotFoundException;
+use Hilos\Database\Idea\Exception\Collection\UnserializeException;
+use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 use Hilos\Database\Object\Item\Object_;
 use Hilos\Database\Object\Objects;
-use Hilos\Exception\Database\Object\ObjectGetIdStringNotImplementedException;
-use Hilos\Exception\DatabaseException;
-use Hilos\Exception\Idea\Collection\IdeaCollectionActionsClassException;
-use Hilos\Exception\Idea\Collection\IdeaCollectionCloneException;
-use Hilos\Exception\Idea\Collection\IdeaCollectionDirectSetException;
-use Hilos\Exception\Idea\Collection\IdeaCollectionNotManualException;
-use Hilos\Exception\Idea\Collection\IdeaCollectionPropertyNotFoundException;
-use Hilos\Exception\Idea\Collection\IdeaCollectionUnserializeException;
 use Iterator;
 
 /**
@@ -93,7 +93,7 @@ abstract class IdeaCollection implements ArrayAccess, Countable, Iterator
      *
      * @param IdeaItem $item Single item to wrap
      * @return static New manual collection with one item
-     * @throws IdeaCollectionNotManualException Never (initEmpty is manual)
+     * @throws NotManualException Never (initEmpty is manual)
      * @throws ObjectGetIdStringNotImplementedException If IdeaItem's Object does not implement getIdString() (required for manual collections to use ID as key)
      */
     public static function fromSingleItem(IdeaItem $item): static
@@ -108,11 +108,11 @@ abstract class IdeaCollection implements ArrayAccess, Countable, Iterator
      *
      * Magic methods in PHP must be public to be called.
      * IdeaCollection instances should not be cloned.
-     * @throws IdeaCollectionCloneException
+     * @throws CloneException
      */
     public function __clone(): void
     {
-        throw new IdeaCollectionCloneException('IdeaCollection cannot be cloned');
+        throw new CloneException('IdeaCollection cannot be cloned');
     }
 
     /**
@@ -120,11 +120,11 @@ abstract class IdeaCollection implements ArrayAccess, Countable, Iterator
      *
      * Magic methods in PHP must be public to be called.
      * IdeaCollection instances cannot be safely unserialized.
-     * @throws IdeaCollectionUnserializeException
+     * @throws UnserializeException
      */
     public function __wakeup(): void
     {
-        throw new IdeaCollectionUnserializeException('IdeaCollection cannot be unserialized');
+        throw new UnserializeException('IdeaCollection cannot be unserialized');
     }
 
     /**
@@ -177,14 +177,14 @@ abstract class IdeaCollection implements ArrayAccess, Countable, Iterator
      * Creates Actions instance lazily on first access
      *
      * @return IdeaActions
-     * @throws IdeaCollectionActionsClassException If Actions class is not set and default class cannot be used
+     * @throws ActionsClassException If Actions class is not set and default class cannot be used
      */
     protected function getActions(): IdeaActions
     {
         if ($this->_actions === null) {
             $class = $this->_actionsClass ?? IdeaActions::class;
             if (!is_subclass_of($class, IdeaActions::class)) {
-                throw new IdeaCollectionActionsClassException("Actions class [{$class}] must extend IdeaActions");
+                throw new ActionsClassException("Actions class [{$class}] must extend IdeaActions");
             }
             $this->_actions = new $class($this);
 
@@ -235,13 +235,13 @@ abstract class IdeaCollection implements ArrayAccess, Countable, Iterator
      *
      * @param T $item IdeaItem instance to add
      *
-     * @throws IdeaCollectionNotManualException If collection is not manual, or item has no ID
+     * @throws NotManualException If collection is not manual, or item has no ID
      * @throws ObjectGetIdStringNotImplementedException If IdeaItem's Object does not implement getIdString() (required for manual collections to use ID as key)
      */
     public function add(IdeaItem $item): void
     {
         if (!$this->isManual) {
-            throw new IdeaCollectionNotManualException("Can only add items to manual collections (created via initEmpty())");
+            throw new NotManualException("Can only add items to manual collections (created via initEmpty())");
         }
 
         $this->items[$item->getIdString()] = $item;
@@ -253,7 +253,7 @@ abstract class IdeaCollection implements ArrayAccess, Countable, Iterator
      *
      * @param IdeaCollection $other Collection whose items to merge in (only those not already in $this)
      * @return static New manual collection
-     * @throws IdeaCollectionNotManualException Never (initEmpty is manual)
+     * @throws NotManualException Never (initEmpty is manual)
      * @throws ObjectGetIdStringNotImplementedException If an item's Object does not implement getIdString()
      */
     public function mergeWith(IdeaCollection $other): static
@@ -359,7 +359,7 @@ abstract class IdeaCollection implements ArrayAccess, Countable, Iterator
      *
      * @param callable $callback Callback function (IdeaItem, key) => bool
      * @return static New filtered manual collection
-     * @throws IdeaCollectionNotManualException If trying to add to non-manual collection
+     * @throws NotManualException If trying to add to non-manual collection
      * @throws DatabaseException If IdeaItem has no associated Object ID
      */
     public function filter(callable $callback): static
@@ -543,11 +543,11 @@ abstract class IdeaCollection implements ArrayAccess, Countable, Iterator
     }
 
     /**
-     * @throws IdeaCollectionDirectSetException
+     * @throws DirectSetException
      */
     public function offsetSet(mixed $offset, mixed $value): void
     {
-        throw new IdeaCollectionDirectSetException("Cannot directly set Idea instances in collection");
+        throw new DirectSetException("Cannot directly set Idea instances in collection");
     }
 
     public function offsetUnset(mixed $offset): void
@@ -567,8 +567,8 @@ abstract class IdeaCollection implements ArrayAccess, Countable, Iterator
      *
      * @param string $name Property name
      * @return IdeaActions
-     * @throws IdeaCollectionPropertyNotFoundException
-     * @throws IdeaCollectionActionsClassException
+     * @throws PropertyNotFoundException
+     * @throws ActionsClassException
      */
     public function __get(string $name)
     {
@@ -576,7 +576,7 @@ abstract class IdeaCollection implements ArrayAccess, Countable, Iterator
             return $this->getActions();
         }
 
-        throw new IdeaCollectionPropertyNotFoundException("Property [{$name}] does not exist on " . static::class);
+        throw new PropertyNotFoundException("Property [{$name}] does not exist on " . static::class);
     }
 
     /**

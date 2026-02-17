@@ -4,14 +4,14 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Core\Agent;
 
-use Demo\Chat\Constants\AgentType;
 use Demo\Chat\Agents\BotAgent;
 use Demo\Chat\Agents\ChatAgent;
 use Demo\Chat\Agents\ModeratorAgent;
+use Demo\Chat\Constants\AgentType;
 use Hilos\Core\Agent\AbstractAgentWorkerFactory;
 use Hilos\Core\Agent\AgentInterface;
+use Hilos\Core\Agent\Exception\AgentCreationFailedException;
 use Hilos\Core\Router\SignalRouter;
-use Hilos\Exception\Worker\AgentCreationFailedException;
 
 /**
  * ChatAgentFactory - Factory for creating chat-specific agents in worker processes

@@ -7,11 +7,11 @@ namespace Hilos\Socket\Client;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HttpConstants;
 use Hilos\Core\Router\SignalRouter;
-use Hilos\Exception\MissingEnvironmentVariableException;
-use Hilos\Exception\SocketException;
 use Hilos\Socket\AbstractSocket;
+use Hilos\Socket\SocketException;
 use Hilos\Socket\SocketOperation;
 use Hilos\Utils\Env;
+use Hilos\Utils\Exception\MissingEnvironmentVariableException;
 use Hilos\Utils\Logger;
 
 /**

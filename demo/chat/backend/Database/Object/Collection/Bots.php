@@ -4,13 +4,12 @@ namespace Demo\Chat\Database\Object\Collection;
 
 use ArrayAccess;
 use Countable;
-use Demo\Chat\Database\Entity\Item\Bot as EntityBot;
 use Demo\Chat\Database\Entity\Collection\Bots as EntityBots;
-use Demo\Chat\Hilos;
+use Demo\Chat\Database\Entity\Item\Bot as EntityBot;
 use Demo\Chat\Database\Object\Item\Bot as ObjectBot;
+use Demo\Chat\Hilos;
 use Hilos\Database\Database;
 use Hilos\Database\Object\Objects;
-use Hilos\Exception\DatabaseException;
 use Iterator;
 
 /**

@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Page;
 
+use Hilos\Core\Page\Exception\PageNotFoundException;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\DTO\Action\ActionPayloadDTO;
 use Hilos\DTO\Action\UnknownActionPayloadDTO;
-use Hilos\Exception\Page\PageNotFoundException;
 
 /**
  * AbstractPageFactory - Abstract factory for creating page instances

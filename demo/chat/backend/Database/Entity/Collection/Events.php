@@ -4,7 +4,6 @@ namespace Demo\Chat\Database\Entity\Collection;
 
 use Demo\Chat\Database\Entity\Item\Event as EntityEvent;
 use Hilos\Database\Entity\Collection\EntityCollection;
-use Hilos\Exception\DatabaseException;
 
 /**
  * Events Entity Collection

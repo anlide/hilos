@@ -6,9 +6,9 @@ namespace Demo\Chat\Core\Socket\Server;
 
 use Demo\Chat\Core\Socket\Client\ChatWebSocketClient;
 use Hilos\Core\Router\SignalRouter;
-use Hilos\Exception\SocketException;
 use Hilos\Socket\Client\Interface\WebSocketClientInterface;
 use Hilos\Socket\Server\WebSocketServer;
+use Hilos\Socket\SocketException;
 
 /**
  * ChatWebSocketServer - WebSocket server for chat demo

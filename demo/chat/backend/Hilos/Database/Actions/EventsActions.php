@@ -3,18 +3,12 @@
 namespace Demo\Chat\Hilos\Database\Actions;
 
 use Demo\Chat\Database\Entity\Item\Event;
-use Demo\Chat\Database\Object\Item\Event as ObjectEvent;
 use Demo\Chat\Database\Object\Collection\Events as ObjectCollectionEvents;
-use Demo\Chat\Hilos\Database\Item\Event as DbEvent;
+use Demo\Chat\Database\Object\Item\Event as ObjectEvent;
 use Demo\Chat\Hilos\Database\Collection\Events as DbCollectionEvents;
-use Hilos\Exception\DatabaseException;
-use Hilos\Exception\Hilos\Database\Actions\CallbackNotSetException;
-use Hilos\Exception\Hilos\Database\Actions\DuplicateIdException;
-use Hilos\Exception\Hilos\Database\Actions\ObjectCollectionNullException;
-use Hilos\Exception\Hilos\Database\Actions\TableNameUndeterminedException;
-use Hilos\Exception\Hilos\Database\Actions\UnknownLazyStrategyException;
-use Hilos\Exception\Hilos\Database\TruthSource\WriteNotAllowedException;
+use Demo\Chat\Hilos\Database\Item\Event as DbEvent;
 use Hilos\Hilos\Database\Actions\DbActions;
+use Hilos\Hilos\Database\Actions\Exception\Old\ObjectCollectionNullException;
 
 /**
  * Events Actions - provides write operations for Events collection.

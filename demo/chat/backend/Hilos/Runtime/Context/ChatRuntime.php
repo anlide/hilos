@@ -7,9 +7,8 @@ namespace Demo\Chat\Hilos\Runtime\Context;
 use Demo\Chat\Hilos\Runtime\Actions\ConnectionsActions;
 use Demo\Chat\Hilos\Runtime\Collection\Connections;
 use Demo\Chat\Hilos\Runtime\State\Collection\Connections as StateConnections;
-use Hilos\Exception\Hilos\Runtime\Rt\StateCollectionNotFoundException;
-use Hilos\Exception\Runtime\Rt\IdeaRtStateCollectionNotFoundException;
 use Hilos\Hilos\Runtime\Context\RtContext;
+use Hilos\Hilos\Runtime\Exception\Rt\StateCollectionNotFoundException;
 
 /**
  * ChatRuntime - application-specific runtime data access
@@ -31,7 +30,6 @@ final class ChatRuntime extends RtContext
 
     /**
      * @throws StateCollectionNotFoundException
-     * @throws IdeaRtStateCollectionNotFoundException
      */
     public static function init(): static
     {

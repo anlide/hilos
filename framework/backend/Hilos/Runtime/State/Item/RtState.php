@@ -2,7 +2,7 @@
 
 namespace Hilos\Hilos\Runtime\State\Item;
 
-use Hilos\Exception\Runtime\State\RtStateUnserializeException;
+use Hilos\Hilos\Runtime\Exception\State\RtStateUnserializeException;
 
 /**
  * Base class for runtime state objects

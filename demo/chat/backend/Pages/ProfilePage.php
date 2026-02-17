@@ -12,13 +12,13 @@ use Demo\Chat\DTO\Action\RenameActionDTO;
 use Demo\Chat\DTO\ChatEventSignalDTO;
 use Demo\Chat\Hilos;
 use Demo\Chat\Hilos\Database\Collection\Events;
+use Hilos\Database\DatabaseException;
 use Hilos\DTO\Action\ActionPayloadDTO;
 use Hilos\DTO\EntitiesChangesDTO;
-use Hilos\Exception\DatabaseException;
-use Hilos\Exception\Hilos\Database\Actions\ObjectCollectionNullException;
-use Hilos\Exception\Hilos\Database\Actions\TableNameUndeterminedException;
-use Hilos\Exception\Hilos\Database\Actions\UnknownLazyStrategyException;
-use Hilos\Exception\Hilos\Database\TruthSource\WriteNotAllowedException;
+use Hilos\Hilos\Database\Actions\Exception\Old\ObjectCollectionNullException;
+use Hilos\Hilos\Database\Actions\Exception\Old\TableNameUndeterminedException;
+use Hilos\Hilos\Database\Actions\Exception\Old\UnknownLazyStrategyException;
+use Hilos\Hilos\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Utils\Logger;
 
 /**

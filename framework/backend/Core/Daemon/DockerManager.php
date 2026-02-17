@@ -5,18 +5,18 @@ declare(strict_types=1);
 namespace Hilos\Core\Daemon;
 
 use Hilos\Constants\EnvConstants;
+use Hilos\Core\Daemon\Exception\InvalidScriptPathException;
+use Hilos\Core\Exception\Process\CouldNotStartException;
+use Hilos\Core\Exception\Process\FailedToClosePipeException;
+use Hilos\Core\Exception\Process\FailedToGetStatusException;
+use Hilos\Core\Exception\Process\FailedToReadStdOutException;
+use Hilos\Core\Exception\Process\FailedToSetNonBlockingException;
+use Hilos\Core\Exception\Process\FailedToSetStdErrException;
+use Hilos\Core\Exception\Process\FailedToTerminateProcessExceptionException;
 use Hilos\Core\Process;
-use Hilos\Exception\InvalidScriptPathException;
-use Hilos\Exception\Log\LogRotationException;
-use Hilos\Exception\MissingEnvironmentVariableException;
-use Hilos\Exception\Process\CouldNotStartException;
-use Hilos\Exception\Process\FailedToClosePipeException;
-use Hilos\Exception\Process\FailedToGetStatusException;
-use Hilos\Exception\Process\FailedToReadStdOutException;
-use Hilos\Exception\Process\FailedToSetNonBlockingException;
-use Hilos\Exception\Process\FailedToSetStdErrException;
-use Hilos\Exception\Process\FailedToTerminateProcessExceptionException;
 use Hilos\Utils\Env;
+use Hilos\Utils\Exception\LogRotationException;
+use Hilos\Utils\Exception\MissingEnvironmentVariableException;
 use Hilos\Utils\Logger;
 
 /**

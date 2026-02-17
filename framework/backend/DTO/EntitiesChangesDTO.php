@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace Hilos\DTO;
 
+use Hilos\Database\Idea\Exception\Collection\NotManualException;
 use Hilos\Database\Idea\IdeaCollection;
-use Hilos\Exception\Database\Object\ObjectGetIdStringNotImplementedException;
-use Hilos\Exception\Idea\Collection\IdeaCollectionNotManualException;
+use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 
 /**
  * EntitiesChangesDTO - Entity changes payload
@@ -71,7 +71,7 @@ class EntitiesChangesDTO extends BaseDTO
      * @param string $collection Collection key (e.g. 'events', 'users')
      * @param IdeaCollection $toAppend Collection whose items to merge in
      * @return static New DTO instance
-     * @throws IdeaCollectionNotManualException If $toAppend is not manual (cannot be merged)
+     * @throws NotManualException If $toAppend is not manual (cannot be merged)
      * @throws ObjectGetIdStringNotImplementedException If any item in $toAppend has an Object that does not implement getIdString() (required for merging)
      */
     public function withFullAppended(string $collection, IdeaCollection $toAppend): static

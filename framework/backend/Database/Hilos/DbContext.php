@@ -2,13 +2,13 @@
 
 namespace Hilos\Database\Hilos;
 
-use Hilos\Hilos\Database\Collection\DbCollection;
+use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Objects;
-use Hilos\Exception\DatabaseException;
-use Hilos\Exception\Hilos\Database\CollectionNotFoundException;
-use Hilos\Exception\Hilos\Database\CloneNotAllowedException;
-use Hilos\Exception\Hilos\Database\ObjectCollectionNotFoundException;
-use Hilos\Exception\Hilos\Database\UnknownLazyStrategyException;
+use Hilos\Hilos\Database\Collection\DbCollection;
+use Hilos\Hilos\Database\Exception\CloneNotAllowedException;
+use Hilos\Hilos\Database\Exception\CollectionNotFoundException;
+use Hilos\Hilos\Database\Exception\ObjectCollectionNotFoundException;
+use Hilos\Hilos\Database\Exception\UnknownLazyStrategyException;
 
 /**
  * DbContext - Database context (instance layer only).

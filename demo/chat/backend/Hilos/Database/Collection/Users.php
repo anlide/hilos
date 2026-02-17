@@ -2,12 +2,11 @@
 
 namespace Demo\Chat\Hilos\Database\Collection;
 
-use Demo\Chat\Database\Object\Item\User as ObjectUser;
 use Demo\Chat\Database\Object\Collection\Users as ObjectUsers;
-use Demo\Chat\Hilos\Database\Item\User;
+use Demo\Chat\Database\Object\Item\User as ObjectUser;
 use Demo\Chat\Hilos\Database\Actions\UsersActions;
+use Demo\Chat\Hilos\Database\Item\User;
 use Hilos\Database\Object\Item\Object_;
-use Hilos\Exception\DatabaseException;
 use Hilos\Hilos\Database\Collection\DbCollection;
 use InvalidArgumentException;
 

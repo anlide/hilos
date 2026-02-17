@@ -2,9 +2,9 @@
 
 namespace Hilos\Hilos\Runtime\Base;
 
-use Hilos\Exception\Runtime\Rt\IdeaRtCloneException;
-use Hilos\Exception\Runtime\Rt\IdeaRtCollectionNotFoundException;
-use Hilos\Exception\Runtime\Rt\IdeaRtStateCollectionNotFoundException;
+use Hilos\Hilos\Runtime\Exception\Rt\RtCloneException;
+use Hilos\Hilos\Runtime\Exception\Rt\RtCollectionNotFoundException;
+use Hilos\Hilos\Runtime\Exception\Rt\StateCollectionNotFoundException;
 use Hilos\Hilos\Runtime\State\Collection\RtStates;
 
 /**
@@ -27,10 +27,10 @@ abstract class RtContextBase
     {
     }
 
-    /** @throws IdeaRtCloneException */
+    /** @throws RtCloneException */
     public function __clone(): void
     {
-        throw new IdeaRtCloneException('Runtime context cannot be cloned');
+        throw new RtCloneException('Runtime context cannot be cloned');
     }
 
     public static function init(): static
@@ -41,12 +41,12 @@ abstract class RtContextBase
     /**
      * @param string $rtCollectionClass RtCollectionBase class name
      * @param ?string $actionsClass RtActionsBase class name (optional)
-     * @throws IdeaRtStateCollectionNotFoundException
+     * @throws StateCollectionNotFoundException
      */
     public function setRepresent(string $name, string $rtCollectionClass, ?string $actionsClass = null): void
     {
         if (!isset($this->_stateCollections[$name])) {
-            throw new IdeaRtStateCollectionNotFoundException(
+            throw new StateCollectionNotFoundException(
                 "State collection [{$name}] not found in _stateCollections. Create it before calling setRepresent()."
             );
         }
@@ -69,11 +69,11 @@ abstract class RtContextBase
         return $this->_stateCollections[$name] ?? null;
     }
 
-    /** @throws IdeaRtCollectionNotFoundException */
+    /** @throws RtCollectionNotFoundException */
     public function __get(string $name): RtCollectionBase
     {
         if (!isset($this->_rtCollections[$name])) {
-            throw new IdeaRtCollectionNotFoundException("Runtime collection [{$name}] does not exist");
+            throw new RtCollectionNotFoundException("Runtime collection [{$name}] does not exist");
         }
         return $this->_rtCollections[$name];
     }

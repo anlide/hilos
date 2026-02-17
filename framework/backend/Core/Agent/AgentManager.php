@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Agent;
 
+use Hilos\Core\Agent\Exception\AgentCreationFailedException;
 use Hilos\Core\Router\SignalRouter;
-use Hilos\Exception\Worker\AgentCreationFailedException;
 
 /**
  * AgentManager - Base class for managing agents in worker processes

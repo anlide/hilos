@@ -14,10 +14,10 @@ use Hilos\Core\Agent\AgentInterface;
 use Hilos\Core\Agent\AgentManager;
 use Hilos\Core\Daemon\WorkerManager;
 use Hilos\Core\Page\ActionRouteConfig;
-use Hilos\Core\Table\TableActionConstants;
+use Hilos\Core\Page\Exception\PageSignalRouterNotFoundException;
 use Hilos\Core\Page\PageSignalRouter;
-use Hilos\Exception\Page\PageSignalRouterNotFoundException;
 use Hilos\Core\Router\SignalRouter;
+use Hilos\Core\Table\TableActionConstants;
 
 /**
  * ChatWorkerManager - Worker manager for chat demo

@@ -4,14 +4,14 @@ declare(strict_types=1);
 
 namespace Hilos\Core;
 
-use Hilos\Exception\Process\CouldNotStartException;
-use Hilos\Exception\Process\FailedToClosePipeException;
-use Hilos\Exception\Process\FailedToGetStatusException;
-use Hilos\Exception\Process\FailedToReadStdOutException;
-use Hilos\Exception\Process\FailedToSetStdErrException;
-use Hilos\Exception\Process\FailedToSetNonBlockingException;
-use Hilos\Exception\Process\FailedToTerminateProcessExceptionException;
-use Hilos\Exception\Process\FailedToWriteStdInException;
+use Hilos\Core\Exception\Process\CouldNotStartException;
+use Hilos\Core\Exception\Process\FailedToClosePipeException;
+use Hilos\Core\Exception\Process\FailedToGetStatusException;
+use Hilos\Core\Exception\Process\FailedToReadStdOutException;
+use Hilos\Core\Exception\Process\FailedToSetNonBlockingException;
+use Hilos\Core\Exception\Process\FailedToSetStdErrException;
+use Hilos\Core\Exception\Process\FailedToTerminateProcessExceptionException;
+use Hilos\Core\Exception\Process\FailedToWriteStdInException;
 
 class Process
 {

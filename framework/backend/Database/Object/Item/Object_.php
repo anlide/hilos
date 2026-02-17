@@ -2,10 +2,9 @@
 
 namespace Hilos\Database\Object\Item;
 
-use Exception;
+use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Item\Entity;
-use Hilos\Exception\DatabaseException;
-use Hilos\Exception\Database\Object\ObjectGetIdStringNotImplementedException;
+use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 
 /**
  * Base Object class

@@ -7,8 +7,8 @@ namespace Demo\Chat\Core\Daemon;
 use Demo\Chat\Core\Agent\ChatAgentDaemonFactory;
 use Hilos\Core\Agent\Daemon\AgentDaemonInterface;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
+use Hilos\Core\Agent\Exception\AgentDaemonCreationFailedException;
 use Hilos\Core\Router\SignalRouter;
-use Hilos\Exception\Worker\AgentDaemonCreationFailedException;
 
 /**
  * ChatAgentManagerDaemon - Agent manager daemon for chat demo (daemon side)

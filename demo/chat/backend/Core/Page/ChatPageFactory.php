@@ -20,9 +20,9 @@ use Demo\Chat\Pages\ProfilePage;
 use Demo\Chat\Pages\UserPage;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Page\AbstractPageFactory;
+use Hilos\Core\Page\Exception\PageNotFoundException;
 use Hilos\Core\Page\PageAgentInterface;
 use Hilos\DTO\Action\ActionPayloadDTO;
-use Hilos\Exception\Page\PageNotFoundException;
 
 /**
  * ChatPageFactory - Factory for creating chat page instances

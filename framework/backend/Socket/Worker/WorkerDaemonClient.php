@@ -5,17 +5,12 @@ declare(strict_types=1);
 namespace Hilos\Socket\Worker;
 
 use Hilos\Constants\EnvConstants;
-use Hilos\Constants\WorkerConstants;
-use Hilos\DTO\Worker\AgentStartDTO;
-use Hilos\DTO\Worker\AgentStopDTO;
-use Hilos\DTO\Worker\DaemonAgentMessageDTO;
 use Hilos\DTO\Worker\WorkerDTO;
-use Hilos\DTO\Worker\WorkerRegisteredDTO;
-use Hilos\Exception\MissingEnvironmentVariableException;
-use Hilos\Exception\SocketException;
 use Hilos\Socket\AbstractSocket;
+use Hilos\Socket\SocketException;
 use Hilos\Socket\SocketOperation;
 use Hilos\Utils\Env;
+use Hilos\Utils\Exception\MissingEnvironmentVariableException;
 
 /**
  * WorkerDaemonClient - Client for worker to connect to daemon

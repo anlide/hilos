@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Router;
 
+use Hilos\API\Router\Exception\GroupSubscriptionNotFoundException;
+use Hilos\API\Router\Exception\PageSubscriptionMismatchException;
+use Hilos\API\Router\Exception\PageSubscriptionNotFoundException;
 use Hilos\Constants\SignalPayloadConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\DTO\SignalDTO;
@@ -13,9 +16,6 @@ use Hilos\DTO\WebSocket\WebSocketGroupUpdateSubscriptionSignalDTO;
 use Hilos\DTO\WebSocket\WebSocketPageSubscribeSignalDTO;
 use Hilos\DTO\WebSocket\WebSocketPageUnsubscribeSignalDTO;
 use Hilos\DTO\WebSocket\WebSocketPageUpdateSubscriptionSignalDTO;
-use Hilos\Exception\Router\GroupSubscriptionNotFoundException;
-use Hilos\Exception\Router\PageSubscriptionMismatchException;
-use Hilos\Exception\Router\PageSubscriptionNotFoundException;
 use Hilos\Utils\Logger;
 
 /**

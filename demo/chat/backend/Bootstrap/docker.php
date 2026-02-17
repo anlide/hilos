@@ -8,11 +8,11 @@ use Demo\Chat\Database\Database;
 use Hilos\Constants\ErrorConstants;
 use Hilos\Constants\ExitCode;
 use Hilos\Core\Daemon\DockerManager;
+use Hilos\Core\Exception\Process\CouldNotStartException;
+use Hilos\Core\Exception\Process\FailedToGetStatusException;
+use Hilos\Core\Exception\Process\FailedToSetNonBlockingException;
+use Hilos\Database\DatabaseException;
 use Hilos\Database\Migration;
-use Hilos\Exception\DatabaseException;
-use Hilos\Exception\Process\CouldNotStartException;
-use Hilos\Exception\Process\FailedToGetStatusException;
-use Hilos\Exception\Process\FailedToSetNonBlockingException;
 use Hilos\Utils\Env;
 use Hilos\Utils\Logger;
 

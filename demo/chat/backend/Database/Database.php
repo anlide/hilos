@@ -6,10 +6,10 @@ namespace Demo\Chat\Database;
 
 use Demo\Chat\Hilos;
 use Hilos\Database\Database as BaseDatabase;
+use Hilos\Database\DatabaseException;
 use Hilos\Database\Schema\Schema;
-use Hilos\Exception\DatabaseException;
-use Hilos\Exception\MissingEnvironmentVariableException;
 use Hilos\Utils\Env;
+use Hilos\Utils\Exception\MissingEnvironmentVariableException;
 
 /**
  * Database - Database connection configuration for WebSocket Test Demo

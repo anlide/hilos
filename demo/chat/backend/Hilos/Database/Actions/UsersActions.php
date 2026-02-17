@@ -2,17 +2,10 @@
 
 namespace Demo\Chat\Hilos\Database\Actions;
 
-use Demo\Chat\Database\Object\Item\User as ObjectUser;
 use Demo\Chat\Database\Object\Collection\Users as ObjectUsers;
-use Demo\Chat\Hilos\Database\Item\User;
+use Demo\Chat\Database\Object\Item\User as ObjectUser;
 use Demo\Chat\Hilos\Database\Collection\Users as DbCollectionUsers;
-use Hilos\Exception\DatabaseException;
-use Hilos\Exception\Hilos\Database\Actions\CallbackNotSetException;
-use Hilos\Exception\Hilos\Database\Actions\DuplicateIdException;
-use Hilos\Exception\Hilos\Database\Actions\ObjectCollectionNullException;
-use Hilos\Exception\Hilos\Database\Actions\TableNameUndeterminedException;
-use Hilos\Exception\Hilos\Database\Actions\UnknownLazyStrategyException;
-use Hilos\Exception\Hilos\Database\TruthSource\WriteNotAllowedException;
+use Demo\Chat\Hilos\Database\Item\User;
 use Hilos\Hilos\Database\Actions\DbActions;
 use RuntimeException;
 

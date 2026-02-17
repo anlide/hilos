@@ -2,10 +2,10 @@
 
 namespace Hilos\Hilos\Runtime\Base;
 
-use Hilos\Exception\Runtime\Item\IdeaRtItemCloneException;
-use Hilos\Exception\Runtime\Item\IdeaRtItemPropertyNotFoundException;
-use Hilos\Exception\Runtime\Item\IdeaRtItemReadOnlyException;
-use Hilos\Exception\Runtime\Item\IdeaRtItemUnserializeException;
+use Hilos\Hilos\Runtime\Exception\Item\RtItemCloneException;
+use Hilos\Hilos\Runtime\Exception\Item\RtItemPropertyNotFoundException;
+use Hilos\Hilos\Runtime\Exception\Item\RtItemReadOnlyException;
+use Hilos\Hilos\Runtime\Exception\Item\RtItemUnserializeException;
 use Hilos\Hilos\Runtime\State\Item\RtState;
 
 /**
@@ -36,30 +36,30 @@ abstract class RtItemBase
         return $this->_state->getId();
     }
 
-    /** @throws IdeaRtItemCloneException */
+    /** @throws RtItemCloneException */
     public function __clone(): void
     {
-        throw new IdeaRtItemCloneException('RtItem cannot be cloned');
+        throw new RtItemCloneException('RtItem cannot be cloned');
     }
 
-    /** @throws IdeaRtItemUnserializeException */
+    /** @throws RtItemUnserializeException */
     public function __wakeup(): void
     {
-        throw new IdeaRtItemUnserializeException('RtItem cannot be unserialized');
+        throw new RtItemUnserializeException('RtItem cannot be unserialized');
     }
 
-    /** @throws IdeaRtItemPropertyNotFoundException */
+    /** @throws RtItemPropertyNotFoundException */
     public function __get(string $name)
     {
         $className = static::class;
-        throw new IdeaRtItemPropertyNotFoundException("Property [{$name}] does not exist on {$className}");
+        throw new RtItemPropertyNotFoundException("Property [{$name}] does not exist on {$className}");
     }
 
-    /** @throws IdeaRtItemReadOnlyException */
+    /** @throws RtItemReadOnlyException */
     final public function __set(string $name, mixed $value): never
     {
         $className = static::class;
-        throw new IdeaRtItemReadOnlyException(
+        throw new RtItemReadOnlyException(
             "Cannot set property [{$name}] on {$className}: RtItem is read-only. Use actions for modifications."
         );
     }
