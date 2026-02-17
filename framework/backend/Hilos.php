@@ -16,10 +16,10 @@ use Hilos\Hilos\Table\TableHub;
  *
  * @template TRuntime of RtContext
  */
-abstract class Hilos extends DbContext
+abstract class Hilos
 {
-    /** @var ?static Database layer singleton */
-    public static ?self $db = null;
+    /** @var ?DbContext Database layer singleton */
+    public static ?DbContext $db = null;
 
     /** @var ?TRuntime Runtime layer singleton */
     public static ?RtContext $rt = null;
@@ -33,14 +33,14 @@ abstract class Hilos extends DbContext
     public static function init(): void
     {
         if (static::$db === null) {
-            static::$db = new static();
+            static::$db = static::createDb();
         }
 
         if (static::$rt === null) {
             static::$rt = static::createRuntime();
         }
 
-        static::configureCollections();
+        static::$db->configure();
 
         if (static::$table === null) {
             static::$table = static::createTable();
@@ -48,11 +48,9 @@ abstract class Hilos extends DbContext
     }
 
     /**
-     * Configure DB collections.
+     * Create database context instance.
      */
-    protected static function configureCollections(): void
-    {
-    }
+    abstract protected static function createDb(): DbContext;
 
     /**
      * Create runtime instance.

@@ -33,9 +33,9 @@ abstract class DbContext
     protected array $_ideaCollections = [];
 
     /**
-     * Private constructor - use init() instead.
+     * Constructor. Called from facade createDb().
      */
-    protected function __construct()
+    public function __construct()
     {
     }
 
@@ -122,6 +122,12 @@ abstract class DbContext
 
         return $this->_ideaCollections[$name];
     }
+
+    /**
+     * Configure collections (register object collections and setRepresent).
+     * Called from facade init() after createDb() and createRuntime().
+     */
+    abstract public function configure(): void;
 
     /**
      * Get entity mapping for collections.

@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Table;
 
-use Hilos\Hilos\Database\Hilos;
+use Hilos\Hilos;
 use Hilos\DTO\Action\ActionPayloadDTO;
 use Hilos\DTO\Table\TableDataDTO;
 use Hilos\DTO\Table\TablesPayloadDTO;
