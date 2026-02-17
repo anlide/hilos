@@ -2,10 +2,6 @@
 
 namespace Demo\Chat\Database;
 
-use Demo\Chat\Database\Entity\Item\Bot as EntityBot;
-use Demo\Chat\Database\Entity\Item\Event as EntityEvent;
-use Demo\Chat\Database\Entity\Item\Moderator as EntityModerator;
-use Demo\Chat\Database\Entity\Item\User as EntityUser;
 use Demo\Chat\Hilos\Database\Actions\EventsActions;
 use Demo\Chat\Hilos\Database\Actions\UsersActions;
 use Demo\Chat\Hilos\Database\Collection\Bots;
@@ -18,6 +14,7 @@ use Demo\Chat\Database\Object\Collection\Moderators as ObjectModerators;
 use Demo\Chat\Database\Object\Collection\Users as ObjectUsers;
 use Hilos\Database\Hilos\DbContext;
 use Hilos\Database\Object\Objects;
+use Hilos\Exception\DatabaseException;
 use Hilos\Exception\Hilos\Database\ObjectCollectionNotFoundException;
 
 /**
@@ -37,6 +34,7 @@ class DbChatContext extends DbContext
 
     /**
      * @throws ObjectCollectionNotFoundException
+     * @throws DatabaseException
      */
     public function configure(): void
     {
@@ -49,18 +47,5 @@ class DbChatContext extends DbContext
         $this->setRepresent(self::events, Events::class, EventsActions::class);
         $this->setRepresent(self::bots, Bots::class);
         $this->setRepresent(self::moderators, Moderators::class);
-    }
-
-    /**
-     * @return array<string, string>
-     */
-    protected static function getEntityMapping(): array
-    {
-        return [
-            self::users => EntityUser::class,
-            self::events => EntityEvent::class,
-            self::bots => EntityBot::class,
-            self::moderators => EntityModerator::class,
-        ];
     }
 }

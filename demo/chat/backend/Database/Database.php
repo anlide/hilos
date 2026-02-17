@@ -8,7 +8,6 @@ use Demo\Chat\Hilos;
 use Hilos\Database\Database as BaseDatabase;
 use Hilos\Database\Schema\Schema;
 use Hilos\Exception\DatabaseException;
-use Hilos\Exception\Hilos\Database\ObjectCollectionNotFoundException;
 use Hilos\Exception\MissingEnvironmentVariableException;
 use Hilos\Utils\Env;
 
@@ -38,7 +37,6 @@ class Database extends BaseDatabase
      * @param bool $retryConnection If true, retry connection on temporary errors (useful for Docker startup)
      * @throws DatabaseException
      * @throws MissingEnvironmentVariableException
-     * @throws ObjectCollectionNotFoundException
      */
     public static function initialize(bool $initHilos = true, bool $retryConnection = false): void
     {

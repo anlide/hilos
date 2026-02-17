@@ -130,13 +130,6 @@ abstract class DbContext
     abstract public function configure(): void;
 
     /**
-     * Get entity mapping for collections.
-     *
-     * @return array<string, string> Mapping of collection name => Entity class name
-     */
-    abstract protected static function getEntityMapping(): array;
-
-    /**
      * Convert all collections to array.
      *
      * @return array<string, array>
