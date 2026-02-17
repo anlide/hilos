@@ -6,7 +6,7 @@ namespace Demo\Chat\Core\Agent\Daemon;
 
 use Demo\Chat\Constants\AgentType;
 use Hilos\Core\Agent\Daemon\AbstractAgentDaemon;
-use Hilos\Logging\Logger\Logger;
+use Hilos\Utils\Logger;
 
 /**
  * ModeratorAgentDaemon - Daemon proxy for ModeratorAgent

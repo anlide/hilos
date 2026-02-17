@@ -8,10 +8,10 @@ use Demo\Chat\Constants\ChatEventType;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Page\AbstractChatPage;
-use Demo\Chat\Hilos;
-use Demo\Chat\Hilos\Database\Collection\Events;
 use Demo\Chat\DTO\Action\RenameActionDTO;
 use Demo\Chat\DTO\ChatEventSignalDTO;
+use Demo\Chat\Hilos;
+use Demo\Chat\Hilos\Database\Collection\Events;
 use Hilos\DTO\Action\ActionPayloadDTO;
 use Hilos\DTO\EntitiesChangesDTO;
 use Hilos\Exception\DatabaseException;
@@ -19,7 +19,7 @@ use Hilos\Exception\Hilos\Database\Actions\ObjectCollectionNullException;
 use Hilos\Exception\Hilos\Database\Actions\TableNameUndeterminedException;
 use Hilos\Exception\Hilos\Database\Actions\UnknownLazyStrategyException;
 use Hilos\Exception\Hilos\Database\TruthSource\WriteNotAllowedException;
-use Hilos\Logging\Logger\Logger;
+use Hilos\Utils\Logger;
 
 /**
  * ProfilePage - User profile page handler

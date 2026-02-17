@@ -9,7 +9,7 @@ use Hilos\DTO\WebSocket\WebSocketPageSubscribeSignalDTO;
 use Hilos\DTO\WebSocket\WebSocketPageUnsubscribeSignalDTO;
 use Hilos\DTO\WebSocket\WebSocketPageUpdateSubscriptionSignalDTO;
 use Hilos\Exception\Page\PageNotFoundException;
-use Hilos\Logging\Logger\Logger;
+use Hilos\Utils\Logger;
 
 /**
  * PageSignalRouter - Routes page signals to page handlers

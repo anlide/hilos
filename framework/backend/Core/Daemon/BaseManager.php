@@ -6,8 +6,8 @@ namespace Hilos\Core\Daemon;
 
 use ErrorException;
 use Hilos\Constants\ErrorConstants;
-use Hilos\Logging\Logger\Logger;
 use Hilos\Utils\Env;
+use Hilos\Utils\Logger;
 use RuntimeException;
 use Throwable;
 

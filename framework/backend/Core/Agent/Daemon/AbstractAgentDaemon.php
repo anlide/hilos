@@ -7,8 +7,8 @@ namespace Hilos\Core\Agent\Daemon;
 use Hilos\DTO\Agent\AgentMessageDTOInterface;
 use Hilos\DTO\Agent\MessageFromUserDTO;
 use Hilos\DTO\BaseDTO;
-use Hilos\Logging\Logger\Logger;
 use Hilos\Socket\Client\WorkerClient;
+use Hilos\Utils\Logger;
 
 /**
  * AbstractAgentDaemon - Abstract base class for agent proxies in daemon

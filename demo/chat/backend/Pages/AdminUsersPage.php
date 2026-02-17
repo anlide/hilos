@@ -7,15 +7,15 @@ namespace Demo\Chat\Pages;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Page\AbstractChatPage;
-use Demo\Chat\Hilos;
 use Demo\Chat\DTO\ChatEventSignalDTO;
+use Demo\Chat\Hilos;
 use Hilos\Core\Table\TableActionHandler;
 use Hilos\Core\Table\TablePayloadBuilder;
 use Hilos\DTO\Action\ActionPayloadDTO;
+use Hilos\DTO\EntitiesChangesDTO;
 use Hilos\DTO\Table\TableDataDTO;
 use Hilos\DTO\Table\TablesPayloadDTO;
-use Hilos\DTO\EntitiesChangesDTO;
-use Hilos\Logging\Logger\Logger;
+use Hilos\Utils\Logger;
 
 /**
  * AdminUsersPage - Admin users page handler

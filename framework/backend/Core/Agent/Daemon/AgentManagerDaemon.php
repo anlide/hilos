@@ -9,7 +9,7 @@ use Hilos\DTO\Worker\WorkerAgentMessageDTO;
 use Hilos\DTO\Worker\WorkerAgentStartedDTO;
 use Hilos\DTO\Worker\WorkerAgentStoppedDTO;
 use Hilos\Exception\Worker\AgentDaemonCreationFailedException;
-use Hilos\Logging\Logger\Logger;
+use Hilos\Utils\Logger;
 
 /**
  * AgentManagerDaemon - Base class for managing agent daemons in daemon process

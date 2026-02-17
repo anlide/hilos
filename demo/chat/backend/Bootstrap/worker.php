@@ -9,9 +9,9 @@ use Demo\Chat\Database\Database;
 use Hilos\Constants\ErrorConstants;
 use Hilos\Constants\ExitCode;
 use Hilos\Exception\InvalidWorkerIdException;
-use Hilos\Logging\Logger\Logger;
 use Hilos\Utils\Env;
 use Hilos\Utils\Helpers\ArgumentHelper;
+use Hilos\Utils\Logger;
 
 /**
  * Worker Bootstrap - Entry point for worker processes

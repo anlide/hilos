@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Hilos\Logging\Logger;
+namespace Hilos\Utils;
 
 use Hilos\Utils\Helpers\TimeHelper;
 

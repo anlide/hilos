@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Hilos\DTO\Worker;
 
 use Hilos\DTO\BaseDTO;
-use Hilos\Logging\Logger\Logger;
+use Hilos\Utils\Logger;
 
 /**
  * WorkerDTO - Abstract base class for worker DTOs

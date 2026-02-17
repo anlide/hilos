@@ -9,8 +9,8 @@ use Hilos\Constants\ErrorConstants;
 use Hilos\Constants\ExitCode;
 use Hilos\Core\CLI\CliManager;
 use Hilos\Database\Migration;
-use Hilos\Logging\Logger\Logger;
 use Hilos\Utils\Env;
+use Hilos\Utils\Logger;
 
 // Initialize environment (reads .env from local directory)
 Env::init(__DIR__);

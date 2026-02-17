@@ -13,10 +13,10 @@ use Hilos\Core\Router\SignalRouter;
 use Hilos\DTO\WebSocket\WebSocketActionSignalDTO;
 use Hilos\DTO\WebSocket\WebSocketCloseSignalDTO;
 use Hilos\DTO\WebSocket\WebSocketFrameBinarySignalDTO;
-use Hilos\DTO\WebSocket\WebSocketHandshakeSignalDTO;
 use Hilos\DTO\WebSocket\WebSocketGroupSubscribeSignalDTO;
 use Hilos\DTO\WebSocket\WebSocketGroupUnsubscribeSignalDTO;
 use Hilos\DTO\WebSocket\WebSocketGroupUpdateSubscriptionSignalDTO;
+use Hilos\DTO\WebSocket\WebSocketHandshakeSignalDTO;
 use Hilos\DTO\WebSocket\WebSocketPageSubscribeSignalDTO;
 use Hilos\DTO\WebSocket\WebSocketPageUnsubscribeSignalDTO;
 use Hilos\DTO\WebSocket\WebSocketPageUpdateSubscriptionSignalDTO;
@@ -30,9 +30,9 @@ use Hilos\Exception\MissingEnvironmentVariableException;
 use Hilos\Exception\Page\PageSignalRouterNotFoundException;
 use Hilos\Exception\SocketException;
 use Hilos\Exception\Worker\AgentCreationFailedException;
-use Hilos\Logging\Logger\Logger;
 use Hilos\Socket\Worker\WorkerDaemonClient;
 use Hilos\Utils\Helpers\ArgumentHelper;
+use Hilos\Utils\Logger;
 
 /**
  * WorkerManager - Base worker process manager

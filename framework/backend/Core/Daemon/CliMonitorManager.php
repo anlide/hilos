@@ -12,9 +12,9 @@ use Hilos\Constants\HttpConstants;
 use Hilos\Core\Daemon\Master\DaemonStatus;
 use Hilos\DTO\DaemonStatusDTO;
 use Hilos\Exception\MissingEnvironmentVariableException;
-use Hilos\Logging\Logger\Logger;
 use Hilos\Utils\Env;
 use Hilos\Utils\Helpers\StringHelper;
+use Hilos\Utils\Logger;
 
 /**
  * CliMonitorManager - manages real-time daemon monitoring

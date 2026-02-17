@@ -10,8 +10,8 @@ use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\Daemon\Cron\CronRule;
 use Hilos\Core\EventLoop\EventLoop;
-use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Router\SignalRouter;
+use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\DTO\BaseDTO;
 use Hilos\DTO\SignalDTO;
 use Hilos\DTO\WebSocket\WebSocketGroupSubscribeSignalDTO;
@@ -23,11 +23,11 @@ use Hilos\DTO\WebSocket\WebSocketPageUpdateSubscriptionSignalDTO;
 use Hilos\DTO\Worker\DaemonAgentMessageDTO;
 use Hilos\Exception\Worker\AgentDaemonCreationFailedException;
 use Hilos\Exception\Worker\NoSuitableWorkerException;
-use Hilos\Logging\Logger\Logger;
 use Hilos\Socket\Client\WebSocketClient;
 use Hilos\Socket\Server\ServerInterface;
 use Hilos\Socket\Server\WebSocketServer;
 use Hilos\Socket\Server\WorkerServer;
+use Hilos\Utils\Logger;
 
 /**
  * DaemonManager - Abstract base class for daemon process management

@@ -16,8 +16,8 @@ use Hilos\DTO\Worker\WorkerRegisterDTO;
 use Hilos\DTO\Worker\WorkerRegisteredDTO;
 use Hilos\Exception\SocketException;
 use Hilos\Exception\Worker\AgentDaemonCreationFailedException;
-use Hilos\Logging\Logger\Logger;
 use Hilos\Socket\Client\Interface\WorkerClientInterface;
+use Hilos\Utils\Logger;
 
 /**
  * WorkerClient - Represents a single worker connection

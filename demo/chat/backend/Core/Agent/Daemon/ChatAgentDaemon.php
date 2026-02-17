@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Demo\Chat\Core\Agent\Daemon;
 
 use Hilos\Core\Agent\Daemon\AbstractAgentDaemon;
-use Hilos\Logging\Logger\Logger;
+use Hilos\Utils\Logger;
 
 /**
  * ChatAgentDaemon - Daemon proxy for ChatAgent

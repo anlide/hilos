@@ -15,9 +15,9 @@ use Hilos\Constants\ExitCode;
 use Hilos\Constants\HttpConstants;
 use Hilos\Core\Daemon\Master\DaemonStatus;
 use Hilos\DTO\DaemonStatusDTO;
-use Hilos\Logging\Logger\Logger;
 use Hilos\Socket\Server\HttpServer;
 use Hilos\Utils\Env;
+use Hilos\Utils\Logger;
 
 /**
  * Daemon - Entry point for WebSocket test daemon

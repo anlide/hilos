@@ -16,8 +16,8 @@ use Hilos\Exception\Process\FailedToReadStdOutException;
 use Hilos\Exception\Process\FailedToSetNonBlockingException;
 use Hilos\Exception\Process\FailedToSetStdErrException;
 use Hilos\Exception\Process\FailedToTerminateProcessExceptionException;
-use Hilos\Logging\Logger\Logger;
 use Hilos\Utils\Env;
+use Hilos\Utils\Logger;
 
 /**
  * DockerManager - manages daemon process in Docker container

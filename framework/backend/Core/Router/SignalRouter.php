@@ -16,7 +16,7 @@ use Hilos\DTO\WebSocket\WebSocketPageUpdateSubscriptionSignalDTO;
 use Hilos\Exception\Router\GroupSubscriptionNotFoundException;
 use Hilos\Exception\Router\PageSubscriptionMismatchException;
 use Hilos\Exception\Router\PageSubscriptionNotFoundException;
-use Hilos\Logging\Logger\Logger;
+use Hilos\Utils\Logger;
 
 /**
  * SignalRouter - Base class for routing signals from sources to agents

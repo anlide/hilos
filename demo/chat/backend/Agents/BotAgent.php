@@ -9,7 +9,7 @@ use Demo\Chat\Hilos;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Database\Idea\TruthSourceRegistry;
-use Hilos\Logging\Logger\Logger;
+use Hilos\Utils\Logger;
 
 /**
  * BotAgent - Regular agent for bot management

@@ -13,8 +13,8 @@ use Hilos\Exception\DatabaseException;
 use Hilos\Exception\Process\CouldNotStartException;
 use Hilos\Exception\Process\FailedToGetStatusException;
 use Hilos\Exception\Process\FailedToSetNonBlockingException;
-use Hilos\Logging\Logger\Logger;
 use Hilos\Utils\Env;
+use Hilos\Utils\Logger;
 
 // Initialize environment (reads .env from local directory)
 Env::init(__DIR__);

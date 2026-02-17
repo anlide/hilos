@@ -29,12 +29,12 @@ use Hilos\Exception\Worker\AgentNotFoundException;
 use Hilos\Exception\Worker\AgentNotLinkedToWorkerException;
 use Hilos\Exception\Worker\NoSuitableWorkerException;
 use Hilos\Exception\Worker\WorkerClientNotFoundException;
-use Hilos\Logging\Logger\Logger;
 use Hilos\Socket\Client\ClientInterface;
 use Hilos\Socket\Client\Interface\WorkerClientInterface;
 use Hilos\Socket\Client\WorkerClient;
 use Hilos\Utils\Env;
 use Hilos\Utils\Helpers\ArgumentHelper;
+use Hilos\Utils\Logger;
 
 /**
  * WorkerServer - Worker communication server implementation
