@@ -9,7 +9,7 @@ use Demo\Chat\Constants\ChatCronConstants;
 use Demo\Chat\Constants\ChatEventType;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\HttpHeaders;
-use Demo\Chat\Hilos\Database\Hilos;
+use Demo\Chat\Hilos;
 use Demo\Chat\Hilos\Database\Collection\Events;
 use Demo\Chat\Hilos\Database\Collection\Users;
 use Demo\Chat\DTO\ChatEventSignalDTO;

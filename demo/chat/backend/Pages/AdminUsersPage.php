@@ -7,7 +7,7 @@ namespace Demo\Chat\Pages;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Page\AbstractChatPage;
-use Demo\Chat\Hilos\Database\Hilos;
+use Demo\Chat\Hilos;
 use Demo\Chat\DTO\ChatEventSignalDTO;
 use Hilos\Core\Table\TableActionHandler;
 use Hilos\Core\Table\TablePayloadBuilder;

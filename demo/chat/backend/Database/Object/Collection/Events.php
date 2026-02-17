@@ -4,13 +4,12 @@ namespace Demo\Chat\Database\Object\Collection;
 
 use ArrayAccess;
 use Countable;
-use Demo\Chat\Hilos\Database\Hilos;
+use Demo\Chat\Hilos;
 use Demo\Chat\Database\Entity\Item\Event as EntityEvent;
 use Demo\Chat\Database\Entity\Collection\Events as EntityEvents;
 use Demo\Chat\Database\Object\Item\Event as ObjectEvent;
 use Hilos\Database\Database;
 use Hilos\Database\Object\Objects;
-use Hilos\Exception\DatabaseException;
 use Hilos\Exception\Hilos\Database\TruthSource\WriteNotAllowedException;
 use Iterator;
 use RuntimeException;

@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Database;
 
+use Demo\Chat\Hilos;
 use Hilos\Database\Database as BaseDatabase;
 use Hilos\Database\Schema\Schema;
 use Hilos\Exception\DatabaseException;
+use Hilos\Exception\Hilos\Database\ObjectCollectionNotFoundException;
 use Hilos\Exception\MissingEnvironmentVariableException;
 use Hilos\Utils\Env;
 
@@ -36,6 +38,7 @@ class Database extends BaseDatabase
      * @param bool $retryConnection If true, retry connection on temporary errors (useful for Docker startup)
      * @throws DatabaseException
      * @throws MissingEnvironmentVariableException
+     * @throws ObjectCollectionNotFoundException
      */
     public static function initialize(bool $initHilos = true, bool $retryConnection = false): void
     {
@@ -47,7 +50,7 @@ class Database extends BaseDatabase
             password: Env::get('DB_PASSWORD', ''),
             database: Env::get('DB_DATABASE', 'hilos_demo'),
             port: Env::getInt('DB_PORT', 3306),
-            charset: 'utf8mb4'
+            charset: 'utf8mb4',
         );
 
         // Connect to primary database
@@ -63,7 +66,7 @@ class Database extends BaseDatabase
         // Hilos depends on Database, so initialize it here.
         // Can be skipped for commands that need to work with broken database context files.
         if ($initHilos) {
-            \Demo\Chat\Hilos\Database\Hilos::init();
+            Hilos::init();
         }
 
         // Additional database connections can be configured here
@@ -75,7 +78,7 @@ class Database extends BaseDatabase
         //     password: Env::get('DB_SECONDARY_PASSWORD', ''),
         //     database: Env::get('DB_SECONDARY_DATABASE', 'hilos_demo_secondary'),
         //     port: Env::getInt('DB_SECONDARY_PORT', 3306),
-        //     charset: 'utf8mb4'
+        //     charset: 'utf8mb4',
         // );
         // self::connect(1);
         // self::sql("SET NAMES utf8mb4 COLLATE utf8mb4_0900_ai_ci");

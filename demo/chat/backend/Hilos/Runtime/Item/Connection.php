@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Hilos\Runtime\Item;
 
-use Demo\Chat\Hilos\Database\Hilos;
+use Demo\Chat\Hilos;
 use Demo\Chat\Hilos\Database\Item\User;
 use Demo\Chat\Hilos\Runtime\State\Item\Connection as StateConnection;
 use Hilos\Hilos\Runtime\Item\RtItem;

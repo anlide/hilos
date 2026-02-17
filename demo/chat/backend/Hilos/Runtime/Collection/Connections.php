@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Demo\Chat\Hilos\Runtime\Collection;
 
 use Demo\Chat\Hilos\Database\Collection\Users as DbUsers;
-use Demo\Chat\Hilos\Database\Hilos;
+use Demo\Chat\Hilos;
 use Demo\Chat\Hilos\Runtime\Actions\ConnectionsActions;
 use Demo\Chat\Hilos\Runtime\Item\Connection;
 use Demo\Chat\Hilos\Runtime\State\Item\Connection as StateConnection;

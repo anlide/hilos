@@ -6,11 +6,10 @@ use ArrayAccess;
 use Countable;
 use Demo\Chat\Database\Entity\Item\Moderator as EntityModerator;
 use Demo\Chat\Database\Entity\Collection\Moderators as EntityModerators;
-use Demo\Chat\Hilos\Database\Hilos;
+use Demo\Chat\Hilos;
 use Demo\Chat\Database\Object\Item\Moderator as ObjectModerator;
 use Hilos\Database\Database;
 use Hilos\Database\Object\Objects;
-use Hilos\Exception\DatabaseException;
 use Iterator;
 
 /**

@@ -6,7 +6,7 @@ use ArrayAccess;
 use Countable;
 use Demo\Chat\Database\Entity\Item\Bot as EntityBot;
 use Demo\Chat\Database\Entity\Collection\Bots as EntityBots;
-use Demo\Chat\Hilos\Database\Hilos;
+use Demo\Chat\Hilos;
 use Demo\Chat\Database\Object\Item\Bot as ObjectBot;
 use Hilos\Database\Database;
 use Hilos\Database\Object\Objects;

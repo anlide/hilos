@@ -1,6 +1,8 @@
 <?php
 
-namespace Demo\Chat\Hilos\Database;
+declare(strict_types=1);
+
+namespace Demo\Chat;
 
 /**
  * Main app facade for data access.
@@ -10,7 +12,7 @@ namespace Demo\Chat\Hilos\Database;
  * - Hilos::$rt->connections
  * - Hilos::$table?->users
  */
-final class Hilos extends DbChat
+final class Hilos extends Database\DbChat
 {
     public const string connections = 'connections';
     public const string user = 'user';
