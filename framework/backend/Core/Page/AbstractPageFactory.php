@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace Hilos\Core\Page;
 
 use Hilos\Core\Page\Exception\PageNotFoundException;
+use Hilos\Core\Router\DTO\ActionPayloadDTO;
+use Hilos\Core\Router\DTO\UnknownActionPayloadDTO;
 use Hilos\Core\Router\SignalRouter;
-use Hilos\DTO\Action\ActionPayloadDTO;
-use Hilos\DTO\Action\UnknownActionPayloadDTO;
 
 /**
  * AbstractPageFactory - Abstract factory for creating page instances

@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Hilos\DTO;
+namespace Hilos\Core\Router\DTO;
 
 /**
  * SignalDataDTO - Marker interface for signal data DTOs

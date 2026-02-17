@@ -2,12 +2,12 @@
 
 declare(strict_types=1);
 
-namespace Demo\Chat\DTO;
+namespace Demo\Chat\Core\Router\DTO;
 
+use Hilos\Core\Router\DTO\EntitiesChangesDTO;
 use Hilos\Core\Router\SignalData;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Table\DTO\TablesPayloadDTO;
-use Hilos\DTO\EntitiesChangesDTO;
 use RuntimeException;
 
 /**

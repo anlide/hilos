@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Hilos\DTO;
+namespace Hilos\Hilos;
 
 /**
  * BaseDTO - Abstract base class for all DTOs

@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Hilos\DTO;
+namespace Hilos\Core\Router\DTO;
 
 use Hilos\Core\Router\SignalData;
 use Hilos\Core\Router\SignalDataInterface;
@@ -12,6 +12,7 @@ use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalSourceInterface;
 use Hilos\Core\Router\SignalType;
 use Hilos\Core\Router\SignalTypeInterface;
+use Hilos\Hilos\BaseDTO;
 use Hilos\Utils\Logger;
 
 /**

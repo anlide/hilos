@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
-namespace Demo\Chat\DTO;
+namespace Demo\Chat\Core\Router\DTO;
 
+use Hilos\Core\Router\DTO\SignalDataDTO;
 use Hilos\Core\Router\SignalDataInterface;
-use Hilos\DTO\BaseDTO;
-use Hilos\DTO\SignalDataDTO;
+use Hilos\Hilos\BaseDTO;
 
 /**
  * CronSignalDTO - DTO for cron signal

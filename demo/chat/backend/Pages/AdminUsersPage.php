@@ -7,14 +7,14 @@ namespace Demo\Chat\Pages;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Page\AbstractChatPage;
-use Demo\Chat\DTO\ChatEventSignalDTO;
+use Demo\Chat\Core\Router\DTO\ChatEventSignalDTO;
 use Demo\Chat\Hilos;
+use Hilos\Core\Router\DTO\ActionPayloadDTO;
+use Hilos\Core\Router\DTO\EntitiesChangesDTO;
 use Hilos\Core\Table\DTO\TableDataDTO;
 use Hilos\Core\Table\DTO\TablesPayloadDTO;
 use Hilos\Core\Table\TableActionHandler;
 use Hilos\Core\Table\TablePayloadBuilder;
-use Hilos\DTO\Action\ActionPayloadDTO;
-use Hilos\DTO\EntitiesChangesDTO;
 use Hilos\Utils\Logger;
 
 /**

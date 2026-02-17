@@ -6,7 +6,7 @@ namespace Hilos\Core\Agent\Daemon;
 
 use Hilos\Core\Agent\DTO\AgentMessageDTOInterface;
 use Hilos\Core\Agent\DTO\MessageFromUserDTO;
-use Hilos\DTO\BaseDTO;
+use Hilos\Hilos\BaseDTO;
 use Hilos\Socket\Client\WorkerClient;
 use Hilos\Utils\Logger;
 

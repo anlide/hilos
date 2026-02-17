@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace Demo\Chat\DTO;
+namespace Demo\Chat\Core\Router\DTO;
 
-use Hilos\DTO\BaseDTO;
+use Hilos\Hilos\BaseDTO;
 
 /**
  * AbstractChatMessageDTO - Abstract base class for chat message DTOs

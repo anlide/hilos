@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Page;
 
+use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\SignalRouter;
-use Hilos\DTO\Action\ActionPayloadDTO;
 
 /**
  * AbstractPage - Abstract base class for page handlers

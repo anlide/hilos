@@ -2,11 +2,12 @@
 
 declare(strict_types=1);
 
-namespace Hilos\DTO;
+namespace Hilos\Core\Router\DTO;
 
 use Hilos\Database\Idea\Exception\Collection\NotManualException;
 use Hilos\Database\Idea\IdeaCollection;
 use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
+use Hilos\Hilos\BaseDTO;
 
 /**
  * EntitiesChangesDTO - Entity changes payload

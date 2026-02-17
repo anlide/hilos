@@ -7,9 +7,9 @@ namespace Demo\Chat\Pages;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Page\AbstractChatPage;
-use Demo\Chat\DTO\ChatEventSignalDTO;
-use Hilos\DTO\Action\ActionPayloadDTO;
-use Hilos\DTO\EntitiesChangesDTO;
+use Demo\Chat\Core\Router\DTO\ChatEventSignalDTO;
+use Hilos\Core\Router\DTO\ActionPayloadDTO;
+use Hilos\Core\Router\DTO\EntitiesChangesDTO;
 
 /**
  * UserPage - User page handler

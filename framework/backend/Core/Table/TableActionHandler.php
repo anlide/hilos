@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Table;
 
+use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Table\DTO\TableDataDTO;
 use Hilos\Core\Table\DTO\TablesPayloadDTO;
-use Hilos\DTO\Action\ActionPayloadDTO;
 
 /**
  * Handles table-scoped actions: load_page, refresh_snapshot.

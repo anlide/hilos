@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Socket\WebSocket\DTO;
 
-use Demo\Chat\DTO\ChatMessageDTOInterface;
+use Demo\Chat\Core\Router\DTO\ChatMessageDTOInterface;
 use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO as FrameworkWebSocketHandshakeSignalDTO;
 
 /**

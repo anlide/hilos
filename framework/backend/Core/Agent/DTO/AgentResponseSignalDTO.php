@@ -12,7 +12,7 @@ use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalSourceInterface;
 use Hilos\Core\Router\SignalType;
 use Hilos\Core\Router\SignalTypeInterface;
-use Hilos\DTO\BaseDTO;
+use Hilos\Hilos\BaseDTO;
 
 /**
  * AgentResponseSignalDTO - DTO for agent response signals

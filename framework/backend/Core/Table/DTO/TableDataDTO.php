@@ -6,7 +6,7 @@ namespace Hilos\Core\Table\DTO;
 
 use Hilos\Core\Table\TableActionConstants;
 use Hilos\Core\Table\TableType;
-use Hilos\DTO\BaseDTO;
+use Hilos\Hilos\BaseDTO;
 
 /**
  * Data for a single table (one key): rows + meta for frontend.

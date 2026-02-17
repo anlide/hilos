@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace Hilos\Socket\Worker\DTO;
 
+use Hilos\Core\Router\DTO\SignalDataDTO;
 use Hilos\Core\Router\SignalDataInterface;
-use Hilos\DTO\BaseDTO;
-use Hilos\DTO\SignalDataDTO;
+use Hilos\Hilos\BaseDTO;
 
 /**
  * SystemSignalDTO - DTO for system signal

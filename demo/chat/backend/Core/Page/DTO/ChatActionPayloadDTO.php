@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace Demo\Chat\DTO\Action;
+namespace Demo\Chat\Core\Page\DTO;
 
-use Hilos\DTO\Action\ActionPayloadDTO;
+use Hilos\Core\Router\DTO\ActionPayloadDTO;
 
 /**
  * ChatActionPayloadDTO - Abstract base class for chat action payloads

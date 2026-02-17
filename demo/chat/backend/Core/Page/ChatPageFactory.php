@@ -6,9 +6,9 @@ namespace Demo\Chat\Core\Page;
 
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\PageConstants;
-use Demo\Chat\DTO\Action\FileActionDTO;
-use Demo\Chat\DTO\Action\MessageActionDTO;
-use Demo\Chat\DTO\Action\RenameActionDTO;
+use Demo\Chat\Core\Page\DTO\FileActionDTO;
+use Demo\Chat\Core\Page\DTO\MessageActionDTO;
+use Demo\Chat\Core\Page\DTO\RenameActionDTO;
 use Demo\Chat\Pages\AdminBotsPage;
 use Demo\Chat\Pages\AdminModeratorPage;
 use Demo\Chat\Pages\AdminPage;
@@ -22,7 +22,7 @@ use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Page\AbstractPageFactory;
 use Hilos\Core\Page\Exception\PageNotFoundException;
 use Hilos\Core\Page\PageAgentInterface;
-use Hilos\DTO\Action\ActionPayloadDTO;
+use Hilos\Core\Router\DTO\ActionPayloadDTO;
 
 /**
  * ChatPageFactory - Factory for creating chat page instances

@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Demo\Chat\DTO\Action;
+namespace Demo\Chat\Core\Page\DTO;
 
 use Demo\Chat\Constants\ChatSignalConstants;
 

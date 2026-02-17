@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace Hilos\DTO\Action;
+namespace Hilos\Core\Router\DTO;
 
-use Hilos\DTO\BaseDTO;
+use Hilos\Hilos\BaseDTO;
 
 /**
  * ActionPayloadDTO - Abstract base class for action payload DTOs

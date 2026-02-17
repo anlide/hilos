@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
-namespace Demo\Chat\DTO;
+namespace Demo\Chat\Socket\WebSocket\DTO;
 
+use Hilos\Core\Router\DTO\EntitiesChangesDTO;
 use Hilos\Core\Router\SignalDataInterface;
-use Hilos\DTO\BaseDTO;
-use Hilos\DTO\EntitiesChangesDTO;
+use Hilos\Hilos\BaseDTO;
 use RuntimeException;
 
 /**

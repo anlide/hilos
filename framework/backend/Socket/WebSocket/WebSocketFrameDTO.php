@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Socket\WebSocket;
 
-use Hilos\DTO\BaseDTO;
+use Hilos\Hilos\BaseDTO;
 
 /**
  * WebSocketFrameDTO - Data Transfer Object for WebSocket frame data

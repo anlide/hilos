@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Router;
 
-use Hilos\DTO\BaseDTO;
+use Hilos\Hilos\BaseDTO;
 
 /**
  * WebSocketSignalData - Signal data for WebSocket signals

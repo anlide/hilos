@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Demo\Chat\DTO;
+namespace Demo\Chat\Core\Router\DTO;
 
 /**
  * ChatMessageDTOInterface - Interface for chat message DTOs

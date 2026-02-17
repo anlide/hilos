@@ -8,13 +8,13 @@ use Demo\Chat\Constants\ChatEventType;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Page\AbstractChatPage;
-use Demo\Chat\DTO\Action\FileActionDTO;
-use Demo\Chat\DTO\Action\MessageActionDTO;
-use Demo\Chat\DTO\ChatEventSignalDTO;
+use Demo\Chat\Core\Page\DTO\FileActionDTO;
+use Demo\Chat\Core\Page\DTO\MessageActionDTO;
+use Demo\Chat\Core\Router\DTO\ChatEventSignalDTO;
 use Demo\Chat\Hilos;
 use Demo\Chat\Hilos\Database\Collection\Events;
-use Hilos\DTO\Action\ActionPayloadDTO;
-use Hilos\DTO\EntitiesChangesDTO;
+use Hilos\Core\Router\DTO\ActionPayloadDTO;
+use Hilos\Core\Router\DTO\EntitiesChangesDTO;
 use Hilos\Utils\Logger;
 
 /**

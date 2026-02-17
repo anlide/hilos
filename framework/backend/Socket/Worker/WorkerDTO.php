@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Socket\Worker;
 
-use Hilos\DTO\BaseDTO;
+use Hilos\Hilos\BaseDTO;
 use Hilos\Socket\Worker\DTO\AgentStartDTO;
 use Hilos\Socket\Worker\DTO\AgentStopDTO;
 use Hilos\Socket\Worker\DTO\DaemonAgentMessageDTO;
