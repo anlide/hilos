@@ -15,9 +15,9 @@
             </router-link>
             <router-link to="/admin/moderator" class="list-group-item list-group-item-action">
               <div class="d-flex w-100 justify-content-between">
-                <h6 class="mb-1">Moderator</h6>
+                <h6 class="mb-1">Moderator prompt pieces</h6>
               </div>
-              <p class="mb-1">Moderator management</p>
+              <p class="mb-1">Moderator rules and prompts</p>
             </router-link>
             <router-link to="/admin/bots" class="list-group-item list-group-item-action">
               <div class="d-flex w-100 justify-content-between">

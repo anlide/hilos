@@ -8,8 +8,11 @@ use Hilos\Database\Entity\Collection\EntityCollection;
 /**
  * Users Entity Collection
  * Typed wrapper around EntityCollection for User entities
+ *
+ * @implements \Iterator<int|string, EntityUser>
+ * @implements \ArrayAccess<int|string, EntityUser>
  */
-final class Users
+final class Users implements \Iterator, \ArrayAccess, \Countable
 {
     private EntityCollection $collection;
 

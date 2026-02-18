@@ -2,102 +2,97 @@
   <div class="row">
     <div class="col-12 col-lg-10 mx-auto">
       <div class="card">
-        <div class="card-header">
-          <h5 class="mb-0">Admin Moderator</h5>
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <h5 class="mb-0">Moderator prompt pieces</h5>
+          <button
+            v-if="tableMeta"
+            type="button"
+            class="btn btn-outline-light btn-sm"
+            title="Refresh table from server"
+            aria-label="Refresh"
+            @click="updateSnapshot"
+          >
+            <i class="bi bi-arrow-clockwise" aria-hidden="true"></i>
+            Refresh
+          </button>
         </div>
         <div class="card-body">
           <Table
-            :items="moderatorData"
+            :items="items"
             item-key="id"
-            :colspan="5"
+            :colspan="4"
             :searchable="true"
-            search-placeholder="Search moderator data..."
-            :search-fields="['userId', 'username', 'action']"
+            search-placeholder="Search prompt pieces..."
+            :search-fields="['id', 'section', 'promptPiece']"
             :sortable="true"
-            :sortable-fields="['timestamp', 'action']"
+            :sortable-fields="['id', 'section']"
             :paginated="false"
             :show-actions="true"
-            :show-add-button="true"
+            :show-add-button="false"
             :show-edit-button="true"
-            :show-delete-button="true"
+            :show-delete-button="false"
             :pending-changes="pendingChanges"
             :change-markers="changeMarkers"
-            @add="handleAdd"
             @edit="handleEdit"
-            @delete="handleDelete"
             @update-snapshot="updateSnapshot"
           >
             <template #header="{ sort, handleSort, isFieldSortable }">
-              <th>User ID</th>
-              <th>Username</th>
               <th>
                 <button
-                  v-if="isFieldSortable('timestamp')"
+                  v-if="isFieldSortable('id')"
                   class="btn btn-link p-0 text-decoration-none text-dark fw-bold"
-                  @click="handleSort('timestamp')"
+                  @click="handleSort('id')"
                 >
-                  Timestamp
-                  <span v-if="sort.field === 'timestamp'">
+                  ID
+                  <span v-if="sort.field === 'id'">
                     {{ sort.direction === 'asc' ? '↑' : '↓' }}
                   </span>
                 </button>
-                <span v-else>Timestamp</span>
+                <span v-else>ID</span>
               </th>
               <th>
                 <button
-                  v-if="isFieldSortable('action')"
+                  v-if="isFieldSortable('section')"
                   class="btn btn-link p-0 text-decoration-none text-dark fw-bold"
-                  @click="handleSort('action')"
+                  @click="handleSort('section')"
                 >
-                  Action
-                  <span v-if="sort.field === 'action'">
+                  Section
+                  <span v-if="sort.field === 'section'">
                     {{ sort.direction === 'asc' ? '↑' : '↓' }}
                   </span>
                 </button>
-                <span v-else>Action</span>
+                <span v-else>Section</span>
               </th>
+              <th>Prompt</th>
               <th>Actions</th>
             </template>
-            <template #row="{ item, handleEdit, handleDelete, showEditButton, showDeleteButton }">
+            <template #row="row">
+              <td>{{ row.item.id }}</td>
               <td>
-                {{ item.userId }}
-              </td>
-              <td>{{ item.username }}</td>
-              <td>{{ formatDate(item.timestamp) }}</td>
-              <td>
-                <span class="badge" :class="getActionBadgeClass(item.action)">
-                  {{ item.action }}
+                <span class="badge" :class="getSectionBadgeClass(row.item.section)">
+                  {{ row.item.section }}
                 </span>
               </td>
+              <td class="text-truncate" style="max-width: 300px" :title="row.item.promptPiece">
+                {{ row.item.promptPiece }}
+              </td>
               <td>
-                <div class="d-flex gap-1">
+                <div v-if="row.showEditButton" class="d-flex gap-1">
                   <button
-                    v-if="showEditButton"
                     type="button"
                     class="btn btn-sm btn-outline-primary"
                     title="Edit"
                     aria-label="Edit"
-                    @click="handleEdit"
+                    @click="row.handleEdit"
                   >
                     <i class="bi bi-pencil" aria-hidden="true"></i>
                     <span class="visually-hidden">Edit</span>
-                  </button>
-                  <button
-                    v-if="showDeleteButton"
-                    type="button"
-                    class="btn btn-sm btn-outline-danger"
-                    title="Delete"
-                    aria-label="Delete"
-                    @click="handleDelete"
-                  >
-                    <i class="bi bi-trash" aria-hidden="true"></i>
-                    <span class="visually-hidden">Delete</span>
                   </button>
                 </div>
               </td>
             </template>
             <template #empty>
-              <p class="mb-0">No moderator actions found</p>
+              <p class="mb-0">No moderator prompt pieces found</p>
             </template>
           </Table>
         </div>
@@ -109,65 +104,39 @@
     v-model="showModal"
     :title="modalTitle"
     modal-name="admin-moderator-modal"
-    :modal-type="modalMode"
+    modal-type="edit"
     :confirm-on-close="isFormDirty"
     @cancel="resetForm"
-    @ok="submitModal"
+    @ok="savePiece"
   >
-    <form v-if="!isDeleteMode" @submit.prevent="submitModal">
+    <form @submit.prevent="savePiece">
       <div class="mb-3">
-        <label class="form-label" for="mod-user-id">User ID</label>
-        <input
-          id="mod-user-id"
-          v-model.number="formAction.userId"
-          type="number"
-          class="form-control"
-          min="1"
-          required
-          data-autofocus
-        />
-      </div>
-      <div class="mb-3">
-        <label class="form-label" for="mod-username">Username</label>
-        <input
-          id="mod-username"
-          v-model="formAction.username"
-          type="text"
-          class="form-control"
-          required
-          maxlength="50"
-        />
-      </div>
-      <div class="mb-0">
-        <label class="form-label" for="mod-action">Action</label>
-        <select id="mod-action" v-model="formAction.action" class="form-select">
-          <option value="approved">approved</option>
-          <option value="rejected">rejected</option>
-          <option value="flagged">flagged</option>
+        <label class="form-label" for="piece-section">Section</label>
+        <select id="piece-section" v-model="formPiece.section" class="form-select" required data-autofocus>
+          <option value="name_rule">name_rule</option>
+          <option value="message_rule">message_rule</option>
         </select>
       </div>
+      <div class="mb-0">
+        <label class="form-label" for="piece-prompt">Prompt</label>
+        <textarea
+          id="piece-prompt"
+          v-model="formPiece.promptPiece"
+          class="form-control"
+          rows="6"
+          required
+        />
+      </div>
     </form>
-    <div v-else class="text-muted">
-      Delete moderator action for <strong>{{ selectedAction?.username }}</strong>?
-    </div>
     <template #actions="{ requestClose }">
       <button type="button" class="btn btn-secondary" @click="requestClose">Cancel</button>
-      <button
-        v-if="isDeleteMode"
-        type="button"
-        class="btn btn-danger"
-        @click="submitModal"
-      >
-        Delete
-      </button>
       <LoadingButton
-        v-else
         type="button"
         variant="btn-primary"
         :loading="saveLoading"
         :disabled="!isFormValid"
         :loading-delay="300"
-        @click="submitModal"
+        @click="savePiece"
       >
         Save
       </LoadingButton>
@@ -176,60 +145,25 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, computed } from 'vue'
+import { ref, computed } from 'vue'
+import { useWebSocket } from '@hilos/sdk/plugins/websocket'
 import { Table, Modal, LoadingButton } from '@hilos/sdk/components'
+import { useChatStore } from '@/stores'
+import { sendAction } from '@/services/websocketActions'
+import { TableActionConstants } from '@hilos/sdk/constants'
+import type { ModeratorPromptPieceEntity } from '@/types/domain'
 
-interface ModeratorAction {
-  id: number
-  userId: number
-  username: string
-  timestamp: string
-  action: string
-}
+const chatStore = useChatStore()
+const websocket = useWebSocket()
 
-// Snapshot data - represents table state at a specific point in time
-const snapshotModeratorData = ref<ModeratorAction[]>([
-  {
-    id: 1,
-    userId: 1,
-    username: 'User 1',
-    timestamp: '2025-01-29T10:00:00Z',
-    action: 'approved'
-  },
-  {
-    id: 2,
-    userId: 2,
-    username: 'User 2',
-    timestamp: '2025-01-29T09:30:00Z',
-    action: 'rejected'
-  },
-  {
-    id: 3,
-    userId: 3,
-    username: 'User 3',
-    timestamp: '2025-01-29T08:00:00Z',
-    action: 'flagged'
-  },
-  {
-    id: 4,
-    userId: 1,
-    username: 'User 1',
-    timestamp: '2025-01-29T07:00:00Z',
-    action: 'approved'
-  },
-  {
-    id: 5,
-    userId: 4,
-    username: 'User 4',
-    timestamp: '2025-01-29T06:00:00Z',
-    action: 'approved'
-  }
-])
+const tableKey = 'moderatorPromptPieces'
+const tableMeta = computed(() => chatStore.tableData[tableKey])
+const items = computed(() => {
+  const data = tableMeta.value
+  if (!data || !Array.isArray(data.rows)) return []
+  return data.rows as ModeratorPromptPieceEntity[]
+})
 
-// Current displayed data (snapshot only)
-const moderatorData = computed(() => snapshotModeratorData.value)
-
-// Pending changes tracking
 const pendingChanges = ref({
   added: 0,
   updated: 0,
@@ -242,248 +176,74 @@ const changeMarkers = ref({
   deleted: [] as number[]
 })
 
-const pendingAdditions = ref<ModeratorAction[]>([])
-const pendingUpdates = ref<Record<number, Partial<ModeratorAction>>>({})
-
 const showModal = ref(false)
-const modalMode = ref<'custom' | 'add' | 'edit' | 'delete'>('custom')
-const selectedAction = ref<ModeratorAction | null>(null)
-const formAction = ref<ModeratorAction>({
-  id: 0,
-  userId: 0,
-  username: '',
-  timestamp: '',
-  action: 'approved'
+const selectedPiece = ref<ModeratorPromptPieceEntity | null>(null)
+const formPiece = ref<ModeratorPromptPieceEntity>({
+  id: null,
+  section: 'message_rule',
+  promptPiece: ''
 })
-const baselineAction = ref<ModeratorAction | null>(null)
+const baselinePiece = ref<ModeratorPromptPieceEntity | null>(null)
 
-const isDeleteMode = computed(() => modalMode.value === 'delete')
-const modalTitle = computed(() => {
-  switch (modalMode.value) {
-    case 'add':
-      return 'Add Moderator Action'
-    case 'edit':
-      return 'Edit Moderator Action'
-    case 'delete':
-      return 'Delete Moderator Action'
-    default:
-      return 'Moderator Action'
-  }
-})
+const modalTitle = computed(() => 'Edit prompt piece')
 
-const cloneAction = (action: ModeratorAction): ModeratorAction => {
-  return JSON.parse(JSON.stringify(action)) as ModeratorAction
-}
-
-const markActionUpdated = (id: number, updates: Partial<ModeratorAction>) => {
-  pendingUpdates.value[id] = {
-    ...(pendingUpdates.value[id] || {}),
-    ...updates
-  }
-  if (!changeMarkers.value.updated.includes(id)) {
-    changeMarkers.value.updated.push(id)
-    pendingChanges.value.updated++
-  }
+const clonePiece = (piece: ModeratorPromptPieceEntity): ModeratorPromptPieceEntity => {
+  return JSON.parse(JSON.stringify(piece)) as ModeratorPromptPieceEntity
 }
 
 const isFormDirty = computed(() => {
-  if (isDeleteMode.value || !baselineAction.value) return false
-  return JSON.stringify(formAction.value) !== JSON.stringify(baselineAction.value)
+  if (!baselinePiece.value) return false
+  return JSON.stringify(formPiece.value) !== JSON.stringify(baselinePiece.value)
 })
 
 const isFormValid = computed(() => {
-  return formAction.value.userId > 0 && formAction.value.username.trim().length > 0
+  return formPiece.value.promptPiece.trim().length > 0
 })
-
-// TEMPORARY: WebSocket emulation for debugging
-// TODO: Replace with real WebSocket implementation
-let emulationTimeouts: ReturnType<typeof setTimeout>[] = []
-
-const emulateWebSocketEvents = () => {
-  // Simulate multiple events at different times
-  emulationTimeouts.push(
-    setTimeout(() => {
-      // Add new moderator action
-      const newAction = {
-        id: 6,
-        userId: 5,
-        username: 'User 5',
-        timestamp: new Date().toISOString(),
-        action: 'flagged'
-      }
-      if (!changeMarkers.value.added.includes(6)) {
-        pendingAdditions.value.push(newAction)
-        changeMarkers.value.added.push(6)
-        pendingChanges.value.added++
-      }
-    }, 3000)
-  )
-
-  emulationTimeouts.push(
-    setTimeout(() => {
-      // Update existing action
-      const actionEntry = snapshotModeratorData.value.find(a => a.id === 2)
-      if (actionEntry) {
-        markActionUpdated(2, {
-          action: 'approved'
-        })
-      }
-    }, 5000)
-  )
-
-  emulationTimeouts.push(
-    setTimeout(() => {
-      // Mark for deletion
-      if (!changeMarkers.value.deleted.includes(5)) {
-        changeMarkers.value.deleted.push(5)
-        pendingChanges.value.deleted++
-      }
-    }, 10000)
-  )
-}
 
 const updateSnapshot = () => {
-  // Apply all pending changes to snapshot
-  const updatedSnapshot = snapshotModeratorData.value.map(action => {
-    const updates = pendingUpdates.value[action.id]
-    return updates ? { ...action, ...updates } : action
+  sendAction(websocket, TableActionConstants.ACTION_REFRESH_SNAPSHOT, {
+    [TableActionConstants.PAYLOAD_KEY_TABLE_KEY]: tableKey,
   })
-  const additions = pendingAdditions.value.filter(action => !changeMarkers.value.deleted.includes(action.id))
-  snapshotModeratorData.value = [...updatedSnapshot, ...additions].filter(
-    action => !changeMarkers.value.deleted.includes(action.id)
-  )
-  
-  // Reset pending changes
-  pendingChanges.value = { added: 0, updated: 0, deleted: 0 }
-  changeMarkers.value = { added: [], updated: [], deleted: [] }
-  pendingAdditions.value = []
-  pendingUpdates.value = {}
 }
 
-onMounted(() => {
-  // TEMPORARY: Start WebSocket emulation
-  emulateWebSocketEvents()
-})
-
-onUnmounted(() => {
-  emulationTimeouts.forEach(timeout => clearTimeout(timeout))
-  emulationTimeouts = []
-})
-
-const formatDate = (dateStr: string | null | undefined): string => {
-  if (!dateStr) return 'Never'
-  try {
-    const date = new Date(dateStr)
-    return date.toLocaleString()
-  } catch {
-    return dateStr
-  }
-}
-
-const getActionBadgeClass = (action: string | null | undefined): string => {
-  switch (action) {
-    case 'approved':
-      return 'bg-success'
-    case 'rejected':
-      return 'bg-danger'
-    case 'flagged':
-      return 'bg-warning'
+const getSectionBadgeClass = (section: string | null | undefined): string => {
+  switch (section) {
+    case 'name_rule':
+      return 'bg-info'
+    case 'message_rule':
+      return 'bg-primary'
     default:
       return 'bg-secondary'
   }
 }
 
-const handleAdd = () => {
-  modalMode.value = 'add'
-  selectedAction.value = null
-  formAction.value = {
-    id: 0,
-    userId: 1,
-    username: '',
-    timestamp: '',
-    action: 'approved'
-  }
-  baselineAction.value = cloneAction(formAction.value)
-  showModal.value = true
-}
-
 const handleEdit = (item: unknown) => {
   if (typeof item !== 'object' || item === null) return
-  const action = item as ModeratorAction
-  modalMode.value = 'edit'
-  selectedAction.value = action
-  formAction.value = cloneAction(action)
-  baselineAction.value = cloneAction(action)
-  showModal.value = true
-}
-
-const handleDelete = (item: unknown) => {
-  if (typeof item !== 'object' || item === null) return
-  const action = item as ModeratorAction
-  modalMode.value = 'delete'
-  selectedAction.value = action
-  formAction.value = cloneAction(action)
-  baselineAction.value = cloneAction(action)
+  const piece = item as ModeratorPromptPieceEntity
+  selectedPiece.value = piece
+  formPiece.value = clonePiece(piece)
+  baselinePiece.value = clonePiece(piece)
   showModal.value = true
 }
 
 const saveLoading = ref(false)
 
-const submitModal = () => {
-  if (isDeleteMode.value) {
-    const id = selectedAction.value?.id
-    if (id === undefined) return
-    if (!changeMarkers.value.deleted.includes(id)) {
-      changeMarkers.value.deleted.push(id)
-      pendingChanges.value.deleted++
-    }
-    resetForm()
-    return
-  }
-
-  if (!isFormValid.value) return
-
+const savePiece = () => {
+  if (!selectedPiece.value || !isFormValid.value) return
   saveLoading.value = true
-  if (modalMode.value === 'add') {
-    const maxId = snapshotModeratorData.value.reduce((max, entry) => Math.max(max, entry.id), 0)
-    const newAction: ModeratorAction = {
-      id: maxId + 1,
-      userId: formAction.value.userId,
-      username: formAction.value.username.trim(),
-      timestamp: new Date().toISOString(),
-      action: formAction.value.action
-    }
-    if (!changeMarkers.value.added.includes(newAction.id)) {
-      pendingAdditions.value.push(newAction)
-      changeMarkers.value.added.push(newAction.id)
-      pendingChanges.value.added++
-    }
-    resetForm()
-    return
-  }
-
-  if (modalMode.value === 'edit' && selectedAction.value) {
-    markActionUpdated(selectedAction.value.id, {
-      userId: formAction.value.userId,
-      username: formAction.value.username.trim(),
-      action: formAction.value.action
-    })
-    resetForm()
-  }
+  // TODO: send update action to backend when API is available
+  resetForm()
 }
 
 const resetForm = () => {
   showModal.value = false
-  modalMode.value = 'custom'
-  selectedAction.value = null
-  baselineAction.value = null
+  selectedPiece.value = null
+  baselinePiece.value = null
   saveLoading.value = false
-  formAction.value = {
-    id: 0,
-    userId: 0,
-    username: '',
-    timestamp: '',
-    action: 'approved'
+  formPiece.value = {
+    id: null,
+    section: 'message_rule',
+    promptPiece: ''
   }
 }
 </script>

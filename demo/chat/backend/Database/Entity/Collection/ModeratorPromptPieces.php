@@ -2,14 +2,17 @@
 
 namespace Demo\Chat\Database\Entity\Collection;
 
-use Demo\Chat\Database\Entity\Item\Moderator as EntityModerator;
+use Demo\Chat\Database\Entity\Item\ModeratorPromptPiece as EntityModeratorPromptPiece;
 use Hilos\Database\Entity\Collection\EntityCollection;
 
 /**
- * Moderators Entity Collection
- * Typed wrapper around EntityCollection for Moderator entities
+ * ModeratorPromptPieces Entity Collection
+ * Typed wrapper around EntityCollection for ModeratorPromptPiece entities
+ *
+ * @implements \Iterator<int|string, EntityModeratorPromptPiece>
+ * @implements \ArrayAccess<int|string, EntityModeratorPromptPiece>
  */
-final class Moderators
+final class ModeratorPromptPieces implements \Iterator, \ArrayAccess, \Countable
 {
     private EntityCollection $collection;
 
@@ -20,7 +23,7 @@ final class Moderators
 
     public static function initFullDB(): self
     {
-        $entityCollection = EntityModerator::getAll();
+        $entityCollection = EntityModeratorPromptPiece::getAll();
         return new self($entityCollection);
     }
 
@@ -39,22 +42,22 @@ final class Moderators
         return $this->collection;
     }
 
-    public function get(int|string $key): ?EntityModerator
+    public function get(int|string $key): ?EntityModeratorPromptPiece
     {
         $entity = $this->collection->get($key);
-        return $entity instanceof EntityModerator ? $entity : null;
+        return $entity instanceof EntityModeratorPromptPiece ? $entity : null;
     }
 
-    public function first(): ?EntityModerator
+    public function first(): ?EntityModeratorPromptPiece
     {
         $entity = $this->collection->first();
-        return $entity instanceof EntityModerator ? $entity : null;
+        return $entity instanceof EntityModeratorPromptPiece ? $entity : null;
     }
 
-    public function last(): ?EntityModerator
+    public function last(): ?EntityModeratorPromptPiece
     {
         $entity = $this->collection->last();
-        return $entity instanceof EntityModerator ? $entity : null;
+        return $entity instanceof EntityModeratorPromptPiece ? $entity : null;
     }
 
     public function count(): int
@@ -70,27 +73,27 @@ final class Moderators
     public function filter(callable $callback): self
     {
         $filtered = $this->collection->filter(function ($entity) use ($callback) {
-            return $entity instanceof EntityModerator && $callback($entity);
+            return $entity instanceof EntityModeratorPromptPiece && $callback($entity);
         });
         return new self($filtered);
     }
 
-    /** @return EntityModerator[] */
+    /** @return EntityModeratorPromptPiece[] */
     public function toArray(): array
     {
         $result = [];
         foreach ($this->collection as $entity) {
-            if ($entity instanceof EntityModerator) {
+            if ($entity instanceof EntityModeratorPromptPiece) {
                 $result[] = $entity;
             }
         }
         return $result;
     }
 
-    public function current(): ?EntityModerator
+    public function current(): ?EntityModeratorPromptPiece
     {
         $entity = $this->collection->current();
-        return $entity instanceof EntityModerator ? $entity : null;
+        return $entity instanceof EntityModeratorPromptPiece ? $entity : null;
     }
 
     public function key(): int|string|null
@@ -118,15 +121,15 @@ final class Moderators
         return $this->collection->offsetExists($offset);
     }
 
-    public function offsetGet(mixed $offset): ?EntityModerator
+    public function offsetGet(mixed $offset): ?EntityModeratorPromptPiece
     {
         $entity = $this->collection->offsetGet($offset);
-        return $entity instanceof EntityModerator ? $entity : null;
+        return $entity instanceof EntityModeratorPromptPiece ? $entity : null;
     }
 
     public function offsetSet(mixed $offset, mixed $value): void
     {
-        if ($value instanceof EntityModerator) {
+        if ($value instanceof EntityModeratorPromptPiece) {
             $this->collection->offsetSet($offset, $value);
         }
     }

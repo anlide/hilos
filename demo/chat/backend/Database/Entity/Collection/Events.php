@@ -8,8 +8,11 @@ use Hilos\Database\Entity\Collection\EntityCollection;
 /**
  * Events Entity Collection
  * Typed wrapper around EntityCollection for Event entities
+ *
+ * @implements \Iterator<int|string, EntityEvent>
+ * @implements \ArrayAccess<int|string, EntityEvent>
  */
-final class Events implements \Iterator
+final class Events implements \Iterator, \ArrayAccess, \Countable
 {
     private EntityCollection $collection;
 

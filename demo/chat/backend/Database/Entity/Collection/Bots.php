@@ -8,8 +8,11 @@ use Hilos\Database\Entity\Collection\EntityCollection;
 /**
  * Bots Entity Collection
  * Typed wrapper around EntityCollection for Bot entities
+ *
+ * @implements \Iterator<int|string, EntityBot>
+ * @implements \ArrayAccess<int|string, EntityBot>
  */
-final class Bots
+final class Bots implements \Iterator, \ArrayAccess, \Countable
 {
     private EntityCollection $collection;
 

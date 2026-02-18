@@ -50,6 +50,8 @@ final class Hilos extends \Hilos\Hilos
     {
         $table = new TableHub();
         $table->register(DbChatContext::users, new EntityTableDataSource(static::$db->users));
+        $table->register(DbChatContext::bots, new EntityTableDataSource(static::$db->bots));
+        $table->register(DbChatContext::moderatorPromptPieces, new EntityTableDataSource(static::$db->moderatorPromptPieces));
         return $table;
     }
 }
