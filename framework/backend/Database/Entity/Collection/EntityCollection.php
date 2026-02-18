@@ -17,19 +17,23 @@ use Iterator;
 class EntityCollection implements ArrayAccess, Countable, Iterator
 {
     /** @var array<int|string, Entity> */
-    private array $entities = [];
+    protected array $entities = [];
 
     /** @var array<int|string> */
-    private array $keys = [];
+    protected array $keys = [];
 
+    /** Current iterator position */
     private int $position = 0;
+
+    /** Backup of iterator position for backupIndex/restoreIndex */
+    private int $savedPosition = 0;
 
     /**
      * Create empty collection
      */
-    public static function empty(): self
+    public static function empty(): static
     {
-        return new self();
+        return new static();
     }
 
     /**
@@ -37,9 +41,9 @@ class EntityCollection implements ArrayAccess, Countable, Iterator
      *
      * @param Entity[] $entities
      */
-    public static function fromArray(array $entities): self
+    public static function fromArray(array $entities): static
     {
-        $collection = new self();
+        $collection = new static();
         foreach ($entities as $key => $entity) {
             $collection[$key] = $entity;
         }
@@ -124,14 +128,6 @@ class EntityCollection implements ArrayAccess, Countable, Iterator
     }
 
     /**
-     * Filter collection
-     */
-    public function filter(callable $callback): self
-    {
-        return self::fromArray(array_filter($this->entities, $callback));
-    }
-
-    /**
      * Map collection
      */
     public function map(callable $callback): array
@@ -140,31 +136,40 @@ class EntityCollection implements ArrayAccess, Countable, Iterator
     }
 
     /**
-     * Backup current position
+     * Backup current iterator position
      */
-    private int $savedPosition = 0;
-
     public function backupIndex(): void
     {
         $this->savedPosition = $this->position;
     }
 
+    /**
+     * Restore iterator position from backup
+     */
     public function restoreIndex(): void
     {
         $this->position = $this->savedPosition;
     }
 
-    // ArrayAccess implementation
+    /**
+     * Check if offset exists (ArrayAccess)
+     */
     public function offsetExists(mixed $offset): bool
     {
         return isset($this->entities[$offset]);
     }
 
+    /**
+     * Get entity at offset (ArrayAccess)
+     */
     public function offsetGet(mixed $offset): ?Entity
     {
         return $this->entities[$offset] ?? null;
     }
 
+    /**
+     * Set entity at offset (ArrayAccess)
+     */
     public function offsetSet(mixed $offset, mixed $value): void
     {
         if (!($value instanceof Entity)) {
@@ -182,41 +187,60 @@ class EntityCollection implements ArrayAccess, Countable, Iterator
         }
     }
 
+    /**
+     * Unset entity at offset (ArrayAccess)
+     */
     public function offsetUnset(mixed $offset): void
     {
         unset($this->entities[$offset]);
         $this->keys = array_keys($this->entities);
     }
 
-    // Countable implementation
+    /**
+     * Get collection size (Countable)
+     */
     public function count(): int
     {
         return count($this->entities);
     }
 
-    // Iterator implementation
+    /**
+     * Get current entity (Iterator)
+     */
     public function current(): ?Entity
     {
         $key = $this->keys[$this->position] ?? null;
         return $key !== null ? $this->entities[$key] : null;
     }
 
+    /**
+     * Get current key (Iterator)
+     */
     public function key(): mixed
     {
         return $this->keys[$this->position] ?? null;
     }
 
+    /**
+     * Move to next element (Iterator)
+     */
     public function next(): void
     {
         ++$this->position;
     }
 
+    /**
+     * Rewind to first element (Iterator)
+     */
     public function rewind(): void
     {
         $this->position = 0;
         $this->keys = array_keys($this->entities);
     }
 
+    /**
+     * Check if current position is valid (Iterator)
+     */
     public function valid(): bool
     {
         return isset($this->keys[$this->position]);
