@@ -39,13 +39,13 @@ final class User extends Entity
 
     // Indexes
     public const array _indexes = [
-        'session_token' => ['unique' => true, 'columns' => [self::session_token]],
-        'last_activity' => ['columns' => [self::last_activity]],
+        'session_token' => [Entity::INDEX_UNIQUE => true, Entity::INDEX_COLUMNS => [self::session_token]],
+        'last_activity' => [Entity::INDEX_COLUMNS => [self::last_activity]],
     ];
 
     // Properties
-    public ?string $session_token = null;
-    public ?string $last_activity = null;
     public ?int $id = null;
     public string $name;
+    public ?string $session_token = null;
+    public ?string $last_activity = null;
 }

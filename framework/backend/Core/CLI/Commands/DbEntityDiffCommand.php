@@ -352,13 +352,13 @@ HELP;
             if (!isset($entityIndexes[$indexName])) {
                 $diff['indexes_missing_in_entity'][] = [
                     'name' => $indexName,
-                    'unique' => $dbIndex->unique,
-                    'columns' => $dbIndex->columns,
+                    Entity::INDEX_UNIQUE => $dbIndex->unique,
+                    Entity::INDEX_COLUMNS => $dbIndex->columns,
                 ];
             } else {
                 $entityIndex = $entityIndexes[$indexName];
-                $entityCols = $entityIndex['columns'] ?? [];
-                $entityUnique = $entityIndex['unique'] ?? false;
+                $entityCols = $entityIndex[Entity::INDEX_COLUMNS] ?? [];
+                $entityUnique = $entityIndex[Entity::INDEX_UNIQUE] ?? false;
                 sort($entityCols);
                 $dbCols = $dbIndex->columns;
                 sort($dbCols);
@@ -367,12 +367,12 @@ HELP;
                     $diff['indexes_different'][] = [
                         'name' => $indexName,
                         'entity' => [
-                            'unique' => $entityUnique,
-                            'columns' => $entityCols,
+                            Entity::INDEX_UNIQUE => $entityUnique,
+                            Entity::INDEX_COLUMNS => $entityCols,
                         ],
                         'db' => [
-                            'unique' => $dbIndex->unique,
-                            'columns' => $dbCols,
+                            Entity::INDEX_UNIQUE => $dbIndex->unique,
+                            Entity::INDEX_COLUMNS => $dbCols,
                         ],
                     ];
                 }
@@ -383,8 +383,8 @@ HELP;
             if (!isset($dbIndexes[$indexName])) {
                 $diff['indexes_missing_in_db'][] = [
                     'name' => $indexName,
-                    'unique' => $entityIndex['unique'] ?? false,
-                    'columns' => $entityIndex['columns'] ?? [],
+                    Entity::INDEX_UNIQUE => $entityIndex[Entity::INDEX_UNIQUE] ?? false,
+                    Entity::INDEX_COLUMNS => $entityIndex[Entity::INDEX_COLUMNS] ?? [],
                 ];
             }
         }
@@ -494,8 +494,8 @@ HELP;
                 if (!empty($tableDiff['indexes_missing_in_entity'])) {
                     echo "  Indexes missing in Entity:\n";
                     foreach ($tableDiff['indexes_missing_in_entity'] as $index) {
-                        $unique = $index['unique'] ? 'UNIQUE ' : '';
-                        $cols = implode(', ', $index['columns']);
+                        $unique = ($index[Entity::INDEX_UNIQUE] ?? false) ? 'UNIQUE ' : '';
+                        $cols = implode(', ', $index[Entity::INDEX_COLUMNS] ?? []);
                         echo "    - {$unique}{$index['name']}: ({$cols})\n";
                     }
                     echo "\n";
@@ -504,8 +504,8 @@ HELP;
                 if (!empty($tableDiff['indexes_missing_in_db'])) {
                     echo "  Indexes missing in database:\n";
                     foreach ($tableDiff['indexes_missing_in_db'] as $index) {
-                        $unique = $index['unique'] ? 'UNIQUE ' : '';
-                        $cols = implode(', ', $index['columns']);
+                        $unique = ($index[Entity::INDEX_UNIQUE] ?? false) ? 'UNIQUE ' : '';
+                        $cols = implode(', ', $index[Entity::INDEX_COLUMNS] ?? []);
                         echo "    - {$unique}{$index['name']}: ({$cols})\n";
                     }
                     echo "\n";
@@ -515,10 +515,10 @@ HELP;
                     echo "  Indexes with differences:\n";
                     foreach ($tableDiff['indexes_different'] as $index) {
                         echo "    - {$index['name']}:\n";
-                        $eUnique = $index['entity']['unique'] ? 'UNIQUE ' : '';
-                        $dUnique = $index['db']['unique'] ? 'UNIQUE ' : '';
-                        echo "      Entity: {$eUnique}(" . implode(', ', $index['entity']['columns']) . ")\n";
-                        echo "      DB:     {$dUnique}(" . implode(', ', $index['db']['columns']) . ")\n";
+                        $eUnique = ($index['entity'][Entity::INDEX_UNIQUE] ?? false) ? 'UNIQUE ' : '';
+                        $dUnique = ($index['db'][Entity::INDEX_UNIQUE] ?? false) ? 'UNIQUE ' : '';
+                        echo "      Entity: {$eUnique}(" . implode(', ', $index['entity'][Entity::INDEX_COLUMNS] ?? []) . ")\n";
+                        echo "      DB:     {$dUnique}(" . implode(', ', $index['db'][Entity::INDEX_COLUMNS] ?? []) . ")\n";
                     }
                     echo "\n";
                 }

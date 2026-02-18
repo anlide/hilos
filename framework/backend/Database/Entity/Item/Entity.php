@@ -33,6 +33,10 @@ abstract class Entity
     public const string META_FOREIGN = '_foreign';
     public const string META_INDEXES = '_indexes';
 
+    // Index definition keys (for _indexes array structure)
+    public const string INDEX_COLUMNS = 'columns';
+    public const string INDEX_UNIQUE = 'unique';
+
     // Internal property names
     public const string PROP_RELATED = '_related';
 

@@ -633,7 +633,7 @@ HELP;
             // Also remove indexes that reference removed columns
             $entityIndexes = $entity['indexes'] ?? [];
             foreach ($entityIndexes as $indexName => $indexDef) {
-                $indexColumns = $indexDef['columns'] ?? [];
+                $indexColumns = $indexDef[Entity::INDEX_COLUMNS] ?? [];
                 foreach ($indexColumns as $indexCol) {
                     if (in_array($indexCol, $columnsToRemove, true)) {
                         $fixes['remove_indexes'][] = $indexName;
@@ -678,14 +678,14 @@ HELP;
             if (!isset($entityIndexes[$indexName])) {
                 $fixes['add_indexes'][] = [
                     'name' => $indexName,
-                    'unique' => $dbIndex->unique,
-                    'columns' => $dbIndex->columns,
+                    Entity::INDEX_UNIQUE => $dbIndex->unique,
+                    Entity::INDEX_COLUMNS => $dbIndex->columns,
                 ];
             } elseif ($this->indexesDiffer($entityIndexes[$indexName], $dbIndex)) {
                 $fixes['update_indexes'][] = [
                     'name' => $indexName,
-                    'unique' => $dbIndex->unique,
-                    'columns' => $dbIndex->columns,
+                    Entity::INDEX_UNIQUE => $dbIndex->unique,
+                    Entity::INDEX_COLUMNS => $dbIndex->columns,
                 ];
             }
         }
@@ -727,8 +727,8 @@ HELP;
      */
     private function indexesDiffer(array $entityIndex, IndexInfo $dbIndex): bool
     {
-        $entityCols = $entityIndex['columns'] ?? [];
-        $entityUnique = $entityIndex['unique'] ?? false;
+        $entityCols = $entityIndex[Entity::INDEX_COLUMNS] ?? [];
+        $entityUnique = $entityIndex[Entity::INDEX_UNIQUE] ?? false;
         sort($entityCols);
         $dbCols = $dbIndex->columns;
         sort($dbCols);
@@ -945,8 +945,8 @@ HELP;
             if (!empty($tableFixes['add_indexes'])) {
                 echo "  Will add indexes:\n";
                 foreach ($tableFixes['add_indexes'] as $index) {
-                    $unique = $index['unique'] ? 'UNIQUE ' : '';
-                    $cols = implode(', ', $index['columns']);
+                    $unique = ($index[Entity::INDEX_UNIQUE] ?? false) ? 'UNIQUE ' : '';
+                    $cols = implode(', ', $index[Entity::INDEX_COLUMNS] ?? []);
                     echo "    + {$unique}{$index['name']}: ({$cols})\n";
                 }
                 echo "\n";
@@ -955,8 +955,8 @@ HELP;
             if (!empty($tableFixes['update_indexes'])) {
                 echo "  Will update indexes:\n";
                 foreach ($tableFixes['update_indexes'] as $index) {
-                    $unique = $index['unique'] ? 'UNIQUE ' : '';
-                    $cols = implode(', ', $index['columns']);
+                    $unique = ($index[Entity::INDEX_UNIQUE] ?? false) ? 'UNIQUE ' : '';
+                    $cols = implode(', ', $index[Entity::INDEX_COLUMNS] ?? []);
                     echo "    ~ {$index['name']}: {$unique}({$cols})\n";
                 }
                 echo "\n";
@@ -1797,7 +1797,7 @@ HELP;
 
                 if ($depth === 0) {
                     // Extract full index definition
-                    $fullEntry = substr($indexesContent, $startPos, $endPos - $startPos);
+                    $fullEntry = substr($indexesContent, (int)$startPos, $endPos - $startPos);
 
                     if (!in_array($indexName, $indexNames, true)) {
                         // Keep this index
@@ -1811,7 +1811,7 @@ HELP;
                     $offset = $endPos;
                 } else {
                     // Unbalanced brackets, skip this match
-                    $offset = $startPos + 1;
+                    $offset = (int)$startPos + 1;
                 }
             }
 
@@ -2053,8 +2053,8 @@ HELP;
                 // Use column constants instead of strings
                 $columnRefs = array_map(fn($col) => "self::{$col}", $indexInfo->columns);
                 $columns = implode(", ", $columnRefs);
-                $unique = $indexInfo->unique ? "'unique' => true, " : "";
-                $indexEntries[] = "        '{$indexName}' => [{$unique}'columns' => [{$columns}]],";
+                $unique = $indexInfo->unique ? "Entity::INDEX_UNIQUE => true, " : "";
+                $indexEntries[] = "        '{$indexName}' => [{$unique}Entity::INDEX_COLUMNS => [{$columns}]],";
             }
         }
 

@@ -46,7 +46,7 @@ final class Bot extends Entity
 
     // Indexes
     public const array _indexes = [
-        'active' => ['columns' => [self::active]],
+        'active' => [Entity::INDEX_COLUMNS => [self::active]],
     ];
 
     // Properties

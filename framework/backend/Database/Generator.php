@@ -109,8 +109,8 @@ class Generator
             // Use column constants instead of strings
             $indexColumnRefs = array_map(fn($col) => "self::{$col}", $info['columns']);
             $indexColumns = implode(", ", $indexColumnRefs);
-            $unique = $info['unique'] ? "'unique' => true, " : "";
-            $indexesList[] = "        '{$keyName}' => [{$unique}'columns' => [{$indexColumns}]]";
+            $unique = $info['unique'] ? "Entity::INDEX_UNIQUE => true, " : "";
+            $indexesList[] = "        '{$keyName}' => [{$unique}Entity::INDEX_COLUMNS => [{$indexColumns}]]";
         }
 
         // Get real foreign keys from INFORMATION_SCHEMA

@@ -45,9 +45,9 @@ final class Event extends Entity
 
     // Indexes
     public const array _indexes = [
-        'type' => ['columns' => [self::type]],
-        'timestamp' => ['columns' => [self::timestamp]],
-        'user_id' => ['columns' => [self::user_id]],
+        'type' => [Entity::INDEX_COLUMNS => [self::type]],
+        'timestamp' => [Entity::INDEX_COLUMNS => [self::timestamp]],
+        'user_id' => [Entity::INDEX_COLUMNS => [self::user_id]],
     ];
 
     // Properties
