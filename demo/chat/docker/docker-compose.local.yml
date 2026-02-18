@@ -4,9 +4,13 @@
 name: hilos-chat-local
 
 services:
+  # MySQL: inside the network use mysql-local:3306. From host use localhost:${MYSQL_HOST_PORT} (default 33060 for demo/chat).
+  # Other demos should set their own MYSQL_HOST_PORT in .env (33061, 33062, …).
   mysql-local:
     image: mariadb:11.4
     container_name: hilos-mysql-local
+    ports:
+      - "${MYSQL_HOST_PORT:-33060}:3306"
     environment:
       - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD:-hilos_root_pass}
       - MYSQL_DATABASE=${MYSQL_DATABASE:-hilos-demo-chat}
