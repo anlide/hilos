@@ -12,6 +12,8 @@ use Hilos\Database\Object\Item\Object_;
  *
  * Business logic layer with change tracking
  *
+ * @extends Object_<EntityUser>
+ *
  * @property-read ?int $id
  * @property string $name
  * @property ?string $sessionToken
@@ -19,36 +21,13 @@ use Hilos\Database\Object\Item\Object_;
  */
 final class User extends Object_
 {
+    public const string ENTITY_CLASS = EntityUser::class;
+
     // Property name constants (camelCase for PHP)
     public const string id = 'id';
     public const string name = 'name';
     public const string sessionToken = 'sessionToken';
     public const string lastActivity = 'lastActivity';
-
-    protected EntityUser $entity;
-    protected EntityUser $entitySync;
-
-    /**
-     * Create new empty user object
-     */
-    public static function create(): self
-    {
-        $obj = new self();
-        $obj->entity = EntityUser::getEmpty();
-        $obj->entitySync = clone $obj->entity;
-        return $obj;
-    }
-
-    /**
-     * Create from entity
-     */
-    public static function fromEntity(EntityUser $entity): self
-    {
-        $obj = new self();
-        $obj->entity = $entity;
-        $obj->entitySync = clone $entity;
-        return $obj;
-    }
 
     /**
      * Load user by ID
@@ -172,13 +151,5 @@ final class User extends Object_
             self::sessionToken => $this->entity->session_token,
             self::lastActivity => $this->entity->last_activity,
         ];
-    }
-
-    public function getIdString(): string
-    {
-        if ($this->entity->id === null) {
-            throw new DatabaseException("Cannot get ID string: User ID is null");
-        }
-        return (string)$this->entity->id;
     }
 }

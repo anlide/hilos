@@ -3,12 +3,13 @@
 namespace Demo\Chat\Database\Object\Item;
 
 use Demo\Chat\Database\Entity\Item\Event as EntityEvent;
-use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Item\Object_;
 
 /**
  * Event Object
  * Auto-generated from Entity: Demo\Chat\Database\Entity\Item\Event
+ *
+ * @extends Object_<EntityEvent>
  *
  * @property-read ?int $id
  * @property ?int $userId
@@ -18,30 +19,13 @@ use Hilos\Database\Object\Item\Object_;
  */
 final class Event extends Object_
 {
+    public const string ENTITY_CLASS = EntityEvent::class;
+
     public const string id = 'id';
     public const string userId = 'userId';
     public const string type = 'type';
     public const string timestamp = 'timestamp';
     public const string data = 'data';
-
-    protected EntityEvent $entity;
-    protected EntityEvent $entitySync;
-
-    public static function create(): self
-    {
-        $obj = new self();
-        $obj->entity = EntityEvent::getEmpty();
-        $obj->entitySync = clone $obj->entity;
-        return $obj;
-    }
-
-    public static function fromEntity(EntityEvent $entity): self
-    {
-        $obj = new self();
-        $obj->entity = $entity;
-        $obj->entitySync = clone $entity;
-        return $obj;
-    }
 
     public function __get(string $property): mixed
     {
@@ -75,13 +59,5 @@ final class Event extends Object_
             self::timestamp => $this->entity->timestamp,
             self::data => $this->entity->data,
         ];
-    }
-
-    public function getIdString(): string
-    {
-        if ($this->entity->id === null) {
-            throw new DatabaseException("Cannot get ID string: Event ID is null");
-        }
-        return (string)$this->entity->id;
     }
 }

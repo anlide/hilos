@@ -4,12 +4,13 @@ namespace Hilos\Database\Object\Item;
 
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Item\Entity;
-use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 
 /**
  * Base Object class
  * Manages two Entity instances: current state and synced state
  * Enables precise change tracking and saves only modified columns
+ *
+ * Child classes must declare ENTITY_CLASS constant.
  *
  * @template TEntity of Entity
  *
@@ -18,12 +19,56 @@ use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
  */
 abstract class Object_
 {
-    protected function __clone()
+    /** @var TEntity */
+    protected Entity $entity;
+    /** @var TEntity */
+    protected Entity $entitySync;
+
+    /**
+     * Entity class for this Object. Child classes must define:
+     *   public const string ENTITY_CLASS = EntityXxx::class;
+     *
+     * @var class-string<Entity>
+     */
+    public const string ENTITY_CLASS = '';
+
+    final protected function __clone(): void
     {
     }
 
-    protected function __construct()
+    final protected function __construct()
     {
+    }
+
+    /**
+     * Create new empty object
+     *
+     * @return static
+     */
+    public static function create(): static
+    {
+        $entityClass = static::ENTITY_CLASS;
+        if ($entityClass === '') {
+            throw new DatabaseException(static::class . ' must define ENTITY_CLASS constant');
+        }
+        $obj = new static();
+        $obj->entity = $entityClass::getEmpty();
+        $obj->entitySync = clone $obj->entity;
+        return $obj;
+    }
+
+    /**
+     * Create object from entity
+     *
+     * @param TEntity $entity
+     * @return static
+     */
+    public static function fromEntity(Entity $entity): static
+    {
+        $obj = new static();
+        $obj->entity = $entity;
+        $obj->entitySync = clone $entity;
+        return $obj;
     }
 
     /**
@@ -139,15 +184,24 @@ abstract class Object_
 
     /**
      * Get ID as string (for use as array key)
-     * Supports composite keys by returning string representation
-     * Must be overridden in child classes
+     * Supports composite keys by returning string representation (joined with ':')
+     * Uses Entity::_primary to determine primary key column(s)
      *
      * @return string ID as string (for simple keys) or composite key representation
-     * @throws ObjectGetIdStringNotImplementedException If method is not overridden in child class
+     * @throws DatabaseException If primary key is null
      */
     public function getIdString(): string
     {
-        throw new ObjectGetIdStringNotImplementedException("getIdString() must be implemented in child class: " . static::class);
+        $primaryKeys = is_array($this->entity::_primary) ? $this->entity::_primary : [$this->entity::_primary];
+        $parts = [];
+        foreach ($primaryKeys as $column) {
+            $value = $this->entity->$column;
+            if ($value === null) {
+                throw new DatabaseException("Cannot get ID string: " . static::class . " primary key is null");
+            }
+            $parts[] = (string)$value;
+        }
+        return implode(':', $parts);
     }
 
     /**

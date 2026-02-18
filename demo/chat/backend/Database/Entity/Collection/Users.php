@@ -14,4 +14,5 @@ use Hilos\Database\Entity\Collection\EntityCollection;
  */
 final class Users extends EntityCollection
 {
+    public const string ENTITY_CLASS = EntityUser::class;
 }

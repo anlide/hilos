@@ -2443,35 +2443,19 @@ HELP;
         $code .= " * {$className} Object\n";
         $code .= " * Auto-generated from Entity: {$entityClassName}\n";
         $code .= " *\n";
+        $code .= " * @extends Object_<Entity{$className}>\n";
+        $code .= " *\n";
         if (!empty($readOnlyProps) || !empty($writableProps)) {
             $code .= implode("\n", array_merge($readOnlyProps, $writableProps)) . "\n";
         }
         $code .= " */\n";
         $code .= "final class {$className} extends Object_\n";
         $code .= "{\n";
-        
+        $code .= "    public const string ENTITY_CLASS = Entity{$className}::class;\n\n";
         if (!empty($camelCaseConstants)) {
             $code .= "    // Property name constants (camelCase for PHP)\n";
             $code .= implode("\n", $camelCaseConstants) . "\n\n";
         }
-        
-        $code .= "    protected Entity{$className} \$entity;\n";
-        $code .= "    protected Entity{$className} \$entitySync;\n\n";
-
-        $code .= "    public static function create(): self\n";
-        $code .= "    {\n";
-        $code .= "        \$obj = new self();\n";
-        $code .= "        \$obj->entity = Entity{$className}::getEmpty();\n";
-        $code .= "        \$obj->entitySync = clone \$obj->entity;\n";
-        $code .= "        return \$obj;\n";
-        $code .= "    }\n\n";
-        $code .= "    public static function fromEntity(Entity{$className} \$entity): self\n";
-        $code .= "    {\n";
-        $code .= "        \$obj = new self();\n";
-        $code .= "        \$obj->entity = \$entity;\n";
-        $code .= "        \$obj->entitySync = clone \$entity;\n";
-        $code .= "        return \$obj;\n";
-        $code .= "    }\n\n";
 
         if (!empty($getterCases)) {
             $code .= "    public function __get(string \$property): mixed\n";

@@ -173,40 +173,38 @@ trait EntityCollectionFixer
             return null;
         }
 
-        // Look for use statement: use ...\Entity\ClassName as EntityClassName;
-        // Or: use ...\Entity\ClassName;
-        // Use preg_match_all to find all use statements and filter for Entity classes
-        // This avoids capturing comments or strings that might contain \Entity\
-        // Pattern: capture class name (without "as alias") in group 1, alias in group 2
+        // Look for ENTITY_CLASS constant first
+        if (preg_match('/ENTITY_CLASS\s*=\s*(\w+)::class/', $content, $constMatch)) {
+            $entityAlias = $constMatch[1];
+            // Resolve alias from use statements
+            if (preg_match_all('/^use\s+([^\s;]+)(?:\s+as\s+(\w+))?;/m', $content, $useMatches, PREG_SET_ORDER)) {
+                foreach ($useMatches as $useMatch) {
+                    $fullClassName = trim($useMatch[1]);
+                    $alias = $useMatch[2] ?? $this->getShortClassName($fullClassName);
+                    if ($alias === $entityAlias && str_contains($fullClassName, '\\Entity\\') && !str_contains($fullClassName, '\\EntityCollection\\')) {
+                        return $fullClassName;
+                    }
+                }
+            }
+        }
+
+        // Fallback: look for use statement with Entity class
         if (preg_match_all('/^use\s+([^\s;]+)(?:\s+as\s+(\w+))?;/m', $content, $useMatches, PREG_SET_ORDER)) {
             foreach ($useMatches as $useMatch) {
                 $fullClassName = trim($useMatch[1]);
-                // Check that this is an Entity class, but not EntityCollection
-                if (strpos($fullClassName, '\\Entity\\') !== false &&
-                    strpos($fullClassName, '\\EntityCollection\\') === false) {
+                if (str_contains($fullClassName, '\\Entity\\') && !str_contains($fullClassName, '\\EntityCollection\\')) {
                     return $fullClassName;
                 }
             }
         }
 
-        // Fallback: try to infer from EntityCollection class name
-        // If EntityCollection class is "Users", Entity class should be "User" in Entity subnamespace
+        // Fallback: infer from EntityCollection class name
         $entityCollectionNamespace = $entityCollectionReflection->getNamespaceName();
         $entityCollectionShortName = $entityCollectionReflection->getShortName();
-
-        // Replace EntityCollection namespace with Entity namespace
-        $entityNamespace = str_replace('\\EntityCollection', '\\Entity', $entityCollectionNamespace);
-
-        // Remove plural ending to get singular form (Users -> User, Events -> Event)
         $entityShortName = StringHelper::singularize($entityCollectionShortName);
+        $entityNamespace = str_replace('\\Entity\\Collection\\' . $entityCollectionShortName, '\\Entity\\Item\\' . $entityShortName, $entityCollectionReflection->getName());
 
-        $entityClassName = $entityNamespace . '\\' . $entityShortName;
-
-        if (class_exists($entityClassName)) {
-            return $entityClassName;
-        }
-
-        return null;
+        return class_exists($entityNamespace) ? $entityNamespace : null;
     }
 
     /**
@@ -506,6 +504,9 @@ trait EntityCollectionFixer
             $content = $this->rebuildEntityCollectionTypeHints($content, $expectedEntityAlias, $fixes['update_type_hints']['wrong']);
         }
 
+        // Ensure ENTITY_CLASS constant is present
+        $content = $this->ensureEntityCollectionHasEntityClassConstant($content, $expectedEntityAlias);
+
         // Write file
         return file_put_contents($entityCollectionFile, $content) !== false;
     }
@@ -597,6 +598,22 @@ trait EntityCollectionFixer
     }
 
     /**
+     * Ensure EntityCollection has ENTITY_CLASS constant
+     */
+    private function ensureEntityCollectionHasEntityClassConstant(string $content, string $entityAlias): string
+    {
+        if (str_contains($content, 'ENTITY_CLASS')) {
+            return $content;
+        }
+        return preg_replace(
+            '/((?:final\s+)?class\s+\w+\s+extends\s+EntityCollection\s*\{\s*)\n/',
+            '$1' . "\n    public const string ENTITY_CLASS = {$entityAlias}::class;\n\n",
+            $content,
+            1
+        );
+    }
+
+    /**
      * Rebuild type hints in EntityCollection file
      *
      * @param string $content Current file content
@@ -656,6 +673,7 @@ trait EntityCollectionFixer
         $content .= " */\n";
         $content .= "final class {$entityCollectionShortName} extends EntityCollection\n";
         $content .= "{\n";
+        $content .= "    public const string ENTITY_CLASS = {$entityAlias}::class;\n";
         $content .= "}\n";
 
         return file_put_contents($entityCollectionFile, $content) !== false;

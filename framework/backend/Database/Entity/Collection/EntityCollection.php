@@ -3,13 +3,14 @@
 namespace Hilos\Database\Entity\Collection;
 
 use Hilos\Database\Entity\Item\Entity;
-use Hilos\Utils\Helpers\StringHelper;
 use ArrayAccess;
 use Countable;
 use Iterator;
 
 /**
  * Collection of Entity objects
+ *
+ * Child classes must define ENTITY_CLASS constant.
  *
  * @template T of Entity
  * @implements ArrayAccess<int|string, T>
@@ -30,21 +31,12 @@ class EntityCollection implements ArrayAccess, Countable, Iterator
     private int $savedPosition = 0;
 
     /**
-     * Derive entity class from collection class (Entity\Collection\Bots -> Entity\Item\Bot)
+     * Entity class for this collection. Child classes must define:
+     *   public const string ENTITY_CLASS = EntityXxx::class;
      *
-     * @return class-string<Entity>|null
+     * @var class-string<Entity>
      */
-    protected static function getEntityClass(): ?string
-    {
-        if (static::class === self::class) {
-            return null;
-        }
-        $class = static::class;
-        $entityNamespace = str_replace('\\Entity\\Collection', '\\Entity\\Item', $class);
-        $shortName = (new \ReflectionClass($class))->getShortName();
-        $singular = StringHelper::singularize($shortName);
-        return $entityNamespace . '\\' . $singular;
-    }
+    public const string ENTITY_CLASS = '';
 
     /**
      * Create empty collection
@@ -59,8 +51,8 @@ class EntityCollection implements ArrayAccess, Countable, Iterator
      */
     public static function initFullDB(): static
     {
-        $entityClass = static::getEntityClass();
-        if ($entityClass === null) {
+        $entityClass = static::ENTITY_CLASS;
+        if ($entityClass === '') {
             throw new \LogicException('initFullDB must be called on a specific collection class');
         }
         return static::fromEntityCollection($entityClass::getAll());
@@ -234,8 +226,8 @@ class EntityCollection implements ArrayAccess, Countable, Iterator
             throw new \InvalidArgumentException("Value must be instance of Entity");
         }
 
-        $entityClass = static::getEntityClass();
-        if ($entityClass !== null && !($value instanceof $entityClass)) {
+        $entityClass = static::ENTITY_CLASS;
+        if ($entityClass !== '' && !($value instanceof $entityClass)) {
             return;
         }
 
