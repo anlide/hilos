@@ -4,7 +4,6 @@ namespace Demo\Chat\Hilos\Database\Item;
 
 use Demo\Chat\Database\Object\Item\Bot as ObjectBot;
 use Hilos\Hilos\Database\Item\DbItem;
-use RuntimeException;
 
 /**
  * Bot Db item - high-level abstraction with lazy loading and relationships.
@@ -21,15 +20,13 @@ final class Bot extends DbItem
     public function __get(string $name): int|string|bool|null
     {
         return match ($name) {
-            ObjectBot::idBot => $this->_object->idBot,
+            ObjectBot::id => $this->_object->id,
             ObjectBot::name => $this->_object->name,
             ObjectBot::description => $this->_object->description,
             ObjectBot::style => $this->_object->style,
             ObjectBot::topics => $this->_object->topics,
             ObjectBot::personality => $this->_object->personality,
             ObjectBot::active => $this->_object->active,
-            ObjectBot::createdAt => $this->_object->createdAt,
-            ObjectBot::updatedAt => $this->_object->updatedAt,
             default => parent::__get($name),
         };
     }
@@ -38,7 +35,7 @@ final class Bot extends DbItem
     {
         $data = [];
         if ($withId) {
-            $data[ObjectBot::idBot] = $this->_object->idBot;
+            $data[ObjectBot::id] = $this->_object->id;
         }
         $data[ObjectBot::name] = $this->_object->name;
         $data[ObjectBot::description] = $this->_object->description;
@@ -46,8 +43,6 @@ final class Bot extends DbItem
         $data[ObjectBot::topics] = $this->_object->topics;
         $data[ObjectBot::personality] = $this->_object->personality;
         $data[ObjectBot::active] = $this->_object->active;
-        $data[ObjectBot::createdAt] = $this->_object->createdAt;
-        $data[ObjectBot::updatedAt] = $this->_object->updatedAt;
         return $data;
     }
 }

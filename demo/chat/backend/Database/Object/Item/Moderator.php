@@ -11,7 +11,7 @@ use Demo\Chat\Database\Entity\Item\Moderator as EntityModerator;
  */
 final class Moderator extends Object_
 {
-    public const string idModerator = 'idModerator';
+    public const string id = 'id';
     public const string name = 'name';
     public const string checkAdultContent = 'checkAdultContent';
     public const string checkViolence = 'checkViolence';
@@ -21,8 +21,6 @@ final class Moderator extends Object_
     public const string sensitivityLevel = 'sensitivityLevel';
     public const string additionalRules = 'additionalRules';
     public const string active = 'active';
-    public const string createdAt = 'createdAt';
-    public const string updatedAt = 'updatedAt';
 
     protected EntityModerator $entity;
     protected EntityModerator $entitySync;
@@ -46,7 +44,7 @@ final class Moderator extends Object_
     public function __get(string $property): mixed
     {
         return match ($property) {
-            self::idModerator => $this->entity->id_moderator,
+            self::id => $this->entity->id,
             self::name => $this->entity->name,
             self::checkAdultContent => $this->entity->check_adult_content,
             self::checkViolence => $this->entity->check_violence,
@@ -56,8 +54,6 @@ final class Moderator extends Object_
             self::sensitivityLevel => $this->entity->sensitivity_level,
             self::additionalRules => $this->entity->additional_rules,
             self::active => $this->entity->active,
-            self::createdAt => $this->entity->created_at,
-            self::updatedAt => $this->entity->updated_at,
             default => parent::__get($property),
         };
     }
@@ -74,8 +70,6 @@ final class Moderator extends Object_
             self::sensitivityLevel => $this->entity->sensitivity_level = (int)$value,
             self::additionalRules => $this->entity->additional_rules = (string)$value,
             self::active => $this->entity->active = (bool)$value,
-            self::createdAt => $this->entity->created_at = (string)$value,
-            self::updatedAt => $this->entity->updated_at = (string)$value,
             default => parent::__set($property, $value),
         };
     }
@@ -83,7 +77,7 @@ final class Moderator extends Object_
     public function toArray(): array
     {
         return [
-            self::idModerator => $this->entity->id_moderator,
+            self::id => $this->entity->id,
             self::name => $this->entity->name,
             self::checkAdultContent => $this->entity->check_adult_content,
             self::checkViolence => $this->entity->check_violence,
@@ -93,8 +87,6 @@ final class Moderator extends Object_
             self::sensitivityLevel => $this->entity->sensitivity_level,
             self::additionalRules => $this->entity->additional_rules,
             self::active => $this->entity->active,
-            self::createdAt => $this->entity->created_at,
-            self::updatedAt => $this->entity->updated_at,
         ];
     }
 }

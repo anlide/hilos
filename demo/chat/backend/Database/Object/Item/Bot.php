@@ -11,15 +11,13 @@ use Demo\Chat\Database\Entity\Item\Bot as EntityBot;
  */
 final class Bot extends Object_
 {
-    public const string idBot = 'idBot';
+    public const string id = 'id';
     public const string name = 'name';
     public const string description = 'description';
     public const string style = 'style';
     public const string topics = 'topics';
     public const string personality = 'personality';
     public const string active = 'active';
-    public const string createdAt = 'createdAt';
-    public const string updatedAt = 'updatedAt';
 
     protected EntityBot $entity;
     protected EntityBot $entitySync;
@@ -43,15 +41,13 @@ final class Bot extends Object_
     public function __get(string $property): mixed
     {
         return match ($property) {
-            self::idBot => $this->entity->id_bot,
+            self::id => $this->entity->id,
             self::name => $this->entity->name,
             self::description => $this->entity->description,
             self::style => $this->entity->style,
             self::topics => $this->entity->topics,
             self::personality => $this->entity->personality,
             self::active => $this->entity->active,
-            self::createdAt => $this->entity->created_at,
-            self::updatedAt => $this->entity->updated_at,
             default => parent::__get($property),
         };
     }
@@ -65,8 +61,6 @@ final class Bot extends Object_
             self::topics => $this->entity->topics = (string)$value,
             self::personality => $this->entity->personality = (string)$value,
             self::active => $this->entity->active = (bool)$value,
-            self::createdAt => $this->entity->created_at = (string)$value,
-            self::updatedAt => $this->entity->updated_at = (string)$value,
             default => parent::__set($property, $value),
         };
     }
@@ -74,15 +68,13 @@ final class Bot extends Object_
     public function toArray(): array
     {
         return [
-            self::idBot => $this->entity->id_bot,
+            self::id => $this->entity->id,
             self::name => $this->entity->name,
             self::description => $this->entity->description,
             self::style => $this->entity->style,
             self::topics => $this->entity->topics,
             self::personality => $this->entity->personality,
             self::active => $this->entity->active,
-            self::createdAt => $this->entity->created_at,
-            self::updatedAt => $this->entity->updated_at,
         ];
     }
 }

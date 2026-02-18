@@ -4,7 +4,6 @@ namespace Demo\Chat\Hilos\Database\Item;
 
 use Demo\Chat\Database\Object\Item\Moderator as ObjectModerator;
 use Hilos\Hilos\Database\Item\DbItem;
-use RuntimeException;
 
 /**
  * Moderator Db item - high-level abstraction with lazy loading and relationships.
@@ -21,7 +20,7 @@ final class Moderator extends DbItem
     public function __get(string $name): int|string|bool|null
     {
         return match ($name) {
-            ObjectModerator::idModerator => $this->_object->idModerator,
+            ObjectModerator::id => $this->_object->id,
             ObjectModerator::name => $this->_object->name,
             ObjectModerator::checkAdultContent => $this->_object->checkAdultContent,
             ObjectModerator::checkViolence => $this->_object->checkViolence,
@@ -31,8 +30,6 @@ final class Moderator extends DbItem
             ObjectModerator::sensitivityLevel => $this->_object->sensitivityLevel,
             ObjectModerator::additionalRules => $this->_object->additionalRules,
             ObjectModerator::active => $this->_object->active,
-            ObjectModerator::createdAt => $this->_object->createdAt,
-            ObjectModerator::updatedAt => $this->_object->updatedAt,
             default => parent::__get($name),
         };
     }
@@ -41,7 +38,7 @@ final class Moderator extends DbItem
     {
         $data = [];
         if ($withId) {
-            $data[ObjectModerator::idModerator] = $this->_object->idModerator;
+            $data[ObjectModerator::id] = $this->_object->id;
         }
         $data[ObjectModerator::name] = $this->_object->name;
         $data[ObjectModerator::checkAdultContent] = $this->_object->checkAdultContent;
@@ -52,8 +49,6 @@ final class Moderator extends DbItem
         $data[ObjectModerator::sensitivityLevel] = $this->_object->sensitivityLevel;
         $data[ObjectModerator::additionalRules] = $this->_object->additionalRules;
         $data[ObjectModerator::active] = $this->_object->active;
-        $data[ObjectModerator::createdAt] = $this->_object->createdAt;
-        $data[ObjectModerator::updatedAt] = $this->_object->updatedAt;
         return $data;
     }
 }

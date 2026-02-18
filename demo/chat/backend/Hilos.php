@@ -25,7 +25,7 @@ final class Hilos extends \Hilos\Hilos
     /**
      * Creates and returns a database context instance.
      *
-     * @return DbContext The database context instance.
+     * @return DbChatContext The database context instance.
      */
     protected static function createDb(): DbContext
     {
@@ -33,7 +33,7 @@ final class Hilos extends \Hilos\Hilos
     }
 
     /**
-     * @return ?RtContext The runtime context instance, or null if runtime is not available.
+     * @return ?RtChatContext The runtime context instance, or null if runtime is not available.
      * @throws StateCollectionNotFoundException if a required state collection is not found in the runtime.
      */
     protected static function createRuntime(): ?RtContext
