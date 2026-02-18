@@ -3,6 +3,7 @@
 namespace Hilos\Database\Entity\Collection;
 
 use Hilos\Database\Entity\Item\Entity;
+use Hilos\Utils\Helpers\StringHelper;
 use ArrayAccess;
 use Countable;
 use Iterator;
@@ -29,11 +30,60 @@ class EntityCollection implements ArrayAccess, Countable, Iterator
     private int $savedPosition = 0;
 
     /**
+     * Derive entity class from collection class (Entity\Collection\Bots -> Entity\Item\Bot)
+     *
+     * @return class-string<Entity>|null
+     */
+    protected static function getEntityClass(): ?string
+    {
+        if (static::class === self::class) {
+            return null;
+        }
+        $class = static::class;
+        $entityNamespace = str_replace('\\Entity\\Collection', '\\Entity\\Item', $class);
+        $shortName = (new \ReflectionClass($class))->getShortName();
+        $singular = StringHelper::singularize($shortName);
+        return $entityNamespace . '\\' . $singular;
+    }
+
+    /**
      * Create empty collection
      */
     public static function empty(): static
     {
         return new static();
+    }
+
+    /**
+     * Initialize collection with all entities from database
+     */
+    public static function initFullDB(): static
+    {
+        $entityClass = static::getEntityClass();
+        if ($entityClass === null) {
+            throw new \LogicException('initFullDB must be called on a specific collection class');
+        }
+        return static::fromEntityCollection($entityClass::getAll());
+    }
+
+    /**
+     * Initialize empty collection
+     */
+    public static function initEmpty(): static
+    {
+        return static::empty();
+    }
+
+    /**
+     * Create from EntityCollection
+     */
+    public static function fromEntityCollection(EntityCollection $collection): static
+    {
+        $result = new static();
+        foreach ($collection as $key => $entity) {
+            $result[$key] = $entity;
+        }
+        return $result;
     }
 
     /**
@@ -81,6 +131,8 @@ class EntityCollection implements ArrayAccess, Countable, Iterator
 
     /**
      * Get entity by key
+     *
+     * @return ?T
      */
     public function get(int|string $key): ?Entity
     {
@@ -107,6 +159,8 @@ class EntityCollection implements ArrayAccess, Countable, Iterator
 
     /**
      * Get first entity
+     *
+     * @return ?T
      */
     public function first(): ?Entity
     {
@@ -118,6 +172,8 @@ class EntityCollection implements ArrayAccess, Countable, Iterator
 
     /**
      * Get last entity
+     *
+     * @return ?T
      */
     public function last(): ?Entity
     {
@@ -161,6 +217,8 @@ class EntityCollection implements ArrayAccess, Countable, Iterator
 
     /**
      * Get entity at offset (ArrayAccess)
+     *
+     * @return ?T
      */
     public function offsetGet(mixed $offset): ?Entity
     {
@@ -174,6 +232,11 @@ class EntityCollection implements ArrayAccess, Countable, Iterator
     {
         if (!($value instanceof Entity)) {
             throw new \InvalidArgumentException("Value must be instance of Entity");
+        }
+
+        $entityClass = static::getEntityClass();
+        if ($entityClass !== null && !($value instanceof $entityClass)) {
+            return;
         }
 
         if ($offset === null) {
@@ -206,6 +269,8 @@ class EntityCollection implements ArrayAccess, Countable, Iterator
 
     /**
      * Get current entity (Iterator)
+     *
+     * @return ?T
      */
     public function current(): ?Entity
     {
