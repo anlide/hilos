@@ -8,7 +8,7 @@ use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Page\AbstractChatPage;
 use Demo\Chat\Core\Router\DTO\ChatEventSignalDTO;
-use Demo\Chat\Hilos;
+use Demo\Chat\Database\DbChatContext;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\EntitiesChangesDTO;
 use Hilos\Core\Table\DTO\TableDataDTO;
@@ -44,7 +44,7 @@ class AdminUsersPage extends AbstractChatPage
      */
     public function onSubscribe(string $acceptKey): void
     {
-        $tablesPayload = TablePayloadBuilder::buildFull([Hilos::users]);
+        $tablesPayload = TablePayloadBuilder::buildFull([DbChatContext::users]);
         Logger::logAgentInfo('chat', json_encode($tablesPayload->toArray()));
 
         $this->getChatAgent()->sendToUser(

@@ -10,6 +10,7 @@ use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Page\AbstractChatPage;
 use Demo\Chat\Core\Page\DTO\RenameActionDTO;
 use Demo\Chat\Core\Router\DTO\ChatEventSignalDTO;
+use Demo\Chat\Database\DbChatContext;
 use Demo\Chat\Hilos;
 use Demo\Chat\Hilos\Database\Collection\Events;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
@@ -122,8 +123,8 @@ class ProfilePage extends AbstractChatPage
         $this->getChatAgent()->sendToAllUsers(
             ChatSignalConstants::NEW_EVENT,
             new ChatEventSignalDTO(new EntitiesChangesDTO(
-                full: [Hilos::events => Events::fromSingleItem($event)],
-                updates: [Hilos::users => [['id' => $userId, 'name' => $dto->newName]]],
+                full: [DbChatContext::events => Events::fromSingleItem($event)],
+                updates: [DbChatContext::users => [['id' => $userId, 'name' => $dto->newName]]],
             )),
         );
     }

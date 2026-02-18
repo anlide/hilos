@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Hilos\Runtime\Item;
 
+use Demo\Chat\Database\DbChatContext;
 use Demo\Chat\Hilos;
 use Demo\Chat\Hilos\Database\Item\User;
 use Demo\Chat\Hilos\Runtime\State\Item\Connection as StateConnection;
@@ -47,7 +48,7 @@ final class Connection extends RtItem
             StateConnection::acceptKey => $state->getAcceptKey(),
             StateConnection::userId => $state->getUserId(),
             StateConnection::connectedAt => $state->getConnectedAt(),
-            Hilos::user => Hilos::$db->users[$state->getUserId()] ?? null,
+            DbChatContext::user => Hilos::$db->users[$state->getUserId()] ?? null,
             default => parent::__get($name),
         };
     }

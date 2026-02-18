@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Demo\Chat\Agents;
 
 use Demo\Chat\Constants\AgentType;
-use Demo\Chat\Hilos;
+use Demo\Chat\Database\DbChatContext;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
@@ -61,7 +61,7 @@ class BotAgent extends AbstractAgent
         Logger::logAgentStart($this->getId(), $this->getType());
 
         // Register this agent as truth source for bot collection (all keys)
-        TruthSourceRegistry::register(Hilos::bots, true, $this->getId());
+        TruthSourceRegistry::register(DbChatContext::bots, true, $this->getId());
     }
 
     /**
@@ -70,7 +70,7 @@ class BotAgent extends AbstractAgent
     public function onStop(): void
     {
         // Unregister as truth source
-        TruthSourceRegistry::unregister(Hilos::bots, $this->getId());
+        TruthSourceRegistry::unregister(DbChatContext::bots, $this->getId());
         
         Logger::logAgentStop($this->getId(), $this->getType());
     }

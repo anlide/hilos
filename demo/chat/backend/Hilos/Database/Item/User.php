@@ -5,6 +5,7 @@ namespace Demo\Chat\Hilos\Database\Item;
 use Demo\Chat\Database\Object\Item\User as ObjectUser;
 use Demo\Chat\Hilos;
 use Demo\Chat\Hilos\Runtime\Collection\Connections;
+use Demo\Chat\Hilos\Runtime\Context\RtChatContext;
 use Hilos\Hilos\Database\Item\DbItem;
 use RuntimeException;
 
@@ -48,7 +49,7 @@ final class User extends DbItem
             ObjectUser::name => $this->_object->name,
             ObjectUser::sessionToken => $this->_object->sessionToken,
             ObjectUser::lastActivity => $this->_object->lastActivity,
-            Hilos::connections => Hilos::$rt->connections->forUser($this->id),
+            RtChatContext::connections => Hilos::$rt->connections->forUser($this->id),
             default => parent::__get($name),
         };
     }

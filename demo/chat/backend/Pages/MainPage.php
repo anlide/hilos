@@ -11,6 +11,7 @@ use Demo\Chat\Core\Page\AbstractChatPage;
 use Demo\Chat\Core\Page\DTO\FileActionDTO;
 use Demo\Chat\Core\Page\DTO\MessageActionDTO;
 use Demo\Chat\Core\Router\DTO\ChatEventSignalDTO;
+use Demo\Chat\Database\DbChatContext;
 use Demo\Chat\Hilos;
 use Demo\Chat\Hilos\Database\Collection\Events;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
@@ -47,8 +48,8 @@ class MainPage extends AbstractChatPage
             new ChatEventSignalDTO(
                 new EntitiesChangesDTO(
                     full: [
-                        Hilos::users => Hilos::$rt->connections->relevantUsers,
-                        Hilos::events => Hilos::$db->events,
+                        DbChatContext::users => Hilos::$rt->connections->relevantUsers,
+                        DbChatContext::events => Hilos::$db->events,
                     ],
                 ),
             ),
@@ -114,7 +115,7 @@ class MainPage extends AbstractChatPage
         $event = Hilos::$db->events->actions->add(ChatEventType::MESSAGE_SENT->value, $userId, ['message' => $dto->content]);
         $this->getChatAgent()->sendToAllUsers(
             ChatSignalConstants::NEW_EVENT,
-            new ChatEventSignalDTO(new EntitiesChangesDTO(full: [Hilos::events => Events::fromSingleItem($event)])),
+            new ChatEventSignalDTO(new EntitiesChangesDTO(full: [DbChatContext::events => Events::fromSingleItem($event)])),
         );
     }
 
@@ -144,7 +145,7 @@ class MainPage extends AbstractChatPage
         ]);
         $this->getChatAgent()->sendToAllUsers(
             ChatSignalConstants::NEW_EVENT,
-            new ChatEventSignalDTO(new EntitiesChangesDTO(full: [Hilos::events => Events::fromSingleItem($event)])),
+            new ChatEventSignalDTO(new EntitiesChangesDTO(full: [DbChatContext::events => Events::fromSingleItem($event)])),
         );
     }
 }

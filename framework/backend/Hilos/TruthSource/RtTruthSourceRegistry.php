@@ -18,7 +18,7 @@ use Hilos\Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedExcept
  *   // In Agent::onStop()
  *   RtTruthSourceRegistry::unregisterAgent($this->getId());
  *
- *   // In RtActionsBase (automatic check)
+ *   // In RtActions (automatic check)
  *   RtTruthSourceRegistry::checkCanWrite('connections');
  */
 class RtTruthSourceRegistry extends AbstractTruthSourceRegistry

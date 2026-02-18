@@ -4,7 +4,7 @@ namespace Demo\Chat\Database\Object\Collection;
 
 use ArrayAccess;
 use Countable;
-use Demo\Chat\Hilos;
+use Demo\Chat\Database\DbChatContext;
 use Demo\Chat\Database\Entity\Item\User as EntityUser;
 use Demo\Chat\Database\Entity\Collection\Users as EntityUsers;
 use Demo\Chat\Database\Object\Item\User as ObjectUser;
@@ -100,7 +100,7 @@ final class Users extends Objects implements Iterator, ArrayAccess, Countable
 
     public function getCollectionKey(): string
     {
-        return Hilos::users;
+        return DbChatContext::users;
     }
 
     public function findBySession(string $sessionToken): ?ObjectUser

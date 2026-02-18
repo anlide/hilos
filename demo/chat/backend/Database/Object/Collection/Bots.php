@@ -6,8 +6,8 @@ use ArrayAccess;
 use Countable;
 use Demo\Chat\Database\Entity\Collection\Bots as EntityBots;
 use Demo\Chat\Database\Entity\Item\Bot as EntityBot;
+use Demo\Chat\Database\DbChatContext;
 use Demo\Chat\Database\Object\Item\Bot as ObjectBot;
-use Demo\Chat\Hilos;
 use Hilos\Database\Database;
 use Hilos\Database\Object\Objects;
 use Iterator;
@@ -45,7 +45,7 @@ final class Bots extends Objects implements Iterator, ArrayAccess, Countable
 
     public function getCollectionKey(): string
     {
-        return Hilos::bots;
+        return DbChatContext::bots;
     }
 
     public function current(): ?ObjectBot

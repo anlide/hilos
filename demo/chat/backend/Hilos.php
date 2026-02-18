@@ -5,10 +5,11 @@ declare(strict_types=1);
 namespace Demo\Chat;
 
 use Demo\Chat\Database\DbChatContext;
-use Demo\Chat\Hilos\Runtime\Context\ChatRuntime;
+use Demo\Chat\Hilos\Runtime\Context\RtChatContext;
 use Hilos\Core\Table\DataSource\EntityTableDataSource;
 use Hilos\Database\Hilos\DbContext;
 use Hilos\Hilos\Runtime\Context\RtContext;
+use Hilos\Hilos\Runtime\Exception\Rt\StateCollectionNotFoundException;
 use Hilos\Hilos\Table\TableHub;
 
 /**
@@ -21,25 +22,30 @@ use Hilos\Hilos\Table\TableHub;
  */
 final class Hilos extends \Hilos\Hilos
 {
-    public const string connections = 'connections';
-    public const string user = 'user';
-
-    /** @see DbChatContext Collection names for $db (re-exported for TruthSourceRegistry, DTOs, etc.) */
-    public const string users = DbChatContext::users;
-    public const string events = DbChatContext::events;
-    public const string bots = DbChatContext::bots;
-    public const string moderators = DbChatContext::moderators;
-
+    /**
+     * Creates and returns a database context instance.
+     *
+     * @return DbContext The database context instance.
+     */
     protected static function createDb(): DbContext
     {
         return new DbChatContext();
     }
 
+    /**
+     * @return ?RtContext The runtime context instance, or null if runtime is not available.
+     * @throws StateCollectionNotFoundException if a required state collection is not found in the runtime.
+     */
     protected static function createRuntime(): ?RtContext
     {
-        return ChatRuntime::init();
+        return RtChatContext::init();
     }
 
+    /**
+     * Creates and registers a new table instance within a TableHub.
+     *
+     * @return ?TableHub The initialized TableHub instance, or null on failure.
+     */
     protected static function createTable(): ?TableHub
     {
         $table = new TableHub();

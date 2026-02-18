@@ -11,9 +11,7 @@ use Hilos\Hilos\Runtime\Context\RtContext;
 use Hilos\Hilos\Runtime\Exception\Rt\StateCollectionNotFoundException;
 
 /**
- * ChatRuntime - application-specific runtime data access
- *
- * Extends framework runtime context to provide chat-specific runtime collections.
+ * RtChatContext - chat runtime context (runtime data access for the chat app).
  *
  * Available collections:
  *   - connections: Active WebSocket connections (acceptKey → userId mapping)
@@ -24,7 +22,7 @@ use Hilos\Hilos\Runtime\Exception\Rt\StateCollectionNotFoundException;
  *
  * @property-read Connections $connections Active connections collection
  */
-final class ChatRuntime extends RtContext
+final class RtChatContext extends RtContext
 {
     public const string connections = 'connections';
 

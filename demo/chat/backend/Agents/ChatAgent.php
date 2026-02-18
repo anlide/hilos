@@ -10,10 +10,11 @@ use Demo\Chat\Constants\ChatEventType;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\HttpHeaders;
 use Demo\Chat\Core\Router\DTO\ChatEventSignalDTO;
+use Demo\Chat\Database\DbChatContext;
 use Demo\Chat\Hilos;
 use Demo\Chat\Hilos\Database\Collection\Events;
 use Demo\Chat\Hilos\Database\Collection\Users;
-use Demo\Chat\Hilos\Runtime\Context\ChatRuntime;
+use Demo\Chat\Hilos\Runtime\Context\RtChatContext;
 use Demo\Chat\Socket\WebSocket\DTO\HandshakeResponseSignalData;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Router\DTO\EntitiesChangesDTO;
@@ -74,11 +75,11 @@ class ChatAgent extends AbstractAgent
     public function onStart(): void
     {
         // Register this agent as truth source for database tables (all keys)
-        TruthSourceRegistry::register(Hilos::events, true, $this->getId());
-        TruthSourceRegistry::register(Hilos::users, true, $this->getId());
+        TruthSourceRegistry::register(DbChatContext::events, true, $this->getId());
+        TruthSourceRegistry::register(DbChatContext::users, true, $this->getId());
 
         // Register this agent as truth source for runtime collections (all keys)
-        RtTruthSourceRegistry::register(ChatRuntime::connections, true, $this->getId());
+        RtTruthSourceRegistry::register(RtChatContext::connections, true, $this->getId());
 
         // Add chat started event to history (system event with userId = null)
         Hilos::$db->events->actions->add(ChatEventType::CHAT_STARTED->value);
@@ -110,7 +111,7 @@ class ChatAgent extends AbstractAgent
         $hadNoConnections = count(Hilos::$rt->connections->forUser($user->id)) === 0;
         Hilos::$rt->connections->actions->register($data->acceptKey, $user->id);
 
-        $userEntities = new EntitiesChangesDTO(full: [Hilos::users => Users::fromSingleItem($user)]);
+        $userEntities = new EntitiesChangesDTO(full: [DbChatContext::users => Users::fromSingleItem($user)]);
         $newEvents = Events::initEmpty();
         if ($wasRegisteredNow) {
             $newEvents->add(Hilos::$db->events->actions->add(ChatEventType::USER_REGISTERED->value, $user->id));
@@ -122,7 +123,7 @@ class ChatAgent extends AbstractAgent
         if (count($newEvents) > 0) {
             $this->sendToAllUsers(
                 ChatSignalConstants::NEW_EVENT,
-                new ChatEventSignalDTO($userEntities->withFullAppended(Hilos::events, $newEvents)),
+                new ChatEventSignalDTO($userEntities->withFullAppended(DbChatContext::events, $newEvents)),
                 $data->acceptKey,
             );
         }
@@ -167,8 +168,8 @@ class ChatAgent extends AbstractAgent
                 new ChatEventSignalDTO(
                     new EntitiesChangesDTO(
                         full: [
-                            Hilos::users => Users::fromSingleItem($user),
-                            Hilos::events => Events::fromSingleItem($event),
+                            DbChatContext::users => Users::fromSingleItem($user),
+                            DbChatContext::events => Events::fromSingleItem($event),
                         ],
                     ),
                 ),
@@ -231,8 +232,8 @@ class ChatAgent extends AbstractAgent
                 ChatSignalConstants::NEW_EVENT,
                 new ChatEventSignalDTO(
                     new EntitiesChangesDTO(
-                        full: [Hilos::events => Events::fromSingleItem($event)],
-                        replaceFullKeys: [Hilos::events],
+                        full: [DbChatContext::events => Events::fromSingleItem($event)],
+                        replaceFullKeys: [DbChatContext::events],
                     ),
                 ),
             );

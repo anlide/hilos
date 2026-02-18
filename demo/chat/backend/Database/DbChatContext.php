@@ -32,6 +32,11 @@ class DbChatContext extends DbContext
     public const string bots = 'bots';
     public const string moderators = 'moderators';
 
+    public const string user = 'user';
+    public const string event = 'event';
+    public const string bot = 'bot';
+    public const string moderator = 'moderator';
+
     /**
      * @throws ObjectCollectionNotFoundException
      * @throws DatabaseException
