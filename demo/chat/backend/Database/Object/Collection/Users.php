@@ -33,24 +33,16 @@ final class Users extends Objects
             return null;
         }
 
-        $entityUsers = EntityUser::get([EntityUser::session_token => $sessionToken]);
-        $entityUser = $entityUsers->first();
+        $entityUser = EntityUser::get([EntityUser::session_token => $sessionToken])->first();
 
         if ($entityUser === null) {
             return null;
         }
 
-        $userId = $entityUser->id;
-        if ($userId !== null && isset($this->objects[$userId])) {
-            return $this->objects[$userId];
+        if (!isset($this->objects[$entityUser->id])) {
+            $this->objects[$entityUser->id] = ObjectUser::fromEntity($entityUser);
         }
 
-        $objectUser = ObjectUser::fromEntity($entityUser);
-
-        if ($userId !== null) {
-            $this->objects[$userId] = $objectUser;
-        }
-
-        return $objectUser;
+        return $this->objects[$entityUser->id];
     }
 }
