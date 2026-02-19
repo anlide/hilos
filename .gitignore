@@ -10,6 +10,7 @@ node_modules/
 # IDE
 .vscode/
 .idea/
+.cursor/
 
 # OS
 .DS_Store

@@ -12,7 +12,7 @@ use Hilos\Hilos\TruthSource\Exception\WriteNotAllowedException;
 use RuntimeException;
 
 /**
- * Events Object Collection
+ * Chat events object collection.
  *
  * @extends Objects<ObjectEvent>
  */
@@ -22,12 +22,23 @@ final class Events extends Objects
     public const string ENTITY_COLLECTION_CLASS = EntityEvents::class;
     public const string COLLECTION_KEY = DbChatContext::events;
 
+    /**
+     * Deletes all events from database and clears the collection.
+     */
     public function deleteAll(): void
     {
         Database::sql("DELETE FROM `event` WHERE true;");
         $this->objects = [];
     }
 
+    /**
+     * Adds new event to collection and persists to database.
+     *
+     * @param string $type Event type
+     * @param ?int $userId User ID (optional)
+     * @param ?array $data Additional event data (optional)
+     * @return ObjectEvent Created event object
+     */
     public function add(string $type, ?int $userId = null, ?array $data = null): ObjectEvent
     {
         if ($this->_lazyStrategy === Objects::LAZY_STRATEGY_NONE) {

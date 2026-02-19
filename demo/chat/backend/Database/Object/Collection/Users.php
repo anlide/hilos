@@ -9,7 +9,7 @@ use Demo\Chat\Database\Object\Item\User as ObjectUser;
 use Hilos\Database\Object\Objects;
 
 /**
- * Users Object Collection
+ * Chat users object collection.
  *
  * @extends Objects<ObjectUser>
  */
@@ -19,6 +19,12 @@ final class Users extends Objects
     public const string ENTITY_COLLECTION_CLASS = EntityUsers::class;
     public const string COLLECTION_KEY = DbChatContext::users;
 
+    /**
+     * Finds user by session token.
+     *
+     * @param string $sessionToken User session token
+     * @return ?ObjectUser User object or null if not found
+     */
     public function findBySession(string $sessionToken): ?ObjectUser
     {
         if (empty($sessionToken)) {
