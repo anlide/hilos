@@ -10,18 +10,17 @@ use Hilos\Database\SqlParam;
 use Hilos\Database\SqlParamCollection;
 
 /**
- * Base Entity class
- * Represents a row in a database table
+ * Base Entity class — represents a row in a database table.
  *
  * Child classes must define:
- * - const string _table - table name
- * - const string|array _primary - primary key column(s)
- * - const array _columns - all column names
- * - const array _types - column types mapping
- * - const array _foreign - foreign key relationships (optional)
- * - const array _indexes - index definitions (optional)
+ * - const string _table — table name
+ * - const string|array _primary — primary key column(s)
+ * - const array _columns — all column names
+ * - const array _types — column types mapping
+ * - const array _foreign — foreign key relationships (optional)
+ * - const array _indexes — index definitions (optional)
  *
- * @property bool $_related
+ * @property-read bool $_related
  */
 abstract class Entity
 {
@@ -62,10 +61,10 @@ abstract class Entity
     }
 
     /**
-     * Save entity to database
+     * Save entity to database.
      *
-     * @param array $columns Specific columns to save (empty = all changed columns)
-     * @return bool Success status
+     * @param string[] $columns Specific columns to save (empty = all changed columns)
+     * @return bool Always true on success
      * @throws DatabaseException
      */
     public function save(array $columns = []): bool
@@ -79,7 +78,10 @@ abstract class Entity
     }
 
     /**
-     * Save only changed columns (diff save)
+     * Save only columns that differ from the original entity state.
+     *
+     * @param Entity $originalEntity Entity state to compare against
+     * @throws DatabaseException
      */
     public function saveDiff(Entity $originalEntity): bool
     {
@@ -100,7 +102,8 @@ abstract class Entity
     }
 
     /**
-     * Insert new row
+     * Insert new row and update auto-increment primary key.
+     *
      * @throws DatabaseException
      */
     private function saveInsert(): void
@@ -141,7 +144,9 @@ abstract class Entity
     }
 
     /**
-     * Update existing row
+     * Update existing row.
+     *
+     * @param string[] $columns Columns to update (empty = all non-primary columns)
      * @throws DatabaseException
      */
     private function saveUpdate(array $columns = []): void
@@ -180,8 +185,9 @@ abstract class Entity
     }
 
     /**
-     * Delete entity from database
-     * @throws DatabaseException
+     * Delete entity from database.
+     *
+     * @throws DatabaseException If entity is not related to a database row
      */
     public function delete(): void
     {
@@ -210,7 +216,9 @@ abstract class Entity
     }
 
     /**
-     * Set entity data from database row
+     * Set entity data from database row and mark as related.
+     *
+     * @param array<string, mixed> $row Database row data
      */
     protected function setRelatedData(array $row): void
     {
@@ -227,7 +235,7 @@ abstract class Entity
     }
 
     /**
-     * Check if entity is related to database
+     * Check if entity is persisted to a database row.
      */
     public function isRelated(): bool
     {
@@ -235,7 +243,7 @@ abstract class Entity
     }
 
     /**
-     * Mark as related (for external operations)
+     * Mark entity as related and snapshot current data as original.
      */
     public function flushRelated(): void
     {
@@ -244,7 +252,13 @@ abstract class Entity
     }
 
     /**
-     * Get entities with filters
+     * Build and execute SELECT query with optional filters and ordering.
+     *
+     * @param class-string<static> $class Entity class to query
+     * @param array<string, mixed>|string $filters Column => value pairs or raw WHERE clause
+     * @param array<int, mixed>|string $filtersParam Bound parameters for raw WHERE clause
+     * @param array<string, string>|string $orderBy Column => direction pairs or raw ORDER BY clause
+     * @return EntityCollection
      * @throws DatabaseException
      */
     private static function getEntities(string $class, array|string $filters = [], array|string $filtersParam = [], array|string $orderBy = []): EntityCollection
@@ -304,7 +318,15 @@ abstract class Entity
     }
 
     /**
-     * Get entities with filters
+     * Get entities matching the given filters.
+     *
+     * Child classes should override the return type via @method PHPDoc
+     * to return their typed EntityCollection subclass.
+     *
+     * @param array<string, mixed>|string $filters Column => value pairs or raw WHERE clause
+     * @param array<int, mixed>|string $filtersParam Bound parameters for raw WHERE clause
+     * @param array<string, string>|string $orderBy Column => direction pairs or raw ORDER BY clause
+     * @return EntityCollection
      * @throws DatabaseException
      */
     public static function get(array|string $filters = [], array|string $filtersParam = [], array|string $orderBy = []): EntityCollection
@@ -313,7 +335,10 @@ abstract class Entity
     }
 
     /**
-     * Get entity by primary key
+     * Get entity by primary key value.
+     *
+     * @param mixed $id Primary key value
+     * @return ?static Entity or null if not found
      * @throws DatabaseException
      */
     public static function getById(mixed $id): ?static
@@ -324,7 +349,7 @@ abstract class Entity
     }
 
     /**
-     * Get empty entity (not related to database)
+     * Create a new entity instance not related to any database row.
      */
     public static function getEmpty(): static
     {
@@ -332,7 +357,9 @@ abstract class Entity
     }
 
     /**
-     * Get all entities
+     * Get all entities from the table.
+     *
+     * @return EntityCollection
      * @throws DatabaseException
      */
     public static function getAll(): EntityCollection
@@ -354,8 +381,9 @@ abstract class Entity
     }
 
     /**
-     * Magic getter for accessing properties
-     * @throws DatabaseException
+     * @param string $name Property name
+     * @return mixed Property value
+     * @throws DatabaseException If property does not exist
      */
     public function __get(string $name): mixed
     {
@@ -371,7 +399,9 @@ abstract class Entity
     }
 
     /**
-     * Convert entity to array
+     * Convert entity to associative array of column => value pairs.
+     *
+     * @return array<string, mixed>
      */
     public function toArray(): array
     {

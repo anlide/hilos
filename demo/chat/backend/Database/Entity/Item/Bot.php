@@ -2,12 +2,16 @@
 
 namespace Demo\Chat\Database\Entity\Item;
 
+use Demo\Chat\Database\Entity\Collection\Bots as EntityBots;
 use Hilos\Database\Entity\Item\Entity;
 use Hilos\Database\PhpType;
 
 /**
  * Bot Entity
  * Auto-generated from table: bot
+ *
+ * @method static EntityBots get(array|string $filters = [], array|string $filtersParam = [], array|string $orderBy = [])
+ * @method static EntityBots getAll()
  */
 final class Bot extends Entity
 {

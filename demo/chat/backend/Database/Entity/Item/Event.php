@@ -2,12 +2,16 @@
 
 namespace Demo\Chat\Database\Entity\Item;
 
+use Demo\Chat\Database\Entity\Collection\Events as EntityEvents;
 use Hilos\Database\Entity\Item\Entity;
 use Hilos\Database\PhpType;
 
 /**
  * Event Entity
  * Auto-generated from table: event
+ *
+ * @method static EntityEvents get(array|string $filters = [], array|string $filtersParam = [], array|string $orderBy = [])
+ * @method static EntityEvents getAll()
  */
 final class Event extends Entity
 {

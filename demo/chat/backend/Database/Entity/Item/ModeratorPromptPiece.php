@@ -2,12 +2,16 @@
 
 namespace Demo\Chat\Database\Entity\Item;
 
+use Demo\Chat\Database\Entity\Collection\ModeratorPromptPieces as EntityModeratorPromptPieces;
 use Hilos\Database\Entity\Item\Entity;
 use Hilos\Database\PhpType;
 
 /**
  * ModeratorPromptPiece Entity
  * Auto-generated from table: moderator_prompt_piece
+ *
+ * @method static EntityModeratorPromptPieces get(array|string $filters = [], array|string $filtersParam = [], array|string $orderBy = [])
+ * @method static EntityModeratorPromptPieces getAll()
  */
 final class ModeratorPromptPiece extends Entity
 {

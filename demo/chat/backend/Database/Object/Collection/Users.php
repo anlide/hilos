@@ -3,8 +3,8 @@
 namespace Demo\Chat\Database\Object\Collection;
 
 use Demo\Chat\Database\DbChatContext;
-use Demo\Chat\Database\Entity\Item\User as EntityUser;
 use Demo\Chat\Database\Entity\Collection\Users as EntityUsers;
+use Demo\Chat\Database\Entity\Item\User as EntityUser;
 use Demo\Chat\Database\Object\Item\User as ObjectUser;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Objects;
@@ -33,8 +33,7 @@ final class Users extends Objects
             return null;
         }
 
-        $entityCollection = EntityUser::get(['session_token' => $sessionToken]);
-        $entityUsers = EntityUsers::fromEntityCollection($entityCollection);
+        $entityUsers = EntityUser::get([EntityUser::session_token => $sessionToken]);
         $entityUser = $entityUsers->first();
 
         if ($entityUser === null) {

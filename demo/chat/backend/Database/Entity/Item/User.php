@@ -2,6 +2,7 @@
 
 namespace Demo\Chat\Database\Entity\Item;
 
+use Demo\Chat\Database\Entity\Collection\Users as EntityUsers;
 use Hilos\Database\Entity\Item\Entity;
 use Hilos\Database\PhpType;
 
@@ -10,6 +11,9 @@ use Hilos\Database\PhpType;
  * Auto-generated from table: user
  *
  * @object-exclude password_hash, salt
+ *
+ * @method static EntityUsers get(array|string $filters = [], array|string $filtersParam = [], array|string $orderBy = [])
+ * @method static EntityUsers getAll()
  */
 final class User extends Entity
 {
