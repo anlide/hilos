@@ -156,7 +156,6 @@ abstract class DbActions
      * @throws ObjectCollectionNullException If ObjectCollection is null
      * @throws UnknownLazyStrategyException If unknown lazy loading strategy
      * @throws WriteNotAllowedException If write is not allowed
-     * @throws TableNameUndeterminedException If table name cannot be determined
      * @throws DatabaseException
      */
     protected function ensureCanWrite(): void

@@ -6,6 +6,7 @@ use Demo\Chat\Database\DbChatContext;
 use Demo\Chat\Database\Entity\Item\User as EntityUser;
 use Demo\Chat\Database\Entity\Collection\Users as EntityUsers;
 use Demo\Chat\Database\Object\Item\User as ObjectUser;
+use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Objects;
 
 /**
@@ -24,6 +25,7 @@ final class Users extends Objects
      *
      * @param string $sessionToken User session token
      * @return ?ObjectUser User object or null if not found
+     * @throws DatabaseException
      */
     public function findBySession(string $sessionToken): ?ObjectUser
     {

@@ -451,6 +451,15 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
     }
 
     /**
+     * Deletes all rows from the table and clears the collection.
+     */
+    public function deleteAll(): void
+    {
+        Database::sql("DELETE FROM `" . $this->getTableName() . "` WHERE true;");
+        $this->objects = [];
+    }
+
+    /**
      * Get first object in collection
      *
      * @return ?T

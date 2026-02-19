@@ -29,56 +29,6 @@ final class User extends Object_
     public const string lastActivity = 'lastActivity';
 
     /**
-     * Returns a user by session token.
-     *
-     * @param string $sessionToken Session token to search for
-     * @return ?self User object or null if not found
-     * @throws DatabaseException
-     */
-    public static function getBySessionToken(string $sessionToken): ?self
-    {
-        if (empty($sessionToken)) {
-            return null;
-        }
-
-        $collection = EntityUser::get(['session_token' => $sessionToken]);
-        $entity = $collection->first();
-        return $entity !== null ? self::fromEntity($entity) : null;
-    }
-
-    /**
-     * Registers a new user with the given session token.
-     *
-     * @param string $sessionToken Session token (32 hex characters)
-     * @return self Registered user object
-     * @throws DatabaseException On invalid token format or if user with this token already exists
-     */
-    public static function register(string $sessionToken): self
-    {
-        if (strlen($sessionToken) !== 32 || !ctype_xdigit($sessionToken)) {
-            throw new DatabaseException("Invalid session token format. Expected 32 hex characters.");
-        }
-
-        $existingUser = self::getBySessionToken($sessionToken);
-        if ($existingUser !== null) {
-            throw new DatabaseException("User with session token already exists");
-        }
-
-        $user = self::create();
-        $user->entity->name = 'User' . mt_rand(1000, 9999);
-        $user->entity->session_token = $sessionToken;
-        $user->entity->last_activity = date('Y-m-d H:i:s');
-
-        try {
-            $user->sync();
-        } catch (DatabaseException $e) {
-            throw new DatabaseException("Failed to register user: " . $e->getMessage(), $e->getCode(), $e);
-        }
-
-        return $user;
-    }
-
-    /**
      * Returns the value of a user object property by name.
      *
      * @param string $property Property name (id, name, sessionToken, lastActivity)
