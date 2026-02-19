@@ -23,23 +23,17 @@ final class User extends Object_
 {
     public const string ENTITY_CLASS = EntityUser::class;
 
-    // Property name constants (camelCase for PHP)
     public const string id = 'id';
     public const string name = 'name';
     public const string sessionToken = 'sessionToken';
     public const string lastActivity = 'lastActivity';
 
     /**
-     * Load user by ID
-     */
-    public static function getById(int $id): ?self
-    {
-        $entity = EntityUser::getById($id);
-        return $entity !== null ? self::fromEntity($entity) : null;
-    }
-
-    /**
-     * Load user by session token
+     * Returns a user by session token.
+     *
+     * @param string $sessionToken Session token to search for
+     * @return ?self User object or null if not found
+     * @throws DatabaseException
      */
     public static function getBySessionToken(string $sessionToken): ?self
     {
@@ -53,33 +47,11 @@ final class User extends Object_
     }
 
     /**
-     * Login or register user by session token
+     * Registers a new user with the given session token.
      *
-     * @param string $sessionToken Session token (32 hex characters) or empty string
-     * @return self User object with valid session token
-     */
-    public static function loginOrRegister(string $sessionToken): self
-    {
-        if (!empty($sessionToken) && strlen($sessionToken) === 32) {
-            $user = self::getBySessionToken($sessionToken);
-
-            if ($user !== null) {
-                $user->updateActivity();
-                return $user;
-            }
-        }
-
-        $user = self::create();
-        $user->entity->name = 'User' . mt_rand(1000, 9999);
-        $user->entity->session_token = self::generateSessionToken();
-        $user->entity->last_activity = date('Y-m-d H:i:s');
-        $user->sync();
-
-        return $user;
-    }
-
-    /**
-     * Register new user
+     * @param string $sessionToken Session token (32 hex characters)
+     * @return self Registered user object
+     * @throws DatabaseException On invalid token format or if user with this token already exists
      */
     public static function register(string $sessionToken): self
     {
@@ -106,22 +78,13 @@ final class User extends Object_
         return $user;
     }
 
-    private static function generateSessionToken(): string
-    {
-        return bin2hex(random_bytes(16));
-    }
-
-    public function updateActivity(): void
-    {
-        $this->entity->last_activity = date('Y-m-d H:i:s');
-        $this->sync();
-    }
-
-    public function sync(): void
-    {
-        parent::sync();
-    }
-
+    /**
+     * Returns the value of a user object property by name.
+     *
+     * @param string $property Property name (id, name, sessionToken, lastActivity)
+     * @return mixed Property value or parent method result
+     * @throws DatabaseException
+     */
     public function __get(string $property): mixed
     {
         return match ($property) {
@@ -133,6 +96,13 @@ final class User extends Object_
         };
     }
 
+    /**
+     * Sets the value of a user object property.
+     *
+     * @param string $property Property name to set
+     * @param mixed $value New value (cast to appropriate type)
+     * @throws DatabaseException
+     */
     public function __set(string $property, mixed $value): void
     {
         match ($property) {
@@ -143,6 +113,11 @@ final class User extends Object_
         };
     }
 
+    /**
+     * Converts the user object to an associative array with all fields.
+     *
+     * @return array<string, mixed> Key => value array
+     */
     public function toArray(): array
     {
         return [

@@ -3,6 +3,7 @@
 namespace Demo\Chat\Database\Object\Item;
 
 use Demo\Chat\Database\Entity\Item\Bot as EntityBot;
+use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Item\Object_;
 
 /**
@@ -31,6 +32,13 @@ final class Bot extends Object_
     public const string personality = 'personality';
     public const string active = 'active';
 
+    /**
+     * Returns the value of a bot object property by name.
+     *
+     * @param string $property Property name (id, name, description, style, topics, personality, active)
+     * @return mixed Property value or parent method result
+     * @throws DatabaseException
+     */
     public function __get(string $property): mixed
     {
         return match ($property) {
@@ -45,6 +53,13 @@ final class Bot extends Object_
         };
     }
 
+    /**
+     * Sets the value of a bot object property.
+     *
+     * @param string $property Property name to set
+     * @param mixed $value New value (cast to appropriate type)
+     * @throws DatabaseException
+     */
     public function __set(string $property, mixed $value): void
     {
         match ($property) {
@@ -58,6 +73,11 @@ final class Bot extends Object_
         };
     }
 
+    /**
+     * Converts the bot object to an associative array with all fields.
+     *
+     * @return array<string, mixed> Key => value array
+     */
     public function toArray(): array
     {
         return [

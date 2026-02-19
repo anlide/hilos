@@ -3,6 +3,7 @@
 namespace Demo\Chat\Database\Object\Item;
 
 use Demo\Chat\Database\Entity\Item\ModeratorPromptPiece as EntityModeratorPromptPiece;
+use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Item\Object_;
 
 /**
@@ -23,6 +24,13 @@ final class ModeratorPromptPiece extends Object_
     public const string section = 'section';
     public const string promptPiece = 'promptPiece';
 
+    /**
+     * Returns the value of a moderator prompt piece property by name.
+     *
+     * @param string $property Property name (id, section, promptPiece)
+     * @return mixed Property value or parent method result
+     * @throws DatabaseException
+     */
     public function __get(string $property): mixed
     {
         return match ($property) {
@@ -33,6 +41,13 @@ final class ModeratorPromptPiece extends Object_
         };
     }
 
+    /**
+     * Sets the value of a moderator prompt piece property.
+     *
+     * @param string $property Property name to set
+     * @param mixed $value New value (cast to appropriate type)
+     * @throws DatabaseException
+     */
     public function __set(string $property, mixed $value): void
     {
         match ($property) {
@@ -42,6 +57,11 @@ final class ModeratorPromptPiece extends Object_
         };
     }
 
+    /**
+     * Converts the moderator prompt piece object to an associative array with all fields.
+     *
+     * @return array<string, mixed> Key => value array
+     */
     public function toArray(): array
     {
         return [
