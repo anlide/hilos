@@ -254,16 +254,15 @@ abstract class Entity
     /**
      * Build and execute SELECT query with optional filters and ordering.
      *
-     * @param class-string<static> $class Entity class to query
      * @param array<string, mixed>|string $filters Column => value pairs or raw WHERE clause
      * @param array<int, mixed>|string $filtersParam Bound parameters for raw WHERE clause
      * @param array<string, string>|string $orderBy Column => direction pairs or raw ORDER BY clause
      * @return EntityCollection
      * @throws DatabaseException
      */
-    private static function getEntities(string $class, array|string $filters = [], array|string $filtersParam = [], array|string $orderBy = []): EntityCollection
+    private static function getEntities(array|string $filters = [], array|string $filtersParam = [], array|string $orderBy = []): EntityCollection
     {
-        $table = $class::_table;
+        $table = static::class::_table;
 
         // Build WHERE clause
         $whereClause = '';
@@ -313,8 +312,8 @@ abstract class Entity
             return EntityCollection::empty();
         }
 
-        $primaryKey = is_array($class::_primary) ? $class::_primary[0] : $class::_primary;
-        return $firstResultSet->toEntityCollection($class, $primaryKey);
+        $primaryKey = is_array(static::class::_primary) ? static::class::_primary[0] : static::class::_primary;
+        return $firstResultSet->toEntityCollection(static::class, $primaryKey);
     }
 
     /**
@@ -331,7 +330,7 @@ abstract class Entity
      */
     public static function get(array|string $filters = [], array|string $filtersParam = [], array|string $orderBy = []): EntityCollection
     {
-        return self::getEntities(static::class, $filters, $filtersParam, $orderBy);
+        return self::getEntities($filters, $filtersParam, $orderBy);
     }
 
     /**
