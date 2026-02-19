@@ -45,7 +45,6 @@ class AdminUsersPage extends AbstractChatPage
     public function onSubscribe(string $acceptKey): void
     {
         $tablesPayload = TablePayloadBuilder::buildFull([DbChatContext::users]);
-        Logger::logAgentInfo('chat', json_encode($tablesPayload->toArray()));
 
         $this->getChatAgent()->sendToUser(
             ChatSignalConstants::SUBSCRIPTION_PAGE_ADMIN_USERS,

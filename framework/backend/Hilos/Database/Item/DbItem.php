@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Hilos\Database\Item;
 
+use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 use Hilos\Hilos\Database\Exception\Item\CloneException;
 use Hilos\Hilos\Database\Exception\Item\PropertyNotFoundException;
@@ -103,15 +104,29 @@ abstract class DbItem
     }
 
     /**
-     * Convert to array
-     * Must be implemented by child classes
+     * Convert to array.
+     * Child classes override to add/modify fields (e.g. User adds presence for frontend).
      *
      * @param bool $withId Include ID fields
      * @param bool $idAsIndex Use ID as array index
      * @param bool $withBridges Include bridge/junction table data
      * @param bool $withCalculation Include calculated fields
-     * @param bool $toFrontend When true, exclude fields that must not be sent to frontend (e.g. sessionToken)
-     * @return array
+     * @param bool $toFrontend When true, exclude fields that must not be sent to frontend (e.g. sessionToken). ID is always included when true.
+     * @return array<string, mixed>
      */
-    abstract public function toArray(bool $withId = true, bool $idAsIndex = true, bool $withBridges = false, bool $withCalculation = false, bool $toFrontend = false): array;
+    public function toArray(bool $withId = true, bool $idAsIndex = true, bool $withBridges = false, bool $withCalculation = false, bool $toFrontend = false): array
+    {
+        $result = $this->_object->toArray();
+        $includeId = $withId || $toFrontend;
+
+        if (!$includeId) {
+            foreach ($this->_object->getPrimaryKeyArrayKeys() as $key) {
+                if (array_key_exists($key, $result)) {
+                    unset($result[$key]);
+                }
+            }
+        }
+
+        return $result;
+    }
 }

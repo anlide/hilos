@@ -155,14 +155,12 @@ abstract class DbActions
      * Uses Objects::getTableName() or creates temporary object if collection is empty
      *
      * @return string Table name
-     * @throws ObjectCollectionNullException If ObjectCollection is null
      * @throws TableNameUndeterminedException If table name cannot be determined
      */
     protected function getTableName(): string
     {
-        $objectCollection = $this->objectCollection;
         try {
-            return $objectCollection->getTableName();
+            return $this->objectCollection->getTableName();
         } catch (\Exception $e) {
             throw new TableNameUndeterminedException("Cannot determine table name: collection is empty. Override getTableName() in Actions class if needed.", 0, $e);
         }
@@ -215,7 +213,7 @@ abstract class DbActions
      * @throws DatabaseException
      * @throws TableNameUndeterminedException
      */
-    protected function addObjectToCollection(Object_ &$object): void
+    protected function addObjectToCollection(Object_ $object): void
     {
         $idString = $object->getIdString();
         if (isset($this->objectCollection[$idString])) {

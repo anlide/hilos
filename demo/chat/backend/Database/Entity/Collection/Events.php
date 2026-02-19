@@ -2,15 +2,17 @@
 
 namespace Demo\Chat\Database\Entity\Collection;
 
+use ArrayAccess;
 use Demo\Chat\Database\Entity\Item\Event as EntityEvent;
 use Hilos\Database\Entity\Collection\EntityCollection;
+use Iterator;
 
 /**
  * Events Entity Collection
  *
  * @extends EntityCollection<EntityEvent>
- * @implements \Iterator<int|string, EntityEvent>
- * @implements \ArrayAccess<int|string, EntityEvent>
+ * @implements Iterator<int|string, EntityEvent>
+ * @implements ArrayAccess<int|string, EntityEvent>
  */
 final class Events extends EntityCollection
 {

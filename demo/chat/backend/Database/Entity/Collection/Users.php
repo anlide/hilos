@@ -2,15 +2,17 @@
 
 namespace Demo\Chat\Database\Entity\Collection;
 
+use ArrayAccess;
 use Demo\Chat\Database\Entity\Item\User as EntityUser;
 use Hilos\Database\Entity\Collection\EntityCollection;
+use Iterator;
 
 /**
  * Users Entity Collection
  *
  * @extends EntityCollection<EntityUser>
- * @implements \Iterator<int|string, EntityUser>
- * @implements \ArrayAccess<int|string, EntityUser>
+ * @implements Iterator<int|string, EntityUser>
+ * @implements ArrayAccess<int|string, EntityUser>
  */
 final class Users extends EntityCollection
 {

@@ -6,8 +6,8 @@ use Demo\Chat\Database\Object\Item\User as ObjectUser;
 use Demo\Chat\Hilos;
 use Demo\Chat\Hilos\Runtime\Collection\Connections;
 use Demo\Chat\Hilos\Runtime\Context\RtChatContext;
+use Hilos\Hilos\Database\Exception\Item\PropertyNotFoundException;
 use Hilos\Hilos\Database\Item\DbItem;
-use RuntimeException;
 
 /**
  * User Db item - high-level abstraction with lazy loading and relationships.
@@ -16,6 +16,7 @@ use RuntimeException;
  * Object instances are stored in ObjectCollection in Hilos.
  *
  * @extends DbItem<ObjectUser>
+ * @method __construct(ObjectUser &$objectUser)
  *
  * @property-read ?int $id User ID (primary key)
  * @property-read string $name User name
@@ -25,22 +26,16 @@ use RuntimeException;
  */
 final class User extends DbItem
 {
-    /**
-     * Creates User from ObjectUser instance.
-     *
-     * @param ObjectUser $objectUser ObjectUser instance (reference)
-     */
-    public function __construct(ObjectUser &$objectUser)
-    {
-        parent::__construct($objectUser);
-    }
+    private const string PRESENCE_KEY = 'presence';
+    private const string PRESENCE_ONLINE = 'online';
+    private const string PRESENCE_OFFLINE = 'offline';
 
     /**
      * Property getter (read-only access). Supports lazy loading of related collections.
      *
      * @param string $name Property name
      * @return int|string|Connections|null Property value or Connections for relationships
-     * @throws RuntimeException If property does not exist
+     * @throws PropertyNotFoundException If property does not exist
      */
     public function __get(string $name): int|string|Connections|null
     {
@@ -55,32 +50,17 @@ final class User extends DbItem
     }
 
     /**
-     * Convert to array representation.
-     *
-     * @param bool $withId Include ID field in result
-     * @param bool $idAsIndex Use ID as array key
-     * @param bool $withBridges Include bridge/junction table data
-     * @param bool $withCalculation Include calculated fields
-     * @param bool $toFrontend When true, exclude sessionToken (must not be sent to frontend)
-     * @return array<string, mixed> Array representation
+     * {@inheritDoc}
      */
     public function toArray(bool $withId = true, bool $idAsIndex = true, bool $withBridges = false, bool $withCalculation = false, bool $toFrontend = false): array
     {
-        $data = [];
+        $result = parent::toArray($withId, $idAsIndex, $withBridges, $withCalculation, $toFrontend);
 
-        if ($withId) {
-            $data[ObjectUser::id] = $this->_object->id;
-        }
-
-        $data[ObjectUser::name] = $this->_object->name;
-        if (!$toFrontend) {
-            $data[ObjectUser::sessionToken] = $this->_object->sessionToken;
-        }
-        $data[ObjectUser::lastActivity] = $this->_object->lastActivity;
         if ($toFrontend) {
-            $data['presence'] = count($this->connections) > 0 ? 'online' : 'offline';
+            unset($result[ObjectUser::sessionToken]);
+            $result[self::PRESENCE_KEY] = count($this->connections) > 0 ? self::PRESENCE_ONLINE : self::PRESENCE_OFFLINE;
         }
 
-        return $data;
+        return $result;
     }
 }

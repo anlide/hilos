@@ -4,6 +4,7 @@ namespace Hilos\Database\Object\Item;
 
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Item\Entity;
+use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 
 /**
  * Base Object class
@@ -44,6 +45,7 @@ abstract class Object_
      * Create new empty object
      *
      * @return static
+     * @throws DatabaseException
      */
     public static function create(): static
     {
@@ -183,21 +185,34 @@ abstract class Object_
     }
 
     /**
+     * Get primary key column names as they appear in toArray() result.
+     * Uses Entity::_primary. For simple keys matches array keys; for composite keys
+     * child classes may override if Entity uses different naming (e.g. snake_case).
+     *
+     * @return array<string>
+     */
+    public function getPrimaryKeyArrayKeys(): array
+    {
+        $primaryKeys = is_array($this->entity::_primary) ? $this->entity::_primary : [$this->entity::_primary];
+        return $primaryKeys;
+    }
+
+    /**
      * Get ID as string (for use as array key)
      * Supports composite keys by returning string representation (joined with ':')
      * Uses Entity::_primary to determine primary key column(s)
      *
      * @return string ID as string (for simple keys) or composite key representation
-     * @throws DatabaseException If primary key is null
+     * @throws ObjectGetIdStringNotImplementedException If ENTITY_CLASS does not implement getIdString() or primary key is null
      */
     public function getIdString(): string
     {
-        $primaryKeys = is_array($this->entity::_primary) ? $this->entity::_primary : [$this->entity::_primary];
+        $primaryKeys = $this->getPrimaryKeyArrayKeys();
         $parts = [];
         foreach ($primaryKeys as $column) {
             $value = $this->entity->$column;
             if ($value === null) {
-                throw new DatabaseException("Cannot get ID string: " . static::class . " primary key is null");
+                throw new ObjectGetIdStringNotImplementedException("Cannot get ID string: " . static::class . " primary key is null");
             }
             $parts[] = (string)$value;
         }
