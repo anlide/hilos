@@ -13,7 +13,8 @@ use InvalidArgumentException;
 /**
  * Users Db collection - collection of User items with additional filtering methods.
  *
- * @extends DbCollection<User>
+ * @extends DbCollection<User, ObjectUsers>
+ * @method ObjectUsers|null getObjectCollection()
  * @property-read UsersActions $actions Actions for write operations
  */
 final class Users extends DbCollection

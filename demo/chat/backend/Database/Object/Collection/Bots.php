@@ -11,6 +11,11 @@ use Hilos\Database\Object\Objects;
  * Bots Object Collection
  *
  * @extends Objects<ObjectBot>
+ * @method ObjectBot|null current()
+ * @method ObjectBot|null first()
+ * @method ObjectBot|null last()
+ * @method ObjectBot|null get(int|string $key)
+ * @method ObjectBot|null offsetGet(mixed $offset)
  */
 final class Bots extends Objects
 {

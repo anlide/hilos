@@ -17,7 +17,8 @@ use RuntimeException;
 /**
  * Users Actions - write operations for Users collection.
  *
- * @extends DbActions<User>
+ * @extends DbActions<User, ObjectUsers>
+ * @method ObjectUsers getObjectCollection()
  * @property-read DbCollectionUsers $collection
  */
 final class UsersActions extends DbActions
@@ -36,7 +37,6 @@ final class UsersActions extends DbActions
             throw new DatabaseException("Invalid session token format. Expected 32 hex characters.");
         }
 
-        /** @var ObjectUsers $objectCollection */
         $objectCollection = $this->getObjectCollection();
         $existingUser = $objectCollection->findBySession($sessionToken);
         if ($existingUser !== null) {
@@ -77,7 +77,6 @@ final class UsersActions extends DbActions
     {
         $this->ensureCanWrite();
 
-        /** @var ObjectUsers $objectCollection */
         $objectCollection = $this->getObjectCollection();
         if (!isset($objectCollection[$userId])) {
             throw new RuntimeException("User not found for rename (userId={$userId})");

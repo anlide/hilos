@@ -13,6 +13,11 @@ use Hilos\Database\Object\Objects;
  * Chat users object collection.
  *
  * @extends Objects<ObjectUser>
+ * @method ObjectUser|null current()
+ * @method ObjectUser|null first()
+ * @method ObjectUser|null last()
+ * @method ObjectUser|null get(int|string $key)
+ * @method ObjectUser|null offsetGet(mixed $offset)
  */
 final class Users extends Objects
 {

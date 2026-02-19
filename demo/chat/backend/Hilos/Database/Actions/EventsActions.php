@@ -3,6 +3,7 @@
 namespace Demo\Chat\Hilos\Database\Actions;
 
 use Demo\Chat\Database\Entity\Item\Event;
+use Demo\Chat\Database\Object\Collection\Events as ObjectEvents;
 use Demo\Chat\Database\Object\Item\Event as ObjectEvent;
 use Demo\Chat\Hilos\Database\Collection\Events as DbCollectionEvents;
 use Demo\Chat\Hilos\Database\Item\Event as DbEvent;
@@ -13,7 +14,8 @@ use RuntimeException;
 /**
  * Events Actions - write operations for Events collection.
  *
- * @extends DbActions<DbEvent>
+ * @extends DbActions<DbEvent, ObjectEvents>
+ * @method ObjectEvents|null getObjectCollection()
  * @property-read DbCollectionEvents $collection
  */
 final class EventsActions extends DbActions

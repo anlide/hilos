@@ -11,6 +11,11 @@ use Hilos\Database\Object\Objects;
  * ModeratorPromptPieces Object Collection
  *
  * @extends Objects<ObjectModeratorPromptPiece>
+ * @method ObjectModeratorPromptPiece|null current()
+ * @method ObjectModeratorPromptPiece|null first()
+ * @method ObjectModeratorPromptPiece|null last()
+ * @method ObjectModeratorPromptPiece|null get(int|string $key)
+ * @method ObjectModeratorPromptPiece|null offsetGet(mixed $offset)
  */
 final class ModeratorPromptPieces extends Objects
 {

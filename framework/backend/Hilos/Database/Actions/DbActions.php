@@ -27,7 +27,8 @@ use Hilos\Hilos\Database\Item\DbItem;
  *   $event = Hilos::$db->events->actions->add($type, $userId, $data);
  *
  * @template T of DbItem
- * @property-read DbCollection $collection DbCollection instance this actions belong to
+ * @template TObjectCollection of Objects
+ * @property-read DbCollection<T, TObjectCollection> $collection DbCollection instance this actions belong to
  */
 abstract class DbActions
 {
@@ -35,7 +36,7 @@ abstract class DbActions
      * DbCollection instance this actions belong to
      * Type is declared via property-read in child classes
      *
-     * @var DbCollection
+     * @var DbCollection<T, TObjectCollection>
      */
     protected DbCollection $collection;
 
@@ -58,7 +59,7 @@ abstract class DbActions
     /**
      * Constructor
      *
-     * @param DbCollection $collection DbCollection instance
+     * @param DbCollection<T, TObjectCollection> $collection DbCollection instance
      */
     public function __construct(DbCollection $collection)
     {
@@ -121,11 +122,13 @@ abstract class DbActions
      * Get ObjectCollection for this Actions
      * Returns reference to storage - modifications will affect the stored collection
      *
-     * @return ?Objects ObjectCollection instance, or null for manual collections
+     * @return ?TObjectCollection ObjectCollection instance, or null for manual collections
      */
     protected function getObjectCollection(): ?Objects
     {
-        return $this->collection->getObjectCollection();
+        /** @var ?TObjectCollection $objectCollection */
+        $objectCollection = $this->collection->getObjectCollection();
+        return $objectCollection;
     }
 
     /**

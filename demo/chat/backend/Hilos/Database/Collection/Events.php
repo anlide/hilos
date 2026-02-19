@@ -2,6 +2,7 @@
 
 namespace Demo\Chat\Hilos\Database\Collection;
 
+use Demo\Chat\Database\Object\Collection\Events as ObjectEvents;
 use Demo\Chat\Hilos\Database\Item\Event;
 use Demo\Chat\Hilos\Database\Actions\EventsActions;
 use Demo\Chat\Database\Object\Item\Event as ObjectEvent;
@@ -12,7 +13,8 @@ use InvalidArgumentException;
 /**
  * Events Db collection - collection of Event items.
  *
- * @extends DbCollection<Event>
+ * @extends DbCollection<Event, ObjectEvents>
+ * @method ObjectEvents|null getObjectCollection()
  * @property-read EventsActions $actions Actions for write operations
  */
 final class Events extends DbCollection

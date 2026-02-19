@@ -2,6 +2,7 @@
 
 namespace Demo\Chat\Hilos\Database\Collection;
 
+use Demo\Chat\Database\Object\Collection\ModeratorPromptPieces as ObjectModeratorPromptPiecesCollection;
 use Demo\Chat\Hilos\Database\Item\ModeratorPromptPiece;
 use Demo\Chat\Database\Object\Item\ModeratorPromptPiece as ObjectModeratorPromptPiece;
 use Hilos\Database\Object\Item\Object_;
@@ -12,7 +13,8 @@ use InvalidArgumentException;
 /**
  * ModeratorPromptPieces Db collection - collection of ModeratorPromptPiece items.
  *
- * @extends DbCollection<ModeratorPromptPiece>
+ * @extends DbCollection<ModeratorPromptPiece, ObjectModeratorPromptPiecesCollection>
+ * @method ObjectModeratorPromptPiecesCollection|null getObjectCollection()
  * @property-read DbActions $actions Actions for write operations
  */
 final class ModeratorPromptPieces extends DbCollection

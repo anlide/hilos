@@ -11,6 +11,11 @@ use Hilos\Database\Object\Objects;
  * Chat events object collection.
  *
  * @extends Objects<ObjectEvent>
+ * @method ObjectEvent|null current()
+ * @method ObjectEvent|null first()
+ * @method ObjectEvent|null last()
+ * @method ObjectEvent|null get(int|string $key)
+ * @method ObjectEvent|null offsetGet(mixed $offset)
  */
 final class Events extends Objects
 {

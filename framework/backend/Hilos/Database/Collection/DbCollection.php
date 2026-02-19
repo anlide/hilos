@@ -31,6 +31,7 @@ use Iterator;
  * Each DbItem references a specific Object stored in ObjectCollection.
  *
  * @template T of DbItem
+ * @template TObjectCollection of Objects
  * @implements ArrayAccess<int|string, T>
  * @implements Iterator<int|string, T>
  */
@@ -61,7 +62,7 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
      * Object collection reference (set via setObjectCollection)
      * Used in automatic mode to access Object collection
      *
-     * @var ?Objects
+     * @var ?TObjectCollection
      */
     private ?Objects $_objectCollection = null;
 
@@ -76,7 +77,7 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
     /**
      * Cached Actions instance (created lazily)
      *
-     * @var ?DbActions
+     * @var ?DbActions<T, TObjectCollection>
      */
     private ?DbActions $_actions = null;
 
@@ -159,7 +160,7 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
      * Set Object collection reference
      * Called when collection is registered
      *
-     * @param Objects $objectCollection Object collection instance (reference)
+     * @param TObjectCollection $objectCollection Object collection instance (reference)
      */
     public function setObjectCollection(Objects &$objectCollection): void
     {
@@ -181,7 +182,7 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
      * Get Actions instance
      * Creates Actions instance lazily on first access
      *
-     * @return DbActions
+     * @return DbActions<T, TObjectCollection>
      * @throws ActionsClassException If Actions class is not set and default class cannot be used
      */
     protected function getActions(): DbActions
@@ -209,11 +210,13 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
      * Public method to allow Actions and child classes to access ObjectCollection.
      * Modifications to the returned object will affect the stored collection.
      *
-     * @return ?Objects ObjectCollection instance, or null for manual collections
+     * @return ?TObjectCollection ObjectCollection instance, or null for manual collections
      */
     public function getObjectCollection(): ?Objects
     {
-        return $this->_objectCollection;
+        /** @var ?TObjectCollection $objectCollection */
+        $objectCollection = $this->_objectCollection;
+        return $objectCollection;
     }
 
     /**
