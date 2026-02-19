@@ -2,109 +2,25 @@
 
 namespace Demo\Chat\Database\Object\Collection;
 
-use ArrayAccess;
-use Countable;
 use Demo\Chat\Database\Entity\Collection\Events as EntityEvents;
-use Demo\Chat\Database\Entity\Item\Event as EntityEvent;
-use Demo\Chat\Database\Object\Item\Event as ObjectEvent;
 use Demo\Chat\Database\DbChatContext;
+use Demo\Chat\Database\Object\Item\Event as ObjectEvent;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Database;
 use Hilos\Database\Object\Objects;
 use Hilos\Hilos\TruthSource\Exception\WriteNotAllowedException;
-use Iterator;
 use RuntimeException;
 
 /**
  * Events Object Collection
+ *
+ * @extends Objects<ObjectEvent>
  */
-final class Events extends Objects implements Iterator, ArrayAccess, Countable
+final class Events extends Objects
 {
-    /** @var ObjectEvent[] $objects */
-    protected array $objects = [];
-
-    public function loadAllFromDB(): void
-    {
-        $this->objects = [];
-        $EntityEvents = EntityEvents::initFullDB();
-        foreach ($EntityEvents as $key => $EntityEvent) {
-            $this->objects[$key] = ObjectEvent::fromEntity($EntityEvent);
-        }
-        $this->_allLoaded = true;
-        $this->_allowLazyLoading = false;
-    }
-
-    public static function initEmpty(): static
-    {
-        $self = new self();
-        $self->objects = [];
-        return $self;
-    }
-
-    public function current(): ?ObjectEvent
-    {
-        return parent::current();
-    }
-
-    public function offsetSet($offset, $value): void
-    {
-        if ($value instanceof ObjectEvent) {
-            if ($offset === null) {
-                $this->objects[] = $value;
-            } else {
-                $this->objects[$offset] = $value;
-            }
-        }
-    }
-
-    public function offsetGet($offset): ?ObjectEvent
-    {
-        return parent::offsetGet($offset);
-    }
-
-    protected function lazyLoadObject(int|string $key): ?ObjectEvent
-    {
-        $EntityEvent = EntityEvent::getById((int)$key);
-        return $EntityEvent !== null ? ObjectEvent::fromEntity($EntityEvent) : null;
-    }
-
-    protected function lazyLoadCount(): int
-    {
-        $resultSetCollection = Database::sql(
-            "SELECT COUNT(*) as count FROM `" . EntityEvent::_table . "`"
-        );
-        $firstResultSet = $resultSetCollection->first();
-
-        if ($firstResultSet === null) {
-            return 0;
-        }
-
-        $row = $firstResultSet->first();
-        return $row !== null ? (int)($row['count'] ?? 0) : 0;
-    }
-
-    protected function lazyLoadAll(): void
-    {
-        $EntityEvents = EntityEvents::initFullDB();
-
-        foreach ($EntityEvents as $key => $EntityEvent) {
-            if (!isset($this->objects[$key])) {
-                $this->objects[$key] = ObjectEvent::fromEntity($EntityEvent);
-            }
-        }
-
-        $this->_allLoaded = true;
-    }
-
-    public function getTableName(): string
-    {
-        return EntityEvent::_table;
-    }
-
-    public function getCollectionKey(): string
-    {
-        return DbChatContext::events;
-    }
+    public const string OBJECT_CLASS = ObjectEvent::class;
+    public const string ENTITY_COLLECTION_CLASS = EntityEvents::class;
+    public const string COLLECTION_KEY = DbChatContext::events;
 
     public function deleteAll(): void
     {

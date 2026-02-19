@@ -4,7 +4,9 @@ namespace Hilos\Database\Object;
 
 use ArrayAccess;
 use Countable;
+use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\Entity\Collection\EntityCollection;
 use Hilos\Database\Filter\FilterInterface;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Object\Item\Object_;
@@ -15,7 +17,10 @@ use Iterator;
  * Abstract base class for Object collections
  * Provides lazy loading support and common collection operations
  *
- * @template T of \Hilos\Database\Object\Item\Object_
+ * Child classes should define OBJECT_CLASS, ENTITY_COLLECTION_CLASS, and COLLECTION_KEY constants
+ * to get default implementations of all collection methods.
+ *
+ * @template T of Object_
  * @implements ArrayAccess<int|string, T>
  * @implements Iterator<int|string, T>
  *
@@ -25,6 +30,15 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
 {
     public const string allowLazyLoading = 'allowLazyLoading';
 
+    /** @var class-string<Object_> */
+    public const string OBJECT_CLASS = '';
+
+    /** @var class-string<EntityCollection> */
+    public const string ENTITY_COLLECTION_CLASS = '';
+
+    /** Collection key for TruthSourceRegistry */
+    public const string COLLECTION_KEY = '';
+
     /**
      * Lazy loading strategies
      */
@@ -33,7 +47,7 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
     public const int LAZY_STRATEGY_BATCH = 2;          // Lazy load by key, but load all on iteration
     public const int LAZY_STRATEGY_FULL_ON_ACCESS = 3; // Load all on first access
 
-    /** @var \Hilos\Database\Object\Item\Object_[] */
+    /** @var T[] */
     protected array $objects = [];
 
     /** @var bool */
@@ -82,11 +96,21 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
     /**
      * Load all objects from database
      * Clears existing objects and loads all from database
-     * Must be implemented by child classes
      *
      * @throws DatabaseException
      */
-    abstract public function loadAllFromDB(): void;
+    public function loadAllFromDB(): void
+    {
+        $this->objects = [];
+        $entityCollectionClass = static::ENTITY_COLLECTION_CLASS;
+        $objectClass = static::OBJECT_CLASS;
+        $entityCollection = $entityCollectionClass::initFullDB();
+        foreach ($entityCollection as $key => $entity) {
+            $this->objects[$key] = $objectClass::fromEntity($entity);
+        }
+        $this->_allLoaded = true;
+        $this->_allowLazyLoading = false;
+    }
 
     /**
      * Initialize collection with all objects from database
@@ -105,30 +129,63 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
      *
      * @return static
      */
-    abstract public static function initEmpty(): static;
+    public static function initEmpty(): static
+    {
+        return new static();
+    }
 
     /**
-     * Lazy load object by key (only if allowLazyLoading is true)
-     * Must be implemented by child classes
+     * Lazy load object by key
      *
      * @param int|string $key Object key (usually primary key)
-     * @return ?Object_
+     * @return ?T
      */
-    abstract protected function lazyLoadObject(int|string $key): ?Object_;
+    protected function lazyLoadObject(int|string $key): ?Object_
+    {
+        $objectClass = static::OBJECT_CLASS;
+        $entityClass = $objectClass::ENTITY_CLASS;
+        $entity = $entityClass::getById((int)$key);
+        return $entity !== null ? $objectClass::fromEntity($entity) : null;
+    }
 
     /**
-     * Lazy load count from database (only if allowLazyLoading is true)
-     * Must be implemented by child classes
+     * Lazy load count from database
      *
      * @return int
      */
-    abstract protected function lazyLoadCount(): int;
+    protected function lazyLoadCount(): int
+    {
+        $resultSetCollection = Database::sql(
+            "SELECT COUNT(*) as count FROM `" . $this->getTableName() . "`"
+        );
+        $firstResultSet = $resultSetCollection->first();
+
+        if ($firstResultSet === null) {
+            return 0;
+        }
+
+        $row = $firstResultSet->first();
+        return $row !== null ? (int)($row['count'] ?? 0) : 0;
+    }
 
     /**
      * Load all objects from database (for batch strategy)
-     * Must be implemented by child classes
+     * Only loads objects that aren't already in memory.
      */
-    abstract protected function lazyLoadAll(): void;
+    protected function lazyLoadAll(): void
+    {
+        $entityCollectionClass = static::ENTITY_COLLECTION_CLASS;
+        $objectClass = static::OBJECT_CLASS;
+        $entityCollection = $entityCollectionClass::initFullDB();
+
+        foreach ($entityCollection as $key => $entity) {
+            if (!isset($this->objects[$key])) {
+                $this->objects[$key] = $objectClass::fromEntity($entity);
+            }
+        }
+
+        $this->_allLoaded = true;
+    }
 
     /**
      * Preload all objects (explicit full load)
@@ -177,7 +234,7 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
      * Get current object
      * For batch strategy, loads all objects on first iteration
      *
-     * @return Object_
+     * @return ?T
      */
     public function current(): ?Object_
     {
@@ -191,7 +248,6 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
 
         $keys = array_keys($this->objects);
         if (!isset($keys[$this->index])) {
-            // Return null if position is invalid
             return null;
         }
 
@@ -231,7 +287,7 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
         // For KEY strategy, we can't iterate over all (would require loading all)
         // So iteration is only valid for already loaded objects
         if ($this->_allowLazyLoading && $this->_lazyStrategy === self::LAZY_STRATEGY_KEY) {
-            return false; // Can't iterate over all in KEY strategy
+            return false;
         }
 
         return false;
@@ -249,16 +305,21 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
      * Set object at offset
      *
      * @param mixed $offset
-     * @param mixed $value
+     * @param T $value
      */
     public function offsetSet($offset, $value): void
     {
-        if ($value instanceof Object_) {
-            if ($offset === null) {
-                $this->objects[] = $value;
-            } else {
-                $this->objects[$offset] = $value;
-            }
+        if (!($value instanceof Object_)) {
+            return;
+        }
+        $objectClass = static::OBJECT_CLASS;
+        if ($objectClass !== '' && !($value instanceof $objectClass)) {
+            return;
+        }
+        if ($offset === null) {
+            $this->objects[] = $value;
+        } else {
+            $this->objects[$offset] = $value;
         }
     }
 
@@ -287,7 +348,7 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
      * Supports lazy loading if enabled
      *
      * @param mixed $offset
-     * @return ?Object_
+     * @return ?T
      */
     public function offsetGet($offset): ?Object_
     {
@@ -321,14 +382,10 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
     public function count(): int
     {
         if ($this->_allowLazyLoading && !$this->_allLoaded) {
-            // For KEY strategy, we need to query DB for count
             if ($this->_lazyStrategy === self::LAZY_STRATEGY_KEY) {
                 return $this->lazyLoadCount();
             }
-            // For other strategies, if we haven't loaded all, get count from DB
-            // But if we have some loaded, we might want to load all first
             if ($this->_lazyStrategy === self::LAZY_STRATEGY_BATCH) {
-                // Could return DB count or load all - let's return DB count for efficiency
                 return $this->lazyLoadCount();
             }
         }
@@ -353,7 +410,6 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
 
     /**
      * Get lazy loading strategy
-     * Used by Actions to check if LAZY_STRATEGY_NONE is enabled
      *
      * @return int Lazy loading strategy constant
      */
@@ -364,7 +420,6 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
 
     /**
      * Check if all objects are loaded
-     * Used by Actions to check if data needs to be loaded
      *
      * @return bool True if all objects are loaded
      */
@@ -374,20 +429,68 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
     }
 
     /**
-     * Get table name from Entity class
-     * Must be implemented in child classes
+     * Get table name derived from Entity class
      *
      * @return string Table name
      */
-    abstract public function getTableName(): string;
+    public function getTableName(): string
+    {
+        $objectClass = static::OBJECT_CLASS;
+        $entityClass = $objectClass::ENTITY_CLASS;
+        return $entityClass::_table;
+    }
 
     /**
-     * Get collection key (Idea key, e.g. 'events', 'users')
-     * Used for TruthSourceRegistry. Must be implemented in child classes.
+     * Get collection key for TruthSourceRegistry
      *
      * @return string Collection key
      */
-    abstract public function getCollectionKey(): string;
+    public function getCollectionKey(): string
+    {
+        return static::COLLECTION_KEY;
+    }
+
+    /**
+     * Get first object in collection
+     *
+     * @return ?T
+     */
+    public function first(): ?Object_
+    {
+        if (empty($this->objects)) {
+            return null;
+        }
+
+        $keys = array_keys($this->objects);
+        return $this->objects[$keys[0]] ?? null;
+    }
+
+    /**
+     * Get last object in collection
+     *
+     * @return ?T
+     */
+    public function last(): ?Object_
+    {
+        if (empty($this->objects)) {
+            return null;
+        }
+
+        $keys = array_keys($this->objects);
+        $lastKey = end($keys);
+        return $this->objects[$lastKey] ?? null;
+    }
+
+    /**
+     * Get object by key
+     *
+     * @param int|string $key
+     * @return ?T
+     */
+    public function get(int|string $key): ?Object_
+    {
+        return $this->offsetGet($key);
+    }
 
     /**
      * Filter collection by filter criteria
@@ -433,9 +536,6 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
                     }
                 }
             } else {
-                // For lazy strategies - SQL query with filter
-                // TODO: Implement for other lazy loading strategies
-                // Currently only for fully loaded collections
                 throw new DatabaseException("Filtering for lazy-loaded collections not yet implemented. Use LAZY_STRATEGY_NONE or ensure all objects are loaded.");
             }
         }
