@@ -4,50 +4,22 @@ namespace Demo\Chat\Hilos\Database\Collection;
 
 use Demo\Chat\Database\Object\Collection\Bots as ObjectBots;
 use Demo\Chat\Hilos\Database\Item\Bot;
-use Demo\Chat\Database\Object\Item\Bot as ObjectBot;
-use Hilos\Database\Object\Item\Object_;
 use Hilos\Hilos\Database\Actions\DbActions;
 use Hilos\Hilos\Database\Collection\DbCollection;
-use InvalidArgumentException;
 
 /**
  * Bots Db collection - collection of Bot items.
  *
  * @extends DbCollection<Bot, ObjectBots>
  * @method ObjectBots|null getObjectCollection()
+ * @method Bot|null current()
+ * @method Bot|null first()
+ * @method Bot|null last()
+ * @method Bot|null offsetGet(mixed $offset)
  * @property-read DbActions $actions Actions for write operations
  */
 final class Bots extends DbCollection
 {
-    protected function createIdea(Object_ &$object): Bot
-    {
-        if (!($object instanceof ObjectBot)) {
-            throw new InvalidArgumentException("Object must be instance of ObjectBot");
-        }
-        return new Bot($object);
-    }
-
-    public function current(): ?Bot
-    {
-        $item = parent::current();
-        return $item instanceof Bot ? $item : null;
-    }
-
-    public function first(): ?Bot
-    {
-        $item = parent::first();
-        return $item instanceof Bot ? $item : null;
-    }
-
-    public function last(): ?Bot
-    {
-        $item = parent::last();
-        return $item instanceof Bot ? $item : null;
-    }
-
-    public function offsetGet(mixed $offset): ?Bot
-    {
-        $item = parent::offsetGet($offset);
-        return $item instanceof Bot ? $item : null;
-    }
+    public const string DB_ITEM_CLASS = Bot::class;
+    public const string OBJECT_COLLECTION_CLASS = ObjectBots::class;
 }

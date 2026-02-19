@@ -19,6 +19,9 @@ use Hilos\Hilos\Table\TableHub;
  * - Hilos::$db->users
  * - Hilos::$rt->connections
  * - Hilos::$table?->users
+ *
+ * @property-read DbChatContext $db Database context (narrows parent's DbContext for IDE)
+ * @property-read RtChatContext $rt Runtime context (narrows parent's RtContext for IDE)
  */
 final class Hilos extends \Hilos\Hilos
 {

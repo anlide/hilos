@@ -47,7 +47,7 @@ final class UsersActions extends DbActions
 
         $this->addObjectToCollection($user);
 
-        return $this->createIdeaFromObject($user);
+        return $this->createDbItemFromObject($user);
     }
 
     /**

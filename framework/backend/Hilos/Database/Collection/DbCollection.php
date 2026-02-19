@@ -11,12 +11,14 @@ use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 use Hilos\Hilos\Database\Exception\Collection\ActionsClassException;
 use Hilos\Hilos\Database\Exception\Collection\CloneException;
 use Hilos\Hilos\Database\Exception\Collection\DirectSetException;
+use Hilos\Hilos\Database\Actions\Exception\ObjectCollectionNullException;
 use Hilos\Hilos\Database\Exception\Collection\PropertyNotFoundException;
 use Hilos\Hilos\Database\Exception\Collection\UnserializeException;
 use Hilos\Hilos\Database\Exception\CollectionNotManualException;
 use Hilos\Database\Object\Item\Object_;
 use Hilos\Database\Object\Objects;
 use Hilos\Hilos\Database\Actions\DbActions;
+use InvalidArgumentException;
 use Hilos\Hilos\Database\Item\DbItem;
 use Iterator;
 
@@ -34,10 +36,18 @@ use Iterator;
  * @template TObjectCollection of Objects
  * @implements ArrayAccess<int|string, T>
  * @implements Iterator<int|string, T>
+ * @property-read TObjectCollection $objectCollection Object collection shortcut (throws if manual)
  */
 abstract class DbCollection implements ArrayAccess, Countable, Iterator
 {
     public const string actions = 'actions';
+    public const string objectCollection = 'objectCollection';
+
+    /** @var class-string<T> */
+    public const string DB_ITEM_CLASS = '';
+
+    /** @var class-string<TObjectCollection> */
+    public const string OBJECT_COLLECTION_CLASS = '';
 
     /**
      * Whether this is a manual collection (empty, populated manually)
@@ -193,8 +203,8 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
                 throw new ActionsClassException("Actions class [{$class}] must extend DbActions");
             }
             $this->_actions = new $class($this);
-            $this->_actions->setCreateIdeaCallback(function (Object_ &$object): DbItem {
-                return $this->createIdea($object);
+            $this->_actions->setCreateDbItemCallback(function (Object_ &$object): DbItem {
+                return $this->createDbItem($object);
             });
             $this->_actions->setClearCacheCallback(function (): void {
                 $this->clearCache();
@@ -220,13 +230,25 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
     }
 
     /**
-     * Create DbItem instance from Object
-     * Must be implemented by child classes
+     * Create DbItem instance from Object.
+     * Uses DB_ITEM_CLASS and OBJECT_COLLECTION_CLASS constants defined by child classes.
      *
      * @param Object_ $object Object instance (reference)
      * @return T
      */
-    abstract protected function createIdea(Object_ &$object): DbItem;
+    protected function createDbItem(Object_ &$object): DbItem
+    {
+        $itemClass = static::DB_ITEM_CLASS;
+        $objectCollectionClass = static::OBJECT_COLLECTION_CLASS;
+        if ($itemClass === '' || $objectCollectionClass === '') {
+            throw new \LogicException(static::class . ' must define DB_ITEM_CLASS and OBJECT_COLLECTION_CLASS constants');
+        }
+        $objectClass = $objectCollectionClass::OBJECT_CLASS;
+        if (!($object instanceof $objectClass)) {
+            throw new InvalidArgumentException("Object must be instance of {$objectClass}");
+        }
+        return new $itemClass($object);
+    }
 
     /**
      * Add DbItem to manual collection
@@ -290,7 +312,7 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
         if ($object === null) {
             return null;
         }
-        $item = $this->createIdea($object);
+        $item = $this->createDbItem($object);
         $this->items[$key] = $item;
         return $item;
     }
@@ -513,19 +535,22 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
     }
 
     /**
-     * Magic getter for actions
+     * Magic getter for actions and objectCollection.
      *
      * @param string $name Property name
-     * @return DbActions
+     * @return DbActions<T, TObjectCollection>|TObjectCollection
      * @throws PropertyNotFoundException
      * @throws ActionsClassException
+     * @throws ObjectCollectionNullException
      */
     public function __get(string $name)
     {
-        if ($name === self::actions) {
-            return $this->getActions();
-        }
-        throw new PropertyNotFoundException("Property [{$name}] does not exist on " . static::class);
+        return match ($name) {
+            self::actions => $this->getActions(),
+            self::objectCollection => $this->getObjectCollection()
+                ?? throw new ObjectCollectionNullException("ObjectCollection is null (manual collection)"),
+            default => throw new PropertyNotFoundException("Property [{$name}] does not exist on " . static::class),
+        };
     }
 
     /**
@@ -580,7 +605,7 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
         if ($objectCollection !== null) {
             $this->items = [];
             foreach ($objectCollection as $key => $object) {
-                $this->items[$key] = $this->createIdea($object);
+                $this->items[$key] = $this->createDbItem($object);
                 unset($object);
             }
             $objectCollection->rewind();

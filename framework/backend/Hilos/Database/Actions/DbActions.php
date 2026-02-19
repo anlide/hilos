@@ -33,6 +33,8 @@ use Hilos\Hilos\Database\Item\DbItem;
  */
 abstract class DbActions
 {
+    public const string objectCollection = 'objectCollection';
+
     /**
      * DbCollection instance this actions belong to
      * Type is declared via property-read in child classes
@@ -43,11 +45,11 @@ abstract class DbActions
 
     /**
      * Callback for creating DbItem from Object
-     * Set by DbCollection via setCreateIdeaCallback()
+     * Set by DbCollection via setCreateDbItemCallback()
      *
      * @var callable(Object_): DbItem|null
      */
-    private $createIdeaCallback = null;
+    private $createDbItemCallback = null;
 
     /**
      * Callback for notifying DbCollection about mass changes (e.g. deleteAll()).
@@ -75,14 +77,11 @@ abstract class DbActions
      */
     public function __get(string $name): mixed
     {
-        if ($name === 'objectCollection') {
-            $objectCollection = $this->getObjectCollection();
-            if ($objectCollection === null) {
-                throw new ObjectCollectionNullException("ObjectCollection is null (manual collection)");
-            }
-            return $objectCollection;
-        }
-        throw new \InvalidArgumentException("Unknown property: {$name}");
+        return match ($name) {
+            self::objectCollection => $this->getObjectCollection()
+                ?? throw new ObjectCollectionNullException("ObjectCollection is null (manual collection)"),
+            default => throw new \InvalidArgumentException("Unknown property: {$name}"),
+        };
     }
 
     /**
@@ -91,9 +90,9 @@ abstract class DbActions
      *
      * @param callable(Object_): DbItem $callback Callback function
      */
-    public function setCreateIdeaCallback(callable $callback): void
+    public function setCreateDbItemCallback(callable $callback): void
     {
-        $this->createIdeaCallback = $callback;
+        $this->createDbItemCallback = $callback;
     }
 
     /**
@@ -114,12 +113,12 @@ abstract class DbActions
      * @return T Db item (subtype of DbItem, bound in child class)
      * @throws CallbackNotSetException If callback is not set
      */
-    protected function createIdeaFromObject(Object_ &$object): DbItem
+    protected function createDbItemFromObject(Object_ &$object): DbItem
     {
-        if ($this->createIdeaCallback === null) {
-            throw new CallbackNotSetException("createIdeaCallback is not set. DbCollection must call setCreateIdeaCallback() when creating Actions.");
+        if ($this->createDbItemCallback === null) {
+            throw new CallbackNotSetException("createDbItemCallback is not set. DbCollection must call setCreateDbItemCallback() when creating Actions.");
         }
-        return ($this->createIdeaCallback)($object);
+        return ($this->createDbItemCallback)($object);
     }
 
     /**

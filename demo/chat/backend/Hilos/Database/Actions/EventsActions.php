@@ -52,7 +52,7 @@ final class EventsActions extends DbActions
         }
 
         $this->addObjectToCollection($objectEvent);
-        return $this->createIdeaFromObject($objectEvent);
+        return $this->createDbItemFromObject($objectEvent);
     }
 
     /**
