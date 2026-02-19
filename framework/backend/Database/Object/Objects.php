@@ -452,6 +452,8 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
 
     /**
      * Deletes all rows from the table and clears the collection.
+     *
+     * @throws DatabaseException
      */
     public function deleteAll(): void
     {

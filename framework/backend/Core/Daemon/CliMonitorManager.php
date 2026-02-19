@@ -14,6 +14,7 @@ use Hilos\Core\Daemon\Master\DaemonStatus;
 use Hilos\Utils\Env;
 use Hilos\Utils\Exception\MissingEnvironmentVariableException;
 use Hilos\Utils\Helpers\StringHelper;
+use Hilos\Utils\Helpers\TimeHelper;
 use Hilos\Utils\Logger;
 
 /**
@@ -168,7 +169,7 @@ class CliMonitorManager extends BaseManager
 
         // Header
         echo "=== HILOS DAEMON MONITOR ===\n";
-        echo "Last update: " . date('Y-m-d H:i:s') . "\n";
+        echo "Last update: " . TimeHelper::getSqlDateTime() . "\n";
         echo "Press Ctrl+C to exit\n\n";
 
         // Daemon status table

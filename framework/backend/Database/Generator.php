@@ -2,6 +2,8 @@
 
 namespace Hilos\Database;
 
+use Hilos\Utils\Helpers\TimeHelper;
+
 /**
  * Code generator for Entity, Object and Idea classes
  * Generates PHP classes from existing database tables
@@ -497,7 +499,7 @@ class Generator
         $createStatement = $row['Create Table'];
 
         $migration = "-- Migration: Create {$tableName} table\n";
-        $migration .= "-- Auto-generated: " . date('Y-m-d H:i:s') . "\n\n";
+        $migration .= "-- Auto-generated: " . TimeHelper::getSqlDateTime() . "\n\n";
         $migration .= $createStatement . ";\n";
 
         return $migration;

@@ -4,19 +4,21 @@ namespace Demo\Chat\Hilos\Database\Actions;
 
 use Demo\Chat\Database\Entity\Item\Event;
 use Demo\Chat\Database\Object\Collection\Events as ObjectEvents;
+use Hilos\Utils\Helpers\TimeHelper;
 use Demo\Chat\Database\Object\Item\Event as ObjectEvent;
 use Demo\Chat\Hilos\Database\Collection\Events as DbCollectionEvents;
 use Demo\Chat\Hilos\Database\Item\Event as DbEvent;
 use Hilos\Hilos\Database\Actions\DbActions;
 use Hilos\Hilos\Database\Actions\Exception\Old\ObjectCollectionNullException;
+use Hilos\HilosException;
 use RuntimeException;
 
 /**
  * Events Actions - write operations for Events collection.
  *
  * @extends DbActions<DbEvent, ObjectEvents>
- * @method ObjectEvents|null getObjectCollection()
  * @property-read DbCollectionEvents $collection
+ * @property-read ObjectEvents $objectCollection
  */
 final class EventsActions extends DbActions
 {
@@ -32,8 +34,7 @@ final class EventsActions extends DbActions
      * @param ?int $userId User ID (optional)
      * @param ?array $data Additional event data (optional)
      * @return DbEvent Created event
-     * @throws ObjectCollectionNullException If ObjectCollection is null
-     * @throws RuntimeException If event id is null after sync
+     * @throws HilosException On error (invalid parameters, database error, etc.)
      */
     public function add(string $type, ?int $userId = null, ?array $data = null): DbEvent
     {
@@ -42,7 +43,7 @@ final class EventsActions extends DbActions
         $objectEvent = ObjectEvent::create();
         $objectEvent->userId = $userId;
         $objectEvent->type = $type;
-        $objectEvent->timestamp = date('Y-m-d H:i:s');
+        $objectEvent->timestamp = TimeHelper::getSqlDateTime();
         $objectEvent->data = $data === null ? null : json_encode($data);
         $objectEvent->sync();
 
@@ -57,16 +58,14 @@ final class EventsActions extends DbActions
     /**
      * Deletes all events from database and clears the collection.
      *
-     * @throws ObjectCollectionNullException If ObjectCollection is null
+     * @throws HilosException On error (permissions error, database error, etc.)
      */
     public function deleteAll(): void
     {
         $this->ensureCanWrite();
-        $objectCollection = $this->getObjectCollection();
-        if ($objectCollection === null) {
-            throw new ObjectCollectionNullException("Cannot delete all: ObjectCollection is null");
-        }
-        $objectCollection->deleteAll();
+
+        $this->objectCollection->deleteAll();
+
         $this->clearCollectionCache();
     }
 }

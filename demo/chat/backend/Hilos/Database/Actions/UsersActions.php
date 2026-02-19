@@ -4,22 +4,19 @@ namespace Demo\Chat\Hilos\Database\Actions;
 
 use Demo\Chat\Database\Object\Collection\Users as ObjectUsers;
 use Demo\Chat\Database\Object\Item\User as ObjectUser;
+use Hilos\Utils\Helpers\TimeHelper;
 use Demo\Chat\Hilos\Database\Collection\Users as DbCollectionUsers;
 use Demo\Chat\Hilos\Database\Item\User;
-use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
-use Hilos\Database\DatabaseException;
 use Hilos\Hilos\Database\Actions\DbActions;
-use Hilos\Hilos\Database\Actions\Exception\CallbackNotSetException;
-use Hilos\Hilos\Database\Actions\Exception\ObjectCollectionNullException;
-use Hilos\Hilos\Database\Actions\Exception\UnknownLazyStrategyException;
+use Hilos\HilosException;
 use RuntimeException;
 
 /**
  * Users Actions - write operations for Users collection.
  *
  * @extends DbActions<User, ObjectUsers>
- * @method ObjectUsers getObjectCollection()
  * @property-read DbCollectionUsers $collection
+ * @property-read ObjectUsers $objectCollection
  */
 final class UsersActions extends DbActions
 {
@@ -28,36 +25,27 @@ final class UsersActions extends DbActions
      *
      * @param string $sessionToken Session token (32 hex characters)
      * @return User Registered user
-     * @throws DatabaseException On invalid token format or if user with this token already exists
-     * @throws CallbackNotSetException If collection callback is not set
+     * @throws HilosException On error (invalid token format, user already exists, database error, etc.)
      */
     public function register(string $sessionToken): User
     {
+        $this->ensureCanWrite();
+
         if (strlen($sessionToken) !== 32 || !ctype_xdigit($sessionToken)) {
-            throw new DatabaseException("Invalid session token format. Expected 32 hex characters.");
+            throw new RuntimeException("Invalid session token format. Expected 32 hex characters.");
         }
 
-        $objectCollection = $this->getObjectCollection();
-        $existingUser = $objectCollection->findBySession($sessionToken);
-        if ($existingUser !== null) {
-            throw new DatabaseException("User with session token already exists");
+        if ($this->objectCollection->findBySession($sessionToken) !== null) {
+            throw new RuntimeException("User with session token already exists");
         }
 
         $user = ObjectUser::create();
-        $user->entity->name = 'User' . mt_rand(1000, 9999);
-        $user->entity->session_token = $sessionToken;
-        $user->entity->last_activity = date('Y-m-d H:i:s');
+        $user->name = 'User' . mt_rand(1000, 9999);
+        $user->sessionToken = $sessionToken;
+        $user->lastActivity = TimeHelper::getSqlDateTime();
+        $user->sync();
 
-        try {
-            $user->sync();
-        } catch (DatabaseException $e) {
-            throw new DatabaseException("Failed to register user: " . $e->getMessage(), $e->getCode(), $e);
-        }
-
-        $userId = $user->id;
-        if ($userId !== null) {
-            $objectCollection[$userId] = $user;
-        }
+        $this->addObjectToCollection($user);
 
         return $this->createIdeaFromObject($user);
     }
@@ -67,31 +55,23 @@ final class UsersActions extends DbActions
      *
      * @param int $userId User ID
      * @param string $newName New display name
-     * @throws RuntimeException If user not found or new name equals current name
-     * @throws ObjectCollectionNullException If ObjectCollection is null
-     * @throws UnknownLazyStrategyException If unknown lazy loading strategy
-     * @throws WriteNotAllowedException If write is not allowed
-     * @throws DatabaseException On database error
+     * @throws HilosException On error (user not found, new name same as old name, database error, etc.)
      */
     public function rename(int $userId, string $newName): void
     {
         $this->ensureCanWrite();
 
-        $objectCollection = $this->getObjectCollection();
-        if (!isset($objectCollection[$userId])) {
+        if (!isset($this->objectCollection[$userId])) {
             throw new RuntimeException("User not found for rename (userId={$userId})");
         }
 
-        $oldName = $objectCollection[$userId]->name;
+        $oldName = $this->objectCollection[$userId]->name;
         if ($oldName === $newName) {
             throw new RuntimeException("New name is the same as old name for rename (userId={$userId})");
         }
 
-        $objectCollection[$userId]->name = $newName;
-        $objectCollection[$userId]->sync();
-
-        if ($objectCollection[$userId]->lastActivity === null) {
-            throw new RuntimeException("User lastActivity is null after rename (userId={$userId})");
-        }
+        $this->objectCollection[$userId]->name = $newName;
+        $this->objectCollection[$userId]->lastActivity = TimeHelper::getSqlDateTime();
+        $this->objectCollection[$userId]->sync();
     }
 }

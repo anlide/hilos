@@ -2,6 +2,8 @@
 
 namespace Hilos\Database;
 
+use Hilos\Utils\Helpers\TimeHelper;
+
 /**
  * Database migration management system
  * Handles up/down migrations with SQL files
@@ -395,7 +397,7 @@ class Migration
         }
 
         $sanitizedName = preg_replace('/[^a-z0-9_-]/i', '_', $name);
-        $timestamp = date('Y-m-d H:i:s');
+        $timestamp = TimeHelper::getSqlDateTime();
 
         $upFile = $migrationPath . '/' . $newIndex . '_up.sql';
         $downFile = $migrationPath . '/' . $newIndex . '_down.sql';

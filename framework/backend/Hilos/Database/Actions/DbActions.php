@@ -29,6 +29,7 @@ use Hilos\Hilos\Database\Item\DbItem;
  * @template T of DbItem
  * @template TObjectCollection of Objects
  * @property-read DbCollection<T, TObjectCollection> $collection DbCollection instance this actions belong to
+ * @property-read TObjectCollection $objectCollection ObjectCollection shortcut (via __get)
  */
 abstract class DbActions
 {
@@ -64,6 +65,24 @@ abstract class DbActions
     public function __construct(DbCollection $collection)
     {
         $this->collection = $collection;
+    }
+
+    /**
+     * Magic getter for objectCollection shortcut.
+     *
+     * @return TObjectCollection
+     * @throws ObjectCollectionNullException If ObjectCollection is null (manual collection)
+     */
+    public function __get(string $name): mixed
+    {
+        if ($name === 'objectCollection') {
+            $objectCollection = $this->getObjectCollection();
+            if ($objectCollection === null) {
+                throw new ObjectCollectionNullException("ObjectCollection is null (manual collection)");
+            }
+            return $objectCollection;
+        }
+        throw new \InvalidArgumentException("Unknown property: {$name}");
     }
 
     /**
@@ -141,10 +160,7 @@ abstract class DbActions
      */
     protected function getTableName(): string
     {
-        $objectCollection = $this->getObjectCollection();
-        if ($objectCollection === null) {
-            throw new ObjectCollectionNullException("Cannot get table name: ObjectCollection is null");
-        }
+        $objectCollection = $this->objectCollection;
         try {
             return $objectCollection->getTableName();
         } catch (\Exception $e) {
@@ -163,10 +179,7 @@ abstract class DbActions
      */
     protected function ensureCanWrite(): void
     {
-        $objectCollection = $this->getObjectCollection();
-        if ($objectCollection === null) {
-            throw new ObjectCollectionNullException("Cannot ensure write: ObjectCollection is null");
-        }
+        $objectCollection = $this->objectCollection;
 
         switch ($objectCollection->getLazyStrategy()) {
             case Objects::LAZY_STRATEGY_NONE:
@@ -204,15 +217,11 @@ abstract class DbActions
      */
     protected function addObjectToCollection(Object_ &$object): void
     {
-        $objectCollection = $this->getObjectCollection();
-        if ($objectCollection === null) {
-            throw new ObjectCollectionNullException("Cannot add object: ObjectCollection is null");
-        }
         $idString = $object->getIdString();
-        if (isset($objectCollection[$idString])) {
+        if (isset($this->objectCollection[$idString])) {
             $table = $this->getTableName();
             throw new DuplicateIdException("Cannot add object to collection: object with ID '{$idString}' already exists in table '{$table}'");
         }
-        $objectCollection[$idString] = $object;
+        $this->objectCollection[$idString] = $object;
     }
 }
