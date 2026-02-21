@@ -2,20 +2,20 @@
 
 namespace Demo\Chat\Database;
 
+use Demo\Chat\Database\Actions\EventsActions;
+use Demo\Chat\Database\Actions\UsersActions;
 use Demo\Chat\Database\Object\Collection\Bots as ObjectBots;
 use Demo\Chat\Database\Object\Collection\Events as ObjectEvents;
 use Demo\Chat\Database\Object\Collection\ModeratorPromptPieces as ObjectModeratorPromptPieces;
 use Demo\Chat\Database\Object\Collection\Users as ObjectUsers;
-use Demo\Chat\Hilos\Database\Actions\EventsActions;
-use Demo\Chat\Hilos\Database\Actions\UsersActions;
-use Demo\Chat\Hilos\Database\Collection\Bots;
-use Demo\Chat\Hilos\Database\Collection\Events;
-use Demo\Chat\Hilos\Database\Collection\ModeratorPromptPieces;
-use Demo\Chat\Hilos\Database\Collection\Users;
+use Demo\Chat\Database\View\Collection\Bots;
+use Demo\Chat\Database\View\Collection\Events;
+use Demo\Chat\Database\View\Collection\ModeratorPromptPieces;
+use Demo\Chat\Database\View\Collection\Users;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\Exception\View\ObjectCollectionNotFoundException;
 use Hilos\Database\Hilos\DbContext;
 use Hilos\Database\Object\Objects;
-use Hilos\Hilos\Database\Exception\ObjectCollectionNotFoundException;
 
 /**
  * DbChatContext - App-specific database context ($db layer).

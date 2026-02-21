@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Agent\DTO;
 
+use Hilos\BaseDTO;
 use Hilos\Core\Router\SignalData;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\SignalName;
@@ -12,7 +13,6 @@ use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalSourceInterface;
 use Hilos\Core\Router\SignalType;
 use Hilos\Core\Router\SignalTypeInterface;
-use Hilos\Hilos\BaseDTO;
 
 /**
  * AgentResponseSignalDTO - DTO for agent response signals

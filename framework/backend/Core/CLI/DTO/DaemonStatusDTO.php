@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Core\CLI\DTO;
 
-use Hilos\Hilos\BaseDTO;
+use Hilos\BaseDTO;
 
 /**
  * DaemonStatusDTO - Data Transfer Object for daemon status

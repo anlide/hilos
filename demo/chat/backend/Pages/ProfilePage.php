@@ -11,15 +11,15 @@ use Demo\Chat\Core\Page\AbstractChatPage;
 use Demo\Chat\Core\Page\DTO\RenameActionDTO;
 use Demo\Chat\Core\Router\DTO\ChatEventSignalDTO;
 use Demo\Chat\Database\DbChatContext;
+use Demo\Chat\Database\View\Collection\Events;
 use Demo\Chat\Hilos;
-use Demo\Chat\Hilos\Database\Collection\Events;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\EntitiesChangesDTO;
+use Hilos\Database\Actions\Exception\Old\ObjectCollectionNullException;
+use Hilos\Database\Actions\Exception\Old\TableNameUndeterminedException;
+use Hilos\Database\Actions\Exception\Old\UnknownLazyStrategyException;
 use Hilos\Database\DatabaseException;
-use Hilos\Hilos\Database\Actions\Exception\Old\ObjectCollectionNullException;
-use Hilos\Hilos\Database\Actions\Exception\Old\TableNameUndeterminedException;
-use Hilos\Hilos\Database\Actions\Exception\Old\UnknownLazyStrategyException;
-use Hilos\Hilos\TruthSource\Exception\WriteNotAllowedException;
+use Hilos\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Utils\Logger;
 
 /**

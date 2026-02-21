@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Table\DTO;
 
+use Hilos\BaseDTO;
 use Hilos\Core\Table\TableActionConstants;
-use Hilos\Hilos\BaseDTO;
 
 /**
  * Payload for multiple tables (e.g. subscription response: one page, several tables).

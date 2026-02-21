@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Table\DTO;
 
+use Hilos\BaseDTO;
 use Hilos\Core\Table\TableActionConstants;
 use Hilos\Core\Table\TableType;
-use Hilos\Hilos\BaseDTO;
 
 /**
  * Data for a single table (one key): rows + meta for frontend.

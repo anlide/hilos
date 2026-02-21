@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Agent\DTO;
 
-use Hilos\Hilos\BaseDTO;
+use Hilos\BaseDTO;
 
 /**
  * MessageFromDaemonDTO - DTO for messages from daemon to agent

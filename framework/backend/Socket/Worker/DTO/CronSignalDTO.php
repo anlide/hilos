@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace Hilos\Socket\Worker\DTO;
 
+use Hilos\BaseDTO;
 use Hilos\Core\Router\DTO\SignalDataDTO;
 use Hilos\Core\Router\SignalDataInterface;
-use Hilos\Hilos\BaseDTO;
 
 /**
  * CronSignalDTO - DTO for cron signal

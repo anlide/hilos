@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Router\DTO;
 
+use Hilos\BaseDTO;
+use Hilos\Database\Exception\View\CollectionNotManualException;
 use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
-use Hilos\Hilos\BaseDTO;
-use Hilos\Hilos\Database\Collection\DbCollection;
-use Hilos\Hilos\Database\Exception\CollectionNotManualException;
+use Hilos\Database\View\Collection\DbCollection;
 
 /**
  * EntitiesChangesDTO - Entity changes payload

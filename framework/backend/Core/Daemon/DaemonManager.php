@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Core\Daemon;
 
 use Hilos\API\Router\HttpRouter;
+use Hilos\BaseDTO;
 use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
@@ -15,7 +16,6 @@ use Hilos\Core\EventLoop\EventLoop;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\WebSocketSignalData;
-use Hilos\Hilos\BaseDTO;
 use Hilos\Socket\Client\WebSocketClient;
 use Hilos\Socket\Server\ServerInterface;
 use Hilos\Socket\Server\WebSocketServer;

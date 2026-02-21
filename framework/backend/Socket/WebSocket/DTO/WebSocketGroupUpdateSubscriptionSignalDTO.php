@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace Hilos\Socket\WebSocket\DTO;
 
+use Hilos\BaseDTO;
 use Hilos\Core\Router\DTO\SignalDataDTO;
 use Hilos\Core\Router\SignalDataInterface;
-use Hilos\Hilos\BaseDTO;
 
 /**
  * WebSocketGroupUpdateSubscriptionSignalDTO - DTO for WebSocket group update subscription signal

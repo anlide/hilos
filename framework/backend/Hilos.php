@@ -3,8 +3,8 @@
 namespace Hilos;
 
 use Hilos\Database\Hilos\DbContext;
-use Hilos\Hilos\Runtime\View\Context\RtContext;
-use Hilos\Hilos\Table\TableHub;
+use Hilos\Runtime\View\Context\RtContext;
+use Hilos\Table\TableHub;
 
 /**
  * Main framework facade for data access.

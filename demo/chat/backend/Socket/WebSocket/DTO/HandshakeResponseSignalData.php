@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Socket\WebSocket\DTO;
 
+use Hilos\BaseDTO;
 use Hilos\Core\Router\DTO\EntitiesChangesDTO;
 use Hilos\Core\Router\SignalDataInterface;
-use Hilos\Hilos\BaseDTO;
 use RuntimeException;
 
 /**

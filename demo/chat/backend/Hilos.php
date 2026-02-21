@@ -5,12 +5,12 @@ declare(strict_types=1);
 namespace Demo\Chat;
 
 use Demo\Chat\Database\DbChatContext;
-use Demo\Chat\Hilos\Runtime\View\Context\RtChatContext;
+use Demo\Chat\Runtime\View\Context\RtChatContext;
 use Hilos\Core\Table\DataSource\EntityTableDataSource;
 use Hilos\Database\Hilos\DbContext;
-use Hilos\Hilos\Runtime\View\Context\RtContext;
-use Hilos\Hilos\Runtime\Exception\Rt\StateCollectionNotFoundException;
-use Hilos\Hilos\Table\TableHub;
+use Hilos\Runtime\Exception\Rt\StateCollectionNotFoundException;
+use Hilos\Runtime\View\Context\RtContext;
+use Hilos\Table\TableHub;
 
 /**
  * Main app facade for data access.
