@@ -20,7 +20,7 @@ class Connections extends RtStates
     public function findByUserId(int $userId): ?Connection
     {
         foreach ($this->states as $connection) {
-            if ($connection->getUserId() === $userId) {
+            if ($connection->userId === $userId) {
                 return $connection;
             }
         }
@@ -31,7 +31,7 @@ class Connections extends RtStates
     {
         $result = [];
         foreach ($this->states as $acceptKey => $connection) {
-            if ($connection->getUserId() === $userId) {
+            if ($connection->userId === $userId) {
                 $result[$acceptKey] = $connection;
             }
         }

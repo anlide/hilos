@@ -2,13 +2,13 @@
 
 declare(strict_types=1);
 
-namespace Demo\Chat\Hilos\Runtime\Item;
+namespace Demo\Chat\Hilos\Runtime\View\Item;
 
 use Demo\Chat\Database\DbChatContext;
 use Demo\Chat\Hilos;
 use Demo\Chat\Hilos\Database\Item\User;
 use Demo\Chat\Hilos\Runtime\State\Item\Connection as StateConnection;
-use Hilos\Hilos\Runtime\Item\RtItem;
+use Hilos\Hilos\Runtime\View\Item\RtItem;
 
 /**
  * Connection Rt item - read-only wrapper around Connection state.
@@ -45,10 +45,10 @@ final class Connection extends RtItem
         $state = $this->_state;
 
         return match ($name) {
-            StateConnection::acceptKey => $state->getAcceptKey(),
-            StateConnection::userId => $state->getUserId(),
-            StateConnection::connectedAt => $state->getConnectedAt(),
-            DbChatContext::user => Hilos::$db->users[$state->getUserId()] ?? null,
+            StateConnection::acceptKey => $state->acceptKey,
+            StateConnection::userId => $state->userId,
+            StateConnection::connectedAt => $state->connectedAt,
+            DbChatContext::user => Hilos::$db->users[$state->userId] ?? null,
             default => parent::__get($name),
         };
     }
@@ -63,9 +63,9 @@ final class Connection extends RtItem
         /** @var StateConnection $state */
         $state = $this->_state;
         return [
-            StateConnection::acceptKey => $state->getAcceptKey(),
-            StateConnection::userId => $state->getUserId(),
-            StateConnection::connectedAt => $state->getConnectedAt(),
+            StateConnection::acceptKey => $state->acceptKey,
+            StateConnection::userId => $state->userId,
+            StateConnection::connectedAt => $state->connectedAt,
         ];
     }
 }

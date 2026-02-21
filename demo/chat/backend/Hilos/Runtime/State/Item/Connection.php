@@ -12,9 +12,9 @@ use Hilos\Hilos\Runtime\State\Item\RtState;
  * Maps acceptKey to userId and additional connection metadata.
  * This is the single source of truth for connection data.
  *
- * @property-read string $acceptKey WebSocket accept key (unique connection identifier)
- * @property-read int $userId User ID associated with this connection
- * @property-read int $connectedAt Unix timestamp when connection was established
+ * @property string $acceptKey WebSocket accept key (unique connection identifier)
+ * @property int $userId User ID associated with this connection
+ * @property int $connectedAt Unix timestamp when connection was established
  */
 class Connection extends RtState
 {
@@ -22,39 +22,52 @@ class Connection extends RtState
     public const string userId = 'userId';
     public const string connectedAt = 'connectedAt';
 
+    private string $acceptKey {
+        get {
+            return $this->acceptKey;
+        }
+    }
+    private int $userId {
+        get {
+            return $this->userId;
+        }
+    }
+    private int $connectedAt {
+        get {
+            return $this->connectedAt;
+        }
+    }
+
     public static function create(string $acceptKey, int $userId): static
     {
         $instance = new static();
-        $instance->data = [
-            self::acceptKey => $acceptKey,
-            self::userId => $userId,
-            self::connectedAt => time(),
-        ];
+        $instance->acceptKey = $acceptKey;
+        $instance->userId = $userId;
+        $instance->connectedAt = time();
         return $instance;
     }
 
     public function getId(): string
     {
-        return $this->data[self::acceptKey];
+        return $this->acceptKey;
     }
 
-    public function getAcceptKey(): string
+    public function __get(string $name): string|int
     {
-        return $this->data[self::acceptKey];
-    }
-
-    public function getUserId(): int
-    {
-        return $this->data[self::userId];
-    }
-
-    public function getConnectedAt(): int
-    {
-        return $this->data[self::connectedAt];
+        return match ($name) {
+            self::acceptKey => $this->acceptKey,
+            self::userId => $this->userId,
+            self::connectedAt => $this->connectedAt,
+            default => parent::__get($name),
+        };
     }
 
     public function toArray(): array
     {
-        return $this->data;
+        return [
+            self::acceptKey => $this->acceptKey,
+            self::userId => $this->userId,
+            self::connectedAt => $this->connectedAt,
+        ];
     }
 }

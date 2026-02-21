@@ -3,7 +3,7 @@
 namespace Hilos;
 
 use Hilos\Database\Hilos\DbContext;
-use Hilos\Hilos\Runtime\Context\RtContext;
+use Hilos\Hilos\Runtime\View\Context\RtContext;
 use Hilos\Hilos\Table\TableHub;
 
 /**

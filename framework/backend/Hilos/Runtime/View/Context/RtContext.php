@@ -1,20 +1,20 @@
 <?php
 
-namespace Hilos\Hilos\Runtime\Context;
+declare(strict_types=1);
 
-use Hilos\Hilos\Runtime\Collection\RtCollection;
+namespace Hilos\Hilos\Runtime\View\Context;
+
 use Hilos\Hilos\Runtime\Exception\Rt\RtCloneException;
 use Hilos\Hilos\Runtime\Exception\Rt\RtCollectionNotFoundException;
 use Hilos\Hilos\Runtime\Exception\Rt\StateCollectionNotFoundException;
 use Hilos\Hilos\Runtime\State\Collection\RtStates;
+use Hilos\Hilos\Runtime\View\Collection\RtCollection;
 
 /**
  * RtContext - runtime context (transient application data).
  *
- * Manages state collections (RtStates) and their RtCollection wrappers.
+ * Manages state collections and their runtime view wrappers.
  * Runtime data is transient - it lives only in memory for the process lifetime.
- *
- * Child classes must override init() and use setRepresent() to register collections.
  */
 abstract class RtContext
 {

@@ -2,17 +2,17 @@
 
 declare(strict_types=1);
 
-namespace Demo\Chat\Hilos\Runtime\Collection;
+namespace Demo\Chat\Hilos\Runtime\View\Collection;
 
-use Demo\Chat\Hilos\Database\Collection\Users as DbUsers;
 use Demo\Chat\Hilos;
-use Demo\Chat\Hilos\Runtime\Actions\ConnectionsActions;
-use Demo\Chat\Hilos\Runtime\Item\Connection;
-use Demo\Chat\Hilos\Runtime\State\Item\Connection as StateConnection;
+use Demo\Chat\Hilos\Database\Collection\Users as DbUsers;
 use Demo\Chat\Hilos\Runtime\State\Collection\Connections as StateConnections;
-use Hilos\Hilos\Runtime\Collection\RtCollection;
-use Hilos\Hilos\Runtime\Item\RtItem;
+use Demo\Chat\Hilos\Runtime\State\Item\Connection as StateConnection;
+use Demo\Chat\Hilos\Runtime\View\Actions\ConnectionsActions;
+use Demo\Chat\Hilos\Runtime\View\Item\Connection;
 use Hilos\Hilos\Runtime\State\Item\RtState;
+use Hilos\Hilos\Runtime\View\Collection\RtCollection;
+use Hilos\Hilos\Runtime\View\Item\RtItem;
 
 /**
  * Connections Rt collection - read-only wrapper around Connections state.

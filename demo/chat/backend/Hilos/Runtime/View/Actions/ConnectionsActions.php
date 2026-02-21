@@ -2,15 +2,15 @@
 
 declare(strict_types=1);
 
-namespace Demo\Chat\Hilos\Runtime\Actions;
+namespace Demo\Chat\Hilos\Runtime\View\Actions;
 
-use Demo\Chat\Hilos\Runtime\Item\Connection as RuntimeConnection;
 use Demo\Chat\Hilos\Runtime\State\Item\Connection as StateConnection;
+use Demo\Chat\Hilos\Runtime\View\Item\Connection as RuntimeConnection;
+use Hilos\Hilos\Runtime\Exception\Actions\RtActionsCallbackNotSetException;
+use Hilos\Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
+use Hilos\Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
-use Hilos\Hilos\Runtime\Actions\Exception\RtActionsCallbackNotSetException;
-use Hilos\Hilos\Runtime\Actions\Exception\RtActionsCollectionNameNullException;
-use Hilos\Hilos\Runtime\Actions\Exception\RtActionsStateCollectionNullException;
-use Hilos\Hilos\Runtime\Actions\RtActions;
+use Hilos\Hilos\Runtime\View\Actions\RtActions;
 
 /**
  * ConnectionsActions - write operations for connections runtime data.

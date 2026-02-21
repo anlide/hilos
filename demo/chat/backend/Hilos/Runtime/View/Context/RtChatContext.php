@@ -2,13 +2,13 @@
 
 declare(strict_types=1);
 
-namespace Demo\Chat\Hilos\Runtime\Context;
+namespace Demo\Chat\Hilos\Runtime\View\Context;
 
-use Demo\Chat\Hilos\Runtime\Actions\ConnectionsActions;
-use Demo\Chat\Hilos\Runtime\Collection\Connections;
 use Demo\Chat\Hilos\Runtime\State\Collection\Connections as StateConnections;
-use Hilos\Hilos\Runtime\Context\RtContext;
+use Demo\Chat\Hilos\Runtime\View\Actions\ConnectionsActions;
+use Demo\Chat\Hilos\Runtime\View\Collection\Connections;
 use Hilos\Hilos\Runtime\Exception\Rt\StateCollectionNotFoundException;
+use Hilos\Hilos\Runtime\View\Context\RtContext;
 
 /**
  * RtChatContext - chat runtime context (runtime data access for the chat app).

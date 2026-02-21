@@ -1,22 +1,24 @@
 <?php
 
-namespace Hilos\Hilos\Runtime\Actions;
+declare(strict_types=1);
 
-use Hilos\Hilos\Runtime\Collection\RtCollection;
+namespace Hilos\Hilos\Runtime\View\Actions;
+
 use Hilos\Hilos\Runtime\Exception\Actions\RtActionsCallbackNotSetException;
 use Hilos\Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
 use Hilos\Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
-use Hilos\Hilos\Runtime\Item\RtItem;
 use Hilos\Hilos\Runtime\State\Item\RtState;
 use Hilos\Hilos\Runtime\State\Collection\RtStates;
+use Hilos\Hilos\Runtime\View\Collection\RtCollection;
+use Hilos\Hilos\Runtime\View\Item\RtItem;
 use Hilos\Hilos\TruthSource\RtTruthSourceRegistry;
 
 /**
- * RtActions - write operations for Rt collection (Rt layer).
+ * RtActions - write operations for runtime collection.
  *
  * Write operations require truth source registration via RtTruthSourceRegistry.
- * All modifications to runtime connection/session data must go through this class.
+ * All modifications to runtime data must go through this class.
  *
  * @property-read RtCollection $collection
  */

@@ -1,23 +1,25 @@
 <?php
 
-namespace Hilos\Hilos\Runtime\Collection;
+declare(strict_types=1);
+
+namespace Hilos\Hilos\Runtime\View\Collection;
 
 use ArrayAccess;
 use Countable;
-use Hilos\Hilos\Runtime\Actions\RtActions;
 use Hilos\Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Hilos\Runtime\Exception\Collection\RtCollectionActionsClassException;
 use Hilos\Hilos\Runtime\Exception\Collection\RtCollectionCloneException;
 use Hilos\Hilos\Runtime\Exception\Collection\RtCollectionDirectSetException;
 use Hilos\Hilos\Runtime\Exception\Collection\RtCollectionPropertyNotFoundException;
 use Hilos\Hilos\Runtime\Exception\Collection\RtCollectionUnserializeException;
-use Hilos\Hilos\Runtime\Item\RtItem;
 use Hilos\Hilos\Runtime\State\Item\RtState;
 use Hilos\Hilos\Runtime\State\Collection\RtStates;
+use Hilos\Hilos\Runtime\View\Actions\RtActions;
+use Hilos\Hilos\Runtime\View\Item\RtItem;
 use Iterator;
 
 /**
- * RtCollection - collection of RtItem instances (Rt layer).
+ * RtCollection - collection of RtItem instances (view layer).
  *
  * Read-only wrapper around runtime state collection.
  *
@@ -30,8 +32,10 @@ abstract class RtCollection implements ArrayAccess, Countable, Iterator
     public const string actions = 'actions';
 
     private int $position = 0;
+
     /** @var array<string, T> */
     private array $items = [];
+
     private ?RtStates $_stateCollection = null;
     private ?string $_collectionName = null;
     private ?string $_actionsClass = null;
@@ -188,7 +192,7 @@ abstract class RtCollection implements ArrayAccess, Countable, Iterator
     }
 
     /** @throws RtCollectionPropertyNotFoundException */
-    public function __get(string $name)
+    public function __get(string $name): mixed
     {
         if ($name === self::actions) {
             return $this->getActions();
@@ -211,7 +215,7 @@ abstract class RtCollection implements ArrayAccess, Countable, Iterator
 
     public function offsetGet(mixed $offset): ?RtItem
     {
-        return $this->getRtItemForKey($offset);
+        return $this->getRtItemForKey((string)$offset);
     }
 
     /** @throws RtCollectionDirectSetException */
@@ -224,8 +228,8 @@ abstract class RtCollection implements ArrayAccess, Countable, Iterator
 
     public function offsetUnset(mixed $offset): void
     {
-        unset($this->items[$offset]);
-        $this->getStateCollection()->remove($offset);
+        unset($this->items[(string)$offset]);
+        $this->getStateCollection()->remove((string)$offset);
     }
 
     public function count(): int

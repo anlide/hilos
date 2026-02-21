@@ -1,6 +1,8 @@
 <?php
 
-namespace Hilos\Hilos\Runtime\Item;
+declare(strict_types=1);
+
+namespace Hilos\Hilos\Runtime\View\Item;
 
 use Hilos\Hilos\Runtime\Exception\Item\RtItemCloneException;
 use Hilos\Hilos\Runtime\Exception\Item\RtItemPropertyNotFoundException;
@@ -9,10 +11,9 @@ use Hilos\Hilos\Runtime\Exception\Item\RtItemUnserializeException;
 use Hilos\Hilos\Runtime\State\Item\RtState;
 
 /**
- * RtItem - read-only wrapper around runtime state (Rt layer).
+ * RtItem - read-only wrapper around runtime state.
  *
  * All write operations must go through RtActions.
- * Provides high-level access to transient connection/session data.
  *
  * @template TState of RtState
  * @property-read TState $_state Reference to RtState instance
@@ -50,7 +51,7 @@ abstract class RtItem
     }
 
     /** @throws RtItemPropertyNotFoundException */
-    public function __get(string $name)
+    public function __get(string $name): mixed
     {
         $className = static::class;
         throw new RtItemPropertyNotFoundException("Property [{$name}] does not exist on {$className}");

@@ -1,30 +1,21 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Hilos\Hilos\Runtime\State\Item;
 
+use Hilos\Hilos\Runtime\Exception\State\RtStatePropertyNotFoundException;
+use Hilos\Hilos\Runtime\Exception\State\RtStateReadOnlyException;
 use Hilos\Hilos\Runtime\Exception\State\RtStateUnserializeException;
 
 /**
  * Base class for runtime state objects
  *
- * RtState is the single source of truth for runtime data (analogous to Object_ for database).
- * Each RtState instance holds the actual data in memory.
- * RtItem instances are lightweight wrappers that reference RtState.
- *
- * Unlike database Object_, RtState does not sync to persistent storage.
- * Data lives only in memory for the lifetime of the process.
- *
- * @template TData of array
+ * RtState is the single source of truth for runtime data (analogous to Object_).
+ * Child classes must use typed/private fields and expose read access via __get and/or explicit getters.
  */
 abstract class RtState
 {
-    /**
-     * State data storage
-     *
-     * @var array
-     */
-    protected array $data = [];
-
     /**
      * Protected constructor - use static factory methods
      */
@@ -62,6 +53,22 @@ abstract class RtState
         return $this->toArray();
     }
 
+    /** @throws RtStatePropertyNotFoundException */
+    public function __get(string $name): mixed
+    {
+        $className = static::class;
+        throw new RtStatePropertyNotFoundException("Property [{$name}] does not exist on {$className}");
+    }
+
+    /** @throws RtStateReadOnlyException */
+    final public function __set(string $name, mixed $value): never
+    {
+        $className = static::class;
+        throw new RtStateReadOnlyException(
+            "Cannot set property [{$name}] on {$className}: RtState is read-only from outside."
+        );
+    }
+
     /**
      * Get unique identifier for this state
      *
@@ -73,9 +80,7 @@ abstract class RtState
     abstract public function getId(): string;
 
     /**
-     * Convert state to array representation
-     *
-     * @return array
+     * Convert state to array representation.
      */
     abstract public function toArray(): array;
 }

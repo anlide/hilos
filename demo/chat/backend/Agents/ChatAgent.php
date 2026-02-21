@@ -14,7 +14,7 @@ use Demo\Chat\Database\DbChatContext;
 use Demo\Chat\Hilos;
 use Demo\Chat\Hilos\Database\Collection\Events;
 use Demo\Chat\Hilos\Database\Collection\Users;
-use Demo\Chat\Hilos\Runtime\Context\RtChatContext;
+use Demo\Chat\Hilos\Runtime\View\Context\RtChatContext;
 use Demo\Chat\Socket\WebSocket\DTO\HandshakeResponseSignalData;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Router\DTO\EntitiesChangesDTO;
