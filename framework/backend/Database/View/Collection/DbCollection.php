@@ -36,7 +36,7 @@ use Iterator;
  * @template TObjectCollection of Objects
  * @implements ArrayAccess<int|string, T>
  * @implements Iterator<int|string, T>
- * @property-read Objects $objectCollection Object collection shortcut (throws if manual)
+ * @property-read TObjectCollection $objectCollection Object collection shortcut (throws if manual)
  */
 abstract class DbCollection implements ArrayAccess, Countable, Iterator
 {
