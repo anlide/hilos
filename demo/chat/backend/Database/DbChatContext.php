@@ -15,7 +15,7 @@ use Demo\Chat\Database\View\Collection\ModeratorPromptPieces;
 use Demo\Chat\Database\View\Collection\Users;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Exception\View\ObjectCollectionNotFoundException;
-use Hilos\Database\Hilos\DbContext;
+use Hilos\Database\Context\DbContext;
 use Hilos\Database\Object\Objects;
 
 /**

@@ -7,7 +7,7 @@ namespace Demo\Chat;
 use Demo\Chat\Database\DbChatContext;
 use Demo\Chat\Runtime\View\Context\RtChatContext;
 use Hilos\Core\Table\DataSource\EntityTableDataSource;
-use Hilos\Database\Hilos\DbContext;
+use Hilos\Database\Context\DbContext;
 use Hilos\Runtime\Exception\Rt\StateCollectionNotFoundException;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Table\TableHub;

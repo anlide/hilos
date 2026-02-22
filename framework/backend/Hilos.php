@@ -2,7 +2,7 @@
 
 namespace Hilos;
 
-use Hilos\Database\Hilos\DbContext;
+use Hilos\Database\Context\DbContext;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Table\TableHub;
 
