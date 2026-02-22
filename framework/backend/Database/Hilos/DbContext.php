@@ -54,10 +54,11 @@ abstract class DbContext
      *
      * @param string $name Collection name (e.g., 'users')
      * @param string $ideaCollectionClass DB collection class name
-     * @param ?string $actionsClass Actions class name (optional)
+     * @param ?string $actionsClass Collection actions class name (optional)
+     * @param ?string $itemActionsClass Item actions class name (optional)
      * @throws ObjectCollectionNotFoundException
      */
-    public function setRepresent(string $name, string $ideaCollectionClass, ?string $actionsClass = null): void
+    public function setRepresent(string $name, string $ideaCollectionClass, ?string $actionsClass = null, ?string $itemActionsClass = null): void
     {
         if (!isset($this->_objectCollections[$name])) {
             throw new ObjectCollectionNotFoundException(
@@ -72,6 +73,9 @@ abstract class DbContext
             $ideaCollection->setObjectCollection($objectCollection);
             if ($actionsClass !== null) {
                 $ideaCollection->setActionsClass($actionsClass);
+            }
+            if ($itemActionsClass !== null) {
+                $ideaCollection->setItemActionsClass($itemActionsClass);
             }
             $this->_ideaCollections[$name] = $ideaCollection;
         }

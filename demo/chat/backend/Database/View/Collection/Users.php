@@ -2,7 +2,7 @@
 
 namespace Demo\Chat\Database\View\Collection;
 
-use Demo\Chat\Database\Actions\UsersActions;
+use Demo\Chat\Database\Actions\Collection\UsersActions;
 use Demo\Chat\Database\Object\Collection\Users as ObjectUsers;
 use Demo\Chat\Database\View\Item\User;
 use Hilos\Database\DatabaseException;

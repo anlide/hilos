@@ -4,7 +4,7 @@ namespace Demo\Chat\Database\View\Collection;
 
 use Demo\Chat\Database\Object\Collection\Bots as ObjectBots;
 use Demo\Chat\Database\View\Item\Bot;
-use Hilos\Database\Actions\DbActions;
+use Hilos\Database\Actions\Collection\DbActions;
 use Hilos\Database\View\Collection\DbCollection;
 
 /**

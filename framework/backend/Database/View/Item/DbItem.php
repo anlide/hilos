@@ -4,12 +4,16 @@ declare(strict_types=1);
 
 namespace Hilos\Database\View\Item;
 
+use Hilos\Database\Actions\Item\DbActions;
+use Hilos\Database\Exception\View\Collection\ActionsClassException;
 use Hilos\Database\Exception\View\Item\CloneException;
 use Hilos\Database\Exception\View\Item\PropertyNotFoundException;
 use Hilos\Database\Exception\View\Item\ReadOnlyException;
 use Hilos\Database\Exception\View\Item\UnserializeException;
 use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 use Hilos\Database\Object\Item\Object_;
+use Hilos\Database\Object\Objects;
+use Hilos\Database\View\Collection\DbCollection;
 
 /**
  * Base class for Db items (read-only wrappers around Object instances).
@@ -18,17 +22,41 @@ use Hilos\Database\Object\Item\Object_;
  *
  * @template TObject of Object_
  * @property-read mixed $id Primary key value
- * @property-read Object_ $_object Reference to Object instance
+ * @property-read DbActions<DbItem, TObject> $actions Item actions for write operations
  */
 abstract class DbItem
 {
+    public const string actions = 'actions';
+    public const string object = '_object';
+
     /**
      * Reference to Object instance
      * Object is stored in ObjectCollection in storage
      *
-     * @var Object_
+     * @var TObject
      */
     protected Object_ $_object;
+
+    /**
+     * Parent DbCollection for this item.
+     *
+     * @var ?DbCollection<DbItem, Objects>
+     */
+    protected ?DbCollection $_collection = null;
+
+    /**
+     * Item actions class for lazy initialization.
+     *
+     * @var ?class-string<DbActions>
+     */
+    private ?string $_actionsClass = null;
+
+    /**
+     * Cached item actions instance.
+     *
+     * @var ?DbActions<DbItem, Object_>
+     */
+    private ?DbActions $_actions = null;
 
     /**
      * Public constructor - creates DbItem from Object instance
@@ -50,6 +78,75 @@ abstract class DbItem
     public function getIdString(): string
     {
         return $this->_object->getIdString();
+    }
+
+    /**
+     * Get underlying object reference.
+     *
+     * @return TObject
+     */
+    public function getObject(): Object_
+    {
+        return $this->_object;
+    }
+
+    /**
+     * Set parent DbCollection reference.
+     *
+     * @param DbCollection<DbItem, Objects> $collection
+     */
+    public function setCollection(DbCollection $collection): void
+    {
+        $this->_collection = $collection;
+    }
+
+    /**
+     * Get parent DbCollection reference.
+     *
+     * @return ?DbCollection<DbItem, Objects>
+     */
+    public function getCollection(): ?DbCollection
+    {
+        return $this->_collection;
+    }
+
+    /**
+     * Get object collection from parent collection.
+     */
+    public function getObjectCollection(): ?Objects
+    {
+        return $this->_collection?->getObjectCollection();
+    }
+
+    /**
+     * Set item actions class for lazy initialization.
+     *
+     * @param ?class-string<DbActions> $actionsClass
+     */
+    public function setActionsClass(?string $actionsClass): void
+    {
+        $this->_actionsClass = $actionsClass;
+    }
+
+    /**
+     * Get item actions instance.
+     *
+     * @throws ActionsClassException
+     */
+    protected function getActions(): DbActions
+    {
+        if ($this->_actions === null) {
+            $class = $this->_actionsClass;
+            if ($class === null) {
+                throw new ActionsClassException("Item actions class is not set for " . static::class);
+            }
+            if (!is_subclass_of($class, DbActions::class)) {
+                throw new ActionsClassException("Item actions class [{$class}] must extend " . DbActions::class);
+            }
+            $this->_actions = new $class($this);
+        }
+
+        return $this->_actions;
     }
 
     /**
@@ -75,17 +172,21 @@ abstract class DbItem
     }
 
     /**
-     * Property getter - throws error for undeclared properties
+     * Property getter.
      * Child classes should override and call parent::__get() in default case.
      *
      * @param string $name Property name
-     * @return never
-     * @throws PropertyNotFoundException Always throws for undeclared properties
+     * @return mixed
+     * @throws PropertyNotFoundException If property does not exist
+     * @throws ActionsClassException If item actions class is invalid or not configured
      */
     public function __get(string $name)
     {
-        $className = static::class;
-        throw new PropertyNotFoundException("Property [{$name}] does not exist on {$className}");
+        return match ($name) {
+            self::actions => $this->getActions(),
+            self::object => $this->_object,
+            default => throw new PropertyNotFoundException("Property [{$name}] does not exist on " . static::class),
+        };
     }
 
     /**

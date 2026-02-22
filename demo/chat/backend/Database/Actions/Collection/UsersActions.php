@@ -1,12 +1,12 @@
 <?php
 
-namespace Demo\Chat\Database\Actions;
+namespace Demo\Chat\Database\Actions\Collection;
 
 use Demo\Chat\Database\Object\Collection\Users as ObjectUsers;
 use Demo\Chat\Database\Object\Item\User as ObjectUser;
 use Demo\Chat\Database\View\Collection\Users as DbCollectionUsers;
 use Demo\Chat\Database\View\Item\User;
-use Hilos\Database\Actions\DbActions;
+use Hilos\Database\Actions\Collection\DbActions;
 use Hilos\HilosException;
 use Hilos\Utils\Helpers\TimeHelper;
 use RuntimeException;
@@ -48,30 +48,5 @@ final class UsersActions extends DbActions
         $this->addObjectToCollection($user);
 
         return $this->createDbItemFromObject($user);
-    }
-
-    /**
-     * Renames user by ID.
-     *
-     * @param int $userId User ID
-     * @param string $newName New display name
-     * @throws HilosException On error (user not found, new name same as old name, database error, etc.)
-     */
-    public function rename(int $userId, string $newName): void
-    {
-        $this->ensureCanWrite();
-
-        if (!isset($this->objectCollection[$userId])) {
-            throw new RuntimeException("User not found for rename (userId={$userId})");
-        }
-
-        $oldName = $this->objectCollection[$userId]->name;
-        if ($oldName === $newName) {
-            throw new RuntimeException("New name is the same as old name for rename (userId={$userId})");
-        }
-
-        $this->objectCollection[$userId]->name = $newName;
-        $this->objectCollection[$userId]->lastActivity = TimeHelper::getSqlDateTime();
-        $this->objectCollection[$userId]->sync();
     }
 }

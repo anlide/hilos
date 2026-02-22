@@ -6,7 +6,7 @@ namespace Hilos\Database\View\Collection;
 
 use ArrayAccess;
 use Countable;
-use Hilos\Database\Actions\DbActions;
+use Hilos\Database\Actions\Collection\DbActions;
 use Hilos\Database\Actions\Exception\ObjectCollectionNullException;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Exception\View\Collection\ActionsClassException;
@@ -42,6 +42,7 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
 {
     public const string actions = 'actions';
     public const string objectCollection = 'objectCollection';
+    public const string itemActionsClass = 'itemActionsClass';
 
     /** @var class-string<T> */
     public const string DB_ITEM_CLASS = '';
@@ -83,6 +84,14 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
      * @var ?string
      */
     private ?string $_actionsClass = null;
+
+    /**
+     * Item actions class name (set via setItemActionsClass).
+     * Used to create Actions instance for each DbItem on demand.
+     *
+     * @var ?string
+     */
+    private ?string $_itemActionsClass = null;
 
     /**
      * Cached Actions instance (created lazily)
@@ -189,6 +198,17 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
     }
 
     /**
+     * Set Item Actions class name.
+     * Called when collection is registered.
+     *
+     * @param ?string $itemActionsClass Item actions class name
+     */
+    public function setItemActionsClass(?string $itemActionsClass): void
+    {
+        $this->_itemActionsClass = $itemActionsClass;
+    }
+
+    /**
      * Get Actions instance
      * Creates Actions instance lazily on first access
      *
@@ -247,7 +267,10 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
         if (!($object instanceof $objectClass)) {
             throw new InvalidArgumentException("Object must be instance of {$objectClass}");
         }
-        return new $itemClass($object);
+        $item = new $itemClass($object);
+        $item->setCollection($this);
+        $item->setActionsClass($this->_itemActionsClass);
+        return $item;
     }
 
     /**

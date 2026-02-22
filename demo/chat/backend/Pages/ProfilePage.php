@@ -11,15 +11,12 @@ use Demo\Chat\Core\Page\AbstractChatPage;
 use Demo\Chat\Core\Page\DTO\RenameActionDTO;
 use Demo\Chat\Core\Router\DTO\ChatEventSignalDTO;
 use Demo\Chat\Database\DbChatContext;
+use Demo\Chat\Database\Object\Item\User;
 use Demo\Chat\Database\View\Collection\Events;
 use Demo\Chat\Hilos;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\EntitiesChangesDTO;
-use Hilos\Database\Actions\Exception\Old\ObjectCollectionNullException;
-use Hilos\Database\Actions\Exception\Old\TableNameUndeterminedException;
-use Hilos\Database\Actions\Exception\Old\UnknownLazyStrategyException;
-use Hilos\Database\DatabaseException;
-use Hilos\TruthSource\Exception\WriteNotAllowedException;
+use Hilos\HilosException;
 use Hilos\Utils\Logger;
 
 /**
@@ -69,11 +66,7 @@ class ProfilePage extends AbstractChatPage
      * @param string $acceptKey Accept key
      * @param string $action Action name
      * @param ActionPayloadDTO $dto Action payload DTO
-     * @throws DatabaseException
-     * @throws ObjectCollectionNullException
-     * @throws UnknownLazyStrategyException
-     * @throws WriteNotAllowedException
-     * @throws TableNameUndeterminedException
+     * @throws HilosException On error during action handling
      */
     public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): void
     {
@@ -94,11 +87,7 @@ class ProfilePage extends AbstractChatPage
      *
      * @param string $acceptKey Accept key
      * @param RenameActionDTO $dto Rename DTO
-     * @throws DatabaseException
-     * @throws ObjectCollectionNullException
-     * @throws UnknownLazyStrategyException
-     * @throws WriteNotAllowedException
-     * @throws TableNameUndeterminedException
+     * @throws HilosException On error during rename operation
      */
     private function handleRename(string $acceptKey, RenameActionDTO $dto): void
     {
@@ -112,10 +101,11 @@ class ProfilePage extends AbstractChatPage
             return;
         }
 
-        $oldName = Hilos::$db->users[Hilos::$rt->connections[$acceptKey]->userId]->name;
-        Hilos::$db->users->actions->rename(Hilos::$rt->connections[$acceptKey]->userId, $dto->newName);
-
         $userId = Hilos::$rt->connections[$acceptKey]->userId;
+        $user = Hilos::$db->users[$userId];
+        $oldName = $user->name;
+        $user->actions->rename($dto->newName);
+
         $event = Hilos::$db->events->actions->add(ChatEventType::USER_RENAMED->value, $userId, [
             'oldName' => $oldName,
             'newName' => $dto->newName,
@@ -124,7 +114,7 @@ class ProfilePage extends AbstractChatPage
             ChatSignalConstants::NEW_EVENT,
             new ChatEventSignalDTO(new EntitiesChangesDTO(
                 full: [DbChatContext::events => Events::fromSingleItem($event)],
-                updates: [DbChatContext::users => [['id' => $userId, 'name' => $dto->newName]]],
+                updates: [DbChatContext::users => [[User::id => $userId, User::name => $dto->newName]]],
             )),
         );
     }

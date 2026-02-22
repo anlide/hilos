@@ -4,7 +4,7 @@ namespace Demo\Chat\Database\View\Collection;
 
 use Demo\Chat\Database\Object\Collection\ModeratorPromptPieces as ObjectModeratorPromptPiecesCollection;
 use Demo\Chat\Database\View\Item\ModeratorPromptPiece;
-use Hilos\Database\Actions\DbActions;
+use Hilos\Database\Actions\Collection\DbActions;
 use Hilos\Database\View\Collection\DbCollection;
 
 /**

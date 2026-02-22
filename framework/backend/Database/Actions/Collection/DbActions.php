@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Hilos\Database\Actions;
+namespace Hilos\Database\Actions\Collection;
 
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Core\TruthSource\TruthSourceRegistry;

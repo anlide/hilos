@@ -1,13 +1,13 @@
 <?php
 
-namespace Demo\Chat\Database\Actions;
+namespace Demo\Chat\Database\Actions\Collection;
 
 use Demo\Chat\Database\Entity\Item\Event;
 use Demo\Chat\Database\Object\Collection\Events as ObjectEvents;
 use Demo\Chat\Database\Object\Item\Event as ObjectEvent;
 use Demo\Chat\Database\View\Collection\Events as DbCollectionEvents;
 use Demo\Chat\Database\View\Item\Event as DbEvent;
-use Hilos\Database\Actions\DbActions;
+use Hilos\Database\Actions\Collection\DbActions;
 use Hilos\HilosException;
 use Hilos\Utils\Helpers\TimeHelper;
 use RuntimeException;

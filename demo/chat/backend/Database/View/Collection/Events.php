@@ -2,7 +2,7 @@
 
 namespace Demo\Chat\Database\View\Collection;
 
-use Demo\Chat\Database\Actions\EventsActions;
+use Demo\Chat\Database\Actions\Collection\EventsActions;
 use Demo\Chat\Database\Object\Collection\Events as ObjectEvents;
 use Demo\Chat\Database\View\Item\Event;
 use Hilos\Database\View\Collection\DbCollection;
