@@ -39,6 +39,6 @@ final class Users extends DbCollection
             return null;
         }
 
-        return $this->getIdeaForKey($objectUser->id);
+        return $this->getItemForKey($objectUser->id);
     }
 }

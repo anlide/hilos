@@ -110,7 +110,7 @@ abstract class DbActions
      * Create DbItem from Object using callback
      *
      * @param Object_ $object Object instance
-     * @return DbItem Db item (subtype of DbItem, bound in child class)
+     * @return T DbItem instance, resolved to specific subtype via generic parameter T
      * @throws CallbackNotSetException If callback is not set
      */
     protected function createDbItemFromObject(Object_ &$object): DbItem

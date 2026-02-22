@@ -145,6 +145,7 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
      * @param DbItem $item Single item to wrap
      * @return static New manual collection with one item
      * @throws ObjectGetIdStringNotImplementedException If DbItem's Object does not implement getIdString() (required for manual collections to use ID as key)
+     * @throws CollectionNotManualException If collection is not manual (add() is only supported for manual collections, as it uses ID as key)
      */
     public static function fromSingleItem(DbItem $item): static
     {
@@ -296,6 +297,7 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
      * @param DbCollection $other Collection whose items to merge in (only those not already in $this)
      * @return static New manual collection
      * @throws ObjectGetIdStringNotImplementedException If an item's Object does not implement getIdString()
+     * @throws CollectionNotManualException If this collection is not manual (merging is only supported for manual collections, as it returns a new manual collection)
      */
     public function mergeWith(DbCollection $other): static
     {
@@ -317,9 +319,9 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
      * Uses cached DbItem if available, otherwise creates new instance
      *
      * @param int|string $key Primary key ID
-     * @return ?DbItem
+     * @return ?T DbItem instance for object at key, or null if not found (e.g. deleted)
      */
-    protected function getIdeaForKey(int|string $key): ?DbItem
+    protected function getItemForKey(int|string $key): ?DbItem
     {
         if (isset($this->items[$key])) {
             return $this->items[$key];
@@ -353,8 +355,8 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
     {
         $result = [];
         if ($this->isManual) {
-            foreach ($this->items as $key => $idea) {
-                $data = $idea->toArray($withId, $idAsIndex, $withBridges, $withCalculation, $toFrontend);
+            foreach ($this->items as $key => $item) {
+                $data = $item->toArray($withId, $idAsIndex, $withBridges, $withCalculation, $toFrontend);
                 if ($idAsIndex) {
                     $result[$key] = $data;
                 } else {
@@ -365,9 +367,9 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
             $objectCollection = $this->getObjectCollection();
             if ($objectCollection !== null) {
                 foreach ($objectCollection as $key => $object) {
-                    $idea = $this->getIdeaForKey($key);
-                    if ($idea !== null) {
-                        $data = $idea->toArray($withId, $idAsIndex, $withBridges, $withCalculation, $toFrontend);
+                    $item = $this->getItemForKey($key);
+                    if ($item !== null) {
+                        $data = $item->toArray($withId, $idAsIndex, $withBridges, $withCalculation, $toFrontend);
                         if ($idAsIndex) {
                             $result[$key] = $data;
                         } else {
@@ -388,14 +390,15 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
      * @param callable $callback Callback function (DbItem, key) => bool
      * @return static New filtered manual collection
      * @throws DatabaseException If DbItem has no associated Object ID
+     * @throws CollectionNotManualException If collection is not manual (filtering is only supported for manual collections, as it returns a new manual collection)
      */
     public function filter(callable $callback): static
     {
         $filtered = static::initEmpty();
         if ($this->isManual) {
-            foreach ($this->items as $key => $idea) {
-                if ($callback($idea, $key)) {
-                    $filtered->add($idea);
+            foreach ($this->items as $key => $item) {
+                if ($callback($item, $key)) {
+                    $filtered->add($item);
                 }
             }
         } else {
@@ -407,9 +410,9 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
                     $objectCollection->preloadAll();
                 }
                 foreach ($objectCollection as $key => $object) {
-                    $idea = $this->getIdeaForKey($key);
-                    if ($idea !== null && $callback($idea, $key)) {
-                        $filtered->add($idea);
+                    $item = $this->getItemForKey($key);
+                    if ($item !== null && $callback($item, $key)) {
+                        $filtered->add($item);
                     }
                 }
             }
@@ -426,8 +429,8 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
     public function map(callable $callback): array
     {
         $result = [];
-        foreach ($this as $key => $idea) {
-            $result[$key] = $callback($idea, $key);
+        foreach ($this as $key => $item) {
+            $result[$key] = $callback($item, $key);
         }
         return $result;
     }
@@ -453,7 +456,7 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
             return null;
         }
         $firstKey = array_key_first(iterator_to_array($objectCollection));
-        return $firstKey !== null ? $this->getIdeaForKey($firstKey) : null;
+        return $firstKey !== null ? $this->getItemForKey($firstKey) : null;
     }
 
     /**
@@ -478,7 +481,7 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
         }
         $keys = array_keys(iterator_to_array($objectCollection));
         $lastKey = end($keys);
-        return $lastKey !== false ? $this->getIdeaForKey($lastKey) : null;
+        return $lastKey !== false ? $this->getItemForKey($lastKey) : null;
     }
 
     /**
@@ -535,7 +538,7 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
      */
     public function offsetGet(mixed $offset): ?DbItem
     {
-        return $this->getIdeaForKey($offset);
+        return $this->getItemForKey($offset);
     }
 
     /**
