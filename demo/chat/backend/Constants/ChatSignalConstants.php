@@ -27,6 +27,23 @@ class ChatSignalConstants
     public const string SUBSCRIPTION_PAGE_ADMIN_MODERATOR = 'subscription_page_admin_moderator';
     public const string SUBSCRIPTION_PAGE_ADMIN_BOTS = 'subscription_page_admin_bots';
 
-    /** Signal for table action response (load_page, refresh_snapshot) */
-    public const string TABLE_UPDATE = 'table_update';
+    // ── Table actions (client → server) ──────────────────────────────────
+    public const string TABLE_REFRESH = 'table_refresh';
+    public const string USER_UPDATE = 'user_update';
+    public const string BOT_CREATE = 'bot_create';
+    public const string BOT_UPDATE = 'bot_update';
+    public const string BOT_DELETE = 'bot_delete';
+    public const string MODERATOR_PIECE_CREATE = 'moderator_piece_create';
+    public const string MODERATOR_PIECE_UPDATE = 'moderator_piece_update';
+    public const string MODERATOR_PIECE_DELETE = 'moderator_piece_delete';
+
+    // ── Table signals (server → client) ──────────────────────────────────
+    /** Server responds with fresh table data */
+    public const string TABLE_DATA = 'table_data';
+
+    /** Server broadcasts a single table mutation */
+    public const string TABLE_MUTATION = 'table_mutation';
+
+    /** Server sends a table action error to the originating client */
+    public const string TABLE_ACTION_ERROR = 'table_action_error';
 }

@@ -26,6 +26,14 @@ class ChatWebSocketClient extends WebSocketClient
             ChatSignalConstants::RENAME,
             ChatSignalConstants::MESSAGE,
             ChatSignalConstants::FILE,
+            ChatSignalConstants::TABLE_REFRESH,
+            ChatSignalConstants::USER_UPDATE,
+            ChatSignalConstants::BOT_CREATE,
+            ChatSignalConstants::BOT_UPDATE,
+            ChatSignalConstants::BOT_DELETE,
+            ChatSignalConstants::MODERATOR_PIECE_CREATE,
+            ChatSignalConstants::MODERATOR_PIECE_UPDATE,
+            ChatSignalConstants::MODERATOR_PIECE_DELETE,
         ], true)) {
             throw new \RuntimeException("Unknown websocket action type: {$actionName}");
         }

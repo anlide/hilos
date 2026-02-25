@@ -5,12 +5,12 @@
         <div class="card-header d-flex justify-content-between align-items-center">
           <h5 class="mb-0">Admin Users</h5>
           <button
-            v-if="usersTableMeta"
+            v-if="tableState"
             type="button"
             class="btn btn-outline-light btn-sm"
             title="Refresh table from server"
             aria-label="Refresh table"
-            @click="updateSnapshot"
+            @click="refreshTable"
           >
             <i class="bi bi-arrow-clockwise" aria-hidden="true"></i>
             Refresh
@@ -34,7 +34,7 @@
             :pending-changes="pendingChanges"
             :change-markers="changeMarkers"
             @edit="handleEdit"
-            @update-snapshot="updateSnapshot"
+            @update-snapshot="handleApplyChanges"
           >
             <template #header="{ sort, handleSort, isFieldSortable }">
               <th>
@@ -164,9 +164,11 @@
 import { ref, computed } from 'vue'
 import { useWebSocket } from '@hilos/sdk/plugins/websocket'
 import { Table, Modal, LoadingButton } from '@hilos/sdk/components'
+import { getTableDisplayRows, getTablePendingChanges, getTableChangeMarkers } from '@hilos/sdk/composables'
 import { useChatStore } from '@/stores'
 import { sendAction } from '@/services/websocketActions'
 import { TableActionConstants } from '@hilos/sdk/constants'
+import { USER_UPDATE } from '@/constants'
 import type { Presence } from '@/types/domain/Presence'
 
 interface UserEntity {
@@ -179,32 +181,32 @@ interface UserEntity {
 const chatStore = useChatStore()
 const websocket = useWebSocket()
 
-// Table data from backend (subscription_page_admin_users / table_update)
-const usersTableKey = 'users'
-const usersTableMeta = computed(() => chatStore.tableData[usersTableKey])
+const tableKey = 'users'
+const tableState = computed(() => chatStore.tableData[tableKey])
+const displayRows = computed(() => getTableDisplayRows<UserEntity>(chatStore.tableData[tableKey]))
+const pendingChanges = computed(() => getTablePendingChanges(chatStore.tableData[tableKey]))
+const changeMarkers = computed(() => getTableChangeMarkers(chatStore.tableData[tableKey]))
+
 const users = computed(() => {
-  const data = usersTableMeta.value
-  if (!data || !Array.isArray(data.rows)) return []
-  const rows = data.rows as UserEntity[]
-  return rows.map((row) => {
+  return displayRows.value.map((row) => {
     const liveUser = chatStore.users.find((u) => u.id === row.id)
     const presence = liveUser?.presence ?? row.presence
     return { ...row, presence }
   })
 })
 
-// Pending changes tracking
-const pendingChanges = ref({
-  added: 0,
-  updated: 0,
-  deleted: 0
-})
+const refreshTable = () => {
+  sendAction(websocket, TableActionConstants.TABLE_REFRESH, {
+    [TableActionConstants.PAYLOAD_KEY_TABLE_KEY]: tableKey,
+  })
+}
 
-const changeMarkers = ref({
-  added: [] as number[],
-  updated: [] as number[],
-  deleted: [] as number[]
-})
+const handleApplyChanges = () => {
+  const { hasDeletes } = chatStore.applyPendingMutations(tableKey)
+  if (hasDeletes) {
+    refreshTable()
+  }
+}
 
 const showModal = ref(false)
 const selectedUser = ref<UserEntity | null>(null)
@@ -231,13 +233,6 @@ const isFormValid = computed(() => {
   const name = formUser.value.name.trim()
   return name.length >= 2 && name.length <= 50
 })
-
-/** Request fresh table data from backend; response comes via table_update signal. */
-const updateSnapshot = () => {
-  sendAction(websocket, TableActionConstants.ACTION_REFRESH_SNAPSHOT, {
-    [TableActionConstants.PAYLOAD_KEY_TABLE_KEY]: usersTableKey,
-  })
-}
 
 const formatDate = (dateStr: string | null | undefined): string => {
   if (!dateStr) return 'Never'
@@ -276,7 +271,10 @@ const saveLoading = ref(false)
 const saveUser = () => {
   if (!selectedUser.value || !isFormValid.value) return
   saveLoading.value = true
-  // TODO: send update user action to backend when API is available
+  sendAction(websocket, USER_UPDATE, {
+    id: selectedUser.value.id,
+    name: formUser.value.name.trim(),
+  })
   resetForm()
 }
 

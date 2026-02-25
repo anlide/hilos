@@ -2,9 +2,9 @@
 
 namespace Hilos;
 
+use Hilos\Core\Table\Context\TableContext;
 use Hilos\Database\Context\DbContext;
 use Hilos\Runtime\View\Context\RtContext;
-use Hilos\Table\TableHub;
 
 /**
  * Main framework facade for data access.
@@ -24,8 +24,8 @@ abstract class Hilos
     /** @var ?TRuntime Runtime layer singleton */
     public static ?RtContext $rt = null;
 
-    /** @var ?TableHub Table layer singleton */
-    public static ?TableHub $table = null;
+    /** @var ?TableContext Table layer singleton */
+    public static ?TableContext $table = null;
 
     /**
      * Initialize all layers.
@@ -34,26 +34,30 @@ abstract class Hilos
     {
         if (static::$db === null) {
             static::$db = static::createDb();
+            static::$db->configure();
         }
 
         if (static::$rt === null) {
             static::$rt = static::createRuntime();
         }
 
-        static::$db->configure();
-
         if (static::$table === null) {
             static::$table = static::createTable();
+            static::$table?->configure();
         }
     }
 
     /**
      * Create database context instance.
+     *
+     * @return DbContext
      */
     abstract protected static function createDb(): DbContext;
 
     /**
      * Create runtime instance.
+     *
+     * @return ?TRuntime
      */
     protected static function createRuntime(): ?RtContext
     {
@@ -61,9 +65,11 @@ abstract class Hilos
     }
 
     /**
-     * Create table instance.
+     * Create table context instance.
+     *
+     * @return ?TableContext
      */
-    protected static function createTable(): ?TableHub
+    protected static function createTable(): ?TableContext
     {
         return null;
     }

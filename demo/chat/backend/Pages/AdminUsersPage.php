@@ -8,85 +8,110 @@ use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Page\AbstractChatPage;
 use Demo\Chat\Core\Router\DTO\ChatEventSignalDTO;
-use Demo\Chat\Database\DbChatContext;
+use Demo\Chat\Hilos;
+use Demo\Chat\Tables\DTO\TableRefreshActionDTO;
+use Demo\Chat\Tables\TableChatContext;
+use Demo\Chat\Tables\User\DTO\UserUpdateActionDTO;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\EntitiesChangesDTO;
-use Hilos\Core\Table\DTO\TableDataDTO;
-use Hilos\Core\Table\DTO\TablesPayloadDTO;
-use Hilos\Core\Table\TableActionHandler;
-use Hilos\Core\Table\TablePayloadBuilder;
-use Hilos\Utils\Logger;
+use Hilos\Core\Table\DTO\TableActionErrorSignalData;
+use Hilos\Core\Table\DTO\TableMutationSignalData;
+use Hilos\Core\Table\Exception\TableActionException;
 
 /**
- * AdminUsersPage - Admin users page handler
+ * AdminUsersPage — Admin users table page handler.
  *
- * Handles subscription, unsubscription, and actions for the admin users page.
- * Subscription response includes the users table (Hilos::$table->users).
+ * Handles initial data load on subscribe, user_update actions,
+ * and the universal table_refresh action (routed here for all tables).
  */
 class AdminUsersPage extends AbstractChatPage
 {
-    /**
-     * Get page name
-     *
-     * @return string Page name
-     */
     public function getPageName(): string
     {
         return PageConstants::ADMIN_USERS;
     }
 
-    /**
-     * Handle page-specific subscription logic
-     *
-     * Returns users table data (full snapshot) in the subscription response.
-     *
-     * @param string $acceptKey Accept key
-     */
     public function onSubscribe(string $acceptKey): void
     {
-        $tablesPayload = TablePayloadBuilder::buildFull([DbChatContext::users]);
+        $result = Hilos::$table->users->get();
 
         $this->getChatAgent()->sendToUser(
             ChatSignalConstants::SUBSCRIPTION_PAGE_ADMIN_USERS,
             $acceptKey,
-            new ChatEventSignalDTO(new EntitiesChangesDTO(), $tablesPayload),
+            new ChatEventSignalDTO(
+                new EntitiesChangesDTO(),
+                [TableChatContext::users => $result],
+            ),
         );
     }
 
-    /**
-     * Handle page-specific unsubscription logic
-     *
-     * @param string $acceptKey Accept key
-     */
     public function onUnsubscribe(string $acceptKey): void
     {
-        // TODO: Implement admin users page unsubscribe logic
+    }
+
+    public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): void
+    {
+        try {
+            match (true) {
+                $dto instanceof UserUpdateActionDTO => $this->handleUserUpdate($acceptKey, $dto),
+                $dto instanceof TableRefreshActionDTO => $this->handleTableRefresh($acceptKey, $dto),
+                default => throw new TableActionException("Unexpected action payload for users page"),
+            };
+        } catch (TableActionException $e) {
+            $tableKey = $dto instanceof TableRefreshActionDTO ? ($dto->tableKey ?: TableChatContext::users) : TableChatContext::users;
+
+            $this->getChatAgent()->sendToUser(
+                ChatSignalConstants::TABLE_ACTION_ERROR,
+                $acceptKey,
+                new TableActionErrorSignalData($tableKey, $action, $e->getMessage()),
+            );
+        }
     }
 
     /**
-     * Handle page-specific action logic
-     *
-     * Delegates table actions (load_page, refresh_snapshot) to TableActionHandler.
-     *
-     * @param string $acceptKey Accept key
-     * @param string $action Action name
-     * @param ActionPayloadDTO $dto Action payload DTO
+     * @throws TableActionException
      */
-    public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): void
+    private function handleUserUpdate(string $acceptKey, UserUpdateActionDTO $dto): void
     {
-        $result = TableActionHandler::handle($action, $dto);
-        if ($result === null) {
-            return;
+        if ($dto->id <= 0) {
+            throw new TableActionException('Invalid user ID');
         }
 
-        $tablesPayload = $result instanceof TableDataDTO
-            ? new TablesPayloadDTO(tables: [$result->key => $result])
-            : $result;
+        $objectCollection = Hilos::$db->users->getObjectCollection();
+        if (!isset($objectCollection[(string) $dto->id])) {
+            throw new TableActionException("User #{$dto->id} not found");
+        }
+
+        $mutation = Hilos::$table->users[$dto->id]->actions->update($dto);
+        $signal = new TableMutationSignalData(TableChatContext::users, $mutation);
+
+        $this->getChatAgent()->sendToUser(ChatSignalConstants::TABLE_MUTATION, $acceptKey, $signal);
+        $this->getChatAgent()->sendToAllUsers(ChatSignalConstants::TABLE_MUTATION, $signal, $acceptKey);
+    }
+
+    /**
+     * @throws TableActionException
+     */
+    private function handleTableRefresh(string $acceptKey, TableRefreshActionDTO $dto): void
+    {
+        if ($dto->tableKey === '') {
+            throw new TableActionException('Table key is required for refresh');
+        }
+
+        $tableDef = Hilos::$table?->get($dto->tableKey);
+        if ($tableDef === null) {
+            throw new TableActionException("Table '{$dto->tableKey}' not found");
+        }
+
+        $result = $tableDef->get();
 
         $this->getChatAgent()->sendToUser(
-            ChatSignalConstants::TABLE_UPDATE,
+            ChatSignalConstants::TABLE_DATA,
             $acceptKey,
-            new ChatEventSignalDTO(new EntitiesChangesDTO(), $tablesPayload),
+            new ChatEventSignalDTO(
+                new EntitiesChangesDTO(),
+                [$dto->tableKey => $result],
+            ),
         );
     }
 }

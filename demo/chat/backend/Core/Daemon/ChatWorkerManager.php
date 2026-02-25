@@ -17,7 +17,6 @@ use Hilos\Core\Page\ActionRouteConfig;
 use Hilos\Core\Page\Exception\PageSignalRouterNotFoundException;
 use Hilos\Core\Page\PageSignalRouter;
 use Hilos\Core\Router\SignalRouter;
-use Hilos\Core\Table\TableActionConstants;
 
 /**
  * ChatWorkerManager - Worker manager for chat demo
@@ -27,37 +26,18 @@ use Hilos\Core\Table\TableActionConstants;
  */
 class ChatWorkerManager extends WorkerManager
 {
-    /**
-     * Create signal router instance
-     *
-     * @return SignalRouter Signal router instance
-     */
     protected function createSignalRouter(): SignalRouter
     {
         return new ChatSignalRouter();
     }
 
-    /**
-     * Create agent manager instance
-     *
-     * @param SignalRouter $signalRouter Signal router instance
-     * @return AgentManager Agent manager instance
-     */
     protected function createAgentManager(SignalRouter $signalRouter): AgentManager
     {
         return new ChatAgentManager($signalRouter);
     }
 
-    /**
-     * Worker tick implementation
-     *
-     * Called regularly when connected to daemon.
-     * Base class already ticks all agents, so this is for worker-specific work.
-     */
     protected function onTick(): void
     {
-        // Worker-specific tick logic (if any)
-        // Agents are already ticked by base class
     }
 
     protected function createPageSignalRouter(AgentInterface $agent): PageSignalRouter
@@ -71,8 +51,17 @@ class ChatWorkerManager extends WorkerManager
             ChatSignalConstants::MESSAGE => PageConstants::MAIN,
             ChatSignalConstants::RENAME => PageConstants::PROFILE,
             ChatSignalConstants::FILE => PageConstants::MAIN,
-            TableActionConstants::ACTION_LOAD_PAGE => PageConstants::ADMIN_USERS,
-            TableActionConstants::ACTION_REFRESH_SNAPSHOT => PageConstants::ADMIN_USERS,
+
+            ChatSignalConstants::TABLE_REFRESH => PageConstants::ADMIN_USERS,
+            ChatSignalConstants::USER_UPDATE => PageConstants::ADMIN_USERS,
+
+            ChatSignalConstants::BOT_CREATE => PageConstants::ADMIN_BOTS,
+            ChatSignalConstants::BOT_UPDATE => PageConstants::ADMIN_BOTS,
+            ChatSignalConstants::BOT_DELETE => PageConstants::ADMIN_BOTS,
+
+            ChatSignalConstants::MODERATOR_PIECE_CREATE => PageConstants::ADMIN_MODERATOR,
+            ChatSignalConstants::MODERATOR_PIECE_UPDATE => PageConstants::ADMIN_MODERATOR,
+            ChatSignalConstants::MODERATOR_PIECE_DELETE => PageConstants::ADMIN_MODERATOR,
         ]);
 
         return new PageSignalRouter($pageFactory, $actionRoutes);

@@ -5,12 +5,12 @@
         <div class="card-header d-flex justify-content-between align-items-center">
           <h5 class="mb-0">Moderator prompt pieces</h5>
           <button
-            v-if="tableMeta"
+            v-if="tableState"
             type="button"
             class="btn btn-outline-light btn-sm"
             title="Refresh table from server"
             aria-label="Refresh"
-            @click="updateSnapshot"
+            @click="refreshTable"
           >
             <i class="bi bi-arrow-clockwise" aria-hidden="true"></i>
             Refresh
@@ -18,7 +18,7 @@
         </div>
         <div class="card-body">
           <Table
-            :items="items"
+            :items="displayRows"
             item-key="id"
             :colspan="4"
             :searchable="true"
@@ -28,13 +28,15 @@
             :sortable-fields="['id', 'section']"
             :paginated="false"
             :show-actions="true"
-            :show-add-button="false"
+            :show-add-button="true"
             :show-edit-button="true"
-            :show-delete-button="false"
+            :show-delete-button="true"
             :pending-changes="pendingChanges"
             :change-markers="changeMarkers"
+            @add="handleAdd"
             @edit="handleEdit"
-            @update-snapshot="updateSnapshot"
+            @delete="handleDelete"
+            @update-snapshot="handleApplyChanges"
           >
             <template #header="{ sort, handleSort, isFieldSortable }">
               <th>
@@ -77,8 +79,9 @@
                 {{ row.item.promptPiece }}
               </td>
               <td>
-                <div v-if="row.showEditButton" class="d-flex gap-1">
+                <div class="d-flex gap-1">
                   <button
+                    v-if="row.showEditButton"
                     type="button"
                     class="btn btn-sm btn-outline-primary"
                     title="Edit"
@@ -86,7 +89,16 @@
                     @click="row.handleEdit"
                   >
                     <i class="bi bi-pencil" aria-hidden="true"></i>
-                    <span class="visually-hidden">Edit</span>
+                  </button>
+                  <button
+                    v-if="row.showDeleteButton"
+                    type="button"
+                    class="btn btn-sm btn-outline-danger"
+                    title="Delete"
+                    aria-label="Delete"
+                    @click="row.handleDelete"
+                  >
+                    <i class="bi bi-trash" aria-hidden="true"></i>
                   </button>
                 </div>
               </td>
@@ -104,7 +116,7 @@
     v-model="showModal"
     :title="modalTitle"
     modal-name="admin-moderator-modal"
-    modal-type="edit"
+    :modal-type="isCreating ? 'add' : 'edit'"
     :confirm-on-close="isFormDirty"
     @cancel="resetForm"
     @ok="savePiece"
@@ -138,7 +150,7 @@
         :loading-delay="300"
         @click="savePiece"
       >
-        Save
+        {{ isCreating ? 'Create' : 'Save' }}
       </LoadingButton>
     </template>
   </Modal>
@@ -148,35 +160,37 @@
 import { ref, computed } from 'vue'
 import { useWebSocket } from '@hilos/sdk/plugins/websocket'
 import { Table, Modal, LoadingButton } from '@hilos/sdk/components'
+import { getTableDisplayRows, getTablePendingChanges, getTableChangeMarkers } from '@hilos/sdk/composables'
 import { useChatStore } from '@/stores'
 import { sendAction } from '@/services/websocketActions'
 import { TableActionConstants } from '@hilos/sdk/constants'
+import { MODERATOR_PIECE_CREATE, MODERATOR_PIECE_UPDATE, MODERATOR_PIECE_DELETE } from '@/constants'
 import type { ModeratorPromptPieceEntity } from '@/types/domain'
 
 const chatStore = useChatStore()
 const websocket = useWebSocket()
 
 const tableKey = 'moderatorPromptPieces'
-const tableMeta = computed(() => chatStore.tableData[tableKey])
-const items = computed(() => {
-  const data = tableMeta.value
-  if (!data || !Array.isArray(data.rows)) return []
-  return data.rows as ModeratorPromptPieceEntity[]
-})
+const tableState = computed(() => chatStore.tableData[tableKey])
+const displayRows = computed(() => getTableDisplayRows<ModeratorPromptPieceEntity>(chatStore.tableData[tableKey]))
+const pendingChanges = computed(() => getTablePendingChanges(chatStore.tableData[tableKey]))
+const changeMarkers = computed(() => getTableChangeMarkers(chatStore.tableData[tableKey]))
 
-const pendingChanges = ref({
-  added: 0,
-  updated: 0,
-  deleted: 0
-})
+const refreshTable = () => {
+  sendAction(websocket, TableActionConstants.TABLE_REFRESH, {
+    [TableActionConstants.PAYLOAD_KEY_TABLE_KEY]: tableKey,
+  })
+}
 
-const changeMarkers = ref({
-  added: [] as number[],
-  updated: [] as number[],
-  deleted: [] as number[]
-})
+const handleApplyChanges = () => {
+  const { hasDeletes } = chatStore.applyPendingMutations(tableKey)
+  if (hasDeletes) {
+    refreshTable()
+  }
+}
 
 const showModal = ref(false)
+const isCreating = ref(false)
 const selectedPiece = ref<ModeratorPromptPieceEntity | null>(null)
 const formPiece = ref<ModeratorPromptPieceEntity>({
   id: null,
@@ -185,13 +199,14 @@ const formPiece = ref<ModeratorPromptPieceEntity>({
 })
 const baselinePiece = ref<ModeratorPromptPieceEntity | null>(null)
 
-const modalTitle = computed(() => 'Edit prompt piece')
+const modalTitle = computed(() => isCreating.value ? 'Create prompt piece' : 'Edit prompt piece')
 
 const clonePiece = (piece: ModeratorPromptPieceEntity): ModeratorPromptPieceEntity => {
   return JSON.parse(JSON.stringify(piece)) as ModeratorPromptPieceEntity
 }
 
 const isFormDirty = computed(() => {
+  if (isCreating.value) return formPiece.value.promptPiece.trim().length > 0
   if (!baselinePiece.value) return false
   return JSON.stringify(formPiece.value) !== JSON.stringify(baselinePiece.value)
 })
@@ -199,12 +214,6 @@ const isFormDirty = computed(() => {
 const isFormValid = computed(() => {
   return formPiece.value.promptPiece.trim().length > 0
 })
-
-const updateSnapshot = () => {
-  sendAction(websocket, TableActionConstants.ACTION_REFRESH_SNAPSHOT, {
-    [TableActionConstants.PAYLOAD_KEY_TABLE_KEY]: tableKey,
-  })
-}
 
 const getSectionBadgeClass = (section: string | null | undefined): string => {
   switch (section) {
@@ -217,26 +226,60 @@ const getSectionBadgeClass = (section: string | null | undefined): string => {
   }
 }
 
+const handleAdd = () => {
+  isCreating.value = true
+  selectedPiece.value = null
+  formPiece.value = {
+    id: null,
+    section: 'message_rule',
+    promptPiece: '',
+  }
+  baselinePiece.value = null
+  showModal.value = true
+}
+
 const handleEdit = (item: unknown) => {
   if (typeof item !== 'object' || item === null) return
   const piece = item as ModeratorPromptPieceEntity
+  isCreating.value = false
   selectedPiece.value = piece
   formPiece.value = clonePiece(piece)
   baselinePiece.value = clonePiece(piece)
   showModal.value = true
 }
 
+const handleDelete = (item: unknown) => {
+  if (typeof item !== 'object' || item === null) return
+  const piece = item as ModeratorPromptPieceEntity
+  if (piece.id == null) return
+  sendAction(websocket, MODERATOR_PIECE_DELETE, { id: piece.id })
+}
+
 const saveLoading = ref(false)
 
 const savePiece = () => {
-  if (!selectedPiece.value || !isFormValid.value) return
+  if (!isFormValid.value) return
   saveLoading.value = true
-  // TODO: send update action to backend when API is available
+
+  if (isCreating.value) {
+    sendAction(websocket, MODERATOR_PIECE_CREATE, {
+      section: formPiece.value.section,
+      promptPiece: formPiece.value.promptPiece.trim(),
+    })
+  } else if (selectedPiece.value?.id != null) {
+    sendAction(websocket, MODERATOR_PIECE_UPDATE, {
+      id: selectedPiece.value.id,
+      section: formPiece.value.section,
+      promptPiece: formPiece.value.promptPiece.trim(),
+    })
+  }
+
   resetForm()
 }
 
 const resetForm = () => {
   showModal.value = false
+  isCreating.value = false
   selectedPiece.value = null
   baselinePiece.value = null
   saveLoading.value = false

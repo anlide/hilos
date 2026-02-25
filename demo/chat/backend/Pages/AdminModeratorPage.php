@@ -8,67 +8,113 @@ use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Page\AbstractChatPage;
 use Demo\Chat\Core\Router\DTO\ChatEventSignalDTO;
-use Demo\Chat\Database\DbChatContext;
+use Demo\Chat\Hilos;
+use Demo\Chat\Tables\ModeratorPiece\DTO\ModeratorPieceCreateActionDTO;
+use Demo\Chat\Tables\ModeratorPiece\DTO\ModeratorPieceDeleteActionDTO;
+use Demo\Chat\Tables\ModeratorPiece\DTO\ModeratorPieceUpdateActionDTO;
+use Demo\Chat\Tables\TableChatContext;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\EntitiesChangesDTO;
-use Hilos\Core\Table\TablePayloadBuilder;
+use Hilos\Core\Table\DTO\TableActionErrorSignalData;
+use Hilos\Core\Table\DTO\TableMutationSignalData;
+use Hilos\Core\Table\Exception\TableActionException;
 
 /**
- * AdminModeratorPage - Admin moderator prompt pieces page handler
+ * AdminModeratorPage — Admin moderator prompt pieces page handler.
  *
- * Handles subscription, unsubscription, and actions for the admin moderator page.
- * Subscription response includes the moderatorPromptPieces table.
+ * Handles initial data load on subscribe and piece create/update/delete actions.
  */
 class AdminModeratorPage extends AbstractChatPage
 {
-    /**
-     * Get page name
-     *
-     * @return string Page name
-     */
     public function getPageName(): string
     {
         return PageConstants::ADMIN_MODERATOR;
     }
 
-    /**
-     * Handle page-specific subscription logic
-     *
-     * Returns moderatorPromptPieces table data (full snapshot) in the subscription response.
-     *
-     * @param string $acceptKey Accept key
-     */
     public function onSubscribe(string $acceptKey): void
     {
-        $tablesPayload = TablePayloadBuilder::buildFull([DbChatContext::moderatorPromptPieces]);
+        $result = Hilos::$table->moderatorPromptPieces->get();
+
         $this->getChatAgent()->sendToUser(
             ChatSignalConstants::SUBSCRIPTION_PAGE_ADMIN_MODERATOR,
             $acceptKey,
-            new ChatEventSignalDTO(new EntitiesChangesDTO(), $tablesPayload),
+            new ChatEventSignalDTO(
+                new EntitiesChangesDTO(),
+                [TableChatContext::moderatorPromptPieces => $result],
+            ),
         );
     }
 
-    /**
-     * Handle page-specific unsubscription logic
-     *
-     * @param string $acceptKey Accept key
-     */
     public function onUnsubscribe(string $acceptKey): void
     {
-        // TODO: Implement admin moderator page unsubscribe logic
+    }
+
+    public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): void
+    {
+        try {
+            match (true) {
+                $dto instanceof ModeratorPieceCreateActionDTO => $this->handleCreate($acceptKey, $dto),
+                $dto instanceof ModeratorPieceUpdateActionDTO => $this->handleUpdate($acceptKey, $dto),
+                $dto instanceof ModeratorPieceDeleteActionDTO => $this->handleDelete($acceptKey, $dto),
+                default => throw new TableActionException("Unexpected action payload for moderator page"),
+            };
+        } catch (TableActionException $e) {
+            $this->getChatAgent()->sendToUser(
+                ChatSignalConstants::TABLE_ACTION_ERROR,
+                $acceptKey,
+                new TableActionErrorSignalData(TableChatContext::moderatorPromptPieces, $action, $e->getMessage()),
+            );
+        }
+    }
+
+    private function handleCreate(string $acceptKey, ModeratorPieceCreateActionDTO $dto): void
+    {
+        $mutation = Hilos::$table->moderatorPromptPieces->actions->create($dto);
+        $signal = new TableMutationSignalData(TableChatContext::moderatorPromptPieces, $mutation);
+
+        $this->getChatAgent()->sendToUser(ChatSignalConstants::TABLE_MUTATION, $acceptKey, $signal);
+        $this->getChatAgent()->sendToAllUsers(ChatSignalConstants::TABLE_MUTATION, $signal, $acceptKey);
     }
 
     /**
-     * Handle page-specific action logic
-     *
-     * Table actions (load_page, refresh_snapshot) are routed to AdminUsersPage via ActionRouteConfig.
-     *
-     * @param string $acceptKey Accept key
-     * @param string $action Action name
-     * @param ActionPayloadDTO $dto Action payload DTO
+     * @throws TableActionException
      */
-    public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): void
+    private function handleUpdate(string $acceptKey, ModeratorPieceUpdateActionDTO $dto): void
     {
-        // Table actions routed to AdminUsersPage
+        if ($dto->id <= 0) {
+            throw new TableActionException('Invalid moderator prompt piece ID');
+        }
+
+        $objectCollection = Hilos::$db->moderatorPromptPieces->getObjectCollection();
+        if (!isset($objectCollection[(string) $dto->id])) {
+            throw new TableActionException("Moderator prompt piece #{$dto->id} not found");
+        }
+
+        $mutation = Hilos::$table->moderatorPromptPieces[$dto->id]->actions->update($dto);
+        $signal = new TableMutationSignalData(TableChatContext::moderatorPromptPieces, $mutation);
+
+        $this->getChatAgent()->sendToUser(ChatSignalConstants::TABLE_MUTATION, $acceptKey, $signal);
+        $this->getChatAgent()->sendToAllUsers(ChatSignalConstants::TABLE_MUTATION, $signal, $acceptKey);
+    }
+
+    /**
+     * @throws TableActionException
+     */
+    private function handleDelete(string $acceptKey, ModeratorPieceDeleteActionDTO $dto): void
+    {
+        if ($dto->id <= 0) {
+            throw new TableActionException('Invalid moderator prompt piece ID');
+        }
+
+        $objectCollection = Hilos::$db->moderatorPromptPieces->getObjectCollection();
+        if (!isset($objectCollection[(string) $dto->id])) {
+            throw new TableActionException("Moderator prompt piece #{$dto->id} not found");
+        }
+
+        $mutation = Hilos::$table->moderatorPromptPieces[$dto->id]->actions->delete();
+        $signal = new TableMutationSignalData(TableChatContext::moderatorPromptPieces, $mutation);
+
+        $this->getChatAgent()->sendToUser(ChatSignalConstants::TABLE_MUTATION, $acceptKey, $signal);
+        $this->getChatAgent()->sendToAllUsers(ChatSignalConstants::TABLE_MUTATION, $signal, $acceptKey);
     }
 }

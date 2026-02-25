@@ -5,12 +5,12 @@
         <div class="card-header d-flex justify-content-between align-items-center">
           <h5 class="mb-0">Admin Bots</h5>
           <button
-            v-if="tableMeta"
+            v-if="tableState"
             type="button"
             class="btn btn-outline-light btn-sm"
             title="Refresh table from server"
             aria-label="Refresh table"
-            @click="updateSnapshot"
+            @click="refreshTable"
           >
             <i class="bi bi-arrow-clockwise" aria-hidden="true"></i>
             Refresh
@@ -18,7 +18,7 @@
         </div>
         <div class="card-body">
           <Table
-            :items="bots"
+            :items="displayRows"
             item-key="id"
             :colspan="6"
             :searchable="true"
@@ -28,13 +28,15 @@
             :sortable-fields="['id', 'name', 'active']"
             :paginated="true"
             :show-actions="true"
-            :show-add-button="false"
+            :show-add-button="true"
             :show-edit-button="true"
-            :show-delete-button="false"
+            :show-delete-button="true"
             :pending-changes="pendingChanges"
             :change-markers="changeMarkers"
+            @add="handleAdd"
             @edit="handleEdit"
-            @update-snapshot="updateSnapshot"
+            @delete="handleDelete"
+            @update-snapshot="handleApplyChanges"
           >
             <template #header="{ sort, handleSort, isFieldSortable }">
               <th>
@@ -96,8 +98,9 @@
                 </span>
               </td>
               <td>
-                <div v-if="row.showEditButton" class="d-flex gap-1">
+                <div class="d-flex gap-1">
                   <button
+                    v-if="row.showEditButton"
                     type="button"
                     class="btn btn-sm btn-outline-primary"
                     title="Edit"
@@ -105,7 +108,16 @@
                     @click="row.handleEdit"
                   >
                     <i class="bi bi-pencil" aria-hidden="true"></i>
-                    <span class="visually-hidden">Edit</span>
+                  </button>
+                  <button
+                    v-if="row.showDeleteButton"
+                    type="button"
+                    class="btn btn-sm btn-outline-danger"
+                    title="Delete"
+                    aria-label="Delete"
+                    @click="row.handleDelete"
+                  >
+                    <i class="bi bi-trash" aria-hidden="true"></i>
                   </button>
                 </div>
               </td>
@@ -123,7 +135,7 @@
     v-model="showModal"
     :title="modalTitle"
     modal-name="admin-bots-modal"
-    modal-type="edit"
+    :modal-type="isCreating ? 'add' : 'edit'"
     :confirm-on-close="isFormDirty"
     @cancel="resetForm"
     @ok="saveBot"
@@ -187,7 +199,7 @@
         :loading-delay="300"
         @click="saveBot"
       >
-        Save
+        {{ isCreating ? 'Create' : 'Save' }}
       </LoadingButton>
     </template>
   </Modal>
@@ -197,35 +209,37 @@
 import { ref, computed } from 'vue'
 import { useWebSocket } from '@hilos/sdk/plugins/websocket'
 import { Table, Modal, LoadingButton } from '@hilos/sdk/components'
+import { getTableDisplayRows, getTablePendingChanges, getTableChangeMarkers } from '@hilos/sdk/composables'
 import { useChatStore } from '@/stores'
 import { sendAction } from '@/services/websocketActions'
 import { TableActionConstants } from '@hilos/sdk/constants'
+import { BOT_CREATE, BOT_UPDATE, BOT_DELETE } from '@/constants'
 import type { BotEntity } from '@/types/domain'
 
 const chatStore = useChatStore()
 const websocket = useWebSocket()
 
 const tableKey = 'bots'
-const tableMeta = computed(() => chatStore.tableData[tableKey])
-const bots = computed(() => {
-  const data = tableMeta.value
-  if (!data || !Array.isArray(data.rows)) return []
-  return data.rows as BotEntity[]
-})
+const tableState = computed(() => chatStore.tableData[tableKey])
+const displayRows = computed(() => getTableDisplayRows<BotEntity>(chatStore.tableData[tableKey]))
+const pendingChanges = computed(() => getTablePendingChanges(chatStore.tableData[tableKey]))
+const changeMarkers = computed(() => getTableChangeMarkers(chatStore.tableData[tableKey]))
 
-const pendingChanges = ref({
-  added: 0,
-  updated: 0,
-  deleted: 0
-})
+const refreshTable = () => {
+  sendAction(websocket, TableActionConstants.TABLE_REFRESH, {
+    [TableActionConstants.PAYLOAD_KEY_TABLE_KEY]: tableKey,
+  })
+}
 
-const changeMarkers = ref({
-  added: [] as number[],
-  updated: [] as number[],
-  deleted: [] as number[]
-})
+const handleApplyChanges = () => {
+  const { hasDeletes } = chatStore.applyPendingMutations(tableKey)
+  if (hasDeletes) {
+    refreshTable()
+  }
+}
 
 const showModal = ref(false)
+const isCreating = ref(false)
 const selectedBot = ref<BotEntity | null>(null)
 const formBot = ref<BotEntity>({
   id: null,
@@ -238,13 +252,14 @@ const formBot = ref<BotEntity>({
 })
 const baselineBot = ref<BotEntity | null>(null)
 
-const modalTitle = computed(() => 'Edit Bot')
+const modalTitle = computed(() => isCreating.value ? 'Create Bot' : 'Edit Bot')
 
 const cloneBot = (bot: BotEntity): BotEntity => {
   return JSON.parse(JSON.stringify(bot)) as BotEntity
 }
 
 const isFormDirty = computed(() => {
+  if (isCreating.value) return formBot.value.name.trim().length > 0
   if (!baselineBot.value) return false
   return JSON.stringify(formBot.value) !== JSON.stringify(baselineBot.value)
 })
@@ -254,32 +269,68 @@ const isFormValid = computed(() => {
   return name.length >= 2 && name.length <= 255
 })
 
-const updateSnapshot = () => {
-  sendAction(websocket, TableActionConstants.ACTION_REFRESH_SNAPSHOT, {
-    [TableActionConstants.PAYLOAD_KEY_TABLE_KEY]: tableKey,
-  })
+const handleAdd = () => {
+  isCreating.value = true
+  selectedBot.value = null
+  formBot.value = {
+    id: null,
+    name: '',
+    description: null,
+    style: null,
+    topics: null,
+    personality: null,
+    active: true,
+  }
+  baselineBot.value = null
+  showModal.value = true
 }
 
 const handleEdit = (item: unknown) => {
   if (typeof item !== 'object' || item === null) return
   const bot = item as BotEntity
+  isCreating.value = false
   selectedBot.value = bot
   formBot.value = cloneBot(bot)
   baselineBot.value = cloneBot(bot)
   showModal.value = true
 }
 
+const handleDelete = (item: unknown) => {
+  if (typeof item !== 'object' || item === null) return
+  const bot = item as BotEntity
+  if (bot.id == null) return
+  sendAction(websocket, BOT_DELETE, { id: bot.id })
+}
+
 const saveLoading = ref(false)
 
 const saveBot = () => {
-  if (!selectedBot.value || !isFormValid.value) return
+  if (!isFormValid.value) return
   saveLoading.value = true
-  // TODO: send update bot action to backend when API is available
+
+  if (isCreating.value) {
+    sendAction(websocket, BOT_CREATE, {
+      name: formBot.value.name.trim(),
+      description: formBot.value.description,
+      style: formBot.value.style,
+      active: formBot.value.active,
+    })
+  } else if (selectedBot.value?.id != null) {
+    sendAction(websocket, BOT_UPDATE, {
+      id: selectedBot.value.id,
+      name: formBot.value.name.trim(),
+      description: formBot.value.description,
+      style: formBot.value.style,
+      active: formBot.value.active,
+    })
+  }
+
   resetForm()
 }
 
 const resetForm = () => {
   showModal.value = false
+  isCreating.value = false
   selectedBot.value = null
   baselineBot.value = null
   saveLoading.value = false

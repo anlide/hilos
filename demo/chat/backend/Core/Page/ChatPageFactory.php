@@ -18,6 +18,14 @@ use Demo\Chat\Pages\MainPage;
 use Demo\Chat\Pages\ModeratorPage;
 use Demo\Chat\Pages\ProfilePage;
 use Demo\Chat\Pages\UserPage;
+use Demo\Chat\Tables\Bot\DTO\BotCreateActionDTO;
+use Demo\Chat\Tables\Bot\DTO\BotDeleteActionDTO;
+use Demo\Chat\Tables\Bot\DTO\BotUpdateActionDTO;
+use Demo\Chat\Tables\DTO\TableRefreshActionDTO;
+use Demo\Chat\Tables\ModeratorPiece\DTO\ModeratorPieceCreateActionDTO;
+use Demo\Chat\Tables\ModeratorPiece\DTO\ModeratorPieceDeleteActionDTO;
+use Demo\Chat\Tables\ModeratorPiece\DTO\ModeratorPieceUpdateActionDTO;
+use Demo\Chat\Tables\User\DTO\UserUpdateActionDTO;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Page\AbstractPageFactory;
 use Hilos\Core\Page\Exception\PageNotFoundException;
@@ -33,13 +41,6 @@ use Hilos\Core\Router\DTO\ActionPayloadDTO;
  */
 class ChatPageFactory extends AbstractPageFactory
 {
-    /**
-     * Create page instance
-     *
-     * @param string $pageName Page name/identifier
-     * @return AbstractPage Page instance
-     * @throws PageNotFoundException If page cannot be created
-     */
     protected function createPage(string $pageName): AbstractPage
     {
         return match ($pageName) {
@@ -56,12 +57,6 @@ class ChatPageFactory extends AbstractPageFactory
         };
     }
 
-    /**
-     * Check if page exists
-     *
-     * @param string $pageName Page name/identifier
-     * @return bool True if page can be created
-     */
     public function hasPage(string $pageName): bool
     {
         return in_array($pageName, [
@@ -77,19 +72,20 @@ class ChatPageFactory extends AbstractPageFactory
         ], true);
     }
 
-    /**
-     * Create ActionPayloadDTO for chat actions
-     *
-     * @param string $action Action name
-     * @param array $data Payload data
-     * @return ActionPayloadDTO Action payload DTO
-     */
     public function createActionPayloadDTO(string $action, array $data): ActionPayloadDTO
     {
         return match ($action) {
             ChatSignalConstants::MESSAGE => MessageActionDTO::fromArray($data),
             ChatSignalConstants::RENAME => RenameActionDTO::fromArray($data),
             ChatSignalConstants::FILE => FileActionDTO::fromArray($data),
+            ChatSignalConstants::TABLE_REFRESH => TableRefreshActionDTO::fromArray($data),
+            ChatSignalConstants::USER_UPDATE => UserUpdateActionDTO::fromArray($data),
+            ChatSignalConstants::BOT_CREATE => BotCreateActionDTO::fromArray($data),
+            ChatSignalConstants::BOT_UPDATE => BotUpdateActionDTO::fromArray($data),
+            ChatSignalConstants::BOT_DELETE => BotDeleteActionDTO::fromArray($data),
+            ChatSignalConstants::MODERATOR_PIECE_CREATE => ModeratorPieceCreateActionDTO::fromArray($data),
+            ChatSignalConstants::MODERATOR_PIECE_UPDATE => ModeratorPieceUpdateActionDTO::fromArray($data),
+            ChatSignalConstants::MODERATOR_PIECE_DELETE => ModeratorPieceDeleteActionDTO::fromArray($data),
             default => parent::createActionPayloadDTO($action, $data),
         };
     }

@@ -1,59 +1,56 @@
 <template>
   <div>
     <!-- Search, Controls and Snapshot Update Banner -->
-    <div v-if="searchable || showActions || hasPendingChanges" class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-      <div class="d-flex align-items-center gap-2 flex-wrap flex-grow-1">
-        <div v-if="searchable" class="flex-grow-1 input-group">
-          <span class="input-group-text">
-            <i class="bi bi-search" aria-hidden="true"></i>
-            <span class="visually-hidden">Search</span>
-          </span>
-          <input
-              v-model="searchQuery"
-              type="text"
-              class="form-control"
-              :placeholder="searchPlaceholder"
-              :aria-label="searchPlaceholder || 'Search'"
-          />
-        </div>
-        <div v-if="hasPendingChanges" class="d-flex align-items-center gap-2 flex-wrap">
-          <span
-              v-if="pendingChanges.added > 0"
-              class="badge bg-success"
-              :title="`${pendingChanges.added} to add`"
-          >
-            <i class="bi bi-plus-lg" aria-hidden="true"></i>
-            <span class="visually-hidden">Pending additions</span>
-          </span>
-          <span
-              v-if="pendingChanges.updated > 0"
-              class="badge bg-warning"
-              :title="`${pendingChanges.updated} to update`"
-          >
-            <i class="bi bi-pencil" aria-hidden="true"></i>
-            <span class="visually-hidden">Pending updates</span>
-          </span>
-          <span
-              v-if="pendingChanges.deleted > 0"
-              class="badge bg-danger"
-              :title="`${pendingChanges.deleted} to delete`"
-          >
-            <i class="bi bi-trash" aria-hidden="true"></i>
-            <span class="visually-hidden">Pending deletions</span>
-          </span>
-          <button
-              type="button"
-              class="btn btn-primary btn-sm"
-              title="Update Snapshot"
-              aria-label="Update Snapshot"
-              @click="$emit('updateSnapshot')"
-          >
-            <i class="bi bi-arrow-clockwise" aria-hidden="true"></i>
-            <span class="visually-hidden">Update Snapshot</span>
-          </button>
-        </div>
+    <div v-if="searchable || showActions || hasPendingChanges" class="d-flex align-items-center mb-3 gap-2">
+      <div v-if="searchable" class="flex-grow-1 input-group">
+        <span class="input-group-text">
+          <i class="bi bi-search" aria-hidden="true"></i>
+          <span class="visually-hidden">Search</span>
+        </span>
+        <input
+            v-model="searchQuery"
+            type="text"
+            class="form-control"
+            :placeholder="searchPlaceholder"
+            :aria-label="searchPlaceholder || 'Search'"
+        />
       </div>
-      <div v-if="showActions" class="d-flex gap-2">
+      <div v-if="hasPendingChanges" class="d-flex align-items-center gap-1 flex-shrink-0">
+        <span
+            v-if="pendingChanges.added > 0"
+            class="badge bg-success"
+            :title="`${pendingChanges.added} to add`"
+        >
+          <i class="bi bi-plus-lg" aria-hidden="true"></i>
+          <span class="visually-hidden">Pending additions</span>
+        </span>
+        <span
+            v-if="pendingChanges.updated > 0"
+            class="badge bg-warning"
+            :title="`${pendingChanges.updated} to update`"
+        >
+          <i class="bi bi-pencil" aria-hidden="true"></i>
+          <span class="visually-hidden">Pending updates</span>
+        </span>
+        <span
+            v-if="pendingChanges.deleted > 0"
+            class="badge bg-danger"
+            :title="`${pendingChanges.deleted} to delete`"
+        >
+          <i class="bi bi-trash" aria-hidden="true"></i>
+          <span class="visually-hidden">Pending deletions</span>
+        </span>
+        <button
+            type="button"
+            class="btn btn-primary btn-sm"
+            title="Apply changes"
+            aria-label="Apply changes"
+            @click="$emit('updateSnapshot')"
+        >
+          <i class="bi bi-arrow-clockwise" aria-hidden="true"></i>
+        </button>
+      </div>
+      <div v-if="showActions" class="d-flex gap-2 flex-shrink-0">
         <slot name="actions">
           <button
               v-if="showAddButton"
@@ -85,16 +82,16 @@
           <tr
               v-for="(item, index) in paginatedItems"
               :key="getItemKey(item, index)"
-              :class="getRowChangeClass(item)"
+              :class="[getRowChangeClass(item), { 'opacity-50': getChangeType(item) === 'deleted' }]"
           >
             <slot
                 name="row"
                 :item="item"
                 :index="index"
-                :handleEdit="showEditButton ? () => $emit('edit', item) : undefined"
-                :handleDelete="showDeleteButton ? () => $emit('delete', item) : undefined"
-                :showEditButton="showEditButton"
-                :showDeleteButton="showDeleteButton"
+                :handleEdit="showEditButton && getChangeType(item) !== 'deleted' ? () => $emit('edit', item) : undefined"
+                :handleDelete="showDeleteButton && getChangeType(item) !== 'deleted' ? () => $emit('delete', item) : undefined"
+                :showEditButton="showEditButton && getChangeType(item) !== 'deleted'"
+                :showDeleteButton="showDeleteButton && getChangeType(item) !== 'deleted'"
                 :changeType="getChangeType(item)"
             >
               <!-- Default row if no slot provided -->

@@ -10,11 +10,14 @@ import {
   SUBSCRIPTION_PAGE_ADMIN_USERS,
   SUBSCRIPTION_PAGE_ADMIN_BOTS,
   SUBSCRIPTION_PAGE_ADMIN_MODERATOR,
-  TABLE_UPDATE,
+  TABLE_DATA,
+  TABLE_MUTATION,
+  TABLE_ACTION_ERROR,
 } from '@/constants'
 import {localStorageService} from '@/services/LocalStorageService'
 import {ChatEntitiesReceiver} from '@/entities/ChatEntitiesReceiver'
 import {eventPayloadToEvent, isRecord, parseEventPayloads} from '@/entities/parsers'
+import type { TableMutationEntry } from '@hilos/sdk/types'
 
 type RawMessage = {
   type: string
@@ -106,28 +109,41 @@ export function createChatWebSocketPlugin() {
           return
         }
         case SUBSCRIPTION_PAGE_MAIN: {
-          // Entities (events + users) already applied above via hasEntities
           return
         }
         case SUBSCRIPTION_PAGE_PROFILE: {
-          // Empty subscription response; entities already applied above if present
           return
         }
         case SUBSCRIPTION_PAGE_ADMIN: {
-          // Admin layout subscription; entities already applied above if present
           return
         }
         case SUBSCRIPTION_PAGE_ADMIN_USERS:
         case SUBSCRIPTION_PAGE_ADMIN_BOTS:
-        case SUBSCRIPTION_PAGE_ADMIN_MODERATOR: {
+        case SUBSCRIPTION_PAGE_ADMIN_MODERATOR:
+        case TABLE_DATA: {
           if (message.data && typeof message.data === 'object' && 'tables' in message.data && message.data.tables) {
             chatStore.applyTablesPayload(message.data.tables as Record<string, unknown>)
           }
           return
         }
-        case TABLE_UPDATE: {
-          if (message.data && typeof message.data === 'object' && 'tables' in message.data && message.data.tables) {
-            chatStore.applyTablesPayload(message.data.tables as Record<string, unknown>)
+        case TABLE_MUTATION: {
+          if (message.data && typeof message.data === 'object') {
+            const d = message.data as Record<string, unknown>
+            const tableKey = d['tableKey'] as string | undefined
+            const mutation = d['mutation'] as TableMutationEntry | undefined
+            if (tableKey && mutation) {
+              chatStore.applyTableMutation(tableKey, mutation)
+            }
+          }
+          return
+        }
+        case TABLE_ACTION_ERROR: {
+          if (message.data && typeof message.data === 'object') {
+            const d = message.data as Record<string, unknown>
+            const msg = d['message'] as string | undefined
+            if (msg) {
+              console.error(`[Table action error] ${d['tableKey'] ?? ''}: ${msg}`)
+            }
           }
           return
         }

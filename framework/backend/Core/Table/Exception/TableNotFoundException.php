@@ -7,7 +7,7 @@ namespace Hilos\Core\Table\Exception;
 use Hilos\HilosException;
 
 /**
- * Exception: table not found in Hilos::$table (TableHub).
+ * Exception: table not found in Hilos::$table.
  */
 class TableNotFoundException extends HilosException
 {

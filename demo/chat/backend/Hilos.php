@@ -6,11 +6,11 @@ namespace Demo\Chat;
 
 use Demo\Chat\Database\DbChatContext;
 use Demo\Chat\Runtime\View\Context\RtChatContext;
-use Hilos\Core\Table\DataSource\EntityTableDataSource;
+use Demo\Chat\Tables\TableChatContext;
+use Hilos\Core\Table\Context\TableContext;
 use Hilos\Database\Context\DbContext;
 use Hilos\Runtime\Exception\Rt\StateCollectionNotFoundException;
 use Hilos\Runtime\View\Context\RtContext;
-use Hilos\Table\TableHub;
 
 /**
  * Main app facade for data access.
@@ -18,10 +18,11 @@ use Hilos\Table\TableHub;
  * Usage:
  * - Hilos::$db->users
  * - Hilos::$rt->connections
- * - Hilos::$table?->users
+ * - Hilos::$table->users
  *
  * @property-read DbChatContext $db Database context (narrows parent's DbContext for IDE)
  * @property-read RtChatContext $rt Runtime context (narrows parent's RtContext for IDE)
+ * @property-read TableChatContext $table Table context (narrows parent's TableContext for IDE)
  */
 final class Hilos extends \Hilos\Hilos
 {
@@ -45,16 +46,12 @@ final class Hilos extends \Hilos\Hilos
     }
 
     /**
-     * Creates and registers a new table instance within a TableHub.
+     * Creates and returns the table context.
      *
-     * @return ?TableHub The initialized TableHub instance, or null on failure.
+     * @return ?TableChatContext The table context instance.
      */
-    protected static function createTable(): ?TableHub
+    protected static function createTable(): ?TableContext
     {
-        $table = new TableHub();
-        $table->register(DbChatContext::users, new EntityTableDataSource(static::$db->users));
-        $table->register(DbChatContext::bots, new EntityTableDataSource(static::$db->bots));
-        $table->register(DbChatContext::moderatorPromptPieces, new EntityTableDataSource(static::$db->moderatorPromptPieces));
-        return $table;
+        return new TableChatContext();
     }
 }
