@@ -62,7 +62,7 @@ const getParticipantName = (userId: number | null): string => {
 }
 
 const getHeaderUserId = (): number | null => {
-  if (props.event.type === 'user_renamed') {
+  if (props.event.type === 'user_renamed' || props.event.type === 'user_renamed_by_admin') {
     return null
   }
 
@@ -93,6 +93,15 @@ const getServiceTitle = (): string => {
         return `renamed from ${oldName} to ${newName}`
       }
       return 'renamed'
+    }
+    case 'user_renamed_by_admin': {
+      const { data } = props.event
+      const oldName = data.oldName as string | undefined
+      const newName = data.newName as string | undefined
+      if (oldName && newName) {
+        return `renamed by admin from ${oldName} to ${newName}`
+      }
+      return 'renamed by admin'
     }
     case 'chat_started':
       return 'Chat started'
@@ -130,6 +139,8 @@ const getServiceMessageClass = (): string => {
       return 'bg-success bg-opacity-25'
     case 'user_renamed':
       return 'bg-info bg-opacity-25'
+    case 'user_renamed_by_admin':
+      return 'bg-warning bg-opacity-25'
     case 'chat_started':
     case 'chat_stopped':
     case 'chat_cleared':

@@ -32,6 +32,9 @@ enum ChatEventType: string
     /** User renamed themselves */
     case USER_RENAMED = 'user_renamed';
 
+    /** User renamed by admin */
+    case USER_RENAMED_BY_ADMIN = 'user_renamed_by_admin';
+
     /** User sent a message */
     case MESSAGE_SENT = 'message_sent';
 

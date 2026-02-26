@@ -158,7 +158,7 @@ export function createChatWebSocketPlugin() {
 
           for (const eventPayload of eventPayloads) {
             const event = eventPayloadToEvent(eventPayload)
-            if (event.type === 'user_renamed') {
+            if (event.type === 'user_renamed' || event.type === 'user_renamed_by_admin') {
               const newName =
                 typeof event.data.newName === 'string'
                   ? event.data.newName

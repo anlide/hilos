@@ -4,10 +4,14 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Pages;
 
+use Demo\Chat\Constants\ChatEventType;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Page\AbstractChatPage;
 use Demo\Chat\Core\Router\DTO\ChatEventSignalDTO;
+use Demo\Chat\Database\DbChatContext;
+use Demo\Chat\Database\Object\Item\User;
+use Demo\Chat\Database\View\Collection\Events;
 use Demo\Chat\Hilos;
 use Demo\Chat\Tables\DTO\TableRefreshActionDTO;
 use Demo\Chat\Tables\TableChatContext;
@@ -17,6 +21,7 @@ use Hilos\Core\Router\DTO\EntitiesChangesDTO;
 use Hilos\Core\Table\DTO\TableActionErrorSignalData;
 use Hilos\Core\Table\DTO\TableMutationSignalData;
 use Hilos\Core\Table\Exception\TableActionException;
+use Hilos\HilosException;
 
 /**
  * AdminUsersPage — Admin users table page handler.
@@ -95,6 +100,7 @@ class AdminUsersPage extends AbstractChatPage
      * @param UserUpdateActionDTO $dto Update action payload
      *
      * @throws TableActionException If user ID is invalid or user not found
+     * @throws HilosException
      */
     private function handleUserUpdate(string $acceptKey, UserUpdateActionDTO $dto): void
     {
@@ -106,11 +112,31 @@ class AdminUsersPage extends AbstractChatPage
             throw new TableActionException("User #{$dto->id} not found");
         }
 
+        $dbUser = Hilos::$db->users[$dto->id];
+        $oldName = $dbUser->name;
+
         $mutation = Hilos::$table->users[$dto->id]->actions->update($dto);
         $signal = new TableMutationSignalData(TableChatContext::users, $mutation);
 
         $this->getChatAgent()->sendToUser(ChatSignalConstants::TABLE_MUTATION, $acceptKey, $signal);
         $this->getChatAgent()->sendToAllUsers(ChatSignalConstants::TABLE_MUTATION, $signal, $acceptKey);
+
+        $adminUserId = isset(Hilos::$rt->connections[$acceptKey])
+            ? Hilos::$rt->connections[$acceptKey]->userId
+            : null;
+
+        $event = Hilos::$db->events->actions->add(ChatEventType::USER_RENAMED_BY_ADMIN->value, $dto->id, [
+            'oldName' => $oldName,
+            'newName' => $dto->name,
+            'adminUserId' => $adminUserId,
+        ]);
+        $this->getChatAgent()->sendToAllUsers(
+            ChatSignalConstants::NEW_EVENT,
+            new ChatEventSignalDTO(new EntitiesChangesDTO(
+                full: [DbChatContext::events => Events::fromSingleItem($event)],
+                updates: [DbChatContext::users => [[User::id => $dto->id, User::name => $dto->name]]],
+            )),
+        );
     }
 
     /**

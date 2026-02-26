@@ -11,9 +11,12 @@ use Demo\Chat\Core\Page\AbstractChatPage;
 use Demo\Chat\Core\Page\DTO\RenameActionDTO;
 use Demo\Chat\Core\Router\DTO\ChatEventSignalDTO;
 use Demo\Chat\Database\DbChatContext;
-use Demo\Chat\Database\Object\Item\User;
 use Demo\Chat\Database\View\Collection\Events;
 use Demo\Chat\Hilos;
+use Demo\Chat\Tables\TableChatContext;
+use Hilos\Core\Table\DTO\TableMutationSignalData;
+use Hilos\Core\Table\Mutation\TableMutationEntry;
+use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\EntitiesChangesDTO;
 use Hilos\HilosException;
@@ -114,8 +117,18 @@ class ProfilePage extends AbstractChatPage
             ChatSignalConstants::NEW_EVENT,
             new ChatEventSignalDTO(new EntitiesChangesDTO(
                 full: [DbChatContext::events => Events::fromSingleItem($event)],
-                updates: [DbChatContext::users => [[User::id => $userId, User::name => $dto->newName]]],
+                updates: [DbChatContext::users => [$user->toArray(toFrontend: true)]],
             )),
+        );
+
+        $mutation = new TableMutationEntry(
+            TableMutationType::Updated,
+            $userId,
+            $user->toArray(toFrontend: true),
+        );
+        $this->getChatAgent()->sendToAllUsers(
+            ChatSignalConstants::TABLE_MUTATION,
+            new TableMutationSignalData(TableChatContext::users, $mutation),
         );
     }
 }
