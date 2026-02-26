@@ -2,7 +2,9 @@
 
 namespace Demo\Chat\Database\View\Item;
 
+use Demo\Chat\Database\Actions\Item\BotActions;
 use Demo\Chat\Database\Object\Item\Bot as ObjectBot;
+use Hilos\Database\Exception\View\Collection\ActionsClassException;
 use Hilos\Database\Exception\View\Item\PropertyNotFoundException;
 use Hilos\Database\View\Item\DbItem;
 
@@ -11,6 +13,7 @@ use Hilos\Database\View\Item\DbItem;
  *
  * @extends DbItem<ObjectBot>
  * @method __construct(ObjectBot &$objectBot)
+ * @property-read BotActions $actions Item-level write operations
  */
 final class Bot extends DbItem
 {
@@ -18,10 +21,11 @@ final class Bot extends DbItem
      * Property getter (read-only access).
      *
      * @param string $name Property name
-     * @return int|string|bool|null Property value
+     * @return int|string|bool|BotActions|null Property value or actions
      * @throws PropertyNotFoundException If property does not exist
+     * @throws ActionsClassException If actions class is not defined for the collection
      */
-    public function __get(string $name): int|string|bool|null
+    public function __get(string $name): int|string|bool|BotActions|null
     {
         return match ($name) {
             ObjectBot::id => $this->_object->id,

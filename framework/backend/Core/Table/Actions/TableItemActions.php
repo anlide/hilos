@@ -16,6 +16,10 @@ use Hilos\Core\Table\Mutation\TableMutationType;
  */
 abstract class TableItemActions
 {
+    /**
+     * @param TableDefinition $definition Table definition this actions instance belongs to
+     * @param string|int $itemId ID of the item these actions operate on
+     */
     public function __construct(
         protected readonly TableDefinition $definition,
         protected readonly string|int $itemId,
@@ -23,7 +27,12 @@ abstract class TableItemActions
     }
 
     /**
-     * Helper: create a mutation entry for broadcasting.
+     * Creates a mutation entry for broadcasting.
+     *
+     * @param TableMutationType $type Mutation type (e.g. update, delete)
+     * @param array<string, mixed>|null $row Optional row data for the mutation
+     *
+     * @return TableMutationEntry
      */
     protected function mutation(TableMutationType $type, ?array $row = null): TableMutationEntry
     {

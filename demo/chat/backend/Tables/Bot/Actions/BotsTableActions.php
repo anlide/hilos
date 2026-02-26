@@ -10,26 +10,36 @@ use Demo\Chat\Tables\Bot\DTO\BotCreateActionDTO;
 use Hilos\Core\Table\Actions\TableActions;
 use Hilos\Core\Table\Mutation\TableMutationEntry;
 use Hilos\Core\Table\Mutation\TableMutationType;
+use Hilos\HilosException;
 
 /**
- * Collection-level actions for the bots table.
+ * Collection-level actions for the bots table (table layer).
+ *
+ * Delegates to db layer (BotsActions) for actual create.
  */
 class BotsTableActions extends TableActions
 {
+    /**
+     * Creates a bot and returns mutation for broadcasting.
+     *
+     * @param BotCreateActionDTO $dto Create payload
+     *
+     * @return TableMutationEntry
+     * @throws HilosException
+     */
     public function create(BotCreateActionDTO $dto): TableMutationEntry
     {
-        $bot = ObjectBot::create();
-        $bot->name = $dto->name;
-        $bot->description = $dto->description;
-        $bot->style = $dto->style;
-        $bot->topics = $dto->topics;
-        $bot->personality = $dto->personality;
-        $bot->active = $dto->active;
-        $bot->sync();
+        $data = [
+            ObjectBot::name => $dto->name,
+            ObjectBot::description => $dto->description,
+            ObjectBot::style => $dto->style,
+            ObjectBot::topics => $dto->topics,
+            ObjectBot::personality => $dto->personality,
+            ObjectBot::active => $dto->active,
+        ];
 
-        $objectCollection = Hilos::$db->bots->getObjectCollection();
-        $objectCollection[$bot->getIdString()] = $bot;
+        $dbBot = Hilos::$db->bots->actions->create($data);
 
-        return $this->mutation(TableMutationType::Created, $bot->id, $bot->toArray());
+        return $this->mutation(TableMutationType::Created, $dbBot->id, $dbBot->toArray(toFrontend: true));
     }
 }

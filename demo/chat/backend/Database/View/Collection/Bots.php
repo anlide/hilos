@@ -2,9 +2,9 @@
 
 namespace Demo\Chat\Database\View\Collection;
 
+use Demo\Chat\Database\Actions\Collection\BotsActions;
 use Demo\Chat\Database\Object\Collection\Bots as ObjectBots;
 use Demo\Chat\Database\View\Item\Bot;
-use Hilos\Database\Actions\Collection\DbActions;
 use Hilos\Database\View\Collection\DbCollection;
 
 /**
@@ -16,7 +16,7 @@ use Hilos\Database\View\Collection\DbCollection;
  * @method Bot|null first()
  * @method Bot|null last()
  * @method Bot|null offsetGet(mixed $offset)
- * @property-read DbActions $actions Actions for write operations
+ * @property-read BotsActions $actions Collection actions (create); items use BotActions
  */
 final class Bots extends DbCollection
 {

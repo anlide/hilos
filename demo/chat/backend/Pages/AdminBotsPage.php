@@ -26,11 +26,19 @@ use Hilos\Core\Table\Exception\TableActionException;
  */
 class AdminBotsPage extends AbstractChatPage
 {
+    /**
+     * Returns the page identifier for routing.
+     */
     public function getPageName(): string
     {
         return PageConstants::ADMIN_BOTS;
     }
 
+    /**
+     * Sends initial bots table data to the user on page subscription.
+     *
+     * @param string $acceptKey WebSocket accept key for the subscribing client
+     */
     public function onSubscribe(string $acceptKey): void
     {
         $result = Hilos::$table->bots->get();
@@ -45,10 +53,22 @@ class AdminBotsPage extends AbstractChatPage
         );
     }
 
+    /**
+     * Handles page unsubscription (no-op for bots page).
+     *
+     * @param string $acceptKey WebSocket accept key for the unsubscribing client
+     */
     public function onUnsubscribe(string $acceptKey): void
     {
     }
 
+    /**
+     * Routes incoming bot actions (create/update/delete) to the appropriate handler.
+     *
+     * @param string $acceptKey WebSocket accept key for the client
+     * @param string $action Action name (for error reporting)
+     * @param ActionPayloadDTO $dto Action payload (BotCreateActionDTO|BotUpdateActionDTO|BotDeleteActionDTO)
+     */
     public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): void
     {
         try {
@@ -67,6 +87,12 @@ class AdminBotsPage extends AbstractChatPage
         }
     }
 
+    /**
+     * Creates a new bot and broadcasts the mutation to all clients.
+     *
+     * @param string $acceptKey WebSocket accept key for the requesting client
+     * @param BotCreateActionDTO $dto Create action payload
+     */
     private function handleCreate(string $acceptKey, BotCreateActionDTO $dto): void
     {
         $mutation = Hilos::$table->bots->actions->create($dto);
@@ -77,7 +103,12 @@ class AdminBotsPage extends AbstractChatPage
     }
 
     /**
-     * @throws TableActionException
+     * Updates an existing bot and broadcasts the mutation to all clients.
+     *
+     * @param string $acceptKey WebSocket accept key for the requesting client
+     * @param BotUpdateActionDTO $dto Update action payload
+     *
+     * @throws TableActionException If bot ID is invalid or bot not found
      */
     private function handleUpdate(string $acceptKey, BotUpdateActionDTO $dto): void
     {
@@ -85,8 +116,7 @@ class AdminBotsPage extends AbstractChatPage
             throw new TableActionException('Invalid bot ID');
         }
 
-        $objectCollection = Hilos::$db->bots->getObjectCollection();
-        if (!isset($objectCollection[(string) $dto->id])) {
+        if (!isset(Hilos::$db->bots[$dto->id])) {
             throw new TableActionException("Bot #{$dto->id} not found");
         }
 
@@ -98,7 +128,12 @@ class AdminBotsPage extends AbstractChatPage
     }
 
     /**
-     * @throws TableActionException
+     * Deletes a bot and broadcasts the mutation to all clients.
+     *
+     * @param string $acceptKey WebSocket accept key for the requesting client
+     * @param BotDeleteActionDTO $dto Delete action payload
+     *
+     * @throws TableActionException If bot ID is invalid or bot not found
      */
     private function handleDelete(string $acceptKey, BotDeleteActionDTO $dto): void
     {
@@ -106,8 +141,7 @@ class AdminBotsPage extends AbstractChatPage
             throw new TableActionException('Invalid bot ID');
         }
 
-        $objectCollection = Hilos::$db->bots->getObjectCollection();
-        if (!isset($objectCollection[(string) $dto->id])) {
+        if (!isset(Hilos::$db->bots[$dto->id])) {
             throw new TableActionException("Bot #{$dto->id} not found");
         }
 

@@ -2,6 +2,7 @@
 
 namespace Demo\Chat\Database\View\Item;
 
+use Demo\Chat\Database\Actions\Item\ModeratorPromptPieceActions;
 use Demo\Chat\Database\Object\Item\ModeratorPromptPiece as ObjectModeratorPromptPiece;
 use Hilos\Database\Exception\View\Item\PropertyNotFoundException;
 use Hilos\Database\View\Item\DbItem;
@@ -14,6 +15,7 @@ use Hilos\Database\View\Item\DbItem;
  * @property-read ?int $id
  * @property-read string $section
  * @property-read string $promptPiece
+ * @property-read \Demo\Chat\Database\Actions\Item\ModeratorPromptPieceActions $actions Item-level write operations
  */
 final class ModeratorPromptPiece extends DbItem
 {
@@ -21,10 +23,10 @@ final class ModeratorPromptPiece extends DbItem
      * Property getter (read-only access).
      *
      * @param string $name Property name
-     * @return int|string|bool|null Property value
+     * @return int|string|bool|ModeratorPromptPieceActions|null Property value or actions
      * @throws PropertyNotFoundException If property does not exist
      */
-    public function __get(string $name): int|string|bool|null
+    public function __get(string $name): int|string|bool|ModeratorPromptPieceActions|null
     {
         return match ($name) {
             ObjectModeratorPromptPiece::id => $this->_object->id,

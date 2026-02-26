@@ -4,36 +4,53 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Tables\ModeratorPiece\Actions;
 
+use Demo\Chat\Database\Object\Item\ModeratorPromptPiece as ObjectPiece;
 use Demo\Chat\Hilos;
 use Demo\Chat\Tables\ModeratorPiece\DTO\ModeratorPieceUpdateActionDTO;
 use Hilos\Core\Table\Actions\TableItemActions;
 use Hilos\Core\Table\Mutation\TableMutationEntry;
 use Hilos\Core\Table\Mutation\TableMutationType;
+use Hilos\HilosException;
 
 /**
- * Item-level actions for a single moderator prompt piece.
+ * Item-level actions for a single moderator prompt piece (table layer).
+ *
+ * Delegates to db layer (ModeratorPromptPieceActions) for actual updates and deletes.
  */
 class ModeratorPromptPieceItemActions extends TableItemActions
 {
+    /**
+     * Updates piece and returns mutation for broadcasting.
+     *
+     * @param ModeratorPieceUpdateActionDTO $dto Update payload (only non-null fields are applied)
+     *
+     * @return TableMutationEntry
+     * @throws HilosException
+     */
     public function update(ModeratorPieceUpdateActionDTO $dto): TableMutationEntry
     {
-        $objectCollection = Hilos::$db->moderatorPromptPieces->getObjectCollection();
-        $object = $objectCollection[(string) $this->itemId];
+        $data = array_filter([
+            ObjectPiece::section => $dto->section,
+            ObjectPiece::promptPiece => $dto->promptPiece,
+        ], static fn($v) => $v !== null);
 
-        if ($dto->section !== null) $object->section = $dto->section;
-        if ($dto->promptPiece !== null) $object->promptPiece = $dto->promptPiece;
-        $object->sync();
+        if ($data !== []) {
+            Hilos::$db->moderatorPromptPieces[$this->itemId]->actions->update($data);
+        }
 
-        return $this->mutation(TableMutationType::Updated, $object->toArray());
+        $dbPiece = Hilos::$db->moderatorPromptPieces[$this->itemId];
+        return $this->mutation(TableMutationType::Updated, $dbPiece->toArray(toFrontend: true));
     }
 
+    /**
+     * Deletes piece and returns mutation for broadcasting.
+     *
+     * @return TableMutationEntry
+     * @throws HilosException
+     */
     public function delete(): TableMutationEntry
     {
-        $objectCollection = Hilos::$db->moderatorPromptPieces->getObjectCollection();
-        $object = $objectCollection[(string) $this->itemId];
-        $object->delete();
-        unset($objectCollection[(string) $this->itemId]);
-
+        Hilos::$db->moderatorPromptPieces[$this->itemId]->actions->delete();
         return $this->mutation(TableMutationType::Deleted);
     }
 }

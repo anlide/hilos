@@ -20,12 +20,15 @@ abstract class TableContext
     protected array $_tables = [];
 
     /**
-     * Register tables. Called during Hilos::init().
+     * Registers tables. Called during Hilos::init().
      */
     abstract public function configure(): void;
 
     /**
-     * Register a table definition by name.
+     * Registers a table definition by name.
+     *
+     * @param string $name Table key (e.g. users, bots)
+     * @param TableDefinition $definition Table definition instance
      */
     protected function register(string $name, TableDefinition $definition): void
     {
@@ -33,7 +36,11 @@ abstract class TableContext
     }
 
     /**
-     * Get a table definition by name (returns null if not found).
+     * Returns a table definition by name.
+     *
+     * @param string $name Table key
+     *
+     * @return TableDefinition|null Definition or null if not found
      */
     public function get(string $name): ?TableDefinition
     {
@@ -43,7 +50,11 @@ abstract class TableContext
     /**
      * Magic property access: Hilos::$table->users → TableDefinition
      *
-     * @throws TableNotFoundException
+     * @param string $name Table key
+     *
+     * @return TableDefinition
+     *
+     * @throws TableNotFoundException When table does not exist
      */
     public function __get(string $name): TableDefinition
     {
@@ -53,6 +64,13 @@ abstract class TableContext
         return $this->_tables[$name];
     }
 
+    /**
+     * Checks if a table is registered.
+     *
+     * @param string $name Table key
+     *
+     * @return bool
+     */
     public function __isset(string $name): bool
     {
         return isset($this->_tables[$name]);

@@ -26,11 +26,19 @@ use Hilos\Core\Table\Exception\TableActionException;
  */
 class AdminUsersPage extends AbstractChatPage
 {
+    /**
+     * Returns the page identifier for routing.
+     */
     public function getPageName(): string
     {
         return PageConstants::ADMIN_USERS;
     }
 
+    /**
+     * Sends initial users table data to the user on page subscription.
+     *
+     * @param string $acceptKey WebSocket accept key for the subscribing client
+     */
     public function onSubscribe(string $acceptKey): void
     {
         $result = Hilos::$table->users->get();
@@ -45,10 +53,22 @@ class AdminUsersPage extends AbstractChatPage
         );
     }
 
+    /**
+     * Handles page unsubscription (no-op for users page).
+     *
+     * @param string $acceptKey WebSocket accept key for the unsubscribing client
+     */
     public function onUnsubscribe(string $acceptKey): void
     {
     }
 
+    /**
+     * Routes incoming actions (user_update, table_refresh) to the appropriate handler.
+     *
+     * @param string $acceptKey WebSocket accept key for the client
+     * @param string $action Action name (for error reporting)
+     * @param ActionPayloadDTO $dto Action payload (UserUpdateActionDTO|TableRefreshActionDTO)
+     */
     public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): void
     {
         try {
@@ -69,7 +89,12 @@ class AdminUsersPage extends AbstractChatPage
     }
 
     /**
-     * @throws TableActionException
+     * Updates an existing user and broadcasts the mutation to all clients.
+     *
+     * @param string $acceptKey WebSocket accept key for the requesting client
+     * @param UserUpdateActionDTO $dto Update action payload
+     *
+     * @throws TableActionException If user ID is invalid or user not found
      */
     private function handleUserUpdate(string $acceptKey, UserUpdateActionDTO $dto): void
     {
@@ -77,8 +102,7 @@ class AdminUsersPage extends AbstractChatPage
             throw new TableActionException('Invalid user ID');
         }
 
-        $objectCollection = Hilos::$db->users->getObjectCollection();
-        if (!isset($objectCollection[(string) $dto->id])) {
+        if (!isset(Hilos::$db->users[$dto->id])) {
             throw new TableActionException("User #{$dto->id} not found");
         }
 
@@ -90,7 +114,12 @@ class AdminUsersPage extends AbstractChatPage
     }
 
     /**
-     * @throws TableActionException
+     * Refreshes table data by key and sends it to the requesting client.
+     *
+     * @param string $acceptKey WebSocket accept key for the requesting client
+     * @param TableRefreshActionDTO $dto Refresh action payload (contains tableKey)
+     *
+     * @throws TableActionException If table key is empty or table not found
      */
     private function handleTableRefresh(string $acceptKey, TableRefreshActionDTO $dto): void
     {

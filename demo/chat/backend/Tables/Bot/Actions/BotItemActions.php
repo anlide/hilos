@@ -4,40 +4,57 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Tables\Bot\Actions;
 
+use Demo\Chat\Database\Object\Item\Bot as ObjectBot;
 use Demo\Chat\Hilos;
 use Demo\Chat\Tables\Bot\DTO\BotUpdateActionDTO;
 use Hilos\Core\Table\Actions\TableItemActions;
 use Hilos\Core\Table\Mutation\TableMutationEntry;
 use Hilos\Core\Table\Mutation\TableMutationType;
+use Hilos\HilosException;
 
 /**
- * Item-level actions for a single bot.
+ * Item-level actions for a single bot (table layer).
+ *
+ * Delegates to db layer (BotActions) for actual updates and deletes.
  */
 class BotItemActions extends TableItemActions
 {
+    /**
+     * Updates bot and returns mutation for broadcasting.
+     *
+     * @param BotUpdateActionDTO $dto Update payload (only non-null fields are applied)
+     *
+     * @return TableMutationEntry
+     * @throws HilosException
+     */
     public function update(BotUpdateActionDTO $dto): TableMutationEntry
     {
-        $objectCollection = Hilos::$db->bots->getObjectCollection();
-        $object = $objectCollection[(string) $this->itemId];
+        $data = array_filter([
+            ObjectBot::name => $dto->name,
+            ObjectBot::description => $dto->description,
+            ObjectBot::style => $dto->style,
+            ObjectBot::topics => $dto->topics,
+            ObjectBot::personality => $dto->personality,
+            ObjectBot::active => $dto->active,
+        ], static fn($v) => $v !== null);
 
-        if ($dto->name !== null) $object->name = $dto->name;
-        if ($dto->description !== null) $object->description = $dto->description;
-        if ($dto->style !== null) $object->style = $dto->style;
-        if ($dto->topics !== null) $object->topics = $dto->topics;
-        if ($dto->personality !== null) $object->personality = $dto->personality;
-        if ($dto->active !== null) $object->active = $dto->active;
-        $object->sync();
+        if ($data !== []) {
+            Hilos::$db->bots[$this->itemId]->actions->update($data);
+        }
 
-        return $this->mutation(TableMutationType::Updated, $object->toArray());
+        $dbBot = Hilos::$db->bots[$this->itemId];
+        return $this->mutation(TableMutationType::Updated, $dbBot->toArray(toFrontend: true));
     }
 
+    /**
+     * Deletes bot and returns mutation for broadcasting.
+     *
+     * @return TableMutationEntry
+     * @throws HilosException
+     */
     public function delete(): TableMutationEntry
     {
-        $objectCollection = Hilos::$db->bots->getObjectCollection();
-        $object = $objectCollection[(string) $this->itemId];
-        $object->delete();
-        unset($objectCollection[(string) $this->itemId]);
-
+        Hilos::$db->bots[$this->itemId]->actions->delete();
         return $this->mutation(TableMutationType::Deleted);
     }
 }

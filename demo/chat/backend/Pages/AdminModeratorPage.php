@@ -26,11 +26,19 @@ use Hilos\Core\Table\Exception\TableActionException;
  */
 class AdminModeratorPage extends AbstractChatPage
 {
+    /**
+     * Returns the page identifier for routing.
+     */
     public function getPageName(): string
     {
         return PageConstants::ADMIN_MODERATOR;
     }
 
+    /**
+     * Sends initial moderator prompt pieces table data to the user on page subscription.
+     *
+     * @param string $acceptKey WebSocket accept key for the subscribing client
+     */
     public function onSubscribe(string $acceptKey): void
     {
         $result = Hilos::$table->moderatorPromptPieces->get();
@@ -45,10 +53,22 @@ class AdminModeratorPage extends AbstractChatPage
         );
     }
 
+    /**
+     * Handles page unsubscription (no-op for moderator page).
+     *
+     * @param string $acceptKey WebSocket accept key for the unsubscribing client
+     */
     public function onUnsubscribe(string $acceptKey): void
     {
     }
 
+    /**
+     * Routes incoming moderator piece actions (create/update/delete) to the appropriate handler.
+     *
+     * @param string $acceptKey WebSocket accept key for the client
+     * @param string $action Action name (for error reporting)
+     * @param ActionPayloadDTO $dto Action payload (ModeratorPieceCreateActionDTO|ModeratorPieceUpdateActionDTO|ModeratorPieceDeleteActionDTO)
+     */
     public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): void
     {
         try {
@@ -67,6 +87,12 @@ class AdminModeratorPage extends AbstractChatPage
         }
     }
 
+    /**
+     * Creates a new moderator prompt piece and broadcasts the mutation to all clients.
+     *
+     * @param string $acceptKey WebSocket accept key for the requesting client
+     * @param ModeratorPieceCreateActionDTO $dto Create action payload
+     */
     private function handleCreate(string $acceptKey, ModeratorPieceCreateActionDTO $dto): void
     {
         $mutation = Hilos::$table->moderatorPromptPieces->actions->create($dto);
@@ -77,7 +103,12 @@ class AdminModeratorPage extends AbstractChatPage
     }
 
     /**
-     * @throws TableActionException
+     * Updates an existing moderator prompt piece and broadcasts the mutation to all clients.
+     *
+     * @param string $acceptKey WebSocket accept key for the requesting client
+     * @param ModeratorPieceUpdateActionDTO $dto Update action payload
+     *
+     * @throws TableActionException If piece ID is invalid or piece not found
      */
     private function handleUpdate(string $acceptKey, ModeratorPieceUpdateActionDTO $dto): void
     {
@@ -85,8 +116,7 @@ class AdminModeratorPage extends AbstractChatPage
             throw new TableActionException('Invalid moderator prompt piece ID');
         }
 
-        $objectCollection = Hilos::$db->moderatorPromptPieces->getObjectCollection();
-        if (!isset($objectCollection[(string) $dto->id])) {
+        if (!isset(Hilos::$db->moderatorPromptPieces[$dto->id])) {
             throw new TableActionException("Moderator prompt piece #{$dto->id} not found");
         }
 
@@ -98,7 +128,12 @@ class AdminModeratorPage extends AbstractChatPage
     }
 
     /**
-     * @throws TableActionException
+     * Deletes a moderator prompt piece and broadcasts the mutation to all clients.
+     *
+     * @param string $acceptKey WebSocket accept key for the requesting client
+     * @param ModeratorPieceDeleteActionDTO $dto Delete action payload
+     *
+     * @throws TableActionException If piece ID is invalid or piece not found
      */
     private function handleDelete(string $acceptKey, ModeratorPieceDeleteActionDTO $dto): void
     {
@@ -106,8 +141,7 @@ class AdminModeratorPage extends AbstractChatPage
             throw new TableActionException('Invalid moderator prompt piece ID');
         }
 
-        $objectCollection = Hilos::$db->moderatorPromptPieces->getObjectCollection();
-        if (!isset($objectCollection[(string) $dto->id])) {
+        if (!isset(Hilos::$db->moderatorPromptPieces[$dto->id])) {
             throw new TableActionException("Moderator prompt piece #{$dto->id} not found");
         }
 

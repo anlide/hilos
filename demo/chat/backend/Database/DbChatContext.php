@@ -2,8 +2,12 @@
 
 namespace Demo\Chat\Database;
 
+use Demo\Chat\Database\Actions\Collection\BotsActions;
 use Demo\Chat\Database\Actions\Collection\EventsActions;
+use Demo\Chat\Database\Actions\Collection\ModeratorPromptPiecesActions;
 use Demo\Chat\Database\Actions\Collection\UsersActions;
+use Demo\Chat\Database\Actions\Item\BotActions;
+use Demo\Chat\Database\Actions\Item\ModeratorPromptPieceActions;
 use Demo\Chat\Database\Actions\Item\UserActions;
 use Demo\Chat\Database\Object\Collection\Bots as ObjectBots;
 use Demo\Chat\Database\Object\Collection\Events as ObjectEvents;
@@ -51,7 +55,7 @@ class DbChatContext extends DbContext
 
         $this->setRepresent(self::users, Users::class, UsersActions::class, UserActions::class);
         $this->setRepresent(self::events, Events::class, EventsActions::class);
-        $this->setRepresent(self::bots, Bots::class);
-        $this->setRepresent(self::moderatorPromptPieces, ModeratorPromptPieces::class);
+        $this->setRepresent(self::bots, Bots::class, BotsActions::class, BotActions::class);
+        $this->setRepresent(self::moderatorPromptPieces, ModeratorPromptPieces::class, ModeratorPromptPiecesActions::class, ModeratorPromptPieceActions::class);
     }
 }

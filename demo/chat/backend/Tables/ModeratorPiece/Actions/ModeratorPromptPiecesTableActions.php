@@ -10,22 +10,32 @@ use Demo\Chat\Tables\ModeratorPiece\DTO\ModeratorPieceCreateActionDTO;
 use Hilos\Core\Table\Actions\TableActions;
 use Hilos\Core\Table\Mutation\TableMutationEntry;
 use Hilos\Core\Table\Mutation\TableMutationType;
+use Hilos\HilosException;
 
 /**
- * Collection-level actions for the moderator prompt pieces table.
+ * Collection-level actions for the moderator prompt pieces table (table layer).
+ *
+ * Delegates to db layer (ModeratorPromptPiecesActions) for actual create.
  */
 class ModeratorPromptPiecesTableActions extends TableActions
 {
+    /**
+     * Creates a moderator prompt piece and returns mutation for broadcasting.
+     *
+     * @param ModeratorPieceCreateActionDTO $dto Create payload
+     *
+     * @return TableMutationEntry
+     * @throws HilosException
+     */
     public function create(ModeratorPieceCreateActionDTO $dto): TableMutationEntry
     {
-        $piece = ObjectPiece::create();
-        $piece->section = $dto->section;
-        $piece->promptPiece = $dto->promptPiece;
-        $piece->sync();
+        $data = [
+            ObjectPiece::section => $dto->section,
+            ObjectPiece::promptPiece => $dto->promptPiece,
+        ];
 
-        $objectCollection = Hilos::$db->moderatorPromptPieces->getObjectCollection();
-        $objectCollection[$piece->getIdString()] = $piece;
+        $dbPiece = Hilos::$db->moderatorPromptPieces->actions->create($data);
 
-        return $this->mutation(TableMutationType::Created, $piece->id, $piece->toArray());
+        return $this->mutation(TableMutationType::Created, $dbPiece->id, $dbPiece->toArray(toFrontend: true));
     }
 }

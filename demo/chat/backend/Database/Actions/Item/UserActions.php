@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Demo\Chat\Database\Actions\Item;
 
 use Demo\Chat\Database\Object\Item\User as ObjectUser;
@@ -17,26 +19,40 @@ use RuntimeException;
  */
 final class UserActions extends DbActions
 {
+    private const int NAME_MIN_LENGTH = 1;
+    private const int NAME_MAX_LENGTH = 64;
+
     /**
-     * Renames current user item.
+     * Renames current user item (only editable field). Validates and persists.
      *
-     * @param string $newName New display name
-     * @throws HilosException On error (empty id, new name same as old name, database error, etc.)
+     * @param string $newName New display name (trimmed)
+     *
+     * @throws HilosException On error (user not found, invalid name, database error, etc.)
      */
     public function rename(string $newName): void
     {
         $this->ensureCanWrite();
 
         if ($this->object->id === null) {
-            throw new RuntimeException("User not found for rename (id is null)");
+            throw new RuntimeException('User not found for rename (id is null)');
         }
 
-        $oldName = $this->object->name;
-        if ($oldName === $newName) {
-            throw new RuntimeException("New name is the same as old name for rename (userId={$this->object->id})");
+        $name = trim($newName);
+        if ($name === '') {
+            throw new RuntimeException('User name cannot be empty');
+        }
+        if (mb_strlen($name) < self::NAME_MIN_LENGTH) {
+            throw new RuntimeException('User name is too short');
+        }
+        if (mb_strlen($name) > self::NAME_MAX_LENGTH) {
+            throw new RuntimeException('User name exceeds maximum length of ' . self::NAME_MAX_LENGTH . ' characters');
         }
 
-        $this->object->name = $newName;
+        if ($this->object->name === $name) {
+            return;
+        }
+
+        $this->object->name = $name;
         $this->object->lastActivity = TimeHelper::getSqlDateTime();
         $this->object->sync();
     }

@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Demo\Chat\Database\Actions\Collection;
 
 use Demo\Chat\Database\Object\Collection\Users as ObjectUsers;

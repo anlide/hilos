@@ -2,9 +2,9 @@
 
 namespace Demo\Chat\Database\View\Collection;
 
+use Demo\Chat\Database\Actions\Collection\ModeratorPromptPiecesActions;
 use Demo\Chat\Database\Object\Collection\ModeratorPromptPieces as ObjectModeratorPromptPiecesCollection;
 use Demo\Chat\Database\View\Item\ModeratorPromptPiece;
-use Hilos\Database\Actions\Collection\DbActions;
 use Hilos\Database\View\Collection\DbCollection;
 
 /**
@@ -16,7 +16,7 @@ use Hilos\Database\View\Collection\DbCollection;
  * @method ModeratorPromptPiece|null first()
  * @method ModeratorPromptPiece|null last()
  * @method ModeratorPromptPiece|null offsetGet(mixed $offset)
- * @property-read DbActions $actions Actions for write operations
+ * @property-read ModeratorPromptPiecesActions $actions Collection actions (create); items use ModeratorPromptPieceActions
  */
 final class ModeratorPromptPieces extends DbCollection
 {

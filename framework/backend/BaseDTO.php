@@ -49,7 +49,7 @@ abstract class BaseDTO
     {
         $data = json_decode($json, true);
         if ($data === null) {
-            throw new \InvalidArgumentException('Invalid JSON provided');
+            throw new HilosException('Invalid JSON provided');
         }
         return static::fromArray($data);
     }
