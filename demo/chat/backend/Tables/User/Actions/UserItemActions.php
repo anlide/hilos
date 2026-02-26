@@ -10,6 +10,8 @@ use Hilos\Core\Router\Exception\InvalidActionPayloadException;
 use Hilos\Core\Table\Actions\TableItemActions;
 use Hilos\Core\Table\Mutation\TableMutationEntry;
 use Hilos\Core\Table\Mutation\TableMutationType;
+use Hilos\HilosException;
+use Hilos\Runtime\Exception\RuntimeException;
 
 /**
  * Item-level actions for a single user (table layer).
@@ -26,15 +28,16 @@ class UserItemActions extends TableItemActions
      * @return TableMutationEntry
      *
      * @throws InvalidActionPayloadException If name is empty
+     * @throws HilosException If update fails at db layer
      */
     public function update(UserUpdateActionDTO $dto): TableMutationEntry
     {
-        if ($dto->name === '') {
-            throw new InvalidActionPayloadException('User name is required');
+        try {
+            $dbUser = Hilos::$db->users[$this->itemId];
+            $dbUser->actions->rename($dto->name);
+        } catch (RuntimeException $e) {
+            throw new HilosException('Failed to update user: ' . $e->getMessage(), previous: $e);
         }
-
-        Hilos::$db->users[$this->itemId]->actions->rename($dto->name);
-        $dbUser = Hilos::$db->users[$this->itemId];
         return $this->mutation(TableMutationType::Updated, $dbUser->toArray(toFrontend: true));
     }
 }

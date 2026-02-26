@@ -24,7 +24,9 @@ class ModeratorPieceUpdateActionDTO extends ChatActionPayloadDTO
     }
 
     /**
-     * Returns the action name this DTO represents.
+     * Action name this DTO represents.
+     *
+     * @return string
      */
     public function getAction(): string
     {
@@ -32,28 +34,28 @@ class ModeratorPieceUpdateActionDTO extends ChatActionPayloadDTO
     }
 
     /**
-     * Creates DTO from payload array. Unwraps nested data key if present.
+     * Creates instance from payload array.
      *
-     * @param array<string, mixed> $data Raw payload (may contain SignalPayloadConstants::FIELD_DATA wrapper)
+     * @param array<string, mixed> $data Raw payload (may contain FIELD_DATA wrapper)
      *
-     * @return static
+     * @return self
      */
     public static function fromArray(array $data): static
     {
-        $d = $data[SignalPayloadConstants::FIELD_DATA] ?? $data;
-        if (is_array($d) && isset($d[SignalPayloadConstants::FIELD_DATA]) && is_array($d[SignalPayloadConstants::FIELD_DATA])) {
-            $d = $d[SignalPayloadConstants::FIELD_DATA];
+        $inner = $data[SignalPayloadConstants::FIELD_DATA] ?? $data;
+        if (is_array($inner) && isset($inner[SignalPayloadConstants::FIELD_DATA]) && is_array($inner[SignalPayloadConstants::FIELD_DATA])) {
+            $inner = $inner[SignalPayloadConstants::FIELD_DATA];
         }
 
         return new static(
-            id: (int) ($d[ObjectPiece::id] ?? 0),
-            section: isset($d[ObjectPiece::section]) && is_string($d[ObjectPiece::section]) ? trim($d[ObjectPiece::section]) : null,
-            promptPiece: isset($d[ObjectPiece::promptPiece]) && is_string($d[ObjectPiece::promptPiece]) ? trim($d[ObjectPiece::promptPiece]) : null,
+            id: (int) ($inner[ObjectPiece::id] ?? 0),
+            section: isset($inner[ObjectPiece::section]) && is_string($inner[ObjectPiece::section]) ? trim($inner[ObjectPiece::section]) : null,
+            promptPiece: isset($inner[ObjectPiece::promptPiece]) && is_string($inner[ObjectPiece::promptPiece]) ? trim($inner[ObjectPiece::promptPiece]) : null,
         );
     }
 
     /**
-     * Converts DTO to array for serialization (only non-null fields).
+     * Serializes to array (only non-null fields).
      *
      * @return array<string, mixed>
      */

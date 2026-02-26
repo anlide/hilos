@@ -8,8 +8,8 @@ use Demo\Chat\Database\Object\Item\User as ObjectUser;
 use Demo\Chat\Database\View\Item\User;
 use Hilos\Database\Actions\Item\DbActions;
 use Hilos\HilosException;
+use Hilos\Runtime\Exception\RuntimeException;
 use Hilos\Utils\Helpers\TimeHelper;
-use RuntimeException;
 
 /**
  * UserActions - write operations for a single User item.

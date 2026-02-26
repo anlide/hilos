@@ -22,7 +22,9 @@ class TableRefreshActionDTO extends ChatActionPayloadDTO
     }
 
     /**
-     * Returns the action name this DTO represents.
+     * Action name this DTO represents.
+     *
+     * @return string
      */
     public function getAction(): string
     {
@@ -30,26 +32,26 @@ class TableRefreshActionDTO extends ChatActionPayloadDTO
     }
 
     /**
-     * Creates DTO from payload array. Unwraps nested data key if present.
+     * Creates instance from payload array.
      *
-     * @param array<string, mixed> $data Raw payload (may contain SignalPayloadConstants::FIELD_DATA wrapper)
+     * @param array<string, mixed> $data Raw payload (may contain FIELD_DATA wrapper)
      *
-     * @return static
+     * @return self
      */
     public static function fromArray(array $data): static
     {
-        $d = $data[SignalPayloadConstants::FIELD_DATA] ?? $data;
-        if (is_array($d) && isset($d[SignalPayloadConstants::FIELD_DATA]) && is_array($d[SignalPayloadConstants::FIELD_DATA])) {
-            $d = $d[SignalPayloadConstants::FIELD_DATA];
+        $inner = $data[SignalPayloadConstants::FIELD_DATA] ?? $data;
+        if (is_array($inner) && isset($inner[SignalPayloadConstants::FIELD_DATA]) && is_array($inner[SignalPayloadConstants::FIELD_DATA])) {
+            $inner = $inner[SignalPayloadConstants::FIELD_DATA];
         }
 
         return new static(
-            tableKey: is_string($d[TableConstants::PAYLOAD_KEY_TABLE_KEY] ?? null) ? $d[TableConstants::PAYLOAD_KEY_TABLE_KEY] : '',
+            tableKey: is_string($inner[TableConstants::PAYLOAD_KEY_TABLE_KEY] ?? null) ? $inner[TableConstants::PAYLOAD_KEY_TABLE_KEY] : '',
         );
     }
 
     /**
-     * Converts DTO to array for serialization.
+     * Serializes to array.
      *
      * @return array<string, mixed>
      */

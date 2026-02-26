@@ -28,7 +28,9 @@ class BotUpdateActionDTO extends ChatActionPayloadDTO
     }
 
     /**
-     * Returns the action name this DTO represents.
+     * Action name this DTO represents.
+     *
+     * @return string
      */
     public function getAction(): string
     {
@@ -36,32 +38,32 @@ class BotUpdateActionDTO extends ChatActionPayloadDTO
     }
 
     /**
-     * Creates DTO from payload array. Unwraps nested data key if present.
+     * Creates instance from payload array.
      *
-     * @param array<string, mixed> $data Raw payload (may contain SignalPayloadConstants::FIELD_DATA wrapper)
+     * @param array<string, mixed> $data Raw payload (may contain FIELD_DATA wrapper)
      *
-     * @return static
+     * @return self
      */
     public static function fromArray(array $data): static
     {
-        $d = $data[SignalPayloadConstants::FIELD_DATA] ?? $data;
-        if (is_array($d) && isset($d[SignalPayloadConstants::FIELD_DATA]) && is_array($d[SignalPayloadConstants::FIELD_DATA])) {
-            $d = $d[SignalPayloadConstants::FIELD_DATA];
+        $inner = $data[SignalPayloadConstants::FIELD_DATA] ?? $data;
+        if (is_array($inner) && isset($inner[SignalPayloadConstants::FIELD_DATA]) && is_array($inner[SignalPayloadConstants::FIELD_DATA])) {
+            $inner = $inner[SignalPayloadConstants::FIELD_DATA];
         }
 
         return new static(
-            id: (int) ($d[ObjectBot::id] ?? 0),
-            name: isset($d[ObjectBot::name]) && is_string($d[ObjectBot::name]) ? trim($d[ObjectBot::name]) : null,
-            description: array_key_exists(ObjectBot::description, $d) ? (is_string($d[ObjectBot::description]) ? $d[ObjectBot::description] : null) : null,
-            style: array_key_exists(ObjectBot::style, $d) ? (is_string($d[ObjectBot::style]) ? $d[ObjectBot::style] : null) : null,
-            topics: array_key_exists(ObjectBot::topics, $d) ? (is_string($d[ObjectBot::topics]) ? $d[ObjectBot::topics] : null) : null,
-            personality: array_key_exists(ObjectBot::personality, $d) ? (is_string($d[ObjectBot::personality]) ? $d[ObjectBot::personality] : null) : null,
-            active: isset($d[ObjectBot::active]) ? (bool) $d[ObjectBot::active] : null,
+            id: (int) ($inner[ObjectBot::id] ?? 0),
+            name: isset($inner[ObjectBot::name]) && is_string($inner[ObjectBot::name]) ? trim($inner[ObjectBot::name]) : null,
+            description: array_key_exists(ObjectBot::description, $inner) ? (is_string($inner[ObjectBot::description]) ? $inner[ObjectBot::description] : null) : null,
+            style: array_key_exists(ObjectBot::style, $inner) ? (is_string($inner[ObjectBot::style]) ? $inner[ObjectBot::style] : null) : null,
+            topics: array_key_exists(ObjectBot::topics, $inner) ? (is_string($inner[ObjectBot::topics]) ? $inner[ObjectBot::topics] : null) : null,
+            personality: array_key_exists(ObjectBot::personality, $inner) ? (is_string($inner[ObjectBot::personality]) ? $inner[ObjectBot::personality] : null) : null,
+            active: isset($inner[ObjectBot::active]) ? (bool) $inner[ObjectBot::active] : null,
         );
     }
 
     /**
-     * Converts DTO to array for serialization (only non-null fields).
+     * Serializes to array (only non-null fields).
      *
      * @return array<string, mixed>
      */
