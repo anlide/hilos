@@ -6,7 +6,6 @@ namespace Hilos\Socket\Client;
 
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\Agent\Exception\AgentDaemonCreationFailedException;
-use Hilos\Core\Router\SignalRouter;
 use Hilos\Socket\Client\Interface\WorkerClientInterface;
 use Hilos\Socket\SocketException;
 use Hilos\Socket\Worker\DTO\AgentStartDTO;
@@ -49,12 +48,11 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
      * WorkerClient constructor
      *
      * @param resource $socket Client socket
-     * @param SignalRouter $signalRouter Signal router instance
      * @param AgentManagerDaemon $agentManager Agent manager daemon instance
      */
-    public function __construct($socket, SignalRouter $signalRouter, AgentManagerDaemon $agentManager)
+    public function __construct($socket, AgentManagerDaemon $agentManager)
     {
-        parent::__construct($socket, $signalRouter);
+        parent::__construct($socket);
         $this->agentManager = $agentManager;
         $this->connectTime = microtime(true);
     }

@@ -5,31 +5,26 @@ declare(strict_types=1);
 namespace Hilos\Core\Page;
 
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
-use Hilos\Core\Router\SignalRouter;
 
 /**
- * AbstractPage - Abstract base class for page handlers
+ * AbstractPage - Abstract base class for page handlers.
  *
  * Provides base implementation for page-specific logic.
  * Each page handles its own subscribe, unsubscribe, and action logic.
+ * Signal router is available globally via Hilos::$sr.
  */
 abstract class AbstractPage
 {
-    /** @var SignalRouter Signal router for sending signals */
-    protected SignalRouter $signalRouter;
-
     /** @var PageAgentInterface Agent instance for page operations */
     protected PageAgentInterface $agent;
 
     /**
      * Constructor
      *
-     * @param SignalRouter $signalRouter Signal router instance
      * @param PageAgentInterface $agent Agent instance
      */
-    public function __construct(SignalRouter $signalRouter, PageAgentInterface $agent)
+    public function __construct(PageAgentInterface $agent)
     {
-        $this->signalRouter = $signalRouter;
         $this->agent = $agent;
     }
 

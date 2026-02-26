@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Hilos\Socket\Server;
 
-use Hilos\Core\Router\SignalRouter;
 use Hilos\Socket\AbstractSocket;
 use Hilos\Socket\Client\ClientInterface;
 use Hilos\Socket\SocketException;
@@ -42,21 +41,16 @@ abstract class AbstractServer extends AbstractSocket implements ServerInterface
     /** @var bool Whether server is preparing for shutdown (should not accept new connections) */
     protected bool $preparingShutdown = false;
 
-    /** @var SignalRouter Signal router instance */
-    protected SignalRouter $signalRouter;
-
     /**
      * AbstractServer constructor
      *
      * @param string $host Host to bind
      * @param int $port Port to bind
-     * @param SignalRouter $signalRouter Signal router instance
      */
-    public function __construct(string $host, int $port, SignalRouter $signalRouter)
+    public function __construct(string $host, int $port)
     {
         $this->host = $host;
         $this->port = $port;
-        $this->signalRouter = $signalRouter;
     }
 
     /**
@@ -189,7 +183,7 @@ abstract class AbstractServer extends AbstractSocket implements ServerInterface
             return null;
         }
 
-        $client = $this->onCreateClient($clientSocket, $this->signalRouter);
+        $client = $this->onCreateClient($clientSocket);
         $this->clients[] = $client;
 
         return $client;
@@ -231,15 +225,14 @@ abstract class AbstractServer extends AbstractSocket implements ServerInterface
     }
 
     /**
-     * Called when a new client connection is accepted
+     * Called when a new client connection is accepted.
      *
      * Must be implemented by child classes to create specific client type.
      *
      * @param resource $socket Client socket
-     * @param SignalRouter $signalRouter Signal router instance
      * @return ClientInterface Client instance
      */
-    abstract protected function onCreateClient($socket, SignalRouter $signalRouter): ClientInterface;
+    abstract protected function onCreateClient($socket): ClientInterface;
 
     /**
      * Tick method - process all clients

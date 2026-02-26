@@ -5,16 +5,15 @@ declare(strict_types=1);
 namespace Demo\Chat\Core\Socket\Server;
 
 use Demo\Chat\Core\Socket\Client\ChatWebSocketClient;
-use Hilos\Core\Router\SignalRouter;
 use Hilos\Socket\Client\Interface\WebSocketClientInterface;
 use Hilos\Socket\Server\WebSocketServer;
 use Hilos\Socket\SocketException;
 
 /**
- * ChatWebSocketServer - WebSocket server for chat demo
+ * ChatWebSocketServer - WebSocket server for chat demo.
  *
  * Extends base WebSocketServer with chat-specific functionality.
- * Queues signals for dispatch through SignalRouter.
+ * Queues signals for dispatch through Hilos::$sr.
  */
 class ChatWebSocketServer extends WebSocketServer
 {
@@ -33,12 +32,11 @@ class ChatWebSocketServer extends WebSocketServer
      * Called when a new chat WebSocket client connection is accepted
      *
      * @param resource $socket Client socket
-     * @param SignalRouter $signalRouter Signal router instance
      * @return WebSocketClientInterface Client instance
      */
-    protected function onCreateClient($socket, SignalRouter $signalRouter): WebSocketClientInterface
+    protected function onCreateClient($socket): WebSocketClientInterface
     {
-        return new ChatWebSocketClient($socket, $signalRouter);
+        return new ChatWebSocketClient($socket);
     }
 
     /**

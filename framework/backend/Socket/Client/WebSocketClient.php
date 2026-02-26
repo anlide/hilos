@@ -28,6 +28,7 @@ use Hilos\Socket\WebSocket\Exception\InvalidFrameSequenceException;
 use Hilos\Socket\WebSocket\Exception\ReservedOpcodeException;
 use Hilos\Socket\WebSocket\Exception\UnknownOpcodeException;
 use Hilos\Socket\WebSocket\Exception\UnsupportedProtocolVersionException;
+use Hilos\Hilos;
 use Hilos\Socket\WebSocket\WebSocketFrameDTO;
 use Hilos\Utils\Helpers\JsonHelper;
 use RuntimeException;
@@ -557,7 +558,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
                     data: $actionData,
                 );
 
-                $this->signalRouter->queueSignal(
+                Hilos::$sr->queueSignal(
                     new SignalSource(SignalSource::WEBSOCKET),
                     new SignalType(SignalTypeConstants::ACTION),
                     new SignalName($actionName),
@@ -592,7 +593,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
                     default => throw new RuntimeException("Unsupported page signal type: {$type}"),
                 };
 
-                $this->signalRouter->queueSignal(
+                Hilos::$sr->queueSignal(
                     new SignalSource(SignalSource::WEBSOCKET),
                     new SignalType($type),
                     new SignalName($page),
@@ -620,7 +621,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
                     acceptKey: $acceptKey,
                 );
 
-                $this->signalRouter->queueSignal(
+                Hilos::$sr->queueSignal(
                     new SignalSource(SignalSource::WEBSOCKET),
                     new SignalType(SignalTypeConstants::PAGE_UNSUBSCRIBE),
                     new SignalName($page),
@@ -661,7 +662,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
                     default => throw new RuntimeException("Unsupported group signal type: {$type}"),
                 };
 
-                $this->signalRouter->queueSignal(
+                Hilos::$sr->queueSignal(
                     new SignalSource(SignalSource::WEBSOCKET),
                     new SignalType($type),
                     new SignalName($group),
@@ -793,7 +794,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
             payload: $payload,
         );
 
-        $this->signalRouter->queueSignal(
+        Hilos::$sr->queueSignal(
             new SignalSource(SignalSource::WEBSOCKET),
             new SignalType(SignalTypeConstants::FRAME_BINARY),
             new SignalName(SignalName::EMPTY),
@@ -842,7 +843,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
             queryParams: $queryParams,
         );
 
-        $this->signalRouter->queueSignal(
+        Hilos::$sr->queueSignal(
             new SignalSource(SignalSource::WEBSOCKET),
             new SignalType(SignalTypeConstants::HANDSHAKE),
             new SignalName(SignalTypeConstants::HANDSHAKE),
@@ -896,7 +897,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
         }
 
         $closeDto = new WebSocketCloseSignalDTO(acceptKey: $this->acceptKey);
-        $this->signalRouter->queueSignal(
+        Hilos::$sr->queueSignal(
             new SignalSource(SignalSource::WEBSOCKET),
             new SignalType(SignalTypeConstants::CONNECTION_CLOSE),
             new SignalName(SignalName::EMPTY),
@@ -907,13 +908,13 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
             acceptKey: $this->acceptKey,
         );
 
-        $this->signalRouter->queueSignal(
+        Hilos::$sr->queueSignal(
             new SignalSource(SignalSource::WEBSOCKET),
             new SignalType(SignalTypeConstants::PAGE_UNSUBSCRIBE),
             new SignalName(SignalName::EMPTY),
             $pageDto,
         );
 
-        $this->signalRouter->unsubscribeFromAll($this->acceptKey);
+        Hilos::$sr->unsubscribeFromAll($this->acceptKey);
     }
 }

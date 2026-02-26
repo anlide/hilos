@@ -11,10 +11,9 @@ use Demo\Chat\Constants\AgentType;
 use Hilos\Core\Agent\AbstractAgentWorkerFactory;
 use Hilos\Core\Agent\AgentInterface;
 use Hilos\Core\Agent\Exception\AgentCreationFailedException;
-use Hilos\Core\Router\SignalRouter;
 
 /**
- * ChatAgentFactory - Factory for creating chat-specific agents in worker processes
+ * ChatAgentFactory - Factory for creating chat-specific agents in worker processes.
  *
  * Creates ChatAgent, BotAgent and ModeratorAgent instances based on agent type.
  */
@@ -25,16 +24,15 @@ class ChatAgentWorkerFactory extends AbstractAgentWorkerFactory
      *
      * @param string $agentType Agent type
      * @param ?string $agentIndex Agent index (optional)
-     * @param SignalRouter $signalRouter Signal router instance
      * @return AgentInterface Agent instance
      * @throws AgentCreationFailedException If agent type is not supported or agentIndex is invalid
      */
-    public static function createAgent(string $agentType, ?string $agentIndex, SignalRouter $signalRouter): AgentInterface
+    public static function createAgent(string $agentType, ?string $agentIndex): AgentInterface
     {
         return match ($agentType) {
-            AgentType::CHAT => new ChatAgent($signalRouter),
-            AgentType::BOT => new BotAgent($signalRouter),
-            AgentType::MODERATOR => new ModeratorAgent($signalRouter),
+            AgentType::CHAT => new ChatAgent(),
+            AgentType::BOT => new BotAgent(),
+            AgentType::MODERATOR => new ModeratorAgent(),
             default => throw new AgentCreationFailedException($agentType, $agentIndex),
         };
     }

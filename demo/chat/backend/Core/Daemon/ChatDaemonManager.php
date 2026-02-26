@@ -14,6 +14,7 @@ use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
+use Hilos\Hilos;
 use Hilos\Socket\Worker\DTO\CronSignalDTO;
 
 /**
@@ -45,7 +46,7 @@ class ChatDaemonManager extends DaemonManager
     /**
      * Create signal router instance
      *
-     * @return SignalRouter Signal router instance
+     * @return SignalRouter
      */
     protected function createSignalRouter(): SignalRouter
     {
@@ -55,12 +56,11 @@ class ChatDaemonManager extends DaemonManager
     /**
      * Create agent manager daemon instance
      *
-     * @param SignalRouter $signalRouter Signal router instance
-     * @return AgentManagerDaemon Agent manager daemon instance
+     * @return AgentManagerDaemon
      */
-    protected function createAgentManagerDaemon(SignalRouter $signalRouter): AgentManagerDaemon
+    protected function createAgentManagerDaemon(): AgentManagerDaemon
     {
-        return new ChatAgentManagerDaemon($signalRouter);
+        return new ChatAgentManagerDaemon();
     }
 
     /**
@@ -89,7 +89,7 @@ class ChatDaemonManager extends DaemonManager
             cronName: $rule->name,
         );
 
-        $this->signalRouter->queueSignal(
+        Hilos::$sr->queueSignal(
             new SignalSource(SignalSource::DAEMON),
             new SignalType(SignalTypeConstants::CRON),
             new SignalName($rule->name),

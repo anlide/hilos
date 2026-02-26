@@ -19,7 +19,6 @@ use Demo\Chat\Socket\WebSocket\DTO\HandshakeResponseSignalData;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Router\DTO\EntitiesChangesDTO;
 use Hilos\Core\Router\SignalDataInterface;
-use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\HilosException;
 use Hilos\Socket\WebSocket\DTO\WebSocketCloseSignalDTO;
@@ -35,16 +34,6 @@ use Hilos\Utils\Logger;
  */
 class ChatAgent extends AbstractAgent
 {
-    /**
-     * Constructor
-     *
-     * @param SignalRouter $signalRouter Signal router instance
-     */
-    public function __construct(SignalRouter $signalRouter)
-    {
-        parent::__construct($signalRouter);
-    }
-
     /**
      * Get agent type
      *

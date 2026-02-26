@@ -9,6 +9,7 @@ use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
+use Hilos\Hilos;
 use Hilos\Socket\Server\WorkerServer;
 use Hilos\Socket\Worker\DTO\SystemSignalDTO;
 
@@ -34,7 +35,7 @@ class ChatWorkerServer extends WorkerServer
      */
     protected function onInitialWorkersReady(): void
     {
-        $this->signalRouter->queueSignal(
+        Hilos::$sr->queueSignal(
             new SignalSource(SignalSource::DAEMON),
             new SignalType(SignalTypeConstants::SYSTEM),
             new SignalName(ChatSignalConstants::START),

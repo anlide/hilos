@@ -7,21 +7,18 @@ namespace Hilos\Core\Page;
 use Hilos\Core\Page\Exception\PageNotFoundException;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\UnknownActionPayloadDTO;
-use Hilos\Core\Router\SignalRouter;
 
 /**
- * AbstractPageFactory - Abstract factory for creating page instances
+ * AbstractPageFactory - Abstract factory for creating page instances.
  *
  * Provides base implementation for page factories.
  * Child classes must implement createPage() to create specific page instances.
+ * Signal router is available globally via Hilos::$sr.
  *
  * @template TAgent of PageAgentInterface
  */
 abstract class AbstractPageFactory
 {
-    /** @var SignalRouter Signal router instance */
-    protected SignalRouter $signalRouter;
-
     /** @var TAgent Agent instance for pages */
     protected PageAgentInterface $agent;
 
@@ -31,12 +28,10 @@ abstract class AbstractPageFactory
     /**
      * Constructor
      *
-     * @param SignalRouter $signalRouter Signal router instance
      * @param PageAgentInterface $agent Agent instance
      */
-    public function __construct(SignalRouter $signalRouter, PageAgentInterface $agent)
+    public function __construct(PageAgentInterface $agent)
     {
-        $this->signalRouter = $signalRouter;
         $this->agent = $agent;
     }
 

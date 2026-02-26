@@ -31,9 +31,9 @@ class ChatWorkerManager extends WorkerManager
         return new ChatSignalRouter();
     }
 
-    protected function createAgentManager(SignalRouter $signalRouter): AgentManager
+    protected function createAgentManager(): AgentManager
     {
-        return new ChatAgentManager($signalRouter);
+        return new ChatAgentManager();
     }
 
     protected function onTick(): void
@@ -46,7 +46,7 @@ class ChatWorkerManager extends WorkerManager
             throw new PageSignalRouterNotFoundException($agent::class);
         }
 
-        $pageFactory = new ChatPageFactory($this->signalRouter, $agent);
+        $pageFactory = new ChatPageFactory($agent);
         $actionRoutes = new ActionRouteConfig([
             ChatSignalConstants::MESSAGE => PageConstants::MAIN,
             ChatSignalConstants::RENAME => PageConstants::PROFILE,

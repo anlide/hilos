@@ -37,17 +37,13 @@ try {
     // Initialize database connection, schema and Hilos context.
     Database::initialize();
 
-    // Create chat daemon manager instance first (creates signalRouter)
+    // Create chat daemon manager instance first (initializes Hilos::$sr)
     $daemon = new ChatDaemonManager();
-
-    // Get signal router from daemon
-    $signalRouter = $daemon->getSignalRouter();
 
     // Create HTTP server
     $httpServer = new HttpServer(
         Env::get(EnvConstants::HTTP_STATUS_HOST),
         Env::getInt(EnvConstants::HTTP_STATUS_PORT),
-        $signalRouter,
     );
 
     // Set log file for daemon-side logging
@@ -60,7 +56,6 @@ try {
         Env::getInt(EnvConstants::WORKER_COMM_PORT),
         $workerScript,
         __DIR__,
-        $signalRouter,
         $daemon->getAgentManagerDaemon(),
     );
 
@@ -68,7 +63,6 @@ try {
     $webSocketServer = new ChatWebSocketServer(
         Env::get(EnvConstants::WEBSOCKET_HOST),
         Env::getInt(EnvConstants::WEBSOCKET_PORT),
-        $signalRouter,
     );
 
     // Create HTTP router

@@ -44,15 +44,15 @@ class ChatPageFactory extends AbstractPageFactory
     protected function createPage(string $pageName): AbstractPage
     {
         return match ($pageName) {
-            PageConstants::MAIN => new MainPage($this->signalRouter, $this->agent),
-            PageConstants::PROFILE => new ProfilePage($this->signalRouter, $this->agent),
-            PageConstants::USER => new UserPage($this->signalRouter, $this->agent),
-            PageConstants::BOT => new BotPage($this->signalRouter, $this->agent),
-            PageConstants::MODERATOR => new ModeratorPage($this->signalRouter, $this->agent),
-            PageConstants::ADMIN => new AdminPage($this->signalRouter, $this->agent),
-            PageConstants::ADMIN_USERS => new AdminUsersPage($this->signalRouter, $this->agent),
-            PageConstants::ADMIN_MODERATOR => new AdminModeratorPage($this->signalRouter, $this->agent),
-            PageConstants::ADMIN_BOTS => new AdminBotsPage($this->signalRouter, $this->agent),
+            PageConstants::MAIN => new MainPage($this->agent),
+            PageConstants::PROFILE => new ProfilePage($this->agent),
+            PageConstants::USER => new UserPage($this->agent),
+            PageConstants::BOT => new BotPage($this->agent),
+            PageConstants::MODERATOR => new ModeratorPage($this->agent),
+            PageConstants::ADMIN => new AdminPage($this->agent),
+            PageConstants::ADMIN_USERS => new AdminUsersPage($this->agent),
+            PageConstants::ADMIN_MODERATOR => new AdminModeratorPage($this->agent),
+            PageConstants::ADMIN_BOTS => new AdminBotsPage($this->agent),
             default => throw new PageNotFoundException($pageName),
         };
     }

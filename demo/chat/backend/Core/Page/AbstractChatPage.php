@@ -6,10 +6,9 @@ namespace Demo\Chat\Core\Page;
 
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Page\PageAgentInterface;
-use Hilos\Core\Router\SignalRouter;
 
 /**
- * AbstractChatPage - Abstract base class for chat page handlers
+ * AbstractChatPage - Abstract base class for chat page handlers.
  *
  * Provides base implementation for chat-specific page logic.
  * Child classes must implement page-specific subscribe, unsubscribe, and action handlers.

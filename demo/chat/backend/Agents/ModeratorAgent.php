@@ -7,7 +7,6 @@ namespace Demo\Chat\Agents;
 use Demo\Chat\Constants\AgentType;
 use Demo\Chat\Database\DbChatContext;
 use Hilos\Core\Agent\AbstractAgent;
-use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Utils\Logger;
 
@@ -20,16 +19,6 @@ class ModeratorAgent extends AbstractAgent
 {
     /** @var string Agent type */
     private const string AGENT_TYPE = AgentType::MODERATOR;
-
-    /**
-     * ModeratorAgent constructor
-     *
-     * @param SignalRouter $signalRouter Signal router instance
-     */
-    public function __construct(SignalRouter $signalRouter)
-    {
-        parent::__construct($signalRouter);
-    }
 
     /**
      * Get agent type

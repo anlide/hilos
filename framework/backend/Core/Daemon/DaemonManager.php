@@ -16,6 +16,7 @@ use Hilos\Core\EventLoop\EventLoop;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\WebSocketSignalData;
+use Hilos\Hilos;
 use Hilos\Socket\Client\WebSocketClient;
 use Hilos\Socket\Server\ServerInterface;
 use Hilos\Socket\Server\WebSocketServer;
@@ -48,9 +49,6 @@ abstract class DaemonManager extends BaseManager
     /** @var EventLoop Event loop for epoll */
     protected EventLoop $eventLoop;
 
-    /** @var SignalRouter Signal router instance */
-    protected SignalRouter $signalRouter;
-
     /** @var AgentManagerDaemon Agent manager daemon instance */
     protected AgentManagerDaemon $agentManagerDaemon;
 
@@ -82,33 +80,34 @@ abstract class DaemonManager extends BaseManager
     /**
      * Constructor
      *
-     * Creates signal router via createSignalRouter() method (must be implemented in child classes).
-     * Then creates agent manager daemon with the signal router.
+     * Initializes signal router via Hilos::initSignalRouter() and creates
+     * agent manager daemon. Child classes must implement createSignalRouter()
+     * and createAgentManagerDaemon().
      */
     public function __construct()
     {
-        $this->signalRouter = $this->createSignalRouter();
-        $this->agentManagerDaemon = $this->createAgentManagerDaemon($this->signalRouter);
+        Hilos::initSignalRouter($this->createSignalRouter());
+        $this->agentManagerDaemon = $this->createAgentManagerDaemon();
     }
 
     /**
-     * Create signal router instance
+     * Create signal router instance.
      *
      * Must be implemented in child classes to create specific signal router.
+     * The created instance is registered globally via Hilos::$sr.
      *
-     * @return SignalRouter Signal router instance
+     * @return SignalRouter
      */
     abstract protected function createSignalRouter(): SignalRouter;
 
     /**
-     * Create agent manager daemon instance
+     * Create agent manager daemon instance.
      *
      * Must be implemented in child classes to create specific agent manager daemon.
      *
-     * @param SignalRouter $signalRouter Signal router instance
-     * @return AgentManagerDaemon Agent manager daemon instance
+     * @return AgentManagerDaemon
      */
-    abstract protected function createAgentManagerDaemon(SignalRouter $signalRouter): AgentManagerDaemon;
+    abstract protected function createAgentManagerDaemon(): AgentManagerDaemon;
 
     /**
      * Run daemon - main method
@@ -223,16 +222,6 @@ abstract class DaemonManager extends BaseManager
     public function registerServer(ServerInterface $server): void
     {
         $this->servers[] = $server;
-    }
-
-    /**
-     * Get signal router instance
-     *
-     * @return SignalRouter Signal router instance
-     */
-    public function getSignalRouter(): SignalRouter
-    {
-        return $this->signalRouter;
     }
 
     /**
@@ -471,14 +460,14 @@ abstract class DaemonManager extends BaseManager
         }
 
         // Process signals one by one in while-do loop
-        while (($signal = $this->signalRouter->getNextQueuedSignal()) !== null) {
+        while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
             Logger::debug('getNextQueuedSignal called for signal: ' . $signal->toJson());
 
             // Update subscriptions BEFORE routing (routing may depend on current subscriptions)
             $this->updateSubscriptions($signal);
 
             // Get destinations for signal
-            $destinations = $this->signalRouter->getDestinations($signal);
+            $destinations = Hilos::$sr->getDestinations($signal);
             $signalName = $signal->signalName->getName();
             $signalType = $signal->signalType->getType();
 
@@ -685,7 +674,7 @@ abstract class DaemonManager extends BaseManager
     /**
      * Update user subscriptions based on signal type
      *
-     * Updates subscriptions in SignalRouter for subscribe/unsubscribe/update_subscription signals.
+     * Updates subscriptions in Hilos::$sr for subscribe/unsubscribe/update_subscription signals.
      * This must be called BEFORE routing, as routing may depend on current subscriptions.
      *
      * @param SignalDTO $signal Signal DTO
@@ -700,14 +689,14 @@ abstract class DaemonManager extends BaseManager
                 if (!($signal->data instanceof WebSocketPageSubscribeSignalDTO)) {
                     return;
                 }
-                $this->signalRouter->subscribeToPage($signal->data->page, $signal->data);
+                Hilos::$sr->subscribeToPage($signal->data->page, $signal->data);
                 break;
 
             case SignalTypeConstants::PAGE_UPDATE_SUBSCRIPTION:
                 if (!($signal->data instanceof WebSocketPageUpdateSubscriptionSignalDTO)) {
                     return;
                 }
-                $this->signalRouter->updatePageSubscription($signal->data->page, $signal->data);
+                Hilos::$sr->updatePageSubscription($signal->data->page, $signal->data);
                 break;
 
             case SignalTypeConstants::PAGE_UNSUBSCRIBE:
@@ -718,28 +707,28 @@ abstract class DaemonManager extends BaseManager
                 if ($page === '') {
                     return;
                 }
-                $this->signalRouter->unsubscribeFromPage($page, $signal->data);
+                Hilos::$sr->unsubscribeFromPage($page, $signal->data);
                 break;
 
             case SignalTypeConstants::GROUP_SUBSCRIBE:
                 if (!($signal->data instanceof WebSocketGroupSubscribeSignalDTO)) {
                     return;
                 }
-                $this->signalRouter->subscribeToGroup($signal->data->group, $signal->data);
+                Hilos::$sr->subscribeToGroup($signal->data->group, $signal->data);
                 break;
 
             case SignalTypeConstants::GROUP_UPDATE_SUBSCRIPTION:
                 if (!($signal->data instanceof WebSocketGroupUpdateSubscriptionSignalDTO)) {
                     return;
                 }
-                $this->signalRouter->updateGroupSubscription($signal->data->group, $signal->data);
+                Hilos::$sr->updateGroupSubscription($signal->data->group, $signal->data);
                 break;
 
             case SignalTypeConstants::GROUP_UNSUBSCRIBE:
                 if (!($signal->data instanceof WebSocketGroupUnsubscribeSignalDTO)) {
                     return;
                 }
-                $this->signalRouter->unsubscribeFromGroup($signal->data->group, $signal->data);
+                Hilos::$sr->unsubscribeFromGroup($signal->data->group, $signal->data);
                 break;
         }
     }

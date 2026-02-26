@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Hilos\Core\Agent;
 
 use Hilos\Core\Agent\Exception\AgentCreationFailedException;
-use Hilos\Core\Router\SignalRouter;
 
 /**
  * AgentManager - Base class for managing agents in worker processes
@@ -18,19 +17,6 @@ abstract class AgentManager
 {
     /** @var array<string, AgentInterface> Active agents indexed by agent ID */
     protected array $agents = [];
-
-    /** @var SignalRouter Signal router instance */
-    protected SignalRouter $signalRouter;
-
-    /**
-     * Constructor
-     *
-     * @param SignalRouter $signalRouter Signal router instance
-     */
-    public function __construct(SignalRouter $signalRouter)
-    {
-        $this->signalRouter = $signalRouter;
-    }
 
     /**
      * Create agent instance (factory method)

@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Core\Agent\Daemon;
 
 use Hilos\Core\Agent\Exception\AgentDaemonCreationFailedException;
-use Hilos\Core\Router\SignalRouter;
+use Hilos\Hilos;
 use Hilos\Socket\Worker\DTO\WorkerAgentMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerAgentStartedDTO;
 use Hilos\Socket\Worker\DTO\WorkerAgentStoppedDTO;
@@ -26,19 +26,6 @@ abstract class AgentManagerDaemon
 
     /** @var array<string, int> Mapping agentId => workerId (negative = monopolistic, positive = regular) */
     protected array $agentToWorker = [];
-
-    /** @var SignalRouter Signal router for queuing response signals */
-    protected SignalRouter $signalRouter;
-
-    /**
-     * Constructor
-     *
-     * @param SignalRouter $signalRouter Signal router instance
-     */
-    public function __construct(SignalRouter $signalRouter)
-    {
-        $this->signalRouter = $signalRouter;
-    }
 
     /**
      * Create agent daemon instance (factory method)
@@ -290,7 +277,7 @@ abstract class AgentManagerDaemon
     {
         // Simply queue signal in daemon's SignalRouter
         // DaemonManager will process it in dispatchSignals() and handle routing/delivery
-        $this->signalRouter->queueSignal(
+        Hilos::$sr->queueSignal(
             signalSource: $dto->signal->signalSource,
             signalType: $dto->signal->signalType,
             signalName: $dto->signal->signalName,

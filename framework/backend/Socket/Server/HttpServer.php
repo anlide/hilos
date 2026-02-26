@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Hilos\Socket\Server;
 
-use Hilos\Core\Router\SignalRouter;
 use Hilos\Socket\Client\HttpClient;
 use Hilos\Socket\Client\Interface\HttpClientInterface;
 use Hilos\Socket\SocketException;
@@ -35,9 +34,9 @@ class HttpServer extends AbstractServer
      * @param resource $socket Client socket
      * @return HttpClientInterface Client instance
      */
-    protected function onCreateClient($socket, SignalRouter $signalRouter): HttpClientInterface
+    protected function onCreateClient($socket): HttpClientInterface
     {
-        return new HttpClient($socket, $signalRouter);
+        return new HttpClient($socket);
     }
 
     /**

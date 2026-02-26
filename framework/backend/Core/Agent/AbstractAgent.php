@@ -8,11 +8,11 @@ use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Page\PageAgentInterface;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\SignalName;
-use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalSourceInterface;
 use Hilos\Core\Router\SignalType;
 use Hilos\Core\Router\WebSocketSignalData;
+use Hilos\Hilos;
 use Hilos\Socket\WebSocket\DTO\WebSocketActionSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketCloseSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketFrameBinarySignalDTO;
@@ -35,21 +35,8 @@ use Hilos\Socket\WebSocket\DTO\WebSocketPageUpdateSubscriptionSignalDTO;
  */
 abstract class AbstractAgent implements AgentInterface, PageAgentInterface
 {
-    /** @var SignalRouter Signal router for queuing signals */
-    protected SignalRouter $signalRouter;
-
     /** @var bool Flag indicating agent should stop */
     private bool $shouldStop = false;
-
-    /**
-     * Constructor
-     *
-     * @param SignalRouter $signalRouter Signal router instance
-     */
-    public function __construct(SignalRouter $signalRouter)
-    {
-        $this->signalRouter = $signalRouter;
-    }
 
     /**
      * Get agent unique identifier (type + index)
@@ -90,7 +77,7 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface
      */
     public function sendToUser(string $signalName, string $targetAcceptKey, SignalDataInterface $data): void
     {
-        $this->signalRouter->queueSignal(
+        Hilos::$sr->queueSignal(
             signalSource: $this->getAgentSignalSource(),
             signalType: new SignalType(SignalTypeConstants::WS_USER),
             signalName: new SignalName($signalName),
@@ -107,7 +94,7 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface
      */
     public function sendToAllUsers(string $signalName, SignalDataInterface $data, ?string $excludeAcceptKey = null): void
     {
-        $this->signalRouter->queueSignal(
+        Hilos::$sr->queueSignal(
             signalSource: $this->getAgentSignalSource(),
             signalType: new SignalType(SignalTypeConstants::WS_ALL),
             signalName: new SignalName($signalName),
@@ -125,7 +112,7 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface
      */
     public function sendToGroup(string $signalName, string $targetGroup, SignalDataInterface $data, ?string $excludeAcceptKey = null): void
     {
-        $this->signalRouter->queueSignal(
+        Hilos::$sr->queueSignal(
             signalSource: $this->getAgentSignalSource(),
             signalType: new SignalType(SignalTypeConstants::WS_GROUP),
             signalName: new SignalName($signalName),

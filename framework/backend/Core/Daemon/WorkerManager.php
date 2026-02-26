@@ -12,6 +12,7 @@ use Hilos\Core\Agent\Exception\AgentCreationFailedException;
 use Hilos\Core\Page\Exception\PageSignalRouterNotFoundException;
 use Hilos\Core\Page\PageSignalRouter;
 use Hilos\Core\Router\SignalRouter;
+use Hilos\Hilos;
 use Hilos\Socket\SocketException;
 use Hilos\Socket\WebSocket\DTO\WebSocketActionSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketCloseSignalDTO;
@@ -58,11 +59,10 @@ abstract class WorkerManager extends BaseManager
     /** @var array<string, PageSignalRouter> Page routers by agent ID */
     private array $pageSignalRouters = [];
 
-    /** @var SignalRouter Signal router instance */
-    protected SignalRouter $signalRouter;
-
     /**
      * WorkerManager constructor
+     *
+     * Initializes signal router via Hilos::initSignalRouter() and creates agent manager.
      *
      * @param int $workerIndex Worker index
      * @param array<string> $argv Command line arguments
@@ -71,28 +71,19 @@ abstract class WorkerManager extends BaseManager
     {
         $this->workerIndex = $workerIndex;
         $this->isMonopolistic = ArgumentHelper::isMonopolistic($argv);
-        $this->signalRouter = $this->createSignalRouter();
-        $this->agentManager = $this->createAgentManager($this->signalRouter);
+        Hilos::initSignalRouter($this->createSignalRouter());
+        $this->agentManager = $this->createAgentManager();
     }
 
     /**
-     * Create signal router instance
+     * Create signal router instance.
      *
      * Must be implemented in child classes to create specific signal router.
+     * The created instance is registered globally via Hilos::$sr.
      *
-     * @return SignalRouter Signal router instance
+     * @return SignalRouter
      */
     abstract protected function createSignalRouter(): SignalRouter;
-
-    /**
-     * Get signal router instance
-     *
-     * @return SignalRouter Signal router instance
-     */
-    public function getSignalRouter(): SignalRouter
-    {
-        return $this->signalRouter;
-    }
 
     /**
      * Run worker - main method
@@ -693,7 +684,7 @@ abstract class WorkerManager extends BaseManager
         }
 
         // Process signals one by one in while-do loop
-        while (($signal = $this->signalRouter->getNextQueuedSignal()) !== null) {
+        while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
             // Extract agent type and index from signal source
             $agentType = $signal->signalSource->getType();
             $agentIndex = $signal->signalSource->getIndex();
@@ -709,14 +700,13 @@ abstract class WorkerManager extends BaseManager
     }
 
     /**
-     * Create agent manager instance
+     * Create agent manager instance.
      *
      * Must be implemented in child classes to create specific agent manager.
      *
-     * @param SignalRouter $signalRouter Signal router instance
-     * @return AgentManager Agent manager instance
+     * @return AgentManager
      */
-    abstract protected function createAgentManager(SignalRouter $signalRouter): AgentManager;
+    abstract protected function createAgentManager(): AgentManager;
 
     /**
      * Get manager name for logging

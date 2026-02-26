@@ -22,8 +22,8 @@ use Hilos\Core\Exception\Process\FailedToSetStdErrException;
 use Hilos\Core\Exception\Process\FailedToTerminateProcessExceptionException;
 use Hilos\Core\Process;
 use Hilos\Core\Router\SignalName;
-use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalSource;
+use Hilos\Hilos;
 use Hilos\Core\Router\SignalType;
 use Hilos\Socket\Client\ClientInterface;
 use Hilos\Socket\Client\Interface\WorkerClientInterface;
@@ -97,13 +97,12 @@ abstract class WorkerServer extends AbstractServer
      * @param int $port Port to bind
      * @param string $workerScript Path to worker bootstrap script
      * @param string $workingDirectory Working directory for worker processes
-     * @param SignalRouter $signalRouter Signal router instance
      * @param AgentManagerDaemon $agentManager Agent manager daemon instance
      * @throws MissingEnvironmentVariableException
      */
-    public function __construct(string $host, int $port, string $workerScript, string $workingDirectory, SignalRouter $signalRouter, AgentManagerDaemon $agentManager)
+    public function __construct(string $host, int $port, string $workerScript, string $workingDirectory, AgentManagerDaemon $agentManager)
     {
-        parent::__construct($host, $port, $signalRouter);
+        parent::__construct($host, $port);
 
         $this->workerScript = $workerScript;
         $this->workingDirectory = $workingDirectory;
@@ -135,9 +134,9 @@ abstract class WorkerServer extends AbstractServer
      * @param resource $socket Client socket
      * @return WorkerClientInterface Client instance
      */
-    protected function onCreateClient($socket, SignalRouter $signalRouter): WorkerClientInterface
+    protected function onCreateClient($socket): WorkerClientInterface
     {
-        return new WorkerClient($socket, $signalRouter, $this->agentManager);
+        return new WorkerClient($socket, $this->agentManager);
     }
 
     /**
@@ -358,7 +357,7 @@ abstract class WorkerServer extends AbstractServer
                 $this->onInitialWorkersReady();
 
                 // Send workers ready signal to daemon
-                $this->signalRouter->queueSignal(
+                Hilos::$sr->queueSignal(
                     new SignalSource(SignalSource::DAEMON),
                     new SignalType(SignalTypeConstants::SYSTEM),
                     new SignalName(SignalConstants::WORKERS_READY),

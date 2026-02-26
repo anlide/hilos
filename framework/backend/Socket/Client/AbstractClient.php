@@ -6,7 +6,6 @@ namespace Hilos\Socket\Client;
 
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HttpConstants;
-use Hilos\Core\Router\SignalRouter;
 use Hilos\Socket\AbstractSocket;
 use Hilos\Socket\SocketException;
 use Hilos\Socket\SocketOperation;
@@ -33,25 +32,18 @@ abstract class AbstractClient extends AbstractSocket implements ClientInterface
     /** @var bool Flag indicating if client should be closed */
     protected bool $shouldClose = false;
 
-    /** @var SignalRouter Signal router instance */
-    protected SignalRouter $signalRouter;
-
     /**
      * AbstractClient constructor
      *
      * @param resource $socket Client socket
-     * @param SignalRouter $signalRouter Signal router instance
      */
-    public function __construct($socket, SignalRouter $signalRouter)
+    public function __construct($socket)
     {
         $this->socket = $socket;
-        $this->signalRouter = $signalRouter;
 
-        // Read buffer size from config with default fallback
         try {
             $this->readBufferSize = Env::getInt(EnvConstants::SOCKET_READ_BUFFER_SIZE, 8192);
         } catch (MissingEnvironmentVariableException) {
-            // Default buffer size if not configured
             $this->readBufferSize = 8192;
         }
     }
