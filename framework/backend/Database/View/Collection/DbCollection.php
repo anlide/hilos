@@ -7,6 +7,7 @@ namespace Hilos\Database\View\Collection;
 use ArrayAccess;
 use Countable;
 use Hilos\Core\Table\DTO\TableQueryDTO;
+use Hilos\Core\Table\TableConstants;
 use Hilos\Database\Actions\Collection\DbActions;
 use Hilos\Database\Actions\Exception\ObjectCollectionNullException;
 use Hilos\Database\DatabaseException;
@@ -435,20 +436,20 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
     {
         $objectCollection = $this->getObjectCollection();
         if ($objectCollection === null) {
-            return ['rows' => [], 'totalCount' => 0];
+            return [TableConstants::RESULT_KEY_ROWS => [], TableConstants::RESULT_KEY_TOTAL_COUNT => 0];
         }
 
         $result = $objectCollection->queryPage($query);
 
         $rows = [];
-        foreach ($result['objects'] as $key => $object) {
+        foreach ($result[TableConstants::RESULT_KEY_OBJECTS] as $key => $object) {
             $item = $this->getItemForKey($key);
             if ($item !== null) {
                 $rows[] = $item->toArray(toFrontend: true);
             }
         }
 
-        return ['rows' => $rows, 'totalCount' => $result['totalCount']];
+        return [TableConstants::RESULT_KEY_ROWS => $rows, TableConstants::RESULT_KEY_TOTAL_COUNT => $result[TableConstants::RESULT_KEY_TOTAL_COUNT]];
     }
 
     /**

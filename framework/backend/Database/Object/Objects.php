@@ -274,7 +274,7 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
             }
         }
 
-        return ['objects' => $pageObjects, 'totalCount' => $totalCount];
+        return [TableConstants::RESULT_KEY_OBJECTS => $pageObjects, TableConstants::RESULT_KEY_TOTAL_COUNT => $totalCount];
     }
 
     protected function __construct()

@@ -48,6 +48,9 @@ final class TableConstants
     /** Result key for total count. */
     public const string RESULT_KEY_TOTAL_COUNT = 'totalCount';
 
+    /** Result key for objects array (Object layer queryPage intermediate result). */
+    public const string RESULT_KEY_OBJECTS = 'objects';
+
     /** Result key for offset. */
     public const string RESULT_KEY_OFFSET = 'offset';
 

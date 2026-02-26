@@ -6,7 +6,9 @@ namespace Hilos\Core\Table\DataSource;
 
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableResultDTO;
+use Hilos\Core\Table\TableConstants;
 use Hilos\Core\Table\TableType;
+use Hilos\Database\DatabaseException;
 use Hilos\Database\View\Collection\DbCollection;
 
 /**
@@ -48,6 +50,7 @@ readonly class EntityTableDataSource implements TableDataSourceInterface
      * @param TableQueryDTO $query Query parameters
      *
      * @return TableResultDTO
+     * @throws DatabaseException
      */
     public function query(TableQueryDTO $query): TableResultDTO
     {
@@ -61,8 +64,8 @@ readonly class EntityTableDataSource implements TableDataSourceInterface
         $result = $this->collection->queryPage($query);
 
         return new TableResultDTO(
-            rows: $result['rows'],
-            totalCount: $result['totalCount'],
+            rows: $result[TableConstants::RESULT_KEY_ROWS],
+            totalCount: $result[TableConstants::RESULT_KEY_TOTAL_COUNT],
             offset: $query->offset,
             limit: $query->limit,
         );
