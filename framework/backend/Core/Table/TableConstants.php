@@ -9,6 +9,9 @@ namespace Hilos\Core\Table;
  */
 final class TableConstants
 {
+    /** Limit value meaning "return all rows" (no pagination limit). */
+    public const int NO_LIMIT = 0;
+
     /** Order direction: ascending */
     public const string ORDER_ASC = 'asc';
 

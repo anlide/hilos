@@ -6,6 +6,7 @@ namespace Hilos\Database\View\Collection;
 
 use ArrayAccess;
 use Countable;
+use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Database\Actions\Collection\DbActions;
 use Hilos\Database\Actions\Exception\ObjectCollectionNullException;
 use Hilos\Database\DatabaseException;
@@ -418,6 +419,36 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
             }
         }
         return $filtered;
+    }
+
+    /**
+     * Query a page of items from DB via the Object layer.
+     * Objects are stored in the common collection; DbItems pass through View-layer
+     * transformations (toFrontend filtering, calculated fields, etc.).
+     *
+     * @param TableQueryDTO $query Query parameters
+     *
+     * @return array{rows: array<int, array<string, mixed>>, totalCount: int}
+     * @throws DatabaseException
+     */
+    public function queryPage(TableQueryDTO $query): array
+    {
+        $objectCollection = $this->getObjectCollection();
+        if ($objectCollection === null) {
+            return ['rows' => [], 'totalCount' => 0];
+        }
+
+        $result = $objectCollection->queryPage($query);
+
+        $rows = [];
+        foreach ($result['objects'] as $key => $object) {
+            $item = $this->getItemForKey($key);
+            if ($item !== null) {
+                $rows[] = $item->toArray(toFrontend: true);
+            }
+        }
+
+        return ['rows' => $rows, 'totalCount' => $result['totalCount']];
     }
 
     /**

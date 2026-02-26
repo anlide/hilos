@@ -4,13 +4,14 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Table\DataSource;
 
+use Hilos\Core\Table\DTO\TableQueryDTO;
+use Hilos\Core\Table\DTO\TableResultDTO;
 use Hilos\Core\Table\TableType;
 
 /**
  * Table data source backed by raw SQL.
  *
- * Structure only: no SQL execution implemented yet.
- * When implemented: constructor would accept connection + query builder or safe query descriptor.
+ * Subclasses implement query() to build SQL with WHERE/ORDER BY/LIMIT/OFFSET.
  */
 abstract class SqlTableDataSource implements TableDataSourceInterface
 {
@@ -25,35 +26,12 @@ abstract class SqlTableDataSource implements TableDataSourceInterface
     }
 
     /**
-     * Loads full dataset (e.g. for initial load or refresh_snapshot).
+     * Executes a table query with search, sort and pagination.
+     * Subclasses should build SQL with WHERE/ORDER BY/LIMIT/OFFSET.
      *
-     * @return array<int, array<string, mixed>> List of rows (assoc arrays, frontend-ready)
+     * @param TableQueryDTO $query Query parameters
+     *
+     * @return TableResultDTO
      */
-    public function loadFull(): array
-    {
-        return [];
-    }
-
-    /**
-     * Loads one page for server-side pagination.
-     *
-     * @param int $offset Zero-based offset
-     * @param int $limit  Page size
-     *
-     * @return array<int, array<string, mixed>> Rows for this page
-     */
-    public function loadPage(int $offset, int $limit): array
-    {
-        return [];
-    }
-
-    /**
-     * Returns total number of rows for pagination.
-     *
-     * @return int Row count, or -1 if unknown / not supported
-     */
-    public function getTotalCount(): int
-    {
-        return -1;
-    }
+    abstract public function query(TableQueryDTO $query): TableResultDTO;
 }

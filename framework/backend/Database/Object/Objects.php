@@ -4,12 +4,16 @@ namespace Hilos\Database\Object;
 
 use ArrayAccess;
 use Countable;
+use Hilos\Core\Table\DTO\TableQueryDTO;
+use Hilos\Core\Table\TableConstants;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Collection\EntityCollection;
 use Hilos\Database\Filter\FilterInterface;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Object\Item\Object_;
+use Hilos\Database\SqlParam;
+use Hilos\Database\SqlParamCollection;
 use InvalidArgumentException;
 use Iterator;
 
@@ -196,6 +200,81 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
             $this->lazyLoadAll();
             $this->_allLoaded = true;
         }
+    }
+
+    /**
+     * Returns entity column names eligible for full-text search.
+     * Override in subclasses to restrict searchable columns.
+     * Default: all columns from the entity.
+     *
+     * @return array<string> Entity column names
+     */
+    public function getSearchableColumns(): array
+    {
+        $objectClass = static::OBJECT_CLASS;
+        $entityClass = $objectClass::ENTITY_CLASS;
+        return $entityClass::_columns;
+    }
+
+    /**
+     * Query a page of objects from DB with search, sort and pagination.
+     * Loaded objects are merged into $this->objects (common storage).
+     *
+     * @param TableQueryDTO $query Query parameters
+     *
+     * @return array{objects: array<int|string, Object_>, totalCount: int}
+     * @throws DatabaseException
+     */
+    public function queryPage(TableQueryDTO $query): array
+    {
+        $objectClass = static::OBJECT_CLASS;
+        $entityClass = $objectClass::ENTITY_CLASS;
+
+        $filters = '';
+        $filtersParam = [];
+
+        if ($query->search !== '') {
+            $columns = $this->getSearchableColumns();
+            $likeParts = [];
+            foreach ($columns as $column) {
+                $likeParts[] = "`{$column}` LIKE ?";
+                $filtersParam[] = SqlParam::string("%{$query->search}%");
+            }
+            if (!empty($likeParts)) {
+                $filters = '(' . implode(' OR ', $likeParts) . ')';
+            }
+        }
+
+        $orderBy = [];
+        if ($query->orderBy !== '') {
+            $orderBy[$query->orderBy] = $query->orderDirection;
+        }
+
+        $entityCollection = $entityClass::get(
+            filters: $filters,
+            filtersParam: $filtersParam,
+            orderBy: $orderBy,
+            limit: $query->limit,
+            offset: $query->offset,
+        );
+
+        $totalCount = $entityClass::count(
+            filters: $filters,
+            filtersParam: $filtersParam,
+        );
+
+        $pageObjects = [];
+        foreach ($entityCollection as $key => $entity) {
+            if (isset($this->objects[$key])) {
+                $pageObjects[$key] = $this->objects[$key];
+            } else {
+                $object = $objectClass::fromEntity($entity);
+                $this->objects[$key] = $object;
+                $pageObjects[$key] = $object;
+            }
+        }
+
+        return ['objects' => $pageObjects, 'totalCount' => $totalCount];
     }
 
     protected function __construct()

@@ -2,6 +2,7 @@
 
 namespace Hilos\Database\Entity\Item;
 
+use Hilos\Core\Table\TableConstants;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Collection\EntityCollection;
@@ -252,19 +253,15 @@ abstract class Entity
     }
 
     /**
-     * Build and execute SELECT query with optional filters and ordering.
+     * Builds WHERE clause and params from filters.
      *
      * @param array<string, mixed>|string $filters Column => value pairs or raw WHERE clause
      * @param array<int, mixed>|string $filtersParam Bound parameters for raw WHERE clause
-     * @param array<string, string>|string $orderBy Column => direction pairs or raw ORDER BY clause
-     * @return EntityCollection
-     * @throws DatabaseException
+     *
+     * @return array{string, SqlParamCollection} [whereClause, params]
      */
-    private static function getEntities(array|string $filters = [], array|string $filtersParam = [], array|string $orderBy = []): EntityCollection
+    private static function buildWhere(array|string $filters = [], array|string $filtersParam = []): array
     {
-        $table = static::class::_table;
-
-        // Build WHERE clause
         $whereClause = '';
         $params = SqlParamCollection::empty();
 
@@ -286,24 +283,65 @@ abstract class Entity
             }
         }
 
-        // Build ORDER BY clause
-        $orderByClause = '';
-        if (!empty($orderBy)) {
-            if (is_string($orderBy)) {
-                $orderByClause = " ORDER BY {$orderBy}";
-            } elseif (is_array($orderBy)) {
-                $orderByParts = [];
-                foreach ($orderBy as $column => $direction) {
-                    $direction = strtoupper($direction);
-                    $orderByParts[] = "`{$column}` {$direction}";
-                }
-                if (!empty($orderByParts)) {
-                    $orderByClause = " ORDER BY " . implode(', ', $orderByParts);
-                }
-            }
+        return [$whereClause, $params];
+    }
+
+    /**
+     * Builds ORDER BY clause from orderBy specification.
+     *
+     * @param array<string, string>|string $orderBy Column => direction pairs or raw ORDER BY clause
+     *
+     * @return string ORDER BY clause (with leading space) or empty string
+     */
+    private static function buildOrderBy(array|string $orderBy = []): string
+    {
+        if (empty($orderBy)) {
+            return '';
         }
 
-        $sql = "SELECT * FROM `{$table}`{$whereClause}{$orderByClause}";
+        if (is_string($orderBy)) {
+            return " ORDER BY {$orderBy}";
+        }
+
+        $orderByParts = [];
+        foreach ($orderBy as $column => $direction) {
+            $direction = strtoupper($direction);
+            $orderByParts[] = "`{$column}` {$direction}";
+        }
+
+        return !empty($orderByParts) ? " ORDER BY " . implode(', ', $orderByParts) : '';
+    }
+
+    /**
+     * Build and execute SELECT query with optional filters, ordering and pagination.
+     *
+     * @param array<string, mixed>|string $filters Column => value pairs or raw WHERE clause
+     * @param array<int, mixed>|string $filtersParam Bound parameters for raw WHERE clause
+     * @param array<string, string>|string $orderBy Column => direction pairs or raw ORDER BY clause
+     * @param int $limit Row limit (TableConstants::NO_LIMIT = all rows)
+     * @param int $offset Zero-based offset
+     *
+     * @return EntityCollection
+     * @throws DatabaseException
+     */
+    private static function getEntities(
+        array|string $filters = [],
+        array|string $filtersParam = [],
+        array|string $orderBy = [],
+        int $limit = TableConstants::NO_LIMIT,
+        int $offset = 0,
+    ): EntityCollection {
+        $table = static::class::_table;
+
+        [$whereClause, $params] = self::buildWhere($filters, $filtersParam);
+        $orderByClause = self::buildOrderBy($orderBy);
+
+        $limitClause = '';
+        if ($limit !== TableConstants::NO_LIMIT) {
+            $limitClause = " LIMIT {$limit} OFFSET {$offset}";
+        }
+
+        $sql = "SELECT * FROM `{$table}`{$whereClause}{$orderByClause}{$limitClause}";
 
         $resultSetCollection = Database::sql($sql, $params);
         $firstResultSet = $resultSetCollection->first();
@@ -325,12 +363,48 @@ abstract class Entity
      * @param array<string, mixed>|string $filters Column => value pairs or raw WHERE clause
      * @param array<int, mixed>|string $filtersParam Bound parameters for raw WHERE clause
      * @param array<string, string>|string $orderBy Column => direction pairs or raw ORDER BY clause
+     * @param int $limit Row limit (TableConstants::NO_LIMIT = all rows)
+     * @param int $offset Zero-based offset
+     *
      * @return EntityCollection
      * @throws DatabaseException
      */
-    public static function get(array|string $filters = [], array|string $filtersParam = [], array|string $orderBy = []): EntityCollection
+    public static function get(
+        array|string $filters = [],
+        array|string $filtersParam = [],
+        array|string $orderBy = [],
+        int $limit = TableConstants::NO_LIMIT,
+        int $offset = 0,
+    ): EntityCollection {
+        return self::getEntities($filters, $filtersParam, $orderBy, $limit, $offset);
+    }
+
+    /**
+     * Count entities matching the given filters.
+     *
+     * @param array<string, mixed>|string $filters Column => value pairs or raw WHERE clause
+     * @param array<int, mixed>|string $filtersParam Bound parameters for raw WHERE clause
+     *
+     * @return int
+     * @throws DatabaseException
+     */
+    public static function count(array|string $filters = [], array|string $filtersParam = []): int
     {
-        return self::getEntities($filters, $filtersParam, $orderBy);
+        $table = static::class::_table;
+
+        [$whereClause, $params] = self::buildWhere($filters, $filtersParam);
+
+        $sql = "SELECT COUNT(*) as `cnt` FROM `{$table}`{$whereClause}";
+
+        $resultSetCollection = Database::sql($sql, $params);
+        $firstResultSet = $resultSetCollection->first();
+
+        if ($firstResultSet === null) {
+            return 0;
+        }
+
+        $row = $firstResultSet->first();
+        return $row !== null ? (int) ($row['cnt'] ?? 0) : 0;
     }
 
     /**

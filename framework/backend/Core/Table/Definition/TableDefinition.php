@@ -8,6 +8,7 @@ use ArrayAccess;
 use Hilos\Core\Table\Actions\TableActions;
 use Hilos\Core\Table\Actions\TableItemActions;
 use Hilos\Core\Table\DataSource\TableDataSourceInterface;
+use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableResultDTO;
 use Hilos\Core\Table\Exception\TableActionsNotConfiguredException;
 use Hilos\Core\Table\Exception\TableDataSourceNotProvidedException;
@@ -111,13 +112,13 @@ abstract class TableDefinition implements ArrayAccess
     // ── Stateless query ──────────────────────────────────────────────────
 
     /**
-     * Loads table data (stateless). Pulls from data source, applies search/sort/pagination.
+     * Loads table data (stateless). Delegates query to the data source.
      *
      * @param string $search Full-text search across row values
      * @param string $orderBy Field name to order by (empty = no ordering)
      * @param string $orderDirection TableConstants::ORDER_ASC or TableConstants::ORDER_DESC
      * @param int $offset Zero-based offset for pagination
-     * @param int $limit Page size (0 = no limit)
+     * @param int $limit Page size (TableConstants::NO_LIMIT = all rows)
      *
      * @return TableResultDTO
      */
@@ -126,43 +127,15 @@ abstract class TableDefinition implements ArrayAccess
         string $orderBy = '',
         string $orderDirection = TableConstants::ORDER_ASC,
         int $offset = 0,
-        int $limit = 0,
+        int $limit = TableConstants::NO_LIMIT,
     ): TableResultDTO {
-        $rows = $this->dataSource->loadFull();
-
-        if ($search !== '') {
-            $query = mb_strtolower($search);
-            $rows = array_values(array_filter($rows, static function (array $row) use ($query): bool {
-                return array_any($row, fn($value) => $value !== null && str_contains(mb_strtolower((string)$value), $query));
-            }));
-        }
-
-        if ($orderBy !== '') {
-            $dir = strtolower($orderDirection) === TableConstants::ORDER_DESC ? -1 : 1;
-            usort($rows, static function (array $a, array $b) use ($orderBy, $dir): int {
-                $va = $a[$orderBy] ?? null;
-                $vb = $b[$orderBy] ?? null;
-                if ($va === null && $vb === null) return 0;
-                if ($va === null) return $dir;
-                if ($vb === null) return -$dir;
-                return $dir * strnatcasecmp((string) $va, (string) $vb);
-            });
-        }
-
-        $totalCount = count($rows);
-
-        if ($limit > 0) {
-            $rows = array_slice($rows, $offset, $limit);
-        } elseif ($offset > 0) {
-            $rows = array_slice($rows, $offset);
-        }
-
-        return new TableResultDTO(
-            rows: $rows,
-            totalCount: $totalCount,
+        return $this->dataSource->query(new TableQueryDTO(
+            search: $search,
+            orderBy: $orderBy,
+            orderDirection: $orderDirection,
             offset: $offset,
             limit: $limit,
-        );
+        ));
     }
 
     // ── Actions property ─────────────────────────────────────────────────

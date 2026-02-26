@@ -18,13 +18,13 @@ class TableResultDTO extends BaseDTO
      * @param array<int, array<string, mixed>> $rows Result rows (assoc arrays, frontend-ready)
      * @param int $totalCount Total rows matching the query (before pagination)
      * @param int $offset Zero-based offset used
-     * @param int $limit Page size used (0 = unlimited)
+     * @param int $limit Page size used (TableConstants::NO_LIMIT = all rows)
      */
     public function __construct(
         public readonly array $rows = [],
         public readonly int $totalCount = 0,
         public readonly int $offset = 0,
-        public readonly int $limit = 0,
+        public readonly int $limit = TableConstants::NO_LIMIT,
     ) {
     }
 

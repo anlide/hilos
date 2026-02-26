@@ -4,12 +4,15 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Table\DataSource;
 
+use Hilos\Core\Table\DTO\TableQueryDTO;
+use Hilos\Core\Table\DTO\TableResultDTO;
 use Hilos\Core\Table\TableType;
 
 /**
  * Table data source for "other" type (e.g. list of backups corresponding to real files).
  *
- * Abstract: project implements loadFull/loadPage/getTotalCount.
+ * Subclasses implement loadAll() to provide raw data.
+ * Default query() uses loadAll() + InMemoryTableFilter; subclasses may override query() directly.
  */
 abstract class OtherTableDataSource implements TableDataSourceInterface
 {
@@ -24,26 +27,24 @@ abstract class OtherTableDataSource implements TableDataSourceInterface
     }
 
     /**
-     * Loads full dataset (e.g. for initial load or refresh_snapshot).
+     * Executes a table query with search, sort and pagination.
+     * Default: loads all rows via loadAll() and filters in memory.
+     * Subclasses may override for more efficient implementations.
+     *
+     * @param TableQueryDTO $query Query parameters
+     *
+     * @return TableResultDTO
+     */
+    public function query(TableQueryDTO $query): TableResultDTO
+    {
+        return InMemoryTableFilter::apply($this->loadAll(), $query);
+    }
+
+    /**
+     * Loads all rows from the underlying data source.
+     * Subclasses must implement to provide raw data for in-memory filtering.
      *
      * @return array<int, array<string, mixed>> List of rows (assoc arrays, frontend-ready)
      */
-    abstract public function loadFull(): array;
-
-    /**
-     * Loads one page for server-side pagination.
-     *
-     * @param int $offset Zero-based offset
-     * @param int $limit  Page size
-     *
-     * @return array<int, array<string, mixed>> Rows for this page
-     */
-    abstract public function loadPage(int $offset, int $limit): array;
-
-    /**
-     * Returns total number of rows for pagination.
-     *
-     * @return int Row count, or -1 if unknown / not supported
-     */
-    abstract public function getTotalCount(): int;
+    abstract protected function loadAll(): array;
 }
