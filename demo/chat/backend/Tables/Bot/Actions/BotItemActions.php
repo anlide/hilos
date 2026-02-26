@@ -38,11 +38,11 @@ class BotItemActions extends TableItemActions
             ObjectBot::active => $dto->active,
         ], static fn($v) => $v !== null);
 
+        $dbBot = Hilos::$db->bots[$this->itemId];
         if ($data !== []) {
-            Hilos::$db->bots[$this->itemId]->actions->update($data);
+            $dbBot->actions->update($data);
         }
 
-        $dbBot = Hilos::$db->bots[$this->itemId];
         return $this->mutation(TableMutationType::Updated, $dbBot->toArray(toFrontend: true));
     }
 

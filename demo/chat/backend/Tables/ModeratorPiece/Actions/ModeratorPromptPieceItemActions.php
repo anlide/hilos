@@ -34,11 +34,11 @@ class ModeratorPromptPieceItemActions extends TableItemActions
             ObjectPiece::promptPiece => $dto->promptPiece,
         ], static fn($v) => $v !== null);
 
+        $dbPiece = Hilos::$db->moderatorPromptPieces[$this->itemId];
         if ($data !== []) {
-            Hilos::$db->moderatorPromptPieces[$this->itemId]->actions->update($data);
+            $dbPiece->actions->update($data);
         }
 
-        $dbPiece = Hilos::$db->moderatorPromptPieces[$this->itemId];
         return $this->mutation(TableMutationType::Updated, $dbPiece->toArray(toFrontend: true));
     }
 
