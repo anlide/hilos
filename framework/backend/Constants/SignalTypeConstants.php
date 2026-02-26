@@ -33,6 +33,9 @@ class SignalTypeConstants
     // Cron actions signal types
     public const string CRON = 'cron';
 
+    // Agent-to-agent signal type
+    public const string AGENT_SIGNAL = 'agent_signal';
+
     // WebSocket response signal types (for delivery to users)
     public const string WS_USER = 'ws_user';
     public const string WS_ALL = 'ws_all';

@@ -18,6 +18,7 @@ use Hilos\Runtime\View\Context\RtContext;
  * Usage:
  * - Hilos::$db->users
  * - Hilos::$rt->connections
+ * - Hilos::$rt->moderationStates
  * - Hilos::$table->users
  *
  * @property-read DbChatContext $db Database context (narrows parent's DbContext for IDE)

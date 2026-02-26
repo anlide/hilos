@@ -338,6 +338,11 @@ class SignalRouter
             return $this->getWebSocketDestinations($signal);
         }
 
+        // Handle agent-to-agent signals: route by source + signalName from config
+        if ($signalType === SignalTypeConstants::AGENT_SIGNAL) {
+            return $this->getAgentDestinations($signal);
+        }
+
         // Get route using existing route method for agent routing
         $route = $this->route($signal->signalSource, $signal->signalType, $signal->data);
 
@@ -425,6 +430,51 @@ class SignalRouter
                     }
                 }
                 break;
+        }
+
+        return $destinations;
+    }
+
+    /**
+     * Get agent destinations for agent-to-agent signal
+     *
+     * Uses config['signals'][source][AGENT_SIGNAL][signalName] -> agentType or [agentTypes].
+     * Configure in child router's __construct (e.g. ChatSignalRouter).
+     * Supports single agent (string) or multiple agents (array of strings).
+     *
+     * @param SignalDTO $signal Signal DTO
+     * @return array Array of destinations [['type' => 'agent', 'agentType' => string, 'agentIndex' => ?string], ...]
+     */
+    private function getAgentDestinations(SignalDTO $signal): array
+    {
+        $source = $signal->signalSource->getSource();
+        $signalName = $signal->signalName->getName();
+
+        $signalsConfig = $this->config['signals'] ?? [];
+        $sourceConfig = $signalsConfig[$source] ?? [];
+        $agentSignalsConfig = $sourceConfig[SignalTypeConstants::AGENT_SIGNAL] ?? null;
+
+        if (!is_array($agentSignalsConfig) || !isset($agentSignalsConfig[$signalName])) {
+            return [];
+        }
+
+        $agentTypes = $agentSignalsConfig[$signalName];
+        if (is_string($agentTypes)) {
+            $agentTypes = [$agentTypes];
+        }
+        if (!is_array($agentTypes)) {
+            return [];
+        }
+
+        $destinations = [];
+        foreach ($agentTypes as $agentType) {
+            if (is_string($agentType) && $agentType !== '') {
+                $destinations[] = [
+                    'type' => 'agent',
+                    'agentType' => $agentType,
+                    'agentIndex' => null,
+                ];
+            }
         }
 
         return $destinations;

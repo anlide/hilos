@@ -26,6 +26,15 @@ class ChatSignalConstants
     public const string SUBSCRIPTION_PAGE_ADMIN_USERS = 'subscription_page_admin_users';
     public const string SUBSCRIPTION_PAGE_ADMIN_MODERATOR = 'subscription_page_admin_moderator';
     public const string SUBSCRIPTION_PAGE_ADMIN_BOTS = 'subscription_page_admin_bots';
+    public const string MODERATION_STATE = 'moderation_state';
+    /** Server → client: private update of current user's moderation state (sent to user's connections only) */
+    public const string MODERATION_STATE_UPDATE = 'moderation_state_update';
+
+    // ── Agent-to-agent signals ───────────────────────────────────────────
+    /** ChatAgent → ModeratorAgent: request message moderation */
+    public const string MODERATE_REQUEST = 'moderate_request';
+    /** ModeratorAgent → ChatAgent: moderation result */
+    public const string MODERATION_RESULT = 'moderation_result';
 
     // ── Table actions (client → server) ──────────────────────────────────
     public const string TABLE_REFRESH = 'table_refresh';

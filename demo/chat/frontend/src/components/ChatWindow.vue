@@ -17,19 +17,21 @@
     <div class="card-footer">
       <form @submit.prevent="handleSubmit" class="d-flex gap-2">
         <input
-          v-model="message"
+          :value="displayMessage"
+          @input="handleInput"
           type="text"
           class="form-control"
           placeholder="Type your message..."
-          :disabled="!chatStore.isConnected"
+          :readonly="chatStore.isModeratingMessage"
+          :disabled="!chatStore.isConnected || chatStore.isModeratingMessage"
           required
           maxlength="500"
         />
         <LoadingButton
           type="submit"
           variant="btn-primary"
-          :loading="submitLoading"
-          :disabled="!chatStore.isConnected || !message.trim()"
+          :loading="chatStore.isModeratingMessage"
+          :disabled="!chatStore.isConnected || chatStore.isModeratingMessage || !draftMessage.trim()"
           :loading-delay="300"
         >
           Send
@@ -47,16 +49,21 @@ import { LoadingButton } from '@hilos/sdk/components'
 
 const chatStore = useChatStore()
 const messagesContainer = ref<HTMLElement | null>(null)
-const message = ref('')
+const draftMessage = ref('')
 
-/** Payload: message to send and done() to call when send is complete (e.g. after ws response) */
 const emit = defineEmits<{
-  send: [payload: { message: string; done: () => void }]
+  send: [message: string]
 }>()
 
-const submitLoading = ref(false)
 const hiddenEventTypes = new Set(['user_online', 'user_offline'])
 const visibleEvents = computed(() => chatStore.events.filter((event) => !hiddenEventTypes.has(event.type)))
+const currentUserModerationState = computed(() => chatStore.currentUserModerationState ?? null)
+const displayMessage = computed(() => {
+  if (currentUserModerationState.value !== null) {
+    return currentUserModerationState.value
+  }
+  return draftMessage.value
+})
 
 const scrollToBottom = () => {
   nextTick(() => {
@@ -67,16 +74,18 @@ const scrollToBottom = () => {
 }
 
 const handleSubmit = () => {
-  if (!message.value.trim() || !chatStore.isConnected) return
-  const text = message.value.trim()
-  message.value = ''
-  submitLoading.value = true
-  emit('send', {
-    message: text,
-    done: () => {
-      submitLoading.value = false
-    },
-  })
+  if (!draftMessage.value.trim() || !chatStore.isConnected || chatStore.isModeratingMessage) return
+  const text = draftMessage.value.trim()
+  draftMessage.value = ''
+  emit('send', text)
+}
+
+const handleInput = (event: Event) => {
+  if (chatStore.isModeratingMessage) {
+    return
+  }
+  const target = event.target as HTMLInputElement
+  draftMessage.value = target.value
 }
 
 watch(() => visibleEvents.value.length, scrollToBottom)

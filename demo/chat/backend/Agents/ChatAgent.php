@@ -10,13 +10,16 @@ use Demo\Chat\Constants\ChatEventType;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\HttpHeaders;
 use Demo\Chat\Core\Router\DTO\ChatEventSignalDTO;
+use Demo\Chat\Core\Router\DTO\ModerationResultSignalData;
 use Demo\Chat\Database\DbChatContext;
 use Demo\Chat\Database\View\Collection\Events;
 use Demo\Chat\Database\View\Collection\Users;
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\View\Context\RtChatContext;
+use Demo\Chat\Core\Router\DTO\ModerationStateUpdateSignalData;
 use Demo\Chat\Socket\WebSocket\DTO\HandshakeResponseSignalData;
 use Hilos\Core\Agent\AbstractAgent;
+use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\EntitiesChangesDTO;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
@@ -71,6 +74,7 @@ class ChatAgent extends AbstractAgent
 
         // Register this agent as truth source for runtime collections (all keys)
         RtTruthSourceRegistry::register(RtChatContext::connections, true, $this->getId());
+        RtTruthSourceRegistry::register(RtChatContext::moderationStates, true, $this->getId());
 
         // Add chat started event to history (system event with userId = null)
         Hilos::$db->events->actions->add(ChatEventType::CHAT_STARTED->value);
@@ -119,12 +123,17 @@ class ChatAgent extends AbstractAgent
             );
         }
 
+        $moderationState = isset(Hilos::$rt->moderationStates[$user->id])
+            ? Hilos::$rt->moderationStates[$user->id]->message
+            : null;
+
         $this->sendToUser(
             ChatSignalConstants::HANDSHAKE_RESPONSE,
             $data->acceptKey,
             new HandshakeResponseSignalData(
                 entities: $userEntities,
                 userId: $user->id,
+                moderationState: $moderationState,
             ),
         );
     }
@@ -191,15 +200,6 @@ class ChatAgent extends AbstractAgent
      */
     public function onTick(): void
     {
-        // TODO: Presence state tracking (offline grace + unstable links).
-        // TODO: Keep a per-user presence state machine (online/unstable/offline),
-        // TODO: backed by ping/pong timestamps and connection error counters.
-        // TODO: Define thresholds for "unstable" (e.g. missed pings, reconnect churn),
-        // TODO: and apply a 5s grace window before declaring offline.
-        // TODO: Broadcast presence changes via EntitiesChangesDTO updates
-        // TODO: (green = online, yellow = unstable, grey = offline).
-        // TODO: Ensure state is per user, not per client, and merges multiple tabs.
-
         // Presence tracking removed for now.
     }
 
@@ -228,6 +228,64 @@ class ChatAgent extends AbstractAgent
                     ),
                 ),
             );
+        }
+    }
+
+    /**
+     * Handle agent-to-agent signal (moderation result from ModeratorAgent).
+     */
+    public function onSignalAgent(AgentSignalData $data, string $source, string $name): void
+    {
+        if ($name !== ChatSignalConstants::MODERATION_RESULT) {
+            return;
+        }
+
+        $payload = $data->data;
+        if (!$payload instanceof ModerationResultSignalData) {
+            Logger::logAgentError($this->getId(), "Invalid payload type for {$name}: " . get_class($payload));
+            return;
+        }
+
+        $this->handleModerationResult($payload);
+    }
+
+    /**
+     * Process moderation result: clear state, notify user, publish message if allowed.
+     */
+    private function handleModerationResult(ModerationResultSignalData $result): void
+    {
+        $acceptKey = $result->acceptKey;
+        $userId = $result->userId;
+
+        Hilos::$rt->moderationStates->actions->clear($userId);
+        $this->sendModerationStateToUserConnections($userId, null);
+
+        if (!$result->allow) {
+            $reason = $result->reason !== '' ? $result->reason : 'unknown';
+            Logger::logAgentError($this->getId(), "Message blocked by moderation (userId={$userId}; reason={$reason})");
+            return;
+        }
+
+        $event = Hilos::$db->events->actions->add(ChatEventType::MESSAGE_SENT->value, $userId, ['message' => $result->message]);
+        $this->sendToAllUsers(
+            ChatSignalConstants::NEW_EVENT,
+            new ChatEventSignalDTO(new EntitiesChangesDTO(full: [DbChatContext::events => Events::fromSingleItem($event)])),
+        );
+    }
+
+    /**
+     * Sends moderation state update to all connections of a user.
+     * Private data - only the user's own connections receive this.
+     *
+     * @param int $userId User ID
+     * @param string|null $moderationState Current moderation state (message text or null when cleared)
+     */
+    public function sendModerationStateToUserConnections(int $userId, ?string $moderationState): void
+    {
+        $connections = Hilos::$rt->connections->forUser($userId);
+        $data = new ModerationStateUpdateSignalData(moderationState: $moderationState);
+        foreach ($connections as $connection) {
+            $this->sendToUser(ChatSignalConstants::MODERATION_STATE_UPDATE, $connection->acceptKey, $data);
         }
     }
 }

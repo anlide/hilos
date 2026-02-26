@@ -94,6 +94,12 @@ class ChatSignalRouter extends SignalRouter
                 SignalTypeConstants::SYSTEM => AgentType::CHAT,
                 SignalTypeConstants::CRON => AgentType::CHAT,
             ],
+            SignalSource::AGENT => [
+                SignalTypeConstants::AGENT_SIGNAL => [
+                    ChatSignalConstants::MODERATE_REQUEST => AgentType::MODERATOR,
+                    ChatSignalConstants::MODERATION_RESULT => AgentType::CHAT,
+                ],
+            ],
             SignalSource::WEBSOCKET => [
                 // Page subscription signals - routing to CHAT agent
                 SignalTypeConstants::HANDSHAKE => AgentType::CHAT,

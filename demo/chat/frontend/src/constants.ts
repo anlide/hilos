@@ -8,6 +8,7 @@ export const SUBSCRIPTION_PAGE_ADMIN_MODERATOR = 'subscription_page_admin_modera
 export const TABLE_DATA = 'table_data'
 export const TABLE_MUTATION = 'table_mutation'
 export const TABLE_ACTION_ERROR = 'table_action_error'
+export const MODERATION_STATE_UPDATE = 'moderation_state_update'
 export const MESSAGE_TYPE_FIELD = 'type'
 export const MESSAGE_PAGE_FIELD = 'page'
 export const MESSAGE_PARAMS_FIELD = 'params'

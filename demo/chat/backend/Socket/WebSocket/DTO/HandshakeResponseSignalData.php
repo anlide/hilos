@@ -23,6 +23,8 @@ class HandshakeResponseSignalData extends BaseDTO implements SignalDataInterface
         public readonly EntitiesChangesDTO $entities,
         /** @var int Current user ID */
         public readonly int $userId,
+        /** @var string|null Current user's moderation state (private, not in entities) */
+        public readonly ?string $moderationState = null,
     ) {
     }
 
@@ -33,10 +35,16 @@ class HandshakeResponseSignalData extends BaseDTO implements SignalDataInterface
      */
     public function toArray(): array
     {
-        return [
+        $result = [
             'entities' => $this->entities->toArray(),
             'userId' => $this->userId,
         ];
+        if ($this->moderationState !== null) {
+            $result['moderationState'] = $this->moderationState;
+        } else {
+            $result['moderationState'] = null;
+        }
+        return $result;
     }
 
     /**

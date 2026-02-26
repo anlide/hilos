@@ -12,6 +12,7 @@ export type PartialUserPayload = {
   name?: string
   lastActivity?: string | null
   presence?: Presence
+  moderationState?: string | null
 }
 
 function isRecord(value: unknown): value is JsonRecord {
@@ -29,6 +30,13 @@ export function isPartialUserPayload(value: unknown): value is PartialUserPayloa
     value.lastActivity !== undefined &&
     value.lastActivity !== null &&
     typeof value.lastActivity !== 'string'
+  ) {
+    return false
+  }
+  if (
+    value.moderationState !== undefined &&
+    value.moderationState !== null &&
+    typeof value.moderationState !== 'string'
   ) {
     return false
   }

@@ -13,6 +13,7 @@ export type UserPayload = {
   name: string
   lastActivity?: string | null
   presence?: Presence
+  moderationState?: string | null
 }
 
 export type EventPayload = {
@@ -31,6 +32,13 @@ export const isUserPayload = (value: unknown): value is UserPayload => {
     return false
   }
   if (value.lastActivity !== undefined && value.lastActivity !== null && typeof value.lastActivity !== 'string') {
+    return false
+  }
+  if (
+    value.moderationState !== undefined &&
+    value.moderationState !== null &&
+    typeof value.moderationState !== 'string'
+  ) {
     return false
   }
   return value.presence === undefined || isPresence(value.presence)

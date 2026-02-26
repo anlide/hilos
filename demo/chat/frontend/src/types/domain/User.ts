@@ -16,13 +16,15 @@ export class User extends DomainObject {
   sessionToken: string | null
   lastActivity: string | null
   presence: Presence
+  moderationState: string | null
 
   constructor(
     id: number | null,
     name: string,
     sessionToken: string | null,
     lastActivity: string | null,
-    presence: Presence
+    presence: Presence,
+    moderationState: string | null
   ) {
     super()
     this.id = id
@@ -30,6 +32,7 @@ export class User extends DomainObject {
     this.sessionToken = sessionToken
     this.lastActivity = lastActivity
     this.presence = presence
+    this.moderationState = moderationState
   }
 
   /**
@@ -41,13 +44,15 @@ export class User extends DomainObject {
     sessionToken?: string | null
     lastActivity?: string | null
     presence?: Presence
+    moderationState?: string | null
   }): User {
     return new User(
       data.id ?? null,
       data.name,
       data.sessionToken ?? null,
       data.lastActivity ?? null,
-      data.presence ?? 'offline'
+      data.presence ?? 'offline',
+      data.moderationState ?? null
     )
   }
 }

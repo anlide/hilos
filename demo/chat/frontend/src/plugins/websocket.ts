@@ -4,6 +4,7 @@ import {config} from '@/config'
 import {useChatStore} from '@/stores'
 import {
   HANDSHAKE_RESPONSE,
+  MODERATION_STATE_UPDATE,
   SUBSCRIPTION_PAGE_MAIN,
   SUBSCRIPTION_PAGE_PROFILE,
   SUBSCRIPTION_PAGE_ADMIN,
@@ -105,7 +106,20 @@ export function createChatWebSocketPlugin() {
           }
           const currentUserId = message.data.userId
           const currentUser = chatStore.users.find((u) => u.id === currentUserId)
-          chatStore.handleSubscriptionResponse(currentUserId, currentUser?.name ?? '')
+          const moderationState =
+            message.data.moderationState !== undefined ? message.data.moderationState : undefined
+          chatStore.handleSubscriptionResponse(
+            currentUserId,
+            currentUser?.name ?? '',
+            moderationState as string | null | undefined
+          )
+          return
+        }
+        case MODERATION_STATE_UPDATE: {
+          if (message.data && typeof message.data === 'object' && 'moderationState' in message.data) {
+            const value = (message.data as { moderationState: string | null }).moderationState
+            chatStore.setModerationState(value ?? null)
+          }
           return
         }
         case SUBSCRIPTION_PAGE_MAIN: {

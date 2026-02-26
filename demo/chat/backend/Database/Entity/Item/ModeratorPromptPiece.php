@@ -20,10 +20,6 @@ final class ModeratorPromptPiece extends Entity
     public const string section = 'section';
     public const string prompt_piece = 'prompt_piece';
 
-    // Section enum values
-    public const string SECTION_NAME_RULE = 'name_rule';
-    public const string SECTION_MESSAGE_RULE = 'message_rule';
-
     // Table meta information
     public const string _table = 'moderator_prompt_piece';
     public const string _primary = self::id;

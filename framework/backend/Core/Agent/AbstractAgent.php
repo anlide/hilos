@@ -6,6 +6,7 @@ namespace Hilos\Core\Agent;
 
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Page\PageAgentInterface;
+use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalSource;
@@ -117,6 +118,25 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface
             signalType: new SignalType(SignalTypeConstants::WS_GROUP),
             signalName: new SignalName($signalName),
             signalData: new WebSocketSignalData(data: $data, targetGroup: $targetGroup, excludeAcceptKey: $excludeAcceptKey),
+        );
+    }
+
+    /**
+     * Send signal to another agent (agent-to-agent).
+     *
+     * Target agent is determined by routing config: signals[AGENT][AGENT_SIGNAL][signalName].
+     * Configure in application router (e.g. ChatSignalRouter::__construct).
+     *
+     * @param string $signalName Signal name (used for routing)
+     * @param SignalDataInterface $data Signal payload
+     */
+    public function sendToAgent(string $signalName, SignalDataInterface $data): void
+    {
+        Hilos::$sr->queueSignal(
+            signalSource: $this->getAgentSignalSource(),
+            signalType: new SignalType(SignalTypeConstants::AGENT_SIGNAL),
+            signalName: new SignalName($signalName),
+            signalData: new AgentSignalData(data: $data),
         );
     }
 
@@ -324,6 +344,21 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface
      * @param SignalDataInterface $data Signal data
      */
     public function onSignalCron(SignalDataInterface $data, string $source, string $name): void
+    {
+        // Default: do nothing
+    }
+
+    /**
+     * Default implementation - no agent-to-agent signal handling
+     *
+     * Child classes can override this method.
+     * Use $data->data to access the inner payload (e.g. ModerationRequestSignalData).
+     *
+     * @param AgentSignalData $data Signal data (container with inner payload)
+     * @param string $source Signal source
+     * @param string $name Signal name
+     */
+    public function onSignalAgent(AgentSignalData $data, string $source, string $name): void
     {
         // Default: do nothing
     }

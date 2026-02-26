@@ -17,6 +17,7 @@ export const useChatStore = defineStore('chat', {
     tableData: {} as Record<string, TableDataState>,
     currentUserId: null as number | null,
     currentUsername: null as string | null,
+    currentUserModerationState: null as string | null,
     reconnectAttempts: 0,
     maxReconnectAttempts: Infinity,
   }),
@@ -33,6 +34,15 @@ export const useChatStore = defineStore('chat', {
     },
     onlineUsers(): User[] {
       return this.users.filter((user) => user.presence === 'online')
+    },
+    currentUser(): User | null {
+      if (this.currentUserId === null) {
+        return null
+      }
+      return this.users.find((user) => user.id === this.currentUserId) ?? null
+    },
+    isModeratingMessage(): boolean {
+      return this.currentUserModerationState !== null
     },
   },
   
@@ -58,11 +68,16 @@ export const useChatStore = defineStore('chat', {
       this.reconnectAttempts++
     },
     
-    handleSubscriptionResponse(userId: number, username: string) {
+    handleSubscriptionResponse(userId: number, username: string, moderationState?: string | null) {
       this.currentUserId = userId
       this.currentUsername = username
+      this.currentUserModerationState = moderationState ?? null
     },
-    
+
+    setModerationState(value: string | null) {
+      this.currentUserModerationState = value
+    },
+
     addEvent(event: Event) {
       this.events.push(event)
       if (this.events.length > 1000) {
@@ -102,6 +117,7 @@ export const useChatStore = defineStore('chat', {
           name: user.name,
           lastActivity: user.lastActivity ?? null,
           presence: user.presence ?? 'offline',
+          moderationState: null,
         }))
       }
     },
@@ -117,6 +133,7 @@ export const useChatStore = defineStore('chat', {
             sessionToken: existing.sessionToken,
             lastActivity: p.lastActivity ?? existing.lastActivity ?? null,
             presence: p.presence ?? existing.presence,
+            moderationState: null,
           })
         } else if (p.name !== undefined) {
           this.addUser(
@@ -125,6 +142,7 @@ export const useChatStore = defineStore('chat', {
               name: p.name,
               lastActivity: p.lastActivity ?? null,
               presence: p.presence ?? 'offline',
+              moderationState: null,
             })
           )
         }

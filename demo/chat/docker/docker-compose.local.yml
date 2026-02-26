@@ -48,6 +48,20 @@ services:
     networks:
       - hilos-demo-chat-local-network
 
+  ollama-local:
+    image: ollama/ollama:latest
+    container_name: hilos-ollama-local
+    volumes:
+      - ../data/ollama:/root/.ollama
+    environment:
+      - OLLAMA_HOST=0.0.0.0:11434
+    ports:
+      - "${OLLAMA_HOST_PORT:-11434}:11434"
+    restart: unless-stopped
+    networks:
+      hilos-demo-chat-local-network:
+        ipv4_address: ${DOCKER_OLLAMA_IP:-172.26.0.12}
+
   chat-local:
     build: .
     env_file:
@@ -74,10 +88,14 @@ services:
       - DB_DATABASE=${MYSQL_DATABASE:-hilos-demo-chat}
       - DB_USERNAME=${MYSQL_USER:-hilos}
       - DB_PASSWORD=${MYSQL_PASSWORD:-hilos_pass}
+      - CHAT_MODERATION_URL=${CHAT_MODERATION_URL:-http://ollama-local:11434/api/generate}
+      - CHAT_MODERATION_MODEL=${CHAT_MODERATION_MODEL:-qwen2.5:3b}
+      - CHAT_MODERATION_TIMEOUT_SEC=${CHAT_MODERATION_TIMEOUT_SEC:-20.0}
     command: ["php", "backend/Bootstrap/docker.php"]
     stop_grace_period: 25s
     depends_on:
       - mysql-local
+      - ollama-local
     ports:
       # Expose ports to host for local frontend access
       - "${HTTP_STATUS_PORT:-8090}:${HTTP_STATUS_PORT:-8090}"

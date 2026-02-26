@@ -11,6 +11,7 @@ use Demo\Chat\Core\Page\AbstractChatPage;
 use Demo\Chat\Core\Page\DTO\FileActionDTO;
 use Demo\Chat\Core\Page\DTO\MessageActionDTO;
 use Demo\Chat\Core\Router\DTO\ChatEventSignalDTO;
+use Demo\Chat\Core\Router\DTO\ModerationRequestSignalData;
 use Demo\Chat\Database\DbChatContext;
 use Demo\Chat\Database\View\Collection\Events;
 use Demo\Chat\Hilos;
@@ -54,6 +55,18 @@ class MainPage extends AbstractChatPage
                 ),
             ),
         );
+
+        if (!isset(Hilos::$rt->connections[$acceptKey])) {
+            return;
+        }
+
+        $userId = Hilos::$rt->connections[$acceptKey]->userId;
+        $moderationState = isset(Hilos::$rt->moderationStates[$userId])
+            ? Hilos::$rt->moderationStates[$userId]->message
+            : null;
+        if ($moderationState !== null) {
+            $this->getChatAgent()->sendModerationStateToUserConnections($userId, $moderationState);
+        }
     }
 
     /**
@@ -94,7 +107,7 @@ class MainPage extends AbstractChatPage
     }
 
     /**
-     * Handle message action
+     * Handle message action.
      *
      * @param string $acceptKey Accept key
      * @param MessageActionDTO $dto Message DTO
@@ -112,10 +125,16 @@ class MainPage extends AbstractChatPage
         }
 
         $userId = Hilos::$rt->connections[$acceptKey]->userId;
-        $event = Hilos::$db->events->actions->add(ChatEventType::MESSAGE_SENT->value, $userId, ['message' => $dto->content]);
-        $this->getChatAgent()->sendToAllUsers(
-            ChatSignalConstants::NEW_EVENT,
-            new ChatEventSignalDTO(new EntitiesChangesDTO(full: [DbChatContext::events => Events::fromSingleItem($event)])),
+        Hilos::$rt->moderationStates->actions->set($userId, $dto->content);
+        $this->getChatAgent()->sendModerationStateToUserConnections($userId, $dto->content);
+
+        $this->getChatAgent()->sendToAgent(
+            ChatSignalConstants::MODERATE_REQUEST,
+            new ModerationRequestSignalData(
+                acceptKey: $acceptKey,
+                userId: $userId,
+                message: $dto->content,
+            ),
         );
     }
 

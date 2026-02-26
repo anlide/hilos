@@ -8,6 +8,7 @@ use Hilos\Constants\SignalTypeConstants;
 use Hilos\Constants\WorkerConstants;
 use Hilos\Core\Agent\AgentInterface;
 use Hilos\Core\Agent\AgentManager;
+use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Agent\Exception\AgentCreationFailedException;
 use Hilos\Core\Page\Exception\PageSignalRouterNotFoundException;
 use Hilos\Core\Page\PageSignalRouter;
@@ -351,8 +352,6 @@ abstract class WorkerManager extends BaseManager
             return;
         }
 
-        $pageRouter = $this->getPageSignalRouter($agentId, $agent);
-
         $signalType = $data->signal->signalType->getType();
         $source = $data->signal->signalSource->getSource();
         $name = $data->signal->signalName->getName();
@@ -397,7 +396,7 @@ abstract class WorkerManager extends BaseManager
                 if ($signalData instanceof WebSocketActionSignalDTO) {
                     $this->onActionHandled($name, $signalData);
                     $agent->onSignalAction($signalData, $source, $name);
-                    $pageRouter->dispatchAction($signalData, $source);
+                    $this->getPageSignalRouter($agentId, $agent)->dispatchAction($signalData, $source);
                 } else {
                     Logger::error("handleActionSignal - invalid signal data type: " . get_class($signalData));
                 }
@@ -415,7 +414,7 @@ abstract class WorkerManager extends BaseManager
                 if ($signalData instanceof WebSocketPageSubscribeSignalDTO) {
                     $this->onPageSubscribed($signalData, $source, $name);
                     $agent->onSignalPageSubscribe($signalData, $source, $name);
-                    $pageRouter->dispatchPageSubscribe($signalData, $source, $name);
+                    $this->getPageSignalRouter($agentId, $agent)->dispatchPageSubscribe($signalData, $source, $name);
                 } else {
                     Logger::error("handlePageSubscribeSignal - invalid signal data type: " . get_class($signalData));
                 }
@@ -425,7 +424,7 @@ abstract class WorkerManager extends BaseManager
                 if ($signalData instanceof WebSocketPageUpdateSubscriptionSignalDTO) {
                     $this->onPageSubscriptionUpdated($signalData, $source, $name);
                     $agent->onSignalPageUpdateSubscription($signalData, $source, $name);
-                    $pageRouter->dispatchPageUpdateSubscription($signalData, $source, $name);
+                    $this->getPageSignalRouter($agentId, $agent)->dispatchPageUpdateSubscription($signalData, $source, $name);
                 } else {
                     Logger::error("handlePageUpdateSubscriptionSignal - invalid signal data type: " . get_class($signalData));
                 }
@@ -435,7 +434,7 @@ abstract class WorkerManager extends BaseManager
                 if ($signalData instanceof WebSocketPageUnsubscribeSignalDTO) {
                     $this->onPageUnsubscribed($signalData, $source, $name);
                     $agent->onSignalPageUnsubscribe($signalData, $source, $name);
-                    $pageRouter->dispatchPageUnsubscribe($signalData, $source, $name);
+                    $this->getPageSignalRouter($agentId, $agent)->dispatchPageUnsubscribe($signalData, $source, $name);
                 } else {
                     Logger::error("handlePageUnsubscribeSignal - invalid signal data type: " . get_class($signalData));
                 }
@@ -465,6 +464,14 @@ abstract class WorkerManager extends BaseManager
                     $agent->onSignalGroupUpdateSubscription($signalData, $source, $name);
                 } else {
                     Logger::error("handleGroupUpdateSubscriptionSignal - invalid signal data type: " . get_class($signalData));
+                }
+                break;
+
+            case SignalTypeConstants::AGENT_SIGNAL:
+                if ($signalData instanceof AgentSignalData) {
+                    $agent->onSignalAgent($signalData, $source, $name);
+                } else {
+                    Logger::error("onSignalAgent - invalid signal data type: " . get_class($signalData));
                 }
                 break;
 
@@ -685,6 +692,8 @@ abstract class WorkerManager extends BaseManager
 
         // Process signals one by one in while-do loop
         while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
+            // TODO: If target agent (from AGENT_SIGNAL) is on the same worker as sender,
+            // deliver signal locally without routing through daemon (optimization).
             // Extract agent type and index from signal source
             $agentType = $signal->signalSource->getType();
             $agentIndex = $signal->signalSource->getIndex();
