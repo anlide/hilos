@@ -31,7 +31,9 @@ class ChatAgentDaemonFactory extends AbstractAgentDaemonFactory
     {
         return match ($agentType) {
             AgentType::CHAT => new ChatAgentDaemon(),
-            AgentType::BOT => new BotAgentDaemon(),
+            AgentType::BOT => new BotAgentDaemon(
+                $agentIndex ?? throw new \RuntimeException('BotAgentDaemon requires agentIndex (bot id)'),
+            ),
             AgentType::MODERATOR => new ModeratorAgentDaemon(),
             default => throw new AgentDaemonCreationFailedException($agentType, $agentIndex),
         };

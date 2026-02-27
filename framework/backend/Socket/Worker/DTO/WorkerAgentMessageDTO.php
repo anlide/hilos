@@ -4,11 +4,12 @@ declare(strict_types=1);
 
 namespace Hilos\Socket\Worker\DTO;
 
+use Hilos\Constants\WorkerConstants;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Socket\Worker\WorkerDTO;
 
 /**
- * WorkerAgentMessageDTO - DTO for agent message from worker
+ * WorkerAgentMessageDTO - DTO for agent message from worker to daemon
  *
  * Used when worker sends agent message to daemon.
  */
@@ -20,7 +21,7 @@ class WorkerAgentMessageDTO extends WorkerDTO
     public const string SIGNAL = 'signal';
 
     // Message type
-    public const string MESSAGE_TYPE = 'agent_message';
+    public const string MESSAGE_TYPE = WorkerConstants::MESSAGE_AGENT_MESSAGE;
 
     public function __construct(
         public readonly string $agentId,

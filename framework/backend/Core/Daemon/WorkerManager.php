@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Daemon;
 
+use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Constants\WorkerConstants;
 use Hilos\Core\Agent\AgentInterface;
+use Hilos\Database\DbSyncApplicator;
 use Hilos\Core\Agent\AgentManager;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Agent\Exception\AgentCreationFailedException;
@@ -28,8 +30,21 @@ use Hilos\Socket\WebSocket\DTO\WebSocketPageUpdateSubscriptionSignalDTO;
 use Hilos\Socket\Worker\DTO\AgentStartDTO;
 use Hilos\Socket\Worker\DTO\AgentStopDTO;
 use Hilos\Socket\Worker\DTO\CronSignalDTO;
+use Hilos\Core\Sync\DTO\DbSyncCreatedSignalData;
+use Hilos\Core\Sync\DTO\DbSyncDeletedSignalData;
+use Hilos\Core\Sync\DTO\DbSyncUpdatedSignalData;
+use Hilos\Core\Sync\DTO\RtSyncCreatedSignalData;
+use Hilos\Core\Sync\DTO\RtSyncDeletedSignalData;
+use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
 use Hilos\Socket\Worker\DTO\SystemSignalDTO;
+use Hilos\Socket\Worker\DTO\DaemonAgentMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerAgentMessageDTO;
+use Hilos\Socket\Worker\DTO\WorkerDbSyncCreatedMessageDTO;
+use Hilos\Socket\Worker\DTO\WorkerDbSyncDeletedMessageDTO;
+use Hilos\Socket\Worker\DTO\WorkerDbSyncUpdatedMessageDTO;
+use Hilos\Socket\Worker\DTO\WorkerRtSyncCreatedMessageDTO;
+use Hilos\Socket\Worker\DTO\WorkerRtSyncDeletedMessageDTO;
+use Hilos\Socket\Worker\DTO\WorkerRtSyncUpdatedMessageDTO;
 use Hilos\Socket\Worker\WorkerDaemonClient;
 use Hilos\Socket\Worker\WorkerDTO;
 use Hilos\Utils\Exception\MissingEnvironmentVariableException;
@@ -161,9 +176,11 @@ abstract class WorkerManager extends BaseManager
 
                     // Check if agent requested stop
                     if ($agent->shouldStop()) {
+                        $agent->onStop();
                         $this->agentManager->removeAgent($agentId);
                         Logger::info("Agent {$agentId} stopped (self-requested)");
                         Logger::logAgentInfo($agentId, "Agent stopped (self-requested) on worker [workerIndex={$this->workerIndex}]");
+                        $this->notifyAgentStopped($agentId);
                     }
                 }
 
@@ -229,12 +246,36 @@ abstract class WorkerManager extends BaseManager
                 $this->handleAgentStop($data);
                 break;
 
-            case WorkerConstants::MESSAGE_AGENT_MESSAGE:
-                if ($data instanceof WorkerAgentMessageDTO) {
+            case WorkerConstants::MESSAGE_DAEMON_AGENT_MESSAGE:
+                if ($data instanceof DaemonAgentMessageDTO) {
                     $this->handleAgentMessage($data);
                 } else {
-                    Logger::error("handleAgentMessage - not WorkerAgentMessageDTO, type=" . get_class($data));
+                    Logger::error("handleAgentMessage - unexpected type: " . get_class($data));
                 }
+                break;
+
+            case WorkerConstants::MESSAGE_DB_SYNC_CREATED:
+                $this->handleDbSyncCreatedMessage($data);
+                break;
+
+            case WorkerConstants::MESSAGE_DB_SYNC_UPDATED:
+                $this->handleDbSyncUpdatedMessage($data);
+                break;
+
+            case WorkerConstants::MESSAGE_DB_SYNC_DELETED:
+                $this->handleDbSyncDeletedMessage($data);
+                break;
+
+            case WorkerConstants::MESSAGE_RT_SYNC_CREATED:
+                $this->handleRtSyncCreatedMessage($data);
+                break;
+
+            case WorkerConstants::MESSAGE_RT_SYNC_UPDATED:
+                $this->handleRtSyncUpdatedMessage($data);
+                break;
+
+            case WorkerConstants::MESSAGE_RT_SYNC_DELETED:
+                $this->handleRtSyncDeletedMessage($data);
                 break;
 
             default:
@@ -331,13 +372,135 @@ abstract class WorkerManager extends BaseManager
         $this->notifyAgentStopped($agentId);
     }
 
+    private function handleDaemonAgentMessage(WorkerDTO $data): void
+    {
+
+    }
+
     /**
-     * Handle agent message
+      * Handle DB sync created message from daemon.
+      *
+      * @param WorkerDTO $data Message data
+      */
+    private function handleDbSyncCreatedMessage(WorkerDTO $data): void
+    {
+        if ($data instanceof WorkerDbSyncCreatedMessageDTO) {
+            DbSyncApplicator::applyCreated($data->signalData);
+            $this->dispatchDbSyncToAgents(SignalConstants::DB_SYNC_CREATED, $data->signalData);
+        } else {
+            Logger::error("handleDbSyncCreatedMessage - unexpected type: " . get_class($data));
+        }
+    }
+
+    /**
+     * Handle DB sync updated message from daemon.
      *
-     * @param WorkerAgentMessageDTO $data Message data
+     * @param WorkerDTO $data Message data
+     */
+    private function handleDbSyncUpdatedMessage(WorkerDTO $data): void
+    {
+        if ($data instanceof WorkerDbSyncUpdatedMessageDTO) {
+            DbSyncApplicator::applyUpdated($data->signalData);
+            $this->dispatchDbSyncToAgents(SignalConstants::DB_SYNC_UPDATED, $data->signalData);
+        } else {
+            Logger::error("handleDbSyncUpdatedMessage - unexpected type: " . get_class($data));
+        }
+    }
+
+    /**
+     * Handle DB sync deleted message from daemon.
+     *
+     * @param WorkerDTO $data Message data
+     */
+    private function handleDbSyncDeletedMessage(WorkerDTO $data): void
+    {
+        if ($data instanceof WorkerDbSyncDeletedMessageDTO) {
+            DbSyncApplicator::applyDeleted($data->signalData);
+            $this->dispatchDbSyncToAgents(SignalConstants::DB_SYNC_DELETED, $data->signalData);
+        } else {
+            Logger::error("handleDbSyncDeletedMessage - unexpected type: " . get_class($data));
+        }
+    }
+
+    /**
+     * Dispatch DB sync signal to all agents on this worker.
+     * Each agent can filter by collectionKey/idString in its onSignal* handler.
+     */
+    private function dispatchDbSyncToAgents(string $signalName, array $signalData): void
+    {
+        $source = 'db';
+        $data = match ($signalName) {
+            SignalConstants::DB_SYNC_CREATED => DbSyncCreatedSignalData::fromArray($signalData),
+            SignalConstants::DB_SYNC_UPDATED => DbSyncUpdatedSignalData::fromArray($signalData),
+            SignalConstants::DB_SYNC_DELETED => DbSyncDeletedSignalData::fromArray($signalData),
+            default => null,
+        };
+        if ($data === null) {
+            return;
+        }
+
+        foreach ($this->agentManager->getAgents() as $agentId => $agent) {
+            if (!$agent instanceof AgentInterface) {
+                continue;
+            }
+            match ($signalName) {
+                SignalConstants::DB_SYNC_CREATED => $agent->onSignalDbSyncCreated($data, $source, $signalName),
+                SignalConstants::DB_SYNC_UPDATED => $agent->onSignalDbSyncUpdated($data, $source, $signalName),
+                SignalConstants::DB_SYNC_DELETED => $agent->onSignalDbSyncDeleted($data, $source, $signalName),
+                default => null,
+            };
+        }
+    }
+
+    /**
+     * Handle RT sync created message from daemon.
+     *
+     * @param WorkerDTO $data Message data
+     */
+    private function handleRtSyncCreatedMessage(WorkerDTO $data): void
+    {
+        if ($data instanceof WorkerRtSyncCreatedMessageDTO) {
+            // TODO: Implement RT sync applicator and dispatch to agents
+        } else {
+            Logger::error("handleRtSyncCreatedMessage - unexpected type: " . get_class($data));
+        }
+    }
+
+    /**
+     * Handle RT sync updated message from daemon.
+     *
+     * @param WorkerDTO $data Message data
+     */
+    private function handleRtSyncUpdatedMessage(WorkerDTO $data): void
+    {
+        if ($data instanceof WorkerRtSyncUpdatedMessageDTO) {
+            // TODO: Implement RT sync applicator and dispatch to agents
+        } else {
+            Logger::error("handleRtSyncUpdatedMessage - unexpected type: " . get_class($data));
+        }
+    }
+
+    /**
+     * Handle RT sync deleted message from daemon.
+     *
+     * @param WorkerDTO $data Message data
+     */
+    private function handleRtSyncDeletedMessage(WorkerDTO $data): void
+    {
+        if ($data instanceof WorkerRtSyncDeletedMessageDTO) {
+            // TODO: Implement RT sync applicator and dispatch to agents
+        } else {
+            Logger::error("handleRtSyncDeletedMessage - unexpected type: " . get_class($data));
+        }
+    }
+
+    /**
+     * Handle agent message (from worker or daemon)
+     *
+     * @param DaemonAgentMessageDTO $data Message data (daemon -> worker)
      * @throws PageSignalRouterNotFoundException If page router is not found for agent
      */
-    private function handleAgentMessage(WorkerAgentMessageDTO $data): void
+    private function handleAgentMessage(DaemonAgentMessageDTO $data): void
     {
         $agentId = $data->agentId;
 
@@ -472,6 +635,54 @@ abstract class WorkerManager extends BaseManager
                     $agent->onSignalAgent($signalData, $source, $name);
                 } else {
                     Logger::error("onSignalAgent - invalid signal data type: " . get_class($signalData));
+                }
+                break;
+
+            case SignalTypeConstants::DB_SYNC_CREATED:
+                if ($signalData instanceof DbSyncCreatedSignalData) {
+                    $agent->onSignalDbSyncCreated($signalData, $source, $name);
+                } else {
+                    Logger::error("onSignalDbSyncCreated - invalid signal data type: " . get_class($signalData));
+                }
+                break;
+
+            case SignalTypeConstants::DB_SYNC_UPDATED:
+                if ($signalData instanceof DbSyncUpdatedSignalData) {
+                    $agent->onSignalDbSyncUpdated($signalData, $source, $name);
+                } else {
+                    Logger::error("onSignalDbSyncUpdated - invalid signal data type: " . get_class($signalData));
+                }
+                break;
+
+            case SignalTypeConstants::DB_SYNC_DELETED:
+                if ($signalData instanceof DbSyncDeletedSignalData) {
+                    $agent->onSignalDbSyncDeleted($signalData, $source, $name);
+                } else {
+                    Logger::error("onSignalDbSyncDeleted - invalid signal data type: " . get_class($signalData));
+                }
+                break;
+
+            case SignalTypeConstants::RT_SYNC_CREATED:
+                if ($signalData instanceof RtSyncCreatedSignalData) {
+                    $agent->onSignalRtSyncCreated($signalData, $source, $name);
+                } else {
+                    Logger::error("onSignalRtSyncCreated - invalid signal data type: " . get_class($signalData));
+                }
+                break;
+
+            case SignalTypeConstants::RT_SYNC_UPDATED:
+                if ($signalData instanceof RtSyncUpdatedSignalData) {
+                    $agent->onSignalRtSyncUpdated($signalData, $source, $name);
+                } else {
+                    Logger::error("onSignalRtSyncUpdated - invalid signal data type: " . get_class($signalData));
+                }
+                break;
+
+            case SignalTypeConstants::RT_SYNC_DELETED:
+                if ($signalData instanceof RtSyncDeletedSignalData) {
+                    $agent->onSignalRtSyncDeleted($signalData, $source, $name);
+                } else {
+                    Logger::error("onSignalRtSyncDeleted - invalid signal data type: " . get_class($signalData));
                 }
                 break;
 
@@ -682,7 +893,9 @@ abstract class WorkerManager extends BaseManager
      * Signals are processed one by one in while-do loop.
      * Called at the end of each loop iteration when connected to daemon.
      *
-     * Logic: We simply forward signals to daemon as-is. Daemon will decide what to do with them.
+     * Logic:
+     * - DB/RT sync: sent as WorkerDbSync*MessageDTO / WorkerRtSync*MessageDTO (worker-level broadcast)
+     * - Agent signals: sent as WorkerAgentMessageDTO (agent-level routing)
      */
     private function dispatchSignals(): void
     {
@@ -692,17 +905,40 @@ abstract class WorkerManager extends BaseManager
 
         // Process signals one by one in while-do loop
         while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
-            // TODO: If target agent (from AGENT_SIGNAL) is on the same worker as sender,
-            // deliver signal locally without routing through daemon (optimization).
-            // Extract agent type and index from signal source
-            $agentType = $signal->signalSource->getType();
-            $agentIndex = $signal->signalSource->getIndex();
+            $signalType = $signal->signalType->getType();
+            $signalName = $signal->signalName->getName();
+            $signalData = $signal->data->toArray();
 
             $json = json_encode($signal->toArray());
             Logger::debug("Signal going to transmit: {$json}");
-            // Send signal to daemon (daemon will handle routing)
+
+            // DB/RT sync: worker-level broadcast (daemon + all workers)
+            $syncDto = match ($signalType) {
+                SignalTypeConstants::DB_SYNC_CREATED => new WorkerDbSyncCreatedMessageDTO($signalData),
+                SignalTypeConstants::DB_SYNC_UPDATED => new WorkerDbSyncUpdatedMessageDTO($signalData),
+                SignalTypeConstants::DB_SYNC_DELETED => new WorkerDbSyncDeletedMessageDTO($signalData),
+                SignalTypeConstants::RT_SYNC_CREATED => new WorkerRtSyncCreatedMessageDTO($signalData),
+                SignalTypeConstants::RT_SYNC_UPDATED => new WorkerRtSyncUpdatedMessageDTO($signalData),
+                SignalTypeConstants::RT_SYNC_DELETED => new WorkerRtSyncDeletedMessageDTO($signalData),
+                default => null,
+            };
+
+            if ($syncDto !== null) {
+                $this->daemonClient->send($syncDto);
+                continue;
+            }
+
+            // Agent signals: agent-level routing
+            $agentType = $signal->signalSource->getType();
+            $agentIndex = $signal->signalSource->getIndex();
+            $agentId = $this->agentManager->buildAgentId($agentType, $agentIndex);
+            if ($agentId === null) {
+                Logger::error("Cannot dispatch signal without agent ID: {$signalType}/{$signalName}");
+                continue;
+            }
+
             $this->daemonClient->send(new WorkerAgentMessageDTO(
-                agentId: $this->agentManager->buildAgentId($agentType, $agentIndex),
+                agentId: $agentId,
                 signal: $signal,
             ));
         }

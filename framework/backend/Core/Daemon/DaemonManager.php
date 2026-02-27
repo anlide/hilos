@@ -15,6 +15,7 @@ use Hilos\Core\Daemon\Cron\CronRule;
 use Hilos\Core\EventLoop\EventLoop;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\SignalRouter;
+use Hilos\Database\DbSyncApplicator;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Hilos;
 use Hilos\Socket\Client\WebSocketClient;
@@ -27,7 +28,14 @@ use Hilos\Socket\WebSocket\DTO\WebSocketGroupUpdateSubscriptionSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageUnsubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageUpdateSubscriptionSignalDTO;
+use Hilos\Socket\Client\WorkerClient;
 use Hilos\Socket\Worker\DTO\DaemonAgentMessageDTO;
+use Hilos\Socket\Worker\DTO\WorkerDbSyncCreatedMessageDTO;
+use Hilos\Socket\Worker\DTO\WorkerDbSyncDeletedMessageDTO;
+use Hilos\Socket\Worker\DTO\WorkerDbSyncUpdatedMessageDTO;
+use Hilos\Socket\Worker\DTO\WorkerRtSyncCreatedMessageDTO;
+use Hilos\Socket\Worker\DTO\WorkerRtSyncDeletedMessageDTO;
+use Hilos\Socket\Worker\DTO\WorkerRtSyncUpdatedMessageDTO;
 use Hilos\Utils\Logger;
 
 /**
@@ -459,12 +467,27 @@ abstract class DaemonManager extends BaseManager
             }
         }
 
+        // Sync signals: always send to workers and daemon
+        $syncTypes = [
+            SignalTypeConstants::DB_SYNC_CREATED,
+            SignalTypeConstants::DB_SYNC_UPDATED,
+            SignalTypeConstants::DB_SYNC_DELETED,
+            SignalTypeConstants::RT_SYNC_CREATED,
+            SignalTypeConstants::RT_SYNC_UPDATED,
+            SignalTypeConstants::RT_SYNC_DELETED,
+        ];
+
         // Process signals one by one in while-do loop
         while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
             Logger::debug('getNextQueuedSignal called for signal: ' . $signal->toJson());
 
             // Update subscriptions BEFORE routing (routing may depend on current subscriptions)
             $this->updateSubscriptions($signal);
+
+            if (in_array($signal->signalType->getType(), $syncTypes, true)) {
+                $this->sendSyncToWorkers($workerServer, $signal);
+                $this->handleDaemonSignal($signal);
+            }
 
             // Get destinations for signal
             $destinations = Hilos::$sr->getDestinations($signal);
@@ -557,6 +580,56 @@ abstract class DaemonManager extends BaseManager
                 }
             }
         }
+    }
+
+    /**
+     * Send sync signal to all worker clients
+     */
+    private function sendSyncToWorkers(WorkerServer $workerServer, SignalDTO $signal): void
+    {
+        $signalName = $signal->signalName->getName();
+        $signalData = $signal->data->toArray();
+
+        $dto = match ($signalName) {
+            SignalConstants::DB_SYNC_CREATED => new WorkerDbSyncCreatedMessageDTO($signalData),
+            SignalConstants::DB_SYNC_UPDATED => new WorkerDbSyncUpdatedMessageDTO($signalData),
+            SignalConstants::DB_SYNC_DELETED => new WorkerDbSyncDeletedMessageDTO($signalData),
+            SignalConstants::RT_SYNC_CREATED => new WorkerRtSyncCreatedMessageDTO($signalData),
+            SignalConstants::RT_SYNC_UPDATED => new WorkerRtSyncUpdatedMessageDTO($signalData),
+            SignalConstants::RT_SYNC_DELETED => new WorkerRtSyncDeletedMessageDTO($signalData),
+            default => null,
+        };
+
+        if ($dto === null) {
+            return;
+        }
+
+        foreach ($workerServer->getClients() as $client) {
+            if ($client instanceof WorkerClient) {
+                $client->send($dto->toJson());
+            }
+        }
+    }
+
+    /**
+     * Handle daemon-internal signal (e.g. start/stop agents, DB/RT sync)
+     *
+     * Default dispatches DB/RT sync to 6 apply methods.
+     *
+     * @param SignalDTO $signal Signal DTO
+     */
+    protected function handleDaemonSignal(SignalDTO $signal): void
+    {
+        $signalType = $signal->signalType->getType();
+        match ($signalType) {
+            SignalTypeConstants::DB_SYNC_CREATED => DbSyncApplicator::applyCreated($signal->data->toArray()),
+            SignalTypeConstants::DB_SYNC_UPDATED => DbSyncApplicator::applyUpdated($signal->data->toArray()),
+            SignalTypeConstants::DB_SYNC_DELETED => DbSyncApplicator::applyDeleted($signal->data->toArray()),
+            SignalTypeConstants::RT_SYNC_CREATED => null, // TODO: Implement it
+            SignalTypeConstants::RT_SYNC_UPDATED => null, // TODO: Implement it
+            SignalTypeConstants::RT_SYNC_DELETED => null, // TODO: Implement it
+            default => null,
+        };
     }
 
     /**

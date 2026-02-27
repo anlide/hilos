@@ -4,14 +4,10 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Core\Socket\Server;
 
-use Demo\Chat\Constants\ChatSignalConstants;
-use Hilos\Constants\SignalTypeConstants;
-use Hilos\Core\Router\SignalName;
-use Hilos\Core\Router\SignalSource;
-use Hilos\Core\Router\SignalType;
-use Hilos\Hilos;
+use Demo\Chat\Hilos;
+use Hilos\Core\Agent\Exception\AgentDaemonCreationFailedException;
+use Hilos\Core\Agent\Exception\NoSuitableWorkerException;
 use Hilos\Socket\Server\WorkerServer;
-use Hilos\Socket\Worker\DTO\SystemSignalDTO;
 
 /**
  * ChatWorkerServer - Worker server with chat-specific agent daemon factory
@@ -31,15 +27,19 @@ class ChatWorkerServer extends WorkerServer
     /**
      * Called when initial workers are ready
      *
-     * Sends start signal to chat agent when workers are ready.
+     * Calls parent to queue INITIAL_AGENTS_START, then starts BotAgent for each active bot.
+     * @throws AgentDaemonCreationFailedException If agent daemon cannot be created
+     * @throws NoSuitableWorkerException If no suitable worker is available
      */
     protected function onInitialWorkersReady(): void
     {
-        Hilos::$sr->queueSignal(
-            new SignalSource(SignalSource::DAEMON),
-            new SignalType(SignalTypeConstants::SYSTEM),
-            new SignalName(ChatSignalConstants::START),
-            new SystemSignalDTO(systemName: ChatSignalConstants::START),
-        );
+        parent::onInitialWorkersReady();
+
+        foreach (Hilos::$db->bots as $bot) {
+            if (!$bot->active) {
+                continue;
+            }
+            $this->startAgent('bot', (string) $bot->id);
+        }
     }
 }

@@ -36,6 +36,10 @@ class ChatSignalConstants
     /** ModeratorAgent → ChatAgent: moderation result */
     public const string MODERATION_RESULT = 'moderation_result';
 
+    // ── Bot agent lifecycle ─────────────────────────────────────────────
+    /** ChatAgent → BotAgent: start (sending to agent triggers framework start if not running) */
+    public const string BOT_AGENT_START = 'bot_agent_start';
+
     // ── Table actions (client → server) ──────────────────────────────────
     public const string TABLE_REFRESH = 'table_refresh';
     public const string USER_UPDATE = 'user_update';

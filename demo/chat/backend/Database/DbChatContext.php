@@ -25,6 +25,7 @@ use Hilos\Database\Object\Objects;
 /**
  * DbChatContext - App-specific database context ($db layer).
  *
+ * @extends DbContext<DbChatContext>
  * @property-read Users $users
  * @property-read Events $events
  * @property-read Bots $bots

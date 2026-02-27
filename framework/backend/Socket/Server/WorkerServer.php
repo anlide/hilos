@@ -181,9 +181,18 @@ abstract class WorkerServer extends AbstractServer
      *
      * This method is called once when the minimum number of registered workers
      * (both regular and monopolistic) has been reached according to configuration.
-     * Must be implemented by child classes to perform initialization that requires workers to be ready.
+     * Default implementation queues INITIAL_AGENTS_START signal. Child classes should call
+     * parent::onInitialWorkersReady() and add project-specific initialization.
      */
-    abstract protected function onInitialWorkersReady(): void;
+    protected function onInitialWorkersReady(): void
+    {
+        Hilos::$sr->queueSignal(
+            new SignalSource(SignalSource::DAEMON),
+            new SignalType(SignalTypeConstants::SYSTEM),
+            new SignalName(SignalConstants::INITIAL_AGENTS_START),
+            new SystemSignalDTO(systemName: SignalConstants::INITIAL_AGENTS_START),
+        );
+    }
 
     /**
      * Get count of active regular worker processes
@@ -923,6 +932,37 @@ abstract class WorkerServer extends AbstractServer
 
         // Agent exists and is linked, send message DTO immediately
         $workerClient->send($messageDto->toJson());
+    }
+
+    /**
+     * Stop agent and remove from manager
+     *
+     * Sends agent_stop signal to worker and removes agent from agent manager.
+     * No-op if agent is not running.
+     *
+     * @param string $agentType Agent type
+     * @param ?string $agentIndex Agent index (optional)
+     */
+    protected function stopAgent(string $agentType, ?string $agentIndex = null): void
+    {
+        $agentId = $this->buildAgentId($agentType, $agentIndex);
+
+        $workerInfo = $this->agentManager->getAgentWorkerInfo($agentId);
+        if ($workerInfo === null) {
+            return;
+        }
+
+        $workerId = $this->agentManager->calculateWorkerId(
+            $workerInfo['workerIndex'],
+            $workerInfo['isMonopolistic'],
+        );
+        $workerClient = $this->findWorkerClientById($workerId);
+        if ($workerClient === null) {
+            return;
+        }
+
+        $workerClient->sendAgentStop($agentType, $agentIndex);
+        $this->agentManager->removeAgent($agentId);
     }
 
     /**

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Database\Actions\Collection;
 
+use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Actions\Exception\CallbackNotSetException;
@@ -198,6 +199,42 @@ abstract class DbActions
 
             default:
                 throw new UnknownLazyStrategyException("Unknown lazy loading strategy for write check");
+        }
+    }
+
+    /**
+     * Ensure create is allowed and data is loaded if needed
+     * Checks TruthSourceRegistry::checkCanCreate for create permission
+     *
+     * @throws ObjectCollectionNullException If ObjectCollection is null
+     * @throws UnknownLazyStrategyException If unknown lazy loading strategy
+     * @throws CreateNotAllowedException If create is not allowed
+     * @throws DatabaseException
+     */
+    protected function ensureCanCreate(): void
+    {
+        $objectCollection = $this->objectCollection;
+
+        switch ($objectCollection->getLazyStrategy()) {
+            case Objects::LAZY_STRATEGY_NONE:
+                $collectionKey = $objectCollection->getCollectionKey();
+                TruthSourceRegistry::checkCanCreate($collectionKey);
+                if (!$objectCollection->isAllLoaded()) {
+                    $objectCollection->loadAllFromDB();
+                }
+                break;
+
+            case Objects::LAZY_STRATEGY_KEY:
+                break;
+
+            case Objects::LAZY_STRATEGY_BATCH:
+                break;
+
+            case Objects::LAZY_STRATEGY_FULL_ON_ACCESS:
+                break;
+
+            default:
+                throw new UnknownLazyStrategyException("Unknown lazy loading strategy for create check");
         }
     }
 

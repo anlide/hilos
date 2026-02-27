@@ -13,6 +13,12 @@ use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalSourceInterface;
 use Hilos\Core\Router\SignalType;
 use Hilos\Core\Router\WebSocketSignalData;
+use Hilos\Core\Sync\DTO\DbSyncCreatedSignalData;
+use Hilos\Core\Sync\DTO\DbSyncDeletedSignalData;
+use Hilos\Core\Sync\DTO\DbSyncUpdatedSignalData;
+use Hilos\Core\Sync\DTO\RtSyncCreatedSignalData;
+use Hilos\Core\Sync\DTO\RtSyncDeletedSignalData;
+use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
 use Hilos\Hilos;
 use Hilos\Socket\WebSocket\DTO\WebSocketActionSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketCloseSignalDTO;
@@ -359,6 +365,90 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface
      * @param string $name Signal name
      */
     public function onSignalAgent(AgentSignalData $data, string $source, string $name): void
+    {
+        // Default: do nothing
+    }
+
+    /**
+     * Default implementation - no DB sync signal handling
+     *
+     * Child classes can override these methods.
+     *
+     * @param string $source Signal source
+     * @param string $name Signal name
+     * @param DbSyncCreatedSignalData $data Signal data
+     */
+    public function onSignalDbSyncCreated(DbSyncCreatedSignalData $data, string $source, string $name): void
+    {
+        // Default: do nothing
+    }
+
+    /**
+     * Default implementation - no DB sync signal handling
+     *
+     * Child classes can override these methods.
+     *
+     * @param string $source Signal source
+     * @param string $name Signal name
+     * @param DbSyncUpdatedSignalData $data Signal data
+     */
+    public function onSignalDbSyncUpdated(DbSyncUpdatedSignalData $data, string $source, string $name): void
+    {
+        // Default: do nothing
+    }
+
+    /**
+     * Default implementation - no DB sync signal handling
+     *
+     * Child classes can override these methods.
+     *
+     * @param string $source Signal source
+     * @param string $name Signal name
+     * @param DbSyncDeletedSignalData $data Signal data
+     */
+    public function onSignalDbSyncDeleted(DbSyncDeletedSignalData $data, string $source, string $name): void
+    {
+        // Default: do nothing
+    }
+
+    /**
+     * Default implementation - no RT sync signal handling
+     *
+     * Child classes can override these methods.
+     *
+     * @param string $source Signal source
+     * @param string $name Signal name
+     * @param RtSyncCreatedSignalData $data Signal data
+     */
+    public function onSignalRtSyncCreated(RtSyncCreatedSignalData $data, string $source, string $name): void
+    {
+        // Default: do nothing
+    }
+
+    /**
+     * Default implementation - no RT sync signal handling
+     *
+     * Child classes can override these methods.
+     *
+     * @param string $source Signal source
+     * @param string $name Signal name
+     * @param RtSyncUpdatedSignalData $data Signal data
+     */
+    public function onSignalRtSyncUpdated(RtSyncUpdatedSignalData $data, string $source, string $name): void
+    {
+        // Default: do nothing
+    }
+
+    /**
+     * Default implementation - no RT sync signal handling
+     *
+     * Child classes can override these methods.
+     *
+     * @param string $source Signal source
+     * @param string $name Signal name
+     * @param RtSyncDeletedSignalData $data Signal data
+     */
+    public function onSignalRtSyncDeleted(RtSyncDeletedSignalData $data, string $source, string $name): void
     {
         // Default: do nothing
     }

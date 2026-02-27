@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Core\TruthSource;
 
+use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 
 /**
@@ -12,20 +13,28 @@ use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
  * Tracks which agents are sources of truth for specific database tables.
  * Only registered agents can write to database tables.
  *
+ * Create permission: separate right for INSERT operations (key does not exist yet).
+ * Register via registerCreate() for agents that can create new records.
+ *
  * Usage:
  *   // In Agent::onStart()
  *   TruthSourceRegistry::register(Hilos::users, true, $this->getId());
+ *   TruthSourceRegistry::registerCreate(Hilos::bots, $this->getId());
  *
  *   // In Agent::onStop()
  *   TruthSourceRegistry::unregisterAgent($this->getId());
  *
  *   // In DbActions (automatic check)
  *   TruthSourceRegistry::checkCanWrite($tableName);
+ *   TruthSourceRegistry::checkCanCreate($tableName);
  */
 class TruthSourceRegistry extends AbstractTruthSourceRegistry
 {
     /** @var array<string, array<string, array|true>> [table => [agentId => keys]] */
     private static array $sources = [];
+
+    /** @var array<string, array<string, true>> [collection => [agentId => true]] Create permission registry */
+    private static array $createSources = [];
 
     /**
      * Get sources storage reference
@@ -35,6 +44,88 @@ class TruthSourceRegistry extends AbstractTruthSourceRegistry
     protected static function &getSources(): array
     {
         return self::$sources;
+    }
+
+    /**
+     * Register agent as having create permission for collection
+     *
+     * @param string $collection Collection/table name
+     * @param string $agentId Agent ID from agent->getId()
+     */
+    public static function registerCreate(string $collection, string $agentId): void
+    {
+        if (!isset(self::$createSources[$collection])) {
+            self::$createSources[$collection] = [];
+        }
+        self::$createSources[$collection][$agentId] = true;
+    }
+
+    /**
+     * Unregister agent from create permission for collection
+     *
+     * @param string $collection Collection/table name
+     * @param string $agentId Agent ID
+     */
+    public static function unregisterCreate(string $collection, string $agentId): void
+    {
+        if (isset(self::$createSources[$collection][$agentId])) {
+            unset(self::$createSources[$collection][$agentId]);
+            if (empty(self::$createSources[$collection])) {
+                unset(self::$createSources[$collection]);
+            }
+        }
+    }
+
+    /**
+     * Check if collection has any agent with create permission
+     *
+     * Create permission is a subset of write permission: if an agent has truth source
+     * (write rights) for the collection, it implicitly has create permission.
+     *
+     * @param string $collection Collection/table name
+     * @return bool True if at least one agent has create or write permission
+     */
+    public static function hasCreateSource(string $collection): bool
+    {
+        return self::hasTruthSource($collection)
+            || (isset(self::$createSources[$collection]) && !empty(self::$createSources[$collection]));
+    }
+
+    /**
+     * Check if create operation is allowed for database table
+     *
+     * Create is allowed if any agent has write permission (truth source) or explicit create permission.
+     *
+     * @param string $collection Table name
+     * @throws CreateNotAllowedException If create is not allowed
+     */
+    public static function checkCanCreate(string $collection): void
+    {
+        if (!self::hasCreateSource($collection)) {
+            throw new CreateNotAllowedException(
+                "Create operation not allowed: no create or write permission registered for table '{$collection}'. " .
+                "Register via TruthSourceRegistry::register() or TruthSourceRegistry::registerCreate() first."
+            );
+        }
+    }
+
+    /**
+     * Unregister agent from all collections and create permissions
+     *
+     * @param string $agentId Agent ID
+     */
+    public static function unregisterAgent(string $agentId): void
+    {
+        parent::unregisterAgent($agentId);
+
+        foreach (self::$createSources as $collection => $agents) {
+            if (isset($agents[$agentId])) {
+                unset(self::$createSources[$collection][$agentId]);
+                if (empty(self::$createSources[$collection])) {
+                    unset(self::$createSources[$collection]);
+                }
+            }
+        }
     }
 
     /**

@@ -35,7 +35,7 @@ final class BotsActions extends DbActions
      */
     public function create(array $data): Bot
     {
-        $this->ensureCanWrite();
+        $this->ensureCanCreate();
 
         $name = isset($data[ObjectBot::name]) && is_string($data[ObjectBot::name]) ? trim($data[ObjectBot::name]) : '';
         if ($name === '') {

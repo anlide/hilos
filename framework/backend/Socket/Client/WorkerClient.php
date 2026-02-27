@@ -13,8 +13,14 @@ use Hilos\Socket\Worker\DTO\AgentStopDTO;
 use Hilos\Socket\Worker\DTO\WorkerAgentMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerAgentStartedDTO;
 use Hilos\Socket\Worker\DTO\WorkerAgentStoppedDTO;
+use Hilos\Socket\Worker\DTO\WorkerDbSyncCreatedMessageDTO;
+use Hilos\Socket\Worker\DTO\WorkerDbSyncDeletedMessageDTO;
+use Hilos\Socket\Worker\DTO\WorkerDbSyncUpdatedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerRegisterDTO;
 use Hilos\Socket\Worker\DTO\WorkerRegisteredDTO;
+use Hilos\Socket\Worker\DTO\WorkerRtSyncCreatedMessageDTO;
+use Hilos\Socket\Worker\DTO\WorkerRtSyncDeletedMessageDTO;
+use Hilos\Socket\Worker\DTO\WorkerRtSyncUpdatedMessageDTO;
 use Hilos\Socket\Worker\WorkerDTO;
 use Hilos\Utils\Logger;
 
@@ -160,6 +166,12 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
             $workerDTO instanceof WorkerAgentStartedDTO => $this->handleAgentStartedMessage($workerDTO),
             $workerDTO instanceof WorkerAgentStoppedDTO => $this->handleAgentStoppedMessage($workerDTO),
             $workerDTO instanceof WorkerAgentMessageDTO => $this->handleAgentMessageMessage($workerDTO),
+            $workerDTO instanceof WorkerDbSyncCreatedMessageDTO => $this->handleWorkerDbSyncCreatedMessage($workerDTO),
+            $workerDTO instanceof WorkerDbSyncUpdatedMessageDTO => $this->handleWorkerDbSyncUpdatedMessage($workerDTO),
+            $workerDTO instanceof WorkerDbSyncDeletedMessageDTO => $this->handleWorkerDbSyncDeletedMessage($workerDTO),
+            $workerDTO instanceof WorkerRtSyncCreatedMessageDTO => $this->handleWorkerRtSyncCreatedMessage($workerDTO),
+            $workerDTO instanceof WorkerRtSyncUpdatedMessageDTO => $this->handleWorkerRtSyncUpdatedMessage($workerDTO),
+            $workerDTO instanceof WorkerRtSyncDeletedMessageDTO => $this->handleWorkerRtSyncDeletedMessage($workerDTO),
             default => Logger::error("Unknown message type received from worker: " . get_class($workerDTO)),
         };
     }
@@ -209,16 +221,63 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
     }
 
     /**
-     * Handle agent_message message from worker
+     * Handle agent_message (worker signal) message from worker
      *
-     * Converts WorkerAgentMessageDTO to DaemonAgentMessageDTO and forwards it to AgentManagerDaemon.
-     * AgentManagerDaemon will queue the signal in daemon's SignalRouter.
+     * Forwards to AgentManagerDaemon which queues the signal in daemon's SignalRouter.
      *
      * @param WorkerAgentMessageDTO $dto DTO with agent message data
      */
     private function handleAgentMessageMessage(WorkerAgentMessageDTO $dto): void
     {
         $this->agentManager->handleAgentMessage($dto);
+    }
+
+    /**
+     * Handle DB sync created message from worker (worker-level broadcast)
+     */
+    private function handleWorkerDbSyncCreatedMessage(WorkerDbSyncCreatedMessageDTO $dto): void
+    {
+        $this->agentManager->handleWorkerDbSyncCreated($dto);
+    }
+
+    /**
+     * Handle DB sync updated message from worker (worker-level broadcast)
+     */
+    private function handleWorkerDbSyncUpdatedMessage(WorkerDbSyncUpdatedMessageDTO $dto): void
+    {
+        $this->agentManager->handleWorkerDbSyncUpdated($dto);
+    }
+
+    /**
+     * Handle DB sync deleted message from worker (worker-level broadcast)
+     */
+    private function handleWorkerDbSyncDeletedMessage(WorkerDbSyncDeletedMessageDTO $dto): void
+    {
+        $this->agentManager->handleWorkerDbSyncDeleted($dto);
+    }
+
+    /**
+     * Handle RT sync created message from worker (worker-level broadcast)
+     */
+    private function handleWorkerRtSyncCreatedMessage(WorkerRtSyncCreatedMessageDTO $dto): void
+    {
+        $this->agentManager->handleWorkerRtSyncCreated($dto);
+    }
+
+    /**
+     * Handle RT sync updated message from worker (worker-level broadcast)
+     */
+    private function handleWorkerRtSyncUpdatedMessage(WorkerRtSyncUpdatedMessageDTO $dto): void
+    {
+        $this->agentManager->handleWorkerRtSyncUpdated($dto);
+    }
+
+    /**
+     * Handle RT sync deleted message from worker (worker-level broadcast)
+     */
+    private function handleWorkerRtSyncDeletedMessage(WorkerRtSyncDeletedMessageDTO $dto): void
+    {
+        $this->agentManager->handleWorkerRtSyncDeleted($dto);
     }
 
     /**

@@ -2,6 +2,7 @@
 
 namespace Demo\Chat\Database\Object\Item;
 
+use Demo\Chat\Database\DbChatContext;
 use Demo\Chat\Database\Entity\Item\ModeratorPromptPiece as EntityModeratorPromptPiece;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Item\Object_;
@@ -25,6 +26,11 @@ final class ModeratorPromptPiece extends Object_
     public const string id = 'id';
     public const string section = 'section';
     public const string promptPiece = 'promptPiece';
+
+    protected static function getCollectionKey(): string
+    {
+        return DbChatContext::moderatorPromptPieces;
+    }
 
     /**
      * Returns the value of a moderator prompt piece property by name.

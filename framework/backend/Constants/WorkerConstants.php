@@ -29,8 +29,29 @@ class WorkerConstants
     /** @var string Agent stop signal */
     public const string MESSAGE_AGENT_STOP = 'agent_stop';
 
-    /** @var string Agent message signal */
+    /** @var string Agent message signal (worker -> daemon) */
     public const string MESSAGE_AGENT_MESSAGE = 'agent_message';
+
+    /** @var string Daemon agent message signal (daemon -> worker) */
+    public const string MESSAGE_DAEMON_AGENT_MESSAGE = 'daemon_agent_message';
+
+    /** @var string DB sync created (daemon/worker broadcast) */
+    public const string MESSAGE_DB_SYNC_CREATED = 'db_sync_created';
+
+    /** @var string DB sync updated (daemon/worker broadcast) */
+    public const string MESSAGE_DB_SYNC_UPDATED = 'db_sync_updated';
+
+    /** @var string DB sync deleted (daemon/worker broadcast) */
+    public const string MESSAGE_DB_SYNC_DELETED = 'db_sync_deleted';
+
+    /** @var string RT sync created (daemon/worker broadcast) */
+    public const string MESSAGE_RT_SYNC_CREATED = 'rt_sync_created';
+
+    /** @var string RT sync updated (daemon/worker broadcast) */
+    public const string MESSAGE_RT_SYNC_UPDATED = 'rt_sync_updated';
+
+    /** @var string RT sync deleted (daemon/worker broadcast) */
+    public const string MESSAGE_RT_SYNC_DELETED = 'rt_sync_deleted';
 
     // Message types from worker to daemon
     /** @var string Worker registration request */

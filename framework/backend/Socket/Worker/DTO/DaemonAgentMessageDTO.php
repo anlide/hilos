@@ -20,8 +20,8 @@ class DaemonAgentMessageDTO extends WorkerDTO
     public const string AGENT_ID = 'agentId';
     public const string SIGNAL = 'signal';
 
-    // Message type
-    public const string MESSAGE_TYPE = WorkerConstants::MESSAGE_AGENT_MESSAGE;
+    // Message type (daemon -> worker; distinct from WorkerAgentMessageDTO for worker -> daemon)
+    public const string MESSAGE_TYPE = WorkerConstants::MESSAGE_DAEMON_AGENT_MESSAGE;
 
     /**
      * Get message type

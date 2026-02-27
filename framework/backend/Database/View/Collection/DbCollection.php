@@ -257,7 +257,7 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
      * Uses DB_ITEM_CLASS and OBJECT_COLLECTION_CLASS constants defined by child classes.
      *
      * @param Object_ $object Object instance (reference)
-     * @return DbItem
+     * @return T
      */
     protected function createDbItem(Object_ &$object): DbItem
     {
@@ -321,7 +321,7 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
      * Uses cached DbItem if available, otherwise creates new instance
      *
      * @param int|string $key Primary key ID
-     * @return ?T DbItem instance for object at key, or null if not found (e.g. deleted)
+     * @return T|null DbItem instance for object at key, or null if not found (e.g. deleted)
      */
     protected function getItemForKey(int|string $key): ?DbItem
     {
@@ -389,7 +389,7 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
      * Returns a new manual collection with filtered items
      * Note: For lazy-loaded collections, this may trigger full load
      *
-     * @param callable $callback Callback function (DbItem, key) => bool
+     * @param callable(T, int|string): bool $callback Callback function (item, key) => bool
      * @return static New filtered manual collection
      * @throws DatabaseException If DbItem has no associated Object ID
      * @throws CollectionNotManualException If collection is not manual (filtering is only supported for manual collections, as it returns a new manual collection)
@@ -470,7 +470,7 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
     /**
      * Get first DbItem
      *
-     * @return ?DbItem
+     * @return T|null
      */
     public function first(): ?DbItem
     {
@@ -494,7 +494,7 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
     /**
      * Get last DbItem
      *
-     * @return ?DbItem
+     * @return T|null
      */
     public function last(): ?DbItem
     {
@@ -566,7 +566,7 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
 
     /**
      * @param mixed $offset Primary key ID
-     * @return ?DbItem
+     * @return T|null
      */
     public function offsetGet(mixed $offset): ?DbItem
     {
@@ -627,7 +627,7 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
     /**
      * Get current element.
      *
-     * @return ?DbItem
+     * @return T|null
      */
     public function current(): ?DbItem
     {

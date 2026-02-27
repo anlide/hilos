@@ -2,6 +2,7 @@
 
 namespace Demo\Chat\Database\Object\Item;
 
+use Demo\Chat\Database\DbChatContext;
 use Demo\Chat\Database\Entity\Item\Event as EntityEvent;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Item\Object_;
@@ -27,6 +28,11 @@ final class Event extends Object_
     public const string type = 'type';
     public const string timestamp = 'timestamp';
     public const string data = 'data';
+
+    protected static function getCollectionKey(): string
+    {
+        return DbChatContext::events;
+    }
 
     /**
      * Returns the value of an event object property by name.

@@ -2,6 +2,7 @@
 
 namespace Demo\Chat\Database\Object\Item;
 
+use Demo\Chat\Database\DbChatContext;
 use Demo\Chat\Database\Entity\Item\Bot as EntityBot;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Item\Object_;
@@ -31,6 +32,11 @@ final class Bot extends Object_
     public const string topics = 'topics';
     public const string personality = 'personality';
     public const string active = 'active';
+
+    protected static function getCollectionKey(): string
+    {
+        return DbChatContext::bots;
+    }
 
     /**
      * Returns the value of a bot object property by name.

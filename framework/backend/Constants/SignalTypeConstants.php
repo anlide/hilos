@@ -40,4 +40,12 @@ class SignalTypeConstants
     public const string WS_USER = 'ws_user';
     public const string WS_ALL = 'ws_all';
     public const string WS_GROUP = 'ws_group';
+
+    // Data sync signal types (DB and RT state propagation to workers/daemons)
+    public const string DB_SYNC_CREATED = 'db_sync_created';
+    public const string DB_SYNC_UPDATED = 'db_sync_updated';
+    public const string DB_SYNC_DELETED = 'db_sync_deleted';
+    public const string RT_SYNC_CREATED = 'rt_sync_created';
+    public const string RT_SYNC_UPDATED = 'rt_sync_updated';
+    public const string RT_SYNC_DELETED = 'rt_sync_deleted';
 }

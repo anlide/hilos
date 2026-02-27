@@ -44,6 +44,19 @@ class SignalRouter
     /** @var SignalDTO[] Queued signals to dispatch */
     private array $queuedSignals = [];
 
+    /** @var bool Whether DB sync broadcast is enabled (false for CLI/migrations) */
+    public bool $dbSyncBroadcastEnabled = true {
+        get {
+            return $this->dbSyncBroadcastEnabled;
+        }
+        set {
+            $this->dbSyncBroadcastEnabled = $value;
+        }
+    }
+
+    /** @var array<string, true> Keys "collectionKey:idString" for self-broadcast skip */
+    private array $dbSyncBroadcastedIds = [];
+
     /**
      * User page subscriptions storage
      * Format: [acceptKey => ['page' => string, 'params' => array]]
@@ -138,6 +151,48 @@ class SignalRouter
         $signalNameValue = $signalName->getName();
         Logger::debug("Signal queued: {$source}/{$signalTypeValue}/{$signalNameValue}");
         Logger::debug('Now count of queued signals: ' . count($this->queuedSignals));
+    }
+
+    /**
+     * Queue DB sync signal (from Object_::sync/delete).
+     * Skips if broadcast disabled. Registers (collectionKey, idString) for self-apply skip.
+     *
+     * @param string $signalName Signal name (e.g. SignalConstants::DB_SYNC_CREATED)
+     */
+    public function queueDbSyncSignal(string $signalName, SignalDataInterface $signalData): void
+    {
+        if (!$this->dbSyncBroadcastEnabled) {
+            return;
+        }
+
+        $data = $signalData->toArray();
+        $collectionKey = $data['collectionKey'] ?? '';
+        $idString = $data['idString'] ?? '';
+        if ($collectionKey !== '' && $idString !== '') {
+            $this->dbSyncBroadcastedIds[$collectionKey . ':' . $idString] = true;
+        }
+
+        $this->queueSignal(
+            signalSource: new SignalSource(SignalSource::DB),
+            signalType: new SignalType($signalName),
+            signalName: new SignalName($signalName),
+            signalData: $signalData,
+        );
+    }
+
+    /**
+     * Check if apply should be skipped (self-broadcast) and remove from registry.
+     *
+     * @return bool True if this was our broadcast, skip apply
+     */
+    public function shouldSkipDbSyncApply(string $collectionKey, string $idString): bool
+    {
+        $key = $collectionKey . ':' . $idString;
+        if (isset($this->dbSyncBroadcastedIds[$key])) {
+            unset($this->dbSyncBroadcastedIds[$key]);
+            return true;
+        }
+        return false;
     }
 
     /**
@@ -314,10 +369,8 @@ class SignalRouter
     /**
      * Get destinations for signal
      *
-     * Returns array of destinations for signal based on routing configuration.
-     * Each destination is an array with 'type', 'agentType' and 'agentIndex' (for agent routing)
-     * or 'type' and 'acceptKey' (for WebSocket routing).
-     * Can return multiple destinations for signals that need to be delivered to multiple agents or clients.
+     * Merges destinations from all routing methods. One signal can go to multiple
+     * destination types (websocket, agent, worker, daemon) per config.
      *
      * @param SignalDTO $signal Signal DTO
      * @return array Array of destinations [['type' => string, ...], ...]
@@ -329,33 +382,26 @@ class SignalRouter
         $signalType = $signal->signalType->getType();
         Logger::debug("getDestinations Signal type: " . $signalType);
 
-        // Handle WebSocket response signals (ws_user, ws_all, ws_group)
+        $destinations = [];
+
         if (in_array($signalType, [
             SignalTypeConstants::WS_USER,
             SignalTypeConstants::WS_ALL,
             SignalTypeConstants::WS_GROUP,
         ], true)) {
-            return $this->getWebSocketDestinations($signal);
+            $destinations = array_merge($destinations, $this->getWebSocketDestinations($signal));
         }
 
-        // Handle agent-to-agent signals: route by source + signalName from config
         if ($signalType === SignalTypeConstants::AGENT_SIGNAL) {
-            return $this->getAgentDestinations($signal);
+            $destinations = array_merge($destinations, $this->getAgentDestinations($signal));
         }
 
-        // Get route using existing route method for agent routing
         $route = $this->route($signal->signalSource, $signal->signalType, $signal->data);
-
-        if ($route === null) {
-            return [];
+        if ($route !== null) {
+            $destinations[] = array_merge(['type' => 'agent'], $route);
         }
 
-        // Add destination type (for now only 'agent' is supported)
-        $destination = array_merge(['type' => 'agent'], $route);
-
-        // For now, return single destination
-        // Can be extended in child classes to return multiple destinations
-        return [$destination];
+        return $destinations;
     }
 
     /**
@@ -380,8 +426,6 @@ class SignalRouter
         $targetGroup = null;
         $excludeAcceptKey = null;
 
-        #var_dump($signalData);
-        #var_dump($signalData instanceof WebSocketSignalData);
         if ($signalData instanceof WebSocketSignalData) {
             $targetAcceptKey = $signalData->targetAcceptKey;
             $targetGroup = $signalData->targetGroup;

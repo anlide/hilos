@@ -1,4 +1,7 @@
 <?php
+
+declare(strict_types=1);
+
 namespace Hilos\Database\Context;
 
 use Hilos\Database\DatabaseException;
@@ -12,6 +15,8 @@ use Hilos\Database\View\Collection\DbCollection;
 /**
  * DbContext - Database context (instance layer only).
  * Contains object collections and their DB collection wrappers.
+ *
+ * @template T of DbContext
  */
 abstract class DbContext
 {
@@ -24,12 +29,12 @@ abstract class DbContext
     protected array $_objectCollections = [];
 
     /**
-     * DB collections (wrappers around Object collections)
+     * DB item collections (wrappers around Object collections)
      * These are created automatically from Object collections.
      *
      * @var array<string, DbCollection>
      */
-    protected array $_ideaCollections = [];
+    protected array $_dbItemCollections = [];
 
     /**
      * Constructor. Called from facade createDb().
@@ -52,12 +57,12 @@ abstract class DbContext
      * Set representation for object collection.
      *
      * @param string $name Collection name (e.g., 'users')
-     * @param string $ideaCollectionClass DB collection class name
+     * @param string $dbItemCollectionClass DB collection class name
      * @param ?string $actionsClass Collection actions class name (optional)
      * @param ?string $itemActionsClass Item actions class name (optional)
      * @throws ObjectCollectionNotFoundException
      */
-    public function setRepresent(string $name, string $ideaCollectionClass, ?string $actionsClass = null, ?string $itemActionsClass = null): void
+    public function setRepresent(string $name, string $dbItemCollectionClass, ?string $actionsClass = null, ?string $itemActionsClass = null): void
     {
         if (!isset($this->_objectCollections[$name])) {
             throw new ObjectCollectionNotFoundException(
@@ -67,16 +72,16 @@ abstract class DbContext
 
         $objectCollection = $this->_objectCollections[$name];
 
-        if (is_subclass_of($ideaCollectionClass, DbCollection::class)) {
-            $ideaCollection = $ideaCollectionClass::init();
-            $ideaCollection->setObjectCollection($objectCollection);
+        if (is_subclass_of($dbItemCollectionClass, DbCollection::class)) {
+            $dbItemCollection = $dbItemCollectionClass::init();
+            $dbItemCollection->setObjectCollection($objectCollection);
             if ($actionsClass !== null) {
-                $ideaCollection->setActionsClass($actionsClass);
+                $dbItemCollection->setActionsClass($actionsClass);
             }
             if ($itemActionsClass !== null) {
-                $ideaCollection->setItemActionsClass($itemActionsClass);
+                $dbItemCollection->setItemActionsClass($itemActionsClass);
             }
-            $this->_ideaCollections[$name] = $ideaCollection;
+            $this->_dbItemCollections[$name] = $dbItemCollection;
         }
     }
 
@@ -99,7 +104,7 @@ abstract class DbContext
      */
     public function __get(string $name)
     {
-        if (!isset($this->_ideaCollections[$name])) {
+        if (!isset($this->_dbItemCollections[$name])) {
             throw new CollectionNotFoundException("Db collection [{$name}] does not exist");
         }
 
@@ -123,7 +128,7 @@ abstract class DbContext
                 throw new UnknownLazyStrategyException("Unknown lazy loading strategy for collection [{$name}]");
         }
 
-        return $this->_ideaCollections[$name];
+        return $this->_dbItemCollections[$name];
     }
 
     /**
@@ -141,6 +146,6 @@ abstract class DbContext
     {
         return array_map(function ($collection) {
             return $collection->toArray();
-        }, $this->_ideaCollections);
+        }, $this->_dbItemCollections);
     }
 }

@@ -2,6 +2,7 @@
 
 namespace Demo\Chat\Database\Object\Item;
 
+use Demo\Chat\Database\DbChatContext;
 use Demo\Chat\Database\Entity\Item\User as EntityUser;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Item\Object_;
@@ -27,6 +28,11 @@ final class User extends Object_
     public const string name = 'name';
     public const string sessionToken = 'sessionToken';
     public const string lastActivity = 'lastActivity';
+
+    protected static function getCollectionKey(): string
+    {
+        return DbChatContext::users;
+    }
 
     /**
      * Returns the value of a user object property by name.

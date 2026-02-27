@@ -12,19 +12,23 @@ use Hilos\Utils\Logger;
  * BotAgentDaemon - Daemon proxy for BotAgent
  *
  * Simple proxy class for bot agent on daemon side.
- * Handles routing between WebSocket clients and BotAgent in worker.
+ * One daemon per bot (agentIndex = bot.id).
  */
 class BotAgentDaemon extends AbstractAgentDaemon
 {
     /** @var string Agent type */
     private const string AGENT_TYPE = AgentType::BOT;
 
-    /**
-     * BotAgentDaemon constructor
-     */
-    public function __construct()
+    /** @var string Agent index (bot id) */
+    private string $agentIndex;
+
+    public function __construct(string $agentIndex)
     {
-        Logger::debug("BotAgentDaemon created [type=" . self::AGENT_TYPE . "]");
+        if ($agentIndex === '') {
+            throw new \RuntimeException('BotAgentDaemon requires non-empty agentIndex (bot id)');
+        }
+        $this->agentIndex = $agentIndex;
+        Logger::debug("BotAgentDaemon created [type=" . self::AGENT_TYPE . " index=" . $agentIndex . "]");
     }
 
     /**
@@ -40,13 +44,13 @@ class BotAgentDaemon extends AbstractAgentDaemon
     /**
      * Get agent index
      *
-     * Bot agent has no index (global singleton)
+     * Bot agent index is the bot id (string)
      *
-     * @return ?string Agent index (null for global bot agent)
+     * @return string Agent index
      */
     public function getIndex(): ?string
     {
-        return null;
+        return $this->agentIndex;
     }
 
     /**

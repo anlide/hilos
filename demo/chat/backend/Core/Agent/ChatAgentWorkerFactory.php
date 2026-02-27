@@ -31,7 +31,9 @@ class ChatAgentWorkerFactory extends AbstractAgentWorkerFactory
     {
         return match ($agentType) {
             AgentType::CHAT => new ChatAgent(),
-            AgentType::BOT => new BotAgent(),
+            AgentType::BOT => new BotAgent(
+                $agentIndex ?? throw new \RuntimeException('BotAgent requires agentIndex (bot id)'),
+            ),
             AgentType::MODERATOR => new ModeratorAgent(),
             default => throw new AgentCreationFailedException($agentType, $agentIndex),
         };

@@ -21,6 +21,7 @@ class BotsTableActions extends TableActions
 {
     /**
      * Creates a bot and returns mutation for broadcasting.
+     * DB_SYNC broadcast is triggered automatically by Object_::sync().
      *
      * @param BotCreateActionDTO $dto Create payload
      *

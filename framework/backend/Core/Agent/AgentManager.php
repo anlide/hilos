@@ -33,12 +33,15 @@ abstract class AgentManager
     /**
      * Build agent ID from type and index
      *
-     * @param string $agentType Agent type
+     * @param ?string $agentType Agent type (null for non-agent sources like DB sync)
      * @param ?string $agentIndex Agent index (optional)
-     * @return string Agent ID (format: "type" or "type:index")
+     * @return ?string Agent ID (format: "type" or "type:index") or null if agentType is null
      */
-    public function buildAgentId(string $agentType, ?string $agentIndex): string
+    public function buildAgentId(?string $agentType, ?string $agentIndex): ?string
     {
+        if ($agentType === null) {
+            return null;
+        }
         return $agentIndex !== null ? $agentType . ':' . $agentIndex : $agentType;
     }
 

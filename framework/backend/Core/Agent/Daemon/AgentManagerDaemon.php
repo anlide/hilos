@@ -4,11 +4,28 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Agent\Daemon;
 
+use Hilos\Constants\SignalConstants;
+use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\Exception\AgentDaemonCreationFailedException;
+use Hilos\Core\Router\SignalName;
+use Hilos\Core\Router\SignalSource;
+use Hilos\Core\Router\SignalType;
+use Hilos\Core\Sync\DTO\DbSyncCreatedSignalData;
+use Hilos\Core\Sync\DTO\DbSyncDeletedSignalData;
+use Hilos\Core\Sync\DTO\DbSyncUpdatedSignalData;
+use Hilos\Core\Sync\DTO\RtSyncCreatedSignalData;
+use Hilos\Core\Sync\DTO\RtSyncDeletedSignalData;
+use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
 use Hilos\Hilos;
 use Hilos\Socket\Worker\DTO\WorkerAgentMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerAgentStartedDTO;
 use Hilos\Socket\Worker\DTO\WorkerAgentStoppedDTO;
+use Hilos\Socket\Worker\DTO\WorkerDbSyncCreatedMessageDTO;
+use Hilos\Socket\Worker\DTO\WorkerDbSyncDeletedMessageDTO;
+use Hilos\Socket\Worker\DTO\WorkerDbSyncUpdatedMessageDTO;
+use Hilos\Socket\Worker\DTO\WorkerRtSyncCreatedMessageDTO;
+use Hilos\Socket\Worker\DTO\WorkerRtSyncDeletedMessageDTO;
+use Hilos\Socket\Worker\DTO\WorkerRtSyncUpdatedMessageDTO;
 use Hilos\Utils\Logger;
 
 /**
@@ -42,12 +59,15 @@ abstract class AgentManagerDaemon
     /**
      * Build agent ID from type and index
      *
-     * @param string $agentType Agent type
+     * @param ?string $agentType Agent type (null for non-agent sources like DB sync)
      * @param ?string $agentIndex Agent index (optional)
-     * @return string Agent ID (format: "type" or "type:index")
+     * @return ?string Agent ID (format: "type" or "type:index") or null if agentType is null
      */
-    public function buildAgentId(string $agentType, ?string $agentIndex): string
+    public function buildAgentId(?string $agentType, ?string $agentIndex): ?string
     {
+        if ($agentType === null) {
+            return null;
+        }
         return $agentIndex !== null ? $agentType . ':' . $agentIndex : $agentType;
     }
 
@@ -265,9 +285,9 @@ abstract class AgentManagerDaemon
     }
 
     /**
-     * Handle agent_message signal from worker
+     * Handle worker signal message (agent_message wire type)
      *
-     * Receives signal from worker and simply queues it in daemon's SignalRouter.
+     * Receives signal from worker and queues it in daemon's SignalRouter.
      * DaemonManager will process the signal and decide what to do with it
      * (routing to other agents, WebSocket delivery to clients, etc.).
      *
@@ -282,6 +302,90 @@ abstract class AgentManagerDaemon
             signalType: $dto->signal->signalType,
             signalName: $dto->signal->signalName,
             signalData: $dto->signal->data,
+        );
+    }
+
+    /**
+     * Handle DB sync created message from worker (worker-level broadcast to daemon + all workers)
+     */
+    public function handleWorkerDbSyncCreated(WorkerDbSyncCreatedMessageDTO $dto): void
+    {
+        $signalData = DbSyncCreatedSignalData::fromArray($dto->signalData);
+        Hilos::$sr->queueSignal(
+            signalSource: new SignalSource(SignalSource::DB),
+            signalType: new SignalType(SignalTypeConstants::DB_SYNC_CREATED),
+            signalName: new SignalName(SignalConstants::DB_SYNC_CREATED),
+            signalData: $signalData,
+        );
+    }
+
+    /**
+     * Handle DB sync updated message from worker (worker-level broadcast)
+     */
+    public function handleWorkerDbSyncUpdated(WorkerDbSyncUpdatedMessageDTO $dto): void
+    {
+        $signalData = DbSyncUpdatedSignalData::fromArray($dto->signalData);
+        Hilos::$sr->queueSignal(
+            signalSource: new SignalSource(SignalSource::DB),
+            signalType: new SignalType(SignalTypeConstants::DB_SYNC_UPDATED),
+            signalName: new SignalName(SignalConstants::DB_SYNC_UPDATED),
+            signalData: $signalData,
+        );
+    }
+
+    /**
+     * Handle DB sync deleted message from worker (worker-level broadcast)
+     */
+    public function handleWorkerDbSyncDeleted(WorkerDbSyncDeletedMessageDTO $dto): void
+    {
+        $signalData = DbSyncDeletedSignalData::fromArray($dto->signalData);
+        Hilos::$sr->queueSignal(
+            signalSource: new SignalSource(SignalSource::DB),
+            signalType: new SignalType(SignalTypeConstants::DB_SYNC_DELETED),
+            signalName: new SignalName(SignalConstants::DB_SYNC_DELETED),
+            signalData: $signalData,
+        );
+    }
+
+    /**
+     * Handle RT sync created message from worker (worker-level broadcast)
+     */
+    public function handleWorkerRtSyncCreated(WorkerRtSyncCreatedMessageDTO $dto): void
+    {
+        $signalData = RtSyncCreatedSignalData::fromArray($dto->signalData);
+        Hilos::$sr->queueSignal(
+            signalSource: new SignalSource(SignalSource::DB),
+            signalType: new SignalType(SignalTypeConstants::RT_SYNC_CREATED),
+            signalName: new SignalName(SignalConstants::RT_SYNC_CREATED),
+            signalData: $signalData,
+        );
+    }
+
+    /**
+     * Handle RT sync updated message from worker (worker-level broadcast)
+     */
+    public function handleWorkerRtSyncUpdated(WorkerRtSyncUpdatedMessageDTO $dto): void
+    {
+        $signalData = RtSyncUpdatedSignalData::fromArray($dto->signalData);
+        Hilos::$sr->queueSignal(
+            signalSource: new SignalSource(SignalSource::DB),
+            signalType: new SignalType(SignalTypeConstants::RT_SYNC_UPDATED),
+            signalName: new SignalName(SignalConstants::RT_SYNC_UPDATED),
+            signalData: $signalData,
+        );
+    }
+
+    /**
+     * Handle RT sync deleted message from worker (worker-level broadcast)
+     */
+    public function handleWorkerRtSyncDeleted(WorkerRtSyncDeletedMessageDTO $dto): void
+    {
+        $signalData = RtSyncDeletedSignalData::fromArray($dto->signalData);
+        Hilos::$sr->queueSignal(
+            signalSource: new SignalSource(SignalSource::DB),
+            signalType: new SignalType(SignalTypeConstants::RT_SYNC_DELETED),
+            signalName: new SignalName(SignalConstants::RT_SYNC_DELETED),
+            signalData: $signalData,
         );
     }
 }

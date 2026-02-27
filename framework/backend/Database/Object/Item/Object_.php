@@ -2,9 +2,14 @@
 
 namespace Hilos\Database\Object\Item;
 
+use Hilos\Constants\SignalConstants;
+use Hilos\Core\Sync\DTO\DbSyncCreatedSignalData;
+use Hilos\Core\Sync\DTO\DbSyncDeletedSignalData;
+use Hilos\Core\Sync\DTO\DbSyncUpdatedSignalData;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Item\Entity;
 use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
+use Hilos\Hilos;
 
 /**
  * Base Object class
@@ -89,16 +94,22 @@ abstract class Object_
      */
     public function sync(): void
     {
+        $isCreate = !$this->entity->isRelated();
+
         if ($this->entity->isRelated()) {
-            // Entity exists in database, save only differences
+            $changedColumns = $this->getChangedColumns();
+            $currentData = $this->entity->toArray();
+            $diff = array_intersect_key($currentData, array_flip($changedColumns));
             $this->entity->saveDiff($this->entitySync);
+            $this->entitySync = clone $this->entity;
+            $result = $diff;
         } else {
-            // New entity, insert into database
             $this->entity->save();
+            $this->entitySync = clone $this->entity;
+            $result = $this->entity->toArray();
         }
 
-        // Update synced state
-        $this->entitySync = clone $this->entity;
+        $this->broadcastDbSyncAfterSync($isCreate, $result);
     }
 
     /**
@@ -120,7 +131,14 @@ abstract class Object_
      */
     public function delete(): void
     {
+        $collectionKey = static::getCollectionKey();
+        $idString = $collectionKey !== '' ? $this->getIdString() : '';
+
         $this->entity->delete();
+
+        if ($collectionKey !== '' && $idString !== '') {
+            $this->queueDbSyncDeleted($collectionKey, $idString);
+        }
     }
 
     /**
@@ -165,6 +183,70 @@ abstract class Object_
         if ($this->entity->isRelated()) {
             $this->entity = clone $this->entitySync;
         }
+    }
+
+    /**
+     * Collection key for DB sync broadcast (e.g. DbChatContext::bots).
+     * Return empty string to skip broadcast.
+     */
+    protected static function getCollectionKey(): string
+    {
+        return '';
+    }
+
+    /**
+     * Broadcast DB sync after sync (created or updated).
+     *
+     * @param bool $isCreate True if this was a create (new row)
+     * @param array<string, mixed> $result Full row for create, diff for update
+     * @throws ObjectGetIdStringNotImplementedException If getIdString() is not implemented or primary key is null
+     */
+    private function broadcastDbSyncAfterSync(bool $isCreate, array $result): void
+    {
+        $collectionKey = static::getCollectionKey();
+        if ($collectionKey === '' || $result === []) {
+            return;
+        }
+
+        $idString = $this->getIdString();
+        if ($isCreate) {
+            $this->queueDbSyncCreated($collectionKey, $idString, $result);
+        } else {
+            $this->queueDbSyncUpdated($collectionKey, $idString, $result);
+        }
+    }
+
+    /**
+     * Queue DB sync created signal (no-op if broadcast disabled).
+     */
+    private function queueDbSyncCreated(string $collectionKey, string $idString, array $row): void
+    {
+        Hilos::$sr?->queueDbSyncSignal(
+            SignalConstants::DB_SYNC_CREATED,
+            new DbSyncCreatedSignalData($collectionKey, $idString, $row),
+        );
+    }
+
+    /**
+     * Queue DB sync updated signal (no-op if broadcast disabled).
+     */
+    private function queueDbSyncUpdated(string $collectionKey, string $idString, array $row): void
+    {
+        Hilos::$sr?->queueDbSyncSignal(
+            SignalConstants::DB_SYNC_UPDATED,
+            new DbSyncUpdatedSignalData($collectionKey, $idString, $row),
+        );
+    }
+
+    /**
+     * Queue DB sync deleted signal (no-op if broadcast disabled).
+     */
+    private function queueDbSyncDeleted(string $collectionKey, string $idString): void
+    {
+        Hilos::$sr?->queueDbSyncSignal(
+            SignalConstants::DB_SYNC_DELETED,
+            new DbSyncDeletedSignalData($collectionKey, $idString),
+        );
     }
 
     /**
