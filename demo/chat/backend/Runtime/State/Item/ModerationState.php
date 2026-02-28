@@ -49,6 +49,25 @@ class ModerationState extends RtState
         return $instance;
     }
 
+    public static function fromRow(array $row): static
+    {
+        $instance = new static();
+        $instance->userId = (int)($row[self::userId] ?? 0);
+        $instance->message = (string)($row[self::message] ?? '');
+        $instance->updatedAt = (int)($row[self::updatedAt] ?? time());
+        return $instance;
+    }
+
+    public function applyDiff(array $diff): void
+    {
+        if (isset($diff[self::message])) {
+            $this->message = (string)$diff[self::message];
+        }
+        if (isset($diff[self::updatedAt])) {
+            $this->updatedAt = (int)$diff[self::updatedAt];
+        }
+    }
+
     public function getId(): string
     {
         return (string)$this->userId;

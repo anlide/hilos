@@ -47,6 +47,25 @@ class Connection extends RtState
         return $instance;
     }
 
+    public static function fromRow(array $row): static
+    {
+        $instance = new static();
+        $instance->acceptKey = (string)($row[self::acceptKey] ?? '');
+        $instance->userId = (int)($row[self::userId] ?? 0);
+        $instance->connectedAt = (int)($row[self::connectedAt] ?? time());
+        return $instance;
+    }
+
+    public function applyDiff(array $diff): void
+    {
+        if (isset($diff[self::userId])) {
+            $this->userId = (int)$diff[self::userId];
+        }
+        if (isset($diff[self::connectedAt])) {
+            $this->connectedAt = (int)$diff[self::connectedAt];
+        }
+    }
+
     public function getId(): string
     {
         return $this->acceptKey;

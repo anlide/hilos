@@ -17,6 +17,8 @@ use Hilos\Runtime\State\Collection\RtStates;
  */
 class Connections extends RtStates
 {
+    public const string STATE_CLASS = Connection::class;
+
     public function findByUserId(int $userId): ?Connection
     {
         foreach ($this->states as $connection) {

@@ -80,6 +80,25 @@ abstract class RtState
     abstract public function getId(): string;
 
     /**
+     * Create state instance from row (array) for RT sync deserialization.
+     *
+     * @param array<string, mixed> $row Full state data (keys match toArray() output)
+     * @return static State instance
+     */
+    abstract public static function fromRow(array $row): static;
+
+    /**
+     * Apply diff to state fields for RT sync update.
+     *
+     * Override in child classes to support updates. Default no-op.
+     *
+     * @param array<string, mixed> $diff Changed fields => values
+     */
+    public function applyDiff(array $diff): void
+    {
+    }
+
+    /**
      * Convert state to array representation.
      */
     abstract public function toArray(): array;

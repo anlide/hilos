@@ -16,7 +16,6 @@ class RtSyncDeletedSignalData extends BaseDTO implements SignalDataInterface
     public function __construct(
         public readonly string $collectionKey,
         public readonly string $stateId,
-        public readonly string $sourceAgentId,
     ) {
     }
 
@@ -25,7 +24,6 @@ class RtSyncDeletedSignalData extends BaseDTO implements SignalDataInterface
         return [
             'collectionKey' => $this->collectionKey,
             'stateId' => $this->stateId,
-            'sourceAgentId' => $this->sourceAgentId,
         ];
     }
 
@@ -34,7 +32,6 @@ class RtSyncDeletedSignalData extends BaseDTO implements SignalDataInterface
         return new self(
             collectionKey: $data['collectionKey'] ?? '',
             stateId: $data['stateId'] ?? '',
-            sourceAgentId: $data['sourceAgentId'] ?? '',
         );
     }
 }

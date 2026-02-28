@@ -15,7 +15,7 @@ class WorkerRtSyncCreatedMessageDTO extends WorkerDTO
     public const string MESSAGE_TYPE = WorkerConstants::MESSAGE_RT_SYNC_CREATED;
 
     public function __construct(
-        /** @param array<string, mixed> collectionKey, stateId, row, sourceAgentId */
+        /** @param array<string, mixed> collectionKey, stateId, row */
         public readonly array $signalData,
     ) {
     }

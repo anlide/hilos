@@ -14,4 +14,5 @@ use Hilos\Runtime\State\Collection\RtStates;
  */
 class ModerationStates extends RtStates
 {
+    public const string STATE_CLASS = ModerationState::class;
 }

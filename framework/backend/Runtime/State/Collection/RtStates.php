@@ -25,6 +25,9 @@ use Iterator;
  */
 abstract class RtStates implements Iterator, ArrayAccess, Countable
 {
+    /** @var class-string<RtState> */
+    public const string STATE_CLASS = '';
+
     /**
      * State objects storage
      *

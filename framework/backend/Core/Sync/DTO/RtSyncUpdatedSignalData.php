@@ -18,7 +18,6 @@ class RtSyncUpdatedSignalData extends BaseDTO implements SignalDataInterface
         public readonly string $stateId,
         /** @var array<string, mixed> Only changed fields => values */
         public readonly array $row,
-        public readonly string $sourceAgentId,
     ) {
     }
 
@@ -28,7 +27,6 @@ class RtSyncUpdatedSignalData extends BaseDTO implements SignalDataInterface
             'collectionKey' => $this->collectionKey,
             'stateId' => $this->stateId,
             'row' => $this->row,
-            'sourceAgentId' => $this->sourceAgentId,
         ];
     }
 
@@ -38,7 +36,6 @@ class RtSyncUpdatedSignalData extends BaseDTO implements SignalDataInterface
             collectionKey: $data['collectionKey'] ?? '',
             stateId: $data['stateId'] ?? '',
             row: $data['row'] ?? [],
-            sourceAgentId: $data['sourceAgentId'] ?? '',
         );
     }
 }

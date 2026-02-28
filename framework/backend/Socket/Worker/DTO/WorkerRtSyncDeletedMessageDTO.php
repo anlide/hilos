@@ -15,7 +15,7 @@ class WorkerRtSyncDeletedMessageDTO extends WorkerDTO
     public const string MESSAGE_TYPE = WorkerConstants::MESSAGE_RT_SYNC_DELETED;
 
     public function __construct(
-        /** @param array<string, mixed> collectionKey, stateId, sourceAgentId */
+        /** @param array<string, mixed> collectionKey, stateId */
         public readonly array $signalData,
     ) {
     }
