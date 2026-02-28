@@ -33,6 +33,9 @@ class CliCommands
     /** @var string Command: Retry failed migration */
     public const string MIGRATION_RETRY = 'migration:retry';
 
+    /** @var string Command: Apply database seeds */
+    public const string SEED_APPLY = 'seed:apply';
+
     /** @var string Command: Show database schema status */
     public const string DB_SCHEMA_STATUS = 'db:schema:status';
 

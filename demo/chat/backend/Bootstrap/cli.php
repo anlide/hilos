@@ -9,6 +9,7 @@ use Hilos\Constants\ErrorConstants;
 use Hilos\Constants\ExitCode;
 use Hilos\Core\CLI\CliManager;
 use Hilos\Database\Migration;
+use Hilos\Database\Seed;
 use Hilos\Utils\Env;
 use Hilos\Utils\Logger;
 
@@ -27,6 +28,9 @@ try {
     Migration::setMigrationListPath(__DIR__ . '/../Database/Migration');
     Migration::setMigrationName('Schema');
     Migration::setRoutinesPath(__DIR__ . '/../Database/Migration/Routines');
+
+    // Initialize seed configuration
+    Seed::setSeedPath(__DIR__ . '/../Database/Migration/Seed');
 
     // Determine which command is being executed.
     // TODO(hilos-refactor): rename legacy CLI commands db:idea:* to db:hilos:* and remove this compatibility branch.

@@ -46,6 +46,7 @@
         "migration:down": "docker-compose -f docker/docker-compose.local.yml run --rm chat-cli-local php backend/Bootstrap/cli.php migration:down",
         "migration:status": "docker-compose -f docker/docker-compose.local.yml run --rm chat-cli-local php backend/Bootstrap/cli.php migration:status",
         "migration:retry": "docker-compose -f docker/docker-compose.local.yml run --rm chat-cli-local php backend/Bootstrap/cli.php migration:retry",
+        "seed:apply": "docker-compose -f docker/docker-compose.local.yml run --rm chat-cli-local php backend/Bootstrap/cli.php seed:apply",
         "db:schema:status": "docker-compose -f docker/docker-compose.local.yml run --rm chat-cli-local php backend/Bootstrap/cli.php db:schema:status",
         "db:entity:diff": "docker-compose -f docker/docker-compose.local.yml run --rm chat-cli-local php backend/Bootstrap/cli.php db:entity:diff",
         "db:entity:fix": "docker-compose -f docker/docker-compose.local.yml run --rm chat-cli-local php backend/Bootstrap/cli.php db:entity:fix",

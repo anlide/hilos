@@ -92,6 +92,9 @@ HELP;
                 CliCommands::MIGRATION_STATUS,
                 CliCommands::MIGRATION_RETRY,
             ],
+            'Database Seeds' => [
+                CliCommands::SEED_APPLY,
+            ],
             'Database Schema' => [
                 CliCommands::DB_SCHEMA_STATUS,
                 CliCommands::DB_ENTITY_DIFF,

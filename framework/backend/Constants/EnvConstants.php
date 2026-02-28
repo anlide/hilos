@@ -124,4 +124,13 @@ enum EnvConstants
 
     /** @var string Moderation provider: local | external */
     case CHAT_MODERATION_PROVIDER;
+
+    // ── Application environment ──────────────────────────────────────────────
+
+    /**
+     * Application environment. Use AppEnv enum values: prod, staging, dev, local, test.
+     * Aliases accepted: production->prod, development->dev, etc.
+     * When PROD or STAGING: database seeds are disabled.
+     */
+    case APP_ENV;
 }

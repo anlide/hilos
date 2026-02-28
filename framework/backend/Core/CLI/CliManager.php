@@ -16,6 +16,7 @@ use Hilos\Core\CLI\Commands\MigrationDownCommand;
 use Hilos\Core\CLI\Commands\MigrationRetryCommand;
 use Hilos\Core\CLI\Commands\MigrationStatusCommand;
 use Hilos\Core\CLI\Commands\MigrationUpCommand;
+use Hilos\Core\CLI\Commands\SeedApplyCommand;
 use Hilos\Core\CLI\Commands\MonitorCommand;
 use Hilos\Core\CLI\Commands\StatusCommand;
 use Hilos\Database\DatabaseException;
@@ -89,6 +90,7 @@ class CliManager
         $this->commands[CliCommands::MIGRATION_DOWN] = new MigrationDownCommand();
         $this->commands[CliCommands::MIGRATION_STATUS] = new MigrationStatusCommand();
         $this->commands[CliCommands::MIGRATION_RETRY] = new MigrationRetryCommand();
+        $this->commands[CliCommands::SEED_APPLY] = new SeedApplyCommand();
         $this->commands[CliCommands::DB_SCHEMA_STATUS] = new DbSchemaStatusCommand();
         $this->commands[CliCommands::DB_ENTITY_DIFF] = new DbEntityDiffCommand();
         $this->commands[CliCommands::DB_ENTITY_FIX] = new DbEntityFixCommand();
