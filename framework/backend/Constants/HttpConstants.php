@@ -53,4 +53,22 @@ class HttpConstants
 
     // WebSocket Protocol Values
     public const string WEBSOCKET_PROTOCOL = 'websocket';
+
+    /** Stream context wrapper key for HTTP */
+    public const string STREAM_CONTEXT_HTTP = 'http';
+
+    /** Stream context option: HTTP method */
+    public const string STREAM_OPT_METHOD = 'method';
+
+    /** Stream context option: HTTP headers */
+    public const string STREAM_OPT_HEADER = 'header';
+
+    /** Stream context option: Request body */
+    public const string STREAM_OPT_CONTENT = 'content';
+
+    /** Stream context option: Timeout in seconds */
+    public const string STREAM_OPT_TIMEOUT = 'timeout';
+
+    /** Stream context option: Ignore HTTP errors */
+    public const string STREAM_OPT_IGNORE_ERRORS = 'ignore_errors';
 }

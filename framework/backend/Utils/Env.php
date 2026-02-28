@@ -64,7 +64,71 @@ class Env
     }
 
     /**
-     * Get environment variable as integer
+     * Get environment variable as float
+     *
+     * @param EnvConstants|string $name Environment variable name or enum constant
+     * @param ?float $default Default value if not found
+     * @return float Environment variable value as float
+     * @throws MissingEnvironmentVariableException If variable not found and no default provided
+     */
+    public static function getFloat(EnvConstants|string $name, ?float $default = null): float
+    {
+        $variableName = $name instanceof EnvConstants ? $name->name : $name;
+
+        if (self::$envCache !== null && isset(self::$envCache[$variableName])) {
+            return (float) self::$envCache[$variableName];
+        }
+
+        $value = getenv($variableName);
+        if ($value !== false) {
+            return (float) $value;
+        }
+
+        $exampleValue = self::getFromExample($variableName);
+        if ($exampleValue !== null) {
+            return (float) $exampleValue;
+        }
+
+        if ($default !== null) {
+            return $default;
+        }
+
+        throw new MissingEnvironmentVariableException($variableName);
+    }
+
+    /**
+     * Get string value, fallback to default when not set or empty/whitespace.
+     *
+     * @param EnvConstants|string $name Environment variable name
+     * @param string $default Default when var not set or empty
+     * @return string Non-empty value
+     */
+    public static function getFilled(EnvConstants|string $name, string $default): string
+    {
+        $variableName = $name instanceof EnvConstants ? $name->name : $name;
+
+        if (self::$envCache !== null && isset(self::$envCache[$variableName])) {
+            $v = trim((string) self::$envCache[$variableName]);
+            return $v !== '' ? $v : $default;
+        }
+
+        $value = getenv($variableName);
+        if ($value !== false) {
+            $v = trim((string) $value);
+            return $v !== '' ? $v : $default;
+        }
+
+        $exampleValue = self::getFromExample($variableName);
+        if ($exampleValue !== null) {
+            $v = trim((string) $exampleValue);
+            return $v !== '' ? $v : $default;
+        }
+
+        return $default;
+    }
+
+    /**
+     * Get environment variable as integer.
      *
      * Priority order:
      * 1. Loaded .env file (if loaded)

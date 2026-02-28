@@ -1,0 +1,48 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Demo\Chat\Utils;
+
+use Demo\Chat\Constants\ModerationConstants;
+use Hilos\Constants\EnvConstants;
+use Hilos\Constants\LLMConstants;
+use Hilos\Utils\Env;
+
+/**
+ * ModerationEnv - Reads moderation LLM config from env via Env
+ *
+ * Extends Env usage for moderation-specific variables.
+ */
+class ModerationEnv
+{
+    public static function getModel(): string
+    {
+        return Env::getFilled(EnvConstants::CHAT_MODERATION_MODEL, ModerationConstants::DEFAULT_MODEL);
+    }
+
+    public static function getUrl(): string
+    {
+        $url = Env::getFilled(EnvConstants::CHAT_MODERATION_URL, ModerationConstants::DEFAULT_URL);
+        $url = rtrim($url, '/');
+        if (str_ends_with($url, '/api/generate')) {
+            $url = substr($url, 0, -strlen('/api/generate'));
+        }
+
+        return $url;
+    }
+
+    public static function getTimeoutSec(): float
+    {
+        $timeout = Env::getFloat(EnvConstants::CHAT_MODERATION_TIMEOUT_SEC, ModerationConstants::DEFAULT_TIMEOUT_SEC);
+
+        return $timeout > 0 ? $timeout : LLMConstants::DEFAULT_TIMEOUT_SEC;
+    }
+
+    public static function useExternalProvider(): bool
+    {
+        $value = Env::getFilled(EnvConstants::CHAT_MODERATION_PROVIDER, 'local');
+
+        return strtolower($value) === 'external';
+    }
+}

@@ -81,4 +81,47 @@ enum EnvConstants
 
     /** @var string Minimum interval between daemon restarts after errors (in seconds) */
     case DAEMON_MIN_RESTART_INTERVAL;
+
+    // ── LLM ────────────────────────────────────────────────────────────────
+
+    /** @var string LLM chat provider: local | external */
+    case LLM_CHAT_PROVIDER;
+
+    /** @var string LLM image provider: local | external */
+    case LLM_IMAGE_PROVIDER;
+
+    /** @var string Local LLM base URL (e.g. Ollama) */
+    case LLM_LOCAL_URL;
+
+    /** @var string Local LLM chat model name */
+    case LLM_LOCAL_CHAT_MODEL;
+
+    /** @var string Local LLM image model name */
+    case LLM_LOCAL_IMAGE_MODEL;
+
+    /** @var string External LLM base URL (e.g. OpenAI) */
+    case LLM_EXTERNAL_URL;
+
+    /** @var string External LLM API key */
+    case LLM_EXTERNAL_API_KEY;
+
+    /** @var string External LLM chat model name */
+    case LLM_EXTERNAL_CHAT_MODEL;
+
+    /** @var string External LLM image model name */
+    case LLM_EXTERNAL_IMAGE_MODEL;
+
+    // ── Chat moderation (demo) ──────────────────────────────────────────────
+
+    /** @var string Moderation model name */
+    case CHAT_MODERATION_MODEL;
+
+    /** @var string Moderation API base URL */
+    case CHAT_MODERATION_URL;
+
+    /** @var string Moderation request timeout in seconds */
+    case CHAT_MODERATION_TIMEOUT_SEC;
+
+    /** @var string Moderation provider: local | external */
+    case CHAT_MODERATION_PROVIDER;
 }
