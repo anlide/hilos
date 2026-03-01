@@ -1111,11 +1111,11 @@ HELP;
         }
 
         // Clean up empty _indexes after all operations
-        if (preg_match('/(\/\/ Indexes\s*public const array _indexes = \[)\s*(\];)/s', $content, $matches)) {
+        if (preg_match('/(\/\/ Indexes\s*public const array _indexes = \[)\s*(];)/s', $content, $matches)) {
             // Remove only the comment and declaration lines, preserve surrounding empty lines
             // Match: \n    // Indexes\n    public const array _indexes = [\n    ];\n
             // Replace with just newline before to preserve spacing
-            $pattern = '/(\n)\s*\/\/ Indexes\s*\n\s*public const array _indexes = \[\s*\];\s*\n/';
+            $pattern = '/(\n)\s*\/\/ Indexes\s*\n\s*public const array _indexes = \[\s*];\s*\n/';
             $content = preg_replace($pattern, '$1', $content);
         }
 
@@ -1124,12 +1124,12 @@ HELP;
         }
 
         // Clean up empty _foreign after all operations
-        if (preg_match('/(\/\/ Foreign keys\s*public const array _foreign = \[)\s*(\];)/s', $content, $matches)) {
+        if (preg_match('/(\/\/ Foreign keys\s*public const array _foreign = \[)\s*(];)/s', $content, $matches)) {
             // Remove only the comment and declaration lines, preserve surrounding empty lines
             // Be very precise to avoid removing extra content or leaving extra spaces
             // Match: \n    // Foreign keys\n    public const array _foreign = [\n    ];\n
             // Replace with just \n (removing the section but keeping one newline)
-            $pattern = '/(\n)\s*\/\/ Foreign keys\s*\n\s*public const array _foreign = \[\s*\];\s*\n/';
+            $pattern = '/(\n)\s*\/\/ Foreign keys\s*\n\s*public const array _foreign = \[\s*];\s*\n/';
             $content = preg_replace($pattern, '$1', $content);
 
             // Clean up any extra spaces that might remain before next section (but preserve empty lines)
@@ -1337,7 +1337,7 @@ HELP;
         // Extract existing columns from _columns array
         $existingColumns = [];
         $existingContent = '';
-        if (preg_match('/(public const array _columns = \[)(.*?)(\];)/s', $content, $matches)) {
+        if (preg_match('/(public const array _columns = \[)(.*?)(];)/s', $content, $matches)) {
             $existingContent = $matches[2];
             if (preg_match_all('/self::(\w+)/', $existingContent, $colMatches)) {
                 $existingColumns = $colMatches[1];
@@ -1381,7 +1381,7 @@ HELP;
         // Generate column references
         $columnRefs = array_map(fn($col) => "        self::{$col}", $allColumns);
 
-        if (preg_match('/(public const array _columns = \[)(.*?)(\];)/s', $content, $matches)) {
+        if (preg_match('/(public const array _columns = \[)(.*?)(];)/s', $content, $matches)) {
             // Always ensure trailing comma after last element
             $newContent = "\n" . implode(",\n", $columnRefs) . ",\n    ";
             $content = str_replace($matches[0], $matches[1] . $newContent . $matches[3], $content);
@@ -1396,7 +1396,7 @@ HELP;
     private function fixTrailingCommaInColumnsArray(string $content): string
     {
         // Check if _columns array exists and if last element has trailing comma
-        if (preg_match('/(public const array _columns = \[)(.*?)(\];)/s', $content, $matches)) {
+        if (preg_match('/(public const array _columns = \[)(.*?)(];)/s', $content, $matches)) {
             $arrayContent = $matches[2];
 
             // Check if there's at least one column
@@ -1448,7 +1448,7 @@ HELP;
 
         // Extract existing types from _types array
         $existingTypes = [];
-        if (preg_match('/(public const array _types = \[)(.*?)(\];)/s', $content, $matches)) {
+        if (preg_match('/(public const array _types = \[)(.*?)(];)/s', $content, $matches)) {
             if (preg_match_all('/self::(\w+)\s*=>\s*([^,\n]+)/', $matches[2], $typeMatches)) {
                 foreach ($typeMatches[1] as $i => $colName) {
                     $existingTypes[$colName] = trim($typeMatches[2][$i]);
@@ -1510,14 +1510,14 @@ HELP;
         }
 
         // Check if _types section exists - match with comment and preserve surrounding newlines
-        if (preg_match('/(\n)(\s*\/\/ Column types\s*\n\s*public const array _types = \[)(.*?)(\];\s*\n)(\s*)/s', $content, $matches)) {
+        if (preg_match('/(\n)(\s*\/\/ Column types\s*\n\s*public const array _types = \[)(.*?)(];\s*\n)(\s*)/s', $content, $matches)) {
             // Rewrite entire array, preserve newlines before comment and after
             // $matches[1] = newline before, $matches[5] = whitespace/newlines after
             $newContent = $matches[1] . $matches[2] . "\n" . implode(",\n", $typeEntries) . ",\n    " . $matches[4] . $matches[5];
             $content = str_replace($matches[0], $newContent, $content);
         } else {
             // Add _types section
-            if (preg_match('/(public const array _columns = \[.*?\];\n\n)/s', $content, $matches)) {
+            if (preg_match('/(public const array _columns = \[.*?];\n\n)/s', $content, $matches)) {
                 $typesSection = "    // Column types\n    public const array _types = [\n" . implode(",\n", $typeEntries) . ",\n    ];\n\n";
                 $content = str_replace($matches[1], $matches[1] . $typesSection, $content);
             }
@@ -1562,7 +1562,7 @@ HELP;
             $content = str_replace($matches[1], $matches[1] . implode("\n", $properties) . "\n", $content);
         } else {
             // Add before closing brace
-            if (preg_match('/(\n)\}/', $content, $matches)) {
+            if (preg_match('/(\n)}/', $content, $matches)) {
                 $propsSection = "\n    // Properties\n" . implode("\n", $properties) . "\n";
                 $content = str_replace($matches[1] . '}', $propsSection . '}', $content);
             }
@@ -1629,7 +1629,7 @@ HELP;
         $content = $this->removeFromClassLevelObjectExclude($content, $columns);
 
         // Clean up empty lines in _columns array
-        if (preg_match('/(public const array _columns = \[)(.*?)(\];)/s', $content, $matches)) {
+        if (preg_match('/(public const array _columns = \[)(.*?)(];)/s', $content, $matches)) {
             $columnsContent = $matches[2];
             // Remove lines that are only whitespace
             $columnsContent = preg_replace('/^\s+$/m', '', $columnsContent);
@@ -1665,7 +1665,7 @@ HELP;
         }
 
         // Clean up empty lines in _types array
-        if (preg_match('/(public const array _types = \[)(.*?)(\];)/s', $content, $matches)) {
+        if (preg_match('/(public const array _types = \[)(.*?)(];)/s', $content, $matches)) {
             $typesContent = $matches[2];
             // Remove lines that are only whitespace
             $typesContent = preg_replace('/^\s+$/m', '', $typesContent);
@@ -1695,13 +1695,13 @@ HELP;
                 } else {
                     // All entries removed - remove entire _types section
                     // Match: \n    // Column types\n    public const array _types = [\n    ];\n
-                    $pattern = '/(\n)\s*\/\/ Column types\s*\n\s*public const array _types = \[\s*\];\s*\n/';
+                    $pattern = '/(\n)\s*\/\/ Column types\s*\n\s*public const array _types = \[\s*];\s*\n/';
                     $content = preg_replace($pattern, '$1', $content);
                 }
             } else {
                 // All entries removed - remove entire _types section
                 // Match: \n    // Column types\n    public const array _types = [\n    ];\n
-                $pattern = '/(\n)\s*\/\/ Column types\s*\n\s*public const array _types = \[\s*\];\s*\n/';
+                $pattern = '/(\n)\s*\/\/ Column types\s*\n\s*public const array _types = \[\s*];\s*\n/';
                 $content = preg_replace($pattern, '$1', $content);
             }
         }
@@ -1765,7 +1765,7 @@ HELP;
     private function removeIndexes(string $content, array $indexNames, ReflectionClass $reflection): string
     {
         // Find _indexes array
-        if (preg_match('/(public const array _indexes = \[)(.*?)(\];)/s', $content, $matches)) {
+        if (preg_match('/(public const array _indexes = \[)(.*?)(];)/s', $content, $matches)) {
             $indexesContent = $matches[2];
             $remainingIndexes = [];
 
@@ -1835,7 +1835,7 @@ HELP;
     private function removeForeignKeys(string $content, array $columnKeys, ReflectionClass $reflection): string
     {
         // Find _foreign array
-        if (preg_match('/(public const array _foreign = \[)(.*?)(\];)/s', $content, $matches)) {
+        if (preg_match('/(public const array _foreign = \[)(.*?)(];)/s', $content, $matches)) {
             $remainingForeign = [];
 
             // Parse existing foreign keys (support both simple and composite)
@@ -1871,7 +1871,7 @@ HELP;
     private function convertAllTypesToPhpType(string $content): string
     {
         // Find _types array
-        if (preg_match('/(public const array _types = \[)(.*?)(\];)/s', $content, $matches)) {
+        if (preg_match('/(public const array _types = \[)(.*?)(];)/s', $content, $matches)) {
             $typesContent = $matches[2];
 
             // Replace all string literals like 'integer', 'string' with PhpType::INTEGER->value, etc.
@@ -2059,7 +2059,7 @@ HELP;
         }
 
         // Check if _indexes section exists - match with comment and preserve surrounding newlines
-        if (preg_match('/(\n)(\s*\/\/ Indexes\s*\n\s*public const array _indexes = \[)(.*?)(\];\s*\n)(\s*)/s', $content, $matches)) {
+        if (preg_match('/(\n)(\s*\/\/ Indexes\s*\n\s*public const array _indexes = \[)(.*?)(];\s*\n)(\s*)/s', $content, $matches)) {
             // Remove empty _indexes array if no entries
             if (empty($indexEntries)) {
                 // Remove the entire _indexes section, but preserve newlines before and after
@@ -2091,7 +2091,7 @@ HELP;
                 $content = str_replace($matches[1], "\n" . $indexesSection . $matches[1], $content);
             } else {
                 // Add before closing brace
-                if (preg_match('/(\n)\}/', $content, $matches)) {
+                if (preg_match('/(\n)}/', $content, $matches)) {
                     $content = str_replace($matches[1] . '}', "\n" . $indexesSection . '}', $content);
                 }
             }
@@ -2125,11 +2125,11 @@ HELP;
 
         if (empty($allForeignKeys)) {
             // No foreign keys to add/update, but check if we need to remove empty section
-            if (preg_match('/(public const array _foreign = \[)(.*?)(\];)/s', $content, $matches)) {
+            if (preg_match('/(public const array _foreign = \[)(.*?)(];)/s', $content, $matches)) {
                 $foreignContent = trim($matches[2]);
                 if (empty($foreignContent)) {
                     // Remove empty _foreign section
-                    $pattern = '/(\n\s*)\/\/ Foreign keys\s*\n\s*public const array _foreign = \[\s*\];\s*\n(\s*)/';
+                    $pattern = '/(\n\s*)\/\/ Foreign keys\s*\n\s*public const array _foreign = \[\s*];\s*\n(\s*)/';
                     $content = preg_replace($pattern, '$1$2', $content);
                 }
             }
@@ -2173,7 +2173,7 @@ HELP;
         }
 
         // Check if _foreign section exists
-        if (preg_match('/(public const array _foreign = \[)(.*?)(\];)/s', $content, $matches)) {
+        if (preg_match('/(public const array _foreign = \[)(.*?)(];)/s', $content, $matches)) {
             // Merge: keep existing that are not being updated, add/update new ones
             $finalEntries = [];
 
@@ -2212,7 +2212,7 @@ HELP;
 
             // Remove empty _foreign array if no entries
             if (empty($finalEntries)) {
-                $pattern = '/(\n\s*)\/\/ Foreign keys\s*\n\s*public const array _foreign = \[\s*\];\s*\n(\s*)/';
+                $pattern = '/(\n\s*)\/\/ Foreign keys\s*\n\s*public const array _foreign = \[\s*];\s*\n(\s*)/';
                 $content = preg_replace($pattern, '$1$2', $content);
                 return $content;
             }
@@ -2254,7 +2254,7 @@ HELP;
             $foreignSection = "    // Foreign keys\n    public const array _foreign = [\n" . implode("\n", $foreignEntries) . "\n    ];\n\n";
 
             // Insert after _types, before _indexes or properties
-            if (preg_match('/(public const array _types = \[.*?\];\n\n)/s', $content, $matches)) {
+            if (preg_match('/(public const array _types = \[.*?];\n\n)/s', $content, $matches)) {
                 $content = str_replace($matches[1], $matches[1] . $foreignSection, $content);
             } elseif (preg_match('/(\/\/ Indexes)/', $content, $matches)) {
                 $content = str_replace($matches[1], $foreignSection . $matches[1], $content);
@@ -2277,7 +2277,7 @@ HELP;
     {
         $foreignKeys = [];
 
-        if (!preg_match('/(public const array _foreign = \[)(.*?)(\];)/s', $content, $matches)) {
+        if (!preg_match('/(public const array _foreign = \[)(.*?)(];)/s', $content, $matches)) {
             return $foreignKeys;
         }
 

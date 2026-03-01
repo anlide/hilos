@@ -80,7 +80,7 @@ class RouteRegistry
     private function compilePattern(string $path): string
     {
         // Convert /user/{id} to /user/([^/]+)
-        $pattern = preg_replace('/\{([a-zA-Z0-9_]+)\}/', '([^/]+)', $path);
+        $pattern = preg_replace('/\{([a-zA-Z0-9_]+)}/', '([^/]+)', $path);
 
         // Escape slashes and add anchors
         $pattern = '#^' . $pattern . '$#';

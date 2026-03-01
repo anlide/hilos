@@ -574,7 +574,7 @@ trait IdeaCollectionFixer
         ];
 
         // Parse objectToIdea() method
-        if (preg_match('/protected\s+function\s+objectToIdea\s*\([^)]*\)\s*:\s*(\w+)\s*\{([^}]+)\}/s', $content, $objectToIdeaMatch)) {
+        if (preg_match('/protected\s+function\s+objectToIdea\s*\([^)]*\)\s*:\s*(\w+)\s*\{([^}]+)}/s', $content, $objectToIdeaMatch)) {
             $returnType = trim($objectToIdeaMatch[1]); // Idea class name
             $methodBody = $objectToIdeaMatch[2];
 
@@ -687,7 +687,7 @@ trait IdeaCollectionFixer
         ];
 
         // Extract all methods
-        if (preg_match_all('/(?:public|private|protected)\s+(?:static\s+)?function\s+(\w+)\s*\([^)]*\)\s*:[^\{]*\{([^}]+)\}/s', $content, $matches, PREG_SET_ORDER)) {
+        if (preg_match_all('/(?:public|private|protected)\s+(?:static\s+)?function\s+(\w+)\s*\([^)]*\)\s*:[^\{]*\{([^}]+)}/s', $content, $matches, PREG_SET_ORDER)) {
             foreach ($matches as $match) {
                 $methodName = $match[1];
                 
@@ -735,11 +735,11 @@ trait IdeaCollectionFixer
         $newMethod .= "    }";
 
         // Replace existing objectToIdea() method
-        if (preg_match('/(protected\s+function\s+objectToIdea\s*\([^)]*\)\s*:[^\{]*\{[^}]*\})/s', $content, $matches)) {
+        if (preg_match('/(protected\s+function\s+objectToIdea\s*\([^)]*\)\s*:[^\{]*\{[^}]*})/s', $content, $matches)) {
             $content = str_replace($matches[1], $newMethod, $content);
         } else {
             // Insert before closing brace of class
-            if (preg_match('/(\n\s*)(\})/s', $content, $matches)) {
+            if (preg_match('/(\n\s*)(})/s', $content, $matches)) {
                 $content = str_replace($matches[0], "\n\n" . $newMethod . "\n" . $matches[2], $content);
             }
         }

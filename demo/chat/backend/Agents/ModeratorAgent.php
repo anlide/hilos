@@ -295,7 +295,7 @@ class ModeratorAgent extends AbstractAgent
             return $trimmed;
         }
 
-        if (preg_match('/\{.*\}/s', $trimmed, $matches) === 1) {
+        if (preg_match('/\{.*}/s', $trimmed, $matches) === 1) {
             return $matches[0];
         }
 

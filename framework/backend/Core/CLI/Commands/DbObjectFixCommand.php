@@ -849,7 +849,7 @@ HELP;
     private function parseGetterCases(string $content): array
     {
         $cases = [];
-        if (preg_match('/public\s+function\s+__get.*?match\s*\([^)]+\)\s*\{([^}]+)\}/s', $content, $match)) {
+        if (preg_match('/public\s+function\s+__get.*?match\s*\([^)]+\)\s*\{([^}]+)}/s', $content, $match)) {
             $matchBody = $match[1];
             if (preg_match_all('/self::(\w+)\s*=>/', $matchBody, $matches)) {
                 foreach ($matches[1] as $name) {
@@ -866,7 +866,7 @@ HELP;
     private function parseSetterCases(string $content): array
     {
         $cases = [];
-        if (preg_match('/public\s+function\s+__set.*?match\s*\([^)]+\)\s*\{([^}]+)\}/s', $content, $match)) {
+        if (preg_match('/public\s+function\s+__set.*?match\s*\([^)]+\)\s*\{([^}]+)}/s', $content, $match)) {
             $matchBody = $match[1];
             if (preg_match_all('/self::(\w+)\s*=>/', $matchBody, $matches)) {
                 foreach ($matches[1] as $name) {
@@ -1223,7 +1223,7 @@ HELP;
 
         // Insert user-defined methods before closing brace
         if (!empty($userMethods)) {
-            $newContent = preg_replace('/(\n)\}/', '$1' . implode("\n\n", $userMethods) . "\n}", $newContent);
+            $newContent = preg_replace('/(\n)}/', '$1' . implode("\n\n", $userMethods) . "\n}", $newContent);
         }
 
         file_put_contents($objectFile, $newContent);
@@ -1301,7 +1301,7 @@ HELP;
             // Remove old user methods if they exist, then add them back
             $content = $this->removeUserMethods($content);
             // Insert before closing brace
-            $content = preg_replace('/(\n)\}/', '$1' . implode("\n\n", $userMethods) . "\n}", $content);
+            $content = preg_replace('/(\n)}/', '$1' . implode("\n\n", $userMethods) . "\n}", $content);
         }
 
         file_put_contents($objectFile, $content);
@@ -1518,7 +1518,7 @@ HELP;
                 // Check if there's already a newline before __set
                 $needsNewline = !preg_match('/\n\s*$/', $before);
                 $content = $before . ($needsNewline ? "\n" : '') . $getterMethod . "\n" . $after;
-            } elseif (preg_match('/(\n)\}/', $content, $matches, PREG_OFFSET_CAPTURE)) {
+            } elseif (preg_match('/(\n)}/', $content, $matches, PREG_OFFSET_CAPTURE)) {
                 $insertPos = $matches[0][1];
                 $before = substr($content, 0, $insertPos);
                 $after = substr($content, $insertPos);
@@ -1731,7 +1731,7 @@ HELP;
                 $needsNewline = !preg_match('/\n\s*$/', $before);
                 $afterStartsWithNewline = preg_match('/^\s*\n/', $after);
                 $content = $before . ($needsNewline ? "\n" : '') . $setterMethod . ($afterStartsWithNewline ? '' : "\n") . $after;
-            } elseif (preg_match('/(\n)\}/', $content, $matches, PREG_OFFSET_CAPTURE)) {
+            } elseif (preg_match('/(\n)}/', $content, $matches, PREG_OFFSET_CAPTURE)) {
                 $insertPos = $matches[0][1];
                 $before = substr($content, 0, $insertPos);
                 $after = substr($content, $insertPos);
@@ -1975,7 +1975,7 @@ HELP;
             $toArrayMethod .= "{$indent}    ];\n";
             $toArrayMethod .= "{$indent}}";
             
-            if (preg_match('/(\n)\}/', $content, $matches, PREG_OFFSET_CAPTURE)) {
+            if (preg_match('/(\n)}/', $content, $matches, PREG_OFFSET_CAPTURE)) {
                 $insertPos = $matches[0][1];
                 $before = substr($content, 0, $insertPos);
                 $after = substr($content, $insertPos);

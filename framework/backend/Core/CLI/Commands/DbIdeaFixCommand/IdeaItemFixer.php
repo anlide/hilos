@@ -852,7 +852,7 @@ trait IdeaItemFixer
             // Match: $data[ObjectClass::property] = ...
             // Flexible regex similar to PHPDoc - finds $data[ObjectClass::property] pattern
             // Allows whitespace, newlines, and matches properties inside if blocks
-            if (preg_match_all('/\$data\[(\w+)::(\w+)\]/s', $toArrayBody, $matches, PREG_SET_ORDER)) {
+            if (preg_match_all('/\$data\[(\w+)::(\w+)]/s', $toArrayBody, $matches, PREG_SET_ORDER)) {
                 foreach ($matches as $match) {
                     $objectClass = $match[1];
                     $property = $match[2];
@@ -914,7 +914,7 @@ trait IdeaItemFixer
         ];
 
         // Extract all methods
-        if (preg_match_all('/(?:public|private|protected)\s+(?:static\s+)?function\s+(\w+)\s*\([^)]*\)\s*:[^\{]*\{([^}]+)\}/s', $content, $matches, PREG_SET_ORDER)) {
+        if (preg_match_all('/(?:public|private|protected)\s+(?:static\s+)?function\s+(\w+)\s*\([^)]*\)\s*:[^\{]*\{([^}]+)}/s', $content, $matches, PREG_SET_ORDER)) {
             foreach ($matches as $match) {
                 $methodName = $match[1];
                 
@@ -990,7 +990,7 @@ trait IdeaItemFixer
             $newGetter .= "    }";
 
             // Insert before closing brace of class
-            if (preg_match('/(\n\s*)(\})/s', $content, $matches)) {
+            if (preg_match('/(\n\s*)(})/s', $content, $matches)) {
                 $content = str_replace($matches[0], "\n\n" . $newGetter . "\n" . $matches[2], $content);
             }
             return $content;
@@ -1005,7 +1005,7 @@ trait IdeaItemFixer
             $beforeMatch = $beforeMatch[1];
         }
         
-        if (!preg_match('/return\s+match\s*\([^)]+\)\s*\{([^}]+)\};/s', $methodBody, $matchMatch)) {
+        if (!preg_match('/return\s+match\s*\([^)]+\)\s*\{([^}]+)};/s', $methodBody, $matchMatch)) {
             // Can't parse match - replace entire method
             return $this->replaceEntireGetterMethod($content, $getterMethod, $objectProperties, $objectClassAlias, $objectPropertyName, $objectReflection);
         }
@@ -1226,7 +1226,7 @@ trait IdeaItemFixer
         // If no private property found, try to find variable usage in __get() method
         // Pattern: $objectUser = $this->getObjectUser(); or similar
         // Then look for usage: $objectUser->property
-        if (preg_match('/public\s+function\s+__get[^{]*\{([^}]+)\}/s', $content, $getterMatch)) {
+        if (preg_match('/public\s+function\s+__get[^{]*\{([^}]+)}/s', $content, $getterMatch)) {
             $getterBody = $getterMatch[1];
             
             // Find variable assignment like: $objectUser = $this->getObjectUser();
@@ -1359,7 +1359,7 @@ trait IdeaItemFixer
             $newToArray .= implode("\n", $toArrayLines) . "\n";
             $newToArray .= "    }";
             
-            if (preg_match('/(\n\s*)(\})/s', $content, $matches)) {
+            if (preg_match('/(\n\s*)(})/s', $content, $matches)) {
                 $content = str_replace($matches[0], "\n\n" . $newToArray . "\n" . $matches[2], $content);
             }
         }
