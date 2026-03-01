@@ -4,6 +4,7 @@ import router from './router'
 import { createChatWebSocketPlugin } from './plugins/websocket'
 import { localStorageService } from './services/LocalStorageService'
 import 'bootstrap/dist/css/bootstrap.min.css'
+import * as bootstrap from 'bootstrap'
 import 'bootstrap-icons/font/bootstrap-icons.css'
 import App from './App.vue'
 
