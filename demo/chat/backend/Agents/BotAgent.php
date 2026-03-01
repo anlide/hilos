@@ -7,9 +7,9 @@ namespace Demo\Chat\Agents;
 use Demo\Chat\Constants\AgentType;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Core\Router\DTO\BotAgentSignalData;
+use Demo\Chat\Core\Router\DTO\ModerationBotRequestSignalData;
 use Demo\Chat\Database\Object\Item\Bot as ObjectBot;
 use Hilos\Core\Agent\AbstractAgent;
-use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Sync\DTO\DbSyncDeletedSignalData;
 use Hilos\Core\Sync\DTO\DbSyncUpdatedSignalData;
 use Hilos\Utils\Logger;
@@ -27,6 +27,18 @@ class BotAgent extends AbstractAgent
 
     /** @var string Agent index (bot id) */
     private string $agentIndex;
+
+    /** @var bool Whether first tick has already sent a message (one message per agent lifecycle for verification) */
+    private bool $hasSentMessage = false;
+
+    /** @var list<string> Random messages for verification flow (no LLM) */
+    private const array RANDOM_MESSAGES = [
+        'Hello everyone!',
+        "How's it going?",
+        'Nice to meet you all.',
+        'What a lovely chat we have here.',
+        'Greetings from the bot!',
+    ];
 
     public function __construct(string $agentIndex)
     {
@@ -64,6 +76,8 @@ class BotAgent extends AbstractAgent
     public function onStart(): void
     {
         Logger::logAgentStart($this->getId(), $this->getType());
+        $botId = (int) $this->agentIndex;
+        $this->sendToAgent(ChatSignalConstants::BOT_JOINED, new BotAgentSignalData(botId: $botId));
     }
 
     /**
@@ -73,6 +87,8 @@ class BotAgent extends AbstractAgent
      */
     public function onStop(): void
     {
+        $botId = (int) $this->agentIndex;
+        $this->sendToAgent(ChatSignalConstants::BOT_LEFT, new BotAgentSignalData(botId: $botId));
         Logger::logAgentStop($this->getId(), $this->getType());
     }
 
@@ -119,10 +135,22 @@ class BotAgent extends AbstractAgent
 
     /**
      * Agent-specific tick implementation
+     *
+     * Sends one random message on first tick to verify full flow: moderation → event → frontend.
      */
     public function onTick(): void
     {
-        // TODO: Add bot-specific logic here
-        // For example: process queued bot messages, handle bot responses, etc.
+        if ($this->hasSentMessage) {
+            return;
+        }
+        $this->hasSentMessage = true;
+
+        $botId = (int) $this->agentIndex;
+        $message = self::RANDOM_MESSAGES[array_rand(self::RANDOM_MESSAGES)];
+
+        $this->sendToAgent(
+            ChatSignalConstants::MODERATE_BOT_REQUEST,
+            new ModerationBotRequestSignalData(botId: $botId, message: $message),
+        );
     }
 }

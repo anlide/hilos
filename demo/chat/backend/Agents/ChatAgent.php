@@ -10,6 +10,7 @@ use Demo\Chat\Constants\ChatEventType;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\HttpHeaders;
 use Demo\Chat\Core\Router\DTO\ChatEventSignalDTO;
+use Demo\Chat\Core\Router\DTO\ModerationBotResultSignalData;
 use Demo\Chat\Core\Router\DTO\ModerationResultSignalData;
 use Demo\Chat\Database\DbChatContext;
 use Demo\Chat\Database\View\Collection\Events;
@@ -232,21 +233,39 @@ class ChatAgent extends AbstractAgent
     }
 
     /**
-     * Handle agent-to-agent signal (moderation result from ModeratorAgent).
+     * Handle agent-to-agent signals (moderation result from ModeratorAgent).
      */
     public function onSignalAgent(AgentSignalData $data, string $source, string $name): void
     {
-        if ($name !== ChatSignalConstants::MODERATION_RESULT) {
-            return;
-        }
-
         $payload = $data->data;
-        if (!$payload instanceof ModerationResultSignalData) {
-            Logger::logAgentError($this->getId(), "Invalid payload type for {$name}: " . get_class($payload));
-            return;
-        }
 
-        $this->handleModerationResult($payload);
+        switch ($name) {
+            case ChatSignalConstants::MODERATION_RESULT:
+                if ($payload instanceof ModerationResultSignalData) {
+                    $this->handleModerationResult($payload);
+                } else {
+                    $this->logInvalidAgentPayload($name, $payload);
+                }
+                return;
+            case ChatSignalConstants::MODERATION_BOT_RESULT:
+                if ($payload instanceof ModerationBotResultSignalData) {
+                    $this->handleModerationBotResult($payload);
+                } else {
+                    $this->logInvalidAgentPayload($name, $payload);
+                }
+                return;
+            case ChatSignalConstants::BOT_JOINED:
+            case ChatSignalConstants::BOT_LEFT:
+                $this->sendToAllUsers($name, $data->data);
+                return;
+            default:
+                $this->logInvalidAgentPayload($name, $payload);
+        }
+    }
+
+    private function logInvalidAgentPayload(string $name, mixed $payload): void
+    {
+        Logger::logAgentError($this->getId(), "Invalid payload type for {$name}: " . get_class($payload));
     }
 
     /**
@@ -266,7 +285,25 @@ class ChatAgent extends AbstractAgent
             return;
         }
 
-        $event = Hilos::$db->events->actions->add(ChatEventType::MESSAGE_SENT->value, $userId, ['message' => $result->message]);
+        $event = Hilos::$db->events->actions->add(ChatEventType::MESSAGE_SENT->value, $userId, null, ['message' => $result->message]);
+        $this->sendToAllUsers(
+            ChatSignalConstants::NEW_EVENT,
+            new ChatEventSignalDTO(new EntitiesChangesDTO(full: [DbChatContext::events => Events::fromSingleItem($event)])),
+        );
+    }
+
+    /**
+     * Process bot message moderation result: publish message if allowed.
+     */
+    private function handleModerationBotResult(ModerationBotResultSignalData $result): void
+    {
+        if (!$result->allow) {
+            $reason = $result->reason !== '' ? $result->reason : 'unknown';
+            Logger::logAgentError($this->getId(), "Bot message blocked by moderation (botId={$result->botId}; reason={$reason})");
+            return;
+        }
+
+        $event = Hilos::$db->events->actions->add(ChatEventType::MESSAGE_SENT->value, null, $result->botId, ['message' => $result->message]);
         $this->sendToAllUsers(
             ChatSignalConstants::NEW_EVENT,
             new ChatEventSignalDTO(new EntitiesChangesDTO(full: [DbChatContext::events => Events::fromSingleItem($event)])),

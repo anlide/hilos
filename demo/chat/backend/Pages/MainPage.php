@@ -13,10 +13,12 @@ use Demo\Chat\Core\Page\DTO\MessageActionDTO;
 use Demo\Chat\Core\Router\DTO\ChatEventSignalDTO;
 use Demo\Chat\Core\Router\DTO\ModerationRequestSignalData;
 use Demo\Chat\Database\DbChatContext;
+use Demo\Chat\Database\View\Collection\Bots;
 use Demo\Chat\Database\View\Collection\Events;
 use Demo\Chat\Hilos;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\EntitiesChangesDTO;
+use Hilos\HilosException;
 use Hilos\Utils\Logger;
 
 /**
@@ -50,6 +52,7 @@ class MainPage extends AbstractChatPage
                 new EntitiesChangesDTO(
                     full: [
                         DbChatContext::users => Hilos::$rt->connections->relevantUsers,
+                        DbChatContext::bots => $this->getActiveBots(),
                         DbChatContext::events => Hilos::$db->events,
                     ],
                 ),
@@ -139,10 +142,25 @@ class MainPage extends AbstractChatPage
     }
 
     /**
+     * Get collection of all active bots (filter: active=true).
+     */
+    private function getActiveBots(): Bots
+    {
+        $collection = Bots::initEmpty();
+        foreach (Hilos::$db->bots as $bot) {
+            if ($bot->active) {
+                $collection->add($bot);
+            }
+        }
+        return $collection;
+    }
+
+    /**
      * Handle file action
      *
      * @param string $acceptKey Accept key
      * @param FileActionDTO $dto File DTO
+     * @throws HilosException
      */
     private function handleFile(string $acceptKey, FileActionDTO $dto): void
     {
@@ -157,7 +175,7 @@ class MainPage extends AbstractChatPage
         }
 
         $userId = Hilos::$rt->connections[$acceptKey]->userId;
-        $event = Hilos::$db->events->actions->add(ChatEventType::FILE_SHARED->value, $userId, [
+        $event = Hilos::$db->events->actions->add(ChatEventType::FILE_SHARED->value, $userId, null, [
             'filename' => $dto->filename,
             'mimeType' => $dto->mimeType,
             'size' => $dto->size,

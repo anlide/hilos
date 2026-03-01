@@ -5,14 +5,21 @@
     :class="getServiceMessageClass()"
   >
     <div class="d-flex align-items-baseline gap-2">
+      <span v-if="getHeaderIcon()" class="opacity-75" :title="getBotName(props.event.botId)">{{ getHeaderIcon() }}</span>
       <RouterLink
-        v-if="getHeaderUserName()"
+        v-if="getHeaderUserName() && props.event.userId !== null"
         class="fw-bold text-decoration-none"
         :class="isServiceMessage ? 'text-secondary' : 'text-primary'"
         :to="{ name: 'user', params: { id: getHeaderUserId() } }"
       >
         {{ getHeaderUserName() }}
       </RouterLink>
+      <span
+        v-else-if="getHeaderUserName()"
+        class="fw-bold text-primary"
+      >
+        {{ getHeaderUserName() }}
+      </span>
       <span
         v-if="getServiceTitle()"
         class="fw-bold text-secondary"
@@ -57,8 +64,18 @@ const getParticipantName = (userId: number | null): string => {
   if (userId === null) {
     return 'Unknown user'
   }
-  const user = chatStore.users.find(u => u.id === userId)
+  const user = chatStore.users.find((u) => u.id === userId)
   return user?.name || `User${userId}`
+}
+
+const BOT_ICON = '\u{1F916}' // Unicode robot face
+
+const getBotName = (botId: number | null | undefined): string => {
+  if (botId == null) {
+    return 'Unknown bot'
+  }
+  const bot = chatStore.bots.find((b) => b.id === botId)
+  return bot?.name ?? `Bot${botId}`
 }
 
 const getHeaderUserId = (): number | null => {
@@ -70,11 +87,22 @@ const getHeaderUserId = (): number | null => {
 }
 
 const getHeaderUserName = (): string => {
-  if (getHeaderUserId() === null) {
+  if (props.event.botId != null) {
+    return getBotName(props.event.botId)
+  }
+  const userId = getHeaderUserId()
+  if (userId === null) {
     return ''
   }
 
-  return getParticipantName(getHeaderUserId())
+  return getParticipantName(userId)
+}
+
+const getHeaderIcon = (): string => {
+  if (props.event.botId != null) {
+    return BOT_ICON
+  }
+  return ''
 }
 
 const getServiceTitle = (): string => {

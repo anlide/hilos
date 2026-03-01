@@ -3,6 +3,7 @@
  * These classes extend DomainObject from framework
  */
 
+export { ChatBot } from './ChatBot'
 export { Event } from './Event'
 export { User } from './User'
 export type { Presence } from './Presence'

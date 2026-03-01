@@ -121,7 +121,7 @@ class AdminUsersPage extends AbstractChatPage
         $this->getChatAgent()->sendToUser(ChatSignalConstants::TABLE_MUTATION, $acceptKey, $signal);
         $this->getChatAgent()->sendToAllUsers(ChatSignalConstants::TABLE_MUTATION, $signal, $acceptKey);
 
-        $event = Hilos::$db->events->actions->add(ChatEventType::USER_RENAMED_BY_ADMIN->value, $dto->id, [
+        $event = Hilos::$db->events->actions->add(ChatEventType::USER_RENAMED_BY_ADMIN->value, $dto->id, null, [
             'oldName' => $oldName,
             'newName' => $dto->name,
             'adminUserId' => Hilos::$rt->connections[$acceptKey]?->userId,

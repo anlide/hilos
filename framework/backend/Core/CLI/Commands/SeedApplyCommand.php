@@ -6,6 +6,7 @@ namespace Hilos\Core\CLI\Commands;
 
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\ExitCode;
+use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Seed;
 
@@ -73,8 +74,9 @@ HELP;
      * Execute seed apply command.
      *
      * @param array<string, mixed> $options Parsed CLI options (e.g. db-index)
-     * @param array<int, string>   $args    Positional arguments (seed identifier)
+     * @param array<int, string> $args Positional arguments (seed identifier)
      * @return int Exit code (0 = success)
+     * @throws DatabaseException
      */
     public function execute(array $options, array $args): int
     {
@@ -82,7 +84,7 @@ HELP;
 
         $dbIndex = isset($options['db-index']) ? (int)$options['db-index'] : 0;
         if ($dbIndex !== 0) {
-            \Hilos\Database\Database::useConnection($dbIndex);
+            Database::useConnection($dbIndex);
             echo "Using database connection index: {$dbIndex}\n\n";
         }
 

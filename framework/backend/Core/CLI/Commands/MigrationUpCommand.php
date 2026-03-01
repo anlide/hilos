@@ -6,6 +6,8 @@ namespace Hilos\Core\CLI\Commands;
 
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\ExitCode;
+use Hilos\Database\Database;
+use Hilos\Database\DatabaseException;
 use Hilos\Database\Migration;
 
 /**
@@ -60,6 +62,21 @@ If a migration fails:
 HELP;
     }
 
+    /**
+     * Executes the database migration process. It handles initializing the migration system,
+     * applying pending migrations, and checking for potential issues such as failed migrations.
+     *
+     * @param array $options An associative array of options which may include:
+     *                       - 'db-index': The database connection index to use (default is 0).
+     *                       - 'to': The target migration version to apply up to.
+     *                       - 'force': A flag to force migrations even if there are failed migrations.
+     * @param array $args Additional arguments for execution (not directly used in the method).
+     *
+     * @return int           Returns the exit code for the operation:
+     *                       - ExitCode::SUCCESS on successful completion.
+     *                       - ExitCode::ERROR if there are errors during the migration process.
+     * @throws DatabaseException
+     */
     public function execute(array $options, array $args): int
     {
         echo "\n=== Database Migration UP ===\n\n";
@@ -71,7 +88,7 @@ HELP;
 
         // Set database connection index if specified
         if ($dbIndex !== 0) {
-            \Hilos\Database\Database::useConnection($dbIndex);
+            Database::useConnection($dbIndex);
             echo "Using database connection index: {$dbIndex}\n\n";
         }
 

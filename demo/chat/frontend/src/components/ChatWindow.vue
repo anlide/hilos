@@ -4,7 +4,7 @@
       <div class="list-group list-group-flush">
         <div
           v-for="event in visibleEvents"
-          :key="event.id || `event-${event.timestamp}-${event.userId}`"
+          :key="event.id || `event-${event.timestamp}-${event.userId ?? event.botId ?? 'sys'}`"
           class="list-group-item border-0"
         >
           <MessageItem :event="event" />

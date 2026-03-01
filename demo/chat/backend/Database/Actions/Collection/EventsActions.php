@@ -30,17 +30,19 @@ final class EventsActions extends DbActions
      * Adds new event to collection and persists to database.
      *
      * @param string $type Event type
-     * @param ?int $userId User ID (optional)
+     * @param ?int $userId User ID (optional, for user-authored events)
+     * @param ?int $botId Bot ID (optional, for bot-authored events; mutually exclusive with userId)
      * @param ?array $data Additional event data (optional)
      * @return DbEvent Created event
      * @throws HilosException On error (invalid parameters, database error, etc.)
      */
-    public function add(string $type, ?int $userId = null, ?array $data = null): DbEvent
+    public function add(string $type, ?int $userId = null, ?int $botId = null, ?array $data = null): DbEvent
     {
         $this->ensureCanWrite();
 
         $objectEvent = ObjectEvent::create();
         $objectEvent->userId = $userId;
+        $objectEvent->botId = $botId;
         $objectEvent->type = $type;
         $objectEvent->timestamp = TimeHelper::getSqlDateTime();
         $objectEvent->data = $data === null ? null : json_encode($data);

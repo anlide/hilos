@@ -9,6 +9,7 @@ use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Page\AbstractChatPage;
 use Demo\Chat\Core\Router\DTO\BotAgentSignalData;
 use Demo\Chat\Core\Router\DTO\ChatEventSignalDTO;
+use Demo\Chat\Database\DbChatContext;
 use Demo\Chat\Database\Object\Item\Bot as ObjectBot;
 use Demo\Chat\Hilos;
 use Demo\Chat\Tables\Bot\DTO\BotCreateActionDTO;
@@ -147,6 +148,14 @@ class AdminBotsPage extends AbstractChatPage
             );
         }
         // active true->false: BotAgent learns via DB_SYNC_UPDATED and calls selfStop()
+
+        // Push updated bot to main chat store so bot names display correctly (for both active change and data-only edits)
+        $this->getChatAgent()->sendToAllUsers(
+            ChatSignalConstants::BOT_UPDATED,
+            new ChatEventSignalDTO(new EntitiesChangesDTO(updates: [
+                DbChatContext::bots => [Hilos::$db->bots[$dto->id]->toArray(toFrontend: true)],
+            ])),
+        );
     }
 
     /**

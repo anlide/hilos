@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { Event, User } from '@/types'
+import { ChatBot, Event, User } from '@/types'
 import type { Presence } from '@/types/domain/Presence'
 import { applyTableMutations } from '@hilos/sdk/composables'
 import type { TableDataState, TableMutationEntry } from '@hilos/sdk/types'
@@ -14,6 +14,7 @@ export const useChatStore = defineStore('chat', {
     error: null as string | null,
     events: [] as Event[],
     users: [] as User[],
+    bots: [] as ChatBot[],
     tableData: {} as Record<string, TableDataState>,
     currentUserId: null as number | null,
     currentUsername: null as string | null,
@@ -107,6 +108,17 @@ export const useChatStore = defineStore('chat', {
         this.users[existingIndex] = user
       } else {
         this.users.push(user)
+      }
+    },
+
+    upsertBots(bots: ChatBot[]) {
+      for (const bot of bots) {
+        const existingIndex = this.bots.findIndex((b) => b.id === bot.id)
+        if (existingIndex >= 0) {
+          this.bots[existingIndex] = bot
+        } else {
+          this.bots.push(bot)
+        }
       }
     },
 

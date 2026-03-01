@@ -15,6 +15,7 @@ use Hilos\Database\Object\Item\Object_;
  *
  * @property-read ?int $id
  * @property ?int $userId
+ * @property ?int $botId
  * @property string $type
  * @property string $timestamp
  * @property ?string $data
@@ -25,6 +26,7 @@ final class Event extends Object_
 
     public const string id = 'id';
     public const string userId = 'userId';
+    public const string botId = 'botId';
     public const string type = 'type';
     public const string timestamp = 'timestamp';
     public const string data = 'data';
@@ -46,6 +48,7 @@ final class Event extends Object_
         return match ($property) {
             self::id => $this->entity->id,
             self::userId => $this->entity->user_id,
+            self::botId => $this->entity->bot_id,
             self::type => $this->entity->type,
             self::timestamp => $this->entity->timestamp,
             self::data => $this->entity->data,
@@ -64,6 +67,7 @@ final class Event extends Object_
     {
         match ($property) {
             self::userId => $this->entity->user_id = $value === null ? null : (int)$value,
+            self::botId => $this->entity->bot_id = $value === null ? null : (int)$value,
             self::type => $this->entity->type = (string)$value,
             self::timestamp => $this->entity->timestamp = (string)$value,
             self::data => $this->entity->data = $value === null ? null : (string)$value,
@@ -81,6 +85,7 @@ final class Event extends Object_
         return [
             self::id => $this->entity->id,
             self::userId => $this->entity->user_id,
+            self::botId => $this->entity->bot_id,
             self::type => $this->entity->type,
             self::timestamp => $this->entity->timestamp,
             self::data => $this->entity->data,

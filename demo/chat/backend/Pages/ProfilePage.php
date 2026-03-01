@@ -109,7 +109,7 @@ class ProfilePage extends AbstractChatPage
         $oldName = $user->name;
         $user->actions->rename($dto->newName);
 
-        $event = Hilos::$db->events->actions->add(ChatEventType::USER_RENAMED->value, $userId, [
+        $event = Hilos::$db->events->actions->add(ChatEventType::USER_RENAMED->value, $userId, null, [
             'oldName' => $oldName,
             'newName' => $dto->newName,
         ]);

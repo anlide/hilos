@@ -7,6 +7,8 @@ namespace Demo\Chat\Agents;
 use Demo\Chat\Constants\AgentType;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Utils\ModerationEnv;
+use Demo\Chat\Core\Router\DTO\ModerationBotRequestSignalData;
+use Demo\Chat\Core\Router\DTO\ModerationBotResultSignalData;
 use Demo\Chat\Core\Router\DTO\ModerationRequestSignalData;
 use Demo\Chat\Core\Router\DTO\ModerationResultSignalData;
 use Demo\Chat\Database\DbChatContext;
@@ -99,21 +101,35 @@ class ModeratorAgent extends AbstractAgent
     }
 
     /**
-     * Handle agent-to-agent signal (moderation request from ChatAgent).
+     * Handle agent-to-agent signals (moderation request from ChatAgent or BotAgent).
      */
     public function onSignalAgent(AgentSignalData $data, string $source, string $name): void
     {
         $payload = $data->data;
-        if (!$payload instanceof ModerationRequestSignalData) {
-            Logger::logAgentError('ModeratorAgent', "Invalid payload type for {$name}: " . get_class($payload));
-            return;
+
+        switch ($name) {
+            case ChatSignalConstants::MODERATE_REQUEST:
+                if ($payload instanceof ModerationRequestSignalData) {
+                    $this->handleModerateRequest($payload);
+                } else {
+                    $this->logInvalidPayload($name, $payload);
+                }
+                return;
+            case ChatSignalConstants::MODERATE_BOT_REQUEST:
+                if ($payload instanceof ModerationBotRequestSignalData) {
+                    $this->handleModerateBotRequest($payload);
+                } else {
+                    $this->logInvalidPayload($name, $payload);
+                }
+                return;
+            default:
+                $this->logInvalidPayload($name, $payload);
         }
+    }
 
-        $moderationResponse = $this->moderateMessage($payload->message, $payload->userId);
-
-        $allow = $moderationResponse['allow'] ?? false;
-        $reason = $moderationResponse['reason'] ?? ($moderationResponse === null ? 'service_unavailable' : 'unknown');
-
+    private function handleModerateRequest(ModerationRequestSignalData $payload): void
+    {
+        [$allow, $reason] = $this->moderateAndNormalize($payload->message, userId: $payload->userId);
         $this->sendToAgent(
             ChatSignalConstants::MODERATION_RESULT,
             new ModerationResultSignalData(
@@ -126,27 +142,62 @@ class ModeratorAgent extends AbstractAgent
         );
     }
 
+    private function handleModerateBotRequest(ModerationBotRequestSignalData $payload): void
+    {
+        [$allow, $reason] = $this->moderateAndNormalize($payload->message, botId: $payload->botId);
+        $this->sendToAgent(
+            ChatSignalConstants::MODERATION_BOT_RESULT,
+            new ModerationBotResultSignalData(
+                botId: $payload->botId,
+                message: $payload->message,
+                allow: $allow,
+                reason: $reason,
+            ),
+        );
+    }
+
+    /**
+     * Run moderation and return normalized [allow, reason].
+     *
+     * @return array{0: bool, 1: string}
+     */
+    private function moderateAndNormalize(string $message, ?int $userId = null, ?int $botId = null): array
+    {
+        $response = $this->moderateMessage($message, $userId, $botId);
+        return [
+            $response['allow'] ?? false,
+            $response['reason'] ?? ($response === null ? 'service_unavailable' : 'unknown'),
+        ];
+    }
+
+    private function logInvalidPayload(string $name, mixed $payload): void
+    {
+        Logger::logAgentError('ModeratorAgent', "Invalid payload type for {$name}: " . get_class($payload));
+    }
+
     /**
      * Moderates a message with LLM (local or external by config).
      *
-     * @param string $message User message text
-     * @param int $userId Sender user ID
+     * @param string $message Message text
+     * @param ?int $userId Sender user ID (for user messages)
+     * @param ?int $botId Bot ID (for bot messages; mutually exclusive with userId)
      *
      * @return ?array{allow: bool, reason: string}
      */
-    private function moderateMessage(string $message, int $userId): ?array
+    private function moderateMessage(string $message, ?int $userId = null, ?int $botId = null): ?array
     {
         $startedAt = microtime(true);
         $model = ModerationEnv::getModel();
         $timeoutSec = ModerationEnv::getTimeoutSec();
         $messageLength = mb_strlen($message);
+        $authorContext = $userId !== null ? "userId={$userId}" : "botId={$botId}";
 
         Logger::logAgentInfo(
             'ModeratorAgent',
-            "Moderation request started [userId={$userId}; messageLen={$messageLength}; model={$model}; timeoutSec={$timeoutSec}]"
+            "Moderation request started [{$authorContext}; messageLen={$messageLength}; model={$model}; timeoutSec={$timeoutSec}]"
         );
 
-        $messages = $this->buildModerationMessages($message, $userId);
+        $messages = $this->buildModerationMessages($message, $userId, $botId);
         $options = new ChatGenerateOptions(
             model: $model,
             temperature: 0.0,
@@ -159,7 +210,7 @@ class ModeratorAgent extends AbstractAgent
         if ($modelText === null) {
             Logger::logAgentInfo(
                 'ModeratorAgent',
-                "Moderation request finished [userId={$userId}; decision=block_unavailable; reason=service_unavailable; durationMs={$elapsedMs}]"
+                "Moderation request finished [{$authorContext}; decision=block_unavailable; reason=service_unavailable; durationMs={$elapsedMs}]"
             );
             return null;
         }
@@ -172,7 +223,7 @@ class ModeratorAgent extends AbstractAgent
             );
             Logger::logAgentInfo(
                 'ModeratorAgent',
-                "Moderation request finished [userId={$userId}; decision=block_parse_error; reason=parse_error; durationMs={$elapsedMs}]"
+                "Moderation request finished [{$authorContext}; decision=block_parse_error; reason=parse_error; durationMs={$elapsedMs}]"
             );
             return null;
         }
@@ -181,7 +232,7 @@ class ModeratorAgent extends AbstractAgent
         $reason = $decision['reason'] !== '' ? $decision['reason'] : 'none';
         Logger::logAgentInfo(
             'ModeratorAgent',
-            "Moderation request finished [userId={$userId}; decision={$decisionValue}; reason={$reason}; durationMs={$elapsedMs}]"
+            "Moderation request finished [{$authorContext}; decision={$decisionValue}; reason={$reason}; durationMs={$elapsedMs}]"
         );
 
         return $decision;
@@ -241,11 +292,11 @@ class ModeratorAgent extends AbstractAgent
     }
 
     /**
-     * Build chat messages for moderation (system rules + user message).
+     * Build chat messages for moderation (system rules + author context + message).
      *
      * @return list<Message>
      */
-    private function buildModerationMessages(string $message, int $userId): array
+    private function buildModerationMessages(string $message, ?int $userId = null, ?int $botId = null): array
     {
         $rules = $this->getMessageModerationRules();
         $rulesBlock = $rules === []
@@ -263,7 +314,8 @@ Return JSON with this exact schema:
 {"allow": true|false, "reason": "short_snake_case_reason"}
 PROMPT;
 
-        $userContent = "User ID: {$userId}\nMessage:\n{$message}";
+        $authorLabel = $userId !== null ? "User ID: {$userId}" : "Bot ID: {$botId}";
+        $userContent = "{$authorLabel}\nMessage:\n{$message}";
 
         return [
             new Message(Message::ROLE_SYSTEM, $systemContent),

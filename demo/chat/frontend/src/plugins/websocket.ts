@@ -3,6 +3,9 @@ import {extractEntitiesEnvelope, hasEntities} from '@hilos/sdk/types'
 import {config} from '@/config'
 import {useChatStore} from '@/stores'
 import {
+  BOT_JOINED,
+  BOT_LEFT,
+  BOT_UPDATED,
   HANDSHAKE_RESPONSE,
   MODERATION_STATE_UPDATE,
   SUBSCRIPTION_PAGE_MAIN,
@@ -162,6 +165,11 @@ export function createChatWebSocketPlugin() {
           return
         }
         case 'subscription_updated': {
+          return
+        }
+        case BOT_JOINED:
+        case BOT_LEFT:
+        case BOT_UPDATED: {
           return
         }
         case 'new_event': {

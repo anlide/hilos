@@ -1,12 +1,14 @@
+import { ChatBot } from '@/types'
 import { EntitiesReceiver } from '@hilos/sdk/entities'
 import type { Presence } from '@/types/domain/Presence'
-import { parseUserPayloads, parseEventPayloads, eventPayloadToEvent } from './parsers'
+import { parseUserPayloads, parseEventPayloads, eventPayloadToEvent, parseBotPayloads } from './parsers'
 import { parsePartialUserPayloads } from './partialUserPayload'
 
 /** Store interface required for applying entity changes (avoids importing store here). */
 interface ChatStoreForEntities {
   upsertUsers(users: Array<{ id: number; name: string; lastActivity?: string | null; presence?: Presence }>): void
   patchUsers(partials: Array<{ id: number; name?: string; lastActivity?: string | null; presence?: Presence }>): void
+  upsertBots(bots: ChatBot[]): void
   upsertEvents(events: ReturnType<typeof eventPayloadToEvent>[]): void
   addEvent(event: ReturnType<typeof eventPayloadToEvent>): void
   clearEvents(): void
@@ -31,6 +33,14 @@ export class ChatEntitiesReceiver extends EntitiesReceiver {
       const users = parseUserPayloads(rawItems)
       if (users !== null) {
         store.upsertUsers(users)
+      }
+      return
+    }
+
+    if (collectionKey === 'bots') {
+      const bots = parseBotPayloads(rawItems)
+      if (bots !== null) {
+        store.upsertBots(bots.map((b) => ChatBot.fromObject(b)))
       }
       return
     }
@@ -62,6 +72,14 @@ export class ChatEntitiesReceiver extends EntitiesReceiver {
         if (users !== null) {
           store.upsertUsers(users)
         }
+      }
+      return
+    }
+
+    if (collectionKey === 'bots') {
+      const bots = parseBotPayloads(rawItems)
+      if (bots !== null) {
+        store.upsertBots(bots.map((b) => ChatBot.fromObject(b)))
       }
       return
     }

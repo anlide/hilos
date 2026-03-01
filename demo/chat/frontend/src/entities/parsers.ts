@@ -16,9 +16,24 @@ export type UserPayload = {
   moderationState?: string | null
 }
 
+export type BotPayload = {
+  id: number
+  name: string
+}
+
+export const isBotPayload = (value: unknown): value is BotPayload => {
+  return isRecord(value) && typeof value.id === 'number' && typeof value.name === 'string'
+}
+
+export function parseBotPayloads(value: unknown): BotPayload[] | null {
+  if (value === undefined || !Array.isArray(value)) return null
+  return value.every(isBotPayload) ? value : null
+}
+
 export type EventPayload = {
   id: number
   userId: number | null
+  botId?: number | null
   type: string
   timestamp: number | string
   data: Record<string, unknown> | string | null
@@ -103,6 +118,7 @@ export function eventPayloadToEvent(p: EventPayload): InstanceType<typeof Event>
   return Event.fromObject({
     id: p.id,
     userId: p.userId,
+    botId: p.botId ?? null,
     type: p.type,
     timestamp: timestampString,
     data: eventData,
