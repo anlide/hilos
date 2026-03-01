@@ -55,9 +55,36 @@ All components run in Docker containers. See Docker configuration in `docker/` d
 composer run daemon-start
 ```
 
+**Start daemon with GPU acceleration (optional):**
+- **NVIDIA**: `composer run daemon-start-gpu-nvidia` (requires [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/))
+- **AMD ROCm**: `composer run daemon-start-gpu-amd` (requires ROCm, `/dev/kfd` and `/dev/dri`)
+
 **Start frontend dev server:**
 ```bash
 composer run frontend-dev
+```
+
+## GPU acceleration (optional)
+
+AI moderation uses Ollama. By default it runs on CPU. For faster inference, use GPU overrides:
+
+| Vendor | Command | Prerequisites |
+|--------|---------|---------------|
+| **NVIDIA** | `composer run daemon-start-gpu-nvidia` | [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/) |
+| **AMD** | `composer run daemon-start-gpu-amd` | ROCm, `/dev/kfd` and `/dev/dri` |
+
+**Model initialization:** Pull the moderation model before first run (or after switching to GPU override):
+- `composer run ollama-pull` (CPU / default)
+- `composer run ollama-pull-gpu-nvidia` (NVIDIA)
+- `composer run ollama-pull-gpu-amd` (AMD)
+
+Direct Docker Compose usage:
+```bash
+# NVIDIA
+docker compose -f docker/docker-compose.local.yml -f docker/docker-compose.local.gpu-nvidia.yml up -d
+
+# AMD
+docker compose -f docker/docker-compose.local.yml -f docker/docker-compose.local.gpu-amd.yml up -d
 ```
 
 ## Documentation

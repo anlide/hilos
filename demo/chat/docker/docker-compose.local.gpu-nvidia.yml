@@ -1,0 +1,21 @@
+# GPU override for ollama-local (NVIDIA).
+# Use: docker compose -f docker/docker-compose.local.yml -f docker/docker-compose.local.gpu-nvidia.yml up -d
+#
+# Prerequisites: NVIDIA Container Toolkit, drivers for WSL2/Linux
+#
+# Uses named volume for model storage (faster loading on WSL2 vs bind mount).
+
+services:
+  ollama-local:
+    volumes:
+      - ollama-local-data:/root/.ollama
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+volumes:
+  ollama-local-data:
