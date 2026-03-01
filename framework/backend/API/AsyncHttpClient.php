@@ -18,30 +18,33 @@ use Hilos\Constants\HttpConstants;
  * - State machine based request handling (CONNECTING → SENDING → RECEIVING → DONE)
  * - Configurable timeout per request
  * - Result polling via hasResult()/getResult()
+ * - GET and POST methods with optional JSON body (for LLM APIs, etc.)
  *
  * Note: This class handles only the HTTP request lifecycle. Request scheduling
  * (delays between requests, etc.) should be implemented by the calling code.
  *
- * Usage:
+ * Usage (GET, backward compatible):
  * ```php
  * $client = new AsyncHttpClient('localhost', 8080, '/api/status');
- * $client->setTimeout(2000);  // 2 seconds timeout
- *
- * // In event loop:
- * $currentTimeMs = microtime(true) * 1000;
- *
- * // Start new request when ready
+ * $client->timeout = 2000;
  * if (!$client->isBusy()) {
- *     $client->startNewRequest($currentTimeMs);
+ *     $client->startNewRequest(microtime(true) * 1000);
  * }
- *
- * // Process ongoing request
- * $client->tick($currentTimeMs);
- *
- * // Check for result
+ * $client->tick(microtime(true) * 1000);
  * if ($client->hasResult()) {
  *     $response = $client->getResult();
- *     // Process response
+ * }
+ * ```
+ *
+ * Usage (POST with JSON body):
+ * ```php
+ * $client = new AsyncHttpClient('127.0.0.1', 11434, '/api/generate');
+ * $client->timeout = 60000;  // 60 seconds for LLM
+ * $client->setRequestOptions(HttpConstants::METHOD_POST, null, json_encode($payload), [
+ *     HttpConstants::HEADER_CONTENT_TYPE => HttpConstants::CONTENT_TYPE_JSON,
+ * ]);
+ * if (!$client->isBusy()) {
+ *     $client->startNewRequest(microtime(true) * 1000);
  * }
  * ```
  */
@@ -53,8 +56,26 @@ class AsyncHttpClient
     /** @var int Target port */
     private int $port;
 
-    /** @var string Request path */
-    private string $path;
+    /** @var string Default request path (from constructor) */
+    private string $defaultPath;
+
+    /** @var bool Use TLS (ssl://) for HTTPS */
+    private bool $useTls;
+
+    /** @var string Request method for next/current request */
+    private string $requestMethod = HttpConstants::METHOD_GET;
+
+    /** @var string Request path for next/current request (when null, use defaultPath) */
+    private string $requestPath;
+
+    /** @var string Request body for next/current request (POST/PUT) */
+    private string $requestBody = '';
+
+    /** @var array<string, string> Extra headers for next/current request */
+    private array $requestHeaders = [];
+
+    /** @var string Pending data to write (for large bodies) */
+    private string $pendingWrite = '';
 
     /** @var AsyncHttpState Current state */
     private AsyncHttpState $state {
@@ -94,13 +115,37 @@ class AsyncHttpClient
      * @param string $host Target host
      * @param int $port Target port
      * @param ApiEndpoint|string $path Request path or enum (default: '/')
+     * @param bool $useTls Use TLS/SSL (for HTTPS)
      */
-    public function __construct(string $host, int $port, ApiEndpoint|string $path = '/')
+    public function __construct(string $host, int $port, ApiEndpoint|string $path = '/', bool $useTls = false)
     {
         $this->host = $host;
         $this->port = $port;
-        $this->path = $path instanceof ApiEndpoint ? $path->value : $path;
+        $this->useTls = $useTls;
+        $pathStr = $path instanceof ApiEndpoint ? $path->value : $path;
+        $this->defaultPath = $pathStr;
+        $this->requestPath = $pathStr;
         $this->state = AsyncHttpState::DONE;
+    }
+
+    /**
+     * Set request options for the next startNewRequest() call.
+     * Resets to defaults (GET, constructor path, no body) after each request.
+     *
+     * @param string $method HTTP method (HttpConstants::METHOD_GET or METHOD_POST)
+     * @param string|null $path Override path (null = use default from constructor)
+     * @param string|null $body Request body (for POST)
+     * @param array<string, string> $headers Extra headers (e.g. Content-Type: application/json)
+     * @return $this
+     */
+    public function setRequestOptions(string $method = HttpConstants::METHOD_GET, ?string $path = null, ?string $body = null, array $headers = []): self
+    {
+        $this->requestMethod = $method;
+        $this->requestPath = $path ?? $this->defaultPath;
+        $this->requestBody = $body ?? '';
+        $this->requestHeaders = $headers;
+
+        return $this;
     }
 
     /**
@@ -183,6 +228,7 @@ class AsyncHttpClient
         $this->closeSocket();
         $this->state = AsyncHttpState::DONE;
         $this->responseBuffer = '';
+        $this->pendingWrite = '';
         $this->startTime = 0.0;
     }
 
@@ -216,8 +262,9 @@ class AsyncHttpClient
         $this->hasNewResult = false;
 
         // Use stream_socket_client with STREAM_CLIENT_ASYNC_CONNECT for non-blocking connect
+        $scheme = $this->useTls ? 'ssl' : 'tcp';
         $this->socket = @stream_socket_client(
-            "tcp://{$this->host}:{$this->port}",
+            "{$scheme}://{$this->host}:{$this->port}",
             $errno,
             $errstr,
             0,  // timeout = 0 for non-blocking
@@ -275,20 +322,53 @@ class AsyncHttpClient
             return;
         }
 
-        $request = "GET {$this->path} HTTP/1.1\r\n";
-        $request .= "Host: {$this->host}\r\n";
-        $request .= "Connection: close\r\n";
-        $request .= "\r\n";
+        // Build full request if not yet done
+        if ($this->pendingWrite === '') {
+            $this->pendingWrite = $this->buildRequest();
+        }
 
-        $written = @fwrite($this->socket, $request);
+        $written = @fwrite($this->socket, $this->pendingWrite);
 
         if ($written === false) {
             $this->completeRequest(false);
             return;
         }
 
-        // Switch to receiving
-        $this->state = AsyncHttpState::RECEIVING;
+        $this->pendingWrite = substr($this->pendingWrite, $written);
+
+        if ($this->pendingWrite === '') {
+            $this->state = AsyncHttpState::RECEIVING;
+        }
+    }
+
+    /**
+     * Build HTTP request string from current options
+     */
+    private function buildRequest(): string
+    {
+        $path = $this->requestPath;
+        if ($path === '' || !str_starts_with($path, '/')) {
+            $path = '/' . ltrim($path, '/');
+        }
+
+        $lines = [
+            $this->requestMethod . ' ' . $path . ' ' . HttpConstants::HTTP_VERSION,
+            HttpConstants::HEADER_HOST . ': ' . $this->host,
+            HttpConstants::HEADER_CONNECTION . ': close',
+        ];
+
+        foreach ($this->requestHeaders as $name => $value) {
+            $lines[] = $name . ': ' . $value;
+        }
+
+        if ($this->requestBody !== '' && !isset($this->requestHeaders[HttpConstants::HEADER_CONTENT_LENGTH])) {
+            $lines[] = HttpConstants::HEADER_CONTENT_LENGTH . ': ' . strlen($this->requestBody);
+        }
+
+        $headers = implode(HttpConstants::HTTP_LINE_SEPARATOR, $lines);
+        $request = $headers . HttpConstants::HTTP_DELIMITER . $this->requestBody;
+
+        return $request;
     }
 
     /**
@@ -378,7 +458,14 @@ class AsyncHttpClient
         $this->closeSocket();
         $this->state = AsyncHttpState::DONE;
         $this->responseBuffer = '';
+        $this->pendingWrite = '';
         $this->startTime = 0.0;
+
+        // Reset request options to defaults for next request (backward compatibility)
+        $this->requestMethod = HttpConstants::METHOD_GET;
+        $this->requestPath = $this->defaultPath;
+        $this->requestBody = '';
+        $this->requestHeaders = [];
     }
 
     /**

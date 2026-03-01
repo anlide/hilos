@@ -6,18 +6,18 @@ namespace Hilos\LLM;
 
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\LLMConstants;
-use Hilos\LLM\Contract\ChatLLMInterface;
+use Hilos\LLM\Contract\AsyncChatLLMInterface;
 use Hilos\LLM\Contract\ImageLLMInterface;
-use Hilos\LLM\External\Chat\OpenAIChatProvider;
+use Hilos\LLM\External\Chat\AsyncOpenAIChatProvider;
 use Hilos\LLM\External\Image\OpenAIImageProvider;
-use Hilos\LLM\Local\Chat\OllamaChatProvider;
+use Hilos\LLM\Local\Chat\AsyncOllamaChatProvider;
 use Hilos\LLM\Local\Image\PlaceholderLocalImageProvider;
 use Hilos\Utils\Env;
 
 /**
  * ClientFactory - Creates LLM clients based on configuration
  *
- * Supports two local models (chat, image) and two external models (chat, image).
+ * Chat clients are async (AsyncChatLLMInterface). Image clients remain sync.
  * Provider selection per capability via LLM_CHAT_PROVIDER / LLM_IMAGE_PROVIDER.
  *
  * Env: LLM_CHAT_PROVIDER, LLM_IMAGE_PROVIDER, LLM_LOCAL_*, LLM_EXTERNAL_*
@@ -25,11 +25,11 @@ use Hilos\Utils\Env;
 class ClientFactory
 {
     /**
-     * Create chat LLM client (local or external by env config).
+     * Create async chat LLM client (local or external by env config).
      *
-     * @return ChatLLMInterface OllamaChatProvider (local) or OpenAIChatProvider (external)
+     * @return AsyncChatLLMInterface AsyncOllamaChatProvider (local) or AsyncOpenAIChatProvider (external)
      */
-    public static function createChatClient(): ChatLLMInterface
+    public static function createChatClient(): AsyncChatLLMInterface
     {
         $provider = Env::getFilled(EnvConstants::LLM_CHAT_PROVIDER, LLMConstants::PROVIDER_LOCAL);
 
@@ -61,35 +61,35 @@ class ClientFactory
      * @param ?string $url Base URL (overrides env when provided)
      * @param ?string $model Model name (overrides env when provided)
      * @param ?string $apiKey API key (non-empty selects external provider)
-     * @return ChatLLMInterface Configured chat client
+     * @return AsyncChatLLMInterface Configured async chat client
      */
     public static function createChatClientWithConfig(
         ?string $url = null,
         ?string $model = null,
         ?string $apiKey = null,
-    ): ChatLLMInterface {
+    ): AsyncChatLLMInterface {
         if ($apiKey !== null && $apiKey !== '') {
             $url = $url ?? Env::getFilled(EnvConstants::LLM_EXTERNAL_URL, LLMConstants::DEFAULT_EXTERNAL_URL);
             $model = $model ?? Env::getFilled(EnvConstants::LLM_EXTERNAL_CHAT_MODEL, LLMConstants::DEFAULT_EXTERNAL_CHAT_MODEL);
 
-            return new OpenAIChatProvider($url, $apiKey, $model);
+            return new AsyncOpenAIChatProvider($url, $apiKey, $model);
         }
 
         $url = $url ?? Env::getFilled(EnvConstants::LLM_LOCAL_URL, LLMConstants::DEFAULT_LOCAL_URL);
         $model = $model ?? Env::getFilled(EnvConstants::LLM_LOCAL_CHAT_MODEL, LLMConstants::DEFAULT_LOCAL_CHAT_MODEL);
 
-        return new OllamaChatProvider($url, $model);
+        return new AsyncOllamaChatProvider($url, $model);
     }
 
     /**
-     * @return ChatLLMInterface
+     * @return AsyncChatLLMInterface
      */
-    private static function createLocalChatProvider(): ChatLLMInterface
+    private static function createLocalChatProvider(): AsyncChatLLMInterface
     {
         $url = Env::getFilled(EnvConstants::LLM_LOCAL_URL, LLMConstants::DEFAULT_LOCAL_URL);
         $model = Env::getFilled(EnvConstants::LLM_LOCAL_CHAT_MODEL, LLMConstants::DEFAULT_LOCAL_CHAT_MODEL);
 
-        return new OllamaChatProvider($url, $model);
+        return new AsyncOllamaChatProvider($url, $model);
     }
 
     /**
@@ -104,15 +104,15 @@ class ClientFactory
     }
 
     /**
-     * @return ChatLLMInterface
+     * @return AsyncChatLLMInterface
      */
-    private static function createExternalChatProvider(): ChatLLMInterface
+    private static function createExternalChatProvider(): AsyncChatLLMInterface
     {
         $url = Env::getFilled(EnvConstants::LLM_EXTERNAL_URL, LLMConstants::DEFAULT_EXTERNAL_URL);
         $apiKey = Env::getFilled(EnvConstants::LLM_EXTERNAL_API_KEY, '');
         $model = Env::getFilled(EnvConstants::LLM_EXTERNAL_CHAT_MODEL, LLMConstants::DEFAULT_EXTERNAL_CHAT_MODEL);
 
-        return new OpenAIChatProvider($url, $apiKey, $model);
+        return new AsyncOpenAIChatProvider($url, $apiKey, $model);
     }
 
     /**
