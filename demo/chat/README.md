@@ -64,16 +64,20 @@ composer run daemon-start
 composer run frontend-dev
 ```
 
-## GPU acceleration (optional)
+## AI moderation (Ollama)
 
-AI moderation uses Ollama. By default it runs on CPU. For faster inference, use GPU overrides:
+AI moderation uses Ollama with a lightweight model (`qwen2.5:0.5b`) for low-latency allow/block classification. Override via env var `CHAT_MODERATION_MODEL` (e.g. `qwen2.5:3b` for stronger moderation).
+
+### GPU acceleration (optional)
+
+By default Ollama runs on CPU. For faster inference, use GPU overrides:
 
 | Vendor | Command | Prerequisites |
 |--------|---------|---------------|
 | **NVIDIA** | `composer run daemon-start-gpu-nvidia` | [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/) |
 | **AMD** | `composer run daemon-start-gpu-amd` | ROCm, `/dev/kfd` and `/dev/dri` |
 
-**Model initialization:** Pull the moderation model before first run (or after switching to GPU override):
+**Model initialization:** Start the daemon first (`daemon-start` or `daemon-start-gpu-*`), then pull (installs both default qwen2.5:0.5b and optional qwen2.5:3b):
 - `composer run ollama-pull` (CPU / default)
 - `composer run ollama-pull-gpu-nvidia` (NVIDIA)
 - `composer run ollama-pull-gpu-amd` (AMD)

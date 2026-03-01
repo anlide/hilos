@@ -89,7 +89,7 @@ services:
       - DB_USERNAME=${MYSQL_USER:-hilos}
       - DB_PASSWORD=${MYSQL_PASSWORD:-hilos_pass}
       - CHAT_MODERATION_URL=${CHAT_MODERATION_URL:-http://ollama-local:11434/api/generate}
-      - CHAT_MODERATION_MODEL=${CHAT_MODERATION_MODEL:-qwen2.5:3b}
+      - CHAT_MODERATION_MODEL=${CHAT_MODERATION_MODEL:-qwen2.5:0.5b}
       - CHAT_MODERATION_TIMEOUT_SEC=${CHAT_MODERATION_TIMEOUT_SEC:-90.0}
     command: ["php", "backend/Bootstrap/docker.php"]
     stop_grace_period: 25s

@@ -235,6 +235,7 @@ class ModeratorAgent extends AbstractAgent
             model: ModerationEnv::getModel(),
             temperature: 0.0,
             timeoutSec: ModerationEnv::getTimeoutSec(),
+            maxTokens: 32,
         );
 
         if (!$this->chatClient->startGenerate($messages, $options)) {
@@ -313,16 +314,7 @@ class ModeratorAgent extends AbstractAgent
             ? "- Default policy: allow benign messages.\n- Block only explicit insults, threats, hate speech, sexual content, and obvious spam.\n- If uncertain, return allow=true."
             : implode("\n", array_map(static fn (string $rule): string => "- {$rule}", $rules));
 
-        $systemContent = <<<PROMPT
-You are a strict chat moderation classifier.
-Output must be ONLY valid JSON object, without markdown and without explanations.
-
-Decision rules:
-{$rulesBlock}
-
-Return JSON with this exact schema:
-{"allow": true|false, "reason": "short_snake_case_reason"}
-PROMPT;
+        $systemContent = "Moderation. JSON only. Output: {\"allow\":true|false,\"reason\":\"ok|insult|threat|hate_speech|sexual|spam\"}\nRules:\n{$rulesBlock}";
 
         $authorLabel = $userId !== null ? "User ID: {$userId}" : "Bot ID: {$botId}";
         $userContent = "{$authorLabel}\nMessage:\n{$message}";
@@ -351,14 +343,5 @@ PROMPT;
         }
 
         return $rules;
-    }
-
-    private static function truncateForLog(string $text, int $limit = 1200): string
-    {
-        if ($limit <= 0 || strlen($text) <= $limit) {
-            return $text;
-        }
-
-        return substr($text, 0, $limit) . '...<truncated>';
     }
 }

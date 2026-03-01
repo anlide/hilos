@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Utils;
 
-use Demo\Chat\Constants\ModerationConstants;
+use Demo\Chat\Constants\ChatLLMConstants;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\LLMConstants;
 use Hilos\Utils\Env;
@@ -18,12 +18,12 @@ class ModerationEnv
 {
     public static function getModel(): string
     {
-        return Env::getFilled(EnvConstants::CHAT_MODERATION_MODEL, ModerationConstants::DEFAULT_MODEL);
+        return Env::getFilled(EnvConstants::CHAT_MODERATION_MODEL, ChatLLMConstants::MODEL_MODERATION);
     }
 
     public static function getUrl(): string
     {
-        $url = Env::getFilled(EnvConstants::CHAT_MODERATION_URL, ModerationConstants::DEFAULT_URL);
+        $url = Env::getFilled(EnvConstants::CHAT_MODERATION_URL, LLMConstants::DEFAULT_LOCAL_URL);
         $url = rtrim($url, '/');
         if (str_ends_with($url, '/api/generate')) {
             $url = substr($url, 0, -strlen('/api/generate'));
@@ -34,7 +34,7 @@ class ModerationEnv
 
     public static function getTimeoutSec(): float
     {
-        $timeout = Env::getFloat(EnvConstants::CHAT_MODERATION_TIMEOUT_SEC, ModerationConstants::DEFAULT_TIMEOUT_SEC);
+        $timeout = Env::getFloat(EnvConstants::CHAT_MODERATION_TIMEOUT_SEC, LLMConstants::DEFAULT_TIMEOUT_SEC);
 
         return $timeout > 0 ? $timeout : LLMConstants::DEFAULT_TIMEOUT_SEC;
     }
