@@ -32,6 +32,12 @@ final class Bot extends Object_
     public const string topics = 'topics';
     public const string personality = 'personality';
     public const string active = 'active';
+    public const string reactionDelayMin = 'reactionDelayMin';
+    public const string reactionDelayMax = 'reactionDelayMax';
+    public const string reactionChance = 'reactionChance';
+    public const string topicMatchRequired = 'topicMatchRequired';
+    public const string cooldownAfterMessage = 'cooldownAfterMessage';
+    public const string priority = 'priority';
 
     protected static function getCollectionKey(): string
     {
@@ -41,7 +47,7 @@ final class Bot extends Object_
     /**
      * Returns the value of a bot object property by name.
      *
-     * @param string $property Property name (id, name, description, style, topics, personality, active)
+     * @param string $property Property name (id, name, description, style, topics, personality, active, reactionDelayMin, ...)
      * @return mixed Property value or parent method result
      * @throws DatabaseException
      */
@@ -55,6 +61,12 @@ final class Bot extends Object_
             self::topics => $this->entity->topics,
             self::personality => $this->entity->personality,
             self::active => $this->entity->active,
+            self::reactionDelayMin => $this->entity->reaction_delay_min,
+            self::reactionDelayMax => $this->entity->reaction_delay_max,
+            self::reactionChance => $this->entity->reaction_chance,
+            self::topicMatchRequired => $this->entity->topic_match_required,
+            self::cooldownAfterMessage => $this->entity->cooldown_after_message,
+            self::priority => $this->entity->priority,
             default => parent::__get($property),
         };
     }
@@ -75,6 +87,12 @@ final class Bot extends Object_
             self::topics => $this->entity->topics = (string)$value,
             self::personality => $this->entity->personality = (string)$value,
             self::active => $this->entity->active = (bool)$value,
+            self::reactionDelayMin => $this->entity->reaction_delay_min = (int)$value,
+            self::reactionDelayMax => $this->entity->reaction_delay_max = (int)$value,
+            self::reactionChance => $this->entity->reaction_chance = (int)$value,
+            self::topicMatchRequired => $this->entity->topic_match_required = (bool)$value,
+            self::cooldownAfterMessage => $this->entity->cooldown_after_message = (int)$value,
+            self::priority => $this->entity->priority = (int)$value,
             default => parent::__set($property, $value),
         };
     }
@@ -94,6 +112,12 @@ final class Bot extends Object_
             self::topics => $this->entity->topics,
             self::personality => $this->entity->personality,
             self::active => $this->entity->active,
+            self::reactionDelayMin => $this->entity->reaction_delay_min,
+            self::reactionDelayMax => $this->entity->reaction_delay_max,
+            self::reactionChance => $this->entity->reaction_chance,
+            self::topicMatchRequired => $this->entity->topic_match_required,
+            self::cooldownAfterMessage => $this->entity->cooldown_after_message,
+            self::priority => $this->entity->priority,
         ];
     }
 }

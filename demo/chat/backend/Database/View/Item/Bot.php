@@ -35,6 +35,12 @@ final class Bot extends DbItem
             ObjectBot::topics => $this->_object->topics,
             ObjectBot::personality => $this->_object->personality,
             ObjectBot::active => $this->_object->active,
+            ObjectBot::reactionDelayMin => $this->_object->reactionDelayMin,
+            ObjectBot::reactionDelayMax => $this->_object->reactionDelayMax,
+            ObjectBot::reactionChance => $this->_object->reactionChance,
+            ObjectBot::topicMatchRequired => $this->_object->topicMatchRequired,
+            ObjectBot::cooldownAfterMessage => $this->_object->cooldownAfterMessage,
+            ObjectBot::priority => $this->_object->priority,
             default => parent::__get($name),
         };
     }

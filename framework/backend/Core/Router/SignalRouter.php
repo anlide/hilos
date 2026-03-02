@@ -94,37 +94,38 @@ class SignalRouter
      * @param SignalSourceInterface $signalSource Signal source identifier
      * @param SignalTypeInterface $signalType Signal type (e.g., 'frame', 'handshake', 'close', 'subscribe', 'action')
      * @param SignalDataInterface $dto Signal data DTO
-     * @return ?array Routing info ['agentType' => string, 'agentIndex' => ?string] or null if no route
+     * @return list<array{agentType: string, agentIndex: ?string}> List of routes, or empty list if no route
      */
-    public function route(SignalSourceInterface $signalSource, SignalTypeInterface $signalType, SignalDataInterface $dto): ?array
+    public function route(SignalSourceInterface $signalSource, SignalTypeInterface $signalType, SignalDataInterface $dto): array
     {
         $source = $signalSource->getSource();
         $signalTypeValue = $signalType->getType();
 
-        $signalsConfig = $this->config['signals'];
+        $signalsConfig = $this->config['signals'] ?? [];
 
-        // Check if source exists in config
-        if (!isset($signalsConfig[$source])) {
-            return null;
+        if (!isset($signalsConfig[$source][$signalTypeValue])) {
+            return [];
         }
 
-        $sourceConfig = $signalsConfig[$source];
-
-        // Check if signal type exists in source config
-        if (!isset($sourceConfig[$signalTypeValue])) {
-            return null;
-        }
-
-        $routeConfig = $sourceConfig[$signalTypeValue];
+        $routeConfig = $signalsConfig[$source][$signalTypeValue];
 
         if (is_string($routeConfig)) {
             return [
-                'agentType' => $routeConfig,
-                'agentIndex' => null,
+                ['agentType' => $routeConfig, 'agentIndex' => null],
             ];
         }
 
-        return null;
+        if (is_array($routeConfig)) {
+            $routes = [];
+            foreach ($routeConfig as $agentType) {
+                if (is_string($agentType)) {
+                    $routes[] = ['agentType' => $agentType, 'agentIndex' => null];
+                }
+            }
+            return $routes;
+        }
+
+        return [];
     }
 
     /**
@@ -394,11 +395,11 @@ class SignalRouter
 
         if ($signalType === SignalTypeConstants::AGENT_SIGNAL) {
             $destinations = array_merge($destinations, $this->getAgentDestinations($signal));
-        }
-
-        $route = $this->route($signal->signalSource, $signal->signalType, $signal->data);
-        if ($route !== null) {
-            $destinations[] = array_merge(['type' => 'agent'], $route);
+        } else {
+            $routes = $this->route($signal->signalSource, $signal->signalType, $signal->data);
+            foreach ($routes as $route) {
+                $destinations[] = array_merge(['type' => 'agent'], $route);
+            }
         }
 
         return $destinations;

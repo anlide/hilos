@@ -65,6 +65,24 @@ final class BotActions extends DbActions
         if (array_key_exists(ObjectBot::active, $data)) {
             $this->object->active = $data[ObjectBot::active];
         }
+        if (array_key_exists(ObjectBot::reactionDelayMin, $data)) {
+            $this->object->reactionDelayMin = (int)$data[ObjectBot::reactionDelayMin];
+        }
+        if (array_key_exists(ObjectBot::reactionDelayMax, $data)) {
+            $this->object->reactionDelayMax = (int)$data[ObjectBot::reactionDelayMax];
+        }
+        if (array_key_exists(ObjectBot::reactionChance, $data)) {
+            $this->object->reactionChance = (int)$data[ObjectBot::reactionChance];
+        }
+        if (array_key_exists(ObjectBot::topicMatchRequired, $data)) {
+            $this->object->topicMatchRequired = (bool)$data[ObjectBot::topicMatchRequired];
+        }
+        if (array_key_exists(ObjectBot::cooldownAfterMessage, $data)) {
+            $this->object->cooldownAfterMessage = (int)$data[ObjectBot::cooldownAfterMessage];
+        }
+        if (array_key_exists(ObjectBot::priority, $data)) {
+            $this->object->priority = (int)$data[ObjectBot::priority];
+        }
 
         $this->object->sync();
     }

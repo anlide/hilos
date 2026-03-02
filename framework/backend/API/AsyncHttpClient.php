@@ -428,17 +428,71 @@ class AsyncHttpClient
         }
 
         // Split headers and body
-        $parts = explode("\r\n\r\n", $this->responseBuffer, 2);
+        $parts = explode(HttpConstants::HTTP_DELIMITER, $this->responseBuffer, 2);
         if (count($parts) < 2) {
             $this->completeRequest(false);
             return;
         }
 
+        $headersRaw = $parts[0];
         $body = $parts[1];
+
+        if ($this->isChunkedEncoding($headersRaw)) {
+            $body = $this->decodeChunkedBody($body);
+            if ($body === null) {
+                $this->completeRequest(false);
+                return;
+            }
+        }
 
         // Success - store response
         $this->lastResponse = $body;
         $this->completeRequest(true);
+    }
+
+    private function isChunkedEncoding(string $headersRaw): bool
+    {
+        foreach (explode(HttpConstants::HTTP_LINE_SEPARATOR, $headersRaw) as $line) {
+            if (stripos($line, HttpConstants::HEADER_TRANSFER_ENCODING . ':') === 0) {
+                $value = trim(substr($line, strlen(HttpConstants::HEADER_TRANSFER_ENCODING) + 1));
+                return strtolower($value) === 'chunked';
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Decode HTTP chunked transfer encoding body.
+     *
+     * @return ?string Decoded body or null on parse error
+     */
+    private function decodeChunkedBody(string $chunkedBody): ?string
+    {
+        $result = '';
+        $offset = 0;
+        $len = strlen($chunkedBody);
+
+        while ($offset < $len) {
+            $lineEnd = strpos($chunkedBody, "\r\n", $offset);
+            if ($lineEnd === false) {
+                return null;
+            }
+            $sizeLine = substr($chunkedBody, $offset, $lineEnd - $offset);
+            $chunkSize = (int) hexdec(trim(explode(';', $sizeLine)[0]));
+            $offset = $lineEnd + 2;
+
+            if ($chunkSize === 0) {
+                break;
+            }
+
+            if ($offset + $chunkSize > $len) {
+                return null;
+            }
+            $result .= substr($chunkedBody, $offset, $chunkSize);
+            $offset += $chunkSize + 2;
+        }
+
+        return $result;
     }
 
     /**

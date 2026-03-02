@@ -131,6 +131,20 @@ enum EnvConstants
     /** @var string Enable moderation for bot messages: 1|0, true|false (default: false) */
     case CHAT_MODERATION_BOTS;
 
+    // ── Chat context analyzer (demo) ────────────────────────────────────────
+
+    /** @var string Context analyzer model name */
+    case CHAT_CONTEXT_ANALYZER_MODEL;
+
+    /** @var string Context analyzer API base URL */
+    case CHAT_CONTEXT_ANALYZER_URL;
+
+    /** @var string Context analyzer request timeout in seconds */
+    case CHAT_CONTEXT_ANALYZER_TIMEOUT_SEC;
+
+    /** @var string Context analyzer provider: local | external */
+    case CHAT_CONTEXT_ANALYZER_PROVIDER;
+
     // ── Application environment ──────────────────────────────────────────────
 
     /**

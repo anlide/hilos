@@ -33,6 +33,7 @@ class HttpConstants
     // HTTP Headers
     public const string HEADER_CONTENT_TYPE = 'Content-Type';
     public const string HEADER_CONTENT_LENGTH = 'Content-Length';
+    public const string HEADER_TRANSFER_ENCODING = 'Transfer-Encoding';
     public const string HEADER_HOST = 'Host';
     public const string HEADER_CONNECTION = 'Connection';
     public const string HEADER_UPGRADE = 'Upgrade';

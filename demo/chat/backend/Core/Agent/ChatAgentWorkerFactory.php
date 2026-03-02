@@ -6,6 +6,7 @@ namespace Demo\Chat\Core\Agent;
 
 use Demo\Chat\Agents\BotAgent;
 use Demo\Chat\Agents\ChatAgent;
+use Demo\Chat\Agents\ChatContextAnalyzerAgent;
 use Demo\Chat\Agents\ModeratorAgent;
 use Demo\Chat\Constants\AgentType;
 use Hilos\Core\Agent\AbstractAgentWorkerFactory;
@@ -31,6 +32,7 @@ class ChatAgentWorkerFactory extends AbstractAgentWorkerFactory
     {
         return match ($agentType) {
             AgentType::CHAT => new ChatAgent(),
+            AgentType::CHAT_CONTEXT_ANALYZER => new ChatContextAnalyzerAgent(),
             AgentType::BOT => new BotAgent(
                 $agentIndex ?? throw new \RuntimeException('BotAgent requires agentIndex (bot id)'),
             ),

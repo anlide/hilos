@@ -55,6 +55,12 @@ final class BotsActions extends DbActions
         $bot->topics = $data[ObjectBot::topics] ?? null;
         $bot->personality = $data[ObjectBot::personality] ?? null;
         $bot->active = $data[ObjectBot::active] ?? true;
+        $bot->reactionDelayMin = $data[ObjectBot::reactionDelayMin] ?? 5;
+        $bot->reactionDelayMax = $data[ObjectBot::reactionDelayMax] ?? 30;
+        $bot->reactionChance = $data[ObjectBot::reactionChance] ?? 80;
+        $bot->topicMatchRequired = $data[ObjectBot::topicMatchRequired] ?? true;
+        $bot->cooldownAfterMessage = $data[ObjectBot::cooldownAfterMessage] ?? 60;
+        $bot->priority = $data[ObjectBot::priority] ?? 0;
         $bot->sync();
 
         $this->addObjectToCollection($bot);

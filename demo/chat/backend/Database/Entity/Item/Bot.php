@@ -23,6 +23,12 @@ final class Bot extends Entity
     public const string topics = 'topics';
     public const string personality = 'personality';
     public const string active = 'active';
+    public const string reaction_delay_min = 'reaction_delay_min';
+    public const string reaction_delay_max = 'reaction_delay_max';
+    public const string reaction_chance = 'reaction_chance';
+    public const string topic_match_required = 'topic_match_required';
+    public const string cooldown_after_message = 'cooldown_after_message';
+    public const string priority = 'priority';
 
     // Table meta information
     public const string _table = 'bot';
@@ -35,6 +41,12 @@ final class Bot extends Entity
         self::topics,
         self::personality,
         self::active,
+        self::reaction_delay_min,
+        self::reaction_delay_max,
+        self::reaction_chance,
+        self::topic_match_required,
+        self::cooldown_after_message,
+        self::priority,
     ];
 
     // Column types
@@ -46,6 +58,12 @@ final class Bot extends Entity
         self::topics => PhpType::STRING->value,
         self::personality => PhpType::STRING->value,
         self::active => PhpType::BOOLEAN->value,
+        self::reaction_delay_min => PhpType::INTEGER->value,
+        self::reaction_delay_max => PhpType::INTEGER->value,
+        self::reaction_chance => PhpType::INTEGER->value,
+        self::topic_match_required => PhpType::BOOLEAN->value,
+        self::cooldown_after_message => PhpType::INTEGER->value,
+        self::priority => PhpType::INTEGER->value,
     ];
 
     // Indexes
@@ -61,4 +79,10 @@ final class Bot extends Entity
     public ?string $topics = null;
     public ?string $personality = null;
     public bool $active = true;
+    public int $reaction_delay_min = 5;
+    public int $reaction_delay_max = 30;
+    public int $reaction_chance = 80;
+    public bool $topic_match_required = true;
+    public int $cooldown_after_message = 60;
+    public int $priority = 0;
 }
