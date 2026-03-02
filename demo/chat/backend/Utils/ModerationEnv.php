@@ -45,4 +45,30 @@ class ModerationEnv
 
         return strtolower($value) === 'external';
     }
+
+    /**
+     * Whether moderation is enabled for user messages.
+     * Default: true.
+     */
+    public static function moderateUsersEnabled(): bool
+    {
+        return self::parseBool(EnvConstants::CHAT_MODERATION_USERS, true);
+    }
+
+    /**
+     * Whether moderation is enabled for bot messages.
+     * Default: false.
+     */
+    public static function moderateBotsEnabled(): bool
+    {
+        return self::parseBool(EnvConstants::CHAT_MODERATION_BOTS, false);
+    }
+
+    private static function parseBool(EnvConstants $name, bool $default): bool
+    {
+        $value = Env::getFilled($name, $default ? 'true' : 'false');
+        $v = strtolower(trim($value));
+
+        return in_array($v, ['1', 'true', 'yes', 'on'], true);
+    }
 }

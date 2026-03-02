@@ -91,6 +91,8 @@ services:
       - CHAT_MODERATION_URL=${CHAT_MODERATION_URL:-http://ollama-local:11434/api/generate}
       - CHAT_MODERATION_MODEL=${CHAT_MODERATION_MODEL:-qwen2.5:0.5b}
       - CHAT_MODERATION_TIMEOUT_SEC=${CHAT_MODERATION_TIMEOUT_SEC:-90.0}
+      - CHAT_MODERATION_USERS=${CHAT_MODERATION_USERS:-true}
+      - CHAT_MODERATION_BOTS=${CHAT_MODERATION_BOTS:-false}
     command: ["php", "backend/Bootstrap/docker.php"]
     stop_grace_period: 25s
     depends_on:

@@ -54,9 +54,9 @@ class ModeratorAgent extends AbstractAgent
     }
 
     /**
-     * Get agent type
+     * Get agent type identifier.
      *
-     * @return string Agent type
+     * @return string Agent type constant
      */
     public function getType(): string
     {
@@ -64,11 +64,9 @@ class ModeratorAgent extends AbstractAgent
     }
 
     /**
-     * Get agent index
+     * Get agent index. Moderator has no index (global singleton).
      *
-     * Moderator agent has no index (global singleton)
-     *
-     * @return ?string Agent index (null for global moderator agent)
+     * @return ?string Agent index, null for global moderator
      */
     public function getIndex(): ?string
     {
@@ -76,7 +74,8 @@ class ModeratorAgent extends AbstractAgent
     }
 
     /**
-     * Called when agent is started
+     * Called when agent is started.
+     * Registers as truth source for moderator prompt pieces.
      */
     public function onStart(): void
     {
@@ -87,7 +86,8 @@ class ModeratorAgent extends AbstractAgent
     }
 
     /**
-     * Called when agent is stopped
+     * Called when agent is stopped.
+     * Unregisters truth source for moderator prompt pieces.
      */
     public function onStop(): void
     {
@@ -98,7 +98,8 @@ class ModeratorAgent extends AbstractAgent
     }
 
     /**
-     * Agent-specific tick implementation
+     * Agent-specific tick implementation.
+     * Processes LLM results and sends moderation decisions to ChatAgent.
      */
     public function onTick(): void
     {
@@ -167,6 +168,10 @@ class ModeratorAgent extends AbstractAgent
 
     /**
      * Handle agent-to-agent signals (moderation request from ChatAgent or BotAgent).
+     *
+     * @param AgentSignalData $data Incoming signal payload
+     * @param string          $source Source agent id
+     * @param string          $name Signal name (MODERATE_REQUEST or MODERATE_BOT_REQUEST)
      */
     public function onSignalAgent(AgentSignalData $data, string $source, string $name): void
     {
@@ -192,8 +197,18 @@ class ModeratorAgent extends AbstractAgent
         }
     }
 
+    /**
+     * Queue or bypass user message moderation request.
+     *
+     * @param ModerationRequestSignalData $payload User message moderation request
+     */
     private function handleModerateRequest(ModerationRequestSignalData $payload): void
     {
+        if (!ModerationEnv::moderateUsersEnabled()) {
+            $this->bypassModerationUser($payload);
+            return;
+        }
+
         $messageLength = mb_strlen($payload->message);
         Logger::logAgentInfo(
             'ModeratorAgent',
@@ -204,8 +219,18 @@ class ModeratorAgent extends AbstractAgent
         $this->startNextPending();
     }
 
+    /**
+     * Queue or bypass bot message moderation request.
+     *
+     * @param ModerationBotRequestSignalData $payload Bot message moderation request
+     */
     private function handleModerateBotRequest(ModerationBotRequestSignalData $payload): void
     {
+        if (!ModerationEnv::moderateBotsEnabled()) {
+            $this->bypassModerationBot($payload);
+            return;
+        }
+
         $messageLength = mb_strlen($payload->message);
         Logger::logAgentInfo(
             'ModeratorAgent',
@@ -216,6 +241,48 @@ class ModeratorAgent extends AbstractAgent
         $this->startNextPending();
     }
 
+    /**
+     * Send allow result without LLM when user moderation is disabled.
+     *
+     * @param ModerationRequestSignalData $payload User message data to pass through
+     */
+    private function bypassModerationUser(ModerationRequestSignalData $payload): void
+    {
+        Logger::logAgentInfo('ModeratorAgent', "Moderation bypassed for user [userId={$payload->userId}] (disabled)");
+        $this->sendToAgent(
+            ChatSignalConstants::MODERATION_RESULT,
+            new ModerationResultSignalData(
+                acceptKey: $payload->acceptKey,
+                userId: $payload->userId,
+                message: $payload->message,
+                allow: true,
+                reason: 'disabled',
+            ),
+        );
+    }
+
+    /**
+     * Send allow result without LLM when bot moderation is disabled.
+     *
+     * @param ModerationBotRequestSignalData $payload Bot message data to pass through
+     */
+    private function bypassModerationBot(ModerationBotRequestSignalData $payload): void
+    {
+        Logger::logAgentInfo('ModeratorAgent', "Moderation bypassed for bot [botId={$payload->botId}] (disabled)");
+        $this->sendToAgent(
+            ChatSignalConstants::MODERATION_BOT_RESULT,
+            new ModerationBotResultSignalData(
+                botId: $payload->botId,
+                message: $payload->message,
+                allow: true,
+                reason: 'disabled',
+            ),
+        );
+    }
+
+    /**
+     * Start next pending moderation request via LLM if not busy.
+     */
     private function startNextPending(): void
     {
         if ($this->chatClient->isBusy() || $this->pendingQueue === []) {
@@ -244,20 +311,25 @@ class ModeratorAgent extends AbstractAgent
         }
     }
 
+    /**
+     * Log invalid signal payload and its type.
+     *
+     * @param string $name Signal name
+     * @param mixed  $payload Payload instance (wrong type)
+     */
     private function logInvalidPayload(string $name, mixed $payload): void
     {
         Logger::logAgentError('ModeratorAgent', "Invalid payload type for {$name}: " . get_class($payload));
     }
 
     /**
-     * Parses JSON returned by moderation model.
+     * Parse JSON returned by moderation model.
      *
-     * Expected shape:
-     * {"allow": true|false, "reason": "short reason"}
+     * Expected shape: {"allow": true|false, "reason": "short reason"}
      *
      * @param string $text Raw model output
      *
-     * @return ?array{allow: bool, reason: string}
+     * @return ?array{allow: bool, reason: string} Parsed decision or null when invalid
      */
     private static function parseModerationDecision(string $text): ?array
     {
@@ -278,11 +350,11 @@ class ModeratorAgent extends AbstractAgent
     }
 
     /**
-     * Extracts first JSON object from model output text.
+     * Extract first JSON object from model output text.
      *
      * @param string $text Raw model output
      *
-     * @return ?string JSON object string when found
+     * @return ?string JSON object string when found, null otherwise
      */
     private static function extractJsonObject(string $text): ?string
     {
@@ -305,7 +377,11 @@ class ModeratorAgent extends AbstractAgent
     /**
      * Build chat messages for moderation (system rules + author context + message).
      *
-     * @return list<Message>
+     * @param string   $message Message text to moderate
+     * @param ?int     $userId User id when moderating user message
+     * @param ?int     $botId Bot id when moderating bot message
+     *
+     * @return list<Message> System and user messages for LLM
      */
     private function buildModerationMessages(string $message, ?int $userId = null, ?int $botId = null): array
     {
@@ -326,7 +402,9 @@ class ModeratorAgent extends AbstractAgent
     }
 
     /**
-     * @return list<string>
+     * Fetch message moderation rules from database.
+     *
+     * @return list<string> Rules from moderator prompt pieces
      */
     private function getMessageModerationRules(): array
     {
