@@ -57,6 +57,9 @@ class SignalRouter
     /** @var array<string, true> Keys "collectionKey:idString" for self-broadcast skip */
     private array $dbSyncBroadcastedIds = [];
 
+    /** @var array<string, true> Keys "collectionKey:stateId" for self-broadcast skip */
+    private array $rtSyncBroadcastedIds = [];
+
     /**
      * User page subscriptions storage
      * Format: [acceptKey => ['page' => string, 'params' => array]]
@@ -191,6 +194,44 @@ class SignalRouter
         $key = $collectionKey . ':' . $idString;
         if (isset($this->dbSyncBroadcastedIds[$key])) {
             unset($this->dbSyncBroadcastedIds[$key]);
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * Queue RT sync signal (from RtActions write operations).
+     * Registers (collectionKey, stateId) for self-apply skip.
+     *
+     * @param string $signalName Signal name (e.g. SignalConstants::RT_SYNC_CREATED)
+     */
+    public function queueRtSyncSignal(string $signalName, SignalDataInterface $signalData): void
+    {
+        $data = $signalData->toArray();
+        $collectionKey = $data['collectionKey'] ?? '';
+        $stateId = $data['stateId'] ?? '';
+        if ($collectionKey !== '' && $stateId !== '') {
+            $this->rtSyncBroadcastedIds[$collectionKey . ':' . $stateId] = true;
+        }
+
+        $this->queueSignal(
+            signalSource: new SignalSource(SignalSource::RT),
+            signalType: new SignalType($signalName),
+            signalName: new SignalName($signalName),
+            signalData: $signalData,
+        );
+    }
+
+    /**
+     * Check if RT sync apply should be skipped (self-broadcast) and remove from registry.
+     *
+     * @return bool True if this was our broadcast, skip apply
+     */
+    public function shouldSkipRtSyncApply(string $collectionKey, string $stateId): bool
+    {
+        $key = $collectionKey . ':' . $stateId;
+        if (isset($this->rtSyncBroadcastedIds[$key])) {
+            unset($this->rtSyncBroadcastedIds[$key]);
             return true;
         }
         return false;

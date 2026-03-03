@@ -9,9 +9,12 @@ use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Core\Router\DTO\BotAgentSignalData;
 use Demo\Chat\Core\Router\DTO\ModerationBotRequestSignalData;
 use Demo\Chat\Database\Object\Item\Bot as ObjectBot;
+use Demo\Chat\Runtime\View\Context\RtChatContext;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Sync\DTO\DbSyncDeletedSignalData;
 use Hilos\Core\Sync\DTO\DbSyncUpdatedSignalData;
+use Hilos\Core\Sync\DTO\RtSyncCreatedSignalData;
+use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
 use Hilos\Utils\Logger;
 
 /**
@@ -131,6 +134,40 @@ class BotAgent extends AbstractAgent
             return;
         }
         $this->selfStop();
+    }
+
+    /**
+     * Handle RT sync created signal.
+     *
+     * @param RtSyncCreatedSignalData $data Signal data
+     * @param string $source Source of the signal
+     * @param string $name Name of the signal
+     */
+    public function onSignalRtSyncCreated(RtSyncCreatedSignalData $data, string $source, string $name): void
+    {
+        if ($data->collectionKey === RtChatContext::chatContexts) {
+            Logger::logAgentInfo(
+                $this->getId(),
+                "[rt_sync] ChatContext created: stateId={$data->stateId}, row=" . json_encode($data->row, JSON_UNESCAPED_UNICODE)
+            );
+        }
+    }
+
+    /**
+     * Handle RT sync updated signal.
+     *
+     * @param RtSyncUpdatedSignalData $data Signal data
+     * @param string $source Source of the signal
+     * @param string $name Name of the signal
+     */
+    public function onSignalRtSyncUpdated(RtSyncUpdatedSignalData $data, string $source, string $name): void
+    {
+        if ($data->collectionKey === RtChatContext::chatContexts) {
+            Logger::logAgentInfo(
+                $this->getId(),
+                "[rt_sync] ChatContext updated: stateId={$data->stateId}, diff=" . json_encode($data->row, JSON_UNESCAPED_UNICODE)
+            );
+        }
     }
 
     /**

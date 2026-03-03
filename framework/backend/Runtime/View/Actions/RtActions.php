@@ -4,6 +4,11 @@ declare(strict_types=1);
 
 namespace Hilos\Runtime\View\Actions;
 
+use Hilos\Constants\SignalConstants;
+use Hilos\Core\Sync\DTO\RtSyncCreatedSignalData;
+use Hilos\Core\Sync\DTO\RtSyncDeletedSignalData;
+use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
+use Hilos\Hilos;
 use Hilos\Runtime\Exception\Actions\RtActionsCallbackNotSetException;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
@@ -97,18 +102,74 @@ abstract class RtActions
     {
         $this->ensureCanWrite();
         $this->getStateCollection()->add($state);
+        $this->queueRtSyncCreated($state->getId(), $state->toArray());
+    }
+
+    /**
+     * Apply diff to state and queue RT sync updated signal.
+     * Analogous to Object_::sync() for DB — the diff is known at call site.
+     */
+    protected function applyDiffToState(RtState $state, array $diff): void
+    {
+        $this->ensureCanWrite();
+        $state->applyDiff($diff);
+        $this->queueRtSyncUpdated($state->getId(), $diff);
     }
 
     protected function removeStateFromCollection(string $id): void
     {
         $this->ensureCanWrite();
         $this->getStateCollection()->remove($id);
+        $this->queueRtSyncDeleted($id);
     }
 
     protected function clearAllStates(): void
     {
         $this->ensureCanWrite();
-        $this->getStateCollection()->clear();
+        $collectionName = $this->getCollectionName();
+        $stateCollection = $this->getStateCollection();
+        if ($collectionName !== null) {
+            foreach ($stateCollection as $state) {
+                $this->queueRtSyncDeleted($state->getId());
+            }
+        }
+        $stateCollection->clear();
         $this->clearCollectionCache();
+    }
+
+    private function queueRtSyncCreated(string $stateId, array $row): void
+    {
+        $collectionName = $this->getCollectionName();
+        if ($collectionName === null) {
+            return;
+        }
+        Hilos::$sr?->queueRtSyncSignal(
+            SignalConstants::RT_SYNC_CREATED,
+            new RtSyncCreatedSignalData($collectionName, $stateId, $row),
+        );
+    }
+
+    private function queueRtSyncUpdated(string $stateId, array $diff): void
+    {
+        $collectionName = $this->getCollectionName();
+        if ($collectionName === null) {
+            return;
+        }
+        Hilos::$sr?->queueRtSyncSignal(
+            SignalConstants::RT_SYNC_UPDATED,
+            new RtSyncUpdatedSignalData($collectionName, $stateId, $diff),
+        );
+    }
+
+    private function queueRtSyncDeleted(string $stateId): void
+    {
+        $collectionName = $this->getCollectionName();
+        if ($collectionName === null) {
+            return;
+        }
+        Hilos::$sr?->queueRtSyncSignal(
+            SignalConstants::RT_SYNC_DELETED,
+            new RtSyncDeletedSignalData($collectionName, $stateId),
+        );
     }
 }

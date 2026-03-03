@@ -16,6 +16,7 @@ use Hilos\Core\EventLoop\EventLoop;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Database\DbSyncApplicator;
+use Hilos\Runtime\RtSyncApplicator;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Hilos;
 use Hilos\Socket\Client\WebSocketClient;
@@ -625,9 +626,9 @@ abstract class DaemonManager extends BaseManager
             SignalTypeConstants::DB_SYNC_CREATED => DbSyncApplicator::applyCreated($signal->data->toArray()),
             SignalTypeConstants::DB_SYNC_UPDATED => DbSyncApplicator::applyUpdated($signal->data->toArray()),
             SignalTypeConstants::DB_SYNC_DELETED => DbSyncApplicator::applyDeleted($signal->data->toArray()),
-            SignalTypeConstants::RT_SYNC_CREATED => null, // TODO: Implement it
-            SignalTypeConstants::RT_SYNC_UPDATED => null, // TODO: Implement it
-            SignalTypeConstants::RT_SYNC_DELETED => null, // TODO: Implement it
+            SignalTypeConstants::RT_SYNC_CREATED => RtSyncApplicator::applyCreated($signal->data->toArray()),
+            SignalTypeConstants::RT_SYNC_UPDATED => RtSyncApplicator::applyUpdated($signal->data->toArray()),
+            SignalTypeConstants::RT_SYNC_DELETED => RtSyncApplicator::applyDeleted($signal->data->toArray()),
             default => null,
         };
     }

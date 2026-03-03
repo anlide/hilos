@@ -44,7 +44,7 @@ class ChatContextsActions extends RtActions
             throw new \RuntimeException('ChatContext not initialized. Call init() first.');
         }
 
-        $existing->applyDiff($data);
+        $this->applyDiffToState($existing, $data);
         return $this->createRtItemFromState($existing);
     }
 }

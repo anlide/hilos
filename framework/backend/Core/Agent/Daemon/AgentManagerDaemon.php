@@ -354,7 +354,7 @@ abstract class AgentManagerDaemon
     {
         $signalData = RtSyncCreatedSignalData::fromArray($dto->signalData);
         Hilos::$sr->queueSignal(
-            signalSource: new SignalSource(SignalSource::DB),
+            signalSource: new SignalSource(SignalSource::RT),
             signalType: new SignalType(SignalTypeConstants::RT_SYNC_CREATED),
             signalName: new SignalName(SignalConstants::RT_SYNC_CREATED),
             signalData: $signalData,
@@ -368,7 +368,7 @@ abstract class AgentManagerDaemon
     {
         $signalData = RtSyncUpdatedSignalData::fromArray($dto->signalData);
         Hilos::$sr->queueSignal(
-            signalSource: new SignalSource(SignalSource::DB),
+            signalSource: new SignalSource(SignalSource::RT),
             signalType: new SignalType(SignalTypeConstants::RT_SYNC_UPDATED),
             signalName: new SignalName(SignalConstants::RT_SYNC_UPDATED),
             signalData: $signalData,
@@ -382,7 +382,7 @@ abstract class AgentManagerDaemon
     {
         $signalData = RtSyncDeletedSignalData::fromArray($dto->signalData);
         Hilos::$sr->queueSignal(
-            signalSource: new SignalSource(SignalSource::DB),
+            signalSource: new SignalSource(SignalSource::RT),
             signalType: new SignalType(SignalTypeConstants::RT_SYNC_DELETED),
             signalName: new SignalName(SignalConstants::RT_SYNC_DELETED),
             signalData: $signalData,

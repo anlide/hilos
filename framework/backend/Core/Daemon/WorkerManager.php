@@ -9,6 +9,7 @@ use Hilos\Constants\SignalTypeConstants;
 use Hilos\Constants\WorkerConstants;
 use Hilos\Core\Agent\AgentInterface;
 use Hilos\Database\DbSyncApplicator;
+use Hilos\Runtime\RtSyncApplicator;
 use Hilos\Core\Agent\AgentManager;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Agent\Exception\AgentCreationFailedException;
@@ -453,6 +454,36 @@ abstract class WorkerManager extends BaseManager
     }
 
     /**
+     * Dispatch RT sync signal to all agents on this worker.
+     * Each agent can filter by collectionKey/stateId in its onSignal* handler.
+     */
+    private function dispatchRtSyncToAgents(string $signalName, array $signalData): void
+    {
+        $source = 'rt';
+        $data = match ($signalName) {
+            SignalConstants::RT_SYNC_CREATED => RtSyncCreatedSignalData::fromArray($signalData),
+            SignalConstants::RT_SYNC_UPDATED => RtSyncUpdatedSignalData::fromArray($signalData),
+            SignalConstants::RT_SYNC_DELETED => RtSyncDeletedSignalData::fromArray($signalData),
+            default => null,
+        };
+        if ($data === null) {
+            return;
+        }
+
+        foreach ($this->agentManager->getAgents() as $agentId => $agent) {
+            if (!$agent instanceof AgentInterface) {
+                continue;
+            }
+            match ($signalName) {
+                SignalConstants::RT_SYNC_CREATED => $agent->onSignalRtSyncCreated($data, $source, $signalName),
+                SignalConstants::RT_SYNC_UPDATED => $agent->onSignalRtSyncUpdated($data, $source, $signalName),
+                SignalConstants::RT_SYNC_DELETED => $agent->onSignalRtSyncDeleted($data, $source, $signalName),
+                default => null,
+            };
+        }
+    }
+
+    /**
      * Handle RT sync created message from daemon.
      *
      * @param WorkerDTO $data Message data
@@ -460,7 +491,8 @@ abstract class WorkerManager extends BaseManager
     private function handleRtSyncCreatedMessage(WorkerDTO $data): void
     {
         if ($data instanceof WorkerRtSyncCreatedMessageDTO) {
-            // TODO: Implement RT sync applicator and dispatch to agents
+            RtSyncApplicator::applyCreated($data->signalData);
+            $this->dispatchRtSyncToAgents(SignalConstants::RT_SYNC_CREATED, $data->signalData);
         } else {
             Logger::error("handleRtSyncCreatedMessage - unexpected type: " . get_class($data));
         }
@@ -474,7 +506,8 @@ abstract class WorkerManager extends BaseManager
     private function handleRtSyncUpdatedMessage(WorkerDTO $data): void
     {
         if ($data instanceof WorkerRtSyncUpdatedMessageDTO) {
-            // TODO: Implement RT sync applicator and dispatch to agents
+            RtSyncApplicator::applyUpdated($data->signalData);
+            $this->dispatchRtSyncToAgents(SignalConstants::RT_SYNC_UPDATED, $data->signalData);
         } else {
             Logger::error("handleRtSyncUpdatedMessage - unexpected type: " . get_class($data));
         }
@@ -488,7 +521,8 @@ abstract class WorkerManager extends BaseManager
     private function handleRtSyncDeletedMessage(WorkerDTO $data): void
     {
         if ($data instanceof WorkerRtSyncDeletedMessageDTO) {
-            // TODO: Implement RT sync applicator and dispatch to agents
+            RtSyncApplicator::applyDeleted($data->signalData);
+            $this->dispatchRtSyncToAgents(SignalConstants::RT_SYNC_DELETED, $data->signalData);
         } else {
             Logger::error("handleRtSyncDeletedMessage - unexpected type: " . get_class($data));
         }

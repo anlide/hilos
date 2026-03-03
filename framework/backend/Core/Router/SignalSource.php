@@ -19,6 +19,7 @@ class SignalSource implements SignalSourceInterface
     public const string HTTP = 'http';
     public const string AGENT = 'agent';
     public const string DB = 'db';
+    public const string RT = 'rt';
 
     /**
      * SignalSource constructor
