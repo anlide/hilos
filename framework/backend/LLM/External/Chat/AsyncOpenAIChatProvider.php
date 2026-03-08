@@ -78,6 +78,10 @@ class AsyncOpenAIChatProvider implements AsyncChatLLMInterface
             $payload[LLMApiConstants::KEY_MAX_TOKENS] = $options->maxTokens;
         }
 
+        if ($options->responseFormat !== null && $options->responseFormat !== []) {
+            $payload[LLMApiConstants::KEY_RESPONSE_FORMAT] = $options->responseFormat;
+        }
+
         $body = json_encode($payload, JSON_UNESCAPED_UNICODE);
         if (!is_string($body)) {
             Logger::logAgentError(static::class, LLMApiConstants::LOG_FAILED_ENCODE_PAYLOAD);

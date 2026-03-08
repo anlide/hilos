@@ -20,12 +20,14 @@ class ChatGenerateOptions extends BaseDTO
      * @param float $temperature Sampling temperature (0.0 = deterministic)
      * @param float $timeoutSec Request timeout in seconds
      * @param ?int $maxTokens Maximum tokens to generate
+     * @param ?array<string, mixed> $responseFormat Response format for OpenAI-compatible APIs (e.g. ["type" => "json_object"])
      */
     public function __construct(
         public readonly ?string $model = null,
         public readonly float $temperature = 0.0,
         public readonly float $timeoutSec = LLMConstants::DEFAULT_TIMEOUT_SEC,
         public readonly ?int $maxTokens = null,
+        public readonly ?array $responseFormat = null,
     ) {
     }
 
@@ -51,6 +53,7 @@ class ChatGenerateOptions extends BaseDTO
             temperature: isset($data[LLMApiConstants::KEY_TEMPERATURE]) ? (float) $data[LLMApiConstants::KEY_TEMPERATURE] : 0.0,
             timeoutSec: isset($data[LLMApiConstants::KEY_TIMEOUT_SEC]) ? (float) $data[LLMApiConstants::KEY_TIMEOUT_SEC] : LLMConstants::DEFAULT_TIMEOUT_SEC,
             maxTokens: isset($data[LLMApiConstants::KEY_MAX_TOKENS_CAMEL]) ? (int) $data[LLMApiConstants::KEY_MAX_TOKENS_CAMEL] : null,
+            responseFormat: isset($data['responseFormat']) && is_array($data['responseFormat']) ? $data['responseFormat'] : null,
         );
     }
 }

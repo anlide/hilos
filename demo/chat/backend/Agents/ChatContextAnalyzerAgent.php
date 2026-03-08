@@ -110,9 +110,11 @@ class ChatContextAnalyzerAgent extends AbstractAgent
 
             Hilos::$rt->chatContexts->actions->update($parsed);
 
+            $topicStatus = $topic === null ? 'null' : 'valid';
             Logger::logAgentInfo(
                 $this->getType(),
-                '[llm_done] topic=' . ($topic ?? 'null') . ', confidence=' . round($confidence, 2)
+                '[llm_done] topic=' . json_encode($topic ?? 'null', JSON_UNESCAPED_UNICODE) . ' (' . $topicStatus . ')'
+                . ', confidence=' . round($confidence, 2)
                 . ', summary=' . json_encode(mb_substr($summary, 0, 300), JSON_UNESCAPED_UNICODE)
             );
             Logger::logAgentInfo(
@@ -214,17 +216,21 @@ class ChatContextAnalyzerAgent extends AbstractAgent
         $eventCount = substr_count($eventsText, "\n") + (strlen($eventsText) > 0 ? 1 : 0);
         $topicsList = ChatTopicConstants::getTopicsForPrompt();
         $systemPrompt = <<<PROMPT
-You analyze a chat transcript and extract structured insights. Respond with JSON only, no markdown or explanation.
+You analyze a chat transcript and extract structured insights.
 
-Output format:
-{"topic": "exactly one from the list below or null if unclear", "topicConfidence": 0.0-1.0, "summary": "detailed 3-5 sentence summary of the conversation, key points, mood, and outcomes"}
+CRITICAL: Your response must be ONLY a single valid JSON object. No markdown, no code blocks, no explanation, no surrounding text. Just the raw JSON.
 
-Allowed topics (use exactly as written): {$topicsList}
+Required JSON schema:
+{"topic": "exactly one from allowed list below OR null if unclear", "topicConfidence": 0.0-1.0, "summary": "detailed 3-5 sentence summary"}
+
+Allowed topics (copy exactly, character-for-character): {$topicsList}
 
 Rules:
-- topic: must be exactly one of the allowed topics above, or null if conversation does not match any
-- topicConfidence: 0.0 to 1.0, use 0 when topic is unclear
+- topic: exactly one value from the allowed list above, or null if no match. No variations, no new topics.
+- topicConfidence: 0.0 to 1.0; use 0 when topic is null or unclear
 - summary: comprehensive but concise, capture context, decisions, sentiment
+
+Output only the JSON object, nothing else.
 PROMPT;
 
         $messages = [
@@ -237,6 +243,9 @@ PROMPT;
             temperature: 0.0,
             timeoutSec: ContextAnalyzerEnv::getTimeoutSec(),
             maxTokens: ChatContextAnalyzerConstants::MAX_RESPONSE_TOKENS,
+            responseFormat: ContextAnalyzerEnv::useExternalProvider()
+                ? ['type' => 'json_object']
+                : ['format' => 'json'],
         );
 
         Logger::logAgentInfo(
@@ -290,9 +299,16 @@ PROMPT;
             return null;
         }
 
-        $topic = isset($decoded['topic']) && $decoded['topic'] !== null && $decoded['topic'] !== ''
-            ? (string)$decoded['topic']
+        $topicRaw = isset($decoded['topic']) && $decoded['topic'] !== null && $decoded['topic'] !== ''
+            ? trim((string)$decoded['topic'])
             : null;
+        $topic = $topicRaw !== null && $topicRaw !== '' && $this->isTopicAllowed($topicRaw) ? $topicRaw : null;
+        if ($topicRaw !== null && $topicRaw !== '' && $topic === null) {
+            Logger::logAgentInfo(
+                $this->getType(),
+                '[llm_done] topic rejected (not in allowed list): ' . json_encode($topicRaw, JSON_UNESCAPED_UNICODE)
+            );
+        }
         $confidence = isset($decoded['topicConfidence'])
             ? (float)$decoded['topicConfidence']
             : 0.0;
@@ -303,6 +319,11 @@ PROMPT;
             StateChatContext::topicConfidence => max(0, min(1, $confidence)),
             StateChatContext::summary => $summary,
         ];
+    }
+
+    private function isTopicAllowed(string $topic): bool
+    {
+        return in_array($topic, ChatTopicConstants::TOPICS, true);
     }
 
     private function extractJsonObject(string $text): ?string

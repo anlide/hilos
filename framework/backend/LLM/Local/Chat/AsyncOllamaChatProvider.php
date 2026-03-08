@@ -77,6 +77,10 @@ class AsyncOllamaChatProvider implements AsyncChatLLMInterface
             $payload[LLMApiConstants::KEY_OPTIONS][LLMApiConstants::KEY_NUM_PREDICT] = $options->maxTokens;
         }
 
+        if ($options->responseFormat !== null && $options->responseFormat !== []) {
+            $payload['format'] = 'json';
+        }
+
         $body = json_encode($payload, JSON_UNESCAPED_UNICODE);
         if (!is_string($body)) {
             Logger::logAgentError(static::class, LLMApiConstants::LOG_FAILED_ENCODE_PAYLOAD);
