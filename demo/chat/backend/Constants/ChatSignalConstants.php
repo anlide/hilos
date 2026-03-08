@@ -49,6 +49,8 @@ class ChatSignalConstants
     public const string BOT_LEFT = 'bot_left';
     /** Server → frontend: bot data updated (e.g. after admin edit) */
     public const string BOT_UPDATED = 'bot_updated';
+    /** Guardian agents → ChatAgent: structured guardian report signal */
+    public const string GUARDIAN_REPORT = 'guardian_report';
 
     // ── Table actions (client → server) ──────────────────────────────────
     public const string TABLE_REFRESH = 'table_refresh';

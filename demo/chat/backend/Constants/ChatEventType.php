@@ -40,4 +40,7 @@ enum ChatEventType: string
 
     /** User shared a file */
     case FILE_SHARED = 'file_shared';
+
+    /** System guardian report injected into event stream */
+    case GUARDIAN_REPORTED = 'guardian_reported';
 }

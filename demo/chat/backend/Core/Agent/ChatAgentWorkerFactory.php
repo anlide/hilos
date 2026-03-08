@@ -9,6 +9,8 @@ use Demo\Chat\Agents\ChatAgent;
 use Demo\Chat\Agents\ChatContextAnalyzerAgent;
 use Demo\Chat\Agents\ModeratorAgent;
 use Demo\Chat\Constants\AgentType;
+use Demo\Chat\Guardian\Agents\ChatSituationGuardianAgent;
+use Demo\Chat\Guardian\Agents\GuardiansOpsAgent;
 use Hilos\Core\Agent\AbstractAgentWorkerFactory;
 use Hilos\Core\Agent\AgentInterface;
 use Hilos\Core\Agent\Exception\AgentCreationFailedException;
@@ -33,6 +35,8 @@ class ChatAgentWorkerFactory extends AbstractAgentWorkerFactory
         return match ($agentType) {
             AgentType::CHAT => new ChatAgent(),
             AgentType::CHAT_CONTEXT_ANALYZER => new ChatContextAnalyzerAgent(),
+            AgentType::GUARDIAN_OPS => new GuardiansOpsAgent(),
+            AgentType::CHAT_SITUATION_GUARDIAN => new ChatSituationGuardianAgent(),
             AgentType::BOT => new BotAgent(
                 $agentIndex ?? throw new \RuntimeException('BotAgent requires agentIndex (bot id)'),
             ),

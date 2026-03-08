@@ -94,7 +94,11 @@ class ChatSignalRouter extends SignalRouter
         // Signals configuration - defines signal routing rules
         $signals = [
             SignalSource::DAEMON => [
-                SignalTypeConstants::SYSTEM => [AgentType::CHAT, AgentType::CHAT_CONTEXT_ANALYZER],
+                SignalTypeConstants::SYSTEM => [
+                    AgentType::CHAT,
+                    AgentType::GUARDIAN_OPS,
+                    AgentType::CHAT_SITUATION_GUARDIAN,
+                ],
                 SignalTypeConstants::CRON => AgentType::CHAT,
             ],
             SignalSource::AGENT => [
@@ -105,6 +109,7 @@ class ChatSignalRouter extends SignalRouter
                     ChatSignalConstants::MODERATION_BOT_RESULT => AgentType::CHAT,
                     ChatSignalConstants::BOT_JOINED => AgentType::CHAT,
                     ChatSignalConstants::BOT_LEFT => AgentType::CHAT,
+                    ChatSignalConstants::GUARDIAN_REPORT => AgentType::CHAT,
                 ],
             ],
             SignalSource::WEBSOCKET => [

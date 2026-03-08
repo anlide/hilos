@@ -1,0 +1,193 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Demo\Chat\Guardian\Agents;
+
+use Demo\Chat\Constants\AgentType;
+use Demo\Chat\Constants\ChatEventType;
+use Demo\Chat\Guardian\Capabilities\DbEventsReadCapability;
+use Demo\Chat\Guardian\Capabilities\RtReadCapability;
+use Demo\Chat\Guardian\Config\GuardianConfig;
+use Demo\Chat\Guardian\Reports\GuardianReportPayload;
+use Demo\Chat\Utils\ContextAnalyzerEnv;
+use Hilos\LLM\ClientFactory;
+use Hilos\LLM\Contract\AsyncChatLLMInterface;
+use Hilos\LLM\DTO\ChatGenerateOptions;
+use Hilos\LLM\DTO\Message;
+use Hilos\Utils\Logger;
+
+final class ChatSituationGuardianAgent extends AbstractGuardianAgent
+{
+    private float $nextRunAtMs = 0.0;
+    private DbEventsReadCapability $eventsCapability;
+    private RtReadCapability $rtCapability;
+    private AsyncChatLLMInterface $chatClient;
+    private ?array $pendingStats = null;
+
+    public function __construct()
+    {
+        parent::__construct();
+        $this->eventsCapability = new DbEventsReadCapability();
+        $this->rtCapability = new RtReadCapability();
+        $this->chatClient = ContextAnalyzerEnv::useExternalProvider()
+            ? ClientFactory::createChatClient()
+            : ClientFactory::createChatClientWithConfig(
+                url: ContextAnalyzerEnv::getUrl(),
+                model: ContextAnalyzerEnv::getModel(),
+                apiKey: null,
+            );
+    }
+
+    public function getType(): string
+    {
+        return AgentType::CHAT_SITUATION_GUARDIAN;
+    }
+
+    public function getIndex(): ?string
+    {
+        return null;
+    }
+
+    public function onStart(): void
+    {
+        Logger::logAgentStart($this->getId(), $this->getType());
+    }
+
+    public function onStop(): void
+    {
+        Logger::logAgentStop($this->getId(), $this->getType());
+    }
+
+    public function onTick(): void
+    {
+        $this->chatClient->tick(microtime(true) * 1000);
+        if ($this->chatClient->hasResult()) {
+            $this->finishPendingReport($this->chatClient->getResult());
+        }
+
+        if ($this->chatClient->isBusy()) {
+            return;
+        }
+
+        $nowMs = microtime(true) * 1000;
+        if ($nowMs < $this->nextRunAtMs) {
+            return;
+        }
+        $this->nextRunAtMs = $nowMs + GuardianConfig::CHAT_SITUATION_TICK_INTERVAL_MS;
+
+        $stats = $this->buildChatStats();
+        if ($stats === null) {
+            return;
+        }
+
+        $summaryPrompt = $this->buildPromptFromStats($stats);
+        $options = new ChatGenerateOptions(
+            model: ContextAnalyzerEnv::getModel(),
+            temperature: 0.0,
+            timeoutSec: ContextAnalyzerEnv::getTimeoutSec(),
+            maxTokens: 80,
+        );
+        $messages = [
+            new Message(Message::ROLE_SYSTEM, 'Return JSON only: {"severity":"info|low|medium|high","message":"short admin insight"}'),
+            new Message(Message::ROLE_USER, $summaryPrompt),
+        ];
+
+        if (!$this->chatClient->startGenerate($messages, $options)) {
+            return;
+        }
+
+        $this->pendingStats = $stats;
+    }
+
+    /**
+     * @return ?array<string, mixed>
+     */
+    private function buildChatStats(): ?array
+    {
+        $eventsResult = $this->eventsCapability->execute(['limit' => GuardianConfig::MAX_EVENTS_SCAN]);
+        $rtResult = $this->rtCapability->execute(['limitPerCollection' => 50]);
+        if (!$eventsResult->ok || !$rtResult->ok) {
+            return null;
+        }
+
+        $events = is_array($eventsResult->data['events'] ?? null) ? $eventsResult->data['events'] : [];
+        $messageEvents = array_values(array_filter(
+            $events,
+            static fn (array $event): bool => ($event['type'] ?? '') === ChatEventType::MESSAGE_SENT->value
+        ));
+        $uniqueAuthors = [];
+        foreach ($messageEvents as $event) {
+            $key = ($event['userId'] ?? null) !== null
+                ? 'u:' . (string) $event['userId']
+                : 'b:' . (string) ($event['botId'] ?? 0);
+            $uniqueAuthors[$key] = true;
+        }
+
+        return [
+            'messages' => count($messageEvents),
+            'uniqueAuthors' => count($uniqueAuthors),
+            'activeConnections' => (int) (($rtResult->data['rt']['connections']['count'] ?? 0)),
+            'recentTypes' => array_values(array_unique(array_map(
+                static fn (array $event): string => (string) ($event['type'] ?? ''),
+                array_slice($events, -10),
+            ))),
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $stats
+     */
+    private function buildPromptFromStats(array $stats): string
+    {
+        return 'Analyze chat health from stats: ' . json_encode($stats, JSON_UNESCAPED_UNICODE);
+    }
+
+    private function finishPendingReport(?string $rawResult): void
+    {
+        $stats = $this->pendingStats;
+        $this->pendingStats = null;
+        if ($stats === null) {
+            return;
+        }
+
+        $severity = 'info';
+        $message = 'Chat activity analyzed';
+        if (is_string($rawResult) && $rawResult !== '') {
+            $candidate = $this->extractJsonObject($rawResult);
+            if ($candidate !== null) {
+                $decoded = json_decode($candidate, true);
+                if (is_array($decoded)) {
+                    $severity = is_string($decoded['severity'] ?? null) ? $decoded['severity'] : $severity;
+                    $message = is_string($decoded['message'] ?? null) ? $decoded['message'] : $message;
+                }
+            }
+        }
+
+        $this->publishReport(
+            new GuardianReportPayload(
+                guardian: AgentType::CHAT_SITUATION_GUARDIAN,
+                category: 'business',
+                severity: $severity,
+                title: 'Chat situation insight',
+                message: $message,
+                details: $stats,
+            )
+        );
+    }
+
+    private function extractJsonObject(string $text): ?string
+    {
+        $trimmed = trim($text);
+        if ($trimmed === '') {
+            return null;
+        }
+        if (str_starts_with($trimmed, '{') && str_ends_with($trimmed, '}')) {
+            return $trimmed;
+        }
+        if (preg_match('/\{.*}/s', $trimmed, $matches) === 1) {
+            return $matches[0];
+        }
+        return null;
+    }
+}
