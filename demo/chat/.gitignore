@@ -7,6 +7,8 @@
 # Log files
 data/logs/*.log
 data/logs/archive/
+data/logs-test/*.log
+data/logs-test/archive/
 
 # Vendor
 vendor/
@@ -14,3 +16,7 @@ vendor/
 # Node.js
 node_modules/
 npm-debug.log*
+
+# Playwright
+tests/e2e/test-results/
+tests/e2e/playwright-report/

@@ -4,10 +4,21 @@ Vue 3 + TypeScript + Vite chat frontend with WebSocket client integration.
 
 ## Development Setup
 
+### Prerequisites
+
+The frontend uses `@hilos/sdk` from the framework. From demo root (`demo/chat/`):
+
+```bash
+composer run install-deps
+composer run frontend-install
+```
+
+The demo must live inside the full Hilos repo: `framework/` is a sibling of `demo/`.
+
 ### Install Dependencies
 
 ```bash
-npm install
+composer run frontend-install
 ```
 
 ### Development Server (Local)

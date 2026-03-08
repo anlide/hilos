@@ -1,6 +1,6 @@
 <template>
   <div class="card h-100 d-flex flex-column">
-    <div class="card-header d-flex justify-content-between align-items-center">
+    <div class="card-header d-flex justify-content-between align-items-center" data-id="participants-header">
       <strong>Participants</strong>
       <span
         v-if="chatStore.isConnected"
@@ -36,16 +36,17 @@
         </div>
       </template>
       <template v-else>
-        <div class="px-3 py-2 text-muted small border-bottom">
+        <div class="px-3 py-2 text-muted small border-bottom" data-id="online-users-label">
           Users ({{ chatStore.onlineUsers.length }} online)
         </div>
-        <div v-if="sortedUsers.length === 0" class="text-muted p-3 border-bottom">
+        <div v-if="sortedUsers.length === 0" class="text-muted p-3 border-bottom" data-id="online-users-empty">
           No users yet
         </div>
         <div
           v-for="user in sortedUsers"
           :key="user.id ?? `user-${user.name}`"
           class="d-flex align-items-center gap-2 px-3 py-2 border-bottom"
+          data-id="online-user"
         >
           <span
             class="rounded-circle flex-shrink-0"

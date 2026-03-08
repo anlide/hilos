@@ -50,6 +50,7 @@ services:
       - DB_PASSWORD=${MYSQL_PASSWORD:-hilos_pass}
       - HTTP_STATUS_HOST=0.0.0.0
       - HTTP_STATUS_PORT=8090
+      - WORKER_MIN_MONOPOLISTIC=${WORKER_MIN_MONOPOLISTIC:-7}
       - WORKER_COMM_HOST=0.0.0.0
       - WORKER_COMM_PORT=8091
       - WEBSOCKET_HOST=0.0.0.0
@@ -75,9 +76,8 @@ services:
       - ../frontend:/app
       - ../../../framework:/hilos/framework:ro
     environment:
-      - NODE_ENV=production
       - VITE_WEBSOCKET_PORT=8097
-    command: sh -c "npm ci && npm run build && npx serve dist -l 5174"
+    command: sh -c "npm ci && npm run build:docker && npx serve -s dist -l 5174"
     ports:
       - "${FRONTEND_TEST_PORT:-5174}:5174"
     networks:

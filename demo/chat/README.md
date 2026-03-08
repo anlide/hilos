@@ -28,6 +28,7 @@ This is a chat application demo that showcases WebSocket real-time communication
 ### Prerequisites
 
 - Docker and Docker Compose
+- **Full Hilos repository** — clone the repo at `hilos` root so that `framework/` is a sibling of `demo/`. The frontend uses `@hilos/sdk` from `framework/frontend/src`; TypeScript and Vite resolve it via path mapping.
 
 ### Setup
 
@@ -36,7 +37,7 @@ This is a chat application demo that showcases WebSocket real-time communication
    composer run setup-env
    ```
 
-2. **Install dependencies** (backend Composer packages):
+2. **Install dependencies** (backend Composer packages; also triggers Hilos SDK link via post-install):
    ```bash
    composer run install-deps
    ```
@@ -128,6 +129,9 @@ Tests use a separate Docker stack (`docker/docker-compose.test.yml`), isolated f
 | `composer run test:all` | Reset DB and run all PHPUnit tests |
 | `composer run test:e2e-up` | Start full stack for Playwright (MySQL + daemon + frontend) |
 | `composer run test:e2e-down` | Stop E2E stack |
+| `composer run test:e2e-install` | Install Playwright deps and browsers |
+| `composer run test:e2e` | Run Playwright E2E tests |
+| `composer run test:e2e-full` | Full E2E flow: up → db-wait → db-reset → install → test → down |
 
 ### Typical flow
 
@@ -147,19 +151,31 @@ composer run test:phpunit
 
 ### Playwright (E2E)
 
+**Full flow (recommended):**
+
+```bash
+composer run test:e2e-full
+```
+
+This starts the stack, waits for MySQL (`db:wait`), resets the DB, installs Playwright deps, runs E2E tests, then stops the stack.
+
+**Manual flow:**
+
 1. Start the E2E stack:
    ```bash
    composer run test:e2e-up
    ```
 
-2. Reset the test database:
+2. Wait for MySQL and reset the DB:
    ```bash
+   composer run test:db-wait
    composer run test:db-reset
    ```
 
-3. Install Playwright and run E2E tests:
+3. Install Playwright (first time only) and run tests:
    ```bash
-   cd tests/e2e && npm ci && npx playwright install --with-deps && npm test
+   composer run test:e2e-install
+   composer run test:e2e
    ```
 
 4. Stop the stack when done:

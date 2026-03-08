@@ -35,6 +35,7 @@
           type="text"
           class="form-control"
           placeholder="Type your message..."
+          data-id="chat-input"
           :readonly="chatStore.isModeratingMessage"
           :disabled="!chatStore.isConnected || chatStore.isModeratingMessage"
           required
@@ -52,6 +53,7 @@
           :loading="chatStore.isModeratingMessage"
           :disabled="!chatStore.isConnected || chatStore.isModeratingMessage || isRateLimited || !draftMessage.trim()"
           :loading-delay="300"
+          data-id="chat-send"
         >
           Send
         </LoadingButton>

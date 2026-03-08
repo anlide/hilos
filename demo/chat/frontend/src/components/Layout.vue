@@ -6,7 +6,7 @@
     >
       <div class="container-fluid">
         <router-link class="navbar-brand" to="/">WebSocket Chat Demo</router-link>
-        <span v-if="!chatStore.isConnected" class="badge bg-dark ms-2 align-middle">offline</span>
+        <span v-if="!chatStore.isConnected" class="badge bg-dark ms-2 align-middle" data-id="nav-offline">offline</span>
         <button
           class="navbar-toggler"
           type="button"
@@ -21,20 +21,21 @@
         <div class="collapse navbar-collapse" id="navbarNav">
           <ul class="navbar-nav ms-auto">
             <li class="nav-item">
-              <router-link class="nav-link" to="/" :class="{ 'fw-bold': $route.name === 'home' }">
+              <router-link class="nav-link" to="/" :class="{ 'fw-bold': $route.name === 'home' }" data-id="nav-home">
                 Home
               </router-link>
             </li>
             <li class="nav-item">
-              <router-link class="nav-link" to="/profile" :class="{ 'fw-bold': $route.name === 'profile' }">
+              <router-link class="nav-link" to="/profile" :class="{ 'fw-bold': $route.name === 'profile' }" data-id="nav-profile">
                 Profile
               </router-link>
             </li>
             <li class="nav-item">
-              <router-link 
-                class="nav-link" 
-                to="/admin" 
+              <router-link
+                class="nav-link"
+                to="/admin"
                 :class="{ 'fw-bold': $route.name === 'admin' || $route.name === 'admin_users' || $route.name === 'admin_moderator' || $route.name === 'admin_bots' }"
+                data-id="nav-admin"
               >
                 Admin
               </router-link>
