@@ -15,4 +15,10 @@ body,
   height: 100%;
   margin: 0;
 }
+
+/* Chat: Bootstrap lacks font-variant-numeric and min-width (rem) utilities */
+.chat-rate-limit-counter {
+  min-width: 2.5rem;
+  font-variant-numeric: tabular-nums;
+}
 </style>

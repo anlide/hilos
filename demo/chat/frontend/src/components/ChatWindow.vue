@@ -42,8 +42,7 @@
         />
         <span
           v-if="isRateLimited"
-          class="text-muted user-select-none"
-          style="min-width: 2.5rem; font-variant-numeric: tabular-nums"
+          class="text-muted user-select-none chat-rate-limit-counter flex-shrink-0"
         >
           {{ rateLimitSecondsLeft }}s
         </span>

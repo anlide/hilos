@@ -1,35 +1,46 @@
 <template>
   <!-- All events (messages and service messages) -->
-  <div 
-    class="d-flex flex-column mb-2 p-2 rounded" 
-    :class="getServiceMessageClass()"
+  <div
+    class="d-flex mb-2"
+    :class="isOwnMessage ? 'justify-content-end' : 'justify-content-start'"
   >
-    <div class="d-flex align-items-baseline gap-2">
-      <span v-if="getHeaderIcon()" class="opacity-75" :title="getBotName(props.event.botId)">{{ getHeaderIcon() }}</span>
-      <RouterLink
-        v-if="getHeaderUserName() && props.event.userId !== null"
-        class="fw-bold text-decoration-none"
-        :class="isServiceMessage ? 'text-secondary' : 'text-primary'"
-        :to="{ name: 'user', params: { id: getHeaderUserId() } }"
-      >
-        {{ getHeaderUserName() }}
-      </RouterLink>
-      <span
-        v-else-if="getHeaderUserName()"
-        class="fw-bold text-primary"
-      >
-        {{ getHeaderUserName() }}
-      </span>
-      <span
-        v-if="getServiceTitle()"
-        class="fw-bold text-secondary"
-      >
-        {{ getServiceTitle() }}
-      </span>
-      <small class="text-muted">{{ formatTime(event.timestamp) }}</small>
-    </div>
-    <div v-if="getMessageText()" class="ms-3 mt-1">
-      {{ getMessageText() }}
+    <div
+      class="d-flex flex-column p-2 rounded"
+      :class="[
+        getBubbleClass(),
+        { 'w-75': props.event.type === 'message_sent' }
+      ]"
+    >
+      <div v-if="!isOwnMessage" class="d-flex align-items-baseline gap-2">
+        <span v-if="getHeaderIcon()" class="opacity-75" :title="getBotName(props.event.botId)">{{ getHeaderIcon() }}</span>
+        <RouterLink
+          v-if="getHeaderUserName() && props.event.userId !== null"
+          class="fw-bold text-decoration-none"
+          :class="isServiceMessage ? 'text-secondary' : 'text-primary'"
+          :to="{ name: 'user', params: { id: getHeaderUserId() } }"
+        >
+          {{ getHeaderUserName() }}
+        </RouterLink>
+        <span
+          v-else-if="getHeaderUserName()"
+          class="fw-bold text-primary"
+        >
+          {{ getHeaderUserName() }}
+        </span>
+        <span
+          v-if="getServiceTitle()"
+          class="fw-bold text-secondary"
+        >
+          {{ getServiceTitle() }}
+        </span>
+        <small class="text-muted">{{ formatTime(event.timestamp) }}</small>
+      </div>
+      <div v-if="getMessageText()" :class="isOwnMessage ? 'mt-1' : 'ms-3 mt-1'">
+        {{ getMessageText() }}
+      </div>
+      <div v-if="isOwnMessage" class="text-end">
+        <small class="opacity-75">{{ formatTime(event.timestamp) }}</small>
+      </div>
     </div>
   </div>
 </template>
@@ -49,6 +60,15 @@ const chatStore = useChatStore()
 
 const isServiceMessage = computed(() => {
   return props.event.type !== 'message_sent'
+})
+
+/** True if this is a message_sent from the current user (own message, show on right) */
+const isOwnMessage = computed(() => {
+  return (
+    props.event.type === 'message_sent' &&
+    props.event.userId !== null &&
+    props.event.userId === chatStore.currentUserId
+  )
 })
 
 const formatTime = (timestamp: string): string => {
@@ -177,8 +197,6 @@ const getServiceMessageClass = (): string => {
   if (!isServiceMessage.value) {
     return ''
   }
-  
-  // Return Bootstrap utility classes for background colors
   switch (props.event.type) {
     case 'user_registered':
       return 'bg-success bg-opacity-25'
@@ -195,5 +213,16 @@ const getServiceMessageClass = (): string => {
     default:
       return 'bg-secondary bg-opacity-25'
   }
+}
+
+/** Bubble styles: own=primary, others=neutral (theme-aware), service=existing */
+const getBubbleClass = (): string => {
+  if (isOwnMessage.value) {
+    return 'bg-primary text-white'
+  }
+  if (props.event.type === 'message_sent') {
+    return 'bg-light text-dark'
+  }
+  return getServiceMessageClass()
 }
 </script>
