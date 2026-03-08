@@ -6,10 +6,19 @@
           <h5 class="mb-0">User</h5>
         </div>
         <div class="card-body">
-          <p class="text-muted">User profile</p>
-          <p>User ID: {{ userId }}</p>
-          <p v-if="userName">Name: {{ userName }}</p>
-          <p v-else class="text-muted">Name not loaded yet</p>
+          <template v-if="!chatStore.isConnected">
+            <div class="placeholder-glow">
+              <span class="placeholder col-4 mb-2 d-block" style="height: 0.875rem"></span>
+              <span class="placeholder col-3 mb-2 d-block" style="height: 0.875rem"></span>
+              <span class="placeholder col-5" style="height: 0.875rem"></span>
+            </div>
+          </template>
+          <template v-else>
+            <p class="text-muted">User profile</p>
+            <p>User ID: {{ userId }}</p>
+            <p v-if="userName">Name: {{ userName }}</p>
+            <p v-else class="text-muted">Name not loaded yet</p>
+          </template>
         </div>
       </div>
     </div>

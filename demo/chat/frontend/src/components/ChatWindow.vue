@@ -1,18 +1,31 @@
 <template>
   <div class="card h-100 d-flex flex-column">
     <div class="card-body p-0 overflow-auto flex-grow-1" ref="messagesContainer">
-      <div class="list-group list-group-flush">
+      <div v-if="!chatStore.isConnected" class="list-group list-group-flush p-3 placeholder-glow">
         <div
-          v-for="event in visibleEvents"
-          :key="event.id || `event-${event.timestamp}-${event.userId ?? event.botId ?? 'sys'}`"
-          class="list-group-item border-0"
+          v-for="i in 6"
+          :key="i"
+          class="d-flex flex-column gap-2 mb-3"
+          :class="{ 'align-items-end': i % 3 === 0 }"
         >
-          <MessageItem :event="event" />
+          <span class="placeholder" :class="i % 3 === 0 ? 'col-4' : 'col-7'"></span>
+          <span class="placeholder col-5" v-if="i % 2 === 1"></span>
         </div>
       </div>
-      <div v-if="visibleEvents.length === 0" class="text-center text-muted p-5">
-        <p class="mb-0">No events yet. Start chatting!</p>
-      </div>
+      <template v-else>
+        <div class="list-group list-group-flush">
+          <div
+            v-for="event in visibleEvents"
+            :key="event.id || `event-${event.timestamp}-${event.userId ?? event.botId ?? 'sys'}`"
+            class="list-group-item border-0"
+          >
+            <MessageItem :event="event" />
+          </div>
+        </div>
+        <div v-if="visibleEvents.length === 0" class="text-center text-muted p-5">
+          <p class="mb-0">No events yet. Start chatting!</p>
+        </div>
+      </template>
     </div>
     <div class="card-footer flex-shrink-0">
       <form @submit.prevent="handleSubmit" class="d-flex gap-2">

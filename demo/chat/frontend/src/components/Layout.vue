@@ -1,8 +1,12 @@
 <template>
   <div class="layout d-flex flex-column app-shell">
-    <nav class="navbar navbar-expand-lg navbar-dark bg-primary flex-shrink-0">
+    <nav
+      class="navbar navbar-expand-lg navbar-dark flex-shrink-0"
+      :class="chatStore.isConnected ? 'bg-primary' : 'bg-danger'"
+    >
       <div class="container-fluid">
         <router-link class="navbar-brand" to="/">WebSocket Chat Demo</router-link>
+        <span v-if="!chatStore.isConnected" class="badge bg-dark ms-2 align-middle">offline</span>
         <button
           class="navbar-toggler"
           type="button"

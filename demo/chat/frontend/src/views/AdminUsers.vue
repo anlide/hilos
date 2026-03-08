@@ -21,6 +21,7 @@
             :items="users"
             item-key="id"
             :colspan="5"
+            :placeholder-when-empty="!chatStore.isConnected"
             :searchable="true"
             search-placeholder="Search users..."
             :search-fields="['id', 'name']"

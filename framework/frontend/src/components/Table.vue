@@ -98,6 +98,18 @@
             </slot>
           </tr>
         </template>
+        <template v-else-if="placeholderWhenEmpty">
+          <tr
+            v-for="i in placeholderRowCount"
+            :key="`placeholder-${i}`"
+            class="placeholder-glow"
+            aria-hidden="true"
+          >
+            <td v-for="c in colspan" :key="c" class="align-middle">
+              <span class="placeholder d-block" :class="getPlaceholderColClass(c)" style="height: 0.875rem"></span>
+            </td>
+          </tr>
+        </template>
         <tr v-else>
           <td :colspan="colspan" class="text-center text-muted py-4">
             <slot name="empty">
@@ -202,6 +214,10 @@ interface Props {
     updated?: (string | number)[]
     deleted?: (string | number)[]
   }
+  /** When true and items are empty, show animated placeholder rows instead of empty slot */
+  placeholderWhenEmpty?: boolean
+  /** Number of placeholder rows when placeholderWhenEmpty (default 5) */
+  placeholderRowCount?: number
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -221,6 +237,8 @@ const props = withDefaults(defineProps<Props>(), {
   showDeleteButton: true,
   pendingChanges: () => ({ added: 0, updated: 0, deleted: 0 }),
   changeMarkers: () => ({ added: [], updated: [], deleted: [] }),
+  placeholderWhenEmpty: false,
+  placeholderRowCount: 5,
 })
 
 defineEmits<{
@@ -356,6 +374,12 @@ const isFieldSortable = (field: string): boolean => {
   if (!props.sortable) return false
   if (props.sortableFields.length === 0) return true
   return props.sortableFields.includes(field)
+}
+
+/** Varying column widths for placeholder skeleton rows (Bootstrap width utilities) */
+const getPlaceholderColClass = (colIndex: number): string => {
+  const widths = ['w-25', 'w-50', 'w-75', 'w-25', 'w-50', 'w-25']
+  return widths[(colIndex - 1) % widths.length] ?? 'w-50'
 }
 
 const filteredItems = computed(() => {

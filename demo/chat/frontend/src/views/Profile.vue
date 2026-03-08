@@ -6,7 +6,14 @@
           <h5 class="mb-0">Profile</h5>
         </div>
         <div class="card-body">
-          <div class="mb-3">
+          <div v-if="!chatStore.isConnected" class="mb-3 placeholder-glow">
+            <span class="placeholder col-3 mb-2 d-block" style="height: 0.875rem"></span>
+            <div class="d-flex align-items-center gap-3">
+              <span class="placeholder col-6" style="height: 1.5rem"></span>
+              <span class="placeholder" style="width: 4rem; height: 2.25rem"></span>
+            </div>
+          </div>
+          <div v-else class="mb-3">
             <label class="form-label">Your Name</label>
             <div class="d-flex align-items-center gap-3">
               <div class="flex-grow-1">

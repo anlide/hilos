@@ -21,6 +21,7 @@
             :items="displayRows"
             item-key="id"
             :colspan="4"
+            :placeholder-when-empty="!chatStore.isConnected"
             :searchable="true"
             search-placeholder="Search prompt pieces..."
             :search-fields="['id', 'section', 'promptPiece']"

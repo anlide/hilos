@@ -21,6 +21,7 @@
             :items="displayRows"
             item-key="id"
             :colspan="6"
+            :placeholder-when-empty="!chatStore.isConnected"
             :searchable="true"
             search-placeholder="Search bots..."
             :search-fields="['id', 'name', 'description', 'style']"
