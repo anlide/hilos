@@ -37,7 +37,7 @@ try {
     // Some legacy commands (like db:idea:fix) need to work with potentially broken context files,
     // so we skip Hilos initialization for them.
     $command = $argv[1] ?? '';
-    $commandsWithoutHilosInit = ['db:idea:fix'];
+    $commandsWithoutHilosInit = ['db:idea:fix', 'db:wait', 'db:test:reset'];
     $initHilos = !in_array($command, $commandsWithoutHilosInit);
 
     // Initialize database connection and schema

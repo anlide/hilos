@@ -11,6 +11,8 @@ use Hilos\Core\CLI\Commands\DbEntityDiffCommand;
 use Hilos\Core\CLI\Commands\DbEntityFixCommand;
 use Hilos\Core\CLI\Commands\DbObjectFixCommand;
 use Hilos\Core\CLI\Commands\DbSchemaStatusCommand;
+use Hilos\Core\CLI\Commands\DbTestResetCommand;
+use Hilos\Core\CLI\Commands\DbWaitCommand;
 use Hilos\Core\CLI\Commands\HelpCommand;
 use Hilos\Core\CLI\Commands\MigrationDownCommand;
 use Hilos\Core\CLI\Commands\MigrationRetryCommand;
@@ -95,6 +97,8 @@ class CliManager
         $this->commands[CliCommands::DB_ENTITY_DIFF] = new DbEntityDiffCommand();
         $this->commands[CliCommands::DB_ENTITY_FIX] = new DbEntityFixCommand();
         $this->commands[CliCommands::DB_OBJECT_FIX] = new DbObjectFixCommand();
+        $this->commands[CliCommands::DB_WAIT] = new DbWaitCommand();
+        $this->commands[CliCommands::DB_TEST_RESET] = new DbTestResetCommand();
         $this->commands[CliCommands::HELP] = new HelpCommand($this->commands);
     }
 

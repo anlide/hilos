@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="https://schema.phpunit.de/11.0/phpunit.xsd"
+         bootstrap="backend/Bootstrap/phpunit.php"
+         cacheDirectory=".phpunit.cache"
+         colors="true">
+    <source>
+        <include>
+            <directory suffix=".php">backend</directory>
+        </include>
+        <exclude>
+            <directory>backend/Tests</directory>
+        </exclude>
+    </source>
+    <testsuites>
+        <testsuite name="unit">
+            <directory>backend/Tests/Unit</directory>
+        </testsuite>
+        <testsuite name="integration">
+            <directory>backend/Tests/Integration</directory>
+        </testsuite>
+    </testsuites>
+    <php>
+        <env name="APP_ENV" value="test"/>
+        <env name="DB_HOST" value="localhost"/>
+        <env name="DB_PORT" value="33061"/>
+        <env name="DB_DATABASE" value="hilos-demo-chat-test"/>
+        <env name="DB_USERNAME" value="hilos"/>
+        <env name="DB_PASSWORD" value="hilos_pass"/>
+    </php>
+</phpunit>

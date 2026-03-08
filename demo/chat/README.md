@@ -91,12 +91,97 @@ docker compose -f docker/docker-compose.local.yml -f docker/docker-compose.local
 docker compose -f docker/docker-compose.local.yml -f docker/docker-compose.local.gpu-amd.yml up -d
 ```
 
+## Testing
+
+Tests use a separate Docker stack (`docker/docker-compose.test.yml`), isolated from the development environment.
+
+### Prerequisites
+
+- Docker and Docker Compose
+- Test stack dependencies installed (see below)
+
+### First-time setup
+
+1. **Install test dependencies** (PHPUnit and dev packages):
+   ```bash
+   composer run test:install-deps
+   ```
+
+2. **Copy test environment** (optional; defaults work for Docker):
+   ```bash
+   cp .env.test.example .env.test
+   ```
+   Adjust `.env.test` if running PHPUnit from the host (e.g. `DB_HOST=localhost`, `DB_PORT=33061`).
+
+### Commands
+
+| Command | Description |
+|---------|-------------|
+| `composer run test:up` | Start MySQL test container |
+| `composer run test:down` | Stop test stack |
+| `composer run test:down-volumes` | Stop and remove test volumes |
+| `composer run test:db-reset` | Reset test DB (DROP → migrate → seed) |
+| `composer run test:db-wait` | Wait for MySQL to be ready |
+| `composer run test:unit` | Run unit tests |
+| `composer run test:integration` | Run integration tests |
+| `composer run test:phpunit` | Run all PHPUnit tests |
+| `composer run test:all` | Reset DB and run all PHPUnit tests |
+| `composer run test:e2e-up` | Start full stack for Playwright (MySQL + daemon + frontend) |
+| `composer run test:e2e-down` | Stop E2E stack |
+
+### Typical flow
+
+```bash
+# Start MySQL
+composer run test:up
+
+# Reset DB and run tests
+composer run test:all
+```
+
+To run only PHPUnit (without resetting the DB):
+
+```bash
+composer run test:phpunit
+```
+
+### Playwright (E2E)
+
+1. Start the E2E stack:
+   ```bash
+   composer run test:e2e-up
+   ```
+
+2. Reset the test database:
+   ```bash
+   composer run test:db-reset
+   ```
+
+3. Install Playwright and run E2E tests:
+   ```bash
+   cd tests/e2e && npm ci && npx playwright install --with-deps && npm test
+   ```
+
+4. Stop the stack when done:
+   ```bash
+   composer run test:e2e-down
+   ```
+
+### Test structure
+
+- `backend/Tests/Unit/` — unit tests (no DB)
+- `backend/Tests/Integration/` — integration tests (require MySQL)
+- `tests/e2e/` — Playwright E2E tests (full app)
+
+---
+
 ## Documentation
 
 For detailed instructions on:
 - Frontend development and build: see [frontend/README.md](frontend/README.md)
 - Backend setup: see framework documentation
 - Docker configuration: see `docker/` directory
+- Test environment: see [Testing](#testing) above
 
 ## Refactor Notes
 

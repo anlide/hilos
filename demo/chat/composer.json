@@ -22,9 +22,17 @@
         "php": ">=8.4",
         "anlide/hilos": "^2.0"
     },
+    "require-dev": {
+        "phpunit/phpunit": "^11.0"
+    },
     "autoload": {
         "psr-4": {
             "Demo\\Chat\\": "backend/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Demo\\Chat\\Tests\\": "backend/Tests/"
         }
     },
     "scripts": {
@@ -65,7 +73,19 @@
         "frontend-install": "docker-compose -f docker/docker-compose.local.yml run --rm chat-frontend-local npm install",
         "frontend-build": "docker-compose -f docker/docker-compose.local.yml run --rm chat-frontend-local npm run build",
         "frontend-dev": "docker-compose -f docker/docker-compose.local.yml up -d chat-frontend-local",
-        "frontend-stop": "docker-compose -f docker/docker-compose.local.yml stop chat-frontend-local"
+        "frontend-stop": "docker-compose -f docker/docker-compose.local.yml stop chat-frontend-local",
+        "test:install-deps": "docker compose -f docker/docker-compose.test.yml --profile cli run --rm chat-cli-test composer update phpunit/phpunit --no-interaction",
+        "test:up": "docker compose -f docker/docker-compose.test.yml up -d mysql-test",
+        "test:down": "docker compose -f docker/docker-compose.test.yml down",
+        "test:down-volumes": "docker compose -f docker/docker-compose.test.yml down -v",
+        "test:db-reset": "docker compose -f docker/docker-compose.test.yml --profile cli run --rm chat-cli-test php backend/Bootstrap/cli.php db:test:reset",
+        "test:db-wait": "docker compose -f docker/docker-compose.test.yml --profile cli run --rm chat-cli-test php backend/Bootstrap/cli.php db:wait",
+        "test:unit": "docker compose -f docker/docker-compose.test.yml --profile cli run --rm chat-cli-test php vendor/bin/phpunit --testsuite unit",
+        "test:integration": "docker compose -f docker/docker-compose.test.yml --profile cli run --rm chat-cli-test php vendor/bin/phpunit --testsuite integration",
+        "test:phpunit": "docker compose -f docker/docker-compose.test.yml --profile cli run --rm chat-cli-test php vendor/bin/phpunit",
+        "test:all": "composer run test:db-reset && composer run test:phpunit",
+        "test:e2e-up": "docker compose -f docker/docker-compose.test.yml up -d mysql-test chat-test frontend-test",
+        "test:e2e-down": "docker compose -f docker/docker-compose.test.yml down"
     }
 }
 

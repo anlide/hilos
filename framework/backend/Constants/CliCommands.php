@@ -50,4 +50,10 @@ class CliCommands
 
     /** @var string Command: Fix Idea files to match Object files */
     public const string DB_IDEA_FIX = 'db:idea:fix';
+
+    /** @var string Command: Wait for MySQL to become ready */
+    public const string DB_WAIT = 'db:wait';
+
+    /** @var string Command: Reset test database (DROP, migrate, seed) */
+    public const string DB_TEST_RESET = 'db:test:reset';
 }
