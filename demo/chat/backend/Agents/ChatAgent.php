@@ -39,6 +39,11 @@ use Hilos\Utils\Logger;
  */
 class ChatAgent extends AbstractAgent
 {
+    private const int MESSAGE_RATE_LIMIT_SECONDS = 10;
+
+    /** @var array<int, float> userId => last message timestamp (microtime) */
+    private array $lastMessageTimestampByUser = [];
+
     /**
      * Get agent type
      *
@@ -293,6 +298,7 @@ class ChatAgent extends AbstractAgent
             return;
         }
 
+        $this->recordMessageSent($userId);
         $event = Hilos::$db->events->actions->add(ChatEventType::MESSAGE_SENT->value, $userId, null, ['message' => $result->message]);
         $this->sendToAllUsers(
             ChatSignalConstants::NEW_EVENT,
@@ -362,5 +368,34 @@ class ChatAgent extends AbstractAgent
         foreach ($connections as $connection) {
             $this->sendToUser(ChatSignalConstants::MODERATION_STATE_UPDATE, $connection->acceptKey, $data);
         }
+    }
+
+    /**
+     * Check whether user is allowed to send a message under rate limit.
+     *
+     * Limit: one message per {@see MESSAGE_RATE_LIMIT_SECONDS} seconds per user.
+     * Applied as (limit - 1) seconds to avoid blocking legitimate messages from frontend timer drift.
+     *
+     * @param int $userId User ID
+     * @return bool True if user can send, false if rate limited
+     */
+    public function canSendMessage(int $userId): bool
+    {
+        $now = microtime(true);
+        $last = $this->lastMessageTimestampByUser[$userId] ?? 0.0;
+        $effectiveLimit = self::MESSAGE_RATE_LIMIT_SECONDS - 1;
+        return ($now - $last) >= $effectiveLimit;
+    }
+
+    /**
+     * Record that user has successfully sent a message (updates rate limit timestamp).
+     *
+     * Call after message is stored and broadcast to all users.
+     *
+     * @param int $userId User ID
+     */
+    public function recordMessageSent(int $userId): void
+    {
+        $this->lastMessageTimestampByUser[$userId] = microtime(true);
     }
 }

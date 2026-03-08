@@ -7,6 +7,7 @@ namespace Demo\Chat\Pages;
 use Demo\Chat\Constants\ChatEventType;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\PageConstants;
+use Demo\Chat\Agents\ChatAgent;
 use Demo\Chat\Core\Page\AbstractChatPage;
 use Demo\Chat\Core\Page\DTO\FileActionDTO;
 use Demo\Chat\Core\Page\DTO\MessageActionDTO;
@@ -128,6 +129,11 @@ class MainPage extends AbstractChatPage
         }
 
         $userId = Hilos::$rt->connections[$acceptKey]->userId;
+        $chatAgent = $this->getChatAgent();
+        if ($chatAgent instanceof ChatAgent && !$chatAgent->canSendMessage($userId)) {
+            return;
+        }
+
         Hilos::$rt->moderationStates->actions->set($userId, $dto->content);
         $this->getChatAgent()->sendModerationStateToUserConnections($userId, $dto->content);
 

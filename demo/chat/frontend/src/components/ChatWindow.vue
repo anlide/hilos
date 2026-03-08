@@ -28,7 +28,7 @@
       </template>
     </div>
     <div class="card-footer flex-shrink-0">
-      <form @submit.prevent="handleSubmit" class="d-flex gap-2">
+      <form @submit.prevent="handleSubmit" class="d-flex gap-2 align-items-center">
         <input
           :value="displayMessage"
           @input="handleInput"
@@ -40,11 +40,18 @@
           required
           maxlength="500"
         />
+        <span
+          v-if="isRateLimited"
+          class="text-muted user-select-none"
+          style="min-width: 2.5rem; font-variant-numeric: tabular-nums"
+        >
+          {{ rateLimitSecondsLeft }}s
+        </span>
         <LoadingButton
           type="submit"
           variant="btn-primary"
           :loading="chatStore.isModeratingMessage"
-          :disabled="!chatStore.isConnected || chatStore.isModeratingMessage || !draftMessage.trim()"
+          :disabled="!chatStore.isConnected || chatStore.isModeratingMessage || isRateLimited || !draftMessage.trim()"
           :loading-delay="300"
         >
           Send
@@ -55,14 +62,17 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch, nextTick, onMounted } from 'vue'
+import { computed, ref, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { useChatStore } from '@/stores'
+import { MESSAGE_RATE_LIMIT_SECONDS } from '@/constants'
 import MessageItem from './MessageItem.vue'
 import { LoadingButton } from '@hilos/sdk/components'
 
 const chatStore = useChatStore()
 const messagesContainer = ref<HTMLElement | null>(null)
 const draftMessage = ref('')
+const rateLimitSecondsLeft = ref(0)
+let rateLimitInterval: ReturnType<typeof setInterval> | null = null
 
 const emit = defineEmits<{
   send: [message: string]
@@ -77,6 +87,7 @@ const displayMessage = computed(() => {
   }
   return draftMessage.value
 })
+const isRateLimited = computed(() => rateLimitSecondsLeft.value > 0)
 
 const scrollToBottom = () => {
   nextTick(() => {
@@ -86,12 +97,29 @@ const scrollToBottom = () => {
   })
 }
 
+const startRateLimitCountdown = () => {
+  rateLimitSecondsLeft.value = MESSAGE_RATE_LIMIT_SECONDS
+  if (rateLimitInterval) clearInterval(rateLimitInterval)
+  rateLimitInterval = setInterval(() => {
+    rateLimitSecondsLeft.value--
+    if (rateLimitSecondsLeft.value <= 0 && rateLimitInterval) {
+      clearInterval(rateLimitInterval)
+      rateLimitInterval = null
+    }
+  }, 1000)
+}
+
 const handleSubmit = () => {
-  if (!draftMessage.value.trim() || !chatStore.isConnected || chatStore.isModeratingMessage) return
+  if (!draftMessage.value.trim() || !chatStore.isConnected || chatStore.isModeratingMessage || isRateLimited.value) return
   const text = draftMessage.value.trim()
   draftMessage.value = ''
   emit('send', text)
+  startRateLimitCountdown()
 }
+
+onUnmounted(() => {
+  if (rateLimitInterval) clearInterval(rateLimitInterval)
+})
 
 const handleInput = (event: Event) => {
   if (chatStore.isModeratingMessage) {

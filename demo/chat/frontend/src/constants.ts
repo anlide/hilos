@@ -28,3 +28,6 @@ export const BOT_DELETE = 'bot_delete'
 export const MODERATOR_PIECE_CREATE = 'moderator_piece_create'
 export const MODERATOR_PIECE_UPDATE = 'moderator_piece_update'
 export const MODERATOR_PIECE_DELETE = 'moderator_piece_delete'
+
+/** Message rate limit in seconds (displayed to user, backend allows 1 sec earlier). */
+export const MESSAGE_RATE_LIMIT_SECONDS = 10
