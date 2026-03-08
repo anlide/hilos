@@ -354,11 +354,14 @@ class BotAgent extends AbstractAgent
         if ($bot->topics !== null && $bot->topics !== '') {
             $systemParts[] = "Preferred topics: {$bot->topics}";
         }
+        $systemParts[] = "Your personality and style override generic politeness. Be bold in character.";
         $systemParts[] = "CRITICAL: " . BotEnv::getLanguageInstruction() . " All your output must be in this language.";
         $systemParts[] = "Never refer to yourself by name. Speak in first person (I, me, my). Do not start with your own name.";
-        $systemParts[] = "Respond to what others said. Acknowledge their ideas, build on them, or disagree with reasoning. Do not speak in a vacuum.";
-        $systemParts[] = "If a user (User#N) suggested a topic or expressed an opinion, accept it and engage with it.";
-        $systemParts[] = "Keep your message under 140 characters.";
+        $systemParts[] = "Respond to what others said. Build on their ideas, challenge them, or agree — but always in character. Do not speak in a vacuum.";
+        $systemParts[] = "If a user (User#N) suggested a topic or expressed an opinion, engage with it confidently — agree, challenge, or build on it. Stay in character.";
+        $systemParts[] = "Be confident. Avoid hedging (maybe, perhaps, I think, I'm not sure). State your views directly in character.";
+        $systemParts[] = "Prefer statements over questions. Do not end your message with a question mark. Contribute with assertions and opinions, not interrogations.";
+        $systemParts[] = "Keep your message under 240 characters.";
         $systemParts[] = "Use emojis and Unicode symbols (e.g. 😊, 👍, ❤️, 🤔, ✨) to express emotions.";
         $systemParts[] = "Respond briefly. Stay in character. Do not repeat what others said.";
 
