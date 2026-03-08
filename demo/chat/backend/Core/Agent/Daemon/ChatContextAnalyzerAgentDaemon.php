@@ -39,7 +39,7 @@ class ChatContextAnalyzerAgentDaemon extends AbstractAgentDaemon
 
     public function handleWorkerMessage(array $data): void
     {
-        // TODO: Route to WebSocket clients if needed
+        // No-op: context updates go to BotAgents via RtSync (chatContexts), not WebSocket
     }
 
     public function handleExternalMessage(array $data): ?array

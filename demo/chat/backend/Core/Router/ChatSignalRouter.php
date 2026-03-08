@@ -96,6 +96,8 @@ class ChatSignalRouter extends SignalRouter
             SignalSource::DAEMON => [
                 SignalTypeConstants::SYSTEM => [
                     AgentType::CHAT,
+                    AgentType::CHAT_CONTEXT_ANALYZER,
+                    AgentType::MODERATOR,
                     AgentType::GUARDIAN_OPS,
                     AgentType::CHAT_SITUATION_GUARDIAN,
                 ],

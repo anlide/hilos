@@ -68,12 +68,14 @@ class BotAgentDaemon extends AbstractAgentDaemon
     /**
      * Handle message from worker agent
      *
+     * Bot signals (BOT_JOINED, BOT_LEFT, MODERATE_BOT_REQUEST) go agent-to-agent via
+     * framework signal router to ChatAgent/ModeratorAgent. No daemon routing needed.
+     *
      * @param array $data Message data from worker
      */
     public function handleWorkerMessage(array $data): void
     {
-        // TODO: Implement routing to WebSocket clients
-        // For now, this is a placeholder
+        // No-op: bot agent signals are routed by framework to ChatAgent/ModeratorAgent
     }
 
     /**
@@ -84,8 +86,7 @@ class BotAgentDaemon extends AbstractAgentDaemon
      */
     public function handleExternalMessage(array $data): ?array
     {
-        // TODO: Implement routing to worker agent
-        // For now, this is a placeholder
+        // No-op: bots receive context via RtSync from ChatContextAnalyzerAgent
         return null;
     }
 }

@@ -5,43 +5,56 @@ declare(strict_types=1);
 namespace Demo\Chat\Agents;
 
 use Demo\Chat\Constants\AgentType;
+use Demo\Chat\Constants\ChatContextAnalyzerConstants;
+use Demo\Chat\Constants\ChatTopicConstants;
+use Demo\Chat\Constants\ChatEventType;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Core\Router\DTO\BotAgentSignalData;
 use Demo\Chat\Core\Router\DTO\ModerationBotRequestSignalData;
+use Demo\Chat\Database\DbChatContext;
 use Demo\Chat\Database\Object\Item\Bot as ObjectBot;
+use Demo\Chat\Database\View\Item\Bot as ViewBot;
+use Demo\Chat\Hilos;
+use Demo\Chat\Runtime\State\Item\ChatContext as StateChatContext;
 use Demo\Chat\Runtime\View\Context\RtChatContext;
+use Demo\Chat\Utils\BotEnv;
 use Hilos\Core\Agent\AbstractAgent;
+use Hilos\Core\Sync\DTO\DbSyncCreatedSignalData;
 use Hilos\Core\Sync\DTO\DbSyncDeletedSignalData;
 use Hilos\Core\Sync\DTO\DbSyncUpdatedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncCreatedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
+use Hilos\LLM\ClientFactory;
+use Hilos\LLM\Contract\AsyncChatLLMInterface;
+use Hilos\LLM\DTO\ChatGenerateOptions;
+use Hilos\LLM\DTO\Message;
 use Hilos\Utils\Logger;
 
 /**
  * BotAgent - Regular agent for bot management
  *
  * Runs in regular worker process. One agent per bot (agentIndex = bot.id).
- * Manages bot interactions and chat behavior.
+ * Manages bot interactions: reacts to chat context updates (RtSync from ChatContextAnalyzerAgent)
+ * and generates messages via async LLM.
  */
 class BotAgent extends AbstractAgent
 {
-    /** @var string Agent type */
     private const string AGENT_TYPE = AgentType::BOT;
 
-    /** @var string Agent index (bot id) */
+    private const int MAX_RESPONSE_TOKENS = 256;
+
     private string $agentIndex;
 
-    /** @var bool Whether first tick has already sent a message (one message per agent lifecycle for verification) */
-    private bool $hasSentMessage = false;
+    private AsyncChatLLMInterface $chatClient;
 
-    /** @var list<string> Random messages for verification flow (no LLM) */
-    private const array RANDOM_MESSAGES = [
-        'Hello everyone!',
-        "How's it going?",
-        'Nice to meet you all.',
-        'What a lovely chat we have here.',
-        'Greetings from the bot!',
-    ];
+    /** @var float Unix timestamp (seconds) when reaction is scheduled, or 0 if not scheduled */
+    private float $scheduledReactAt = 0.0;
+
+    /** @var float Unix timestamp (seconds) when last message was sent, for cooldown */
+    private float $lastMessageSentAt = 0.0;
+
+    /** @var bool Whether LLM generation is in flight (result will be sent to ModeratorAgent) */
+    private bool $generationInFlight = false;
 
     public function __construct(string $agentIndex)
     {
@@ -49,45 +62,36 @@ class BotAgent extends AbstractAgent
             throw new \RuntimeException('BotAgent requires non-empty agentIndex (bot id)');
         }
         $this->agentIndex = $agentIndex;
+        $this->chatClient = BotEnv::useExternalProvider()
+            ? ClientFactory::createChatClient()
+            : ClientFactory::createChatClientWithConfig(
+                url: BotEnv::getUrl(),
+                model: BotEnv::getModel(),
+                apiKey: null,
+            );
     }
 
-    /**
-     * Get agent type
-     *
-     * @return string Agent type
-     */
     public function getType(): string
     {
         return self::AGENT_TYPE;
     }
 
-    /**
-     * Get agent index
-     *
-     * Bot agent index is the bot id (string)
-     *
-     * @return ?string Agent index
-     */
     public function getIndex(): ?string
     {
         return $this->agentIndex;
     }
 
-    /**
-     * Called when agent is started
-     */
     public function onStart(): void
     {
         Logger::logAgentStart($this->getId(), $this->getType());
         $botId = (int) $this->agentIndex;
         $this->sendToAgent(ChatSignalConstants::BOT_JOINED, new BotAgentSignalData(botId: $botId));
+
+        // Bots without topic restriction (leaders) should start conversation when chat is empty.
+        // RtSync from init() may arrive before BotAgents exist, so schedule on join as fallback.
+        $this->scheduleReaction();
     }
 
-    /**
-     * Called when agent is stopped
-     *
-     * No BOT_AGENT_STOP signal - agent discovers state change through synchronized data.
-     */
     public function onStop(): void
     {
         $botId = (int) $this->agentIndex;
@@ -99,10 +103,6 @@ class BotAgent extends AbstractAgent
      * Handle DB sync updated signal for the bot
      *
      * If the bot is marked as inactive, stop the agent.
-     *
-     * @param DbSyncUpdatedSignalData $data Signal data containing updated row
-     * @param string $source Source of the signal
-     * @param string $name Name of the signal
      */
     public function onSignalDbSyncUpdated(DbSyncUpdatedSignalData $data, string $source, string $name): void
     {
@@ -119,12 +119,6 @@ class BotAgent extends AbstractAgent
 
     /**
      * Handle DB sync deleted signal for the bot
-     *
-     * If the bot is deleted, stop the agent.
-     *
-     * @param DbSyncDeletedSignalData $data Signal data containing deleted row info
-     * @param string $source Source of the signal
-     * @param string $name Name of the signal
      */
     public function onSignalDbSyncDeleted(DbSyncDeletedSignalData $data, string $source, string $name): void
     {
@@ -137,57 +131,329 @@ class BotAgent extends AbstractAgent
     }
 
     /**
+     * Handle DB sync created signal.
+     * When chat is cleared, topic is reset - leaders should propose a new topic.
+     */
+    public function onSignalDbSyncCreated(DbSyncCreatedSignalData $data, string $source, string $name): void
+    {
+        if ($data->collectionKey !== DbChatContext::events) {
+            return;
+        }
+        $eventType = $data->row['type'] ?? '';
+        if ($eventType === ChatEventType::CHAT_CLEARED->value) {
+            Logger::logAgentInfo($this->getId(), '[chat_cleared] Scheduling topic proposal');
+            $this->scheduleReaction();
+        }
+    }
+
+    /**
      * Handle RT sync created signal.
-     *
-     * @param RtSyncCreatedSignalData $data Signal data
-     * @param string $source Source of the signal
-     * @param string $name Name of the signal
+     * ChatContext created (init) - can schedule reaction if context has content.
      */
     public function onSignalRtSyncCreated(RtSyncCreatedSignalData $data, string $source, string $name): void
     {
         if ($data->collectionKey === RtChatContext::chatContexts) {
-            Logger::logAgentInfo(
-                $this->getId(),
-                "[rt_sync] ChatContext created: stateId={$data->stateId}, row=" . json_encode($data->row, JSON_UNESCAPED_UNICODE)
-            );
+            $this->scheduleReaction();
         }
     }
 
     /**
      * Handle RT sync updated signal.
-     *
-     * @param RtSyncUpdatedSignalData $data Signal data
-     * @param string $source Source of the signal
-     * @param string $name Name of the signal
+     * ChatContext updated (new messages summarized) - schedule reaction.
      */
     public function onSignalRtSyncUpdated(RtSyncUpdatedSignalData $data, string $source, string $name): void
     {
         if ($data->collectionKey === RtChatContext::chatContexts) {
-            Logger::logAgentInfo(
-                $this->getId(),
-                "[rt_sync] ChatContext updated: stateId={$data->stateId}, diff=" . json_encode($data->row, JSON_UNESCAPED_UNICODE)
-            );
+            $this->scheduleReaction();
         }
     }
 
     /**
-     * Agent-specific tick implementation
-     *
-     * Sends one random message on first tick to verify full flow: moderation → event → frontend.
+     * Agent-specific tick implementation.
+     * Processes async LLM results and triggers scheduled reactions.
      */
     public function onTick(): void
     {
-        if ($this->hasSentMessage) {
+        $nowMs = microtime(true) * 1000;
+        $nowSec = microtime(true);
+
+        $this->chatClient->tick($nowMs);
+
+        if ($this->chatClient->hasResult()) {
+            $text = $this->chatClient->getResult();
+            $this->generationInFlight = false;
+
+            $botId = (int) $this->agentIndex;
+            $message = $text !== null && trim($text) !== '' ? trim($text) : null;
+
+            if ($message !== null) {
+                $this->lastMessageSentAt = $nowSec;
+                $this->sendToAgent(
+                    ChatSignalConstants::MODERATE_BOT_REQUEST,
+                    new ModerationBotRequestSignalData(botId: $botId, message: $message),
+                );
+                $len = mb_strlen($message);
+                Logger::logAgentInfo($this->getId(), "[publish] Queued for moderation, {$len} chars");
+            } else {
+                Logger::logAgentInfo($this->getId(), "[publish] Skipped: LLM returned empty");
+            }
+        }
+
+        if ($this->scheduledReactAt > 0 && $nowSec >= $this->scheduledReactAt && !$this->chatClient->isBusy()) {
+            $this->scheduledReactAt = 0.0;
+            if ($this->shouldReact()) {
+                $this->startGenerate();
+            }
+        }
+    }
+
+    private function scheduleReaction(): void
+    {
+        if ($this->chatClient->isBusy() || $this->generationInFlight) {
             return;
         }
-        $this->hasSentMessage = true;
 
-        $botId = (int) $this->agentIndex;
-        $message = self::RANDOM_MESSAGES[array_rand(self::RANDOM_MESSAGES)];
+        $bot = $this->getBot();
+        if ($bot === null) {
+            return;
+        }
 
-        $this->sendToAgent(
-            ChatSignalConstants::MODERATE_BOT_REQUEST,
-            new ModerationBotRequestSignalData(botId: $botId, message: $message),
+        $delayMin = max(0, (int) ($bot->reactionDelayMin ?? 0));
+        $delayMax = max($delayMin, (int) ($bot->reactionDelayMax ?? 1));
+        $delaySec = $delayMin === $delayMax ? $delayMin : random_int($delayMin, $delayMax);
+        $this->scheduledReactAt = microtime(true) + (float) $delaySec;
+
+        Logger::logAgentInfo($this->getId(), "[schedule] Reaction in {$delaySec}s");
+    }
+
+    private function shouldReact(): bool
+    {
+        $bot = $this->getBot();
+        if ($bot === null) {
+            return false;
+        }
+
+        $reactionChance = (int) ($bot->reactionChance ?? 100);
+        if ($reactionChance <= 0) {
+            return false;
+        }
+        if ($reactionChance < 100 && random_int(1, 100) > $reactionChance) {
+            return false;
+        }
+
+        $cooldownSec = (int) ($bot->cooldownAfterMessage ?? 0);
+        if ($cooldownSec > 0 && $this->lastMessageSentAt > 0) {
+            $elapsed = microtime(true) - $this->lastMessageSentAt;
+            if ($elapsed < $cooldownSec) {
+                return false;
+            }
+        }
+
+        if ((bool) ($bot->topicMatchRequired ?? false)) {
+            if (!$this->topicMatches($bot)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private function topicMatches(ViewBot $bot): bool
+    {
+        $botTopics = $this->parseTopics((string) ($bot->topics ?? ''));
+        if ($botTopics === []) {
+            return true;
+        }
+
+        $ctx = Hilos::$rt->chatContexts->getStateCollection()->get(StateChatContext::ID_MAIN);
+        $contextTopic = $ctx?->topic;
+        if ($contextTopic === null || $contextTopic === '') {
+            return false;
+        }
+
+        $contextLower = mb_strtolower($contextTopic);
+        foreach ($botTopics as $topic) {
+            if ($topic !== '' && str_contains($contextLower, mb_strtolower($topic))) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Parse topics from JSON array or comma/semicolon-separated string.
+     *
+     * @return list<string>
+     */
+    private function parseTopics(string $topics): array
+    {
+        $trimmed = trim($topics);
+        if ($trimmed === '') {
+            return [];
+        }
+
+        $decoded = json_decode($trimmed, true);
+        if (is_array($decoded)) {
+            $result = [];
+            foreach ($decoded as $item) {
+                if (is_string($item) && trim($item) !== '') {
+                    $result[] = trim($item);
+                }
+            }
+
+            return $result;
+        }
+
+        $parts = preg_split('/[\s,;]+/', $trimmed, -1, PREG_SPLIT_NO_EMPTY) ?: [];
+
+        return array_values(array_filter(array_map('trim', $parts)));
+    }
+
+    private function startGenerate(): void
+    {
+        $bot = $this->getBot();
+        if ($bot === null) {
+            return;
+        }
+
+        $messages = $this->buildGenerationMessages($bot);
+        if ($messages === []) {
+            return;
+        }
+
+        $options = new ChatGenerateOptions(
+            model: BotEnv::getModel(),
+            temperature: 0.7,
+            timeoutSec: BotEnv::getTimeoutSec(),
+            maxTokens: self::MAX_RESPONSE_TOKENS,
         );
+
+        if ($this->chatClient->startGenerate($messages, $options)) {
+            $this->generationInFlight = true;
+            Logger::logAgentInfo($this->getId(), '[generate] Started');
+        }
+    }
+
+    /**
+     * @return list<Message>
+     */
+    private function buildGenerationMessages(ViewBot $bot): array
+    {
+        $systemParts = [];
+        $systemParts[] = "You are a chat participant. Name: {$bot->name}.";
+        if ($bot->description !== null && $bot->description !== '') {
+            $systemParts[] = "Description: {$bot->description}";
+        }
+        if ($bot->personality !== null && $bot->personality !== '') {
+            $systemParts[] = "Personality: {$bot->personality}";
+        }
+        if ($bot->style !== null && $bot->style !== '') {
+            $systemParts[] = "Style: {$bot->style}";
+        }
+        if ($bot->topics !== null && $bot->topics !== '') {
+            $systemParts[] = "Preferred topics: {$bot->topics}";
+        }
+        $systemParts[] = "CRITICAL: " . BotEnv::getLanguageInstruction() . " All your output must be in this language.";
+        $systemParts[] = "Never refer to yourself by name. Speak in first person (I, me, my). Do not start with your own name.";
+        $systemParts[] = "Respond to what others said. Acknowledge their ideas, build on them, or disagree with reasoning. Do not speak in a vacuum.";
+        $systemParts[] = "If a user (User#N) suggested a topic or expressed an opinion, accept it and engage with it.";
+        $systemParts[] = "Keep your message under 140 characters.";
+        $systemParts[] = "Use emojis and Unicode symbols (e.g. 😊, 👍, ❤️, 🤔, ✨) to express emotions.";
+        $systemParts[] = "Respond briefly. Stay in character. Do not repeat what others said.";
+
+        $systemContent = implode("\n", $systemParts);
+
+        $userParts = [];
+        $ctx = Hilos::$rt->chatContexts->getStateCollection()->get(StateChatContext::ID_MAIN);
+        if ($ctx !== null) {
+            if ($ctx->topic !== null && $ctx->topic !== '') {
+                $userParts[] = "Current topic: {$ctx->topic}";
+            }
+            if ($ctx->summary !== '') {
+                $userParts[] = "Summary: {$ctx->summary}";
+            }
+        }
+
+        $recentContext = $this->buildRecentEventsContext();
+        $recentMeta = $this->getRecentMessagesMeta($recentContext);
+        if ($recentContext !== '') {
+            $userParts[] = "Recent messages (react to these):\n{$recentContext}";
+        }
+
+        if ($userParts === []) {
+            $topicsList = ChatTopicConstants::getTopicsForPrompt();
+            $userParts[] = "The chat is empty or just started. No topic yet."
+                . " Propose exactly one topic from this list: {$topicsList}"
+                . " Say which topic you suggest and briefly why. Greet everyone.";
+        }
+
+        $userContent = implode("\n\n", $userParts);
+
+        Logger::logAgentInfo(
+            $this->getId(),
+            "[generate] Reacting to: {$recentMeta}"
+        );
+
+        return [
+            new Message(Message::ROLE_SYSTEM, $systemContent),
+            new Message(Message::ROLE_USER, $userContent),
+        ];
+    }
+
+    /**
+     * Build short meta string for logging: what the bot is reacting to.
+     */
+    private function getRecentMessagesMeta(string $recentContext): string
+    {
+        if ($recentContext === '') {
+            return 'empty chat (starting conversation)';
+        }
+
+        $lines = explode("\n", $recentContext);
+        $count = count($lines);
+        $lastAuthors = array_slice(array_map(
+            static function (string $line): string {
+                $colon = strpos($line, ':');
+
+                return $colon !== false ? trim(substr($line, 0, $colon)) : '?';
+            },
+            $lines
+        ), -3);
+
+        return "{$count} message(s), last from " . implode(', ', $lastAuthors);
+    }
+
+    private function buildRecentEventsContext(): string
+    {
+        $events = [];
+        foreach (Hilos::$db->events as $event) {
+            if ($event->type === ChatEventType::MESSAGE_SENT->value) {
+                $author = $event->userId !== null ? "User#{$event->userId}" : "Bot#{$event->botId}";
+                $data = $event->data !== null ? json_decode($event->data, true) : null;
+                $msg = is_array($data) && isset($data['message']) ? (string) $data['message'] : '(no text)';
+                $events[] = ['id' => $event->id, 'author' => $author, 'msg' => $msg];
+            }
+            if ($event->type === ChatEventType::CHAT_CLEARED->value) {
+                $events[] = ['id' => $event->id, 'author' => 'System', 'msg' => '[chat cleared]'];
+            }
+        }
+
+        usort($events, static fn (array $a, array $b): int => ($a['id'] ?? 0) <=> ($b['id'] ?? 0));
+        $recent = array_slice($events, -ChatContextAnalyzerConstants::MAX_RECENT_EVENTS);
+
+        $lines = [];
+        foreach ($recent as $e) {
+            $lines[] = $e['author'] . ': ' . $e['msg'];
+        }
+
+        return implode("\n", $lines);
+    }
+
+    private function getBot(): ?ViewBot
+    {
+        $botId = (int) $this->agentIndex;
+
+        return Hilos::$db->bots[$botId] ?? null;
     }
 }

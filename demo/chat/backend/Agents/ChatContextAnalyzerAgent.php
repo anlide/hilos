@@ -6,6 +6,7 @@ namespace Demo\Chat\Agents;
 
 use Demo\Chat\Constants\AgentType;
 use Demo\Chat\Constants\ChatContextAnalyzerConstants;
+use Demo\Chat\Constants\ChatTopicConstants;
 use Demo\Chat\Constants\ChatEventType;
 use Demo\Chat\Database\DbChatContext;
 use Demo\Chat\Hilos;
@@ -211,14 +212,17 @@ class ChatContextAnalyzerAgent extends AbstractAgent
         }
 
         $eventCount = substr_count($eventsText, "\n") + (strlen($eventsText) > 0 ? 1 : 0);
+        $topicsList = ChatTopicConstants::getTopicsForPrompt();
         $systemPrompt = <<<PROMPT
 You analyze a chat transcript and extract structured insights. Respond with JSON only, no markdown or explanation.
 
 Output format:
-{"topic": "main topic as short phrase or null if unclear", "topicConfidence": 0.0-1.0, "summary": "detailed 3-5 sentence summary of the conversation, key points, mood, and outcomes"}
+{"topic": "exactly one from the list below or null if unclear", "topicConfidence": 0.0-1.0, "summary": "detailed 3-5 sentence summary of the conversation, key points, mood, and outcomes"}
+
+Allowed topics (use exactly as written): {$topicsList}
 
 Rules:
-- topic: single clear phrase (e.g. "planning a trip", "technical support") or null
+- topic: must be exactly one of the allowed topics above, or null if conversation does not match any
 - topicConfidence: 0.0 to 1.0, use 0 when topic is unclear
 - summary: comprehensive but concise, capture context, decisions, sentiment
 PROMPT;

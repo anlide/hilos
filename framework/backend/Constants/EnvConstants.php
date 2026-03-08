@@ -145,6 +145,23 @@ enum EnvConstants
     /** @var string Context analyzer provider: local | external */
     case CHAT_CONTEXT_ANALYZER_PROVIDER;
 
+    // ── Chat bot (demo) ────────────────────────────────────────────────────────
+
+    /** @var string Bot model name */
+    case CHAT_BOT_MODEL;
+
+    /** @var string Bot API base URL */
+    case CHAT_BOT_URL;
+
+    /** @var string Bot request timeout in seconds */
+    case CHAT_BOT_TIMEOUT_SEC;
+
+    /** @var string Bot provider: local | external */
+    case CHAT_BOT_PROVIDER;
+
+    /** @var string Chat language: ru, en (ISO 639-1). Bots respond in this language. */
+    case CHAT_BOT_LANGUAGE;
+
     // ── Application environment ──────────────────────────────────────────────
 
     /**

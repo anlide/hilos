@@ -65,12 +65,13 @@ class ModeratorAgentDaemon extends AbstractAgentDaemon
     /**
      * Handle message from worker agent
      *
+     * Moderation results go agent-to-agent to ChatAgent via framework signal router.
+     *
      * @param array $data Message data from worker
      */
     public function handleWorkerMessage(array $data): void
     {
-        // TODO: Implement routing to WebSocket clients
-        // For now, this is a placeholder
+        // No-op: moderation results are routed by framework to ChatAgent
     }
 
     /**
@@ -81,8 +82,7 @@ class ModeratorAgentDaemon extends AbstractAgentDaemon
      */
     public function handleExternalMessage(array $data): ?array
     {
-        // TODO: Implement routing to worker agent
-        // For now, this is a placeholder
+        // No-op: moderation requests come from ChatAgent/BotAgent via signal router
         return null;
     }
 }
