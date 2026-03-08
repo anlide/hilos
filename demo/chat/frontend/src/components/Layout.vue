@@ -1,6 +1,6 @@
 <template>
-  <div class="layout">
-    <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+  <div class="layout d-flex flex-column app-shell">
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary flex-shrink-0">
       <div class="container-fluid">
         <router-link class="navbar-brand" to="/">WebSocket Chat Demo</router-link>
         <button
@@ -39,7 +39,7 @@
         </div>
       </div>
     </nav>
-    <main class="container-fluid py-4">
+    <main class="container-fluid py-3 flex-grow-1 overflow-hidden d-flex flex-column">
       <router-view />
     </main>
   </div>
@@ -150,3 +150,10 @@ watch(() => chatStore.isConnected, (isConnected) => {
   }
 })
 </script>
+
+<style scoped>
+.app-shell {
+  height: 100dvh;
+  overflow: hidden;
+}
+</style>

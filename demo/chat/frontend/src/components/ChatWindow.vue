@@ -1,6 +1,6 @@
 <template>
-  <div class="card">
-    <div class="card-body p-0 overflow-auto min-vh-50" ref="messagesContainer">
+  <div class="card h-100 d-flex flex-column">
+    <div class="card-body p-0 overflow-auto flex-grow-1" ref="messagesContainer">
       <div class="list-group list-group-flush">
         <div
           v-for="event in visibleEvents"
@@ -14,7 +14,7 @@
         <p class="mb-0">No events yet. Start chatting!</p>
       </div>
     </div>
-    <div class="card-footer">
+    <div class="card-footer flex-shrink-0">
       <form @submit.prevent="handleSubmit" class="d-flex gap-2">
         <input
           :value="displayMessage"
