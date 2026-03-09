@@ -50,7 +50,7 @@ class PageSignalRouter
             return;
         }
 
-        $pageInstance->onSubscribe($data->acceptKey);
+        $pageInstance->onSubscribe($data->acceptKey, $data->params);
     }
 
     /**

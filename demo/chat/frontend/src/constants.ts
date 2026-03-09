@@ -1,6 +1,8 @@
 export const HANDSHAKE_RESPONSE = 'handshake_response'
 export const SUBSCRIPTION_PAGE_MAIN = 'subscription_page_main'
 export const SUBSCRIPTION_PAGE_PROFILE = 'subscription_page_profile'
+export const SUBSCRIPTION_PAGE_USER = 'subscription_page_user'
+export const SUBSCRIPTION_PAGE_BOT = 'subscription_page_bot'
 export const SUBSCRIPTION_PAGE_ADMIN = 'subscription_page_admin'
 export const SUBSCRIPTION_PAGE_ADMIN_USERS = 'subscription_page_admin_users'
 export const SUBSCRIPTION_PAGE_ADMIN_BOTS = 'subscription_page_admin_bots'

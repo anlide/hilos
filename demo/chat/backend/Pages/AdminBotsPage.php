@@ -41,8 +41,9 @@ class AdminBotsPage extends AbstractChatPage
      * Sends initial bots table data to the user on page subscription.
      *
      * @param string $acceptKey WebSocket accept key for the subscribing client
+     * @param array<string, string> $params Route params from page subscription (unused for admin bots page)
      */
-    public function onSubscribe(string $acceptKey): void
+    public function onSubscribe(string $acceptKey, array $params = []): void
     {
         $result = Hilos::$table->bots->get();
 

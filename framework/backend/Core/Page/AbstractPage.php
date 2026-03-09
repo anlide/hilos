@@ -41,8 +41,9 @@ abstract class AbstractPage
      * Called when a client subscribes to this page.
      *
      * @param string $acceptKey WebSocket accept key
+     * @param array<string, string> $params Page params from route (e.g. ['id' => '123'])
      */
-    abstract public function onSubscribe(string $acceptKey): void;
+    abstract public function onSubscribe(string $acceptKey, array $params = []): void;
 
     /**
      * Handle page unsubscription

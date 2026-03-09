@@ -43,8 +43,9 @@ class AdminUsersPage extends AbstractChatPage
      * Sends initial users table data to the user on page subscription.
      *
      * @param string $acceptKey WebSocket accept key for the subscribing client
+     * @param array<string, string> $params Route params from page subscription (unused for admin users page)
      */
-    public function onSubscribe(string $acceptKey): void
+    public function onSubscribe(string $acceptKey, array $params = []): void
     {
         $result = Hilos::$table->users->get();
 

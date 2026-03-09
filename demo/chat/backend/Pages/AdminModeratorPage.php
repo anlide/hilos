@@ -38,8 +38,9 @@ class AdminModeratorPage extends AbstractChatPage
      * Sends initial moderator prompt pieces table data to the user on page subscription.
      *
      * @param string $acceptKey WebSocket accept key for the subscribing client
+     * @param array<string, string> $params Route params from page subscription (unused for moderator page)
      */
-    public function onSubscribe(string $acceptKey): void
+    public function onSubscribe(string $acceptKey, array $params = []): void
     {
         $result = Hilos::$table->moderatorPromptPieces->get();
 

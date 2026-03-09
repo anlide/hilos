@@ -14,6 +14,8 @@ import {
   SUBSCRIPTION_PAGE_ADMIN_USERS,
   SUBSCRIPTION_PAGE_ADMIN_BOTS,
   SUBSCRIPTION_PAGE_ADMIN_MODERATOR,
+  SUBSCRIPTION_PAGE_BOT,
+  SUBSCRIPTION_PAGE_USER,
   TABLE_DATA,
   TABLE_MUTATION,
   TABLE_ACTION_ERROR,
@@ -129,6 +131,10 @@ export function createChatWebSocketPlugin() {
           return
         }
         case SUBSCRIPTION_PAGE_PROFILE: {
+          return
+        }
+        case SUBSCRIPTION_PAGE_USER:
+        case SUBSCRIPTION_PAGE_BOT: {
           return
         }
         case SUBSCRIPTION_PAGE_ADMIN: {

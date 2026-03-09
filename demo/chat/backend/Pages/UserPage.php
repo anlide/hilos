@@ -32,8 +32,9 @@ class UserPage extends AbstractChatPage
      * Handle page-specific subscription logic
      *
      * @param string $acceptKey Accept key
+     * @param array<string, string> $params Route params from page subscription (e.g. ['id' => userId])
      */
-    public function onSubscribe(string $acceptKey): void
+    public function onSubscribe(string $acceptKey, array $params = []): void
     {
         $this->getChatAgent()->sendToUser(
             ChatSignalConstants::SUBSCRIPTION_PAGE_USER,

@@ -19,6 +19,11 @@ export type UserPayload = {
 export type BotPayload = {
   id: number
   name: string
+  description?: string | null
+  personality?: string | null
+  style?: string | null
+  topics?: string | null
+  active?: boolean
 }
 
 export const isBotPayload = (value: unknown): value is BotPayload => {
