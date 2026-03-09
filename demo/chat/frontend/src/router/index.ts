@@ -8,6 +8,10 @@ import AdminModerator from '@/views/AdminModerator.vue'
 import AdminBots from '@/views/AdminBots.vue'
 import User from '@/views/User.vue'
 import Bot from '@/views/Bot.vue'
+import Licence from '@/views/Licence.vue'
+import Terms from '@/views/Terms.vue'
+import Privacy from '@/views/Privacy.vue'
+import Agents from '@/views/Agents.vue'
 import type { RouteRecordRaw } from 'vue-router'
 
 /**
@@ -57,6 +61,26 @@ const demoRoutes: RouteRecordRaw[] = [
         path: 'bot/:id',
         name: 'bot',
         component: Bot
+      },
+      {
+        path: 'licence',
+        name: 'licence',
+        component: Licence
+      },
+      {
+        path: 'terms',
+        name: 'terms',
+        component: Terms
+      },
+      {
+        path: 'privacy',
+        name: 'privacy',
+        component: Privacy
+      },
+      {
+        path: 'agents',
+        name: 'agents',
+        component: Agents
       }
     ]
   }

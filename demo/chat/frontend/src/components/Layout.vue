@@ -47,6 +47,20 @@
     <main class="container-fluid py-3 flex-grow-1 overflow-hidden d-flex flex-column">
       <router-view />
     </main>
+    <footer class="footer flex-shrink-0 py-2 border-top">
+      <div class="container-fluid">
+        <div class="d-flex flex-column flex-sm-row justify-content-between align-items-center gap-2 text-body-secondary small">
+          <span>
+            <router-link to="/licence" class="text-body-secondary text-decoration-none">MIT licence</router-link>
+          </span>
+          <div class="d-flex flex-wrap justify-content-center gap-2 gap-sm-3">
+            <router-link to="/terms" class="text-body-secondary text-decoration-none">terms</router-link>
+            <router-link to="/privacy" class="text-body-secondary text-decoration-none">privacy</router-link>
+            <router-link to="/agents" class="text-body-secondary text-decoration-none">agents</router-link>
+          </div>
+        </div>
+      </div>
+    </footer>
   </div>
 </template>
 
