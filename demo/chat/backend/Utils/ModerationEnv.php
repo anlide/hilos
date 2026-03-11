@@ -18,7 +18,10 @@ class ModerationEnv
 {
     public static function getModel(): string
     {
-        return Env::getFilled(EnvConstants::CHAT_MODERATION_MODEL, ChatLLMConstants::MODEL_MODERATION);
+        return Env::getFilled(
+            EnvConstants::CHAT_MODERATION_MODEL,
+            Env::getFilled(EnvConstants::LLM_LOCAL_CHAT_MODEL, ChatLLMConstants::MODEL_MODERATION)
+        );
     }
 
     public static function getUrl(): string
