@@ -51,16 +51,20 @@ This is a chat application demo that showcases WebSocket real-time communication
 
 All components run in Docker containers. See Docker configuration in `docker/` directory for details.
 
-**Start daemon:**
+**1. Start Ollama (framework, separate project).** Required for AI moderation and bots. See [Docker + Ollama + GPU](../../docs/docker-ollama-gpu.md).
+
+From repo root:
+```bash
+composer run ollama:start
+# Or GPU: ollama:start-gpu-nvidia / ollama:start-gpu-amd
+```
+
+**2. Start daemon:**
 ```bash
 composer run daemon-start
 ```
 
-**Start daemon with GPU acceleration (optional):**
-- **NVIDIA**: `composer run daemon-start-gpu-nvidia` (requires [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/))
-- **AMD ROCm**: `composer run daemon-start-gpu-amd` (requires ROCm, `/dev/kfd` and `/dev/dri`)
-
-**Start frontend dev server:**
+**3. Start frontend dev server:**
 ```bash
 composer run frontend-dev
 ```
@@ -69,28 +73,16 @@ composer run frontend-dev
 
 AI moderation uses Ollama with a lightweight model (`qwen2.5:0.5b`) for low-latency allow/block classification. Override via env var `CHAT_MODERATION_MODEL` (e.g. `qwen2.5:3b` for stronger moderation).
 
+Ollama runs as a **standalone** framework project, port 11434 exposed to host. Demo connects via `LLM_LOCAL_URL` (default `http://host.docker.internal:11434`) and does not depend on framework internals—it may be external AI farm too. See [Docker + Ollama + GPU (framework)](../../docs/docker-ollama-gpu.md).
+
 ### GPU acceleration (optional)
 
-By default Ollama runs on CPU. For faster inference, use GPU overrides:
+| Vendor | Command (from repo root) | Prerequisites |
+|--------|--------------------------|---------------|
+| **NVIDIA** | `composer run ollama:start-gpu-nvidia` | [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/) |
+| **AMD** | `composer run ollama:start-gpu-amd` | ROCm, `/dev/kfd` and `/dev/dri` |
 
-| Vendor | Command | Prerequisites |
-|--------|---------|---------------|
-| **NVIDIA** | `composer run daemon-start-gpu-nvidia` | [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/) |
-| **AMD** | `composer run daemon-start-gpu-amd` | ROCm, `/dev/kfd` and `/dev/dri` |
-
-**Model initialization:** Start the daemon first (`daemon-start` or `daemon-start-gpu-*`), then pull (installs both default qwen2.5:0.5b and optional qwen2.5:3b):
-- `composer run ollama-pull` (CPU / default)
-- `composer run ollama-pull-gpu-nvidia` (NVIDIA)
-- `composer run ollama-pull-gpu-amd` (AMD)
-
-Direct Docker Compose usage:
-```bash
-# NVIDIA
-docker compose -f docker/docker-compose.local.yml -f docker/docker-compose.local.gpu-nvidia.yml up -d
-
-# AMD
-docker compose -f docker/docker-compose.local.yml -f docker/docker-compose.local.gpu-amd.yml up -d
-```
+**Model initialization:** After starting Ollama, from repo root: `composer run ollama:pull` / `ollama:pull-gpu-nvidia` / `ollama:pull-gpu-amd`
 
 ## Testing
 

@@ -1,5 +1,5 @@
 # GPU override for ollama-local (AMD ROCm).
-# Use: docker compose -f docker/docker-compose.local.yml -f docker/docker-compose.local.gpu-amd.yml up -d
+# Use: docker compose -f framework/docker/ollama-local.yml -f framework/docker/ollama-local.gpu-amd.yml up -d
 #
 # Prerequisites: AMD GPU with ROCm support, /dev/kfd and /dev/dri on host
 

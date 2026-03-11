@@ -21,7 +21,10 @@ class ContextAnalyzerEnv
 
     public static function getUrl(): string
     {
-        $url = Env::getFilled(EnvConstants::CHAT_CONTEXT_ANALYZER_URL, LLMConstants::DEFAULT_LOCAL_URL);
+        $url = trim(Env::getFilled(EnvConstants::CHAT_CONTEXT_ANALYZER_URL, ''));
+        if ($url === '') {
+            $url = Env::getFilled(EnvConstants::LLM_LOCAL_URL, LLMConstants::DEFAULT_LOCAL_URL);
+        }
         $url = rtrim($url, '/');
         if (str_ends_with($url, '/api/generate')) {
             $url = substr($url, 0, -strlen('/api/generate'));

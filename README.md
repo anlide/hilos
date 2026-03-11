@@ -174,6 +174,7 @@ hilos/
 ## 📚 Documentation
 
 - **[docs/ai-agents.md](docs/ai-agents.md)** — Instructions for AI agents
+- **[docs/docker-ollama-gpu.md](docs/docker-ollama-gpu.md)** — Ollama (standalone), GPU (NVIDIA/AMD), LLM_LOCAL_URL
 - **[docs/quality.md](docs/quality.md)** — Application quality guidelines
 - **[docs/code-style.md](docs/code-style.md)** — Code style guide
 - **[docs/reference.md](docs/reference.md)** — API reference

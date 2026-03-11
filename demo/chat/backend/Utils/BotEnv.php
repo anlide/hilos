@@ -23,7 +23,10 @@ class BotEnv
 
     public static function getUrl(): string
     {
-        $url = Env::getFilled(EnvConstants::CHAT_BOT_URL, LLMConstants::DEFAULT_LOCAL_URL);
+        $url = trim(Env::getFilled(EnvConstants::CHAT_BOT_URL, ''));
+        if ($url === '') {
+            $url = Env::getFilled(EnvConstants::LLM_LOCAL_URL, LLMConstants::DEFAULT_LOCAL_URL);
+        }
         $url = rtrim($url, '/');
         if (str_ends_with($url, '/api/generate')) {
             $url = substr($url, 0, -strlen('/api/generate'));
