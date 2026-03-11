@@ -21,6 +21,13 @@
         >
           {{ getHeaderUserName() }}
         </RouterLink>
+        <RouterLink
+          v-else-if="getHeaderUserName() && props.event.botId != null"
+          class="fw-bold text-decoration-none text-primary"
+          :to="{ name: 'bot', params: { id: props.event.botId } }"
+        >
+          {{ getHeaderUserName() }}
+        </RouterLink>
         <span
           v-else-if="getHeaderUserName()"
           class="fw-bold text-primary"
@@ -36,7 +43,17 @@
         <small class="text-muted">{{ formatTime(event.timestamp) }}</small>
       </div>
       <div v-if="getMessageText()" :class="isOwnMessage ? 'mt-1' : 'ms-3 mt-1'">
-        {{ getMessageText() }}
+        <template v-for="(segment, i) in getLinkifiedSegments()" :key="i">
+          <a
+            v-if="segment.type === 'link'"
+            :href="segment.url"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="text-decoration-underline"
+            :class="isOwnMessage ? 'link-light' : 'link-primary'"
+          >{{ segment.url }}</a>
+          <template v-else>{{ segment.text }}</template>
+        </template>
       </div>
       <div v-if="isOwnMessage" class="text-end">
         <small class="opacity-75">{{ formatTime(event.timestamp) }}</small>
@@ -191,6 +208,34 @@ const getMessageText = (): string => {
   }
 
   return ''
+}
+
+/** URL regex: matches http(s):// followed by non-whitespace */
+const URL_REGEX = /(https?:\/\/[^\s]+)/g
+
+type TextSegment = { type: 'text'; text: string }
+type LinkSegment = { type: 'link'; url: string }
+type MessageSegment = TextSegment | LinkSegment
+
+const getLinkifiedSegments = (): MessageSegment[] => {
+  const text = getMessageText()
+  if (!text) return []
+
+  const parts = text.split(URL_REGEX)
+  const segments: MessageSegment[] = []
+
+  for (let i = 0; i < parts.length; i++) {
+    const part = parts[i]
+    if (!part) continue
+    // Odd indices are URL matches (regex capture groups)
+    if (i % 2 === 1 && part.startsWith('http')) {
+      segments.push({ type: 'link', url: part })
+    } else {
+      segments.push({ type: 'text', text: part })
+    }
+  }
+
+  return segments
 }
 
 const getServiceMessageClass = (): string => {
