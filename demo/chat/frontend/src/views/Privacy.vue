@@ -49,5 +49,15 @@
 </template>
 
 <script setup lang="ts">
-// Privacy Policy page placeholder
+import { useHead } from '@unhead/vue'
+
+useHead({
+  title: 'Privacy Policy | Demo WebSocket Chat',
+  meta: [
+    {
+      name: 'description',
+      content: 'Privacy policy for the demo WebSocket chat. Data collection, storage, and user rights.'
+    }
+  ]
+})
 </script>

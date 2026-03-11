@@ -45,6 +45,7 @@
         "setup-env": "docker-compose -f docker/docker-compose.local.yml run --rm chat-cli-local sh -c \"if [ ! -f ../.env ] && [ -f ../.env.example ]; then cp ../.env.example ../.env && echo '.env file created from .env.example'; else echo '.env file already exists or .env.example not found'; fi\"",
         "install-deps": "docker-compose -f docker/docker-compose.local.yml run --rm chat-cli-local composer install",
         "daemon-start": "docker-compose -f docker/docker-compose.local.yml up -d",
+        "daemon-start-build": "docker-compose -f docker/docker-compose.local.yml --profile full up -d",
         "daemon-stop": "docker-compose -f docker/docker-compose.local.yml stop",
         "daemon-restart": "docker-compose -f docker/docker-compose.local.yml restart chat-local",
         "daemon-status": "docker-compose -f docker/docker-compose.local.yml run --rm chat-cli-local php backend/Bootstrap/cli.php daemon:status",
@@ -66,7 +67,7 @@
         "pma": "docker-compose -f docker/docker-compose.local.yml up -d phpmyadmin-local && echo phpMyAdmin is running at http://localhost:8080",
         "pma-stop": "docker-compose -f docker/docker-compose.local.yml stop phpmyadmin-local",
         "frontend-install": "docker-compose -f docker/docker-compose.local.yml run --rm chat-frontend-local npm install",
-        "frontend-build": "docker-compose -f docker/docker-compose.local.yml run --rm chat-frontend-local npm run build",
+        "frontend-build": "docker-compose -f docker/docker-compose.local.yml --profile build run --rm chat-frontend-builder",
         "frontend-dev": "docker-compose -f docker/docker-compose.local.yml up -d chat-frontend-local",
         "frontend-stop": "docker-compose -f docker/docker-compose.local.yml stop chat-frontend-local",
         "test:install-deps": "docker compose -f docker/docker-compose.test.yml --profile cli run --rm chat-cli-test composer update phpunit/phpunit --no-interaction",
@@ -79,11 +80,12 @@
         "test:integration": "docker compose -f docker/docker-compose.test.yml --profile cli run --rm chat-cli-test php vendor/bin/phpunit --testsuite integration",
         "test:phpunit": "docker compose -f docker/docker-compose.test.yml --profile cli run --rm chat-cli-test php vendor/bin/phpunit",
         "test:all": "composer run test:db-reset && composer run test:phpunit",
-        "test:e2e-up": "docker compose -f docker/docker-compose.test.yml up -d mysql-test chat-test frontend-test",
+        "test:e2e-build": "docker compose -f docker/docker-compose.test.yml --profile build run --rm chat-frontend-builder",
+        "test:e2e-up": "docker compose -f docker/docker-compose.test.yml up -d mysql-test chat-test chat-nginx-test",
         "test:e2e-down": "docker compose -f docker/docker-compose.test.yml down",
         "test:e2e-install": "cd tests/e2e && npm ci && npx playwright install --with-deps",
         "test:e2e": "cd tests/e2e && npm test",
-        "test:e2e-full": "composer run test:e2e-up && composer run test:db-wait && composer run test:db-reset && composer run test:e2e-install && composer run test:e2e && composer run test:e2e-down"
+        "test:e2e-full": "composer run test:e2e-build && composer run test:e2e-up && composer run test:db-wait && composer run test:db-reset && composer run test:e2e-install && composer run test:e2e && composer run test:e2e-down"
     }
 }
 

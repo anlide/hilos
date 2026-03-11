@@ -41,5 +41,15 @@
 </template>
 
 <script setup lang="ts">
-// Terms of Use page placeholder
+import { useHead } from '@unhead/vue'
+
+useHead({
+  title: 'Terms of Use | Demo WebSocket Chat',
+  meta: [
+    {
+      name: 'description',
+      content: 'Terms of use for the demo WebSocket chat service.'
+    }
+  ]
+})
 </script>

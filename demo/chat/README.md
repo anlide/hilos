@@ -59,15 +59,37 @@ composer run ollama:start
 # Or GPU: ollama:start-gpu-nvidia / ollama:start-gpu-amd
 ```
 
-**2. Start daemon:**
+**2. Choose mode: Dev or Build**
+
+| Mode | Use case | Frontend | Daemon |
+|------|----------|----------|--------|
+| **Dev** | Local development, hot reload | Vite on :5173 | :8090, :8092 |
+| **Build** | Production-like, prerendered SEO, HTTPS | Nginx on :80, :443 | :8090, :8092, :8093 |
+
+**Dev mode** (profile `dev`): Vite serves SPA, no Nginx. WebSocket direct to daemon.
 ```bash
 composer run daemon-start
+composer run frontend-dev    # Vite on http://localhost:5173
 ```
 
-**3. Start frontend dev server:**
+**Build mode** (profile `full`): Nginx serves static assets + prerendered HTML (content negotiation via daemon). HTTPS only: port 80 redirects to 443.
 ```bash
-composer run frontend-dev
+composer run frontend-build      # One-time: npm run build in Docker → dist/
+composer run daemon-start-build  # MySQL + daemon + Nginx on :80, :443
+# Open https://localhost (browser will warn about self-signed cert — accept to continue)
 ```
+
+### Frontend and daemon commands
+
+| Command | Description |
+|---------|-------------|
+| `composer run frontend-build` | Build frontend in Docker (vite-ssg prerender → `dist/`); required for Build mode |
+| `composer run frontend-dev` | Start Vite dev server (profile `dev`); hot reload on :5173 |
+| `composer run frontend-stop` | Stop Vite dev server |
+| `composer run daemon-start` | Start Docker stack (MySQL + daemon), Dev mode — no Nginx |
+| `composer run daemon-start-build` | Start stack with Nginx — Build mode, app at **https://localhost** |
+| `composer run daemon-stop` | Stop Docker stack |
+| `composer run daemon-restart` | Restart daemon container |
 
 ## AI moderation (Ollama)
 
@@ -119,11 +141,12 @@ Tests use a separate Docker stack (`docker/docker-compose.test.yml`), isolated f
 | `composer run test:integration` | Run integration tests |
 | `composer run test:phpunit` | Run all PHPUnit tests |
 | `composer run test:all` | Reset DB and run all PHPUnit tests |
-| `composer run test:e2e-up` | Start full stack for Playwright (MySQL + daemon + frontend) |
+| `composer run test:e2e-build` | Build frontend in Docker (required before E2E) |
+| `composer run test:e2e-up` | Start E2E stack (MySQL + daemon + Nginx) |
 | `composer run test:e2e-down` | Stop E2E stack |
 | `composer run test:e2e-install` | Install Playwright deps and browsers |
 | `composer run test:e2e` | Run Playwright E2E tests |
-| `composer run test:e2e-full` | Full E2E flow: up → db-wait → db-reset → install → test → down |
+| `composer run test:e2e-full` | Full E2E flow: build → up → db-wait → db-reset → install → test → down |
 
 ### Typical flow
 
@@ -149,9 +172,14 @@ composer run test:phpunit
 composer run test:e2e-full
 ```
 
-This starts the stack, waits for MySQL (`db:wait`), resets the DB, installs Playwright deps, runs E2E tests, then stops the stack.
+This builds the frontend, starts the stack (MySQL + daemon + Nginx), waits for MySQL, resets the DB, installs Playwright deps, runs E2E tests, then stops the stack. E2E tests run over HTTPS (`https://localhost`).
 
 **Manual flow:**
+
+0. Build frontend (required; produces `dist/` for Nginx):
+   ```bash
+   composer run test:e2e-build
+   ```
 
 1. Start the E2E stack:
    ```bash

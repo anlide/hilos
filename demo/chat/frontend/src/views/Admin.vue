@@ -6,8 +6,9 @@
           <h5 class="mb-0">Admin</h5>
         </div>
         <div class="card-body">
-          <div class="list-group">
-            <router-link to="/admin/users" class="list-group-item list-group-item-action">
+          <client-only>
+            <div class="list-group">
+              <router-link to="/admin/users" class="list-group-item list-group-item-action">
               <div class="d-flex w-100 justify-content-between">
                 <h6 class="mb-1">Users</h6>
               </div>
@@ -26,6 +27,10 @@
               <p class="mb-1">Bot management</p>
             </router-link>
           </div>
+            <template #placeholder>
+              <p class="mb-0 text-body-secondary">Access denied for guests.</p>
+            </template>
+          </client-only>
         </div>
       </div>
     </div>

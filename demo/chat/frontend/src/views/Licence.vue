@@ -38,5 +38,15 @@
 </template>
 
 <script setup lang="ts">
-// Licence page placeholder
+import { useHead } from '@unhead/vue'
+
+useHead({
+  title: 'Licence (MIT) | Demo WebSocket Chat',
+  meta: [
+    {
+      name: 'description',
+      content: 'MIT License for the demo WebSocket chat project.'
+    }
+  ]
+})
 </script>

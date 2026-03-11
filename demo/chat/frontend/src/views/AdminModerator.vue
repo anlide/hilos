@@ -1,6 +1,7 @@
 <template>
   <div class="row">
     <div class="col-12 col-lg-10 mx-auto">
+      <client-only>
       <div class="card">
         <div class="card-header d-flex justify-content-between align-items-center">
           <h5 class="mb-0">Moderator prompt pieces</h5>
@@ -110,8 +111,6 @@
           </Table>
         </div>
       </div>
-    </div>
-  </div>
 
   <Modal
     v-model="showModal"
@@ -155,6 +154,17 @@
       </LoadingButton>
     </template>
   </Modal>
+  <template #placeholder>
+    <div class="card">
+      <div class="card-header"><h5 class="mb-0">Moderator prompt pieces</h5></div>
+      <div class="card-body">
+        <p class="mb-0 text-body-secondary">Access denied for guests.</p>
+      </div>
+    </div>
+  </template>
+  </client-only>
+    </div>
+  </div>
 </template>
 
 <script setup lang="ts">

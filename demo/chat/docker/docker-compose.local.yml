@@ -90,6 +90,9 @@ services:
       - CHAT_BOT_TIMEOUT_SEC=${CHAT_BOT_TIMEOUT_SEC:-90.0}
       - CHAT_BOT_PROVIDER=${CHAT_BOT_PROVIDER:-local}
       - CHAT_BOT_LANGUAGE=${CHAT_BOT_LANGUAGE:-ru}
+      - FRONTEND_HTML_HOST=${FRONTEND_HTML_HOST:-0.0.0.0}
+      - FRONTEND_HTML_PORT=${FRONTEND_HTML_PORT:-8093}
+      - FRONTEND_DIST_PATH=${FRONTEND_DIST_PATH:-/app/frontend/dist}
     command: ["php", "backend/Bootstrap/docker.php"]
     stop_grace_period: 25s
     depends_on:
@@ -99,6 +102,7 @@ services:
       - "${HTTP_STATUS_PORT:-8090}:${HTTP_STATUS_PORT:-8090}"
       - "${WORKER_COMM_PORT:-8091}:${WORKER_COMM_PORT:-8091}"
       - "${WEBSOCKET_PORT:-8092}:${WEBSOCKET_PORT:-8092}"
+      - "${FRONTEND_HTML_PORT:-8093}:${FRONTEND_HTML_PORT:-8093}"
     restart: unless-stopped
     networks:
       hilos-demo-chat-local-network:
@@ -155,6 +159,41 @@ services:
     networks:
       - hilos-demo-chat-local-network
 
+  chat-frontend-builder:
+    image: node:20-alpine
+    container_name: chat-frontend-builder
+    volumes:
+      - ../frontend:/app
+      - ../../../framework:/hilos/framework:ro
+    working_dir: /app
+    environment:
+      - NODE_ENV=production
+      - DOCKER=true
+    command: sh -c "npm ci --include=dev && npm run build:docker"
+    profiles:
+      - build
+
+  chat-nginx-local:
+    build:
+      context: .
+      dockerfile: Dockerfile.nginx
+    container_name: chat-nginx-local
+    volumes:
+      - ../frontend/dist:/usr/share/nginx/html:ro
+      - nginx-ssl-local:/etc/nginx/ssl
+    ports:
+      - "${NGINX_HTTP_PORT:-80}:80"
+      - "${NGINX_HTTPS_PORT:-443}:443"
+    environment:
+      - FRONTEND_HTML_UPSTREAM=chat-local
+    depends_on:
+      - chat-local
+    restart: unless-stopped
+    profiles:
+      - full
+    networks:
+      - hilos-demo-chat-local-network
+
   chat-frontend-local:
     image: node:20-alpine
     container_name: chat-frontend-local
@@ -170,8 +209,13 @@ services:
     ports:
       - "${FRONTEND_DEV_PORT:-5173}:5173"
     restart: unless-stopped
+    profiles:
+      - dev
     networks:
       - hilos-demo-chat-local-network
+
+volumes:
+  nginx-ssl-local:
 
 networks:
   hilos-demo-chat-local-network:

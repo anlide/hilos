@@ -17,5 +17,15 @@
 </template>
 
 <script setup lang="ts">
-// API AI Agents page placeholder
+import { useHead } from '@unhead/vue'
+
+useHead({
+  title: 'Agents | Demo WebSocket Chat',
+  meta: [
+    {
+      name: 'description',
+      content: 'API usage and automation guidelines for AI agents interacting with the chat.'
+    }
+  ]
+})
 </script>

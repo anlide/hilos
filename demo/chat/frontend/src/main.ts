@@ -1,20 +1,38 @@
-import { createApp } from 'vue'
+import { ViteSSG } from 'vite-ssg'
 import { createPinia } from 'pinia'
-import router from './router'
 import { createChatWebSocketPlugin } from './plugins/websocket'
+import { createWebSocketSSRStub } from './plugins/websocket-ssr-stub'
 import { localStorageService } from './services/LocalStorageService'
 import 'bootstrap/dist/css/bootstrap.min.css'
-import * as bootstrap from 'bootstrap'
 import 'bootstrap-icons/font/bootstrap-icons.css'
 import App from './App.vue'
+import { demoRoutes } from '@/router/routes'
 
-// Initialize localStorage service for cross-tab synchronization
-localStorageService.init()
+/** Routes to prerender (exclude dynamic :id routes) */
+export async function includedRoutes(paths: string[]) {
+  return paths.filter(
+    (path) =>
+      !path.startsWith('user') &&
+      !path.startsWith('bot') &&
+      !path.includes('/user/') &&
+      !path.includes('/bot/')
+  )
+}
 
-const app = createApp(App)
+export const createApp = ViteSSG(
+  App,
+  { routes: demoRoutes },
+  ({ app, initialState }) => {
+    const pinia = createPinia()
+    app.use(pinia)
 
-app.use(createPinia())
-app.use(router)
-app.use(createChatWebSocketPlugin())
-
-app.mount('#app')
+    if (import.meta.env.SSR) {
+      initialState.pinia = pinia.state.value as Record<string, unknown>
+      app.use(createWebSocketSSRStub())
+    } else {
+      pinia.state.value = (initialState.pinia as Record<string, unknown>) ?? {}
+      localStorageService.init()
+      app.use(createChatWebSocketPlugin() as Parameters<typeof app.use>[0])
+    }
+  }
+)

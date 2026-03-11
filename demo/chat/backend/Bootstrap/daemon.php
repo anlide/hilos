@@ -5,8 +5,11 @@ declare(strict_types=1);
 require_once __DIR__ . '/../../vendor/autoload.php';
 
 use Demo\Chat\Core\Daemon\ChatDaemonManager;
+use Demo\Chat\Core\Frontend\HtmlCache;
+use Demo\Chat\Core\Frontend\HtmlResolver;
 use Demo\Chat\Core\Socket\Server\ChatWebSocketServer;
 use Demo\Chat\Core\Socket\Server\ChatWorkerServer;
+use Demo\Chat\Core\Socket\Server\FrontendHtmlServer;
 use Demo\Chat\Database\Database;
 use Hilos\API\Router\HttpRouter;
 use Hilos\Constants\EnvConstants;
@@ -102,6 +105,20 @@ try {
     $daemon->registerServer($httpServer);
     $daemon->registerServer($workerServer);
     $daemon->registerServer($webSocketServer);
+
+    $frontendDistPath = Env::get('FRONTEND_DIST_PATH', __DIR__ . '/../../frontend/dist');
+    if (is_dir($frontendDistPath)) {
+        $htmlResolver = new HtmlResolver();
+        $htmlCache = new HtmlCache($frontendDistPath);
+        $frontendHtmlServer = new FrontendHtmlServer(
+            Env::get('FRONTEND_HTML_HOST', '0.0.0.0'),
+            (int) Env::get('FRONTEND_HTML_PORT', '8093'),
+            $htmlResolver,
+            $htmlCache
+        );
+        $daemon->registerServer($frontendHtmlServer);
+    }
+
     $daemon->registerHttpRouter($router);
 
     // Start daemon main loop

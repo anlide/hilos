@@ -33,11 +33,8 @@ const detectWindowsHost = (): boolean => {
   
   // Check process.env.PATH for Windows-style paths (if mounted)
   const pathEnv = process.env.PATH || ''
-  if (pathEnv.includes(':\\') || pathEnv.match(/\/[a-z]:\//i)) {
-    return true
-  }
-  
-  return false
+
+  return !!(pathEnv.includes(':\\') || pathEnv.match(/\/[a-z]:\//i));
 }
 
 const isWindowsHost = detectWindowsHost()
@@ -47,15 +44,11 @@ const needsPolling = isDocker && isWindowsHost
 // Framework is mounted at /hilos/framework in Docker container
 const dockerSdkPath = '/hilos/framework/frontend/src'
 
-let resolvedSdkPath: string
-
-// In Docker: use mounted volume path
-if (isDocker && existsSync(dockerSdkPath)) {
-  resolvedSdkPath = dockerSdkPath
-} else {
-  // Fallback for local development (should not happen in Docker)
-  resolvedSdkPath = resolve(fileURLToPath(new URL('../../../framework/frontend/src', import.meta.url)))
-}
+// In Docker: use mounted volume path; fallback for local development
+const resolvedSdkPath =
+  isDocker && existsSync(dockerSdkPath)
+    ? dockerSdkPath
+    : resolve(fileURLToPath(new URL('../../../framework/frontend/src', import.meta.url)))
 
 // https://vite.dev/config/
 export default defineConfig({
@@ -105,5 +98,5 @@ export default defineConfig({
     outDir: 'dist',
     sourcemap: true,
     emptyOutDir: true
-  }
+  },
 })

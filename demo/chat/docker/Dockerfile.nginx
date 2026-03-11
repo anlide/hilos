@@ -1,0 +1,12 @@
+# Nginx image with envsubst for config templating and optional self-signed SSL
+FROM nginx:alpine
+
+# gettext provides envsubst for config variable substitution
+RUN apk add --no-cache gettext openssl
+
+COPY nginx.conf.template /etc/nginx/nginx.conf.template
+COPY docker-entrypoint-nginx.sh /docker-entrypoint-nginx.sh
+RUN sed -i 's/\r$//' /docker-entrypoint-nginx.sh && chmod +x /docker-entrypoint-nginx.sh
+
+ENTRYPOINT ["/docker-entrypoint-nginx.sh"]
+CMD ["nginx", "-g", "daemon off;"]

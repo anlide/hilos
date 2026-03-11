@@ -25,6 +25,9 @@ services:
       - WORKER_COMM_PORT=${WORKER_COMM_PORT:-8091}
       - WEBSOCKET_HOST=${WEBSOCKET_HOST:-0.0.0.0}
       - WEBSOCKET_PORT=${WEBSOCKET_PORT:-8092}
+      - FRONTEND_HTML_HOST=${FRONTEND_HTML_HOST:-0.0.0.0}
+      - FRONTEND_HTML_PORT=${FRONTEND_HTML_PORT:-8093}
+      - FRONTEND_DIST_PATH=${FRONTEND_DIST_PATH:-/app/frontend/dist}
     command: ["php", "backend/Bootstrap/docker.php"]
     stop_grace_period: 25s
     ports:
@@ -33,20 +36,40 @@ services:
     expose:
       - "${HTTP_STATUS_PORT:-8090}"
       - "${WORKER_COMM_PORT:-8091}"
+      - "${FRONTEND_HTML_PORT:-8093}"
     restart: unless-stopped
     networks:
       hilos-demo-chat-prod-network:
         ipv4_address: ${DOCKER_DAEMON_IP:-172.26.0.11}
 
-  # Nginx for serving frontend production build
+  chat-frontend-builder:
+    image: node:20-alpine
+    container_name: chat-frontend-builder-prod
+    volumes:
+      - ../frontend:/app
+      - ../../../framework:/hilos/framework:ro
+    working_dir: /app
+    environment:
+      - NODE_ENV=production
+      - DOCKER=true
+    command: sh -c "npm ci --include=dev && npm run build:docker"
+    profiles:
+      - build
+
+  # Nginx for serving frontend production build (HTTPS-only)
   chat-frontend-prod:
-    image: nginx:alpine
+    build:
+      context: .
+      dockerfile: Dockerfile.nginx
     container_name: chat-frontend-prod
     volumes:
       - ../frontend/dist:/usr/share/nginx/html:ro
-      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - nginx-ssl-prod:/etc/nginx/ssl
     ports:
-      - "${FRONTEND_PORT:-8080}:80"
+      - "${NGINX_HTTP_PORT:-80}:80"
+      - "${NGINX_HTTPS_PORT:-443}:443"
+    environment:
+      - FRONTEND_HTML_UPSTREAM=chat-prod
     depends_on:
       - chat-prod
     restart: unless-stopped
@@ -93,6 +116,9 @@ services:
       - monitor
     networks:
       - hilos-demo-chat-prod-network
+
+volumes:
+  nginx-ssl-prod:
 
 networks:
   hilos-demo-chat-prod-network:
