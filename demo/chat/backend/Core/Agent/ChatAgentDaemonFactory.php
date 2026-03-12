@@ -11,16 +11,16 @@ use Demo\Chat\Core\Agent\Daemon\ChatContextAnalyzerAgentDaemon;
 use Demo\Chat\Core\Agent\Daemon\ChatSituationGuardianAgentDaemon;
 use Demo\Chat\Core\Agent\Daemon\GuardiansOpsAgentDaemon;
 use Demo\Chat\Core\Agent\Daemon\ModeratorAgentDaemon;
-use Hilos\Core\Agent\Daemon\AbstractAgentDaemonFactory;
 use Hilos\Core\Agent\Daemon\AgentDaemonInterface;
-use Hilos\Core\Agent\Exception\AgentDaemonCreationFailedException;
+use Hilos\Core\Agent\Daemon\HilosAgentDaemonFactory;
 
 /**
  * ChatAgentDaemonFactory - Factory for creating chat-specific agent daemon proxies
  *
  * Creates ChatAgentDaemon, BotAgentDaemon and ModeratorAgentDaemon instances based on agent type.
+ * Extends HilosAgentDaemonFactory to delegate unknown types to framework.
  */
-class ChatAgentDaemonFactory extends AbstractAgentDaemonFactory
+class ChatAgentDaemonFactory extends HilosAgentDaemonFactory
 {
     /**
      * Create agent daemon instance based on type
@@ -28,7 +28,6 @@ class ChatAgentDaemonFactory extends AbstractAgentDaemonFactory
      * @param string $agentType Agent type
      * @param ?string $agentIndex Agent index (optional)
      * @return AgentDaemonInterface Agent daemon instance
-     * @throws AgentDaemonCreationFailedException If agent type is not supported or agentIndex is invalid
      */
     public static function createAgentDaemon(string $agentType, ?string $agentIndex): AgentDaemonInterface
     {
@@ -41,7 +40,7 @@ class ChatAgentDaemonFactory extends AbstractAgentDaemonFactory
                 $agentIndex ?? throw new \RuntimeException('BotAgentDaemon requires agentIndex (bot id)'),
             ),
             AgentType::MODERATOR => new ModeratorAgentDaemon(),
-            default => throw new AgentDaemonCreationFailedException($agentType, $agentIndex),
+            default => parent::createAgentDaemon($agentType, $agentIndex),
         };
     }
 }

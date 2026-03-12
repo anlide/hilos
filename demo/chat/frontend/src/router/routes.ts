@@ -16,6 +16,11 @@ import Licence from '@/views/Licence.vue'
 import Terms from '@/views/Terms.vue'
 import Privacy from '@/views/Privacy.vue'
 import Agents from '@/views/Agents.vue'
+import HilosDashboard from '@/views/HilosDashboard.vue'
+import HilosSettings from '@/views/HilosSettings.vue'
+import HilosI18n from '@/views/HilosI18n.vue'
+import HilosGuardian from '@/views/HilosGuardian.vue'
+import HilosAnalytics from '@/views/HilosAnalytics.vue'
 import ErrorPage from '@/views/ErrorPage.vue'
 
 export const demoRoutes: RouteRecordRaw[] = [
@@ -77,6 +82,31 @@ export const demoRoutes: RouteRecordRaw[] = [
         path: 'privacy',
         name: 'privacy',
         component: Privacy
+      },
+      {
+        path: 'hilos',
+        name: 'hilos',
+        component: HilosDashboard
+      },
+      {
+        path: 'hilos/settings',
+        name: 'hilos_settings',
+        component: HilosSettings
+      },
+      {
+        path: 'hilos/i18n',
+        name: 'hilos_i18n',
+        component: HilosI18n
+      },
+      {
+        path: 'hilos/guardian',
+        name: 'hilos_guardian',
+        component: HilosGuardian
+      },
+      {
+        path: 'hilos/analytics',
+        name: 'hilos_analytics',
+        component: HilosAnalytics
       },
       {
         path: 'agents',

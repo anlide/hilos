@@ -11,16 +11,16 @@ use Demo\Chat\Agents\ModeratorAgent;
 use Demo\Chat\Constants\AgentType;
 use Demo\Chat\Guardian\Agents\ChatSituationGuardianAgent;
 use Demo\Chat\Guardian\Agents\GuardiansOpsAgent;
-use Hilos\Core\Agent\AbstractAgentWorkerFactory;
 use Hilos\Core\Agent\AgentInterface;
-use Hilos\Core\Agent\Exception\AgentCreationFailedException;
+use Hilos\Core\Agent\HilosAgentWorkerFactory;
 
 /**
  * ChatAgentFactory - Factory for creating chat-specific agents in worker processes.
  *
  * Creates ChatAgent, BotAgent and ModeratorAgent instances based on agent type.
+ * Extends HilosAgentWorkerFactory to delegate unknown types to framework.
  */
-class ChatAgentWorkerFactory extends AbstractAgentWorkerFactory
+class ChatAgentWorkerFactory extends HilosAgentWorkerFactory
 {
     /**
      * Create agent instance based on type
@@ -28,7 +28,6 @@ class ChatAgentWorkerFactory extends AbstractAgentWorkerFactory
      * @param string $agentType Agent type
      * @param ?string $agentIndex Agent index (optional)
      * @return AgentInterface Agent instance
-     * @throws AgentCreationFailedException If agent type is not supported or agentIndex is invalid
      */
     public static function createAgent(string $agentType, ?string $agentIndex): AgentInterface
     {
@@ -41,7 +40,7 @@ class ChatAgentWorkerFactory extends AbstractAgentWorkerFactory
                 $agentIndex ?? throw new \RuntimeException('BotAgent requires agentIndex (bot id)'),
             ),
             AgentType::MODERATOR => new ModeratorAgent(),
-            default => throw new AgentCreationFailedException($agentType, $agentIndex),
+            default => parent::createAgent($agentType, $agentIndex),
         };
     }
 }

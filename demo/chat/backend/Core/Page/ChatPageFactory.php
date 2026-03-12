@@ -27,8 +27,7 @@ use Demo\Chat\Tables\ModeratorPiece\DTO\ModeratorPieceDeleteActionDTO;
 use Demo\Chat\Tables\ModeratorPiece\DTO\ModeratorPieceUpdateActionDTO;
 use Demo\Chat\Tables\User\DTO\UserUpdateActionDTO;
 use Hilos\Core\Page\AbstractPage;
-use Hilos\Core\Page\AbstractPageFactory;
-use Hilos\Core\Page\Exception\PageNotFoundException;
+use Hilos\Core\Page\HilosPageFactory;
 use Hilos\Core\Page\PageAgentInterface;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 
@@ -36,10 +35,11 @@ use Hilos\Core\Router\DTO\ActionPayloadDTO;
  * ChatPageFactory - Factory for creating chat page instances
  *
  * Creates and manages chat page instances.
+ * Extends HilosPageFactory to inherit framework-level Hilos admin pages.
  *
- * @extends AbstractPageFactory<PageAgentInterface>
+ * @extends HilosPageFactory<PageAgentInterface>
  */
-class ChatPageFactory extends AbstractPageFactory
+class ChatPageFactory extends HilosPageFactory
 {
     protected function createPage(string $pageName): AbstractPage
     {
@@ -53,7 +53,7 @@ class ChatPageFactory extends AbstractPageFactory
             PageConstants::ADMIN_USERS => new AdminUsersPage($this->agent),
             PageConstants::ADMIN_MODERATOR => new AdminModeratorPage($this->agent),
             PageConstants::ADMIN_BOTS => new AdminBotsPage($this->agent),
-            default => throw new PageNotFoundException($pageName),
+            default => parent::createPage($pageName),
         };
     }
 
@@ -69,7 +69,7 @@ class ChatPageFactory extends AbstractPageFactory
             PageConstants::ADMIN_USERS,
             PageConstants::ADMIN_MODERATOR,
             PageConstants::ADMIN_BOTS,
-        ], true);
+        ], true) || parent::hasPage($pageName);
     }
 
     public function createActionPayloadDTO(string $action, array $data): ActionPayloadDTO

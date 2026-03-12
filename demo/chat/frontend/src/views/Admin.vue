@@ -26,6 +26,12 @@
               </div>
               <p class="mb-1">Bot management</p>
             </router-link>
+            <router-link to="/hilos" class="list-group-item list-group-item-action">
+              <div class="d-flex w-100 justify-content-between">
+                <h6 class="mb-1">Hilos</h6>
+              </div>
+              <p class="mb-1">Hilos system administration</p>
+            </router-link>
           </div>
             <template #placeholder>
               <p class="mb-0 text-body-secondary">Access denied for guests.</p>

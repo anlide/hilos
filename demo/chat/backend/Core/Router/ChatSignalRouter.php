@@ -79,6 +79,31 @@ class ChatSignalRouter extends SignalRouter
                 'agentIndex' => null,
                 'params' => [],
             ],
+            PageConstants::HILOS_DASHBOARD => [
+                'agentType' => AgentType::CHAT,
+                'agentIndex' => null,
+                'params' => [],
+            ],
+            PageConstants::HILOS_SETTINGS => [
+                'agentType' => AgentType::CHAT,
+                'agentIndex' => null,
+                'params' => [],
+            ],
+            PageConstants::HILOS_I18N => [
+                'agentType' => AgentType::CHAT,
+                'agentIndex' => null,
+                'params' => [],
+            ],
+            PageConstants::HILOS_GUARDIAN => [
+                'agentType' => AgentType::CHAT,
+                'agentIndex' => null,
+                'params' => [],
+            ],
+            PageConstants::HILOS_ANALYTICS => [
+                'agentType' => AgentType::CHAT,
+                'agentIndex' => null,
+                'params' => [],
+            ],
         ];
 
         // Groups configuration - defines available groups and their routing

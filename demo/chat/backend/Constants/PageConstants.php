@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Constants;
 
+use Hilos\Constants\HilosPageConstants;
+
 /**
  * PageConstants - Page constants for chat demo
  *
@@ -37,4 +39,19 @@ class PageConstants
 
     /** @var string Admin bots page */
     public const string ADMIN_BOTS = 'admin_bots';
+
+    /** @var string Hilos dashboard page */
+    public const string HILOS_DASHBOARD = HilosPageConstants::HILOS_DASHBOARD;
+
+    /** @var string Hilos settings page */
+    public const string HILOS_SETTINGS = HilosPageConstants::HILOS_SETTINGS;
+
+    /** @var string Hilos internationalization page */
+    public const string HILOS_I18N = HilosPageConstants::HILOS_I18N;
+
+    /** @var string Hilos guardian page */
+    public const string HILOS_GUARDIAN = HilosPageConstants::HILOS_GUARDIAN;
+
+    /** @var string Hilos analytics page */
+    public const string HILOS_ANALYTICS = HilosPageConstants::HILOS_ANALYTICS;
 }
