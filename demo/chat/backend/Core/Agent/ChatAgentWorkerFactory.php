@@ -7,6 +7,9 @@ namespace Demo\Chat\Core\Agent;
 use Demo\Chat\Agents\BotAgent;
 use Demo\Chat\Agents\ChatAgent;
 use Demo\Chat\Agents\ChatContextAnalyzerAgent;
+use Demo\Chat\Agents\Hilos\DemoHilosAgent;
+use Demo\Chat\Agents\Hilos\DemoHilosAnalyticsAgent;
+use Demo\Chat\Agents\Hilos\DemoHilosGuardianAgent;
 use Demo\Chat\Agents\ModeratorAgent;
 use Demo\Chat\Constants\AgentType;
 use Demo\Chat\Guardian\Agents\ChatSituationGuardianAgent;
@@ -15,9 +18,9 @@ use Hilos\Core\Agent\AgentInterface;
 use Hilos\Core\Agent\HilosAgentWorkerFactory;
 
 /**
- * ChatAgentFactory - Factory for creating chat-specific agents in worker processes.
+ * ChatAgentWorkerFactory - Factory for creating chat-specific agents in worker processes.
  *
- * Creates ChatAgent, BotAgent and ModeratorAgent instances based on agent type.
+ * Creates chat and Hilos agent instances based on agent type.
  * Extends HilosAgentWorkerFactory to delegate unknown types to framework.
  */
 class ChatAgentWorkerFactory extends HilosAgentWorkerFactory
@@ -40,6 +43,9 @@ class ChatAgentWorkerFactory extends HilosAgentWorkerFactory
                 $agentIndex ?? throw new \RuntimeException('BotAgent requires agentIndex (bot id)'),
             ),
             AgentType::MODERATOR => new ModeratorAgent(),
+            AgentType::HILOS_INDEX => new DemoHilosAgent(),
+            AgentType::HILOS_GUARDIAN => new DemoHilosGuardianAgent(),
+            AgentType::HILOS_ANALYTICS => new DemoHilosAnalyticsAgent(),
             default => parent::createAgent($agentType, $agentIndex),
         };
     }

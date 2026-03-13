@@ -12,6 +12,7 @@ use Demo\Chat\Core\Page\ChatPageFactory;
 use Demo\Chat\Core\Router\ChatSignalRouter;
 use Hilos\Core\Agent\AgentInterface;
 use Hilos\Core\Agent\AgentManager;
+use Hilos\Core\Agent\Hilos\AbstractHilosAgent;
 use Hilos\Core\Daemon\WorkerManager;
 use Hilos\Core\Page\ActionRouteConfig;
 use Hilos\Core\Page\Exception\PageSignalRouterNotFoundException;
@@ -42,7 +43,7 @@ class ChatWorkerManager extends WorkerManager
 
     protected function createPageSignalRouter(AgentInterface $agent): PageSignalRouter
     {
-        if (!($agent instanceof ChatAgent)) {
+        if (!$agent instanceof ChatAgent && !$agent instanceof AbstractHilosAgent) {
             throw new PageSignalRouterNotFoundException($agent::class);
         }
 

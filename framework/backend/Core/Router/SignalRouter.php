@@ -22,20 +22,34 @@ use Hilos\Utils\Logger;
  * SignalRouter - Base class for routing signals from sources to agents
  *
  * Routes signals based on configuration stored in protected $config array.
- * Can be used directly with empty config, or extended to provide custom routing rules.
- * Manages signal queueing.
+ * Extended by project-level routers (e.g. ChatSignalRouter) to define routing rules.
+ *
+ * Routing design principle: route by sender, not by destination.
+ * Signal source and type determine which agent receives the signal.
+ * Agents do not pull signals — they receive them based on declarative routing config.
+ *
+ * Config structure:
+ * - 'pages'    — page -> agentType mapping (which agent handles which page)
+ * - 'groups'   — group -> agentType mapping
+ * - 'signals'  — source -> signalType -> agentType mapping (static routing)
+ * - 'actions'  — action -> agentType mapping
+ * - 'page_subscription_routing' — per-page agent override for PAGE_SUBSCRIBE/UNSUBSCRIBE/UPDATE:
+ *       ['default' => agentType, 'pages' => [pageName => agentType, ...]]
+ *
+ * For dynamic routing (agentIndex depends on signal content), override getDestinations()
+ * in child router. Static routing must always be declared in config.
  */
 class SignalRouter
 {
     /**
      * Signal routing configuration
      *
-     * Can be overridden in child classes or set via constructor.
-     * Format: [
-     *     'source_name' => [
-     *         'signal_type' => ['agentType' => 'type', 'agentIndex' => 'index'|null]
-     *     ]
-     * ]
+     * Set by child router in __construct(). Keys:
+     * - 'pages'  — array<string, array{agentType: string, agentIndex: ?string, params: array}>
+     * - 'groups' — array<string, array{agentType: string, agentIndex: ?string, params: array}>
+     * - 'signals' — array<source, array<signalType, string|string[]>> (static agent routing)
+     * - 'actions' — array<actionName, string> (action -> agentType)
+     * - 'page_subscription_routing' — array{default: string, pages: array<pageName, string>}
      *
      * @var array
      */
@@ -411,8 +425,13 @@ class SignalRouter
     /**
      * Get destinations for signal
      *
-     * Merges destinations from all routing methods. One signal can go to multiple
-     * destination types (websocket, agent, worker, daemon) per config.
+     * Resolves signal destinations from config. Override in child routers ONLY for
+     * dynamic routing that depends on signal content (e.g. extracting agentIndex from payload).
+     * All static routing (source -> agent type mapping) must be declared in $config.
+     *
+     * Design principle: route by sender (signal source + type), not by destination.
+     * The signal source and type determine where the signal goes; the destination agent
+     * does not pull signals — it receives them based on routing rules.
      *
      * @param SignalDTO $signal Signal DTO
      * @return array Array of destinations [['type' => string, ...], ...]
@@ -434,7 +453,13 @@ class SignalRouter
             $destinations = array_merge($destinations, $this->getWebSocketDestinations($signal));
         }
 
-        if ($signalType === SignalTypeConstants::AGENT_SIGNAL) {
+        if (in_array($signalType, [
+            SignalTypeConstants::PAGE_SUBSCRIBE,
+            SignalTypeConstants::PAGE_UNSUBSCRIBE,
+            SignalTypeConstants::PAGE_UPDATE_SUBSCRIPTION,
+        ], true)) {
+            $destinations = array_merge($destinations, $this->getPageSubscriptionDestinations($signal));
+        } elseif ($signalType === SignalTypeConstants::AGENT_SIGNAL) {
             $destinations = array_merge($destinations, $this->getAgentDestinations($signal));
         } else {
             $routes = $this->route($signal->signalSource, $signal->signalType, $signal->data);
@@ -444,6 +469,46 @@ class SignalRouter
         }
 
         return $destinations;
+    }
+
+    /**
+     * Get agent destinations for page subscription signals (subscribe/unsubscribe/update)
+     *
+     * Uses config['page_subscription_routing'] to resolve per-page agent type.
+     * Falls back to config['page_subscription_routing']['default'] when page has no override.
+     *
+     * @param SignalDTO $signal Signal DTO
+     * @return array Array of destinations [['type' => 'agent', 'agentType' => string, 'agentIndex' => null], ...]
+     */
+    private function getPageSubscriptionDestinations(SignalDTO $signal): array
+    {
+        $signalType = $signal->signalType->getType();
+        $data = $signal->data;
+
+        $page = match ($signalType) {
+            SignalTypeConstants::PAGE_SUBSCRIBE => $data instanceof WebSocketPageSubscribeSignalDTO ? $data->page : '',
+            SignalTypeConstants::PAGE_UPDATE_SUBSCRIPTION => $data instanceof WebSocketPageUpdateSubscriptionSignalDTO ? $data->page : '',
+            SignalTypeConstants::PAGE_UNSUBSCRIBE => $signal->signalName->getName(),
+            default => '',
+        };
+
+        if ($page === '') {
+            return [];
+        }
+
+        $routingConfig = $this->config['page_subscription_routing'] ?? [];
+        $pagesOverrides = $routingConfig['pages'] ?? [];
+        $defaultAgentType = $routingConfig['default'] ?? null;
+
+        $agentType = $pagesOverrides[$page] ?? $defaultAgentType;
+
+        if ($agentType === null || $agentType === '') {
+            return [];
+        }
+
+        return [
+            ['type' => 'agent', 'agentType' => $agentType, 'agentIndex' => null],
+        ];
     }
 
     /**

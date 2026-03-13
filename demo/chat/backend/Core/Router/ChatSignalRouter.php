@@ -18,21 +18,18 @@ use Hilos\Core\Router\SignalSource;
 /**
  * ChatSignalRouter - Signal router for chat demo
  *
- * Routes WebSocket signals to chat agent.
- * Supports page and group subscriptions for routing.
+ * Defines declarative routing rules for all signal types in the chat demo project.
+ * Routes signals by source and type to the appropriate agent.
+ *
+ * Page subscription signals (PAGE_SUBSCRIBE, PAGE_UNSUBSCRIBE, PAGE_UPDATE_SUBSCRIPTION)
+ * are routed per-page via 'page_subscription_routing' config, with a default fallback.
  */
 class ChatSignalRouter extends SignalRouter
 {
-    /**
-     * Constructor
-     *
-     * Initializes chat signal router with routing configuration.
-     */
     public function __construct()
     {
         parent::__construct();
 
-        // Pages configuration - defines available pages and their routing
         $pages = [
             PageConstants::MAIN => [
                 'agentType' => AgentType::CHAT,
@@ -80,34 +77,32 @@ class ChatSignalRouter extends SignalRouter
                 'params' => [],
             ],
             PageConstants::HILOS_DASHBOARD => [
-                'agentType' => AgentType::CHAT,
+                'agentType' => AgentType::HILOS_INDEX,
                 'agentIndex' => null,
                 'params' => [],
             ],
             PageConstants::HILOS_SETTINGS => [
-                'agentType' => AgentType::CHAT,
+                'agentType' => AgentType::HILOS_INDEX,
                 'agentIndex' => null,
                 'params' => [],
             ],
             PageConstants::HILOS_I18N => [
-                'agentType' => AgentType::CHAT,
+                'agentType' => AgentType::HILOS_INDEX,
                 'agentIndex' => null,
                 'params' => [],
             ],
             PageConstants::HILOS_GUARDIAN => [
-                'agentType' => AgentType::CHAT,
+                'agentType' => AgentType::HILOS_GUARDIAN,
                 'agentIndex' => null,
                 'params' => [],
             ],
             PageConstants::HILOS_ANALYTICS => [
-                'agentType' => AgentType::CHAT,
+                'agentType' => AgentType::HILOS_ANALYTICS,
                 'agentIndex' => null,
                 'params' => [],
             ],
         ];
 
-        // Groups configuration - defines available groups and their routing
-        // Groups can be added dynamically or through config
         $groups = [
             GroupConstants::SESSION => [
                 'agentType' => AgentType::CHAT,
@@ -116,7 +111,6 @@ class ChatSignalRouter extends SignalRouter
             ],
         ];
 
-        // Signals configuration - defines signal routing rules
         $signals = [
             SignalSource::DAEMON => [
                 SignalTypeConstants::SYSTEM => [
@@ -125,6 +119,9 @@ class ChatSignalRouter extends SignalRouter
                     AgentType::MODERATOR,
                     AgentType::GUARDIAN_OPS,
                     AgentType::CHAT_SITUATION_GUARDIAN,
+                    AgentType::HILOS_INDEX,
+                    AgentType::HILOS_GUARDIAN,
+                    AgentType::HILOS_ANALYTICS,
                 ],
                 SignalTypeConstants::CRON => AgentType::CHAT,
             ],
@@ -140,20 +137,24 @@ class ChatSignalRouter extends SignalRouter
                 ],
             ],
             SignalSource::WEBSOCKET => [
-                // Page subscription signals - routing to CHAT agent
                 SignalTypeConstants::HANDSHAKE => AgentType::CHAT,
                 SignalTypeConstants::CONNECTION_CLOSE => AgentType::CHAT,
-                SignalTypeConstants::PAGE_SUBSCRIBE => AgentType::CHAT,
-                SignalTypeConstants::PAGE_UNSUBSCRIBE => AgentType::CHAT,
-                SignalTypeConstants::PAGE_UPDATE_SUBSCRIPTION => AgentType::CHAT,
-                // Group subscription signals - routing to CHAT agent
                 SignalTypeConstants::GROUP_SUBSCRIBE => AgentType::CHAT,
                 SignalTypeConstants::GROUP_UNSUBSCRIBE => AgentType::CHAT,
                 SignalTypeConstants::GROUP_UPDATE_SUBSCRIPTION => AgentType::CHAT,
-                // User`s action signal - routing to CHAT agent
                 SignalTypeConstants::ACTION => AgentType::CHAT,
-                // Cron`s action signal - routing to CHAT agent
                 SignalTypeConstants::CRON => AgentType::CHAT,
+            ],
+        ];
+
+        $pageSubscriptionRouting = [
+            'default' => AgentType::CHAT,
+            'pages' => [
+                PageConstants::HILOS_DASHBOARD => AgentType::HILOS_INDEX,
+                PageConstants::HILOS_SETTINGS => AgentType::HILOS_INDEX,
+                PageConstants::HILOS_I18N => AgentType::HILOS_INDEX,
+                PageConstants::HILOS_GUARDIAN => AgentType::HILOS_GUARDIAN,
+                PageConstants::HILOS_ANALYTICS => AgentType::HILOS_ANALYTICS,
             ],
         ];
 
@@ -163,20 +164,21 @@ class ChatSignalRouter extends SignalRouter
             ChatSignalConstants::RENAME => AgentType::CHAT,
         ];
 
-        // Signal routing configuration
         $this->config = [
             'pages' => $pages,
             'groups' => $groups,
             'signals' => $signals,
             'actions' => $actions,
+            'page_subscription_routing' => $pageSubscriptionRouting,
         ];
     }
 
     /**
-     * Get destinations for signal
+     * Dynamic routing for signals that require content-based destination resolution.
      *
-     * BOT_AGENT_START and BOT_AGENT_RELOAD route to specific BotAgent.
-     * DB_SYNC for bots collection also routes to BotAgent (subscription by rowKey).
+     * Only use for cases where agentIndex or destination depends on signal payload
+     * (e.g. BOT_AGENT_START extracts botId to route to specific BotAgent instance).
+     * All static routing is declared in $config above.
      *
      * @param SignalDTO $signal Signal DTO
      * @return array<int, array<string, mixed>> Array of destinations

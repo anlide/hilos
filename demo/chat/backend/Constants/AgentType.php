@@ -4,10 +4,13 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Constants;
 
+use Hilos\Constants\HilosAgentType;
+
 /**
  * AgentType - Agent type constants for chat demo
  *
  * Defines agent type identifiers used in the chat demo project.
+ * Hilos-level agent types are inherited from HilosAgentType.
  */
 class AgentType
 {
@@ -31,4 +34,13 @@ class AgentType
 
     /** @var string Chat situation guardian agent type (monopolistic) */
     public const string CHAT_SITUATION_GUARDIAN = 'chat_situation_guardian';
+
+    /** @var string Hilos index agent type (dashboard, settings, i18n) */
+    public const string HILOS_INDEX = HilosAgentType::HILOS_INDEX;
+
+    /** @var string Hilos guardian agent type */
+    public const string HILOS_GUARDIAN = HilosAgentType::HILOS_GUARDIAN;
+
+    /** @var string Hilos analytics agent type */
+    public const string HILOS_ANALYTICS = HilosAgentType::HILOS_ANALYTICS;
 }

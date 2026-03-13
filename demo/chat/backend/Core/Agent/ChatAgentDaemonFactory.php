@@ -9,6 +9,9 @@ use Demo\Chat\Core\Agent\Daemon\BotAgentDaemon;
 use Demo\Chat\Core\Agent\Daemon\ChatAgentDaemon;
 use Demo\Chat\Core\Agent\Daemon\ChatContextAnalyzerAgentDaemon;
 use Demo\Chat\Core\Agent\Daemon\ChatSituationGuardianAgentDaemon;
+use Demo\Chat\Core\Agent\Daemon\DemoHilosAgentDaemon;
+use Demo\Chat\Core\Agent\Daemon\DemoHilosAnalyticsAgentDaemon;
+use Demo\Chat\Core\Agent\Daemon\DemoHilosGuardianAgentDaemon;
 use Demo\Chat\Core\Agent\Daemon\GuardiansOpsAgentDaemon;
 use Demo\Chat\Core\Agent\Daemon\ModeratorAgentDaemon;
 use Hilos\Core\Agent\Daemon\AgentDaemonInterface;
@@ -17,7 +20,7 @@ use Hilos\Core\Agent\Daemon\HilosAgentDaemonFactory;
 /**
  * ChatAgentDaemonFactory - Factory for creating chat-specific agent daemon proxies
  *
- * Creates ChatAgentDaemon, BotAgentDaemon and ModeratorAgentDaemon instances based on agent type.
+ * Creates chat and Hilos agent daemon instances based on agent type.
  * Extends HilosAgentDaemonFactory to delegate unknown types to framework.
  */
 class ChatAgentDaemonFactory extends HilosAgentDaemonFactory
@@ -40,6 +43,9 @@ class ChatAgentDaemonFactory extends HilosAgentDaemonFactory
                 $agentIndex ?? throw new \RuntimeException('BotAgentDaemon requires agentIndex (bot id)'),
             ),
             AgentType::MODERATOR => new ModeratorAgentDaemon(),
+            AgentType::HILOS_INDEX => new DemoHilosAgentDaemon(),
+            AgentType::HILOS_GUARDIAN => new DemoHilosGuardianAgentDaemon(),
+            AgentType::HILOS_ANALYTICS => new DemoHilosAnalyticsAgentDaemon(),
             default => parent::createAgentDaemon($agentType, $agentIndex),
         };
     }
