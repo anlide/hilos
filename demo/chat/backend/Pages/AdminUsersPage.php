@@ -32,7 +32,9 @@ use Hilos\HilosException;
 class AdminUsersPage extends AbstractChatPage
 {
     /**
-     * Returns the page identifier for routing.
+     * Get page identifier for routing.
+     *
+     * @return string Page constant
      */
     public function getPageName(): string
     {

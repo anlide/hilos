@@ -6,6 +6,11 @@ namespace Demo\Chat\Guardian\Reports;
 
 use Hilos\BaseDTO;
 
+/**
+ * GuardianReportPayload - DTO for guardian report content.
+ *
+ * Contains guardian identifier, category, severity, title, message and optional details.
+ */
 final class GuardianReportPayload extends BaseDTO
 {
     /**
@@ -21,6 +26,11 @@ final class GuardianReportPayload extends BaseDTO
     ) {
     }
 
+    /**
+     * Convert payload to array for serialization.
+     *
+     * @return array<string, mixed> Payload data
+     */
     public function toArray(): array
     {
         return [
@@ -33,6 +43,12 @@ final class GuardianReportPayload extends BaseDTO
         ];
     }
 
+    /**
+     * Create payload from array (deserialization).
+     *
+     * @param array<string, mixed> $data Source data
+     * @return static Instance
+     */
     public static function fromArray(array $data): static
     {
         return new self(

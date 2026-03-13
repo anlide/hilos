@@ -28,7 +28,11 @@ class Connections extends RtCollection
 {
     public const string relevantUsers = 'relevantUsers';
 
-    /** @return StateConnections */
+    /**
+     * Get underlying state collection.
+     *
+     * @return StateConnections State collection instance
+     */
     public function getStateCollection(): StateConnections
     {
         /** @var StateConnections */
@@ -57,8 +61,8 @@ class Connections extends RtCollection
     /**
      * Create Rt item from state.
      *
-     * @param RtState $state StateConnection instance
-     * @return RtItem Connection instance
+     * @param RtState $state StateConnection instance (passed by reference)
+     * @return RtItem Connection Rt item instance
      */
     protected function createRtItem(RtState &$state): RtItem
     {
@@ -66,36 +70,73 @@ class Connections extends RtCollection
         return new Connection($state);
     }
 
+    /**
+     * Get connection by offset (accept key).
+     *
+     * @param mixed $offset Accept key (string)
+     * @return ?Connection Connection or null if not found
+     */
     public function offsetGet(mixed $offset): ?Connection
     {
         return parent::offsetGet($offset);
     }
 
+    /**
+     * Get first connection in collection.
+     *
+     * @return ?Connection First connection or null if empty
+     */
     public function first(): ?Connection
     {
         return parent::first();
     }
 
+    /**
+     * Get last connection in collection.
+     *
+     * @return ?Connection Last connection or null if empty
+     */
     public function last(): ?Connection
     {
         return parent::last();
     }
 
+    /**
+     * Get current connection in iteration.
+     *
+     * @return ?Connection Current connection or null
+     */
     public function current(): ?Connection
     {
         return parent::current();
     }
 
+    /**
+     * Get connection by key (accept key).
+     *
+     * @param string $key Accept key
+     * @return ?Connection Connection or null if not found
+     */
     protected function getRtItemForKey(string $key): ?Connection
     {
         return parent::getRtItemForKey($key);
     }
 
+    /**
+     * Get connections actions instance.
+     *
+     * @return ConnectionsActions Actions for write operations
+     */
     protected function getActions(): ConnectionsActions
     {
         return parent::getActions();
     }
 
+    /**
+     * Get users who are online or mentioned in events.
+     *
+     * @return DbUsers Users collection with relevant users
+     */
     private function getRelevantUsers(): DbUsers
     {
         $userIds = [];
@@ -118,6 +159,12 @@ class Connections extends RtCollection
         return $collection;
     }
 
+    /**
+     * Property getter (actions or relevantUsers).
+     *
+     * @param string $name Property name (actions, relevantUsers)
+     * @return ConnectionsActions|DbUsers Actions or relevant users collection
+     */
     public function __get(string $name): ConnectionsActions|DbUsers
     {
         return match ($name) {

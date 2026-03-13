@@ -18,7 +18,8 @@ class ChatWebSocketClient extends WebSocketClient
     /**
      * Hook: validate action name from parsed payload.
      *
-     * @param string $actionName
+     * @param string $actionName Action name from WebSocket payload
+     * @throws \RuntimeException When action name is not allowed
      */
     protected function onActionValidated(string $actionName): void
     {
@@ -42,11 +43,11 @@ class ChatWebSocketClient extends WebSocketClient
     /**
      * Called when WebSocket handshake is completed
      *
-     * @param array $headers All HTTP headers from handshake request
+     * @param array<string, string> $headers All HTTP headers from handshake request
      * @param string $acceptKey Sec-WebSocket-Accept value (can be used as connection identifier)
-     * @param array $cookies Parsed cookies
+     * @param array<string, string> $cookies Parsed cookies
      * @param string $clientIp Client IP address
-     * @param array $queryParams Query parameters (GET parameters) from request URL
+     * @param array<string, string> $queryParams Query parameters (GET parameters) from request URL
      */
     protected function onHandshake(
         array $headers,

@@ -40,6 +40,13 @@ class ModerationState extends RtState
         }
     }
 
+    /**
+     * Create state from user ID and message.
+     *
+     * @param int $userId User ID
+     * @param string $message Message currently being moderated
+     * @return static New ModerationState instance
+     */
     public static function create(int $userId, string $message): static
     {
         $instance = new static();
@@ -49,6 +56,12 @@ class ModerationState extends RtState
         return $instance;
     }
 
+    /**
+     * Create state from row data (e.g. deserialized).
+     *
+     * @param array<string, mixed> $row Row data with userId, message, updatedAt
+     * @return static New ModerationState instance
+     */
     public static function fromRow(array $row): static
     {
         $instance = new static();
@@ -58,6 +71,11 @@ class ModerationState extends RtState
         return $instance;
     }
 
+    /**
+     * Apply partial diff to state (message, updatedAt).
+     *
+     * @param array<string, mixed> $diff Fields to update
+     */
     public function applyDiff(array $diff): void
     {
         if (isset($diff[self::message])) {
@@ -68,11 +86,22 @@ class ModerationState extends RtState
         }
     }
 
+    /**
+     * Get state ID (userId as string).
+     *
+     * @return string User ID as string
+     */
     public function getId(): string
     {
         return (string)$this->userId;
     }
 
+    /**
+     * Magic getter for property access.
+     *
+     * @param string $name Property name (userId, message, updatedAt)
+     * @return int|string Property value
+     */
     public function __get(string $name): int|string
     {
         return match ($name) {
@@ -83,6 +112,11 @@ class ModerationState extends RtState
         };
     }
 
+    /**
+     * Convert state to array for serialization.
+     *
+     * @return array<string, mixed> State as associative array
+     */
     public function toArray(): array
     {
         return [

@@ -20,7 +20,7 @@ class WebSocketFrameBinarySignalDTO extends FrameworkWebSocketFrameBinarySignalD
      *
      * Override parent method to return correct child class type.
      *
-     * @param array $data Source data
+     * @param array<string, mixed> $data Source data (acceptKey, payload)
      * @return static DTO instance
      */
     public static function fromArray(array $data): static

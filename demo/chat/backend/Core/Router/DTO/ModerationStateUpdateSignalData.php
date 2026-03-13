@@ -21,9 +21,9 @@ class ModerationStateUpdateSignalData extends BaseDTO implements SignalDataInter
     }
 
     /**
-     * Convert DTO to array
+     * Convert DTO to array for transport.
      *
-     * @return array DTO data as array
+     * @return array<string, mixed> DTO data as array
      */
     public function toArray(): array
     {
@@ -33,9 +33,9 @@ class ModerationStateUpdateSignalData extends BaseDTO implements SignalDataInter
     }
 
     /**
-     * Create DTO from array (for deserialization)
+     * Create DTO from array (for deserialization).
      *
-     * @param array $data Source data
+     * @param array<string, mixed> $data Source data
      * @return static DTO instance
      */
     public static function fromArray(array $data): static

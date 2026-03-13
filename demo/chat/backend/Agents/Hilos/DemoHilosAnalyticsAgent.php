@@ -13,6 +13,9 @@ use Hilos\Core\Agent\Hilos\AbstractHilosAnalyticsAgent;
  */
 class DemoHilosAnalyticsAgent extends AbstractHilosAnalyticsAgent
 {
+    /**
+     * Periodic tick handler (no-op for Hilos analytics agent).
+     */
     public function onTick(): void
     {
     }

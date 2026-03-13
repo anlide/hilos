@@ -20,7 +20,11 @@ use Hilos\Runtime\View\Item\RtItem;
  */
 class ModerationStates extends RtCollection
 {
-    /** @return StateModerationStates */
+    /**
+     * Get underlying state collection.
+     *
+     * @return StateModerationStates State collection instance
+     */
     public function getStateCollection(): StateModerationStates
     {
         /** @var StateModerationStates */
@@ -30,8 +34,8 @@ class ModerationStates extends RtCollection
     /**
      * Create Rt item from state.
      *
-     * @param RtState $state StateModerationState instance
-     * @return RtItem ModerationState instance
+     * @param RtState $state StateModerationState instance (passed by reference)
+     * @return RtItem ModerationState Rt item instance
      */
     protected function createRtItem(RtState &$state): RtItem
     {
@@ -39,36 +43,74 @@ class ModerationStates extends RtCollection
         return new ModerationState($state);
     }
 
+    /**
+     * Get moderation state by offset (user ID as string).
+     *
+     * @param mixed $offset User ID as string
+     * @return ?ModerationState Moderation state or null if not found
+     */
     public function offsetGet(mixed $offset): ?ModerationState
     {
         return parent::offsetGet($offset);
     }
 
+    /**
+     * Get first moderation state in collection.
+     *
+     * @return ?ModerationState First state or null if empty
+     */
     public function first(): ?ModerationState
     {
         return parent::first();
     }
 
+    /**
+     * Get last moderation state in collection.
+     *
+     * @return ?ModerationState Last state or null if empty
+     */
     public function last(): ?ModerationState
     {
         return parent::last();
     }
 
+    /**
+     * Get current moderation state in iteration.
+     *
+     * @return ?ModerationState Current state or null
+     */
     public function current(): ?ModerationState
     {
         return parent::current();
     }
 
+    /**
+     * Get moderation state by key (user ID).
+     *
+     * @param string $key User ID as string
+     * @return ?ModerationState Moderation state or null if not found
+     */
     protected function getRtItemForKey(string $key): ?ModerationState
     {
         return parent::getRtItemForKey($key);
     }
 
+    /**
+     * Get moderation states actions instance.
+     *
+     * @return ModerationStatesActions Actions for write operations
+     */
     protected function getActions(): ModerationStatesActions
     {
         return parent::getActions();
     }
 
+    /**
+     * Property getter (actions).
+     *
+     * @param string $name Property name (actions)
+     * @return ModerationStatesActions Actions for write operations
+     */
     public function __get(string $name): ModerationStatesActions
     {
         return match ($name) {

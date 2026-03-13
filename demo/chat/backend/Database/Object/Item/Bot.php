@@ -39,6 +39,11 @@ final class Bot extends Object_
     public const string cooldownAfterMessage = 'cooldownAfterMessage';
     public const string priority = 'priority';
 
+    /**
+     * Return collection key used for DbChatContext lookup
+     *
+     * @return string Collection key (DbChatContext::bots)
+     */
     protected static function getCollectionKey(): string
     {
         return DbChatContext::bots;

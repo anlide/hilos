@@ -12,6 +12,9 @@ use Demo\Chat\Hilos;
  */
 final class UsersActionsTest extends IntegrationTestCase
 {
+    /**
+     * Register with valid token creates user with auto-generated name.
+     */
     public function testRegisterCreatesUser(): void
     {
         $token = bin2hex(random_bytes(16));
@@ -22,6 +25,9 @@ final class UsersActionsTest extends IntegrationTestCase
         $this->assertSame($token, $user->sessionToken);
     }
 
+    /**
+     * Register with too short token throws RuntimeException.
+     */
     public function testRegisterInvalidTokenThrows(): void
     {
         $this->expectException(\RuntimeException::class);
@@ -30,6 +36,9 @@ final class UsersActionsTest extends IntegrationTestCase
         Hilos::$db->users->actions->register('short');
     }
 
+    /**
+     * Register with existing token throws RuntimeException.
+     */
     public function testRegisterDuplicateTokenThrows(): void
     {
         $token = bin2hex(random_bytes(16));

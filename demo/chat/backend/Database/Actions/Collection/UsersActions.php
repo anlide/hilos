@@ -28,6 +28,7 @@ final class UsersActions extends DbActions
      * @param string $sessionToken Session token (32 hex characters)
      * @return User Registered user
      * @throws HilosException On error (invalid token format, user already exists, database error, etc.)
+     * @throws RuntimeException If token format invalid or user already exists
      */
     public function register(string $sessionToken): User
     {

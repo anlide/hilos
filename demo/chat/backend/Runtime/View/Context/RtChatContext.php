@@ -46,7 +46,10 @@ final class RtChatContext extends RtContext
     public const string chatContext = 'chatContext';
 
     /**
-     * @throws StateCollectionNotFoundException
+     * Initialize chat runtime context with connections, moderation states, chat contexts.
+     *
+     * @return static Initialized context
+     * @throws StateCollectionNotFoundException If state collection init fails
      */
     public static function init(): static
     {

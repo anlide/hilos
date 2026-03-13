@@ -21,7 +21,7 @@ class ModeratorPromptPiecesTable extends TableDefinition
     /**
      * Provides entity data source for the moderator prompt pieces collection.
      *
-     * @return EntityTableDataSource
+     * @return TableDataSourceInterface Entity table data source for moderator prompt pieces
      */
     protected function createDataSource(): TableDataSourceInterface
     {

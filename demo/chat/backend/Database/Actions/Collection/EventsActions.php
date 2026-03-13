@@ -21,6 +21,11 @@ use RuntimeException;
  */
 final class EventsActions extends DbActions
 {
+    /**
+     * Get table name for Events collection.
+     *
+     * @return string Table name
+     */
     protected function getTableName(): string
     {
         return Event::_table;
@@ -35,6 +40,7 @@ final class EventsActions extends DbActions
      * @param ?array $data Additional event data (optional)
      * @return DbEvent Created event
      * @throws HilosException On error (invalid parameters, database error, etc.)
+     * @throws RuntimeException If event id is null after sync
      */
     public function add(string $type, ?int $userId = null, ?int $botId = null, ?array $data = null): DbEvent
     {
@@ -59,7 +65,7 @@ final class EventsActions extends DbActions
     /**
      * Deletes all events from database and clears the collection.
      *
-     * @throws HilosException On error (permissions error, database error, etc.)
+     * @throws HilosException On error (permission error, database error, etc.)
      */
     public function deleteAll(): void
     {

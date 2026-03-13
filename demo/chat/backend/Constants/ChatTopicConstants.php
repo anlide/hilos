@@ -77,6 +77,8 @@ final class ChatTopicConstants
 
     /**
      * Get topics as comma-separated string for prompts.
+     *
+     * @return string Comma-separated topic list for LLM prompts
      */
     public static function getTopicsForPrompt(): string
     {

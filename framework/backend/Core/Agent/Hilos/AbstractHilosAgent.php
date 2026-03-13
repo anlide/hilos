@@ -14,11 +14,19 @@ use Hilos\Core\Agent\AbstractAgent;
  */
 abstract class AbstractHilosAgent extends AbstractAgent
 {
+    /**
+     * Get agent index (optional identifier for multi-instance agents).
+     *
+     * @return ?string Agent index or null for global agents
+     */
     public function getIndex(): ?string
     {
         return null;
     }
 
+    /**
+     * Hook called when agent is stopping.
+     */
     public function onStop(): void
     {
     }

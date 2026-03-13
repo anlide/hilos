@@ -34,6 +34,7 @@ class ChatContextsActions extends RtActions
      *
      * @param array<string, mixed> $data Fields to set (topic, summary, topicConfidence)
      * @return RuntimeChatContext Updated context
+     * @throws \RuntimeException If context not initialized (call init() first)
      */
     public function update(array $data): RuntimeChatContext
     {

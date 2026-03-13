@@ -29,9 +29,9 @@ class HandshakeResponseSignalData extends BaseDTO implements SignalDataInterface
     }
 
     /**
-     * Convert DTO to array
+     * Convert DTO to array for transport.
      *
-     * @return array DTO data as array
+     * @return array<string, mixed> DTO data as array
      */
     public function toArray(): array
     {
@@ -48,10 +48,11 @@ class HandshakeResponseSignalData extends BaseDTO implements SignalDataInterface
     }
 
     /**
-     * Create DTO from array
+     * Create DTO from array (not implemented - response is created directly).
      *
-     * @param array $data Source data
+     * @param array<string, mixed> $data Source data
      * @return static DTO instance
+     * @throws RuntimeException Always - not implemented
      */
     public static function fromArray(array $data): static
     {

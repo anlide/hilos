@@ -40,7 +40,7 @@ class ChatWebSocketServer extends WebSocketServer
     }
 
     /**
-     * Called when server is started
+     * Called when server is started. No chat-specific startup logic.
      */
     protected function onStart(): void
     {

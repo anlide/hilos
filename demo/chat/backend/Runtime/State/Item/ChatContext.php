@@ -27,11 +27,22 @@ class ChatContext extends RtState
     private float $topicConfidence = 0.0;
     private string $summary = '';
 
+    /**
+     * Create empty chat context instance.
+     *
+     * @return static New instance
+     */
     public static function create(): static
     {
         return new static();
     }
 
+    /**
+     * Create instance from row data (e.g. from persistence).
+     *
+     * @param array<string, mixed> $row Row data with topic, topicConfidence, summary
+     * @return static New instance
+     */
     public static function fromRow(array $row): static
     {
         $instance = new static();
@@ -42,6 +53,11 @@ class ChatContext extends RtState
         return $instance;
     }
 
+    /**
+     * Apply diff to state (partial update).
+     *
+     * @param array<string, mixed> $diff Fields to update (topic, topicConfidence, summary)
+     */
     public function applyDiff(array $diff): void
     {
         if (array_key_exists(self::topic, $diff)) {
@@ -56,11 +72,20 @@ class ChatContext extends RtState
         }
     }
 
+    /**
+     * Get state ID (always "main" for chat context).
+     *
+     * @return string State ID
+     */
     public function getId(): string
     {
         return self::ID_MAIN;
     }
 
+    /**
+     * @param string $name Property name
+     * @return mixed Property value (topic, topicConfidence, summary)
+     */
     public function __get(string $name): mixed
     {
         return match ($name) {
@@ -71,6 +96,11 @@ class ChatContext extends RtState
         };
     }
 
+    /**
+     * Convert state to array for persistence/serialization.
+     *
+     * @return array<string, mixed> State as associative array
+     */
     public function toArray(): array
     {
         return [

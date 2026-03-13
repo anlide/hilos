@@ -41,6 +41,12 @@ use Hilos\Core\Router\DTO\ActionPayloadDTO;
  */
 class ChatPageFactory extends HilosPageFactory
 {
+    /**
+     * Create page instance by name.
+     *
+     * @param string $pageName Page constant (e.g. PageConstants::MAIN)
+     * @return AbstractPage Page instance
+     */
     protected function createPage(string $pageName): AbstractPage
     {
         return match ($pageName) {
@@ -57,6 +63,12 @@ class ChatPageFactory extends HilosPageFactory
         };
     }
 
+    /**
+     * Check if page name is supported.
+     *
+     * @param string $pageName Page name constant
+     * @return bool True if page exists
+     */
     public function hasPage(string $pageName): bool
     {
         return in_array($pageName, [
@@ -72,6 +84,13 @@ class ChatPageFactory extends HilosPageFactory
         ], true) || parent::hasPage($pageName);
     }
 
+    /**
+     * Create action payload DTO for the given action and data.
+     *
+     * @param string $action Action name (e.g. ChatSignalConstants::MESSAGE)
+     * @param array $data Action payload data
+     * @return ActionPayloadDTO DTO instance
+     */
     public function createActionPayloadDTO(string $action, array $data): ActionPayloadDTO
     {
         return match ($action) {

@@ -26,11 +26,12 @@ use Hilos\Core\Agent\HilosAgentWorkerFactory;
 class ChatAgentWorkerFactory extends HilosAgentWorkerFactory
 {
     /**
-     * Create agent instance based on type
+     * Create agent instance based on type.
      *
      * @param string $agentType Agent type
-     * @param ?string $agentIndex Agent index (optional)
+     * @param ?string $agentIndex Agent index (required for BOT type)
      * @return AgentInterface Agent instance
+     * @throws \RuntimeException If agentIndex is null for BOT type
      */
     public static function createAgent(string $agentType, ?string $agentIndex): AgentInterface
     {

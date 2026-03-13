@@ -28,6 +28,7 @@ final class UserActions extends DbActions
      * @param string $newName New display name (trimmed)
      *
      * @throws HilosException On error (user not found, invalid name, database error, etc.)
+     * @throws RuntimeException If user not found or name validation fails
      */
     public function rename(string $newName): void
     {

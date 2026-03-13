@@ -17,6 +17,9 @@ abstract class IntegrationTestCase extends TestCase
     private const string TEST_AGENT_ID = 'test-agent';
     protected static bool $dbInitialized = false;
 
+    /**
+     * Initialize database and register test agent as truth source.
+     */
     protected function setUp(): void
     {
         parent::setUp();
@@ -30,6 +33,9 @@ abstract class IntegrationTestCase extends TestCase
         TruthSourceRegistry::register(DbChatContext::moderatorPromptPieces, true, self::TEST_AGENT_ID);
     }
 
+    /**
+     * Unregister test agent from truth source.
+     */
     protected function tearDown(): void
     {
         TruthSourceRegistry::unregisterAgent(self::TEST_AGENT_ID);

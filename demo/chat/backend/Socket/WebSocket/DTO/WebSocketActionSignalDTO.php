@@ -20,7 +20,7 @@ class WebSocketActionSignalDTO extends FrameworkWebSocketActionSignalDTO impleme
      *
      * Override parent method to return correct child class type.
      *
-     * @param array $data Source data
+     * @param array<string, mixed> $data Source data (acceptKey, action, data)
      * @return static DTO instance
      */
     public static function fromArray(array $data): static

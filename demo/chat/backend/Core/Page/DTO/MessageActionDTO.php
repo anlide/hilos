@@ -34,14 +34,14 @@ class MessageActionDTO extends ChatActionPayloadDTO
     }
 
     /**
-     * Create from array
+     * Create from array.
      *
      * Supports both formats:
      * - {content: "..."}
      * - {data: {message: "..."}} (legacy format)
      *
-     * @param array $data Payload data
-     * @return static
+     * @param array<string, mixed> $data Payload data (content or data.message)
+     * @return static Message DTO instance
      */
     public static function fromArray(array $data): static
     {
@@ -58,9 +58,9 @@ class MessageActionDTO extends ChatActionPayloadDTO
     }
 
     /**
-     * Convert to array
+     * Convert to array for transport.
      *
-     * @return array
+     * @return array{content: string} Array with content key
      */
     public function toArray(): array
     {

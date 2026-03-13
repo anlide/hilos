@@ -29,6 +29,11 @@ final class User extends Object_
     public const string sessionToken = 'sessionToken';
     public const string lastActivity = 'lastActivity';
 
+    /**
+     * Returns the database collection key for this object type.
+     *
+     * @return string Collection key (DbChatContext::users)
+     */
     protected static function getCollectionKey(): string
     {
         return DbChatContext::users;

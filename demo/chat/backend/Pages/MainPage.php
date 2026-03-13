@@ -150,6 +150,8 @@ class MainPage extends AbstractChatPage
 
     /**
      * Get collection of all active bots (filter: active=true).
+     *
+     * @return Bots Collection of active bots
      */
     private function getActiveBots(): Bots
     {

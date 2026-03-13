@@ -42,13 +42,22 @@ class HtmlResolver
     }
 
     /**
-     * @param string $path Path to use 403 for (e.g. admin)
+     * Set HTTP status override for a path (e.g. 403 for admin).
+     *
+     * @param string $path Path to override (e.g. 'admin')
+     * @param int $status HTTP status code
      */
     public function setStatusOverride(string $path, int $status): void
     {
         $this->statusOverrides[$path] = $status;
     }
 
+    /**
+     * Parse locale from Accept-Language header value.
+     *
+     * @param string $acceptLanguage Accept-Language header value
+     * @return string Locale code (e.g. 'en', 'ru')
+     */
     private function parseLocale(string $acceptLanguage): string
     {
         if ($acceptLanguage === '') {

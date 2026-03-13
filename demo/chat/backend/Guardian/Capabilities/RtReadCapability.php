@@ -9,13 +9,30 @@ use Demo\Chat\Runtime\View\Context\RtChatContext;
 use Hilos\Guardian\Capabilities\AbstractGuardianCapability;
 use Hilos\Guardian\DTO\CapabilityResult;
 
+/**
+ * RtReadCapability - Guardian capability for reading runtime state snapshot.
+ *
+ * Returns collection counts and row samples for connections, moderation states, chat contexts.
+ */
 final class RtReadCapability extends AbstractGuardianCapability
 {
+    /**
+     * Get capability name.
+     *
+     * @return string Capability name
+     */
     public function getName(): string
     {
         return 'rt.read';
     }
 
+    /**
+     * Execute capability: read runtime collections snapshot.
+     *
+     * @param array $payload Payload (limitPerCollection, default 100)
+     * @param array $context Execution context (unused)
+     * @return CapabilityResult Snapshot with counts and row samples (acceptKey masked)
+     */
     public function execute(array $payload = [], array $context = []): CapabilityResult
     {
         $limit = (int) ($payload['limitPerCollection'] ?? 100);

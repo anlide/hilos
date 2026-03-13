@@ -17,7 +17,7 @@ use Hilos\Socket\Server\WorkerServer;
 class ChatWorkerServer extends WorkerServer
 {
     /**
-     * Called when server is started
+     * Called when server is started. Workers are not ready yet.
      */
     protected function onStart(): void
     {

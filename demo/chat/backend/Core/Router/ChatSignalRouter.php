@@ -26,6 +26,9 @@ use Hilos\Core\Router\SignalSource;
  */
 class ChatSignalRouter extends SignalRouter
 {
+    /**
+     * Initialize router with chat-specific pages, groups, signals and page subscription routing.
+     */
     public function __construct()
     {
         parent::__construct();

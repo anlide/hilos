@@ -56,6 +56,12 @@ class BotAgent extends AbstractAgent
     /** @var bool Whether LLM generation is in flight (result will be sent to ModeratorAgent) */
     private bool $generationInFlight = false;
 
+    /**
+     * Create BotAgent for the given bot ID.
+     *
+     * @param string $agentIndex Bot ID (must be non-empty)
+     * @throws \RuntimeException If agentIndex is empty
+     */
     public function __construct(string $agentIndex)
     {
         if ($agentIndex === '') {
@@ -71,16 +77,29 @@ class BotAgent extends AbstractAgent
             );
     }
 
+    /**
+     * Get agent type.
+     *
+     * @return string Agent type constant
+     */
     public function getType(): string
     {
         return self::AGENT_TYPE;
     }
 
+    /**
+     * Get agent index (bot ID).
+     *
+     * @return ?string Bot ID as string
+     */
     public function getIndex(): ?string
     {
         return $this->agentIndex;
     }
 
+    /**
+     * Called when agent is started. Announces bot join and schedules initial reaction.
+     */
     public function onStart(): void
     {
         Logger::logAgentStart($this->getId(), $this->getType());
@@ -92,6 +111,9 @@ class BotAgent extends AbstractAgent
         $this->scheduleReaction();
     }
 
+    /**
+     * Called when agent is stopped. Announces bot left.
+     */
     public function onStop(): void
     {
         $botId = (int) $this->agentIndex;
@@ -100,9 +122,13 @@ class BotAgent extends AbstractAgent
     }
 
     /**
-     * Handle DB sync updated signal for the bot
+     * Handle DB sync updated signal for the bot.
      *
      * If the bot is marked as inactive, stop the agent.
+     *
+     * @param DbSyncUpdatedSignalData $data Sync data with updated row
+     * @param string $source Signal source
+     * @param string $name Signal name
      */
     public function onSignalDbSyncUpdated(DbSyncUpdatedSignalData $data, string $source, string $name): void
     {
@@ -118,7 +144,13 @@ class BotAgent extends AbstractAgent
     }
 
     /**
-     * Handle DB sync deleted signal for the bot
+     * Handle DB sync deleted signal for the bot.
+     *
+     * Stops agent when its bot record is deleted.
+     *
+     * @param DbSyncDeletedSignalData $data Sync data with deleted row id
+     * @param string $source Signal source
+     * @param string $name Signal name
      */
     public function onSignalDbSyncDeleted(DbSyncDeletedSignalData $data, string $source, string $name): void
     {
@@ -132,7 +164,12 @@ class BotAgent extends AbstractAgent
 
     /**
      * Handle DB sync created signal.
+     *
      * When chat is cleared, topic is reset - leaders should propose a new topic.
+     *
+     * @param DbSyncCreatedSignalData $data Sync data with created row
+     * @param string $source Signal source
+     * @param string $name Signal name
      */
     public function onSignalDbSyncCreated(DbSyncCreatedSignalData $data, string $source, string $name): void
     {
@@ -148,7 +185,12 @@ class BotAgent extends AbstractAgent
 
     /**
      * Handle RT sync created signal.
+     *
      * ChatContext created (init) - can schedule reaction if context has content.
+     *
+     * @param RtSyncCreatedSignalData $data Sync data with created state
+     * @param string $source Signal source
+     * @param string $name Signal name
      */
     public function onSignalRtSyncCreated(RtSyncCreatedSignalData $data, string $source, string $name): void
     {
@@ -159,7 +201,12 @@ class BotAgent extends AbstractAgent
 
     /**
      * Handle RT sync updated signal.
+     *
      * ChatContext updated (new messages summarized) - schedule reaction.
+     *
+     * @param RtSyncUpdatedSignalData $data Sync data with updated state
+     * @param string $source Signal source
+     * @param string $name Signal name
      */
     public function onSignalRtSyncUpdated(RtSyncUpdatedSignalData $data, string $source, string $name): void
     {
@@ -207,6 +254,9 @@ class BotAgent extends AbstractAgent
         }
     }
 
+    /**
+     * Schedule next reaction based on bot delay settings.
+     */
     private function scheduleReaction(): void
     {
         if ($this->chatClient->isBusy() || $this->generationInFlight) {
@@ -226,6 +276,11 @@ class BotAgent extends AbstractAgent
         Logger::logAgentInfo($this->getId(), "[schedule] Reaction in {$delaySec}s");
     }
 
+    /**
+     * Check whether bot should react (chance, cooldown, topic match).
+     *
+     * @return bool True if bot should generate a message
+     */
     private function shouldReact(): bool
     {
         $bot = $this->getBot();
@@ -258,6 +313,12 @@ class BotAgent extends AbstractAgent
         return true;
     }
 
+    /**
+     * Check if chat topic matches bot preferred topics.
+     *
+     * @param ViewBot $bot Bot view with topics configuration
+     * @return bool True if topic matches or bot has no topic restriction
+     */
     private function topicMatches(ViewBot $bot): bool
     {
         $botTopics = $this->parseTopics((string) ($bot->topics ?? ''));
@@ -284,7 +345,8 @@ class BotAgent extends AbstractAgent
     /**
      * Parse topics from JSON array or comma/semicolon-separated string.
      *
-     * @return list<string>
+     * @param string $topics Topics as JSON or comma/semicolon-separated string
+     * @return list<string> List of topic strings
      */
     private function parseTopics(string $topics): array
     {
@@ -310,6 +372,9 @@ class BotAgent extends AbstractAgent
         return array_values(array_filter(array_map('trim', $parts)));
     }
 
+    /**
+     * Start async LLM generation for bot message.
+     */
     private function startGenerate(): void
     {
         $bot = $this->getBot();
@@ -336,7 +401,10 @@ class BotAgent extends AbstractAgent
     }
 
     /**
-     * @return list<Message>
+     * Build LLM messages for generation (system + user context).
+     *
+     * @param ViewBot $bot Bot view with name, description, personality, etc.
+     * @return list<Message> Messages for LLM (system + user)
      */
     private function buildGenerationMessages(ViewBot $bot): array
     {
@@ -406,6 +474,9 @@ class BotAgent extends AbstractAgent
 
     /**
      * Build short meta string for logging: what the bot is reacting to.
+     *
+     * @param string $recentContext Recent messages context text
+     * @return string Meta description (e.g. "5 message(s), last from User#1, Bot#2")
      */
     private function getRecentMessagesMeta(string $recentContext): string
     {
@@ -427,6 +498,11 @@ class BotAgent extends AbstractAgent
         return "{$count} message(s), last from " . implode(', ', $lastAuthors);
     }
 
+    /**
+     * Build recent chat events as formatted string for LLM context.
+     *
+     * @return string Recent messages as "Author: message" lines
+     */
     private function buildRecentEventsContext(): string
     {
         $events = [];
@@ -453,6 +529,11 @@ class BotAgent extends AbstractAgent
         return implode("\n", $lines);
     }
 
+    /**
+     * Get bot view by agent index (bot ID).
+     *
+     * @return ?ViewBot Bot view or null if not found
+     */
     private function getBot(): ?ViewBot
     {
         $botId = (int) $this->agentIndex;

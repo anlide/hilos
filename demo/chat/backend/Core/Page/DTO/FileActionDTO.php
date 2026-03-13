@@ -38,10 +38,10 @@ class FileActionDTO extends ChatActionPayloadDTO
     }
 
     /**
-     * Create from array
+     * Create from array.
      *
-     * @param array $data Payload data
-     * @return static
+     * @param array<string, mixed> $data Payload data (filename, mimeType, size)
+     * @return static Instance
      */
     public static function fromArray(array $data): static
     {
@@ -53,9 +53,9 @@ class FileActionDTO extends ChatActionPayloadDTO
     }
 
     /**
-     * Convert to array
+     * Convert to array.
      *
-     * @return array
+     * @return array<string, string|int> Data with filename, mimeType, size keys
      */
     public function toArray(): array
     {

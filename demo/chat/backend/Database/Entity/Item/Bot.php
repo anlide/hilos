@@ -7,8 +7,10 @@ use Hilos\Database\Entity\Item\Entity;
 use Hilos\Database\PhpType;
 
 /**
- * Bot Entity
- * Auto-generated from table: bot
+ * Bot Entity - represents bot table row.
+ *
+ * Auto-generated from table: bot.
+ * Stores bot configuration (name, personality, reaction settings).
  *
  * @method static EntityBots get(array|string $filters = [], array|string $filtersParam = [], array|string $orderBy = [])
  * @method static EntityBots getAll()

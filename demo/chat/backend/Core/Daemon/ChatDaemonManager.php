@@ -44,9 +44,9 @@ class ChatDaemonManager extends DaemonManager
     }
 
     /**
-     * Create signal router instance
+     * Create signal router instance.
      *
-     * @return SignalRouter
+     * @return SignalRouter Chat signal router instance
      */
     protected function createSignalRouter(): SignalRouter
     {
@@ -54,9 +54,9 @@ class ChatDaemonManager extends DaemonManager
     }
 
     /**
-     * Create agent manager daemon instance
+     * Create agent manager daemon instance.
      *
-     * @return AgentManagerDaemon
+     * @return AgentManagerDaemon Chat agent manager daemon instance
      */
     protected function createAgentManagerDaemon(): AgentManagerDaemon
     {

@@ -13,6 +13,11 @@ class HtmlCache
     /** @var array<string, string> path+locale -> content */
     private array $cache = [];
 
+    /**
+     * Create HTML cache with dist directory path.
+     *
+     * @param string $distPath Path to dist directory containing prerendered HTML
+     */
     public function __construct(
         private string $distPath
     ) {
@@ -21,7 +26,9 @@ class HtmlCache
     /**
      * Get HTML content for path and locale.
      *
-     * @return string|null HTML content or null if file not found
+     * @param string $path Path (e.g. 'index', 'privacy')
+     * @param string $locale Locale code (e.g. 'en', 'ru')
+     * @return ?string HTML content or null if file not found
      */
     public function get(string $path, string $locale): ?string
     {

@@ -14,6 +14,14 @@ use Hilos\Constants\SignalPayloadConstants;
  */
 class BotCreateActionDTO extends ChatActionPayloadDTO
 {
+    /**
+     * @param string $name Bot display name
+     * @param ?string $description Bot description (optional)
+     * @param ?string $style Writing style (optional)
+     * @param ?string $topics Preferred topics (optional)
+     * @param ?string $personality Personality traits (optional)
+     * @param bool $active Whether bot is active
+     */
     public function __construct(
         public readonly string $name,
         public readonly ?string $description = null,

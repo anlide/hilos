@@ -10,11 +10,19 @@ use Hilos\Core\Router\SignalDataInterface;
 
 final class GuardianReportSignalData extends BaseDTO implements SignalDataInterface
 {
+    /**
+     * @param GuardianReportPayload $report Guardian report payload
+     */
     public function __construct(
         public readonly GuardianReportPayload $report,
     ) {
     }
 
+    /**
+     * Convert DTO to array for transport.
+     *
+     * @return array<string, mixed> Report as associative array
+     */
     public function toArray(): array
     {
         return [
@@ -22,6 +30,12 @@ final class GuardianReportSignalData extends BaseDTO implements SignalDataInterf
         ];
     }
 
+    /**
+     * Create DTO from array (for deserialization).
+     *
+     * @param array<string, mixed> $data Source data with report key
+     * @return static DTO instance
+     */
     public static function fromArray(array $data): static
     {
         $rawReport = is_array($data['report'] ?? null) ? $data['report'] : [];

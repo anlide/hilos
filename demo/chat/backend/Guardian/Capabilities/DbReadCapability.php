@@ -9,13 +9,30 @@ use Demo\Chat\Hilos;
 use Hilos\Guardian\Capabilities\AbstractGuardianCapability;
 use Hilos\Guardian\DTO\CapabilityResult;
 
+/**
+ * DbReadCapability - Guardian capability for reading database snapshot.
+ *
+ * Returns collection counts and row samples for users, events, bots, moderator prompt pieces.
+ */
 final class DbReadCapability extends AbstractGuardianCapability
 {
+    /**
+     * Get capability name.
+     *
+     * @return string Capability name
+     */
     public function getName(): string
     {
         return 'db.read';
     }
 
+    /**
+     * Execute capability: read database collections snapshot.
+     *
+     * @param array $payload Payload (limitPerCollection, default 50)
+     * @param array $context Execution context (unused)
+     * @return CapabilityResult Snapshot with counts and row samples
+     */
     public function execute(array $payload = [], array $context = []): CapabilityResult
     {
         $limit = (int) ($payload['limitPerCollection'] ?? 50);

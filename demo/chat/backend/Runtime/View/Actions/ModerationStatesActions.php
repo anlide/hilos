@@ -27,7 +27,10 @@ class ModerationStatesActions extends RtActions
      * @param int $userId User ID
      * @param string $message Message currently being moderated
      * @return RuntimeModerationState Created/updated runtime wrapper
-     * @throws RtActionsCallbackNotSetException
+     * @throws RtActionsCallbackNotSetException If callback for creating Rt item is not set
+     * @throws RtActionsStateCollectionNullException If state collection is null
+     * @throws RtActionsCollectionNameNullException If collection name is null
+     * @throws RtTruthSourceWriteNotAllowedException If no truth source registered
      */
     public function set(int $userId, string $message): RuntimeModerationState
     {

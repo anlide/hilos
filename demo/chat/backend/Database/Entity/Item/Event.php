@@ -7,8 +7,10 @@ use Hilos\Database\Entity\Item\Entity;
 use Hilos\Database\PhpType;
 
 /**
- * Event Entity
- * Auto-generated from table: event
+ * Event Entity - represents event table row.
+ *
+ * Auto-generated from table: event.
+ * Stores chat events (messages, user actions, system events).
  *
  * @method static EntityEvents get(array|string $filters = [], array|string $filtersParam = [], array|string $orderBy = [])
  * @method static EntityEvents getAll()

@@ -27,6 +27,11 @@ final class ModeratorPromptPiece extends Object_
     public const string section = 'section';
     public const string promptPiece = 'promptPiece';
 
+    /**
+     * Returns the database collection key for this object type.
+     *
+     * @return string Collection key (DbChatContext::moderatorPromptPieces)
+     */
     protected static function getCollectionKey(): string
     {
         return DbChatContext::moderatorPromptPieces;

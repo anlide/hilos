@@ -7,8 +7,10 @@ use Hilos\Database\Entity\Item\Entity;
 use Hilos\Database\PhpType;
 
 /**
- * ModeratorPromptPiece Entity
- * Auto-generated from table: moderator_prompt_piece
+ * ModeratorPromptPiece Entity - represents moderator_prompt_piece table row.
+ *
+ * Auto-generated from table: moderator_prompt_piece.
+ * Stores moderator prompt pieces (rules for LLM moderation).
  *
  * @method static EntityModeratorPromptPieces get(array|string $filters = [], array|string $filtersParam = [], array|string $orderBy = [])
  * @method static EntityModeratorPromptPieces getAll()

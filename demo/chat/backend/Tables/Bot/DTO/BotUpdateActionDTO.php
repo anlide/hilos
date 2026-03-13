@@ -16,6 +16,15 @@ use Hilos\Constants\SignalPayloadConstants;
  */
 class BotUpdateActionDTO extends ChatActionPayloadDTO
 {
+    /**
+     * @param int $id Bot ID to update
+     * @param ?string $name Display name (null = do not update)
+     * @param ?string $description Description (null = do not update)
+     * @param ?string $style Writing style (null = do not update)
+     * @param ?string $topics Preferred topics (null = do not update)
+     * @param ?string $personality Personality (null = do not update)
+     * @param ?bool $active Active flag (null = do not update)
+     */
     public function __construct(
         public readonly int $id,
         public readonly ?string $name = null,

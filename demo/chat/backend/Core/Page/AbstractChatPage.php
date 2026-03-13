@@ -16,9 +16,9 @@ use Hilos\Core\Page\PageAgentInterface;
 abstract class AbstractChatPage extends AbstractPage
 {
     /**
-     * Get chat agent (same as $this->agent, typed for convenience)
+     * Get chat agent (same as $this->agent, typed for convenience).
      *
-     * @return PageAgentInterface
+     * @return PageAgentInterface Chat agent instance
      */
     protected function getChatAgent(): PageAgentInterface
     {

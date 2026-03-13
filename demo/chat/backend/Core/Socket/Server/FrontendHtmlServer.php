@@ -18,6 +18,12 @@ use Hilos\Socket\SocketException;
  */
 class FrontendHtmlServer extends AbstractServer
 {
+    /**
+     * @param string $host Listen host
+     * @param int $port Listen port
+     * @param HtmlResolver $resolver Path resolver for HTML
+     * @param HtmlCache $cache Cached prerendered HTML
+     */
     public function __construct(
         string $host,
         int $port,
@@ -27,21 +33,41 @@ class FrontendHtmlServer extends AbstractServer
         parent::__construct($host, $port);
     }
 
+    /**
+     * Accept new client connection
+     *
+     * @return ?ClientInterface New client or null
+     * @throws SocketException
+     */
     public function acceptConnection(): ?ClientInterface
     {
         return parent::acceptConnection();
     }
 
+    /**
+     * Create client instance for accepted socket
+     *
+     * @param resource $socket Client socket
+     * @return ClientInterface Client instance
+     */
     protected function onCreateClient($socket): ClientInterface
     {
         return new FrontendHtmlClient($socket, $this->resolver, $this->cache);
     }
 
+    /**
+     * Return server display name
+     *
+     * @return string Server name
+     */
     public function getServerName(): string
     {
         return 'Frontend HTML Server';
     }
 
+    /**
+     * Set forbidden status for admin routes.
+     */
     protected function onStart(): void
     {
         $forbidden = 403;
@@ -51,17 +77,27 @@ class FrontendHtmlServer extends AbstractServer
         $this->resolver->setStatusOverride('admin/bots', $forbidden);
     }
 
+    /**
+     * Prepare server for graceful shutdown.
+     */
     public function prepareShutdown(): void
     {
         parent::prepareShutdown();
     }
 
+    /**
+     * Check if server has no active clients and can shut down
+     *
+     * @return bool True when no clients connected
+     */
     public function isReadyToShutdown(): bool
     {
         return empty($this->clients);
     }
 
     /**
+     * Stop server and close socket.
+     *
      * @throws SocketException
      */
     public function stop(): void

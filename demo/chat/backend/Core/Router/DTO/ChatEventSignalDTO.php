@@ -28,6 +28,11 @@ class ChatEventSignalDTO extends SignalData implements SignalDataInterface
     ) {
     }
 
+    /**
+     * Convert DTO to array for transport.
+     *
+     * @return array<string, mixed> DTO data as array
+     */
     public function toArray(): array
     {
         $data = ['entities' => $this->entities->toArray()];
@@ -40,6 +45,13 @@ class ChatEventSignalDTO extends SignalData implements SignalDataInterface
         return $data;
     }
 
+    /**
+     * Create DTO from array (not implemented - response is created directly).
+     *
+     * @param array<string, mixed> $data Source data
+     * @return static DTO instance
+     * @throws RuntimeException Always - not implemented
+     */
     public static function fromArray(array $data): static
     {
         throw new RuntimeException('ChatEventSignalDTO::fromArray() is not implemented');

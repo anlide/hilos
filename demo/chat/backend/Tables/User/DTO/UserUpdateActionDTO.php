@@ -17,6 +17,10 @@ use Hilos\Constants\SignalPayloadConstants;
  */
 class UserUpdateActionDTO extends ChatActionPayloadDTO
 {
+    /**
+     * @param int $id User ID to update
+     * @param string $name New display name
+     */
     public function __construct(
         public readonly int $id,
         public readonly string $name,

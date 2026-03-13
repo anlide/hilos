@@ -39,6 +39,9 @@ class ChatContextAnalyzerAgent extends AbstractAgent
 
     private bool $pendingSummarize = false;
 
+    /**
+     * Create ChatContextAnalyzerAgent with LLM client from ContextAnalyzerEnv.
+     */
     public function __construct()
     {
         $this->chatClient = ContextAnalyzerEnv::useExternalProvider()
@@ -50,11 +53,21 @@ class ChatContextAnalyzerAgent extends AbstractAgent
             );
     }
 
+    /**
+     * Get agent type identifier.
+     *
+     * @return string Agent type constant
+     */
     public function getType(): string
     {
         return AgentType::CHAT_CONTEXT_ANALYZER;
     }
 
+    /**
+     * Get agent index (null for global chat context analyzer).
+     *
+     * @return ?string Agent index or null
+     */
     public function getIndex(): ?string
     {
         return null;
@@ -132,26 +145,61 @@ class ChatContextAnalyzerAgent extends AbstractAgent
         }
     }
 
+    /**
+     * Handle DB sync created signal.
+     *
+     * @param DbSyncCreatedSignalData $data Sync data with created row
+     * @param string $source Signal source
+     * @param string $name Signal name
+     */
     public function onSignalDbSyncCreated(DbSyncCreatedSignalData $data, string $source, string $name): void
     {
         $this->handleDbSyncChange($data->collectionKey, $data->idString, $data->row);
     }
 
+    /**
+     * Handle DB sync updated signal.
+     *
+     * @param DbSyncUpdatedSignalData $data Sync data with updated row
+     * @param string $source Signal source
+     * @param string $name Signal name
+     */
     public function onSignalDbSyncUpdated(DbSyncUpdatedSignalData $data, string $source, string $name): void
     {
         $this->handleDbSyncChange($data->collectionKey, $data->idString, $data->row);
     }
 
+    /**
+     * Handle RT sync created signal.
+     *
+     * @param RtSyncCreatedSignalData $data Sync data with created state
+     * @param string $source Signal source
+     * @param string $name Signal name
+     */
     public function onSignalRtSyncCreated(RtSyncCreatedSignalData $data, string $source, string $name): void
     {
         $this->handleRtSyncChange($data->collectionKey, $data->stateId, $data->row);
     }
 
+    /**
+     * Handle RT sync updated signal.
+     *
+     * @param RtSyncUpdatedSignalData $data Sync data with updated state
+     * @param string $source Signal source
+     * @param string $name Signal name
+     */
     public function onSignalRtSyncUpdated(RtSyncUpdatedSignalData $data, string $source, string $name): void
     {
         $this->handleRtSyncChange($data->collectionKey, $data->stateId, $data->row);
     }
 
+    /**
+     * Process DB sync change (events, users, bots).
+     *
+     * @param string $collectionKey Collection key (events, users, bots)
+     * @param string $idString Row ID
+     * @param array<string, mixed> $row Row data
+     */
     private function handleDbSyncChange(string $collectionKey, string $idString, array $row): void
     {
         if ($collectionKey === DbChatContext::events) {
@@ -189,6 +237,13 @@ class ChatContextAnalyzerAgent extends AbstractAgent
         }
     }
 
+    /**
+     * Process RT sync change (connections).
+     *
+     * @param string $collectionKey Collection key (connections)
+     * @param string $stateId State ID
+     * @param array<string, mixed> $row State row data
+     */
     private function handleRtSyncChange(string $collectionKey, string $stateId, array $row): void
     {
         if ($collectionKey === RtChatContext::connections) {
@@ -200,6 +255,9 @@ class ChatContextAnalyzerAgent extends AbstractAgent
         }
     }
 
+    /**
+     * Start LLM summarization request if not busy.
+     */
     private function startSummarize(): void
     {
         if ($this->chatClient->isBusy()) {
@@ -258,6 +316,11 @@ PROMPT;
         }
     }
 
+    /**
+     * Build recent chat events as formatted string for LLM context.
+     *
+     * @return string Recent messages as "Author: message" lines
+     */
     private function buildRecentEventsContext(): string
     {
         $events = [];

@@ -14,6 +14,11 @@ use Hilos\Constants\HilosAgentType;
  */
 abstract class AbstractHilosIndexAgent extends AbstractHilosAgent
 {
+    /**
+     * Return agent type identifier.
+     *
+     * @return string Agent type
+     */
     public function getType(): string
     {
         return HilosAgentType::HILOS_INDEX;

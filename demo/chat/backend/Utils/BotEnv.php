@@ -16,11 +16,21 @@ use Hilos\Utils\Env;
  */
 class BotEnv
 {
+    /**
+     * Get LLM model name for bot chat generation.
+     *
+     * @return string Model name
+     */
     public static function getModel(): string
     {
         return Env::getFilled(EnvConstants::CHAT_BOT_MODEL, ChatLLMConstants::MODEL_BOT);
     }
 
+    /**
+     * Get LLM API base URL (Ollama or external).
+     *
+     * @return string Base URL without trailing slash
+     */
     public static function getUrl(): string
     {
         $url = trim(Env::getFilled(EnvConstants::CHAT_BOT_URL, ''));
@@ -35,6 +45,11 @@ class BotEnv
         return $url;
     }
 
+    /**
+     * Get timeout in seconds for LLM API calls.
+     *
+     * @return float Timeout in seconds
+     */
     public static function getTimeoutSec(): float
     {
         $timeout = Env::getFloat(EnvConstants::CHAT_BOT_TIMEOUT_SEC, LLMConstants::DEFAULT_TIMEOUT_SEC);
@@ -42,6 +57,11 @@ class BotEnv
         return $timeout > 0 ? $timeout : LLMConstants::DEFAULT_TIMEOUT_SEC;
     }
 
+    /**
+     * Whether to use external LLM provider (e.g. OpenAI) instead of local Ollama.
+     *
+     * @return bool True if external provider should be used
+     */
     public static function useExternalProvider(): bool
     {
         $value = Env::getFilled(EnvConstants::CHAT_BOT_PROVIDER, 'local');
@@ -51,7 +71,8 @@ class BotEnv
 
     /**
      * Get chat response language (ISO 639-1 code).
-     * Default: ru.
+     *
+     * @return string Language code (e.g. ru, en). Default: ru.
      */
     public static function getLanguage(): string
     {
@@ -62,7 +83,8 @@ class BotEnv
 
     /**
      * Get language instruction for LLM prompt (English instruction text).
-     * Example: "Respond in Russian." or "Respond in English."
+     *
+     * @return string Instruction text (e.g. "Respond in Russian.", "Respond in English.")
      */
     public static function getLanguageInstruction(): string
     {

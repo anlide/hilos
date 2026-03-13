@@ -24,6 +24,7 @@ final class ModeratorPromptPieceActions extends DbActions
      * @param array<string, mixed> $data Fields to update (keys: ObjectPiece::section, ObjectPiece::promptPiece)
      *
      * @throws HilosException On error (invalid data, database error, etc.)
+     * @throws RuntimeException If piece not found for update
      */
     public function update(array $data): void
     {
@@ -47,6 +48,7 @@ final class ModeratorPromptPieceActions extends DbActions
      * Deletes the piece.
      *
      * @throws HilosException On error (database error, etc.)
+     * @throws RuntimeException If piece not found or object collection is null
      */
     public function delete(): void
     {

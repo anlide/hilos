@@ -17,6 +17,11 @@ use Hilos\LLM\DTO\ChatGenerateOptions;
 use Hilos\LLM\DTO\Message;
 use Hilos\Utils\Logger;
 
+/**
+ * ChatSituationGuardianAgent - Guardian agent for chat situation analysis.
+ *
+ * Runs periodically to analyze chat health and publish insights via Guardian report.
+ */
 final class ChatSituationGuardianAgent extends AbstractGuardianAgent
 {
     private float $nextRunAtMs = 0.0;
@@ -25,6 +30,9 @@ final class ChatSituationGuardianAgent extends AbstractGuardianAgent
     private AsyncChatLLMInterface $chatClient;
     private ?array $pendingStats = null;
 
+    /**
+     * Create guardian agent with DB, RT and LLM capabilities.
+     */
     public function __construct()
     {
         parent::__construct();
@@ -39,26 +47,45 @@ final class ChatSituationGuardianAgent extends AbstractGuardianAgent
             );
     }
 
+    /**
+     * Get agent type identifier.
+     *
+     * @return string Agent type
+     */
     public function getType(): string
     {
         return AgentType::CHAT_SITUATION_GUARDIAN;
     }
 
+    /**
+     * Get agent index (null for global guardian agent).
+     *
+     * @return ?string Agent index or null
+     */
     public function getIndex(): ?string
     {
         return null;
     }
 
+    /**
+     * Called when agent is started.
+     */
     public function onStart(): void
     {
         Logger::logAgentStart($this->getId(), $this->getType());
     }
 
+    /**
+     * Called when agent is stopped.
+     */
     public function onStop(): void
     {
         Logger::logAgentStop($this->getId(), $this->getType());
     }
 
+    /**
+     * Agent-specific tick. Processes LLM results and schedules next analysis run.
+     */
     public function onTick(): void
     {
         $this->chatClient->tick(microtime(true) * 1000);

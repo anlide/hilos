@@ -16,6 +16,11 @@ use Hilos\Socket\Client\Interface\HttpClientInterface;
  */
 class FrontendHtmlClient extends AbstractClient implements HttpClientInterface
 {
+    /**
+     * @param resource $socket Client socket
+     * @param HtmlResolver $resolver Path resolver for HTML
+     * @param HtmlCache $cache HTML content cache
+     */
     public function __construct(
         $socket,
         private HtmlResolver $resolver,
@@ -24,11 +29,19 @@ class FrontendHtmlClient extends AbstractClient implements HttpClientInterface
         parent::__construct($socket);
     }
 
+    /**
+     * Set HTTP router. Not used - this client serves static HTML.
+     *
+     * @param HttpRouter $router Router instance (ignored)
+     */
     public function setRouter(HttpRouter $router): void
     {
         // Not used - this client serves static HTML
     }
 
+    /**
+     * Process incoming HTTP request and write prerendered HTML response.
+     */
     protected function processReadBuffer(): void
     {
         if (strpos($this->readBuffer, HttpConstants::HTTP_DELIMITER) === false) {
@@ -63,6 +76,12 @@ class FrontendHtmlClient extends AbstractClient implements HttpClientInterface
         $this->shouldClose = true;
     }
 
+    /**
+     * Parse raw HTTP request into method, path and headers.
+     *
+     * @param string $raw Raw HTTP request
+     * @return array{method: string, path: string, headers: array<string, string>}
+     */
     private function parseRequest(string $raw): array
     {
         $lines = explode(HttpConstants::HTTP_LINE_SEPARATOR, $raw);
@@ -87,6 +106,12 @@ class FrontendHtmlClient extends AbstractClient implements HttpClientInterface
         ];
     }
 
+    /**
+     * Build HTTP response string from status, headers and body.
+     *
+     * @param array<string, mixed> $response Response data
+     * @return string Raw HTTP response
+     */
     private function buildResponse(array $response): string
     {
         $status = $response[HttpConstants::RESPONSE_KEY_STATUS] ?? 200;
@@ -111,10 +136,16 @@ class FrontendHtmlClient extends AbstractClient implements HttpClientInterface
         return $out;
     }
 
+    /**
+     * Called every tick. No-op for static HTML client.
+     */
     public function onTick(): void
     {
     }
 
+    /**
+     * Called when connection is closed.
+     */
     protected function onClose(): void
     {
     }

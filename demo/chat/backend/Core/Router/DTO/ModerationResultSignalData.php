@@ -14,6 +14,13 @@ use Hilos\Core\Router\SignalDataInterface;
  */
 class ModerationResultSignalData extends BaseDTO implements SignalDataInterface
 {
+    /**
+     * @param string $acceptKey WebSocket accept key
+     * @param int $userId User ID
+     * @param string $message Message text
+     * @param bool $allow Whether message is allowed
+     * @param string $reason Moderation reason
+     */
     public function __construct(
         public readonly string $acceptKey,
         public readonly int $userId,
@@ -24,9 +31,9 @@ class ModerationResultSignalData extends BaseDTO implements SignalDataInterface
     }
 
     /**
-     * Convert DTO to array
+     * Convert DTO to array for transport.
      *
-     * @return array DTO data as array
+     * @return array<string, int|string|bool> DTO data as array
      */
     public function toArray(): array
     {
@@ -40,9 +47,9 @@ class ModerationResultSignalData extends BaseDTO implements SignalDataInterface
     }
 
     /**
-     * Create DTO from array (for deserialization)
+     * Create DTO from array (for deserialization).
      *
-     * @param array $data Source data
+     * @param array<string, mixed> $data Source data
      * @return static DTO instance
      */
     public static function fromArray(array $data): static

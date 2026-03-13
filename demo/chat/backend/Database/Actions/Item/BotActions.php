@@ -25,8 +25,8 @@ final class BotActions extends DbActions
      * Updates bot fields. Only provided keys are updated.
      *
      * @param array<string, mixed> $data Fields to update (keys: ObjectBot::name, ObjectBot::description, etc.)
-     *
      * @throws HilosException On error (invalid data, database error, etc.)
+     * @throws RuntimeException If bot not found or name validation fails
      */
     public function update(array $data): void
     {
@@ -91,6 +91,7 @@ final class BotActions extends DbActions
      * Deletes the bot.
      *
      * @throws HilosException On error (database error, etc.)
+     * @throws RuntimeException If bot not found or object collection is null
      */
     public function delete(): void
     {

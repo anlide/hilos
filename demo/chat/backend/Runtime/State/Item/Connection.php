@@ -38,6 +38,13 @@ class Connection extends RtState
         }
     }
 
+    /**
+     * Create connection state instance.
+     *
+     * @param string $acceptKey WebSocket accept key (unique identifier)
+     * @param int $userId User ID
+     * @return static New instance
+     */
     public static function create(string $acceptKey, int $userId): static
     {
         $instance = new static();
@@ -47,6 +54,12 @@ class Connection extends RtState
         return $instance;
     }
 
+    /**
+     * Create instance from row data (e.g. from persistence).
+     *
+     * @param array<string, mixed> $row Row data with acceptKey, userId, connectedAt
+     * @return static New instance
+     */
     public static function fromRow(array $row): static
     {
         $instance = new static();
@@ -56,6 +69,11 @@ class Connection extends RtState
         return $instance;
     }
 
+    /**
+     * Apply diff to state (partial update).
+     *
+     * @param array<string, mixed> $diff Fields to update (userId, connectedAt)
+     */
     public function applyDiff(array $diff): void
     {
         if (isset($diff[self::userId])) {
@@ -66,11 +84,22 @@ class Connection extends RtState
         }
     }
 
+    /**
+     * Get state ID (accept key).
+     *
+     * @return string Accept key
+     */
     public function getId(): string
     {
         return $this->acceptKey;
     }
 
+    /**
+     * Get property value by name (acceptKey, userId, connectedAt).
+     *
+     * @param string $name Property name
+     * @return string|int Property value
+     */
     public function __get(string $name): string|int
     {
         return match ($name) {
@@ -81,6 +110,11 @@ class Connection extends RtState
         };
     }
 
+    /**
+     * Convert state to associative array for persistence/serialization.
+     *
+     * @return array<string, mixed> State data (acceptKey, userId, connectedAt)
+     */
     public function toArray(): array
     {
         return [

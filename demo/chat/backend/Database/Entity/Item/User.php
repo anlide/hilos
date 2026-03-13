@@ -7,8 +7,10 @@ use Hilos\Database\Entity\Item\Entity;
 use Hilos\Database\PhpType;
 
 /**
- * User Entity
- * Auto-generated from table: user
+ * User Entity - represents user table row.
+ *
+ * Auto-generated from table: user.
+ * Used by DbCollection and ObjectCollection for ORM layer.
  *
  * @object-exclude password_hash, salt
  *

@@ -14,6 +14,14 @@ use Hilos\Core\Agent\Exception\AgentCreationFailedException;
  */
 class HilosAgentWorkerFactory extends AbstractAgentWorkerFactory
 {
+    /**
+     * Create agent instance (throws by default - override in project factory).
+     *
+     * @param string $agentType Agent type
+     * @param ?string $agentIndex Agent index (optional)
+     * @return AgentInterface Agent instance
+     * @throws AgentCreationFailedException Always - override in subclasses
+     */
     public static function createAgent(string $agentType, ?string $agentIndex): AgentInterface
     {
         throw new AgentCreationFailedException($agentType, $agentIndex);

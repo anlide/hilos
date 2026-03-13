@@ -14,6 +14,10 @@ use Hilos\Constants\SignalPayloadConstants;
  */
 class ModeratorPieceCreateActionDTO extends ChatActionPayloadDTO
 {
+    /**
+     * @param string $section Section identifier (e.g. ObjectPiece::SECTION_MESSAGE_RULE)
+     * @param string $promptPiece Prompt text for the piece
+     */
     public function __construct(
         public readonly string $section,
         public readonly string $promptPiece,

@@ -12,6 +12,9 @@ use PHPUnit\Framework\TestCase;
  */
 final class PlaceholderTest extends TestCase
 {
+    /**
+     * Placeholder assertion to keep unit test suite valid.
+     */
     public function testPlaceholder(): void
     {
         $this->assertTrue(true);

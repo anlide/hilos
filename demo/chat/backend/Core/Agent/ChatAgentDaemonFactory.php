@@ -26,11 +26,12 @@ use Hilos\Core\Agent\Daemon\HilosAgentDaemonFactory;
 class ChatAgentDaemonFactory extends HilosAgentDaemonFactory
 {
     /**
-     * Create agent daemon instance based on type
+     * Create agent daemon instance based on type.
      *
      * @param string $agentType Agent type
-     * @param ?string $agentIndex Agent index (optional)
+     * @param ?string $agentIndex Agent index (required for BOT type)
      * @return AgentDaemonInterface Agent daemon instance
+     * @throws \RuntimeException If agentIndex is null for BOT type
      */
     public static function createAgentDaemon(string $agentType, ?string $agentIndex): AgentDaemonInterface
     {

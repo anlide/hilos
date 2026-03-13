@@ -20,7 +20,7 @@ class UsersTable extends TableDefinition
     /**
      * Provides entity data source for the users collection.
      *
-     * @return EntityTableDataSource
+     * @return TableDataSourceInterface Entity table data source for users
      */
     protected function createDataSource(): TableDataSourceInterface
     {

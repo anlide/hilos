@@ -12,12 +12,21 @@ use Hilos\Core\Router\SignalDataInterface;
  */
 class ModerationBotRequestSignalData extends BaseDTO implements SignalDataInterface
 {
+    /**
+     * @param int $botId Bot ID
+     * @param string $message Message text to moderate
+     */
     public function __construct(
         public readonly int $botId,
         public readonly string $message,
     ) {
     }
 
+    /**
+     * Convert DTO to array for transport.
+     *
+     * @return array<string, int|string> DTO data as array
+     */
     public function toArray(): array
     {
         return [
@@ -26,6 +35,12 @@ class ModerationBotRequestSignalData extends BaseDTO implements SignalDataInterf
         ];
     }
 
+    /**
+     * Create DTO from array (for deserialization).
+     *
+     * @param array<string, mixed> $data Source data
+     * @return static DTO instance
+     */
     public static function fromArray(array $data): static
     {
         return new self(

@@ -34,10 +34,10 @@ class RenameActionDTO extends ChatActionPayloadDTO
     }
 
     /**
-     * Create from array
+     * Create from array.
      *
-     * @param array $data Payload data
-     * @return static
+     * @param array<string, mixed> $data Payload data
+     * @return static Instance
      */
     public static function fromArray(array $data): static
     {
@@ -47,9 +47,9 @@ class RenameActionDTO extends ChatActionPayloadDTO
     }
 
     /**
-     * Convert to array
+     * Convert to array.
      *
-     * @return array
+     * @return array<string, string> Data with newName key
      */
     public function toArray(): array
     {

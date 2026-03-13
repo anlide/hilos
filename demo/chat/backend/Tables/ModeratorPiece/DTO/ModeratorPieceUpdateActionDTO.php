@@ -16,6 +16,11 @@ use Hilos\Constants\SignalPayloadConstants;
  */
 class ModeratorPieceUpdateActionDTO extends ChatActionPayloadDTO
 {
+    /**
+     * @param int $id Piece ID to update
+     * @param ?string $section Section (null = do not update)
+     * @param ?string $promptPiece Prompt text (null = do not update)
+     */
     public function __construct(
         public readonly int $id,
         public readonly ?string $section = null,

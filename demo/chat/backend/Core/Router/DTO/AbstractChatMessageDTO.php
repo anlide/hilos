@@ -10,9 +10,8 @@ use Hilos\BaseDTO;
  * AbstractChatMessageDTO - Abstract base class for chat message DTOs
  *
  * Provides base functionality for chat-specific DTOs.
+ * Child classes must implement toArray() and fromArray().
  */
 abstract class AbstractChatMessageDTO extends BaseDTO implements ChatMessageDTOInterface
 {
-    // Base class for all chat message DTOs
-    // Child classes must implement toArray() and fromArray()
 }

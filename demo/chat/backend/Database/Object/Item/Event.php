@@ -31,6 +31,11 @@ final class Event extends Object_
     public const string timestamp = 'timestamp';
     public const string data = 'data';
 
+    /**
+     * Return collection key used for DbChatContext lookup
+     *
+     * @return string Collection key (DbChatContext::events)
+     */
     protected static function getCollectionKey(): string
     {
         return DbChatContext::events;

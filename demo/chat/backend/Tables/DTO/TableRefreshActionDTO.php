@@ -16,6 +16,9 @@ use Hilos\Core\Table\TableConstants;
  */
 class TableRefreshActionDTO extends ChatActionPayloadDTO
 {
+    /**
+     * @param string $tableKey Table identifier (e.g. TableChatContext::users)
+     */
     public function __construct(
         public readonly string $tableKey,
     ) {

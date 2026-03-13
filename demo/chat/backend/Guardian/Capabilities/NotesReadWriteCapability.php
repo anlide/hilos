@@ -8,13 +8,30 @@ use Hilos\Guardian\Capabilities\AbstractGuardianCapability;
 use Hilos\Guardian\DTO\CapabilityResult;
 use Hilos\Guardian\Storage\InMemoryNotesStorage;
 
+/**
+ * NotesReadWriteCapability - Read/write notes for guardian scope.
+ *
+ * Supports scope and mode via payload. Mode 'write' stores note, 'read' returns notes.
+ */
 final class NotesReadWriteCapability extends AbstractGuardianCapability
 {
+    /**
+     * Get capability name.
+     *
+     * @return string Capability identifier
+     */
     public function getName(): string
     {
         return 'notes.read_write';
     }
 
+    /**
+     * Execute read or write note operation.
+     *
+     * @param array<string, mixed> $payload Scope (default: guardian), mode (read/write), note (for write)
+     * @param array<string, mixed> $context Execution context (unused)
+     * @return CapabilityResult Success with notes data or error
+     */
     public function execute(array $payload = [], array $context = []): CapabilityResult
     {
         $scope = (string) ($payload['scope'] ?? 'guardian');

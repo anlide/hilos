@@ -14,6 +14,9 @@ use Hilos\Core\Router\SignalDataInterface;
  */
 class BotAgentSignalData extends BaseDTO implements SignalDataInterface
 {
+    /**
+     * @param int $botId Bot ID
+     */
     public function __construct(
         public readonly int $botId,
     ) {

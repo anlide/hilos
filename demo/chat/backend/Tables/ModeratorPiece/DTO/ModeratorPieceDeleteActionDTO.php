@@ -14,6 +14,9 @@ use Hilos\Constants\SignalPayloadConstants;
  */
 class ModeratorPieceDeleteActionDTO extends ChatActionPayloadDTO
 {
+    /**
+     * @param int $id Piece ID to delete
+     */
     public function __construct(
         public readonly int $id,
     ) {

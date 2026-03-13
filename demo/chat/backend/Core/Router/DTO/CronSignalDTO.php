@@ -18,15 +18,18 @@ class CronSignalDTO extends BaseDTO implements SignalDataDTO, SignalDataInterfac
     // Field name constants
     public const string CRON_NAME = 'cronName';
 
+    /**
+     * @param string $cronName Cron job name
+     */
     public function __construct(
         public readonly string $cronName,
     ) {
     }
 
     /**
-     * Convert DTO to array
+     * Convert DTO to array for transport.
      *
-     * @return array DTO data as array
+     * @return array<string, string> DTO data as array
      */
     public function toArray(): array
     {
@@ -36,9 +39,9 @@ class CronSignalDTO extends BaseDTO implements SignalDataDTO, SignalDataInterfac
     }
 
     /**
-     * Create DTO from array
+     * Create DTO from array.
      *
-     * @param array $data Source data
+     * @param array<string, mixed> $data Source data
      * @return static DTO instance
      */
     public static function fromArray(array $data): static

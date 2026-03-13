@@ -21,7 +21,7 @@ class BotsTable extends TableDefinition
     /**
      * Provides entity data source for the bots collection.
      *
-     * @return EntityTableDataSource
+     * @return TableDataSourceInterface Entity table data source for bots
      */
     protected function createDataSource(): TableDataSourceInterface
     {

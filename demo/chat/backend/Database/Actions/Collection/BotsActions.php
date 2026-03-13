@@ -28,10 +28,9 @@ final class BotsActions extends DbActions
      * Creates a new bot and adds it to the collection.
      *
      * @param array<string, mixed> $data Bot fields (ObjectBot::name, ObjectBot::description, etc.)
-     *
      * @return Bot Created bot Db item
-     *
-     * @throws HilosException On error (invalid data, database error, etc.)
+     * @throws RuntimeException If name is empty, too short or exceeds max length
+     * @throws HilosException On database error or truth source check failure
      */
     public function create(array $data): Bot
     {
