@@ -7,7 +7,7 @@ namespace Hilos\Core\Router\DTO;
 use Hilos\BaseDTO;
 
 /**
- * ActionPayloadDTO - Abstract base class for action payload DTOs
+ * ActionPayloadDTO - Abstract base class for action payload DTOs.
  *
  * Provides base structure for typed action payloads.
  * Child classes in demo/app level define specific action DTOs.

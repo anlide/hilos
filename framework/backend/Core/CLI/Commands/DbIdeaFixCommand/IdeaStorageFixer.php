@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Core\CLI\Commands\DbIdeaFixCommand;
 
 /**
- * IdeaStorageFixer trait
+ * IdeaStorageFixer trait.
  *
  * Handles synchronization of IdeaStorage.php file with ObjectCollection classes.
  *

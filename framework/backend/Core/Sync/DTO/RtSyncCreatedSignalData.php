@@ -8,7 +8,8 @@ use Hilos\BaseDTO;
 use Hilos\Core\Router\SignalDataInterface;
 
 /**
- * RT sync signal data for created state.
+ * RtSyncCreatedSignalData - RT sync signal data for created state.
+ *
  * Full state data.
  */
 class RtSyncCreatedSignalData extends BaseDTO implements SignalDataInterface

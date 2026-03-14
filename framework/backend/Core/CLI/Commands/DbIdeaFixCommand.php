@@ -669,10 +669,11 @@ HELP;
     }
 
     /**
-     * Display IdeaItem fixes that will be applied
+     * Display IdeaItem fixes that will be applied.
      *
      * @param array $fixes Fixes to apply
      * @param array $toCreate IdeaItems to create
+     * @param array $toDelete IdeaItems to delete
      * @param bool $dryRun Dry run mode
      */
     private function displayIdeaItemFixes(array $fixes, array $toCreate, array $toDelete, bool $dryRun): void

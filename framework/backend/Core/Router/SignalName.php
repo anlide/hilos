@@ -11,6 +11,7 @@ namespace Hilos\Core\Router;
  */
 class SignalName implements SignalNameInterface
 {
+    /** @var string Empty signal name value */
     public const string EMPTY = '';
 
     /**

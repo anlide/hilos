@@ -280,7 +280,7 @@ trait IdeaItemFixer
      *
      * @param array $IdeaItemInfo dbItem info
      * @param array $objectInfo Object info
-     * @param ?array $parseError Reference to store parse error message
+     * @param ?string $parseError Reference to store parse error message
      * @return array Fixes to apply
      */
     private function compareIdeaItemWithObject(array $IdeaItemInfo, array $objectInfo, ?string &$parseError = null): array

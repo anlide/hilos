@@ -441,7 +441,8 @@ class SignalRouter
      * does not pull signals — it receives them based on routing rules.
      *
      * @param SignalDTO $signal Signal DTO
-     * @return array Array of destinations [['type' => string, ...], ...]
+     * @return list<array{type: string, agentType?: string, agentIndex?: ?string, acceptKey?: string}>
+     *         List of destination configs (agent or websocket)
      */
     public function getDestinations(SignalDTO $signal): array
     {
@@ -485,7 +486,8 @@ class SignalRouter
      * Falls back to config['page_subscription_routing']['default'] when page has no override.
      *
      * @param SignalDTO $signal Signal DTO
-     * @return array Array of destinations [['type' => 'agent', 'agentType' => string, 'agentIndex' => null], ...]
+     * @return list<array{type: string, agentType: string, agentIndex: null}>
+     *         List of agent destination configs
      */
     private function getPageSubscriptionDestinations(SignalDTO $signal): array
     {
@@ -527,7 +529,8 @@ class SignalRouter
      * For ws_group: returns clients subscribed to targetGroup, excluding excludeAcceptKey
      *
      * @param SignalDTO $signal Signal DTO
-     * @return array Array of destinations [['type' => 'websocket', 'acceptKey' => string], ...]
+     * @return list<array{type: string, acceptKey: string}>
+     *         List of WebSocket client destination configs
      */
     private function getWebSocketDestinations(SignalDTO $signal): array
     {
@@ -601,7 +604,8 @@ class SignalRouter
      * Supports single agent (string) or multiple agents (array of strings).
      *
      * @param SignalDTO $signal Signal DTO
-     * @return array Array of destinations [['type' => 'agent', 'agentType' => string, 'agentIndex' => ?string], ...]
+     * @return list<array{type: string, agentType: string, agentIndex: ?string}>
+     *         List of agent destination configs
      */
     private function getAgentDestinations(SignalDTO $signal): array
     {

@@ -122,7 +122,14 @@ HELP;
     }
 
     /**
-     * Load Entity classes from directory
+     * Load Entity classes from directory.
+     *
+     * Auto-detects entity directory if not provided.
+     *
+     * @param ?string $entityDir Entity files directory or null for auto-detect
+     * @param ?string $entityNamespace Entity namespace prefix or null for auto-detect
+     * @return array<string, array<string, mixed>> Map of table name to entity info
+     * @throws RuntimeException If entity directory not found or invalid
      */
     private function loadEntities(?string $entityDir, ?string $entityNamespace): array
     {
@@ -204,7 +211,13 @@ HELP;
     }
 
     /**
-     * Extract class name from PHP file
+     * Extract class name from PHP file.
+     *
+     * Parses namespace and class name from file content.
+     *
+     * @param string $file File path
+     * @param ?string $namespacePrefix Optional namespace prefix filter
+     * @return ?string Full class name or null if extraction fails
      */
     private function extractClassNameFromFile(string $file, ?string $namespacePrefix): ?string
     {
@@ -230,7 +243,12 @@ HELP;
     }
 
     /**
-     * Extract Entity information from ReflectionClass
+     * Extract Entity information from ReflectionClass.
+     *
+     * Reads table, columns, types, indexes and foreign keys from Entity metadata.
+     *
+     * @param ReflectionClass<Entity> $reflection Entity class reflection
+     * @return ?array<string, mixed> Entity info (table, columns, types, etc.) or null
      */
     private function extractEntityInfo(ReflectionClass $reflection): ?array
     {
@@ -268,7 +286,12 @@ HELP;
     }
 
     /**
-     * Compare Entity definitions with database schema
+     * Compare Entity definitions with database schema.
+     *
+     * @param array<string, array<string, mixed>> $entities Loaded entity definitions
+     * @param array<string, TableInfo> $dbTables Database tables from schema
+     * @param ?string $tableFilter Optional table name to restrict comparison
+     * @return array{tables_missing_in_entity: list<string>, tables_missing_in_db: list<string>, table_diffs: array<string, array>} Diff result
      */
     private function compareEntitiesWithDatabase(array $entities, array $dbTables, ?string $tableFilter): array
     {
@@ -311,7 +334,11 @@ HELP;
     }
 
     /**
-     * Compare single table Entity with database schema
+     * Compare single table Entity with database schema.
+     *
+     * @param array<string, mixed> $entity Entity metadata (columns, types, indexes, etc.)
+     * @param TableInfo $dbTable Database table info
+     * @return array<string, mixed> Table-specific diff (columns, indexes, foreign keys)
      */
     private function compareTable(array $entity, TableInfo $dbTable): array
     {
@@ -445,7 +472,9 @@ HELP;
     }
 
     /**
-     * Display diff results
+     * Display diff results to stdout.
+     *
+     * @param array<string, mixed> $diff Diff result from compareEntitiesWithDatabase
      */
     private function displayDiff(array $diff): void
     {

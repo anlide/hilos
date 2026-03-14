@@ -40,13 +40,13 @@ class Process
     /** @var array<int, resource|false> Descriptors for stdin, stdout and stderr */
     private array $pipes = [];
 
-    /** @var array<string, string> Descriptor for stdin */
+    /** @var list<string> Descriptor for stdin (e.g. [pipe, r]) */
     private array $stdinDescriptor;
 
-    /** @var array<string, string> Descriptor for stdout */
+    /** @var list<string> Descriptor for stdout (e.g. [pipe, w]) */
     private array $stdoutDescriptor;
 
-    /** @var array<string, string> Descriptor for stderr */
+    /** @var list<string> Descriptor for stderr (e.g. [pipe, w]) */
     private array $stderrDescriptor;
 
     /** @var string Unread stdout content */

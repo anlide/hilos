@@ -8,7 +8,8 @@ use Hilos\BaseDTO;
 use Hilos\Core\Router\SignalDataInterface;
 
 /**
- * DB sync signal data for created row.
+ * DbSyncCreatedSignalData - DB sync signal data for created row.
+ *
  * Full row data (all columns).
  */
 class DbSyncCreatedSignalData extends BaseDTO implements SignalDataInterface

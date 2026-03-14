@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Core\Agent\DTO;
 
 /**
- * AgentMessageDTOInterface - Interface for agent message DTOs
+ * AgentMessageDTOInterface - Interface for agent message DTOs.
  *
  * All agent message DTOs must extend BaseDTO and implement this interface
  * to ensure type safety and consistent structure.

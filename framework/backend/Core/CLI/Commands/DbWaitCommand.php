@@ -16,7 +16,10 @@ use Hilos\Utils\Env;
  */
 class DbWaitCommand implements CommandInterface
 {
+    /** @var int Poll interval in seconds */
     private const int DEFAULT_INTERVAL_SEC = 2;
+
+    /** @var int Max wait time in seconds */
     private const int DEFAULT_TIMEOUT_SEC = 60;
 
     /**

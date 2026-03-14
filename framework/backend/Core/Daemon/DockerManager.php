@@ -245,7 +245,9 @@ class DockerManager extends BaseManager
     }
 
     /**
-     * Initiate daemon process stop
+     * Initiate daemon process stop.
+     *
+     * Stops the current daemon process. No-op if no process is running.
      */
     private function initiateDaemonStop(): void
     {

@@ -125,6 +125,9 @@ trait EntityCollectionFixer
 
     /**
      * Extract class name from EntityCollection file.
+     *
+     * @param string $file EntityCollection file path
+     * @return ?string Fully qualified class name or null if not found
      */
     private function extractClassNameFromEntityCollectionFile(string $file): ?string
     {
@@ -164,6 +167,10 @@ trait EntityCollectionFixer
 
     /**
      * Extract Entity class name from EntityCollection reflection or file.
+     *
+     * @param ReflectionClass $entityCollectionReflection EntityCollection class reflection
+     * @param string $entityCollectionFile EntityCollection file path
+     * @return ?string Entity class name or null if not found
      */
     private function extractEntityClassNameFromEntityCollection(ReflectionClass $entityCollectionReflection, string $entityCollectionFile): ?string
     {
@@ -425,6 +432,9 @@ trait EntityCollectionFixer
 
     /**
      * Get short class name from full class name.
+     *
+     * @param string $fullClassName Fully qualified class name
+     * @return string Short class name (last segment)
      */
     private function getShortClassName(string $fullClassName): string
     {
@@ -598,6 +608,10 @@ trait EntityCollectionFixer
 
     /**
      * Ensure EntityCollection has ENTITY_CLASS constant.
+     *
+     * @param string $content EntityCollection file content
+     * @param string $entityAlias Entity class alias
+     * @return string Updated content with ENTITY_CLASS constant if added
      */
     private function ensureEntityCollectionHasEntityClassConstant(string $content, string $entityAlias): string
     {
@@ -895,6 +909,9 @@ trait EntityCollectionFixer
 
     /**
      * Convert table name to PascalCase class name.
+     *
+     * @param string $tableName Database table name (snake_case)
+     * @return string PascalCase class name
      */
     protected function tableToPascalCase(string $tableName): string
     {

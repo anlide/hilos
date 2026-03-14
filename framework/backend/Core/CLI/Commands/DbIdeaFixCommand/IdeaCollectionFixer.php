@@ -138,7 +138,10 @@ trait IdeaCollectionFixer
     }
 
     /**
-     * Extract class name from IdeaCollection file
+     * Extract fully qualified class name from IdeaCollection file path.
+     *
+     * @param string $file Path to IdeaCollection PHP file
+     * @return ?string Fully qualified class name or null if extraction fails
      */
     private function extractClassNameFromIdeaCollectionFile(string $file): ?string
     {
@@ -165,7 +168,11 @@ trait IdeaCollectionFixer
     }
 
     /**
-     * Extract ObjectCollection class name from IdeaCollection reflection or file
+     * Extract ObjectCollection class name from IdeaCollection reflection or file content.
+     *
+     * @param ReflectionClass<object> $ideaCollectionReflection IdeaCollection class reflection
+     * @param string $ideaCollectionFile Path to IdeaCollection file
+     * @return ?string ObjectCollection fully qualified class name or null if not found
      */
     private function extractObjectCollectionClassNameFromIdeaCollection(ReflectionClass $ideaCollectionReflection, string $ideaCollectionFile): ?string
     {
@@ -204,12 +211,12 @@ trait IdeaCollectionFixer
     }
 
     /**
-     * Prepare fixes for IdeaCollection files
+     * Prepare fixes for IdeaCollection files.
      *
-     * @param array $objectCollections Loaded ObjectCollection classes
-     * @param array $ideaCollections Loaded IdeaCollection files
+     * @param array<string, array{class: string, file: string, reflection: ReflectionClass, object_collection_class: string}> $objectCollections Loaded ObjectCollection classes
+     * @param array<string, array{class: string, file: string, reflection: ReflectionClass, object_collection_class: string}> $ideaCollections Loaded IdeaCollection files
      * @param ?string $tableFilter Table name filter
-     * @return array Fixes to apply
+     * @return array<string, array<string, mixed>> Fixes to apply keyed by object collection class name
      */
     protected function prepareIdeaCollectionFixes(array $objectCollections, array $ideaCollections, ?string $tableFilter): array
     {
@@ -259,7 +266,10 @@ trait IdeaCollectionFixer
     }
 
     /**
-     * Extract Entity class name from ObjectCollection
+     * Extract Entity class name from ObjectCollection via use statements in file.
+     *
+     * @param ReflectionClass<object> $objectCollectionReflection ObjectCollection class reflection
+     * @return ?string Entity fully qualified class name or null if not found
      */
     private function extractEntityClassNameFromObjectCollection(ReflectionClass $objectCollectionReflection): ?string
     {
@@ -291,11 +301,11 @@ trait IdeaCollectionFixer
     }
 
     /**
-     * Compare IdeaCollection with ObjectCollection and prepare fixes
+     * Compare IdeaCollection with ObjectCollection and prepare fixes.
      *
-     * @param array $ideaCollectionInfo IdeaCollection info
-     * @param array $objectCollectionInfo ObjectCollection info
-     * @return array Fixes to apply
+     * @param array{class: string, file: string, reflection: ReflectionClass, object_collection_class: string} $ideaCollectionInfo IdeaCollection info
+     * @param array{class: string, file: string, reflection: ReflectionClass, object_collection_class: string} $objectCollectionInfo ObjectCollection info
+     * @return array<string, mixed> Fixes to apply (e.g. update_objectToIdea, update_imports)
      */
     private function compareIdeaCollectionWithObjectCollection(array $ideaCollectionInfo, array $objectCollectionInfo): array
     {
@@ -372,7 +382,10 @@ trait IdeaCollectionFixer
     }
 
     /**
-     * Extract Object class name from ObjectCollection
+     * Extract Object class name from ObjectCollection via use statements in file.
+     *
+     * @param ReflectionClass<object> $objectCollectionReflection ObjectCollection class reflection
+     * @return ?string Object fully qualified class name or null if not found
      */
     private function extractObjectClassNameFromObjectCollection(ReflectionClass $objectCollectionReflection): ?string
     {
@@ -406,11 +419,11 @@ trait IdeaCollectionFixer
     }
 
     /**
-     * Apply fixes to IdeaCollection files
+     * Apply fixes to IdeaCollection files.
      *
-     * @param array $fixes Fixes to apply (keyed by object collection class name)
-     * @param array $ideaCollections Loaded IdeaCollection files info
-     * @param array $objectCollections Loaded ObjectCollection files info
+     * @param array<string, array<string, mixed>> $fixes Fixes to apply keyed by object collection class name
+     * @param array<string, array{class: string, file: string, reflection: ReflectionClass, object_collection_class: string}> $ideaCollections Loaded IdeaCollection files info
+     * @param array<string, array{class: string, file: string, reflection: ReflectionClass, object_collection_class: string}> $objectCollections Loaded ObjectCollection files info
      * @return int Number of files updated
      */
     protected function applyIdeaCollectionFixes(array $fixes, array $ideaCollections, array $objectCollections): int
@@ -442,12 +455,12 @@ trait IdeaCollectionFixer
     }
 
     /**
-     * Apply fixes to a single IdeaCollection file
+     * Apply fixes to a single IdeaCollection file.
      *
      * @param string $ideaCollectionFile IdeaCollection file path
-     * @param array $fixes Fixes to apply
-     * @param ReflectionClass $objectCollectionReflection ObjectCollection reflection
-     * @return bool Success
+     * @param array<string, mixed> $fixes Fixes to apply (e.g. update_objectToIdea, update_imports)
+     * @param ReflectionClass<object> $objectCollectionReflection ObjectCollection reflection
+     * @return bool True if file was updated successfully
      */
     private function applyIdeaCollectionFileFixes(string $ideaCollectionFile, array $fixes, ReflectionClass $objectCollectionReflection): bool
     {
@@ -555,10 +568,10 @@ trait IdeaCollectionFixer
     }
 
     /**
-     * Parse IdeaCollection file to extract current structure
+     * Parse IdeaCollection file to extract current structure (object_class, idea_class, imports).
      *
      * @param string $filePath IdeaCollection file path
-     * @return ?array Parsed structure or null if failed
+     * @return ?array{object_class: ?string, idea_class: ?string, imports: array<string, string>} Parsed structure or null if failed
      */
     protected function parseIdeaCollectionFile(string $filePath): ?array
     {
@@ -616,7 +629,11 @@ trait IdeaCollectionFixer
     }
 
     /**
-     * Resolve full class name from use statement alias
+     * Resolve full class name from use statement alias in file content.
+     *
+     * @param string $content File content with use statements
+     * @param string $alias Short class name or alias from use statement
+     * @return ?string Fully qualified class name or null if not found
      */
     private function resolveClassNameFromUse(string $content, string $alias): ?string
     {
@@ -641,7 +658,10 @@ trait IdeaCollectionFixer
     }
 
     /**
-     * Get short class name from full class name
+     * Get short class name (last segment) from fully qualified class name.
+     *
+     * @param string $fullClassName Fully qualified class name
+     * @return string Short class name without namespace
      */
     private function getShortClassName(string $fullClassName): string
     {
@@ -748,7 +768,11 @@ trait IdeaCollectionFixer
     }
 
     /**
-     * Extract alias from use statement
+     * Extract alias from use statement for given fully qualified class name.
+     *
+     * @param string $content File content with use statements
+     * @param string $fullClassName Fully qualified class name to look up
+     * @return ?string Alias if found, or short name for unaliased use, or null
      */
     private function extractAliasFromUse(string $content, string $fullClassName): ?string
     {
@@ -824,11 +848,11 @@ trait IdeaCollectionFixer
     }
 
     /**
-     * Find IdeaCollection files to delete (when corresponding ObjectCollection class doesn't exist)
+     * Find IdeaCollection files to delete when corresponding ObjectCollection class does not exist.
      *
-     * @param array $objectCollections Loaded ObjectCollection classes (keyed by class name)
-     * @param array $ideaCollections Loaded IdeaCollection files (keyed by object collection class name)
-     * @return array IdeaCollection files to delete (keyed by object collection class name)
+     * @param array<string, array{class: string, file: string, reflection: ReflectionClass, object_collection_class: string}> $objectCollections Loaded ObjectCollection classes keyed by class name
+     * @param array<string, array{class: string, file: string, reflection: ReflectionClass, object_collection_class: string}> $ideaCollections Loaded IdeaCollection files keyed by object collection class name
+     * @return array<string, array{class: string, file: string, reflection: ReflectionClass, object_collection_class: string}> IdeaCollection files to delete keyed by object collection class name
      */
     protected function findIdeaCollectionsToDelete(array $objectCollections, array $ideaCollections): array
     {
@@ -851,10 +875,10 @@ trait IdeaCollectionFixer
     }
 
     /**
-     * Find vendor/autoload.php path relative to current working directory or file location
+     * Find vendor/autoload.php path relative to current working directory or file location.
      *
-     * @param ?string $referenceFile Optional reference file to search from
-     * @return ?string Path to autoload.php or null if not found
+     * @param ?string $referenceFile Optional reference file path to search from
+     * @return ?string Absolute path to autoload.php or null if not found
      */
     private function findAutoloadPath(?string $referenceFile = null): ?string
     {

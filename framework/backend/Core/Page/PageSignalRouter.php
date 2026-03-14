@@ -12,7 +12,7 @@ use Hilos\Socket\WebSocket\DTO\WebSocketPageUpdateSubscriptionSignalDTO;
 use Hilos\Utils\Logger;
 
 /**
- * PageSignalRouter - Routes page signals to page handlers
+ * PageSignalRouter - Routes page signals to page handlers.
  *
  * Resolves page instances and dispatches subscribe/unsubscribe/action events.
  */

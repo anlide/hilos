@@ -7,7 +7,7 @@ namespace Hilos\Core\Router;
 use Hilos\BaseDTO;
 
 /**
- * WebSocketSignalData - Signal data for WebSocket signals
+ * WebSocketSignalData - Signal data for WebSocket signals.
  *
  * Contains both the actual signal data and targeting metadata
  * (targetAcceptKey, targetGroup, excludeAcceptKey).
@@ -37,7 +37,6 @@ class WebSocketSignalData extends BaseDTO implements SignalDataInterface
      */
     public function toArray(): array
     {
-        #var_dump($this);
         $dataArray = $this->data instanceof BaseDTO
             ? $this->data->toArray()
             : [];

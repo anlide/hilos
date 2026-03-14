@@ -7,7 +7,7 @@ namespace Hilos\Core\Agent\Hilos;
 use Hilos\Core\Agent\AbstractAgent;
 
 /**
- * AbstractHilosAgent - Abstract base for all Hilos admin section agents
+ * AbstractHilosAgent - Abstract base for all Hilos admin section agents.
  *
  * Base class for framework-level Hilos agents (index, guardian, analytics).
  * Projects must extend one of the concrete abstract subclasses to provide agents.

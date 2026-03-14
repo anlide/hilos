@@ -18,7 +18,7 @@ class EventLoop
     /** @var EventBase Event base instance */
     private EventBase $base;
 
-    /** @var array<int, Event> Registered events indexed by socket resource ID */
+    /** @var array<int|string, Event> Registered events indexed by socket resource ID or "id_write" */
     private array $events = [];
 
     /** @var int Counter for active events (for debugging) */

@@ -7,7 +7,7 @@ namespace Hilos\Core\Daemon\Master;
 use Hilos\Core\CLI\DTO\DaemonStatusDTO;
 
 /**
- * DaemonStatus - Holds daemon status information
+ * DaemonStatus - Holds daemon status information.
  *
  * Contains runtime information about daemon state that can be
  * exposed via HTTP status endpoint.
@@ -53,7 +53,7 @@ class DaemonStatus
     }
 
     /**
-     * DaemonStatus constructor
+     * Creates daemon status with optional start time.
      *
      * @param ?float $startTime Optional start time (for creating from DTO)
      */
@@ -63,7 +63,7 @@ class DaemonStatus
     }
 
     /**
-     * Update status information
+     * Updates status information (memory, CPU, workers).
      */
     public function update(): void
     {

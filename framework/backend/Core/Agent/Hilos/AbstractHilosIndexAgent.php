@@ -7,7 +7,7 @@ namespace Hilos\Core\Agent\Hilos;
 use Hilos\Constants\HilosAgentType;
 
 /**
- * AbstractHilosIndexAgent - Abstract agent for Hilos dashboard, settings and i18n pages
+ * AbstractHilosIndexAgent - Abstract agent for Hilos dashboard, settings and i18n pages.
  *
  * Projects must extend this class to provide a concrete agent for Hilos index pages
  * (dashboard, settings, i18n). If not extended, the corresponding pages will not function.

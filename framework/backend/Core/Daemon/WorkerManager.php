@@ -373,9 +373,13 @@ abstract class WorkerManager extends BaseManager
         $this->notifyAgentStopped($agentId);
     }
 
+    /**
+     * Handle daemon agent message (reserved for future use).
+     *
+     * @param WorkerDTO $data Message data from daemon
+     */
     private function handleDaemonAgentMessage(WorkerDTO $data): void
     {
-
     }
 
     /**

@@ -306,7 +306,9 @@ abstract class AgentManagerDaemon
     }
 
     /**
-     * Handle DB sync created message from worker (worker-level broadcast to daemon + all workers)
+     * Handle DB sync created message from worker (worker-level broadcast to daemon + all workers).
+     *
+     * @param WorkerDbSyncCreatedMessageDTO $dto DTO with sync created data
      */
     public function handleWorkerDbSyncCreated(WorkerDbSyncCreatedMessageDTO $dto): void
     {
@@ -320,7 +322,9 @@ abstract class AgentManagerDaemon
     }
 
     /**
-     * Handle DB sync updated message from worker (worker-level broadcast)
+     * Handle DB sync updated message from worker (worker-level broadcast).
+     *
+     * @param WorkerDbSyncUpdatedMessageDTO $dto DTO with sync updated data
      */
     public function handleWorkerDbSyncUpdated(WorkerDbSyncUpdatedMessageDTO $dto): void
     {
@@ -334,7 +338,9 @@ abstract class AgentManagerDaemon
     }
 
     /**
-     * Handle DB sync deleted message from worker (worker-level broadcast)
+     * Handle DB sync deleted message from worker (worker-level broadcast).
+     *
+     * @param WorkerDbSyncDeletedMessageDTO $dto DTO with sync deleted data
      */
     public function handleWorkerDbSyncDeleted(WorkerDbSyncDeletedMessageDTO $dto): void
     {
@@ -348,7 +354,9 @@ abstract class AgentManagerDaemon
     }
 
     /**
-     * Handle RT sync created message from worker (worker-level broadcast)
+     * Handle RT sync created message from worker (worker-level broadcast).
+     *
+     * @param WorkerRtSyncCreatedMessageDTO $dto DTO with sync created data
      */
     public function handleWorkerRtSyncCreated(WorkerRtSyncCreatedMessageDTO $dto): void
     {
@@ -362,7 +370,9 @@ abstract class AgentManagerDaemon
     }
 
     /**
-     * Handle RT sync updated message from worker (worker-level broadcast)
+     * Handle RT sync updated message from worker (worker-level broadcast).
+     *
+     * @param WorkerRtSyncUpdatedMessageDTO $dto DTO with sync updated data
      */
     public function handleWorkerRtSyncUpdated(WorkerRtSyncUpdatedMessageDTO $dto): void
     {
@@ -376,7 +386,9 @@ abstract class AgentManagerDaemon
     }
 
     /**
-     * Handle RT sync deleted message from worker (worker-level broadcast)
+     * Handle RT sync deleted message from worker (worker-level broadcast).
+     *
+     * @param WorkerRtSyncDeletedMessageDTO $dto DTO with sync deleted data
      */
     public function handleWorkerRtSyncDeleted(WorkerRtSyncDeletedMessageDTO $dto): void
     {
