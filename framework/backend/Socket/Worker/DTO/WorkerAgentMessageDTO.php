@@ -23,6 +23,12 @@ class WorkerAgentMessageDTO extends WorkerDTO
     // Message type
     public const string MESSAGE_TYPE = WorkerConstants::MESSAGE_AGENT_MESSAGE;
 
+    /**
+     * Creates agent message DTO.
+     *
+     * @param string $agentId Agent ID
+     * @param SignalDTO $signal Signal payload
+     */
     public function __construct(
         public readonly string $agentId,
         public readonly SignalDTO $signal,
@@ -40,9 +46,9 @@ class WorkerAgentMessageDTO extends WorkerDTO
     }
 
     /**
-     * Convert DTO to array
+     * Converts DTO to array for transport.
      *
-     * @return array DTO data as array
+     * @return array<string, mixed> DTO data as array
      */
     public function toArray(): array
     {
@@ -59,9 +65,9 @@ class WorkerAgentMessageDTO extends WorkerDTO
     }
 
     /**
-     * Create DTO from array
+     * Creates DTO from array.
      *
-     * @param array $data Source data
+     * @param array<string, mixed> $data Source data (agentId, signal)
      * @return static DTO instance
      */
     public static function fromArray(array $data): static

@@ -13,13 +13,23 @@ use Hilos\Core\Router\SignalDataInterface;
  */
 class DbSyncDeletedSignalData extends BaseDTO implements SignalDataInterface
 {
+    /**
+     * Creates DB sync deleted signal data.
+     *
+     * @param string $collectionKey Collection key
+     * @param string $idString Row ID from Object::getIdString()
+     */
     public function __construct(
         public readonly string $collectionKey,
-        /** @var string Collection key from Object::getIdString() */
         public readonly string $idString,
     ) {
     }
 
+    /**
+     * Converts DTO to array for transport.
+     *
+     * @return array<string, string> DTO data as array
+     */
     public function toArray(): array
     {
         return [
@@ -28,6 +38,12 @@ class DbSyncDeletedSignalData extends BaseDTO implements SignalDataInterface
         ];
     }
 
+    /**
+     * Creates DTO from array.
+     *
+     * @param array<string, mixed> $data Source data
+     * @return static DTO instance
+     */
     public static function fromArray(array $data): static
     {
         return new self(

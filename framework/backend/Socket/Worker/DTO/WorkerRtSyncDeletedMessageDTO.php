@@ -14,8 +14,12 @@ class WorkerRtSyncDeletedMessageDTO extends WorkerDTO
 {
     public const string MESSAGE_TYPE = WorkerConstants::MESSAGE_RT_SYNC_DELETED;
 
+    /**
+     * Creates RT sync deleted message DTO.
+     *
+     * @param array<string, mixed> $signalData Payload (collectionKey, stateId)
+     */
     public function __construct(
-        /** @param array<string, mixed> collectionKey, stateId */
         public readonly array $signalData,
     ) {
     }

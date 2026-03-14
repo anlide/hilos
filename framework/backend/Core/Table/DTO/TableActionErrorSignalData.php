@@ -17,6 +17,8 @@ use Hilos\Core\Table\TableConstants;
 class TableActionErrorSignalData extends SignalData implements SignalDataInterface
 {
     /**
+     * Creates table action error signal data.
+     *
      * @param string $tableKey Table identifier (e.g. users, bots)
      * @param string $action Action name that failed
      * @param string $message Error message

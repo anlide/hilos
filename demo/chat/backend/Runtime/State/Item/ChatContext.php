@@ -83,8 +83,10 @@ class ChatContext extends RtState
     }
 
     /**
-     * @param string $name Property name
-     * @return mixed Property value (topic, topicConfidence, summary)
+     * Returns property value by name.
+     *
+     * @param string $name Property name (topic, topicConfidence, summary)
+     * @return mixed Property value
      */
     public function __get(string $name): mixed
     {

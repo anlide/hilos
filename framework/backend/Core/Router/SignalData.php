@@ -15,9 +15,9 @@ use Hilos\BaseDTO;
 class SignalData extends BaseDTO implements SignalDataInterface
 {
     /**
-     * SignalData constructor
+     * Creates signal data with optional payload.
      *
-     * @param array $data Optional data to store
+     * @param array<string, mixed> $data Optional data to store
      */
     public function __construct(
         private array $data = [],
@@ -25,9 +25,9 @@ class SignalData extends BaseDTO implements SignalDataInterface
     }
 
     /**
-     * Convert DTO to array
+     * Converts DTO to array.
      *
-     * @return array Stored data array
+     * @return array<string, mixed> Stored data
      */
     public function toArray(): array
     {
@@ -35,9 +35,9 @@ class SignalData extends BaseDTO implements SignalDataInterface
     }
 
     /**
-     * Create DTO from array
+     * Creates DTO from array.
      *
-     * @param array $data Source data
+     * @param array<string, mixed> $data Source data
      * @return static DTO instance
      */
     public static function fromArray(array $data): static

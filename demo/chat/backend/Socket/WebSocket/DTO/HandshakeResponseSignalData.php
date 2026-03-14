@@ -18,12 +18,16 @@ use RuntimeException;
  */
 class HandshakeResponseSignalData extends BaseDTO implements SignalDataInterface
 {
+    /**
+     * Creates handshake response signal data.
+     *
+     * @param EntitiesChangesDTO $entities Entity payload (full.users with current user)
+     * @param int $userId Current user ID
+     * @param ?string $moderationState Current user's moderation state or null
+     */
     public function __construct(
-        /** @var EntitiesChangesDTO Entity payload: only current user (full.users) */
         public readonly EntitiesChangesDTO $entities,
-        /** @var int Current user ID */
         public readonly int $userId,
-        /** @var string|null Current user's moderation state (private, not in entities) */
         public readonly ?string $moderationState = null,
     ) {
     }

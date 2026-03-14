@@ -23,9 +23,8 @@ class ModeratorPromptPiecesTableActions extends TableActions
      * Creates a moderator prompt piece and returns mutation for broadcasting.
      *
      * @param ModeratorPieceCreateActionDTO $dto Create payload
-     *
-     * @return TableMutationEntry
-     * @throws HilosException
+     * @return TableMutationEntry Mutation entry for broadcast
+     * @throws HilosException On db or permission error
      */
     public function create(ModeratorPieceCreateActionDTO $dto): TableMutationEntry
     {

@@ -20,6 +20,13 @@ class WebSocketActionSignalDTO extends BaseDTO implements SignalDataDTO, SignalD
     public const string ACTION = 'action';
     public const string DATA = 'data';
 
+    /**
+     * Creates WebSocket action signal DTO.
+     *
+     * @param string $acceptKey WebSocket accept key
+     * @param string $action Action name
+     * @param array<string, mixed> $data Action payload data
+     */
     public function __construct(
         public readonly string $acceptKey,
         public readonly string $action,
@@ -28,9 +35,9 @@ class WebSocketActionSignalDTO extends BaseDTO implements SignalDataDTO, SignalD
     }
 
     /**
-     * Convert DTO to array
+     * Converts DTO to array for transport.
      *
-     * @return array DTO data as array
+     * @return array<string, mixed> DTO data as array
      */
     public function toArray(): array
     {
@@ -47,9 +54,9 @@ class WebSocketActionSignalDTO extends BaseDTO implements SignalDataDTO, SignalD
     }
 
     /**
-     * Create DTO from array
+     * Creates DTO from array.
      *
-     * @param array $data Source data
+     * @param array<string, mixed> $data Source data
      * @return static DTO instance
      */
     public static function fromArray(array $data): static

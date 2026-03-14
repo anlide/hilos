@@ -19,6 +19,12 @@ class WebSocketFrameBinarySignalDTO extends BaseDTO implements SignalDataDTO, Si
     public const string ACCEPT_KEY = 'acceptKey';
     public const string PAYLOAD = 'payload';
 
+    /**
+     * Creates binary frame signal DTO.
+     *
+     * @param string $acceptKey WebSocket accept key
+     * @param string $payload Frame payload (base64 or raw)
+     */
     public function __construct(
         public readonly string $acceptKey,
         public readonly string $payload,
@@ -26,9 +32,9 @@ class WebSocketFrameBinarySignalDTO extends BaseDTO implements SignalDataDTO, Si
     }
 
     /**
-     * Convert DTO to array
+     * Converts DTO to array for transport.
      *
-     * @return array DTO data as array
+     * @return array<string, string> DTO data as array
      */
     public function toArray(): array
     {
@@ -39,9 +45,9 @@ class WebSocketFrameBinarySignalDTO extends BaseDTO implements SignalDataDTO, Si
     }
 
     /**
-     * Create DTO from array
+     * Creates DTO from array.
      *
-     * @param array $data Source data
+     * @param array<string, mixed> $data Source data
      * @return static DTO instance
      */
     public static function fromArray(array $data): static

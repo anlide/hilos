@@ -26,7 +26,9 @@ use Hilos\Runtime\View\Item\RtItem;
 final class Connection extends RtItem
 {
     /**
-     * @param StateConnection $state Connection state (reference)
+     * Creates connection Rt item from state reference.
+     *
+     * @param StateConnection $state Connection state (passed by reference)
      */
     public function __construct(StateConnection &$state)
     {

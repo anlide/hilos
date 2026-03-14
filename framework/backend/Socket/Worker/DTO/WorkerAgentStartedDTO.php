@@ -22,6 +22,13 @@ class WorkerAgentStartedDTO extends WorkerDTO
     // Message type
     public const string MESSAGE_TYPE = 'agent_started';
 
+    /**
+     * Creates agent started DTO.
+     *
+     * @param string $agentId Agent unique ID
+     * @param string $agentType Agent type constant
+     * @param ?string $agentIndex Agent index or null
+     */
     public function __construct(
         public readonly string $agentId,
         public readonly string $agentType,
@@ -40,9 +47,9 @@ class WorkerAgentStartedDTO extends WorkerDTO
     }
 
     /**
-     * Convert DTO to array
+     * Converts DTO to array for transport.
      *
-     * @return array DTO data as array
+     * @return array<string, mixed> DTO data as array
      */
     public function toArray(): array
     {
@@ -60,9 +67,9 @@ class WorkerAgentStartedDTO extends WorkerDTO
     }
 
     /**
-     * Create DTO from array
+     * Creates DTO from array.
      *
-     * @param array $data Source data
+     * @param array<string, mixed> $data Source data (agentId, agentType, agentIndex)
      * @return static DTO instance
      */
     public static function fromArray(array $data): static

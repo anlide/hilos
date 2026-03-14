@@ -18,15 +18,20 @@ class SystemSignalDTO extends BaseDTO implements SignalDataDTO, SignalDataInterf
     // Field name constants
     public const string SYSTEM_NAME = 'systemName';
 
+    /**
+     * Creates system signal DTO.
+     *
+     * @param string $systemName System signal name
+     */
     public function __construct(
         public readonly string $systemName,
     ) {
     }
 
     /**
-     * Convert DTO to array
+     * Converts DTO to array for transport.
      *
-     * @return array DTO data as array
+     * @return array<string, string> DTO data as array
      */
     public function toArray(): array
     {
@@ -36,9 +41,9 @@ class SystemSignalDTO extends BaseDTO implements SignalDataDTO, SignalDataInterf
     }
 
     /**
-     * Create DTO from array
+     * Creates DTO from array.
      *
-     * @param array $data Source data
+     * @param array<string, mixed> $data Source data (systemName key)
      * @return static DTO instance
      */
     public static function fromArray(array $data): static

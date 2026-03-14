@@ -14,8 +14,12 @@ class WorkerDbSyncCreatedMessageDTO extends WorkerDTO
 {
     public const string MESSAGE_TYPE = WorkerConstants::MESSAGE_DB_SYNC_CREATED;
 
+    /**
+     * Creates worker DB sync created message.
+     *
+     * @param array<string, mixed> $signalData Signal data (collectionKey, idString, row)
+     */
     public function __construct(
-        /** @var array<string, mixed> collectionKey, idString, row */
         public readonly array $signalData,
     ) {
     }

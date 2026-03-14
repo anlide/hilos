@@ -5,32 +5,30 @@ declare(strict_types=1);
 namespace Hilos;
 
 /**
- * BaseDTO - Abstract base class for all DTOs
+ * BaseDTO - Abstract base class for all DTOs.
  *
  * Provides common functionality for Data Transfer Objects:
- * - JSON serialization
- * - Array conversion
- * - Data validation
+ * JSON serialization, array conversion, data validation.
  */
 abstract class BaseDTO
 {
     /**
-     * Convert DTO to array
+     * Converts DTO to associative array.
      *
-     * @return array DTO data as array
+     * @return array<string, mixed> DTO data as array
      */
     abstract public function toArray(): array;
 
     /**
-     * Create DTO from array
+     * Creates DTO instance from array.
      *
-     * @param array $data Source data
+     * @param array<string, mixed> $data Source data
      * @return static DTO instance
      */
     abstract public static function fromArray(array $data): static;
 
     /**
-     * Convert DTO to JSON string
+     * Converts DTO to JSON string.
      *
      * @return string JSON representation
      */
@@ -40,10 +38,11 @@ abstract class BaseDTO
     }
 
     /**
-     * Create DTO from JSON string
+     * Creates DTO instance from JSON string.
      *
      * @param string $json JSON string
      * @return static DTO instance
+     * @throws HilosException On invalid JSON
      */
     public static function fromJson(string $json): static
     {

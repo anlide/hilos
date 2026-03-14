@@ -18,6 +18,8 @@ use Hilos\Core\Table\TableConstants;
 class TableMutationSignalData extends SignalData implements SignalDataInterface
 {
     /**
+     * Creates table mutation signal data.
+     *
      * @param string $tableKey Table identifier (e.g. users, bots)
      * @param TableMutationEntry $mutation Mutation entry (type, rowId, row)
      */

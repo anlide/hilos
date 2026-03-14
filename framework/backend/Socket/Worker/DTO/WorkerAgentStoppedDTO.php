@@ -20,6 +20,11 @@ class WorkerAgentStoppedDTO extends WorkerDTO
     // Message type
     public const string MESSAGE_TYPE = 'agent_stopped';
 
+    /**
+     * Creates agent stopped notification DTO.
+     *
+     * @param string $agentId Agent ID that stopped
+     */
     public function __construct(
         public readonly string $agentId,
     ) {
@@ -36,9 +41,9 @@ class WorkerAgentStoppedDTO extends WorkerDTO
     }
 
     /**
-     * Convert DTO to array
+     * Converts DTO to array for transport.
      *
-     * @return array DTO data as array
+     * @return array<string, string> DTO data as array
      */
     public function toArray(): array
     {
@@ -49,9 +54,9 @@ class WorkerAgentStoppedDTO extends WorkerDTO
     }
 
     /**
-     * Create DTO from array
+     * Creates DTO from array.
      *
-     * @param array $data Source data
+     * @param array<string, mixed> $data Source data (agentId)
      * @return static DTO instance
      */
     public static function fromArray(array $data): static

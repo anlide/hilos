@@ -23,10 +23,9 @@ class BotItemActions extends TableItemActions
      * Updates bot and returns mutation for broadcasting.
      * DB_SYNC broadcast is triggered automatically by Object_::sync().
      *
-     * @param BotUpdateActionDTO $dto Update payload (only non-null fields are applied)
-     *
-     * @return TableMutationEntry
-     * @throws HilosException
+     * @param BotUpdateActionDTO $dto Update payload (only non-null fields applied)
+     * @return TableMutationEntry Mutation entry for broadcast
+     * @throws HilosException On db or permission error
      */
     public function update(BotUpdateActionDTO $dto): TableMutationEntry
     {
@@ -51,8 +50,8 @@ class BotItemActions extends TableItemActions
      * Deletes bot and returns mutation for broadcasting.
      * DB_SYNC broadcast is triggered automatically by Object_::delete().
      *
-     * @return TableMutationEntry
-     * @throws HilosException
+     * @return TableMutationEntry Mutation entry for broadcast
+     * @throws HilosException On db or permission error
      */
     public function delete(): TableMutationEntry
     {

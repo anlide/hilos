@@ -21,6 +21,12 @@ class WorkerRegisterDTO extends WorkerDTO
     // Message type
     public const string MESSAGE_TYPE = 'worker_register';
 
+    /**
+     * Creates worker registration DTO.
+     *
+     * @param int $workerIndex Worker index assigned by daemon
+     * @param bool $monopolistic Whether worker is monopolistic
+     */
     public function __construct(
         public readonly int $workerIndex,
         public readonly bool $monopolistic = false,
@@ -38,9 +44,9 @@ class WorkerRegisterDTO extends WorkerDTO
     }
 
     /**
-     * Convert DTO to array
+     * Converts DTO to array for transport.
      *
-     * @return array DTO data as array
+     * @return array<string, mixed> DTO data as array
      */
     public function toArray(): array
     {
@@ -52,9 +58,9 @@ class WorkerRegisterDTO extends WorkerDTO
     }
 
     /**
-     * Create DTO from array
+     * Creates DTO from array.
      *
-     * @param array $data Source data
+     * @param array<string, mixed> $data Source data (workerIndex, monopolistic)
      * @return static DTO instance
      */
     public static function fromArray(array $data): static

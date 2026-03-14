@@ -77,11 +77,11 @@ class ChatDaemonManager extends DaemonManager
     }
 
     /**
-     * Called when a cron job should be executed
+     * Called when a cron job should be executed.
      *
      * Sends cron signal to appropriate agent via signal router.
      *
-     * @param CronRule $rule Cron rule that should be executed
+     * @param CronRule $rule Cron rule to execute
      */
     protected function onCron(CronRule $rule): void
     {

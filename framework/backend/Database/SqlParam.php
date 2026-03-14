@@ -3,12 +3,21 @@
 namespace Hilos\Database;
 
 /**
- * Single SQL parameter with type information
+ * Single SQL parameter with type information for prepared statements.
+ *
+ * Type chars: i=integer, d=double, s=string, b=blob.
  */
 readonly class SqlParam
 {
+    /**
+     * Creates SQL parameter with explicit type.
+     *
+     * @param mixed $value Bound value
+     * @param string $type Type char: i, d, s, b
+     * @throws \InvalidArgumentException When type is not i, d, s or b
+     */
     public function __construct(
-        public mixed  $value,
+        public mixed $value,
         public string $type = 's' // i=integer, d=double, s=string, b=blob
     ) {
         if (!in_array($type, ['i', 'd', 's', 'b'], true)) {
@@ -17,7 +26,10 @@ readonly class SqlParam
     }
 
     /**
-     * Auto-detect type from value
+     * Auto-detects type from value (int→i, float→d, bool→i, null→s, else→s).
+     *
+     * @param mixed $value Value to bind
+     * @return self Parameter instance
      */
     public static function auto(mixed $value): self
     {
@@ -33,7 +45,10 @@ readonly class SqlParam
     }
 
     /**
-     * Create integer parameter
+     * Creates integer parameter.
+     *
+     * @param int $value Integer value
+     * @return self Parameter instance
      */
     public static function int(int $value): self
     {
@@ -41,7 +56,10 @@ readonly class SqlParam
     }
 
     /**
-     * Create double parameter
+     * Creates double parameter.
+     *
+     * @param float $value Float value
+     * @return self Parameter instance
      */
     public static function double(float $value): self
     {
@@ -49,7 +67,10 @@ readonly class SqlParam
     }
 
     /**
-     * Create string parameter
+     * Creates string parameter.
+     *
+     * @param string $value String value
+     * @return self Parameter instance
      */
     public static function string(string $value): self
     {
@@ -57,7 +78,10 @@ readonly class SqlParam
     }
 
     /**
-     * Create blob parameter
+     * Creates blob parameter.
+     *
+     * @param string $value Blob value
+     * @return self Parameter instance
      */
     public static function blob(string $value): self
     {
@@ -65,7 +89,10 @@ readonly class SqlParam
     }
 
     /**
-     * Create boolean parameter (stored as integer)
+     * Creates boolean parameter (stored as integer 0/1).
+     *
+     * @param bool $value Boolean value
+     * @return self Parameter instance
      */
     public static function bool(bool $value): self
     {

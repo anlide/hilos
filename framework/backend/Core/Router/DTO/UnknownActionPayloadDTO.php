@@ -13,10 +13,10 @@ namespace Hilos\Core\Router\DTO;
 class UnknownActionPayloadDTO extends ActionPayloadDTO
 {
     /**
-     * Constructor
+     * Creates unknown action payload DTO with raw data preserved.
      *
      * @param string $action Action name
-     * @param array $data Raw payload data
+     * @param array<string, mixed> $data Raw payload data
      */
     public function __construct(
         private string $action,
@@ -35,9 +35,9 @@ class UnknownActionPayloadDTO extends ActionPayloadDTO
     }
 
     /**
-     * Get raw payload data
+     * Returns raw payload data.
      *
-     * @return array Raw data
+     * @return array<string, mixed> Raw payload data
      */
     public function getData(): array
     {
@@ -45,10 +45,10 @@ class UnknownActionPayloadDTO extends ActionPayloadDTO
     }
 
     /**
-     * Create from array
+     * Creates DTO from array.
      *
-     * @param array $data Data array (must contain 'action' and optionally 'data')
-     * @return static
+     * @param array<string, mixed> $data Data array (action key required, data optional)
+     * @return static DTO instance
      */
     public static function fromArray(array $data): static
     {
@@ -59,9 +59,9 @@ class UnknownActionPayloadDTO extends ActionPayloadDTO
     }
 
     /**
-     * Convert to array
+     * Converts to array.
      *
-     * @return array
+     * @return array<string, mixed> Action and data keys
      */
     public function toArray(): array
     {

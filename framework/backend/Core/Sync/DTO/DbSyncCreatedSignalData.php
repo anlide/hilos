@@ -13,15 +13,25 @@ use Hilos\Core\Router\SignalDataInterface;
  */
 class DbSyncCreatedSignalData extends BaseDTO implements SignalDataInterface
 {
+    /**
+     * Creates DB sync created signal data.
+     *
+     * @param string $collectionKey Collection key (e.g. DbChatContext::events)
+     * @param string $idString Row ID from Object::getIdString()
+     * @param array<string, mixed> $row Full row data (all columns)
+     */
     public function __construct(
         public readonly string $collectionKey,
-        /** @var string Collection key from Object::getIdString() */
         public readonly string $idString,
-        /** @var array<string, mixed> Full row (all columns) */
         public readonly array $row,
     ) {
     }
 
+    /**
+     * Converts DTO to array for transport.
+     *
+     * @return array<string, mixed> DTO data as array
+     */
     public function toArray(): array
     {
         return [
@@ -31,6 +41,12 @@ class DbSyncCreatedSignalData extends BaseDTO implements SignalDataInterface
         ];
     }
 
+    /**
+     * Creates DTO from array.
+     *
+     * @param array<string, mixed> $data Source data (collectionKey, idString, row)
+     * @return static DTO instance
+     */
     public static function fromArray(array $data): static
     {
         return new self(

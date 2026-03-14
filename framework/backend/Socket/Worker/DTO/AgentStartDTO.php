@@ -30,15 +30,20 @@ class AgentStartDTO extends WorkerDTO
         return self::MESSAGE_TYPE;
     }
 
+    /**
+     * Creates agent start DTO.
+     *
+     * @param string $agentId Agent unique ID to start
+     */
     public function __construct(
         public readonly string $agentId,
     ) {
     }
 
     /**
-     * Convert DTO to array
+     * Converts DTO to array for transport.
      *
-     * @return array DTO data as array
+     * @return array<string, mixed> DTO data as array
      */
     public function toArray(): array
     {
@@ -49,9 +54,9 @@ class AgentStartDTO extends WorkerDTO
     }
 
     /**
-     * Create DTO from array
+     * Creates DTO from array.
      *
-     * @param array $data Source data
+     * @param array<string, mixed> $data Source data (agentId)
      * @return static DTO instance
      */
     public static function fromArray(array $data): static

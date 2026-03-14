@@ -14,8 +14,12 @@ class WorkerDbSyncUpdatedMessageDTO extends WorkerDTO
 {
     public const string MESSAGE_TYPE = WorkerConstants::MESSAGE_DB_SYNC_UPDATED;
 
+    /**
+     * Creates worker DB sync updated message.
+     *
+     * @param array<string, mixed> $signalData Signal data (collectionKey, idString, row diff)
+     */
     public function __construct(
-        /** @var array<string, mixed> collectionKey, idString, row (diff) */
         public readonly array $signalData,
     ) {
     }

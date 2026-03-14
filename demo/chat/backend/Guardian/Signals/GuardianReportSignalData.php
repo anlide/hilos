@@ -8,9 +8,14 @@ use Demo\Chat\Guardian\Reports\GuardianReportPayload;
 use Hilos\BaseDTO;
 use Hilos\Core\Router\SignalDataInterface;
 
+/**
+ * GuardianReportSignalData - DTO for guardian report signal (GuardianAgent → ChatAgent).
+ */
 final class GuardianReportSignalData extends BaseDTO implements SignalDataInterface
 {
     /**
+     * Creates guardian report signal data.
+     *
      * @param GuardianReportPayload $report Guardian report payload
      */
     public function __construct(

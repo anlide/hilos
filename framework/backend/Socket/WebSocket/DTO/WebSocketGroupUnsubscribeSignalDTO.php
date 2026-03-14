@@ -19,6 +19,12 @@ class WebSocketGroupUnsubscribeSignalDTO extends BaseDTO implements SignalDataDT
     public const string ACCEPT_KEY = 'acceptKey';
     public const string GROUP = 'group';
 
+    /**
+     * Creates group unsubscribe signal DTO.
+     *
+     * @param string $acceptKey WebSocket accept key
+     * @param string $group Group name
+     */
     public function __construct(
         public readonly string $acceptKey,
         public readonly string $group = '',
@@ -26,9 +32,9 @@ class WebSocketGroupUnsubscribeSignalDTO extends BaseDTO implements SignalDataDT
     }
 
     /**
-     * Convert DTO to array
+     * Converts DTO to array for transport.
      *
-     * @return array DTO data as array
+     * @return array<string, mixed> DTO data as array
      */
     public function toArray(): array
     {
@@ -44,9 +50,9 @@ class WebSocketGroupUnsubscribeSignalDTO extends BaseDTO implements SignalDataDT
     }
 
     /**
-     * Create DTO from array
+     * Creates DTO from array.
      *
-     * @param array $data Source data
+     * @param array<string, mixed> $data Source data
      * @return static DTO instance
      */
     public static function fromArray(array $data): static

@@ -14,8 +14,12 @@ class WorkerRtSyncUpdatedMessageDTO extends WorkerDTO
 {
     public const string MESSAGE_TYPE = WorkerConstants::MESSAGE_RT_SYNC_UPDATED;
 
+    /**
+     * Creates RT sync updated message DTO.
+     *
+     * @param array<string, mixed> $signalData Payload (collectionKey, stateId, row diff)
+     */
     public function __construct(
-        /** @param array<string, mixed> collectionKey, stateId, row (diff) */
         public readonly array $signalData,
     ) {
     }

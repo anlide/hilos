@@ -73,6 +73,9 @@ class ChatContextAnalyzerAgent extends AbstractAgent
         return null;
     }
 
+    /**
+     * Called when agent starts. Registers truth source and initializes chat context if empty.
+     */
     public function onStart(): void
     {
         Logger::logAgentStart($this->getId(), $this->getType());
@@ -89,6 +92,9 @@ class ChatContextAnalyzerAgent extends AbstractAgent
         }
     }
 
+    /**
+     * Called when agent stops. Unregisters truth source.
+     */
     public function onStop(): void
     {
         RtTruthSourceRegistry::unregister(RtChatContext::chatContexts, $this->getId());
@@ -96,6 +102,9 @@ class ChatContextAnalyzerAgent extends AbstractAgent
         Logger::logAgentStop($this->getId(), $this->getType());
     }
 
+    /**
+     * Periodic tick. Processes LLM results and handles sync signals.
+     */
     public function onTick(): void
     {
         $this->chatClient->tick(microtime(true) * 1000);
@@ -348,7 +357,10 @@ PROMPT;
     }
 
     /**
-     * @return ?array{topic: ?string, topicConfidence: float, summary: string}
+     * Parses LLM JSON output into structured topic, confidence and summary.
+     *
+     * @param string $text Raw LLM response text
+     * @return ?array{topic: ?string, topicConfidence: float, summary: string} Parsed data or null on failure
      */
     private function parseAnalyzerOutput(string $text): ?array
     {
@@ -384,11 +396,23 @@ PROMPT;
         ];
     }
 
+    /**
+     * Checks if topic is in the allowed list.
+     *
+     * @param string $topic Topic to validate
+     * @return bool True if allowed
+     */
     private function isTopicAllowed(string $topic): bool
     {
         return in_array($topic, ChatTopicConstants::TOPICS, true);
     }
 
+    /**
+     * Extracts first JSON object from text.
+     *
+     * @param string $text Raw text possibly containing JSON
+     * @return ?string JSON object string or null
+     */
     private function extractJsonObject(string $text): ?string
     {
         $trimmed = trim($text);

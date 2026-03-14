@@ -22,6 +22,15 @@ class WebSocketHandshakeSignalDTO extends BaseDTO implements SignalDataDTO, Sign
     public const string CLIENT_IP = 'clientIp';
     public const string QUERY_PARAMS = 'queryParams';
 
+    /**
+     * Creates WebSocket handshake signal DTO.
+     *
+     * @param array<string, string> $headers HTTP headers
+     * @param string $acceptKey WebSocket accept key
+     * @param array<string, string> $cookies Cookies
+     * @param string $clientIp Client IP address
+     * @param array<string, string> $queryParams Query string params
+     */
     public function __construct(
         public readonly array $headers,
         public readonly string $acceptKey,
@@ -32,9 +41,9 @@ class WebSocketHandshakeSignalDTO extends BaseDTO implements SignalDataDTO, Sign
     }
 
     /**
-     * Convert DTO to array
+     * Converts DTO to array for transport.
      *
-     * @return array DTO data as array
+     * @return array<string, mixed> DTO data as array
      */
     public function toArray(): array
     {
@@ -48,9 +57,9 @@ class WebSocketHandshakeSignalDTO extends BaseDTO implements SignalDataDTO, Sign
     }
 
     /**
-     * Create DTO from array
+     * Creates DTO from array.
      *
-     * @param array $data Source data
+     * @param array<string, mixed> $data Source data
      * @return static DTO instance
      */
     public static function fromArray(array $data): static

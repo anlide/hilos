@@ -13,6 +13,8 @@ use Hilos\Core\Router\SignalDataInterface;
 class ModerationBotRequestSignalData extends BaseDTO implements SignalDataInterface
 {
     /**
+     * Creates bot moderation request signal data.
+     *
      * @param int $botId Bot ID
      * @param string $message Message text to moderate
      */

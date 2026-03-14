@@ -37,7 +37,7 @@ final class EventsActions extends DbActions
      * @param string $type Event type
      * @param ?int $userId User ID (optional, for user-authored events)
      * @param ?int $botId Bot ID (optional, for bot-authored events; mutually exclusive with userId)
-     * @param ?array $data Additional event data (optional)
+     * @param ?array<string, mixed> $data Additional event data (optional)
      * @return DbEvent Created event
      * @throws HilosException On error (invalid parameters, database error, etc.)
      * @throws RuntimeException If event id is null after sync

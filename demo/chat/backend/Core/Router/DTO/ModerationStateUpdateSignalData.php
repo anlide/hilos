@@ -14,8 +14,12 @@ use Hilos\Core\Router\SignalDataInterface;
  */
 class ModerationStateUpdateSignalData extends BaseDTO implements SignalDataInterface
 {
+    /**
+     * Creates moderation state update signal data.
+     *
+     * @param ?string $moderationState Current moderation state (message text or null when cleared)
+     */
     public function __construct(
-        /** @var string|null Current moderation state (message text or null when cleared) */
         public readonly ?string $moderationState,
     ) {
     }

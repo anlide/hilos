@@ -15,6 +15,8 @@ use Hilos\Core\Router\SignalDataInterface;
 class ModerationResultSignalData extends BaseDTO implements SignalDataInterface
 {
     /**
+     * Creates moderation result signal data.
+     *
      * @param string $acceptKey WebSocket accept key
      * @param int $userId User ID
      * @param string $message Message text

@@ -32,6 +32,12 @@ class WorkerRegisteredDTO extends WorkerDTO
         return self::MESSAGE_TYPE;
     }
 
+    /**
+     * Creates worker registration confirmation DTO.
+     *
+     * @param int $workerIndex Worker index assigned by daemon
+     * @param bool $monopolistic Whether worker is monopolistic
+     */
     public function __construct(
         public readonly int $workerIndex,
         public readonly bool $monopolistic = false,
@@ -53,9 +59,9 @@ class WorkerRegisteredDTO extends WorkerDTO
     }
 
     /**
-     * Create DTO from array
+     * Creates DTO from array.
      *
-     * @param array $data Source data
+     * @param array<string, mixed> $data Source data (workerIndex, monopolistic)
      * @return static DTO instance
      */
     public static function fromArray(array $data): static

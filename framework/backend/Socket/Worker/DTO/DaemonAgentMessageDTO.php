@@ -24,6 +24,18 @@ class DaemonAgentMessageDTO extends WorkerDTO
     public const string MESSAGE_TYPE = WorkerConstants::MESSAGE_DAEMON_AGENT_MESSAGE;
 
     /**
+     * Creates daemon agent message DTO.
+     *
+     * @param string $agentId Agent ID
+     * @param SignalDTO $signal Signal payload
+     */
+    public function __construct(
+        public readonly string $agentId,
+        public readonly SignalDTO $signal,
+    ) {
+    }
+
+    /**
      * Get message type
      *
      * @return string Message type
@@ -33,16 +45,10 @@ class DaemonAgentMessageDTO extends WorkerDTO
         return self::MESSAGE_TYPE;
     }
 
-    public function __construct(
-        public readonly string $agentId,
-        public readonly SignalDTO $signal,
-    ) {
-    }
-
     /**
-     * Convert DTO to array
+     * Converts DTO to array for transport.
      *
-     * @return array DTO data as array
+     * @return array<string, mixed> DTO data as array
      */
     public function toArray(): array
     {
@@ -54,9 +60,9 @@ class DaemonAgentMessageDTO extends WorkerDTO
     }
 
     /**
-     * Create DTO from array
+     * Creates DTO from array.
      *
-     * @param array $data Source data
+     * @param array<string, mixed> $data Source data (agentId, signal)
      * @return static DTO instance
      */
     public static function fromArray(array $data): static

@@ -22,6 +22,12 @@ class BotAgentDaemon extends AbstractAgentDaemon
     /** @var string Agent index (bot id) */
     private string $agentIndex;
 
+    /**
+     * Creates daemon proxy for BotAgent with given bot id as index.
+     *
+     * @param string $agentIndex Bot id (non-empty)
+     * @throws \RuntimeException When agentIndex is empty
+     */
     public function __construct(string $agentIndex)
     {
         if ($agentIndex === '') {
@@ -66,12 +72,12 @@ class BotAgentDaemon extends AbstractAgentDaemon
     }
 
     /**
-     * Handle message from worker agent
+     * Handle message from worker agent.
      *
      * Bot signals (BOT_JOINED, BOT_LEFT, MODERATE_BOT_REQUEST) go agent-to-agent via
      * framework signal router to ChatAgent/ModeratorAgent. No daemon routing needed.
      *
-     * @param array $data Message data from worker
+     * @param array<string, mixed> $data Message data from worker
      */
     public function handleWorkerMessage(array $data): void
     {
@@ -79,10 +85,10 @@ class BotAgentDaemon extends AbstractAgentDaemon
     }
 
     /**
-     * Handle message from external source (WebSocket, HTTP, etc.)
+     * Handle message from external source (WebSocket, HTTP, etc.).
      *
-     * @param array $data Message data from external source
-     * @return ?array Response data
+     * @param array<string, mixed> $data Message data from external source
+     * @return ?array<string, mixed> Response data or null
      */
     public function handleExternalMessage(array $data): ?array
     {

@@ -85,10 +85,11 @@ class EntitiesChangesDTO extends BaseDTO
     }
 
     /**
-     * Convert DTO to array.
+     * Converts DTO to array.
+     *
      * Serializes full from DbCollections with idAsIndex: false, toFrontend: true.
      *
-     * @return array DTO data as array
+     * @return array<string, mixed> DTO data as array
      */
     public function toArray(): array
     {
@@ -117,10 +118,11 @@ class EntitiesChangesDTO extends BaseDTO
     }
 
     /**
-     * Create DTO from array.
+     * Creates DTO from array.
+     *
      * Full cannot be restored from array (DbCollection instances required); full will be empty.
      *
-     * @param array $data Source data
+     * @param array<string, mixed> $data Source data
      * @return static DTO instance
      */
     public static function fromArray(array $data): static

@@ -13,6 +13,13 @@ use RuntimeException;
  */
 class ModerationStateSignalData extends BaseDTO implements SignalDataInterface
 {
+    /**
+     * Creates moderation state signal data.
+     *
+     * @param int $userId User ID
+     * @param bool $isModerating Whether moderation is in progress
+     * @param ?string $message Current message text or null
+     */
     public function __construct(
         public readonly int $userId,
         public readonly bool $isModerating,
@@ -20,6 +27,11 @@ class ModerationStateSignalData extends BaseDTO implements SignalDataInterface
     ) {
     }
 
+    /**
+     * Converts DTO to array for transport.
+     *
+     * @return array<string, int|bool|string|null> DTO data as array
+     */
     public function toArray(): array
     {
         return [
@@ -29,6 +41,13 @@ class ModerationStateSignalData extends BaseDTO implements SignalDataInterface
         ];
     }
 
+    /**
+     * Creates DTO from array (not implemented).
+     *
+     * @param array<string, mixed> $data Source data
+     * @return static DTO instance
+     * @throws RuntimeException Always - not implemented
+     */
     public static function fromArray(array $data): static
     {
         throw new RuntimeException('ModerationStateSignalData::fromArray() is not implemented');

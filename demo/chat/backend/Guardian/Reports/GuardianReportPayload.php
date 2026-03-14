@@ -14,7 +14,14 @@ use Hilos\BaseDTO;
 final class GuardianReportPayload extends BaseDTO
 {
     /**
-     * @param array<string, mixed> $details
+     * Creates guardian report payload.
+     *
+     * @param string $guardian Guardian identifier
+     * @param string $category Report category
+     * @param string $severity Severity (e.g. info, warning, error)
+     * @param string $title Report title
+     * @param string $message Report message
+     * @param array<string, mixed> $details Optional extra data
      */
     public function __construct(
         public readonly string $guardian,

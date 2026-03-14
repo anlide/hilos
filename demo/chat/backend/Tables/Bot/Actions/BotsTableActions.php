@@ -23,10 +23,9 @@ class BotsTableActions extends TableActions
      * Creates a bot and returns mutation for broadcasting.
      * DB_SYNC broadcast is triggered automatically by Object_::sync().
      *
-     * @param BotCreateActionDTO $dto Create payload
-     *
-     * @return TableMutationEntry
-     * @throws HilosException
+     * @param BotCreateActionDTO $dto Create payload (name, description, style, etc.)
+     * @return TableMutationEntry Mutation entry for broadcast
+     * @throws HilosException On db or validation error
      */
     public function create(BotCreateActionDTO $dto): TableMutationEntry
     {

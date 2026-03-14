@@ -23,12 +23,10 @@ class UserItemActions extends TableItemActions
     /**
      * Updates user name and returns mutation for broadcasting.
      *
-     * @param UserUpdateActionDTO $dto Update payload (name is required)
-     *
-     * @return TableMutationEntry
-     *
+     * @param UserUpdateActionDTO $dto Update payload (name required)
+     * @return TableMutationEntry Mutation entry for broadcast
      * @throws InvalidActionPayloadException If name is empty
-     * @throws HilosException If update fails at db layer
+     * @throws HilosException On db or permission error
      */
     public function update(UserUpdateActionDTO $dto): TableMutationEntry
     {

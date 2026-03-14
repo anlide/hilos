@@ -44,10 +44,10 @@ class DbChatContext extends DbContext
     public const string moderatorPromptPiece = 'moderatorPromptPiece';
 
     /**
-     * Configure database context with object collections and view representations.
+     * Configures database context with object collections and view representations.
      *
      * @throws ObjectCollectionNotFoundException If object collection init fails
-     * @throws DatabaseException On database connection or schema error
+     * @throws DatabaseException On connection or schema error
      */
     public function configure(): void
     {

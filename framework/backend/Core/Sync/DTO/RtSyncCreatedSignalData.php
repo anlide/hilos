@@ -13,14 +13,25 @@ use Hilos\Core\Router\SignalDataInterface;
  */
 class RtSyncCreatedSignalData extends BaseDTO implements SignalDataInterface
 {
+    /**
+     * Creates RT sync created signal data.
+     *
+     * @param string $collectionKey Collection key
+     * @param string $stateId State ID
+     * @param array<string, mixed> $row Full state data
+     */
     public function __construct(
         public readonly string $collectionKey,
         public readonly string $stateId,
-        /** @var array<string, mixed> Full state data */
         public readonly array $row,
     ) {
     }
 
+    /**
+     * Converts DTO to array for transport.
+     *
+     * @return array<string, mixed> DTO data as array
+     */
     public function toArray(): array
     {
         return [
@@ -30,6 +41,12 @@ class RtSyncCreatedSignalData extends BaseDTO implements SignalDataInterface
         ];
     }
 
+    /**
+     * Creates DTO from array.
+     *
+     * @param array<string, mixed> $data Source data
+     * @return static DTO instance
+     */
     public static function fromArray(array $data): static
     {
         return new self(

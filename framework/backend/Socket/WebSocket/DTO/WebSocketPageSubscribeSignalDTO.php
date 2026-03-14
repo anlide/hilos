@@ -20,6 +20,13 @@ class WebSocketPageSubscribeSignalDTO extends BaseDTO implements SignalDataDTO, 
     public const string PAGE = 'page';
     public const string PARAMS = 'params';
 
+    /**
+     * Creates page subscribe signal DTO.
+     *
+     * @param string $acceptKey WebSocket accept key
+     * @param string $page Page name
+     * @param array<string, string> $params Route params
+     */
     public function __construct(
         public readonly string $acceptKey,
         public readonly string $page = '',
@@ -28,9 +35,9 @@ class WebSocketPageSubscribeSignalDTO extends BaseDTO implements SignalDataDTO, 
     }
 
     /**
-     * Convert DTO to array
+     * Converts DTO to array for transport.
      *
-     * @return array DTO data as array
+     * @return array<string, mixed> DTO data as array
      */
     public function toArray(): array
     {
@@ -50,9 +57,9 @@ class WebSocketPageSubscribeSignalDTO extends BaseDTO implements SignalDataDTO, 
     }
 
     /**
-     * Create DTO from array
+     * Creates DTO from array.
      *
-     * @param array $data Source data
+     * @param array<string, mixed> $data Source data
      * @return static DTO instance
      */
     public static function fromArray(array $data): static

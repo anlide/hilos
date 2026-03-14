@@ -61,12 +61,12 @@ class ChatAgentDaemon extends AbstractAgentDaemon
     }
 
     /**
-     * Handle message from worker agent
+     * Handle message from worker agent.
      *
      * ChatAgent handles WebSocket routing via its own sendToUser/sendToAllUsers.
      * Agent signals (BOT_JOINED, MODERATION_RESULT, etc.) are processed in onSignalAgent.
      *
-     * @param array $data Message data from worker
+     * @param array<string, mixed> $data Message data from worker
      */
     public function handleWorkerMessage(array $data): void
     {
@@ -74,10 +74,10 @@ class ChatAgentDaemon extends AbstractAgentDaemon
     }
 
     /**
-     * Handle message from external source (WebSocket, HTTP, etc.)
+     * Handle message from external source (WebSocket, HTTP, etc.).
      *
-     * @param array $data Message data from external source
-     * @return ?array Response data
+     * @param array<string, mixed> $data Message data from external source
+     * @return ?array<string, mixed> Response data or null
      */
     public function handleExternalMessage(array $data): ?array
     {

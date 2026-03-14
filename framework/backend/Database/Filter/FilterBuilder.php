@@ -3,7 +3,9 @@
 namespace Hilos\Database\Filter;
 
 /**
- * Builder for creating filters
+ * Builder for creating filters.
+ *
+ * Accumulates column conditions and composite filters, builds final FilterInterface.
  */
 class FilterBuilder
 {
@@ -12,7 +14,12 @@ class FilterBuilder
     private FilterLogic $currentLogic = FilterLogic::AND;
 
     /**
-     * Add WHERE condition
+     * Adds WHERE condition for column, operator and value.
+     *
+     * @param string $column Column name
+     * @param FilterOperator $op Comparison operator
+     * @param mixed $value Value to compare
+     * @return self For chaining
      */
     public function where(string $column, FilterOperator $op, mixed $value): self
     {
@@ -21,7 +28,12 @@ class FilterBuilder
     }
 
     /**
-     * Add AND WHERE condition
+     * Adds AND WHERE condition (sets logic to AND).
+     *
+     * @param string $column Column name
+     * @param FilterOperator $op Comparison operator
+     * @param mixed $value Value to compare
+     * @return self For chaining
      */
     public function andWhere(string $column, FilterOperator $op, mixed $value): self
     {
@@ -30,7 +42,12 @@ class FilterBuilder
     }
 
     /**
-     * Add OR WHERE condition
+     * Adds OR WHERE condition (sets logic to OR).
+     *
+     * @param string $column Column name
+     * @param FilterOperator $op Comparison operator
+     * @param mixed $value Value to compare
+     * @return self For chaining
      */
     public function orWhere(string $column, FilterOperator $op, mixed $value): self
     {
@@ -39,7 +56,10 @@ class FilterBuilder
     }
 
     /**
-     * Add composite filter
+     * Adds composite filter (nested FilterInterface).
+     *
+     * @param FilterInterface $filter Filter instance to add
+     * @return self For chaining
      */
     public function addFilter(FilterInterface $filter): self
     {
@@ -48,7 +68,10 @@ class FilterBuilder
     }
 
     /**
-     * Build final filter
+     * Builds final filter from accumulated conditions.
+     *
+     * @return FilterInterface Single filter or composite
+     * @throws \InvalidArgumentException When no filters added
      */
     public function build(): FilterInterface
     {

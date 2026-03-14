@@ -5,14 +5,21 @@ namespace Hilos\Database\Filter;
 use Hilos\Database\Object\Item\Object_;
 
 /**
- * Filter by column value
+ * Filter by column value with operator (equals, in, like, etc.).
  */
 class ColumnFilter implements FilterInterface
 {
     private string $column;
     private FilterOperator $operator;
-    private mixed $value; // Может быть массив для IN
+    private mixed $value;
 
+    /**
+     * Creates column filter.
+     *
+     * @param string $column Column name (camelCase, converted to snake_case for SQL)
+     * @param FilterOperator $operator Comparison operator
+     * @param mixed $value Value (array for IN/NOT_IN, array of 2 for BETWEEN)
+     */
     public function __construct(string $column, FilterOperator $operator, mixed $value)
     {
         $this->column = $column;
@@ -21,13 +28,23 @@ class ColumnFilter implements FilterInterface
     }
 
     /**
-     * Convert camelCase to snake_case for SQL column names
+     * Converts camelCase to snake_case for SQL column names.
+     *
+     * @param string $camel CamelCase string
+     * @return string snake_case string
      */
     private function camelToSnake(string $camel): string
     {
         return strtolower(preg_replace('/([a-z])([A-Z])/', '$1_$2', $camel));
     }
 
+    /**
+     * Generates SQL WHERE condition fragment.
+     *
+     * @param string $table Table name
+     * @param string $alias Table alias (for JOINs)
+     * @return string SQL condition (without WHERE keyword)
+     */
     public function toSql(string $table, string $alias = ''): string
     {
         $prefix = $alias ? "{$alias}." : '';
@@ -45,6 +62,11 @@ class ColumnFilter implements FilterInterface
         };
     }
 
+    /**
+     * Returns parameter values for prepared statement binding.
+     *
+     * @return array<int, mixed> Values in order for placeholders
+     */
     public function getParams(): array
     {
         return match($this->operator) {
@@ -55,6 +77,12 @@ class ColumnFilter implements FilterInterface
         };
     }
 
+    /**
+     * Checks if object matches filter (in-memory).
+     *
+     * @param Object_ $object Object to check
+     * @return bool True if matches
+     */
     public function matches(Object_ $object): bool
     {
         $objectValue = $object->{$this->column} ?? null;
@@ -76,6 +104,11 @@ class ColumnFilter implements FilterInterface
         };
     }
 
+    /**
+     * Returns column names used in filter.
+     *
+     * @return array<int, string> Column names
+     */
     public function getColumns(): array
     {
         return [$this->column];

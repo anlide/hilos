@@ -19,7 +19,9 @@ class CronSignalDTO extends BaseDTO implements SignalDataDTO, SignalDataInterfac
     public const string CRON_NAME = 'cronName';
 
     /**
-     * @param string $cronName Cron job name
+     * Creates cron signal DTO.
+     *
+     * @param string $cronName Cron job name (e.g. ChatCronConstants::CLEANUP_HISTORY)
      */
     public function __construct(
         public readonly string $cronName,
@@ -39,9 +41,9 @@ class CronSignalDTO extends BaseDTO implements SignalDataDTO, SignalDataInterfac
     }
 
     /**
-     * Create DTO from array.
+     * Creates DTO from array.
      *
-     * @param array<string, mixed> $data Source data
+     * @param array<string, mixed> $data Source data (cronName key)
      * @return static DTO instance
      */
     public static function fromArray(array $data): static

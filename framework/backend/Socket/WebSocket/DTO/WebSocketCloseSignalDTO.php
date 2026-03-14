@@ -18,15 +18,20 @@ class WebSocketCloseSignalDTO extends BaseDTO implements SignalDataDTO, SignalDa
     // Field name constants
     public const string ACCEPT_KEY = 'acceptKey';
 
+    /**
+     * Creates WebSocket close signal DTO.
+     *
+     * @param string $acceptKey WebSocket accept key
+     */
     public function __construct(
         public readonly string $acceptKey,
     ) {
     }
 
     /**
-     * Convert DTO to array
+     * Converts DTO to array for transport.
      *
-     * @return array DTO data as array
+     * @return array<string, string> DTO data as array
      */
     public function toArray(): array
     {
@@ -36,9 +41,9 @@ class WebSocketCloseSignalDTO extends BaseDTO implements SignalDataDTO, SignalDa
     }
 
     /**
-     * Create DTO from array
+     * Creates DTO from array.
      *
-     * @param array $data Source data
+     * @param array<string, mixed> $data Source data
      * @return static DTO instance
      */
     public static function fromArray(array $data): static

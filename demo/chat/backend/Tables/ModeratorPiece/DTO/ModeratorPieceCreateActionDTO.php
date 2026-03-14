@@ -25,9 +25,9 @@ class ModeratorPieceCreateActionDTO extends ChatActionPayloadDTO
     }
 
     /**
-     * Action name this DTO represents.
+     * Returns action name constant for this DTO.
      *
-     * @return string
+     * @return string Action name (MODERATOR_PIECE_CREATE)
      */
     public function getAction(): string
     {

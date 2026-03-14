@@ -14,8 +14,12 @@ class WorkerDbSyncDeletedMessageDTO extends WorkerDTO
 {
     public const string MESSAGE_TYPE = WorkerConstants::MESSAGE_DB_SYNC_DELETED;
 
+    /**
+     * Creates worker DB sync deleted message.
+     *
+     * @param array<string, mixed> $signalData Signal data (collectionKey, idString)
+     */
     public function __construct(
-        /** @var array<string, mixed> collectionKey, idString */
         public readonly array $signalData,
     ) {
     }

@@ -22,10 +22,9 @@ class ModeratorPromptPieceItemActions extends TableItemActions
     /**
      * Updates piece and returns mutation for broadcasting.
      *
-     * @param ModeratorPieceUpdateActionDTO $dto Update payload (only non-null fields are applied)
-     *
-     * @return TableMutationEntry
-     * @throws HilosException
+     * @param ModeratorPieceUpdateActionDTO $dto Update payload (only non-null fields applied)
+     * @return TableMutationEntry Mutation entry for broadcast
+     * @throws HilosException On db or permission error
      */
     public function update(ModeratorPieceUpdateActionDTO $dto): TableMutationEntry
     {
@@ -45,8 +44,8 @@ class ModeratorPromptPieceItemActions extends TableItemActions
     /**
      * Deletes piece and returns mutation for broadcasting.
      *
-     * @return TableMutationEntry
-     * @throws HilosException
+     * @return TableMutationEntry Mutation entry for broadcast
+     * @throws HilosException On db or permission error
      */
     public function delete(): TableMutationEntry
     {

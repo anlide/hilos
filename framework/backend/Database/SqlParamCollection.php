@@ -20,7 +20,10 @@ class SqlParamCollection implements ArrayAccess, Countable, Iterator
     private int $position = 0;
 
     /**
-     * Create from array of values (auto-detect types)
+     * Creates collection from array of values (auto-detects types for non-SqlParam).
+     *
+     * @param array<int, mixed> $values Values (SqlParam preserved, others wrapped with auto())
+     * @return self New collection
      */
     public static function fromArray(array $values): self
     {
@@ -36,7 +39,9 @@ class SqlParamCollection implements ArrayAccess, Countable, Iterator
     }
 
     /**
-     * Create empty collection
+     * Creates empty collection.
+     *
+     * @return self New empty collection
      */
     public static function empty(): self
     {
@@ -44,7 +49,10 @@ class SqlParamCollection implements ArrayAccess, Countable, Iterator
     }
 
     /**
-     * Add parameter to collection
+     * Adds parameter to collection.
+     *
+     * @param SqlParam $param Parameter to add
+     * @return self For chaining
      */
     public function add(SqlParam $param): self
     {
@@ -53,7 +61,9 @@ class SqlParamCollection implements ArrayAccess, Countable, Iterator
     }
 
     /**
-     * Get all parameter values
+     * Returns all parameter values for bind_param.
+     *
+     * @return array<int, mixed> Values in order
      */
     public function getValues(): array
     {
@@ -61,7 +71,9 @@ class SqlParamCollection implements ArrayAccess, Countable, Iterator
     }
 
     /**
-     * Get type string for bind_param (e.g., "iss" for int, string, string)
+     * Returns type string for bind_param (e.g. "iss" for int, string, string).
+     *
+     * @return string Concatenated type chars
      */
     public function getTypeString(): string
     {
@@ -69,9 +81,9 @@ class SqlParamCollection implements ArrayAccess, Countable, Iterator
     }
 
     /**
-     * Get references to values (needed for bind_param)
-     * Note: This method is not used in current implementation (we use parseSqlWithParams instead)
-     * Kept for potential future use with prepared statements
+     * Returns value references for bind_param (kept for future use).
+     *
+     * @return array<int, mixed> Value references (or copies for readonly)
      */
     public function getValueReferences(): array
     {
@@ -84,14 +96,23 @@ class SqlParamCollection implements ArrayAccess, Countable, Iterator
         return $refs;
     }
 
-    // ArrayAccess implementation
+    /**
+     * ArrayAccess: checks if parameter exists at offset.
+     *
+     * @param mixed $offset Index
+     * @return bool True if exists
+     */
     public function offsetExists(mixed $offset): bool
     {
         return isset($this->params[$offset]);
     }
 
     /**
-     * @throws DatabaseParamsException
+     * ArrayAccess: returns parameter at offset.
+     *
+     * @param mixed $offset Index
+     * @return SqlParam Parameter at index
+     * @throws DatabaseParamsException When index does not exist
      */
     public function offsetGet(mixed $offset): SqlParam
     {
@@ -102,7 +123,11 @@ class SqlParamCollection implements ArrayAccess, Countable, Iterator
     }
 
     /**
-     * @throws DatabaseParamsException
+     * ArrayAccess: sets parameter at offset (or appends if offset is null).
+     *
+     * @param mixed $offset Index or null to append
+     * @param mixed $value SqlParam instance
+     * @throws DatabaseParamsException When value is not SqlParam
      */
     public function offsetSet(mixed $offset, mixed $value): void
     {
@@ -117,39 +142,68 @@ class SqlParamCollection implements ArrayAccess, Countable, Iterator
         }
     }
 
+    /**
+     * ArrayAccess: removes parameter at offset and re-indexes.
+     *
+     * @param mixed $offset Index to unset
+     */
     public function offsetUnset(mixed $offset): void
     {
         unset($this->params[$offset]);
         $this->params = array_values($this->params); // Re-index
     }
 
-    // Countable implementation
+    /**
+     * Countable: returns number of parameters.
+     *
+     * @return int Parameter count
+     */
     public function count(): int
     {
         return count($this->params);
     }
 
-    // Iterator implementation
+    /**
+     * Iterator: returns current parameter.
+     *
+     * @return SqlParam Current parameter
+     */
     public function current(): SqlParam
     {
         return $this->params[$this->position];
     }
 
+    /**
+     * Iterator: returns current key (position).
+     *
+     * @return int Current position
+     */
     public function key(): int
     {
         return $this->position;
     }
 
+    /**
+     * Iterator: advances to next element.
+     */
     public function next(): void
     {
         ++$this->position;
     }
 
+    /**
+     * Iterator: resets position to start.
+     */
     public function rewind(): void
     {
         $this->position = 0;
     }
 
+    /**
+     * Iterator: checks if current position is valid.
+     *
+     * @return bool True if valid
+     */
     public function valid(): bool
     {
         return isset($this->params[$this->position]);

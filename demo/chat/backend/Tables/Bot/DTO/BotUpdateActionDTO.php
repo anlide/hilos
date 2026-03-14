@@ -39,7 +39,7 @@ class BotUpdateActionDTO extends ChatActionPayloadDTO
     /**
      * Action name this DTO represents.
      *
-     * @return string
+     * @return string Action name constant
      */
     public function getAction(): string
     {
@@ -50,8 +50,7 @@ class BotUpdateActionDTO extends ChatActionPayloadDTO
      * Creates instance from payload array.
      *
      * @param array<string, mixed> $data Raw payload (may contain FIELD_DATA wrapper)
-     *
-     * @return self
+     * @return static Instance
      */
     public static function fromArray(array $data): static
     {

@@ -85,10 +85,10 @@ class ChatPageFactory extends HilosPageFactory
     }
 
     /**
-     * Create action payload DTO for the given action and data.
+     * Creates action payload DTO for the given action and data.
      *
      * @param string $action Action name (e.g. ChatSignalConstants::MESSAGE)
-     * @param array $data Action payload data
+     * @param array<string, mixed> $data Action payload data
      * @return ActionPayloadDTO DTO instance
      */
     public function createActionPayloadDTO(string $action, array $data): ActionPayloadDTO
