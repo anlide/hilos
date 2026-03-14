@@ -40,9 +40,7 @@ abstract class Entity
     // Internal property names
     public const string PROP_RELATED = '_related';
 
-    /**
-     * Indicates if this entity is related to a database row
-     */
+    /** @var bool Whether this entity is related to a database row */
     private bool $_related = false;
 
     /** @var array<string, mixed> original row data from DB (for change tracking) */

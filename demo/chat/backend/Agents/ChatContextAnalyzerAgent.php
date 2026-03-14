@@ -38,7 +38,7 @@ class ChatContextAnalyzerAgent extends AbstractAgent
     /** @var AsyncChatLLMInterface LLM chat client for context analysis */
     private AsyncChatLLMInterface $chatClient;
 
-    /** @var bool whether summarize request is pending */
+    /** @var bool Whether summarize request is pending */
     private bool $pendingSummarize = false;
 
     /**

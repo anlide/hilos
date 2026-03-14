@@ -51,7 +51,7 @@ class SignalRouter
      * - 'actions' — array<actionName, string> (action -> agentType)
      * - 'page_subscription_routing' — array{default: string, pages: array<pageName, string>}
      *
-     * @var array
+     * @var array<string, mixed>
      */
     protected array $config;
 

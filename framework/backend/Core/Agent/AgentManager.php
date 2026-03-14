@@ -7,7 +7,7 @@ namespace Hilos\Core\Agent;
 use Hilos\Core\Agent\Exception\AgentCreationFailedException;
 
 /**
- * AgentManager - Base class for managing agents in worker processes
+ * AgentManager - Base class for managing agents in worker processes.
  *
  * Manages lifecycle of agents running in worker processes.
  * Provides unified interface for agent creation, storage and retrieval.

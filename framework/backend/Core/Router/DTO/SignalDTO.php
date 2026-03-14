@@ -16,7 +16,7 @@ use Hilos\Core\Router\SignalTypeInterface;
 use Hilos\Utils\Logger;
 
 /**
- * SignalDTO - DTO for queued signal
+ * SignalDTO - DTO for queued signal.
  *
  * Represents a signal queued for dispatch with source, type, name and data.
  */

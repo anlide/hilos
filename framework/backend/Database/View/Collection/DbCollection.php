@@ -67,7 +67,7 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
      * Cached DbItem instances for iteration
      * Key is the primary key ID, value is DbItem instance
      *
-     * @var DbItem
+     * @var array<string|int, T>
      */
     private array $items = [];
 
@@ -83,7 +83,7 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
      * Actions class name (set via setActionsClass)
      * Used to create Actions instance on demand
      *
-     * @var ?string
+     * @var ?class-string<DbActions>
      */
     private ?string $_actionsClass = null;
 
@@ -91,7 +91,7 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
      * Item actions class name (set via setItemActionsClass).
      * Used to create Actions instance for each DbItem on demand.
      *
-     * @var ?string
+     * @var ?class-string
      */
     private ?string $_itemActionsClass = null;
 
@@ -325,7 +325,7 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
      * Uses cached DbItem if available, otherwise creates new instance
      *
      * @param int|string $key Primary key ID
-     * @return T|null DbItem instance for object at key, or null if not found (e.g. deleted)
+     * @return ?T DbItem instance for object at key, or null if not found (e.g. deleted)
      */
     protected function getItemForKey(int|string $key): ?DbItem
     {
@@ -474,7 +474,7 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
     /**
      * Get first DbItem
      *
-     * @return T|null
+     * @return ?T
      */
     public function first(): ?DbItem
     {
@@ -498,7 +498,7 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
     /**
      * Get last DbItem
      *
-     * @return T|null
+     * @return ?T
      */
     public function last(): ?DbItem
     {
@@ -572,7 +572,7 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
      * Get item by primary key.
      *
      * @param mixed $offset Primary key ID
-     * @return T|null Item or null
+     * @return ?T Item or null
      */
     public function offsetGet(mixed $offset): ?DbItem
     {
@@ -637,7 +637,7 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
     /**
      * Get current element.
      *
-     * @return T|null
+     * @return ?T
      */
     public function current(): ?DbItem
     {

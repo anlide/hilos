@@ -15,8 +15,10 @@ use Iterator;
  */
 class SqlParamCollection implements ArrayAccess, Countable, Iterator
 {
-    /** @var SqlParam[] */
+    /** @var list<SqlParam> parameters for prepared statement */
     private array $params = [];
+
+    /** @var int current iterator position */
     private int $position = 0;
 
     /**

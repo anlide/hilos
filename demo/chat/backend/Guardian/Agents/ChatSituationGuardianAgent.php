@@ -24,16 +24,16 @@ use Hilos\Utils\Logger;
  */
 final class ChatSituationGuardianAgent extends AbstractGuardianAgent
 {
-    /** @var float next scheduled run timestamp in milliseconds */
+    /** @var float Next scheduled run timestamp in milliseconds */
     private float $nextRunAtMs = 0.0;
 
-    /** @var DbEventsReadCapability events read capability */
+    /** @var DbEventsReadCapability Events read capability */
     private DbEventsReadCapability $eventsCapability;
 
-    /** @var RtReadCapability runtime read capability */
+    /** @var RtReadCapability Runtime read capability */
     private RtReadCapability $rtCapability;
 
-    /** @var AsyncChatLLMInterface LLM chat client */
+    /** @var AsyncChatLLMInterface LLM chat client for analysis */
     private AsyncChatLLMInterface $chatClient;
 
     /** @var array<string, mixed>|null pending stats for report after LLM response */

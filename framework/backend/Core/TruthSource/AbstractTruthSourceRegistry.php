@@ -3,7 +3,7 @@
 namespace Hilos\Core\TruthSource;
 
 /**
- * Abstract Truth Source Registry
+ * Abstract Truth Source Registry.
  *
  * Base class for tracking which agents are sources of truth for specific collections.
  * Provides common logic for registration, unregistration, and permission checking.

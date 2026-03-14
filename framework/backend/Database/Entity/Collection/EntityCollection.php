@@ -8,7 +8,7 @@ use Countable;
 use Iterator;
 
 /**
- * Collection of Entity objects
+ * Collection of Entity objects.
  *
  * Child classes must define ENTITY_CLASS constant.
  *
@@ -18,16 +18,16 @@ use Iterator;
  */
 class EntityCollection implements ArrayAccess, Countable, Iterator
 {
-    /** @var array<int|string, Entity> */
+    /** @var array<int|string, Entity> entities in collection (key => Entity) */
     protected array $entities = [];
 
-    /** @var array<int|string> */
+    /** @var array<int|string> entity keys in order (for iteration) */
     protected array $keys = [];
 
-    /** Current iterator position */
+    /** @var int current iterator position */
     private int $position = 0;
 
-    /** Backup of iterator position for backupIndex/restoreIndex */
+    /** @var int backup of iterator position for nested iteration */
     private int $savedPosition = 0;
 
     /**
@@ -39,7 +39,9 @@ class EntityCollection implements ArrayAccess, Countable, Iterator
     public const string ENTITY_CLASS = '';
 
     /**
-     * Create empty collection
+     * Create empty collection.
+     *
+     * @return static empty collection instance
      */
     public static function empty(): static
     {
@@ -47,7 +49,10 @@ class EntityCollection implements ArrayAccess, Countable, Iterator
     }
 
     /**
-     * Initialize collection with all entities from database
+     * Initialize collection with all entities from database.
+     *
+     * @return static collection with all entities loaded
+     * @throws \LogicException If ENTITY_CLASS is not defined
      */
     public static function initFullDB(): static
     {
@@ -59,7 +64,9 @@ class EntityCollection implements ArrayAccess, Countable, Iterator
     }
 
     /**
-     * Initialize empty collection
+     * Initialize empty collection.
+     *
+     * @return static empty collection instance
      */
     public static function initEmpty(): static
     {
@@ -67,7 +74,10 @@ class EntityCollection implements ArrayAccess, Countable, Iterator
     }
 
     /**
-     * Create from EntityCollection
+     * Create from EntityCollection.
+     *
+     * @param EntityCollection $collection source collection
+     * @return static new collection with same entities
      */
     public static function fromEntityCollection(EntityCollection $collection): static
     {
@@ -79,9 +89,10 @@ class EntityCollection implements ArrayAccess, Countable, Iterator
     }
 
     /**
-     * Create collection from array of entities
+     * Create collection from array of entities.
      *
-     * @param Entity[] $entities
+     * @param array<int|string, Entity> $entities entities (key => Entity)
+     * @return static new collection
      */
     public static function fromArray(array $entities): static
     {
@@ -93,7 +104,11 @@ class EntityCollection implements ArrayAccess, Countable, Iterator
     }
 
     /**
-     * Add entity to collection
+     * Add entity to collection.
+     *
+     * @param Entity $entity Entity to add
+     * @param int|string|null $key Optional key (null = append)
+     * @return self For chaining
      */
     public function add(Entity $entity, int|string|null $key = null): self
     {
@@ -110,7 +125,10 @@ class EntityCollection implements ArrayAccess, Countable, Iterator
     }
 
     /**
-     * Remove entity from collection
+     * Remove entity from collection by key.
+     *
+     * @param int|string $key Entity key to remove
+     * @return self For chaining
      */
     public function remove(int|string $key): self
     {
@@ -122,9 +140,10 @@ class EntityCollection implements ArrayAccess, Countable, Iterator
     }
 
     /**
-     * Get entity by key
+     * Get entity by key.
      *
-     * @return ?T
+     * @param int|string $key Entity key
+     * @return ?T Entity or null if not found
      */
     public function get(int|string $key): ?Entity
     {
@@ -132,7 +151,10 @@ class EntityCollection implements ArrayAccess, Countable, Iterator
     }
 
     /**
-     * Check if entity exists at key
+     * Check if entity exists at key.
+     *
+     * @param int|string $key Entity key
+     * @return bool True if entity exists
      */
     public function has(int|string $key): bool
     {
@@ -140,9 +162,9 @@ class EntityCollection implements ArrayAccess, Countable, Iterator
     }
 
     /**
-     * Get all entities as array
+     * Get all entities as array.
      *
-     * @return Entity[]
+     * @return array<int|string, Entity> Entities (key => Entity)
      */
     public function toArray(): array
     {
@@ -150,9 +172,9 @@ class EntityCollection implements ArrayAccess, Countable, Iterator
     }
 
     /**
-     * Get first entity
+     * Get first entity in collection.
      *
-     * @return ?T
+     * @return ?T First entity or null if empty
      */
     public function first(): ?Entity
     {
@@ -163,9 +185,9 @@ class EntityCollection implements ArrayAccess, Countable, Iterator
     }
 
     /**
-     * Get last entity
+     * Get last entity in collection.
      *
-     * @return ?T
+     * @return ?T Last entity or null if empty
      */
     public function last(): ?Entity
     {
@@ -176,7 +198,10 @@ class EntityCollection implements ArrayAccess, Countable, Iterator
     }
 
     /**
-     * Map collection
+     * Map collection via callback.
+     *
+     * @param callable(Entity): mixed $callback Callback per entity
+     * @return array<int, mixed> Mapped values
      */
     public function map(callable $callback): array
     {
@@ -184,7 +209,7 @@ class EntityCollection implements ArrayAccess, Countable, Iterator
     }
 
     /**
-     * Backup current iterator position
+     * Backup current iterator position for nested iteration.
      */
     public function backupIndex(): void
     {
@@ -192,7 +217,7 @@ class EntityCollection implements ArrayAccess, Countable, Iterator
     }
 
     /**
-     * Restore iterator position from backup
+     * Restore iterator position from backup.
      */
     public function restoreIndex(): void
     {
@@ -200,7 +225,10 @@ class EntityCollection implements ArrayAccess, Countable, Iterator
     }
 
     /**
-     * Check if offset exists (ArrayAccess)
+     * Check if offset exists (ArrayAccess).
+     *
+     * @param mixed $offset Entity key
+     * @return bool True if key exists
      */
     public function offsetExists(mixed $offset): bool
     {
@@ -208,9 +236,10 @@ class EntityCollection implements ArrayAccess, Countable, Iterator
     }
 
     /**
-     * Get entity at offset (ArrayAccess)
+     * Get entity at offset (ArrayAccess).
      *
-     * @return ?T
+     * @param mixed $offset Entity key
+     * @return ?T Entity or null if not found
      */
     public function offsetGet(mixed $offset): ?Entity
     {
@@ -218,7 +247,11 @@ class EntityCollection implements ArrayAccess, Countable, Iterator
     }
 
     /**
-     * Set entity at offset (ArrayAccess)
+     * Set entity at offset (ArrayAccess).
+     *
+     * @param mixed $offset Entity key (null to append)
+     * @param mixed $value Entity instance
+     * @throws \InvalidArgumentException If value is not Entity instance
      */
     public function offsetSet(mixed $offset, mixed $value): void
     {
@@ -243,7 +276,9 @@ class EntityCollection implements ArrayAccess, Countable, Iterator
     }
 
     /**
-     * Unset entity at offset (ArrayAccess)
+     * Unset entity at offset (ArrayAccess).
+     *
+     * @param mixed $offset Entity key to remove
      */
     public function offsetUnset(mixed $offset): void
     {
@@ -252,7 +287,9 @@ class EntityCollection implements ArrayAccess, Countable, Iterator
     }
 
     /**
-     * Get collection size (Countable)
+     * Get collection size (Countable).
+     *
+     * @return int Number of entities
      */
     public function count(): int
     {
@@ -260,9 +297,9 @@ class EntityCollection implements ArrayAccess, Countable, Iterator
     }
 
     /**
-     * Get current entity (Iterator)
+     * Get current entity (Iterator).
      *
-     * @return ?T
+     * @return ?T Current entity or null if position invalid
      */
     public function current(): ?Entity
     {
@@ -271,7 +308,9 @@ class EntityCollection implements ArrayAccess, Countable, Iterator
     }
 
     /**
-     * Get current key (Iterator)
+     * Get current key (Iterator).
+     *
+     * @return int|string|null Current key or null if position invalid
      */
     public function key(): mixed
     {
@@ -279,7 +318,7 @@ class EntityCollection implements ArrayAccess, Countable, Iterator
     }
 
     /**
-     * Move to next element (Iterator)
+     * Move to next element (Iterator).
      */
     public function next(): void
     {
@@ -287,7 +326,7 @@ class EntityCollection implements ArrayAccess, Countable, Iterator
     }
 
     /**
-     * Rewind to first element (Iterator)
+     * Rewind to first element (Iterator).
      */
     public function rewind(): void
     {
@@ -296,7 +335,9 @@ class EntityCollection implements ArrayAccess, Countable, Iterator
     }
 
     /**
-     * Check if current position is valid (Iterator)
+     * Check if current position is valid (Iterator).
+     *
+     * @return bool True if current position has entity
      */
     public function valid(): bool
     {

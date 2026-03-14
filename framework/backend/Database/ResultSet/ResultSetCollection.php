@@ -18,10 +18,10 @@ use RuntimeException;
  */
 class ResultSetCollection implements \Iterator, \Countable
 {
-    /** @var ResultSet[] */
+    /** @var list<ResultSet> result sets in collection */
     private array $resultSets = [];
 
-    /** @var int Current position */
+    /** @var int current iterator position */
     private int $position = 0;
 
     /**
@@ -435,7 +435,7 @@ class ResultSetCollection implements \Iterator, \Countable
      *
      * Automatically collects all result sets if not already collected.
      *
-     * @return ResultSet[] Array of result sets
+     * @return list<ResultSet> Array of result sets
      */
     public function all(): array
     {

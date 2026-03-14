@@ -9,8 +9,10 @@ namespace Hilos\Database\Filter;
  */
 class FilterBuilder
 {
-    /** @var FilterInterface[] */
+    /** @var list<FilterInterface> accumulated filters */
     private array $filters = [];
+
+    /** @var FilterLogic logic operator for next condition (AND/OR) */
     private FilterLogic $currentLogic = FilterLogic::AND;
 
     /**

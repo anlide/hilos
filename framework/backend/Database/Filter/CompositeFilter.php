@@ -11,8 +11,10 @@ use Hilos\Database\Object\Item\Object_;
  */
 class CompositeFilter implements FilterInterface
 {
-    /** @var FilterInterface[] */
+    /** @var list<FilterInterface> child filters */
     private array $filters;
+
+    /** @var FilterLogic logic operator (AND, OR, XOR) */
     private FilterLogic $logic;
 
     /**

@@ -14,7 +14,7 @@ use Demo\Chat\Guardian\Reports\GuardianReportPayload;
 use Hilos\Utils\Logger;
 
 /**
- * GuardiansOpsAgent - Monopolistic guardian for ops heartbeat
+ * GuardiansOpsAgent - Monopolistic guardian for ops heartbeat.
  *
  * Reports ops metrics (messages, connections, bots) periodically.
  */

@@ -52,22 +52,22 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
     public const int LAZY_STRATEGY_BATCH = 2;          // Lazy load by key, but load all on iteration
     public const int LAZY_STRATEGY_FULL_ON_ACCESS = 3; // Load all on first access
 
-    /** @var T[] */
+    /** @var array<string|int, T> objects stored in collection (key => Object_) */
     protected array $objects = [];
 
-    /** @var bool */
+    /** @var bool whether lazy loading is enabled */
     protected bool $_allowLazyLoading = false;
 
-    /** @var int Lazy loading strategy */
+    /** @var int lazy loading strategy */
     protected int $_lazyStrategy = self::LAZY_STRATEGY_NONE;
 
-    /** @var bool Whether all objects have been loaded */
+    /** @var bool whether all objects have been loaded */
     protected bool $_allLoaded = false;
 
-    /** @var int */
+    /** @var int current iterator position */
     protected int $index = 0;
 
-    /** @var int */
+    /** @var int backup of iterator position for nested iteration */
     private int $backupIndex = 0;
 
     /**

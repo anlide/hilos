@@ -43,7 +43,7 @@ class BotAgent extends AbstractAgent
 
     private const int MAX_RESPONSE_TOKENS = 256;
 
-    /** @var string bot ID (agent index) */
+    /** @var string Bot ID (agent index) */
     private string $agentIndex;
 
     /** @var AsyncChatLLMInterface LLM chat client */

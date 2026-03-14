@@ -9,8 +9,13 @@ use Hilos\Database\Object\Item\Object_;
  */
 class ColumnFilter implements FilterInterface
 {
+    /** @var string column name (camelCase, converted to snake_case for SQL) */
     private string $column;
+
+    /** @var FilterOperator comparison operator */
     private FilterOperator $operator;
+
+    /** @var mixed filter value (array for IN/NOT_IN, array of 2 for BETWEEN) */
     private mixed $value;
 
     /**

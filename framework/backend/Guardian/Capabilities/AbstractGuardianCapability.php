@@ -7,6 +7,12 @@ namespace Hilos\Guardian\Capabilities;
 use Hilos\Guardian\Contracts\GuardianCapabilityInterface;
 use Hilos\Guardian\DTO\CapabilityResult;
 
+/**
+ * Abstract base for Guardian capabilities.
+ *
+ * Capabilities are units of work that Guardian agents execute
+ * to gather data or perform actions during investigations.
+ */
 abstract class AbstractGuardianCapability implements GuardianCapabilityInterface
 {
     /**

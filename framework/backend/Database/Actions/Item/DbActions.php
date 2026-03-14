@@ -24,7 +24,7 @@ abstract class DbActions
 {
     public const string object = 'object';
 
-    /** @var DbItem DbItem instance this actions belong to */
+    /** @var DbItem DbItem instance these actions belong to */
     protected DbItem $item;
 
     /**

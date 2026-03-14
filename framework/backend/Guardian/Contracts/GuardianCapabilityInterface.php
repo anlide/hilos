@@ -6,6 +6,12 @@ namespace Hilos\Guardian\Contracts;
 
 use Hilos\Guardian\DTO\CapabilityResult;
 
+/**
+ * Interface for Guardian capabilities.
+ *
+ * Capabilities are units of work that Guardian agents execute
+ * to gather data or perform actions during investigations.
+ */
 interface GuardianCapabilityInterface
 {
     /**
