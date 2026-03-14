@@ -12,6 +12,12 @@ use Throwable;
  */
 class InvalidFrameException extends WebSocketException
 {
+    /**
+     * Creates exception with reason and optional previous exception.
+     *
+     * @param string $reason Invalid frame reason
+     * @param ?Throwable $previous Previous exception for chaining
+     */
     public function __construct(string $reason, ?Throwable $previous = null)
     {
         $message = "Invalid WebSocket frame: {$reason}";

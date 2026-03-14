@@ -10,7 +10,7 @@ use Hilos\Utils\Helpers\StringHelper;
 use ReflectionClass;
 
 /**
- * IdeaItemFixer trait
+ * IdeaItemFixer trait.
  *
  * Handles synchronization of Idea item files (Idea/{Name}.php)
  * with Object classes. Idea is isolated from Entity and works only with Object.
@@ -30,7 +30,7 @@ trait IdeaItemFixer
      *
      * @param ?string $ideaDir Idea files directory
      * @param int $syntaxErrors Reference to syntax error counter
-     * @param array $brokenFiles Reference to broken files array
+     * @param array<string, string> $brokenFiles Reference to broken files (file path => error message)
      * @return array<string, array{class: string, file: string, reflection: ReflectionClass}> Loaded Idea item files info
      */
     protected function loadIdeaItems(?string $ideaDir, int &$syntaxErrors = 0, array &$brokenFiles = []): array

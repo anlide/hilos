@@ -30,8 +30,8 @@ final class ChatAgentGuardianSignalCapability extends AbstractGuardianCapability
     /**
      * Execute capability: send guardian report to ChatAgent.
      *
-     * @param array $payload Payload with report array
-     * @param array $context Context with sendSignal callable
+     * @param array<string, mixed> $payload Payload (report: GuardianReportPayload data)
+     * @param array<string, mixed> $context Context (sendSignal: callable to forward signal)
      * @return CapabilityResult Ok with signal name, or error if payload/context invalid
      */
     public function execute(array $payload = [], array $context = []): CapabilityResult

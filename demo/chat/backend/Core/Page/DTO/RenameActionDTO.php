@@ -7,7 +7,7 @@ namespace Demo\Chat\Core\Page\DTO;
 use Demo\Chat\Constants\ChatSignalConstants;
 
 /**
- * RenameActionDTO - DTO for rename action payload
+ * RenameActionDTO - DTO for rename action payload.
  *
  * Represents a user rename request.
  */

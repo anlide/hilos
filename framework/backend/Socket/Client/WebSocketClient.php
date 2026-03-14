@@ -34,7 +34,7 @@ use Hilos\Utils\Helpers\JsonHelper;
 use RuntimeException;
 
 /**
- * WebSocketClient - Represents a single WebSocket connection
+ * WebSocketClient - Represents a single WebSocket connection.
  *
  * Handles WebSocket protocol frame parsing and writing.
  * Created by WebSocketServer when accepting new connections.

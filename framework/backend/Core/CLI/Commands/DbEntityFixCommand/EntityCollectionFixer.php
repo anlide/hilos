@@ -9,7 +9,7 @@ use Hilos\Utils\Helpers\StringHelper;
 use ReflectionClass;
 
 /**
- * EntityCollectionFixer trait
+ * EntityCollectionFixer trait.
  *
  * Handles synchronization of EntityCollection files (EntityCollection/{Name}s.php)
  * with Entity classes.
@@ -26,7 +26,7 @@ trait EntityCollectionFixer
      *
      * @param ?string $entityCollectionDir EntityCollection files directory
      * @param int $syntaxErrors Reference to syntax error counter
-     * @param array $brokenFiles Reference to broken files array
+     * @param array<string, string> $brokenFiles Reference to broken files (file path => error message)
      * @return array<string, array{class: string, file: string, reflection: ReflectionClass, entity_class: string}> Loaded EntityCollection files info
      */
     protected function loadEntityCollections(?string $entityCollectionDir, int &$syntaxErrors = 0, array &$brokenFiles = []): array

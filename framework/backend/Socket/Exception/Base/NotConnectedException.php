@@ -12,6 +12,11 @@ use Throwable;
  */
 class NotConnectedException extends SocketException
 {
+    /**
+     * Creates exception with optional previous exception.
+     *
+     * @param ?Throwable $previous Previous exception for chaining
+     */
     public function __construct(?Throwable $previous = null)
     {
         $message = "Socket is not connected";

@@ -12,6 +12,11 @@ use Throwable;
  */
 class MaskKeyMissingException extends WebSocketException
 {
+    /**
+     * Creates exception with optional previous exception.
+     *
+     * @param ?Throwable $previous Previous exception for chaining
+     */
     public function __construct(?Throwable $previous = null)
     {
         $message = "WebSocket frame is marked as masked but masking key is missing or incomplete";

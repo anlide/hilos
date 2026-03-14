@@ -8,10 +8,15 @@ use Hilos\HilosException;
 use Throwable;
 
 /**
- * Exception thrown when agent daemon factory is not configured
+ * Exception thrown when agent daemon factory is not configured.
  */
 class AgentDaemonFactoryNotConfiguredException extends HilosException
 {
+    /**
+     * Creates exception with optional previous exception.
+     *
+     * @param ?Throwable $previous Previous exception for chaining
+     */
     public function __construct(?Throwable $previous = null)
     {
         $message = "Agent daemon factory is not configured. " .

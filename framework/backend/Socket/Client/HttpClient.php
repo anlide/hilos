@@ -9,7 +9,7 @@ use Hilos\Constants\HttpConstants;
 use Hilos\Socket\Client\Interface\HttpClientInterface;
 
 /**
- * HttpClient - Represents a single HTTP client connection
+ * HttpClient - Represents a single HTTP client connection.
  *
  * Handles reading HTTP requests and writing responses for a single client.
  * Created by HttpServer when accepting new connections.
@@ -30,7 +30,9 @@ class HttpClient extends AbstractClient implements HttpClientInterface
     }
 
     /**
-     * Process read buffer - check for complete HTTP request
+     * Process read buffer and check for complete HTTP request.
+     *
+     * Triggers processRequest() when HTTP delimiter is found.
      */
     protected function processReadBuffer(): void
     {
@@ -41,7 +43,9 @@ class HttpClient extends AbstractClient implements HttpClientInterface
     }
 
     /**
-     * Process complete HTTP request
+     * Process complete HTTP request and send response.
+     *
+     * Parses request, routes via router, builds and sends HTTP response.
      */
     private function processRequest(): void
     {
@@ -69,10 +73,10 @@ class HttpClient extends AbstractClient implements HttpClientInterface
     }
 
     /**
-     * Parse HTTP request
+     * Parse HTTP request.
      *
      * @param string $rawRequest Raw HTTP request
-     * @return array Parsed request
+     * @return array{method: string, path: string, version: string, headers: array<string, string>, body: string} Parsed request
      */
     private function parseRequest(string $rawRequest): array
     {
@@ -92,10 +96,10 @@ class HttpClient extends AbstractClient implements HttpClientInterface
     }
 
     /**
-     * Parse HTTP headers
+     * Parse HTTP headers.
      *
-     * @param array $lines Request lines
-     * @return array Headers
+     * @param list<string> $lines Request lines (from explode of raw request)
+     * @return array<string, string> Headers (name => value)
      */
     private function parseHeaders(array $lines): array
     {
@@ -113,9 +117,9 @@ class HttpClient extends AbstractClient implements HttpClientInterface
     }
 
     /**
-     * Build HTTP response
+     * Build HTTP response.
      *
-     * @param array $response Response data
+     * @param array{status?: int, headers?: array<string, string>, body?: string} $response Response data
      * @return string HTTP response string
      */
     private function buildResponse(array $response): string

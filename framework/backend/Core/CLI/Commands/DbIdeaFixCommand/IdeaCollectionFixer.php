@@ -10,7 +10,7 @@ use Hilos\Utils\Helpers\StringHelper;
 use ReflectionClass;
 
 /**
- * IdeaCollectionFixer trait
+ * IdeaCollectionFixer trait.
  *
  * Handles synchronization of IdeaCollection files (IdeaCollection/{Name}s.php)
  * with ObjectCollection classes.
@@ -25,11 +25,11 @@ use ReflectionClass;
 trait IdeaCollectionFixer
 {
     /**
-     * Load IdeaCollection files from directory
+     * Load IdeaCollection files from directory.
      *
      * @param ?string $ideaCollectionDir IdeaCollection files directory
      * @param int $syntaxErrors Reference to syntax error counter
-     * @param array $brokenFiles Reference to broken files array
+     * @param array<string, string> $brokenFiles Reference to broken files (file path => error message)
      * @return array<string, array{class: string, file: string, reflection: ReflectionClass, object_collection_class: string}> Loaded IdeaCollection files info
      */
     protected function loadIdeaCollections(?string $ideaCollectionDir, int &$syntaxErrors = 0, array &$brokenFiles = []): array

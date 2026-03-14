@@ -26,7 +26,7 @@ trait ObjectCollectionFixer
      *
      * @param ?string $entityCollectionDir EntityCollection files directory
      * @param int $syntaxErrors Reference to syntax error counter
-     * @param array $brokenFiles Reference to broken files array
+     * @param array<string, string> $brokenFiles Reference to broken files (file path => error message)
      * @return bool True if all EntityCollection files are valid
      */
     protected function validateEntityCollections(?string $entityCollectionDir, int &$syntaxErrors = 0, array &$brokenFiles = []): bool
@@ -99,7 +99,7 @@ trait ObjectCollectionFixer
      *
      * @param ?string $objectCollectionDir ObjectCollection files directory
      * @param int $syntaxErrors Reference to syntax error counter
-     * @param array $brokenFiles Reference to broken files array
+     * @param array<string, string> $brokenFiles Reference to broken files (file path => error message)
      * @return array<string, array{class: string, file: string, reflection: ReflectionClass, object_class: string}> Loaded ObjectCollection files info
      */
     protected function loadObjectCollections(?string $objectCollectionDir, int &$syntaxErrors = 0, array &$brokenFiles = []): array

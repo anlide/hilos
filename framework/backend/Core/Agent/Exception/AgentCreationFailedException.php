@@ -8,10 +8,17 @@ use Hilos\HilosException;
 use Throwable;
 
 /**
- * Exception thrown when agent creation fails
+ * Exception thrown when agent creation fails.
  */
 class AgentCreationFailedException extends HilosException
 {
+    /**
+     * Creates exception with agent type, optional index and previous exception.
+     *
+     * @param string $agentType Agent type identifier
+     * @param ?string $agentIndex Agent index or null
+     * @param ?Throwable $previous Previous exception for chaining
+     */
     public function __construct(string $agentType, ?string $agentIndex = null, ?Throwable $previous = null)
     {
         $agentId = $agentIndex !== null ? $agentType . ':' . $agentIndex : $agentType;

@@ -7,7 +7,7 @@ namespace Hilos\Core\CLI\DTO;
 use Hilos\BaseDTO;
 
 /**
- * DaemonStatusDTO - Data Transfer Object for daemon status
+ * DaemonStatusDTO - Data Transfer Object for daemon status.
  *
  * Contains daemon runtime information transmitted via HTTP API.
  */
@@ -34,9 +34,9 @@ class DaemonStatusDTO extends BaseDTO
     }
 
     /**
-     * Convert DTO to array
+     * Convert DTO to array.
      *
-     * @return array DTO data as array
+     * @return array<string, int|float> DTO data as array
      */
     public function toArray(): array
     {
@@ -52,9 +52,9 @@ class DaemonStatusDTO extends BaseDTO
     }
 
     /**
-     * Create DTO from array
+     * Create DTO from array.
      *
-     * @param array $data Source data
+     * @param array<string, mixed> $data Source data
      * @return static DTO instance
      */
     public static function fromArray(array $data): static

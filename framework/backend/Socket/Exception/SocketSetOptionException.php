@@ -12,6 +12,13 @@ use Throwable;
  */
 class SocketSetOptionException extends SocketException
 {
+    /**
+     * Creates exception with error code, message and optional previous exception.
+     *
+     * @param int $errorCode Socket error code
+     * @param string $errorMessage Error message
+     * @param ?Throwable $previous Previous exception for chaining
+     */
     public function __construct(int $errorCode, string $errorMessage, ?Throwable $previous = null)
     {
         $message = sprintf(

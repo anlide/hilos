@@ -14,7 +14,7 @@ use Hilos\Core\Exception\Process\FailedToTerminateProcessExceptionException;
 use Hilos\Core\Exception\Process\FailedToWriteStdInException;
 
 /**
- * Wraps proc_open for running child processes with non-blocking I/O
+ * Wraps proc_open for running child processes with non-blocking I/O.
  */
 class Process
 {

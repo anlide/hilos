@@ -12,6 +12,12 @@ use Throwable;
  */
 class InvalidArgumentException extends SocketException
 {
+    /**
+     * Creates exception with optional details and previous exception.
+     *
+     * @param string $details Additional details for error message
+     * @param ?Throwable $previous Previous exception for chaining
+     */
     public function __construct(string $details = '', ?Throwable $previous = null)
     {
         $message = "Invalid socket argument" . ($details ? ": {$details}" : '');

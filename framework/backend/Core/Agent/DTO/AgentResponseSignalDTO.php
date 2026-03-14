@@ -15,7 +15,7 @@ use Hilos\Core\Router\SignalType;
 use Hilos\Core\Router\SignalTypeInterface;
 
 /**
- * AgentResponseSignalDTO - DTO for agent response signals
+ * AgentResponseSignalDTO - DTO for agent response signals.
  *
  * Represents a signal sent from an agent to users/clients.
  * Contains signal source (agent), type (delivery type), name, data, and optional targeting.
@@ -43,9 +43,9 @@ class AgentResponseSignalDTO extends BaseDTO implements AgentMessageDTOInterface
     }
 
     /**
-     * Convert DTO to array
+     * Convert DTO to array.
      *
-     * @return array DTO data as array
+     * @return array<string, mixed> DTO data as array
      */
     public function toArray(): array
     {
@@ -83,9 +83,9 @@ class AgentResponseSignalDTO extends BaseDTO implements AgentMessageDTOInterface
     }
 
     /**
-     * Create DTO from array
+     * Create DTO from array.
      *
-     * @param array $data Source data
+     * @param array<string, mixed> $data Source data (signalSource, signalType, signalName, signalData, etc.)
      * @return static DTO instance
      */
     public static function fromArray(array $data): static

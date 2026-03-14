@@ -28,8 +28,8 @@ final class DbEventsReadCapability extends AbstractGuardianCapability
     /**
      * Execute capability: read recent events from database.
      *
-     * @param array $payload Payload (limit: max events to return, default 20)
-     * @param array $context Execution context (unused)
+     * @param array<string, mixed> $payload Payload (limit: max events to return, default 20)
+     * @param array<string, mixed> $context Execution context (unused)
      * @return CapabilityResult Result with events array
      */
     public function execute(array $payload = [], array $context = []): CapabilityResult

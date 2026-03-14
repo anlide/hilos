@@ -6,9 +6,10 @@ use Hilos\Database\Filter\FilterInterface;
 use Hilos\Database\Object\Item\Object_;
 
 /**
- * Filtered collection wrapper
- * Stores only references to objects from source collection
- * No data duplication - all objects stored in source collection
+ * Filtered collection wrapper.
+ *
+ * Stores only references to objects from source collection.
+ * No data duplication - all objects stored in source collection.
  */
 class FilteredCollection extends Objects
 {
@@ -18,9 +19,11 @@ class FilteredCollection extends Objects
     private array $filteredObjects;
 
     /**
+     * Creates filtered collection from source with filter criteria.
+     *
      * @param Objects $source Source collection
      * @param FilterInterface $filter Filter criteria
-     * @param array $filteredObjects [key => Object_] - references to objects from source
+     * @param array<string, Object_> $filteredObjects References to objects from source (key => Object_)
      */
     public function __construct(Objects $source, FilterInterface $filter, array $filteredObjects)
     {
@@ -30,8 +33,11 @@ class FilteredCollection extends Objects
     }
 
     /**
-     * Get ObjectCollection from IdeaStorage
-     * Returns source collection
+     * Get ObjectCollection from IdeaStorage.
+     *
+     * Returns source collection.
+     *
+     * @return ?Objects Source collection
      */
     protected function getObjectCollection(): ?Objects
     {
@@ -39,8 +45,11 @@ class FilteredCollection extends Objects
     }
 
     /**
-     * Get table name from Entity
-     * Delegates to source collection
+     * Get table name from Entity.
+     *
+     * Delegates to source collection.
+     *
+     * @return string Table name
      */
     public function getTableName(): string
     {
@@ -48,8 +57,11 @@ class FilteredCollection extends Objects
     }
 
     /**
-     * Get collection key
-     * Delegates to source collection
+     * Get collection key.
+     *
+     * Delegates to source collection.
+     *
+     * @return string Collection key
      */
     public function getCollectionKey(): string
     {

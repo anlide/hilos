@@ -29,8 +29,8 @@ final class RtReadCapability extends AbstractGuardianCapability
     /**
      * Execute capability: read runtime collections snapshot.
      *
-     * @param array $payload Payload (limitPerCollection, default 100)
-     * @param array $context Execution context (unused)
+     * @param array<string, mixed> $payload Payload (limitPerCollection, default 100)
+     * @param array<string, mixed> $context Execution context (unused)
      * @return CapabilityResult Snapshot with counts and row samples (acceptKey masked)
      */
     public function execute(array $payload = [], array $context = []): CapabilityResult

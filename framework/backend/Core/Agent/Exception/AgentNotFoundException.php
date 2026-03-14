@@ -8,10 +8,16 @@ use Hilos\HilosException;
 use Throwable;
 
 /**
- * Exception thrown when agent does not exist after startAgent() call
+ * Exception thrown when agent does not exist after startAgent() call.
  */
 class AgentNotFoundException extends HilosException
 {
+    /**
+     * Creates exception with agent ID and optional previous exception.
+     *
+     * @param string $agentId Agent ID
+     * @param ?Throwable $previous Previous exception for chaining
+     */
     public function __construct(string $agentId, ?Throwable $previous = null)
     {
         $message = "Agent '{$agentId}' does not exist after startAgent() call";

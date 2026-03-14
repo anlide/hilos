@@ -14,7 +14,7 @@ use Hilos\Utils\Exception\MissingEnvironmentVariableException;
 use Hilos\Utils\Logger;
 
 /**
- * AbstractClient - Abstract base class for client implementations
+ * AbstractClient - Abstract base class for client implementations.
  *
  * Provides common functionality for all client types.
  */

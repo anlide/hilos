@@ -8,10 +8,16 @@ use Hilos\HilosException;
 use Throwable;
 
 /**
- * Exception thrown when a required environment variable is missing
+ * Exception thrown when a required environment variable is missing.
  */
 class MissingEnvironmentVariableException extends HilosException
 {
+    /**
+     * Creates exception with variable name and optional previous exception.
+     *
+     * @param string $variableName Environment variable name
+     * @param ?Throwable $previous Previous exception for chaining
+     */
     public function __construct(string $variableName, ?Throwable $previous = null)
     {
         $message = "Required environment variable '{$variableName}' is not defined. " .

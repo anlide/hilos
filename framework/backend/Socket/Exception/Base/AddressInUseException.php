@@ -12,6 +12,11 @@ use Throwable;
  */
 class AddressInUseException extends SocketException
 {
+    /**
+     * Creates exception with optional previous exception.
+     *
+     * @param ?Throwable $previous Previous exception for chaining
+     */
     public function __construct(?Throwable $previous = null)
     {
         $message = "Address already in use";

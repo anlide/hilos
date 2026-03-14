@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Hilos\API\Router\Exception;
 
 /**
- * Exception thrown when trying to update a page subscription that doesn't exist
+ * Exception thrown when trying to update a page subscription that doesn't exist.
  */
 class PageSubscriptionNotFoundException extends RouteException
 {

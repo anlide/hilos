@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Utils\Helpers;
 
 /**
- * JsonHelper - JSON parsing utilities
+ * JsonHelper - JSON parsing utilities.
  *
  * Provides safe JSON decode helpers that return null on invalid input.
  *

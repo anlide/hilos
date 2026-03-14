@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Hilos\API\Router\Exception;
 
 /**
- * Exception thrown when trying to update a page subscription with a different page name
+ * Exception thrown when trying to update a page subscription with a different page name.
  */
 class PageSubscriptionMismatchException extends RouteException
 {

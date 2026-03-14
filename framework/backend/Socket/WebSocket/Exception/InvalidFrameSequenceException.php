@@ -13,6 +13,12 @@ use Throwable;
  */
 class InvalidFrameSequenceException extends WebSocketException
 {
+    /**
+     * Creates exception with message and optional previous exception.
+     *
+     * @param string $message Error message
+     * @param ?Throwable $previous Previous exception for chaining
+     */
     public function __construct(string $message = "Invalid WebSocket frame sequence", ?Throwable $previous = null)
     {
         parent::__construct($message, 0, $previous);

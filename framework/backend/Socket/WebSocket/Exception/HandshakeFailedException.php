@@ -12,6 +12,12 @@ use Throwable;
  */
 class HandshakeFailedException extends WebSocketException
 {
+    /**
+     * Creates exception with reason and optional previous exception.
+     *
+     * @param string $reason Failure reason
+     * @param ?Throwable $previous Previous exception for chaining
+     */
     public function __construct(string $reason = "Handshake failed", ?Throwable $previous = null)
     {
         $message = "WebSocket handshake failed: {$reason}";

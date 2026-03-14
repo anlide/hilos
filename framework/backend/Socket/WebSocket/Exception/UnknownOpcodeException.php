@@ -12,6 +12,12 @@ use Throwable;
  */
 class UnknownOpcodeException extends WebSocketException
 {
+    /**
+     * Creates exception with opcode and optional previous exception.
+     *
+     * @param int $opcode Unknown opcode value
+     * @param ?Throwable $previous Previous exception for chaining
+     */
     public function __construct(int $opcode, ?Throwable $previous = null)
     {
         $message = sprintf(

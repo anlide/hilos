@@ -12,6 +12,11 @@ use Throwable;
  */
 class BrokenPipeException extends SocketException
 {
+    /**
+     * Creates exception with optional previous exception.
+     *
+     * @param ?Throwable $previous Previous exception for chaining
+     */
     public function __construct(?Throwable $previous = null)
     {
         $message = "Broken pipe";

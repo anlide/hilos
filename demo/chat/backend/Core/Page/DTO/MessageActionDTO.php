@@ -7,7 +7,7 @@ namespace Demo\Chat\Core\Page\DTO;
 use Demo\Chat\Constants\ChatSignalConstants;
 
 /**
- * MessageActionDTO - DTO for message action payload
+ * MessageActionDTO - DTO for message action payload.
  *
  * Represents a chat message sent by user.
  */

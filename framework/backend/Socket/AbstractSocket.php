@@ -40,7 +40,7 @@ use Hilos\Socket\Exception\SocketSetOptionException;
 use Hilos\Socket\Exception\SocketWriteException;
 
 /**
- * AbstractSocket - Abstract base class for socket operations
+ * AbstractSocket - Abstract base class for socket operations.
  *
  * Provides common socket error handling for both clients and servers.
  */

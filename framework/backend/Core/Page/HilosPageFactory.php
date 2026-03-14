@@ -13,7 +13,7 @@ use Hilos\Core\Page\HilosPages\HilosI18nPage;
 use Hilos\Core\Page\HilosPages\HilosSettingsPage;
 
 /**
- * HilosPageFactory - Factory for creating Hilos admin page instances
+ * HilosPageFactory - Factory for creating Hilos admin page instances.
  *
  * Creates framework-level Hilos admin pages.
  * Project-level page factories should extend this class to inherit Hilos pages

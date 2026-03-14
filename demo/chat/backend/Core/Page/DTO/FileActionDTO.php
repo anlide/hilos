@@ -7,7 +7,7 @@ namespace Demo\Chat\Core\Page\DTO;
 use Demo\Chat\Constants\ChatSignalConstants;
 
 /**
- * FileActionDTO - DTO for file action payload
+ * FileActionDTO - DTO for file action payload.
  *
  * Represents a file upload/share request.
  */
