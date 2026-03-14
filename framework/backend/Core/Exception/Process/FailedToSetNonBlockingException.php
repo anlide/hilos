@@ -7,5 +7,6 @@ use Hilos\Core\Exception\ProcessException;
 /**
  * Exception thrown when pipe or stream could not be set to non-blocking mode.
  */
-class FailedToSetNonBlockingException extends ProcessException {
+class FailedToSetNonBlockingException extends ProcessException
+{
 }

@@ -6,7 +6,9 @@ namespace Hilos\Database\Exception\View\Collection;
 
 use Hilos\HilosException;
 
-/** Base exception for Db collection operations. */
+/**
+ * Base exception for Db collection operations.
+ */
 class CollectionException extends HilosException
 {
 }

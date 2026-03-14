@@ -12,7 +12,7 @@ use Hilos\HilosException;
 class TableOffsetUnsetNotSupportedException extends HilosException
 {
     /**
-     * Creates exception.
+     * Creates exception for unsupported offsetUnset.
      */
     public function __construct()
     {

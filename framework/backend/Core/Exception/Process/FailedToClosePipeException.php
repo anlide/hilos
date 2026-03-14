@@ -7,5 +7,6 @@ use Hilos\Core\Exception\ProcessException;
 /**
  * Exception thrown when process pipe could not be closed.
  */
-class FailedToClosePipeException extends ProcessException {
+class FailedToClosePipeException extends ProcessException
+{
 }

@@ -6,7 +6,9 @@ namespace Hilos\Database\Exception\View\Item;
 
 use Hilos\HilosException;
 
-/** Base exception for Db item operations. */
+/**
+ * Base exception for Db item operations.
+ */
 class ItemException extends HilosException
 {
 }
