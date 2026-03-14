@@ -10,6 +10,9 @@ data/logs/archive/
 data/logs-test/*.log
 data/logs-test/archive/
 
+# PHPUnit
+.phpunit.cache/
+
 # Vendor
 vendor/
 
