@@ -7,7 +7,7 @@ namespace Hilos\Constants;
 use BackedEnum;
 
 /**
- * ApiEndpoint - API endpoint paths enumeration
+ * ApiEndpoint - API endpoint paths enumeration.
  *
  * Defines all available API endpoint paths as an enumeration.
  * Centralized endpoint path management prevents typos and ensures consistency

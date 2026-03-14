@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Constants;
 
 /**
- * CliCommands - CLI command name constants
+ * CliCommands - CLI command name constants.
  *
  * Defines all available CLI command names used throughout the framework.
  * Centralized command name management prevents typos and ensures consistency.

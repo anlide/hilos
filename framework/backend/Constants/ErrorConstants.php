@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Constants;
 
 /**
- * ErrorConstants - Error handling constants
+ * ErrorConstants - Error handling constants.
  *
  * Defines limits and constraints for error handling, logging, and error message formatting.
  * These constants control the maximum length of error messages and stack traces

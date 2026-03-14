@@ -452,6 +452,12 @@ class AsyncHttpClient
         $this->completeRequest(true);
     }
 
+    /**
+     * Checks if response uses chunked transfer encoding.
+     *
+     * @param string $headersRaw Raw HTTP headers string
+     * @return bool True if Transfer-Encoding header is chunked
+     */
     private function isChunkedEncoding(string $headersRaw): bool
     {
         foreach (explode(HttpConstants::HTTP_LINE_SEPARATOR, $headersRaw) as $line) {

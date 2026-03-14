@@ -11,10 +11,12 @@ namespace Hilos\Constants;
  */
 class DaemonConstants
 {
-    // Daemon status display values
+    /** @var string Daemon status display: online */
     public const string STATUS_ONLINE = 'ONLINE';
+
+    /** @var string Daemon status display: offline */
     public const string STATUS_OFFLINE = 'OFFLINE';
 
-    // Not available display value
+    /** @var string Display value when status is not available */
     public const string VALUE_NOT_AVAILABLE = 'N/A';
 }
