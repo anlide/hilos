@@ -379,10 +379,10 @@ abstract class WorkerManager extends BaseManager
     }
 
     /**
-      * Handle DB sync created message from daemon.
-      *
-      * @param WorkerDTO $data Message data
-      */
+     * Handle DB sync created message from daemon.
+     *
+     * @param WorkerDTO $data Message data
+     */
     private function handleDbSyncCreatedMessage(WorkerDTO $data): void
     {
         if ($data instanceof WorkerDbSyncCreatedMessageDTO) {

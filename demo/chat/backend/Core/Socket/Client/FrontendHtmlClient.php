@@ -43,6 +43,9 @@ class FrontendHtmlClient extends AbstractClient implements HttpClientInterface
 
     /**
      * Process incoming HTTP request and write prerendered HTML response.
+     *
+     * Parses request, resolves path via HtmlResolver, gets HTML from cache,
+     * builds response with status and headers.
      */
     protected function processReadBuffer(): void
     {
@@ -139,7 +142,9 @@ class FrontendHtmlClient extends AbstractClient implements HttpClientInterface
     }
 
     /**
-     * Called every tick. No-op for static HTML client.
+     * Called every tick.
+     *
+     * No-op for static HTML client (no periodic work needed).
      */
     public function onTick(): void
     {
@@ -147,6 +152,8 @@ class FrontendHtmlClient extends AbstractClient implements HttpClientInterface
 
     /**
      * Called when connection is closed.
+     *
+     * No-op for static HTML client (no cleanup needed).
      */
     protected function onClose(): void
     {

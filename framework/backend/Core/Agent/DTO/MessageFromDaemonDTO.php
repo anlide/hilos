@@ -17,6 +17,12 @@ class MessageFromDaemonDTO extends BaseDTO implements AgentMessageDTOInterface
     public const string ACTION = 'action';
     public const string PAYLOAD = 'payload';
 
+    /**
+     * Creates message from daemon DTO.
+     *
+     * @param string $action Action name (e.g. agent_start, agent_stop)
+     * @param array<string, mixed> $payload Action payload data
+     */
     public function __construct(
         public readonly string $action,
         public readonly array $payload = [],
@@ -24,9 +30,9 @@ class MessageFromDaemonDTO extends BaseDTO implements AgentMessageDTOInterface
     }
 
     /**
-     * Convert DTO to array
+     * Converts DTO to array for transport.
      *
-     * @return array DTO data as array
+     * @return array<string, mixed> DTO data with action and optional payload keys
      */
     public function toArray(): array
     {
@@ -42,9 +48,9 @@ class MessageFromDaemonDTO extends BaseDTO implements AgentMessageDTOInterface
     }
 
     /**
-     * Create DTO from array
+     * Creates DTO from array.
      *
-     * @param array $data Source data
+     * @param array<string, mixed> $data Source data with action and optional payload keys
      * @return static DTO instance
      */
     public static function fromArray(array $data): static

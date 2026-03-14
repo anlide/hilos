@@ -8,7 +8,7 @@ use Hilos\Constants\EnvConstants;
 use Hilos\Utils\Exception\MissingEnvironmentVariableException;
 
 /**
- * Env - Environment variable manager
+ * Env - Environment variable manager.
  *
  * Handles reading and managing environment variables from .env files and system environment.
  * Provides automatic fallback to .env.example for default values.

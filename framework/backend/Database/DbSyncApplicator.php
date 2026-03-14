@@ -10,7 +10,7 @@ use Hilos\Database\Object\Objects;
 use Hilos\Hilos;
 
 /**
- * Applies DB sync signals (created/updated/deleted) to Hilos::$db.
+ * Applies DB sync signals (created, updated, deleted) to Hilos::$db.
  *
  * Used by DaemonManager and WorkerManager to sync in-memory collections
  * when receiving DB_SYNC signals from other processes.

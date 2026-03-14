@@ -128,7 +128,9 @@ final class ChatSituationGuardianAgent extends AbstractGuardianAgent
     }
 
     /**
-     * @return ?array<string, mixed>
+     * Build chat stats from events and RT data for LLM prompt.
+     *
+     * @return array<string, mixed>|null Stats (messages, uniqueAuthors, activeConnections, recentTypes) or null on error
      */
     private function buildChatStats(): ?array
     {
@@ -163,7 +165,10 @@ final class ChatSituationGuardianAgent extends AbstractGuardianAgent
     }
 
     /**
-     * @param array<string, mixed> $stats
+     * Build LLM prompt string from chat stats.
+     *
+     * @param array<string, mixed> $stats Chat statistics
+     * @return string Prompt text for LLM
      */
     private function buildPromptFromStats(array $stats): string
     {

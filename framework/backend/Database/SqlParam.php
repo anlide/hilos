@@ -14,7 +14,7 @@ readonly class SqlParam
      *
      * @param mixed $value Bound value
      * @param string $type Type char: i, d, s, b
-     * @throws \InvalidArgumentException When type is not i, d, s or b
+     * @throws \InvalidArgumentException When type is not one of i, d, s, b
      */
     public function __construct(
         public mixed $value,

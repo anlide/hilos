@@ -16,11 +16,13 @@ use Hilos\LLM\Constants\LLMApiConstants;
 class ChatGenerateOptions extends BaseDTO
 {
     /**
+     * Creates chat generate options instance.
+     *
      * @param ?string $model Model name (e.g. gpt-4o-mini, qwen2.5:3b)
      * @param float $temperature Sampling temperature (0.0 = deterministic)
      * @param float $timeoutSec Request timeout in seconds
      * @param ?int $maxTokens Maximum tokens to generate
-     * @param ?array<string, mixed> $responseFormat Response format for OpenAI-compatible APIs (e.g. ["type" => "json_object"])
+     * @param ?array<string, mixed> $responseFormat Response format for OpenAI-compatible APIs
      */
     public function __construct(
         public readonly ?string $model = null,
@@ -31,7 +33,11 @@ class ChatGenerateOptions extends BaseDTO
     ) {
     }
 
-    /** @return array<string, mixed> */
+    /**
+     * Converts options to array for API request.
+     *
+     * @return array<string, mixed> Model, temperature, timeout, maxTokens keys
+     */
     public function toArray(): array
     {
         return array_filter([
@@ -43,8 +49,10 @@ class ChatGenerateOptions extends BaseDTO
     }
 
     /**
-     * @param array<string, mixed> $data
-     * @return static
+     * Creates options from array.
+     *
+     * @param array<string, mixed> $data Source data
+     * @return static Options instance
      */
     public static function fromArray(array $data): static
     {

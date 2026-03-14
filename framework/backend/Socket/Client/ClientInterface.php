@@ -7,7 +7,7 @@ namespace Hilos\Socket\Client;
 use Hilos\Socket\SocketException;
 
 /**
- * ClientInterface - Interface for all client implementations
+ * ClientInterface - Interface for all client implementations.
  *
  * Defines common interface for client connections managed by servers.
  */

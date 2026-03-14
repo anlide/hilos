@@ -14,6 +14,8 @@ use Hilos\Core\Table\TableConstants;
 readonly class TableQueryDTO
 {
     /**
+     * Creates query parameters for table data request.
+     *
      * @param string $search Full-text search across row values
      * @param string $orderBy Field name to order by (empty = no ordering)
      * @param string $orderDirection TableConstants::ORDER_ASC or TableConstants::ORDER_DESC

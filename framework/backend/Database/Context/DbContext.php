@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Database\Context;
 
+use Hilos\Core\Table\Actions\TableItemActions;
+use Hilos\Database\Actions\Collection\DbActions;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Exception\View\CloneNotAllowedException;
 use Hilos\Database\Exception\View\CollectionNotFoundException;
@@ -57,9 +59,9 @@ abstract class DbContext
      * Set representation for object collection.
      *
      * @param string $name Collection name (e.g. users)
-     * @param string $dbItemCollectionClass DB collection class name
-     * @param ?string $actionsClass Collection actions class name (optional)
-     * @param ?string $itemActionsClass Item actions class name (optional)
+     * @param class-string<DbCollection> $dbItemCollectionClass DB collection class name
+     * @param ?class-string<DbActions> $actionsClass Collection actions class name (optional)
+     * @param ?class-string<TableItemActions> $itemActionsClass Item actions class name (optional)
      * @throws ObjectCollectionNotFoundException When object collection not found
      */
     public function setRepresent(string $name, string $dbItemCollectionClass, ?string $actionsClass = null, ?string $itemActionsClass = null): void

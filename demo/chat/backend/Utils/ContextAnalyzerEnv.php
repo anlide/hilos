@@ -10,7 +10,7 @@ use Hilos\Constants\LLMConstants;
 use Hilos\Utils\Env;
 
 /**
- * ContextAnalyzerEnv - Reads context analyzer LLM config from env via Env
+ * ContextAnalyzerEnv - Reads context analyzer LLM config from env via Env.
  *
  * Used by ChatContextAnalyzerAgent for summarization and topic extraction.
  */

@@ -10,7 +10,10 @@ use Hilos\Guardian\Enums\ActionType;
 final class GuardianActionRequest extends BaseDTO
 {
     /**
-     * @param array<string, mixed> $payload
+     * Creates guardian action request instance.
+     *
+     * @param ActionType $actionType Action type (CREATE_REPORT, etc.)
+     * @param array<string, mixed> $payload Action payload data
      */
     public function __construct(
         public readonly ActionType $actionType,
@@ -18,6 +21,11 @@ final class GuardianActionRequest extends BaseDTO
     ) {
     }
 
+    /**
+     * Converts request to array for transport.
+     *
+     * @return array<string, mixed> Request data with actionType, payload keys
+     */
     public function toArray(): array
     {
         return [
@@ -26,6 +34,12 @@ final class GuardianActionRequest extends BaseDTO
         ];
     }
 
+    /**
+     * Creates request from array.
+     *
+     * @param array<string, mixed> $data Source data (actionType, payload)
+     * @return static Request instance
+     */
     public static function fromArray(array $data): static
     {
         return new self(

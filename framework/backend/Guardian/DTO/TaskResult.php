@@ -10,7 +10,12 @@ use Hilos\Guardian\Enums\TaskStatus;
 final class TaskResult extends BaseDTO
 {
     /**
-     * @param array<string, mixed> $payload
+     * Creates task result DTO.
+     *
+     * @param string $taskId Task identifier
+     * @param TaskStatus $status Task status enum
+     * @param array<string, mixed> $payload Result payload data
+     * @param ?string $error Error message (null if success)
      */
     public function __construct(
         public readonly string $taskId,
@@ -20,6 +25,11 @@ final class TaskResult extends BaseDTO
     ) {
     }
 
+    /**
+     * Converts DTO to array for transport.
+     *
+     * @return array<string, mixed> DTO data with taskId, status, payload, error keys
+     */
     public function toArray(): array
     {
         return [
@@ -30,6 +40,12 @@ final class TaskResult extends BaseDTO
         ];
     }
 
+    /**
+     * Creates DTO from array.
+     *
+     * @param array<string, mixed> $data Source data
+     * @return static DTO instance
+     */
     public static function fromArray(array $data): static
     {
         return new self(

@@ -8,8 +8,8 @@ use Hilos\Database\Exception\DatabaseParamsException;
 use Iterator;
 
 /**
- * Type-safe collection of SQL parameters
- * 
+ * Type-safe collection of SQL parameters.
+ *
  * @implements ArrayAccess<int, SqlParam>
  * @implements Iterator<int, SqlParam>
  */

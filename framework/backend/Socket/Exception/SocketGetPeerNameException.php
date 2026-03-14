@@ -8,10 +8,17 @@ use Hilos\Socket\SocketException;
 use Throwable;
 
 /**
- * Exception thrown when socket_getpeername fails
+ * Exception thrown when socket_getpeername fails.
  */
 class SocketGetPeerNameException extends SocketException
 {
+    /**
+     * Creates socket get peer name exception.
+     *
+     * @param int $errorCode Socket error code
+     * @param string $errorMessage Socket error message
+     * @param ?Throwable $previous Previous exception for chaining
+     */
     public function __construct(int $errorCode, string $errorMessage, ?Throwable $previous = null)
     {
         $message = sprintf(

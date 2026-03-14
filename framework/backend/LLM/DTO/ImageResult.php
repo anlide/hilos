@@ -18,6 +18,8 @@ use Hilos\LLM\Constants\LLMApiConstants;
 class ImageResult extends BaseDTO
 {
     /**
+     * Creates image result with URL or base64 data.
+     *
      * @param ?string $url Temporary URL to the generated image
      * @param ?string $base64 Base64-encoded image data
      */
@@ -27,7 +29,11 @@ class ImageResult extends BaseDTO
     ) {
     }
 
-    /** @return array<string, mixed> */
+    /**
+     * Converts DTO to array (excludes null values).
+     *
+     * @return array<string, mixed> URL and/or base64 keys
+     */
     public function toArray(): array
     {
         return array_filter([
@@ -37,8 +43,10 @@ class ImageResult extends BaseDTO
     }
 
     /**
-     * @param array<string, mixed> $data
-     * @return static
+     * Creates DTO from array.
+     *
+     * @param array<string, mixed> $data Source data with url and base64 keys
+     * @return static DTO instance
      */
     public static function fromArray(array $data): static
     {

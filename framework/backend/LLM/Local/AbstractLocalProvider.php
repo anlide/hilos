@@ -22,6 +22,8 @@ abstract class AbstractLocalProvider
     protected ?string $defaultModel;
 
     /**
+     * Creates local LLM provider with base URL and optional default model.
+     *
      * @param string $baseUrl Base URL of local LLM service (without trailing slash)
      * @param ?string $defaultModel Default model name for requests
      */

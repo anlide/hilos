@@ -18,6 +18,8 @@ use Hilos\LLM\Constants\LLMApiConstants;
 class ImageGenerateOptions extends BaseDTO
 {
     /**
+     * Creates image generate options instance.
+     *
      * @param ?string $model Model name (e.g. dall-e-3)
      * @param ?string $size Image dimensions (e.g. 1024x1024)
      * @param float $timeoutSec Request timeout in seconds
@@ -29,7 +31,11 @@ class ImageGenerateOptions extends BaseDTO
     ) {
     }
 
-    /** @return array<string, mixed> */
+    /**
+     * Converts options to array for API request.
+     *
+     * @return array<string, mixed> Model, size, timeout keys
+     */
     public function toArray(): array
     {
         return array_filter([
@@ -40,8 +46,10 @@ class ImageGenerateOptions extends BaseDTO
     }
 
     /**
-     * @param array<string, mixed> $data
-     * @return static
+     * Creates options from array.
+     *
+     * @param array<string, mixed> $data Source data
+     * @return static Options instance
      */
     public static function fromArray(array $data): static
     {

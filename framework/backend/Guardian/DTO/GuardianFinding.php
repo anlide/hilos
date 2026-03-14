@@ -11,7 +11,13 @@ use Hilos\Guardian\Enums\Severity;
 final class GuardianFinding extends BaseDTO
 {
     /**
-     * @param array<string, mixed> $details
+     * Creates guardian finding.
+     *
+     * @param FindingType $type Finding type
+     * @param Severity $severity Severity level
+     * @param string $title Finding title
+     * @param string $message Finding message
+     * @param array<string, mixed> $details Optional extra data
      */
     public function __construct(
         public readonly FindingType $type,
@@ -22,6 +28,11 @@ final class GuardianFinding extends BaseDTO
     ) {
     }
 
+    /**
+     * Converts to array for serialization.
+     *
+     * @return array<string, mixed> Finding data with type, severity, title, message, details
+     */
     public function toArray(): array
     {
         return [
@@ -33,6 +44,12 @@ final class GuardianFinding extends BaseDTO
         ];
     }
 
+    /**
+     * Creates finding from array.
+     *
+     * @param array<string, mixed> $data Source data
+     * @return static Finding instance
+     */
     public static function fromArray(array $data): static
     {
         return new self(

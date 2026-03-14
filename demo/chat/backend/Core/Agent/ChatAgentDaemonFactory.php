@@ -18,7 +18,7 @@ use Hilos\Core\Agent\Daemon\AgentDaemonInterface;
 use Hilos\Core\Agent\Daemon\HilosAgentDaemonFactory;
 
 /**
- * ChatAgentDaemonFactory - Factory for creating chat-specific agent daemon proxies
+ * ChatAgentDaemonFactory - Factory for creating chat-specific agent daemon proxies.
  *
  * Creates chat and Hilos agent daemon instances based on agent type.
  * Extends HilosAgentDaemonFactory to delegate unknown types to framework.

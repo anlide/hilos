@@ -14,9 +14,9 @@ namespace Hilos\Core\TruthSource;
  *   3. Implement checkCanWrite() with their specific exception type
  *
  * Usage pattern:
- *   - Agent registers as truth source on start: Registry::register($collection, true, $agentId)
- *   - Agent unregisters on stop: Registry::unregisterAgent($agentId)
- *   - Actions check before write: Registry::checkCanWrite($collection)
+ *   - Agent registers as truth source on start: Registry::register($collection, true, $agentId).
+ *   - Agent unregisters on stop: Registry::unregisterAgent($agentId).
+ *   - Actions check before write: Registry::checkCanWrite($collection).
  */
 abstract class AbstractTruthSourceRegistry
 {
@@ -34,7 +34,7 @@ abstract class AbstractTruthSourceRegistry
      * Register agent as truth source for collection
      *
      * @param string $collection Collection/table name
-     * @param array|true $keys Array of specific keys or true for all keys
+     * @param array<int, string>|true $keys Array of specific keys or true for all keys
      * @param string $agentId Agent ID from agent->getId()
      */
     public static function register(string $collection, array|true $keys, string $agentId): void
@@ -97,8 +97,8 @@ abstract class AbstractTruthSourceRegistry
      * Check if keys are truth source (don't need external load)
      *
      * @param string $collection Collection/table name
-     * @param array $keys Keys to check
-     * @return bool True if all keys are truth source
+     * @param array<int, string> $keys Keys to check
+     * @return bool True if all given keys are covered by a truth source
      */
     public static function isTruthSource(string $collection, array $keys): bool
     {
@@ -132,7 +132,7 @@ abstract class AbstractTruthSourceRegistry
      * Get truth source keys for collection
      *
      * @param string $collection Collection/table name
-     * @return array|true|null Array of keys, true for all keys, or null if not truth source
+     * @return array<int, string>|true|null Array of keys, true for all keys, or null if no truth source
      */
     public static function getTruthSourceKeys(string $collection): array|true|null
     {

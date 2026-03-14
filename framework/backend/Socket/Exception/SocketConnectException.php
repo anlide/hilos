@@ -14,6 +14,13 @@ use Throwable;
  */
 class SocketConnectException extends SocketException
 {
+    /**
+     * Creates socket connect exception.
+     *
+     * @param int $errorCode Socket error code
+     * @param string $errorMessage Error message
+     * @param ?Throwable $previous Previous exception for chaining
+     */
     public function __construct(int $errorCode, string $errorMessage, ?Throwable $previous = null)
     {
         $message = sprintf(

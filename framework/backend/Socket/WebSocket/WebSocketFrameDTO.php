@@ -19,6 +19,14 @@ class WebSocketFrameDTO extends BaseDTO
     public const string MASKED = 'masked';
     public const string PAYLOAD = 'payload';
 
+    /**
+     * Creates WebSocket frame DTO.
+     *
+     * @param int $fin FIN bit (1 for final frame)
+     * @param int $opcode Opcode (e.g. text, binary, close)
+     * @param int $masked Mask bit (1 if masked)
+     * @param string $payload Frame payload
+     */
     public function __construct(
         public readonly int $fin,
         public readonly int $opcode,
@@ -28,9 +36,9 @@ class WebSocketFrameDTO extends BaseDTO
     }
 
     /**
-     * Convert DTO to array
+     * Converts DTO to array for transport.
      *
-     * @return array DTO data as array
+     * @return array<string, int|string> DTO data with fin, opcode, masked, payload keys
      */
     public function toArray(): array
     {
@@ -43,9 +51,9 @@ class WebSocketFrameDTO extends BaseDTO
     }
 
     /**
-     * Create DTO from array
+     * Creates DTO from array.
      *
-     * @param array $data Source data
+     * @param array<string, mixed> $data Source data with fin, opcode, masked, payload keys
      * @return static DTO instance
      */
     public static function fromArray(array $data): static

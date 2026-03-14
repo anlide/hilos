@@ -15,6 +15,8 @@ use Hilos\Core\Table\TableConstants;
 class TableResultDTO extends BaseDTO
 {
     /**
+     * Creates table result DTO.
+     *
      * @param array<int, array<string, mixed>> $rows Result rows (assoc arrays, frontend-ready)
      * @param int $totalCount Total rows matching the query (before pagination)
      * @param int $offset Zero-based offset used
@@ -31,7 +33,7 @@ class TableResultDTO extends BaseDTO
     /**
      * Converts to array for WebSocket serialization.
      *
-     * @return array<string, mixed>
+     * @return array<string, mixed> Rows, totalCount, offset, limit keys
      */
     public function toArray(): array
     {
@@ -46,9 +48,8 @@ class TableResultDTO extends BaseDTO
     /**
      * Creates DTO from payload array.
      *
-     * @param array<string, mixed> $data Raw payload
-     *
-     * @return static
+     * @param array<string, mixed> $data Raw payload with rows, totalCount, offset, limit keys
+     * @return static DTO instance
      */
     public static function fromArray(array $data): static
     {

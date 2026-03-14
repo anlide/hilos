@@ -207,7 +207,7 @@ class SignalDTO extends BaseDTO
      *
      * Attempts to find and use framework equivalent of custom class.
      *
-     * @param string $originalClass Original class name (may be custom class outside framework)
+     * @param class-string<SignalDataInterface> $originalClass Original class name (may be custom class outside framework)
      * @param array<string, mixed> $dataArray Data array for deserialization
      * @return ?SignalDataInterface Deserialized signal data or null if fallback failed
      */
@@ -261,8 +261,8 @@ class SignalDTO extends BaseDTO
      * - Custom\SomeApp\DTO\Agent\AgentSignalDTO -> Hilos\DTO\Agent\AgentSignalDTO
      * - Custom\SomeApp\DTO\SomeDTO -> Hilos\DTO\SomeDTO
      *
-     * @param string $customClass Custom class name (outside Hilos namespace)
-     * @return ?string Framework class name or null if no mapping exists
+     * @param class-string $customClass Custom class name (outside Hilos namespace)
+     * @return ?class-string Framework class name or null if no mapping exists
      */
     private static function getFrameworkClassFallback(string $customClass): ?string
     {

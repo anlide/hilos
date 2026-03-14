@@ -33,7 +33,7 @@ use Hilos\Core\Page\PageAgentInterface;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 
 /**
- * ChatPageFactory - Factory for creating chat page instances
+ * ChatPageFactory - Factory for creating chat page instances.
  *
  * Creates and manages chat page instances.
  * Extends HilosPageFactory to inherit framework-level Hilos admin pages.

@@ -18,6 +18,13 @@ class MessageFromUserDTO extends BaseDTO implements AgentMessageDTOInterface
     public const string ACTION = 'action';
     public const string PAYLOAD = 'payload';
 
+    /**
+     * Creates message from user DTO.
+     *
+     * @param string $userId User identifier
+     * @param string $action Action name
+     * @param array<string, mixed> $payload Action payload data
+     */
     public function __construct(
         public readonly string $userId,
         public readonly string $action,
@@ -26,9 +33,9 @@ class MessageFromUserDTO extends BaseDTO implements AgentMessageDTOInterface
     }
 
     /**
-     * Convert DTO to array
+     * Converts DTO to array for transport.
      *
-     * @return array DTO data as array
+     * @return array<string, mixed> DTO data with userId, action, payload keys
      */
     public function toArray(): array
     {
@@ -40,9 +47,9 @@ class MessageFromUserDTO extends BaseDTO implements AgentMessageDTOInterface
     }
 
     /**
-     * Create DTO from array
+     * Creates DTO from array.
      *
-     * @param array $data Source data
+     * @param array<string, mixed> $data Source data with userId, action, payload keys
      * @return static DTO instance
      */
     public static function fromArray(array $data): static

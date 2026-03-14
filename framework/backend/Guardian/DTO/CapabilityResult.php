@@ -6,10 +6,19 @@ namespace Hilos\Guardian\DTO;
 
 use Hilos\BaseDTO;
 
+/**
+ * Capability result DTO.
+ *
+ * Wraps result of a guardian capability check (ok, data, optional error).
+ */
 final class CapabilityResult extends BaseDTO
 {
     /**
-     * @param array<string, mixed> $data
+     * Creates capability result instance.
+     *
+     * @param bool $ok Whether capability check passed
+     * @param array<string, mixed> $data Result data (default empty)
+     * @param ?string $error Error message if check failed
      */
     public function __construct(
         public readonly bool $ok,
@@ -18,6 +27,11 @@ final class CapabilityResult extends BaseDTO
     ) {
     }
 
+    /**
+     * Converts DTO to array for transport.
+     *
+     * @return array<string, mixed> DTO data with ok, data, error keys
+     */
     public function toArray(): array
     {
         return [
@@ -27,6 +41,12 @@ final class CapabilityResult extends BaseDTO
         ];
     }
 
+    /**
+     * Creates DTO from array.
+     *
+     * @param array<string, mixed> $data Source data (ok, data, error keys)
+     * @return static DTO instance
+     */
     public static function fromArray(array $data): static
     {
         return new self(

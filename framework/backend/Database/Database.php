@@ -55,11 +55,12 @@ class Database
     private static array $resultSets = [];
 
     /**
-     * Get current result set (for ResultSetCollection)
-     * Returns mysqli_result from cached ResultSet
+     * Get current result set (for ResultSetCollection).
+     *
+     * Returns mysqli_result from cached ResultSet.
      *
      * @param ?int $index Connection index
-     * @return ?mysqli_result
+     * @return ?mysqli_result mysqli_result from cached ResultSet or null
      */
     public static function getCurrentResult(?int $index = null): ?mysqli_result
     {
@@ -68,10 +69,10 @@ class Database
     }
 
     /**
-     * Get cached ResultSet for current result (preserves pointer position)
+     * Get cached ResultSet for current result (preserves pointer position).
      *
      * @param ?int $index Connection index
-     * @return ?ResultSet
+     * @return ?ResultSet Cached ResultSet or null
      */
     public static function getCachedResultSet(?int $index = null): ?ResultSet
     {
@@ -158,7 +159,9 @@ class Database
     }
 
     /**
-     * Get current connection index
+     * Get current connection index.
+     *
+     * @return int Active connection index (0 by default)
      */
     public static function getCurrentIndex(): int
     {
@@ -291,7 +294,10 @@ class Database
     }
 
     /**
-     * Check if connected
+     * Check if connection is active.
+     *
+     * @param ?int $index Connection index (uses current if null)
+     * @return bool True if connected
      */
     public static function isConnected(?int $index = null): bool
     {
@@ -467,10 +473,10 @@ class Database
     }
 
     /**
-     * Get next result set from multi-query
+     * Get next result set from multi-query.
      *
      * @return bool True if there is a next result set
-     * @throws DatabaseConnectionException
+     * @throws DatabaseConnectionException If not connected
      */
     public static function nextResult(): bool
     {
@@ -566,8 +572,10 @@ class Database
     }
 
     /**
-     * Get number of affected rows from last query
-     * @throws DatabaseConnectionException
+     * Get number of affected rows from last query.
+     *
+     * @return int Number of affected rows
+     * @throws DatabaseConnectionException If not connected
      */
     public static function affectedRows(): int
     {
@@ -576,8 +584,10 @@ class Database
     }
 
     /**
-     * Get last insert ID
-     * @throws DatabaseConnectionException
+     * Get last insert ID.
+     *
+     * @return int Last insert ID or 0
+     * @throws DatabaseConnectionException If not connected
      */
     public static function lastInsertId(): int
     {
@@ -586,8 +596,9 @@ class Database
     }
 
     /**
-     * Start transaction
-     * @throws DatabaseConnectionException
+     * Start transaction.
+     *
+     * @throws DatabaseConnectionException If not connected
      */
     public static function transactionStart(): void
     {
@@ -596,8 +607,9 @@ class Database
     }
 
     /**
-     * Commit transaction
-     * @throws DatabaseConnectionException
+     * Commit transaction.
+     *
+     * @throws DatabaseConnectionException If not connected
      */
     public static function transactionCommit(): void
     {
@@ -606,8 +618,9 @@ class Database
     }
 
     /**
-     * Rollback transaction
-     * @throws DatabaseConnectionException
+     * Rollback transaction.
+     *
+     * @throws DatabaseConnectionException If not connected
      */
     public static function transactionRollback(): void
     {
@@ -616,10 +629,10 @@ class Database
     }
 
     /**
-     * Lock tables
+     * Lock tables.
      *
-     * @param array $tables Array of table names with lock types ['table1' => 'READ', 'table2' => 'WRITE']
-     * @throws DatabaseException
+     * @param array<string, string> $tables Table name => lock type (READ or WRITE)
+     * @throws DatabaseException On query failure
      */
     public static function lockTables(array $tables): void
     {
@@ -632,8 +645,9 @@ class Database
     }
 
     /**
-     * Unlock all tables
-     * @throws DatabaseException
+     * Unlock all tables.
+     *
+     * @throws DatabaseException On query failure
      */
     public static function unlockTables(): void
     {
@@ -641,8 +655,13 @@ class Database
     }
 
     /**
-     * Parse SQL query with parameters
-     * @throws DatabaseParamsException
+     * Parse SQL query with parameters.
+     *
+     * @param string $sql SQL query with ? placeholders
+     * @param ?SqlParamCollection $params Query parameters
+     * @param mysqli $mysqli mysqli connection for escaping
+     * @return string Parsed SQL with values substituted
+     * @throws DatabaseParamsException When parameter count does not match placeholders
      */
     private static function parseSqlWithParams(string $sql, ?SqlParamCollection $params, mysqli $mysqli): string
     {

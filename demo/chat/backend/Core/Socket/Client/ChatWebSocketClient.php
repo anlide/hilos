@@ -41,7 +41,7 @@ class ChatWebSocketClient extends WebSocketClient
     }
 
     /**
-     * Called when WebSocket handshake is completed
+     * Called when WebSocket handshake is completed.
      *
      * @param array<string, string> $headers All HTTP headers from handshake request
      * @param string $acceptKey Sec-WebSocket-Accept value (can be used as connection identifier)

@@ -27,6 +27,8 @@ class Message extends BaseDTO
     public const string ROLE_ASSISTANT = 'assistant';
 
     /**
+     * Creates chat message instance.
+     *
      * @param string $role Message role (ROLE_SYSTEM, ROLE_USER, ROLE_ASSISTANT)
      * @param string $content Message text content
      */
@@ -36,7 +38,11 @@ class Message extends BaseDTO
     ) {
     }
 
-    /** @return array{role: string, content: string} */
+    /**
+     * Converts DTO to array for provider use.
+     *
+     * @return array{role: string, content: string} Role and content keys
+     */
     public function toArray(): array
     {
         return [
@@ -46,8 +52,10 @@ class Message extends BaseDTO
     }
 
     /**
-     * @param array<string, mixed> $data
-     * @return static
+     * Creates DTO from array.
+     *
+     * @param array<string, mixed> $data Source data with role and content keys
+     * @return static DTO instance
      */
     public static function fromArray(array $data): static
     {
@@ -60,9 +68,10 @@ class Message extends BaseDTO
     /**
      * Normalize message to array format for provider use.
      *
-     * @param Message|array{role: string, content: string} $message
+     * Accepts either Message instance or associative array.
      *
-     * @return array{role: string, content: string}
+     * @param Message|array{role: string, content: string} $message Message instance or array
+     * @return array{role: string, content: string} Normalized array with role and content
      */
     public static function toProviderFormat(Message|array $message): array
     {

@@ -15,7 +15,7 @@ use Hilos\LLM\Local\Image\PlaceholderLocalImageProvider;
 use Hilos\Utils\Env;
 
 /**
- * ClientFactory - Creates LLM clients based on configuration
+ * ClientFactory - Creates LLM clients based on configuration.
  *
  * Chat clients are async (AsyncChatLLMInterface). Image clients remain sync.
  * Provider selection per capability via LLM_CHAT_PROVIDER / LLM_IMAGE_PROVIDER.
@@ -82,7 +82,9 @@ class ClientFactory
     }
 
     /**
-     * @return AsyncChatLLMInterface
+     * Creates local (Ollama) async chat provider from env config.
+     *
+     * @return AsyncChatLLMInterface Local chat client
      */
     private static function createLocalChatProvider(): AsyncChatLLMInterface
     {
@@ -93,7 +95,9 @@ class ClientFactory
     }
 
     /**
-     * @return ImageLLMInterface
+     * Creates local image provider (placeholder) from env config.
+     *
+     * @return ImageLLMInterface Local image client
      */
     private static function createLocalImageProvider(): ImageLLMInterface
     {
@@ -104,7 +108,9 @@ class ClientFactory
     }
 
     /**
-     * @return AsyncChatLLMInterface
+     * Creates external (OpenAI) async chat provider from env config.
+     *
+     * @return AsyncChatLLMInterface External chat client
      */
     private static function createExternalChatProvider(): AsyncChatLLMInterface
     {
@@ -116,7 +122,9 @@ class ClientFactory
     }
 
     /**
-     * @return ImageLLMInterface
+     * Creates external (OpenAI) image provider from env config.
+     *
+     * @return ImageLLMInterface External image client
      */
     private static function createExternalImageProvider(): ImageLLMInterface
     {

@@ -10,7 +10,12 @@ use Hilos\Guardian\Enums\TaskStatus;
 final class InvestigationTask extends BaseDTO
 {
     /**
-     * @param array<string, mixed> $input
+     * Creates investigation task instance.
+     *
+     * @param string $id Task identifier
+     * @param string $goal Task goal/description
+     * @param array<string, mixed> $input Task input data
+     * @param TaskStatus $status Task status (default: PENDING)
      */
     public function __construct(
         public readonly string $id,
@@ -20,6 +25,11 @@ final class InvestigationTask extends BaseDTO
     ) {
     }
 
+    /**
+     * Converts task to array for transport.
+     *
+     * @return array<string, mixed> Task data with id, goal, input, status keys
+     */
     public function toArray(): array
     {
         return [
@@ -30,6 +40,12 @@ final class InvestigationTask extends BaseDTO
         ];
     }
 
+    /**
+     * Creates task from array.
+     *
+     * @param array<string, mixed> $data Source data (id, goal, input, status)
+     * @return static Task instance
+     */
     public static function fromArray(array $data): static
     {
         return new self(

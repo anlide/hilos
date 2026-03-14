@@ -12,7 +12,7 @@ use Hilos\Utils\Env;
 use Hilos\Utils\Exception\MissingEnvironmentVariableException;
 
 /**
- * Database - Database connection configuration for WebSocket Test Demo
+ * Database - Database connection configuration for WebSocket Test Demo.
  *
  * Extends base Database class to provide application-specific configuration.
  * Reads database connection parameters from environment variables.

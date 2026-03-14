@@ -5,8 +5,8 @@ namespace Hilos\Database;
 use Hilos\Utils\Helpers\TimeHelper;
 
 /**
- * Code generator for Entity, Object and Idea classes
- * Generates PHP classes from existing database tables
+ * Code generator for Entity, Object and Idea classes.
+ * Generates PHP classes from existing database tables.
  */
 class Generator
 {
@@ -18,7 +18,7 @@ class Generator
      * @param ?string $className Class name (defaults to PascalCase of table name)
      * @param ?string $entityDir Entity directory path for namespace auto-detection (if namespace is default)
      * @return string Generated PHP code
-     * @throws DatabaseException
+     * @throws DatabaseException On database connection or query error
      */
     public static function generateEntity(string $tableName, string $namespace = 'App\\Entity', ?string $className = null, ?string $entityDir = null): string
     {
@@ -107,9 +107,10 @@ class Generator
             $indexGroups[$keyName]['columns'][] = $index['Column_name'];
         }
 
+        $entityConstPrefix = 'self::';
         foreach ($indexGroups as $keyName => $info) {
             // Use column constants instead of strings
-            $indexColumnRefs = array_map(fn($col) => "self::{$col}", $info['columns']);
+            $indexColumnRefs = array_map(fn($col) => $entityConstPrefix . $col, $info['columns']);
             $indexColumns = implode(", ", $indexColumnRefs);
             $unique = $info['unique'] ? "Entity::INDEX_UNIQUE => true, " : "";
             $indexesList[] = "        '{$keyName}' => [{$unique}Entity::INDEX_COLUMNS => [{$indexColumns}]]";
@@ -129,7 +130,7 @@ class Generator
                 $foreignKeys[] = "        self::{$column} => Entity{$referencedEntityClass}::_table";
             } else {
                 // Composite foreign key
-                $columnRefs = array_map(fn($col) => "self::" . trim($col), $columns);
+                $columnRefs = array_map(fn($col) => $entityConstPrefix . trim($col), $columns);
                 $referencedEntityClass = self::tableToPascalCase($referencedTable);
                 $foreignKeys[] = "        " . implode(' . \',\' . . ', $columnRefs) . " => Entity{$referencedEntityClass}::_table";
             }
@@ -206,7 +207,14 @@ class Generator
     }
 
     /**
-     * Generate Object class skeleton
+     * Generate Object class skeleton from database table.
+     *
+     * @param string $tableName Database table name
+     * @param string $namespace Namespace for generated class
+     * @param string $entityNamespace Entity namespace for ENTITY_CLASS
+     * @param ?string $className Class name (defaults to PascalCase of table name)
+     * @return string Generated PHP code
+     * @throws DatabaseException On database error
      */
     public static function generateObject(string $tableName, string $namespace = 'App\\Object', string $entityNamespace = 'App\\Entity', ?string $className = null): string
     {
@@ -333,9 +341,13 @@ class Generator
     }
 
     /**
-     * Normalize type to PhpType enum value
-     * Converts 'text' to 'string' (as TEXT should be represented as STRING in Entity)
-     * This is a common method used both in Generator and DbEntityFixCommand
+     * Normalize type to PhpType enum value.
+     *
+     * Converts 'text' to 'string' (as TEXT should be represented as STRING in Entity).
+     * This is a common method used both in Generator and DbEntityFixCommand.
+     *
+     * @param string $type Raw type string
+     * @return string Normalized type value
      */
     public static function normalizeType(string $type): string
     {
@@ -356,7 +368,10 @@ class Generator
     }
 
     /**
-     * Format type for use in _types array (use PhpType enum if available, otherwise string)
+     * Format type for use in _types array (PhpType enum or string literal).
+     *
+     * @param string $type Type string
+     * @return string PhpType::X->value or quoted string for unknown types
      */
     private static function formatTypeForArray(string $type): string
     {
@@ -373,7 +388,10 @@ class Generator
     }
 
     /**
-     * Convert MySQL type to PHP type
+     * Convert MySQL type string to PHP type.
+     *
+     * @param string $mysqlType MySQL type (e.g. int(11), varchar(255))
+     * @return string PHP type (integer, string, boolean, etc.)
      */
     private static function mysqlTypeToPhp(string $mysqlType): string
     {
@@ -397,7 +415,10 @@ class Generator
     }
 
     /**
-     * Convert table name to PascalCase
+     * Convert table name to PascalCase.
+     *
+     * @param string $tableName Snake_case table name
+     * @return string PascalCase class name
      */
     private static function tableToPascalCase(string $tableName): string
     {
@@ -405,7 +426,10 @@ class Generator
     }
 
     /**
-     * Convert snake_case to camelCase
+     * Convert snake_case to camelCase.
+     *
+     * @param string $snake Snake_case string
+     * @return string camelCase string
      */
     private static function snakeToCamelCase(string $snake): string
     {
@@ -413,8 +437,12 @@ class Generator
     }
 
     /**
-     * Convert PhpType enum value to PHP type hint for properties
-     * Converts 'integer' -> 'int', 'boolean' -> 'bool', 'datetime' -> 'string'
+     * Convert PhpType enum value to PHP type hint for properties.
+     *
+     * Converts 'integer' -> 'int', 'boolean' -> 'bool', 'datetime' -> 'string'.
+     *
+     * @param string $type PhpType value (integer, string, boolean, etc.)
+     * @return string PHP type hint for property (int, string, bool, etc.)
      */
     public static function phpTypeToPropertyType(string $type): string
     {
@@ -427,7 +455,11 @@ class Generator
     }
 
     /**
-     * Format default value for code generation
+     * Format default value for code generation.
+     *
+     * @param mixed $default Default value from database
+     * @param string $type PHP type (integer, string, boolean, etc.)
+     * @return string Formatted value for PHP code (e.g. null, 42, 'text', true)
      */
     private static function formatDefaultValue(mixed $default, string $type): string
     {
@@ -444,8 +476,15 @@ class Generator
     }
 
     /**
-     * Generate all classes (Entity + Object) from table
-     * @throws DatabaseException
+     * Generate all classes (Entity + Object) from table.
+     *
+     * @param string $tableName Database table name
+     * @param string $outputDir Output directory path
+     * @param string $entityNamespace Entity namespace
+     * @param string $objectNamespace Object namespace
+     * @param ?string $className Class name (defaults to PascalCase of table name)
+     * @return array{entity: string, object: string} Paths to generated entity and object files
+     * @throws DatabaseException When table not found or query fails
      */
     public static function generateAll(
         string $tableName,
@@ -484,8 +523,11 @@ class Generator
     }
 
     /**
-     * Generate migration from current database state
-     * @throws DatabaseException
+     * Generate migration from current database state.
+     *
+     * @param string $tableName Database table name
+     * @return string SQL migration script (CREATE TABLE statement)
+     * @throws DatabaseException When table not found
      */
     public static function generateMigrationFromTable(string $tableName): string
     {
@@ -506,8 +548,10 @@ class Generator
     }
 
     /**
-     * List all tables in current database
-     * @throws DatabaseException
+     * List all tables in current database.
+     *
+     * @return array<int, string> Table names
+     * @throws DatabaseException When query fails
      */
     public static function listTables(): array
     {
@@ -520,15 +564,13 @@ class Generator
     }
 
     /**
-     * Detect namespace from Entity directory path
-     * Used both for creating and updating Entity files
+     * Detect namespace from Entity directory path.
      *
-     * Algorithm:
-     * 1. Try to find composer.json by going up from entityDir
-     * 2. Read autoload.psr-4 from composer.json
-     * 3. Find matching namespace prefix for the path
-     * 4. Build namespace: prefix + path remainder (converted to PascalCase)
-     * 5. Fallback to old path-based algorithm if composer.json not found
+     * Used both for creating and updating Entity files.
+     * Algorithm: scan existing Entity files for namespace or use path-based fallback.
+     *
+     * @param string $entityDir Entity directory path
+     * @return string Detected namespace (e.g. App\Entity or Demo\Chat\Database\Entity)
      */
     public static function detectNamespaceFromPath(string $entityDir): string
     {

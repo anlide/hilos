@@ -6,7 +6,7 @@ use Hilos\Core\TruthSource\AbstractTruthSourceRegistry;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 
 /**
- * Runtime Truth Source Registry
+ * Runtime Truth Source Registry.
  *
  * Tracks which agents are sources of truth for runtime collections.
  * Only registered agents can write to runtime data.
@@ -27,9 +27,9 @@ class RtTruthSourceRegistry extends AbstractTruthSourceRegistry
     private static array $sources = [];
 
     /**
-     * Get sources storage reference
+     * Get sources storage reference.
      *
-     * @return array<string, array<string, array|true>>
+     * @return array<string, array<string, array|true>> Reference to sources storage [collection => [agentId => keys]]
      */
     protected static function &getSources(): array
     {
@@ -37,7 +37,7 @@ class RtTruthSourceRegistry extends AbstractTruthSourceRegistry
     }
 
     /**
-     * Check if write operation is allowed for runtime collection
+     * Check if write operation is allowed for runtime collection.
      *
      * @param string $collection Collection name
      * @throws RtTruthSourceWriteNotAllowedException If write is not allowed

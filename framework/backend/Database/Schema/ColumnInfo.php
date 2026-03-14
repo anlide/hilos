@@ -3,11 +3,15 @@
 namespace Hilos\Database\Schema;
 
 /**
- * ColumnInfo - Information about a database column
+ * ColumnInfo - Information about a database column.
+ *
+ * Holds column metadata from database schema.
  */
 readonly class ColumnInfo
 {
     /**
+     * Creates column info instance.
+     *
      * @param string $name Column name
      * @param string $mysqlType MySQL type (e.g., "int(11)", "varchar(255)")
      * @param string $phpType PHP type (e.g., "integer", "string")
