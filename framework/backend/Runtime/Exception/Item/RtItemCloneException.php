@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Runtime\Exception\Item;
 
 /**
- * Exception: Attempt to clone RtItem
+ * Exception: Attempt to clone RtItem.
  */
 class RtItemCloneException extends RtItemException
 {

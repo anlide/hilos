@@ -7,7 +7,7 @@ namespace Hilos\Runtime\Exception\Rt;
 use Hilos\Runtime\Exception\RtException;
 
 /**
- * Exception: RtCollection not found in Rt context
+ * Exception: RtCollection not found in Rt context.
  */
 class RtCollectionNotFoundException extends RtException
 {

@@ -5,7 +5,7 @@ namespace Hilos\Database\Exception;
 use Hilos\Database\DatabaseException;
 
 /**
- * Base SQL connection exception
+ * Base SQL connection exception.
  */
 class DatabaseConnectionException extends DatabaseException
 {

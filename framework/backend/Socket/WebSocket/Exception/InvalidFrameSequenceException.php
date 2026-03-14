@@ -8,8 +8,9 @@ use Hilos\Socket\WebSocket\WebSocketException;
 use Throwable;
 
 /**
- * Exception thrown when WebSocket frame sequence is invalid
- * (e.g., continuation frame received without initial fragmented frame).
+ * Exception thrown when WebSocket frame sequence is invalid.
+ *
+ * E.g., continuation frame received without initial fragmented frame.
  */
 class InvalidFrameSequenceException extends WebSocketException
 {

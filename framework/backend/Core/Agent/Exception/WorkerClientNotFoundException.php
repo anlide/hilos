@@ -8,10 +8,18 @@ use Hilos\HilosException;
 use Throwable;
 
 /**
- * Exception thrown when worker client is not found for agent
+ * Exception thrown when worker client is not found for agent.
  */
 class WorkerClientNotFoundException extends HilosException
 {
+    /**
+     * Creates exception when worker client cannot be found.
+     *
+     * @param string $agentId Agent identifier
+     * @param int $workerIndex Worker index
+     * @param bool $isMonopolistic Whether monopolistic worker was required
+     * @param ?Throwable $previous Previous exception for chaining
+     */
     public function __construct(string $agentId, int $workerIndex, bool $isMonopolistic, ?Throwable $previous = null)
     {
         $message = "Worker client not found for agent '{$agentId}' (workerIndex={$workerIndex}, isMonopolistic=" . ($isMonopolistic ? 'true' : 'false') . ")";

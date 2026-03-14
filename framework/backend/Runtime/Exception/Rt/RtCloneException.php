@@ -7,7 +7,7 @@ namespace Hilos\Runtime\Exception\Rt;
 use Hilos\Runtime\Exception\RtException;
 
 /**
- * Exception: Attempt to clone Rt context
+ * Exception: Attempt to clone Rt context.
  */
 class RtCloneException extends RtException
 {

@@ -7,7 +7,7 @@ namespace Hilos\Runtime\Exception\State;
 use Hilos\Runtime\Exception\RtStateException;
 
 /**
- * Exception: Attempt to unserialize RtState
+ * Exception: Attempt to unserialize RtState.
  */
 class RtStateUnserializeException extends RtStateException
 {
