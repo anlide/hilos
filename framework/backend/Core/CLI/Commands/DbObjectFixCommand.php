@@ -816,7 +816,7 @@ HELP;
         $excluded = [];
 
         // Parse class-level @object-exclude directive in PHPDoc
-        if (preg_match('/\/\*\*.*?@object-exclude\s+([^\n\*]+).*?\*\//s', $entityContent, $matches)) {
+        if (preg_match('/\/\*\*.*?@object-exclude\s+([^\n*]+).*?\*\//s', $entityContent, $matches)) {
             $fields = preg_split('/\s*,\s*/', trim($matches[1]));
             foreach ($fields as $field) {
                 $field = trim($field);
@@ -828,7 +828,7 @@ HELP;
 
         // Parse property-level @object-exclude directives
         // Look for @object-exclude in comments before property declarations
-        if (preg_match_all('/(?:\/\/[^\n]*@object-exclude[^\n]*\n|\/\*\*[^\*]*@object-exclude[^\*]*\*\/\s*\n).*?public\s+(?:\?)?\w+\s+\$(\w+)/s', $entityContent, $matches)) {
+        if (preg_match_all('/(?:\/\/[^\n]*@object-exclude[^\n]*\n|\/\*\*[^*]*@object-exclude[^*]*\*\/\s*\n).*?public\s+\??\w+\s+\$(\w+)/s', $entityContent, $matches)) {
             foreach ($matches[1] as $field) {
                 if (!in_array($field, $excluded, true)) {
                     $excluded[] = $field;
@@ -1399,15 +1399,15 @@ HELP;
         // Replace constants section - match from start of line including newline
         if (preg_match('/(\n)([ \t]*)\/\/ Property name constants.*?\n((?:[ \t]*public const string \w+[^\n]*\n)+)/s', $content, $matches, PREG_OFFSET_CAPTURE)) {
             // Check what comes after constants section to preserve spacing
-            $matchEnd = $matches[0][1] + strlen($matches[0][0]);
+            $matchEnd = (int)$matches[0][1] + strlen($matches[0][0]);
             $afterConstants = substr($content, $matchEnd);
             $hasNewlineAfter = preg_match('/^\s*\n/', $afterConstants);
-            $replacement = $matches[1][0] . $constantsSection . ($hasNewlineAfter ? '' : "\n");
-            $content = substr_replace($content, $replacement, $matches[0][1], strlen($matches[0][0]));
+            $replacement = "{$matches[1][0]}{$constantsSection}" . ($hasNewlineAfter ? '' : "\n");
+            $content = substr_replace($content, $replacement, (int)$matches[0][1], strlen($matches[0][0]));
         } else {
             // Add constants section before $entity property
             if (preg_match('/(protected Entity\w+ \$entity;)/', $content, $matches)) {
-                $content = str_replace($matches[1], $constantsSection . $matches[1], $content);
+                $content = str_replace($matches[1], "{$constantsSection}{$matches[1]}", $content);
             }
         }
 
@@ -1435,7 +1435,7 @@ HELP;
         // Match indent at start of line (spaces/tabs, but not newlines)
         $methodPattern = '/(\n)([ \t]*)public\s+function\s+__get\s*\([^)]*\)\s*:\s*mixed\s*\{/';
         if (preg_match($methodPattern, $content, $methodStart, PREG_OFFSET_CAPTURE)) {
-            $startPos = $methodStart[0][1];
+            $startPos = (int)$methodStart[0][1];
             $indent = $methodStart[2][0]; // Extract indent (spaces/tabs only, no newlines)
             
             // Find matching closing brace
@@ -1475,10 +1475,10 @@ HELP;
                 $docStart = $startPos;
                 $beforeMethod = substr($content, max(0, $startPos - 200), $startPos - max(0, $startPos - 200));
                 if (preg_match('/(\/\*\*.*?\*\/)\s*(?=public\s+function\s+__get)/s', $beforeMethod, $docMatch, PREG_OFFSET_CAPTURE)) {
-                    $docStart = $startPos - (strlen($beforeMethod) - $docMatch[1][1]);
+                    $docStart = $startPos - (strlen($beforeMethod) - (int)$docMatch[1][1]);
                 }
                 
-                $before = substr($content, 0, $docStart);
+                $before = substr($content, 0, (int)$docStart);
                 $after = substr($content, $methodEnd);
                 
                 // Check if there's a newline before method, preserve it
@@ -1490,7 +1490,7 @@ HELP;
                 $getterMethod .= "{$indent}    return match (\$property) {\n";
                 if (!empty($cases)) {
                     // Update cases with correct indent (same as default: indent + 8 spaces)
-                    $indentedCases = array_map(fn($case) => $indent . '        ' . $case, $cases);
+                    $indentedCases = array_map(fn($case) => "{$indent}        {$case}", $cases);
                     $getterMethod .= implode(",\n", $indentedCases) . ",\n";
                 }
                 $getterMethod .= "{$indent}        default => parent::__get(\$property),\n";
@@ -1499,7 +1499,7 @@ HELP;
                 
                 // Ensure proper spacing: check if there's a newline after method, preserve it
                 $afterStartsWithNewline = preg_match('/^\s*\n/', $after);
-                $content = $before . $getterMethod . ($afterStartsWithNewline ? '' : "\n") . $after;
+                $content = "{$before}{$getterMethod}" . ($afterStartsWithNewline ? '' : "\n") . "{$after}";
             }
         } else {
             // Add __get method before __set or before closing brace
@@ -1514,7 +1514,7 @@ HELP;
             $getterMethod .= "{$indent}{\n";
             $getterMethod .= "{$indent}    return match (\$property) {\n";
             if (!empty($cases)) {
-                $indentedCases = array_map(fn($case) => $indent . '    ' . ltrim($case), $cases);
+                $indentedCases = array_map(fn($case) => "{$indent}    " . ltrim($case), $cases);
                 $getterMethod .= implode(",\n", $indentedCases) . ",\n";
             }
             $getterMethod .= "{$indent}        default => parent::__get(\$property),\n";
@@ -1522,14 +1522,14 @@ HELP;
             $getterMethod .= "{$indent}}";
             
             if (preg_match('/(\n)([ \t]*)public\s+function\s+__set/', $content, $matches, PREG_OFFSET_CAPTURE)) {
-                $insertPos = $matches[0][1];
+                $insertPos = (int)$matches[0][1];
                 $before = substr($content, 0, $insertPos);
                 $after = substr($content, $insertPos);
                 // Check if there's already a newline before __set
                 $needsNewline = !preg_match('/\n\s*$/', $before);
                 $content = $before . ($needsNewline ? "\n" : '') . $getterMethod . "\n" . $after;
             } elseif (preg_match('/(\n)}/', $content, $matches, PREG_OFFSET_CAPTURE)) {
-                $insertPos = $matches[0][1];
+                $insertPos = (int)$matches[0][1];
                 $before = substr($content, 0, $insertPos);
                 $after = substr($content, $insertPos);
                 $content = $before . $getterMethod . "\n" . $after;
@@ -1586,7 +1586,7 @@ HELP;
             // Match indent at start of line (spaces/tabs, but not newlines)
             $methodPattern = '/(\n)([ \t]*)public\s+function\s+__set\s*\([^)]*\)\s*:\s*void\s*\{/';
             if (preg_match($methodPattern, $content, $methodStart, PREG_OFFSET_CAPTURE)) {
-                $startPos = $methodStart[0][1];
+                $startPos = (int)$methodStart[0][1];
                 // Find matching closing brace
                 $pos = $startPos + strlen($methodStart[0][0]);
                 $braceCount = 1;
@@ -1614,13 +1614,13 @@ HELP;
                     $docStart = $startPos;
                     $beforeMethod = substr($content, max(0, $startPos - 200), $startPos - max(0, $startPos - 200));
                     if (preg_match('/(\/\*\*.*?\*\/)\s*(?=public\s+function\s+__set)/s', $beforeMethod, $docMatch, PREG_OFFSET_CAPTURE)) {
-                        $docStart = $startPos - (strlen($beforeMethod) - $docMatch[1][1]);
+                        $docStart = $startPos - (strlen($beforeMethod) - (int)$docMatch[1][1]);
                     }
-                    $before = substr($content, 0, $docStart);
+                    $before = substr($content, 0, (int)$docStart);
                     $after = substr($content, $methodEnd);
                     // Remove trailing newline if present
                     $after = preg_replace('/^\s*\n/', '', $after);
-                    $content = $before . $after;
+                    $content = "{$before}{$after}";
                 }
             }
             return $content;
@@ -1630,7 +1630,7 @@ HELP;
         // Match indent at start of line (spaces/tabs, but not newlines)
         $methodPattern = '/(\n)([ \t]*)public\s+function\s+__set\s*\([^)]*\)\s*:\s*void\s*\{/';
         if (preg_match($methodPattern, $content, $methodStart, PREG_OFFSET_CAPTURE)) {
-            $startPos = $methodStart[0][1];
+            $startPos = (int)$methodStart[0][1];
             $indent = $methodStart[2][0]; // Extract indent (spaces/tabs only, no newlines)
             
             // Find matching closing brace
@@ -1670,10 +1670,10 @@ HELP;
                 $docStart = $startPos;
                 $beforeMethod = substr($content, max(0, $startPos - 200), $startPos - max(0, $startPos - 200));
                 if (preg_match('/(\/\*\*.*?\*\/)\s*(?=public\s+function\s+__set)/s', $beforeMethod, $docMatch, PREG_OFFSET_CAPTURE)) {
-                    $docStart = $startPos - (strlen($beforeMethod) - $docMatch[1][1]);
+                    $docStart = $startPos - (strlen($beforeMethod) - (int)$docMatch[1][1]);
                 }
                 
-                $before = substr($content, 0, $docStart);
+                $before = substr($content, 0, (int)$docStart);
                 $after = substr($content, $methodEnd);
                 
                 // Check if there's a newline before method, preserve it
@@ -1684,7 +1684,7 @@ HELP;
                 $setterMethod .= "{$indent}{\n";
                 $setterMethod .= "{$indent}    match (\$property) {\n";
                 // Update cases with correct indent (same as default: indent + 8 spaces)
-                $indentedCases = array_map(fn($case) => $indent . '        ' . $case, $cases);
+                $indentedCases = array_map(fn($case) => "{$indent}        {$case}", $cases);
                 $setterMethod .= implode(",\n", $indentedCases) . ",\n";
                 $setterMethod .= "{$indent}        default => parent::__set(\$property, \$value),\n";
                 $setterMethod .= "{$indent}    };\n";
@@ -1692,7 +1692,7 @@ HELP;
                 
                 // Ensure proper spacing: check if there's a newline after method, preserve it
                 $afterStartsWithNewline = preg_match('/^\s*\n/', $after);
-                $content = $before . $setterMethod . ($afterStartsWithNewline ? '' : "\n") . $after;
+                $content = "{$before}{$setterMethod}" . ($afterStartsWithNewline ? '' : "\n") . "{$after}";
             }
         } else {
             // Add __set method after __get or before closing brace
@@ -1706,7 +1706,7 @@ HELP;
             $setterMethod = "{$indent}public function __set(string \$property, mixed \$value): void\n";
             $setterMethod .= "{$indent}{\n";
             $setterMethod .= "{$indent}    match (\$property) {\n";
-            $indentedCases = array_map(fn($case) => $indent . '        ' . $case, $cases);
+            $indentedCases = array_map(fn($case) => "{$indent}        {$case}", $cases);
             $setterMethod .= implode(",\n", $indentedCases) . ",\n";
             $setterMethod .= "{$indent}        default => parent::__set(\$property, \$value),\n";
             $setterMethod .= "{$indent}    };\n";
@@ -1714,7 +1714,7 @@ HELP;
             
             if (preg_match('/(\n)([ \t]*)public\s+function\s+__get\s*\([^)]*\)\s*:\s*mixed\s*\{/', $content, $matches, PREG_OFFSET_CAPTURE)) {
                 // Find end of __get method
-                $getStartPos = $matches[0][1] + strlen($matches[0][0]);
+                $getStartPos = (int)$matches[0][1] + strlen($matches[0][0]);
                 $pos = $getStartPos;
                 $braceCount = 1;
                 $inString = false;
@@ -1742,10 +1742,10 @@ HELP;
                 $afterStartsWithNewline = preg_match('/^\s*\n/', $after);
                 $content = $before . ($needsNewline ? "\n" : '') . $setterMethod . ($afterStartsWithNewline ? '' : "\n") . $after;
             } elseif (preg_match('/(\n)}/', $content, $matches, PREG_OFFSET_CAPTURE)) {
-                $insertPos = $matches[0][1];
+                $insertPos = (int)$matches[0][1];
                 $before = substr($content, 0, $insertPos);
                 $after = substr($content, $insertPos);
-                $content = $before . $setterMethod . "\n" . $after;
+                $content = "{$before}{$setterMethod}\n{$after}";
             }
         }
 
@@ -1852,9 +1852,9 @@ HELP;
         // Find class declaration position first
         $classStart = null; // Initialize to fix PHPStorm warning
         if (preg_match('/((?:final\s+)?class\s+\w+)/', $content, $classMatch, PREG_OFFSET_CAPTURE)) {
-            $classStart = $classMatch[0][1];
-            $beforeClass = substr($content, 0, $classStart);
-            $afterClass = substr($content, $classStart);
+            $classOffset = (int)$classMatch[0][1];
+            $beforeClass = substr($content, 0, $classOffset);
+            $afterClass = substr($content, $classOffset);
             
             // Check if there's an empty line (double newline) before PHPDoc blocks
             // Pattern: \n\n (empty line) followed by optional whitespace and /**
@@ -1906,7 +1906,7 @@ HELP;
         // Match indent at start of line (spaces/tabs, but not newlines)
         $methodPattern = '/(\n)([ \t]*)public\s+function\s+toArray\s*\([^)]*\)\s*:\s*array\s*\{/';
         if (preg_match($methodPattern, $content, $methodStart, PREG_OFFSET_CAPTURE)) {
-            $startPos = $methodStart[0][1];
+            $startPos = (int)$methodStart[0][1];
             $indent = $methodStart[2][0]; // Extract indent (spaces/tabs only, no newlines)
             
             // Find matching closing brace
@@ -1945,10 +1945,10 @@ HELP;
                 $docStart = $startPos;
                 $beforeMethod = substr($content, max(0, $startPos - 200), $startPos - max(0, $startPos - 200));
                 if (preg_match('/(\/\*\*.*?\*\/)\s*(?=public\s+function\s+toArray)/s', $beforeMethod, $docMatch, PREG_OFFSET_CAPTURE)) {
-                    $docStart = $startPos - (strlen($beforeMethod) - $docMatch[1][1]);
+                    $docStart = $startPos - (strlen($beforeMethod) - (int)$docMatch[1][1]);
                 }
                 
-                $before = substr($content, 0, $docStart);
+                $before = substr($content, 0, (int)$docStart);
                 $after = substr($content, $methodEnd);
                 
                 // Check if there's a newline before method, preserve it
@@ -1959,14 +1959,14 @@ HELP;
                 $toArrayMethod .= "{$indent}{\n";
                 $toArrayMethod .= "{$indent}    return [\n";
                 // Update array entries with correct indent (same as return: indent + 4 spaces)
-                $indentedEntries = array_map(fn($entry) => $indent . '        ' . $entry, $arrayEntries);
+                $indentedEntries = array_map(fn($entry) => "{$indent}        {$entry}", $arrayEntries);
                 $toArrayMethod .= implode(",\n", $indentedEntries) . ",\n";
                 $toArrayMethod .= "{$indent}    ];\n";
                 $toArrayMethod .= "{$indent}}";
                 
                 // Ensure proper spacing: check if there's a newline after method, preserve it
                 $afterStartsWithNewline = preg_match('/^\s*\n/', $after);
-                $content = $before . $toArrayMethod . ($afterStartsWithNewline ? '' : "\n") . $after;
+                $content = "{$before}{$toArrayMethod}" . ($afterStartsWithNewline ? '' : "\n") . "{$after}";
             }
         } else {
             // Add toArray method before closing brace
@@ -1980,16 +1980,16 @@ HELP;
             $toArrayMethod = "{$indent}public function toArray(): array\n";
             $toArrayMethod .= "{$indent}{\n";
             $toArrayMethod .= "{$indent}    return [\n";
-            $indentedEntries = array_map(fn($entry) => $indent . '        ' . $entry, $arrayEntries);
+            $indentedEntries = array_map(fn($entry) => "{$indent}        {$entry}", $arrayEntries);
             $toArrayMethod .= implode(",\n", $indentedEntries) . ",\n";
             $toArrayMethod .= "{$indent}    ];\n";
             $toArrayMethod .= "{$indent}}";
             
             if (preg_match('/(\n)}/', $content, $matches, PREG_OFFSET_CAPTURE)) {
-                $insertPos = $matches[0][1];
+                $insertPos = (int)$matches[0][1];
                 $before = substr($content, 0, $insertPos);
                 $after = substr($content, $insertPos);
-                $content = $before . $toArrayMethod . "\n" . $after;
+                $content = "{$before}{$toArrayMethod}\n{$after}";
             }
         }
 
@@ -2012,7 +2012,7 @@ HELP;
         
         while (preg_match($pattern, $content, $matches, PREG_OFFSET_CAPTURE, $offset)) {
             $methodName = $matches[1][0];
-            $methodStart = $matches[0][1];
+            $methodStart = (int)$matches[0][1];
             
             if (!in_array($methodName, $excludedMethods, true)) {
                 // Find the matching closing brace
@@ -2033,10 +2033,10 @@ HELP;
                     // Find PHPDoc before method
                     $docStart = $methodStart;
                     if (preg_match('/(\/\*\*.*?\*\/)\s*(?=public|protected|private)/s', substr($content, 0, $methodStart), $docMatch, PREG_OFFSET_CAPTURE)) {
-                        $docStart = $methodStart - (strlen(substr($content, 0, $methodStart)) - $docMatch[1][1]);
+                        $docStart = (int)($methodStart - (strlen(substr($content, 0, $methodStart)) - (int)$docMatch[1][1]));
                     }
                     $methodEnd = $pos;
-                    $removals[] = ['start' => $docStart, 'end' => $methodEnd];
+                    $removals[] = ['start' => (int)$docStart, 'end' => $methodEnd];
                 }
             }
             
@@ -2080,7 +2080,7 @@ HELP;
         $offset = 0;
         while (preg_match($pattern, $content, $matches, PREG_OFFSET_CAPTURE, $offset)) {
             $methodName = $matches[1][0];
-            $methodStart = $matches[0][1];
+            $methodStart = (int)$matches[0][1];
             
             if (!in_array($methodName, $excludedMethods, true)) {
                 // Find the matching closing brace
@@ -2103,9 +2103,9 @@ HELP;
                     // Try to find PHPDoc before method
                     $docStart = $methodStart;
                     if (preg_match('/(\/\*\*.*?\*\/)\s*(?=public|protected|private)/s', substr($content, 0, $methodStart), $docMatch, PREG_OFFSET_CAPTURE)) {
-                        $docStart = $docMatch[1][1];
+                        $docStart = (int)$docMatch[1][1];
                     }
-                    $fullMethod = substr($content, $docStart, $methodEnd - $docStart);
+                    $fullMethod = substr($content, (int)$docStart, $methodEnd - $docStart);
                     $methods[] = $fullMethod;
                 }
             }

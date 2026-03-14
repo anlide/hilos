@@ -1201,7 +1201,7 @@ HELP;
 
         // Extract existing column constants from file
         $existingConstants = [];
-        if (preg_match_all('/    public const string (\w+) = \'[^\']+\';\n/', $content, $matches)) {
+        if (preg_match_all('/ {4}public const string (\w+) = \'[^\']+\';\n/', $content, $matches)) {
             $existingConstants = $matches[1];
         }
 
@@ -1258,7 +1258,7 @@ HELP;
         }
 
         // Find position to insert new constants
-        if (preg_match('/(\/\/ Column name constants.*?\n)((?:    public const string \w+ = \'[^\']+\';\n)+)/s', $content, $matches, PREG_OFFSET_CAPTURE)) {
+        if (preg_match('/(\/\/ Column name constants.*?\n)((?: {4}public const string \w+ = \'[^\']+\';\n)+)/s', $content, $matches, PREG_OFFSET_CAPTURE)) {
             $constantsBlock = $matches[2][0];
             $constantsBlockStart = $matches[2][1];
 
@@ -1290,11 +1290,12 @@ HELP;
 
                 // Find the actual position in the constants block
                 if ($insertAfter !== null) {
-                    $pattern = '/(    public const string ' . preg_quote($insertAfter, '/') . ' = \'[^\']+\';\n)/';
+                    $escaped = preg_quote($insertAfter, '/');
+                    $pattern = "/( {4}public const string {$escaped} = '[^']+';\n)/";
                     if (preg_match($pattern, $constantsBlock, $found, PREG_OFFSET_CAPTURE)) {
                         $insertions[] = [
                             'constant' => "    public const string {$newColName} = '{$newColName}';",
-                            'position' => $found[0][1] + strlen($found[0][0]),
+                            'position' => ((int)$found[0][1] + strlen($found[0][0])),
                         ];
                     } else {
                         // Fallback: append
@@ -1320,14 +1321,15 @@ HELP;
             foreach ($insertions as $insertion) {
                 $before = substr($newConstantsBlock, 0, $insertion['position']);
                 $after = substr($newConstantsBlock, $insertion['position']);
-                $newConstantsBlock = $before . $insertion['constant'] . "\n" . $after;
+                $newConstantsBlock = "{$before}{$insertion['constant']}\n{$after}";
             }
 
             $content = str_replace($constantsBlock, $newConstantsBlock, $content);
         } else {
             // Insert after class declaration if no constants section exists
             if (preg_match('/(final class \w+ extends Entity\n\{)/', $content, $matches)) {
-                $content = str_replace($matches[1], $matches[1] . "\n    // Column name constants\n" . implode("\n", $newConstants) . "\n", $content);
+                $replacement = "{$matches[1]}\n    // Column name constants\n" . implode("\n", $newConstants) . "\n";
+                $content = str_replace($matches[1], $replacement, $content);
             }
         }
 
@@ -1593,15 +1595,15 @@ HELP;
             $escapedColName = preg_quote($colName, '/');
             // Single-line comment: entire line with // @object-exclude followed by property line
             // Remove entire comment line (including leading spaces) and property line
-            $pattern = '/^[ \t]*\/\/[^\n]*@object-exclude[^\n]*\n[ \t]*public\s+(?:\?)?\w+\s+\$' . $escapedColName . '(?:\s*=\s*[^;]+)?;\n?/m';
+            $pattern = '/^[ \t]*\/\/[^\n]*@object-exclude[^\n]*\n[ \t]*public\s+\??\w+\s+\$' . $escapedColName . '(?:\s*=\s*[^;]+)?;\n?/m';
             $content = preg_replace($pattern, '', $content);
             // Multi-line comment: entire /** @object-exclude */ block followed by property line
             // Remove entire comment block (including leading spaces) and property line
-            $pattern = '/^[ \t]*\/\*\*[^\*]*@object-exclude[^\*]*\*\/\s*\n[ \t]*public\s+(?:\?)?\w+\s+\$' . $escapedColName . '(?:\s*=\s*[^;]+)?;\n?/m';
+            $pattern = '/^[ \t]*\/\*\*[^*]*@object-exclude[^*]*\*\/\s*\n[ \t]*public\s+\??\w+\s+\$' . $escapedColName . '(?:\s*=\s*[^;]+)?;\n?/m';
             $content = preg_replace($pattern, '', $content);
 
             // Remove column constant (only the line itself, not extra newlines)
-            $pattern = '/    public const string ' . preg_quote($colName, '/') . ' = \'[^\']+\';\n/';
+            $pattern = '/ {4}public const string ' . preg_quote($colName, '/') . ' = \'[^\']+\';\n/';
             $content = preg_replace($pattern, '', $content);
 
             // Remove from _columns array - be more precise to avoid removing extra lines
@@ -1630,7 +1632,7 @@ HELP;
 
             // Remove property if it wasn't already removed with @object-exclude directive
             // Match: public type $name = value; or public type $name;
-            $pattern = '/    public\s+(?:\?[a-z]+|[a-z]+)\s+\$' . preg_quote($colName, '/') . '(?:\s*=\s*[^;]+)?;\n/';
+            $pattern = '/ {4}public\s+(?:\?[a-z]+|[a-z]+)\s+\$' . preg_quote($colName, '/') . '(?:\s*=\s*[^;]+)?;\n/';
             $content = preg_replace($pattern, '', $content);
 
             // Remove from _foreign if exists - already handled separately
@@ -1732,7 +1734,7 @@ HELP;
         // Find class-level @object-exclude directive in PHPDoc
         // Pattern: /** ... @object-exclude field1, field2, field3 ... */
         // The directive can be on a single line or span multiple lines
-        if (preg_match('/(\/\*\*.*?)(\*\s*@object-exclude\s+)([^\n\*]+)(.*?\*\/)/s', $content, $matches)) {
+        if (preg_match('/(\/\*\*.*?)(\*\s*@object-exclude\s+)([^\n*]+)(.*?\*\/)/s', $content, $matches)) {
             $beforeDirective = $matches[1];
             $directiveStart = $matches[2];
             $fieldsString = trim($matches[3]);
@@ -1753,7 +1755,7 @@ HELP;
             if (empty($remainingFields)) {
                 // All fields removed - remove entire @object-exclude line from PHPDoc
                 // Remove entire line including leading spaces and * symbol: [spaces]* @object-exclude field1, field2
-                $pattern = '/^[ \t]*\*\s*@object-exclude\s+[^\n\*]+\n?/m';
+                $pattern = '/^[ \t]*\*\s*@object-exclude\s+[^\n*]+\n?/m';
                 $content = preg_replace($pattern, '', $content);
 
                 // Clean up multiple consecutive empty lines
@@ -1785,10 +1787,10 @@ HELP;
             $offset = 0;
             while (preg_match("/'([^']+)' => \[/", $indexesContent, $nameMatch, PREG_OFFSET_CAPTURE, $offset)) {
                 $indexName = $nameMatch[1][0];
-                $startPos = $nameMatch[0][1];
+                $startPos = (int)$nameMatch[0][1];
 
                 // Find the matching closing bracket for this index definition
-                $bracketStart = $nameMatch[0][1] + strlen($nameMatch[0][0]) - 1; // Position of opening [
+                $bracketStart = ((int)$nameMatch[0][1] + strlen($nameMatch[0][0])) - 1; // Position of opening [
                 $depth = 1;
                 $pos = $bracketStart + 1;
                 $endPos = $pos;
@@ -1816,7 +1818,7 @@ HELP;
                         // Ensure trailing comma (but not double comma)
                         $entry = rtrim($entry, ',');
                         $entry .= ',';
-                        $remainingIndexes[] = "        " . $entry;
+                        $remainingIndexes[] = "        {$entry}";
                     }
 
                     $offset = $endPos;
@@ -1963,7 +1965,7 @@ HELP;
             // Pattern: public (nullable type or type) $name (optional = value);
             // This matches: public ?string $name = null; or public string $name; or public int $id = 0;
             // More precise pattern to match the entire property line
-            $pattern = '/    public\s+(?:\?[a-zA-Z_]+|[a-zA-Z_]+)\s+\$' . $escapedName . '(?:\s*=\s*[^;]+)?;/';
+            $pattern = '/ {4}public\s+(?:\?[a-zA-Z_]+|[a-zA-Z_]+)\s+\$' . $escapedName . '(?:\s*=\s*[^;]+)?;/';
             $replacement = "    public {$phpType} \${$colName}{$default};";
             $content = preg_replace($pattern, $replacement, $content);
         }
@@ -1980,7 +1982,7 @@ HELP;
         $escapedName = preg_quote($colName, '/');
 
         // Match property declaration: public [type] $name [= value];
-        if (preg_match('/    public\s+(\??)([a-zA-Z_]+)\s+\$' . $escapedName . '(?:\s*=\s*([^;]+))?;/', $content, $matches)) {
+        if (preg_match('/ {4}public\s+(\??)([a-zA-Z_]+)\s+\$' . $escapedName . '(?:\s*=\s*([^;]+))?;/', $content, $matches)) {
             $nullable = !empty($matches[1]); // ? prefix means nullable
             $type = $matches[2];
             $default = isset($matches[3]) ? trim($matches[3]) : null;
@@ -2098,7 +2100,7 @@ HELP;
             // Insert before properties or at end
             if (preg_match('/(\/\/ Properties)/', $content, $matches)) {
                 $content = str_replace($matches[1], $indexesSection . $matches[1], $content);
-            } elseif (preg_match('/(\n    \/\/ Properties)/', $content, $matches)) {
+            } elseif (preg_match('/(\n {4}\/\/ Properties)/', $content, $matches)) {
                 $content = str_replace($matches[1], "\n" . $indexesSection . $matches[1], $content);
             } else {
                 // Add before closing brace
@@ -2446,13 +2448,13 @@ HELP;
         // Find position to insert use statements (after existing use statements or after namespace)
         if (preg_match('/(use\s+[^;]+;\n)/', $content, $lastUseMatch, PREG_OFFSET_CAPTURE)) {
             // Insert after last use statement
-            $insertPos = $lastUseMatch[0][1] + strlen($lastUseMatch[0][0]);
+            $insertPos = (int)$lastUseMatch[0][1] + strlen($lastUseMatch[0][0]);
             $before = substr($content, 0, $insertPos);
             $after = substr($content, $insertPos);
-            $content = $before . implode("\n", $newUseStatements) . "\n" . $after;
+            $content = "{$before}" . implode("\n", $newUseStatements) . "\n{$after}";
         } elseif (preg_match('/(namespace\s+[^;]+;\n\n)/', $content, $nsMatch)) {
             // Insert after namespace
-            $content = str_replace($nsMatch[1], $nsMatch[1] . implode("\n", $newUseStatements) . "\n", $content);
+            $content = str_replace($nsMatch[1], "{$nsMatch[1]}" . implode("\n", $newUseStatements) . "\n", $content);
         }
 
         return $content;
