@@ -73,7 +73,8 @@ abstract class DbActions
     /**
      * Magic getter for objectCollection shortcut.
      *
-     * @return Objects
+     * @param string $name Property name (objectCollection)
+     * @return Objects Object collection instance
      * @throws ObjectCollectionNullException If ObjectCollection is null (manual collection)
      */
     public function __get(string $name): mixed

@@ -332,7 +332,6 @@ class ModeratorAgent extends AbstractAgent
      * Expected shape: {"allow": true|false, "reason": "short reason"}
      *
      * @param string $text Raw model output
-     *
      * @return ?array{allow: bool, reason: string} Parsed decision or null when invalid
      */
     private static function parseModerationDecision(string $text): ?array
@@ -357,7 +356,6 @@ class ModeratorAgent extends AbstractAgent
      * Extract first JSON object from model output text.
      *
      * @param string $text Raw model output
-     *
      * @return ?string JSON object string when found, null otherwise
      */
     private static function extractJsonObject(string $text): ?string
@@ -384,7 +382,6 @@ class ModeratorAgent extends AbstractAgent
      * @param string   $message Message text to moderate
      * @param ?int     $userId User id when moderating user message
      * @param ?int     $botId Bot id when moderating bot message
-     *
      * @return list<Message> System and user messages for LLM
      */
     private function buildModerationMessages(string $message, ?int $userId = null, ?int $botId = null): array

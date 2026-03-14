@@ -20,10 +20,19 @@ use Hilos\Utils\Logger;
  */
 final class GuardiansOpsAgent extends AbstractGuardianAgent
 {
+    /** @var float Next scheduled run timestamp in milliseconds */
     private float $nextRunAtMs = 0.0;
+
+    /** @var DbEventsReadCapability Events read capability */
     private DbEventsReadCapability $eventsCapability;
+
+    /** @var DbReadCapability Database read capability */
     private DbReadCapability $dbCapability;
+
+    /** @var RtReadCapability Runtime read capability */
     private RtReadCapability $rtCapability;
+
+    /** @var NotesReadWriteCapability Notes read/write capability */
     private NotesReadWriteCapability $notesCapability;
 
     /**
@@ -66,6 +75,9 @@ final class GuardiansOpsAgent extends AbstractGuardianAgent
         Logger::logAgentStart($this->getId(), $this->getType());
     }
 
+    /**
+     * Called when agent is stopped.
+     */
     public function onStop(): void
     {
         Logger::logAgentStop($this->getId(), $this->getType());

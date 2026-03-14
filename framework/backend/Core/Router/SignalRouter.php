@@ -76,17 +76,19 @@ class SignalRouter
 
     /**
      * User page subscriptions storage
-     * Format: [acceptKey => ['page' => string, 'params' => array]]
      *
-     * @var array
+     * Format: [acceptKey => [pageKey => string, paramsKey => array<string, mixed>]]
+     *
+     * @var array<string, array<string, mixed>>
      */
     private array $subscriptionPages = [];
 
     /**
      * User group subscriptions storage
+     *
      * Format: [acceptKey => [groupName => params, ...]]
      *
-     * @var array
+     * @var array<string, array<string, array<string, mixed>>>
      */
     private array $subscriptionGroups = [];
 
@@ -175,6 +177,7 @@ class SignalRouter
      * Skips if broadcast disabled. Registers (collectionKey, idString) for self-apply skip.
      *
      * @param string $signalName Signal name (e.g. SignalConstants::DB_SYNC_CREATED)
+     * @param SignalDataInterface $signalData Signal data with collectionKey and idString
      */
     public function queueDbSyncSignal(string $signalName, SignalDataInterface $signalData): void
     {
@@ -200,6 +203,8 @@ class SignalRouter
     /**
      * Check if apply should be skipped (self-broadcast) and remove from registry.
      *
+     * @param string $collectionKey Collection key for sync
+     * @param string $idString Entity ID string
      * @return bool True if this was our broadcast, skip apply
      */
     public function shouldSkipDbSyncApply(string $collectionKey, string $idString): bool
@@ -217,6 +222,7 @@ class SignalRouter
      * Registers (collectionKey, stateId) for self-apply skip.
      *
      * @param string $signalName Signal name (e.g. SignalConstants::RT_SYNC_CREATED)
+     * @param SignalDataInterface $signalData Signal data with collectionKey and stateId
      */
     public function queueRtSyncSignal(string $signalName, SignalDataInterface $signalData): void
     {
@@ -238,6 +244,8 @@ class SignalRouter
     /**
      * Check if RT sync apply should be skipped (self-broadcast) and remove from registry.
      *
+     * @param string $collectionKey Collection key for sync
+     * @param string $stateId Runtime state ID
      * @return bool True if this was our broadcast, skip apply
      */
     public function shouldSkipRtSyncApply(string $collectionKey, string $stateId): bool

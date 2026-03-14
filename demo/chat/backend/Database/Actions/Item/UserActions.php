@@ -26,7 +26,6 @@ final class UserActions extends DbActions
      * Renames current user item (only editable field). Validates and persists.
      *
      * @param string $newName New display name (trimmed)
-     *
      * @throws HilosException On error (user not found, invalid name, database error, etc.)
      * @throws RuntimeException If user not found or name validation fails
      */

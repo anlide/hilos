@@ -11,7 +11,7 @@ use Hilos\Socket\Client\WorkerClient;
 use Hilos\Utils\Logger;
 
 /**
- * AbstractAgentDaemon - Abstract base class for agent proxies in daemon
+ * AbstractAgentDaemon - Abstract base class for agent proxies in daemon.
  *
  * Provides base implementation for agent proxies. Child classes must implement:
  * - getType() - return agent type

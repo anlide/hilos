@@ -149,7 +149,7 @@ class SignalDTO extends BaseDTO
      * Deserializes signal data from array.
      *
      * @param array<string, mixed> $dataArray Signal data array
-     * @param ?string $dataType Signal data class name for deserialization
+     * @param class-string<SignalDataInterface>|null $dataType Signal data class name for deserialization
      * @return SignalDataInterface Deserialized signal data
      */
     private static function deserializeSignalData(array $dataArray, ?string $dataType): SignalDataInterface

@@ -12,8 +12,10 @@ use Hilos\Database\Object\Item\Object_;
  */
 class FilteredCollection extends Objects
 {
+    /** @var Objects source collection */
     private Objects $sourceCollection;
-    /** @var Object_[] [key => Object_] - only references to objects from sourceCollection */
+
+    /** @var array<string, Object_> key => Object_ references to objects from sourceCollection */
     private array $filteredObjects;
 
     /**

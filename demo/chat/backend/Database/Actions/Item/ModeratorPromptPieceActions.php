@@ -22,7 +22,6 @@ final class ModeratorPromptPieceActions extends DbActions
      * Updates piece fields. Only provided keys are updated.
      *
      * @param array<string, mixed> $data Fields to update (keys: ObjectPiece::section, ObjectPiece::promptPiece)
-     *
      * @throws HilosException On error (invalid data, database error, etc.)
      * @throws RuntimeException If piece not found for update
      */

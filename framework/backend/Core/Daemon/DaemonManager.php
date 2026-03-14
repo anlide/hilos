@@ -77,7 +77,7 @@ abstract class DaemonManager extends BaseManager
     /** @var float Shutdown timeout in seconds */
     protected float $shutdownTimeout = 20.0;
 
-    /** @var CronRule[] Array of cron rules */
+    /** @var array<string, CronRule> cron rules by name */
     private array $cronRules = [];
 
     /** @var int Last cron check minute timestamp (minute-level, from floor(time() / 60)) */
@@ -105,7 +105,7 @@ abstract class DaemonManager extends BaseManager
      * Must be implemented in child classes to create specific signal router.
      * The created instance is registered globally via Hilos::$sr.
      *
-     * @return SignalRouter
+     * @return SignalRouter Signal router instance
      */
     abstract protected function createSignalRouter(): SignalRouter;
 
@@ -114,18 +114,19 @@ abstract class DaemonManager extends BaseManager
      *
      * Must be implemented in child classes to create specific agent manager daemon.
      *
-     * @return AgentManagerDaemon
+     * @return AgentManagerDaemon Agent manager daemon instance
      */
     abstract protected function createAgentManagerDaemon(): AgentManagerDaemon;
 
     /**
-     * Run daemon - main method
+     * Run daemon - main method.
      *
      * Starts the daemon main loop with error handling, signal processing
      * and precise timing control. Runs until shutdown signal is received
      * and all servers are ready to shutdown (or timeout expires).
-     * @throws AgentDaemonCreationFailedException
-     * @throws NoSuitableWorkerException
+     *
+     * @throws AgentDaemonCreationFailedException If agent daemon cannot be created
+     * @throws NoSuitableWorkerException If no suitable worker is available for signal
      */
     public function run(): void
     {
@@ -440,8 +441,9 @@ abstract class DaemonManager extends BaseManager
      * Processes all queued signals from SignalRouter and sends them to appropriate agents via WorkerServer.
      * Signals are processed one by one in while-do loop.
      * Called at the end of each loop iteration.
-     * @throws AgentDaemonCreationFailedException
-     * @throws NoSuitableWorkerException
+     *
+     * @throws AgentDaemonCreationFailedException If agent daemon cannot be created
+     * @throws NoSuitableWorkerException If no suitable worker is available for signal
      */
     private function dispatchSignals(): void
     {
@@ -584,7 +586,10 @@ abstract class DaemonManager extends BaseManager
     }
 
     /**
-     * Send sync signal to all worker clients
+     * Send sync signal to all worker clients.
+     *
+     * @param WorkerServer $workerServer Worker server instance
+     * @param SignalDTO $signal Signal DTO to send
      */
     private function sendSyncToWorkers(WorkerServer $workerServer, SignalDTO $signal): void
     {
@@ -829,7 +834,7 @@ abstract class DaemonManager extends BaseManager
     }
 
     /**
-     * Add cron rule
+     * Add cron rule.
      *
      * @param string $name Cron job name (unique identifier)
      * @param string $expression Cron expression (minute hour day month weekday), e.g., "*\/5 * * * *"
@@ -840,7 +845,7 @@ abstract class DaemonManager extends BaseManager
     }
 
     /**
-     * Update cron rule expression
+     * Update cron rule expression.
      *
      * @param string $name Cron job name
      * @param string $expression New cron expression (minute hour day month weekday)
@@ -857,7 +862,7 @@ abstract class DaemonManager extends BaseManager
     }
 
     /**
-     * Remove cron rule
+     * Remove cron rule.
      *
      * @param string $name Cron job name
      * @return bool True if rule was found and removed
@@ -873,9 +878,9 @@ abstract class DaemonManager extends BaseManager
     }
 
     /**
-     * Get all cron rules
+     * Get all cron rules.
      *
-     * @return CronRule[] Array of cron rules
+     * @return array<string, CronRule> Cron rules by name
      */
     public function getCronRules(): array
     {
@@ -883,7 +888,7 @@ abstract class DaemonManager extends BaseManager
     }
 
     /**
-     * Check cron jobs and execute if needed
+     * Check cron jobs and execute if needed.
      *
      * Checks all cron rules and executes jobs that are due.
      * This method is called on each loop iteration but only

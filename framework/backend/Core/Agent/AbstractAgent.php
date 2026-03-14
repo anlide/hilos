@@ -32,13 +32,13 @@ use Hilos\Socket\WebSocket\DTO\WebSocketPageUnsubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageUpdateSubscriptionSignalDTO;
 
 /**
- * AbstractAgent - Abstract base class for agents running in worker processes
+ * AbstractAgent - Abstract base class for agents running in worker processes.
  *
  * Provides base implementation for agents. Child classes must implement:
  * - getType() - return agent type
  * - getIndex() - return agent index (can return null)
  * - doTick() - agent work logic (override this instead of tick())
- * - Signal handling methods (can override onSignal* methods for specific signal types)
+ * - Signal handling methods (can override onSignal* methods for specific signal types).
  */
 abstract class AbstractAgent implements AgentInterface, PageAgentInterface
 {

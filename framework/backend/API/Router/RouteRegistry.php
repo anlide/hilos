@@ -12,7 +12,7 @@ namespace Hilos\API\Router;
  */
 class RouteRegistry
 {
-    /** @var array Registered routes */
+    /** @var array<string, array<string, array<string, mixed>>> routes by method and path */
     private array $routes = [];
 
     /**
