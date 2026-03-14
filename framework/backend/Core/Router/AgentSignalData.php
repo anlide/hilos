@@ -14,15 +14,20 @@ use Hilos\BaseDTO;
  */
 class AgentSignalData extends BaseDTO implements SignalDataInterface
 {
+    /**
+     * Creates agent signal data with inner payload.
+     *
+     * @param SignalDataInterface $data Inner signal payload (e.g. ModerationRequestSignalData)
+     */
     public function __construct(
         public readonly SignalDataInterface $data,
     ) {
     }
 
     /**
-     * Convert DTO to array
+     * Converts DTO to array for transport.
      *
-     * @return array DTO data as array
+     * @return array<string, mixed> DTO data with data and dataType keys
      */
     public function toArray(): array
     {
@@ -37,9 +42,9 @@ class AgentSignalData extends BaseDTO implements SignalDataInterface
     }
 
     /**
-     * Create DTO from array
+     * Creates DTO from array.
      *
-     * @param array $data Source data
+     * @param array<string, mixed> $data Source data (data, dataType keys)
      * @return static DTO instance
      */
     public static function fromArray(array $data): static
@@ -53,10 +58,10 @@ class AgentSignalData extends BaseDTO implements SignalDataInterface
     }
 
     /**
-     * Deserialize inner signal data from array
+     * Deserializes inner signal data from array.
      *
-     * @param array $dataArray Signal data array
-     * @param ?string $dataType Signal data class name
+     * @param array<string, mixed> $dataArray Signal data array
+     * @param ?string $dataType Signal data class name for deserialization
      * @return SignalDataInterface Deserialized signal data
      */
     private static function deserializeInnerData(array $dataArray, ?string $dataType): SignalDataInterface

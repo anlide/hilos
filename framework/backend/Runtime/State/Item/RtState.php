@@ -17,14 +17,14 @@ use Hilos\Runtime\Exception\State\RtStateUnserializeException;
 abstract class RtState
 {
     /**
-     * Protected constructor - use static factory methods
+     * Protected constructor. Child classes must use static factory methods (e.g. fromRow).
      */
     protected function __construct()
     {
     }
 
     /**
-     * Protected clone - prevent cloning
+     * Protected clone. Prevents cloning of RtState instances.
      */
     protected function __clone()
     {
@@ -36,7 +36,7 @@ abstract class RtState
      * RtState instances cannot be safely unserialized as they represent
      * transient runtime state that should not persist across processes.
      *
-     * @throws RtStateUnserializeException
+     * @throws RtStateUnserializeException Always, unserialization not allowed
      */
     public function __wakeup(): void
     {
@@ -44,23 +44,35 @@ abstract class RtState
     }
 
     /**
-     * Debug info
+     * Returns state as array for var_dump/print_r debug output.
      *
-     * @return array
+     * @return array<string, mixed> State fields as associative array
      */
     public function __debugInfo(): array
     {
         return $this->toArray();
     }
 
-    /** @throws RtStatePropertyNotFoundException */
+    /**
+     * Magic getter for property access. Override in child classes to expose state fields.
+     *
+     * @param string $name Property name
+     * @return mixed Property value (child classes must override; base always throws)
+     * @throws RtStatePropertyNotFoundException When property does not exist (base implementation)
+     */
     public function __get(string $name): mixed
     {
         $className = static::class;
         throw new RtStatePropertyNotFoundException("Property [{$name}] does not exist on {$className}");
     }
 
-    /** @throws RtStateReadOnlyException */
+    /**
+     * Magic setter. RtState is read-only from outside; all state changes go via applyDiff/RT sync.
+     *
+     * @param string $name Property name
+     * @param mixed $value Value (ignored, always throws)
+     * @throws RtStateReadOnlyException Always, external writes not allowed
+     */
     final public function __set(string $name, mixed $value): never
     {
         $className = static::class;
@@ -100,6 +112,8 @@ abstract class RtState
 
     /**
      * Convert state to array representation.
+     *
+     * @return array<string, mixed> State fields as associative array
      */
     abstract public function toArray(): array;
 }

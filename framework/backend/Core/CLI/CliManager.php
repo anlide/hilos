@@ -209,9 +209,9 @@ class CliManager
     }
 
     /**
-     * Get positional arguments
+     * Returns positional arguments (non-option CLI arguments).
      *
-     * @return array Array of positional arguments
+     * @return array<int, string> Positional arguments
      */
     public function getArgs(): array
     {

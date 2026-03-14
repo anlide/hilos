@@ -61,7 +61,7 @@ abstract class DbActions
     private $clearCacheCallback = null;
 
     /**
-     * Constructor
+     * Creates DbActions with DbCollection instance.
      *
      * @param DbCollection<T, TObjectCollection> $collection DbCollection instance
      */

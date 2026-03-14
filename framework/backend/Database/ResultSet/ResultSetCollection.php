@@ -196,10 +196,11 @@ class ResultSetCollection implements \Iterator, \Countable
     }
 
     /**
-     * Get all rows from first result set (convenience method for chaining)
-     * Note: This loads all rows into memory. For large datasets, use first()->row() in a loop instead.
+     * Returns all rows from first result set (convenience for chaining).
      *
-     * @return array Array of associative arrays
+     * Note: loads all rows into memory. For large datasets, use first()->row() in a loop.
+     *
+     * @return array<int, array<string, mixed>> Array of row arrays
      */
     public function rows(): array
     {
@@ -211,10 +212,11 @@ class ResultSetCollection implements \Iterator, \Countable
     }
 
     /**
-     * Get single row from first result set (convenience method for chaining)
-     * Advances the internal pointer, so each call returns the next row
+     * Returns single row from first result set (convenience for chaining).
      *
-     * @return ?array Associative array or null if no more rows
+     * Advances internal pointer; each call returns the next row.
+     *
+     * @return ?array<string, mixed> Row as associative array or null if no more rows
      */
     public function row(): ?array
     {
@@ -281,10 +283,11 @@ class ResultSetCollection implements \Iterator, \Countable
     }
 
     /**
-     * Get first row from first result set (convenience method)
-     * Does not advance the pointer - always returns the first row
+     * Returns first row from first result set (convenience).
      *
-     * @return ?array First row or null if empty
+     * Does not advance pointer; always returns the first row.
+     *
+     * @return ?array<string, mixed> First row or null if empty
      */
     public function firstRow(): ?array
     {
@@ -321,11 +324,12 @@ class ResultSetCollection implements \Iterator, \Countable
     }
 
     /**
-     * Get array of values from a single column (pluck)
-     * Useful for queries like "SELECT id FROM users"
+     * Returns array of values from a single column (pluck).
+     *
+     * Useful for queries like "SELECT id FROM users".
      *
      * @param string $columnName Column name to pluck
-     * @return array Array of column values
+     * @return array<int, mixed> Array of column values
      */
     public function pluck(string $columnName): array
     {
@@ -346,9 +350,9 @@ class ResultSetCollection implements \Iterator, \Countable
     }
 
     /**
-     * Get all rows as array (alias for rows() for consistency)
+     * Returns all rows as array (alias for rows()).
      *
-     * @return array Array of associative arrays
+     * @return array<int, array<string, mixed>> Array of row arrays
      */
     public function toArray(): array
     {

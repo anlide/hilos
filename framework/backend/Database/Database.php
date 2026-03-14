@@ -501,10 +501,11 @@ class Database
     }
 
     /**
-     * Get all rows from current result set
-     * Note: This loads all rows into memory. For large datasets, use row() in a loop instead.
+     * Returns all rows from current result set.
      *
-     * @return array Array of associative arrays
+     * Note: loads all rows into memory. For large datasets, use row() in a loop.
+     *
+     * @return array<int, array<string, mixed>> Array of row arrays (key preserved)
      */
     public static function rows(): array
     {
@@ -519,10 +520,11 @@ class Database
     }
 
     /**
-     * Get single row from current result set
-     * Advances the internal pointer, so each call returns the next row
+     * Returns single row from current result set.
      *
-     * @return ?array Associative array or null if no more rows
+     * Advances internal pointer; each call returns the next row.
+     *
+     * @return ?array<string, mixed> Row as associative array or null if no more rows
      */
     public static function row(): ?array
     {

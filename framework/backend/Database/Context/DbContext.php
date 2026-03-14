@@ -37,7 +37,7 @@ abstract class DbContext
     protected array $_dbItemCollections = [];
 
     /**
-     * Constructor. Called from facade createDb().
+     * Creates DB context. Called from facade createDb().
      */
     public function __construct()
     {
@@ -46,7 +46,7 @@ abstract class DbContext
     /**
      * Public clone - prevent cloning.
      *
-     * @throws CloneNotAllowedException
+     * @throws CloneNotAllowedException Always, cloning not allowed
      */
     public function __clone(): void
     {

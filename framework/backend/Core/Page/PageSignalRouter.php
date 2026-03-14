@@ -19,7 +19,7 @@ use Hilos\Utils\Logger;
 class PageSignalRouter
 {
     /**
-     * Constructor
+     * Creates page signal router with factory and action routes.
      *
      * @param AbstractPageFactory $pageFactory Page factory for resolving pages
      * @param ActionRouteConfig $actionRoutes Action-to-page route config

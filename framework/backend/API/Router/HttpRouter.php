@@ -21,7 +21,7 @@ class HttpRouter
     private RouteResolver $resolver;
 
     /**
-     * HttpRouter constructor
+     * Creates HTTP router with default registry and resolver.
      */
     public function __construct()
     {
@@ -42,10 +42,10 @@ class HttpRouter
     }
 
     /**
-     * Route an HTTP request
+     * Routes HTTP request to matching handler.
      *
-     * @param array $request Request data
-     * @return array Response data
+     * @param array<string, mixed> $request Request data (method, path, etc.)
+     * @return array<string, mixed> Response data (status, headers, body)
      */
     public function route(array $request): array
     {

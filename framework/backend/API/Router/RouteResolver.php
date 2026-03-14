@@ -15,11 +15,11 @@ use Hilos\Constants\HttpConstants;
 class RouteResolver
 {
     /**
-     * Resolve route and execute handler
+     * Resolves route and executes handler.
      *
-     * @param array $route Route data with handler
-     * @param array $request Request data
-     * @return array Response data
+     * @param array<string, mixed> $route Route data (handler, params)
+     * @param array<string, mixed> $request Request data (method, path, etc.)
+     * @return array<string, mixed> Response data (status, headers, body)
      */
     public function resolve(array $route, array $request): array
     {
@@ -40,10 +40,10 @@ class RouteResolver
     }
 
     /**
-     * Format handler result into HTTP response
+     * Formats handler result into HTTP response.
      *
-     * @param mixed $result Handler result
-     * @return array HTTP response
+     * @param mixed $result Handler result (array, string, or other)
+     * @return array<string, mixed> Response with status, headers, body keys
      */
     private function formatResponse($result): array
     {

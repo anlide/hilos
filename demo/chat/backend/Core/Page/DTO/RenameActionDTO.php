@@ -14,7 +14,7 @@ use Demo\Chat\Constants\ChatSignalConstants;
 class RenameActionDTO extends ChatActionPayloadDTO
 {
     /**
-     * Constructor
+     * Creates rename action DTO.
      *
      * @param string $newName New username
      */

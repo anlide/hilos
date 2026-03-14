@@ -20,6 +20,13 @@ class WebSocketGroupUpdateSubscriptionSignalDTO extends BaseDTO implements Signa
     public const string GROUP = 'group';
     public const string PARAMS = 'params';
 
+    /**
+     * Creates group update subscription signal DTO.
+     *
+     * @param string $acceptKey WebSocket accept key
+     * @param string $group Group name (empty for default)
+     * @param array<string, string> $params Route params for group
+     */
     public function __construct(
         public readonly string $acceptKey,
         public readonly string $group = '',
@@ -28,9 +35,9 @@ class WebSocketGroupUpdateSubscriptionSignalDTO extends BaseDTO implements Signa
     }
 
     /**
-     * Convert DTO to array
+     * Converts DTO to array for transport.
      *
-     * @return array DTO data as array
+     * @return array<string, mixed> DTO data with acceptKey, optional group and params
      */
     public function toArray(): array
     {
@@ -50,9 +57,9 @@ class WebSocketGroupUpdateSubscriptionSignalDTO extends BaseDTO implements Signa
     }
 
     /**
-     * Create DTO from array
+     * Creates DTO from array.
      *
-     * @param array $data Source data
+     * @param array<string, mixed> $data Source data (acceptKey, group, params)
      * @return static DTO instance
      */
     public static function fromArray(array $data): static

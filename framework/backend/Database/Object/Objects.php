@@ -636,7 +636,7 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
     /**
      * Convert collection to array
      *
-     * @return array
+     * @return array<int|string, array<string, mixed>> Array of object arrays (key preserved)
      */
     public function toArray(): array
     {

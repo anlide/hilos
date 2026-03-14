@@ -39,11 +39,11 @@ class RouteRegistry
     }
 
     /**
-     * Match a route for given method and path
+     * Match a route for given method and path.
      *
      * @param string $method HTTP method
      * @param string $path URL path
-     * @return ?array Route data or null if not found
+     * @return array<string, mixed>|null Route data (method, path, handler, pattern, params) or null if not found
      */
     public function match(string $method, string $path): ?array
     {
@@ -89,9 +89,9 @@ class RouteRegistry
     }
 
     /**
-     * Get all registered routes
+     * Returns all registered routes.
      *
-     * @return array All routes
+     * @return array<string, array<string, array<string, mixed>>> Routes by method and path
      */
     public function getRoutes(): array
     {

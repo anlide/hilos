@@ -22,6 +22,14 @@ use Hilos\Utils\Logger;
  */
 class SignalDTO extends BaseDTO
 {
+    /**
+     * Creates signal DTO with source, type, name and data.
+     *
+     * @param SignalSourceInterface $signalSource Signal source (agent, worker, etc.)
+     * @param SignalTypeInterface $signalType Signal type (frame, handshake, action, etc.)
+     * @param SignalNameInterface $signalName Signal name
+     * @param SignalDataInterface $data Signal payload data
+     */
     public function __construct(
         public readonly SignalSourceInterface $signalSource,
         public readonly SignalTypeInterface $signalType,
@@ -31,9 +39,9 @@ class SignalDTO extends BaseDTO
     }
 
     /**
-     * Convert DTO to array
+     * Converts DTO to array for transport.
      *
-     * @return array DTO data as array
+     * @return array<string, mixed> DTO data with signalSource, signalType, signalName, data, dataType keys
      */
     public function toArray(): array
     {
@@ -63,9 +71,9 @@ class SignalDTO extends BaseDTO
     }
 
     /**
-     * Create DTO from array
+     * Creates DTO from array.
      *
-     * @param array $data Source data
+     * @param array<string, mixed> $data Source data (signalSource, signalType, signalName, data required)
      * @return static DTO instance
      * @throws \InvalidArgumentException If required fields are missing or invalid
      */
@@ -138,10 +146,10 @@ class SignalDTO extends BaseDTO
     }
 
     /**
-     * Deserialize signal data from array
+     * Deserializes signal data from array.
      *
-     * @param array $dataArray Signal data array
-     * @param ?string $dataType Signal data class name
+     * @param array<string, mixed> $dataArray Signal data array
+     * @param ?string $dataType Signal data class name for deserialization
      * @return SignalDataInterface Deserialized signal data
      */
     private static function deserializeSignalData(array $dataArray, ?string $dataType): SignalDataInterface
@@ -200,7 +208,7 @@ class SignalDTO extends BaseDTO
      * Attempts to find and use framework equivalent of custom class.
      *
      * @param string $originalClass Original class name (may be custom class outside framework)
-     * @param array $dataArray Data array for deserialization
+     * @param array<string, mixed> $dataArray Data array for deserialization
      * @return ?SignalDataInterface Deserialized signal data or null if fallback failed
      */
     private static function tryFrameworkClassFallback(string $originalClass, array $dataArray): ?SignalDataInterface

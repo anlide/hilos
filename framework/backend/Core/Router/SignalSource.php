@@ -22,7 +22,7 @@ class SignalSource implements SignalSourceInterface
     public const string RT = 'rt';
 
     /**
-     * SignalSource constructor
+     * Creates signal source with source, type and optional index.
      *
      * @param string $source Signal source (use constants from this class)
      * @param ?string $type Signal source type (optional)

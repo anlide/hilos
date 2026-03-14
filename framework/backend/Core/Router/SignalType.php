@@ -12,9 +12,9 @@ namespace Hilos\Core\Router;
 class SignalType implements SignalTypeInterface
 {
     /**
-     * SignalType constructor
+     * Creates signal type instance.
      *
-     * @param string $type Signal type
+     * @param string $type Signal type (e.g. frame, handshake, action)
      */
     public function __construct(
         private readonly string $type,

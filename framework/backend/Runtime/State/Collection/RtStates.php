@@ -67,9 +67,9 @@ abstract class RtStates implements Iterator, ArrayAccess, Countable
     }
 
     /**
-     * Public clone - prevent cloning
+     * Public clone - prevent cloning.
      *
-     * @throws RtStatesCloneException
+     * @throws RtStatesCloneException Always, cloning not allowed
      */
     public function __clone(): void
     {
@@ -77,9 +77,9 @@ abstract class RtStates implements Iterator, ArrayAccess, Countable
     }
 
     /**
-     * Public wakeup - prevent unserialization
+     * Public wakeup - prevent unserialization.
      *
-     * @throws RtStatesUnserializeException
+     * @throws RtStatesUnserializeException Always, unserialization not allowed
      */
     public function __wakeup(): void
     {
@@ -87,9 +87,9 @@ abstract class RtStates implements Iterator, ArrayAccess, Countable
     }
 
     /**
-     * Debug info
+     * Debug info.
      *
-     * @return array
+     * @return array<string, array<string, mixed>> Id => state array map
      */
     public function __debugInfo(): array
     {
@@ -117,10 +117,10 @@ abstract class RtStates implements Iterator, ArrayAccess, Countable
     }
 
     /**
-     * Check if state exists in collection
+     * Check if state exists in collection.
      *
      * @param string $id State ID
-     * @return bool
+     * @return bool True if state exists
      */
     public function has(string $id): bool
     {
@@ -128,10 +128,10 @@ abstract class RtStates implements Iterator, ArrayAccess, Countable
     }
 
     /**
-     * Get state by ID
+     * Get state by ID.
      *
      * @param string $id State ID
-     * @return ?RtState
+     * @return ?RtState State instance or null if not found
      */
     public function get(string $id): ?RtState
     {
@@ -149,10 +149,10 @@ abstract class RtStates implements Iterator, ArrayAccess, Countable
     }
 
     /**
-     * Convert all states to array
+     * Convert all states to array.
      *
      * @param bool $idAsIndex Use ID as array index
-     * @return array
+     * @return array<string|int, array<string, mixed>> Id => state array (if idAsIndex) or list of state arrays
      */
     public function toArray(bool $idAsIndex = true): array
     {
@@ -168,9 +168,9 @@ abstract class RtStates implements Iterator, ArrayAccess, Countable
     }
 
     /**
-     * Get first state
+     * Get first state.
      *
-     * @return ?RtState
+     * @return ?RtState First state or null if empty
      */
     public function first(): ?RtState
     {

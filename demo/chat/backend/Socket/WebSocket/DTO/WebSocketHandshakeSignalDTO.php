@@ -16,11 +16,9 @@ use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO as FrameworkWebSocket
 class WebSocketHandshakeSignalDTO extends FrameworkWebSocketHandshakeSignalDTO implements ChatMessageDTOInterface
 {
     /**
-     * Create DTO from array
+     * Creates DTO from array. Override returns correct child class type.
      *
-     * Override parent method to return correct child class type.
-     *
-     * @param array $data Source data
+     * @param array<string, mixed> $data Source data (headers, acceptKey, cookies, clientIp, queryParams)
      * @return static DTO instance
      */
     public static function fromArray(array $data): static

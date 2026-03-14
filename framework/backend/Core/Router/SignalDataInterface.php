@@ -14,9 +14,9 @@ namespace Hilos\Core\Router;
 interface SignalDataInterface
 {
     /**
-     * Convert signal data to array
+     * Converts signal data to array for transport/serialization.
      *
-     * @return array Signal data as array
+     * @return array<string, mixed> Signal data as associative array
      */
     public function toArray(): array;
 }

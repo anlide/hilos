@@ -14,7 +14,7 @@ use Demo\Chat\Constants\ChatSignalConstants;
 class MessageActionDTO extends ChatActionPayloadDTO
 {
     /**
-     * Constructor
+     * Creates message action DTO.
      *
      * @param string $content Message content
      */

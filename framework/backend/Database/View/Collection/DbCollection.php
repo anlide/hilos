@@ -108,17 +108,18 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
     private int $savedPosition = 0;
 
     /**
-     * Constructor - should be called by child classes via init() or initEmpty()
+     * Creates empty collection. Should be called by child classes via init() or initEmpty().
      */
     protected function __construct()
     {
     }
 
     /**
-     * Initialize collection in automatic mode (wraps ObjectCollection)
-     * Default implementation - child classes can override if needed
+     * Initialize collection in automatic mode (wraps ObjectCollection).
      *
-     * @return static
+     * Default implementation - child classes can override if needed.
+     *
+     * @return static New collection instance in automatic mode
      */
     public static function init(): static
     {
@@ -128,10 +129,11 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
     }
 
     /**
-     * Initialize empty collection in manual mode (populated manually via add())
-     * Default implementation - child classes can override if needed
+     * Initialize empty collection in manual mode (populated manually via add()).
      *
-     * @return static
+     * Default implementation - child classes can override if needed.
+     *
+     * @return static New empty collection in manual mode
      */
     public static function initEmpty(): static
     {
@@ -157,10 +159,11 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
     }
 
     /**
-     * Public clone - prevent cloning
+     * Public clone - prevent cloning.
+     *
      * DbCollection instances should not be cloned.
      *
-     * @throws CloneException
+     * @throws CloneException Always, cloning not allowed
      */
     public function __clone(): void
     {
@@ -168,10 +171,11 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
     }
 
     /**
-     * Public wakeup - prevent unserialization
+     * Public wakeup - prevent unserialization.
+     *
      * DbCollection instances cannot be safely unserialized.
      *
-     * @throws UnserializeException
+     * @throws UnserializeException Always, unserialization not allowed
      */
     public function __wakeup(): void
     {
