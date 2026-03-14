@@ -160,7 +160,7 @@ HELP;
     }
 
     /**
-     * Display status table
+     * Display daemon status table to stdout.
      */
     private function displayStatusTable(): void
     {
@@ -177,7 +177,9 @@ HELP;
     }
 
     /**
-     * Get daemon status value
+     * Get formatted daemon status (online/offline).
+     *
+     * @return string STATUS_ONLINE or STATUS_OFFLINE
      */
     private function getStatusValue(): string
     {
@@ -190,7 +192,9 @@ HELP;
     }
 
     /**
-     * Get daemon uptime value
+     * Get formatted daemon uptime string (HH:MM:SS).
+     *
+     * @return string Uptime string or VALUE_NOT_AVAILABLE
      */
     private function getUptimeValue(): string
     {
@@ -202,7 +206,9 @@ HELP;
     }
 
     /**
-     * Get daemon memory usage
+     * Get formatted daemon memory usage string.
+     *
+     * @return string Memory string (e.g. "15.2 MB") or VALUE_NOT_AVAILABLE
      */
     private function getMemoryValue(): string
     {
@@ -214,7 +220,9 @@ HELP;
     }
 
     /**
-     * Get daemon CPU usage
+     * Get formatted daemon CPU usage string (percentage).
+     *
+     * @return string CPU percentage or VALUE_NOT_AVAILABLE
      */
     private function getCpuValue(): string
     {
@@ -226,7 +234,9 @@ HELP;
     }
 
     /**
-     * Get regular workers count
+     * Get formatted regular workers count string.
+     *
+     * @return string Workers count or VALUE_NOT_AVAILABLE
      */
     private function getWorkersRegularValue(): string
     {
@@ -238,7 +248,9 @@ HELP;
     }
 
     /**
-     * Get monopolistic workers count
+     * Get formatted monopolistic workers count string.
+     *
+     * @return string Workers count or VALUE_NOT_AVAILABLE
      */
     private function getWorkersMonopolisticValue(): string
     {
@@ -250,7 +262,9 @@ HELP;
     }
 
     /**
-     * Get maximum regular workers count
+     * Get formatted maximum regular workers count string.
+     *
+     * @return string Max workers count or VALUE_NOT_AVAILABLE
      */
     private function getWorkersMaxRegularValue(): string
     {

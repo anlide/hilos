@@ -74,8 +74,8 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
      * Automatically determines loading behavior based on strategy
      *
      * @param int $strategy Lazy loading strategy (LAZY_STRATEGY_BATCH by default)
-     * @return static
-     * @throws DatabaseException
+     * @return static Collection instance
+     * @throws DatabaseException If configuration fails
      */
     public static function initDB(int $strategy = self::LAZY_STRATEGY_BATCH): static
     {
@@ -98,10 +98,11 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
     }
 
     /**
-     * Load all objects from database
-     * Clears existing objects and loads all from database
+     * Load all objects from database.
      *
-     * @throws DatabaseException
+     * Clears existing objects and loads all from database.
+     *
+     * @throws DatabaseException If database query fails
      */
     public function loadAllFromDB(): void
     {
@@ -119,8 +120,8 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
     /**
      * Initialize collection with all objects from database
      *
-     * @return static
-     * @throws DatabaseException
+     * @return static Collection instance
+     * @throws DatabaseException If configuration fails
      * @deprecated Use initDB(LAZY_STRATEGY_NONE) instead
      */
     public static function initFullDB(): static
@@ -223,7 +224,7 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
      * @param TableQueryDTO $query Query parameters
      *
      * @return array{objects: array<int|string, Object_>, totalCount: int}
-     * @throws DatabaseException
+     * @throws DatabaseException If database query fails
      */
     public function queryPage(TableQueryDTO $query): array
     {
@@ -381,10 +382,10 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
     }
 
     /**
-     * Set object at offset
+     * Set object at offset.
      *
-     * @param mixed $offset
-     * @param T $value
+     * @param mixed $offset Array key (int or string)
+     * @param T $value Object instance to set
      */
     public function offsetSet($offset, $value): void
     {
@@ -403,9 +404,9 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
     }
 
     /**
-     * Check if offset exists
+     * Check if offset exists.
      *
-     * @param mixed $offset
+     * @param mixed $offset Array key to check
      */
     public function offsetExists($offset): bool
     {
@@ -413,9 +414,9 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
     }
 
     /**
-     * Unset object at offset
+     * Unset object at offset.
      *
-     * @param mixed $offset
+     * @param mixed $offset Array key to unset
      */
     public function offsetUnset($offset): void
     {
@@ -423,11 +424,12 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
     }
 
     /**
-     * Get object at offset
-     * Supports lazy loading if enabled
+     * Get object at offset.
      *
-     * @param mixed $offset
-     * @return ?T
+     * Supports lazy loading if enabled.
+     *
+     * @param mixed $offset Array key (int or string)
+     * @return ?T Object instance or null if not found
      */
     public function offsetGet($offset): ?Object_
     {
@@ -473,11 +475,11 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
     }
 
     /**
-     * Magic getter
+     * Magic getter for object properties.
      *
-     * @param string $property
-     * @return bool
-     * @throws InvalidArgumentException
+     * @param string $property Property name (allowLazyLoading)
+     * @return bool Property value
+     * @throws InvalidArgumentException If property does not exist
      */
     public function __get(string $property): bool
     {
@@ -532,7 +534,7 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
     /**
      * Deletes all rows from the table and clears the collection.
      *
-     * @throws DatabaseException
+     * @throws DatabaseException If delete fails
      */
     public function deleteAll(): void
     {
@@ -572,10 +574,10 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
     }
 
     /**
-     * Get object by key
+     * Get object by key.
      *
-     * @param int|string $key
-     * @return ?T
+     * @param int|string $key Object key (id or string)
+     * @return ?T Object or null if not found
      */
     public function get(int|string $key): ?Object_
     {
@@ -589,7 +591,7 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
      *
      * @param FilterInterface $filter Filter criteria
      * @return FilteredCollection Filtered collection
-     * @throws DatabaseException
+     * @throws DatabaseException If truth source check or filter fails
      */
     public function filter(FilterInterface $filter): FilteredCollection
     {

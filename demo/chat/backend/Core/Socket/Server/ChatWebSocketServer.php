@@ -21,7 +21,7 @@ class ChatWebSocketServer extends WebSocketServer
      * Accept new connection
      *
      * @return ?ChatWebSocketClient New client or null
-     * @throws SocketException
+     * @throws SocketException If accepting connection fails
      */
     public function acceptConnection(): ?ChatWebSocketClient
     {

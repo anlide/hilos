@@ -37,7 +37,7 @@ class FrontendHtmlServer extends AbstractServer
      * Accept new client connection
      *
      * @return ?ClientInterface New client or null
-     * @throws SocketException
+     * @throws SocketException If connection accept fails
      */
     public function acceptConnection(): ?ClientInterface
     {
@@ -98,7 +98,7 @@ class FrontendHtmlServer extends AbstractServer
     /**
      * Stop server and close socket.
      *
-     * @throws SocketException
+     * @throws SocketException If socket close fails
      */
     public function stop(): void
     {

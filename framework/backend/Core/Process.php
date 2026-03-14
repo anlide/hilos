@@ -13,6 +13,9 @@ use Hilos\Core\Exception\Process\FailedToSetStdErrException;
 use Hilos\Core\Exception\Process\FailedToTerminateProcessExceptionException;
 use Hilos\Core\Exception\Process\FailedToWriteStdInException;
 
+/**
+ * Wraps proc_open for running child processes with non-blocking I/O
+ */
 class Process
 {
     // Process status constants
@@ -56,16 +59,14 @@ class Process
     private ?float $haltTime = null;
 
     /**
-     * ProcessManager constructor.
+     * Create and start child process with non-blocking streams.
      *
-     * @param string $command Command to execute (e.g., path to Python script).
-     * @param array<int, string> $params Array of parameters to be passed to the command.
-     * - Each element of the `params` array will be escaped using `escapeshellarg` to protect against command injection.
-     * - Example: `new Process('python', ['script.py', 'param1', 'param2']);`
+     * @param string $command Command to execute (e.g. path to Python script)
+     * @param list<string> $params Parameters passed to command (escaped via escapeshellarg)
      * @param ?string $cwd Working directory for the process
-     * @param array $stdIn Standard input descriptor
-     * @param array $stdOut Standard output descriptor
-     * @param array $stdErr Standard error descriptor
+     * @param array<int, string> $stdIn Standard input descriptor (e.g. [pipe, r])
+     * @param array<int, string> $stdOut Standard output descriptor (e.g. [pipe, w])
+     * @param array<int, string> $stdErr Standard error descriptor (e.g. [pipe, w])
      *
      * @throws CouldNotStartException If process cannot be started
      * @throws FailedToSetNonBlockingException If non-blocking mode cannot be set
@@ -114,22 +115,23 @@ class Process
     }
 
     /**
-     * Convert shell-like command string into an argv array suitable for proc_open()
+     * Convert shell-like command string into an argv array suitable for proc_open().
      *
      * Example:
      *   "php -d memory_limit=512M /app/daemon.php 'arg with space'" =>
      *   ['php', '-d', 'memory_limit=512M', '/app/daemon.php', 'arg with space']
+     *
+     * @param string $command Shell-like command string with quoted args
+     * @return list<string> argv array for proc_open
      */
     function convertCommandStringToProcOpenArray(string $command): array
     {
         $pattern = '/
-            (?:
-                "([^"\\\\]*(?:\\\\.[^"\\\\]*)*)"  # double-quoted
-                |
-                \'([^\'\\\\]*(?:\\\\.[^\'\\\\]*)*)\' # single-quoted
-                |
-                ([^\\s"\']+)                        # unquoted
-            )
+            "([^"\\\\]*(?:\\\\.[^"\\\\]*)*)"  # double-quoted
+            |
+            \'([^\'\\\\]*(?:\\\\.[^\'\\\\]*)*)\' # single-quoted
+            |
+            ([^\\s"\']+)                        # unquoted
         /x';
 
         $args = [];

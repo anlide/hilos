@@ -42,7 +42,7 @@ final class ModeratorPromptPiece extends Object_
      *
      * @param string $property Property name (id, section, promptPiece)
      * @return mixed Property value or parent method result
-     * @throws DatabaseException
+     * @throws DatabaseException If entity access or sync fails
      */
     public function __get(string $property): mixed
     {
@@ -59,7 +59,7 @@ final class ModeratorPromptPiece extends Object_
      *
      * @param string $property Property name to set
      * @param mixed $value New value (cast to appropriate type)
-     * @throws DatabaseException
+     * @throws DatabaseException If entity access or sync fails
      */
     public function __set(string $property, mixed $value): void
     {

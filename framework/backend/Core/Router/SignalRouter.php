@@ -270,10 +270,10 @@ class SignalRouter
     }
 
     /**
-     * Subscribe user to page
+     * Subscribe user to page.
      *
      * @param string $page Page identifier
-     * @param WebSocketPageSubscribeSignalDTO $data
+     * @param WebSocketPageSubscribeSignalDTO $data Subscribe signal (acceptKey, params)
      */
     public function subscribeToPage(string $page, WebSocketPageSubscribeSignalDTO $data): void
     {
@@ -288,13 +288,13 @@ class SignalRouter
     }
 
     /**
-     * Update user page subscription
+     * Update user page subscription.
      *
      * Updates parameters of existing page subscription.
      * Throws exception if current page doesn't match the page being updated.
      *
      * @param string $page Page identifier
-     * @param WebSocketPageUpdateSubscriptionSignalDTO $data
+     * @param WebSocketPageUpdateSubscriptionSignalDTO $data Update signal (acceptKey, params)
      * @throws PageSubscriptionMismatchException If current page doesn't match the page being updated
      * @throws PageSubscriptionNotFoundException If no subscription found
      */
@@ -319,10 +319,10 @@ class SignalRouter
     }
 
     /**
-     * Subscribe user to group
+     * Subscribe user to group.
      *
      * @param string $group Group identifier
-     * @param WebSocketGroupSubscribeSignalDTO $data
+     * @param WebSocketGroupSubscribeSignalDTO $data Subscribe signal (acceptKey, params)
      */
     public function subscribeToGroup(string $group, WebSocketGroupSubscribeSignalDTO $data): void
     {
@@ -338,13 +338,13 @@ class SignalRouter
     }
 
     /**
-     * Update user group subscription
+     * Update user group subscription.
      *
      * Updates parameters of existing group subscription.
      * Throws exception if group is not currently subscribed.
      *
      * @param string $group Group identifier
-     * @param WebSocketGroupUpdateSubscriptionSignalDTO $data
+     * @param WebSocketGroupUpdateSubscriptionSignalDTO $data Update signal (acceptKey, params)
      * @throws GroupSubscriptionNotFoundException If group is not currently subscribed
      */
     public function updateGroupSubscription(string $group, WebSocketGroupUpdateSubscriptionSignalDTO $data): void
@@ -364,10 +364,10 @@ class SignalRouter
 
 
     /**
-     * Unsubscribe user from page
+     * Unsubscribe user from page.
      *
-     * @param string $page
-     * @param WebSocketPageUnsubscribeSignalDTO $data
+     * @param string $page Page identifier
+     * @param WebSocketPageUnsubscribeSignalDTO $data Unsubscribe signal (acceptKey)
      */
     public function unsubscribeFromPage(string $page, WebSocketPageUnsubscribeSignalDTO $data): void
     {
@@ -388,10 +388,10 @@ class SignalRouter
     }
 
     /**
-     * Unsubscribe user from group
+     * Unsubscribe user from group.
      *
      * @param string $group Group identifier
-     * @param WebSocketGroupUnsubscribeSignalDTO $data
+     * @param WebSocketGroupUnsubscribeSignalDTO $data Unsubscribe signal (acceptKey)
      */
     public function unsubscribeFromGroup(string $group, WebSocketGroupUnsubscribeSignalDTO $data): void
     {

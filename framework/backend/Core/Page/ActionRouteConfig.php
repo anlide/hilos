@@ -10,7 +10,9 @@ namespace Hilos\Core\Page;
 class ActionRouteConfig
 {
     /**
-     * @param array<string,string> $routes Action name to page name mapping.
+     * Create action route config with action-to-page mapping.
+     *
+     * @param array<string, string> $routes Action name to page name mapping
      */
     public function __construct(private array $routes = [])
     {
@@ -19,8 +21,8 @@ class ActionRouteConfig
     /**
      * Resolve page name by action.
      *
-     * @param string $action
-     * @return ?string
+     * @param string $action Action name
+     * @return ?string Page name or null if not found
      */
     public function getPageForAction(string $action): ?string
     {

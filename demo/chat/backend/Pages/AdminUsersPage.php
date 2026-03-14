@@ -103,7 +103,7 @@ class AdminUsersPage extends AbstractChatPage
      * @param UserUpdateActionDTO $dto Update action payload
      *
      * @throws TableActionException If user ID is invalid or user not found
-     * @throws HilosException
+     * @throws HilosException If update or broadcast fails
      */
     private function handleUserUpdate(string $acceptKey, UserUpdateActionDTO $dto): void
     {

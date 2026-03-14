@@ -30,7 +30,7 @@ final class Users extends Objects
      *
      * @param string $sessionToken User session token
      * @return ?ObjectUser User object or null if not found
-     * @throws DatabaseException
+     * @throws DatabaseException If database query fails
      */
     public function findBySession(string $sessionToken): ?ObjectUser
     {

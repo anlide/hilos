@@ -729,9 +729,9 @@ abstract class WorkerManager extends BaseManager
     /**
      * Hook: page subscribe handled on worker.
      *
-     * @param WebSocketPageSubscribeSignalDTO $signalData
-     * @param string $source
-     * @param string $name
+     * @param WebSocketPageSubscribeSignalDTO $signalData Subscribe signal (acceptKey, params)
+     * @param string $source Signal source identifier
+     * @param string $name Signal name
      */
     protected function onPageSubscribed(WebSocketPageSubscribeSignalDTO $signalData, string $source, string $name): void
     {
@@ -741,9 +741,9 @@ abstract class WorkerManager extends BaseManager
     /**
      * Hook: page unsubscribe handled on worker.
      *
-     * @param WebSocketPageUnsubscribeSignalDTO $signalData
-     * @param string $source
-     * @param string $name
+     * @param WebSocketPageUnsubscribeSignalDTO $signalData Unsubscribe signal (acceptKey)
+     * @param string $source Signal source identifier
+     * @param string $name Signal name
      */
     protected function onPageUnsubscribed(WebSocketPageUnsubscribeSignalDTO $signalData, string $source, string $name): void
     {
@@ -753,9 +753,9 @@ abstract class WorkerManager extends BaseManager
     /**
      * Hook: page update subscription handled on worker.
      *
-     * @param WebSocketPageUpdateSubscriptionSignalDTO $signalData
-     * @param string $source
-     * @param string $name
+     * @param WebSocketPageUpdateSubscriptionSignalDTO $signalData Update signal (acceptKey, params)
+     * @param string $source Signal source identifier
+     * @param string $name Signal name
      */
     protected function onPageSubscriptionUpdated(WebSocketPageUpdateSubscriptionSignalDTO $signalData, string $source, string $name): void
     {
@@ -765,9 +765,9 @@ abstract class WorkerManager extends BaseManager
     /**
      * Hook: group subscribe handled on worker.
      *
-     * @param WebSocketGroupSubscribeSignalDTO $signalData
-     * @param string $source
-     * @param string $name
+     * @param WebSocketGroupSubscribeSignalDTO $signalData Subscribe signal (acceptKey, params)
+     * @param string $source Signal source identifier
+     * @param string $name Signal name
      */
     protected function onGroupSubscribed(WebSocketGroupSubscribeSignalDTO $signalData, string $source, string $name): void
     {
@@ -777,9 +777,9 @@ abstract class WorkerManager extends BaseManager
     /**
      * Hook: group unsubscribe handled on worker.
      *
-     * @param WebSocketGroupUnsubscribeSignalDTO $signalData
-     * @param string $source
-     * @param string $name
+     * @param WebSocketGroupUnsubscribeSignalDTO $signalData Unsubscribe signal (acceptKey)
+     * @param string $source Signal source identifier
+     * @param string $name Signal name
      */
     protected function onGroupUnsubscribed(WebSocketGroupUnsubscribeSignalDTO $signalData, string $source, string $name): void
     {
@@ -789,9 +789,9 @@ abstract class WorkerManager extends BaseManager
     /**
      * Hook: group update subscription handled on worker.
      *
-     * @param WebSocketGroupUpdateSubscriptionSignalDTO $signalData
-     * @param string $source
-     * @param string $name
+     * @param WebSocketGroupUpdateSubscriptionSignalDTO $signalData Update signal (acceptKey, params)
+     * @param string $source Signal source identifier
+     * @param string $name Signal name
      */
     protected function onGroupSubscriptionUpdated(WebSocketGroupUpdateSubscriptionSignalDTO $signalData, string $source, string $name): void
     {
@@ -801,8 +801,8 @@ abstract class WorkerManager extends BaseManager
     /**
      * Hook: action handled on worker.
      *
-     * @param string $action
-     * @param WebSocketActionSignalDTO $signalData
+     * @param string $action Action name
+     * @param WebSocketActionSignalDTO $signalData Action signal (acceptKey, payload)
      */
     protected function onActionHandled(string $action, WebSocketActionSignalDTO $signalData): void
     {
@@ -812,9 +812,9 @@ abstract class WorkerManager extends BaseManager
     /**
      * Create page router for the given agent (if supported).
      *
-     * @param AgentInterface $agent
-     * @return PageSignalRouter
-     * @throws PageSignalRouterNotFoundException
+     * @param AgentInterface $agent Agent to create router for
+     * @return PageSignalRouter Page router instance
+     * @throws PageSignalRouterNotFoundException If agent does not support page routing
      */
     protected function createPageSignalRouter(AgentInterface $agent): PageSignalRouter
     {

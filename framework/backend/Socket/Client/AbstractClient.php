@@ -49,8 +49,9 @@ abstract class AbstractClient extends AbstractSocket implements ClientInterface
     }
 
     /**
-     * Read data from client socket
-     * @throws SocketException
+     * Read data from client socket.
+     *
+     * @throws SocketException If socket read fails
      */
     public function read(): void
     {
@@ -78,8 +79,9 @@ abstract class AbstractClient extends AbstractSocket implements ClientInterface
     }
 
     /**
-     * Write buffered data to socket
-     * @throws SocketException
+     * Write buffered data to socket.
+     *
+     * @throws SocketException If socket write fails
      */
     public function write(): void
     {
@@ -131,7 +133,7 @@ abstract class AbstractClient extends AbstractSocket implements ClientInterface
      * Idempotent method - can be called multiple times safely.
      * Sets socket to null after successful close to prevent double close.
      *
-     * @throws SocketException
+     * @throws SocketException If socket close fails
      */
     public function close(): void
     {
@@ -170,7 +172,7 @@ abstract class AbstractClient extends AbstractSocket implements ClientInterface
      * Returns empty string if unavailable (non-critical operation).
      *
      * @return string Client IP address (IPv4 or IPv6) or empty string if unavailable
-     * @throws SocketException
+     * @throws SocketException If getpeername fails
      */
     protected function getClientIp(): string
     {

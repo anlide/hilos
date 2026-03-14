@@ -35,8 +35,8 @@ class Database extends BaseDatabase
      * @param bool $initHilos If true, initialize Hilos with storage.
      *                       Set to false for legacy commands that need to work with broken context files (e.g., db:idea:fix)
      * @param bool $retryConnection If true, retry connection on temporary errors (useful for Docker startup)
-     * @throws DatabaseException
-     * @throws MissingEnvironmentVariableException
+     * @throws DatabaseException If connection or configuration fails
+     * @throws MissingEnvironmentVariableException If required env vars not set
      */
     public static function initialize(bool $initHilos = true, bool $retryConnection = false): void
     {

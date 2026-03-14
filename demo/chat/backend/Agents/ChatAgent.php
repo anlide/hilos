@@ -88,11 +88,11 @@ class ChatAgent extends AbstractAgent
     }
 
     /**
-     * Handle handshake signal.
+     * Handle handshake signal from WebSocket client.
      *
-     * @param WebSocketHandshakeSignalDTO $data
-     * @param string $source
-     * @param string $name
+     * @param WebSocketHandshakeSignalDTO $data Handshake data (acceptKey, queryParams)
+     * @param string $source Signal source identifier
+     * @param string $name Signal name
      * @throws HilosException If database, runtime or truth source check fails
      */
     public function onSignalHandshake(WebSocketHandshakeSignalDTO $data, string $source, string $name): void
@@ -149,9 +149,9 @@ class ChatAgent extends AbstractAgent
      * Handle connection close signal (WebSocket connection closed).
      * Unregisters connection from runtime so that relevantUsers and state stay correct.
      *
-     * @param WebSocketCloseSignalDTO $data
-     * @param string $source
-     * @param string $name
+     * @param WebSocketCloseSignalDTO $data Close signal data (acceptKey)
+     * @param string $source Signal source identifier
+     * @param string $name Signal name
      * @throws HilosException If runtime unregister fails
      */
     public function onSignalConnectionClose(WebSocketCloseSignalDTO $data, string $source, string $name): void
@@ -203,7 +203,7 @@ class ChatAgent extends AbstractAgent
     }
 
     /**
-     * Agent-specific tick implementation
+     * Agent-specific tick implementation.
      */
     public function onTick(): void
     {
@@ -211,11 +211,11 @@ class ChatAgent extends AbstractAgent
     }
 
     /**
-     * Handle cron signal
+     * Handle cron signal.
      *
-     * @param string $source Signal source
-     * @param string $name Signal name
-     * @param SignalDataInterface $data Signal data
+     * @param SignalDataInterface $data Cron signal payload
+     * @param string $source Signal source identifier
+     * @param string $name Signal name (e.g. CLEANUP_HISTORY)
      * @throws HilosException If database or truth source check fails
      */
     public function onSignalCron(SignalDataInterface $data, string $source, string $name): void
@@ -240,6 +240,10 @@ class ChatAgent extends AbstractAgent
 
     /**
      * Handle agent-to-agent signals (moderation result from ModeratorAgent).
+     *
+     * @param AgentSignalData $data Agent signal payload (e.g. ModerationResultSignalData)
+     * @param string $source Source agent identifier
+     * @param string $name Signal name (e.g. MODERATION_RESULT)
      */
     public function onSignalAgent(AgentSignalData $data, string $source, string $name): void
     {

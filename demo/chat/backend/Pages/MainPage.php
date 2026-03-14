@@ -165,11 +165,11 @@ class MainPage extends AbstractChatPage
     }
 
     /**
-     * Handle file action
+     * Handle file action.
      *
      * @param string $acceptKey Accept key
      * @param FileActionDTO $dto File DTO
-     * @throws HilosException
+     * @throws HilosException If database or truth source check fails
      */
     private function handleFile(string $acceptKey, FileActionDTO $dto): void
     {

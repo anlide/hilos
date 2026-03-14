@@ -686,8 +686,8 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
     /**
      * Hook: called after page subscribe payload is parsed and queued.
      *
-     * @param string $page
-     * @param WebSocketPageSubscribeSignalDTO $dto
+     * @param string $page Page identifier
+     * @param WebSocketPageSubscribeSignalDTO $dto Subscribe signal (acceptKey, params)
      */
     protected function onPageSubscribeParsed(string $page, WebSocketPageSubscribeSignalDTO $dto): void
     {
@@ -697,8 +697,8 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
     /**
      * Hook: called after page update subscription payload is parsed and queued.
      *
-     * @param string $page
-     * @param WebSocketPageUpdateSubscriptionSignalDTO $dto
+     * @param string $page Page identifier
+     * @param WebSocketPageUpdateSubscriptionSignalDTO $dto Update subscription signal (acceptKey, params)
      */
     protected function onPageUpdateSubscriptionParsed(string $page, WebSocketPageUpdateSubscriptionSignalDTO $dto): void
     {
@@ -708,8 +708,8 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
     /**
      * Hook: called after page unsubscribe payload is parsed and queued.
      *
-     * @param string $page
-     * @param WebSocketPageUnsubscribeSignalDTO $dto
+     * @param string $page Page identifier
+     * @param WebSocketPageUnsubscribeSignalDTO $dto Unsubscribe signal (acceptKey)
      */
     protected function onPageUnsubscribeParsed(string $page, WebSocketPageUnsubscribeSignalDTO $dto): void
     {
@@ -719,8 +719,8 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
     /**
      * Hook: called after group subscribe payload is parsed and queued.
      *
-     * @param string $group
-     * @param WebSocketGroupSubscribeSignalDTO $dto
+     * @param string $group Group identifier
+     * @param WebSocketGroupSubscribeSignalDTO $dto Subscribe signal (acceptKey, params)
      */
     protected function onGroupSubscribeParsed(string $group, WebSocketGroupSubscribeSignalDTO $dto): void
     {
@@ -730,8 +730,8 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
     /**
      * Hook: called after group update subscription payload is parsed and queued.
      *
-     * @param string $group
-     * @param WebSocketGroupUpdateSubscriptionSignalDTO $dto
+     * @param string $group Group identifier
+     * @param WebSocketGroupUpdateSubscriptionSignalDTO $dto Update subscription signal (acceptKey, params)
      */
     protected function onGroupUpdateSubscriptionParsed(string $group, WebSocketGroupUpdateSubscriptionSignalDTO $dto): void
     {
@@ -741,8 +741,8 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
     /**
      * Hook: called after group unsubscribe payload is parsed and queued.
      *
-     * @param string $group
-     * @param WebSocketGroupUnsubscribeSignalDTO $dto
+     * @param string $group Group identifier
+     * @param WebSocketGroupUnsubscribeSignalDTO $dto Unsubscribe signal (acceptKey)
      */
     protected function onGroupUnsubscribeParsed(string $group, WebSocketGroupUnsubscribeSignalDTO $dto): void
     {
@@ -752,7 +752,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
     /**
      * Hook: validate action name from parsed payload.
      *
-     * @param string $actionName
+     * @param string $actionName Action name (e.g. message, rename)
      */
     protected function onActionValidated(string $actionName): void
     {
@@ -762,8 +762,8 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
     /**
      * Hook: called after action payload is parsed and queued.
      *
-     * @param string $actionName
-     * @param WebSocketActionSignalDTO $dto
+     * @param string $actionName Action name (e.g. message, rename)
+     * @param WebSocketActionSignalDTO $dto Action signal payload (acceptKey, action, data)
      */
     protected function onActionQueued(string $actionName, WebSocketActionSignalDTO $dto): void
     {
@@ -773,8 +773,8 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
     /**
      * Hook: called when message type is unknown.
      *
-     * @param string $type
-     * @param string $payload
+     * @param string $type Frame type (opcode)
+     * @param string $payload Raw frame payload
      * @throws InvalidFrameException When frame type is unknown
      */
     protected function onUnknownFrame(string $type, string $payload): void
@@ -806,7 +806,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
     /**
      * Hook: called after binary frame payload is queued.
      *
-     * @param WebSocketFrameBinarySignalDTO $dto
+     * @param WebSocketFrameBinarySignalDTO $dto Binary frame signal (acceptKey, payload)
      */
     protected function onFrameBinaryQueued(WebSocketFrameBinarySignalDTO $dto): void
     {

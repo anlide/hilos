@@ -21,16 +21,16 @@ interface ClientInterface
     public function getSocket();
 
     /**
-     * Read data from client socket
+     * Read data from client socket.
      *
-     * @throws SocketException
+     * @throws SocketException If read fails
      */
     public function read(): void;
 
     /**
-     * Write buffered data to socket
+     * Write buffered data to socket.
      *
-     * @throws SocketException
+     * @throws SocketException If write fails
      */
     public function write(): void;
 
@@ -47,9 +47,9 @@ interface ClientInterface
     public function markShouldClose(): void;
 
     /**
-     * Close client connection
+     * Close client connection.
      *
-     * @throws SocketException
+     * @throws SocketException If close fails
      */
     public function close(): void;
 

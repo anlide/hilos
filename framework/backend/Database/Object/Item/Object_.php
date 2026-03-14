@@ -47,10 +47,10 @@ abstract class Object_
     }
 
     /**
-     * Create new empty object
+     * Create new empty object.
      *
-     * @return static
-     * @throws DatabaseException
+     * @return static Object instance
+     * @throws DatabaseException If ENTITY_CLASS not defined
      */
     public static function create(): static
     {
@@ -65,10 +65,10 @@ abstract class Object_
     }
 
     /**
-     * Create object from entity
+     * Create object from entity.
      *
-     * @param TEntity $entity
-     * @return static
+     * @param TEntity $entity Entity to wrap
+     * @return static Object instance
      */
     public static function fromEntity(Entity $entity): static
     {
