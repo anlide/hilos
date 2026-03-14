@@ -20,7 +20,6 @@ interface ImageLLMInterface
      *
      * @param string $prompt Text prompt describing the image
      * @param ImageGenerateOptions $options Generation options (model, size, style)
-     *
      * @return ?ImageResult Generated image data, or null on transport/format errors
      */
     public function generate(string $prompt, ImageGenerateOptions $options): ?ImageResult;

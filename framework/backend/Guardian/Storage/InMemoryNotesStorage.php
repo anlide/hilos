@@ -9,7 +9,7 @@ namespace Hilos\Guardian\Storage;
  */
 final class InMemoryNotesStorage
 {
-    /** @var array<string, list<string>> */
+    /** @var array<string, list<string>> scope => list of note strings */
     private static array $notes = [];
 
     /**

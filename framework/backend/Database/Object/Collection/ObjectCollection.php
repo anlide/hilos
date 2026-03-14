@@ -150,7 +150,7 @@ class ObjectCollection implements ArrayAccess, Countable, Iterator
     /**
      * Filter collection by callback.
      *
-     * @param callable(Object_): bool $callback Filter predicate
+     * @param callable $callback Filter predicate (receives Object_, returns bool)
      * @return self New filtered collection
      */
     public function filter(callable $callback): self
@@ -161,7 +161,7 @@ class ObjectCollection implements ArrayAccess, Countable, Iterator
     /**
      * Map collection by callback.
      *
-     * @param callable(Object_): mixed $callback Map function
+     * @param callable $callback Map function (receives Object_, returns mixed)
      * @return array<int|string, mixed> Mapped values
      */
     public function map(callable $callback): array

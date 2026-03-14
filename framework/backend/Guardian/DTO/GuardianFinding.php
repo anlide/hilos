@@ -8,6 +8,9 @@ use Hilos\BaseDTO;
 use Hilos\Guardian\Enums\FindingType;
 use Hilos\Guardian\Enums\Severity;
 
+/**
+ * Guardian finding DTO with type, severity, title, message and details.
+ */
 final class GuardianFinding extends BaseDTO
 {
     /**

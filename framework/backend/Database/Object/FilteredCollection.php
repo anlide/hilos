@@ -15,14 +15,14 @@ class FilteredCollection extends Objects
     /** @var Objects source collection */
     private Objects $sourceCollection;
 
-    /** @var array<string, Object_> key => Object_ references to objects from sourceCollection */
+    /** @var array<int|string, Object_> key => Object_ references to objects from sourceCollection */
     private array $filteredObjects;
 
     /**
      * Creates filtered collection from source with pre-filtered objects.
      *
      * @param Objects $source Source collection
-     * @param array<string, Object_> $filteredObjects References to objects from source (key => Object_)
+     * @param array<int|string, Object_> $filteredObjects References to objects from source (key => Object_)
      */
     public function __construct(Objects $source, array $filteredObjects)
     {

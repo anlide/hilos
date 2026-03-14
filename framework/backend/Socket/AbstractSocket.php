@@ -110,7 +110,7 @@ abstract class AbstractSocket
      * For other operations, $this->socket should be set.
      *
      * @param SocketOperation $operation Operation type
-     * @throws SocketException Base exception class for all socket errors
+     * @throws SocketException When socket error occurs (various subclasses based on error code)
      */
     protected function handleSocketError(SocketOperation $operation): void
     {

@@ -382,7 +382,7 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
      * Returns a new manual collection with filtered items
      * Note: For lazy-loaded collections, this may trigger full load
      *
-     * @param callable(T, int|string): bool $callback Callback function (item, key) => bool
+     * @param callable $callback Filter predicate (receives DbItem, key; returns bool)
      * @return static New filtered manual collection
      * @throws DatabaseException If DbItem has no associated Object ID
      * @throws CollectionNotManualException If collection is not manual (filtering is only supported for manual collections, as it returns a new manual collection)
@@ -422,7 +422,7 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
      *
      * @param TableQueryDTO $query Query parameters
      *
-     * @return array{rows: list<array<string, mixed>>, totalCount: int}
+     * @return array<string, mixed> Keys: rows (list of item arrays), totalCount (int)
      * @throws DatabaseException On query or connection error
      */
     public function queryPage(TableQueryDTO $query): array
@@ -448,7 +448,7 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
     /**
      * Map collection
      *
-     * @param callable(T, int|string): mixed $callback Callback (item, key) => any
+     * @param callable $callback Map function (receives DbItem, key; returns mixed)
      * @return array<int|string, mixed>
      */
     public function map(callable $callback): array

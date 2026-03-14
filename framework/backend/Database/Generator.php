@@ -481,7 +481,7 @@ class Generator
      * @param string $entityNamespace Entity namespace
      * @param string $objectNamespace Object namespace
      * @param ?string $className Class name (defaults to PascalCase of table name)
-     * @return array{entity: string, object: string} Paths to generated entity and object files
+     * @return array<string, string> Paths to generated files (keys: entity, object)
      * @throws DatabaseException When table not found or query fails
      */
     public static function generateAll(

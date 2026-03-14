@@ -223,8 +223,7 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
      * Loaded objects are merged into $this->objects (common storage).
      *
      * @param TableQueryDTO $query Query parameters
-     *
-     * @return array{objects: array<int|string, Object_>, totalCount: int}
+     * @return array<string, mixed> Keys: objects (array<int|string, Object_>), totalCount (int)
      * @throws DatabaseException If database query fails
      */
     public function queryPage(TableQueryDTO $query): array
@@ -469,8 +468,11 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
     }
 
     /**
-     * Get count of objects
-     * Supports lazy loading count from database
+     * Get count of objects.
+     *
+     * Supports lazy loading count from database.
+     *
+     * @return int Number of objects in collection
      */
     public function count(): int
     {

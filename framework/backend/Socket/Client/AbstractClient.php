@@ -35,7 +35,7 @@ abstract class AbstractClient extends AbstractSocket implements ClientInterface
     /**
      * Create client with socket. Reads buffer size from env.
      *
-     * @param resource $socket Client socket resource
+     * @param resource|object $socket Client socket resource or Socket object
      */
     public function __construct($socket)
     {

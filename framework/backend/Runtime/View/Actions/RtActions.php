@@ -121,8 +121,12 @@ abstract class RtActions
         return $this->collection->getCollectionName();
     }
 
-    /** @throws RtActionsCollectionNameNullException */
-    /** @throws RtTruthSourceWriteNotAllowedException */
+    /**
+     * Ensures write is allowed (collection name set and truth source permits).
+     *
+     * @throws RtActionsCollectionNameNullException When collection name is null.
+     * @throws RtTruthSourceWriteNotAllowedException When truth source does not allow write.
+     */
     protected function ensureCanWrite(): void
     {
         $collectionName = $this->getCollectionName();
@@ -134,6 +138,11 @@ abstract class RtActions
         RtTruthSourceRegistry::checkCanWrite($collectionName);
     }
 
+    /**
+     * Adds state to collection and queues RT sync created signal.
+     *
+     * @param RtState $state State instance to add
+     */
     protected function addStateToCollection(RtState $state): void
     {
         $this->ensureCanWrite();
@@ -143,7 +152,11 @@ abstract class RtActions
 
     /**
      * Apply diff to state and queue RT sync updated signal.
+     *
      * Analogous to Object_::sync() for DB — the diff is known at call site.
+     *
+     * @param RtState $state State instance to apply diff to
+     * @param array<string, mixed> $diff Changed fields and values
      */
     protected function applyDiffToState(RtState $state, array $diff): void
     {
@@ -152,6 +165,11 @@ abstract class RtActions
         $this->queueRtSyncUpdated($state->getId(), $diff);
     }
 
+    /**
+     * Removes state from collection by ID and queues RT sync deleted signal.
+     *
+     * @param string $id State ID to remove
+     */
     protected function removeStateFromCollection(string $id): void
     {
         $this->ensureCanWrite();
@@ -159,6 +177,9 @@ abstract class RtActions
         $this->queueRtSyncDeleted($id);
     }
 
+    /**
+     * Clears all states from collection and queues RT sync deleted for each.
+     */
     protected function clearAllStates(): void
     {
         $this->ensureCanWrite();
@@ -173,6 +194,12 @@ abstract class RtActions
         $this->clearCollectionCache();
     }
 
+    /**
+     * Queues RT sync created signal for broadcasting.
+     *
+     * @param string $stateId State ID
+     * @param array<string, mixed> $row Full state data
+     */
     private function queueRtSyncCreated(string $stateId, array $row): void
     {
         $collectionName = $this->getCollectionName();
@@ -185,6 +212,12 @@ abstract class RtActions
         );
     }
 
+    /**
+     * Queues RT sync updated signal for broadcasting.
+     *
+     * @param string $stateId State ID
+     * @param array<string, mixed> $diff Changed fields and values
+     */
     private function queueRtSyncUpdated(string $stateId, array $diff): void
     {
         $collectionName = $this->getCollectionName();
@@ -197,6 +230,11 @@ abstract class RtActions
         );
     }
 
+    /**
+     * Queues RT sync deleted signal for broadcasting.
+     *
+     * @param string $stateId State ID
+     */
     private function queueRtSyncDeleted(string $stateId): void
     {
         $collectionName = $this->getCollectionName();

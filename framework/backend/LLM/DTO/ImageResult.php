@@ -8,7 +8,7 @@ use Hilos\BaseDTO;
 use Hilos\LLM\Constants\LLMApiConstants;
 
 /**
- * ImageResult - Result of image generation
+ * ImageResult - Result of image generation.
  *
  * Contains generated image as URL (e.g. temporary URL) or base64-encoded data.
  * At least one of url or base64 should be set for valid result.

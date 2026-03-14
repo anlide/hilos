@@ -48,7 +48,6 @@ abstract class AbstractExternalProvider
      * @param string $url Full endpoint URL
      * @param array<string, mixed> $payload Request payload
      * @param float $timeoutSec Request timeout in seconds
-     *
      * @return ?string Response body, or null on transport errors
      */
     protected function postJson(string $url, array $payload, float $timeoutSec): ?string

@@ -19,7 +19,7 @@ use Hilos\Guardian\Telemetry\GuardianTelemetry;
  */
 final class GuardianEngine implements GuardianEngineInterface
 {
-    /** @var list<callable(InvestigationTask, array<string, mixed>): TaskResult> */
+    /** @var list<callable> Task executors (receive InvestigationTask, context; return TaskResult) */
     private array $executors = [];
 
     /**
@@ -39,7 +39,7 @@ final class GuardianEngine implements GuardianEngineInterface
     /**
      * Registers executor for investigation tasks.
      *
-     * @param callable(InvestigationTask, array<string, mixed>): TaskResult $executor Task executor callable
+     * @param callable $executor Task executor (receives InvestigationTask, context; returns TaskResult)
      */
     public function registerExecutor(callable $executor): void
     {

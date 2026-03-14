@@ -459,7 +459,7 @@ class Migration
     /**
      * Returns migration status (current index, available, failed, pending).
      *
-     * @return array{current_index: int, latest_available: int, available_migrations: array<int>, failed_migrations: array<int>, pending_count: int} Migration info
+     * @return array<string, mixed> Migration info (current_index, latest_available, available_migrations, failed_migrations, pending_count)
      *
      * @throws DatabaseException If migration table query fails
      */
