@@ -4,14 +4,12 @@ declare(strict_types=1);
 
 namespace Hilos\Guardian\Engine;
 
-use Hilos\Guardian\Contracts\ActionExecutorInterface;
 use Hilos\Guardian\Contracts\GuardianEngineInterface;
 use Hilos\Guardian\Contracts\TaskPlannerInterface;
 use Hilos\Guardian\DTO\GuardianReport;
 use Hilos\Guardian\DTO\InvestigationTask;
 use Hilos\Guardian\DTO\TaskResult;
 use Hilos\Guardian\Enums\TaskStatus;
-use Hilos\Guardian\Policies\GuardianPolicy;
 use Hilos\Guardian\Telemetry\GuardianTelemetry;
 
 /**
@@ -23,16 +21,12 @@ final class GuardianEngine implements GuardianEngineInterface
     private array $executors = [];
 
     /**
-     * Creates guardian engine with planner and optional executor.
+     * Creates guardian engine with planner.
      *
      * @param TaskPlannerInterface $planner Task planner
-     * @param ?ActionExecutorInterface $actionExecutor Optional action executor
-     * @param ?GuardianPolicy $policy Optional policy
      */
     public function __construct(
         private readonly TaskPlannerInterface $planner,
-        private readonly ?ActionExecutorInterface $actionExecutor = null,
-        private readonly ?GuardianPolicy $policy = null,
     ) {
     }
 
