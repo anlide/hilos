@@ -18,6 +18,8 @@ use Hilos\Constants\SignalPayloadConstants;
 class UserUpdateActionDTO extends ChatActionPayloadDTO
 {
     /**
+     * Creates user update action DTO.
+     *
      * @param int $id User ID to update
      * @param string $name New display name
      */
@@ -61,7 +63,7 @@ class UserUpdateActionDTO extends ChatActionPayloadDTO
     /**
      * Serializes to array.
      *
-     * @return array<string, mixed>
+     * @return array<string, mixed> Data with id and name
      */
     public function toArray(): array
     {

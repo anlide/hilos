@@ -91,9 +91,8 @@ class SignalRouter
     private array $subscriptionGroups = [];
 
     /**
-     * Constructor
+     * Creates signal router with empty configuration.
      *
-     * Initializes signal router with empty configuration.
      * Child classes should override constructor and call parent::__construct(),
      * then set $this->config with custom routing rules.
      */

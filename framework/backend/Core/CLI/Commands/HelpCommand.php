@@ -18,7 +18,7 @@ class HelpCommand implements CommandInterface
     private array $commands;
 
     /**
-     * Constructor
+     * Creates help command with registered commands map.
      *
      * @param array<string, CommandInterface> $commands All registered commands
      */

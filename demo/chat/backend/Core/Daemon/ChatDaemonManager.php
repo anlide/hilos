@@ -27,7 +27,7 @@ use Hilos\Socket\Worker\DTO\CronSignalDTO;
 class ChatDaemonManager extends DaemonManager
 {
     /**
-     * Constructor
+     * Initializes chat daemon manager.
      *
      * Sets shutdown timeout to 10 seconds.
      * Registers cron rules for chat cleanup (every 30 minutes).

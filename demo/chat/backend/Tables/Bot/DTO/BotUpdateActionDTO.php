@@ -17,6 +17,8 @@ use Hilos\Constants\SignalPayloadConstants;
 class BotUpdateActionDTO extends ChatActionPayloadDTO
 {
     /**
+     * Creates bot update action DTO.
+     *
      * @param int $id Bot ID to update
      * @param ?string $name Display name (null = do not update)
      * @param ?string $description Description (null = do not update)
@@ -73,7 +75,7 @@ class BotUpdateActionDTO extends ChatActionPayloadDTO
     /**
      * Serializes to array (only non-null fields).
      *
-     * @return array<string, mixed>
+     * @return array<string, mixed> Data with id and optionally name, description, style, topics, personality, active keys
      */
     public function toArray(): array
     {

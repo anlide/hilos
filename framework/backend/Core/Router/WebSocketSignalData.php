@@ -33,7 +33,7 @@ class WebSocketSignalData extends BaseDTO implements SignalDataInterface
     /**
      * Converts DTO to array for transport.
      *
-     * @return array DTO data as array
+     * @return array<string, mixed> DTO data with data, dataType, optional target keys
      */
     public function toArray(): array
     {

@@ -87,7 +87,7 @@ abstract class DaemonManager extends BaseManager
     private bool $workersReady = false;
 
     /**
-     * Constructor
+     * Initializes daemon manager.
      *
      * Initializes signal router via Hilos::initSignalRouter() and creates
      * agent manager daemon. Child classes must implement createSignalRouter()

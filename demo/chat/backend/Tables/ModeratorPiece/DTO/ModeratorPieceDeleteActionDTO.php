@@ -15,6 +15,8 @@ use Hilos\Constants\SignalPayloadConstants;
 class ModeratorPieceDeleteActionDTO extends ChatActionPayloadDTO
 {
     /**
+     * Creates moderator piece delete action DTO.
+     *
      * @param int $id Piece ID to delete
      */
     public function __construct(
@@ -53,7 +55,7 @@ class ModeratorPieceDeleteActionDTO extends ChatActionPayloadDTO
     /**
      * Serializes to array.
      *
-     * @return array<string, mixed>
+     * @return array<string, mixed> Data with piece id key
      */
     public function toArray(): array
     {

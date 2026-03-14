@@ -15,6 +15,8 @@ use Hilos\Constants\SignalPayloadConstants;
 class BotDeleteActionDTO extends ChatActionPayloadDTO
 {
     /**
+     * Creates bot delete action DTO.
+     *
      * @param int $id Bot ID to delete
      */
     public function __construct(
@@ -53,7 +55,7 @@ class BotDeleteActionDTO extends ChatActionPayloadDTO
     /**
      * Serializes to array.
      *
-     * @return array<string, mixed>
+     * @return array<string, mixed> Data with bot id key
      */
     public function toArray(): array
     {

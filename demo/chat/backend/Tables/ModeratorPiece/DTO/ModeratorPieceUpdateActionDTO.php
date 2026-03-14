@@ -17,6 +17,8 @@ use Hilos\Constants\SignalPayloadConstants;
 class ModeratorPieceUpdateActionDTO extends ChatActionPayloadDTO
 {
     /**
+     * Creates moderator piece update action DTO.
+     *
      * @param int $id Piece ID to update
      * @param ?string $section Section (null = do not update)
      * @param ?string $promptPiece Prompt text (null = do not update)
@@ -61,7 +63,7 @@ class ModeratorPieceUpdateActionDTO extends ChatActionPayloadDTO
     /**
      * Serializes to array (only non-null fields).
      *
-     * @return array<string, mixed>
+     * @return array<string, mixed> Data with id, section, promptPiece (non-null only)
      */
     public function toArray(): array
     {

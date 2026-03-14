@@ -15,6 +15,8 @@ use Hilos\Constants\SignalPayloadConstants;
 class BotCreateActionDTO extends ChatActionPayloadDTO
 {
     /**
+     * Creates bot create action DTO.
+     *
      * @param string $name Bot display name
      * @param ?string $description Bot description (optional)
      * @param ?string $style Writing style (optional)
@@ -68,7 +70,7 @@ class BotCreateActionDTO extends ChatActionPayloadDTO
     /**
      * Serializes to array.
      *
-     * @return array<string, mixed>
+     * @return array<string, mixed> Data with name, description, style, topics, personality, active keys
      */
     public function toArray(): array
     {

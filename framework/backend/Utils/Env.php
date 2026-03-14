@@ -259,10 +259,10 @@ class Env
     }
 
     /**
-     * Parse .env file into associative array
+     * Parse .env file into associative array.
      *
      * @param string $filePath Path to .env file
-     * @return array Associative array of environment variables
+     * @return array<string, string> Associative array of environment variables
      */
     private static function parseEnvFile(string $filePath): array
     {

@@ -26,7 +26,7 @@ abstract class AbstractPageFactory
     private array $pages = [];
 
     /**
-     * Constructor
+     * Creates factory with agent instance.
      *
      * @param PageAgentInterface $agent Agent instance
      */

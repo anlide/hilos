@@ -15,6 +15,8 @@ use Hilos\Constants\SignalPayloadConstants;
 class ModeratorPieceCreateActionDTO extends ChatActionPayloadDTO
 {
     /**
+     * Creates moderator piece create action DTO.
+     *
      * @param string $section Section identifier (e.g. ObjectPiece::SECTION_MESSAGE_RULE)
      * @param string $promptPiece Prompt text for the piece
      */
@@ -38,8 +40,7 @@ class ModeratorPieceCreateActionDTO extends ChatActionPayloadDTO
      * Creates instance from payload array.
      *
      * @param array<string, mixed> $data Raw payload (may contain FIELD_DATA wrapper)
-     *
-     * @return self
+     * @return static Instance
      */
     public static function fromArray(array $data): static
     {
@@ -57,7 +58,7 @@ class ModeratorPieceCreateActionDTO extends ChatActionPayloadDTO
     /**
      * Serializes to array.
      *
-     * @return array<string, mixed>
+     * @return array<string, mixed> Data with section and promptPiece keys
      */
     public function toArray(): array
     {

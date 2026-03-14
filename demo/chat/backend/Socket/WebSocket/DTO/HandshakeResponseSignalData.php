@@ -54,9 +54,9 @@ class HandshakeResponseSignalData extends BaseDTO implements SignalDataInterface
     /**
      * Create DTO from array (not implemented - response is created directly).
      *
-     * @param array<string, mixed> $data Source data
+     * @param array<string, mixed> $data Source data (ignored)
      * @return static DTO instance
-     * @throws RuntimeException Always - not implemented
+     * @throws RuntimeException Always, deserialization not implemented
      */
     public static function fromArray(array $data): static
     {

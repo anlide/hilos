@@ -14,6 +14,8 @@ use Hilos\Core\Table\TableConstants;
 readonly class TableMutationEntry
 {
     /**
+     * Creates table mutation entry.
+     *
      * @param TableMutationType $type Mutation type (created, updated, deleted)
      * @param string|int $rowId Affected row ID
      * @param array<string, mixed>|null $row Optional row data for create/update
@@ -28,7 +30,7 @@ readonly class TableMutationEntry
     /**
      * Converts to array for WebSocket serialization.
      *
-     * @return array<string, mixed>
+     * @return array<string, mixed> Payload with type, rowId, optional row
      */
     public function toArray(): array
     {

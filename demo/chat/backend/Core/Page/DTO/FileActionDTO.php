@@ -14,7 +14,7 @@ use Demo\Chat\Constants\ChatSignalConstants;
 class FileActionDTO extends ChatActionPayloadDTO
 {
     /**
-     * Constructor
+     * Creates file action DTO.
      *
      * @param string $filename Filename
      * @param string $mimeType MIME type

@@ -19,7 +19,7 @@ abstract class AbstractPage
     protected PageAgentInterface $agent;
 
     /**
-     * Constructor
+     * Creates page with agent instance.
      *
      * @param PageAgentInterface $agent Agent instance
      */

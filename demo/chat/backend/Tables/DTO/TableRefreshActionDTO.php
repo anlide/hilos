@@ -17,6 +17,8 @@ use Hilos\Core\Table\TableConstants;
 class TableRefreshActionDTO extends ChatActionPayloadDTO
 {
     /**
+     * Creates table refresh action DTO.
+     *
      * @param string $tableKey Table identifier (e.g. TableChatContext::users)
      */
     public function __construct(
@@ -55,7 +57,7 @@ class TableRefreshActionDTO extends ChatActionPayloadDTO
     /**
      * Serializes to array.
      *
-     * @return array<string, mixed>
+     * @return array<string, mixed> Data with tableKey
      */
     public function toArray(): array
     {

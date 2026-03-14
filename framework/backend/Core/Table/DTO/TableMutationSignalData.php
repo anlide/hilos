@@ -33,7 +33,7 @@ class TableMutationSignalData extends SignalData implements SignalDataInterface
     /**
      * Converts to array for WebSocket serialization.
      *
-     * @return array<string, mixed>
+     * @return array<string, mixed> Payload with tableKey and mutation keys
      */
     public function toArray(): array
     {
@@ -46,9 +46,9 @@ class TableMutationSignalData extends SignalData implements SignalDataInterface
     /**
      * Not supported: this signal is server-to-client only.
      *
-     * @param array<string, mixed> $data
+     * @param array<string, mixed> $data Source data (ignored)
      *
-     * @throws TableSignalNotDeserializableException
+     * @throws TableSignalNotDeserializableException Always, deserialization not supported
      */
     public static function fromArray(array $data): static
     {

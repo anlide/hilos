@@ -23,7 +23,7 @@ class CronRule
     public float $lastRun;
 
     /**
-     * Constructor
+     * Creates cron rule with name and expression.
      *
      * @param string $name Cron job name (unique identifier)
      * @param string $expression Cron expression (minute hour day month weekday)
