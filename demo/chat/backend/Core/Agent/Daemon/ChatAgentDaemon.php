@@ -19,7 +19,7 @@ class ChatAgentDaemon extends AbstractAgentDaemon
     private const string AGENT_TYPE = 'chat';
 
     /**
-     * ChatAgentDaemon constructor.
+     * Creates daemon proxy for ChatAgent.
      */
     public function __construct()
     {

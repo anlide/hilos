@@ -26,7 +26,7 @@ abstract class AbstractGuardianAgent extends AbstractAgent
     private ChatAgentGuardianSignalCapability $chatSignalCapability;
 
     /**
-     * Initialize transport and chat signal capability.
+     * Creates guardian agent with default transport and chat signal capability.
      */
     public function __construct()
     {

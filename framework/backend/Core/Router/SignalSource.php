@@ -36,7 +36,7 @@ class SignalSource implements SignalSourceInterface
     }
 
     /**
-     * Get signal source
+     * Returns signal source identifier.
      *
      * @return string Signal source
      */
@@ -46,7 +46,7 @@ class SignalSource implements SignalSourceInterface
     }
 
     /**
-     * Get signal source type
+     * Returns signal source type.
      *
      * @return ?string Signal source type or null
      */
@@ -56,7 +56,7 @@ class SignalSource implements SignalSourceInterface
     }
 
     /**
-     * Get signal source index
+     * Returns signal source index.
      *
      * @return ?string Signal source index or null
      */

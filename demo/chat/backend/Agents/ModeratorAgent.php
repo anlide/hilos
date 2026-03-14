@@ -34,6 +34,7 @@ class ModeratorAgent extends AbstractAgent
     /** @var string Agent type */
     private const string AGENT_TYPE = AgentType::MODERATOR;
 
+    /** @var AsyncChatLLMInterface LLM chat client for moderation */
     private AsyncChatLLMInterface $chatClient;
 
     /** @var list<array{type: 'user'|'bot', payload: ModerationRequestSignalData|ModerationBotRequestSignalData}> */
@@ -42,6 +43,9 @@ class ModeratorAgent extends AbstractAgent
     /** @var ?array{type: 'user'|'bot', payload: ModerationRequestSignalData|ModerationBotRequestSignalData} Request currently in flight */
     private ?array $currentPending = null;
 
+    /**
+     * Creates moderator agent with LLM client from ModerationEnv.
+     */
     public function __construct()
     {
         $this->chatClient = ModerationEnv::useExternalProvider()

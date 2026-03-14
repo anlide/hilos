@@ -21,7 +21,7 @@ class ModeratorAgentDaemon extends AbstractAgentDaemon
     private const string AGENT_TYPE = AgentType::MODERATOR;
 
     /**
-     * ModeratorAgentDaemon constructor.
+     * Creates daemon proxy for ModeratorAgent.
      */
     public function __construct()
     {

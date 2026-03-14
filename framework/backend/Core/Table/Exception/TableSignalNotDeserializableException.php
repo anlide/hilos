@@ -11,6 +11,11 @@ use Hilos\HilosException;
  */
 class TableSignalNotDeserializableException extends HilosException
 {
+    /**
+     * Creates exception for non-deserializable signal class.
+     *
+     * @param class-string $className Signal class name that does not support fromArray()
+     */
     public function __construct(string $className)
     {
         parent::__construct("{$className}::fromArray() is not supported (server-to-client only)");

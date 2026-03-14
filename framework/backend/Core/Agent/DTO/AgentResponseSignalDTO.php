@@ -31,6 +31,17 @@ class AgentResponseSignalDTO extends BaseDTO implements AgentMessageDTOInterface
     public const string TARGET_GROUP = 'targetGroup';
     public const string EXCLUDE_ACCEPT_KEY = 'excludeAcceptKey';
 
+    /**
+     * Creates agent response signal DTO.
+     *
+     * @param SignalSourceInterface $signalSource Signal source (agent identifier)
+     * @param SignalTypeInterface $signalType Delivery type (e.g. broadcast, targeted)
+     * @param SignalNameInterface $signalName Signal name/action
+     * @param SignalDataInterface $signalData Payload data
+     * @param ?string $targetAcceptKey Optional target accept key for direct delivery
+     * @param ?string $targetGroup Optional target group name
+     * @param ?string $excludeAcceptKey Optional accept key to exclude from delivery
+     */
     public function __construct(
         public readonly SignalSourceInterface $signalSource,
         public readonly SignalTypeInterface $signalType,

@@ -14,7 +14,7 @@ use Hilos\Socket\SocketException;
 interface ClientInterface
 {
     /**
-     * Get client socket
+     * Returns client socket.
      *
      * @return resource|object|null Socket resource (may be null after close)
      */
@@ -54,10 +54,9 @@ interface ClientInterface
     public function close(): void;
 
     /**
-     * Tick method - called on each server tick
+     * Called on each server tick before read() and write().
      *
      * Allows clients to perform periodic operations (e.g., timeout checks).
-     * Called before read() and write() in server's onTick().
      */
     public function onTick(): void;
 }

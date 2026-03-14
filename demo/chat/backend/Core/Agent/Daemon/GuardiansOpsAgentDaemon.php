@@ -18,7 +18,7 @@ final class GuardiansOpsAgentDaemon extends AbstractAgentDaemon
     private const string AGENT_TYPE = AgentType::GUARDIAN_OPS;
 
     /**
-     * Create daemon proxy for GuardiansOpsAgent.
+     * Creates daemon proxy for GuardiansOpsAgent.
      */
     public function __construct()
     {

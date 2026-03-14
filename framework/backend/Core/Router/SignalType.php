@@ -22,7 +22,7 @@ class SignalType implements SignalTypeInterface
     }
 
     /**
-     * Get signal type
+     * Returns signal type identifier.
      *
      * @return string Signal type
      */

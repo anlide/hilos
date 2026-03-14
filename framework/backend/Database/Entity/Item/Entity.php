@@ -45,18 +45,21 @@ abstract class Entity
      */
     private bool $_related = false;
 
-    /**
-     * Original data from database (for tracking changes)
-     */
+    /** @var array<string, mixed> original row data from DB (for change tracking) */
     private array $_originalData = [];
 
+    /**
+     * Resets relation status and original data on clone.
+     */
     public function __clone()
     {
-        // Reset relation status on clone
         $this->_related = false;
         $this->_originalData = [];
     }
 
+    /**
+     * Creates entity instance.
+     */
     public function __construct()
     {
     }

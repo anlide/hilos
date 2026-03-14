@@ -18,7 +18,7 @@ final class ChatSituationGuardianAgentDaemon extends AbstractAgentDaemon
     private const string AGENT_TYPE = AgentType::CHAT_SITUATION_GUARDIAN;
 
     /**
-     * Create daemon proxy for ChatSituationGuardianAgent.
+     * Creates daemon proxy for ChatSituationGuardianAgent.
      */
     public function __construct()
     {

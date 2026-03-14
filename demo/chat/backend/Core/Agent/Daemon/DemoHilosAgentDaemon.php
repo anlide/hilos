@@ -16,7 +16,7 @@ use Hilos\Utils\Logger;
 class DemoHilosAgentDaemon extends AbstractAgentDaemon
 {
     /**
-     * Create daemon proxy for DemoHilosAgent.
+     * Creates daemon proxy for DemoHilosAgent.
      */
     public function __construct()
     {

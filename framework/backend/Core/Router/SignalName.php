@@ -14,7 +14,7 @@ class SignalName implements SignalNameInterface
     public const string EMPTY = '';
 
     /**
-     * SignalName constructor
+     * Creates signal name instance.
      *
      * @param string $name Signal name
      */
@@ -24,7 +24,7 @@ class SignalName implements SignalNameInterface
     }
 
     /**
-     * Get signal name
+     * Get signal name.
      *
      * @return string Signal name
      */

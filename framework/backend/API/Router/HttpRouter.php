@@ -7,7 +7,7 @@ namespace Hilos\API\Router;
 use Hilos\Constants\HttpConstants;
 
 /**
- * HttpRouter - Routes HTTP requests to handlers
+ * HttpRouter - Routes HTTP requests to handlers.
  *
  * Main router for HTTP requests. Uses RouteRegistry to find matching routes
  * and RouteResolver to execute handlers.
@@ -30,7 +30,7 @@ class HttpRouter
     }
 
     /**
-     * Register a route
+     * Registers HTTP route with method, path and handler.
      *
      * @param string $method HTTP method (GET, POST, etc.)
      * @param string $path URL path
@@ -77,7 +77,7 @@ class HttpRouter
     }
 
     /**
-     * Get route registry
+     * Returns route registry instance.
      *
      * @return RouteRegistry Registry instance
      */

@@ -18,7 +18,7 @@ class ChatContextAnalyzerAgentDaemon extends AbstractAgentDaemon
     private const string AGENT_TYPE = AgentType::CHAT_CONTEXT_ANALYZER;
 
     /**
-     * Create daemon proxy for ChatContextAnalyzerAgent.
+     * Creates daemon proxy for ChatContextAnalyzerAgent.
      */
     public function __construct()
     {

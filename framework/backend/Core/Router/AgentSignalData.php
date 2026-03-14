@@ -7,7 +7,7 @@ namespace Hilos\Core\Router;
 use Hilos\BaseDTO;
 
 /**
- * AgentSignalData - Signal data container for agent-to-agent signals
+ * AgentSignalData - Signal data container for agent-to-agent signals.
  *
  * Wraps the actual payload (e.g. ModerationRequestSignalData) for delivery to target agent.
  * Similar to WebSocketSignalData for WebSocket signals.
@@ -61,7 +61,7 @@ class AgentSignalData extends BaseDTO implements SignalDataInterface
      * Deserializes inner signal data from array.
      *
      * @param array<string, mixed> $dataArray Signal data array
-     * @param ?string $dataType Signal data class name for deserialization
+     * @param class-string|null $dataType Signal data class name for deserialization
      * @return SignalDataInterface Deserialized signal data
      */
     private static function deserializeInnerData(array $dataArray, ?string $dataType): SignalDataInterface

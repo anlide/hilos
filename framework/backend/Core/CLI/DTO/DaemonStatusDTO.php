@@ -22,6 +22,17 @@ class DaemonStatusDTO extends BaseDTO
     public const string workersMonopolistic = 'workersMonopolistic';
     public const string workersMaxRegular = 'workersMaxRegular';
 
+    /**
+     * Creates daemon status DTO.
+     *
+     * @param int $uptime Uptime in seconds
+     * @param int $memory Memory usage in bytes
+     * @param float $cpu CPU usage percentage
+     * @param int $timestamp Current Unix timestamp
+     * @param int $workersRegular Number of regular workers
+     * @param int $workersMonopolistic Number of monopolistic workers
+     * @param int $workersMaxRegular Maximum regular workers capacity
+     */
     public function __construct(
         public readonly int $uptime,
         public readonly int $memory,
