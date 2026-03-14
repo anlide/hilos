@@ -122,10 +122,13 @@ class Logger
         $contextStr = !empty($context) ? ' ' . json_encode($context) : '';
 
         // Determine prefix for main log file:
-        // - INFO: no prefix (main log entries)
-        // - DEBUG: DEBUG: prefix
-        // - ERROR: ERROR: prefix
-        $mainLogPrefix = ($level === 'INFO') ? '' : "{$level}:";
+        // - If showLogLevel: [INFO], [ERROR], [DEBUG] format for all levels
+        // - If !showLogLevel: INFO has no prefix, DEBUG/ERROR have "LEVEL:" prefix
+        if (self::$showLogLevel) {
+            $mainLogPrefix = "[{$level}]";
+        } else {
+            $mainLogPrefix = ($level === 'INFO') ? '' : "{$level}:";
+        }
         $mainLogLine = "[{$timestamp}]" . ($mainLogPrefix !== '' ? " {$mainLogPrefix}" : '') . " {$message}{$contextStr}";
 
         // For error log file: no prefix (only errors there)
