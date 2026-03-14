@@ -13,10 +13,12 @@ use Hilos\Socket\SocketOperation;
  * AbstractServer - Abstract base class for server implementations.
  *
  * Provides common functionality for all server types.
+ *
+ * @template TClient of ClientInterface
  */
 abstract class AbstractServer extends AbstractSocket implements ServerInterface
 {
-    /** @var list<ClientInterface> active client connections */
+    /** @var list<TClient> active client connections */
     protected array $clients = [];
 
     /** @var string Server host */
@@ -46,7 +48,7 @@ abstract class AbstractServer extends AbstractSocket implements ServerInterface
     /**
      * Get all active client connections.
      *
-     * @return list<ClientInterface> Array of client connections
+     * @return list<TClient> Array of client connections
      */
     public function getClients(): array
     {
@@ -159,7 +161,7 @@ abstract class AbstractServer extends AbstractSocket implements ServerInterface
      * Handles socket_accept and socket_set_nonblock.
      * Child classes should implement onCreateClient() to create specific client type.
      *
-     * @return ?ClientInterface New client instance or null if no connection available (EWOULDBLOCK in non-blocking mode)
+     * @return ?TClient New client instance or null if no connection available (EWOULDBLOCK in non-blocking mode)
      * @throws SocketException When socket operations fail
      */
     public function acceptConnection(): ?ClientInterface
@@ -230,7 +232,7 @@ abstract class AbstractServer extends AbstractSocket implements ServerInterface
      * Must be implemented by child classes to create specific client type.
      *
      * @param resource $socket Client socket
-     * @return ClientInterface Client instance
+     * @return TClient Client instance
      */
     abstract protected function onCreateClient($socket): ClientInterface;
 

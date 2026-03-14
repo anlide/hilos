@@ -45,6 +45,8 @@ use Hilos\Utils\Logger;
  *
  * This is an abstract class - child classes must implement onStart() and onInitialWorkersReady().
  * Agent manager daemon is passed via constructor.
+ *
+ * @extends AbstractServer<WorkerClientInterface>
  */
 abstract class WorkerServer extends AbstractServer
 {
@@ -125,7 +127,6 @@ abstract class WorkerServer extends AbstractServer
      */
     public function acceptConnection(): ?WorkerClientInterface
     {
-        /** @var ?WorkerClientInterface */
         return parent::acceptConnection();
     }
 

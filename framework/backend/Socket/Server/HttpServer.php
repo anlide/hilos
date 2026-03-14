@@ -13,6 +13,8 @@ use Hilos\Socket\SocketException;
  *
  * Manages HTTP server socket and accepts incoming connections.
  * Works with epoll in daemon main loop.
+ *
+ * @extends AbstractServer<HttpClientInterface>
  */
 class HttpServer extends AbstractServer
 {

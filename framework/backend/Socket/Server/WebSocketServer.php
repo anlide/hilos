@@ -16,6 +16,8 @@ use Hilos\Socket\SocketOperation;
  *
  * This is an abstract class - child classes must implement onCreateClient()
  * to create concrete WebSocketClient instances.
+ *
+ * @extends AbstractServer<WebSocketClientInterface>
  */
 abstract class WebSocketServer extends AbstractServer
 {
@@ -27,7 +29,6 @@ abstract class WebSocketServer extends AbstractServer
      */
     public function acceptConnection(): ?WebSocketClientInterface
     {
-        /** @var ?WebSocketClientInterface */
         return parent::acceptConnection();
     }
 
