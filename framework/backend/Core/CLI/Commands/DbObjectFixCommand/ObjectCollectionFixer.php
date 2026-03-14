@@ -718,7 +718,7 @@ trait ObjectCollectionFixer
             $expectedType = "?{$objectAlias}";
 
             // Replace return type in method signature
-            $pattern = '/((?:public|private|protected)\s+function\s+' . preg_quote($methodName, '/') . '\s*\([^)]*\)\s*):\s*[^\{]+(\s*)/';
+            $pattern = '/((?:public|private|protected)\s+function\s+' . preg_quote($methodName, '/') . '\s*\([^)]*\)\s*):\s*[^{]+(\s*)/';
             $replacement = '$1: ' . $expectedType . '$2';
             $content = preg_replace($pattern, $replacement, $content);
         }

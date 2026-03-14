@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Hilos\Core\CLI\Commands\DbIdeaFixCommand;
 
-use Hilos\Database\Idea\IdeaCollection;
 use Hilos\Database\Object\Item\Object_;
 use Hilos\Database\Object\Objects;
 use Hilos\Utils\Helpers\StringHelper;
@@ -112,7 +111,7 @@ trait IdeaCollectionFixer
                 }
 
                 $reflection = new ReflectionClass($className);
-                if (!$reflection->isSubclassOf(IdeaCollection::class)) {
+                if (!$reflection->isSubclassOf(Objects::class)) {
                     continue;
                 }
 
@@ -688,7 +687,7 @@ trait IdeaCollectionFixer
         ];
 
         // Extract all methods
-        if (preg_match_all('/(?:public|private|protected)\s+(?:static\s+)?function\s+(\w+)\s*\([^)]*\)\s*:[^\{]*\{([^}]+)}/s', $content, $matches, PREG_SET_ORDER)) {
+        if (preg_match_all('/(?:public|private|protected)\s+(?:static\s+)?function\s+(\w+)\s*\([^)]*\)\s*:[^{]*\{([^}]+)}/s', $content, $matches, PREG_SET_ORDER)) {
             foreach ($matches as $match) {
                 $methodName = $match[1];
                 
@@ -736,7 +735,7 @@ trait IdeaCollectionFixer
         $newMethod .= "    }";
 
         // Replace existing objectToIdea() method
-        if (preg_match('/(protected\s+function\s+objectToIdea\s*\([^)]*\)\s*:[^\{]*\{[^}]*})/s', $content, $matches)) {
+        if (preg_match('/(protected\s+function\s+objectToIdea\s*\([^)]*\)\s*:[^{]*\{[^}]*})/s', $content, $matches)) {
             $content = str_replace($matches[1], $newMethod, $content);
         } else {
             // Insert before closing brace of class
