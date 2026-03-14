@@ -25,9 +25,7 @@ final class ModeratorPromptPiecesActions extends DbActions
      * Creates a new moderator prompt piece and adds it to the collection.
      *
      * @param array<string, mixed> $data Piece fields (ObjectPiece::section, ObjectPiece::promptPiece)
-     *
      * @return ModeratorPromptPiece Created piece Db item
-     *
      * @throws HilosException On error (invalid data, database error, etc.)
      */
     public function create(array $data): ModeratorPromptPiece

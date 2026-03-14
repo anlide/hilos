@@ -11,6 +11,7 @@ namespace Demo\Chat\Core\Frontend;
  */
 class HtmlCache
 {
+    /** @var string Default locale fallback */
     private const string DEFAULT_LOCALE = 'en';
 
     /** @var array<string, string> path+locale -> content */

@@ -13,12 +13,12 @@ namespace Demo\Chat\Constants;
  */
 class ChatLLMConstants
 {
-    /** Lightweight model for moderator (allow/block classification) */
+    /** @var string Lightweight model for moderator (allow/block classification) */
     public const string MODEL_MODERATION = 'qwen2.5:0.5b';
 
-    /** Heavier model for context analyzer (topic/summary extraction, richer analysis) */
+    /** @var string Heavier model for context analyzer (topic/summary extraction, richer analysis) */
     public const string MODEL_CONTEXT_ANALYZER = 'qwen2.5:7b';
 
-    /** Heavier model for bots (generated messages) */
+    /** @var string Heavier model for bots (generated messages) */
     public const string MODEL_BOT = 'qwen2.5:3b';
 }

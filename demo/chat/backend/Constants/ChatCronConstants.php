@@ -9,6 +9,7 @@ namespace Demo\Chat\Constants;
  */
 class ChatCronConstants
 {
+    /** @var string Cleanup history cron job name */
     public const string CLEANUP_HISTORY = 'cleanup_history';
 }
 

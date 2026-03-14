@@ -10,11 +10,15 @@ use Hilos\Core\TruthSource\TruthSourceRegistry;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Base class for integration tests. Requires MySQL test container running.
+ * Base class for integration tests.
+ *
+ * Requires MySQL test container running.
  */
 abstract class IntegrationTestCase extends TestCase
 {
     private const string TEST_AGENT_ID = 'test-agent';
+
+    /** @var bool Whether database has been initialized for test run */
     protected static bool $dbInitialized = false;
 
     /**

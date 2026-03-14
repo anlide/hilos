@@ -13,6 +13,9 @@ use Hilos\Runtime\Exception\RuntimeException;
  */
 final class UserActionsTest extends IntegrationTestCase
 {
+    /**
+     * Rename with valid name updates user in database.
+     */
     public function testRenameSucceeds(): void
     {
         $token = bin2hex(random_bytes(16));
@@ -27,6 +30,9 @@ final class UserActionsTest extends IntegrationTestCase
         $this->assertSame('Alice', $refreshed->name);
     }
 
+    /**
+     * Rename with empty/whitespace-only name throws RuntimeException.
+     */
     public function testRenameEmptyThrows(): void
     {
         $token = bin2hex(random_bytes(16));
@@ -39,6 +45,9 @@ final class UserActionsTest extends IntegrationTestCase
         $dbUser->actions->rename('   ');
     }
 
+    /**
+     * Rename with name exceeding max length throws RuntimeException.
+     */
     public function testRenameTooLongThrows(): void
     {
         $token = bin2hex(random_bytes(16));
@@ -51,6 +60,9 @@ final class UserActionsTest extends IntegrationTestCase
         $dbUser->actions->rename(str_repeat('x', 65));
     }
 
+    /**
+     * Rename with same name performs no-op (no DB update).
+     */
     public function testRenameSameNameNoOp(): void
     {
         $token = bin2hex(random_bytes(16));

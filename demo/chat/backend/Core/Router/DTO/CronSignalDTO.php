@@ -15,7 +15,7 @@ use Hilos\Core\Router\SignalDataInterface;
  */
 class CronSignalDTO extends BaseDTO implements SignalDataDTO, SignalDataInterface
 {
-    // Field name constants
+    /** @var string Field name for cron job in serialized data */
     public const string CRON_NAME = 'cronName';
 
     /**

@@ -9,8 +9,11 @@ namespace Demo\Chat\Core\Frontend;
  */
 class HtmlResolver
 {
+    /** @var list<string> Supported locale codes */
     private const LOCALES = ['en', 'ru'];
-    private const DEFAULT_LOCALE = 'en';
+
+    /** @var string Default locale fallback */
+    private const string DEFAULT_LOCALE = 'en';
 
     /** @var array<string, int> Map path prefix to HTTP status (e.g. admin -> 403) */
     private array $statusOverrides = [];

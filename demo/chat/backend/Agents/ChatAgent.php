@@ -39,6 +39,7 @@ use Hilos\Utils\Logger;
  */
 class ChatAgent extends AbstractAgent
 {
+    /** @var int Message rate limit in seconds per user */
     private const int MESSAGE_RATE_LIMIT_SECONDS = 10;
 
     /** @var array<int, float> userId => last message timestamp (microtime) */

@@ -28,6 +28,7 @@ class ChatWorkerServer extends WorkerServer
      * Called when initial workers are ready.
      *
      * Calls parent to queue INITIAL_AGENTS_START, then starts BotAgent for each active bot.
+     *
      * @throws AgentDaemonCreationFailedException If agent daemon cannot be created
      * @throws NoSuitableWorkerException If no suitable worker is available
      */
