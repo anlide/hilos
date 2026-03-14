@@ -8,7 +8,7 @@ use Hilos\Socket\SocketException;
 use Throwable;
 
 /**
- * Exception thrown when connection was aborted (ECONNABORTED)
+ * Exception thrown when connection was aborted (ECONNABORTED).
  */
 class ConnectionAbortedException extends SocketException
 {

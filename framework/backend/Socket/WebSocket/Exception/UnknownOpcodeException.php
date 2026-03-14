@@ -8,7 +8,7 @@ use Hilos\Socket\WebSocket\WebSocketException;
 use Throwable;
 
 /**
- * Exception thrown when an unknown or invalid WebSocket opcode is encountered
+ * Exception thrown when an unknown or invalid WebSocket opcode is encountered.
  */
 class UnknownOpcodeException extends WebSocketException
 {

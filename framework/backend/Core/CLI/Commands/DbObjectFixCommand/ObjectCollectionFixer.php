@@ -9,7 +9,7 @@ use Hilos\Utils\Helpers\StringHelper;
 use ReflectionClass;
 
 /**
- * ObjectCollectionFixer trait
+ * ObjectCollectionFixer trait.
  *
  * Handles synchronization of ObjectCollection files (ObjectCollection/{Name}s.php)
  * with Object classes.
@@ -464,10 +464,12 @@ trait ObjectCollectionFixer
     }
 
     /**
-     * Parse ObjectCollection file to extract current structure
+     * Parse ObjectCollection file to extract current structure.
      *
      * @param string $filePath ObjectCollection file path
-     * @return ?array Parsed structure or null if failed
+     * @param class-string<Object_>|null $expectedObjectClass Expected Object class name (optional)
+     * @return array{object_class: string|null, object_alias: string|null, methods: array<string, array<string, mixed>>}|null
+     *         Parsed structure or null if failed
      */
     protected function parseObjectCollectionFile(string $filePath, ?string $expectedObjectClass = null): ?array
     {
@@ -617,10 +619,10 @@ trait ObjectCollectionFixer
     }
 
     /**
-     * Rebuild imports in ObjectCollection file
+     * Rebuild imports in ObjectCollection file.
      *
      * @param string $content Current file content
-     * @param string $objectClassName Object class name
+     * @param class-string<Object_> $objectClassName Object class name
      * @param string $objectAlias Object alias
      * @return string Updated content
      */
@@ -703,11 +705,11 @@ trait ObjectCollectionFixer
     }
 
     /**
-     * Rebuild type hints in ObjectCollection file
+     * Rebuild type hints in ObjectCollection file.
      *
      * @param string $content Current file content
      * @param string $objectAlias Object alias
-     * @param array $wrongTypeHints Wrong type hints to fix
+     * @param array<string, array<string, mixed>> $wrongTypeHints Wrong type hints to fix (method => type info)
      * @return string Updated content
      */
     private function rebuildObjectCollectionTypeHints(string $content, string $objectAlias, array $wrongTypeHints): string
@@ -725,12 +727,12 @@ trait ObjectCollectionFixer
     }
 
     /**
-     * Create ObjectCollection file from Object class
+     * Create ObjectCollection file from Object class.
      *
-     * @param string $objectClassName Object class name
+     * @param class-string<Object_> $objectClassName Object class name
      * @param string $objectCollectionDir ObjectCollection directory
      * @param string $namespace ObjectCollection namespace
-     * @param ReflectionClass $objectReflection Object reflection
+     * @param ReflectionClass<Object_> $objectReflection Object reflection
      * @return bool Success
      */
     protected function createObjectCollectionFile(string $objectClassName, string $objectCollectionDir, string $namespace, ReflectionClass $objectReflection): bool

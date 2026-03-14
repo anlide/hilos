@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Utils\Helpers;
 
 /**
- * StringHelper - string manipulation utilities
+ * StringHelper - string manipulation utilities.
  *
  * Provides helper functions for string formatting and manipulation.
  *

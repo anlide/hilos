@@ -8,7 +8,7 @@ use Hilos\Socket\SocketException;
 use Throwable;
 
 /**
- * Exception thrown when connection timed out (ETIMEDOUT)
+ * Exception thrown when connection timed out (ETIMEDOUT).
  */
 class ConnectionTimeoutException extends SocketException
 {

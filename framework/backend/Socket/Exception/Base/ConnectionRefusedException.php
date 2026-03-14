@@ -8,7 +8,7 @@ use Hilos\Socket\SocketException;
 use Throwable;
 
 /**
- * Exception thrown when connection was refused (ECONNREFUSED)
+ * Exception thrown when connection was refused (ECONNREFUSED).
  */
 class ConnectionRefusedException extends SocketException
 {

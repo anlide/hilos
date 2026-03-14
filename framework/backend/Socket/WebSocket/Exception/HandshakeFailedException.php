@@ -8,7 +8,7 @@ use Hilos\Socket\WebSocket\WebSocketException;
 use Throwable;
 
 /**
- * Exception thrown when WebSocket handshake fails
+ * Exception thrown when WebSocket handshake fails.
  */
 class HandshakeFailedException extends WebSocketException
 {

@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Core\Router;
 
 /**
- * SignalSource - Standard implementation of signal source identifier
+ * SignalSource - Standard implementation of signal source identifier.
  *
  * Represents a signal source with three parts: source, type, and index.
  * Provides constants for common signal sources.

@@ -8,7 +8,7 @@ use Hilos\Socket\SocketException;
 use Throwable;
 
 /**
- * Exception thrown when socket_bind fails
+ * Exception thrown when socket_bind fails.
  */
 class SocketBindException extends SocketException
 {

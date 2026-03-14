@@ -8,7 +8,7 @@ use Hilos\Socket\SocketException;
 use Throwable;
 
 /**
- * Exception thrown when network dropped connection on reset (ENETRESET)
+ * Exception thrown when network dropped connection on reset (ENETRESET).
  */
 class NetworkResetException extends SocketException
 {

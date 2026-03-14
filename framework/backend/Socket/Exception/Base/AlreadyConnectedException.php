@@ -8,7 +8,7 @@ use Hilos\Socket\SocketException;
 use Throwable;
 
 /**
- * Exception thrown when socket is already connected (EISCONN)
+ * Exception thrown when socket is already connected (EISCONN).
  */
 class AlreadyConnectedException extends SocketException
 {

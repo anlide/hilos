@@ -8,7 +8,7 @@ use Hilos\Socket\SocketException;
 use Throwable;
 
 /**
- * Exception thrown when operation is not permitted (EPERM)
+ * Exception thrown when operation is not permitted (EPERM).
  */
 class OperationNotPermittedException extends SocketException
 {

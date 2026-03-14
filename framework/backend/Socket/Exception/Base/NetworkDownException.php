@@ -8,7 +8,7 @@ use Hilos\Socket\SocketException;
 use Throwable;
 
 /**
- * Exception thrown when network is down (ENETDOWN)
+ * Exception thrown when network is down (ENETDOWN).
  */
 class NetworkDownException extends SocketException
 {

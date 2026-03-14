@@ -8,7 +8,7 @@ use Hilos\BaseDTO;
 use Hilos\LLM\Constants\LLMApiConstants;
 
 /**
- * Message - Chat message DTO for LLM
+ * Message - Chat message DTO for LLM.
  *
  * Represents a single message in chat format (role + content).
  * Roles: system, user, assistant.

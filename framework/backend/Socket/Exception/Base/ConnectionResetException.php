@@ -8,7 +8,7 @@ use Hilos\Socket\SocketException;
 use Throwable;
 
 /**
- * Exception thrown when connection is reset by peer (ECONNRESET)
+ * Exception thrown when connection is reset by peer (ECONNRESET).
  */
 class ConnectionResetException extends SocketException
 {

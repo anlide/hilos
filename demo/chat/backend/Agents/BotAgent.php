@@ -33,7 +33,7 @@ use Hilos\Utils\Logger;
 /**
  * BotAgent - Regular agent for bot management.
  *
- * Runs in regular worker process. One agent per bot (agentIndex = bot.id).
+ * Runs in regular worker process. One agent per bot (agentIndex = bot.id). One agent per bot (agentIndex = bot.id).
  * Manages bot interactions: reacts to chat context updates (RtSync from ChatContextAnalyzerAgent)
  * and generates messages via async LLM.
  */

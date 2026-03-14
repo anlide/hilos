@@ -8,7 +8,7 @@ use Hilos\Socket\WebSocket\WebSocketException;
 use Throwable;
 
 /**
- * Exception thrown when client uses unsupported WebSocket protocol version
+ * Exception thrown when client uses unsupported WebSocket protocol version.
  */
 class UnsupportedProtocolVersionException extends WebSocketException
 {

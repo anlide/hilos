@@ -280,6 +280,12 @@ class ChatAgent extends AbstractAgent
         }
     }
 
+    /**
+     * Log invalid agent payload type for signal.
+     *
+     * @param string $name Signal name
+     * @param mixed $payload Actual payload (logged for debugging)
+     */
     private function logInvalidAgentPayload(string $name, mixed $payload): void
     {
         Logger::logAgentError($this->getId(), "Invalid payload type for {$name}: " . get_class($payload));
@@ -287,6 +293,8 @@ class ChatAgent extends AbstractAgent
 
     /**
      * Process moderation result: clear state, notify user, publish message if allowed.
+     *
+     * @param ModerationResultSignalData $result Moderation result from ModeratorAgent
      */
     private function handleModerationResult(ModerationResultSignalData $result): void
     {
@@ -312,6 +320,8 @@ class ChatAgent extends AbstractAgent
 
     /**
      * Process bot message moderation result: publish message if allowed.
+     *
+     * @param ModerationBotResultSignalData $result Moderation result for bot message
      */
     private function handleModerationBotResult(ModerationBotResultSignalData $result): void
     {
@@ -330,6 +340,8 @@ class ChatAgent extends AbstractAgent
 
     /**
      * Convert guardian report signal into a regular system event.
+     *
+     * @param GuardianReportSignalData $signal Guardian report signal from guardian agent
      */
     private function handleGuardianReport(GuardianReportSignalData $signal): void
     {

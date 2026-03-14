@@ -8,7 +8,7 @@ use Hilos\Socket\SocketException;
 use Throwable;
 
 /**
- * Exception thrown when address is already in use (EADDRINUSE)
+ * Exception thrown when address is already in use (EADDRINUSE).
  */
 class AddressInUseException extends SocketException
 {

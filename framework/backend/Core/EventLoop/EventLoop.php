@@ -8,7 +8,7 @@ use EventBase;
 use Event;
 
 /**
- * EventLoop - Manages epoll-based event loop
+ * EventLoop - Manages epoll-based event loop.
  *
  * Wrapper around PHP event extension for managing socket events.
  * Works with DaemonManager main loop.
@@ -25,7 +25,7 @@ class EventLoop
     private int $activeEvents = 0;
 
     /**
-     * EventLoop constructor
+     * Creates event loop instance.
      */
     public function __construct()
     {
@@ -152,7 +152,7 @@ class EventLoop
     }
 
     /**
-     * Stop event loop
+     * Stops event loop.
      */
     public function stop(): void
     {
@@ -160,7 +160,7 @@ class EventLoop
     }
 
     /**
-     * Free all events
+     * Frees all registered events.
      */
     public function cleanup(): void
     {
@@ -173,7 +173,7 @@ class EventLoop
     }
 
     /**
-     * Destructor - cleanup events
+     * Destructor. Cleans up all events.
      */
     public function __destruct()
     {

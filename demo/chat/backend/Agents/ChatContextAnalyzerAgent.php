@@ -26,7 +26,7 @@ use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Utils\Logger;
 
 /**
- * ChatContextAnalyzerAgent - Monopolistic agent for chat context analysis
+ * ChatContextAnalyzerAgent - Monopolistic agent for chat context analysis.
  *
  * Runs in monopolistic worker process. Single instance maintains shared chat context
  * for all bots. Listens to DbSync (events, users, bots) and RtSync (connections) to

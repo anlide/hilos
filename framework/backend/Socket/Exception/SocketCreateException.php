@@ -8,7 +8,7 @@ use Hilos\Socket\SocketException;
 use Throwable;
 
 /**
- * Exception thrown when socket_create fails
+ * Exception thrown when socket_create fails.
  */
 class SocketCreateException extends SocketException
 {

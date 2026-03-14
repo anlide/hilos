@@ -8,7 +8,7 @@ use Hilos\Socket\SocketException;
 use Throwable;
 
 /**
- * Exception thrown when address is not available (EADDRNOTAVAIL)
+ * Exception thrown when address is not available (EADDRNOTAVAIL).
  */
 class AddressNotAvailableException extends SocketException
 {

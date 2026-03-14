@@ -10,7 +10,7 @@ use Hilos\Constants\LLMConstants;
 use Hilos\Utils\Env;
 
 /**
- * ModerationEnv - Reads moderation LLM config from env via Env
+ * ModerationEnv - Reads moderation LLM config from env via Env.
  *
  * Extends Env usage for moderation-specific variables.
  */

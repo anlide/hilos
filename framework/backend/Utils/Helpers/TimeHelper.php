@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Utils\Helpers;
 
 /**
- * TimeHelper - Utility functions for time formatting
+ * TimeHelper - Utility functions for time formatting.
  */
 class TimeHelper
 {

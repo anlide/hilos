@@ -8,7 +8,7 @@ use Hilos\Socket\SocketException;
 use Throwable;
 
 /**
- * Exception thrown when socket is not connected (ENOTCONN)
+ * Exception thrown when socket is not connected (ENOTCONN).
  */
 class NotConnectedException extends SocketException
 {

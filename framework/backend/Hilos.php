@@ -31,7 +31,7 @@ abstract class Hilos
     public static ?SignalRouter $sr = null;
 
     /**
-     * Initialize all layers.
+     * Initialize all layers (db, rt, table).
      */
     public static function init(): void
     {
@@ -67,14 +67,14 @@ abstract class Hilos
     /**
      * Create database context instance.
      *
-     * @return DbContext
+     * @return DbContext Database context instance
      */
     abstract protected static function createDb(): DbContext;
 
     /**
      * Create runtime instance.
      *
-     * @return ?RtContext
+     * @return ?RtContext Runtime context or null if not used
      */
     protected static function createRuntime(): ?RtContext
     {
@@ -84,7 +84,7 @@ abstract class Hilos
     /**
      * Create table context instance.
      *
-     * @return ?TableContext
+     * @return ?TableContext Table context or null if not used
      */
     protected static function createTable(): ?TableContext
     {

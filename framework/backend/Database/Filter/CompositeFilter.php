@@ -6,6 +6,8 @@ use Hilos\Database\Object\Item\Object_;
 
 /**
  * Composite filter combining multiple filters with logic operator (AND/OR/XOR).
+ *
+ * Combines child filters using AND, OR or XOR logic.
  */
 class CompositeFilter implements FilterInterface
 {

@@ -8,7 +8,7 @@ use Hilos\Socket\SocketException;
 use Throwable;
 
 /**
- * Exception thrown when no buffer space available (ENOBUFS)
+ * Exception thrown when no buffer space available (ENOBUFS).
  */
 class NoBufferSpaceException extends SocketException
 {

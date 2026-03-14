@@ -8,7 +8,7 @@ use Hilos\Constants\WorkerConstants;
 use Hilos\Utils\Helpers\Exception\InvalidWorkerIdException;
 
 /**
- * ArgumentHelper - Command line argument parsing utilities
+ * ArgumentHelper - Command line argument parsing utilities.
  *
  * Provides helper functions for parsing command line arguments.
  */

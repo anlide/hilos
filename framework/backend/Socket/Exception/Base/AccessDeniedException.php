@@ -8,7 +8,7 @@ use Hilos\Socket\SocketException;
 use Throwable;
 
 /**
- * Exception thrown when permission denied (EACCES)
+ * Exception thrown when permission denied (EACCES).
  */
 class AccessDeniedException extends SocketException
 {

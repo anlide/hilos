@@ -8,7 +8,7 @@ use Hilos\Socket\SocketException;
 use Throwable;
 
 /**
- * Exception thrown when message is too long (EMSGSIZE)
+ * Exception thrown when message is too long (EMSGSIZE).
  */
 class MessageTooLongException extends SocketException
 {

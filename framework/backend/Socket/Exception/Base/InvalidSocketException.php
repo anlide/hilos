@@ -8,7 +8,7 @@ use Hilos\Socket\SocketException;
 use Throwable;
 
 /**
- * Exception thrown when socket is invalid (EBADF)
+ * Exception thrown when socket is invalid (EBADF).
  */
 class InvalidSocketException extends SocketException
 {

@@ -8,7 +8,7 @@ use Hilos\Socket\SocketException;
 use Throwable;
 
 /**
- * Exception thrown when too many open files (EMFILE/ENFILE)
+ * Exception thrown when too many open files (EMFILE/ENFILE).
  */
 class TooManyOpenFilesException extends SocketException
 {

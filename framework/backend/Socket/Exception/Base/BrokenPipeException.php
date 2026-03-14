@@ -8,7 +8,7 @@ use Hilos\Socket\SocketException;
 use Throwable;
 
 /**
- * Exception thrown when broken pipe (EPIPE)
+ * Exception thrown when broken pipe (EPIPE).
  */
 class BrokenPipeException extends SocketException
 {

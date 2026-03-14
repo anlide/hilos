@@ -8,7 +8,7 @@ use Hilos\Socket\SocketException;
 use Throwable;
 
 /**
- * Exception thrown when operation was interrupted (EINTR)
+ * Exception thrown when operation was interrupted (EINTR).
  */
 class InterruptedException extends SocketException
 {

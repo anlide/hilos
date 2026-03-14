@@ -8,7 +8,7 @@ use Hilos\Socket\SocketException;
 use Throwable;
 
 /**
- * Exception thrown when address family is not supported (EAFNOSUPPORT)
+ * Exception thrown when address family is not supported (EAFNOSUPPORT).
  */
 class AddressFamilyNotSupportedException extends SocketException
 {

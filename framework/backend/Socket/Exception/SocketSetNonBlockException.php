@@ -8,7 +8,7 @@ use Hilos\Socket\SocketException;
 use Throwable;
 
 /**
- * Exception thrown when socket_set_nonblock fails
+ * Exception thrown when socket_set_nonblock fails.
  */
 class SocketSetNonBlockException extends SocketException
 {

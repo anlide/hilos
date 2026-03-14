@@ -8,7 +8,7 @@ use Hilos\Socket\SocketException;
 use Throwable;
 
 /**
- * Exception thrown when out of memory (ENOMEM)
+ * Exception thrown when out of memory (ENOMEM).
  */
 class OutOfMemoryException extends SocketException
 {

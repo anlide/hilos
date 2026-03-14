@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Core\CLI\Commands\DbIdeaFixCommand;
 
 use Hilos\Database\Idea\IdeaCollection;
+use Hilos\Database\Object\Item\Object_;
 use Hilos\Database\Object\Objects;
 use Hilos\Utils\Helpers\StringHelper;
 use ReflectionClass;
@@ -483,9 +484,9 @@ trait IdeaCollectionFixer
     }
 
     /**
-     * Create IdeaCollection file from ObjectCollection class
+     * Create IdeaCollection file from ObjectCollection class.
      *
-     * @param string $objectCollectionClassName ObjectCollection class name
+     * @param class-string<Objects> $objectCollectionClassName ObjectCollection class name
      * @param string $ideaCollectionDir IdeaCollection directory
      * @param string $namespace IdeaCollection namespace
      * @param ReflectionClass $objectCollectionReflection ObjectCollection reflection
@@ -709,11 +710,11 @@ trait IdeaCollectionFixer
     }
 
     /**
-     * Rebuild objectToIdea() method in IdeaCollection
+     * Rebuild objectToIdea() method in IdeaCollection.
      *
      * @param string $content Current file content
-     * @param string $objectClassName Object class name
-     * @param string $ideaClassName Idea class name
+     * @param class-string<Object_> $objectClassName Object class name
+     * @param class-string $ideaClassName Idea class name
      * @return string Updated content
      */
     protected function rebuildIdeaCollectionObjectToIdea(string $content, string $objectClassName, string $ideaClassName): string
@@ -766,12 +767,12 @@ trait IdeaCollectionFixer
     }
 
     /**
-     * Rebuild imports in IdeaCollection file
+     * Rebuild imports in IdeaCollection file.
      *
      * @param string $content Current file content
-     * @param string $objectClassName Object class name
-     * @param string $ideaClassName Idea class name
-     * @param string $objectCollectionClassName ObjectCollection class name
+     * @param class-string<Object_> $objectClassName Object class name
+     * @param class-string $ideaClassName Idea class name
+     * @param class-string<Objects> $objectCollectionClassName ObjectCollection class name
      * @return string Updated content
      */
     protected function rebuildIdeaCollectionImports(string $content, string $objectClassName, string $ideaClassName, string $objectCollectionClassName): string
@@ -889,11 +890,12 @@ trait IdeaCollectionFixer
     }
 
     /**
-     * Check if PHP file can be loaded safely without fatal errors
-     * Uses a child process to isolate potential fatal errors
+     * Check if PHP file can be loaded safely without fatal errors.
+     *
+     * Uses a child process to isolate potential fatal errors.
      *
      * @param string $file File path to check
-     * @param string $className Expected class name
+     * @param class-string $className Expected class name
      * @return bool True if file can be loaded safely, false otherwise
      */
     private function canLoadFileSafely(string $file, string $className): bool

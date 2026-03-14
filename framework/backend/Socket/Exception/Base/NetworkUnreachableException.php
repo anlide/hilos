@@ -8,7 +8,7 @@ use Hilos\Socket\SocketException;
 use Throwable;
 
 /**
- * Exception thrown when network is unreachable (ENETUNREACH)
+ * Exception thrown when network is unreachable (ENETUNREACH).
  */
 class NetworkUnreachableException extends SocketException
 {

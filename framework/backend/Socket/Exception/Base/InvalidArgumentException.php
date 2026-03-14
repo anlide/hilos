@@ -8,7 +8,7 @@ use Hilos\Socket\SocketException;
 use Throwable;
 
 /**
- * Exception thrown when invalid argument provided (EINVAL)
+ * Exception thrown when invalid argument provided (EINVAL).
  */
 class InvalidArgumentException extends SocketException
 {

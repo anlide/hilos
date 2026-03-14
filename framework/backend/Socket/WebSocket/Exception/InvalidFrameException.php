@@ -8,7 +8,7 @@ use Hilos\Socket\WebSocket\WebSocketException;
 use Throwable;
 
 /**
- * Exception thrown when WebSocket frame is invalid or malformed
+ * Exception thrown when WebSocket frame is invalid or malformed.
  */
 class InvalidFrameException extends WebSocketException
 {

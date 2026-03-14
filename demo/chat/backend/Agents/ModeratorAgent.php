@@ -24,7 +24,7 @@ use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Utils\Logger;
 
 /**
- * ModeratorAgent - Regular agent for content moderation
+ * ModeratorAgent - Regular agent for content moderation.
  *
  * Runs in regular worker process. Manages content moderation and AI-based checks.
  * Uses framework LLM layer (local Ollama or external OpenAI) via ModerationEnv.
