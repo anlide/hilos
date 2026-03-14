@@ -21,16 +21,31 @@ use RuntimeException;
  */
 class DbEntityDiffCommand implements CommandInterface
 {
+    /**
+     * Returns command name for CLI routing.
+     *
+     * @return string Command name (e.g. db:entity:diff)
+     */
     public function getName(): string
     {
         return CliCommands::DB_ENTITY_DIFF;
     }
 
+    /**
+     * Returns short command description for help listing.
+     *
+     * @return string One-line description
+     */
     public function getDescription(): string
     {
         return 'Compare Entity files with database schema and show differences';
     }
 
+    /**
+     * Returns full help text with usage and examples.
+     *
+     * @return string Multi-line help text
+     */
     public function getHelp(): string
     {
         return <<<HELP
@@ -57,6 +72,14 @@ Examples:
 HELP;
     }
 
+    /**
+     * Compares Entity definitions with database schema and displays diff.
+     *
+     * @param array<string, mixed> $options Parsed options (db-index, table, entity-dir, entity-ns)
+     * @param array<int, string> $args Positional args (unused)
+     * @return int Exit code (0 on success)
+     * @throws RuntimeException If database connection is not established or Entity dir not found
+     */
     public function execute(array $options, array $args): int
     {
         echo "\n=== Entity vs Database Schema Diff ===\n\n";

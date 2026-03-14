@@ -27,16 +27,31 @@ class HelpCommand implements CommandInterface
         $this->commands = $commands;
     }
 
+    /**
+     * Returns command name for CLI routing.
+     *
+     * @return string Command name (e.g. help)
+     */
     public function getName(): string
     {
         return CliCommands::HELP;
     }
 
+    /**
+     * Returns short command description for help listing.
+     *
+     * @return string One-line description
+     */
     public function getDescription(): string
     {
         return 'Show help information about CLI commands';
     }
 
+    /**
+     * Returns full help text with usage and examples.
+     *
+     * @return string Multi-line help text
+     */
     public function getHelp(): string
     {
         return <<<HELP
@@ -60,12 +75,12 @@ HELP;
     }
 
     /**
-     * Execute help command
+     * Execute help command.
      *
      * Displays available commands and usage information.
      *
-     * @param array $options Command options (--help for specific command)
-     * @param array $args Positional arguments (command name for detailed help)
+     * @param array<string, mixed> $options Command options (--help for specific command)
+     * @param array<int, string> $args Positional args (command name for detailed help)
      * @return int Exit code (0)
      */
     public function execute(array $options, array $args): int
@@ -127,7 +142,10 @@ HELP;
     }
 
     /**
-     * Show detailed help for a specific command
+     * Shows detailed help for a specific command.
+     *
+     * @param string $commandName Command name to show help for
+     * @return int Exit code (0 on success)
      */
     private function showCommandHelp(string $commandName): int
     {

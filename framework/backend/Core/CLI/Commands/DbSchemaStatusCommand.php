@@ -19,16 +19,31 @@ use RuntimeException;
  */
 class DbSchemaStatusCommand implements CommandInterface
 {
+    /**
+     * Returns command name for CLI routing.
+     *
+     * @return string Command name (e.g. db:schema:status)
+     */
     public function getName(): string
     {
         return CliCommands::DB_SCHEMA_STATUS;
     }
 
+    /**
+     * Returns short command description for help listing.
+     *
+     * @return string One-line description
+     */
     public function getDescription(): string
     {
         return 'Display database schema structure status';
     }
 
+    /**
+     * Returns full help text with usage and examples.
+     *
+     * @return string Multi-line help text
+     */
     public function getHelp(): string
     {
         return <<<HELP
@@ -54,6 +69,14 @@ Examples:
 HELP;
     }
 
+    /**
+     * Executes schema status command and outputs structure to console.
+     *
+     * @param array<string, mixed> $options Parsed options (db-index, table, verbose)
+     * @param array<int, string> $args Positional args (unused)
+     * @return int Exit code (0 on success)
+     * @throws RuntimeException If database connection is not established
+     */
     public function execute(array $options, array $args): int
     {
         echo "\n=== Database Schema Status ===\n\n";
@@ -123,7 +146,9 @@ HELP;
     }
 
     /**
-     * Display table summary (one line)
+     * Displays table summary (one line) to console.
+     *
+     * @param TableInfo $table Table info to display
      */
     private function displayTableSummary(TableInfo $table): void
     {
@@ -143,7 +168,10 @@ HELP;
     }
 
     /**
-     * Display detailed table information
+     * Displays detailed table information (columns, indexes, foreign keys).
+     *
+     * @param TableInfo $table Table info to display
+     * @param bool $verbose Whether to show verbose column details
      */
     private function displayTableDetails(TableInfo $table, bool $verbose): void
     {

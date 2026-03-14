@@ -10,21 +10,37 @@ use Hilos\Database\Database;
 use Hilos\Database\Migration;
 
 /**
- * Migration Down Command
- * Rolls back database migrations
+ * Migration Down Command.
+ *
+ * Rolls back database migrations to specified target version.
  */
 class MigrationDownCommand implements CommandInterface
 {
+    /**
+     * Returns command name for CLI routing.
+     *
+     * @return string Command name (e.g. migration:down)
+     */
     public function getName(): string
     {
         return CliCommands::MIGRATION_DOWN;
     }
 
+    /**
+     * Returns short command description for help listing.
+     *
+     * @return string One-line description
+     */
     public function getDescription(): string
     {
         return 'Rollback database migrations';
     }
 
+    /**
+     * Returns full help text with usage and examples.
+     *
+     * @return string Multi-line help text
+     */
     public function getHelp(): string
     {
         return <<<HELP
@@ -56,6 +72,13 @@ Warning:
 HELP;
     }
 
+    /**
+     * Executes migration down command and rolls back to target version.
+     *
+     * @param array<string, mixed> $options Parsed options (e.g. db-index, force)
+     * @param array<int, string> $args Positional args (target version required)
+     * @return int Exit code (0 on success)
+     */
     public function execute(array $options, array $args): int
     {
         echo "\n=== Database Migration DOWN ===\n\n";

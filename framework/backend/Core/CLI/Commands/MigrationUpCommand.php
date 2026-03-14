@@ -11,21 +11,37 @@ use Hilos\Database\DatabaseException;
 use Hilos\Database\Migration;
 
 /**
- * Migration Up Command
- * Applies pending database migrations
+ * Migration Up Command.
+ *
+ * Applies pending database migrations to advance schema version.
  */
 class MigrationUpCommand implements CommandInterface
 {
+    /**
+     * Returns command name for CLI routing.
+     *
+     * @return string Command name (e.g. migration:up)
+     */
     public function getName(): string
     {
         return CliCommands::MIGRATION_UP;
     }
 
+    /**
+     * Returns short command description for help listing.
+     *
+     * @return string One-line description
+     */
     public function getDescription(): string
     {
         return 'Apply pending database migrations';
     }
 
+    /**
+     * Returns full help text with usage and examples.
+     *
+     * @return string Multi-line help text
+     */
     public function getHelp(): string
     {
         return <<<HELP
@@ -63,19 +79,14 @@ HELP;
     }
 
     /**
-     * Executes the database migration process. It handles initializing the migration system,
-     * applying pending migrations, and checking for potential issues such as failed migrations.
+     * Executes database migration process.
      *
-     * @param array $options An associative array of options which may include:
-     *                       - 'db-index': The database connection index to use (default is 0).
-     *                       - 'to': The target migration version to apply up to.
-     *                       - 'force': A flag to force migrations even if there are failed migrations.
-     * @param array $args Additional arguments for execution (not directly used in the method).
+     * Initializes migration system, applies pending migrations, handles failed migrations.
      *
-     * @return int           Returns the exit code for the operation:
-     *                       - ExitCode::SUCCESS on successful completion.
-     *                       - ExitCode::ERROR if there are errors during the migration process.
-     * @throws DatabaseException
+     * @param array<string, mixed> $options Parsed options (db-index, to, force)
+     * @param array<int, string> $args Positional args (unused)
+     * @return int Exit code (0 on success)
+     * @throws DatabaseException If database connection or migration fails
      */
     public function execute(array $options, array $args): int
     {

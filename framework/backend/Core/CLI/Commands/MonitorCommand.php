@@ -15,16 +15,31 @@ use Hilos\Core\Daemon\CliMonitorManager;
  */
 class MonitorCommand implements CommandInterface
 {
+    /**
+     * Returns command name for CLI routing.
+     *
+     * @return string Command name (e.g. daemon:monitor)
+     */
     public function getName(): string
     {
         return 'daemon:monitor';
     }
 
+    /**
+     * Returns short command description for help listing.
+     *
+     * @return string One-line description
+     */
     public function getDescription(): string
     {
         return 'Start real-time monitoring of daemon status';
     }
 
+    /**
+     * Returns full help text with usage and examples.
+     *
+     * @return string Multi-line help text
+     */
     public function getHelp(): string
     {
         return <<<HELP
@@ -54,9 +69,9 @@ HELP;
      *
      * Starts real-time monitoring of daemon status.
      *
-     * @param array $options Command options (unused)
-     * @param array $args Positional arguments (unused)
-     * @return int Exit code (0 = success, 1 = error)
+     * @param array<string, mixed> $options Parsed options (unused)
+     * @param array<int, string> $args Positional args (unused)
+     * @return int Exit code (0 on success)
      */
     public function execute(array $options, array $args): int
     {

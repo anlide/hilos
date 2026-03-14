@@ -31,10 +31,12 @@ class ResultSetCollection implements \Iterator, \Countable
     }
 
     /**
-     * Public clone - prevent cloning
+     * Public clone - prevent cloning.
      *
      * Magic methods in PHP must be public to be called.
      * ResultSetCollection instances should not be cloned.
+     *
+     * @throws RuntimeException Always - cloning is not allowed
      */
     public function __clone(): void
     {
@@ -42,9 +44,9 @@ class ResultSetCollection implements \Iterator, \Countable
     }
 
     /**
-     * Create empty collection
+     * Create empty collection.
      *
-     * @return self
+     * @return self Empty collection instance
      */
     public static function empty(): self
     {
@@ -52,13 +54,13 @@ class ResultSetCollection implements \Iterator, \Countable
     }
 
     /**
-     * Create from Database after query execution
-     * Only gets current result set (lazy loading - doesn't collect all result sets)
-     * This allows for streaming/paginated reading of large datasets
-     * Reuses cached ResultSet from Database to preserve pointer position
+     * Create from Database after query execution.
      *
-     * @param ?int $index Connection index
-     * @return self
+     * Only gets current result set (lazy loading - doesn't collect all result sets).
+     * Reuses cached ResultSet from Database to preserve pointer position.
+     *
+     * @param ?int $index Connection index (null for current)
+     * @return self Collection with current result set
      */
     public static function fromDatabase(?int $index = null): self
     {
@@ -79,10 +81,10 @@ class ResultSetCollection implements \Iterator, \Countable
     }
 
     /**
-     * Get current mysqli_result from Database
+     * Get current mysqli_result from Database.
      *
-     * @param ?int $index Connection index
-     * @return ?mysqli_result
+     * @param ?int $index Connection index (null for current)
+     * @return ?mysqli_result Current result or null
      */
     private static function getCurrentResult(?int $index = null): ?mysqli_result
     {
@@ -90,10 +92,10 @@ class ResultSetCollection implements \Iterator, \Countable
     }
 
     /**
-     * Add result set to collection
+     * Add result set to collection.
      *
-     * @param ResultSet $resultSet
-     * @return self
+     * @param ResultSet $resultSet Result set to add
+     * @return self Self for chaining
      */
     public function add(ResultSet $resultSet): self
     {
@@ -102,10 +104,10 @@ class ResultSetCollection implements \Iterator, \Countable
     }
 
     /**
-     * Get result set by index
+     * Get result set by index.
      *
-     * @param int $index
-     * @return ?ResultSet
+     * @param int $index Result set index (0-based)
+     * @return ?ResultSet Result set or null if out of bounds
      */
     public function get(int $index): ?ResultSet
     {
@@ -113,9 +115,9 @@ class ResultSetCollection implements \Iterator, \Countable
     }
 
     /**
-     * Get first result set
+     * Get first result set.
      *
-     * @return ?ResultSet
+     * @return ?ResultSet First result set or null if empty
      */
     public function first(): ?ResultSet
     {
@@ -123,9 +125,9 @@ class ResultSetCollection implements \Iterator, \Countable
     }
 
     /**
-     * Get last result set
+     * Get last result set.
      *
-     * @return ?ResultSet
+     * @return ?ResultSet Last result set or null if empty
      */
     public function last(): ?ResultSet
     {
@@ -136,7 +138,9 @@ class ResultSetCollection implements \Iterator, \Countable
     }
 
     /**
-     * Get count of result sets
+     * Get count of result sets in collection.
+     *
+     * @return int Number of result sets
      */
     public function count(): int
     {
@@ -144,7 +148,9 @@ class ResultSetCollection implements \Iterator, \Countable
     }
 
     /**
-     * Check if collection is empty
+     * Check if collection has no result sets.
+     *
+     * @return bool True if empty
      */
     public function isEmpty(): bool
     {
@@ -160,9 +166,9 @@ class ResultSetCollection implements \Iterator, \Countable
     }
 
     /**
-     * Get current result set
+     * Get current result set at iterator position.
      *
-     * @return ?ResultSet
+     * @return ?ResultSet Current result set or null
      */
     public function current(): ?ResultSet
     {
@@ -170,9 +176,9 @@ class ResultSetCollection implements \Iterator, \Countable
     }
 
     /**
-     * Get current key
+     * Get current iterator key (position).
      *
-     * @return int
+     * @return int Current position index
      */
     public function key(): int
     {
@@ -188,7 +194,9 @@ class ResultSetCollection implements \Iterator, \Countable
     }
 
     /**
-     * Check if current position is valid
+     * Check if current iterator position is valid.
+     *
+     * @return bool True if position has result set
      */
     public function valid(): bool
     {
@@ -360,10 +368,11 @@ class ResultSetCollection implements \Iterator, \Countable
     }
 
     /**
-     * Collect all result sets from multi-query/stored procedure
-     * Automatically calls nextResult() until all result sets are collected
+     * Collect all result sets from multi-query/stored procedure.
      *
-     * @return self Returns self for chaining
+     * Automatically calls nextResult() until all result sets are collected.
+     *
+     * @return self Self for chaining
      */
     public function collectAll(): self
     {
@@ -421,8 +430,9 @@ class ResultSetCollection implements \Iterator, \Countable
     }
 
     /**
-     * Get all result sets as array (convenience method)
-     * Automatically collects all result sets if not already collected
+     * Get all result sets as array (convenience method).
+     *
+     * Automatically collects all result sets if not already collected.
      *
      * @return ResultSet[] Array of result sets
      */

@@ -26,16 +26,31 @@ class DbObjectFixCommand implements CommandInterface
 {
     use ObjectCollectionFixer;
 
+    /**
+     * Returns command name for CLI routing.
+     *
+     * @return string Command name (e.g. db:object:fix)
+     */
     public function getName(): string
     {
         return CliCommands::DB_OBJECT_FIX;
     }
 
+    /**
+     * Returns short command description for help listing.
+     *
+     * @return string One-line description
+     */
     public function getDescription(): string
     {
         return 'Fix Object and ObjectCollection files to match Entity files';
     }
 
+    /**
+     * Returns full help text with usage and examples.
+     *
+     * @return string Multi-line help text
+     */
     public function getHelp(): string
     {
         return <<<HELP
@@ -66,17 +81,12 @@ HELP;
     }
 
     /**
-     * Execute the command to fix Object and ObjectCollection files
+     * Execute the command to fix Object and ObjectCollection files.
      *
-     * @param array $options Command options:
-     *   - 'table' (string|null): Fix specific table only
-     *   - 'object-dir' (string|null): Object and ObjectCollection files directory (auto-detect if null)
-     *   - 'entity-dir' (string|null): Entity files directory (auto-detect if null)
-     *   - 'dry-run' (bool): Show what would be changed without modifying files
-     *   - 'force-repair' (bool): Attempt to repair broken Object and ObjectCollection files
-     * @param array $args Command arguments (not used)
-     * @return int Exit code (ExitCode::SUCCESS on success)
-     * @throws RuntimeException
+     * @param array<string, mixed> $options Parsed options (table, object-dir, entity-dir, dry-run, force-repair)
+     * @param array<int, string> $args Positional args (unused)
+     * @return int Exit code (0 on success)
+     * @throws RuntimeException If critical errors occur during processing
      */
     public function execute(array $options, array $args): int
     {

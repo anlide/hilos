@@ -27,16 +27,31 @@ class StatusCommand implements CommandInterface
     /** @var ?DaemonStatus Daemon status */
     private ?DaemonStatus $daemonStatus = null;
 
+    /**
+     * Returns command name for CLI routing.
+     *
+     * @return string Command name (e.g. daemon:status)
+     */
     public function getName(): string
     {
         return 'daemon:status';
     }
 
+    /**
+     * Returns short command description for help listing.
+     *
+     * @return string One-line description
+     */
     public function getDescription(): string
     {
         return 'Display current daemon status and metrics';
     }
 
+    /**
+     * Returns full help text with usage and examples.
+     *
+     * @return string Multi-line help text
+     */
     public function getHelp(): string
     {
         return <<<HELP
@@ -60,9 +75,9 @@ HELP;
      *
      * Displays current daemon status with real-time data from HTTP endpoint.
      *
-     * @param array $options Command options
-     * @param array $args Positional arguments (unused)
-     * @return int Exit code (0)
+     * @param array<string, mixed> $options Parsed options (unused)
+     * @param array<int, string> $args Positional args (unused)
+     * @return int Exit code (0 on success)
      */
     public function execute(array $options, array $args): int
     {
@@ -86,10 +101,11 @@ HELP;
     }
 
     /**
-     * Fetch daemon status via HTTP
+     * Fetch daemon status via HTTP.
      *
      * Makes synchronous HTTP request to daemon status endpoint.
-     * @throws MissingEnvironmentVariableException
+     *
+     * @throws MissingEnvironmentVariableException If required env vars not set
      */
     private function fetchDaemonStatus(): void
     {

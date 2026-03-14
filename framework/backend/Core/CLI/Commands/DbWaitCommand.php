@@ -19,16 +19,31 @@ class DbWaitCommand implements CommandInterface
     private const int DEFAULT_INTERVAL_SEC = 2;
     private const int DEFAULT_TIMEOUT_SEC = 60;
 
+    /**
+     * Returns command name for CLI routing.
+     *
+     * @return string Command name (e.g. db:wait)
+     */
     public function getName(): string
     {
         return CliCommands::DB_WAIT;
     }
 
+    /**
+     * Returns short command description for help listing.
+     *
+     * @return string One-line description
+     */
     public function getDescription(): string
     {
         return 'Wait for MySQL to become ready';
     }
 
+    /**
+     * Returns full help text with usage and examples.
+     *
+     * @return string Multi-line help text
+     */
     public function getHelp(): string
     {
         return <<<HELP
@@ -52,8 +67,11 @@ HELP;
     }
 
     /**
-     * @param array<string, mixed> $options
-     * @param array<int, string> $args
+     * Polls MySQL connection until ready or timeout.
+     *
+     * @param array<string, mixed> $options Parsed options (interval, timeout)
+     * @param array<int, string> $args Positional args (unused)
+     * @return int Exit code (0 on success)
      */
     public function execute(array $options, array $args): int
     {

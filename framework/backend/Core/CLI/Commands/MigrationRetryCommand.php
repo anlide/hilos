@@ -10,21 +10,37 @@ use Hilos\Database\Database;
 use Hilos\Database\Migration;
 
 /**
- * Migration Retry Command
- * Retries a failed migration
+ * Migration Retry Command.
+ *
+ * Retries a previously failed migration by removing failed record and re-applying.
  */
 class MigrationRetryCommand implements CommandInterface
 {
+    /**
+     * Returns command name for CLI routing.
+     *
+     * @return string Command name (e.g. migration:retry)
+     */
     public function getName(): string
     {
         return CliCommands::MIGRATION_RETRY;
     }
 
+    /**
+     * Returns short command description for help listing.
+     *
+     * @return string One-line description
+     */
     public function getDescription(): string
     {
         return 'Retry a failed migration';
     }
 
+    /**
+     * Returns full help text with usage and examples.
+     *
+     * @return string Multi-line help text
+     */
     public function getHelp(): string
     {
         return <<<HELP
@@ -54,6 +70,13 @@ This command:
 HELP;
     }
 
+    /**
+     * Executes retry command for failed migration.
+     *
+     * @param array<string, mixed> $options Parsed options (e.g. db-index)
+     * @param array<int, string> $args Positional args (version required)
+     * @return int Exit code (0 on success)
+     */
     public function execute(array $options, array $args): int
     {
         echo "\n=== Retry Failed Migration ===\n\n";

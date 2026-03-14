@@ -10,21 +10,38 @@ use Hilos\Database\Database;
 use Hilos\Database\Migration;
 
 /**
- * Migration Status Command
- * Shows current migration status
+ * Migration Status Command.
+ *
+ * CLI command that displays current database migration status.
+ * Shows applied, pending and failed migrations.
  */
 class MigrationStatusCommand implements CommandInterface
 {
+    /**
+     * Returns command name for CLI routing.
+     *
+     * @return string Command name (e.g. migration:status)
+     */
     public function getName(): string
     {
         return CliCommands::MIGRATION_STATUS;
     }
 
+    /**
+     * Returns short command description for help listing.
+     *
+     * @return string One-line description
+     */
     public function getDescription(): string
     {
         return 'Show current migration status';
     }
 
+    /**
+     * Returns full help text with usage and examples.
+     *
+     * @return string Multi-line help text
+     */
     public function getHelp(): string
     {
         return <<<HELP
@@ -46,6 +63,13 @@ Examples:
 HELP;
     }
 
+    /**
+     * Executes migration status command and outputs status to console.
+     *
+     * @param array<string, mixed> $options Parsed options (e.g. db-index)
+     * @param array<int, string> $args Positional arguments (unused)
+     * @return int Exit code (0 on success)
+     */
     public function execute(array $options, array $args): int
     {
         echo "\n=== Migration Status ===\n\n";

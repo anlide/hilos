@@ -29,16 +29,32 @@ use RuntimeException;
 class DbEntityFixCommand implements CommandInterface
 {
     use EntityCollectionFixer;
+
+    /**
+     * Returns command name for CLI routing.
+     *
+     * @return string Command name (e.g. db:entity:fix)
+     */
     public function getName(): string
     {
         return CliCommands::DB_ENTITY_FIX;
     }
 
+    /**
+     * Returns short command description for help listing.
+     *
+     * @return string One-line description
+     */
     public function getDescription(): string
     {
         return 'Fix Entity and EntityCollection files to match database schema';
     }
 
+    /**
+     * Returns full help text with usage and examples.
+     *
+     * @return string Multi-line help text
+     */
     public function getHelp(): string
     {
         return <<<HELP
@@ -68,18 +84,13 @@ HELP;
     }
 
     /**
-     * Execute the command to fix Entity and EntityCollection files
+     * Execute the command to fix Entity and EntityCollection files.
      *
-     * @param array $options Command options:
-     *   - 'db-index' (int): Database connection index (default: 0)
-     *   - 'table' (string|null): Fix specific table only
-     *   - 'entity-dir' (string|null): Entity files directory (auto-detect if null)
-     *   - 'entity-ns' (string|null): Entity namespace prefix (auto-detect if null)
-     *   - 'dry-run' (bool): Show what would be changed without modifying files
-     * @param array $args Command arguments (not used)
-     * @return int Exit code (ExitCode::SUCCESS on success)
-     * @throws DatabaseException
-     * @throws RuntimeException
+     * @param array<string, mixed> $options Parsed options (db-index, table, entity-dir, entity-ns, dry-run)
+     * @param array<int, string> $args Positional args (unused)
+     * @return int Exit code (0 on success)
+     * @throws DatabaseException If database connection or schema init fails
+     * @throws RuntimeException If connection not established or Entity dir not found
      */
     public function execute(array $options, array $args): int
     {

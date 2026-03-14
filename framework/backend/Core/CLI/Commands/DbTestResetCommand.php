@@ -21,16 +21,31 @@ use Hilos\Utils\Env;
  */
 class DbTestResetCommand implements CommandInterface
 {
+    /**
+     * Returns command name for CLI routing.
+     *
+     * @return string Command name (e.g. db:test:reset)
+     */
     public function getName(): string
     {
         return CliCommands::DB_TEST_RESET;
     }
 
+    /**
+     * Returns short command description for help listing.
+     *
+     * @return string One-line description
+     */
     public function getDescription(): string
     {
         return 'Reset test database (DROP, migrate, seed)';
     }
 
+    /**
+     * Returns full help text with usage and examples.
+     *
+     * @return string Multi-line help text
+     */
     public function getHelp(): string
     {
         return <<<HELP
@@ -50,8 +65,12 @@ HELP;
     }
 
     /**
-     * @param array<string, mixed> $options
-     * @param array<int, string> $args
+     * Resets test database: drops, recreates, migrates and seeds.
+     *
+     * @param array<string, mixed> $options Parsed options (unused)
+     * @param array<int, string> $args Positional args (unused)
+     * @return int Exit code (0 on success)
+     * @throws DatabaseException If migration or seed fails
      */
     public function execute(array $options, array $args): int
     {
