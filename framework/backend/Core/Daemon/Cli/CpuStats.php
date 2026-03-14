@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Core\Daemon\Cli;
 
 /**
- * CpuStats - CPU statistics data holder
+ * CpuStats - CPU statistics data holder.
  *
  * Represents CPU statistics from /proc/stat for comparison between measurements.
  * Stores user, nice, system, idle, and iowait values for CPU usage calculation.
@@ -30,7 +30,7 @@ class CpuStats
     public int $iowait;
 
     /**
-     * CpuStats constructor
+     * Creates CpuStats instance with CPU time values.
      *
      * @param int $user User time
      * @param int $nice Nice time
@@ -53,7 +53,7 @@ class CpuStats
     }
 
     /**
-     * Create CpuStats from /proc/stat line
+     * Creates CpuStats instance from /proc/stat line.
      *
      * Parses /proc/stat output and creates CpuStats object.
      *
@@ -74,7 +74,7 @@ class CpuStats
     }
 
     /**
-     * Calculate idle time (idle + iowait)
+     * Calculates idle time (idle + iowait).
      *
      * @return int Total idle time
      */
@@ -84,7 +84,7 @@ class CpuStats
     }
 
     /**
-     * Calculate non-idle time (user + nice + system)
+     * Calculates non-idle time (user + nice + system).
      *
      * @return int Total non-idle time
      */
@@ -94,7 +94,7 @@ class CpuStats
     }
 
     /**
-     * Calculate total time (idle + non-idle)
+     * Calculates total time (idle + non-idle).
      *
      * @return int Total time
      */
@@ -104,7 +104,7 @@ class CpuStats
     }
 
     /**
-     * Calculate CPU usage percentage compared to previous stats
+     * Calculates CPU usage percentage compared to previous stats.
      *
      * Compares current stats with previous stats and calculates CPU usage percentage.
      *

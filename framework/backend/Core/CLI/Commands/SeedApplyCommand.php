@@ -11,7 +11,7 @@ use Hilos\Database\DatabaseException;
 use Hilos\Database\Seed;
 
 /**
- * Seed Apply Command
+ * Seed Apply Command.
  *
  * Applies database seeds from configured seed directory.
  * Requires Seed::setSeedPath() to be called before execution (typically in CLI bootstrap).

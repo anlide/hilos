@@ -23,7 +23,7 @@ use Hilos\Utils\Env;
 use Hilos\Utils\Logger;
 
 /**
- * Daemon - Entry point for WebSocket test daemon
+ * Daemon - Entry point for WebSocket test daemon.
  *
  * Designed to run in Docker container under docker.php management.
  * Provides WebSocket test functionality with heartbeat monitoring.

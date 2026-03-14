@@ -39,7 +39,7 @@ class CronRule
     }
 
     /**
-     * Check if cron job should run now
+     * Check if cron job should run now.
      *
      * Checks if current time matches cron expression.
      * Only checks once per minute to avoid duplicate executions.
@@ -94,7 +94,7 @@ class CronRule
     }
 
     /**
-     * Parse cron expression into parts
+     * Parse cron expression into parts.
      *
      * @return list<string> Five parts: minute, hour, day, month, weekday
      */
@@ -108,7 +108,7 @@ class CronRule
     }
 
     /**
-     * Check if time matches cron expression part
+     * Check if time matches cron expression part.
      *
      * @param string $part Cron expression part (e.g., "*\/5", "*", "15", "1-5")
      * @param int $value Current value to check
@@ -240,7 +240,7 @@ class CronRule
     }
 
     /**
-     * Check if current time matches cron expression
+     * Check if current time matches cron expression.
      *
      * @param string $minuteExpr Minute expression
      * @param string $hourExpr Hour expression

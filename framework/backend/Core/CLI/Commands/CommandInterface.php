@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Core\CLI\Commands;
 
 /**
- * CommandInterface - Interface for CLI commands
+ * CommandInterface - Interface for CLI commands.
  *
  * Defines contract for all CLI command implementations.
  * Each command must implement execute method that returns exit code.
@@ -22,21 +22,21 @@ interface CommandInterface
     public function execute(array $options, array $args): int;
 
     /**
-     * Get command name
+     * Returns command name for CLI routing.
      *
      * @return string Command name (e.g., 'daemon:status')
      */
     public function getName(): string;
 
     /**
-     * Get short command description
+     * Returns short command description for command listing.
      *
      * @return string One-line description for command listing
      */
     public function getDescription(): string;
 
     /**
-     * Get detailed help text
+     * Returns detailed help text with usage examples.
      *
      * @return string Full help text with usage examples
      */

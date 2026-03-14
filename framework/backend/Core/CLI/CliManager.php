@@ -80,7 +80,7 @@ class CliManager
     }
 
     /**
-     * Register available commands
+     * Registers available commands.
      *
      * Initializes command instances and maps them to command names.
      */
@@ -103,7 +103,7 @@ class CliManager
     }
 
     /**
-     * Run CLI manager
+     * Runs CLI manager.
      *
      * Main entry point for CLI execution. Parses command and routes
      * to appropriate handler. Displays help if no command provided.
@@ -152,7 +152,7 @@ class CliManager
     }
 
     /**
-     * Parse command line arguments
+     * Parses command line arguments.
      *
      * Extracts command, positional arguments and options from argv.
      * Supports formats:
@@ -186,7 +186,7 @@ class CliManager
     }
 
     /**
-     * Get option value
+     * Gets option value.
      *
      * @param string $name Option name
      * @param mixed $default Default value if option not set
@@ -198,7 +198,7 @@ class CliManager
     }
 
     /**
-     * Check if option exists
+     * Checks if option exists.
      *
      * @param string $name Option name
      * @return bool True if option is set
@@ -219,7 +219,7 @@ class CliManager
     }
 
     /**
-     * Handle unknown command
+     * Handles unknown command.
      *
      * Displays error message and help information for invalid commands.
      *

@@ -9,7 +9,7 @@ use Hilos\Core\Agent\Daemon\AbstractAgentDaemon;
 use Hilos\Utils\Logger;
 
 /**
- * ChatSituationGuardianAgentDaemon - Daemon proxy for ChatSituationGuardianAgent
+ * ChatSituationGuardianAgentDaemon - Daemon proxy for ChatSituationGuardianAgent.
  *
  * Monopolistic agent for chat situation moderation. Validates messages in context.
  */

@@ -20,7 +20,7 @@ use ReflectionClass;
 use RuntimeException;
 
 /**
- * DbEntityFixCommand - Fix Entity and EntityCollection files to match database schema
+ * DbEntityFixCommand - Fix Entity and EntityCollection files to match database schema.
  *
  * Automatically updates Entity class definitions to match actual database structure.
  * Adds missing columns, indexes, foreign keys, and updates types.

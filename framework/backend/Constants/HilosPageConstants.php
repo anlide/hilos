@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Constants;
 
 /**
- * HilosPageConstants - Page constants for Hilos admin section
+ * HilosPageConstants - Page constants for Hilos admin section.
  *
  * Defines page identifiers for framework-level Hilos admin pages.
  * Projects inherit these pages via HilosPageFactory.

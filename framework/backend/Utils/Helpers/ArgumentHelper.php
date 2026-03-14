@@ -15,7 +15,7 @@ use Hilos\Utils\Helpers\Exception\InvalidWorkerIdException;
 class ArgumentHelper
 {
     /**
-     * Get worker ID argument format string
+     * Gets worker ID argument format string.
      *
      * @return string Format string (e.g., "--worker-id=")
      */
@@ -25,7 +25,7 @@ class ArgumentHelper
     }
 
     /**
-     * Get length of worker ID argument format string
+     * Gets length of worker ID argument format string.
      *
      * @return int Format string length
      */
@@ -35,7 +35,7 @@ class ArgumentHelper
     }
 
     /**
-     * Get monopolistic argument format string
+     * Gets monopolistic argument format string.
      *
      * @return string Format string (e.g., "--monopolistic")
      */
@@ -45,7 +45,7 @@ class ArgumentHelper
     }
 
     /**
-     * Get worker index from command line arguments
+     * Gets worker index from command line arguments.
      *
      * Parses --worker-id=N argument from $argv array.
      * Throws InvalidWorkerIdException if worker index is missing or invalid.
@@ -91,7 +91,7 @@ class ArgumentHelper
     }
 
     /**
-     * Check if monopolistic flag is present in arguments
+     * Checks if monopolistic flag is present in arguments.
      *
      * @param list<string> $argv Command line arguments
      * @return bool True if --monopolistic flag is present
@@ -102,7 +102,7 @@ class ArgumentHelper
     }
 
     /**
-     * Build worker index argument string
+     * Builds worker index argument string.
      *
      * @param int $workerIndex Worker index
      * @return string Argument string (e.g., "--worker-id=1")
@@ -113,7 +113,7 @@ class ArgumentHelper
     }
 
     /**
-     * Build command line arguments array for worker process
+     * Builds command line arguments array for worker process.
      *
      * @param int $workerIndex Worker index
      * @param bool $monopolistic Whether worker is monopolistic

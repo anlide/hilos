@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Constants;
 
 /**
- * EnvConstants - Environment variable name constants
+ * EnvConstants - Environment variable name constants.
  *
  * Defines all environment variable names used by the framework.
  * Centralized environment variable name management prevents typos and ensures consistency.

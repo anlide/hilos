@@ -3,8 +3,9 @@
 namespace Hilos\Database;
 
 /**
- * Entity column type representation enum
- * Represents types used in Entity _types arrays for database column mapping
+ * Entity column type representation enum.
+ *
+ * Represents types used in Entity _types arrays for database column mapping.
  * 
  * Note: Some types (datetime, date, time, text, json, binary) are not native PHP types,
  * but are used for semantic representation of database column types in PHP context.

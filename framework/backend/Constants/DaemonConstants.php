@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Constants;
 
 /**
- * DaemonConstants - Daemon display constants
+ * DaemonConstants - Daemon display constants.
  *
  * Contains constants for daemon status display values.
  */

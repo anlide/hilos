@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Constants;
 
 /**
- * SocketConstants - Socket-related constants
+ * SocketConstants - Socket-related constants.
  *
  * Defines limits and constraints for socket operations.
  */

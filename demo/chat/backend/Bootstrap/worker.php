@@ -14,7 +14,7 @@ use Hilos\Utils\Helpers\Exception\InvalidWorkerIdException;
 use Hilos\Utils\Logger;
 
 /**
- * Worker Bootstrap - Entry point for worker processes
+ * Worker Bootstrap - Entry point for worker processes.
  *
  * Worker processes are started by daemon with --worker-id parameter.
  * Parses worker ID from command line and starts ChatWorkerManager.

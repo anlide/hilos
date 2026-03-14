@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Socket;
 
 /**
- * SocketOperation - Socket operation type enumeration
+ * SocketOperation - Socket operation type enumeration.
  *
  * Represents possible socket operations for error handling.
  */

@@ -8,7 +8,7 @@ use Hilos\Database\Entity\Collection\EntityCollection;
 use Iterator;
 
 /**
- * Bots Entity Collection
+ * Bots entity collection.
  *
  * @extends EntityCollection<EntityBot>
  * @implements Iterator<int|string, EntityBot>

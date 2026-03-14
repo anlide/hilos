@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Demo\Chat\Constants;
 
 /**
- * ChatSignalConstants - Chat signal name constants
+ * ChatSignalConstants - Chat signal name constants.
  *
  * Defines signal name constants used in chat demo.
  */

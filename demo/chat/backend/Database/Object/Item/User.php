@@ -8,7 +8,8 @@ use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Item\Object_;
 
 /**
- * User Object
+ * User object.
+ *
  * Auto-generated from Entity: Demo\Chat\Database\Entity\Item\User
  *
  * Business logic layer with change tracking

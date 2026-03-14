@@ -8,7 +8,7 @@ use Demo\Chat\Runtime\State\Item\Connection;
 use Hilos\Runtime\State\Collection\RtStates;
 
 /**
- * Connections state collection - stores all active WebSocket connections
+ * Connections state collection - stores all active WebSocket connections.
  *
  * This is the single source of truth for connection data.
  * RtCollection wrappers provide read-only access.
@@ -20,7 +20,7 @@ class Connections extends RtStates
     public const string STATE_CLASS = Connection::class;
 
     /**
-     * Find first connection for given user
+     * Finds first connection for given user.
      *
      * @param int $userId User ID
      * @return ?Connection Connection or null
@@ -36,7 +36,7 @@ class Connections extends RtStates
     }
 
     /**
-     * Find all connections for given user (indexed by accept key)
+     * Finds all connections for given user (indexed by accept key).
      *
      * @param int $userId User ID
      * @return array<string, Connection> Accept key => Connection map
@@ -53,7 +53,7 @@ class Connections extends RtStates
     }
 
     /**
-     * Check if user has any active connections
+     * Checks if user has any active connections.
      *
      * @param int $userId User ID
      * @return bool True if at least one connection exists

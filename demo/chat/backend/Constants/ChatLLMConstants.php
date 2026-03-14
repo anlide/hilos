@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Demo\Chat\Constants;
 
 /**
- * ChatLLMConstants - LLM model names for chat demo
+ * ChatLLMConstants - LLM model names for chat demo.
  *
  * Moderator uses lightweight model for low-latency allow/block classification.
  * Context analyzer uses lightweight model for topic/summary extraction.

@@ -13,7 +13,7 @@ use Hilos\Database\Seed;
 use Hilos\Utils\Env;
 
 /**
- * DB Test Reset Command
+ * DB Test Reset Command.
  *
  * Resets test database: DROP DATABASE, CREATE DATABASE, migrate up, apply seeds.
  * Requires Migration and Seed paths to be configured in CLI bootstrap.

@@ -9,8 +9,7 @@ use Hilos\Core\Table\DTO\TableResultDTO;
 use Hilos\Core\Table\TableConstants;
 
 /**
- * In-memory search, sort and pagination for table data sources
- * that load all rows into PHP memory.
+ * In-memory search, sort and pagination for table data sources that load all rows into PHP memory.
  *
  * Data sources that can push these operations to SQL or another backend
  * should implement query() directly instead of using this helper.
@@ -22,7 +21,6 @@ final class InMemoryTableFilter
      *
      * @param list<array<string, mixed>> $rows All rows from the data source
      * @param TableQueryDTO $query Query parameters
-     *
      * @return TableResultDTO Filtered/sorted/paginated result
      */
     public static function apply(array $rows, TableQueryDTO $query): TableResultDTO

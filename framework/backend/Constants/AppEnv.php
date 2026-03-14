@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Constants;
 
 /**
- * AppEnv - Canonical application environment values
+ * AppEnv - Canonical application environment values.
  *
  * Standard environment identifiers for APP_ENV. Use these values in .env
  * to ensure consistent behavior (e.g. database seeds disabled on PROD and STAGING).

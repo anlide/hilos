@@ -9,7 +9,7 @@ use Hilos\Constants\ExitCode;
 use Hilos\Utils\Env;
 
 /**
- * DB Wait Command
+ * DB Wait Command.
  *
  * Waits for MySQL to become ready. Polls connection until success.
  * Uses DB_HOST, DB_PORT, DB_USERNAME, DB_PASSWORD from environment.

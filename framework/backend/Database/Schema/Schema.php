@@ -42,8 +42,9 @@ class Schema
     private static array $initialized = [];
 
     /**
-     * Initialize schema for a connection index
-     * Reads all tables and their structure from database
+     * Initializes schema for a connection index.
+     *
+     * Reads all tables and their structure from database.
      *
      * @param ?int $index Connection index (default: current)
      * @throws DatabaseException If connection is not established or schema read fails
@@ -87,7 +88,7 @@ class Schema
     }
 
     /**
-     * Read table structure from database
+     * Reads table structure from database.
      *
      * @param string $tableName Table name
      * @return TableInfo Table structure information
@@ -172,8 +173,9 @@ class Schema
     }
 
     /**
-     * Get real foreign keys from INFORMATION_SCHEMA
-     * Supports both simple and composite foreign keys
+     * Gets real foreign keys from INFORMATION_SCHEMA.
+     *
+     * Supports both simple and composite foreign keys.
      *
      * @param string $tableName Table name
      * @return array<string, string> Foreign keys mapping:
@@ -226,7 +228,7 @@ class Schema
     }
 
     /**
-     * Get table structure
+     * Gets table structure.
      *
      * @param string $tableName Table name
      * @param ?int $index Connection index
@@ -244,7 +246,7 @@ class Schema
     }
 
     /**
-     * Get all tables for a connection index
+     * Gets all tables for a connection index.
      *
      * @param ?int $index Connection index
      * @return array<string, TableInfo> Array of table structures
@@ -257,7 +259,7 @@ class Schema
     }
 
     /**
-     * Get table names for a connection index
+     * Gets table names for a connection index.
      *
      * @param ?int $index Connection index
      * @return list<string> Table names
@@ -270,7 +272,7 @@ class Schema
     }
 
     /**
-     * Check if schema is initialized for a connection index
+     * Checks if schema is initialized for a connection index.
      *
      * @param ?int $index Connection index
      * @return bool True if initialized
@@ -283,7 +285,7 @@ class Schema
     }
 
     /**
-     * Get schema statistics for a connection index
+     * Gets schema statistics for a connection index.
      *
      * @param ?int $index Connection index
      * @return array<string, mixed> Statistics (connectionIndex, initialized, tablesCount, etc.)
@@ -315,7 +317,10 @@ class Schema
     }
 
     /**
-     * Convert MySQL type to PHP type
+     * Converts MySQL type to PHP type.
+     *
+     * @param string $mysqlType MySQL column type (e.g. int, varchar, datetime)
+     * @return string PHP type (integer, string, float, boolean, datetime, etc.)
      */
     private static function mysqlTypeToPhp(string $mysqlType): string
     {
@@ -354,7 +359,7 @@ class Schema
     }
 
     /**
-     * Reset schema for a connection index (for re-initialization)
+     * Resets schema for a connection index (for re-initialization).
      *
      * @param ?int $index Connection index
      */

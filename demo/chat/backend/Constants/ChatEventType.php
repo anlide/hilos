@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Demo\Chat\Constants;
 
 /**
- * ChatEventType - Chat event type enum
+ * ChatEventType - Chat event type enum.
  *
  * Defines all possible event types that can occur in the chat system.
  */

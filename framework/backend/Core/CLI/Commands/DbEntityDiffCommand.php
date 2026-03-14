@@ -14,7 +14,7 @@ use ReflectionClass;
 use RuntimeException;
 
 /**
- * DbEntityDiffCommand - Compare Entity files with database schema
+ * DbEntityDiffCommand - Compare Entity files with database schema.
  *
  * Compares Entity class definitions with actual database structure
  * and displays differences in a structured format.

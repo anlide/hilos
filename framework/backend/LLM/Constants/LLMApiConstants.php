@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Hilos\LLM\Constants;
 
 /**
- * LLMApiConstants - API payload and response keys for LLM providers
+ * LLMApiConstants - API payload and response keys for LLM providers.
  *
  * Centralized keys for Ollama, OpenAI and compatible APIs.
  */

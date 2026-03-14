@@ -9,7 +9,7 @@ use Hilos\Core\Agent\Daemon\AbstractAgentDaemon;
 use Hilos\Utils\Logger;
 
 /**
- * DemoHilosAnalyticsAgentDaemon - Daemon proxy for DemoHilosAnalyticsAgent
+ * DemoHilosAnalyticsAgentDaemon - Daemon proxy for DemoHilosAnalyticsAgent.
  *
  * Handles routing between WebSocket clients and DemoHilosAnalyticsAgent in worker.
  */

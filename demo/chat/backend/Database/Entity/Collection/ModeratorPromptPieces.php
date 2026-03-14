@@ -8,7 +8,7 @@ use Hilos\Database\Entity\Collection\EntityCollection;
 use Iterator;
 
 /**
- * ModeratorPromptPieces Entity Collection
+ * ModeratorPromptPieces entity collection.
  *
  * @extends EntityCollection<EntityModeratorPromptPiece>
  * @implements Iterator<int|string, EntityModeratorPromptPiece>

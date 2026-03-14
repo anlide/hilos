@@ -17,7 +17,7 @@ use Hilos\Utils\Exception\MissingEnvironmentVariableException;
 use Hilos\Utils\Helpers\StringHelper;
 
 /**
- * StatusCommand - Display daemon status
+ * StatusCommand - Display daemon status.
  *
  * Shows current daemon status including uptime, memory usage and other metrics.
  * Retrieves real-time data from running daemon via HTTP status endpoint.
@@ -71,7 +71,7 @@ HELP;
     }
 
     /**
-     * Execute status command
+     * Execute status command.
      *
      * Displays current daemon status with real-time data from HTTP endpoint.
      *

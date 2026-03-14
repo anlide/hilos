@@ -16,7 +16,7 @@ use ReflectionClass;
 use RuntimeException;
 
 /**
- * DbObjectFixCommand - Fix Object and ObjectCollection files to match Entity files
+ * DbObjectFixCommand - Fix Object and ObjectCollection files to match Entity files.
  *
  * Automatically updates Object and ObjectCollection class definitions to match Entity structure.
  * Adds missing properties, updates types, and maintains user-defined methods.

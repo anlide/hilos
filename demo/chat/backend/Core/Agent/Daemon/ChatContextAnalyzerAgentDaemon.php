@@ -9,7 +9,7 @@ use Hilos\Core\Agent\Daemon\AbstractAgentDaemon;
 use Hilos\Utils\Logger;
 
 /**
- * ChatContextAnalyzerAgentDaemon - Daemon proxy for ChatContextAnalyzerAgent
+ * ChatContextAnalyzerAgentDaemon - Daemon proxy for ChatContextAnalyzerAgent.
  *
  * Monopolistic agent for chat context analysis. Maintains shared context for all bots.
  */

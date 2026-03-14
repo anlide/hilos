@@ -9,7 +9,7 @@ use Hilos\Core\Agent\Daemon\AbstractAgentDaemon;
 use Hilos\Utils\Logger;
 
 /**
- * GuardiansOpsAgentDaemon - Daemon proxy for GuardiansOpsAgent
+ * GuardiansOpsAgentDaemon - Daemon proxy for GuardiansOpsAgent.
  *
  * Monopolistic agent for guardian operations. Manages guardian reports and policies.
  */

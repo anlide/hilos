@@ -8,7 +8,7 @@ use Hilos\Database\Entity\Collection\EntityCollection;
 use Iterator;
 
 /**
- * Events Entity Collection
+ * Events entity collection.
  *
  * @extends EntityCollection<EntityEvent>
  * @implements Iterator<int|string, EntityEvent>

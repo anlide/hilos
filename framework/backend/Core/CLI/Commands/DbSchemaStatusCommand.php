@@ -12,7 +12,7 @@ use Hilos\Database\Schema\TableInfo;
 use RuntimeException;
 
 /**
- * DbSchemaStatusCommand - Display database schema structure status
+ * DbSchemaStatusCommand - Display database schema structure status.
  *
  * Shows information about database tables, columns, indexes, and foreign keys
  * that were loaded into static variables during schema initialization.

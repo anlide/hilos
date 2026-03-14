@@ -20,7 +20,7 @@ use Hilos\Utils\Logger;
 Env::init(__DIR__);
 
 /**
- * Docker Watchdog - Process manager for Docker containers
+ * Docker Watchdog - Process manager for Docker containers.
  *
  * Monitors and manages daemon.php process with automatic restart
  * on failure. Provides graceful shutdown and error handling.

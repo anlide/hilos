@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Constants;
 
 /**
- * HilosAgentType - Agent type constants for framework-level Hilos agents
+ * HilosAgentType - Agent type constants for framework-level Hilos agents.
  *
  * Defines agent type identifiers for Hilos admin page agents.
  * Projects must create concrete agent classes extending the corresponding

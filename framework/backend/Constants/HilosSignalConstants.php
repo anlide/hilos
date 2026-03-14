@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Constants;
 
 /**
- * HilosSignalConstants - Signal constants for Hilos admin pages
+ * HilosSignalConstants - Signal constants for Hilos admin pages.
  *
  * Defines signal names used by framework-level Hilos admin pages.
  */

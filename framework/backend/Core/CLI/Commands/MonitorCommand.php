@@ -8,7 +8,7 @@ use Hilos\Constants\ExitCode;
 use Hilos\Core\Daemon\CliMonitorManager;
 
 /**
- * MonitorCommand - Real-time daemon monitoring
+ * MonitorCommand - Real-time daemon monitoring.
  *
  * Starts real-time monitoring of daemon status.
  * Requires TTY terminal for interactive display.
@@ -65,7 +65,7 @@ HELP;
     }
 
     /**
-     * Execute monitor command
+     * Execute monitor command.
      *
      * Starts real-time monitoring of daemon status.
      *

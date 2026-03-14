@@ -16,7 +16,7 @@ class RouteRegistry
     private array $routes = [];
 
     /**
-     * Register a route
+     * Registers a route.
      *
      * @param string $method HTTP method
      * @param string $path URL path
@@ -70,9 +70,9 @@ class RouteRegistry
     }
 
     /**
-     * Compile path pattern to regex
+     * Compiles path pattern to regex.
      *
-     * Converts route path like /user/{id} to regex pattern
+     * Converts route path like /user/{id} to regex pattern.
      *
      * @param string $path Route path
      * @return string Regex pattern

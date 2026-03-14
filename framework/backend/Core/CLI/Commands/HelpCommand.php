@@ -8,7 +8,7 @@ use Hilos\Constants\CliCommands;
 use Hilos\Constants\ExitCode;
 
 /**
- * HelpCommand - Display help information
+ * HelpCommand - Display help information.
  *
  * Shows available commands and usage information for CLI interface.
  */

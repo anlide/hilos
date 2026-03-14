@@ -9,7 +9,7 @@ use Hilos\Constants\EnvConstants;
 use Hilos\Utils\Env;
 
 /**
- * Database seed management system
+ * Database seed management system.
  *
  * Runs SQL seed files from a configured directory.
  * Seeds are idempotent and safe to run multiple times.

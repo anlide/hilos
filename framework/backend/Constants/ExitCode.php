@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Constants;
 
 /**
- * ExitCode - Exit code constants for process termination
+ * ExitCode - Exit code constants for process termination.
  *
  * Provides standardized exit codes for consistent process termination
  * across the entire framework. Based on Unix/Linux conventions.

@@ -77,7 +77,7 @@ abstract class WorkerManager extends BaseManager
     private array $pageSignalRouters = [];
 
     /**
-     * WorkerManager constructor
+     * Creates worker manager instance.
      *
      * Initializes signal router via Hilos::initSignalRouter() and creates agent manager.
      *
