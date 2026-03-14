@@ -333,10 +333,7 @@ trait IdeaStorageFixer
             }
         }
 
-        // Apply update operations (if any in future)
-        if (!empty($fixes[self::FIX_UPDATE])) {
-            // TODO: Implement update operations when needed
-        }
+        // TODO: Implement update operations when needed
 
         // Write file
         return file_put_contents($ideaStorageFile, $content) !== false;
