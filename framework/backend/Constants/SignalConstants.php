@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Constants;
 
 /**
- * SignalConstants - Signal name constants
+ * SignalConstants - Signal name constants.
  *
  * Defines standard signal names used throughout the framework.
  */

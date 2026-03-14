@@ -52,7 +52,7 @@ class BotAgentDaemon extends AbstractAgentDaemon
      *
      * Bot agent index is the bot id (string).
      *
-     * @return string Agent index
+     * @return ?string Agent index (bot id)
      */
     public function getIndex(): ?string
     {

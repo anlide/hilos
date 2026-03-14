@@ -7,7 +7,7 @@ namespace Demo\Chat\Agents\Hilos;
 use Hilos\Core\Agent\Hilos\AbstractHilosGuardianAgent;
 
 /**
- * DemoHilosGuardianAgent - Concrete Hilos guardian agent for chat demo
+ * DemoHilosGuardianAgent - Concrete Hilos guardian agent for chat demo.
  *
  * Handles Hilos guardian page (project validation robots) in the demo project.
  */

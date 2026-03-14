@@ -7,7 +7,7 @@ namespace Demo\Chat\Agents\Hilos;
 use Hilos\Core\Agent\Hilos\AbstractHilosIndexAgent;
 
 /**
- * DemoHilosAgent - Concrete Hilos index agent for chat demo
+ * DemoHilosAgent - Concrete Hilos index agent for chat demo.
  *
  * Handles Hilos dashboard, settings and i18n pages in the demo project.
  */

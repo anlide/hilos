@@ -15,7 +15,7 @@ use Hilos\Utils\Logger;
  * AbstractGuardianAgent - Abstract base for guardian agents.
  *
  * Provides report publishing via transport and optional chat signal forwarding
- * for medium/high/critical severity.
+ * for medium/high/critical severity. 
  */
 abstract class AbstractGuardianAgent extends AbstractAgent
 {

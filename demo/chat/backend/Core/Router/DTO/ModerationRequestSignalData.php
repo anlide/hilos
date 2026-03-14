@@ -8,7 +8,7 @@ use Hilos\BaseDTO;
 use Hilos\Core\Router\SignalDataInterface;
 
 /**
- * ModerationRequestSignalData - DTO for moderation request signal (ChatAgent → ModeratorAgent)
+ * ModerationRequestSignalData - DTO for moderation request signal (ChatAgent → ModeratorAgent).
  *
  * Routing is configured by signal name in ChatSignalRouter (moderate_request → moderator).
  */

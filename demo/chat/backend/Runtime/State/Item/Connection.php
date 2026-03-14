@@ -7,7 +7,7 @@ namespace Demo\Chat\Runtime\State\Item;
 use Hilos\Runtime\State\Item\RtState;
 
 /**
- * Connection state - stores runtime data for a single WebSocket connection
+ * Connection state - stores runtime data for a single WebSocket connection.
  *
  * Maps acceptKey to userId and additional connection metadata.
  * This is the single source of truth for connection data.

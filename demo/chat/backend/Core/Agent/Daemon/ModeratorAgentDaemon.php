@@ -41,7 +41,7 @@ class ModeratorAgentDaemon extends AbstractAgentDaemon
     /**
      * Get agent index.
      *
-     * Moderator agent has no index (global singleton)
+     * Moderator agent has no index (global singleton).
      *
      * @return ?string Agent index (null for global moderator agent)
      */

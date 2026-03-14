@@ -15,7 +15,10 @@ use Hilos\Utils\Exception\MissingEnvironmentVariableException;
  */
 class Env
 {
+    /** @var ?array<string, string> Loaded .env file cache */
     private static ?array $envCache = null;
+
+    /** @var ?array<string, string> .env.example file cache for fallback */
     private static ?array $exampleCache = null;
 
     /**

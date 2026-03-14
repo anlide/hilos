@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Core\Router;
 
 /**
- * SignalDataInterface - Interface for signal data
+ * SignalDataInterface - Interface for signal data.
  *
  * All signal data DTOs must implement this interface.
  * Signal data DTOs must extend BaseDTO and implement SignalDataInterface.

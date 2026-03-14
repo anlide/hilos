@@ -8,7 +8,7 @@ use Hilos\BaseDTO;
 use Hilos\Core\Router\SignalDataInterface;
 
 /**
- * ModerationStateUpdateSignalData - DTO for moderation state update signal (server → client)
+ * ModerationStateUpdateSignalData - DTO for moderation state update signal (server → client).
  *
  * Sent only to the user's own connections. Private data, not broadcast.
  */

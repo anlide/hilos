@@ -39,7 +39,7 @@ class ChatAgentDaemon extends AbstractAgentDaemon
     /**
      * Get agent index.
      *
-     * Chat agent has no index (global singleton)
+     * Chat agent has no index (global singleton).
      *
      * @return ?string Agent index (null for global chat agent)
      */

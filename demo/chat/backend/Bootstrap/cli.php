@@ -17,7 +17,7 @@ use Hilos\Utils\Logger;
 Env::init(__DIR__);
 
 /**
- * CLI - Entry point for CLI interface
+ * CLI - Entry point for CLI interface.
  *
  * Provides command-line management interface for WebSocket test daemon.
  * Supports commands: daemon:status, daemon:monitor, help.

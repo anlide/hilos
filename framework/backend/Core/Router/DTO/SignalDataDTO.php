@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Core\Router\DTO;
 
 /**
- * SignalDataDTO - Marker interface for signal data DTOs
+ * SignalDataDTO - Marker interface for signal data DTOs.
  *
  * All signal data DTOs must implement this interface.
  * Signal data DTOs must extend BaseDTO and implement SignalDataDTO.

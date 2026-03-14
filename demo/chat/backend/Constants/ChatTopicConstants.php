@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Demo\Chat\Constants;
 
 /**
- * ChatTopicConstants - Allowed chat topics (from bot seed 001_truncate_and_seed_bot.sql)
+ * ChatTopicConstants - Allowed chat topics (from bot seed 001_truncate_and_seed_bot.sql).
  *
  * Extracted from participant bots' topics. Used by ChatContextAnalyzer (must pick
  * topic from this list) and BotAgent leaders (must propose topic from this list).

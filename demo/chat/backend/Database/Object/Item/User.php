@@ -12,7 +12,7 @@ use Hilos\Database\Object\Item\Object_;
  *
  * Auto-generated from Entity: Demo\Chat\Database\Entity\Item\User
  *
- * Business logic layer with change tracking
+ * Business logic layer with change tracking.
  *
  * @extends Object_<EntityUser>
  *

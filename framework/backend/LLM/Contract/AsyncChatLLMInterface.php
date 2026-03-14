@@ -8,7 +8,7 @@ use Hilos\LLM\DTO\ChatGenerateOptions;
 use Hilos\LLM\DTO\Message;
 
 /**
- * AsyncChatLLMInterface - Contract for non-blocking chat LLM providers
+ * AsyncChatLLMInterface - Contract for non-blocking chat LLM providers.
  *
  * Unified interface for asynchronous text generation from messages.
  * Implemented by AsyncOllamaChatProvider (local) and AsyncOpenAIChatProvider (external).
