@@ -11,15 +11,21 @@ use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\SignalData;
 
 /**
- * HilosGuardianPage - Hilos guardian robots page (project validation robots)
+ * HilosGuardianPage - Hilos guardian robots page (project validation robots).
  */
 class HilosGuardianPage extends AbstractHilosPage
 {
+    /**
+     * {@inheritDoc}
+     */
     public function getPageName(): string
     {
         return HilosPageConstants::HILOS_GUARDIAN;
     }
 
+    /**
+     * {@inheritDoc}
+     */
     public function onSubscribe(string $acceptKey, array $params = []): void
     {
         $this->sendToUser(
@@ -29,10 +35,16 @@ class HilosGuardianPage extends AbstractHilosPage
         );
     }
 
+    /**
+     * {@inheritDoc}
+     */
     public function onUnsubscribe(string $acceptKey): void
     {
     }
 
+    /**
+     * {@inheritDoc}
+     */
     public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): void
     {
     }

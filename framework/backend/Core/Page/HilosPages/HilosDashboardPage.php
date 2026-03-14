@@ -11,15 +11,21 @@ use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\SignalData;
 
 /**
- * HilosDashboardPage - Hilos admin dashboard (main page of hilos section)
+ * HilosDashboardPage - Hilos admin dashboard (main page of hilos section).
  */
 class HilosDashboardPage extends AbstractHilosPage
 {
+    /**
+     * {@inheritDoc}
+     */
     public function getPageName(): string
     {
         return HilosPageConstants::HILOS_DASHBOARD;
     }
 
+    /**
+     * {@inheritDoc}
+     */
     public function onSubscribe(string $acceptKey, array $params = []): void
     {
         $this->sendToUser(
@@ -29,10 +35,16 @@ class HilosDashboardPage extends AbstractHilosPage
         );
     }
 
+    /**
+     * {@inheritDoc}
+     */
     public function onUnsubscribe(string $acceptKey): void
     {
     }
 
+    /**
+     * {@inheritDoc}
+     */
     public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): void
     {
     }

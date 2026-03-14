@@ -7,7 +7,7 @@ namespace Hilos\API\Router;
 use Hilos\Constants\HttpConstants;
 
 /**
- * RouteResolver - Resolves and executes route handlers
+ * RouteResolver - Resolves and executes route handlers.
  *
  * Takes a matched route and request, executes the handler,
  * and formats the response.

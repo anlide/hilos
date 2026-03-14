@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Hilos\Guardian\Enums;
 
+/**
+ * Guardian finding category type.
+ */
 enum FindingType: string
 {
     case LOGS = 'logs';

@@ -82,7 +82,7 @@ class Database
     }
 
     /**
-     * Initialize database connections and schema
+     * Initialize database connections and schema.
      *
      * This method should be overridden in child classes to:
      * 1. Configure database connections using self::configure()
@@ -105,7 +105,7 @@ class Database
     }
 
     /**
-     * Configure a database connection (doesn't connect yet)
+     * Configure a database connection (doesn't connect yet).
      *
      * @param int $index Connection index (0 by default for primary)
      * @param string $host Database host
@@ -146,7 +146,7 @@ class Database
     }
 
     /**
-     * Set current connection index
+     * Set current connection index.
      *
      * @param int $index Connection index
      * @throws DatabaseException If connection not configured
@@ -170,7 +170,7 @@ class Database
     }
 
     /**
-     * Connect to database using configured settings
+     * Connect to database using configured settings.
      *
      * @param ?int $index Connection index (uses current if null)
      * @param bool $retryOnConnectionError If true, retry connection on temporary errors (2002, 2003)
@@ -254,7 +254,7 @@ class Database
     }
 
     /**
-     * Close database connection
+     * Closes database connection.
      *
      * @param ?int $index Connection index (uses current if null)
      */
@@ -278,7 +278,7 @@ class Database
     }
 
     /**
-     * Get active mysqli connection
+     * Gets active mysqli connection.
      *
      * @param ?int $index Connection index
      * @throws DatabaseConnectionException If not connected
@@ -307,7 +307,7 @@ class Database
     }
 
     /**
-     * Execute SQL query with parameters
+     * Executes SQL query with parameters.
      *
      * @param string $sql SQL query with ? placeholders
      * @param array|SqlParamCollection|null $params Query parameters
@@ -443,7 +443,7 @@ class Database
     }
 
     /**
-     * Execute SQL with timeout
+     * Execute SQL with timeout.
      *
      * @param string $sql SQL query
      * @param array|SqlParamCollection|null $params Query parameters
@@ -546,7 +546,7 @@ class Database
     }
 
     /**
-     * Get single field value from current result set
+     * Get single field value from current result set.
      *
      * @param string $fieldName Field name
      * @return mixed Field value or null
@@ -725,7 +725,10 @@ class Database
     }
 
     /**
-     * Check if error is connection lost error
+     * Check if error is connection lost error.
+     *
+     * @param int $errno MySQL error number
+     * @return bool True if error indicates connection lost (2006, 2013)
      */
     private static function isConnectionLostError(int $errno): bool
     {
@@ -735,6 +738,8 @@ class Database
     /**
      * Throw appropriate connection exception based on error code.
      *
+     * @param int $errno MySQL error number
+     * @param string $error Error message
      * @throws DatabaseConnectionException When MySQL connection error occurs
      */
     private static function throwConnectionException(int $errno, string $error): never
@@ -758,6 +763,9 @@ class Database
     /**
      * Throw appropriate runtime exception based on error code.
      *
+     * @param int $errno MySQL error number
+     * @param string $error Error message
+     * @param string $query SQL query that failed
      * @throws DatabaseRuntimeException When MySQL runtime error occurs during query
      */
     private static function throwRuntimeException(int $errno, string $error, string $query): never

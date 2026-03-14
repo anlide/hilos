@@ -25,7 +25,7 @@ class ResultSetCollection implements \Iterator, \Countable
     private int $position = 0;
 
     /**
-     * Private constructor - use fromDatabase() or empty() instead
+     * Private constructor - use fromDatabase() or empty() instead.
      */
     private function __construct()
     {
@@ -237,8 +237,9 @@ class ResultSetCollection implements \Iterator, \Countable
     }
 
     /**
-     * Get number of affected rows from last query
-     * Useful for UPDATE/DELETE/INSERT queries
+     * Gets number of affected rows from last query.
+     *
+     * Useful for UPDATE/DELETE/INSERT queries.
      *
      * @return int Number of affected rows
      */
@@ -248,7 +249,8 @@ class ResultSetCollection implements \Iterator, \Countable
     }
 
     /**
-     * Get number of rows in first result set (convenience method for chaining)
+     * Gets number of rows in first result set (convenience method for chaining).
+     *
      * Note: count() returns number of result sets in collection.
      * This method returns number of rows in first result set.
      *
@@ -264,8 +266,9 @@ class ResultSetCollection implements \Iterator, \Countable
     }
 
     /**
-     * Alias for rowCount() - get number of rows in first result set
-     * Provided for convenience and consistency with Database::count()
+     * Alias for rowCount() - gets number of rows in first result set.
+     *
+     * Provided for convenience and consistency with Database::count().
      *
      * @return int Number of rows in first result set
      */
@@ -275,8 +278,9 @@ class ResultSetCollection implements \Iterator, \Countable
     }
 
     /**
-     * Get single field value from first row of first result set
-     * Useful for queries like "SELECT column FROM table LIMIT 1"
+     * Gets single field value from first row of first result set.
+     *
+     * Useful for queries like "SELECT column FROM table LIMIT 1".
      *
      * @param string $fieldName Field name
      * @return mixed Field value or null
@@ -308,7 +312,7 @@ class ResultSetCollection implements \Iterator, \Countable
     }
 
     /**
-     * Check if first result set has any rows
+     * Checks if first result set has any rows.
      *
      * @return bool True if has rows, false otherwise
      */
@@ -322,8 +326,9 @@ class ResultSetCollection implements \Iterator, \Countable
     }
 
     /**
-     * Check if first result set is empty (has no rows)
-     * Note: This is different from isEmpty() which checks if collection has no result sets
+     * Checks if first result set is empty (has no rows).
+     *
+     * Note: This is different from isEmpty() which checks if collection has no result sets.
      *
      * @return bool True if first result set is empty, false otherwise
      */
@@ -389,8 +394,9 @@ class ResultSetCollection implements \Iterator, \Countable
     }
 
     /**
-     * Get result set by index, automatically collecting if needed
-     * If index is beyond current collection, automatically calls nextResult() to collect more
+     * Gets result set by index, automatically collecting if needed.
+     *
+     * If index is beyond current collection, automatically calls nextResult() to collect more.
      *
      * @param int $index Result set index (0-based)
      * @return ?ResultSet Result set or null if index is out of bounds

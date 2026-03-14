@@ -210,7 +210,7 @@ class ChatSignalRouter extends SignalRouter
     }
 
     /**
-     * Extract bot ID from agent signal data
+     * Extracts bot ID from agent signal data.
      *
      * @param SignalDTO $signal Signal DTO containing agent signal data
      * @return int Bot ID if found, otherwise 0

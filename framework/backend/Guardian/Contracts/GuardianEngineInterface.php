@@ -6,6 +6,11 @@ namespace Hilos\Guardian\Contracts;
 
 use Hilos\Guardian\DTO\GuardianReport;
 
+/**
+ * Interface for guardian investigation engine.
+ *
+ * Runs investigation for given goal and returns report with findings.
+ */
 interface GuardianEngineInterface
 {
     /**

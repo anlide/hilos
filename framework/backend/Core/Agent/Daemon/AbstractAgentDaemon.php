@@ -24,7 +24,7 @@ abstract class AbstractAgentDaemon implements AgentDaemonInterface
     private ?WorkerClient $workerClient = null;
 
     /**
-     * Set worker client connection
+     * Sets worker client connection.
      *
      * @param WorkerClient $workerClient Worker client connection
      */
@@ -39,7 +39,7 @@ abstract class AbstractAgentDaemon implements AgentDaemonInterface
     }
 
     /**
-     * Get worker client connection
+     * Gets worker client connection.
      *
      * @return ?WorkerClient Worker client or null if not set
      */
@@ -49,7 +49,7 @@ abstract class AbstractAgentDaemon implements AgentDaemonInterface
     }
 
     /**
-     * Send message to worker agent (from external user)
+     * Sends message to worker agent (from external user).
      *
      * Default implementation sends message through WorkerClient.
      * Child classes can override for custom routing logic.
@@ -62,7 +62,7 @@ abstract class AbstractAgentDaemon implements AgentDaemonInterface
     }
 
     /**
-     * Default implementation - no message forwarding from agent to user
+     * Default implementation - no message forwarding from agent to user.
      *
      * Child classes MUST override this method to forward messages to external clients.
      *
@@ -74,7 +74,7 @@ abstract class AbstractAgentDaemon implements AgentDaemonInterface
     }
 
     /**
-     * Default implementation - forwards to sendToUser()
+     * Default implementation - forwards to sendToUser().
      *
      * Child classes can override for custom handling.
      *
@@ -86,7 +86,7 @@ abstract class AbstractAgentDaemon implements AgentDaemonInterface
     }
 
     /**
-     * Default implementation - forwards to sendToAgent()
+     * Default implementation - forwards to sendToAgent().
      *
      * Child classes can override for custom handling.
      *
@@ -100,9 +100,9 @@ abstract class AbstractAgentDaemon implements AgentDaemonInterface
     }
 
     /**
-     * Get agent unique identifier (type + index)
+     * Gets agent unique identifier (type + index).
      *
-     * Default implementation: "type:index" or "type" if index is null
+     * Default implementation: "type:index" or "type" if index is null.
      *
      * @return string Agent ID
      */
@@ -116,7 +116,7 @@ abstract class AbstractAgentDaemon implements AgentDaemonInterface
     }
 
     /**
-     * Default implementation - logs agent start on daemon side
+     * Default implementation - logs agent start on daemon side.
      *
      * Child classes can override this method.
      */
@@ -130,7 +130,7 @@ abstract class AbstractAgentDaemon implements AgentDaemonInterface
     }
 
     /**
-     * Default implementation - logs agent stop on daemon side
+     * Default implementation - logs agent stop on daemon side.
      *
      * Child classes can override this method.
      */

@@ -11,7 +11,7 @@ use Hilos\Utils\Helpers\TimeHelper;
 class Generator
 {
     /**
-     * Generate Entity class from database table
+     * Generates Entity class from database table.
      *
      * @param string $tableName Database table name
      * @param string $namespace Namespace for generated class

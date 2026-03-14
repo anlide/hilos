@@ -24,7 +24,7 @@ use Hilos\Core\CLI\Commands\StatusCommand;
 use Hilos\Database\DatabaseException;
 
 /**
- * CliManager - Main CLI management class
+ * CliManager - Main CLI management class.
  *
  * Handles CLI command parsing, argument processing and command execution.
  * Provides centralized interface for all CLI operations.
@@ -52,16 +52,16 @@ class CliManager
     /** @var string Option prefix */
     private const string OPTION_PREFIX = '--';
 
-    /** @var array Command arguments */
+    /** @var list<string> command line arguments */
     private array $argv;
 
-    /** @var ?string Current command */
+    /** @var ?string current command name */
     private ?string $command = null;
 
-    /** @var array Parsed command arguments */
+    /** @var list<string> parsed positional arguments */
     private array $args = [];
 
-    /** @var array Parsed options (--key=value or --flag) */
+    /** @var array<string, mixed> parsed options (--key=value or --flag) */
     private array $options = [];
 
     /** @var array<string, CommandInterface> Registered commands */
