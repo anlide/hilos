@@ -2,14 +2,14 @@
 
 declare(strict_types=1);
 
-namespace Hilos\Core\CLI\Commands\DbIdeaFixCommand;
+namespace Hilos\Core\CLI\Commands\DbItemFixCommand;
 
 use Hilos\Database\Object\Item\Object_;
 use Hilos\Utils\Helpers\StringHelper;
 use ReflectionClass;
 
 /**
- * IdeaItemFixer trait.
+ * ItemItemFixer trait.
  *
  * Handles synchronization of dbItem files (DbItem/{Name}.php)
  * with Object classes. dbItem is isolated from Entity and works only with Object.
@@ -21,7 +21,7 @@ use ReflectionClass;
  *
  * @deprecated Idea layer removed; command no longer registered. Kept for reference.
  */
-trait IdeaItemFixer
+trait ItemItemFixer
 {
     /**
      * Load dbItem files from directory.
@@ -73,11 +73,11 @@ trait IdeaItemFixer
             return [];
         }
 
-        $IdeaItems = [];
+        $ideaItems = [];
         $files = glob($ideaDir . '/*.php');
 
         if ($files === false) {
-            return $IdeaItems;
+            return $ideaItems;
         }
 
         foreach ($files as $file) {
@@ -115,7 +115,7 @@ trait IdeaItemFixer
                     continue;
                 }
 
-                $IdeaItems[$objectClassName] = [
+                $ideaItems[$objectClassName] = [
                     'class' => $className,
                     'file' => $file,
                     'reflection' => $reflection,
@@ -127,7 +127,7 @@ trait IdeaItemFixer
             }
         }
 
-        return $IdeaItems;
+        return $ideaItems;
     }
 
     /**
@@ -214,12 +214,12 @@ trait IdeaItemFixer
      * Prepare fixes for dbItem files.
      *
      * @param array $objects Loaded Object classes
-     * @param array $IdeaItems Loaded dbItem files
+     * @param array $ideaItems Loaded dbItem files
      * @param ?string $tableFilter Table name filter
      * @param array $brokenIdeaItems Reference to broken files array (will be populated with parse errors)
      * @return array Fixes to apply
      */
-    protected function prepareIdeaItemFixes(array $objects, array $IdeaItems, ?string $tableFilter, array &$brokenIdeaItems = []): array
+    protected function prepareIdeaItemFixes(array $objects, array $ideaItems, ?string $tableFilter, array &$brokenIdeaItems = []): array
     {
         $fixes = [];
 
@@ -250,20 +250,20 @@ trait IdeaItemFixer
             }
 
             // Check if dbItem exists for this Object
-            $IdeaItemInfo = $IdeaItems[$objectClassName] ?? null;
+            $ideaItemInfo = $ideaItems[$objectClassName] ?? null;
             
-            if ($IdeaItemInfo === null) {
+            if ($ideaItemInfo === null) {
                 // dbItem doesn't exist - will be created
                 continue;
             }
 
             // Compare dbItem with Object
             $parseError = null;
-            $ideaFixes = $this->compareIdeaItemWithObject($IdeaItemInfo, $objectInfo, $parseError);
+            $ideaFixes = $this->compareIdeaItemWithObject($ideaItemInfo, $objectInfo, $parseError);
             
             // If parsing failed, add to broken files and skip
             if ($parseError !== null) {
-                $brokenIdeaItems[$IdeaItemInfo['file']] = $parseError;
+                $brokenIdeaItems[$ideaItemInfo['file']] = $parseError;
                 continue;
             }
             
@@ -278,16 +278,16 @@ trait IdeaItemFixer
     /**
      * Compare dbItem with Object and prepare fixes.
      *
-     * @param array $IdeaItemInfo dbItem info
+     * @param array $ideaItemInfo dbItem info
      * @param array $objectInfo Object info
      * @param ?string $parseError Reference to store parse error message
      * @return array Fixes to apply
      */
-    private function compareIdeaItemWithObject(array $IdeaItemInfo, array $objectInfo, ?string &$parseError = null): array
+    private function compareIdeaItemWithObject(array $ideaItemInfo, array $objectInfo, ?string &$parseError = null): array
     {
         $fixes = [];
         $parseError = null;
-        $ideaFile = $IdeaItemInfo['file'];
+        $ideaFile = $ideaItemInfo['file'];
         $content = file_get_contents($ideaFile);
         if ($content === false) {
             $parseError = 'Failed to read file content';
@@ -431,18 +431,18 @@ trait IdeaItemFixer
      * Apply fixes to dbItem files.
      *
      * @param array $fixes Fixes to apply (keyed by object class name)
-     * @param array $IdeaItems Loaded dbItem files info
+     * @param array $ideaItems Loaded dbItem files info
      * @param array $objects Loaded Object files info
      * @return int Number of files updated
      */
-    protected function applyIdeaItemFixes(array $fixes, array $IdeaItems, array $objects): int
+    protected function applyIdeaItemFixes(array $fixes, array $ideaItems, array $objects): int
     {
         $updated = 0;
 
         foreach ($fixes as $objectClassName => $ideaFixes) {
             // Get dbItem info
-            $IdeaItemInfo = $IdeaItems[$objectClassName] ?? null;
-            if ($IdeaItemInfo === null) {
+            $ideaItemInfo = $ideaItems[$objectClassName] ?? null;
+            if ($ideaItemInfo === null) {
                 continue;
             }
 
@@ -452,7 +452,7 @@ trait IdeaItemFixer
                 continue;
             }
 
-            $ideaFile = $IdeaItemInfo['file'];
+            $ideaFile = $ideaItemInfo['file'];
             $objectReflection = $objectInfo['reflection'];
 
             if ($this->applyIdeaItemFileFixes($ideaFile, $ideaFixes, $objectReflection)) {

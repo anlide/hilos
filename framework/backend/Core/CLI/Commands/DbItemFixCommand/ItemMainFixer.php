@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-namespace Hilos\Core\CLI\Commands\DbIdeaFixCommand;
+namespace Hilos\Core\CLI\Commands\DbItemFixCommand;
 
 /**
- * IdeaMainFixer trait.
+ * ItemMainFixer trait.
  *
  * Handles synchronization of Idea.php file with ObjectCollection classes.
  *
@@ -16,7 +16,7 @@ namespace Hilos\Core\CLI\Commands\DbIdeaFixCommand;
  *
  * @deprecated Idea layer removed; command no longer registered. Kept for reference.
  */
-trait IdeaMainFixer
+trait ItemMainFixer
 {
     // Constants for parsed structure keys
     private const string KEY_FILE = 'file';

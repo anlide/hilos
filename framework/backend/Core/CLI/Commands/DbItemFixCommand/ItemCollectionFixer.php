@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Hilos\Core\CLI\Commands\DbIdeaFixCommand;
+namespace Hilos\Core\CLI\Commands\DbItemFixCommand;
 
 use Hilos\Database\Object\Item\Object_;
 use Hilos\Database\Object\Objects;
@@ -10,7 +10,7 @@ use Hilos\Utils\Helpers\StringHelper;
 use ReflectionClass;
 
 /**
- * IdeaCollectionFixer trait.
+ * ItemCollectionFixer trait.
  *
  * Handles synchronization of IdeaCollection files (IdeaCollection/{Name}s.php)
  * with ObjectCollection classes.
@@ -22,7 +22,7 @@ use ReflectionClass;
  *
  * @deprecated Idea layer removed; command no longer registered. Kept for reference.
  */
-trait IdeaCollectionFixer
+trait ItemCollectionFixer
 {
     /**
      * Load IdeaCollection files from directory.

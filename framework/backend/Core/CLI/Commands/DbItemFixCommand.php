@@ -6,10 +6,10 @@ namespace Hilos\Core\CLI\Commands;
 
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\ExitCode;
-use Hilos\Core\CLI\Commands\DbIdeaFixCommand\IdeaItemFixer;
-use Hilos\Core\CLI\Commands\DbIdeaFixCommand\IdeaCollectionFixer;
-use Hilos\Core\CLI\Commands\DbIdeaFixCommand\IdeaMainFixer;
-use Hilos\Core\CLI\Commands\DbIdeaFixCommand\IdeaStorageFixer;
+use Hilos\Core\CLI\Commands\DbItemFixCommand\ItemItemFixer;
+use Hilos\Core\CLI\Commands\DbItemFixCommand\ItemCollectionFixer;
+use Hilos\Core\CLI\Commands\DbItemFixCommand\ItemMainFixer;
+use Hilos\Core\CLI\Commands\DbItemFixCommand\ItemStorageFixer;
 use Hilos\Database\Object\Item\Object_;
 use Hilos\Database\Object\Objects;
 use Hilos\Utils\Helpers\StringHelper;
@@ -17,67 +17,67 @@ use ReflectionClass;
 use RuntimeException;
 
 /**
- * DbIdeaFixCommand - Fix Idea files to match Object files
+ * DbItemFixCommand - Fix Item/DbItem files to match Object files
  *
- * Automatically updates Idea class definitions to match Object structure.
- * Idea is isolated from Entity and works only with Object classes.
+ * Automatically updates Item/DbItem class definitions to match Object structure.
+ * Item layer is isolated from Entity and works only with Object classes.
  * Adds missing properties, updates types, and maintains user-defined methods.
  *
  * @deprecated Idea layer removed; command no longer registered. Kept for reference.
  */
-class DbIdeaFixCommand implements CommandInterface
+class DbItemFixCommand implements CommandInterface
 {
-    use IdeaItemFixer;
-    use IdeaCollectionFixer;
-    use IdeaMainFixer;
-    use IdeaStorageFixer;
+    use ItemItemFixer;
+    use ItemCollectionFixer;
+    use ItemMainFixer;
+    use ItemStorageFixer;
 
     public function getName(): string
     {
-        return CliCommands::DB_IDEA_FIX;
+        return CliCommands::DB_ITEM_FIX;
     }
 
     public function getDescription(): string
     {
-        return 'Fix Idea files to match Object files';
+        return 'Fix Item/DbItem files to match Object files';
     }
 
     public function getHelp(): string
     {
         return <<<HELP
-Command: db:idea:fix
+Command: db:item:fix
 
 Description:
-  Automatically update Idea class definitions to match Object structure.
-  Idea is isolated from Entity and works only with Object classes.
+  Automatically update Item/DbItem class definitions to match Object structure.
+  Item layer is isolated from Entity and works only with Object classes.
   Adds missing properties, updates types, and preserves user-defined methods.
-  Synchronizes Idea objects, IdeaCollections, IdeaStorage, and Idea.php.
+  Synchronizes Item objects, ItemCollections, ItemStorage, and Item.php.
 
 Usage:
-  php cli.php db:idea:fix [options]
+  php cli.php db:item:fix [options]
 
 Options:
-  --idea-dir=<path>              Idea files directory (default: auto-detect)
-  --idea-collection-dir=<path>    IdeaCollection files directory (default: auto-detect)
+  --idea-dir=<path>              Item/DbItem files directory (default: auto-detect)
+  --idea-collection-dir=<path>    ItemCollection files directory (default: auto-detect)
   --object-dir=<path>             Object files directory (default: auto-detect)
   --table=<name>                  Fix specific table only
   --dry-run                       Show what would be changed without modifying files
-  --force-repair                  Attempt to repair broken Idea files
+  --force-repair                  Attempt to repair broken Item files
 
 Examples:
-  php cli.php db:idea:fix
-  php cli.php db:idea:fix --table=user
-  php cli.php db:idea:fix --dry-run
-  php cli.php db:idea:fix --force-repair
+  php cli.php db:item:fix
+  php cli.php db:item:fix --table=user
+  php cli.php db:item:fix --dry-run
+  php cli.php db:item:fix --force-repair
 
 Note:
-  This command synchronizes 4 levels of Idea files:
-  1. IdeaObject files (Idea/{Name}.php) - individual Idea objects with lazy loading
-  2. IdeaCollection files (IdeaCollection/{Name}s.php) - Idea collections with filtering
-  3. IdeaStorage.php - central storage for Object collections with lazy loading strategies
-  4. Idea.php - access point that connects IdeaStorage with IdeaCollection classes
+  This command synchronizes 4 levels of Item files:
+  1. DbItem files (DbItem/{Name}.php) - individual Item objects with lazy loading
+  2. ItemCollection files (ItemCollection/{Name}s.php) - Item collections with filtering
+  3. ItemStorage.php - central storage for Object collections with lazy loading strategies
+  4. Item.php - access point that connects ItemStorage with ItemCollection classes
   
-  Processing order: IdeaObject → IdeaCollection → IdeaStorage → Idea.php
+  Processing order: DbItem → ItemCollection → ItemStorage → Item.php
   Each level depends on the previous one, so errors in earlier stages skip later stages.
 HELP;
     }
