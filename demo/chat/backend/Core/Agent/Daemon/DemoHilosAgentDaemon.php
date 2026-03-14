@@ -15,12 +15,15 @@ use Hilos\Utils\Logger;
  */
 class DemoHilosAgentDaemon extends AbstractAgentDaemon
 {
+    /** @var string Agent type */
+    private const string AGENT_TYPE = HilosAgentType::HILOS_INDEX;
+
     /**
      * Creates daemon proxy for DemoHilosAgent.
      */
     public function __construct()
     {
-        Logger::debug("DemoHilosAgentDaemon created [type=" . HilosAgentType::HILOS_INDEX . "]");
+        Logger::debug("DemoHilosAgentDaemon created [type=" . self::AGENT_TYPE . "]");
     }
 
     /**
@@ -30,7 +33,7 @@ class DemoHilosAgentDaemon extends AbstractAgentDaemon
      */
     public function getType(): string
     {
-        return HilosAgentType::HILOS_INDEX;
+        return self::AGENT_TYPE;
     }
 
     /**

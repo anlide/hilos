@@ -39,8 +39,10 @@ use Hilos\Utils\Logger;
  */
 class BotAgent extends AbstractAgent
 {
+    /** @var string Agent type */
     private const string AGENT_TYPE = AgentType::BOT;
 
+    /** @var int Maximum tokens for LLM response */
     private const int MAX_RESPONSE_TOKENS = 256;
 
     /** @var string Bot ID (agent index) */

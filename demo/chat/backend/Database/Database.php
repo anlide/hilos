@@ -20,7 +20,7 @@ use Hilos\Utils\Exception\MissingEnvironmentVariableException;
 class Database extends BaseDatabase
 {
     /**
-     * Initialize database connections from environment variables
+     * Initialize database connections from environment variables.
      *
      * Configures database connection index 0 (primary) from .env file.
      * Additional database connections can be configured here if needed.

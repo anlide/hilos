@@ -95,6 +95,7 @@ class AdminModeratorPage extends AbstractChatPage
      *
      * @param string $acceptKey WebSocket accept key for the requesting client
      * @param ModeratorPieceCreateActionDTO $dto Create action payload
+     * @throws TableActionException If create fails
      */
     private function handleCreate(string $acceptKey, ModeratorPieceCreateActionDTO $dto): void
     {

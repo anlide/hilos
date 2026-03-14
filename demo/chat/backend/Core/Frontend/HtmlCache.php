@@ -6,10 +6,13 @@ namespace Demo\Chat\Core\Frontend;
 
 /**
  * In-memory cache for prerendered HTML files.
+ *
  * Loads files from dist directory on first access.
  */
 class HtmlCache
 {
+    private const string DEFAULT_LOCALE = 'en';
+
     /** @var array<string, string> path+locale -> content */
     private array $cache = [];
 
@@ -59,8 +62,6 @@ class HtmlCache
         $this->cache[$key] = $content;
         return $content;
     }
-
-    private const DEFAULT_LOCALE = 'en';
 
     /**
      * Preload HTML files into cache (optional optimization).

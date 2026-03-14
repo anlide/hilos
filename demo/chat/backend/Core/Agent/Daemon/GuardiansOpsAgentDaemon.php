@@ -15,6 +15,7 @@ use Hilos\Utils\Logger;
  */
 final class GuardiansOpsAgentDaemon extends AbstractAgentDaemon
 {
+    /** @var string Agent type */
     private const string AGENT_TYPE = AgentType::GUARDIAN_OPS;
 
     /**

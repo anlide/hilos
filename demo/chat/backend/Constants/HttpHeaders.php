@@ -11,9 +11,6 @@ namespace Demo\Chat\Constants;
  */
 final class HttpHeaders
 {
-    /**
-     * Session token header name
-     * Used for WebSocket authentication
-     */
+    /** @var string Session token header name (WebSocket authentication) */
     public const string SESSION_TOKEN = 'X-Session-Token';
 }

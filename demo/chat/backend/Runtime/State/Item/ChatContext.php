@@ -23,8 +23,13 @@ class ChatContext extends RtState
     public const string topicConfidence = 'topicConfidence';
     public const string summary = 'summary';
 
+    /** @var ?string Current conversation topic (null if none) */
     private ?string $topic = null;
+
+    /** @var float Topic confidence 0..1 */
     private float $topicConfidence = 0.0;
+
+    /** @var string LLM-generated summary of recent messages */
     private string $summary = '';
 
     /**

@@ -7,7 +7,7 @@ namespace Hilos\Core\Router;
 use Hilos\BaseDTO;
 
 /**
- * SignalData - Generic implementation of signal data
+ * SignalData - Generic implementation of signal data.
  *
  * Can represent empty signal data or store arbitrary data as array.
  * Used as fallback when specific SignalDataInterface implementation is not available.

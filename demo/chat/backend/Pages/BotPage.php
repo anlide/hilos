@@ -79,7 +79,7 @@ class BotPage extends AbstractChatPage
     }
 
     /**
-     * Handle page-specific unsubscription logic
+     * Handle page-specific unsubscription logic.
      *
      * @param string $acceptKey Accept key
      */
@@ -89,7 +89,7 @@ class BotPage extends AbstractChatPage
     }
 
     /**
-     * Handle page-specific action logic
+     * Handle page-specific action logic.
      *
      * @param string $acceptKey Accept key
      * @param string $action Action name

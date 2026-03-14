@@ -8,6 +8,8 @@ use Hilos\Guardian\DTO\GuardianReport;
 
 /**
  * Transport interface for sending guardian reports to destination.
+ *
+ * Implementations may write to log, external service, or other sink.
  */
 interface ReportTransportInterface
 {

@@ -19,7 +19,7 @@ abstract class AgentManager
     protected array $agents = [];
 
     /**
-     * Create agent instance (factory method)
+     * Create agent instance (factory method).
      *
      * Must be implemented in child classes to create specific agent types.
      *
@@ -31,7 +31,7 @@ abstract class AgentManager
     abstract protected function createAgent(string $agentType, ?string $agentIndex): AgentInterface;
 
     /**
-     * Build agent ID from type and index
+     * Build agent ID from type and index.
      *
      * @param ?string $agentType Agent type (null for non-agent sources like DB sync)
      * @param ?string $agentIndex Agent index (optional)
@@ -46,7 +46,7 @@ abstract class AgentManager
     }
 
     /**
-     * Parse agent ID to extract type and index
+     * Parse agent ID to extract type and index.
      *
      * @param string $agentId Agent ID (format: "type" or "type:index")
      * @return array{agentType: string, agentIndex: ?string} Parsed agent type and index
@@ -61,7 +61,7 @@ abstract class AgentManager
     }
 
     /**
-     * Add agent to manager
+     * Add agent to manager.
      *
      * @param string $agentId Agent ID
      * @param AgentInterface $agent Agent instance
@@ -72,7 +72,7 @@ abstract class AgentManager
     }
 
     /**
-     * Remove agent from manager
+     * Remove agent from manager.
      *
      * @param string $agentId Agent ID
      */
@@ -82,7 +82,7 @@ abstract class AgentManager
     }
 
     /**
-     * Get agent by ID
+     * Get agent by ID.
      *
      * @param string $agentId Agent ID
      * @return ?AgentInterface Agent instance or null if not found
@@ -93,7 +93,7 @@ abstract class AgentManager
     }
 
     /**
-     * Check if agent exists
+     * Check if agent exists.
      *
      * @param string $agentId Agent ID
      * @return bool True if agent exists
@@ -104,7 +104,7 @@ abstract class AgentManager
     }
 
     /**
-     * Get all agents
+     * Get all agents.
      *
      * @return array<string, AgentInterface> All agents indexed by agent ID
      */
@@ -114,7 +114,7 @@ abstract class AgentManager
     }
 
     /**
-     * Get agent count
+     * Get agent count.
      *
      * @return int Number of active agents
      */
@@ -124,7 +124,7 @@ abstract class AgentManager
     }
 
     /**
-     * Create and add agent
+     * Create and add agent.
      *
      * Factory method that creates agent and adds it to manager.
      *

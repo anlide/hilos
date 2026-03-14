@@ -15,6 +15,7 @@ use Hilos\Utils\Logger;
  */
 class ChatContextAnalyzerAgentDaemon extends AbstractAgentDaemon
 {
+    /** @var string Agent type */
     private const string AGENT_TYPE = AgentType::CHAT_CONTEXT_ANALYZER;
 
     /**

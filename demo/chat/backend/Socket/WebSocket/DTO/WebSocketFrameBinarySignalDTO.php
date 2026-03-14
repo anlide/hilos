@@ -16,7 +16,7 @@ use Hilos\Socket\WebSocket\DTO\WebSocketFrameBinarySignalDTO as FrameworkWebSock
 class WebSocketFrameBinarySignalDTO extends FrameworkWebSocketFrameBinarySignalDTO implements ChatMessageDTOInterface
 {
     /**
-     * Create DTO from array
+     * Create DTO from array.
      *
      * Override parent method to return correct child class type.
      *

@@ -5,7 +5,9 @@ namespace Hilos\Database\Filter;
 use Hilos\Database\Object\Item\Object_;
 
 /**
- * Interface for filter criteria.
+ * Filter criteria interface.
+ *
+ * Implementations generate SQL conditions and support in-memory filtering.
  */
 interface FilterInterface
 {
