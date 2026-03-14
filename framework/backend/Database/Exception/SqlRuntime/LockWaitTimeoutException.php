@@ -11,4 +11,3 @@ use Hilos\Database\Exception\DatabaseRuntimeException;
 class LockWaitTimeoutException extends DatabaseRuntimeException
 {
 }
-

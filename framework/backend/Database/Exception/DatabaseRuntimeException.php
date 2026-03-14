@@ -10,4 +10,3 @@ use Hilos\Database\DatabaseException;
 class DatabaseRuntimeException extends DatabaseException
 {
 }
-

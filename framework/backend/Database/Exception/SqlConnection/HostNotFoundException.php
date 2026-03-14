@@ -11,4 +11,3 @@ use Hilos\Database\Exception\DatabaseConnectionException;
 class HostNotFoundException extends DatabaseConnectionException
 {
 }
-

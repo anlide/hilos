@@ -11,4 +11,3 @@ use Hilos\Database\Exception\DatabaseConnectionException;
 class TimeoutException extends DatabaseConnectionException
 {
 }
-
