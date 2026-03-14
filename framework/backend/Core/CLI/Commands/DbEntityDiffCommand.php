@@ -11,7 +11,7 @@ use Hilos\Database\Entity\Item\Entity;
 use Hilos\Database\Schema\Schema;
 use Hilos\Database\Schema\TableInfo;
 use ReflectionClass;
-use RuntimeException;
+use Hilos\Core\CLI\Exception\CommandException;
 
 /**
  * DbEntityDiffCommand - Compare Entity files with database schema.
@@ -78,7 +78,7 @@ HELP;
      * @param array<string, mixed> $options Parsed options (db-index, table, entity-dir, entity-ns)
      * @param list<string> $args Positional args (unused)
      * @return int Exit code (0 on success)
-     * @throws RuntimeException If database connection is not established or Entity dir not found
+     * @throws CommandException If database connection is not established or Entity dir not found
      */
     public function execute(array $options, array $args): int
     {
@@ -95,7 +95,7 @@ HELP;
 
         // Check if connected
         if (!Database::isConnected($dbIndex)) {
-            throw new RuntimeException("Database connection {$dbIndex} is not established. Please ensure database connection is initialized before running this command.");
+            throw new CommandException("Database connection {$dbIndex} is not established. Please ensure database connection is initialized before running this command.");
         }
 
         // Initialize schema if not already initialized
@@ -129,7 +129,7 @@ HELP;
      * @param ?string $entityDir Entity files directory or null for auto-detect
      * @param ?string $entityNamespace Entity namespace prefix or null for auto-detect
      * @return array<string, array<string, mixed>> Map of table name to entity info
-     * @throws RuntimeException If entity directory not found or invalid
+     * @throws CommandException If entity directory not found or invalid
      */
     private function loadEntities(?string $entityDir, ?string $entityNamespace): array
     {
@@ -166,12 +166,12 @@ HELP;
             }
 
             if ($entityDir === null) {
-                throw new RuntimeException("Could not auto-detect Entity directory. Please specify --entity-dir");
+                throw new CommandException("Could not auto-detect Entity directory. Please specify --entity-dir");
             }
         }
 
         if (!is_dir($entityDir)) {
-            throw new RuntimeException("Entity directory does not exist: {$entityDir}");
+            throw new CommandException("Entity directory does not exist: {$entityDir}");
         }
 
         $entities = [];

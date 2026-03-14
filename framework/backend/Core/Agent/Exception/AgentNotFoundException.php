@@ -4,13 +4,12 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Agent\Exception;
 
-use Hilos\HilosException;
 use Throwable;
 
 /**
  * Exception thrown when agent does not exist after startAgent() call.
  */
-class AgentNotFoundException extends HilosException
+class AgentNotFoundException extends AgentException
 {
     /**
      * Creates exception with agent ID and optional previous exception.

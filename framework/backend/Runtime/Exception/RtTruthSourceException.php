@@ -7,6 +7,6 @@ namespace Hilos\Runtime\Exception;
 /**
  * Base exception for RtTruthSource operations.
  */
-class RtTruthSourceException extends RuntimeException
+class RtTruthSourceException extends RtBaseException
 {
 }

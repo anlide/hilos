@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Demo\Chat\Core\Socket\Client;
 
 use Demo\Chat\Constants\ChatSignalConstants;
+use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Constants\SignalPayloadConstants;
 use Hilos\Socket\Client\WebSocketClient;
 
@@ -19,7 +20,7 @@ class ChatWebSocketClient extends WebSocketClient
      * Hook: validate action name from parsed payload.
      *
      * @param string $actionName Action name from WebSocket payload
-     * @throws \RuntimeException When action name is not allowed
+     * @throws AgentUnknownActionException When action name is not allowed
      */
     protected function onActionValidated(string $actionName): void
     {
@@ -36,7 +37,7 @@ class ChatWebSocketClient extends WebSocketClient
             ChatSignalConstants::MODERATOR_PIECE_UPDATE,
             ChatSignalConstants::MODERATOR_PIECE_DELETE,
         ], true)) {
-            throw new \RuntimeException("Unknown websocket action type: {$actionName}");
+            throw new AgentUnknownActionException("Unknown websocket action type: {$actionName}");
         }
     }
 

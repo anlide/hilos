@@ -4,13 +4,12 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Agent\Exception;
 
-use Hilos\HilosException;
 use Throwable;
 
 /**
  * Exception thrown when no suitable worker is available for agent.
  */
-class NoSuitableWorkerException extends HilosException
+class NoSuitableWorkerException extends AgentException
 {
     /**
      * Creates no suitable worker exception.

@@ -6,9 +6,11 @@ namespace Demo\Chat\Database\Actions\Item;
 
 use Demo\Chat\Database\Object\Item\ModeratorPromptPiece as ObjectPiece;
 use Demo\Chat\Database\View\Item\ModeratorPromptPiece;
+use Hilos\Core\Exception\ItemNotFoundForDeleteException;
+use Hilos\Core\Exception\ItemNotFoundForUpdateException;
+use Hilos\Database\Actions\Exception\ObjectCollectionNullException;
 use Hilos\Database\Actions\Item\DbActions;
 use Hilos\HilosException;
-use RuntimeException;
 
 /**
  * ModeratorPromptPieceActions - write operations for a single ModeratorPromptPiece item.
@@ -23,14 +25,14 @@ final class ModeratorPromptPieceActions extends DbActions
      *
      * @param array<string, mixed> $data Fields to update (keys: ObjectPiece::section, ObjectPiece::promptPiece)
      * @throws HilosException On error (invalid data, database error, etc.)
-     * @throws RuntimeException If piece not found for update
+     * @throws ItemNotFoundForUpdateException If piece not found for update
      */
     public function update(array $data): void
     {
         $this->ensureCanWrite();
 
         if ($this->object->id === null) {
-            throw new RuntimeException('Moderator prompt piece not found for update (id is null)');
+            throw new ItemNotFoundForUpdateException('Moderator prompt piece not found for update (id is null)');
         }
 
         if (array_key_exists(ObjectPiece::section, $data)) {
@@ -47,19 +49,20 @@ final class ModeratorPromptPieceActions extends DbActions
      * Deletes the piece.
      *
      * @throws HilosException On error (database error, etc.)
-     * @throws RuntimeException If piece not found or object collection is null
+     * @throws ItemNotFoundForDeleteException When piece not found for delete (id is null)
+     * @throws ObjectCollectionNullException When object collection is null
      */
     public function delete(): void
     {
         $this->ensureCanWrite();
 
         if ($this->object->id === null) {
-            throw new RuntimeException('Moderator prompt piece not found for delete (id is null)');
+            throw new ItemNotFoundForDeleteException('Moderator prompt piece not found for delete (id is null)');
         }
 
         $objectCollection = $this->getObjectCollection();
         if ($objectCollection === null) {
-            throw new RuntimeException('Object collection is null');
+            throw new ObjectCollectionNullException('Object collection is null');
         }
 
         $idString = $this->object->getIdString();

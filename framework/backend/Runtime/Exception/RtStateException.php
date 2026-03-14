@@ -7,6 +7,6 @@ namespace Hilos\Runtime\Exception;
 /**
  * Base exception for RtState operations.
  */
-class RtStateException extends RuntimeException
+class RtStateException extends RtBaseException
 {
 }

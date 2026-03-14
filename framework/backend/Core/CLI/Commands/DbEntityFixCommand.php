@@ -17,7 +17,8 @@ use Hilos\Database\Schema\Schema;
 use Hilos\Database\Schema\TableInfo;
 use Hilos\Utils\Helpers\StringHelper;
 use ReflectionClass;
-use RuntimeException;
+use Hilos\Core\CLI\Exception\CommandException;
+use Hilos\Core\Exception\FileReadException;
 
 /**
  * DbEntityFixCommand - Fix Entity and EntityCollection files to match database schema.
@@ -90,7 +91,7 @@ HELP;
      * @param list<string> $args Positional args (unused)
      * @return int Exit code (0 on success)
      * @throws DatabaseException If database connection or schema init fails
-     * @throws RuntimeException If connection not established or Entity dir not found
+     * @throws CommandException If connection not established or Entity dir not found
      */
     public function execute(array $options, array $args): int
     {
@@ -108,7 +109,7 @@ HELP;
 
         // Check if connected
         if (!Database::isConnected($dbIndex)) {
-            throw new RuntimeException("Database connection {$dbIndex} is not established. Please ensure database connection is initialized before running this command.");
+            throw new CommandException("Database connection {$dbIndex} is not established. Please ensure database connection is initialized before running this command.");
         }
 
         // Initialize schema if not already initialized
@@ -182,7 +183,7 @@ HELP;
 
         // Check for errors in Entity files - throw exception if found
         if (!empty($brokenEntities) || $syntaxErrors > 0) {
-            throw new RuntimeException(
+            throw new CommandException(
                 "Cannot process EntityCollection files due to errors in Entity files. " .
                 "Please fix the errors above before processing EntityCollection files."
             );
@@ -367,12 +368,12 @@ HELP;
             }
 
             if ($entityDir === null) {
-                throw new RuntimeException("Could not auto-detect Entity directory. Please specify --entity-dir");
+                throw new CommandException("Could not auto-detect Entity directory. Please specify --entity-dir");
             }
         }
 
         if (!is_dir($entityDir)) {
-            throw new RuntimeException("Entity directory does not exist: {$entityDir}");
+            throw new CommandException("Entity directory does not exist: {$entityDir}");
         }
 
         $entities = [];
@@ -1058,7 +1059,7 @@ HELP;
         $file = $tableFix['file'];
         $content = file_get_contents($file);
         if ($content === false) {
-            throw new RuntimeException("Failed to read file: {$file}");
+            throw new FileReadException("Failed to read file: {$file}");
         }
 
         $fixes = $tableFix['fixes'];

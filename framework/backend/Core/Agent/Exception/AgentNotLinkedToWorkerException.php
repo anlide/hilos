@@ -4,13 +4,12 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Agent\Exception;
 
-use Hilos\HilosException;
 use Throwable;
 
 /**
  * Exception thrown when agent daemon is not linked to worker client.
  */
-class AgentNotLinkedToWorkerException extends HilosException
+class AgentNotLinkedToWorkerException extends AgentException
 {
     /**
      * Creates exception for unlinked agent daemon.

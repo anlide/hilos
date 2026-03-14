@@ -6,6 +6,7 @@ namespace Demo\Chat\Runtime\View\Actions;
 
 use Demo\Chat\Runtime\State\Item\ChatContext as StateChatContext;
 use Demo\Chat\Runtime\View\Item\ChatContext as RuntimeChatContext;
+use Hilos\Core\Exception\InvalidStateException;
 use Hilos\Runtime\View\Actions\RtActions;
 
 /**
@@ -14,6 +15,8 @@ use Hilos\Runtime\View\Actions\RtActions;
  * Usage:
  *   Hilos::$rt->chatContexts->actions->init();  // Creates empty context
  *   Hilos::$rt->chatContexts->actions->update($data);  // Updates existing
+ *
+ * @extends RtActions<RuntimeChatContext>
  */
 class ChatContextsActions extends RtActions
 {
@@ -26,7 +29,9 @@ class ChatContextsActions extends RtActions
     {
         $state = StateChatContext::create();
         $this->addStateToCollection($state);
-        return $this->createRtItemFromState($state);
+        /** @var RuntimeChatContext $item */
+        $item = $this->createRtItemFromState($state);
+        return $item;
     }
 
     /**
@@ -34,7 +39,7 @@ class ChatContextsActions extends RtActions
      *
      * @param array<string, mixed> $data Fields to set (topic, summary, topicConfidence)
      * @return RuntimeChatContext Updated context
-     * @throws \RuntimeException If context not initialized (call init() first)
+     * @throws InvalidStateException When context not initialized (call init() first)
      */
     public function update(array $data): RuntimeChatContext
     {
@@ -42,10 +47,12 @@ class ChatContextsActions extends RtActions
         $stateCollection = $this->getStateCollection();
         $existing = $stateCollection->get(StateChatContext::ID_MAIN);
         if ($existing === null) {
-            throw new \RuntimeException('ChatContext not initialized. Call init() first.');
+            throw new InvalidStateException('ChatContext not initialized. Call init() first.');
         }
 
         $this->applyDiffToState($existing, $data);
-        return $this->createRtItemFromState($existing);
+        /** @var RuntimeChatContext $item */
+        $item = $this->createRtItemFromState($existing);
+        return $item;
     }
 }

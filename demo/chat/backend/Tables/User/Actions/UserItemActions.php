@@ -11,7 +11,7 @@ use Hilos\Core\Table\Actions\TableItemActions;
 use Hilos\Core\Table\Mutation\TableMutationEntry;
 use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\HilosException;
-use Hilos\Runtime\Exception\RuntimeException;
+use Hilos\Runtime\Exception\RtBaseException;
 
 /**
  * Item-level actions for a single user (table layer).
@@ -33,7 +33,7 @@ class UserItemActions extends TableItemActions
         try {
             $dbUser = Hilos::$db->users[$this->itemId];
             $dbUser->actions->rename($dto->name);
-        } catch (RuntimeException $e) {
+        } catch (RtBaseException $e) {
             throw new HilosException('Failed to update user: ' . $e->getMessage(), previous: $e);
         }
         return $this->mutation(TableMutationType::Updated, $dbUser->toArray(toFrontend: true));

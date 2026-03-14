@@ -8,9 +8,11 @@ use Demo\Chat\Database\Object\Collection\Bots as ObjectBots;
 use Demo\Chat\Database\Object\Item\Bot as ObjectBot;
 use Demo\Chat\Database\View\Collection\Bots as DbCollectionBots;
 use Demo\Chat\Database\View\Item\Bot;
+use Hilos\Core\Exception\EmptyValueException;
+use Hilos\Core\Exception\ValueTooLongException;
+use Hilos\Core\Exception\ValueTooShortException;
 use Hilos\Database\Actions\Collection\DbActions;
 use Hilos\HilosException;
-use RuntimeException;
 
 /**
  * Bots Actions - write operations for Bots collection.
@@ -29,7 +31,9 @@ final class BotsActions extends DbActions
      *
      * @param array<string, mixed> $data Bot fields (ObjectBot::name, ObjectBot::description, etc.)
      * @return Bot Created bot Db item
-     * @throws RuntimeException If name is empty, too short or exceeds max length
+     * @throws EmptyValueException When bot name is empty
+     * @throws ValueTooShortException When bot name is too short
+     * @throws ValueTooLongException When bot name exceeds maximum length
      * @throws HilosException On database error or truth source check failure
      */
     public function create(array $data): Bot
@@ -38,13 +42,13 @@ final class BotsActions extends DbActions
 
         $name = isset($data[ObjectBot::name]) && is_string($data[ObjectBot::name]) ? trim($data[ObjectBot::name]) : '';
         if ($name === '') {
-            throw new RuntimeException('Bot name cannot be empty');
+            throw new EmptyValueException('Bot name cannot be empty');
         }
         if (mb_strlen($name) < self::NAME_MIN_LENGTH) {
-            throw new RuntimeException('Bot name is too short');
+            throw new ValueTooShortException('Bot name is too short');
         }
         if (mb_strlen($name) > self::NAME_MAX_LENGTH) {
-            throw new RuntimeException('Bot name exceeds maximum length of ' . self::NAME_MAX_LENGTH . ' characters');
+            throw new ValueTooLongException('Bot name exceeds maximum length of ' . self::NAME_MAX_LENGTH . ' characters');
         }
 
         $bot = ObjectBot::create();

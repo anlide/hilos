@@ -3,9 +3,9 @@
 namespace Hilos\Database\ResultSet;
 
 use Hilos\Database\Database;
+use Hilos\Database\Exception\CloneNotAllowedException;
 use mysqli;
 use mysqli_result;
-use RuntimeException;
 
 /**
  * Collection of multiple result sets.
@@ -37,11 +37,11 @@ class ResultSetCollection implements \Iterator, \Countable
      * Magic methods in PHP must be public to be called.
      * ResultSetCollection instances should not be cloned.
      *
-     * @throws RuntimeException Always - cloning is not allowed
+     * @throws CloneNotAllowedException Always - cloning is not allowed
      */
     public function __clone(): void
     {
-        throw new RuntimeException('ResultSetCollection cannot be cloned');
+        throw new CloneNotAllowedException('ResultSetCollection cannot be cloned');
     }
 
     /**

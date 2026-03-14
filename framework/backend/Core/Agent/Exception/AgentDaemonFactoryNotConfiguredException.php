@@ -4,13 +4,12 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Agent\Exception;
 
-use Hilos\HilosException;
 use Throwable;
 
 /**
  * Exception thrown when agent daemon factory is not configured.
  */
-class AgentDaemonFactoryNotConfiguredException extends HilosException
+class AgentDaemonFactoryNotConfiguredException extends AgentException
 {
     /**
      * Creates exception with optional previous exception.

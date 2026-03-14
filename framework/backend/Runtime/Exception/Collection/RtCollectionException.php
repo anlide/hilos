@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace Hilos\Runtime\Exception\Collection;
 
-use Hilos\Runtime\Exception\RuntimeException as BaseRuntimeException;
+use Hilos\Runtime\Exception\RtBaseException;
 
 /**
  * Base exception for RtCollection operations.
  */
-class RtCollectionException extends BaseRuntimeException
+class RtCollectionException extends RtBaseException
 {
 }

@@ -6,7 +6,7 @@ namespace Demo\Chat\Core\Router\DTO;
 
 use Hilos\BaseDTO;
 use Hilos\Core\Router\SignalDataInterface;
-use RuntimeException;
+use Hilos\Core\Exception\NotImplementedException;
 
 /**
  * ModerationStateSignalData - per-user moderation progress state.
@@ -46,10 +46,10 @@ class ModerationStateSignalData extends BaseDTO implements SignalDataInterface
      *
      * @param array<string, mixed> $data Source data
      * @return static DTO instance
-     * @throws RuntimeException Always - not implemented
+     * @throws NotImplementedException Always - not implemented
      */
     public static function fromArray(array $data): static
     {
-        throw new RuntimeException('ModerationStateSignalData::fromArray() is not implemented');
+        throw new NotImplementedException('ModerationStateSignalData::fromArray() is not implemented');
     }
 }

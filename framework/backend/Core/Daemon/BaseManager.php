@@ -8,7 +8,7 @@ use ErrorException;
 use Hilos\Constants\ErrorConstants;
 use Hilos\Utils\Env;
 use Hilos\Utils\Logger;
-use RuntimeException;
+use Hilos\Core\Exception\MissingRequiredParameterException;
 use Throwable;
 
 /**
@@ -221,7 +221,7 @@ abstract class BaseManager
      * process management and signal handling. Throws exception if
      * any required functions are missing.
      *
-     * @throws RuntimeException If required functions are not available
+     * @throws MissingRequiredParameterException When required PCNTL functions are not available
      */
     protected function checkRequiredFunctions(): void
     {
@@ -241,7 +241,7 @@ abstract class BaseManager
         }
 
         if (!empty($missingFunctions)) {
-            throw new RuntimeException(
+            throw new MissingRequiredParameterException(
                 'Required functions are not available: ' . implode(', ', $missingFunctions) .
                 '. Please install PCNTL extension or run in CLI mode.'
             );

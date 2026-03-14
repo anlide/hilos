@@ -8,10 +8,11 @@ use Demo\Chat\Database\Object\Collection\Users as ObjectUsers;
 use Demo\Chat\Database\Object\Item\User as ObjectUser;
 use Demo\Chat\Database\View\Collection\Users as DbCollectionUsers;
 use Demo\Chat\Database\View\Item\User;
+use Hilos\Core\Exception\DuplicateValueException;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Database\Actions\Collection\DbActions;
 use Hilos\HilosException;
 use Hilos\Utils\Helpers\TimeHelper;
-use RuntimeException;
 
 /**
  * Users Actions - write operations for Users collection.
@@ -27,19 +28,20 @@ final class UsersActions extends DbActions
      *
      * @param string $sessionToken Session token (32 hex characters)
      * @return User Registered user
-     * @throws HilosException On error (invalid token format, user already exists, database error, etc.)
-     * @throws RuntimeException If token format invalid or user already exists
+     * @throws InvalidFormatException If token format invalid (not 32 hex characters)
+     * @throws DuplicateValueException If user with session token already exists
+     * @throws HilosException On database error
      */
     public function register(string $sessionToken): User
     {
         $this->ensureCanWrite();
 
         if (strlen($sessionToken) !== 32 || !ctype_xdigit($sessionToken)) {
-            throw new RuntimeException("Invalid session token format. Expected 32 hex characters.");
+            throw new InvalidFormatException("Invalid session token format. Expected 32 hex characters.");
         }
 
         if ($this->objectCollection->findBySession($sessionToken) !== null) {
-            throw new RuntimeException("User with session token already exists");
+            throw new DuplicateValueException("User with session token already exists");
         }
 
         $user = ObjectUser::create();

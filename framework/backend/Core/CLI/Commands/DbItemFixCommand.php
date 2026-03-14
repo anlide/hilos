@@ -14,7 +14,7 @@ use Hilos\Database\Object\Item\Object_;
 use Hilos\Database\Object\Objects;
 use Hilos\Utils\Helpers\StringHelper;
 use ReflectionClass;
-use RuntimeException;
+use Hilos\Core\CLI\Exception\CommandException;
 
 /**
  * DbItemFixCommand - Fix Item/DbItem files to match Object files.
@@ -130,7 +130,7 @@ HELP;
      *   - 'force-repair' (bool): Attempt to repair broken Idea files (currently not used)
      * @param array $args Command arguments (not used)
      * @return int Exit code (ExitCode::SUCCESS on success)
-     * @throws RuntimeException If critical errors occur during processing
+     * @throws CommandException If critical errors occur during processing
      */
     public function execute(array $options, array $args): int
     {
@@ -290,7 +290,7 @@ HELP;
 
         // If IdeaStorage or Idea.php are broken, terminate with error
         if ($brokenIdeaStorage !== null || $brokenIdeaMain !== null) {
-            throw new RuntimeException('Cannot proceed: IdeaStorage or Idea.php files are damaged. Please fix them first.');
+            throw new CommandException('Cannot proceed: IdeaStorage or Idea.php files are damaged. Please fix them first.');
         }
 
         // ============================================

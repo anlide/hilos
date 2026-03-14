@@ -2,6 +2,7 @@
 
 namespace Hilos\Database\Object;
 
+use Hilos\Core\Exception\InvalidStateException;
 use Hilos\Database\Object\Item\Object_;
 
 /**
@@ -169,21 +170,21 @@ class FilteredCollection extends Objects
      * Initialize empty collection (not supported for FilteredCollection).
      *
      * @return static Never returns (throws)
-     * @throws \RuntimeException Always, direct init not allowed
+     * @throws InvalidStateException Always, direct init not allowed
      */
     public static function initEmpty(): static
     {
-        throw new \RuntimeException("FilteredCollection cannot be initialized directly");
+        throw new InvalidStateException("FilteredCollection cannot be initialized directly");
     }
 
     /**
      * Load all from DB (not supported for FilteredCollection).
      *
-     * @throws \RuntimeException Always, direct load not allowed
+     * @throws InvalidStateException Always, direct load not allowed
      */
     public function loadAllFromDB(): void
     {
-        throw new \RuntimeException("FilteredCollection cannot load from database directly");
+        throw new InvalidStateException("FilteredCollection cannot load from database directly");
     }
 
     /**

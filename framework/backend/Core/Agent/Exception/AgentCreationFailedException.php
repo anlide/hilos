@@ -4,13 +4,12 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Agent\Exception;
 
-use Hilos\HilosException;
 use Throwable;
 
 /**
  * Exception thrown when agent creation fails.
  */
-class AgentCreationFailedException extends HilosException
+class AgentCreationFailedException extends AgentException
 {
     /**
      * Creates exception with agent type, optional index and previous exception.
