@@ -23,7 +23,7 @@ use Hilos\Socket\Worker\DTO\WorkerRtSyncUpdatedMessageDTO;
 use Hilos\Utils\Logger;
 
 /**
- * WorkerDTO - Abstract base class for worker DTOs
+ * WorkerDTO - Abstract base class for worker DTOs.
  *
  * Provides common functionality for worker communication DTOs.
  */

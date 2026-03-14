@@ -8,7 +8,7 @@ use Hilos\Constants\WorkerConstants;
 use Hilos\Socket\Worker\WorkerDTO;
 
 /**
- * WorkerRegisteredDTO - DTO for worker registration confirmation
+ * WorkerRegisteredDTO - DTO for worker registration confirmation.
  *
  * Used when daemon confirms worker registration.
  */
@@ -23,16 +23,6 @@ class WorkerRegisteredDTO extends WorkerDTO
     public const string MESSAGE_TYPE = WorkerConstants::MESSAGE_WORKER_REGISTERED;
 
     /**
-     * Get message type
-     *
-     * @return string Message type
-     */
-    public function getType(): string
-    {
-        return self::MESSAGE_TYPE;
-    }
-
-    /**
      * Creates worker registration confirmation DTO.
      *
      * @param int $workerIndex Worker index assigned by daemon
@@ -42,6 +32,16 @@ class WorkerRegisteredDTO extends WorkerDTO
         public readonly int $workerIndex,
         public readonly bool $monopolistic = false,
     ) {
+    }
+
+    /**
+     * Returns message type.
+     *
+     * @return string Message type
+     */
+    public function getType(): string
+    {
+        return self::MESSAGE_TYPE;
     }
 
     /**

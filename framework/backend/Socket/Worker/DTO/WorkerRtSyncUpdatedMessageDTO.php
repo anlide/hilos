@@ -24,11 +24,21 @@ class WorkerRtSyncUpdatedMessageDTO extends WorkerDTO
     ) {
     }
 
+    /**
+     * Returns message type.
+     *
+     * @return string Message type identifier.
+     */
     public function getType(): string
     {
         return self::MESSAGE_TYPE;
     }
 
+    /**
+     * Converts DTO to array for transport.
+     *
+     * @return array<string, mixed> DTO data as array.
+     */
     public function toArray(): array
     {
         return [
@@ -37,6 +47,12 @@ class WorkerRtSyncUpdatedMessageDTO extends WorkerDTO
         ];
     }
 
+    /**
+     * Creates DTO from array.
+     *
+     * @param array<string, mixed> $data Source data with signalData key.
+     * @return static DTO instance.
+     */
     public static function fromArray(array $data): static
     {
         return new self(

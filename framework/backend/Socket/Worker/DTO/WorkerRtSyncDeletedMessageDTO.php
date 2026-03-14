@@ -24,6 +24,11 @@ class WorkerRtSyncDeletedMessageDTO extends WorkerDTO
     ) {
     }
 
+    /**
+     * Returns message type.
+     *
+     * @return string Message type identifier.
+     */
     public function getType(): string
     {
         return self::MESSAGE_TYPE;
@@ -37,6 +42,12 @@ class WorkerRtSyncDeletedMessageDTO extends WorkerDTO
         ];
     }
 
+    /**
+     * Creates DTO from array.
+     *
+     * @param array<string, mixed> $data Source data with signalData key.
+     * @return static DTO instance.
+     */
     public static function fromArray(array $data): static
     {
         return new self(

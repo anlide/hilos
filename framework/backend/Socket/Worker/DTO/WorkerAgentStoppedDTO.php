@@ -7,7 +7,7 @@ namespace Hilos\Socket\Worker\DTO;
 use Hilos\Socket\Worker\WorkerDTO;
 
 /**
- * WorkerAgentStoppedDTO - DTO for agent stopped notification
+ * WorkerAgentStoppedDTO - DTO for agent stopped notification.
  *
  * Used when worker notifies daemon that agent has stopped.
  */

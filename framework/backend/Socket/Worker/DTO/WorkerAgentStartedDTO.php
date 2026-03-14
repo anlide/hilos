@@ -7,7 +7,7 @@ namespace Hilos\Socket\Worker\DTO;
 use Hilos\Socket\Worker\WorkerDTO;
 
 /**
- * WorkerAgentStartedDTO - DTO for agent started notification
+ * WorkerAgentStartedDTO - DTO for agent started notification.
  *
  * Used when worker notifies daemon that agent has started.
  */

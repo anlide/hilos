@@ -9,7 +9,7 @@ use Hilos\Core\Router\DTO\SignalDataDTO;
 use Hilos\Core\Router\SignalDataInterface;
 
 /**
- * CronSignalDTO - DTO for cron signal
+ * CronSignalDTO - DTO for cron signal.
  *
  * Represents a cron signal sent from daemon to agent.
  */

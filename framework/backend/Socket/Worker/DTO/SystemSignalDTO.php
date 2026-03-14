@@ -9,7 +9,7 @@ use Hilos\Core\Router\DTO\SignalDataDTO;
 use Hilos\Core\Router\SignalDataInterface;
 
 /**
- * SystemSignalDTO - DTO for system signal
+ * SystemSignalDTO - DTO for system signal.
  *
  * Represents a system signal sent from daemon to agent.
  */

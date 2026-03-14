@@ -7,7 +7,7 @@ namespace Hilos\Socket\Worker\DTO;
 use Hilos\Socket\Worker\WorkerDTO;
 
 /**
- * WorkerRegisterDTO - DTO for worker registration message
+ * WorkerRegisterDTO - DTO for worker registration message.
  *
  * Used when worker sends registration request to daemon.
  */

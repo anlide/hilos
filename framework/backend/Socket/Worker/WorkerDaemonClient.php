@@ -237,7 +237,7 @@ class WorkerDaemonClient extends AbstractSocket
     }
 
     /**
-     * Check if connected
+     * Check if connected.
      *
      * @return bool True if connected
      */
@@ -247,7 +247,7 @@ class WorkerDaemonClient extends AbstractSocket
     }
 
     /**
-     * Close connection
+     * Close connection.
      */
     public function close(): void
     {
@@ -263,7 +263,7 @@ class WorkerDaemonClient extends AbstractSocket
     }
 
     /**
-     * Mark socket for closing (abstract implementation)
+     * Mark socket for closing (abstract implementation).
      */
     public function markShouldClose(): void
     {

@@ -9,7 +9,7 @@ use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Socket\Worker\WorkerDTO;
 
 /**
- * DaemonAgentMessageDTO - DTO for agent message signal from daemon to worker
+ * DaemonAgentMessageDTO - DTO for agent message signal from daemon to worker.
  *
  * Used when daemon sends agent_message signal to worker.
  * This is for messages from daemon to worker agent.

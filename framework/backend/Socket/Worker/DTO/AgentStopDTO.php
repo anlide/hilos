@@ -8,7 +8,7 @@ use Hilos\Constants\WorkerConstants;
 use Hilos\Socket\Worker\WorkerDTO;
 
 /**
- * AgentStopDTO - DTO for agent stop signal
+ * AgentStopDTO - DTO for agent stop signal.
  *
  * Used when daemon sends agent_stop signal to worker.
  */

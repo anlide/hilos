@@ -8,7 +8,7 @@ use Hilos\Socket\WebSocket\WebSocketException;
 use Throwable;
 
 /**
- * Exception thrown when WebSocket frame requires masking key but it's missing.
+ * Exception thrown when WebSocket frame requires masking key but it is missing.
  */
 class MaskKeyMissingException extends WebSocketException
 {

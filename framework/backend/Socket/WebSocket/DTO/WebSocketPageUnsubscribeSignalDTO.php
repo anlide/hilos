@@ -17,6 +17,7 @@ class WebSocketPageUnsubscribeSignalDTO extends BaseDTO implements SignalDataDTO
 {
     // Field name constants
     public const string ACCEPT_KEY = 'acceptKey';
+
     /**
      * Creates page unsubscribe signal DTO.
      *

@@ -8,7 +8,7 @@ use Hilos\Constants\WorkerConstants;
 use Hilos\Socket\Worker\WorkerDTO;
 
 /**
- * AgentStartDTO - DTO for agent start signal
+ * AgentStartDTO - DTO for agent start signal.
  *
  * Used when daemon sends agent_start signal to worker.
  */
