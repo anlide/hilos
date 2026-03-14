@@ -21,6 +21,7 @@ use Hilos\Core\Table\Exception\TablePropertyNotFoundException;
  */
 class TableItem
 {
+    /** @var ?TableItemActions lazy-loaded item actions instance */
     private ?TableItemActions $_actions = null;
 
     /**

@@ -24,7 +24,7 @@ class RenameActionDTO extends ChatActionPayloadDTO
     }
 
     /**
-     * Get action name
+     * Get action name.
      *
      * @return string Action name
      */
@@ -59,7 +59,7 @@ class RenameActionDTO extends ChatActionPayloadDTO
     }
 
     /**
-     * Check if new name is valid (non-empty)
+     * Check if new name is valid (non-empty).
      *
      * @return bool True if valid
      */

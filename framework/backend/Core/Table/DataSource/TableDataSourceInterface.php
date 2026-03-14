@@ -23,7 +23,7 @@ interface TableDataSourceInterface
     /**
      * Returns the source type (Entity, Sql, or Other).
      *
-     * @return TableType
+     * @return TableType Source type enum value
      */
     public function getType(): TableType;
 
@@ -31,8 +31,7 @@ interface TableDataSourceInterface
      * Executes a table query with search, sort and pagination.
      *
      * @param TableQueryDTO $query Query parameters
-     *
-     * @return TableResultDTO
+     * @return TableResultDTO Query result with rows and total count
      */
     public function query(TableQueryDTO $query): TableResultDTO;
 }

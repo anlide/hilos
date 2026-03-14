@@ -19,7 +19,10 @@ use Hilos\Utils\Logger;
  */
 abstract class AbstractGuardianAgent extends AbstractAgent
 {
+    /** @var ReportTransportInterface report transport */
     protected ReportTransportInterface $transport;
+
+    /** @var ChatAgentGuardianSignalCapability capability for chat signal forwarding */
     private ChatAgentGuardianSignalCapability $chatSignalCapability;
 
     /**

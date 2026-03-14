@@ -8,7 +8,7 @@ use Demo\Chat\Core\Router\DTO\ChatMessageDTOInterface;
 use Hilos\Socket\WebSocket\DTO\WebSocketActionSignalDTO as FrameworkWebSocketActionSignalDTO;
 
 /**
- * WebSocketActionSignalDTO - DTO for WebSocket action signal
+ * WebSocketActionSignalDTO - DTO for WebSocket action signal.
  *
  * Represents an action signal sent from WebSocket client to chat agent.
  * Extends framework WebSocketActionSignalDTO for chat-specific functionality.
@@ -16,7 +16,7 @@ use Hilos\Socket\WebSocket\DTO\WebSocketActionSignalDTO as FrameworkWebSocketAct
 class WebSocketActionSignalDTO extends FrameworkWebSocketActionSignalDTO implements ChatMessageDTOInterface
 {
     /**
-     * Create DTO from array
+     * Creates DTO from array.
      *
      * Override parent method to return correct child class type.
      *

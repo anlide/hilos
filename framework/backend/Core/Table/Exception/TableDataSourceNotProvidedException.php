@@ -11,6 +11,9 @@ use Hilos\HilosException;
  */
 class TableDataSourceNotProvidedException extends HilosException
 {
+    /**
+     * Creates exception for missing data source.
+     */
     public function __construct()
     {
         parent::__construct('Data source must be provided via constructor or override createDataSource()');

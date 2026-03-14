@@ -11,6 +11,9 @@ use Hilos\HilosException;
  */
 class TableActionsNotConfiguredException extends HilosException
 {
+    /**
+     * Creates exception for unconfigured actions class.
+     */
     public function __construct()
     {
         parent::__construct('No actions class configured for this table');

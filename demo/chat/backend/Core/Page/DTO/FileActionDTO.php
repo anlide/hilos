@@ -28,7 +28,7 @@ class FileActionDTO extends ChatActionPayloadDTO
     }
 
     /**
-     * Get action name
+     * Get action name.
      *
      * @return string Action name
      */
@@ -67,7 +67,7 @@ class FileActionDTO extends ChatActionPayloadDTO
     }
 
     /**
-     * Check if file data is valid
+     * Check if file data is valid.
      *
      * @return bool True if valid
      */

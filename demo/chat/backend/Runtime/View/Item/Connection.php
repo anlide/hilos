@@ -39,7 +39,7 @@ final class Connection extends RtItem
      * Property getter.
      *
      * @param string $name Property name
-     * @return string|int|User|null
+     * @return string|int|User|null Property value
      */
     public function __get(string $name): string|int|User|null
     {
@@ -58,7 +58,7 @@ final class Connection extends RtItem
     /**
      * Convert to array.
      *
-     * @return array<string, mixed>
+     * @return array<string, mixed> Item as associative array
      */
     public function toArray(): array
     {

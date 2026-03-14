@@ -24,7 +24,7 @@ class MessageActionDTO extends ChatActionPayloadDTO
     }
 
     /**
-     * Get action name
+     * Get action name.
      *
      * @return string Action name
      */
@@ -70,7 +70,7 @@ class MessageActionDTO extends ChatActionPayloadDTO
     }
 
     /**
-     * Check if message content is valid (non-empty)
+     * Check if message content is valid (non-empty).
      *
      * @return bool True if content is valid
      */

@@ -28,16 +28,16 @@ use Hilos\Core\Table\TableConstants;
  */
 abstract class TableDefinition implements ArrayAccess
 {
-    /** Data source for loading rows (entity collection, view, etc.). */
+    /** @var TableDataSourceInterface data source for loading rows (entity collection, view, etc) */
     private readonly TableDataSourceInterface $dataSource;
 
-    /** Lazy-loaded table-level actions instance. */
+    /** @var ?TableActions lazy-loaded table-level actions instance */
     private ?TableActions $_actions = null;
 
-    /** @var ?class-string<TableActions> Table actions class for create, etc. */
+    /** @var ?class-string<TableActions> table actions class for create, etc */
     private ?string $_actionsClass = null;
 
-    /** @var ?class-string<TableItemActions> Item actions class for update, delete. */
+    /** @var ?class-string<TableItemActions> item actions class for update, delete */
     private ?string $_itemActionsClass = null;
 
     /**
@@ -65,6 +65,8 @@ abstract class TableDefinition implements ArrayAccess
 
     /**
      * Override in subclasses to configure actions classes.
+     *
+     * Called from constructor after data source init.
      */
     protected function init(): void
     {

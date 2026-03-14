@@ -107,6 +107,11 @@ class ChatContexts extends RtCollection
         return $item;
     }
 
+    /**
+     * Returns actions instance for write operations.
+     *
+     * @return ChatContextsActions Actions instance
+     */
     protected function getActions(): ChatContextsActions
     {
         /** @var ChatContextsActions $actions */
@@ -114,6 +119,12 @@ class ChatContexts extends RtCollection
         return $actions;
     }
 
+    /**
+     * Magic getter for actions property.
+     *
+     * @param string $name Property name (actions)
+     * @return ChatContextsActions Actions instance
+     */
     public function __get(string $name): ChatContextsActions
     {
         return match ($name) {

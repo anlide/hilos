@@ -33,7 +33,7 @@ use Hilos\Utils\Logger;
 /**
  * BotAgent - Regular agent for bot management.
  *
- * Runs in regular worker process. One agent per bot (agentIndex = bot.id). One agent per bot (agentIndex = bot.id).
+ * Runs in regular worker process. One agent per bot (agentIndex = bot.id).
  * Manages bot interactions: reacts to chat context updates (RtSync from ChatContextAnalyzerAgent)
  * and generates messages via async LLM.
  */
@@ -43,8 +43,10 @@ class BotAgent extends AbstractAgent
 
     private const int MAX_RESPONSE_TOKENS = 256;
 
+    /** @var string bot ID (agent index) */
     private string $agentIndex;
 
+    /** @var AsyncChatLLMInterface LLM chat client */
     private AsyncChatLLMInterface $chatClient;
 
     /** @var float Unix timestamp (seconds) when reaction is scheduled, or 0 if not scheduled */

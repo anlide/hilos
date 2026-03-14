@@ -16,7 +16,7 @@ use Hilos\Socket\WebSocket\DTO\WebSocketCloseSignalDTO as FrameworkWebSocketClos
 class WebSocketCloseSignalDTO extends FrameworkWebSocketCloseSignalDTO implements ChatMessageDTOInterface
 {
     /**
-     * Create DTO from array
+     * Creates DTO from array.
      *
      * Override parent method to return correct child class type.
      *

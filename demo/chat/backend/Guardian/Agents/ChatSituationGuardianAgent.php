@@ -24,10 +24,19 @@ use Hilos\Utils\Logger;
  */
 final class ChatSituationGuardianAgent extends AbstractGuardianAgent
 {
+    /** @var float next scheduled run timestamp in milliseconds */
     private float $nextRunAtMs = 0.0;
+
+    /** @var DbEventsReadCapability events read capability */
     private DbEventsReadCapability $eventsCapability;
+
+    /** @var RtReadCapability runtime read capability */
     private RtReadCapability $rtCapability;
+
+    /** @var AsyncChatLLMInterface LLM chat client */
     private AsyncChatLLMInterface $chatClient;
+
+    /** @var array<string, mixed>|null pending stats for report after LLM response */
     private ?array $pendingStats = null;
 
     /**
@@ -175,6 +184,11 @@ final class ChatSituationGuardianAgent extends AbstractGuardianAgent
         return 'Analyze chat health from stats: ' . json_encode($stats, JSON_UNESCAPED_UNICODE);
     }
 
+    /**
+     * Finishes pending report and publishes it to Guardian.
+     *
+     * @param ?string $rawResult LLM raw response or null
+     */
     private function finishPendingReport(?string $rawResult): void
     {
         $stats = $this->pendingStats;
@@ -208,6 +222,12 @@ final class ChatSituationGuardianAgent extends AbstractGuardianAgent
         );
     }
 
+    /**
+     * Extracts JSON object substring from text.
+     *
+     * @param string $text Input text (may contain JSON)
+     * @return ?string Extracted JSON string or null
+     */
     private function extractJsonObject(string $text): ?string
     {
         $trimmed = trim($text);

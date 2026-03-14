@@ -44,7 +44,7 @@ class UserPage extends AbstractChatPage
     }
 
     /**
-     * Handle page-specific unsubscription logic
+     * Handle page-specific unsubscription logic.
      *
      * @param string $acceptKey Accept key
      */

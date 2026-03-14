@@ -8,7 +8,7 @@ use Hilos\BaseDTO;
 use Hilos\Core\Router\SignalDataInterface;
 
 /**
- * ModerationBotRequestSignalData - DTO for bot message moderation request (BotAgent → ModeratorAgent)
+ * ModerationBotRequestSignalData - DTO for bot message moderation request (BotAgent → ModeratorAgent).
  */
 class ModerationBotRequestSignalData extends BaseDTO implements SignalDataInterface
 {
