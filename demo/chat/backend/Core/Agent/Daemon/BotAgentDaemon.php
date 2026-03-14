@@ -6,6 +6,7 @@ namespace Demo\Chat\Core\Agent\Daemon;
 
 use Demo\Chat\Constants\AgentType;
 use Hilos\Core\Agent\Daemon\AbstractAgentDaemon;
+use Hilos\Core\Agent\Exception\AgentIndexRequiredException;
 use Hilos\Utils\Logger;
 
 /**
@@ -26,12 +27,12 @@ class BotAgentDaemon extends AbstractAgentDaemon
      * Creates daemon proxy for BotAgent with given bot id as index.
      *
      * @param string $agentIndex Bot id (non-empty)
-     * @throws \RuntimeException When agentIndex is empty
+     * @throws AgentIndexRequiredException When agentIndex is empty
      */
     public function __construct(string $agentIndex)
     {
         if ($agentIndex === '') {
-            throw new \RuntimeException('BotAgentDaemon requires non-empty agentIndex (bot id)');
+            throw new AgentIndexRequiredException('BotAgentDaemon requires non-empty agentIndex (bot id)');
         }
         $this->agentIndex = $agentIndex;
         Logger::debug("BotAgentDaemon created [type=" . self::AGENT_TYPE . " index=" . $agentIndex . "]");

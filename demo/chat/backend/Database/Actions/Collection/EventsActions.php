@@ -7,10 +7,10 @@ use Demo\Chat\Database\Object\Collection\Events as ObjectEvents;
 use Demo\Chat\Database\Object\Item\Event as ObjectEvent;
 use Demo\Chat\Database\View\Collection\Events as DbCollectionEvents;
 use Demo\Chat\Database\View\Item\Event as DbEvent;
+use Hilos\Core\CLI\Exception\CommandException;
 use Hilos\Database\Actions\Collection\DbActions;
 use Hilos\HilosException;
 use Hilos\Utils\Helpers\TimeHelper;
-use RuntimeException;
 
 /**
  * Events Actions - write operations for Events collection.
@@ -40,7 +40,7 @@ final class EventsActions extends DbActions
      * @param ?array<string, mixed> $data Additional event data (optional)
      * @return DbEvent Created event
      * @throws HilosException On error (invalid parameters, database error, etc.)
-     * @throws RuntimeException If event id is null after sync
+     * @throws CommandException If event id is null after sync
      */
     public function add(string $type, ?int $userId = null, ?int $botId = null, ?array $data = null): DbEvent
     {
@@ -55,7 +55,7 @@ final class EventsActions extends DbActions
         $objectEvent->sync();
 
         if ($objectEvent->id === null) {
-            throw new RuntimeException("Failed to save event to database: id is null after sync");
+            throw new CommandException("Failed to save event to database: id is null after sync");
         }
 
         $this->addObjectToCollection($objectEvent);

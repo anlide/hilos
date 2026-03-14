@@ -16,6 +16,7 @@ use Demo\Chat\Core\Agent\Daemon\GuardiansOpsAgentDaemon;
 use Demo\Chat\Core\Agent\Daemon\ModeratorAgentDaemon;
 use Hilos\Core\Agent\Daemon\AgentDaemonInterface;
 use Hilos\Core\Agent\Daemon\HilosAgentDaemonFactory;
+use Hilos\Core\Agent\Exception\AgentIndexRequiredException;
 
 /**
  * ChatAgentDaemonFactory - Factory for creating chat-specific agent daemon proxies.
@@ -31,7 +32,7 @@ class ChatAgentDaemonFactory extends HilosAgentDaemonFactory
      * @param string $agentType Agent type
      * @param ?string $agentIndex Agent index (required for BOT type)
      * @return AgentDaemonInterface Agent daemon instance
-     * @throws \RuntimeException If agentIndex is null for BOT type
+     * @throws AgentIndexRequiredException When agentIndex is null for BOT type
      */
     public static function createAgentDaemon(string $agentType, ?string $agentIndex): AgentDaemonInterface
     {
@@ -41,7 +42,7 @@ class ChatAgentDaemonFactory extends HilosAgentDaemonFactory
             AgentType::GUARDIAN_OPS => new GuardiansOpsAgentDaemon(),
             AgentType::CHAT_SITUATION_GUARDIAN => new ChatSituationGuardianAgentDaemon(),
             AgentType::BOT => new BotAgentDaemon(
-                $agentIndex ?? throw new \RuntimeException('BotAgentDaemon requires agentIndex (bot id)'),
+                $agentIndex ?? throw new AgentIndexRequiredException('BotAgentDaemon requires agentIndex (bot id)'),
             ),
             AgentType::MODERATOR => new ModeratorAgentDaemon(),
             AgentType::HILOS_INDEX => new DemoHilosAgentDaemon(),

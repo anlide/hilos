@@ -6,9 +6,14 @@ namespace Demo\Chat\Database\Actions\Item;
 
 use Demo\Chat\Database\Object\Item\Bot as ObjectBot;
 use Demo\Chat\Database\View\Item\Bot;
+use Hilos\Core\Exception\EmptyValueException;
+use Hilos\Core\Exception\ItemNotFoundForDeleteException;
+use Hilos\Core\Exception\ItemNotFoundForUpdateException;
+use Hilos\Core\Exception\ValueTooLongException;
+use Hilos\Core\Exception\ValueTooShortException;
+use Hilos\Database\Actions\Exception\ObjectCollectionNullException;
 use Hilos\Database\Actions\Item\DbActions;
 use Hilos\HilosException;
-use RuntimeException;
 
 /**
  * BotActions - write operations for a single Bot item.
@@ -25,27 +30,30 @@ final class BotActions extends DbActions
      * Updates bot fields. Only provided keys are updated.
      *
      * @param array<string, mixed> $data Fields to update (keys: ObjectBot::name, ObjectBot::description, etc.)
-     * @throws HilosException On error (invalid data, database error, etc.)
-     * @throws RuntimeException If bot not found or name validation fails
+     * @throws ItemNotFoundForUpdateException If bot id is null (not persisted)
+     * @throws EmptyValueException If name is empty
+     * @throws ValueTooShortException If name is too short
+     * @throws ValueTooLongException If name exceeds max length
+     * @throws HilosException On database error
      */
     public function update(array $data): void
     {
         $this->ensureCanWrite();
 
         if ($this->object->id === null) {
-            throw new RuntimeException('Bot not found for update (id is null)');
+            throw new ItemNotFoundForUpdateException('Bot not found for update (id is null)');
         }
 
         if (array_key_exists(ObjectBot::name, $data)) {
             $name = is_string($data[ObjectBot::name]) ? trim($data[ObjectBot::name]) : '';
             if ($name === '') {
-                throw new RuntimeException('Bot name cannot be empty');
+                throw new EmptyValueException('Bot name cannot be empty');
             }
             if (mb_strlen($name) < self::NAME_MIN_LENGTH) {
-                throw new RuntimeException('Bot name is too short');
+                throw new ValueTooShortException('Bot name is too short');
             }
             if (mb_strlen($name) > self::NAME_MAX_LENGTH) {
-                throw new RuntimeException('Bot name exceeds maximum length of ' . self::NAME_MAX_LENGTH . ' characters');
+                throw new ValueTooLongException('Bot name exceeds maximum length of ' . self::NAME_MAX_LENGTH . ' characters');
             }
             $this->object->name = $name;
         }
@@ -90,20 +98,21 @@ final class BotActions extends DbActions
     /**
      * Deletes the bot.
      *
-     * @throws HilosException On error (database error, etc.)
-     * @throws RuntimeException If bot not found or object collection is null
+     * @throws ItemNotFoundForDeleteException If bot id is null (not persisted)
+     * @throws ObjectCollectionNullException If object collection is null
+     * @throws HilosException On database error
      */
     public function delete(): void
     {
         $this->ensureCanWrite();
 
         if ($this->object->id === null) {
-            throw new RuntimeException('Bot not found for delete (id is null)');
+            throw new ItemNotFoundForDeleteException('Bot not found for delete (id is null)');
         }
 
         $objectCollection = $this->getObjectCollection();
         if ($objectCollection === null) {
-            throw new RuntimeException('Object collection is null');
+            throw new ObjectCollectionNullException('Object collection is null');
         }
 
         $idString = $this->object->getIdString();

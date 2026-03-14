@@ -19,6 +19,7 @@ use Demo\Chat\Runtime\State\Item\ChatContext as StateChatContext;
 use Demo\Chat\Runtime\View\Context\RtChatContext;
 use Demo\Chat\Utils\BotEnv;
 use Hilos\Core\Agent\AbstractAgent;
+use Hilos\Core\Agent\Exception\AgentIndexRequiredException;
 use Hilos\Core\Sync\DTO\DbSyncCreatedSignalData;
 use Hilos\Core\Sync\DTO\DbSyncDeletedSignalData;
 use Hilos\Core\Sync\DTO\DbSyncUpdatedSignalData;
@@ -64,12 +65,12 @@ class BotAgent extends AbstractAgent
      * Create BotAgent for the given bot ID.
      *
      * @param string $agentIndex Bot ID (must be non-empty)
-     * @throws \RuntimeException If agentIndex is empty
+     * @throws AgentIndexRequiredException If agentIndex is empty
      */
     public function __construct(string $agentIndex)
     {
         if ($agentIndex === '') {
-            throw new \RuntimeException('BotAgent requires non-empty agentIndex (bot id)');
+            throw new AgentIndexRequiredException('BotAgent requires non-empty agentIndex (bot id)');
         }
         $this->agentIndex = $agentIndex;
         $this->chatClient = BotEnv::useExternalProvider()

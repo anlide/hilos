@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Demo\Chat\Tests\Integration;
 
 use Demo\Chat\Hilos;
-use Hilos\Runtime\Exception\RuntimeException;
+use Hilos\Runtime\Exception\RtBaseException;
 
 /**
  * Integration tests for UserActions (item-level).
@@ -31,7 +31,7 @@ final class UserActionsTest extends IntegrationTestCase
     }
 
     /**
-     * Rename with empty/whitespace-only name throws RuntimeException.
+     * Rename with empty/whitespace-only name throws RtBaseException.
      */
     public function testRenameEmptyThrows(): void
     {
@@ -39,14 +39,14 @@ final class UserActionsTest extends IntegrationTestCase
         $user = Hilos::$db->users->actions->register($token);
         $dbUser = Hilos::$db->users[$user->id];
 
-        $this->expectException(RuntimeException::class);
+        $this->expectException(RtBaseException::class);
         $this->expectExceptionMessage('cannot be empty');
 
         $dbUser->actions->rename('   ');
     }
 
     /**
-     * Rename with name exceeding max length throws RuntimeException.
+     * Rename with name exceeding max length throws RtBaseException.
      */
     public function testRenameTooLongThrows(): void
     {
@@ -54,7 +54,7 @@ final class UserActionsTest extends IntegrationTestCase
         $user = Hilos::$db->users->actions->register($token);
         $dbUser = Hilos::$db->users[$user->id];
 
-        $this->expectException(RuntimeException::class);
+        $this->expectException(RtBaseException::class);
         $this->expectExceptionMessage('exceeds maximum length');
 
         $dbUser->actions->rename(str_repeat('x', 65));

@@ -8,7 +8,7 @@ use Hilos\Core\Router\DTO\EntitiesChangesDTO;
 use Hilos\Core\Router\SignalData;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Table\DTO\TableResultDTO;
-use RuntimeException;
+use Hilos\Core\Exception\NotImplementedException;
 
 /**
  * ChatEventSignalDTO - Signal data for chat events.
@@ -53,10 +53,10 @@ class ChatEventSignalDTO extends SignalData implements SignalDataInterface
      *
      * @param array<string, mixed> $data Source data
      * @return static DTO instance
-     * @throws RuntimeException Always - not implemented
+     * @throws NotImplementedException Deserialization is not implemented
      */
     public static function fromArray(array $data): static
     {
-        throw new RuntimeException('ChatEventSignalDTO::fromArray() is not implemented');
+        throw new NotImplementedException('ChatEventSignalDTO::fromArray() is not implemented');
     }
 }

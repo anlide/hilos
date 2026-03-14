@@ -698,7 +698,7 @@ trait ItemItemFixer
         $method .= "     *\n";
         $method .= "     * @param string \$name Property name\n";
         $method .= "     * @return {$returnType} Property value\n";
-        $method .= "     * @throws \\RuntimeException If property does not exist\n";
+        $method .= "     * @throws \Hilos\Core\CLI\Exception\FixerPropertyNotFoundException When property does not exist\n";
         $method .= "     */\n";
         $method .= "    public function __get(string \$name): {$returnType}\n";
         $method .= "    {\n";
@@ -984,7 +984,7 @@ trait ItemItemFixer
             $newGetter .= "     *\n";
             $newGetter .= "     * @param string \$name Property name\n";
             $newGetter .= "     * @return {$returnType} Property value\n";
-            $newGetter .= "     * @throws \\RuntimeException If property does not exist\n";
+            $newGetter .= "     * @throws \Hilos\Core\CLI\Exception\FixerPropertyNotFoundException When property does not exist\n";
             $newGetter .= "     */\n";
             $newGetter .= "    public function __get(string \$name): {$returnType}\n";
             $newGetter .= "    {\n";
@@ -1158,7 +1158,7 @@ trait ItemItemFixer
         $newGetter .= "     *\n";
         $newGetter .= "     * @param string \$name Property name\n";
         $newGetter .= "     * @return {$returnType} Property value\n";
-        $newGetter .= "     * @throws \\RuntimeException If property does not exist\n";
+        $newGetter .= "     * @throws \Hilos\Core\CLI\Exception\FixerPropertyNotFoundException When property does not exist\n";
         $newGetter .= "     */\n";
         $newGetter .= "    public function __get(string \$name): {$returnType}\n";
         $newGetter .= "    {\n";

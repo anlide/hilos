@@ -7,7 +7,7 @@ namespace Demo\Chat\Socket\WebSocket\DTO;
 use Hilos\BaseDTO;
 use Hilos\Core\Router\DTO\EntitiesChangesDTO;
 use Hilos\Core\Router\SignalDataInterface;
-use RuntimeException;
+use Hilos\Core\Exception\NotImplementedException;
 
 /**
  * HandshakeResponseSignalData - Signal data for handshake response.
@@ -56,12 +56,12 @@ class HandshakeResponseSignalData extends BaseDTO implements SignalDataInterface
      *
      * @param array<string, mixed> $data Source data (ignored)
      * @return static DTO instance
-     * @throws RuntimeException Always, deserialization not implemented
+     * @throws NotImplementedException Deserialization is not implemented
      */
     public static function fromArray(array $data): static
     {
         // This is not used for deserialization from array
         // Response is created directly in ChatAgent
-        throw new RuntimeException('HandshakeResponseSignalData::fromArray() is not implemented');
+        throw new NotImplementedException('HandshakeResponseSignalData::fromArray() is not implemented');
     }
 }

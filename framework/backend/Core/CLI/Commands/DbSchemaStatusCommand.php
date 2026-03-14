@@ -9,7 +9,7 @@ use Hilos\Constants\ExitCode;
 use Hilos\Database\Database;
 use Hilos\Database\Schema\Schema;
 use Hilos\Database\Schema\TableInfo;
-use RuntimeException;
+use Hilos\Core\CLI\Exception\CommandException;
 
 /**
  * DbSchemaStatusCommand - Display database schema structure status.
@@ -75,7 +75,7 @@ HELP;
      * @param array<string, mixed> $options Parsed options (db-index, table, verbose)
      * @param list<string> $args Positional args (unused)
      * @return int Exit code (0 on success)
-     * @throws RuntimeException If database connection is not established
+     * @throws CommandException If database connection is not established
      */
     public function execute(array $options, array $args): int
     {
@@ -91,7 +91,7 @@ HELP;
 
         // Check if connected
         if (!Database::isConnected($dbIndex)) {
-            throw new RuntimeException("Database connection {$dbIndex} is not established. Please ensure database connection is initialized before running this command.");
+            throw new CommandException("Database connection {$dbIndex} is not established. Please ensure database connection is initialized before running this command.");
         }
 
         // Initialize schema if not already initialized

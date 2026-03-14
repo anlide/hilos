@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Demo\Chat\Tests\Integration;
 
 use Demo\Chat\Hilos;
+use Hilos\Core\Exception\DuplicateValueException;
+use Hilos\Core\Exception\InvalidFormatException;
 
 /**
  * Integration tests for UsersActions.
@@ -26,25 +28,25 @@ final class UsersActionsTest extends IntegrationTestCase
     }
 
     /**
-     * Register with too short token throws RuntimeException.
+     * Register with invalid token format throws InvalidFormatException.
      */
     public function testRegisterInvalidTokenThrows(): void
     {
-        $this->expectException(\RuntimeException::class);
+        $this->expectException(InvalidFormatException::class);
         $this->expectExceptionMessage('Invalid session token');
 
         Hilos::$db->users->actions->register('short');
     }
 
     /**
-     * Register with existing token throws RuntimeException.
+     * Register with existing token throws DuplicateValueException.
      */
     public function testRegisterDuplicateTokenThrows(): void
     {
         $token = bin2hex(random_bytes(16));
         Hilos::$db->users->actions->register($token);
 
-        $this->expectException(\RuntimeException::class);
+        $this->expectException(DuplicateValueException::class);
         $this->expectExceptionMessage('already exists');
         Hilos::$db->users->actions->register($token);
     }

@@ -25,6 +25,7 @@ use Hilos\TruthSource\RtTruthSourceRegistry;
  * Write operations require truth source registration via RtTruthSourceRegistry.
  * All modifications to runtime data must go through this class.
  *
+ * @template T of RtItem
  * @property-read RtCollection $collection
  */
 abstract class RtActions
@@ -72,7 +73,7 @@ abstract class RtActions
      * Creates RtItem from RtState via registered callback.
      *
      * @param RtState $state State instance (reference)
-     * @return RtItem RtItem wrapper for the state
+     * @return T RtItem wrapper for the state
      * @throws RtActionsCallbackNotSetException When createRtItemCallback is not set
      */
     protected function createRtItemFromState(RtState &$state): RtItem

@@ -31,7 +31,8 @@ use Hilos\Socket\WebSocket\Exception\UnsupportedProtocolVersionException;
 use Hilos\Hilos;
 use Hilos\Socket\WebSocket\WebSocketFrameDTO;
 use Hilos\Utils\Helpers\JsonHelper;
-use RuntimeException;
+use Hilos\Core\Exception\InvalidStateException;
+use Hilos\Core\Exception\UnsupportedOperationException;
 
 /**
  * WebSocketClient - Represents a single WebSocket connection.
@@ -453,13 +454,13 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
      * Send WebSocket text frame.
      *
      * @param string $data Text data to send (UTF-8)
-     * @throws RuntimeException When handshake not completed
+     * @throws InvalidStateException When handshake not completed
      */
     public function sendFrame(string $data): void
     {
         // Check if handshake is completed
         if (!$this->handshakeCompleted) {
-            throw new RuntimeException("Cannot send frame: WebSocket handshake not completed");
+            throw new InvalidStateException("Cannot send frame: WebSocket handshake not completed");
         }
 
         $header = $this->buildFrameHeader(strlen($data), self::OPCODE_TEXT);
@@ -592,7 +593,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
                         page: $page,
                         params: $params,
                     ),
-                    default => throw new RuntimeException("Unsupported page signal type: {$type}"),
+                    default => throw new UnsupportedOperationException("Unsupported page signal type: {$type}"),
                 };
 
                 Hilos::$sr->queueSignal(
@@ -605,7 +606,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
                 match ($type) {
                     SignalTypeConstants::PAGE_SUBSCRIBE => $this->onPageSubscribeParsed($page, $dto),
                     SignalTypeConstants::PAGE_UPDATE_SUBSCRIPTION => $this->onPageUpdateSubscriptionParsed($page, $dto),
-                    default => throw new RuntimeException("Unsupported page signal type: {$type}"),
+                    default => throw new UnsupportedOperationException("Unsupported page signal type: {$type}"),
                 };
                 break;
             }
@@ -661,7 +662,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
                         acceptKey: $acceptKey,
                         group: $group,
                     ),
-                    default => throw new RuntimeException("Unsupported group signal type: {$type}"),
+                    default => throw new UnsupportedOperationException("Unsupported group signal type: {$type}"),
                 };
 
                 Hilos::$sr->queueSignal(
@@ -675,7 +676,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
                     SignalTypeConstants::GROUP_SUBSCRIBE => $this->onGroupSubscribeParsed($group, $dto),
                     SignalTypeConstants::GROUP_UPDATE_SUBSCRIPTION => $this->onGroupUpdateSubscriptionParsed($group, $dto),
                     SignalTypeConstants::GROUP_UNSUBSCRIBE => $this->onGroupUnsubscribeParsed($group, $dto),
-                    default => throw new RuntimeException("Unsupported group signal type: {$type}"),
+                    default => throw new UnsupportedOperationException("Unsupported group signal type: {$type}"),
                 };
                 break;
             }
@@ -758,7 +759,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
      */
     protected function onActionValidated(string $actionName): void
     {
-        throw new RuntimeException("Unknown websocket action type: {$actionName}");
+        throw new UnsupportedOperationException("Unknown websocket action type: {$actionName}");
     }
 
     /**
