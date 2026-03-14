@@ -22,7 +22,7 @@ class Env
     private static ?array $exampleCache = null;
 
     /**
-     * Get environment variable value
+     * Get environment variable value.
      *
      * Priority order:
      * 1. Loaded .env file (if loaded)
@@ -67,7 +67,7 @@ class Env
     }
 
     /**
-     * Get environment variable as float
+     * Get environment variable as float.
      *
      * @param EnvConstants|string $name Environment variable name or enum constant
      * @param ?float $default Default value if not found
@@ -100,7 +100,7 @@ class Env
     }
 
     /**
-     * Get string value, fallback to default when not set or empty/whitespace.
+     * Get string value with fallback to default when not set or empty.
      *
      * @param EnvConstants|string $name Environment variable name
      * @param string $default Default when var not set or empty
@@ -176,7 +176,7 @@ class Env
     }
 
     /**
-     * Load environment variables from .env file
+     * Load environment variables from .env file.
      *
      * @param string $envFilePath Path to .env file
      * @return bool True if loaded successfully, false otherwise
@@ -192,7 +192,7 @@ class Env
     }
 
     /**
-     * Copy .env.example to .env if .env doesn't exist
+     * Copy .env.example to .env if .env doesn't exist.
      *
      * @param string $examplePath Path to .env.example file
      * @param string $envPath Path to .env file
@@ -214,7 +214,7 @@ class Env
     }
 
     /**
-     * Initialize environment
+     * Initialize environment.
      *
      * This should be called at the start of the application.
      * It will copy .env.example to .env if needed and load the .env file.
@@ -242,7 +242,7 @@ class Env
     }
 
     /**
-     * Get value from .env.example file
+     * Get value from .env.example file.
      *
      * @param string $name Environment variable name
      * @return ?string Value from .env.example or null if not found
@@ -300,7 +300,7 @@ class Env
     }
 
     /**
-     * Clear caches (useful for reloading environment)
+     * Clear caches (useful for reloading environment).
      *
      * Called when SIGHUP signal is received to reload environment variables
      * from .env file without restarting the application.
@@ -312,7 +312,7 @@ class Env
     }
 
     /**
-     * Reload environment configuration
+     * Reload environment configuration.
      *
      * Clears caches and reloads .env file with auto-detection of project root.
      */

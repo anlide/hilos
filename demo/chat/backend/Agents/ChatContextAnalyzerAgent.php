@@ -362,7 +362,7 @@ PROMPT;
      * Parses LLM JSON output into structured topic, confidence and summary.
      *
      * @param string $text Raw LLM response text
-     * @return ?array{topic: ?string, topicConfidence: float, summary: string} Parsed data or null on failure
+     * @return array<string, mixed>|null Parsed data (topic, topicConfidence, summary) or null on failure
      */
     private function parseAnalyzerOutput(string $text): ?array
     {

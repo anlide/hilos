@@ -14,14 +14,14 @@ use Hilos\Socket\Client\ClientInterface;
 interface WebSocketClientInterface extends ClientInterface
 {
     /**
-     * Send WebSocket text frame
+     * Send WebSocket text frame.
      *
      * @param string $data Text data to send (UTF-8)
      */
     public function sendFrame(string $data): void;
 
     /**
-     * Send WebSocket binary frame
+     * Send WebSocket binary frame.
      *
      * @param string $data Binary data to send
      */

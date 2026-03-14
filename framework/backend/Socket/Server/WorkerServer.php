@@ -50,7 +50,7 @@ use Hilos\Utils\Logger;
  */
 abstract class WorkerServer extends AbstractServer
 {
-    /** @var array<string, array{process: Process, type: string, index: int}> Workers indexed by key (format: "type:index") */
+    /** @var array<string, array<string, Process|string|int>> Workers indexed by key (format: "type:index"), values: process, type, index */
     private array $workers = [];
 
     /** @var array<int> Available worker indices (sorted, can be reused) */
@@ -120,7 +120,7 @@ abstract class WorkerServer extends AbstractServer
     }
 
     /**
-     * Accept new worker connection
+     * Accept new worker connection.
      *
      * @return ?WorkerClientInterface New worker client or null
      * @throws SocketException If socket operation fails
@@ -131,7 +131,7 @@ abstract class WorkerServer extends AbstractServer
     }
 
     /**
-     * Called when a new worker client connection is accepted
+     * Called when a new worker client connection is accepted.
      *
      * @param resource $socket Client socket
      * @return WorkerClientInterface Client instance
@@ -142,7 +142,7 @@ abstract class WorkerServer extends AbstractServer
     }
 
     /**
-     * Get server name for logging
+     * Get server name for logging.
      *
      * @return string Server name
      */
@@ -152,7 +152,7 @@ abstract class WorkerServer extends AbstractServer
     }
 
     /**
-     * Build agent ID from type and index
+     * Build agent ID from type and index.
      *
      * @param string $agentType Agent type
      * @param ?string $agentIndex Agent index (optional)
@@ -164,10 +164,10 @@ abstract class WorkerServer extends AbstractServer
     }
 
     /**
-     * Parse agent ID to extract type and index
+     * Parse agent ID to extract type and index.
      *
      * @param string $agentId Agent ID (format: "type" or "type:index")
-     * @return array{agentType: string, agentIndex: ?string} Parsed agent type and index
+     * @return array<string, string|null> Parsed agent type and index (keys: agentType, agentIndex)
      */
     final protected function parseAgentId(string $agentId): array
     {
@@ -197,7 +197,7 @@ abstract class WorkerServer extends AbstractServer
     }
 
     /**
-     * Get count of active regular worker processes
+     * Get count of active regular worker processes.
      *
      * @return int Number of active regular workers
      */
@@ -207,7 +207,7 @@ abstract class WorkerServer extends AbstractServer
     }
 
     /**
-     * Get count of active monopolistic worker processes
+     * Get count of active monopolistic worker processes.
      *
      * @return int Number of active monopolistic workers
      */
@@ -217,7 +217,7 @@ abstract class WorkerServer extends AbstractServer
     }
 
     /**
-     * Build worker key from type and index
+     * Build worker key from type and index.
      *
      * @param bool $isMonopolistic True if monopolistic
      * @param int $index Worker index
@@ -230,10 +230,10 @@ abstract class WorkerServer extends AbstractServer
     }
 
     /**
-     * Parse worker key to extract type and index
+     * Parse worker key to extract type and index.
      *
      * @param string $key Worker key (format: "type:index")
-     * @return array{type: string, index: int}
+     * @return array<string, string|int> Parsed type and index (keys: type, index)
      */
     private function parseWorkerKey(string $key): array
     {

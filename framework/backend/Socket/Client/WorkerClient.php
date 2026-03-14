@@ -234,7 +234,9 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
     }
 
     /**
-     * Handle DB sync created message from worker (worker-level broadcast)
+     * Handle DB sync created message from worker (worker-level broadcast).
+     *
+     * @param WorkerDbSyncCreatedMessageDTO $dto DTO with sync created data
      */
     private function handleWorkerDbSyncCreatedMessage(WorkerDbSyncCreatedMessageDTO $dto): void
     {
@@ -242,7 +244,9 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
     }
 
     /**
-     * Handle DB sync updated message from worker (worker-level broadcast)
+     * Handle DB sync updated message from worker (worker-level broadcast).
+     *
+     * @param WorkerDbSyncUpdatedMessageDTO $dto DTO with sync updated data
      */
     private function handleWorkerDbSyncUpdatedMessage(WorkerDbSyncUpdatedMessageDTO $dto): void
     {
@@ -250,7 +254,9 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
     }
 
     /**
-     * Handle DB sync deleted message from worker (worker-level broadcast)
+     * Handle DB sync deleted message from worker (worker-level broadcast).
+     *
+     * @param WorkerDbSyncDeletedMessageDTO $dto DTO with sync deleted data
      */
     private function handleWorkerDbSyncDeletedMessage(WorkerDbSyncDeletedMessageDTO $dto): void
     {
@@ -258,7 +264,9 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
     }
 
     /**
-     * Handle RT sync created message from worker (worker-level broadcast)
+     * Handle RT sync created message from worker (worker-level broadcast).
+     *
+     * @param WorkerRtSyncCreatedMessageDTO $dto DTO with sync created data
      */
     private function handleWorkerRtSyncCreatedMessage(WorkerRtSyncCreatedMessageDTO $dto): void
     {
@@ -266,7 +274,9 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
     }
 
     /**
-     * Handle RT sync updated message from worker (worker-level broadcast)
+     * Handle RT sync updated message from worker (worker-level broadcast).
+     *
+     * @param WorkerRtSyncUpdatedMessageDTO $dto DTO with sync updated data
      */
     private function handleWorkerRtSyncUpdatedMessage(WorkerRtSyncUpdatedMessageDTO $dto): void
     {
@@ -274,7 +284,9 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
     }
 
     /**
-     * Handle RT sync deleted message from worker (worker-level broadcast)
+     * Handle RT sync deleted message from worker (worker-level broadcast).
+     *
+     * @param WorkerRtSyncDeletedMessageDTO $dto DTO with sync deleted data
      */
     private function handleWorkerRtSyncDeletedMessage(WorkerRtSyncDeletedMessageDTO $dto): void
     {

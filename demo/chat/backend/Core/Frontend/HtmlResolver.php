@@ -23,7 +23,7 @@ class HtmlResolver
      *
      * @param string $path Request path (e.g. /privacy)
      * @param string $acceptLanguage Accept-Language header value
-     * @return array{path: string, locale: string, status: int}
+     * @return array<string, int|string> Resolved data (path, locale, status)
      */
     public function resolve(string $path, string $acceptLanguage = ''): array
     {

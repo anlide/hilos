@@ -64,7 +64,7 @@ class ChatDaemonManager extends DaemonManager
     }
 
     /**
-     * Daemon tick implementation
+     * Daemon tick implementation.
      *
      * This is where project-specific logic would be implemented.
      */

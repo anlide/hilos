@@ -85,7 +85,7 @@ class FrontendHtmlClient extends AbstractClient implements HttpClientInterface
      * Parse raw HTTP request into method, path and headers.
      *
      * @param string $raw Raw HTTP request
-     * @return array{method: string, path: string, headers: array<string, string>}
+     * @return array<string, mixed> Parsed request (method, path, headers)
      */
     private function parseRequest(string $raw): array
     {

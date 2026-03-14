@@ -15,9 +15,9 @@ use Hilos\Socket\Client\ClientInterface;
 interface HttpClientInterface extends ClientInterface
 {
     /**
-     * Set router for handling HTTP requests
+     * Set router for handling HTTP requests.
      *
-     * @param HttpRouter $router Router instance
+     * @param HttpRouter $router Router instance for handling HTTP requests
      */
     public function setRouter(HttpRouter $router): void;
 }

@@ -14,7 +14,7 @@ namespace Hilos\Utils\Helpers;
 class StringHelper
 {
     /**
-     * Format bytes to human readable format
+     * Format bytes to human readable format.
      *
      * Converts byte count to human-readable format (B, KB, MB, GB).
      * Uses standard 1024-based calculation.
@@ -36,7 +36,7 @@ class StringHelper
     }
 
     /**
-     * Format uptime in seconds to HH:MM:SS format
+     * Format uptime in seconds to HH:MM:SS format.
      *
      * Converts seconds to human-readable time format.
      *
@@ -53,7 +53,7 @@ class StringHelper
     }
 
     /**
-     * Pluralize a word (simple English pluralization)
+     * Pluralize a word (simple English pluralization).
      *
      * Converts singular word to plural form using basic English rules.
      * Examples: "User" -> "Users", "Event" -> "Events", "Box" -> "Boxes"
@@ -79,7 +79,7 @@ class StringHelper
     }
 
     /**
-     * Singularize a word (reverse of pluralization)
+     * Singularize a word (reverse of pluralization).
      *
      * Converts plural word to singular form using basic English rules.
      * Examples: "Users" -> "User", "Events" -> "Event", "Boxes" -> "Box"

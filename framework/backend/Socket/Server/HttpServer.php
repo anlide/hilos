@@ -19,7 +19,7 @@ use Hilos\Socket\SocketException;
 class HttpServer extends AbstractServer
 {
     /**
-     * Accept new connection
+     * Accept new connection.
      *
      * @return ?HttpClientInterface New client or null
      * @throws SocketException If socket operation fails
@@ -30,7 +30,7 @@ class HttpServer extends AbstractServer
     }
 
     /**
-     * Called when a new HTTP client connection is accepted
+     * Called when a new HTTP client connection is accepted.
      *
      * @param resource $socket Client socket
      * @return HttpClientInterface Client instance
@@ -41,7 +41,7 @@ class HttpServer extends AbstractServer
     }
 
     /**
-     * Get server name for logging
+     * Get server name for logging.
      *
      * @return string Server name
      */
@@ -51,7 +51,7 @@ class HttpServer extends AbstractServer
     }
 
     /**
-     * Prepare server for shutdown
+     * Prepare server for shutdown.
      *
      * Stops accepting new connections.
      */
@@ -61,7 +61,7 @@ class HttpServer extends AbstractServer
     }
 
     /**
-     * Check if server is ready to shutdown
+     * Check if server is ready to shutdown.
      *
      * HTTP server is ready when all clients have disconnected.
      *
@@ -74,7 +74,7 @@ class HttpServer extends AbstractServer
     }
 
     /**
-     * Stop server
+     * Stop server.
      *
      * Closes server socket only. Does NOT close client connections.
      * Clients should complete their requests and disconnect themselves.
@@ -95,7 +95,7 @@ class HttpServer extends AbstractServer
     }
 
     /**
-     * Called when server is started
+     * Called when server is started.
      */
     protected function onStart(): void
     {

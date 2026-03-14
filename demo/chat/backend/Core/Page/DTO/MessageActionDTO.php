@@ -60,7 +60,7 @@ class MessageActionDTO extends ChatActionPayloadDTO
     /**
      * Convert to array for transport.
      *
-     * @return array{content: string} Array with content key
+     * @return array<string, string> Array with content key
      */
     public function toArray(): array
     {

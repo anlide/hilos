@@ -33,14 +33,14 @@ abstract class WorkerDTO extends BaseDTO
     public const string TYPE = 'type';
 
     /**
-     * Get message type
+     * Get message type.
      *
      * @return string Message type
      */
     abstract public function getType(): string;
 
     /**
-     * Factory method to create WorkerDTO from JSON string
+     * Factory method to create WorkerDTO from JSON string.
      *
      * Parses JSON, determines message type, and creates appropriate DTO instance.
      *

@@ -68,7 +68,7 @@ class ChatAgent extends AbstractAgent
     }
 
     /**
-     * Called when agent is started
+     * Called when agent is started.
      *
      * @throws HilosException If database operation fails or truth source registration fails
      */
@@ -186,7 +186,7 @@ class ChatAgent extends AbstractAgent
     }
 
     /**
-     * Called when agent is stopped
+     * Called when agent is stopped.
      *
      * @throws HilosException If database operation or unregistration fails
      */

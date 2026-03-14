@@ -332,7 +332,7 @@ class ModeratorAgent extends AbstractAgent
      * Expected shape: {"allow": true|false, "reason": "short reason"}
      *
      * @param string $text Raw model output
-     * @return ?array{allow: bool, reason: string} Parsed decision or null when invalid
+     * @return ?array<string, mixed> Parsed decision or null when invalid
      */
     private static function parseModerationDecision(string $text): ?array
     {

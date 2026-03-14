@@ -36,7 +36,7 @@ class DaemonAgentMessageDTO extends WorkerDTO
     }
 
     /**
-     * Get message type
+     * Get message type.
      *
      * @return string Message type
      */

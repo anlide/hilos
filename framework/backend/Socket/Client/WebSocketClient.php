@@ -314,7 +314,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
      * Parse request line (first line of HTTP request).
      *
      * @param string $request Raw HTTP request string
-     * @return array{method: string, path: string, version: string} Parsed method, path, version
+     * @return array<string, string> Parsed request line with keys: method, path, version
      */
     private function parseRequestLine(string $request): array
     {

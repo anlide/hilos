@@ -21,16 +21,6 @@ class AgentStopDTO extends WorkerDTO
     public const string MESSAGE_TYPE = WorkerConstants::MESSAGE_AGENT_STOP;
 
     /**
-     * Get message type
-     *
-     * @return string Message type
-     */
-    public function getType(): string
-    {
-        return self::MESSAGE_TYPE;
-    }
-
-    /**
      * Creates agent stop DTO.
      *
      * @param string $agentId Agent unique ID to stop
@@ -38,6 +28,16 @@ class AgentStopDTO extends WorkerDTO
     public function __construct(
         public readonly string $agentId,
     ) {
+    }
+
+    /**
+     * Get message type.
+     *
+     * @return string Message type
+     */
+    public function getType(): string
+    {
+        return self::MESSAGE_TYPE;
     }
 
     /**
