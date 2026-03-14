@@ -348,12 +348,12 @@ trait IdeaMainFixer
     private function extractIdeaMainMethodBody(string $content, string $methodName): ?array
     {
         // Find method signature (supports static and non-static, with or without return type)
-        $pattern = '/(?:public|private|protected)\s+(?:static\s+)?function\s+' . preg_quote($methodName, '/') . '\s*\([^)]*\)\s*(?::[^\{]*)?\{/';
+        $pattern = '/(?:public|private|protected)\s+(?:static\s+)?function\s+' . preg_quote($methodName, '/') . '\s*\([^)]*\)\s*(?::[^{]*)?{/';
         if (!preg_match($pattern, $content, $matches, PREG_OFFSET_CAPTURE)) {
             return null;
         }
 
-        $startPos = $matches[0][1] + strlen($matches[0][0]) - 1; // Position of opening brace
+        $startPos = (int) $matches[0][1] + strlen($matches[0][0]) - 1; // Position of opening brace
         $braceCount = 1;
         $pos = $startPos + 1;
 

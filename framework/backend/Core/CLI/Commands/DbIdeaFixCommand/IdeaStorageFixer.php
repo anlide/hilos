@@ -335,7 +335,7 @@ trait IdeaStorageFixer
 
         // Apply update operations (if any in future)
         if (!empty($fixes[self::FIX_UPDATE])) {
-            // TODO: Implement update operations if needed
+            // TODO: Implement update operations when needed
         }
 
         // Write file
@@ -517,12 +517,12 @@ trait IdeaStorageFixer
     private function extractIdeaStorageMethodBody(string $content, string $methodName): ?array
     {
         // Find method signature (supports static and non-static, with or without return type)
-        $pattern = '/(?:public|private|protected)\s+(?:static\s+)?function\s+' . preg_quote($methodName, '/') . '\s*\([^)]*\)\s*(?::[^\{]*)?\{/';
+        $pattern = '/(?:public|private|protected)\s+(?:static\s+)?function\s+' . preg_quote($methodName, '/') . '\s*\([^)]*\)\s*(?::[^{]*)?{/';
         if (!preg_match($pattern, $content, $matches, PREG_OFFSET_CAPTURE)) {
             return null;
         }
 
-        $startPos = $matches[0][1] + strlen($matches[0][0]) - 1; // Position of opening brace
+        $startPos = (int) $matches[0][1] + strlen($matches[0][0]) - 1; // Position of opening brace
         $braceCount = 1;
         $pos = $startPos + 1;
 
@@ -910,7 +910,8 @@ trait IdeaStorageFixer
         foreach ($propertyNames as $propertyName) {
             // Remove case: 'propertyName' => $this->propertyName->initAgainFullDB(),
             // Use lookbehind for \n at start, but remove \n at end to avoid double newlines
-            $pattern = '/(?<=\n)(\s*)[\'"](?:' . preg_quote($propertyName, '/') . ')[\'"]\s*=>\s*\$this->' . preg_quote($propertyName, '/') . '->initAgainFullDB\(\),\s*\n/';
+            $pattern = '/(?<=\n)(\s*)[\'"]' . preg_quote($propertyName, '/') . '[\'"]\s*=>\s*\$this->'
+                . preg_quote($propertyName, '/') . '->initAgainFullDB\(\),\s*\n/';
             $newBody = preg_replace($pattern, '', $newBody);
         }
 
@@ -942,13 +943,13 @@ trait IdeaStorageFixer
         // Without flag 'm', we use explicit \n to match line start
         if (preg_match_all('/\nuse\s+[^;]+;\s*\n/', $content, $useMatches, PREG_OFFSET_CAPTURE)) {
             $lastMatch = end($useMatches[0]);
-            $lastUsePos = $lastMatch[1] + strlen($lastMatch[0]);
+            $lastUsePos = (int) $lastMatch[1] + strlen($lastMatch[0]);
             // Insert after last use statement (pattern already includes \n, so we insert on new line)
             $content = substr_replace($content, $useStatement, $lastUsePos, 0);
         } else {
             // No use statements, insert after namespace
             if (preg_match('/(namespace\s+[^;]+;\n\n)/', $content, $nsMatch, PREG_OFFSET_CAPTURE)) {
-                $nsEnd = $nsMatch[0][1] + strlen($nsMatch[0][0]);
+                $nsEnd = (int) $nsMatch[0][1] + strlen($nsMatch[0][0]);
                 $content = substr_replace($content, $useStatement, $nsEnd, 0);
             }
         }
@@ -980,14 +981,14 @@ trait IdeaStorageFixer
         // Find position after last property (before init() method or any method)
         if (preg_match_all('/(\/\*\*.*?\*\/\s*public\s+\w+\s+\$\w+;\s*\n)/s', $content, $propMatches, PREG_OFFSET_CAPTURE)) {
             $lastMatch = end($propMatches[0]);
-            $lastPropPos = $lastMatch[1] + strlen($lastMatch[0]);
+            $lastPropPos = (int) $lastMatch[1] + strlen($lastMatch[0]);
             // Insert property code - the pattern already includes \n at the end, so we insert right after it
             // This means propertyCode will be inserted on a new line, which is correct
             $content = substr_replace($content, $propertyCode, $lastPropPos, 0);
         } else {
             // No properties, insert after class opening brace
             if (preg_match('/(final\s+class\s+\w+\s+extends\s+\w+\s*\{)/', $content, $classMatch, PREG_OFFSET_CAPTURE)) {
-                $classEnd = $classMatch[0][1] + strlen($classMatch[0][0]);
+                $classEnd = (int) $classMatch[0][1] + strlen($classMatch[0][0]);
                 $content = substr_replace($content, "\n" . $propertyCode, $classEnd, 0);
             }
         }
@@ -1029,7 +1030,7 @@ trait IdeaStorageFixer
         if (preg_match($returnPattern, $initBody, $returnMatch, PREG_OFFSET_CAPTURE)) {
             // $returnMatch[0][1] is the position where \n\n starts
             // We want to insert after \n\n, so we add 2 (length of \n\n)
-            $newlinePos = $returnMatch[0][1];
+            $newlinePos = (int) $returnMatch[0][1];
             $insertPos = $newlinePos + 1; // Position after \n\n
             $newBody = substr_replace($initBody, $initLine, $insertPos, 0);
         } else {
@@ -1104,7 +1105,7 @@ trait IdeaStorageFixer
         if (preg_match('/\n(\s+default\s+=>)/', $reloadBody, $defaultMatch, PREG_OFFSET_CAPTURE)) {
             // $defaultMatch[0][1] is position of \n before default
             // We want to insert after \n, so add 1
-            $newlinePos = $defaultMatch[0][1];
+            $newlinePos = (int) $defaultMatch[0][1];
             $insertPos = $newlinePos + 1; // Position after \n
             $newBody = substr_replace($reloadBody, $caseLine, $insertPos, 0);
         } else {
