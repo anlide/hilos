@@ -2,7 +2,6 @@
 
 namespace Hilos\Database\Object;
 
-use Hilos\Database\Filter\FilterInterface;
 use Hilos\Database\Object\Item\Object_;
 
 /**
@@ -14,26 +13,24 @@ use Hilos\Database\Object\Item\Object_;
 class FilteredCollection extends Objects
 {
     private Objects $sourceCollection;
-    private FilterInterface $filter;
-    /** @var Object_[] [key => Object_] - только ссылки на объекты из sourceCollection */
+    /** @var Object_[] [key => Object_] - only references to objects from sourceCollection */
     private array $filteredObjects;
 
     /**
-     * Creates filtered collection from source with filter criteria.
+     * Creates filtered collection from source with pre-filtered objects.
      *
      * @param Objects $source Source collection
-     * @param FilterInterface $filter Filter criteria
      * @param array<string, Object_> $filteredObjects References to objects from source (key => Object_)
      */
-    public function __construct(Objects $source, FilterInterface $filter, array $filteredObjects)
+    public function __construct(Objects $source, array $filteredObjects)
     {
+        parent::__construct();
         $this->sourceCollection = $source;
-        $this->filter = $filter;
         $this->filteredObjects = $filteredObjects;
     }
 
     /**
-     * Get ObjectCollection from IdeaStorage.
+     * Get ObjectCollection from storage.
      *
      * Returns source collection.
      *

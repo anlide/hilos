@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Hilos\Core\CLI\Commands\DbIdeaFixCommand;
 
-use Hilos\Database\Idea\IdeaItem;
 use Hilos\Database\Object\Item\Object_;
 use Hilos\Utils\Helpers\StringHelper;
 use ReflectionClass;
@@ -12,13 +11,12 @@ use ReflectionClass;
 /**
  * IdeaItemFixer trait.
  *
- * Handles synchronization of Idea item files (Idea/{Name}.php)
- * with Object classes. Idea is isolated from Entity and works only with Object.
+ * Handles synchronization of dbItem files (DbItem/{Name}.php)
+ * with Object classes. dbItem is isolated from Entity and works only with Object.
  *
  * Responsibilities:
- * - Compare Idea item __get() method with Object properties
- * - Compare Idea item toArray() method with Object properties
- * - Update PHPDoc @property-read annotations
+ * - Compare dbItem __get() method with Object properties
+ * - Compare dbItem toArray() method with Object properties
  * - Preserve user-defined methods (lazy loading, relationships, etc.)
  *
  * @deprecated Idea layer removed; command no longer registered. Kept for reference.
@@ -26,12 +24,12 @@ use ReflectionClass;
 trait IdeaItemFixer
 {
     /**
-     * Load Idea item files from directory
+     * Load dbItem files from directory.
      *
-     * @param ?string $ideaDir Idea files directory
+     * @param ?string $ideaDir dbItem files directory
      * @param int $syntaxErrors Reference to syntax error counter
      * @param array<string, string> $brokenFiles Reference to broken files (file path => error message)
-     * @return array<string, array{class: string, file: string, reflection: ReflectionClass}> Loaded Idea item files info
+     * @return array<string, array{class: string, file: string, reflection: ReflectionClass}> Loaded dbItem files info
      */
     protected function loadIdeaItems(?string $ideaDir, int &$syntaxErrors = 0, array &$brokenFiles = []): array
     {
@@ -39,11 +37,11 @@ trait IdeaItemFixer
         if ($ideaDir === null) {
             $cwd = getcwd();
             $possibleDirs = [
-                $cwd . '/backend/Database/Idea',
-                $cwd . '/Database/Idea',
-                $cwd . '/Idea',
-                dirname($cwd) . '/backend/Database/Idea',
-                dirname($cwd) . '/Database/Idea',
+                $cwd . '/backend/Database/DbItem',
+                $cwd . '/Database/DbItem',
+                $cwd . '/DbItem',
+                dirname($cwd) . '/backend/Database/DbItem',
+                dirname($cwd) . '/Database/DbItem',
             ];
 
             $bootstrapDir = null;
@@ -54,7 +52,7 @@ trait IdeaItemFixer
             }
 
             if ($bootstrapDir !== null) {
-                $possibleDirs[] = $bootstrapDir . '/Database/Idea';
+                $possibleDirs[] = $bootstrapDir . '/Database/DbItem';
             }
 
             foreach ($possibleDirs as $dir) {
@@ -66,7 +64,7 @@ trait IdeaItemFixer
             }
 
             if ($ideaDir === null) {
-                // Idea directory doesn't exist yet, that's OK
+                // dbItem directory doesn't exist yet, that's OK
                 return [];
             }
         }
@@ -106,11 +104,11 @@ trait IdeaItemFixer
                 }
 
                 $reflection = new ReflectionClass($className);
-                if (!$reflection->isSubclassOf(IdeaItem::class)) {
+                if (!$reflection->isSubclassOf(Object_::class)) {
                     continue;
                 }
 
-                // Extract Object class name from IdeaItem
+                // Extract Object class name from dbItem
                 $objectClassName = $this->extractObjectClassNameFromIdeaItem($reflection, $file);
                 if ($objectClassName === null) {
                     $brokenFiles[$file] = 'Cannot determine Object class name';
@@ -133,7 +131,7 @@ trait IdeaItemFixer
     }
 
     /**
-     * Extract class name from Idea file
+     * Extract class name from dbItem file.
      */
     private function extractClassNameFromIdeaFile(string $file): ?string
     {
@@ -160,7 +158,7 @@ trait IdeaItemFixer
     }
 
     /**
-     * Extract Object class name from IdeaItem reflection or file
+     * Extract Object class name from dbItem reflection or file.
      */
     private function extractObjectClassNameFromIdeaItem(ReflectionClass $ideaReflection, string $ideaFile): ?string
     {
@@ -196,13 +194,13 @@ trait IdeaItemFixer
             }
         }
 
-        // Fallback: try to infer from Idea class name
-        // If Idea class is "User", Object class should be in same namespace but Object subnamespace
+        // Fallback: try to infer from dbItem class name
+        // If dbItem class is "User", Object class should be in same namespace but Object subnamespace
         $ideaNamespace = $ideaReflection->getNamespaceName();
         $ideaShortName = $ideaReflection->getShortName();
         
-        // Replace Idea namespace with Object namespace
-        $objectNamespace = str_replace('\\Idea', '\\Object', $ideaNamespace);
+        // Replace DbItem namespace with Object namespace
+        $objectNamespace = str_replace('\\DbItem', '\\Object', $ideaNamespace);
         $objectClassName = $objectNamespace . '\\' . $ideaShortName;
         
         if (class_exists($objectClassName)) {
@@ -213,10 +211,10 @@ trait IdeaItemFixer
     }
 
     /**
-     * Prepare fixes for Idea item files
+     * Prepare fixes for dbItem files.
      *
      * @param array $objects Loaded Object classes
-     * @param array $IdeaItems Loaded Idea item files
+     * @param array $IdeaItems Loaded dbItem files
      * @param ?string $tableFilter Table name filter
      * @param array $brokenIdeaItems Reference to broken files array (will be populated with parse errors)
      * @return array Fixes to apply
@@ -251,15 +249,15 @@ trait IdeaItemFixer
                 continue;
             }
 
-            // Check if IdeaItem exists for this Object
+            // Check if dbItem exists for this Object
             $IdeaItemInfo = $IdeaItems[$objectClassName] ?? null;
             
             if ($IdeaItemInfo === null) {
-                // IdeaItem doesn't exist - will be created
+                // dbItem doesn't exist - will be created
                 continue;
             }
 
-            // Compare IdeaItem with Object
+            // Compare dbItem with Object
             $parseError = null;
             $ideaFixes = $this->compareIdeaItemWithObject($IdeaItemInfo, $objectInfo, $parseError);
             
@@ -278,9 +276,9 @@ trait IdeaItemFixer
     }
 
     /**
-     * Compare IdeaItem with Object and prepare fixes
+     * Compare dbItem with Object and prepare fixes.
      *
-     * @param array $IdeaItemInfo IdeaItem info
+     * @param array $IdeaItemInfo dbItem info
      * @param array $objectInfo Object info
      * @param ?array $parseError Reference to store parse error message
      * @return array Fixes to apply
@@ -298,10 +296,10 @@ trait IdeaItemFixer
 
         $objectReflection = $objectInfo['reflection'];
         
-        // Parse IdeaItem file
+        // Parse dbItem file
         $ideaParsed = $this->parseIdeaItemFile($ideaFile);
         if ($ideaParsed === null) {
-            $parseError = 'Failed to parse IdeaItem file structure (possibly due to unsupported syntax or malformed file)';
+            $parseError = 'Failed to parse dbItem file structure (possibly due to unsupported syntax or malformed file)';
             return $fixes;
         }
 
@@ -373,7 +371,7 @@ trait IdeaItemFixer
     }
 
     /**
-     * Extract Object properties from ReflectionClass
+     * Extract Object properties from ReflectionClass.
      *
      * @param ReflectionClass $objectReflection Object reflection
      * @return array<string, array{type: string, constant: string}> Object properties
@@ -406,7 +404,7 @@ trait IdeaItemFixer
     }
 
     /**
-     * Get Object constant name for property
+     * Get Object constant name for property.
      *
      * @param ReflectionClass $objectReflection Object reflection
      * @param string $propertyName Property name (camelCase)
@@ -430,10 +428,10 @@ trait IdeaItemFixer
     }
 
     /**
-     * Apply fixes to Idea item files
+     * Apply fixes to dbItem files.
      *
      * @param array $fixes Fixes to apply (keyed by object class name)
-     * @param array $IdeaItems Loaded IdeaItem files info
+     * @param array $IdeaItems Loaded dbItem files info
      * @param array $objects Loaded Object files info
      * @return int Number of files updated
      */
@@ -442,7 +440,7 @@ trait IdeaItemFixer
         $updated = 0;
 
         foreach ($fixes as $objectClassName => $ideaFixes) {
-            // Get IdeaItem info
+            // Get dbItem info
             $IdeaItemInfo = $IdeaItems[$objectClassName] ?? null;
             if ($IdeaItemInfo === null) {
                 continue;
@@ -466,9 +464,9 @@ trait IdeaItemFixer
     }
 
     /**
-     * Apply fixes to a single IdeaItem file
+     * Apply fixes to a single dbItem file.
      *
-     * @param string $ideaFile IdeaItem file path
+     * @param string $ideaFile dbItem file path
      * @param array $fixes Fixes to apply
      * @param ReflectionClass $objectReflection Object reflection
      * @return bool Success
@@ -505,11 +503,11 @@ trait IdeaItemFixer
     }
 
     /**
-     * Create Idea item file from Object class
+     * Create dbItem file from Object class.
      *
      * @param string $objectClassName Object class name
-     * @param string $ideaDir Idea directory
-     * @param string $namespace Idea namespace
+     * @param string $ideaDir dbItem directory
+     * @param string $namespace dbItem namespace
      * @param ReflectionClass $objectReflection Object reflection
      * @return bool Success
      */
@@ -542,23 +540,23 @@ trait IdeaItemFixer
         $content = "<?php\n\n";
         $content .= "namespace {$namespace};\n\n";
         $content .= "use {$objectClassName} as {$objectClassAlias};\n";
-        $content .= "use Hilos\\Database\\Idea\\IdeaItem;\n";
-        $content .= "use Hilos\\Database\\Idea\\IdeaCollection;\n\n";
+        $content .= "use Hilos\\Database\\Object\\Item\\Object_;\n";
+        $content .= "use Hilos\\Database\\Object\\Objects;\n\n";
 
         // PHPDoc
         $content .= "/**\n";
-        $content .= " * {$ideaClassName} Idea\n";
+        $content .= " * {$ideaClassName} dbItem\n";
         $content .= " * High-level abstraction with lazy loading and relationships\n";
         $content .= " *\n";
-        $content .= " * @extends IdeaItem<{$objectClassAlias}>\n";
+        $content .= " * @extends Object_<{$objectClassAlias}>\n";
         $content .= " *\n";
         $content .= $phpDocPropertiesStr . "\n";
         $content .= " */\n";
 
         // Class declaration
-        $content .= "final class {$ideaClassName} extends IdeaItem\n";
+        $content .= "final class {$ideaClassName} extends Object_\n";
         $content .= "{\n";
-        $content .= "    /** @var self[] Global cache of {$ideaClassName} ideas */\n";
+        $content .= "    /** @var self[] Global cache of {$ideaClassName} dbItems */\n";
         $content .= "    private static array \${$pluralizedCacheName} = [];\n\n";
         $content .= "    protected function __construct({$objectClassAlias} &\${$objectPropertyName})\n";
         $content .= "    {\n";
@@ -572,7 +570,7 @@ trait IdeaItemFixer
         $content .= "        self::\${$pluralizedCacheName} = [];\n";
         $content .= "    }\n\n";
         $content .= "    /**\n";
-        $content .= "     * Get {$ideaClassName} idea instance (cached)\n";
+        $content .= "     * Get {$ideaClassName} dbItem instance (cached)\n";
         $content .= "     */\n";
         $content .= "    public static function get({$objectClassAlias} &\${$objectPropertyName}): self\n";
         $content .= "    {\n";
@@ -771,12 +769,12 @@ trait IdeaItemFixer
     private function extractMethodBody(string $content, string $methodName): ?array
     {
         // Find method signature
-        $pattern = '/public\s+function\s+' . preg_quote($methodName, '/') . '\s*\([^)]*\)\s*:[^\{]*\{/';
+        $pattern = '/public\s+function\s+' . preg_quote($methodName, '/') . '\s*\([^)]*\)\s*:[^{]*\{/';
         if (!preg_match($pattern, $content, $matches, PREG_OFFSET_CAPTURE)) {
             return null;
         }
 
-        $startPos = $matches[0][1] + strlen($matches[0][0]) - 1; // Position of opening brace
+        $startPos = (int) $matches[0][1] + strlen($matches[0][0]) - 1; // Position of opening brace
         $braceCount = 1;
         $pos = $startPos + 1;
 
@@ -806,9 +804,9 @@ trait IdeaItemFixer
     }
 
     /**
-     * Parse Idea item file to extract current structure
+     * Parse dbItem file to extract current structure.
      *
-     * @param string $filePath Idea item file path
+     * @param string $filePath dbItem file path
      * @return ?array Parsed structure or null if failed
      */
     protected function parseIdeaItemFile(string $filePath): ?array
@@ -874,7 +872,7 @@ trait IdeaItemFixer
             $lines = explode("\n", $phpdoc);
             foreach ($lines as $line) {
                 // Match: * @property-read type $name optional comment
-                if (preg_match('/\*\s*@property-read\s+([^\s\$]+)\s+\$(\w+)(?:\s+(.+))?$/', $line, $match)) {
+                if (preg_match('/\*\s*@property-read\s+([^\s$]+)\s+\$(\w+)(?:\s+(.+))?$/', $line, $match)) {
                     $type = trim($match[1]);
                     $property = trim($match[2]);
                     $comment = isset($match[3]) ? trim($match[3]) : '';
@@ -891,7 +889,7 @@ trait IdeaItemFixer
     }
 
     /**
-     * Extract user-defined methods from Idea item file
+     * Extract user-defined methods from dbItem file.
      *
      * @param string $content File content
      * @return array<string, string> User-defined methods (method name => method code)
@@ -914,7 +912,7 @@ trait IdeaItemFixer
         ];
 
         // Extract all methods
-        if (preg_match_all('/(?:public|private|protected)\s+(?:static\s+)?function\s+(\w+)\s*\([^)]*\)\s*:[^\{]*\{([^}]+)}/s', $content, $matches, PREG_SET_ORDER)) {
+        if (preg_match_all('/(?:public|private|protected)\s+(?:static\s+)?function\s+(\w+)\s*\([^)]*\)\s*:[^{]*\{([^}]+)}/s', $content, $matches, PREG_SET_ORDER)) {
             foreach ($matches as $match) {
                 $methodName = $match[1];
                 
@@ -936,7 +934,7 @@ trait IdeaItemFixer
     }
 
     /**
-     * Rebuild __get() method in Idea item
+     * Rebuild __get() method in dbItem.
      *
      * @param string $content Current file content
      * @param array $objectProperties Object properties to include
@@ -948,7 +946,7 @@ trait IdeaItemFixer
         // Extract Object class alias from use statements
         $objectClassAlias = $this->extractObjectClassAlias($content, $objectReflection);
         if ($objectClassAlias === null) {
-            throw new \RuntimeException("Could not extract object class alias for {$objectReflection->getName()} in IdeaItem file");
+            throw new \RuntimeException("Could not extract object class alias for {$objectReflection->getName()} in dbItem file");
         }
 
         // Extract object property name (e.g., $objectUser or $_object)
@@ -1249,7 +1247,7 @@ trait IdeaItemFixer
     }
 
     /**
-     * Rebuild toArray() method in Idea item
+     * Rebuild toArray() method in dbItem.
      *
      * @param string $content Current file content
      * @param array $objectProperties Object properties to include
@@ -1368,7 +1366,7 @@ trait IdeaItemFixer
     }
 
     /**
-     * Rebuild PHPDoc in Idea item
+     * Rebuild PHPDoc in dbItem.
      *
      * @param string $content Current file content
      * @param array $objectProperties Object properties to include
@@ -1399,7 +1397,7 @@ trait IdeaItemFixer
             $lines = explode("\n", $phpdoc);
             foreach ($lines as $line) {
                 // Match: * @property-read type $name optional comment
-                if (preg_match('/\*\s*@property-read\s+[^\s\$]+\s+\$(\w+)(?:\s+(.+))?$/', $line, $match)) {
+                if (preg_match('/\*\s*@property-read\s+[^\s$]+\s+\$(\w+)(?:\s+(.+))?$/', $line, $match)) {
                     $propertyName = trim($match[1]);
                     if (isset($match[2]) && !empty(trim($match[2]))) {
                         $existingComments[$propertyName] = trim($match[2]);
@@ -1419,7 +1417,7 @@ trait IdeaItemFixer
             }
         } else {
             // Default description if no custom description found
-            $phpDocLines[] = " * {$objectReflection->getShortName()} Idea";
+            $phpDocLines[] = " * {$objectReflection->getShortName()} dbItem.";
             $phpDocLines[] = " * High-level abstraction with lazy loading and relationships";
         }
 
@@ -1474,17 +1472,17 @@ trait IdeaItemFixer
             return true; // Object class use statement is missing or incorrect
         }
 
-        // Check if IdeaItem use statement exists (without alias)
-        if (!preg_match('/use\s+Hilos\\\Database\\\Idea\\\IdeaItem;/', $content)) {
-            return true; // IdeaItem use statement is missing
+        // Check if Object_ use statement exists (without alias).
+        if (!preg_match('/use\s+Hilos\\\Database\\\Object\\\Item\\\Object_;/', $content)) {
+            return true; // Object_ use statement is missing
         }
 
-        // Check if IdeaCollection use statement exists (only if it's used in the file)
-        // IdeaCollection is only needed if the file actually uses it
-        $usesIdeaCollection = preg_match('/\bIdeaCollection\b/', $content) && 
-                             !preg_match('/use\s+[^;]+\\\IdeaCollection\\\[^;]+;/', $content);
-        if ($usesIdeaCollection && !preg_match('/use\s+Hilos\\\Database\\\Idea\\\IdeaCollection;/', $content)) {
-            return true; // IdeaCollection is used but use statement is missing
+        // Check if Objects use statement exists (only if it's used in the file)
+        // Objects is only needed if the file actually uses it
+        $usesObjects = preg_match('/\bObjects\b/', $content) &&
+                      !preg_match('/use\s+Hilos\\\\Database\\\\Object\\\\Objects;/', $content);
+        if ($usesObjects && !preg_match('/use\s+Hilos\\\Database\\\Object\\\Objects;/', $content)) {
+            return true; // Objects is used but use statement is missing
         }
 
         // Check for old/incorrect Object class use statements
@@ -1515,7 +1513,7 @@ trait IdeaItemFixer
     }
 
     /**
-     * Rebuild use statements in IdeaItem file
+     * Rebuild use statements in dbItem file.
      *
      * @param string $content Current file content
      * @param ReflectionClass $objectReflection Object reflection
@@ -1527,18 +1525,18 @@ trait IdeaItemFixer
         $objectShortName = $objectReflection->getShortName();
         $objectClassAlias = "Object{$objectShortName}";
 
-        // Check if IdeaCollection is used in the code (excluding comments)
+        // Check if Objects is used in the code (excluding comments)
         // Remove comments first, then check
         $codeWithoutComments = preg_replace('/\/\*.*?\*\//s', '', $content); // Remove /* */ comments
         $codeWithoutComments = preg_replace('/\/\/.*$/m', '', $codeWithoutComments); // Remove // comments
-        // Check for IdeaCollection as standalone word, not as part of namespace (e.g., not Demo\...\IdeaCollection\UserSettings)
-        // Pattern: IdeaCollection not preceded by backslash and not followed by backslash
-        $needsIdeaCollection = preg_match('/(?<!\\\\)\bIdeaCollection\b(?!\s*\\\\)/', $codeWithoutComments) !== 0;
+        // Check for Objects as standalone word, not as part of namespace
+        // Pattern: Objects not preceded by backslash and not followed by backslash
+        $needsObjects = preg_match('/(?<!\\\\)\bObjects\b(?!\s*\\\\)/', $codeWithoutComments) !== 0;
 
         // Find existing use statements section - only lines starting with "use" and empty lines between them
         // Match from namespace to first non-use, non-empty line (like /** or class)
         // Pattern: lines that start with "use" or are completely empty (only whitespace + newline)
-        if (preg_match('/(namespace\s+[^;]+;\n\n)((?:(?:use\s+[^;]+;|(?:\s*\n)))*?)(\n(?:\/\*\*|(?:final\s+)?class\s+\w+))/s', $content, $matches)) {
+        if (preg_match('/(namespace\s+[^;]+;\n\n)((?:use\s+[^;]+;|\s*\n)*?)(\n(?:\/\*\*|(?:final\s+)?class\s+\w+))/s', $content, $matches)) {
             $existingUses = $matches[2];
             
             // Parse existing use statements into array, preserving order
@@ -1577,23 +1575,22 @@ trait IdeaItemFixer
                             $hasObjectUse = true;
                         }
                     } else {
-                        // Different Object class - remove it (shouldn't happen, but just in case)
-                        // Don't add to processed
+                        continue; // Different Object class - skip
                     }
                 }
-                // Check if this is IdeaItem use statement
-                elseif (preg_match('/^Hilos\\\Database\\\Idea\\\IdeaItem(?:\s+as\s+(\w+))?$/', $useLine, $ideaItemMatch)) {
+                // Check if this is Object_ use statement
+                elseif (preg_match('/^Hilos\\\Database\\\Object\\\Item\\\Object_(?:\s+as\s+(\w+))?$/', $useLine, $objectBaseMatch)) {
                     // If it has an alias, remove it (we want without alias)
-                    if (isset($ideaItemMatch[1])) {
-                        // Remove - don't add to processed
+                    if (isset($objectBaseMatch[1])) {
+                        continue; // Skip - Object_ must be used without alias
                     } else {
                         // No alias - keep it
                         $processedUseStatements[] = $useLine;
                         $hasIdeaItemUse = true;
                     }
                 }
-                // Check if this is IdeaCollection use statement
-                elseif (preg_match('/^Hilos\\\Database\\\Idea\\\IdeaCollection$/', $useLine)) {
+                // Check if this is Objects use statement
+                elseif (preg_match('/^Hilos\\\Database\\\Object\\\Objects$/', $useLine)) {
                     // Remove it - we'll add it back only if needed
                     $hasIdeaCollectionUse = true;
                 }
@@ -1608,10 +1605,10 @@ trait IdeaItemFixer
                 $processedUseStatements[] = "{$objectClassName} as {$objectClassAlias}";
             }
             if (!$hasIdeaItemUse) {
-                $processedUseStatements[] = "Hilos\\Database\\Idea\\IdeaItem";
+                $processedUseStatements[] = "Hilos\\Database\\Object\\Item\\Object_";
             }
-            if ($needsIdeaCollection && !$hasIdeaCollectionUse) {
-                $processedUseStatements[] = "Hilos\\Database\\Idea\\IdeaCollection";
+            if ($needsObjects && !$hasIdeaCollectionUse) {
+                $processedUseStatements[] = "Hilos\\Database\\Object\\Objects";
             }
             
             // Rebuild use statements section
@@ -1625,9 +1622,9 @@ trait IdeaItemFixer
             // Insert after namespace - no existing uses, add all required
             $newUseStatements = [];
             $newUseStatements[] = "{$objectClassName} as {$objectClassAlias}";
-            $newUseStatements[] = "Hilos\\Database\\Idea\\IdeaItem";
-            if ($needsIdeaCollection) {
-                $newUseStatements[] = "Hilos\\Database\\Idea\\IdeaCollection";
+            $newUseStatements[] = "Hilos\\Database\\Object\\Item\\Object_";
+            if ($needsObjects) {
+                $newUseStatements[] = "Hilos\\Database\\Object\\Objects";
             }
             
             $newUseSection = '';
@@ -1644,12 +1641,12 @@ trait IdeaItemFixer
     }
 
     /**
-     * Find IdeaItem files to delete (when corresponding Object class doesn't exist)
+     * Find dbItem files to delete (when corresponding Object class doesn't exist).
      *
      * @param array $objects Loaded Object classes (keyed by class name)
-     * @param array $ideaItems Loaded IdeaItem files (keyed by object class name)
-     * @param ?string $ideaDir Idea directory (auto-detect if null)
-     * @return array IdeaItem files to delete (keyed by object class name)
+     * @param array $ideaItems Loaded dbItem files (keyed by object class name)
+     * @param ?string $ideaDir dbItem directory (auto-detect if null)
+     * @return array dbItem files to delete (keyed by object class name)
      */
     protected function findIdeaItemsToDelete(array $objects, array $ideaItems, ?string &$ideaDir = null): array
     {
@@ -1672,9 +1669,9 @@ trait IdeaItemFixer
     }
 
     /**
-     * Delete IdeaItem files
+     * Delete dbItem files.
      *
-     * @param array $filesToDelete IdeaItem files to delete (keyed by object class name)
+     * @param array $filesToDelete dbItem files to delete (keyed by object class name)
      * @return int Number of files deleted
      */
     protected function deleteIdeaItemFiles(array $filesToDelete): int
@@ -1692,7 +1689,7 @@ trait IdeaItemFixer
                     $deleted++;
                 }
             } catch (\Throwable $e) {
-                echo "⚠ Failed to delete IdeaItem file for {$ideaItemInfo['class']}: {$e->getMessage()}\n";
+                echo "⚠ Failed to delete dbItem file for {$ideaItemInfo['class']}: {$e->getMessage()}\n";
             }
         }
 

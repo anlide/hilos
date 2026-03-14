@@ -11,8 +11,7 @@ use ReflectionClass;
 /**
  * EntityCollectionFixer trait.
  *
- * Handles synchronization of EntityCollection files (EntityCollection/{Name}s.php)
- * with Entity classes.
+ * Handles synchronization of EntityCollection files (EntityCollection/{Name}s.php) with Entity classes.
  *
  * Responsibilities:
  * - Compare EntityCollection imports with Entity class
@@ -22,7 +21,7 @@ use ReflectionClass;
 trait EntityCollectionFixer
 {
     /**
-     * Load EntityCollection files from directory
+     * Load EntityCollection files from directory.
      *
      * @param ?string $entityCollectionDir EntityCollection files directory
      * @param int $syntaxErrors Reference to syntax error counter
@@ -125,7 +124,7 @@ trait EntityCollectionFixer
     }
 
     /**
-     * Extract class name from EntityCollection file
+     * Extract class name from EntityCollection file.
      */
     private function extractClassNameFromEntityCollectionFile(string $file): ?string
     {
@@ -164,7 +163,7 @@ trait EntityCollectionFixer
     }
 
     /**
-     * Extract Entity class name from EntityCollection reflection or file
+     * Extract Entity class name from EntityCollection reflection or file.
      */
     private function extractEntityClassNameFromEntityCollection(ReflectionClass $entityCollectionReflection, string $entityCollectionFile): ?string
     {
@@ -208,7 +207,7 @@ trait EntityCollectionFixer
     }
 
     /**
-     * Prepare fixes for EntityCollection files
+     * Prepare fixes for EntityCollection files.
      *
      * @param array $entities Loaded Entity classes
      * @param array $entityCollections Loaded EntityCollection files
@@ -270,7 +269,7 @@ trait EntityCollectionFixer
     }
 
     /**
-     * Compare EntityCollection with Entity and prepare fixes
+     * Compare EntityCollection with Entity and prepare fixes.
      *
      * @param array $entityCollectionInfo EntityCollection info
      * @param array $entityInfo Entity info
@@ -352,7 +351,7 @@ trait EntityCollectionFixer
     }
 
     /**
-     * Parse EntityCollection file to extract current structure
+     * Parse EntityCollection file to extract current structure.
      *
      * @param string $filePath EntityCollection file path
      * @return ?array Parsed structure or null if failed
@@ -425,7 +424,7 @@ trait EntityCollectionFixer
     }
 
     /**
-     * Get short class name from full class name
+     * Get short class name from full class name.
      */
     private function getShortClassName(string $fullClassName): string
     {
@@ -434,7 +433,7 @@ trait EntityCollectionFixer
     }
 
     /**
-     * Apply fixes to EntityCollection files
+     * Apply fixes to EntityCollection files.
      *
      * @param array $fixes Fixes to apply (keyed by entity class name)
      * @param array $entityCollections Loaded EntityCollection files info
@@ -475,7 +474,7 @@ trait EntityCollectionFixer
     }
 
     /**
-     * Apply fixes to a single EntityCollection file
+     * Apply fixes to a single EntityCollection file.
      *
      * @param string $entityCollectionFile EntityCollection file path
      * @param array $fixes Fixes to apply
@@ -512,7 +511,7 @@ trait EntityCollectionFixer
     }
 
     /**
-     * Rebuild imports in EntityCollection file
+     * Rebuild imports in EntityCollection file.
      *
      * @param string $content Current file content
      * @param string $entityClassName Entity class name
@@ -598,7 +597,7 @@ trait EntityCollectionFixer
     }
 
     /**
-     * Ensure EntityCollection has ENTITY_CLASS constant
+     * Ensure EntityCollection has ENTITY_CLASS constant.
      */
     private function ensureEntityCollectionHasEntityClassConstant(string $content, string $entityAlias): string
     {
@@ -614,7 +613,7 @@ trait EntityCollectionFixer
     }
 
     /**
-     * Rebuild type hints in EntityCollection file
+     * Rebuild type hints in EntityCollection file.
      *
      * @param string $content Current file content
      * @param string $entityAlias Entity alias
@@ -627,7 +626,7 @@ trait EntityCollectionFixer
             $expectedType = "?{$entityAlias}";
 
             // Replace return type in method signature
-            $pattern = '/((?:public|private|protected)\s+function\s+' . preg_quote($methodName, '/') . '\s*\([^)]*\)\s*):\s*[^\{]+/';
+            $pattern = '/((?:public|private|protected)\s+function\s+' . preg_quote($methodName, '/') . '\s*\([^)]*\)\s*):\s*[^{]+/';
             $replacement = '$1: ' . $expectedType;
             $content = preg_replace($pattern, $replacement, $content);
         }
@@ -636,7 +635,7 @@ trait EntityCollectionFixer
     }
 
     /**
-     * Create EntityCollection file from Entity class
+     * Create EntityCollection file from Entity class.
      *
      * @param string $entityClassName Entity class name
      * @param string $entityCollectionDir EntityCollection directory
@@ -680,7 +679,7 @@ trait EntityCollectionFixer
     }
 
     /**
-     * Find EntityCollection files that need to be created
+     * Find EntityCollection files that need to be created.
      *
      * @param array $entities Loaded Entity classes
      * @param array $entityCollections Loaded EntityCollection files
@@ -748,7 +747,7 @@ trait EntityCollectionFixer
     }
 
     /**
-     * Find EntityCollection files to create for newly created Entity files
+     * Find EntityCollection files to create for newly created Entity files.
      *
      * @param array $tablesToCreate Array of table names => TableInfo for newly created tables
      * @param array $entitiesAfter Loaded Entity classes after creation (includes new ones)
@@ -820,8 +819,8 @@ trait EntityCollectionFixer
     }
 
     /**
-     * Find EntityCollection files to create for new entities (estimate phase)
-     * Predicts entity class names from table names without loading files
+     * Find EntityCollection files to create for new entities (estimate phase).
+     * Predicts entity class names from table names without loading files.
      *
      * @param array $tablesToCreate Array of table names => TableInfo for newly created tables
      * @param ?string $entityDir Entity directory
@@ -895,7 +894,7 @@ trait EntityCollectionFixer
     }
 
     /**
-     * Convert table name to PascalCase class name
+     * Convert table name to PascalCase class name.
      */
     protected function tableToPascalCase(string $tableName): string
     {

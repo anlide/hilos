@@ -637,7 +637,7 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
             }
         }
 
-        return new FilteredCollection($this, $filter, $filteredObjects);
+        return new FilteredCollection($this, $filteredObjects);
     }
 
     /**
