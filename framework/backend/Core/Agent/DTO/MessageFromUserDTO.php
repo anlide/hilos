@@ -7,7 +7,7 @@ namespace Hilos\Core\Agent\DTO;
 use Hilos\BaseDTO;
 
 /**
- * MessageFromUserDTO - DTO for messages from user to agent
+ * MessageFromUserDTO - DTO for messages from user to agent.
  *
  * Represents a message sent from external user (WebSocket, HTTP, etc.) to agent.
  */

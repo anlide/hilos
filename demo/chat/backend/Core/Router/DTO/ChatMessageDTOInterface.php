@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Demo\Chat\Core\Router\DTO;
 
 /**
- * ChatMessageDTOInterface - Interface for chat message DTOs
+ * ChatMessageDTOInterface - Interface for chat message DTOs.
  *
  * All chat message DTOs must extend BaseDTO and implement this interface
  * to ensure type safety and consistent structure.

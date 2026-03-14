@@ -18,7 +18,7 @@ use Hilos\Hilos;
 use Hilos\Socket\Worker\DTO\CronSignalDTO;
 
 /**
- * ChatDaemonManager - Main daemon manager for chat demo
+ * ChatDaemonManager - Main daemon manager for chat demo.
  *
  * Extends framework DaemonManager to provide chat functionality.
  * Implements tick() method for project-specific logic.

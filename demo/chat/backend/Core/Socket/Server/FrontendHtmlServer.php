@@ -36,7 +36,7 @@ class FrontendHtmlServer extends AbstractServer
     }
 
     /**
-     * Accept new client connection
+     * Accept new client connection.
      *
      * @return ?ClientInterface New client or null
      * @throws SocketException If connection accept fails
@@ -47,7 +47,7 @@ class FrontendHtmlServer extends AbstractServer
     }
 
     /**
-     * Create client instance for accepted socket
+     * Create client instance for accepted socket.
      *
      * @param resource $socket Client socket
      * @return ClientInterface Client instance
@@ -58,7 +58,7 @@ class FrontendHtmlServer extends AbstractServer
     }
 
     /**
-     * Return server display name
+     * Return server display name.
      *
      * @return string Server name
      */
@@ -88,7 +88,7 @@ class FrontendHtmlServer extends AbstractServer
     }
 
     /**
-     * Check if server has no active clients and can shut down
+     * Check if server has no active clients and can shut down.
      *
      * @return bool True when no clients connected
      */

@@ -32,7 +32,7 @@ final class Event extends Object_
     public const string data = 'data';
 
     /**
-     * Return collection key used for DbChatContext lookup
+     * Return collection key used for DbChatContext lookup.
      *
      * @return string Collection key (DbChatContext::events)
      */

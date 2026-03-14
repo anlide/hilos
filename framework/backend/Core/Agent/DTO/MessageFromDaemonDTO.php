@@ -7,7 +7,7 @@ namespace Hilos\Core\Agent\DTO;
 use Hilos\BaseDTO;
 
 /**
- * MessageFromDaemonDTO - DTO for messages from daemon to agent
+ * MessageFromDaemonDTO - DTO for messages from daemon to agent.
  *
  * Represents a message sent from daemon process to worker agent.
  */

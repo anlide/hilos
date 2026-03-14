@@ -7,7 +7,7 @@ namespace Hilos\Utils;
 use Hilos\Utils\Helpers\TimeHelper;
 
 /**
- * Logger - Static logger for daemon and agent logging
+ * Logger - Static logger for daemon and agent logging.
  *
  * Provides simple static interface for logging with optional file logging.
  * Can write to file (if log file is set) or to stdout/stderr.
@@ -30,7 +30,7 @@ class Logger
     private const string AGENT_LOG_MARKER = '[AGENT_LOG]';
 
     /**
-     * Set log file path for daemon-side logging
+     * Set log file path for daemon-side logging.
      *
      * @param string $logFile Log file path
      */
@@ -40,7 +40,7 @@ class Logger
     }
 
     /**
-     * Set error log file path for error-only logging
+     * Set error log file path for error-only logging.
      *
      * @param string $errorLogFile Error log file path
      */
@@ -50,7 +50,7 @@ class Logger
     }
 
     /**
-     * Enable or disable log level prefix display
+     * Enable or disable log level prefix display.
      *
      * @param bool $showLogLevel If true, log messages will include [INFO], [ERROR], [DEBUG] prefix
      */
@@ -60,7 +60,7 @@ class Logger
     }
 
     /**
-     * Enable or disable debug logging
+     * Enable or disable debug logging.
      *
      * @param bool $enabled If true, debug messages will be logged, otherwise they will be ignored
      */
@@ -70,10 +70,10 @@ class Logger
     }
 
     /**
-     * Log info message
+     * Log info message.
      *
      * @param string $message Message to log
-     * @param array $context Optional context data
+     * @param array<string, mixed> $context Optional context data
      */
     public static function info(string $message, array $context = []): void
     {
@@ -81,10 +81,10 @@ class Logger
     }
 
     /**
-     * Log error message
+     * Log error message.
      *
      * @param string $message Error message
-     * @param array $context Optional context data
+     * @param array<string, mixed> $context Optional context data
      */
     public static function error(string $message, array $context = []): void
     {
@@ -92,13 +92,13 @@ class Logger
     }
 
     /**
-     * Log debug message
+     * Log debug message.
      *
      * Only logs if debug logging is enabled via setDebugEnabled(true).
      * By default, debug logging is disabled.
      *
      * @param string $message Debug message
-     * @param array $context Optional context data
+     * @param array<string, mixed> $context Optional context data
      */
     public static function debug(string $message, array $context = []): void
     {
@@ -109,11 +109,11 @@ class Logger
     }
 
     /**
-     * Log message
+     * Log message.
      *
      * @param string $level Log level (INFO, ERROR, DEBUG)
      * @param string $message Message
-     * @param array $context Optional context data
+     * @param array<string, mixed> $context Optional context data
      * @param bool $useStderr If true, write to stderr instead of stdout
      */
     private static function log(string $level, string $message, array $context = [], bool $useStderr = false): void

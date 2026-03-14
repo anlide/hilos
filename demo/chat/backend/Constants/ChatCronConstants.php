@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Demo\Chat\Constants;
 
 /**
- * ChatCronConstants - cron job name constants for chat demo
+ * ChatCronConstants - cron job name constants for chat demo.
  */
 class ChatCronConstants
 {

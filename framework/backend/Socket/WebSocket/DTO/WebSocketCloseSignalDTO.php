@@ -9,7 +9,7 @@ use Hilos\Core\Router\DTO\SignalDataDTO;
 use Hilos\Core\Router\SignalDataInterface;
 
 /**
- * WebSocketCloseSignalDTO - DTO for WebSocket close signal
+ * WebSocketCloseSignalDTO - DTO for WebSocket close signal.
  *
  * Represents a WebSocket close signal sent from WebSocket client.
  */

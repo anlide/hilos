@@ -287,14 +287,12 @@ class Generator
     }
 
     /**
-     * Get real foreign keys from INFORMATION_SCHEMA
-     * Supports both simple and composite foreign keys
-     * 
+     * Get real foreign keys from INFORMATION_SCHEMA.
+     *
+     * Supports both simple and composite foreign keys.
+     *
      * @param string $tableName Table name
-     * @return array<string, string> Foreign keys mapping:
-     *   - Simple: 'column' => 'referenced_table'
-     *   - Composite: 'col1,col2' => 'referenced_table'
-     * @throws DatabaseException
+     * @return array<string, string> Foreign keys mapping (simple: 'column' => 'referenced_table'; composite: 'col1,col2' => 'referenced_table')
      */
     private static function getRealForeignKeys(string $tableName): array
     {

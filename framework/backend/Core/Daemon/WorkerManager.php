@@ -53,7 +53,7 @@ use Hilos\Utils\Helpers\ArgumentHelper;
 use Hilos\Utils\Logger;
 
 /**
- * WorkerManager - Base worker process manager
+ * WorkerManager - Base worker process manager.
  *
  * Main loop for worker processes. Extends BaseManager for error handling,
  * signal management and logging infrastructure.

@@ -10,7 +10,7 @@ use Hilos\Core\Router\SignalDataInterface;
 use RuntimeException;
 
 /**
- * HandshakeResponseSignalData - Signal data for handshake response
+ * HandshakeResponseSignalData - Signal data for handshake response.
  *
  * Contains only the current (authorized) user in entities and current userId.
  * Full events + users are sent from MainPage on subscribe (main_page_initial).

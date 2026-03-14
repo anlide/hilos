@@ -20,7 +20,7 @@ use Hilos\Core\Page\PageSignalRouter;
 use Hilos\Core\Router\SignalRouter;
 
 /**
- * ChatWorkerManager - Worker manager for chat demo
+ * ChatWorkerManager - Worker manager for chat demo.
  *
  * Extends base WorkerManager to provide chat-specific agent creation.
  * All daemon connection and agent management is handled by base WorkerManager.

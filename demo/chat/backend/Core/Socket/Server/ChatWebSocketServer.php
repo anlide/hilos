@@ -18,7 +18,7 @@ use Hilos\Socket\SocketException;
 class ChatWebSocketServer extends WebSocketServer
 {
     /**
-     * Accept new connection
+     * Accept new connection.
      *
      * @return ?ChatWebSocketClient New client or null
      * @throws SocketException If accepting connection fails
@@ -29,7 +29,7 @@ class ChatWebSocketServer extends WebSocketServer
     }
 
     /**
-     * Called when a new chat WebSocket client connection is accepted
+     * Called when a new chat WebSocket client connection is accepted.
      *
      * @param resource $socket Client socket
      * @return WebSocketClientInterface Client instance

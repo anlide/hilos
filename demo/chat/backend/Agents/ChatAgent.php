@@ -32,7 +32,7 @@ use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Utils\Logger;
 
 /**
- * ChatAgent - Monopolistic agent for chat management
+ * ChatAgent - Monopolistic agent for chat management.
  *
  * Runs in monopolistic worker process. Manages chat state and history.
  * State stored only in memory (no persistence).
@@ -45,7 +45,7 @@ class ChatAgent extends AbstractAgent
     private array $lastMessageTimestampByUser = [];
 
     /**
-     * Get agent type
+     * Get agent type.
      *
      * @return string Agent type
      */
@@ -55,9 +55,9 @@ class ChatAgent extends AbstractAgent
     }
 
     /**
-     * Get agent index
+     * Get agent index.
      *
-     * Chat agent has no index (global singleton)
+     * Chat agent has no index (global singleton).
      *
      * @return ?string Agent index (null for global chat agent)
      */

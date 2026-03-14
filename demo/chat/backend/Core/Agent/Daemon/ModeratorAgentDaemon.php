@@ -9,7 +9,7 @@ use Hilos\Core\Agent\Daemon\AbstractAgentDaemon;
 use Hilos\Utils\Logger;
 
 /**
- * ModeratorAgentDaemon - Daemon proxy for ModeratorAgent
+ * ModeratorAgentDaemon - Daemon proxy for ModeratorAgent.
  *
  * Simple proxy class for moderator agent on daemon side.
  * Handles routing between WebSocket clients and ModeratorAgent in worker.
@@ -21,7 +21,7 @@ class ModeratorAgentDaemon extends AbstractAgentDaemon
     private const string AGENT_TYPE = AgentType::MODERATOR;
 
     /**
-     * ModeratorAgentDaemon constructor
+     * ModeratorAgentDaemon constructor.
      */
     public function __construct()
     {
@@ -29,7 +29,7 @@ class ModeratorAgentDaemon extends AbstractAgentDaemon
     }
 
     /**
-     * Get agent type
+     * Get agent type.
      *
      * @return string Agent type
      */
@@ -39,7 +39,7 @@ class ModeratorAgentDaemon extends AbstractAgentDaemon
     }
 
     /**
-     * Get agent index
+     * Get agent index.
      *
      * Moderator agent has no index (global singleton)
      *
@@ -51,7 +51,7 @@ class ModeratorAgentDaemon extends AbstractAgentDaemon
     }
 
     /**
-     * Check if agent requires monopolistic worker process
+     * Check if agent requires monopolistic worker process.
      *
      * Moderator agent requires monopolistic worker for consistent moderation.
      *

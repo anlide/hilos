@@ -7,7 +7,7 @@ namespace Hilos\Socket\WebSocket;
 use Hilos\BaseDTO;
 
 /**
- * WebSocketFrameDTO - Data Transfer Object for WebSocket frame data
+ * WebSocketFrameDTO - Data Transfer Object for WebSocket frame data.
  *
  * Represents a parsed WebSocket frame with all its components.
  */

@@ -10,7 +10,7 @@ use Hilos\Socket\SocketException;
 use Hilos\Socket\SocketOperation;
 
 /**
- * AbstractServer - Abstract base class for server implementations
+ * AbstractServer - Abstract base class for server implementations.
  *
  * Provides common functionality for all server types.
  */

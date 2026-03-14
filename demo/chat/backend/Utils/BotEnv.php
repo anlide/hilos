@@ -10,7 +10,7 @@ use Hilos\Constants\LLMConstants;
 use Hilos\Utils\Env;
 
 /**
- * BotEnv - Reads bot LLM config from env via Env
+ * BotEnv - Reads bot LLM config from env via Env.
  *
  * Used by BotAgent for async message generation.
  */

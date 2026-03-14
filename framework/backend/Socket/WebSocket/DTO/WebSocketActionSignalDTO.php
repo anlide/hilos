@@ -9,7 +9,7 @@ use Hilos\Core\Router\DTO\SignalDataDTO;
 use Hilos\Core\Router\SignalDataInterface;
 
 /**
- * WebSocketActionSignalDTO - DTO for WebSocket action signal
+ * WebSocketActionSignalDTO - DTO for WebSocket action signal.
  *
  * Represents an action signal sent from WebSocket client.
  */

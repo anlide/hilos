@@ -8,7 +8,7 @@ use Demo\Chat\Core\Router\DTO\ChatMessageDTOInterface;
 use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO as FrameworkWebSocketHandshakeSignalDTO;
 
 /**
- * WebSocketHandshakeSignalDTO - DTO for WebSocket handshake signal
+ * WebSocketHandshakeSignalDTO - DTO for WebSocket handshake signal.
  *
  * Represents a WebSocket handshake signal sent from WebSocket client to chat agent.
  * Extends framework WebSocketHandshakeSignalDTO for chat-specific functionality.

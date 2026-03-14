@@ -10,7 +10,7 @@ use Hilos\Core\Agent\Exception\NoSuitableWorkerException;
 use Hilos\Socket\Server\WorkerServer;
 
 /**
- * ChatWorkerServer - Worker server with chat-specific agent daemon factory
+ * ChatWorkerServer - Worker server with chat-specific agent daemon factory.
  *
  * Extends WorkerServer to provide chat-specific agent daemon creation.
  */
@@ -25,7 +25,7 @@ class ChatWorkerServer extends WorkerServer
     }
 
     /**
-     * Called when initial workers are ready
+     * Called when initial workers are ready.
      *
      * Calls parent to queue INITIAL_AGENTS_START, then starts BotAgent for each active bot.
      * @throws AgentDaemonCreationFailedException If agent daemon cannot be created

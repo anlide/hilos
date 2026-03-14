@@ -12,14 +12,14 @@ use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\EntitiesChangesDTO;
 
 /**
- * AdminPage - Admin page handler
+ * AdminPage - Admin page handler.
  *
  * Handles subscription, unsubscription, and actions for the admin page.
  */
 class AdminPage extends AbstractChatPage
 {
     /**
-     * Get page name
+     * Get page name.
      *
      * @return string Page name
      */
@@ -29,7 +29,7 @@ class AdminPage extends AbstractChatPage
     }
 
     /**
-     * Handle page-specific subscription logic
+     * Handle page-specific subscription logic.
      *
      * @param string $acceptKey Accept key
      * @param array<string, string> $params Route params from page subscription (unused for admin page)
@@ -44,7 +44,7 @@ class AdminPage extends AbstractChatPage
     }
 
     /**
-     * Handle page-specific unsubscription logic
+     * Handle page-specific unsubscription logic.
      *
      * @param string $acceptKey Accept key
      */
@@ -54,7 +54,7 @@ class AdminPage extends AbstractChatPage
     }
 
     /**
-     * Handle page-specific action logic
+     * Handle page-specific action logic.
      *
      * @param string $acceptKey Accept key
      * @param string $action Action name

@@ -9,14 +9,14 @@ use Hilos\Core\Agent\AgentManager;
 use Hilos\Core\Agent\Exception\AgentCreationFailedException;
 
 /**
- * ChatAgentManager - Agent manager for chat demo (worker side)
+ * ChatAgentManager - Agent manager for chat demo (worker side).
  *
  * Extends base AgentManager to provide chat-specific agent creation.
  */
 class ChatAgentManager extends AgentManager
 {
     /**
-     * Create agent instance (factory method)
+     * Create agent instance (factory method).
      *
      * @param string $agentType Agent type
      * @param ?string $agentIndex Agent index (optional)

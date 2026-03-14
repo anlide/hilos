@@ -7,7 +7,7 @@ namespace Hilos\Core\Agent\DTO;
 use Hilos\BaseDTO;
 
 /**
- * MessageFromWorkerDTO - DTO for messages from worker to agent
+ * MessageFromWorkerDTO - DTO for messages from worker to agent.
  *
  * Represents a message sent from worker process management to agent.
  */

@@ -9,7 +9,7 @@ use Hilos\Core\Router\DTO\SignalDataDTO;
 use Hilos\Core\Router\SignalDataInterface;
 
 /**
- * WebSocketGroupUpdateSubscriptionSignalDTO - DTO for WebSocket group update subscription signal
+ * WebSocketGroupUpdateSubscriptionSignalDTO - DTO for WebSocket group update subscription signal.
  *
  * Represents a group subscription update signal sent from WebSocket client.
  */

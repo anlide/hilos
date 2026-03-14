@@ -7,7 +7,7 @@ namespace Hilos\Core\Agent\DTO;
 use Hilos\BaseDTO;
 
 /**
- * MessageFromAgentDTO - DTO for messages from another agent
+ * MessageFromAgentDTO - DTO for messages from another agent.
  *
  * Represents a message sent from one agent to another agent.
  */

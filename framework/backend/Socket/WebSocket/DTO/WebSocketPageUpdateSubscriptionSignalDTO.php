@@ -9,7 +9,7 @@ use Hilos\Core\Router\DTO\SignalDataDTO;
 use Hilos\Core\Router\SignalDataInterface;
 
 /**
- * WebSocketPageUpdateSubscriptionSignalDTO - DTO for WebSocket page update subscription signal
+ * WebSocketPageUpdateSubscriptionSignalDTO - DTO for WebSocket page update subscription signal.
  *
  * Represents a page subscription update signal sent from WebSocket client.
  */

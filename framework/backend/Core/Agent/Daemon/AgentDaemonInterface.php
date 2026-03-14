@@ -10,7 +10,7 @@ use Hilos\Core\Agent\DTO\MessageFromUserDTO;
 use Hilos\Socket\Client\WorkerClient;
 
 /**
- * AgentDaemonInterface - Interface for agent proxies running in daemon
+ * AgentDaemonInterface - Interface for agent proxies running in daemon.
  *
  * Agent proxies run in daemon process and handle routing between
  * external connections (WebSocket, HTTP, etc.) and worker agents.

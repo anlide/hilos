@@ -31,7 +31,7 @@ use Hilos\LLM\DTO\Message;
 use Hilos\Utils\Logger;
 
 /**
- * BotAgent - Regular agent for bot management
+ * BotAgent - Regular agent for bot management.
  *
  * Runs in regular worker process. One agent per bot (agentIndex = bot.id).
  * Manages bot interactions: reacts to chat context updates (RtSync from ChatContextAnalyzerAgent)

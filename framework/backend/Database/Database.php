@@ -557,7 +557,9 @@ class Database
     }
 
     /**
-     * Get number of rows in current result set
+     * Get number of rows in current result set.
+     *
+     * @return int Row count
      */
     public static function count(): int
     {
@@ -788,8 +790,11 @@ class Database
     }
 
     /**
-     * Escape string for SQL query
-     * @throws DatabaseConnectionException
+     * Escape string for SQL query.
+     *
+     * @param string $value Value to escape
+     * @return string Escaped string
+     * @throws DatabaseConnectionException If not connected
      */
     public static function escape(string $value): string
     {
@@ -798,8 +803,10 @@ class Database
     }
 
     /**
-     * Get server info
-     * @throws DatabaseConnectionException
+     * Get server info.
+     *
+     * @return string MySQL server version
+     * @throws DatabaseConnectionException If not connected
      */
     public static function getServerInfo(): string
     {
@@ -808,7 +815,9 @@ class Database
     }
 
     /**
-     * Get client info
+     * Get client info.
+     *
+     * @return string mysqli client version
      */
     public static function getClientInfo(): string
     {
@@ -816,9 +825,11 @@ class Database
     }
 
     /**
-     * Check if connection is alive by attempting a simple query
-     * Note: mysqli_ping() is deprecated, using SELECT 1 instead
-     * @throws DatabaseConnectionException
+     * Check if connection is alive by attempting a simple query.
+     *
+     * Note: mysqli_ping() is deprecated, using SELECT 1 instead.
+     *
+     * @return bool True if connection is alive, false otherwise
      */
     public static function ping(): bool
     {

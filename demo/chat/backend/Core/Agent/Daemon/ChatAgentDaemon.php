@@ -8,7 +8,7 @@ use Hilos\Core\Agent\Daemon\AbstractAgentDaemon;
 use Hilos\Utils\Logger;
 
 /**
- * ChatAgentDaemon - Daemon proxy for ChatAgent
+ * ChatAgentDaemon - Daemon proxy for ChatAgent.
  *
  * Simple proxy class for chat agent on daemon side.
  * Handles routing between WebSocket clients and ChatAgent in worker.
@@ -19,7 +19,7 @@ class ChatAgentDaemon extends AbstractAgentDaemon
     private const string AGENT_TYPE = 'chat';
 
     /**
-     * ChatAgentDaemon constructor
+     * ChatAgentDaemon constructor.
      */
     public function __construct()
     {
@@ -27,7 +27,7 @@ class ChatAgentDaemon extends AbstractAgentDaemon
     }
 
     /**
-     * Get agent type
+     * Get agent type.
      *
      * @return string Agent type
      */
@@ -37,7 +37,7 @@ class ChatAgentDaemon extends AbstractAgentDaemon
     }
 
     /**
-     * Get agent index
+     * Get agent index.
      *
      * Chat agent has no index (global singleton)
      *
@@ -49,7 +49,7 @@ class ChatAgentDaemon extends AbstractAgentDaemon
     }
 
     /**
-     * Check if agent requires monopolistic worker process
+     * Check if agent requires monopolistic worker process.
      *
      * Chat agent requires monopolistic worker.
      *

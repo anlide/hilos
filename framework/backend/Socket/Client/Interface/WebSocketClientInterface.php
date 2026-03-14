@@ -7,7 +7,7 @@ namespace Hilos\Socket\Client\Interface;
 use Hilos\Socket\Client\ClientInterface;
 
 /**
- * WebSocketClientInterface - Interface for WebSocket client implementations
+ * WebSocketClientInterface - Interface for WebSocket client implementations.
  *
  * Extends ClientInterface with WebSocket-specific methods.
  */

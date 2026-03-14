@@ -9,7 +9,7 @@ use Hilos\Core\Router\DTO\SignalDataDTO;
 use Hilos\Core\Router\SignalDataInterface;
 
 /**
- * WebSocketFrameBinarySignalDTO - DTO for WebSocket binary frame signal
+ * WebSocketFrameBinarySignalDTO - DTO for WebSocket binary frame signal.
  *
  * Represents a WebSocket binary frame signal sent from WebSocket client.
  */

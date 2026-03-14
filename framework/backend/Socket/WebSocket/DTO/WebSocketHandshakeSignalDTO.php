@@ -9,7 +9,7 @@ use Hilos\Core\Router\DTO\SignalDataDTO;
 use Hilos\Core\Router\SignalDataInterface;
 
 /**
- * WebSocketHandshakeSignalDTO - DTO for WebSocket handshake signal
+ * WebSocketHandshakeSignalDTO - DTO for WebSocket handshake signal.
  *
  * Represents a WebSocket handshake signal sent from WebSocket client.
  */

@@ -15,7 +15,7 @@ use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\EntitiesChangesDTO;
 
 /**
- * BotPage - Bot page handler
+ * BotPage - Bot page handler.
  *
  * Handles subscription, unsubscription, and actions for the bot page.
  * Sends bot profile data on subscribe when bot ID is provided in params.
@@ -23,7 +23,7 @@ use Hilos\Core\Router\DTO\EntitiesChangesDTO;
 class BotPage extends AbstractChatPage
 {
     /**
-     * Get page name
+     * Get page name.
      *
      * @return string Page name
      */
@@ -33,7 +33,7 @@ class BotPage extends AbstractChatPage
     }
 
     /**
-     * Handle page-specific subscription logic
+     * Handle page-specific subscription logic.
      *
      * @param string $acceptKey Accept key
      * @param array<string, string> $params Route params (e.g. ['id' => botId])

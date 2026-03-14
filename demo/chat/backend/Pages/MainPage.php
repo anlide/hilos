@@ -23,14 +23,14 @@ use Hilos\HilosException;
 use Hilos\Utils\Logger;
 
 /**
- * MainPage - Main chat page handler
+ * MainPage - Main chat page handler.
  *
  * Handles subscription, unsubscription, and actions for the main chat page.
  */
 class MainPage extends AbstractChatPage
 {
     /**
-     * Get page name
+     * Get page name.
      *
      * @return string Page name
      */
@@ -40,7 +40,7 @@ class MainPage extends AbstractChatPage
     }
 
     /**
-     * Handle page-specific subscription logic
+     * Handle page-specific subscription logic.
      *
      * @param string $acceptKey Accept key
      * @param array<string, string> $params Route params from page subscription (unused for main page)
@@ -75,7 +75,7 @@ class MainPage extends AbstractChatPage
     }
 
     /**
-     * Handle page-specific unsubscription logic
+     * Handle page-specific unsubscription logic.
      *
      * @param string $acceptKey Accept key
      */
@@ -85,7 +85,7 @@ class MainPage extends AbstractChatPage
     }
 
     /**
-     * Handle page-specific action logic
+     * Handle page-specific action logic.
      *
      * @param string $acceptKey Accept key
      * @param string $action Action name

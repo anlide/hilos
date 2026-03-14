@@ -12,14 +12,14 @@ use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\EntitiesChangesDTO;
 
 /**
- * UserPage - User page handler
+ * UserPage - User page handler.
  *
  * Handles subscription, unsubscription, and actions for the user page.
  */
 class UserPage extends AbstractChatPage
 {
     /**
-     * Get page name
+     * Get page name.
      *
      * @return string Page name
      */
@@ -29,7 +29,7 @@ class UserPage extends AbstractChatPage
     }
 
     /**
-     * Handle page-specific subscription logic
+     * Handle page-specific subscription logic.
      *
      * @param string $acceptKey Accept key
      * @param array<string, string> $params Route params from page subscription (e.g. ['id' => userId])
@@ -54,7 +54,7 @@ class UserPage extends AbstractChatPage
     }
 
     /**
-     * Handle page-specific action logic
+     * Handle page-specific action logic.
      *
      * @param string $acceptKey Accept key
      * @param string $action Action name

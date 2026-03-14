@@ -16,7 +16,7 @@ use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalSource;
 
 /**
- * ChatSignalRouter - Signal router for chat demo
+ * ChatSignalRouter - Signal router for chat demo.
  *
  * Defines declarative routing rules for all signal types in the chat demo project.
  * Routes signals by source and type to the appropriate agent.

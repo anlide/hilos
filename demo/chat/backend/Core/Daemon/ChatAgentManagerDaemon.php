@@ -17,7 +17,7 @@ use Hilos\Core\Agent\Exception\AgentDaemonCreationFailedException;
 class ChatAgentManagerDaemon extends AgentManagerDaemon
 {
     /**
-     * Create agent daemon instance (factory method)
+     * Create agent daemon instance (factory method).
      *
      * @param string $agentType Agent type
      * @param ?string $agentIndex Agent index (optional)

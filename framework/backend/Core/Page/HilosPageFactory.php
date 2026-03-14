@@ -23,6 +23,13 @@ use Hilos\Core\Page\HilosPages\HilosSettingsPage;
  */
 class HilosPageFactory extends AbstractPageFactory
 {
+    /**
+     * Create page instance by Hilos page name.
+     *
+     * @param string $pageName Page constant (e.g. HilosPageConstants::HILOS_DASHBOARD)
+     * @return AbstractPage Page instance
+     * @throws PageNotFoundException When page cannot be created
+     */
     protected function createPage(string $pageName): AbstractPage
     {
         return match ($pageName) {
@@ -35,6 +42,12 @@ class HilosPageFactory extends AbstractPageFactory
         };
     }
 
+    /**
+     * Check if Hilos page name is supported.
+     *
+     * @param string $pageName Page name constant
+     * @return bool True if page exists
+     */
     public function hasPage(string $pageName): bool
     {
         return in_array($pageName, [

@@ -7,7 +7,7 @@ namespace Demo\Chat\Constants;
 use Hilos\Constants\HilosPageConstants;
 
 /**
- * PageConstants - Page constants for chat demo
+ * PageConstants - Page constants for chat demo.
  *
  * Defines page identifiers used for user subscriptions.
  */

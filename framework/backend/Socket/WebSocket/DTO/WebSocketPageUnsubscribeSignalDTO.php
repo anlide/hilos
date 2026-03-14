@@ -9,7 +9,7 @@ use Hilos\Core\Router\DTO\SignalDataDTO;
 use Hilos\Core\Router\SignalDataInterface;
 
 /**
- * WebSocketPageUnsubscribeSignalDTO - DTO for WebSocket page unsubscribe signal
+ * WebSocketPageUnsubscribeSignalDTO - DTO for WebSocket page unsubscribe signal.
  *
  * Represents a page unsubscribe signal sent from WebSocket client.
  */

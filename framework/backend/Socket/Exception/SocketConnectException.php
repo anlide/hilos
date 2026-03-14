@@ -8,7 +8,7 @@ use Hilos\Socket\SocketException;
 use Throwable;
 
 /**
- * SocketConnectException - Exception thrown when socket connect operation fails
+ * SocketConnectException - Exception thrown when socket connect operation fails.
  *
  * Thrown when socket_connect() fails and error is not handled by specific error handlers.
  */

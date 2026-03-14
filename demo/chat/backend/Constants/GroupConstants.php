@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Demo\Chat\Constants;
 
 /**
- * GroupConstants - Group constants for chat demo
+ * GroupConstants - Group constants for chat demo.
  *
  * Defines group identifiers used for user subscriptions.
  */

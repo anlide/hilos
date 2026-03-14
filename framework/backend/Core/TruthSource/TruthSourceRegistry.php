@@ -8,7 +8,7 @@ use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 
 /**
- * Database Truth Source Registry
+ * Database Truth Source Registry.
  *
  * Tracks which agents are sources of truth for specific database tables.
  * Only registered agents can write to database tables.
@@ -37,7 +37,7 @@ class TruthSourceRegistry extends AbstractTruthSourceRegistry
     private static array $createSources = [];
 
     /**
-     * Get sources storage reference
+     * Get sources storage reference.
      *
      * @return array<string, array<string, array|true>>
      */

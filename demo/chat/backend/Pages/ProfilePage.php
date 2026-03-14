@@ -23,14 +23,14 @@ use Hilos\HilosException;
 use Hilos\Utils\Logger;
 
 /**
- * ProfilePage - User profile page handler
+ * ProfilePage - User profile page handler.
  *
  * Handles subscription, unsubscription, and actions for the user profile page.
  */
 class ProfilePage extends AbstractChatPage
 {
     /**
-     * Get page name
+     * Get page name.
      *
      * @return string Page name
      */
@@ -40,7 +40,7 @@ class ProfilePage extends AbstractChatPage
     }
 
     /**
-     * Handle page-specific subscription logic
+     * Handle page-specific subscription logic.
      *
      * @param string $acceptKey Accept key
      * @param array<string, string> $params Route params from page subscription (unused for profile page)
@@ -55,7 +55,7 @@ class ProfilePage extends AbstractChatPage
     }
 
     /**
-     * Handle page-specific unsubscription logic
+     * Handle page-specific unsubscription logic.
      *
      * @param string $acceptKey Accept key
      */
@@ -65,7 +65,7 @@ class ProfilePage extends AbstractChatPage
     }
 
     /**
-     * Handle page-specific action logic
+     * Handle page-specific action logic.
      *
      * @param string $acceptKey Accept key
      * @param string $action Action name
@@ -87,7 +87,7 @@ class ProfilePage extends AbstractChatPage
     }
 
     /**
-     * Handle rename action
+     * Handle rename action.
      *
      * @param string $acceptKey Accept key
      * @param RenameActionDTO $dto Rename DTO

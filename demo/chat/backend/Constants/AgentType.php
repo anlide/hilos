@@ -7,7 +7,7 @@ namespace Demo\Chat\Constants;
 use Hilos\Constants\HilosAgentType;
 
 /**
- * AgentType - Agent type constants for chat demo
+ * AgentType - Agent type constants for chat demo.
  *
  * Defines agent type identifiers used in the chat demo project.
  * Hilos-level agent types are inherited from HilosAgentType.

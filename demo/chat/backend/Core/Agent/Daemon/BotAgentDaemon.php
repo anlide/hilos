@@ -9,7 +9,7 @@ use Hilos\Core\Agent\Daemon\AbstractAgentDaemon;
 use Hilos\Utils\Logger;
 
 /**
- * BotAgentDaemon - Daemon proxy for BotAgent
+ * BotAgentDaemon - Daemon proxy for BotAgent.
  *
  * Simple proxy class for bot agent on daemon side.
  * One daemon per bot (agentIndex = bot.id).
@@ -38,7 +38,7 @@ class BotAgentDaemon extends AbstractAgentDaemon
     }
 
     /**
-     * Get agent type
+     * Get agent type.
      *
      * @return string Agent type
      */
@@ -48,9 +48,9 @@ class BotAgentDaemon extends AbstractAgentDaemon
     }
 
     /**
-     * Get agent index
+     * Get agent index.
      *
-     * Bot agent index is the bot id (string)
+     * Bot agent index is the bot id (string).
      *
      * @return string Agent index
      */
@@ -60,7 +60,7 @@ class BotAgentDaemon extends AbstractAgentDaemon
     }
 
     /**
-     * Check if agent requires monopolistic worker process
+     * Check if agent requires monopolistic worker process.
      *
      * Bot agent does not require monopolistic worker.
      *

@@ -9,7 +9,7 @@ use Hilos\Constants\SignalPayloadConstants;
 use Hilos\Socket\Client\WebSocketClient;
 
 /**
- * ChatWebSocketClient - WebSocket client for chat demo
+ * ChatWebSocketClient - WebSocket client for chat demo.
  *
  * Handles chat-specific WebSocket frame processing and sends signals to chat agent.
  */

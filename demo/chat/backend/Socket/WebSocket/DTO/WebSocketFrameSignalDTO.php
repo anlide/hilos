@@ -8,7 +8,7 @@ use Demo\Chat\Core\Router\DTO\ChatMessageDTOInterface;
 use Hilos\Socket\WebSocket\DTO\WebSocketFrameSignalDTO as FrameworkWebSocketFrameSignalDTO;
 
 /**
- * WebSocketFrameSignalDTO - DTO for WebSocket text frame signal
+ * WebSocketFrameSignalDTO - DTO for WebSocket text frame signal.
  *
  * Represents a WebSocket text frame signal sent from WebSocket client to chat agent.
  * Extends framework WebSocketFrameSignalDTO for chat-specific functionality.
@@ -16,7 +16,7 @@ use Hilos\Socket\WebSocket\DTO\WebSocketFrameSignalDTO as FrameworkWebSocketFram
 class WebSocketFrameSignalDTO extends FrameworkWebSocketFrameSignalDTO implements ChatMessageDTOInterface
 {
     /**
-     * Create DTO from array
+     * Create DTO from array.
      *
      * Override parent method to return correct child class type.
      *

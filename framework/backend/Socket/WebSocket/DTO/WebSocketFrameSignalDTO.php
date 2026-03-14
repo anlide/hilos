@@ -9,7 +9,7 @@ use Hilos\Core\Router\DTO\SignalDataDTO;
 use Hilos\Core\Router\SignalDataInterface;
 
 /**
- * WebSocketFrameSignalDTO - DTO for WebSocket text frame signal
+ * WebSocketFrameSignalDTO - DTO for WebSocket text frame signal.
  *
  * Represents a WebSocket text frame signal sent from WebSocket client.
  */

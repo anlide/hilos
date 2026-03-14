@@ -40,7 +40,7 @@ use Hilos\Socket\Worker\DTO\WorkerRtSyncUpdatedMessageDTO;
 use Hilos\Utils\Logger;
 
 /**
- * DaemonManager - Abstract base class for daemon process management
+ * DaemonManager - Abstract base class for daemon process management.
  *
  * Provides simple interface for creating daemons:
  * - run() - Main daemon startup method with epoll-based event loop
@@ -62,7 +62,7 @@ abstract class DaemonManager extends BaseManager
     protected AgentManagerDaemon $agentManagerDaemon;
 
     /**
-     * Get agent manager daemon instance
+     * Get agent manager daemon instance.
      *
      * @return AgentManagerDaemon Agent manager daemon instance
      */

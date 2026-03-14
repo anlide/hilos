@@ -7,7 +7,7 @@ namespace Hilos\Core\Agent\Daemon;
 use Hilos\Core\Agent\Exception\AgentDaemonCreationFailedException;
 
 /**
- * AbstractAgentDaemonFactory - Abstract factory for creating agent daemon proxies
+ * AbstractAgentDaemonFactory - Abstract factory for creating agent daemon proxies.
  *
  * Child classes must implement createAgentDaemon() static method to create specific agent daemon types.
  */
