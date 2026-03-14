@@ -67,26 +67,53 @@ class FilteredCollection extends Objects
 
     // Override methods to work with filtered objects only
 
+    /**
+     * Get object at offset.
+     *
+     * @param string|int $offset Object key
+     * @return ?Object_ Object or null if not found
+     */
     public function offsetGet($offset): ?Object_
     {
         return $this->filteredObjects[$offset] ?? null;
     }
 
+    /**
+     * Check if offset exists in filtered collection.
+     *
+     * @param string|int $offset Object key
+     * @return bool True if exists
+     */
     public function offsetExists($offset): bool
     {
         return isset($this->filteredObjects[$offset]);
     }
 
+    /**
+     * Remove object at offset from filtered collection.
+     *
+     * @param string|int $offset Object key
+     */
     public function offsetUnset($offset): void
     {
         unset($this->filteredObjects[$offset]);
     }
 
+    /**
+     * Get filtered collection size.
+     *
+     * @return int Number of filtered objects
+     */
     public function count(): int
     {
         return count($this->filteredObjects);
     }
 
+    /**
+     * Get current object in iteration.
+     *
+     * @return ?Object_ Current object or null
+     */
     public function current(): ?Object_
     {
         $keys = array_keys($this->filteredObjects);
@@ -96,49 +123,91 @@ class FilteredCollection extends Objects
         return $this->filteredObjects[$keys[$this->index]];
     }
 
+    /**
+     * Get current key in iteration.
+     *
+     * @return string|int Current key
+     */
     public function key(): string|int
     {
         $keys = array_keys($this->filteredObjects);
         return $keys[$this->index] ?? 0;
     }
 
+    /**
+     * Advance iterator to next element.
+     */
     public function next(): void
     {
         $this->index++;
     }
 
+    /**
+     * Check if current position is valid.
+     *
+     * @return bool True if valid
+     */
     public function valid(): bool
     {
         $keys = array_keys($this->filteredObjects);
         return isset($keys[$this->index]);
     }
 
+    /**
+     * Reset iterator to first element.
+     */
     public function rewind(): void
     {
         $this->index = 0;
     }
 
     // Abstract methods - must implement but not used in filtered collection
+
+    /**
+     * Initialize empty collection (not supported for FilteredCollection).
+     *
+     * @return static
+     * @throws \RuntimeException Always, direct init not allowed
+     */
     public static function initEmpty(): static
     {
         throw new \RuntimeException("FilteredCollection cannot be initialized directly");
     }
 
+    /**
+     * Load all from DB (not supported for FilteredCollection).
+     *
+     * @throws \RuntimeException Always, direct load not allowed
+     */
     public function loadAllFromDB(): void
     {
         throw new \RuntimeException("FilteredCollection cannot load from database directly");
     }
 
+    /**
+     * Lazy load object by key (not used in filtered collection).
+     *
+     * @param int|string $key Object key
+     * @return ?Object_ Always null
+     */
     protected function lazyLoadObject(int|string $key): ?Object_
     {
         return null; // Not used in filtered collection
     }
 
+    /**
+     * Lazy load count (not used in filtered collection).
+     *
+     * @return int Always 0
+     */
     protected function lazyLoadCount(): int
     {
         return 0; // Not used in filtered collection
     }
 
+    /**
+     * Lazy load all (not used in filtered collection).
+     */
     protected function lazyLoadAll(): void
     {
         // Not used in filtered collection

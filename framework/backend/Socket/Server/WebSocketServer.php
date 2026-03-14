@@ -9,7 +9,7 @@ use Hilos\Socket\SocketException;
 use Hilos\Socket\SocketOperation;
 
 /**
- * WebSocketServer - WebSocket server implementation
+ * WebSocketServer - WebSocket server implementation.
  *
  * Manages WebSocket server socket and accepts incoming connections.
  * Works with epoll in daemon main loop.

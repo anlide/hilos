@@ -467,7 +467,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
     }
 
     /**
-     * Send WebSocket binary frame
+     * Send WebSocket binary frame.
      *
      * @param string $data Binary data to send
      */
@@ -478,7 +478,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
     }
 
     /**
-     * Send pong frame (response to ping)
+     * Send pong frame (response to ping).
      *
      * @param string $data Payload data
      */
@@ -489,7 +489,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
     }
 
     /**
-     * Build WebSocket frame header
+     * Build WebSocket frame header.
      *
      * @param int $length Payload length
      * @param int $opcode Frame opcode
@@ -520,7 +520,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
     }
 
     /**
-     * Handle received WebSocket text frame
+     * Handle received WebSocket text frame.
      *
      * @param string $payload Frame payload (UTF-8 text)
      * @throws InvalidFrameException When frame payload is invalid
@@ -785,7 +785,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
     }
 
     /**
-     * Handle received WebSocket binary frame
+     * Handle received WebSocket binary frame.
      *
      * @param string $payload Frame payload (binary data)
      */
@@ -874,7 +874,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
     ): void;
 
     /**
-     * Tick method - called on each server tick
+     * Tick method - called on each server tick.
      */
     public function onTick(): void
     {
@@ -883,7 +883,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
     }
 
     /**
-     * Called when socket connection is successfully closed
+     * Called when socket connection is successfully closed.
      */
     protected function onClose(): void
     {

@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Core\Router;
 
 /**
- * SignalName - Standard implementation of signal name identifier
+ * SignalName - Standard implementation of signal name identifier.
  *
  * Represents a signal name (e.g., 'message', 'main', 'frame').
  */

@@ -112,6 +112,8 @@ abstract class DbItem
 
     /**
      * Get object collection from parent collection.
+     *
+     * @return ?Objects Object collection or null if no parent
      */
     public function getObjectCollection(): ?Objects
     {

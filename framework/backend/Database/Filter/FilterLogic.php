@@ -3,7 +3,7 @@
 namespace Hilos\Database\Filter;
 
 /**
- * Logic operators for combining filters
+ * Logic operators for combining filters.
  */
 enum FilterLogic: string
 {

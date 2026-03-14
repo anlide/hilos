@@ -8,8 +8,9 @@ use mysqli_result;
 use RuntimeException;
 
 /**
- * Single result set wrapper
- * Stores raw data from database and provides lazy conversion to Entity collections
+ * Single result set wrapper.
+ *
+ * Stores raw data from database and provides lazy conversion to Entity collections.
  *
  * @implements \Iterator<int|string, array<string, mixed>>
  * @implements \Countable
@@ -20,9 +21,9 @@ class ResultSet implements \Iterator, \Countable
     private ?mysqli_result $mysqliResult = null;
 
     /**
-     * Get mysqli_result (for comparison to detect result changes)
+     * Get mysqli_result (for comparison to detect result changes).
      *
-     * @return ?mysqli_result
+     * @return ?mysqli_result mysqli result or null if not set
      */
     public function getMysqliResult(): ?mysqli_result
     {
@@ -89,7 +90,7 @@ class ResultSet implements \Iterator, \Countable
     }
 
     /**
-     * Load all rows from mysqli_result (if not loaded yet)
+     * Load all rows from mysqli_result (if not loaded yet).
      */
     private function loadRows(): void
     {

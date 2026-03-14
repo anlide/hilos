@@ -9,7 +9,7 @@ use Hilos\Socket\Client\Interface\HttpClientInterface;
 use Hilos\Socket\SocketException;
 
 /**
- * HttpServer - HTTP server implementation
+ * HttpServer - HTTP server implementation.
  *
  * Manages HTTP server socket and accepts incoming connections.
  * Works with epoll in daemon main loop.

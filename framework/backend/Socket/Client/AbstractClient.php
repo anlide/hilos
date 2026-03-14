@@ -110,7 +110,7 @@ abstract class AbstractClient extends AbstractSocket implements ClientInterface
     }
 
     /**
-     * Mark socket for closing (abstract implementation from AbstractSocket)
+     * Mark socket for closing (abstract implementation from AbstractSocket).
      */
     public function markShouldClose(): void
     {

@@ -35,14 +35,14 @@ interface ClientInterface
     public function write(): void;
 
     /**
-     * Check if client should be closed
+     * Check if client should be closed.
      *
      * @return bool True if should close
      */
     public function shouldClose(): bool;
 
     /**
-     * Mark socket for closing
+     * Mark socket for closing.
      */
     public function markShouldClose(): void;
 

@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Constants;
 
 /**
- * HttpConstants - HTTP related constants
+ * HttpConstants - HTTP related constants.
  *
  * Contains constants for HTTP operations, response keys, and status codes.
  */

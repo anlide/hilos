@@ -17,7 +17,7 @@ use Hilos\Socket\WebSocket\DTO\WebSocketPageUnsubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageUpdateSubscriptionSignalDTO;
 
 /**
- * AgentInterface - Interface for agents running in worker processes
+ * AgentInterface - Interface for agents running in worker processes.
  *
  * Agents are entities that perform work in worker processes.
  * They have a tick() method called regularly to perform their work.

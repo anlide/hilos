@@ -7,7 +7,7 @@ namespace Hilos\Socket\Server;
 use Hilos\Socket\Client\ClientInterface;
 
 /**
- * ServerInterface - Interface for all server implementations
+ * ServerInterface - Interface for all server implementations.
  *
  * Defines common interface for server components that work with epoll.
  */

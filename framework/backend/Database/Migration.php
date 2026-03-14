@@ -5,8 +5,9 @@ namespace Hilos\Database;
 use Hilos\Utils\Helpers\TimeHelper;
 
 /**
- * Database migration management system
- * Handles up/down migrations with SQL files
+ * Database migration management system.
+ *
+ * Handles up/down migrations with SQL files.
  */
 class Migration
 {

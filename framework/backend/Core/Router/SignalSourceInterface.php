@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Core\Router;
 
 /**
- * SignalSourceInterface - Interface for signal source identifiers
+ * SignalSourceInterface - Interface for signal source identifiers.
  *
  * Represents a signal source with three parts: source, type, and index.
  */

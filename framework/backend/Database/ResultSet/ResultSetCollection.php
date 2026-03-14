@@ -8,9 +8,10 @@ use mysqli_result;
 use RuntimeException;
 
 /**
- * Collection of multiple result sets
- * Used for stored procedures that return multiple result sets
- * Also used as primary way to work with database results (even single result set)
+ * Collection of multiple result sets.
+ *
+ * Used for stored procedures that return multiple result sets.
+ * Also used as primary way to work with database results (even single result set).
  *
  * @implements \Iterator<int, ResultSet>
  * @implements \Countable
@@ -158,7 +159,7 @@ class ResultSetCollection implements \Iterator, \Countable
     }
 
     /**
-     * Reset iterator
+     * Reset iterator to beginning.
      */
     public function rewind(): void
     {
@@ -186,7 +187,7 @@ class ResultSetCollection implements \Iterator, \Countable
     }
 
     /**
-     * Move to next result set
+     * Move to next result set.
      */
     public function next(): void
     {

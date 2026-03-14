@@ -159,7 +159,7 @@ class HttpClient extends AbstractClient implements HttpClientInterface
     }
 
     /**
-     * Tick method - called on each server tick
+     * Tick method - called on each server tick.
      */
     public function onTick(): void
     {
@@ -167,7 +167,7 @@ class HttpClient extends AbstractClient implements HttpClientInterface
     }
 
     /**
-     * Called when socket connection is successfully closed
+     * Called when socket connection is successfully closed.
      */
     protected function onClose(): void
     {

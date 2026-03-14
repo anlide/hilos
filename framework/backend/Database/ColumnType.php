@@ -3,7 +3,7 @@
 namespace Hilos\Database;
 
 /**
- * Database column types enum
+ * Database column types enum.
  */
 enum ColumnType: string
 {

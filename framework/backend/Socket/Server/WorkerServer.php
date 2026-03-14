@@ -91,7 +91,7 @@ abstract class WorkerServer extends AbstractServer
     private ?string $cachedLogDirectory = null;
 
     /**
-     * WorkerServer constructor
+     * Create worker server with host, port, script paths and agent manager.
      *
      * @param string $host Host to bind
      * @param int $port Port to bind

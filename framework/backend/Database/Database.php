@@ -31,8 +31,9 @@ use mysqli;
 use mysqli_result;
 
 /**
- * Database connection and query management class
- * Supports multiple database connections with static methods
+ * Database connection and query management class.
+ *
+ * Supports multiple database connections with static methods.
  */
 class Database
 {

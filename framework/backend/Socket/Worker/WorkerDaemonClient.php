@@ -12,7 +12,7 @@ use Hilos\Utils\Env;
 use Hilos\Utils\Exception\MissingEnvironmentVariableException;
 
 /**
- * WorkerDaemonClient - Client for worker to connect to daemon
+ * WorkerDaemonClient - Client for worker to connect to daemon.
  *
  * Handles socket connection from worker process to daemon WorkerServer.
  * Manages reading/writing messages using JSON protocol (ready for DTO wrapping).

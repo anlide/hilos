@@ -18,8 +18,9 @@ use InvalidArgumentException;
 use Iterator;
 
 /**
- * Abstract base class for Object collections
- * Provides lazy loading support and common collection operations
+ * Abstract base class for Object collections.
+ *
+ * Provides lazy loading support and common collection operations.
  *
  * Child classes should define OBJECT_CLASS, ENTITY_COLLECTION_CLASS, and COLLECTION_KEY constants
  * to get default implementations of all collection methods.

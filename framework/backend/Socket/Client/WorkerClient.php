@@ -25,7 +25,7 @@ use Hilos\Socket\Worker\WorkerDTO;
 use Hilos\Utils\Logger;
 
 /**
- * WorkerClient - Represents a single worker connection
+ * WorkerClient - Represents a single worker connection.
  *
  * Handles reading messages from workers and writing responses.
  * Created by WorkerServer when accepting new worker connections.
@@ -51,7 +51,7 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
     private float $registrationTimeout = 10.0;
 
     /**
-     * WorkerClient constructor
+     * Create worker client with socket and agent manager.
      *
      * @param resource $socket Client socket
      * @param AgentManagerDaemon $agentManager Agent manager daemon instance
@@ -347,7 +347,7 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
     }
 
     /**
-     * Called when socket connection is successfully closed
+     * Called when socket connection is successfully closed.
      */
     protected function onClose(): void
     {

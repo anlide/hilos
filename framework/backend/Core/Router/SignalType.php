@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Core\Router;
 
 /**
- * SignalType - Standard implementation of signal type identifier
+ * SignalType - Standard implementation of signal type identifier.
  *
  * Represents a signal type (e.g., 'frame', 'handshake', 'close', 'subscribe', 'action').
  */

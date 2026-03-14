@@ -8,7 +8,7 @@ use Hilos\HilosException;
 use Throwable;
 
 /**
- * Exception thrown when agent daemon creation fails
+ * Exception thrown when agent daemon creation fails.
  */
 class AgentDaemonCreationFailedException extends HilosException
 {

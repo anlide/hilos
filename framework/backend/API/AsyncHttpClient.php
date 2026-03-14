@@ -8,7 +8,7 @@ use Hilos\Constants\ApiEndpoint;
 use Hilos\Constants\HttpConstants;
 
 /**
- * AsyncHttpClient - Asynchronous non-blocking HTTP client
+ * AsyncHttpClient - Asynchronous non-blocking HTTP client.
  *
  * Provides non-blocking HTTP request capabilities using stream sockets and state machine.
  * Designed for use in event loops and real-time monitoring applications.
@@ -194,11 +194,11 @@ class AsyncHttpClient
     }
 
     /**
-     * Get last request result
+     * Get last request result.
      *
      * Clears the result flag after retrieval.
      *
-     * @return array Result with HttpConstants::RESPONSE_KEY_SUCCESS and HttpConstants::RESPONSE_KEY_BODY keys
+     * @return array{success: bool, body: ?string} Result with success and body keys
      */
     public function getResult(): array
     {
@@ -221,7 +221,7 @@ class AsyncHttpClient
     }
 
     /**
-     * Force close current connection and reset to done state
+     * Force close current connection and reset to done state.
      */
     public function reset(): void
     {
@@ -284,7 +284,7 @@ class AsyncHttpClient
     }
 
     /**
-     * Process connecting state
+     * Process connecting state.
      */
     private function processConnecting(): void
     {
@@ -313,7 +313,7 @@ class AsyncHttpClient
     }
 
     /**
-     * Process sending state
+     * Process sending state.
      */
     private function processSending(): void
     {
@@ -342,7 +342,9 @@ class AsyncHttpClient
     }
 
     /**
-     * Build HTTP request string from current options
+     * Build HTTP request string from current options.
+     *
+     * @return string Raw HTTP request (headers + body)
      */
     private function buildRequest(): string
     {
@@ -372,7 +374,7 @@ class AsyncHttpClient
     }
 
     /**
-     * Process receiving state
+     * Process receiving state.
      */
     private function processReceiving(): void
     {
@@ -418,7 +420,7 @@ class AsyncHttpClient
     }
 
     /**
-     * Parse HTTP response
+     * Parse HTTP response.
      */
     private function parseResponse(): void
     {
@@ -464,6 +466,7 @@ class AsyncHttpClient
     /**
      * Decode HTTP chunked transfer encoding body.
      *
+     * @param string $chunkedBody Raw chunked body
      * @return ?string Decoded body or null on parse error
      */
     private function decodeChunkedBody(string $chunkedBody): ?string
@@ -496,7 +499,7 @@ class AsyncHttpClient
     }
 
     /**
-     * Complete HTTP request
+     * Complete HTTP request.
      *
      * @param bool $success Whether request was successful
      */
@@ -523,7 +526,7 @@ class AsyncHttpClient
     }
 
     /**
-     * Close HTTP socket
+     * Close HTTP socket.
      */
     private function closeSocket(): void
     {
@@ -534,7 +537,7 @@ class AsyncHttpClient
     }
 
     /**
-     * Destructor - cleanup resources
+     * Destructor - cleanup resources.
      */
     public function __destruct()
     {
