@@ -49,6 +49,7 @@ final class RtSyncApplicator
             return;
         }
 
+        /** @var class-string<RtState> $stateClass */
         $state = $stateClass::fromRow($row);
         $stateCollection->add($state);
     }

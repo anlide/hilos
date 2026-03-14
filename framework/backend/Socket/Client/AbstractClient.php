@@ -33,9 +33,9 @@ abstract class AbstractClient extends AbstractSocket implements ClientInterface
     protected bool $shouldClose = false;
 
     /**
-     * AbstractClient constructor
+     * Create client with socket. Reads buffer size from env.
      *
-     * @param resource $socket Client socket
+     * @param resource $socket Client socket resource
      */
     public function __construct($socket)
     {
@@ -190,10 +190,10 @@ abstract class AbstractClient extends AbstractSocket implements ClientInterface
     }
 
     /**
-     * Parse cookies from Cookie header
+     * Parse cookies from Cookie header.
      *
-     * @param array $headers HTTP headers
-     * @return array Cookies as key-value pairs
+     * @param array<string, string> $headers HTTP headers map
+     * @return array<string, string> Cookie name => value pairs
      */
     protected function parseCookies(array $headers): array
     {

@@ -20,9 +20,9 @@ abstract class AbstractServer extends AbstractSocket implements ServerInterface
     protected array $clients = [];
 
     /**
-     * Get all active client connections
+     * Get all active client connections.
      *
-     * @return ClientInterface[] Array of client connections
+     * @return list<ClientInterface> Array of client connections
      */
     public function getClients(): array
     {
@@ -42,7 +42,7 @@ abstract class AbstractServer extends AbstractSocket implements ServerInterface
     protected bool $preparingShutdown = false;
 
     /**
-     * AbstractServer constructor
+     * Create server with host and port.
      *
      * @param string $host Host to bind
      * @param int $port Port to bind
@@ -54,10 +54,10 @@ abstract class AbstractServer extends AbstractSocket implements ServerInterface
     }
 
     /**
-     * Start server - create and bind socket
+     * Start server - create and bind socket.
      *
      * @return bool True on success
-     * @throws SocketException
+     * @throws SocketException When socket create, bind or listen fails
      */
     public function start(): bool
     {
@@ -109,9 +109,9 @@ abstract class AbstractServer extends AbstractSocket implements ServerInterface
     abstract protected function onStart(): void;
 
     /**
-     * Stop server
+     * Stop server and close all client connections.
      *
-     * @throws SocketException
+     * @throws SocketException When socket close fails
      */
     public function stop(): void
     {

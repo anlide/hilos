@@ -56,11 +56,11 @@ abstract class DbContext
     /**
      * Set representation for object collection.
      *
-     * @param string $name Collection name (e.g., 'users')
+     * @param string $name Collection name (e.g. users)
      * @param string $dbItemCollectionClass DB collection class name
      * @param ?string $actionsClass Collection actions class name (optional)
      * @param ?string $itemActionsClass Item actions class name (optional)
-     * @throws ObjectCollectionNotFoundException
+     * @throws ObjectCollectionNotFoundException When object collection not found
      */
     public function setRepresent(string $name, string $dbItemCollectionClass, ?string $actionsClass = null, ?string $itemActionsClass = null): void
     {
@@ -96,11 +96,13 @@ abstract class DbContext
     }
 
     /**
-     * Get DB collection by name.
+     * Get DB collection by name (magic getter for $db->users, $db->events, etc.).
      *
-     * @throws CollectionNotFoundException
-     * @throws UnknownLazyStrategyException
-     * @throws DatabaseException
+     * @param string $name Collection name (e.g. users, events)
+     * @return DbCollection DB collection instance
+     * @throws CollectionNotFoundException When collection does not exist
+     * @throws UnknownLazyStrategyException When lazy strategy is unknown
+     * @throws DatabaseException On connection or schema error
      */
     public function __get(string $name)
     {
@@ -140,7 +142,7 @@ abstract class DbContext
     /**
      * Convert all collections to array.
      *
-     * @return array<string, array>
+     * @return array<string, array<int|string, array<string, mixed>>> Collection name => items array
      */
     public function toArray(): array
     {

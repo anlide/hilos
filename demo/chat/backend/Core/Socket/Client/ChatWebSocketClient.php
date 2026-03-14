@@ -47,7 +47,7 @@ class ChatWebSocketClient extends WebSocketClient
      * @param string $acceptKey Sec-WebSocket-Accept value (can be used as connection identifier)
      * @param array<string, string> $cookies Parsed cookies
      * @param string $clientIp Client IP address
-     * @param array<string, string> $queryParams Query parameters (GET parameters) from request URL
+     * @param array<string, mixed> $queryParams Query parameters from request URL
      */
     protected function onHandshake(
         array $headers,

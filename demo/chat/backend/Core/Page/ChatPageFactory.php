@@ -27,6 +27,7 @@ use Demo\Chat\Tables\ModeratorPiece\DTO\ModeratorPieceDeleteActionDTO;
 use Demo\Chat\Tables\ModeratorPiece\DTO\ModeratorPieceUpdateActionDTO;
 use Demo\Chat\Tables\User\DTO\UserUpdateActionDTO;
 use Hilos\Core\Page\AbstractPage;
+use Hilos\Core\Page\Exception\PageNotFoundException;
 use Hilos\Core\Page\HilosPageFactory;
 use Hilos\Core\Page\PageAgentInterface;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
@@ -46,6 +47,7 @@ class ChatPageFactory extends HilosPageFactory
      *
      * @param string $pageName Page constant (e.g. PageConstants::MAIN)
      * @return AbstractPage Page instance
+     * @throws PageNotFoundException When page cannot be created
      */
     protected function createPage(string $pageName): AbstractPage
     {

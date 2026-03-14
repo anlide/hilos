@@ -73,13 +73,13 @@ abstract class AbstractPageFactory
     abstract public function hasPage(string $pageName): bool;
 
     /**
-     * Create ActionPayloadDTO from action and data
+     * Create ActionPayloadDTO from action and data.
      *
      * Override in child class to create specific DTOs for known actions.
      * Default implementation returns UnknownActionPayloadDTO.
      *
      * @param string $action Action name
-     * @param array $data Payload data
+     * @param array<string, mixed> $data Payload data (key-value pairs)
      * @return ActionPayloadDTO Action payload DTO
      */
     public function createActionPayloadDTO(string $action, array $data): ActionPayloadDTO

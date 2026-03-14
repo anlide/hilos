@@ -43,8 +43,8 @@ class WorkerDaemonClient extends AbstractSocket
      * Starts connection attempt. Use checkConnection() to verify connection status.
      * Connection is established when isConnected() returns true.
      *
-     * @throws SocketException
-     * @throws MissingEnvironmentVariableException
+     * @throws SocketException When socket operations fail
+     * @throws MissingEnvironmentVariableException When WORKER_COMM_HOST or WORKER_COMM_PORT not set
      */
     public function connect(): void
     {
@@ -91,7 +91,7 @@ class WorkerDaemonClient extends AbstractSocket
      * For non-blocking sockets, this checks if connection is established
      * using socket_select. Must be called repeatedly until isConnected() returns true.
      *
-     * @throws SocketException
+     * @throws SocketException When socket select or connection check fails
      */
     public function checkConnection(): void
     {
@@ -153,9 +153,9 @@ class WorkerDaemonClient extends AbstractSocket
     }
 
     /**
-     * Read data from socket
+     * Read data from socket.
      *
-     * @throws SocketException
+     * @throws SocketException When socket read fails
      */
     public function read(): void
     {
@@ -182,9 +182,9 @@ class WorkerDaemonClient extends AbstractSocket
     }
 
     /**
-     * Write buffered data to socket
+     * Write buffered data to socket.
      *
-     * @throws SocketException
+     * @throws SocketException When socket write fails
      */
     public function write(): void
     {
@@ -204,9 +204,9 @@ class WorkerDaemonClient extends AbstractSocket
     }
 
     /**
-     * Send message to daemon
+     * Send message to daemon (appends to write buffer).
      *
-     * @param WorkerDTO|array $data Message DTO or array data
+     * @param WorkerDTO|array<string, mixed> $data Message DTO or array to encode as JSON
      */
     public function send(WorkerDTO|array $data): void
     {
@@ -219,8 +219,9 @@ class WorkerDaemonClient extends AbstractSocket
     }
 
     /**
-     * Process read buffer - extract complete messages
-     * @throws SocketException
+     * Process read buffer - extract complete messages.
+     *
+     * @throws SocketException When JSON parsing fails
      */
     private function processReadBuffer(): void
     {

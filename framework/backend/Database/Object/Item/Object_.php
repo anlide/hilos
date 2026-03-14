@@ -79,7 +79,9 @@ abstract class Object_
     }
 
     /**
-     * Debug info
+     * Debug info for var_dump/print_r.
+     *
+     * @return array<string, mixed> Entity data as array
      */
     public function __debugInfo(): array
     {
@@ -113,8 +115,9 @@ abstract class Object_
     }
 
     /**
-     * Mark entity as synced with database (without saving)
-     * Useful when entity is modified externally
+     * Mark entity as synced with database (without saving).
+     *
+     * Useful when entity is modified externally.
      */
     public function syncRelated(): void
     {
@@ -142,7 +145,9 @@ abstract class Object_
     }
 
     /**
-     * Check if there are unsaved changes
+     * Check if there are unsaved changes.
+     *
+     * @return bool True if entity has unsaved changes
      */
     public function hasChanges(): bool
     {
@@ -154,7 +159,9 @@ abstract class Object_
     }
 
     /**
-     * Get changed column names
+     * Get changed column names.
+     *
+     * @return array<string> List of changed column names
      */
     public function getChangedColumns(): array
     {
@@ -176,7 +183,7 @@ abstract class Object_
     }
 
     /**
-     * Revert changes (restore from entitySync)
+     * Revert changes (restore from entitySync).
      */
     public function revert(): void
     {
@@ -187,7 +194,10 @@ abstract class Object_
 
     /**
      * Collection key for DB sync broadcast (e.g. DbChatContext::bots).
+     *
      * Return empty string to skip broadcast.
+     *
+     * @return string Collection key or empty string
      */
     protected static function getCollectionKey(): string
     {
@@ -218,6 +228,10 @@ abstract class Object_
 
     /**
      * Queue DB sync created signal (no-op if broadcast disabled).
+     *
+     * @param string $collectionKey Collection key for broadcast
+     * @param string $idString Item ID as string
+     * @param array<string, mixed> $row Full row data
      */
     private function queueDbSyncCreated(string $collectionKey, string $idString, array $row): void
     {
@@ -229,6 +243,10 @@ abstract class Object_
 
     /**
      * Queue DB sync updated signal (no-op if broadcast disabled).
+     *
+     * @param string $collectionKey Collection key for broadcast
+     * @param string $idString Item ID as string
+     * @param array<string, mixed> $row Diff row data
      */
     private function queueDbSyncUpdated(string $collectionKey, string $idString, array $row): void
     {
@@ -240,6 +258,9 @@ abstract class Object_
 
     /**
      * Queue DB sync deleted signal (no-op if broadcast disabled).
+     *
+     * @param string $collectionKey Collection key for broadcast
+     * @param string $idString Item ID as string
      */
     private function queueDbSyncDeleted(string $collectionKey, string $idString): void
     {
@@ -250,7 +271,9 @@ abstract class Object_
     }
 
     /**
-     * Check if entity is related to database
+     * Check if entity is related to database.
+     *
+     * @return bool True if entity has DB row
      */
     public function isRelated(): bool
     {
@@ -258,8 +281,9 @@ abstract class Object_
     }
 
     /**
-     * Convert to array
-     * Override in child classes to customize output
+     * Convert to array. Override in child classes to customize output.
+     *
+     * @return array<string, mixed> Entity data
      */
     public function toArray(): array
     {

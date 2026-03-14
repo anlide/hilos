@@ -17,7 +17,9 @@ use Hilos\Socket\Client\Interface\HttpClientInterface;
 class FrontendHtmlClient extends AbstractClient implements HttpClientInterface
 {
     /**
-     * @param resource $socket Client socket
+     * Create HTTP client for serving prerendered HTML.
+     *
+     * @param resource $socket Client socket resource
      * @param HtmlResolver $resolver Path resolver for HTML
      * @param HtmlCache $cache HTML content cache
      */

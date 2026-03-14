@@ -154,9 +154,9 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
     }
 
     /**
-     * Lazy load count from database
+     * Lazy load total count from database.
      *
-     * @return int
+     * @return int Row count for collection
      */
     protected function lazyLoadCount(): int
     {
@@ -287,7 +287,7 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
     }
 
     /**
-     * Backup current iterator index
+     * Backup current iterator index for later restore.
      */
     public function backupIndex(): void
     {
@@ -295,7 +295,7 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
     }
 
     /**
-     * Restore iterator index from backup
+     * Restore iterator index from backup.
      */
     public function restoreIndex(): void
     {
@@ -303,7 +303,9 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
     }
 
     /**
-     * Debug info
+     * Debug info for var_dump/print_r.
+     *
+     * @return array<string, mixed> Collection data as array
      */
     public function __debugInfo(): array
     {
@@ -335,7 +337,7 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
     }
 
     /**
-     * Move to next object
+     * Move iterator to next object.
      */
     public function next(): void
     {
@@ -343,9 +345,9 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
     }
 
     /**
-     * Get current key
+     * Get current iterator key.
      *
-     * @return string|int
+     * @return int|string Current array key
      */
     public function key(): string|int
     {
@@ -353,8 +355,10 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
     }
 
     /**
-     * Check if current position is valid
-     * For KEY strategy, we need to check if we can load more
+     * Check if current position is valid.
+     * For KEY strategy, we need to check if we can load more.
+     *
+     * @return bool True if current position has valid object
      */
     public function valid(): bool
     {
@@ -374,7 +378,7 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
     }
 
     /**
-     * Reset iterator
+     * Reset iterator to first position.
      */
     public function rewind(): void
     {
@@ -407,6 +411,7 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
      * Check if offset exists.
      *
      * @param mixed $offset Array key to check
+     * @return bool True if offset exists
      */
     public function offsetExists($offset): bool
     {

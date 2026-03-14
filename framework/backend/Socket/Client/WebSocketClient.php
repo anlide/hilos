@@ -241,10 +241,11 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
     }
 
     /**
-     * Handle WebSocket handshake
-     * @throws HandshakeFailedException
-     * @throws SocketException
-     * @throws UnsupportedProtocolVersionException
+     * Handle WebSocket handshake (validate upgrade, send 101 response).
+     *
+     * @throws HandshakeFailedException When handshake validation fails
+     * @throws SocketException When socket error occurs
+     * @throws UnsupportedProtocolVersionException When protocol version is not 13
      */
     private function handleHandshake(): void
     {
@@ -310,10 +311,10 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
     }
 
     /**
-     * Parse request line (first line of HTTP request)
+     * Parse request line (first line of HTTP request).
      *
-     * @param string $request HTTP request
-     * @return array ['method' => string, 'path' => string, 'version' => string]
+     * @param string $request Raw HTTP request string
+     * @return array{method: string, path: string, version: string} Parsed method, path, version
      */
     private function parseRequestLine(string $request): array
     {
@@ -331,10 +332,10 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
     }
 
     /**
-     * Parse query parameters from path
+     * Parse query parameters from path.
      *
-     * @param string $path Path with optional query string (e.g., "/path?key=value&key2=value2")
-     * @return array Query parameters as key-value pairs
+     * @param string $path Path with optional query string (e.g. /path?key=value)
+     * @return array<string, mixed> Query parameters as key-value pairs
      */
     private function parseQueryParams(string $path): array
     {
@@ -350,10 +351,10 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
     }
 
     /**
-     * Parse HTTP headers from request
+     * Parse HTTP headers from request.
      *
-     * @param string $request HTTP request
-     * @return array Headers as key-value pairs
+     * @param string $request Raw HTTP request string
+     * @return array<string, string> Headers as key-value pairs
      */
     private function parseHeaders(string $request): array
     {
@@ -449,9 +450,10 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
     }
 
     /**
-     * Send WebSocket text frame
+     * Send WebSocket text frame.
      *
      * @param string $data Text data to send (UTF-8)
+     * @throws RuntimeException When handshake not completed
      */
     public function sendFrame(string $data): void
     {
@@ -819,11 +821,11 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
      * This method is final to ensure framework-level handshake logic is always executed.
      * Child classes should override onHandshake() for custom behavior.
      *
-     * @param array $headers All HTTP headers from handshake request (key-value pairs)
-     * @param string $acceptKey Sec-WebSocket-Accept value (computed from key, can be used as connection identifier)
-     * @param array $cookies Parsed cookies from Cookie header (key-value pairs)
-     * @param string $clientIp Client IP address (IPv4 or IPv6, empty if unavailable)
-     * @param array $queryParams Query parameters (GET parameters) from request URL
+     * @param array<string, string> $headers HTTP headers from handshake request
+     * @param string $acceptKey Sec-WebSocket-Accept value (connection identifier)
+     * @param array<string, string> $cookies Parsed cookies from Cookie header
+     * @param string $clientIp Client IP (IPv4 or IPv6, empty if unavailable)
+     * @param array<string, string|array> $queryParams Query parameters from request URL
      */
     final protected function handleHandshakeInternal(
         array $headers,
@@ -852,16 +854,16 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
     }
 
     /**
-     * Called when WebSocket handshake is completed
+     * Called when WebSocket handshake is completed.
      *
-     * This method is called after successful handshake validation but before sending
-     * the handshake response. Can be used to inspect headers, cookies, client IP, etc.
+     * Called after successful handshake validation but before sending the response.
+     * Can be used to inspect headers, cookies, client IP, etc.
      *
-     * @param array $headers All HTTP headers from handshake request (key-value pairs)
-     * @param string $acceptKey Sec-WebSocket-Accept value (computed from key, can be used as connection identifier)
-     * @param array $cookies Parsed cookies from Cookie header (key-value pairs)
-     * @param string $clientIp Client IP address (IPv4 or IPv6, empty if unavailable)
-     * @param array $queryParams Query parameters (GET parameters) from request URL
+     * @param array<string, string> $headers HTTP headers from handshake request
+     * @param string $acceptKey Sec-WebSocket-Accept value (connection identifier)
+     * @param array<string, string> $cookies Parsed cookies from Cookie header
+     * @param string $clientIp Client IP (IPv4 or IPv6, empty if unavailable)
+     * @param array<string, string|array> $queryParams Query parameters from request URL
      */
     abstract protected function onHandshake(
         array $headers,

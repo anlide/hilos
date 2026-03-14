@@ -19,6 +19,8 @@ use Hilos\Socket\SocketException;
 class FrontendHtmlServer extends AbstractServer
 {
     /**
+     * Initialize server with host, port, HTML resolver and cache.
+     *
      * @param string $host Listen host
      * @param int $port Listen port
      * @param HtmlResolver $resolver Path resolver for HTML

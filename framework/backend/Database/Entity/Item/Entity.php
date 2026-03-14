@@ -64,9 +64,9 @@ abstract class Entity
     /**
      * Save entity to database.
      *
-     * @param string[] $columns Specific columns to save (empty = all changed columns)
+     * @param array<string> $columns Specific columns to save (empty = all changed columns)
      * @return bool Always true on success
-     * @throws DatabaseException
+     * @throws DatabaseException When database operation fails
      */
     public function save(array $columns = []): bool
     {
@@ -82,7 +82,8 @@ abstract class Entity
      * Save only columns that differ from the original entity state.
      *
      * @param Entity $originalEntity Entity state to compare against
-     * @throws DatabaseException
+     * @return bool True if saved (or no changes)
+     * @throws DatabaseException When database operation fails
      */
     public function saveDiff(Entity $originalEntity): bool
     {
@@ -105,7 +106,7 @@ abstract class Entity
     /**
      * Insert new row and update auto-increment primary key.
      *
-     * @throws DatabaseException
+     * @throws DatabaseException When SQL execution fails
      */
     private function saveInsert(): void
     {
@@ -147,8 +148,8 @@ abstract class Entity
     /**
      * Update existing row.
      *
-     * @param string[] $columns Columns to update (empty = all non-primary columns)
-     * @throws DatabaseException
+     * @param array<string> $columns Columns to update (empty = all non-primary columns)
+     * @throws DatabaseException When SQL execution fails
      */
     private function saveUpdate(array $columns = []): void
     {
@@ -237,6 +238,8 @@ abstract class Entity
 
     /**
      * Check if entity is persisted to a database row.
+     *
+     * @return bool True if entity has DB row
      */
     public function isRelated(): bool
     {
@@ -321,8 +324,8 @@ abstract class Entity
      * @param int $limit Row limit (TableConstants::NO_LIMIT = all rows)
      * @param int $offset Zero-based offset
      *
-     * @return EntityCollection
-     * @throws DatabaseException
+     * @return EntityCollection Entity collection
+     * @throws DatabaseException When SQL execution fails
      */
     private static function getEntities(
         array|string $filters = [],
@@ -366,8 +369,8 @@ abstract class Entity
      * @param int $limit Row limit (TableConstants::NO_LIMIT = all rows)
      * @param int $offset Zero-based offset
      *
-     * @return EntityCollection
-     * @throws DatabaseException
+     * @return EntityCollection Entity collection
+     * @throws DatabaseException When SQL execution fails
      */
     public static function get(
         array|string $filters = [],
@@ -385,8 +388,8 @@ abstract class Entity
      * @param array<string, mixed>|string $filters Column => value pairs or raw WHERE clause
      * @param array<int, mixed>|string $filtersParam Bound parameters for raw WHERE clause
      *
-     * @return int
-     * @throws DatabaseException
+     * @return int Row count
+     * @throws DatabaseException When SQL execution fails
      */
     public static function count(array|string $filters = [], array|string $filtersParam = []): int
     {
@@ -412,7 +415,7 @@ abstract class Entity
      *
      * @param mixed $id Primary key value
      * @return ?static Entity or null if not found
-     * @throws DatabaseException
+     * @throws DatabaseException When SQL execution fails
      */
     public static function getById(mixed $id): ?static
     {
@@ -423,6 +426,8 @@ abstract class Entity
 
     /**
      * Create a new entity instance not related to any database row.
+     *
+     * @return static New entity instance
      */
     public static function getEmpty(): static
     {
@@ -432,8 +437,8 @@ abstract class Entity
     /**
      * Get all entities from the table.
      *
-     * @return EntityCollection
-     * @throws DatabaseException
+     * @return EntityCollection Entity collection
+     * @throws DatabaseException When SQL execution fails
      */
     public static function getAll(): EntityCollection
     {
@@ -454,9 +459,11 @@ abstract class Entity
     }
 
     /**
+     * Magic getter for entity properties.
+     *
      * @param string $name Property name
      * @return mixed Property value
-     * @throws DatabaseException If property does not exist
+     * @throws DatabaseException When property does not exist
      */
     public function __get(string $name): mixed
     {

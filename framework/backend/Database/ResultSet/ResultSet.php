@@ -49,10 +49,12 @@ class ResultSet implements \Iterator, \Countable
     }
 
     /**
-     * Public clone - prevent cloning
+     * Public clone - prevent cloning.
      *
      * Magic methods in PHP must be public to be called.
      * ResultSet instances should not be cloned.
+     *
+     * @throws RuntimeException Always, cloning not allowed
      */
     public function __clone(): void
     {
@@ -60,10 +62,11 @@ class ResultSet implements \Iterator, \Countable
     }
 
     /**
-     * Create from mysqli_result (lazy loading)
+     * Create from mysqli_result (lazy loading).
      *
      * @param ?mysqli_result $result mysqli result or null
-     * @return self
+     * @param bool $resetPointer Reset result pointer to start (false when reusing for streaming)
+     * @return self ResultSet instance
      */
     public static function fromMysqliResult(?mysqli_result $result, bool $resetPointer = true): self
     {
@@ -154,7 +157,9 @@ class ResultSet implements \Iterator, \Countable
     }
 
     /**
-     * Get number of rows in result set
+     * Get number of rows in result set.
+     *
+     * @return int Row count
      */
     public function count(): int
     {
@@ -198,9 +203,9 @@ class ResultSet implements \Iterator, \Countable
     }
 
     /**
-     * Convert to EntityCollection (only if this is an entity query)
+     * Convert to EntityCollection (only if this is an entity query).
      *
-     * @param string $entityClass Entity class name
+     * @param class-string<Entity> $entityClass Entity class name
      * @param string|int|null $primaryKey Primary key column name for indexing
      * @return EntityCollection
      */
@@ -213,7 +218,6 @@ class ResultSet implements \Iterator, \Countable
             mysqli_data_seek($this->mysqliResult, 0);
 
             while ($row = mysqli_fetch_assoc($this->mysqliResult)) {
-                /** @var Entity $entity */
                 $entity = $entityClass::fromRow($row);
 
                 $key = $primaryKey !== null ? ($row[$primaryKey] ?? null) : null;
@@ -224,7 +228,6 @@ class ResultSet implements \Iterator, \Countable
             $this->loadRows();
 
             foreach ($this->rows as $row) {
-                /** @var Entity $entity */
                 $entity = $entityClass::fromRow($row);
 
                 $key = $primaryKey !== null ? ($row[$primaryKey] ?? null) : null;
@@ -246,7 +249,7 @@ class ResultSet implements \Iterator, \Countable
     }
 
     /**
-     * Reset iterator to beginning
+     * Reset iterator to beginning.
      */
     public function rewind(): void
     {
@@ -285,7 +288,7 @@ class ResultSet implements \Iterator, \Countable
     }
 
     /**
-     * Move to next row
+     * Move to next row.
      */
     public function next(): void
     {
@@ -293,7 +296,9 @@ class ResultSet implements \Iterator, \Countable
     }
 
     /**
-     * Check if current position is valid
+     * Check if current position is valid.
+     *
+     * @return bool True if current position has row
      */
     public function valid(): bool
     {

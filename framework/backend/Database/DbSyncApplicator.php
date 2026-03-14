@@ -46,6 +46,7 @@ final class DbSyncApplicator
             return;
         }
 
+        /** @var class-string<Entity> $entityClass */
         $entityClass = $objectClass::ENTITY_CLASS;
         if ($entityClass === '' || !is_subclass_of($entityClass, Entity::class)) {
             return;
@@ -89,6 +90,7 @@ final class DbSyncApplicator
             return;
         }
 
+        /** @var class-string<Entity> $entityClass */
         $entityClass = $objectClass::ENTITY_CLASS;
         $object = $collection[$idString] ?? null;
         if (!$object instanceof Object_) {
