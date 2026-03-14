@@ -65,6 +65,7 @@ class EventLoop
             $wrappedCallback,
         );
 
+        /** @noinspection PhpExpressionResultUnusedInspection */
         $event->add();
         $this->events[$socketId] = $event;
         $this->activeEvents++;
@@ -98,6 +99,7 @@ class EventLoop
             $wrappedCallback,
         );
 
+        /** @noinspection PhpExpressionResultUnusedInspection */
         $event->add();
         $this->events[$socketId . '_write'] = $event;
         $this->activeEvents++;
@@ -114,7 +116,9 @@ class EventLoop
 
         // Remove read event
         if (isset($this->events[$socketId])) {
+            /** @noinspection PhpExpressionResultUnusedInspection */
             $this->events[$socketId]->del();
+            /** @noinspection PhpExpressionResultUnusedInspection */
             $this->events[$socketId]->free();
             unset($this->events[$socketId]);
             $this->activeEvents--;
@@ -122,7 +126,9 @@ class EventLoop
 
         // Remove write event if exists
         if (isset($this->events[$socketId . '_write'])) {
+            /** @noinspection PhpExpressionResultUnusedInspection */
             $this->events[$socketId . '_write']->del();
+            /** @noinspection PhpExpressionResultUnusedInspection */
             $this->events[$socketId . '_write']->free();
             unset($this->events[$socketId . '_write']);
             $this->activeEvents--;
@@ -138,6 +144,7 @@ class EventLoop
     {
         // Non-blocking loop - process ready events and return
         // Exceptions in callbacks are handled by wrapper functions
+        /** @noinspection PhpExpressionResultUnusedInspection */
         $this->base->loop(EventBase::LOOP_NONBLOCK);
     }
 
@@ -156,6 +163,7 @@ class EventLoop
      */
     public function stop(): void
     {
+        /** @noinspection PhpExpressionResultUnusedInspection */
         $this->base->stop();
     }
 
@@ -165,7 +173,9 @@ class EventLoop
     public function cleanup(): void
     {
         foreach ($this->events as $event) {
+            /** @noinspection PhpExpressionResultUnusedInspection */
             $event->del();
+            /** @noinspection PhpExpressionResultUnusedInspection */
             $event->free();
         }
         $this->events = [];
