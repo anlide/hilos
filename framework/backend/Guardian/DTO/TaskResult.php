@@ -7,6 +7,9 @@ namespace Hilos\Guardian\DTO;
 use Hilos\BaseDTO;
 use Hilos\Guardian\Enums\TaskStatus;
 
+/**
+ * Task result DTO for guardian investigation flow.
+ */
 final class TaskResult extends BaseDTO
 {
     /**

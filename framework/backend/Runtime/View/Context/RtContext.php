@@ -25,6 +25,9 @@ abstract class RtContext
     /** @var array<string, RtCollection> */
     protected array $_rtCollections = [];
 
+    /**
+     * Protected constructor. Child classes use init() to create instance.
+     */
     protected function __construct()
     {
     }
@@ -39,6 +42,11 @@ abstract class RtContext
         throw new RtCloneException('Runtime context cannot be cloned');
     }
 
+    /**
+     * Creates new runtime context instance.
+     *
+     * @return static New RtContext instance
+     */
     public static function init(): static
     {
         return new static();
@@ -112,6 +120,11 @@ abstract class RtContext
         );
     }
 
+    /**
+     * Debug info for var_dump (returns all collections as array).
+     *
+     * @return array<string, array<string, array<string, mixed>>> Collection name => items array
+     */
     public function __debugInfo(): array
     {
         return $this->toArray();

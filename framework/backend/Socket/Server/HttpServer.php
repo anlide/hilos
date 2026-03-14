@@ -24,7 +24,6 @@ class HttpServer extends AbstractServer
      */
     public function acceptConnection(): ?HttpClientInterface
     {
-        /** @var ?HttpClientInterface */
         return parent::acceptConnection();
     }
 

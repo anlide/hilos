@@ -31,58 +31,107 @@ abstract class RtCollection implements ArrayAccess, Countable, Iterator
 {
     public const string actions = 'actions';
 
+    /** @var int current iterator position */
     private int $position = 0;
 
-    /** @var RtItem */
+    /** @var array<string, RtItem> state ID => RtItem cache */
     private array $items = [];
 
+    /** @var ?RtStates state collection reference */
     private ?RtStates $_stateCollection = null;
+
+    /** @var ?string collection name for truth source and sync */
     private ?string $_collectionName = null;
+
+    /** @var ?class-string<RtActions> actions class for lazy init */
     private ?string $_actionsClass = null;
+
+    /** @var ?RtActions cached actions instance */
     private ?RtActions $_actions = null;
 
+    /**
+     * Protected constructor. Use init() to create instance.
+     */
     protected function __construct()
     {
     }
 
+    /**
+     * Initialize empty collection.
+     *
+     * @return static New RtCollection instance
+     */
     public static function init(): static
     {
         return new static();
     }
 
-    /** @throws RtCollectionCloneException */
+    /**
+     * Prevents cloning of RtCollection.
+     *
+     * @throws RtCollectionCloneException Always, cloning not allowed
+     */
     public function __clone(): void
     {
         throw new RtCollectionCloneException('RtCollection cannot be cloned');
     }
 
-    /** @throws RtCollectionUnserializeException */
+    /**
+     * Prevents unserialization of RtCollection.
+     *
+     * @throws RtCollectionUnserializeException Always, unserialization not allowed
+     */
     public function __wakeup(): void
     {
         throw new RtCollectionUnserializeException('RtCollection cannot be unserialized');
     }
 
+    /**
+     * Set state collection reference.
+     *
+     * @param RtStates $stateCollection State collection instance
+     */
     public function setStateCollection(RtStates &$stateCollection): void
     {
         $this->_stateCollection = &$stateCollection;
     }
 
+    /**
+     * Set collection name for truth source and sync.
+     *
+     * @param string $name Collection name
+     */
     public function setCollectionName(string $name): void
     {
         $this->_collectionName = $name;
     }
 
+    /**
+     * Get collection name.
+     *
+     * @return ?string Collection name or null if not set
+     */
     public function getCollectionName(): ?string
     {
         return $this->_collectionName;
     }
 
+    /**
+     * Set actions class for lazy initialization.
+     *
+     * @param ?class-string<RtActions> $actionsClass Actions class or null
+     */
     public function setActionsClass(?string $actionsClass): void
     {
         $this->_actionsClass = $actionsClass;
     }
 
-    /** @throws RtCollectionActionsClassException */
+    /**
+     * Get actions instance (creates lazily on first access).
+     *
+     * @return RtActions Actions instance
+     * @throws RtCollectionActionsClassException When actions class not set or invalid
+     */
     protected function getActions(): RtActions
     {
         if ($this->_actions === null) {
@@ -113,7 +162,12 @@ abstract class RtCollection implements ArrayAccess, Countable, Iterator
         return $this->_actions;
     }
 
-    /** @throws RtActionsStateCollectionNullException */
+    /**
+     * Get state collection reference.
+     *
+     * @return RtStates State collection instance
+     * @throws RtActionsStateCollectionNullException When state collection not set
+     */
     public function getStateCollection(): RtStates
     {
         if ($this->_stateCollection === null) {
@@ -124,9 +178,20 @@ abstract class RtCollection implements ArrayAccess, Countable, Iterator
         return $this->_stateCollection;
     }
 
-    /** @param RtState $state RtState instance (reference) */
+    /**
+     * Creates RtItem from RtState (implemented by child classes).
+     *
+     * @param RtState $state State instance (reference)
+     * @return RtItem RtItem wrapper for the state
+     */
     abstract protected function createRtItem(RtState &$state): RtItem;
 
+    /**
+     * Get RtItem for state key (cached or created).
+     *
+     * @param string $key State ID
+     * @return ?RtItem RtItem instance or null if state not found
+     */
     protected function getRtItemForKey(string $key): ?RtItem
     {
         if (isset($this->items[$key])) {
@@ -145,6 +210,12 @@ abstract class RtCollection implements ArrayAccess, Countable, Iterator
         return $item;
     }
 
+    /**
+     * Convert collection to array.
+     *
+     * @param bool $idAsIndex Use state ID as array index
+     * @return array<string|int, array<string, mixed>> Items as associative array
+     */
     public function toArray(bool $idAsIndex = true): array
     {
         $result = [];
@@ -165,6 +236,11 @@ abstract class RtCollection implements ArrayAccess, Countable, Iterator
         return $result;
     }
 
+    /**
+     * Get first RtItem.
+     *
+     * @return ?RtItem First item or null if empty
+     */
     public function first(): ?RtItem
     {
         $stateCollection = $this->getStateCollection();
@@ -175,6 +251,11 @@ abstract class RtCollection implements ArrayAccess, Countable, Iterator
         return $this->getRtItemForKey($firstState->getId());
     }
 
+    /**
+     * Get last RtItem.
+     *
+     * @return ?RtItem Last item or null if empty
+     */
     public function last(): ?RtItem
     {
         $stateCollection = $this->getStateCollection();
@@ -185,13 +266,22 @@ abstract class RtCollection implements ArrayAccess, Countable, Iterator
         return $this->getRtItemForKey($lastState->getId());
     }
 
+    /**
+     * Clears cached RtItem instances and resets iterator.
+     */
     public function clearCache(): void
     {
         $this->items = [];
         $this->position = 0;
     }
 
-    /** @throws RtCollectionPropertyNotFoundException */
+    /**
+     * Magic getter for actions property.
+     *
+     * @param string $name Property name (actions only)
+     * @return RtActions Actions instance when name is "actions"
+     * @throws RtCollectionPropertyNotFoundException When property does not exist
+     */
     public function __get(string $name): mixed
     {
         if ($name === self::actions) {
@@ -202,23 +292,46 @@ abstract class RtCollection implements ArrayAccess, Countable, Iterator
         );
     }
 
+    /**
+     * Debug info for var_dump.
+     *
+     * @return array<string|int, array<string, mixed>> Collection as array
+     */
     public function __debugInfo(): array
     {
         return $this->toArray();
     }
 
+    /**
+     * Check if item exists at offset.
+     *
+     * @param mixed $offset State ID
+     * @return bool True if exists
+     */
     public function offsetExists(mixed $offset): bool
     {
         $stateCollection = $this->getStateCollection();
         return isset($stateCollection[$offset]);
     }
 
+    /**
+     * Get item at offset.
+     *
+     * @param mixed $offset State ID
+     * @return ?RtItem Item or null if not found
+     */
     public function offsetGet(mixed $offset): ?RtItem
     {
         return $this->getRtItemForKey((string)$offset);
     }
 
-    /** @throws RtCollectionDirectSetException */
+    /**
+     * Set item at offset (not supported).
+     *
+     * @param mixed $offset State ID
+     * @param mixed $value Value (ignored)
+     * @throws RtCollectionDirectSetException Always, direct set not allowed
+     */
     public function offsetSet(mixed $offset, mixed $value): void
     {
         throw new RtCollectionDirectSetException(
@@ -226,17 +339,32 @@ abstract class RtCollection implements ArrayAccess, Countable, Iterator
         );
     }
 
+    /**
+     * Remove item at offset.
+     *
+     * @param mixed $offset State ID to remove
+     */
     public function offsetUnset(mixed $offset): void
     {
         unset($this->items[(string)$offset]);
         $this->getStateCollection()->remove((string)$offset);
     }
 
+    /**
+     * Get number of items.
+     *
+     * @return int Item count
+     */
     public function count(): int
     {
         return $this->getStateCollection()->count();
     }
 
+    /**
+     * Get current item in iteration.
+     *
+     * @return ?RtItem Current item or null if position invalid
+     */
     public function current(): ?RtItem
     {
         $keys = array_keys($this->items);
@@ -246,17 +374,28 @@ abstract class RtCollection implements ArrayAccess, Countable, Iterator
         return $this->items[$keys[$this->position]];
     }
 
+    /**
+     * Get current iterator key.
+     *
+     * @return ?string Current state ID or null if invalid
+     */
     public function key(): ?string
     {
         $keys = array_keys($this->items);
         return $keys[$this->position] ?? null;
     }
 
+    /**
+     * Advance iterator to next element.
+     */
     public function next(): void
     {
         ++$this->position;
     }
 
+    /**
+     * Reset iterator to first element.
+     */
     public function rewind(): void
     {
         $this->position = 0;
@@ -269,6 +408,11 @@ abstract class RtCollection implements ArrayAccess, Countable, Iterator
         $stateCollection->rewind();
     }
 
+    /**
+     * Check if current iterator position is valid.
+     *
+     * @return bool True if position has element
+     */
     public function valid(): bool
     {
         $keys = array_keys($this->items);

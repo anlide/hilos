@@ -38,7 +38,7 @@ abstract class RtStates implements Iterator, ArrayAccess, Countable
     private int $backupIndex = 0;
 
     /**
-     * Protected constructor - use static factory methods
+     * Protected constructor - use static factory methods.
      */
     protected function __construct()
     {
@@ -85,7 +85,7 @@ abstract class RtStates implements Iterator, ArrayAccess, Countable
     }
 
     /**
-     * Add state to collection
+     * Add state to collection.
      *
      * @param RtState $state State instance to add
      */
@@ -95,7 +95,7 @@ abstract class RtStates implements Iterator, ArrayAccess, Countable
     }
 
     /**
-     * Remove state from collection by ID
+     * Remove state from collection by ID.
      *
      * @param string $id State ID
      */
@@ -127,7 +127,7 @@ abstract class RtStates implements Iterator, ArrayAccess, Countable
     }
 
     /**
-     * Clear all states from collection
+     * Clear all states from collection.
      */
     public function clear(): void
     {
@@ -180,7 +180,7 @@ abstract class RtStates implements Iterator, ArrayAccess, Countable
     }
 
     /**
-     * Backup current iterator position
+     * Backup current iterator position.
      */
     public function backupIndex(): void
     {
@@ -188,7 +188,7 @@ abstract class RtStates implements Iterator, ArrayAccess, Countable
     }
 
     /**
-     * Restore iterator position from backup
+     * Restore iterator position from backup.
      */
     public function restoreIndex(): void
     {

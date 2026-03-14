@@ -12,7 +12,7 @@ use Hilos\LLM\External\AbstractExternalProvider;
 use Hilos\Utils\Logger;
 
 /**
- * OpenAIImageProvider - External image provider via OpenAI DALL-E API
+ * OpenAIImageProvider - External image provider via OpenAI DALL-E API.
  *
  * Uses /v1/images/generations. Returns ImageResult with base64 or URL.
  * Compatible with OpenAI, OpenRouter, Azure OpenAI image endpoints.

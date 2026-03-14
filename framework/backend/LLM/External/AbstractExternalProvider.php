@@ -9,7 +9,7 @@ use Hilos\LLM\Constants\LLMApiConstants;
 use Hilos\Utils\Logger;
 
 /**
- * AbstractExternalProvider - Base for external LLM providers (OpenAI, OpenRouter, etc.)
+ * AbstractExternalProvider - Base for external LLM providers (OpenAI, OpenRouter, etc.).
  *
  * Common logic: API key authentication, HTTPS, shared HTTP helper.
  *
@@ -19,8 +19,13 @@ use Hilos\Utils\Logger;
  */
 abstract class AbstractExternalProvider
 {
+    /** @var string Base URL of external LLM API */
     protected string $baseUrl;
+
+    /** @var string API key for Bearer authentication */
     protected string $apiKey;
+
+    /** @var ?string Default model name for requests */
     protected ?string $defaultModel;
 
     /**

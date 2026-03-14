@@ -11,8 +11,13 @@ use Hilos\HilosException;
  */
 class DatabaseException extends HilosException
 {
+    /** @var int MySQL error code (0 if not set) */
     protected int $mysqlErrorCode = 0;
+
+    /** @var string MySQL error message (empty if not set) */
     protected string $mysqlErrorMessage = '';
+
+    /** @var string SQL query that caused the error (empty if not set) */
     protected string $query = '';
 
     /**

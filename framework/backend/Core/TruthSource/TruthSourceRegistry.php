@@ -39,7 +39,7 @@ class TruthSourceRegistry extends AbstractTruthSourceRegistry
     /**
      * Get sources storage reference.
      *
-     * @return array<string, array<string, array|true>>
+     * @return array<string, array<string, array|true>> Reference to table→agentId→keys mapping
      */
     protected static function &getSources(): array
     {

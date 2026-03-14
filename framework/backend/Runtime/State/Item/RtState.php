@@ -9,7 +9,7 @@ use Hilos\Runtime\Exception\State\RtStateReadOnlyException;
 use Hilos\Runtime\Exception\State\RtStateUnserializeException;
 
 /**
- * Base class for runtime state objects
+ * Base class for runtime state objects.
  *
  * RtState is the single source of truth for runtime data (analogous to Object_).
  * Child classes must use typed/private fields and expose read access via __get and/or explicit getters.

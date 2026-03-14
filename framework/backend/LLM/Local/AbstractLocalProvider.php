@@ -9,7 +9,7 @@ use Hilos\LLM\Constants\LLMApiConstants;
 use Hilos\Utils\Logger;
 
 /**
- * AbstractLocalProvider - Base for local LLM providers (Ollama, etc.)
+ * AbstractLocalProvider - Base for local LLM providers (Ollama, etc.).
  *
  * Common logic: no API key, local URL, shared HTTP helper.
  *
@@ -18,7 +18,10 @@ use Hilos\Utils\Logger;
  */
 abstract class AbstractLocalProvider
 {
+    /** @var string Base URL of local LLM service */
     protected string $baseUrl;
+
+    /** @var ?string Default model name for requests */
     protected ?string $defaultModel;
 
     /**

@@ -279,11 +279,17 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
         return [TableConstants::RESULT_KEY_OBJECTS => $pageObjects, TableConstants::RESULT_KEY_TOTAL_COUNT => $totalCount];
     }
 
+    /**
+     * Prevents direct instantiation. Use initEmpty(), initDB() or initFullDB() instead.
+     */
     protected function __construct()
     {
     }
 
-    protected function __clone()
+    /**
+     * Prevents cloning of collection instances.
+     */
+    protected function __clone(): void
     {
     }
 

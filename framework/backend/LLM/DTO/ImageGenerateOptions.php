@@ -9,7 +9,7 @@ use Hilos\Constants\LLMConstants;
 use Hilos\LLM\Constants\LLMApiConstants;
 
 /**
- * ImageGenerateOptions - Options for image generation request
+ * ImageGenerateOptions - Options for image generation request.
  *
  * Used for DALL-E and compatible image APIs.
  *

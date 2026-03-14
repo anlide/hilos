@@ -11,9 +11,16 @@ use Hilos\Utils\Helpers\TimeHelper;
  */
 class Migration
 {
+    /** @var ?string path to migration list directory */
     private static ?string $migrationListPath = null;
+
+    /** @var string migration track name */
     private static string $migrationName = 'main';
+
+    /** @var ?string path to routines (stored procedures) directory */
     private static ?string $routinesPath = null;
+
+    /** @var bool whether migration system is initialized */
     private static bool $initialized = false;
 
     /**

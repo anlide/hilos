@@ -29,30 +29,52 @@ use Hilos\TruthSource\RtTruthSourceRegistry;
  */
 abstract class RtActions
 {
+    /** @var RtCollection Rt collection instance for write operations */
     protected RtCollection $collection;
 
-    /** @var callable(RtState): RtItem|null */
+    /** @var ?callable(RtState): RtItem Callback to create RtItem from RtState */
     private $createRtItemCallback = null;
 
-    /** @var callable(): void|null */
+    /** @var ?callable(): void Callback to clear collection cache */
     private $clearCacheCallback = null;
 
+    /**
+     * Creates RtActions instance for the given collection.
+     *
+     * @param RtCollection $collection Rt collection to operate on
+     */
     public function __construct(RtCollection $collection)
     {
         $this->collection = $collection;
     }
 
+    /**
+     * Sets callback for creating RtItem from RtState (called by RtCollection).
+     *
+     * @param callable(RtState): RtItem $callback Factory callback
+     */
     public function setCreateRtItemCallback(callable $callback): void
     {
         $this->createRtItemCallback = $callback;
     }
 
+    /**
+     * Sets callback to clear collection cache after state changes.
+     *
+     * @param callable(): void $callback Clear cache callback
+     */
     public function setClearCacheCallback(callable $callback): void
     {
         $this->clearCacheCallback = $callback;
     }
 
-    /** @throws RtActionsCallbackNotSetException */
+    /**
+     * Creates RtItem from RtState via registered callback.
+     *
+     * @param RtState $state State instance (reference)
+     * @return RtItem RtItem wrapper for the state
+     * @throws RtActionsCallbackNotSetException When createRtItemCallback is not set
+     */
     protected function createRtItemFromState(RtState &$state): RtItem
     {
         if ($this->createRtItemCallback === null) {
@@ -63,7 +85,11 @@ abstract class RtActions
         return ($this->createRtItemCallback)($state);
     }
 
-    /** @throws RtActionsCallbackNotSetException */
+    /**
+     * Clears RtCollection cache via registered callback.
+     *
+     * @throws RtActionsCallbackNotSetException When clearCacheCallback is not set
+     */
     protected function clearCollectionCache(): void
     {
         if ($this->clearCacheCallback === null) {
@@ -74,12 +100,22 @@ abstract class RtActions
         ($this->clearCacheCallback)();
     }
 
-    /** @throws RtActionsStateCollectionNullException */
+    /**
+     * Returns underlying state collection.
+     *
+     * @return RtStates State collection instance
+     * @throws RtActionsStateCollectionNullException When state collection is null
+     */
     protected function getStateCollection(): RtStates
     {
         return $this->collection->getStateCollection();
     }
 
+    /**
+     * Returns collection name (null if not set).
+     *
+     * @return ?string Collection name or null
+     */
     protected function getCollectionName(): ?string
     {
         return $this->collection->getCollectionName();

@@ -8,7 +8,7 @@ use Hilos\LLM\DTO\ImageGenerateOptions;
 use Hilos\LLM\DTO\ImageResult;
 
 /**
- * ImageLLMInterface - Contract for image generation LLM providers
+ * ImageLLMInterface - Contract for image generation LLM providers.
  *
  * Unified interface for image generation from text prompt.
  * Implemented by both local and external providers.

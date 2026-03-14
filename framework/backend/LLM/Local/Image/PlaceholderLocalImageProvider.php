@@ -10,7 +10,7 @@ use Hilos\LLM\DTO\ImageResult;
 use Hilos\LLM\Local\AbstractLocalProvider;
 
 /**
- * PlaceholderLocalImageProvider - Placeholder for local image generation
+ * PlaceholderLocalImageProvider - Placeholder for local image generation.
  *
  * Not implemented yet. Local image generation (e.g. Stable Diffusion, LLaVA)
  * can be added here in the future. Always returns null.

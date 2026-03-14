@@ -9,7 +9,7 @@ use Hilos\Constants\LLMConstants;
 use Hilos\LLM\Constants\LLMApiConstants;
 
 /**
- * ChatGenerateOptions - Options for chat completion request
+ * ChatGenerateOptions - Options for chat completion request.
  *
  * @extends BaseDTO
  */

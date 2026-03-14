@@ -7,6 +7,9 @@ namespace Hilos\Guardian\DTO;
 use Hilos\BaseDTO;
 use Hilos\Guardian\Enums\ActionType;
 
+/**
+ * DTO for guardian action request (action type and payload).
+ */
 final class GuardianActionRequest extends BaseDTO
 {
     /**

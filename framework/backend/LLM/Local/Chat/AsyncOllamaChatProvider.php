@@ -13,7 +13,7 @@ use Hilos\LLM\DTO\Message;
 use Hilos\Utils\Logger;
 
 /**
- * AsyncOllamaChatProvider - Non-blocking local chat provider via Ollama API
+ * AsyncOllamaChatProvider - Non-blocking local chat provider via Ollama API.
  *
  * Uses Ollama /api/generate (completion style) over AsyncHttpClient.
  * Call startGenerate(), then tick() in event loop until hasResult().
@@ -24,7 +24,10 @@ class AsyncOllamaChatProvider implements AsyncChatLLMInterface
 {
     private const string ENDPOINT = '/api/generate';
 
+    /** @var AsyncHttpClient Async HTTP client for Ollama API */
     private AsyncHttpClient $httpClient;
+
+    /** @var ?string Default model name */
     private ?string $defaultModel;
 
     /**

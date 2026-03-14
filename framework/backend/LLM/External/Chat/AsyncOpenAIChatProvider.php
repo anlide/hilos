@@ -13,7 +13,7 @@ use Hilos\LLM\DTO\Message;
 use Hilos\Utils\Logger;
 
 /**
- * AsyncOpenAIChatProvider - Non-blocking external chat provider via OpenAI-compatible API
+ * AsyncOpenAIChatProvider - Non-blocking external chat provider via OpenAI-compatible API.
  *
  * Uses /v1/chat/completions over AsyncHttpClient with HTTPS.
  * Compatible with OpenAI, OpenRouter, Azure OpenAI, etc.
@@ -22,8 +22,13 @@ use Hilos\Utils\Logger;
  */
 class AsyncOpenAIChatProvider implements AsyncChatLLMInterface
 {
+    /** @var AsyncHttpClient Async HTTP client for API requests */
     private AsyncHttpClient $httpClient;
+
+    /** @var ?string Default model name */
     private ?string $defaultModel;
+
+    /** @var string API key for Bearer auth */
     private string $apiKey;
 
     /**
