@@ -96,7 +96,7 @@ class CronRule
     /**
      * Parse cron expression into parts
      *
-     * @return array<string> Array of 5 parts: [minute, hour, day, month, weekday]
+     * @return list<string> Five parts: minute, hour, day, month, weekday
      */
     private function parseExpression(): array
     {

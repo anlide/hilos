@@ -84,7 +84,7 @@ HELP;
      * Initializes migration system, applies pending migrations, handles failed migrations.
      *
      * @param array<string, mixed> $options Parsed options (db-index, to, force)
-     * @param array<int, string> $args Positional args (unused)
+     * @param list<string> $args Positional args (unused)
      * @return int Exit code (0 on success)
      * @throws DatabaseException If database connection or migration fails
      */

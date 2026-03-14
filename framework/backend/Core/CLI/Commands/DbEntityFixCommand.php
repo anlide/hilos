@@ -87,7 +87,7 @@ HELP;
      * Execute the command to fix Entity and EntityCollection files.
      *
      * @param array<string, mixed> $options Parsed options (db-index, table, entity-dir, entity-ns, dry-run)
-     * @param array<int, string> $args Positional args (unused)
+     * @param list<string> $args Positional args (unused)
      * @return int Exit code (0 on success)
      * @throws DatabaseException If database connection or schema init fails
      * @throws RuntimeException If connection not established or Entity dir not found
@@ -1839,7 +1839,7 @@ HELP;
      * Supports both simple and composite foreign keys
      *
      * @param string $content Entity file content
-     * @param array<string> $columnKeys Column keys to remove (can be 'column' or 'col1,col2')
+     * @param list<string> $columnKeys Column keys to remove (can be 'column' or 'col1,col2')
      * @param ReflectionClass $reflection Entity reflection class
      * @return string Updated content
      */
@@ -2919,7 +2919,7 @@ HELP;
      * Parse column key (supports both simple and composite)
      *
      * @param string $colKey Column key: 'column' or 'col1,col2'
-     * @return array<string> Array of column names
+     * @return list<string> Array of column names
      */
     private function parseColumnKey(string $colKey): array
     {

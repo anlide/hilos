@@ -74,7 +74,7 @@ HELP;
      * Execute seed apply command.
      *
      * @param array<string, mixed> $options Parsed CLI options (e.g. db-index)
-     * @param array<int, string> $args Positional arguments (seed identifier)
+     * @param list<string> $args Positional arguments (seed identifier)
      * @return int Exit code (0 = success)
      * @throws DatabaseException If database connection or seed execution fails
      */

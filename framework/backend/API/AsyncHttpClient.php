@@ -133,8 +133,8 @@ class AsyncHttpClient
      * Resets to defaults (GET, constructor path, no body) after each request.
      *
      * @param string $method HTTP method (HttpConstants::METHOD_GET or METHOD_POST)
-     * @param string|null $path Override path (null = use default from constructor)
-     * @param string|null $body Request body (for POST)
+     * @param ?string $path Override path (null = use default from constructor)
+     * @param ?string $body Request body (for POST)
      * @param array<string, string> $headers Extra headers (e.g. Content-Type: application/json)
      * @return $this
      */

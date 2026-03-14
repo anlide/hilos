@@ -20,7 +20,7 @@ class CompositeFilter implements FilterInterface
     /**
      * Creates composite filter from child filters.
      *
-     * @param array<FilterInterface> $filters Child filters
+     * @param list<FilterInterface> $filters Child filters
      * @param FilterLogic $logic Logic operator (AND, OR, XOR)
      */
     public function __construct(array $filters, FilterLogic $logic = FilterLogic::AND)

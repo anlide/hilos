@@ -467,7 +467,7 @@ trait ObjectCollectionFixer
      * Parse ObjectCollection file to extract current structure.
      *
      * @param string $filePath ObjectCollection file path
-     * @param class-string<Object_>|null $expectedObjectClass Expected Object class name (optional)
+     * @param ?class-string<Object_> $expectedObjectClass Expected Object class name (optional)
      * @return array{object_class: string|null, object_alias: string|null, methods: array<string, array<string, mixed>>}|null
      *         Parsed structure or null if failed
      */

@@ -32,7 +32,7 @@ abstract class TableItemActions
      * Creates a mutation entry for broadcasting.
      *
      * @param TableMutationType $type Mutation type (e.g. update, delete)
-     * @param array<string, mixed>|null $row Optional row data for the mutation
+     * @param ?array<string, mixed> $row Optional row data for the mutation
      *
      * @return TableMutationEntry Created mutation entry for broadcasting
      */

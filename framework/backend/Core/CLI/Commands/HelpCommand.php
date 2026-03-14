@@ -80,7 +80,7 @@ HELP;
      * Displays available commands and usage information.
      *
      * @param array<string, mixed> $options Command options (--help for specific command)
-     * @param array<int, string> $args Positional args (command name for detailed help)
+     * @param list<string> $args Positional args (command name for detailed help)
      * @return int Exit code (0)
      */
     public function execute(array $options, array $args): int

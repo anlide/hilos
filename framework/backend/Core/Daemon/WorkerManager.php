@@ -82,7 +82,7 @@ abstract class WorkerManager extends BaseManager
      * Initializes signal router via Hilos::initSignalRouter() and creates agent manager.
      *
      * @param int $workerIndex Worker index
-     * @param array<string> $argv Command line arguments
+     * @param list<string> $argv Command line arguments
      */
     public function __construct(int $workerIndex, array $argv = [])
     {

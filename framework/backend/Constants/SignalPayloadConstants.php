@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Constants;
 
 /**
- * SignalPayloadConstants - Common payload field keys for signals
+ * SignalPayloadConstants - Common payload field keys for signals.
  */
 class SignalPayloadConstants
 {

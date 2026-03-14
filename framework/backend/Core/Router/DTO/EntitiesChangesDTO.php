@@ -31,7 +31,7 @@ class EntitiesChangesDTO extends BaseDTO
     /**
      * Collection keys for which full is a full replace (not merge). Empty = current append behavior.
      *
-     * @var array<int, string>
+     * @var list<string>
      */
     private readonly array $replaceFullKeys;
 
@@ -39,9 +39,9 @@ class EntitiesChangesDTO extends BaseDTO
      * Creates entities changes DTO.
      *
      * @param array<string, DbCollection> $full Full snapshot: collection key => one collection
-     * @param array<string, array<int, array<string, mixed>>> $updates Per-collection updates
-     * @param array<string, array<int, int|string>> $deleted Per-collection deleted IDs
-     * @param array<int, string> $replaceFullKeys Keys where full means replace entire collection
+     * @param array<string, list<array<string, mixed>>> $updates Per-collection updates
+     * @param array<string, list<int|string>> $deleted Per-collection deleted IDs
+     * @param list<string> $replaceFullKeys Keys where full means replace entire collection
      */
     public function __construct(
         array $full = [],

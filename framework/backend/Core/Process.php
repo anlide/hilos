@@ -64,9 +64,9 @@ class Process
      * @param string $command Command to execute (e.g. path to Python script)
      * @param list<string> $params Parameters passed to command (escaped via escapeshellarg)
      * @param ?string $cwd Working directory for the process
-     * @param array<int, string> $stdIn Standard input descriptor (e.g. [pipe, r])
-     * @param array<int, string> $stdOut Standard output descriptor (e.g. [pipe, w])
-     * @param array<int, string> $stdErr Standard error descriptor (e.g. [pipe, w])
+     * @param list<string> $stdIn Standard input descriptor (e.g. [pipe, r])
+     * @param list<string> $stdOut Standard output descriptor (e.g. [pipe, w])
+     * @param list<string> $stdErr Standard error descriptor (e.g. [pipe, w])
      *
      * @throws CouldNotStartException If process cannot be started
      * @throws FailedToSetNonBlockingException If non-blocking mode cannot be set

@@ -260,7 +260,7 @@ class Schema
      * Get table names for a connection index
      *
      * @param ?int $index Connection index
-     * @return array<string> Array of table names
+     * @return list<string> Table names
      */
     public static function getTableNames(?int $index = null): array
     {
@@ -286,7 +286,7 @@ class Schema
      * Get schema statistics for a connection index
      *
      * @param ?int $index Connection index
-     * @return array Statistics array
+     * @return array<string, mixed> Statistics (connectionIndex, initialized, tablesCount, etc.)
      */
     public static function getStatistics(?int $index = null): array
     {

@@ -16,7 +16,7 @@ interface CommandInterface
      * Executes command with options and positional arguments.
      *
      * @param array<string, mixed> $options Parsed command options (--key=value or --flag)
-     * @param array<int, string> $args Positional arguments
+     * @param list<string> $args Positional arguments
      * @return int Exit code (0 = success, non-zero = error)
      */
     public function execute(array $options, array $args): int;

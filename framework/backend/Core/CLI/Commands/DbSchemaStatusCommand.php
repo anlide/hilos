@@ -73,7 +73,7 @@ HELP;
      * Executes schema status command and outputs structure to console.
      *
      * @param array<string, mixed> $options Parsed options (db-index, table, verbose)
-     * @param array<int, string> $args Positional args (unused)
+     * @param list<string> $args Positional args (unused)
      * @return int Exit code (0 on success)
      * @throws RuntimeException If database connection is not established
      */

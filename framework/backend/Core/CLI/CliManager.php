@@ -70,7 +70,7 @@ class CliManager
     /**
      * Initializes CLI manager with command line arguments.
      *
-     * @param array<string> $argv Command line arguments (from global $argv)
+     * @param list<string> $argv Command line arguments (from global $argv)
      */
     public function __construct(array $argv)
     {

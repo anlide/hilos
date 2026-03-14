@@ -70,7 +70,7 @@ HELP;
      * Polls MySQL connection until ready or timeout.
      *
      * @param array<string, mixed> $options Parsed options (interval, timeout)
-     * @param array<int, string> $args Positional args (unused)
+     * @param list<string> $args Positional args (unused)
      * @return int Exit code (0 on success)
      */
     public function execute(array $options, array $args): int

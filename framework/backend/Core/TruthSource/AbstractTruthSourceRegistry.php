@@ -34,7 +34,7 @@ abstract class AbstractTruthSourceRegistry
      * Register agent as truth source for collection.
      *
      * @param string $collection Collection/table name
-     * @param array<int, string>|true $keys Array of specific keys or true for all keys
+     * @param list<string>|true $keys Array of specific keys or true for all keys
      * @param string $agentId Agent ID from agent->getId()
      */
     public static function register(string $collection, array|true $keys, string $agentId): void
@@ -97,7 +97,7 @@ abstract class AbstractTruthSourceRegistry
      * Check if keys are truth source (don't need external load).
      *
      * @param string $collection Collection/table name
-     * @param array<int, string> $keys Keys to check
+     * @param list<string> $keys Keys to check
      * @return bool True if all given keys are covered by a truth source
      */
     public static function isTruthSource(string $collection, array $keys): bool

@@ -20,7 +20,7 @@ final class InMemoryTableFilter
     /**
      * Applies search, sort and pagination to an in-memory row set.
      *
-     * @param array<int, array<string, mixed>> $rows All rows from the data source
+     * @param list<array<string, mixed>> $rows All rows from the data source
      * @param TableQueryDTO $query Query parameters
      *
      * @return TableResultDTO Filtered/sorted/paginated result

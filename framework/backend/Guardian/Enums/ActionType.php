@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Hilos\Guardian\Enums;
 
+/**
+ * Action types for guardian capabilities and investigations.
+ */
 enum ActionType: string
 {
     case CREATE_REPORT = 'create_report';

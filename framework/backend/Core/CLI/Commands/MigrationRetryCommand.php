@@ -74,7 +74,7 @@ HELP;
      * Executes retry command for failed migration.
      *
      * @param array<string, mixed> $options Parsed options (e.g. db-index)
-     * @param array<int, string> $args Positional args (version required)
+     * @param list<string> $args Positional args (version required)
      * @return int Exit code (0 on success)
      */
     public function execute(array $options, array $args): int

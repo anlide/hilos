@@ -45,7 +45,7 @@ class Seed
      *
      * Useful to hint user when no valid seeds exist but directory has .sql files.
      *
-     * @return array<string> Basenames of non-matching .sql files
+     * @return list<string> Basenames of non-matching .sql files
      */
     public static function getUnmatchedSqlBasenames(): array
     {
@@ -74,7 +74,7 @@ class Seed
      *
      * Only files matching pattern NNN_name.sql are included.
      *
-     * @return array<string> Full paths to seed files
+     * @return list<string> Full paths to seed files
      */
     public static function getAvailableSeeds(): array
     {

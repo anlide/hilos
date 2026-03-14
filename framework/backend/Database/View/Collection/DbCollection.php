@@ -422,7 +422,7 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
      *
      * @param TableQueryDTO $query Query parameters
      *
-     * @return array{rows: array<int, array<string, mixed>>, totalCount: int}
+     * @return array{rows: list<array<string, mixed>>, totalCount: int}
      * @throws DatabaseException On query or connection error
      */
     public function queryPage(TableQueryDTO $query): array

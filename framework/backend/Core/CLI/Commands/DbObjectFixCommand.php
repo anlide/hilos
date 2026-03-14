@@ -84,7 +84,7 @@ HELP;
      * Execute the command to fix Object and ObjectCollection files.
      *
      * @param array<string, mixed> $options Parsed options (table, object-dir, entity-dir, dry-run, force-repair)
-     * @param array<int, string> $args Positional args (unused)
+     * @param list<string> $args Positional args (unused)
      * @return int Exit code (0 on success)
      * @throws RuntimeException If critical errors occur during processing
      */

@@ -33,6 +33,8 @@ interface AsyncChatLLMInterface
 
     /**
      * Check if generation result is available.
+     *
+     * @return bool True if result is ready for retrieval
      */
     public function hasResult(): bool;
 
@@ -45,6 +47,8 @@ interface AsyncChatLLMInterface
 
     /**
      * Check if generation is in progress.
+     *
+     * @return bool True if generation is running
      */
     public function isBusy(): bool;
 

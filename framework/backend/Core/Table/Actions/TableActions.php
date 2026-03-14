@@ -31,7 +31,7 @@ abstract class TableActions
      *
      * @param TableMutationType $type Mutation type (e.g. insert, update, delete)
      * @param string|int $rowId Row/item ID affected
-     * @param array<string, mixed>|null $row Optional row data for the mutation
+     * @param ?array<string, mixed> $row Optional row data for the mutation
      *
      * @return TableMutationEntry Created mutation entry for broadcasting
      */

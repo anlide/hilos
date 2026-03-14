@@ -76,7 +76,7 @@ HELP;
      * Compares Entity definitions with database schema and displays diff.
      *
      * @param array<string, mixed> $options Parsed options (db-index, table, entity-dir, entity-ns)
-     * @param array<int, string> $args Positional args (unused)
+     * @param list<string> $args Positional args (unused)
      * @return int Exit code (0 on success)
      * @throws RuntimeException If database connection is not established or Entity dir not found
      */

@@ -39,8 +39,7 @@ abstract class TableContext
      * Returns a table definition by name.
      *
      * @param string $name Table key
-     *
-     * @return TableDefinition|null Definition or null if not found
+     * @return ?TableDefinition Definition or null if not found
      */
     public function get(string $name): ?TableDefinition
     {

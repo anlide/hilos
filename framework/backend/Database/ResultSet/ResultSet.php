@@ -20,7 +20,7 @@ class ResultSet implements \Iterator, \Countable
     /** @var ?mysqli_result Original mysqli result (if not loaded yet) */
     private ?mysqli_result $mysqliResult = null;
 
-    /** @var array<int, array<string, mixed>> Raw rows from database (lazy loaded) */
+    /** @var list<array<string, mixed>> Raw rows from database (lazy loaded) */
     private array $rows = [];
 
     /** @var list<string> Column names */
@@ -131,7 +131,7 @@ class ResultSet implements \Iterator, \Countable
      *
      * Advances the internal pointer, so each call returns the next row.
      *
-     * @return array<string, mixed>|null Associative array or null if no more rows
+     * @return ?array<string, mixed> Associative array or null if no more rows
      */
     public function row(): ?array
     {
@@ -186,7 +186,7 @@ class ResultSet implements \Iterator, \Countable
     /**
      * Get first row.
      *
-     * @return array<string, mixed>|null First row or null if empty
+     * @return ?array<string, mixed> First row or null if empty
      */
     public function first(): ?array
     {
@@ -266,7 +266,7 @@ class ResultSet implements \Iterator, \Countable
     /**
      * Get current row.
      *
-     * @return array<string, mixed>|null Current row or null if position invalid
+     * @return ?array<string, mixed> Current row or null if position invalid
      */
     public function current(): ?array
     {

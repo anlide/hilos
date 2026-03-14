@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Hilos\API\Router;
 
 /**
- * RouteRegistry - Stores and matches routes
+ * RouteRegistry - Stores and matches routes.
  *
  * Maintains a registry of all registered routes and provides matching
  * functionality to find the appropriate route for a given request.
@@ -43,7 +43,7 @@ class RouteRegistry
      *
      * @param string $method HTTP method
      * @param string $path URL path
-     * @return array<string, mixed>|null Route data (method, path, handler, pattern, params) or null if not found
+     * @return ?array<string, mixed> Route data (method, path, handler, pattern, params) or null if not found
      */
     public function match(string $method, string $path): ?array
     {

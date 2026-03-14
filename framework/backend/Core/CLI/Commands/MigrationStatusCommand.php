@@ -67,7 +67,7 @@ HELP;
      * Executes migration status command and outputs status to console.
      *
      * @param array<string, mixed> $options Parsed options (e.g. db-index)
-     * @param array<int, string> $args Positional arguments (unused)
+     * @param list<string> $args Positional arguments (unused)
      * @return int Exit code (0 on success)
      */
     public function execute(array $options, array $args): int

@@ -76,7 +76,7 @@ HELP;
      * Executes migration down command and rolls back to target version.
      *
      * @param array<string, mixed> $options Parsed options (e.g. db-index, force)
-     * @param array<int, string> $args Positional args (target version required)
+     * @param list<string> $args Positional args (target version required)
      * @return int Exit code (0 on success)
      */
     public function execute(array $options, array $args): int

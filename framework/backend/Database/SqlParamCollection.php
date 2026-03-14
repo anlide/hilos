@@ -24,7 +24,7 @@ class SqlParamCollection implements ArrayAccess, Countable, Iterator
     /**
      * Creates collection from array of values (auto-detects types for non-SqlParam).
      *
-     * @param array<int, mixed> $values Values (SqlParam preserved, others wrapped with auto())
+     * @param list<mixed> $values Values (SqlParam preserved, others wrapped with auto())
      * @return self New collection
      */
     public static function fromArray(array $values): self
@@ -65,7 +65,7 @@ class SqlParamCollection implements ArrayAccess, Countable, Iterator
     /**
      * Returns all parameter values for bind_param.
      *
-     * @return array<int, mixed> Values in order
+     * @return list<mixed> Values in order
      */
     public function getValues(): array
     {
@@ -85,7 +85,7 @@ class SqlParamCollection implements ArrayAccess, Countable, Iterator
     /**
      * Returns value references for bind_param (kept for future use).
      *
-     * @return array<int, mixed> Value references (or copies for readonly)
+     * @return list<mixed> Value references (or copies for readonly)
      */
     public function getValueReferences(): array
     {

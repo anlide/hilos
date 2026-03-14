@@ -32,7 +32,7 @@ enum AppEnv: string
     /**
      * Map: canonical value (enum case value) -> aliases including canonical.
      *
-     * @return array<string, list<string>>
+     * @return array<string, list<string>> Mapping from canonical value to alias list
      */
     private static function aliases(): array
     {
@@ -50,8 +50,8 @@ enum AppEnv: string
      *
      * Accepts canonical values and common aliases (case-insensitive).
      *
-     * @param string|null $value Raw APP_ENV value
-     * @return self|null Matched enum case or null when unrecognized
+     * @param ?string $value Raw APP_ENV value
+     * @return ?self Matched enum case or null when unrecognized
      */
     public static function fromString(?string $value): ?self
     {

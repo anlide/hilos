@@ -76,7 +76,7 @@ HELP;
      * Displays current daemon status with real-time data from HTTP endpoint.
      *
      * @param array<string, mixed> $options Parsed options (unused)
-     * @param array<int, string> $args Positional args (unused)
+     * @param list<string> $args Positional args (unused)
      * @return int Exit code (0 on success)
      */
     public function execute(array $options, array $args): int

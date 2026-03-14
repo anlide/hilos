@@ -201,7 +201,7 @@ class EntityCollection implements ArrayAccess, Countable, Iterator
      * Map collection via callback.
      *
      * @param callable(Entity): mixed $callback Callback per entity
-     * @return array<int, mixed> Mapped values
+     * @return array<int|string, mixed> Mapped values (keys preserved from entities)
      */
     public function map(callable $callback): array
     {

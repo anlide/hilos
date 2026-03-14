@@ -18,7 +18,7 @@ readonly class TableMutationEntry
      *
      * @param TableMutationType $type Mutation type (created, updated, deleted)
      * @param string|int $rowId Affected row ID
-     * @param array<string, mixed>|null $row Optional row data for create/update
+     * @param ?array<string, mixed> $row Optional row data for create/update
      */
     public function __construct(
         public TableMutationType $type,

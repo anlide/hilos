@@ -13,7 +13,7 @@ readonly class IndexInfo
      * Creates index info instance.
      *
      * @param string $name Index name
-     * @param array<string> $columns Column names in index
+     * @param list<string> $columns Column names in index
      * @param bool $unique Whether index is unique
      */
     public function __construct(

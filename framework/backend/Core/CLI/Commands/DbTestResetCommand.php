@@ -68,7 +68,7 @@ HELP;
      * Resets test database: drops, recreates, migrates and seeds.
      *
      * @param array<string, mixed> $options Parsed options (unused)
-     * @param array<int, string> $args Positional args (unused)
+     * @param list<string> $args Positional args (unused)
      * @return int Exit code (0 on success)
      * @throws DatabaseException If migration or seed fails
      */

@@ -50,7 +50,7 @@ class ArgumentHelper
      * Parses --worker-id=N argument from $argv array.
      * Throws InvalidWorkerIdException if worker index is missing or invalid.
      *
-     * @param array<string> $argv Command line arguments
+     * @param list<string> $argv Command line arguments
      * @return int Worker index (positive integer)
      * @throws InvalidWorkerIdException If worker index is missing or not a positive integer
      */
@@ -93,7 +93,7 @@ class ArgumentHelper
     /**
      * Check if monopolistic flag is present in arguments
      *
-     * @param array<string> $argv Command line arguments
+     * @param list<string> $argv Command line arguments
      * @return bool True if --monopolistic flag is present
      */
     public static function isMonopolistic(array $argv): bool
@@ -117,7 +117,7 @@ class ArgumentHelper
      *
      * @param int $workerIndex Worker index
      * @param bool $monopolistic Whether worker is monopolistic
-     * @return array<string> Array of command line arguments
+     * @return list<string> Array of command line arguments
      */
     public static function buildWorkerArgs(int $workerIndex, bool $monopolistic = false): array
     {

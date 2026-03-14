@@ -17,7 +17,7 @@ class TableResultDTO extends BaseDTO
     /**
      * Creates table result DTO.
      *
-     * @param array<int, array<string, mixed>> $rows Result rows (assoc arrays, frontend-ready)
+     * @param list<array<string, mixed>> $rows Result rows (assoc arrays, frontend-ready)
      * @param int $totalCount Total rows matching the query (before pagination)
      * @param int $offset Zero-based offset used
      * @param int $limit Page size used (TableConstants::NO_LIMIT = all rows)

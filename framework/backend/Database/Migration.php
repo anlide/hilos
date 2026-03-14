@@ -97,7 +97,7 @@ class Migration
     /**
      * Returns list of available migrations from migration path.
      *
-     * @return array<int> Sorted unique migration indices
+     * @return list<int> Sorted unique migration indices
      */
     public static function getAvailableMigrations(): array
     {
