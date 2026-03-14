@@ -4,10 +4,15 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Guardian\Policies;
 
+/**
+ * GuardianPolicySet - Default policy configurations for guardian agents.
+ */
 final class GuardianPolicySet
 {
     /**
-     * @return array<string, mixed>
+     * Default policy for ops guardian agent.
+     *
+     * @return array<string, mixed> Policy config (name, cooldownSec, allowedCategories)
      */
     public static function opsPolicy(): array
     {
@@ -19,7 +24,9 @@ final class GuardianPolicySet
     }
 
     /**
-     * @return array<string, mixed>
+     * Default policy for chat situation guardian agent.
+     *
+     * @return array<string, mixed> Policy config (name, cooldownSec, allowedCategories)
      */
     public static function chatSituationPolicy(): array
     {

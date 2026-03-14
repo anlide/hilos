@@ -569,8 +569,10 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
     }
 
     /**
+     * Get item by primary key.
+     *
      * @param mixed $offset Primary key ID
-     * @return T|null
+     * @return T|null Item or null
      */
     public function offsetGet(mixed $offset): ?DbItem
     {
@@ -578,7 +580,11 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
     }
 
     /**
-     * @throws DirectSetException
+     * Set item by key (not supported).
+     *
+     * @param mixed $offset Key
+     * @param mixed $value Value
+     * @throws DirectSetException Always
      */
     public function offsetSet(mixed $offset, mixed $value): void
     {

@@ -38,8 +38,10 @@ final class Hilos extends \Hilos\Hilos
     }
 
     /**
-     * @return ?RtChatContext The runtime context instance, or null if runtime is not available.
-     * @throws StateCollectionNotFoundException if a required state collection is not found in the runtime.
+     * Creates and returns the runtime context instance.
+     *
+     * @return ?RtChatContext Runtime context or null if runtime is not available
+     * @throws StateCollectionNotFoundException If required state collection is not found
      */
     protected static function createRuntime(): ?RtContext
     {

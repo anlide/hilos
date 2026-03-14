@@ -8,7 +8,7 @@ use Hilos\API\Router\HttpRouter;
 use Hilos\Socket\Client\ClientInterface;
 
 /**
- * HttpClientInterface - Interface for HTTP client implementations
+ * HttpClientInterface - Interface for HTTP client implementations.
  *
  * Extends ClientInterface with HTTP-specific methods.
  */

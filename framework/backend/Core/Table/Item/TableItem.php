@@ -24,6 +24,8 @@ class TableItem
     private ?TableItemActions $_actions = null;
 
     /**
+     * Creates table item for a single row.
+     *
      * @param TableDefinition $definition Parent table definition
      * @param string|int $id Row identifier
      */
@@ -35,6 +37,8 @@ class TableItem
 
     /**
      * Returns the row identifier.
+     *
+     * @return string|int Row ID
      */
     public function getId(): string|int
     {
@@ -44,6 +48,8 @@ class TableItem
     /**
      * Magic getter for lazy-loaded properties (e.g. actions).
      *
+     * @param string $name Property name (e.g. actions)
+     * @return TableItemActions Property value (throws for unknown property)
      * @throws TablePropertyNotFoundException If the property does not exist
      */
     public function __get(string $name): mixed
@@ -57,6 +63,9 @@ class TableItem
 
     /**
      * Magic isset for properties available via __get.
+     *
+     * @param string $name Property name
+     * @return bool True if property exists and is non-null
      */
     public function __isset(string $name): bool
     {
@@ -66,6 +75,7 @@ class TableItem
     /**
      * Lazily creates and returns the item actions instance.
      *
+     * @return TableItemActions Item actions (update, delete, etc.)
      * @throws TableActionsNotConfiguredException If item actions class is not configured
      */
     private function getActions(): TableItemActions

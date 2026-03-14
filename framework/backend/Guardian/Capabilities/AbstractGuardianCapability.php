@@ -10,8 +10,11 @@ use Hilos\Guardian\DTO\CapabilityResult;
 abstract class AbstractGuardianCapability implements GuardianCapabilityInterface
 {
     /**
-     * @param array<string, mixed> $payload
-     * @param array<string, mixed> $context
+     * Execute capability with payload and context.
+     *
+     * @param array<string, mixed> $payload Capability payload
+     * @param array<string, mixed> $context Execution context
+     * @return CapabilityResult Result of execution
      */
     abstract public function execute(array $payload = [], array $context = []): CapabilityResult;
 }

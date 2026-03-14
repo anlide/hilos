@@ -24,14 +24,12 @@ abstract class DbActions
 {
     public const string object = 'object';
 
-    /**
-     * DbItem instance this actions belong to.
-     *
-     * @var DbItem
-     */
+    /** @var DbItem DbItem instance this actions belong to */
     protected DbItem $item;
 
     /**
+     * Creates Db item actions instance.
+     *
      * @param DbItem $item DbItem instance
      */
     public function __construct(DbItem $item)
@@ -40,7 +38,11 @@ abstract class DbActions
     }
 
     /**
-     * @throws \InvalidArgumentException
+     * Returns object property.
+     *
+     * @param string $name Property name (object only)
+     * @return Object_ Object instance
+     * @throws \InvalidArgumentException If property unknown
      */
     public function __get(string $name): mixed
     {
@@ -51,9 +53,9 @@ abstract class DbActions
     }
 
     /**
-     * Get object collection for this item.
+     * Gets object collection for this item.
      *
-     * @return ?Objects
+     * @return ?Objects Object collection or null if no parent
      */
     protected function getObjectCollection(): ?Objects
     {
@@ -61,12 +63,12 @@ abstract class DbActions
     }
 
     /**
-     * Ensure write is allowed and collection is loaded if needed.
+     * Ensures write is allowed and collection is loaded if needed.
      *
-     * @throws ObjectCollectionNullException
-     * @throws UnknownLazyStrategyException
-     * @throws WriteNotAllowedException
-     * @throws DatabaseException
+     * @throws ObjectCollectionNullException If object collection is null (manual)
+     * @throws UnknownLazyStrategyException If lazy strategy is unknown
+     * @throws WriteNotAllowedException If write not allowed by truth source
+     * @throws DatabaseException If load fails
      */
     protected function ensureCanWrite(): void
     {

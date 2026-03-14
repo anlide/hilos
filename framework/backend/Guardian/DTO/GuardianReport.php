@@ -6,11 +6,18 @@ namespace Hilos\Guardian\DTO;
 
 use Hilos\BaseDTO;
 
+/**
+ * Guardian report DTO with findings and metadata.
+ */
 final class GuardianReport extends BaseDTO
 {
     /**
-     * @param list<GuardianFinding> $findings
-     * @param array<string, mixed> $meta
+     * Creates guardian report.
+     *
+     * @param string $guardianType Guardian type identifier
+     * @param string $summary Report summary
+     * @param list<GuardianFinding> $findings Finding list (default empty)
+     * @param array<string, mixed> $meta Additional metadata (default empty)
      */
     public function __construct(
         public readonly string $guardianType,
@@ -20,6 +27,11 @@ final class GuardianReport extends BaseDTO
     ) {
     }
 
+    /**
+     * Converts report to array for serialization.
+     *
+     * @return array<string, mixed> Report as associative array
+     */
     public function toArray(): array
     {
         return [
@@ -33,6 +45,12 @@ final class GuardianReport extends BaseDTO
         ];
     }
 
+    /**
+     * Creates report from array (e.g. from DB or JSON).
+     *
+     * @param array<string, mixed> $data Input data (guardianType, summary, findings, meta)
+     * @return static New GuardianReport instance
+     */
     public static function fromArray(array $data): static
     {
         $rawFindings = is_array($data['findings'] ?? null) ? $data['findings'] : [];

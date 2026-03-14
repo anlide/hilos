@@ -5,8 +5,9 @@ declare(strict_types=1);
 namespace Demo\Chat\Constants;
 
 /**
- * HTTP Headers constants
- * Project-specific HTTP header names
+ * HTTP Headers constants.
+ *
+ * Project-specific HTTP header names.
  */
 final class HttpHeaders
 {

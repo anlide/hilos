@@ -8,13 +8,15 @@ use Hilos\BaseDTO;
 use Hilos\Core\Router\SignalDataInterface;
 
 /**
- * BotAgentSignalData - DTO for bot agent lifecycle signals (start/stop/reload)
+ * BotAgentSignalData - DTO for bot agent lifecycle signals (start/stop/reload).
  *
  * Used by BOT_AGENT_START, BOT_AGENT_STOP, BOT_AGENT_RELOAD signals.
  */
 class BotAgentSignalData extends BaseDTO implements SignalDataInterface
 {
     /**
+     * Creates bot agent signal DTO.
+     *
      * @param int $botId Bot ID
      */
     public function __construct(
@@ -23,9 +25,9 @@ class BotAgentSignalData extends BaseDTO implements SignalDataInterface
     }
 
     /**
-     * Convert DTO to array
+     * Convert DTO to array for transport.
      *
-     * @return array<string, mixed>
+     * @return array<string, mixed> DTO data as array
      */
     public function toArray(): array
     {
@@ -35,7 +37,7 @@ class BotAgentSignalData extends BaseDTO implements SignalDataInterface
     }
 
     /**
-     * Create DTO from array (for deserialization)
+     * Create DTO from array (for deserialization).
      *
      * @param array<string, mixed> $data Source data
      * @return static DTO instance

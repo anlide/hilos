@@ -6,10 +6,16 @@ namespace Hilos\Guardian\Telemetry;
 
 use Hilos\Utils\Logger;
 
+/**
+ * Guardian telemetry logging helper.
+ */
 final class GuardianTelemetry
 {
     /**
-     * @param array<string, mixed> $context
+     * Log guardian telemetry event.
+     *
+     * @param string $name Event name
+     * @param array<string, mixed> $context Event context data
      */
     public static function event(string $name, array $context = []): void
     {

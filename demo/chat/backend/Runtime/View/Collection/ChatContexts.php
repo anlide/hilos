@@ -53,31 +53,45 @@ class ChatContexts extends RtCollection
      */
     public function offsetGet(mixed $offset): ?ChatContext
     {
-        return parent::offsetGet($offset);
+        /** @var ?ChatContext $item */
+        $item = parent::offsetGet($offset);
+        return $item;
     }
 
     /**
+     * Get first item in collection.
+     *
      * @return ?ChatContext First item or null
      */
     public function first(): ?ChatContext
     {
-        return parent::first();
+        /** @var ?ChatContext $item */
+        $item = parent::first();
+        return $item;
     }
 
     /**
+     * Get last item in collection.
+     *
      * @return ?ChatContext Last item or null
      */
     public function last(): ?ChatContext
     {
-        return parent::last();
+        /** @var ?ChatContext $item */
+        $item = parent::last();
+        return $item;
     }
 
     /**
+     * Get current item in iteration.
+     *
      * @return ?ChatContext Current item or null
      */
     public function current(): ?ChatContext
     {
-        return parent::current();
+        /** @var ?ChatContext $item */
+        $item = parent::current();
+        return $item;
     }
 
     /**
@@ -88,12 +102,16 @@ class ChatContexts extends RtCollection
      */
     protected function getRtItemForKey(string $key): ?ChatContext
     {
-        return parent::getRtItemForKey($key);
+        /** @var ?ChatContext $item */
+        $item = parent::getRtItemForKey($key);
+        return $item;
     }
 
     protected function getActions(): ChatContextsActions
     {
-        return parent::getActions();
+        /** @var ChatContextsActions $actions */
+        $actions = parent::getActions();
+        return $actions;
     }
 
     public function __get(string $name): ChatContextsActions

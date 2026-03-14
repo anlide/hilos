@@ -8,11 +8,13 @@ use Hilos\BaseDTO;
 use Hilos\Core\Router\SignalDataInterface;
 
 /**
- * ModerationBotResultSignalData - DTO for bot message moderation result (ModeratorAgent → ChatAgent)
+ * ModerationBotResultSignalData - DTO for bot message moderation result (ModeratorAgent → ChatAgent).
  */
 class ModerationBotResultSignalData extends BaseDTO implements SignalDataInterface
 {
     /**
+     * Creates moderation bot result signal DTO.
+     *
      * @param int $botId Bot ID
      * @param string $message Message text
      * @param bool $allow Whether message is allowed

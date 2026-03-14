@@ -12,6 +12,13 @@ use Throwable;
  */
 class AgentDaemonCreationFailedException extends HilosException
 {
+    /**
+     * Creates exception for failed agent daemon creation.
+     *
+     * @param string $agentType Agent type identifier
+     * @param ?string $agentIndex Agent index (optional, e.g. bot id)
+     * @param ?Throwable $previous Previous exception for chaining
+     */
     public function __construct(string $agentType, ?string $agentIndex = null, ?Throwable $previous = null)
     {
         $agentId = $agentIndex !== null ? $agentType . ':' . $agentIndex : $agentType;

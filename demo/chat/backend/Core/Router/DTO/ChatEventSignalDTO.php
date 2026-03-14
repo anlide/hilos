@@ -11,7 +11,7 @@ use Hilos\Core\Table\DTO\TableResultDTO;
 use RuntimeException;
 
 /**
- * ChatEventSignalDTO - Signal data for chat events
+ * ChatEventSignalDTO - Signal data for chat events.
  *
  * Simple pass-through of entities to frontend.
  * Optional tables payload for get() responses (e.g. admin page with users table).
@@ -19,6 +19,8 @@ use RuntimeException;
 class ChatEventSignalDTO extends SignalData implements SignalDataInterface
 {
     /**
+     * Creates chat event signal DTO.
+     *
      * @param EntitiesChangesDTO $entities Entity changes
      * @param array<string, TableResultDTO> $tables Table key → result DTO
      */
@@ -26,6 +28,7 @@ class ChatEventSignalDTO extends SignalData implements SignalDataInterface
         public readonly EntitiesChangesDTO $entities,
         public readonly array $tables = [],
     ) {
+        parent::__construct($this->toArray());
     }
 
     /**

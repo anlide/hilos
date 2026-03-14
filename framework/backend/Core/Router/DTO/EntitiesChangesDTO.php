@@ -10,7 +10,7 @@ use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 use Hilos\Database\View\Collection\DbCollection;
 
 /**
- * EntitiesChangesDTO - Entity changes payload
+ * EntitiesChangesDTO - Entity changes payload.
  *
  * Holds entity-related changes for transport.
  * Full block stores one DbCollection per key; serialization (toArray with toFrontend/idAsIndex)
@@ -36,9 +36,11 @@ class EntitiesChangesDTO extends BaseDTO
     private readonly array $replaceFullKeys;
 
     /**
+     * Creates entities changes DTO.
+     *
      * @param array<string, DbCollection> $full Full snapshot: collection key => one collection
-     * @param array<string, array<int, array<string, mixed>>> $updates
-     * @param array<string, array<int, int|string>> $deleted
+     * @param array<string, array<int, array<string, mixed>>> $updates Per-collection updates
+     * @param array<string, array<int, int|string>> $deleted Per-collection deleted IDs
      * @param array<int, string> $replaceFullKeys Keys where full means replace entire collection
      */
     public function __construct(

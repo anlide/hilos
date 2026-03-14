@@ -17,6 +17,8 @@ use Hilos\Core\Table\Mutation\TableMutationType;
 abstract class TableItemActions
 {
     /**
+     * Creates item actions for a single table row.
+     *
      * @param TableDefinition $definition Table definition this actions instance belongs to
      * @param string|int $itemId ID of the item these actions operate on
      */
@@ -32,7 +34,7 @@ abstract class TableItemActions
      * @param TableMutationType $type Mutation type (e.g. update, delete)
      * @param array<string, mixed>|null $row Optional row data for the mutation
      *
-     * @return TableMutationEntry
+     * @return TableMutationEntry Created mutation entry for broadcasting
      */
     protected function mutation(TableMutationType $type, ?array $row = null): TableMutationEntry
     {

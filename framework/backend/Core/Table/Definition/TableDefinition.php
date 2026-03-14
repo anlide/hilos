@@ -22,7 +22,7 @@ use Hilos\Core\Table\TableConstants;
  * Base table definition — one per registered table.
  *
  * Stateless: each get() call pulls fresh data from the data source.
- * Supports ArrayAccess for item-level operations: $table->bots[$id]->actions->delete()
+ * Supports ArrayAccess for item-level operations: $table->bots[$id]->actions->delete().
  *
  * @implements ArrayAccess<string|int, TableItem>
  */
@@ -41,6 +41,8 @@ abstract class TableDefinition implements ArrayAccess
     private ?string $_itemActionsClass = null;
 
     /**
+     * Creates table definition with optional data source.
+     *
      * @param ?TableDataSourceInterface $dataSource Optional. If null, createDataSource() is called.
      */
     public function __construct(?TableDataSourceInterface $dataSource = null)
@@ -53,8 +55,7 @@ abstract class TableDefinition implements ArrayAccess
      * Override to provide data source when constructor is called without args.
      * Subclasses that support parameterless construction must override.
      *
-     * @return TableDataSourceInterface
-     *
+     * @return TableDataSourceInterface Created data source instance
      * @throws TableDataSourceNotProvidedException If not overridden and no data source passed
      */
     protected function createDataSource(): TableDataSourceInterface
@@ -72,7 +73,7 @@ abstract class TableDefinition implements ArrayAccess
     /**
      * Registers the table-level actions class (create, etc.).
      *
-     * @param class-string<TableActions> $class
+     * @param class-string<TableActions> $class Table actions class name
      */
     protected function setActionsClass(string $class): void
     {
@@ -82,7 +83,7 @@ abstract class TableDefinition implements ArrayAccess
     /**
      * Registers the item-level actions class (update, delete).
      *
-     * @param class-string<TableItemActions> $class
+     * @param class-string<TableItemActions> $class Item actions class name
      */
     protected function setItemActionsClass(string $class): void
     {
@@ -92,7 +93,7 @@ abstract class TableDefinition implements ArrayAccess
     /**
      * Returns the registered item actions class, or null if not configured.
      *
-     * @return ?class-string<TableItemActions>
+     * @return ?class-string<TableItemActions> Item actions class or null
      */
     public function getItemActionsClass(): ?string
     {
@@ -102,7 +103,7 @@ abstract class TableDefinition implements ArrayAccess
     /**
      * Returns the data source used for loading table rows.
      *
-     * @return TableDataSourceInterface
+     * @return TableDataSourceInterface Data source instance
      */
     public function getDataSource(): TableDataSourceInterface
     {
@@ -116,11 +117,10 @@ abstract class TableDefinition implements ArrayAccess
      *
      * @param string $search Full-text search across row values
      * @param string $orderBy Field name to order by (empty = no ordering)
-     * @param string $orderDirection TableConstants::ORDER_ASC or TableConstants::ORDER_DESC
+     * @param string $orderDirection TableConstants::ORDER_ASC or ORDER_DESC
      * @param int $offset Zero-based offset for pagination
-     * @param int $limit Page size (TableConstants::NO_LIMIT = all rows)
-     *
-     * @return TableResultDTO
+     * @param int $limit Page size (NO_LIMIT = all rows)
+     * @return TableResultDTO Query result with rows and total count
      */
     public function get(
         string $search = '',
@@ -143,10 +143,8 @@ abstract class TableDefinition implements ArrayAccess
     /**
      * Magic getter for table-level actions property.
      *
-     * @param string $name Property name (TableConstants::PROPERTY_ACTIONS for actions)
-     *
-     * @return TableActions
-     *
+     * @param string $name Property name (PROPERTY_ACTIONS for actions)
+     * @return TableActions Table actions instance
      * @throws TablePropertyNotFoundException If the property does not exist
      */
     public function __get(string $name): mixed
@@ -162,8 +160,7 @@ abstract class TableDefinition implements ArrayAccess
      * Magic isset for properties available via __get.
      *
      * @param string $name Property name
-     *
-     * @return bool
+     * @return bool True if property exists and is configurable
      */
     public function __isset(string $name): bool
     {
@@ -173,8 +170,7 @@ abstract class TableDefinition implements ArrayAccess
     /**
      * Lazily creates and returns the table actions instance.
      *
-     * @return TableActions
-     *
+     * @return TableActions Table actions instance
      * @throws TableActionsNotConfiguredException If actions class is not configured
      */
     private function getActions(): TableActions
@@ -193,9 +189,8 @@ abstract class TableDefinition implements ArrayAccess
     /**
      * ArrayAccess: always returns true (item creation is deferred to offsetGet).
      *
-     * @param mixed $offset Row ID (unused, always returns true)
-     *
-     * @return bool
+     * @param mixed $offset Row ID (unused)
+     * @return bool Always true
      */
     public function offsetExists(mixed $offset): bool
     {
@@ -206,8 +201,7 @@ abstract class TableDefinition implements ArrayAccess
      * ArrayAccess: returns a TableItem for the given row ID.
      *
      * @param mixed $offset Row ID
-     *
-     * @return TableItem
+     * @return TableItem Table item for the row
      */
     public function offsetGet(mixed $offset): TableItem
     {
@@ -219,8 +213,7 @@ abstract class TableDefinition implements ArrayAccess
      *
      * @param mixed $offset Row ID (unused)
      * @param mixed $value Value to set (unused)
-     *
-     * @throws TableOffsetSetNotSupportedException
+     * @throws TableOffsetSetNotSupportedException Always thrown
      */
     public function offsetSet(mixed $offset, mixed $value): void
     {
@@ -231,8 +224,7 @@ abstract class TableDefinition implements ArrayAccess
      * ArrayAccess: unset is not supported (tables are read-only).
      *
      * @param mixed $offset Row ID (unused)
-     *
-     * @throws TableOffsetUnsetNotSupportedException
+     * @throws TableOffsetUnsetNotSupportedException Always thrown
      */
     public function offsetUnset(mixed $offset): void
     {

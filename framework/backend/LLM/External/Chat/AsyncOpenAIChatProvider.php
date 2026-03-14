@@ -23,7 +23,16 @@ use Hilos\Utils\Logger;
 class AsyncOpenAIChatProvider implements AsyncChatLLMInterface
 {
     private AsyncHttpClient $httpClient;
+    private ?string $defaultModel;
+    private string $apiKey;
 
+    /**
+     * Creates OpenAI-compatible chat provider.
+     *
+     * @param string $baseUrl Base URL (e.g. https://api.openai.com)
+     * @param string $apiKey API key for Bearer auth
+     * @param ?string $defaultModel Default model name
+     */
     public function __construct(string $baseUrl, string $apiKey, ?string $defaultModel = null)
     {
         [$host, $port, $path] = $this->parseUrl($baseUrl);
@@ -32,11 +41,11 @@ class AsyncOpenAIChatProvider implements AsyncChatLLMInterface
         $this->apiKey = $apiKey;
     }
 
-    private ?string $defaultModel;
-    private string $apiKey;
-
     /**
-     * @return array{0: string, 1: int, 2: string}
+     * Parses base URL into host, port and path.
+     *
+     * @param string $url Base URL of API (e.g. https://api.openai.com)
+     * @return array{0: string, 1: int, 2: string} [host, port, path]
      */
     private function parseUrl(string $url): array
     {
@@ -50,6 +59,13 @@ class AsyncOpenAIChatProvider implements AsyncChatLLMInterface
         return [$host, $port, $path];
     }
 
+    /**
+     * Starts async generation request.
+     *
+     * @param list<Message|array{role: string, content: string}> $messages Chat messages
+     * @param ChatGenerateOptions $options Generation options (model, temperature, etc.)
+     * @return bool True if started, false if already busy or model missing
+     */
     public function startGenerate(array $messages, ChatGenerateOptions $options): bool
     {
         if ($this->httpClient->isBusy()) {
@@ -105,16 +121,31 @@ class AsyncOpenAIChatProvider implements AsyncChatLLMInterface
         return $this->httpClient->startNewRequest($currentTimeMs);
     }
 
+    /**
+     * Advances async client (call in event loop).
+     *
+     * @param float $currentTimeMs Current time in milliseconds
+     */
     public function tick(float $currentTimeMs): void
     {
         $this->httpClient->tick($currentTimeMs);
     }
 
+    /**
+     * Checks if generation result is ready.
+     *
+     * @return bool True if getResult() will return content
+     */
     public function hasResult(): bool
     {
         return $this->httpClient->hasResult();
     }
 
+    /**
+     * Returns generated content or null on error.
+     *
+     * @return ?string Assistant message or null if failed/invalid response
+     */
     public function getResult(): ?string
     {
         $result = $this->httpClient->getResult();
@@ -138,16 +169,31 @@ class AsyncOpenAIChatProvider implements AsyncChatLLMInterface
         return trim($content);
     }
 
+    /**
+     * Checks if request is in progress.
+     *
+     * @return bool True if busy
+     */
     public function isBusy(): bool
     {
         return $this->httpClient->isBusy();
     }
 
+    /**
+     * Resets client state (cancels in-flight request).
+     */
     public function reset(): void
     {
         $this->httpClient->reset();
     }
 
+    /**
+     * Truncates text for log output.
+     *
+     * @param string $text Text to truncate
+     * @param int $limit Max length before truncation
+     * @return string Original or truncated text with suffix
+     */
     private function truncateForLog(string $text, int $limit = LLMApiConstants::TRUNCATE_LIMIT_DEFAULT): string
     {
         if ($limit <= 0 || strlen($text) <= $limit) {

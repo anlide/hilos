@@ -6,10 +6,15 @@ namespace Demo\Chat\Guardian\Workers;
 
 use Demo\Chat\Constants\AgentType;
 
+/**
+ * GuardianWorkerTopology - Defines which guardian agent types require monopolistic workers.
+ */
 final class GuardianWorkerTopology
 {
     /**
-     * @return list<string>
+     * Agent types that must run in monopolistic worker (one process per type).
+     *
+     * @return list<string> Agent type identifiers
      */
     public static function monopolisticAgentTypes(): array
     {

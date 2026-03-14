@@ -24,6 +24,8 @@ abstract class AbstractExternalProvider
     protected ?string $defaultModel;
 
     /**
+     * Creates external LLM provider.
+     *
      * @param string $baseUrl Base URL of external LLM API (without trailing slash)
      * @param string $apiKey API key for Bearer authentication
      * @param ?string $defaultModel Default model name for requests

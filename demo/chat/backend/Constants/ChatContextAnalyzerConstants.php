@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Demo\Chat\Constants;
 
 /**
- * ChatContextAnalyzerConstants - Constants for ChatContextAnalyzerAgent
+ * ChatContextAnalyzerConstants - Constants for ChatContextAnalyzerAgent.
  *
  * Mirrors structure of ModerationEnv/ChatSignalConstants for moderator.
  */

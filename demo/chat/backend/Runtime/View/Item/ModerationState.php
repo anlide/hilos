@@ -23,6 +23,8 @@ use Hilos\Runtime\View\Item\RtItem;
 final class ModerationState extends RtItem
 {
     /**
+     * Creates moderation state view item.
+     *
      * @param StateModerationState $state Moderation state (reference)
      */
     public function __construct(StateModerationState &$state)
@@ -34,7 +36,7 @@ final class ModerationState extends RtItem
      * Property getter.
      *
      * @param string $name Property name
-     * @return int|string|User|null
+     * @return int|string|User|null Property value
      */
     public function __get(string $name): int|string|User|null
     {
@@ -53,7 +55,7 @@ final class ModerationState extends RtItem
     /**
      * Convert to array.
      *
-     * @return array<string, int|string>
+     * @return array<string, int|string> Item as associative array
      */
     public function toArray(): array
     {

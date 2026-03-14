@@ -14,11 +14,21 @@ use Hilos\Guardian\Enums\TaskStatus;
 use Hilos\Guardian\Policies\GuardianPolicy;
 use Hilos\Guardian\Telemetry\GuardianTelemetry;
 
+/**
+ * Guardian engine that investigates goals via planner tasks and registered executors.
+ */
 final class GuardianEngine implements GuardianEngineInterface
 {
     /** @var list<callable(InvestigationTask, array<string, mixed>): TaskResult> */
     private array $executors = [];
 
+    /**
+     * Creates guardian engine with planner and optional executor.
+     *
+     * @param TaskPlannerInterface $planner Task planner
+     * @param ?ActionExecutorInterface $actionExecutor Optional action executor
+     * @param ?GuardianPolicy $policy Optional policy
+     */
     public function __construct(
         private readonly TaskPlannerInterface $planner,
         private readonly ?ActionExecutorInterface $actionExecutor = null,
@@ -27,13 +37,22 @@ final class GuardianEngine implements GuardianEngineInterface
     }
 
     /**
-     * @param callable(InvestigationTask, array<string, mixed>): TaskResult $executor
+     * Registers executor for investigation tasks.
+     *
+     * @param callable(InvestigationTask, array<string, mixed>): TaskResult $executor Task executor callable
      */
     public function registerExecutor(callable $executor): void
     {
         $this->executors[] = $executor;
     }
 
+    /**
+     * Investigates goal and returns report.
+     *
+     * @param string $goal Investigation goal
+     * @param array<string, mixed> $context Optional context
+     * @return GuardianReport Report with task results
+     */
     public function investigate(string $goal, array $context = []): GuardianReport
     {
         $tasks = $this->planner->plan($goal, $context);
@@ -54,6 +73,13 @@ final class GuardianEngine implements GuardianEngineInterface
         );
     }
 
+    /**
+     * Executes single task by delegating to registered executors.
+     *
+     * @param InvestigationTask $task Task to execute
+     * @param array<string, mixed> $context Execution context
+     * @return TaskResult Task result from first successful executor, or FAILED if none handled
+     */
     private function executeTask(InvestigationTask $task, array $context): TaskResult
     {
         foreach ($this->executors as $executor) {

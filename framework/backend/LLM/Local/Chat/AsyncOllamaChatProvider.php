@@ -27,6 +27,12 @@ class AsyncOllamaChatProvider implements AsyncChatLLMInterface
     private AsyncHttpClient $httpClient;
     private ?string $defaultModel;
 
+    /**
+     * Creates Ollama chat provider with base URL and optional default model.
+     *
+     * @param string $baseUrl Base URL (e.g. http://127.0.0.1:11434)
+     * @param ?string $defaultModel Default model name (optional)
+     */
     public function __construct(string $baseUrl, ?string $defaultModel = null)
     {
         [$host, $port, $path] = $this->parseUrl($baseUrl);
@@ -35,7 +41,10 @@ class AsyncOllamaChatProvider implements AsyncChatLLMInterface
     }
 
     /**
-     * @return array{0: string, 1: int, 2: string}
+     * Parses base URL into host, port and path.
+     *
+     * @param string $url Base URL of Ollama (e.g. http://127.0.0.1:11434)
+     * @return array{0: string, 1: int, 2: string} [host, port, path]
      */
     private function parseUrl(string $url): array
     {
@@ -51,6 +60,13 @@ class AsyncOllamaChatProvider implements AsyncChatLLMInterface
         return [$host, $port, $path];
     }
 
+    /**
+     * Starts non-blocking generation request.
+     *
+     * @param list<Message|array{role: string, content: string}> $messages Chat messages
+     * @param ChatGenerateOptions $options Generation options (model, temperature, etc.)
+     * @return bool True if started, false if already busy or model missing
+     */
     public function startGenerate(array $messages, ChatGenerateOptions $options): bool
     {
         if ($this->httpClient->isBusy()) {
@@ -101,16 +117,31 @@ class AsyncOllamaChatProvider implements AsyncChatLLMInterface
         return $this->httpClient->startNewRequest($currentTimeMs);
     }
 
+    /**
+     * Advances async HTTP client state. Call in event loop.
+     *
+     * @param float $currentTimeMs Current time in milliseconds
+     */
     public function tick(float $currentTimeMs): void
     {
         $this->httpClient->tick($currentTimeMs);
     }
 
+    /**
+     * Checks if generation result is ready.
+     *
+     * @return bool True if result available
+     */
     public function hasResult(): bool
     {
         return $this->httpClient->hasResult();
     }
 
+    /**
+     * Returns generated text or null on error/invalid response.
+     *
+     * @return ?string Response text or null
+     */
     public function getResult(): ?string
     {
         $result = $this->httpClient->getResult();
@@ -133,18 +164,29 @@ class AsyncOllamaChatProvider implements AsyncChatLLMInterface
         return trim($decoded[LLMApiConstants::KEY_RESPONSE]);
     }
 
+    /**
+     * Checks if HTTP request is in progress.
+     *
+     * @return bool True if busy
+     */
     public function isBusy(): bool
     {
         return $this->httpClient->isBusy();
     }
 
+    /**
+     * Resets client state for new request.
+     */
     public function reset(): void
     {
         $this->httpClient->reset();
     }
 
     /**
-     * @param list<Message|array{role: string, content: string}> $messages
+     * Converts message array to Ollama prompt string.
+     *
+     * @param list<Message|array{role: string, content: string}> $messages Chat messages
+     * @return string Concatenated prompt for Ollama
      */
     private function messagesToPrompt(array $messages): string
     {
@@ -167,6 +209,13 @@ class AsyncOllamaChatProvider implements AsyncChatLLMInterface
         return implode(LLMApiConstants::OLLAMA_SEPARATOR, $parts) . LLMApiConstants::OLLAMA_ASSISTANT_SUFFIX;
     }
 
+    /**
+     * Truncates text for logging.
+     *
+     * @param string $text Text to truncate
+     * @param int $limit Max length (default from constants)
+     * @return string Truncated string with suffix if exceeded
+     */
     private function truncateForLog(string $text, int $limit = LLMApiConstants::TRUNCATE_LIMIT_DEFAULT): string
     {
         if ($limit <= 0 || strlen($text) <= $limit) {

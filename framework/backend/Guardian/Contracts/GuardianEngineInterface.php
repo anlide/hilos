@@ -9,7 +9,11 @@ use Hilos\Guardian\DTO\GuardianReport;
 interface GuardianEngineInterface
 {
     /**
-     * @param array<string, mixed> $context
+     * Runs guardian investigation for the given goal.
+     *
+     * @param string $goal Investigation goal
+     * @param array<string, mixed> $context Context data for investigation
+     * @return GuardianReport Report with findings and metadata
      */
     public function investigate(string $goal, array $context = []): GuardianReport;
 }

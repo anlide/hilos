@@ -23,6 +23,8 @@ use Hilos\Database\View\Collection\DbCollection;
 readonly class EntityTableDataSource implements TableDataSourceInterface
 {
     /**
+     * Creates data source backed by DbCollection.
+     *
      * @param DbCollection $collection Db collection (e.g. Hilos::$db->users)
      */
     public function __construct(
@@ -33,7 +35,7 @@ readonly class EntityTableDataSource implements TableDataSourceInterface
     /**
      * Returns the source type (Entity, Sql, or Other).
      *
-     * @return TableType
+     * @return TableType Source type enum value
      */
     public function getType(): TableType
     {
@@ -49,8 +51,8 @@ readonly class EntityTableDataSource implements TableDataSourceInterface
      *
      * @param TableQueryDTO $query Query parameters
      *
-     * @return TableResultDTO
-     * @throws DatabaseException
+     * @return TableResultDTO Query result with rows and total count
+     * @throws DatabaseException If query execution fails
      */
     public function query(TableQueryDTO $query): TableResultDTO
     {

@@ -402,8 +402,8 @@ class Migration
     }
 
     /**
-     * Create new migration files
-     * 
+     * Create new migration files.
+     *
      * @param string $name Migration name/description
      * @return int New migration index
      * @throws DatabaseException If migration path is not configured
