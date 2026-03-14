@@ -447,10 +447,10 @@ abstract class Entity
     }
 
     /**
-     * Create entity from database row array
+     * Create entity from database row array.
      *
      * @param array<string, mixed> $row Database row data
-     * @return static
+     * @return static Entity instance
      */
     public static function fromRow(array $row): static
     {
@@ -494,8 +494,9 @@ abstract class Entity
     }
 
     /**
-     * Create SqlParam from PHP value and PHP type
-     * Converts PHP value to SqlParam for database operations
+     * Create SqlParam from PHP value and PHP type.
+     *
+     * Converts PHP value to SqlParam for database operations.
      *
      * @param mixed $value PHP value
      * @param string $type PHP type (from _types array: 'integer', 'string', 'boolean', etc.)
@@ -516,8 +517,9 @@ abstract class Entity
     }
 
     /**
-     * Cast database value to PHP type
-     * Converts value from database to appropriate PHP type
+     * Cast database value to PHP type.
+     *
+     * Converts value from database to appropriate PHP type.
      *
      * @param mixed $value Value from database
      * @param string $type PHP type (from _types array: 'integer', 'string', 'boolean', etc.)

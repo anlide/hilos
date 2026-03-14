@@ -39,7 +39,9 @@ abstract class DbContext
     protected array $_dbItemCollections = [];
 
     /**
-     * Creates DB context. Called from facade createDb().
+     * Creates DB context.
+     *
+     * Called from facade createDb().
      */
     public function __construct()
     {
@@ -90,6 +92,7 @@ abstract class DbContext
     /**
      * Get object collection by name.
      *
+     * @param string $name Collection name (e.g. users, events)
      * @return ?Objects Object collection or null if not found
      */
     public function getObjectCollection(string $name): ?Objects
@@ -137,6 +140,7 @@ abstract class DbContext
 
     /**
      * Configure collections (register object collections and setRepresent).
+     *
      * Called from facade init() after createDb() and createRuntime().
      */
     abstract public function configure(): void;

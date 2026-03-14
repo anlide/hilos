@@ -12,9 +12,10 @@ use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 use Hilos\Hilos;
 
 /**
- * Base Object class
- * Manages two Entity instances: current state and synced state
- * Enables precise change tracking and saves only modified columns
+ * Base Object class.
+ *
+ * Manages two Entity instances: current state and synced state.
+ * Enables precise change tracking and saves only modified columns.
  *
  * Child classes must declare ENTITY_CLASS constant.
  *
@@ -38,10 +39,16 @@ abstract class Object_
      */
     public const string ENTITY_CLASS = '';
 
+    /**
+     * Prevents cloning of Object instances.
+     */
     final protected function __clone(): void
     {
     }
 
+    /**
+     * Prevents direct instantiation. Use create() or fromEntity() instead.
+     */
     final protected function __construct()
     {
     }
@@ -89,8 +96,9 @@ abstract class Object_
     }
 
     /**
-     * Sync changes to database
-     * Saves only changed columns by comparing entity with entitySync
+     * Sync changes to database.
+     *
+     * Saves only changed columns by comparing entity with entitySync.
      *
      * @throws DatabaseException If database operation fails
      */
@@ -128,7 +136,7 @@ abstract class Object_
     }
 
     /**
-     * Delete entity from database
+     * Delete entity from database.
      *
      * @throws DatabaseException If database operation fails
      */
@@ -184,6 +192,7 @@ abstract class Object_
 
     /**
      * Revert changes (restore from entitySync).
+     *
      */
     public function revert(): void
     {
@@ -326,9 +335,11 @@ abstract class Object_
     }
 
     /**
-     * Magic getter - must be overridden in child classes
+     * Magic getter - must be overridden in child classes.
      *
-     * @throws DatabaseException
+     * @param string $property Property name
+     * @return mixed Property value
+     * @throws DatabaseException If property does not exist or entity is misconfigured
      */
     public function __get(string $property): mixed
     {
@@ -340,9 +351,11 @@ abstract class Object_
     }
 
     /**
-     * Magic setter - must be overridden in child classes
+     * Magic setter - must be overridden in child classes.
      *
-     * @throws DatabaseException
+     * @param string $property Property name
+     * @param mixed $value Property value
+     * @throws DatabaseException If property cannot be set or does not exist
      */
     public function __set(string $property, mixed $value): void
     {

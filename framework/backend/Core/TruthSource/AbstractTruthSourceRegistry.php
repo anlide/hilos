@@ -21,7 +21,7 @@ namespace Hilos\Core\TruthSource;
 abstract class AbstractTruthSourceRegistry
 {
     /**
-     * Get sources storage reference
+     * Get sources storage reference.
      *
      * Each child class must override this to return reference to its own static $sources array.
      * This allows proper static inheritance with separate storage per class.
@@ -31,7 +31,7 @@ abstract class AbstractTruthSourceRegistry
     abstract protected static function &getSources(): array;
 
     /**
-     * Register agent as truth source for collection
+     * Register agent as truth source for collection.
      *
      * @param string $collection Collection/table name
      * @param array<int, string>|true $keys Array of specific keys or true for all keys
@@ -47,7 +47,7 @@ abstract class AbstractTruthSourceRegistry
     }
 
     /**
-     * Unregister agent as truth source for specific collection
+     * Unregister agent as truth source for specific collection.
      *
      * @param string $collection Collection/table name
      * @param string $agentId Agent ID
@@ -64,7 +64,7 @@ abstract class AbstractTruthSourceRegistry
     }
 
     /**
-     * Unregister agent from all collections
+     * Unregister agent from all collections.
      *
      * @param string $agentId Agent ID
      */
@@ -82,7 +82,7 @@ abstract class AbstractTruthSourceRegistry
     }
 
     /**
-     * Check if collection has any registered truth source
+     * Check if collection has any registered truth source.
      *
      * @param string $collection Collection/table name
      * @return bool True if collection has at least one registered truth source
@@ -94,7 +94,7 @@ abstract class AbstractTruthSourceRegistry
     }
 
     /**
-     * Check if keys are truth source (don't need external load)
+     * Check if keys are truth source (don't need external load).
      *
      * @param string $collection Collection/table name
      * @param array<int, string> $keys Keys to check
@@ -129,7 +129,7 @@ abstract class AbstractTruthSourceRegistry
     }
 
     /**
-     * Get truth source keys for collection
+     * Get truth source keys for collection.
      *
      * @param string $collection Collection/table name
      * @return array<int, string>|true|null Array of keys, true for all keys, or null if no truth source
@@ -155,7 +155,7 @@ abstract class AbstractTruthSourceRegistry
     }
 
     /**
-     * Check if write operation is allowed for collection
+     * Check if write operation is allowed for collection.
      *
      * Must be implemented by child classes to throw appropriate exception type.
      *

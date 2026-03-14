@@ -101,7 +101,7 @@ abstract class DbActions
      * Set callback for clearing DbCollection cache.
      * Called by DbCollection when Actions is created.
      *
-     * @param callable(): void $callback
+     * @param callable(): void $callback Callback to clear cache
      */
     public function setClearCacheCallback(callable $callback): void
     {
@@ -174,7 +174,7 @@ abstract class DbActions
      * @throws ObjectCollectionNullException If ObjectCollection is null
      * @throws UnknownLazyStrategyException If unknown lazy loading strategy
      * @throws WriteNotAllowedException If write is not allowed
-     * @throws DatabaseException
+     * @throws DatabaseException On connection or load error
      */
     protected function ensureCanWrite(): void
     {
@@ -210,7 +210,7 @@ abstract class DbActions
      * @throws ObjectCollectionNullException If ObjectCollection is null
      * @throws UnknownLazyStrategyException If unknown lazy loading strategy
      * @throws CreateNotAllowedException If create is not allowed
-     * @throws DatabaseException
+     * @throws DatabaseException On connection or load error
      */
     protected function ensureCanCreate(): void
     {
@@ -247,8 +247,8 @@ abstract class DbActions
      * @param Object_ $object Object instance to add
      * @throws ObjectCollectionNullException If ObjectCollection is null
      * @throws DuplicateIdException If object with same ID already exists
-     * @throws DatabaseException
-     * @throws TableNameUndeterminedException
+     * @throws DatabaseException On connection error
+     * @throws TableNameUndeterminedException If table name cannot be determined
      */
     protected function addObjectToCollection(Object_ $object): void
     {

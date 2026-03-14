@@ -46,9 +46,9 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface
     private bool $shouldStop = false;
 
     /**
-     * Get agent unique identifier (type + index)
+     * Get agent unique identifier (type + index).
      *
-     * Default implementation: "type:index" or "type" if index is null
+     * Default implementation: "type:index" or "type" if index is null.
      *
      * @return string Agent ID
      */
@@ -62,7 +62,7 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface
     }
 
     /**
-     * Get signal source for this agent
+     * Get signal source for this agent.
      *
      * @return SignalSourceInterface Agent signal source
      */
@@ -147,7 +147,7 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface
     }
 
     /**
-     * Request agent to stop itself
+     * Request agent to stop itself.
      *
      * Sets internal flag that will cause onStop() to be called at the start
      * of the next tick. Agent will be removed from worker after onStop() is called.
@@ -160,7 +160,7 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface
     }
 
     /**
-     * Check if agent has requested stop
+     * Check if agent has requested stop.
      *
      * @return bool True if agent has requested stop
      */
@@ -170,7 +170,7 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface
     }
 
     /**
-     * Default implementation - no action on start
+     * Default implementation - no action on start.
      *
      * Child classes can override this method.
      */
@@ -180,7 +180,7 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface
     }
 
     /**
-     * Called when agent is stopped
+     * Called when agent is stopped.
      *
      * Must be implemented in child classes to handle cleanup.
      */

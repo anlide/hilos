@@ -349,13 +349,14 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
     }
 
     /**
-     * Convert to array
+     * Convert to array.
      *
      * @param bool $withId Include ID fields
      * @param bool $idAsIndex Use ID as array index
      * @param bool $withBridges Include bridge/junction table data
      * @param bool $withCalculation Include calculated fields
      * @param bool $toFrontend When true, exclude fields that must not be sent to frontend (e.g. sessionToken)
+     * @return array<int|string, array<string, mixed>> Items keyed by ID or sequential
      */
     public function toArray(bool $withId = true, bool $idAsIndex = true, bool $withBridges = false, bool $withCalculation = false, bool $toFrontend = false): array
     {
@@ -434,7 +435,7 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
      * @param TableQueryDTO $query Query parameters
      *
      * @return array{rows: array<int, array<string, mixed>>, totalCount: int}
-     * @throws DatabaseException
+     * @throws DatabaseException On query or connection error
      */
     public function queryPage(TableQueryDTO $query): array
     {
@@ -548,6 +549,7 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
      * For automatic collections, may trigger lazy-load existence check.
      *
      * @param mixed $offset Primary key ID
+     * @return bool True if element exists at offset
      */
     public function offsetExists(mixed $offset): bool
     {
@@ -591,6 +593,11 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
         throw new DirectSetException("Cannot directly set items in collection");
     }
 
+    /**
+     * Remove item at offset (ArrayAccess).
+     *
+     * @param mixed $offset Primary key ID to remove
+     */
     public function offsetUnset(mixed $offset): void
     {
         unset($this->items[$offset]);
@@ -624,6 +631,8 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
     /**
      * Get number of elements in collection.
      * For automatic collections, delegates to underlying ObjectCollection.
+     *
+     * @return int Number of elements
      */
     public function count(): int
     {
@@ -651,6 +660,8 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
 
     /**
      * Get current iterator key.
+     *
+     * @return int|string|null Current key or null if position invalid
      */
     public function key(): mixed
     {
@@ -658,11 +669,17 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
         return $keys[$this->position] ?? null;
     }
 
+    /**
+     * Move iterator to next element.
+     */
     public function next(): void
     {
         ++$this->position;
     }
 
+    /**
+     * Rewind iterator to first element.
+     */
     public function rewind(): void
     {
         $this->position = 0;
@@ -680,17 +697,30 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
         }
     }
 
+    /**
+     * Check if current iterator position is valid.
+     *
+     * @return bool True if position has element
+     */
     public function valid(): bool
     {
         $keys = array_keys($this->items);
         return $this->position < count($keys);
     }
 
+    /**
+     * Debug info for var_dump (returns collection as array).
+     *
+     * @return array<int|string, array<string, mixed>> Collection data
+     */
     public function __debugInfo(): array
     {
         return $this->toArray();
     }
 
+    /**
+     * Clear cached DbItem instances and reset iterator.
+     */
     public function clearCache(): void
     {
         $this->items = [];

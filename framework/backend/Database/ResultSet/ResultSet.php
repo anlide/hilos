@@ -114,7 +114,8 @@ class ResultSet implements \Iterator, \Countable
     }
 
     /**
-     * Get all rows from result set
+     * Get all rows from result set.
+     *
      * Note: This loads all rows into memory. For large datasets, use row() in a loop instead.
      *
      * @return array<int, array<string, mixed>> Array of associative arrays
@@ -126,8 +127,9 @@ class ResultSet implements \Iterator, \Countable
     }
 
     /**
-     * Get single row from result set
-     * Advances the internal pointer, so each call returns the next row
+     * Get single row from result set.
+     *
+     * Advances the internal pointer, so each call returns the next row.
      *
      * @return array<string, mixed>|null Associative array or null if no more rows
      */
@@ -172,9 +174,9 @@ class ResultSet implements \Iterator, \Countable
     }
 
     /**
-     * Get column names
+     * Get column names.
      *
-     * @return array<string>
+     * @return array<string> Column names
      */
     public function getColumns(): array
     {
@@ -182,9 +184,9 @@ class ResultSet implements \Iterator, \Countable
     }
 
     /**
-     * Get first row
+     * Get first row.
      *
-     * @return array<string, mixed>|null
+     * @return array<string, mixed>|null First row or null if empty
      */
     public function first(): ?array
     {
@@ -208,7 +210,7 @@ class ResultSet implements \Iterator, \Countable
      *
      * @param class-string<Entity> $entityClass Entity class name
      * @param string|int|null $primaryKey Primary key column name for indexing
-     * @return EntityCollection
+     * @return EntityCollection Entity collection with rows as Entity instances
      */
     public function toEntityCollection(string $entityClass, string|int|null $primaryKey = null): EntityCollection
     {
@@ -240,9 +242,9 @@ class ResultSet implements \Iterator, \Countable
     }
 
     /**
-     * Get raw rows as array
+     * Get raw rows as array.
      *
-     * @return array<int, array<string, mixed>>
+     * @return array<int, array<string, mixed>> Rows as associative arrays
      */
     public function toArray(): array
     {
@@ -262,9 +264,9 @@ class ResultSet implements \Iterator, \Countable
     }
 
     /**
-     * Get current row
+     * Get current row.
      *
-     * @return array<string, mixed>|null
+     * @return array<string, mixed>|null Current row or null if position invalid
      */
     public function current(): ?array
     {

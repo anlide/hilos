@@ -3,7 +3,7 @@
 namespace Hilos\Database\Filter;
 
 /**
- * Filter operators for column comparisons
+ * Filter operators for column comparisons.
  */
 enum FilterOperator: string
 {

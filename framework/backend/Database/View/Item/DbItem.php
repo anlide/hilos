@@ -17,6 +17,7 @@ use Hilos\Database\View\Collection\DbCollection;
 
 /**
  * Base class for Db items (read-only wrappers around Object instances).
+ *
  * High-level access with lazy loading support for relationships.
  * DbItem stores only reference to Object for memory efficiency.
  *
@@ -59,7 +60,7 @@ abstract class DbItem
     private ?DbActions $_actions = null;
 
     /**
-     * Public constructor - creates DbItem from Object instance
+     * Creates DbItem from Object instance.
      *
      * @param Object_ $object Object instance (reference)
      */
@@ -93,7 +94,7 @@ abstract class DbItem
     /**
      * Set parent DbCollection reference.
      *
-     * @param DbCollection<DbItem, Objects> $collection
+     * @param DbCollection<DbItem, Objects> $collection Parent collection instance
      */
     public function setCollection(DbCollection $collection): void
     {
@@ -123,7 +124,7 @@ abstract class DbItem
     /**
      * Set item actions class for lazy initialization.
      *
-     * @param ?class-string<DbActions> $actionsClass
+     * @param ?class-string<DbActions> $actionsClass Item actions class or null
      */
     public function setActionsClass(?string $actionsClass): void
     {
@@ -133,7 +134,8 @@ abstract class DbItem
     /**
      * Get item actions instance.
      *
-     * @throws ActionsClassException
+     * @return DbActions<DbItem, Object_> Item actions instance
+     * @throws ActionsClassException If actions class not set or invalid
      */
     protected function getActions(): DbActions
     {
@@ -152,10 +154,11 @@ abstract class DbItem
     }
 
     /**
-     * Public clone - prevent cloning
+     * Public clone - prevent cloning.
+     *
      * Cloning DbItem would create duplicate references to the same Object.
      *
-     * @throws CloneException
+     * @throws CloneException Always (cloning not allowed)
      */
     public function __clone(): void
     {
@@ -163,10 +166,11 @@ abstract class DbItem
     }
 
     /**
-     * Public wakeup - prevent unserialization
+     * Public wakeup - prevent unserialization.
+     *
      * Unserializing DbItem would create invalid references to Object instances.
      *
-     * @throws UnserializeException
+     * @throws UnserializeException Always (unserialization not allowed)
      */
     public function __wakeup(): void
     {
