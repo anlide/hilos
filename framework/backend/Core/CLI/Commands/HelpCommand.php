@@ -14,7 +14,7 @@ use Hilos\Constants\ExitCode;
  */
 class HelpCommand implements CommandInterface
 {
-    /** @var array<string, CommandInterface> */
+    /** @var array<string, CommandInterface> map of command name to command instance */
     private array $commands;
 
     /**

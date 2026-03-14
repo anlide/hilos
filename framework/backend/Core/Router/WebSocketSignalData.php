@@ -90,7 +90,7 @@ class WebSocketSignalData extends BaseDTO implements SignalDataInterface
      * Deserializes inner signal data from array.
      *
      * @param array<string, mixed> $dataArray Signal data array
-     * @param ?string $dataType Signal data class name for deserialization
+     * @param ?class-string $dataType Signal data class name for deserialization
      * @return SignalDataInterface Deserialized signal data
      */
     private static function deserializeInnerData(array $dataArray, ?string $dataType): SignalDataInterface

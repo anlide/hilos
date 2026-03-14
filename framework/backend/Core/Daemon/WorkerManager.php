@@ -992,9 +992,9 @@ abstract class WorkerManager extends BaseManager
     abstract protected function createAgentManager(): AgentManager;
 
     /**
-     * Get manager name for logging
+     * Returns manager name for logging.
      *
-     * @return string Manager name
+     * @return string Manager name. for logging.
      */
     protected function getManagerName(): string
     {
@@ -1002,9 +1002,9 @@ abstract class WorkerManager extends BaseManager
     }
 
     /**
-     * Log error message
+     * Logs error message.
      *
-     * @param string $message Error message to log
+     * @param string $message Error message to log.
      */
     protected function logError(string $message): void
     {
@@ -1012,9 +1012,9 @@ abstract class WorkerManager extends BaseManager
     }
 
     /**
-     * Log exception message
+     * Logs exception message.
      *
-     * @param string $message Exception message to log
+     * @param string $message Exception message to log.
      */
     protected function logException(string $message): void
     {
@@ -1022,9 +1022,9 @@ abstract class WorkerManager extends BaseManager
     }
 
     /**
-     * Log shutdown message
+     * Logs shutdown message.
      *
-     * @param string $message Shutdown message to log
+     * @param string $message Shutdown message to log.
      */
     protected function logShutdown(string $message): void
     {
@@ -1032,7 +1032,7 @@ abstract class WorkerManager extends BaseManager
     }
 
     /**
-     * Handle error event
+     * Handles error event.
      *
      * Sets exit flag to stop worker loop.
      */
@@ -1042,7 +1042,7 @@ abstract class WorkerManager extends BaseManager
     }
 
     /**
-     * Handle exception event
+     * Handles exception event.
      *
      * Sets exit flag to stop worker loop.
      */
@@ -1052,7 +1052,7 @@ abstract class WorkerManager extends BaseManager
     }
 
     /**
-     * Handle shutdown event
+     * Handles shutdown event.
      *
      * Sets exit flag to stop worker loop.
      */
@@ -1062,7 +1062,7 @@ abstract class WorkerManager extends BaseManager
     }
 
     /**
-     * Handle shutdown signal event
+     * Handles shutdown signal event.
      *
      * Worker-specific shutdown logic can be implemented in child classes.
      */
@@ -1072,7 +1072,7 @@ abstract class WorkerManager extends BaseManager
     }
 
     /**
-     * Handle restart signal event
+     * Handles restart signal event.
      *
      * Worker-specific restart logic can be implemented in child classes.
      */

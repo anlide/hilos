@@ -25,7 +25,7 @@ class UnknownActionPayloadDTO extends ActionPayloadDTO
     }
 
     /**
-     * Get action name
+     * Gets the action name.
      *
      * @return string Action name
      */
@@ -35,7 +35,7 @@ class UnknownActionPayloadDTO extends ActionPayloadDTO
     }
 
     /**
-     * Returns raw payload data.
+     * Returns the raw payload data.
      *
      * @return array<string, mixed> Raw payload data
      */
@@ -59,7 +59,7 @@ class UnknownActionPayloadDTO extends ActionPayloadDTO
     }
 
     /**
-     * Converts to array.
+     * Converts the DTO to array.
      *
      * @return array<string, mixed> Action and data keys
      */

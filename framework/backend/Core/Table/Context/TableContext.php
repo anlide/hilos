@@ -47,7 +47,7 @@ abstract class TableContext
     }
 
     /**
-     * Magic property access: Hilos::$table->users → TableDefinition
+     * Magic property access: Hilos::$table->users → TableDefinition.
      *
      * @param string $name Table key
      * @return TableDefinition Table definition instance

@@ -12,7 +12,7 @@ namespace Hilos\Core\Router;
 interface SignalNameInterface
 {
     /**
-     * Get signal name
+     * Gets the signal name.
      *
      * @return string Signal name
      */

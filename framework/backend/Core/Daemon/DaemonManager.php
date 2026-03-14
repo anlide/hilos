@@ -923,55 +923,91 @@ abstract class DaemonManager extends BaseManager
         }
     }
 
-    /** @return string Manager name for logging */
+    /**
+     * Returns manager name for logging.
+     *
+     * @return string Manager name for logging.
+     */
     protected function getManagerName(): string
     {
         return "Daemon";
     }
 
-    /** @param string $message Error message to log */
+    /**
+     * Logs error message.
+     *
+     * @param string $message Error message to log.
+     */
     protected function logError(string $message): void
     {
         Logger::error($message);
     }
 
-    /** @param string $message Exception message to log */
+    /**
+     * Logs exception message.
+     *
+     * @param string $message Exception message to log.
+     */
     protected function logException(string $message): void
     {
         Logger::error($message);
     }
 
-    /** @param string $message Shutdown message to log */
+    /**
+     * Logs shutdown message.
+     *
+     * @param string $message Shutdown message to log.
+     */
     protected function logShutdown(string $message): void
     {
         Logger::error($message);
     }
 
-    /** Handle error event - sets exit flag */
+    /**
+     * Handles error event.
+     *
+     * Sets exit flag to stop daemon loop.
+     */
     protected function onError(): void
     {
         $this->shouldExit = true;
     }
 
-    /** Handle exception event - sets exit flag */
+    /**
+     * Handles exception event.
+     *
+     * Sets exit flag to stop daemon loop.
+     */
     protected function onException(): void
     {
         $this->shouldExit = true;
     }
 
-    /** Handle shutdown event - sets exit flag */
+    /**
+     * Handles shutdown event.
+     *
+     * Sets exit flag to stop daemon loop.
+     */
     protected function onShutdown(): void
     {
         $this->shouldExit = true;
     }
 
-    /** Handle shutdown signal event - no additional logic needed */
+    /**
+     * Handles shutdown signal event.
+     *
+     * Daemon-specific shutdown logic (none needed).
+     */
     protected function onShutdownSignal(): void
     {
         // Daemon-specific shutdown logic (none needed)
     }
 
-    /** Handle restart signal event - no additional logic needed */
+    /**
+     * Handles restart signal event.
+     *
+     * Daemon-specific restart logic (none needed).
+     */
     protected function onRestartSignal(): void
     {
         // Daemon-specific restart logic (none needed)

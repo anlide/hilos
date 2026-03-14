@@ -12,7 +12,7 @@ namespace Hilos\Core\Router;
 interface SignalTypeInterface
 {
     /**
-     * Get signal type.
+     * Gets the signal type.
      *
      * @return string Signal type
      */

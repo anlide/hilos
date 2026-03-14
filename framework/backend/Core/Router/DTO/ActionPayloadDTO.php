@@ -25,7 +25,7 @@ use Hilos\BaseDTO;
 abstract class ActionPayloadDTO extends BaseDTO
 {
     /**
-     * Get action name this DTO represents
+     * Gets the action name this DTO represents.
      *
      * @return string Action name
      */
