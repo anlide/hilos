@@ -103,13 +103,13 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
     /**
      * Process read buffer - parse WebSocket frames
      *
-     * @throws HandshakeFailedException
-     * @throws InvalidFrameSequenceException
-     * @throws ReservedOpcodeException
-     * @throws SocketException
-     * @throws UnknownOpcodeException
-     * @throws UnsupportedProtocolVersionException
-     * @throws InvalidFrameException When frame payload is invalid
+     * @throws HandshakeFailedException If WebSocket handshake fails
+     * @throws InvalidFrameSequenceException If frame sequence is invalid
+     * @throws ReservedOpcodeException If reserved opcode is received
+     * @throws SocketException If socket read fails
+     * @throws UnknownOpcodeException If unknown opcode is received
+     * @throws UnsupportedProtocolVersionException If WebSocket version is unsupported
+     * @throws InvalidFrameException If frame payload is invalid
      */
     protected function processReadBuffer(): void
     {

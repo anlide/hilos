@@ -10,7 +10,7 @@ use Hilos\Runtime\State\Item\RtState;
 use Iterator;
 
 /**
- * Base class for runtime state collections
+ * Base class for runtime state collections.
  *
  * RtStates is the single source of truth for runtime state data (analogous to Objects for database).
  * It stores RtState instances and provides collection operations.
@@ -28,25 +28,13 @@ abstract class RtStates implements Iterator, ArrayAccess, Countable
     /** @var class-string<RtState> */
     public const string STATE_CLASS = '';
 
-    /**
-     * State objects storage
-     *
-     * @var RtState
-     */
+    /** @var array<string, T> state ID => RtState map */
     protected array $states = [];
 
-    /**
-     * Current iterator position
-     *
-     * @var int
-     */
+    /** @var int current iterator position */
     protected int $index = 0;
 
-    /**
-     * Backup iterator position
-     *
-     * @var int
-     */
+    /** @var int backup iterator position for nested iteration */
     private int $backupIndex = 0;
 
     /**
@@ -209,16 +197,34 @@ abstract class RtStates implements Iterator, ArrayAccess, Countable
 
     // ==================== ArrayAccess ====================
 
+    /**
+     * Check if state exists at offset.
+     *
+     * @param mixed $offset State ID (string)
+     * @return bool True if state exists
+     */
     public function offsetExists(mixed $offset): bool
     {
         return isset($this->states[$offset]);
     }
 
+    /**
+     * Get state at offset.
+     *
+     * @param mixed $offset State ID (string)
+     * @return ?RtState State instance or null if not found
+     */
     public function offsetGet(mixed $offset): ?RtState
     {
         return $this->states[$offset] ?? null;
     }
 
+    /**
+     * Set state at offset.
+     *
+     * @param mixed $offset State ID or null (uses value ID when null)
+     * @param mixed $value RtState instance to set
+     */
     public function offsetSet(mixed $offset, mixed $value): void
     {
         if ($value instanceof RtState) {
@@ -226,6 +232,11 @@ abstract class RtStates implements Iterator, ArrayAccess, Countable
         }
     }
 
+    /**
+     * Remove state at offset.
+     *
+     * @param mixed $offset State ID to remove
+     */
     public function offsetUnset(mixed $offset): void
     {
         unset($this->states[$offset]);
@@ -233,6 +244,11 @@ abstract class RtStates implements Iterator, ArrayAccess, Countable
 
     // ==================== Countable ====================
 
+    /**
+     * Get number of states in collection.
+     *
+     * @return int Number of states
+     */
     public function count(): int
     {
         return count($this->states);
@@ -240,6 +256,11 @@ abstract class RtStates implements Iterator, ArrayAccess, Countable
 
     // ==================== Iterator ====================
 
+    /**
+     * Get current state in iteration.
+     *
+     * @return ?RtState Current state or null if position invalid
+     */
     public function current(): ?RtState
     {
         $keys = array_keys($this->states);
@@ -249,22 +270,38 @@ abstract class RtStates implements Iterator, ArrayAccess, Countable
         return $this->states[$keys[$this->index]];
     }
 
+    /**
+     * Get current iterator key.
+     *
+     * @return ?string Current state ID or null if position invalid
+     */
     public function key(): ?string
     {
         $keys = array_keys($this->states);
         return $keys[$this->index] ?? null;
     }
 
+    /**
+     * Advance iterator to next element.
+     */
     public function next(): void
     {
         ++$this->index;
     }
 
+    /**
+     * Reset iterator to first element.
+     */
     public function rewind(): void
     {
         $this->index = 0;
     }
 
+    /**
+     * Check if current iterator position is valid.
+     *
+     * @return bool True if position has element
+     */
     public function valid(): bool
     {
         $keys = array_keys($this->states);

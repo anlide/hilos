@@ -20,7 +20,7 @@ use Hilos\Utils\Exception\MissingEnvironmentVariableException;
 use Hilos\Utils\Logger;
 
 /**
- * DockerManager - manages daemon process in Docker container
+ * DockerManager - manages daemon process in Docker container.
  *
  * Contains all logic from docker.php:
  * - Daemon process monitoring
@@ -57,7 +57,7 @@ class DockerManager extends BaseManager
      * @throws FailedToSetStdErrException If stderr data cannot be read
      * @throws FailedToTerminateProcessExceptionException If the process cannot be terminated
      * @throws FailedToClosePipeException If pipes cannot be closed
-     * @throws MissingEnvironmentVariableException
+     * @throws MissingEnvironmentVariableException If required env vars are missing
      * @throws LogRotationException If log rotation fails
      */
     public function runDockerWatchdog(string $daemonScript): void
@@ -104,7 +104,7 @@ class DockerManager extends BaseManager
      * Implements minimum restart interval for error-based restarts
      *
      * @return bool True if daemon should be started
-     * @throws MissingEnvironmentVariableException
+     * @throws MissingEnvironmentVariableException If required env vars are missing
      */
     private function shouldStartDaemon(): bool
     {
@@ -210,7 +210,7 @@ class DockerManager extends BaseManager
      * @throws CouldNotStartException If daemon process cannot be started
      * @throws FailedToSetNonBlockingException If non-blocking mode cannot be set
      * @throws LogRotationException If log directory cannot be created
-     * @throws MissingEnvironmentVariableException
+     * @throws MissingEnvironmentVariableException If required env vars are missing
      */
     private function startDaemon(string $script): void
     {
@@ -267,7 +267,9 @@ class DockerManager extends BaseManager
     // Implementation of abstract methods from BaseManager
 
     /**
-     * Get manager name for logging
+     * Get manager name for logging.
+     *
+     * @return string Manager name
      */
     protected function getManagerName(): string
     {
@@ -275,8 +277,10 @@ class DockerManager extends BaseManager
     }
 
     /**
-     * Log error message (file + system log)
-     * @throws MissingEnvironmentVariableException
+     * Log error message (file + system log).
+     *
+     * @param string $message Error message to log
+     * @throws MissingEnvironmentVariableException If log file path env var is missing
      */
     protected function logError(string $message): void
     {
@@ -284,8 +288,10 @@ class DockerManager extends BaseManager
     }
 
     /**
-     * Log exception message (file + system log)
-     * @throws MissingEnvironmentVariableException
+     * Log exception message (file + system log).
+     *
+     * @param string $message Exception message to log
+     * @throws MissingEnvironmentVariableException If log file path env var is missing
      */
     protected function logException(string $message): void
     {
@@ -293,8 +299,10 @@ class DockerManager extends BaseManager
     }
 
     /**
-     * Log shutdown message (file + system log)
-     * @throws MissingEnvironmentVariableException
+     * Log shutdown message (file + system log).
+     *
+     * @param string $message Shutdown message to log
+     * @throws MissingEnvironmentVariableException If log file path env var is missing
      */
     protected function logShutdown(string $message): void
     {

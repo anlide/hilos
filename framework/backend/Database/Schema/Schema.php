@@ -8,7 +8,7 @@ use Hilos\Database\DatabaseException;
 use Hilos\Database\SqlParamCollection;
 
 /**
- * Schema - Database structure storage and management
+ * Schema - Database structure storage and management.
  *
  * Stores database table structure in static variables per connection index.
  * Provides methods to initialize and query database schema information.
@@ -46,7 +46,7 @@ class Schema
      * Reads all tables and their structure from database
      *
      * @param ?int $index Connection index (default: current)
-     * @throws DatabaseException
+     * @throws DatabaseException If connection is not established or schema read fails
      */
     public static function initialize(?int $index = null): void
     {
@@ -91,7 +91,7 @@ class Schema
      *
      * @param string $tableName Table name
      * @return TableInfo Table structure information
-     * @throws DatabaseException
+     * @throws DatabaseException If table structure cannot be read
      */
     private static function readTableStructure(string $tableName): TableInfo
     {
@@ -179,7 +179,7 @@ class Schema
      * @return array<string, string> Foreign keys mapping:
      *   - Simple: 'column' => 'referenced_table'
      *   - Composite: 'col1,col2' => 'referenced_table'
-     * @throws DatabaseException
+     * @throws DatabaseException If foreign key query fails
      */
     private static function getRealForeignKeys(string $tableName): array
     {

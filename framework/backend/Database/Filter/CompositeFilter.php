@@ -49,7 +49,7 @@ class CompositeFilter implements FilterInterface
     /**
      * Returns all parameter values from child filters (in order).
      *
-     * @return array<int, mixed> Values for prepared statement
+     * @return list<mixed> Values for prepared statement
      */
     public function getParams(): array
     {
@@ -80,7 +80,7 @@ class CompositeFilter implements FilterInterface
     /**
      * Returns unique column names from all child filters.
      *
-     * @return array<int, string> Column names
+     * @return list<string> Column names
      */
     public function getColumns(): array
     {

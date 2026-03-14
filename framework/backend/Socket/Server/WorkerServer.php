@@ -37,7 +37,7 @@ use Hilos\Utils\Helpers\ArgumentHelper;
 use Hilos\Utils\Logger;
 
 /**
- * WorkerServer - Worker communication server implementation
+ * WorkerServer - Worker communication server implementation.
  *
  * Manages worker server socket and accepts incoming connections from workers.
  * Also manages worker processes lifecycle - starts, monitors and stops them.
@@ -98,7 +98,7 @@ abstract class WorkerServer extends AbstractServer
      * @param string $workerScript Path to worker bootstrap script
      * @param string $workingDirectory Working directory for worker processes
      * @param AgentManagerDaemon $agentManager Agent manager daemon instance
-     * @throws MissingEnvironmentVariableException
+     * @throws MissingEnvironmentVariableException If required env vars are missing
      */
     public function __construct(string $host, int $port, string $workerScript, string $workingDirectory, AgentManagerDaemon $agentManager)
     {
@@ -116,11 +116,12 @@ abstract class WorkerServer extends AbstractServer
         // Ensure log directory exists at startup to avoid repeated is_dir() checks
         $this->ensureLogDirectory();
     }
+
     /**
      * Accept new worker connection
      *
      * @return ?WorkerClientInterface New worker client or null
-     * @throws SocketException
+     * @throws SocketException If socket operation fails
      */
     public function acceptConnection(): ?WorkerClientInterface
     {

@@ -118,7 +118,7 @@ class ResultSet implements \Iterator, \Countable
      *
      * Note: This loads all rows into memory. For large datasets, use row() in a loop instead.
      *
-     * @return array<int, array<string, mixed>> Array of associative arrays
+     * @return list<array<string, mixed>> Array of associative arrays
      */
     public function rows(): array
     {
@@ -244,7 +244,7 @@ class ResultSet implements \Iterator, \Countable
     /**
      * Get raw rows as array.
      *
-     * @return array<int, array<string, mixed>> Rows as associative arrays
+     * @return list<array<string, mixed>> Rows as associative arrays
      */
     public function toArray(): array
     {

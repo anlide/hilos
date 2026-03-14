@@ -20,7 +20,7 @@ class HttpServer extends AbstractServer
      * Accept new connection
      *
      * @return ?HttpClientInterface New client or null
-     * @throws SocketException
+     * @throws SocketException If socket operation fails
      */
     public function acceptConnection(): ?HttpClientInterface
     {
@@ -78,7 +78,7 @@ class HttpServer extends AbstractServer
      * Closes server socket only. Does NOT close client connections.
      * Clients should complete their requests and disconnect themselves.
      *
-     * @throws SocketException
+     * @throws SocketException If socket close fails
      */
     public function stop(): void
     {

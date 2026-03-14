@@ -26,9 +26,10 @@ use Hilos\Hilos;
  */
 abstract class Object_
 {
-    /** @var TEntity */
+    /** @var TEntity current entity state */
     protected Entity $entity;
-    /** @var TEntity */
+
+    /** @var TEntity synced entity state (from database) */
     protected Entity $entitySync;
 
     /**

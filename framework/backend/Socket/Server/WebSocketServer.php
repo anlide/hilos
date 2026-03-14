@@ -20,10 +20,10 @@ use Hilos\Socket\SocketOperation;
 abstract class WebSocketServer extends AbstractServer
 {
     /**
-     * Accept new connection
+     * Accept new connection.
      *
-     * @return ?WebSocketClientInterface New client or null
-     * @throws SocketException
+     * @return ?WebSocketClientInterface New client or null if no connection pending
+     * @throws SocketException If socket operation fails
      */
     public function acceptConnection(): ?WebSocketClientInterface
     {
@@ -42,7 +42,7 @@ abstract class WebSocketServer extends AbstractServer
     abstract protected function onCreateClient($socket): WebSocketClientInterface;
 
     /**
-     * Get server name for logging
+     * Get server name for logging.
      *
      * @return string Server name
      */
@@ -52,7 +52,7 @@ abstract class WebSocketServer extends AbstractServer
     }
 
     /**
-     * Prepare server for shutdown
+     * Prepare server for shutdown.
      *
      * Stops accepting new connections.
      * Closing all connected clients.
@@ -67,7 +67,7 @@ abstract class WebSocketServer extends AbstractServer
     }
 
     /**
-     * Check if server is ready to shutdown
+     * Check if server is ready to shutdown.
      *
      * WebSocket server is ready when all clients have disconnected.
      *
@@ -80,12 +80,12 @@ abstract class WebSocketServer extends AbstractServer
     }
 
     /**
-     * Stop server
+     * Stop server.
      *
      * Closes server socket only. Does NOT close client connections.
      * Clients should complete their sessions and disconnect themselves.
      *
-     * @throws SocketException
+     * @throws SocketException If socket close fails
      */
     public function stop(): void
     {
@@ -101,7 +101,7 @@ abstract class WebSocketServer extends AbstractServer
     }
 
     /**
-     * Called when server is started
+     * Called when server is started.
      *
      * Must be implemented by child classes to perform actions when server starts.
      */

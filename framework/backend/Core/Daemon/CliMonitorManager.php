@@ -18,7 +18,7 @@ use Hilos\Utils\Helpers\TimeHelper;
 use Hilos\Utils\Logger;
 
 /**
- * CliMonitorManager - manages real-time daemon monitoring
+ * CliMonitorManager - manages real-time daemon monitoring.
  *
  * Provides interactive monitoring of daemon process with live updates:
  * - Terminal support checking
@@ -39,13 +39,14 @@ class CliMonitorManager extends BaseManager
     private float $httpRequestDelay = 350.0;
 
     /**
-     * Run monitor - main method
+     * Run monitor - main method.
      *
      * Starts the interactive monitoring loop with real-time updates.
      * Main loop runs at 10ms (0.01s) intervals.
      * UI updates every 1 second.
      * HTTP requests every 350ms after completion.
-     * @throws MissingEnvironmentVariableException
+     *
+     * @throws MissingEnvironmentVariableException If required env vars are missing
      */
     public function run(): void
     {
@@ -151,9 +152,8 @@ class CliMonitorManager extends BaseManager
         return true;
     }
 
-
     /**
-     * Update display with new monitoring data
+     * Update display with new monitoring data.
      *
      * Clears the screen and redraws the monitoring display with current data.
      */
@@ -322,7 +322,9 @@ class CliMonitorManager extends BaseManager
     }
 
     /**
-     * Log error message (console + error_log)
+     * Log error message (console + error_log).
+     *
+     * @param string $message Error message to log
      */
     protected function logError(string $message): void
     {
@@ -330,7 +332,9 @@ class CliMonitorManager extends BaseManager
     }
 
     /**
-     * Log exception message (console + error_log)
+     * Log exception message (console + error_log).
+     *
+     * @param string $message Exception message to log
      */
     protected function logException(string $message): void
     {
@@ -338,7 +342,9 @@ class CliMonitorManager extends BaseManager
     }
 
     /**
-     * Log shutdown message (console + error_log)
+     * Log shutdown message (console + error_log).
+     *
+     * @param string $message Shutdown message to log
      */
     protected function logShutdown(string $message): void
     {

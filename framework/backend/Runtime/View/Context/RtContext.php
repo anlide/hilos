@@ -29,7 +29,11 @@ abstract class RtContext
     {
     }
 
-    /** @throws RtCloneException */
+    /**
+     * Prevents cloning (runtime context holds references).
+     *
+     * @throws RtCloneException Always, cloning not allowed
+     */
     public function __clone(): void
     {
         throw new RtCloneException('Runtime context cannot be cloned');

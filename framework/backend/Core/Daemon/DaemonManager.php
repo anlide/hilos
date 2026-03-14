@@ -49,7 +49,7 @@ use Hilos\Utils\Logger;
  */
 abstract class DaemonManager extends BaseManager
 {
-    /** @var ServerInterface[] Array of registered servers */
+    /** @var list<ServerInterface> registered servers */
     protected array $servers = [];
 
     /** @var ?HttpRouter HTTP router instance */

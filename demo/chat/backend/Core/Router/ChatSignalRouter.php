@@ -184,7 +184,7 @@ class ChatSignalRouter extends SignalRouter
      * All static routing is declared in $config above.
      *
      * @param SignalDTO $signal Signal DTO
-     * @return array<int, array<string, mixed>> Array of destinations
+     * @return list<array<string, mixed>> Array of destinations
      */
     public function getDestinations(SignalDTO $signal): array
     {

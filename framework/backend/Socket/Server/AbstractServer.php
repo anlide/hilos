@@ -16,7 +16,7 @@ use Hilos\Socket\SocketOperation;
  */
 abstract class AbstractServer extends AbstractSocket implements ServerInterface
 {
-    /** @var ClientInterface[] Active client connections */
+    /** @var list<ClientInterface> active client connections */
     protected array $clients = [];
 
     /**

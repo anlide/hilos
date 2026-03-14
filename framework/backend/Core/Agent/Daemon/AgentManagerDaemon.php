@@ -29,7 +29,7 @@ use Hilos\Socket\Worker\DTO\WorkerRtSyncUpdatedMessageDTO;
 use Hilos\Utils\Logger;
 
 /**
- * AgentManagerDaemon - Base class for managing agent daemons in daemon process
+ * AgentManagerDaemon - Base class for managing agent daemons in daemon process.
  *
  * Manages lifecycle of agent daemons running in daemon process.
  * Provides unified interface for agent daemon creation, storage and retrieval.
@@ -246,7 +246,7 @@ abstract class AgentManagerDaemon
      * Creates or updates agent daemon and links it to worker client.
      *
      * @param WorkerAgentStartedDTO $dto DTO with agent started data
-     * @throws AgentDaemonCreationFailedException
+     * @throws AgentDaemonCreationFailedException If agent daemon does not exist in manager
      */
     public function handleAgentStarted(WorkerAgentStartedDTO $dto): void
     {

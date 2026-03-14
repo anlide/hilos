@@ -512,7 +512,7 @@ class Database
      *
      * Note: loads all rows into memory. For large datasets, use row() in a loop.
      *
-     * @return array<int, array<string, mixed>> Array of row arrays (key preserved)
+     * @return list<array<string, mixed>> Row arrays in order
      */
     public static function rows(): array
     {
@@ -733,9 +733,9 @@ class Database
     }
 
     /**
-     * Throw appropriate connection exception based on error code
+     * Throw appropriate connection exception based on error code.
      *
-     * @throws DatabaseConnectionException
+     * @throws DatabaseConnectionException When MySQL connection error occurs
      */
     private static function throwConnectionException(int $errno, string $error): never
     {
@@ -756,9 +756,9 @@ class Database
     }
 
     /**
-     * Throw appropriate runtime exception based on error code
+     * Throw appropriate runtime exception based on error code.
      *
-     * @throws DatabaseRuntimeException
+     * @throws DatabaseRuntimeException When MySQL runtime error occurs during query
      */
     private static function throwRuntimeException(int $errno, string $error, string $query): never
     {

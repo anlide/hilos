@@ -43,7 +43,7 @@ abstract class OtherTableDataSource implements TableDataSourceInterface
      * Loads all rows from the underlying data source.
      * Subclasses must implement to provide raw data for in-memory filtering.
      *
-     * @return array<int, array<string, mixed>> List of rows (assoc arrays, frontend-ready)
+     * @return list<array<string, mixed>> List of rows (assoc arrays, frontend-ready)
      */
     abstract protected function loadAll(): array;
 }

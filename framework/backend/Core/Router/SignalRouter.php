@@ -19,7 +19,7 @@ use Hilos\Socket\WebSocket\DTO\WebSocketPageUpdateSubscriptionSignalDTO;
 use Hilos\Utils\Logger;
 
 /**
- * SignalRouter - Base class for routing signals from sources to agents
+ * SignalRouter - Base class for routing signals from sources to agents.
  *
  * Routes signals based on configuration stored in protected $config array.
  * Extended by project-level routers (e.g. ChatSignalRouter) to define routing rules.
@@ -55,7 +55,7 @@ class SignalRouter
      */
     protected array $config;
 
-    /** @var SignalDTO[] Queued signals to dispatch */
+    /** @var list<SignalDTO> queued signals to dispatch */
     private array $queuedSignals = [];
 
     /** @var bool Whether DB sync broadcast is enabled (false for CLI/migrations) */

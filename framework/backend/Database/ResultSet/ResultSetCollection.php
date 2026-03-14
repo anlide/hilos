@@ -209,7 +209,7 @@ class ResultSetCollection implements \Iterator, \Countable
      *
      * Note: loads all rows into memory. For large datasets, use first()->row() in a loop.
      *
-     * @return array<int, array<string, mixed>> Array of row arrays
+     * @return list<array<string, mixed>> Row arrays in order
      */
     public function rows(): array
     {
@@ -338,7 +338,7 @@ class ResultSetCollection implements \Iterator, \Countable
      * Useful for queries like "SELECT id FROM users".
      *
      * @param string $columnName Column name to pluck
-     * @return array<int, mixed> Array of column values
+     * @return list<mixed> Column values in order
      */
     public function pluck(string $columnName): array
     {
@@ -361,7 +361,7 @@ class ResultSetCollection implements \Iterator, \Countable
     /**
      * Returns all rows as array (alias for rows()).
      *
-     * @return array<int, array<string, mixed>> Array of row arrays
+     * @return list<array<string, mixed>> Row arrays in order
      */
     public function toArray(): array
     {

@@ -52,15 +52,10 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
     /** @var class-string<TObjectCollection> */
     public const string OBJECT_COLLECTION_CLASS = '';
 
-    /**
-     * Whether this is a manual collection (empty, populated manually)
-     * If false, collection wraps ObjectCollection from storage
-     */
+    /** @var bool whether collection is manual (empty, populated via add) vs auto (wraps ObjectCollection) */
     protected bool $isManual = false;
 
-    /**
-     * Current iterator position
-     */
+    /** @var int current iterator position */
     private int $position = 0;
 
     /**
@@ -87,12 +82,7 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
      */
     private ?string $_actionsClass = null;
 
-    /**
-     * Item actions class name (set via setItemActionsClass).
-     * Used to create Actions instance for each DbItem on demand.
-     *
-     * @var ?class-string
-     */
+    /** @var ?class-string<DbActions> item actions class for each DbItem (set via setItemActionsClass) */
     private ?string $_itemActionsClass = null;
 
     /**
@@ -102,9 +92,7 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
      */
     private ?DbActions $_actions = null;
 
-    /**
-     * Backup current iterator position
-     */
+    /** @var int backup iterator position for nested iteration */
     private int $savedPosition = 0;
 
     /**
@@ -194,10 +182,10 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
     }
 
     /**
-     * Set Actions class name
-     * Called when collection is registered
+     * Set Actions class name.
+     * Called when collection is registered.
      *
-     * @param ?string $actionsClass Actions class name (null to use default)
+     * @param ?class-string<DbActions> $actionsClass Actions class name or null to use default
      */
     public function setActionsClass(?string $actionsClass): void
     {
@@ -208,7 +196,7 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
      * Set Item Actions class name.
      * Called when collection is registered.
      *
-     * @param ?string $itemActionsClass Item actions class name
+     * @param ?class-string<DbActions> $itemActionsClass Item actions class name or null
      */
     public function setItemActionsClass(?string $itemActionsClass): void
     {
@@ -614,9 +602,9 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
      *
      * @param string $name Property name
      * @return DbActions<T, TObjectCollection>|Objects
-     * @throws PropertyNotFoundException
-     * @throws ActionsClassException
-     * @throws ObjectCollectionNullException
+     * @throws PropertyNotFoundException If property does not exist
+     * @throws ActionsClassException If actions class is not set or invalid
+     * @throws ObjectCollectionNullException If object collection is null (manual collection)
      */
     public function __get(string $name)
     {

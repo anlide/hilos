@@ -70,7 +70,7 @@ class ColumnFilter implements FilterInterface
     /**
      * Returns parameter values for prepared statement binding.
      *
-     * @return array<int, mixed> Values in order for placeholders
+     * @return list<mixed> Values in order for placeholders
      */
     public function getParams(): array
     {

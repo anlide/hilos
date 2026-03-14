@@ -132,7 +132,7 @@ abstract class AbstractTruthSourceRegistry
      * Get truth source keys for collection.
      *
      * @param string $collection Collection/table name
-     * @return array<int, string>|true|null Array of keys, true for all keys, or null if no truth source
+     * @return list<string>|true|null Array of keys, true for all keys, or null if no truth source
      */
     public static function getTruthSourceKeys(string $collection): array|true|null
     {

@@ -21,7 +21,7 @@ interface FilterInterface
     /**
      * Get SQL parameters for prepared statement.
      *
-     * @return array<int, mixed> Parameter values (not SqlParam objects)
+     * @return list<mixed> Parameter values in order (not SqlParam objects)
      */
     public function getParams(): array;
 
@@ -36,7 +36,7 @@ interface FilterInterface
     /**
      * Get columns needed for filter.
      *
-     * @return array<int, string> Column names
+     * @return list<string> Column names
      */
     public function getColumns(): array;
 }

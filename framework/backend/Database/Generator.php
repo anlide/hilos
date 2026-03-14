@@ -548,7 +548,7 @@ class Generator
     /**
      * List all tables in current database.
      *
-     * @return array<int, string> Table names
+     * @return list<string> Table names
      * @throws DatabaseException When query fails
      */
     public static function listTables(): array

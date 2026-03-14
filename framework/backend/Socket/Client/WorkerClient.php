@@ -130,8 +130,9 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
      *
      * Safely parses JSON messages by tracking bracket depth.
      * Handles JSON objects that may contain newlines in strings.
-     * @throws AgentDaemonCreationFailedException
-     * @throws SocketException
+     *
+     * @throws AgentDaemonCreationFailedException If agent creation fails during message handling
+     * @throws SocketException If socket read/write fails
      */
     protected function processReadBuffer(): void
     {
@@ -150,7 +151,7 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
      * Process message from worker
      *
      * @param string $message Message data
-     * @throws AgentDaemonCreationFailedException
+     * @throws AgentDaemonCreationFailedException If agent creation fails during message handling
      */
     private function processMessage(string $message): void
     {
@@ -203,7 +204,7 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
      * Handle agent started message
      *
      * @param WorkerAgentStartedDTO $dto DTO with agent started data
-     * @throws AgentDaemonCreationFailedException
+     * @throws AgentDaemonCreationFailedException If agent creation fails
      */
     private function handleAgentStartedMessage(WorkerAgentStartedDTO $dto): void
     {
