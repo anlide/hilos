@@ -132,6 +132,9 @@ trait ItemItemFixer
 
     /**
      * Extract class name from dbItem file.
+     *
+     * @param string $file dbItem file path
+     * @return ?string Fully qualified class name or null if extraction fails
      */
     private function extractClassNameFromIdeaFile(string $file): ?string
     {
@@ -159,6 +162,10 @@ trait ItemItemFixer
 
     /**
      * Extract Object class name from dbItem reflection or file.
+     *
+     * @param ReflectionClass<object> $ideaReflection dbItem class reflection
+     * @param string $ideaFile Path to dbItem file
+     * @return ?string Object fully qualified class name or null if not found
      */
     private function extractObjectClassNameFromIdeaItem(ReflectionClass $ideaReflection, string $ideaFile): ?string
     {

@@ -53,6 +53,7 @@ trait ItemStorageFixer
     private const string FIX_ADD_INIT_COLLECTION = 'init_collection';
     private const string FIX_ADD_INIT_AGAIN_COLLECTION = 'initAgain_collection';
     private const string FIX_ADD_RELOAD_COLLECTION_CASE = 'reloadCollection_case';
+
     /**
      * Load IdeaStorage file
      *

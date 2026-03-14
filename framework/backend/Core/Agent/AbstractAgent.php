@@ -191,9 +191,9 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface
      *
      * Child classes can override this method.
      *
+     * @param SignalDataInterface $data Signal data
      * @param string $source Signal source
      * @param string $name Signal name
-     * @param SignalDataInterface $data Signal data
      */
     public function onSignalSystem(SignalDataInterface $data, string $source, string $name): void
     {
@@ -205,9 +205,9 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface
      *
      * Child classes can override this method.
      *
+     * @param WebSocketHandshakeSignalDTO $data Signal data
      * @param string $source Signal source
      * @param string $name Signal name
-     * @param WebSocketHandshakeSignalDTO $data Signal data
      */
     public function onSignalHandshake(WebSocketHandshakeSignalDTO $data, string $source, string $name): void
     {
@@ -219,9 +219,9 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface
      *
      * Child classes can override this method.
      *
+     * @param WebSocketCloseSignalDTO $data Signal data
      * @param string $source Signal source
      * @param string $name Signal name
-     * @param WebSocketCloseSignalDTO $data Signal data
      */
     public function onSignalConnectionClose(WebSocketCloseSignalDTO $data, string $source, string $name): void
     {
@@ -233,9 +233,9 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface
      *
      * Child classes can override this method.
      *
+     * @param WebSocketPageSubscribeSignalDTO $data Signal data
      * @param string $source Signal source
      * @param string $name Signal name
-     * @param WebSocketPageSubscribeSignalDTO $data Signal data
      */
     public function onSignalPageSubscribe(WebSocketPageSubscribeSignalDTO $data, string $source, string $name): void
     {
@@ -247,9 +247,9 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface
      *
      * Child classes can override this method.
      *
+     * @param WebSocketPageUnsubscribeSignalDTO $data Signal data
      * @param string $source Signal source
      * @param string $name Signal name
-     * @param WebSocketPageUnsubscribeSignalDTO $data Signal data
      */
     public function onSignalPageUnsubscribe(WebSocketPageUnsubscribeSignalDTO $data, string $source, string $name): void
     {
@@ -261,9 +261,9 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface
      *
      * Child classes can override this method.
      *
+     * @param WebSocketPageUpdateSubscriptionSignalDTO $data Signal data
      * @param string $source Signal source
      * @param string $name Signal name
-     * @param WebSocketPageUpdateSubscriptionSignalDTO $data Signal data
      */
     public function onSignalPageUpdateSubscription(WebSocketPageUpdateSubscriptionSignalDTO $data, string $source, string $name): void
     {
@@ -275,9 +275,9 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface
      *
      * Child classes can override this method.
      *
+     * @param WebSocketGroupSubscribeSignalDTO $data Signal data
      * @param string $source Signal source
      * @param string $name Signal name
-     * @param WebSocketGroupSubscribeSignalDTO $data Signal data
      */
     public function onSignalGroupSubscribe(WebSocketGroupSubscribeSignalDTO $data, string $source, string $name): void
     {
@@ -289,9 +289,9 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface
      *
      * Child classes can override this method.
      *
+     * @param WebSocketGroupUnsubscribeSignalDTO $data Signal data
      * @param string $source Signal source
      * @param string $name Signal name
-     * @param WebSocketGroupUnsubscribeSignalDTO $data Signal data
      */
     public function onSignalGroupUnsubscribe(WebSocketGroupUnsubscribeSignalDTO $data, string $source, string $name): void
     {
@@ -303,9 +303,9 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface
      *
      * Child classes can override this method.
      *
+     * @param WebSocketGroupUpdateSubscriptionSignalDTO $data Signal data
      * @param string $source Signal source
      * @param string $name Signal name
-     * @param WebSocketGroupUpdateSubscriptionSignalDTO $data Signal data
      */
     public function onSignalGroupUpdateSubscription(WebSocketGroupUpdateSubscriptionSignalDTO $data, string $source, string $name): void
     {
@@ -317,9 +317,9 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface
      *
      * Child classes can override this method.
      *
+     * @param WebSocketActionSignalDTO $data Signal data
      * @param string $source Signal source
      * @param string $name Signal name
-     * @param WebSocketActionSignalDTO $data Signal data
      */
     public function onSignalAction(WebSocketActionSignalDTO $data, string $source, string $name): void
     {
@@ -331,9 +331,9 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface
      *
      * Child classes can override this method.
      *
+     * @param WebSocketFrameBinarySignalDTO $data Signal data
      * @param string $source Signal source
      * @param string $name Signal name
-     * @param WebSocketFrameBinarySignalDTO $data Signal data
      */
     public function onSignalFrameBinary(WebSocketFrameBinarySignalDTO $data, string $source, string $name): void
     {
@@ -345,9 +345,9 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface
      *
      * Child classes can override this method.
      *
+     * @param SignalDataInterface $data Signal data
      * @param string $source Signal source
      * @param string $name Signal name
-     * @param SignalDataInterface $data Signal data
      */
     public function onSignalCron(SignalDataInterface $data, string $source, string $name): void
     {
@@ -374,9 +374,9 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface
      *
      * Child classes can override these methods.
      *
+     * @param DbSyncCreatedSignalData $data Signal data
      * @param string $source Signal source
      * @param string $name Signal name
-     * @param DbSyncCreatedSignalData $data Signal data
      */
     public function onSignalDbSyncCreated(DbSyncCreatedSignalData $data, string $source, string $name): void
     {
@@ -388,9 +388,9 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface
      *
      * Child classes can override these methods.
      *
+     * @param DbSyncUpdatedSignalData $data Signal data
      * @param string $source Signal source
      * @param string $name Signal name
-     * @param DbSyncUpdatedSignalData $data Signal data
      */
     public function onSignalDbSyncUpdated(DbSyncUpdatedSignalData $data, string $source, string $name): void
     {
@@ -402,9 +402,9 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface
      *
      * Child classes can override these methods.
      *
+     * @param DbSyncDeletedSignalData $data Signal data
      * @param string $source Signal source
      * @param string $name Signal name
-     * @param DbSyncDeletedSignalData $data Signal data
      */
     public function onSignalDbSyncDeleted(DbSyncDeletedSignalData $data, string $source, string $name): void
     {
@@ -416,9 +416,9 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface
      *
      * Child classes can override these methods.
      *
+     * @param RtSyncCreatedSignalData $data Signal data
      * @param string $source Signal source
      * @param string $name Signal name
-     * @param RtSyncCreatedSignalData $data Signal data
      */
     public function onSignalRtSyncCreated(RtSyncCreatedSignalData $data, string $source, string $name): void
     {
@@ -430,9 +430,9 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface
      *
      * Child classes can override these methods.
      *
+     * @param RtSyncUpdatedSignalData $data Signal data
      * @param string $source Signal source
      * @param string $name Signal name
-     * @param RtSyncUpdatedSignalData $data Signal data
      */
     public function onSignalRtSyncUpdated(RtSyncUpdatedSignalData $data, string $source, string $name): void
     {
@@ -444,9 +444,9 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface
      *
      * Child classes can override these methods.
      *
+     * @param RtSyncDeletedSignalData $data Signal data
      * @param string $source Signal source
      * @param string $name Signal name
-     * @param RtSyncDeletedSignalData $data Signal data
      */
     public function onSignalRtSyncDeleted(RtSyncDeletedSignalData $data, string $source, string $name): void
     {

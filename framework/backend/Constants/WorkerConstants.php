@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Constants;
 
 /**
- * WorkerConstants - Worker-related constants
+ * WorkerConstants - Worker-related constants.
  *
  * Defines command line argument names for worker processes.
  * Formats are derived in ArgumentHelper.

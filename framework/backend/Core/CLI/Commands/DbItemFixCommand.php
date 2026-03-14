@@ -17,7 +17,7 @@ use ReflectionClass;
 use RuntimeException;
 
 /**
- * DbItemFixCommand - Fix Item/DbItem files to match Object files
+ * DbItemFixCommand - Fix Item/DbItem files to match Object files.
  *
  * Automatically updates Item/DbItem class definitions to match Object structure.
  * Item layer is isolated from Entity and works only with Object classes.
@@ -32,16 +32,31 @@ class DbItemFixCommand implements CommandInterface
     use ItemMainFixer;
     use ItemStorageFixer;
 
+    /**
+     * Returns command name for CLI routing.
+     *
+     * @return string Command name
+     */
     public function getName(): string
     {
         return CliCommands::DB_ITEM_FIX;
     }
 
+    /**
+     * Returns short command description for help listing.
+     *
+     * @return string One-line description
+     */
     public function getDescription(): string
     {
         return 'Fix Item/DbItem files to match Object files';
     }
 
+    /**
+     * Returns full help text with usage and examples.
+     *
+     * @return string Multi-line help text
+     */
     public function getHelp(): string
     {
         return <<<HELP
@@ -582,7 +597,10 @@ HELP;
     }
 
     /**
-     * Extract class name from Object file
+     * Extract class name from Object file.
+     *
+     * @param string $file Object file path
+     * @return ?string Fully qualified class name or null if extraction fails
      */
     private function extractClassNameFromObjectFile(string $file): ?string
     {
@@ -1171,7 +1189,10 @@ HELP;
     }
 
     /**
-     * Extract Entity class name from ObjectCollection (helper method)
+     * Extract Entity class name from ObjectCollection via use statements in file.
+     *
+     * @param ReflectionClass<object> $objectCollectionReflection ObjectCollection class reflection
+     * @return ?string Entity fully qualified class name or null if not found
      */
     private function extractEntityClassNameFromObjectCollection(ReflectionClass $objectCollectionReflection): ?string
     {

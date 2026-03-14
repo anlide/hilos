@@ -361,7 +361,8 @@ trait EntityCollectionFixer
      * Parse EntityCollection file to extract current structure.
      *
      * @param string $filePath EntityCollection file path
-     * @return ?array Parsed structure or null if failed
+     * @param ?string $expectedEntityClass Expected Entity class name for validation
+     * @return ?array<string, mixed> Parsed structure or null if failed
      */
     protected function parseEntityCollectionFile(string $filePath, ?string $expectedEntityClass = null): ?array
     {
