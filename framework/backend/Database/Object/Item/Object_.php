@@ -169,7 +169,7 @@ abstract class Object_
     /**
      * Get changed column names.
      *
-     * @return array<string> List of changed column names
+     * @return list<string> List of changed column names
      */
     public function getChangedColumns(): array
     {
@@ -192,7 +192,6 @@ abstract class Object_
 
     /**
      * Revert changes (restore from entitySync).
-     *
      */
     public function revert(): void
     {
@@ -304,7 +303,7 @@ abstract class Object_
      * Uses Entity::_primary. For simple keys matches array keys; for composite keys
      * child classes may override if Entity uses different naming (e.g. snake_case).
      *
-     * @return array<string>
+     * @return list<string> Primary key column names
      */
     public function getPrimaryKeyArrayKeys(): array
     {

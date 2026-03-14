@@ -189,9 +189,9 @@ class CliMonitorManager extends BaseManager
     }
 
     /**
-     * Process HTTP result from async client
+     * Process HTTP result from async client.
      *
-     * @param array $result Result array with HttpConstants::RESPONSE_KEY_SUCCESS and HttpConstants::RESPONSE_KEY_BODY keys
+     * @param array<string, mixed> $result Result array with HttpConstants::RESPONSE_KEY_SUCCESS and HttpConstants::RESPONSE_KEY_BODY keys
      */
     private function processHttpResult(array $result): void
     {
@@ -211,7 +211,9 @@ class CliMonitorManager extends BaseManager
     }
 
     /**
-     * Get daemon status value
+     * Get daemon status value.
+     *
+     * @return string STATUS_ONLINE or STATUS_OFFLINE or VALUE_NOT_AVAILABLE
      */
     private function getStatusValue(): string
     {
@@ -224,7 +226,9 @@ class CliMonitorManager extends BaseManager
     }
 
     /**
-     * Get daemon uptime value
+     * Get daemon uptime value.
+     *
+     * @return string Formatted uptime or VALUE_NOT_AVAILABLE
      */
     private function getUptimeValue(): string
     {
@@ -236,7 +240,9 @@ class CliMonitorManager extends BaseManager
     }
 
     /**
-     * Get daemon memory usage
+     * Get daemon memory usage.
+     *
+     * @return string Formatted memory or VALUE_NOT_AVAILABLE
      */
     private function getMemoryValue(): string
     {
@@ -248,7 +254,9 @@ class CliMonitorManager extends BaseManager
     }
 
     /**
-     * Get daemon CPU usage
+     * Get daemon CPU usage.
+     *
+     * @return string CPU percentage or VALUE_NOT_AVAILABLE
      */
     private function getCpuValue(): string
     {
@@ -260,7 +268,9 @@ class CliMonitorManager extends BaseManager
     }
 
     /**
-     * Get regular workers count
+     * Get regular workers count.
+     *
+     * @return string Workers count or VALUE_NOT_AVAILABLE
      */
     private function getWorkersRegularValue(): string
     {
@@ -272,7 +282,9 @@ class CliMonitorManager extends BaseManager
     }
 
     /**
-     * Get monopolistic workers count
+     * Get monopolistic workers count.
+     *
+     * @return string Workers count or VALUE_NOT_AVAILABLE
      */
     private function getWorkersMonopolisticValue(): string
     {
@@ -284,7 +296,9 @@ class CliMonitorManager extends BaseManager
     }
 
     /**
-     * Get maximum regular workers count
+     * Get maximum regular workers count.
+     *
+     * @return string Max workers count or VALUE_NOT_AVAILABLE
      */
     private function getWorkersMaxRegularValue(): string
     {
@@ -298,7 +312,9 @@ class CliMonitorManager extends BaseManager
     // Implementation of abstract methods from BaseManager
 
     /**
-     * Get manager name for logging
+     * Get manager name for logging.
+     *
+     * @return string Manager name
      */
     protected function getManagerName(): string
     {

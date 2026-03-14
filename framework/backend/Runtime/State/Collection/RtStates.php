@@ -57,9 +57,9 @@ abstract class RtStates implements Iterator, ArrayAccess, Countable
     }
 
     /**
-     * Initialize empty collection
+     * Initialize empty collection.
      *
-     * @return static
+     * @return static New RtStates instance
      */
     public static function init(): static
     {
@@ -180,9 +180,9 @@ abstract class RtStates implements Iterator, ArrayAccess, Countable
     }
 
     /**
-     * Get last state
+     * Get last state.
      *
-     * @return ?RtState
+     * @return ?RtState Last state or null if empty
      */
     public function last(): ?RtState
     {

@@ -65,7 +65,7 @@ abstract class Entity
     /**
      * Save entity to database.
      *
-     * @param array<string> $columns Specific columns to save (empty = all changed columns)
+     * @param list<string> $columns Specific columns to save (empty = all changed columns)
      * @return bool Always true on success
      * @throws DatabaseException When database operation fails
      */
@@ -149,7 +149,7 @@ abstract class Entity
     /**
      * Update existing row.
      *
-     * @param array<string> $columns Columns to update (empty = all non-primary columns)
+     * @param list<string> $columns Columns to update (empty = all non-primary columns)
      * @throws DatabaseException When SQL execution fails
      */
     private function saveUpdate(array $columns = []): void

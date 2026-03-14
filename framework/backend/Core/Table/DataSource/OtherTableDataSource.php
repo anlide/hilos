@@ -19,7 +19,7 @@ abstract class OtherTableDataSource implements TableDataSourceInterface
     /**
      * Returns the source type (Entity, Sql, or Other).
      *
-     * @return TableType
+     * @return TableType Data source type
      */
     public function getType(): TableType
     {
@@ -32,8 +32,7 @@ abstract class OtherTableDataSource implements TableDataSourceInterface
      * Subclasses may override for more efficient implementations.
      *
      * @param TableQueryDTO $query Query parameters
-     *
-     * @return TableResultDTO
+     * @return TableResultDTO Query result with rows and total count
      */
     public function query(TableQueryDTO $query): TableResultDTO
     {

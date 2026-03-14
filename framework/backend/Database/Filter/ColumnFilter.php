@@ -112,7 +112,7 @@ class ColumnFilter implements FilterInterface
     /**
      * Returns column names used in filter.
      *
-     * @return array<int, string> Column names
+     * @return list<string> Column names
      */
     public function getColumns(): array
     {

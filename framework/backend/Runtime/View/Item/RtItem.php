@@ -91,7 +91,7 @@ abstract class RtItem
      *
      * @param string $name Property name
      * @param mixed $value Value to set (unused)
-     * @return never
+     * @return never Never returns (always throws)
      * @throws RtItemReadOnlyException Always thrown
      */
     final public function __set(string $name, mixed $value): never

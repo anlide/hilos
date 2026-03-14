@@ -18,7 +18,7 @@ abstract class SqlTableDataSource implements TableDataSourceInterface
     /**
      * Returns the source type (Entity, Sql, or Other).
      *
-     * @return TableType
+     * @return TableType Data source type (Entity, Sql, or Other)
      */
     public function getType(): TableType
     {
@@ -30,8 +30,7 @@ abstract class SqlTableDataSource implements TableDataSourceInterface
      * Subclasses should build SQL with WHERE/ORDER BY/LIMIT/OFFSET.
      *
      * @param TableQueryDTO $query Query parameters
-     *
-     * @return TableResultDTO
+     * @return TableResultDTO Query result with rows and total count
      */
     abstract public function query(TableQueryDTO $query): TableResultDTO;
 }

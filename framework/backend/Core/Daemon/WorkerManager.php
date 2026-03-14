@@ -98,7 +98,7 @@ abstract class WorkerManager extends BaseManager
      * Must be implemented in child classes to create specific signal router.
      * The created instance is registered globally via Hilos::$sr.
      *
-     * @return SignalRouter
+     * @return SignalRouter Signal router instance
      */
     abstract protected function createSignalRouter(): SignalRouter;
 
@@ -983,7 +983,7 @@ abstract class WorkerManager extends BaseManager
      *
      * Must be implemented in child classes to create specific agent manager.
      *
-     * @return AgentManager
+     * @return AgentManager Agent manager instance
      */
     abstract protected function createAgentManager(): AgentManager;
 

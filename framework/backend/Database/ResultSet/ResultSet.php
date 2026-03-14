@@ -20,20 +20,10 @@ class ResultSet implements \Iterator, \Countable
     /** @var ?mysqli_result Original mysqli result (if not loaded yet) */
     private ?mysqli_result $mysqliResult = null;
 
-    /**
-     * Get mysqli_result (for comparison to detect result changes).
-     *
-     * @return ?mysqli_result mysqli result or null if not set
-     */
-    public function getMysqliResult(): ?mysqli_result
-    {
-        return $this->mysqliResult;
-    }
-
     /** @var array<int, array<string, mixed>> Raw rows from database (lazy loaded) */
     private array $rows = [];
 
-    /** @var array<string> Column names */
+    /** @var list<string> Column names */
     private array $columns = [];
 
     /** @var bool Whether rows are already loaded */
@@ -43,10 +33,20 @@ class ResultSet implements \Iterator, \Countable
     private int $position = 0;
 
     /**
-     * Private constructor - use fromMysqliResult() instead
+     * Private constructor - use fromMysqliResult() instead.
      */
     private function __construct()
     {
+    }
+
+    /**
+     * Get mysqli_result (for comparison to detect result changes).
+     *
+     * @return ?mysqli_result mysqli result or null if not set
+     */
+    public function getMysqliResult(): ?mysqli_result
+    {
+        return $this->mysqliResult;
     }
 
     /**
@@ -176,7 +176,7 @@ class ResultSet implements \Iterator, \Countable
     /**
      * Get column names.
      *
-     * @return array<string> Column names
+     * @return list<string> Column names
      */
     public function getColumns(): array
     {
@@ -281,9 +281,9 @@ class ResultSet implements \Iterator, \Countable
     }
 
     /**
-     * Get current key
+     * Get current iterator position.
      *
-     * @return int
+     * @return int Current iterator position
      */
     public function key(): int
     {

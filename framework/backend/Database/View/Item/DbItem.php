@@ -84,7 +84,7 @@ abstract class DbItem
     /**
      * Get underlying object reference.
      *
-     * @return TObject
+     * @return TObject Underlying Object instance
      */
     public function getObject(): Object_
     {
@@ -104,7 +104,7 @@ abstract class DbItem
     /**
      * Get parent DbCollection reference.
      *
-     * @return ?DbCollection<DbItem, Objects>
+     * @return ?DbCollection<DbItem, Objects> Parent collection or null if not set
      */
     public function getCollection(): ?DbCollection
     {
@@ -182,7 +182,7 @@ abstract class DbItem
      * Child classes should override and call parent::__get() in default case.
      *
      * @param string $name Property name
-     * @return mixed
+     * @return mixed Property value (actions instance, object reference, or child-specific value)
      * @throws PropertyNotFoundException If property does not exist
      * @throws ActionsClassException If item actions class is invalid or not configured
      */
@@ -196,11 +196,11 @@ abstract class DbItem
     }
 
     /**
-     * Property setter - prevents modification (read-only)
+     * Property setter - prevents modification (read-only).
      *
      * @param string $name Property name
      * @param mixed $value Property value
-     * @return never
+     * @return never Never returns (always throws)
      * @throws ReadOnlyException Always throws (read-only)
      */
     final public function __set(string $name, mixed $value): never
@@ -218,7 +218,7 @@ abstract class DbItem
      * @param bool $withBridges Include bridge/junction table data
      * @param bool $withCalculation Include calculated fields
      * @param bool $toFrontend When true, exclude fields that must not be sent to frontend (e.g. sessionToken). ID is always included when true.
-     * @return array<string, mixed>
+     * @return array<string, mixed> Item data as associative array
      */
     public function toArray(bool $withId = true, bool $idAsIndex = true, bool $withBridges = false, bool $withCalculation = false, bool $toFrontend = false): array
     {

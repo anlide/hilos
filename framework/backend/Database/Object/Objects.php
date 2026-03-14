@@ -131,9 +131,9 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
     }
 
     /**
-     * Initialize empty collection
+     * Initialize empty collection.
      *
-     * @return static
+     * @return static Empty collection instance
      */
     public static function initEmpty(): static
     {
@@ -141,10 +141,10 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
     }
 
     /**
-     * Lazy load object by key
+     * Lazy load object by key.
      *
      * @param int|string $key Object key (usually primary key)
-     * @return ?T
+     * @return ?T Object instance or null if not found
      */
     protected function lazyLoadObject(int|string $key): ?Object_
     {
@@ -209,7 +209,7 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
      * Override in subclasses to restrict searchable columns.
      * Default: all columns from the entity.
      *
-     * @return array<string> Entity column names
+     * @return list<string> Entity column names
      */
     public function getSearchableColumns(): array
     {
@@ -314,10 +314,10 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
     }
 
     /**
-     * Get current object
-     * For batch strategy, loads all objects on first iteration
+     * Get current object.
+     * For batch strategy, loads all objects on first iteration.
      *
-     * @return ?T
+     * @return ?T Current Object_ or null if position invalid
      */
     public function current(): ?Object_
     {
@@ -549,9 +549,9 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
     }
 
     /**
-     * Get first object in collection
+     * Get first object in collection.
      *
-     * @return ?T
+     * @return ?T First Object_ or null if collection empty
      */
     public function first(): ?Object_
     {
@@ -564,9 +564,9 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
     }
 
     /**
-     * Get last object in collection
+     * Get last object in collection.
      *
-     * @return ?T
+     * @return ?T Last Object_ or null if collection empty
      */
     public function last(): ?Object_
     {

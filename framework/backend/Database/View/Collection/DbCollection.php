@@ -261,7 +261,7 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
      * Uses DB_ITEM_CLASS and OBJECT_COLLECTION_CLASS constants defined by child classes.
      *
      * @param Object_ $object Object instance (reference)
-     * @return T
+     * @return T DbItem instance for the given Object
      */
     protected function createDbItem(Object_ &$object): DbItem
     {
@@ -473,9 +473,9 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
     }
 
     /**
-     * Get first DbItem
+     * Get first DbItem.
      *
-     * @return ?T
+     * @return ?T First DbItem or null if collection empty
      */
     public function first(): ?DbItem
     {
@@ -497,9 +497,9 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
     }
 
     /**
-     * Get last DbItem
+     * Get last DbItem.
      *
-     * @return ?T
+     * @return ?T Last DbItem or null if collection empty
      */
     public function last(): ?DbItem
     {
@@ -646,7 +646,7 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
     /**
      * Get current element.
      *
-     * @return ?T
+     * @return ?T Current DbItem or null if position invalid
      */
     public function current(): ?DbItem
     {

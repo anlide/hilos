@@ -12,7 +12,7 @@ use RuntimeException;
 use Throwable;
 
 /**
- * BaseManager - Abstract base class for all managers
+ * BaseManager - Abstract base class for all managers.
  *
  * Contains common logic for:
  * - Error and exception handling

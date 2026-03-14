@@ -51,9 +51,7 @@ abstract class TableContext
      * Magic property access: Hilos::$table->users → TableDefinition
      *
      * @param string $name Table key
-     *
-     * @return TableDefinition
-     *
+     * @return TableDefinition Table definition instance
      * @throws TableNotFoundException When table does not exist
      */
     public function __get(string $name): TableDefinition
@@ -68,8 +66,7 @@ abstract class TableContext
      * Checks if a table is registered.
      *
      * @param string $name Table key
-     *
-     * @return bool
+     * @return bool True if table exists
      */
     public function __isset(string $name): bool
     {

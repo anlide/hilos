@@ -168,7 +168,7 @@ class FilteredCollection extends Objects
     /**
      * Initialize empty collection (not supported for FilteredCollection).
      *
-     * @return static
+     * @return static Never returns (throws)
      * @throws \RuntimeException Always, direct init not allowed
      */
     public static function initEmpty(): static
