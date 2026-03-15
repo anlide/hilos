@@ -34,16 +34,42 @@ use Hilos\Socket\WebSocket\DTO\WebSocketPageUpdateSubscriptionSignalDTO;
 /**
  * AbstractAgent - Abstract base class for agents running in worker processes.
  *
- * Provides base implementation for agents. Child classes must implement:
- * - getType() - return agent type
- * - getIndex() - return agent index (can return null)
+ * Provides base implementation for agents. Child classes should define:
+ * - AGENT_TYPE constant - agent type identifier
+ * - $agentIndex property (set in constructor) - for multi-instance agents
  * - doTick() - agent work logic (override this instead of tick())
  * - Signal handling methods (can override onSignal* methods for specific signal types).
  */
 abstract class AbstractAgent implements AgentInterface, PageAgentInterface
 {
+    /** @var string Agent type identifier. Override in child classes. */
+    public const string AGENT_TYPE = '';
+
+    /** @var ?string Agent index for multi-instance agents (null for singletons) */
+    protected ?string $agentIndex = null;
+
     /** @var bool Flag indicating agent should stop */
     private bool $shouldStop = false;
+
+    /**
+     * Get agent type identifier.
+     *
+     * @return string Agent type from AGENT_TYPE constant
+     */
+    public function getType(): string
+    {
+        return static::AGENT_TYPE;
+    }
+
+    /**
+     * Get agent index (optional identifier for multi-instance agents).
+     *
+     * @return ?string Agent index or null for singleton agents
+     */
+    public function getIndex(): ?string
+    {
+        return $this->agentIndex;
+    }
 
     /**
      * Get agent unique identifier (type + index).

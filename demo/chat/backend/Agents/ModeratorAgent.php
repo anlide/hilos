@@ -31,8 +31,7 @@ use Hilos\Utils\Logger;
  */
 class ModeratorAgent extends AbstractAgent
 {
-    /** @var string Agent type */
-    private const string AGENT_TYPE = AgentType::MODERATOR;
+    public const string AGENT_TYPE = AgentType::MODERATOR;
 
     /** @var AsyncChatLLMInterface LLM chat client for moderation */
     private AsyncChatLLMInterface $chatClient;
@@ -55,26 +54,6 @@ class ModeratorAgent extends AbstractAgent
                 model: ModerationEnv::getModel(),
                 apiKey: null,
             );
-    }
-
-    /**
-     * Get agent type identifier.
-     *
-     * @return string Agent type constant
-     */
-    public function getType(): string
-    {
-        return self::AGENT_TYPE;
-    }
-
-    /**
-     * Get agent index. Moderator has no index (global singleton).
-     *
-     * @return ?string Agent index, null for global moderator
-     */
-    public function getIndex(): ?string
-    {
-        return null;
     }
 
     /**

@@ -40,14 +40,10 @@ use Hilos\Utils\Logger;
  */
 class BotAgent extends AbstractAgent
 {
-    /** @var string Agent type */
-    private const string AGENT_TYPE = AgentType::BOT;
+    public const string AGENT_TYPE = AgentType::BOT;
 
     /** @var int Maximum tokens for LLM response */
     private const int MAX_RESPONSE_TOKENS = 256;
-
-    /** @var string Bot ID (agent index) */
-    private string $agentIndex;
 
     /** @var AsyncChatLLMInterface LLM chat client */
     private AsyncChatLLMInterface $chatClient;
@@ -73,6 +69,7 @@ class BotAgent extends AbstractAgent
             throw new AgentIndexRequiredException('BotAgent requires non-empty agentIndex (bot id)');
         }
         $this->agentIndex = $agentIndex;
+
         $this->chatClient = BotEnv::useExternalProvider()
             ? ClientFactory::createChatClient()
             : ClientFactory::createChatClientWithConfig(
@@ -80,26 +77,6 @@ class BotAgent extends AbstractAgent
                 model: BotEnv::getModel(),
                 apiKey: null,
             );
-    }
-
-    /**
-     * Get agent type.
-     *
-     * @return string Agent type constant
-     */
-    public function getType(): string
-    {
-        return self::AGENT_TYPE;
-    }
-
-    /**
-     * Get agent index (bot ID).
-     *
-     * @return ?string Bot ID as string
-     */
-    public function getIndex(): ?string
-    {
-        return $this->agentIndex;
     }
 
     /**

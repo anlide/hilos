@@ -39,33 +39,13 @@ use Hilos\Utils\Logger;
  */
 class ChatAgent extends AbstractAgent
 {
+    public const string AGENT_TYPE = AgentType::CHAT;
+
     /** @var int Message rate limit in seconds per user */
     private const int MESSAGE_RATE_LIMIT_SECONDS = 10;
 
     /** @var array<int, float> userId => last message timestamp (microtime) */
     private array $lastMessageTimestampByUser = [];
-
-    /**
-     * Get agent type.
-     *
-     * @return string Agent type
-     */
-    public function getType(): string
-    {
-        return AgentType::CHAT;
-    }
-
-    /**
-     * Get agent index.
-     *
-     * Chat agent has no index (global singleton).
-     *
-     * @return ?string Agent index (null for global chat agent)
-     */
-    public function getIndex(): ?string
-    {
-        return null;
-    }
 
     /**
      * Called when agent is started.

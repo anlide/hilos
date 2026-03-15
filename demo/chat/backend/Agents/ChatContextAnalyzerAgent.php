@@ -35,6 +35,8 @@ use Hilos\Utils\Logger;
  */
 class ChatContextAnalyzerAgent extends AbstractAgent
 {
+    public const string AGENT_TYPE = AgentType::CHAT_CONTEXT_ANALYZER;
+
     /** @var AsyncChatLLMInterface LLM chat client for context analysis */
     private AsyncChatLLMInterface $chatClient;
 
@@ -53,26 +55,6 @@ class ChatContextAnalyzerAgent extends AbstractAgent
                 model: ContextAnalyzerEnv::getModel(),
                 apiKey: null,
             );
-    }
-
-    /**
-     * Get agent type identifier.
-     *
-     * @return string Agent type constant
-     */
-    public function getType(): string
-    {
-        return AgentType::CHAT_CONTEXT_ANALYZER;
-    }
-
-    /**
-     * Get agent index (null for global chat context analyzer).
-     *
-     * @return ?string Agent index or null
-     */
-    public function getIndex(): ?string
-    {
-        return null;
     }
 
     /**

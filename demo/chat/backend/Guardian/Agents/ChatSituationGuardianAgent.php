@@ -24,6 +24,8 @@ use Hilos\Utils\Logger;
  */
 final class ChatSituationGuardianAgent extends AbstractGuardianAgent
 {
+    public const string AGENT_TYPE = AgentType::CHAT_SITUATION_GUARDIAN;
+
     /** @var float Next scheduled run timestamp in milliseconds */
     private float $nextRunAtMs = 0.0;
 
@@ -54,26 +56,6 @@ final class ChatSituationGuardianAgent extends AbstractGuardianAgent
                 model: ContextAnalyzerEnv::getModel(),
                 apiKey: null,
             );
-    }
-
-    /**
-     * Get agent type identifier.
-     *
-     * @return string Agent type
-     */
-    public function getType(): string
-    {
-        return AgentType::CHAT_SITUATION_GUARDIAN;
-    }
-
-    /**
-     * Get agent index (null for global guardian agent).
-     *
-     * @return ?string Agent index or null
-     */
-    public function getIndex(): ?string
-    {
-        return null;
     }
 
     /**

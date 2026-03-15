@@ -14,30 +14,5 @@ use Hilos\Constants\HilosAgentType;
  */
 abstract class AbstractHilosGuardianAgent extends AbstractHilosAgent
 {
-    /**
-     * Return agent type identifier.
-     *
-     * @return string Agent type
-     */
-    public function getType(): string
-    {
-        return HilosAgentType::HILOS_GUARDIAN;
-    }
-
-    /**
-     * Get agent index (optional identifier for multi-instance agents).
-     *
-     * @return ?string Agent index or null
-     */
-    public function getIndex(): ?string
-    {
-        return null;
-    }
-
-    /**
-     * Hook called when agent is stopping.
-     */
-    public function onStop(): void
-    {
-    }
+    public const string AGENT_TYPE = HilosAgentType::HILOS_GUARDIAN;
 }

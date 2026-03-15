@@ -20,6 +20,8 @@ use Hilos\Utils\Logger;
  */
 final class GuardiansOpsAgent extends AbstractGuardianAgent
 {
+    public const string AGENT_TYPE = AgentType::GUARDIAN_OPS;
+
     /** @var float Next scheduled run timestamp in milliseconds */
     private float $nextRunAtMs = 0.0;
 
@@ -45,26 +47,6 @@ final class GuardiansOpsAgent extends AbstractGuardianAgent
         $this->dbCapability = new DbReadCapability();
         $this->rtCapability = new RtReadCapability();
         $this->notesCapability = new NotesReadWriteCapability();
-    }
-
-    /**
-     * Get agent type identifier.
-     *
-     * @return string Agent type
-     */
-    public function getType(): string
-    {
-        return AgentType::GUARDIAN_OPS;
-    }
-
-    /**
-     * Get agent index (null for global guardian ops agent).
-     *
-     * @return ?string Agent index or null
-     */
-    public function getIndex(): ?string
-    {
-        return null;
     }
 
     /**
