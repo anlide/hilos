@@ -15,7 +15,7 @@ use Hilos\Constants\SignalPayloadConstants;
  * Requires id and name. Name must be non-empty (validated by handler).
  * Throws InvalidActionPayloadException when name is empty.
  */
-class UserUpdateActionDTO extends ChatActionPayloadDTO
+final class UserUpdateActionDTO extends ChatActionPayloadDTO
 {
     /**
      * Creates user update action DTO.

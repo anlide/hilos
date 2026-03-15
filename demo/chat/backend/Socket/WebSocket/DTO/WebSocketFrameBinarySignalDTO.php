@@ -13,7 +13,7 @@ use Hilos\Socket\WebSocket\DTO\WebSocketFrameBinarySignalDTO as FrameworkWebSock
  * Represents a WebSocket binary frame signal sent from WebSocket client to chat agent.
  * Extends framework WebSocketFrameBinarySignalDTO for chat-specific functionality.
  */
-class WebSocketFrameBinarySignalDTO extends FrameworkWebSocketFrameBinarySignalDTO implements ChatMessageDTOInterface
+final class WebSocketFrameBinarySignalDTO extends FrameworkWebSocketFrameBinarySignalDTO implements ChatMessageDTOInterface
 {
     /**
      * Create DTO from array.

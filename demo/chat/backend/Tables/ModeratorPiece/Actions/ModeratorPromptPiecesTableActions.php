@@ -17,7 +17,7 @@ use Hilos\HilosException;
  *
  * Delegates to db layer (ModeratorPromptPiecesActions) for actual create.
  */
-class ModeratorPromptPiecesTableActions extends TableActions
+final class ModeratorPromptPiecesTableActions extends TableActions
 {
     /**
      * Creates a moderator prompt piece and returns mutation for broadcasting.

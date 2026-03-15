@@ -13,7 +13,7 @@ use Hilos\Socket\WebSocket\DTO\WebSocketActionSignalDTO as FrameworkWebSocketAct
  * Represents an action signal sent from WebSocket client to chat agent.
  * Extends framework WebSocketActionSignalDTO for chat-specific functionality.
  */
-class WebSocketActionSignalDTO extends FrameworkWebSocketActionSignalDTO implements ChatMessageDTOInterface
+final class WebSocketActionSignalDTO extends FrameworkWebSocketActionSignalDTO implements ChatMessageDTOInterface
 {
     /**
      * Creates DTO from array.

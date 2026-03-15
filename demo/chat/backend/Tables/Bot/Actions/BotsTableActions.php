@@ -17,7 +17,7 @@ use Hilos\HilosException;
  *
  * Delegates to db layer (BotsActions) for actual create.
  */
-class BotsTableActions extends TableActions
+final class BotsTableActions extends TableActions
 {
     /**
      * Creates a bot and returns mutation for broadcasting.

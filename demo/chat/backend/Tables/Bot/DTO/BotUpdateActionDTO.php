@@ -14,7 +14,7 @@ use Hilos\Constants\SignalPayloadConstants;
  *
  * Only non-null fields are applied on update.
  */
-class BotUpdateActionDTO extends ChatActionPayloadDTO
+final class BotUpdateActionDTO extends ChatActionPayloadDTO
 {
     /**
      * Creates bot update action DTO.

@@ -16,7 +16,7 @@ use Hilos\Core\Table\Definition\TableDefinition;
  *
  * @property-read BotsTableActions $actions
  */
-class BotsTable extends TableDefinition
+final class BotsTable extends TableDefinition
 {
     /**
      * Provides entity data source for the bots collection.

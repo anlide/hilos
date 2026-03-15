@@ -15,7 +15,7 @@ use Hilos\Core\Table\Definition\TableDefinition;
  *
  * Backed by Hilos::$db->users. Supports user update via item actions.
  */
-class UsersTable extends TableDefinition
+final class UsersTable extends TableDefinition
 {
     /**
      * Provides entity data source for the users collection.

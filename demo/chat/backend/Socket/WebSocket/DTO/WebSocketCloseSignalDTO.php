@@ -13,7 +13,7 @@ use Hilos\Socket\WebSocket\DTO\WebSocketCloseSignalDTO as FrameworkWebSocketClos
  * Represents a WebSocket close signal sent from WebSocket client to chat agent.
  * Extends framework WebSocketCloseSignalDTO for chat-specific functionality.
  */
-class WebSocketCloseSignalDTO extends FrameworkWebSocketCloseSignalDTO implements ChatMessageDTOInterface
+final class WebSocketCloseSignalDTO extends FrameworkWebSocketCloseSignalDTO implements ChatMessageDTOInterface
 {
     /**
      * Creates DTO from array.

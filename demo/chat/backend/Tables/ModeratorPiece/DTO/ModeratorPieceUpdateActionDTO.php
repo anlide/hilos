@@ -14,7 +14,7 @@ use Hilos\Constants\SignalPayloadConstants;
  *
  * Only non-null fields are applied on update.
  */
-class ModeratorPieceUpdateActionDTO extends ChatActionPayloadDTO
+final class ModeratorPieceUpdateActionDTO extends ChatActionPayloadDTO
 {
     /**
      * Creates moderator piece update action DTO.

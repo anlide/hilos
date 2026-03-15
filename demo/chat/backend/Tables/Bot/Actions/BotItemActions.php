@@ -17,7 +17,7 @@ use Hilos\HilosException;
  *
  * Delegates to db layer (BotActions) for actual updates and deletes.
  */
-class BotItemActions extends TableItemActions
+final class BotItemActions extends TableItemActions
 {
     /**
      * Updates bot and returns mutation for broadcasting.

@@ -13,7 +13,7 @@ use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO as FrameworkWebSocket
  * Represents a WebSocket handshake signal sent from WebSocket client to chat agent.
  * Extends framework WebSocketHandshakeSignalDTO for chat-specific functionality.
  */
-class WebSocketHandshakeSignalDTO extends FrameworkWebSocketHandshakeSignalDTO implements ChatMessageDTOInterface
+final class WebSocketHandshakeSignalDTO extends FrameworkWebSocketHandshakeSignalDTO implements ChatMessageDTOInterface
 {
     /**
      * Creates DTO from array. Override returns correct child class type.

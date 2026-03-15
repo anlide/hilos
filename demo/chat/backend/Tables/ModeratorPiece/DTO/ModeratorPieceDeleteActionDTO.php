@@ -12,7 +12,7 @@ use Hilos\Constants\SignalPayloadConstants;
 /**
  * DTO for moderator_piece_delete action payload.
  */
-class ModeratorPieceDeleteActionDTO extends ChatActionPayloadDTO
+final class ModeratorPieceDeleteActionDTO extends ChatActionPayloadDTO
 {
     /**
      * Creates moderator piece delete action DTO.

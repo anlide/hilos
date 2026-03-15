@@ -13,7 +13,7 @@ use Hilos\Socket\WebSocket\DTO\WebSocketFrameSignalDTO as FrameworkWebSocketFram
  * Represents a WebSocket text frame signal sent from WebSocket client to chat agent.
  * Extends framework WebSocketFrameSignalDTO for chat-specific functionality.
  */
-class WebSocketFrameSignalDTO extends FrameworkWebSocketFrameSignalDTO implements ChatMessageDTOInterface
+final class WebSocketFrameSignalDTO extends FrameworkWebSocketFrameSignalDTO implements ChatMessageDTOInterface
 {
     /**
      * Create DTO from array.

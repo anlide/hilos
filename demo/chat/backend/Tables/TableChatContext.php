@@ -19,7 +19,7 @@ use Hilos\Core\Table\Context\TableContext;
  * @property-read BotsTable $bots
  * @property-read ModeratorPromptPiecesTable $moderatorPromptPieces
  */
-class TableChatContext extends TableContext
+final class TableChatContext extends TableContext
 {
     public const string users = 'users';
     public const string bots = 'bots';

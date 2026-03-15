@@ -18,7 +18,7 @@ use Hilos\Runtime\Exception\RtBaseException;
  *
  * Delegates to db layer (UserActions) for actual updates.
  */
-class UserItemActions extends TableItemActions
+final class UserItemActions extends TableItemActions
 {
     /**
      * Updates user name and returns mutation for broadcasting.

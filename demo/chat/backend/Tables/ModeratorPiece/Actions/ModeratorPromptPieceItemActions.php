@@ -17,7 +17,7 @@ use Hilos\HilosException;
  *
  * Delegates to db layer (ModeratorPromptPieceActions) for actual updates and deletes.
  */
-class ModeratorPromptPieceItemActions extends TableItemActions
+final class ModeratorPromptPieceItemActions extends TableItemActions
 {
     /**
      * Updates piece and returns mutation for broadcasting.

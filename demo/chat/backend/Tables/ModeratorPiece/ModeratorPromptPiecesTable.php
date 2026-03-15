@@ -16,7 +16,7 @@ use Hilos\Core\Table\Definition\TableDefinition;
  *
  * @property-read ModeratorPromptPiecesTableActions $actions
  */
-class ModeratorPromptPiecesTable extends TableDefinition
+final class ModeratorPromptPiecesTable extends TableDefinition
 {
     /**
      * Provides entity data source for the moderator prompt pieces collection.

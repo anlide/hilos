@@ -16,7 +16,7 @@ use Hilos\Core\Exception\NotImplementedException;
  * Full events + users are sent from MainPage on subscribe (main_page_initial).
  * Target client ID is handled by WebSocketSignalData wrapper for routing.
  */
-class HandshakeResponseSignalData extends BaseDTO implements SignalDataInterface
+final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInterface
 {
     /**
      * Creates handshake response signal data.

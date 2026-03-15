@@ -14,7 +14,7 @@ use Hilos\Core\Table\TableConstants;
  *
  * tableKey identifies which table to refresh (e.g. TableChatContext::users).
  */
-class TableRefreshActionDTO extends ChatActionPayloadDTO
+final class TableRefreshActionDTO extends ChatActionPayloadDTO
 {
     /**
      * Creates table refresh action DTO.

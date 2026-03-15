@@ -12,7 +12,7 @@ use Hilos\Constants\SignalPayloadConstants;
 /**
  * DTO for bot_create action payload.
  */
-class BotCreateActionDTO extends ChatActionPayloadDTO
+final class BotCreateActionDTO extends ChatActionPayloadDTO
 {
     /**
      * Creates bot create action DTO.
