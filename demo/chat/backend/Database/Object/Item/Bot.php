@@ -21,6 +21,12 @@ use Hilos\Database\Object\Item\Object_;
  * @property ?string $topics
  * @property ?string $personality
  * @property bool $active
+ * @property int $reactionDelayMin
+ * @property int $reactionDelayMax
+ * @property int $reactionChance
+ * @property bool $topicMatchRequired
+ * @property int $cooldownAfterMessage
+ * @property int $priority
  */
 final class Bot extends Object_
 {

@@ -15,6 +15,12 @@ use Hilos\Database\View\Item\DbItem;
  * @extends DbItem<ObjectEvent>
  * @method __construct(ObjectEvent &$objectEvent)
  *
+ * @property-read ?int $id
+ * @property-read ?int $userId
+ * @property-read ?int $botId
+ * @property-read string $type
+ * @property-read string $timestamp
+ * @property-read ?string $data
  * @property-read ?User $user User for this event (null if userId is null or user not found)
  * @property-read ?Bot $bot Bot for this event (null if botId is null or bot not found)
  */

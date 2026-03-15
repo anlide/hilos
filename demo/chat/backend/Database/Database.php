@@ -18,7 +18,7 @@ use Hilos\Utils\Exception\MissingEnvironmentVariableException;
  * Extends base Database class to provide application-specific configuration.
  * Reads database connection parameters from environment variables.
  */
-class Database extends BaseDatabase
+final class Database extends BaseDatabase
 {
     /**
      * Initialize database connections from environment variables.

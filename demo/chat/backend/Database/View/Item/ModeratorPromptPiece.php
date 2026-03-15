@@ -12,6 +12,7 @@ use Hilos\Database\View\Item\DbItem;
  *
  * @extends DbItem<ObjectModeratorPromptPiece>
  * @method __construct(ObjectModeratorPromptPiece &$objectModeratorPromptPiece)
+ *
  * @property-read ?int $id
  * @property-read string $section
  * @property-read string $promptPiece

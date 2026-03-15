@@ -31,7 +31,7 @@ use Hilos\Database\Object\Objects;
  * @property-read Bots $bots
  * @property-read ModeratorPromptPieces $moderatorPromptPieces
  */
-class DbChatContext extends DbContext
+final class DbChatContext extends DbContext
 {
     public const string users = 'users';
     public const string events = 'events';

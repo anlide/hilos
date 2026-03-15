@@ -13,6 +13,20 @@ use Hilos\Database\View\Item\DbItem;
  *
  * @extends DbItem<ObjectBot>
  * @method __construct(ObjectBot &$objectBot)
+ *
+ * @property-read ?int $id
+ * @property-read string $name
+ * @property-read ?string $description
+ * @property-read ?string $style
+ * @property-read ?string $topics
+ * @property-read ?string $personality
+ * @property-read bool $active
+ * @property-read int $reactionDelayMin
+ * @property-read int $reactionDelayMax
+ * @property-read int $reactionChance
+ * @property-read bool $topicMatchRequired
+ * @property-read int $cooldownAfterMessage
+ * @property-read int $priority
  * @property-read BotActions $actions Item-level write operations
  */
 final class Bot extends DbItem
