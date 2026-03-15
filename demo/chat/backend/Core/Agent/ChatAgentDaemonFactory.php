@@ -16,6 +16,7 @@ use Demo\Chat\Core\Agent\Daemon\GuardiansOpsAgentDaemon;
 use Demo\Chat\Core\Agent\Daemon\ModeratorAgentDaemon;
 use Hilos\Core\Agent\Daemon\AgentDaemonInterface;
 use Hilos\Core\Agent\Daemon\HilosAgentDaemonFactory;
+use Hilos\Core\Agent\Exception\AgentDaemonCreationFailedException;
 use Hilos\Core\Agent\Exception\AgentIndexRequiredException;
 
 /**
@@ -33,6 +34,7 @@ class ChatAgentDaemonFactory extends HilosAgentDaemonFactory
      * @param ?string $agentIndex Agent index (required for BOT type)
      * @return AgentDaemonInterface Agent daemon instance
      * @throws AgentIndexRequiredException When agentIndex is null for BOT type
+     * @throws AgentDaemonCreationFailedException When agent type is unknown and parent factory cannot create it
      */
     public static function createAgentDaemon(string $agentType, ?string $agentIndex): AgentDaemonInterface
     {

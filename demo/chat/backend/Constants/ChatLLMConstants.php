@@ -11,7 +11,7 @@ namespace Demo\Chat\Constants;
  * Context analyzer uses lightweight model for topic/summary extraction.
  * Bots use heavier model for richer generated responses.
  */
-class ChatLLMConstants
+final class ChatLLMConstants
 {
     /** @var string Lightweight model for moderator (allow/block classification) */
     public const string MODEL_MODERATION = 'qwen2.5:0.5b';

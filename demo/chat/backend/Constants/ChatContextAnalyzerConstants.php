@@ -9,7 +9,7 @@ namespace Demo\Chat\Constants;
  *
  * Constants for chat context analyzer (model, max tokens, events).
  */
-class ChatContextAnalyzerConstants
+final class ChatContextAnalyzerConstants
 {
     /** @var int Maximum number of recent events to include in LLM context for summarization */
     public const int MAX_RECENT_EVENTS = 40;

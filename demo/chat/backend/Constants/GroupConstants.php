@@ -9,7 +9,7 @@ namespace Demo\Chat\Constants;
  *
  * Defines group identifiers used for user subscriptions.
  */
-class GroupConstants
+final class GroupConstants
 {
     /** @var string Chat page */
     public const string SESSION = 'session';

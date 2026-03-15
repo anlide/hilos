@@ -7,6 +7,7 @@ namespace Demo\Chat\Core\Agent;
 use Hilos\Core\Agent\AgentInterface;
 use Hilos\Core\Agent\AgentManager;
 use Hilos\Core\Agent\Exception\AgentCreationFailedException;
+use Hilos\Core\Agent\Exception\AgentIndexRequiredException;
 
 /**
  * ChatAgentManager - Agent manager for chat demo (worker side).
@@ -21,7 +22,7 @@ class ChatAgentManager extends AgentManager
      * @param string $agentType Agent type
      * @param ?string $agentIndex Agent index (optional)
      * @return AgentInterface Agent instance
-     * @throws AgentCreationFailedException If agent cannot be created
+     * @throws AgentIndexRequiredException If agent index is required but not provided
      */
     protected function createAgent(string $agentType, ?string $agentIndex): AgentInterface
     {

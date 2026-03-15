@@ -12,7 +12,7 @@ use Hilos\Constants\HilosAgentType;
  * Defines agent type identifiers used in the chat demo project.
  * Hilos-level agent types are inherited from HilosAgentType.
  */
-class AgentType
+final class AgentType
 {
     /** @var string Chat agent type (monopolistic) */
     public const string CHAT = 'chat';

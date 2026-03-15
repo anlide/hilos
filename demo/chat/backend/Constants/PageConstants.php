@@ -11,7 +11,7 @@ use Hilos\Constants\HilosPageConstants;
  *
  * Defines page identifiers used for user subscriptions.
  */
-class PageConstants
+final class PageConstants
 {
     /** @var string Chat main page */
     public const string MAIN = 'main';

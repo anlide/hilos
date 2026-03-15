@@ -9,7 +9,7 @@ namespace Demo\Chat\Constants;
  *
  * Defines signal name constants used in chat demo.
  */
-class ChatSignalConstants
+final class ChatSignalConstants
 {
     /** @var string Start signal name */
     public const string START = 'start';

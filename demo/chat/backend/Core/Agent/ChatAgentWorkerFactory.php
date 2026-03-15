@@ -15,6 +15,7 @@ use Demo\Chat\Constants\AgentType;
 use Demo\Chat\Guardian\Agents\ChatSituationGuardianAgent;
 use Demo\Chat\Guardian\Agents\GuardiansOpsAgent;
 use Hilos\Core\Agent\AgentInterface;
+use Hilos\Core\Agent\Exception\AgentCreationFailedException;
 use Hilos\Core\Agent\Exception\AgentIndexRequiredException;
 use Hilos\Core\Agent\HilosAgentWorkerFactory;
 
@@ -33,6 +34,7 @@ class ChatAgentWorkerFactory extends HilosAgentWorkerFactory
      * @param ?string $agentIndex Agent index (required for BOT type)
      * @return AgentInterface Agent instance
      * @throws AgentIndexRequiredException When agentIndex is null for BOT type
+     * @throws AgentCreationFailedException When agent type is unknown
      */
     public static function createAgent(string $agentType, ?string $agentIndex): AgentInterface
     {
