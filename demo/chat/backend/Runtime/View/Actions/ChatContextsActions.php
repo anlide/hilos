@@ -7,6 +7,10 @@ namespace Demo\Chat\Runtime\View\Actions;
 use Demo\Chat\Runtime\State\Item\ChatContext as StateChatContext;
 use Demo\Chat\Runtime\View\Item\ChatContext as RuntimeChatContext;
 use Hilos\Core\Exception\InvalidStateException;
+use Hilos\Runtime\Exception\Actions\RtActionsCallbackNotSetException;
+use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
+use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
+use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\Runtime\View\Actions\RtActions;
 
 /**
@@ -18,12 +22,13 @@ use Hilos\Runtime\View\Actions\RtActions;
  *
  * @extends RtActions<RuntimeChatContext>
  */
-class ChatContextsActions extends RtActions
+final class ChatContextsActions extends RtActions
 {
     /**
      * Initialize the main chat context (creates empty).
      *
      * @return RuntimeChatContext Created context
+     * @throws RtActionsCallbackNotSetException When callback for creating RT item from state is not set (should be set in constructor of parent class)
      */
     public function init(): RuntimeChatContext
     {
@@ -40,6 +45,10 @@ class ChatContextsActions extends RtActions
      * @param array<string, mixed> $data Fields to set (topic, summary, topicConfidence)
      * @return RuntimeChatContext Updated context
      * @throws InvalidStateException When context not initialized (call init() first)
+     * @throws RtActionsStateCollectionNullException When state collection is null (should not happen if init() was called)
+     * @throws RtActionsCallbackNotSetException When callback for creating RT item from state is not set (should be set in constructor of parent class)
+     * @throws RtActionsCollectionNameNullException When collection name is null.
+     * @throws RtTruthSourceWriteNotAllowedException When truth source does not allow write.
      */
     public function update(array $data): RuntimeChatContext
     {

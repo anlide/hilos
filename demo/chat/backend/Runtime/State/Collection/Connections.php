@@ -15,25 +15,9 @@ use Hilos\Runtime\State\Collection\RtStates;
  *
  * @extends RtStates<Connection>
  */
-class Connections extends RtStates
+final class Connections extends RtStates
 {
     public const string STATE_CLASS = Connection::class;
-
-    /**
-     * Finds first connection for given user.
-     *
-     * @param int $userId User ID
-     * @return ?Connection Connection or null
-     */
-    public function findByUserId(int $userId): ?Connection
-    {
-        foreach ($this->states as $connection) {
-            if ($connection->userId === $userId) {
-                return $connection;
-            }
-        }
-        return null;
-    }
 
     /**
      * Finds all connections for given user (indexed by accept key).
@@ -43,23 +27,8 @@ class Connections extends RtStates
      */
     public function findAllByUserId(int $userId): array
     {
-        $result = [];
-        foreach ($this->states as $acceptKey => $connection) {
-            if ($connection->userId === $userId) {
-                $result[$acceptKey] = $connection;
-            }
-        }
-        return $result;
-    }
-
-    /**
-     * Checks if user has any active connections.
-     *
-     * @param int $userId User ID
-     * @return bool True if at least one connection exists
-     */
-    public function hasUserConnections(int $userId): bool
-    {
-        return $this->findByUserId($userId) !== null;
+        return array_filter($this->states, function ($connection) use ($userId) {
+            return $connection->userId === $userId;
+        });
     }
 }

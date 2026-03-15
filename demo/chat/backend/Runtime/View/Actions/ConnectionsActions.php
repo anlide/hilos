@@ -21,7 +21,7 @@ use Hilos\Runtime\View\Actions\RtActions;
  *   Hilos::$rt->connections->actions->register($acceptKey, $userId);
  *   Hilos::$rt->connections->actions->unregister($acceptKey);
  */
-class ConnectionsActions extends RtActions
+final class ConnectionsActions extends RtActions
 {
     /**
      * Register new connection.
@@ -30,9 +30,6 @@ class ConnectionsActions extends RtActions
      * @param int $userId User ID
      * @return RuntimeConnection Created connection wrapper
      * @throws RtActionsCallbackNotSetException If callback for creating Rt item is not set
-     * @throws RtActionsStateCollectionNullException If state collection is null
-     * @throws RtActionsCollectionNameNullException If collection name is null
-     * @throws RtTruthSourceWriteNotAllowedException If no truth source registered
      */
     public function register(string $acceptKey, int $userId): RuntimeConnection
     {
@@ -45,9 +42,6 @@ class ConnectionsActions extends RtActions
      * Unregister connection.
      *
      * @param string $acceptKey WebSocket accept key
-     * @throws RtActionsStateCollectionNullException If state collection is null
-     * @throws RtActionsCollectionNameNullException If collection name is null
-     * @throws RtTruthSourceWriteNotAllowedException If no truth source registered
      */
     public function unregister(string $acceptKey): void
     {
@@ -56,11 +50,6 @@ class ConnectionsActions extends RtActions
 
     /**
      * Clear all connections.
-     *
-     * @throws RtActionsStateCollectionNullException If state collection is null
-     * @throws RtActionsCallbackNotSetException If callback is not set
-     * @throws RtActionsCollectionNameNullException If collection name is null
-     * @throws RtTruthSourceWriteNotAllowedException If no truth source registered
      */
     public function clear(): void
     {

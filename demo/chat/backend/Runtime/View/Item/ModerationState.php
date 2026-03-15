@@ -8,6 +8,7 @@ use Demo\Chat\Database\DbChatContext;
 use Demo\Chat\Database\View\Item\User;
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\State\Item\ModerationState as StateModerationState;
+use Hilos\Runtime\Exception\Item\RtItemPropertyNotFoundException;
 use Hilos\Runtime\View\Item\RtItem;
 
 /**
@@ -37,6 +38,7 @@ final class ModerationState extends RtItem
      *
      * @param string $name Property name
      * @return int|string|User|null Property value
+     * @throws RtItemPropertyNotFoundException If property not found
      */
     public function __get(string $name): int|string|User|null
     {

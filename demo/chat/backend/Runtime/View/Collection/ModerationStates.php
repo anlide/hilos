@@ -8,6 +8,8 @@ use Demo\Chat\Runtime\State\Collection\ModerationStates as StateModerationStates
 use Demo\Chat\Runtime\State\Item\ModerationState as StateModerationState;
 use Demo\Chat\Runtime\View\Actions\ModerationStatesActions;
 use Demo\Chat\Runtime\View\Item\ModerationState;
+use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
+use Hilos\Runtime\Exception\Collection\RtCollectionPropertyNotFoundException;
 use Hilos\Runtime\State\Item\RtState;
 use Hilos\Runtime\View\Collection\RtCollection;
 use Hilos\Runtime\View\Item\RtItem;
@@ -18,12 +20,13 @@ use Hilos\Runtime\View\Item\RtItem;
  * @extends RtCollection<ModerationState>
  * @property-read ModerationStatesActions $actions Actions for write operations
  */
-class ModerationStates extends RtCollection
+final class ModerationStates extends RtCollection
 {
     /**
      * Get underlying state collection.
      *
      * @return StateModerationStates State collection instance
+     * @throws RtActionsStateCollectionNullException If actions state collection is null
      */
     public function getStateCollection(): StateModerationStates
     {
@@ -110,6 +113,7 @@ class ModerationStates extends RtCollection
      *
      * @param string $name Property name (actions)
      * @return ModerationStatesActions Actions for write operations
+     * @throws RtCollectionPropertyNotFoundException If property not found
      */
     public function __get(string $name): ModerationStatesActions
     {

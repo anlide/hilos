@@ -12,7 +12,7 @@ use Hilos\Runtime\State\Collection\RtStates;
  *
  * @extends RtStates<ChatContext>
  */
-class ChatContexts extends RtStates
+final class ChatContexts extends RtStates
 {
     public const string STATE_CLASS = ChatContext::class;
 }

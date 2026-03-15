@@ -19,7 +19,7 @@ use Hilos\Runtime\View\Actions\RtActions;
  *   Hilos::$rt->moderationStates->actions->set($userId, $message);
  *   Hilos::$rt->moderationStates->actions->clear($userId);
  */
-class ModerationStatesActions extends RtActions
+final class ModerationStatesActions extends RtActions
 {
     /**
      * Upsert moderation state for user.
@@ -28,9 +28,6 @@ class ModerationStatesActions extends RtActions
      * @param string $message Message currently being moderated
      * @return RuntimeModerationState Created/updated runtime wrapper
      * @throws RtActionsCallbackNotSetException If callback for creating Rt item is not set
-     * @throws RtActionsStateCollectionNullException If state collection is null
-     * @throws RtActionsCollectionNameNullException If collection name is null
-     * @throws RtTruthSourceWriteNotAllowedException If no truth source registered
      */
     public function set(int $userId, string $message): RuntimeModerationState
     {
@@ -45,6 +42,7 @@ class ModerationStatesActions extends RtActions
      * Must clear View cache so that subsequent access returns null (state removed).
      *
      * @param int $userId User ID
+     * @throws RtActionsCallbackNotSetException If callback for creating Rt item is not set
      */
     public function clear(int $userId): void
     {

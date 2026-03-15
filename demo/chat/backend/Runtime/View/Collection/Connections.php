@@ -10,6 +10,8 @@ use Demo\Chat\Runtime\State\Collection\Connections as StateConnections;
 use Demo\Chat\Runtime\State\Item\Connection as StateConnection;
 use Demo\Chat\Runtime\View\Actions\ConnectionsActions;
 use Demo\Chat\Runtime\View\Item\Connection;
+use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
+use Hilos\Runtime\Exception\Collection\RtCollectionPropertyNotFoundException;
 use Hilos\Runtime\State\Item\RtState;
 use Hilos\Runtime\View\Collection\RtCollection;
 use Hilos\Runtime\View\Item\RtItem;
@@ -24,7 +26,7 @@ use Hilos\Runtime\View\Item\RtItem;
  * @property-read ConnectionsActions $actions Actions for write operations
  * @property-read DbUsers $relevantUsers Users who are online or mentioned in events
  */
-class Connections extends RtCollection
+final class Connections extends RtCollection
 {
     public const string relevantUsers = 'relevantUsers';
 
@@ -32,6 +34,7 @@ class Connections extends RtCollection
      * Get underlying state collection.
      *
      * @return StateConnections State collection instance
+     * @throws RtActionsStateCollectionNullException If state collection is null (should not happen in properly initialized collection)
      */
     public function getStateCollection(): StateConnections
     {
@@ -44,6 +47,7 @@ class Connections extends RtCollection
      *
      * @param int $userId User ID
      * @return self Connections collection filtered by user
+     * @throws RtActionsStateCollectionNullException If state collection is null (should not happen in properly initialized collection)
      */
     public function forUser(int $userId): self
     {
@@ -164,6 +168,7 @@ class Connections extends RtCollection
      *
      * @param string $name Property name (actions, relevantUsers)
      * @return ConnectionsActions|DbUsers Actions or relevant users collection
+     * @throws RtCollectionPropertyNotFoundException If property name is not recognized
      */
     public function __get(string $name): ConnectionsActions|DbUsers
     {

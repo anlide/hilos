@@ -8,6 +8,7 @@ use Demo\Chat\Database\DbChatContext;
 use Demo\Chat\Database\View\Item\User;
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\State\Item\Connection as StateConnection;
+use Hilos\Runtime\Exception\Item\RtItemPropertyNotFoundException;
 use Hilos\Runtime\View\Item\RtItem;
 
 /**
@@ -40,6 +41,7 @@ final class Connection extends RtItem
      *
      * @param string $name Property name
      * @return string|int|User|null Property value
+     * @throws RtItemPropertyNotFoundException If property not found
      */
     public function __get(string $name): string|int|User|null
     {

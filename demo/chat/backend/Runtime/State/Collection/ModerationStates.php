@@ -12,7 +12,7 @@ use Hilos\Runtime\State\Collection\RtStates;
  *
  * @extends RtStates<ModerationState>
  */
-class ModerationStates extends RtStates
+final class ModerationStates extends RtStates
 {
     public const string STATE_CLASS = ModerationState::class;
 }

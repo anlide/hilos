@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Runtime\State\Item;
 
+use Hilos\Runtime\Exception\State\RtStatePropertyNotFoundException;
 use Hilos\Runtime\State\Item\RtState;
 
 /**
@@ -16,7 +17,7 @@ use Hilos\Runtime\State\Item\RtState;
  * @property string $message Message currently being moderated
  * @property int $updatedAt Unix timestamp when state was updated
  */
-class ModerationState extends RtState
+final class ModerationState extends RtState
 {
     public const string userId = 'userId';
     public const string message = 'message';
@@ -101,6 +102,7 @@ class ModerationState extends RtState
      *
      * @param string $name Property name (userId, message, updatedAt)
      * @return int|string Property value
+     * @throws RtStatePropertyNotFoundException If property name is invalid
      */
     public function __get(string $name): int|string
     {

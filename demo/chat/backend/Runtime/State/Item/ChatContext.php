@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Runtime\State\Item;
 
+use Hilos\Runtime\Exception\State\RtStatePropertyNotFoundException;
 use Hilos\Runtime\State\Item\RtState;
 
 /**
@@ -16,7 +17,7 @@ use Hilos\Runtime\State\Item\RtState;
  * @property float $topicConfidence Topic confidence 0..1
  * @property string $summary LLM-generated summary of recent messages
  */
-class ChatContext extends RtState
+final class ChatContext extends RtState
 {
     public const string ID_MAIN = 'main';
     public const string topic = 'topic';
@@ -92,6 +93,7 @@ class ChatContext extends RtState
      *
      * @param string $name Property name (topic, topicConfidence, summary)
      * @return mixed Property value
+     * @throws RtStatePropertyNotFoundException If property name is invalid
      */
     public function __get(string $name): mixed
     {

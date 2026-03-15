@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Runtime\State\Item;
 
+use Hilos\Runtime\Exception\State\RtStatePropertyNotFoundException;
 use Hilos\Runtime\State\Item\RtState;
 
 /**
@@ -16,7 +17,7 @@ use Hilos\Runtime\State\Item\RtState;
  * @property int $userId User ID associated with this connection
  * @property int $connectedAt Unix timestamp when connection was established
  */
-class Connection extends RtState
+final class Connection extends RtState
 {
     public const string acceptKey = 'acceptKey';
     public const string userId = 'userId';
@@ -99,6 +100,7 @@ class Connection extends RtState
      *
      * @param string $name Property name
      * @return string|int Property value
+     * @throws RtStatePropertyNotFoundException If property name is invalid
      */
     public function __get(string $name): string|int
     {
