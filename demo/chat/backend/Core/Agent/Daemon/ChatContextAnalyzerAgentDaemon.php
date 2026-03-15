@@ -15,8 +15,7 @@ use Hilos\Utils\Logger;
  */
 class ChatContextAnalyzerAgentDaemon extends AbstractAgentDaemon
 {
-    /** @var string Agent type */
-    private const string AGENT_TYPE = AgentType::CHAT_CONTEXT_ANALYZER;
+    public const string AGENT_TYPE = AgentType::CHAT_CONTEXT_ANALYZER;
 
     /**
      * Creates daemon proxy for ChatContextAnalyzerAgent.
@@ -24,26 +23,6 @@ class ChatContextAnalyzerAgentDaemon extends AbstractAgentDaemon
     public function __construct()
     {
         Logger::debug('ChatContextAnalyzerAgentDaemon created [type=' . self::AGENT_TYPE . ']');
-    }
-
-    /**
-     * Get agent type identifier.
-     *
-     * @return string Agent type
-     */
-    public function getType(): string
-    {
-        return self::AGENT_TYPE;
-    }
-
-    /**
-     * Get agent index (null for global chat context analyzer agent).
-     *
-     * @return ?string Agent index or null
-     */
-    public function getIndex(): ?string
-    {
-        return null;
     }
 
     /**

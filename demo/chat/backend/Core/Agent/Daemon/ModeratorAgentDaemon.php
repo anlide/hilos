@@ -17,8 +17,7 @@ use Hilos\Utils\Logger;
  */
 class ModeratorAgentDaemon extends AbstractAgentDaemon
 {
-    /** @var string Agent type */
-    private const string AGENT_TYPE = AgentType::MODERATOR;
+    public const string AGENT_TYPE = AgentType::MODERATOR;
 
     /**
      * Creates daemon proxy for ModeratorAgent.
@@ -26,28 +25,6 @@ class ModeratorAgentDaemon extends AbstractAgentDaemon
     public function __construct()
     {
         Logger::debug("ModeratorAgentDaemon created [type=" . self::AGENT_TYPE . "]");
-    }
-
-    /**
-     * Get agent type.
-     *
-     * @return string Agent type
-     */
-    public function getType(): string
-    {
-        return self::AGENT_TYPE;
-    }
-
-    /**
-     * Get agent index.
-     *
-     * Moderator agent has no index (global singleton).
-     *
-     * @return ?string Agent index (null for global moderator agent)
-     */
-    public function getIndex(): ?string
-    {
-        return null;
     }
 
     /**

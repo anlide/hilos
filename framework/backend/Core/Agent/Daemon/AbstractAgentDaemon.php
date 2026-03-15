@@ -13,15 +13,41 @@ use Hilos\Utils\Logger;
 /**
  * AbstractAgentDaemon - Abstract base class for agent proxies in daemon.
  *
- * Provides base implementation for agent proxies. Child classes must implement:
- * - getType() - return agent type
- * - getIndex() - return agent index (can return null)
+ * Provides base implementation for agent proxies. Child classes should define:
+ * - AGENT_TYPE constant - agent type identifier
+ * - $agentIndex property (set in constructor) - for multi-instance agents, null for singletons
  * - sendToUser() - forward messages from agent to external user
  */
 abstract class AbstractAgentDaemon implements AgentDaemonInterface
 {
+    /** @var string Agent type identifier. Override in child classes. */
+    public const string AGENT_TYPE = '';
+
+    /** @var ?string Agent index for multi-instance agents (null for singletons) */
+    protected ?string $agentIndex = null;
+
     /** @var ?WorkerClient Worker client connection */
     private ?WorkerClient $workerClient = null;
+
+    /**
+     * Get agent type identifier.
+     *
+     * @return string Agent type from AGENT_TYPE constant
+     */
+    public function getType(): string
+    {
+        return static::AGENT_TYPE;
+    }
+
+    /**
+     * Get agent index (optional identifier for multi-instance agents).
+     *
+     * @return ?string Agent index or null for singleton agents
+     */
+    public function getIndex(): ?string
+    {
+        return $this->agentIndex;
+    }
 
     /**
      * Sets worker client connection.

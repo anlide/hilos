@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Demo\Chat\Core\Agent\Daemon;
+namespace Demo\Chat\Core\Agent\Daemon\Hilos;
 
 use Hilos\Constants\HilosAgentType;
 use Hilos\Core\Agent\Daemon\AbstractAgentDaemon;
@@ -15,32 +15,14 @@ use Hilos\Utils\Logger;
  */
 class DemoHilosAnalyticsAgentDaemon extends AbstractAgentDaemon
 {
+    public const string AGENT_TYPE = HilosAgentType::HILOS_ANALYTICS;
+
     /**
      * Creates daemon proxy for DemoHilosAnalyticsAgent.
      */
     public function __construct()
     {
-        Logger::debug("DemoHilosAnalyticsAgentDaemon created [type=" . HilosAgentType::HILOS_ANALYTICS . "]");
-    }
-
-    /**
-     * Get agent type identifier.
-     *
-     * @return string Agent type
-     */
-    public function getType(): string
-    {
-        return HilosAgentType::HILOS_ANALYTICS;
-    }
-
-    /**
-     * Get agent index (null for global Hilos analytics agent).
-     *
-     * @return ?string Agent index or null
-     */
-    public function getIndex(): ?string
-    {
-        return null;
+        Logger::debug("DemoHilosAnalyticsAgentDaemon created [type=" . self::AGENT_TYPE . "]");
     }
 
     /**

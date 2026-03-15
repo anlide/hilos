@@ -15,8 +15,7 @@ use Hilos\Utils\Logger;
  */
 final class GuardiansOpsAgentDaemon extends AbstractAgentDaemon
 {
-    /** @var string Agent type */
-    private const string AGENT_TYPE = AgentType::GUARDIAN_OPS;
+    public const string AGENT_TYPE = AgentType::GUARDIAN_OPS;
 
     /**
      * Creates daemon proxy for GuardiansOpsAgent.
@@ -24,26 +23,6 @@ final class GuardiansOpsAgentDaemon extends AbstractAgentDaemon
     public function __construct()
     {
         Logger::debug('GuardiansOpsAgentDaemon created [type=' . self::AGENT_TYPE . ']');
-    }
-
-    /**
-     * Get agent type identifier.
-     *
-     * @return string Agent type
-     */
-    public function getType(): string
-    {
-        return self::AGENT_TYPE;
-    }
-
-    /**
-     * Get agent index (null for global guardian ops agent).
-     *
-     * @return ?string Agent index or null
-     */
-    public function getIndex(): ?string
-    {
-        return null;
     }
 
     /**

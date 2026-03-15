@@ -17,11 +17,7 @@ use Hilos\Utils\Logger;
  */
 class BotAgentDaemon extends AbstractAgentDaemon
 {
-    /** @var string Agent type */
-    private const string AGENT_TYPE = AgentType::BOT;
-
-    /** @var string Agent index (bot id) */
-    private string $agentIndex;
+    public const string AGENT_TYPE = AgentType::BOT;
 
     /**
      * Creates daemon proxy for BotAgent with given bot id as index.
@@ -36,28 +32,6 @@ class BotAgentDaemon extends AbstractAgentDaemon
         }
         $this->agentIndex = $agentIndex;
         Logger::debug("BotAgentDaemon created [type=" . self::AGENT_TYPE . " index=" . $agentIndex . "]");
-    }
-
-    /**
-     * Get agent type.
-     *
-     * @return string Agent type
-     */
-    public function getType(): string
-    {
-        return self::AGENT_TYPE;
-    }
-
-    /**
-     * Get agent index.
-     *
-     * Bot agent index is the bot id (string).
-     *
-     * @return ?string Agent index (bot id)
-     */
-    public function getIndex(): ?string
-    {
-        return $this->agentIndex;
     }
 
     /**

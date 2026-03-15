@@ -15,8 +15,7 @@ use Hilos\Utils\Logger;
  */
 class ChatAgentDaemon extends AbstractAgentDaemon
 {
-    /** @var string Agent type */
-    private const string AGENT_TYPE = 'chat';
+    public const string AGENT_TYPE = 'chat';
 
     /**
      * Creates daemon proxy for ChatAgent.
@@ -24,28 +23,6 @@ class ChatAgentDaemon extends AbstractAgentDaemon
     public function __construct()
     {
         Logger::debug("ChatAgentDaemon created [type=" . self::AGENT_TYPE . "]");
-    }
-
-    /**
-     * Get agent type.
-     *
-     * @return string Agent type
-     */
-    public function getType(): string
-    {
-        return self::AGENT_TYPE;
-    }
-
-    /**
-     * Get agent index.
-     *
-     * Chat agent has no index (global singleton).
-     *
-     * @return ?string Agent index (null for global chat agent)
-     */
-    public function getIndex(): ?string
-    {
-        return null;
     }
 
     /**
