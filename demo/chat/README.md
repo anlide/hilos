@@ -205,8 +205,8 @@ This builds the frontend, starts the stack (MySQL + daemon + Nginx), waits for M
 
 ### Test structure
 
-- `backend/Tests/Unit/` — unit tests (no DB)
-- `backend/Tests/Integration/` — integration tests (require MySQL)
+- `tests/Unit/` — unit tests (no DB)
+- `tests/Integration/` — integration tests (require MySQL)
 - `tests/e2e/` — Playwright E2E tests (full app)
 
 ---

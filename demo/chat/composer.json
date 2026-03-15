@@ -32,7 +32,7 @@
     },
     "autoload-dev": {
         "psr-4": {
-            "Demo\\Chat\\Tests\\": "backend/Tests/"
+            "Demo\\Chat\\Tests\\": "tests/"
         }
     },
     "scripts": {
@@ -76,9 +76,9 @@
         "test:down-volumes": "docker compose -f docker/docker-compose.test.yml down -v",
         "test:db-reset": "docker compose -f docker/docker-compose.test.yml --profile cli run --rm chat-cli-test php backend/Bootstrap/cli.php db:test:reset",
         "test:db-wait": "docker compose -f docker/docker-compose.test.yml --profile cli run --rm chat-cli-test php backend/Bootstrap/cli.php db:wait",
-        "test:unit": "docker compose -f docker/docker-compose.test.yml --profile cli run --rm chat-cli-test php vendor/bin/phpunit --testsuite unit",
-        "test:integration": "docker compose -f docker/docker-compose.test.yml --profile cli run --rm chat-cli-test php vendor/bin/phpunit --testsuite integration",
-        "test:phpunit": "docker compose -f docker/docker-compose.test.yml --profile cli run --rm chat-cli-test php vendor/bin/phpunit",
+        "test:unit": "docker compose -f docker/docker-compose.test.yml --profile cli run --rm chat-cli-test php vendor/bin/phpunit -c tests/phpunit.xml --testsuite unit",
+        "test:integration": "docker compose -f docker/docker-compose.test.yml --profile cli run --rm chat-cli-test php vendor/bin/phpunit -c tests/phpunit.xml --testsuite integration",
+        "test:phpunit": "docker compose -f docker/docker-compose.test.yml --profile cli run --rm chat-cli-test php vendor/bin/phpunit -c tests/phpunit.xml",
         "test:all": "composer run test:db-reset && composer run test:phpunit",
         "test:e2e-build": "docker compose -f docker/docker-compose.test.yml --profile build run --rm chat-frontend-builder",
         "test:e2e-up": "docker compose -f docker/docker-compose.test.yml up -d mysql-test chat-test chat-nginx-test",

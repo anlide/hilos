@@ -11,7 +11,7 @@ data/logs-test/*.log
 data/logs-test/archive/
 
 # PHPUnit
-.phpunit.cache/
+tests/.phpunit.cache/
 
 # Vendor
 vendor/

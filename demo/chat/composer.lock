@@ -12,7 +12,7 @@
             "dist": {
                 "type": "path",
                 "url": "/hilos",
-                "reference": "e45f587b7fc2fa70f06f3022e440bdbf3427e803"
+                "reference": "639f204da0e4ba98d9a91d78b8131aee1ab1705f"
             },
             "require": {
                 "ext-ctype": "*",
@@ -28,6 +28,29 @@
                 "psr-4": {
                     "Hilos\\": "framework/backend/"
                 }
+            },
+            "scripts": {
+                "ollama:start": [
+                    "docker compose -f framework/docker/ollama-local.yml up -d"
+                ],
+                "ollama:start-gpu-nvidia": [
+                    "docker compose -f framework/docker/ollama-local.yml -f framework/docker/ollama-local.gpu-nvidia.yml up -d"
+                ],
+                "ollama:start-gpu-amd": [
+                    "docker compose -f framework/docker/ollama-local.yml -f framework/docker/ollama-local.gpu-amd.yml up -d"
+                ],
+                "ollama:stop": [
+                    "docker compose -f framework/docker/ollama-local.yml down"
+                ],
+                "ollama:pull": [
+                    "docker compose -f framework/docker/ollama-local.yml exec -T ollama-local ollama pull qwen2.5:0.5b && docker compose -f framework/docker/ollama-local.yml exec -T ollama-local ollama pull qwen2.5:3b && docker compose -f framework/docker/ollama-local.yml exec -T ollama-local ollama pull qwen2.5:7b"
+                ],
+                "ollama:pull-gpu-nvidia": [
+                    "docker compose -f framework/docker/ollama-local.yml -f framework/docker/ollama-local.gpu-nvidia.yml exec -T ollama-local ollama pull qwen2.5:0.5b && docker compose -f framework/docker/ollama-local.yml -f framework/docker/ollama-local.gpu-nvidia.yml exec -T ollama-local ollama pull qwen2.5:3b && docker compose -f framework/docker/ollama-local.yml -f framework/docker/ollama-local.gpu-nvidia.yml exec -T ollama-local ollama pull qwen2.5:7b"
+                ],
+                "ollama:pull-gpu-amd": [
+                    "docker compose -f framework/docker/ollama-local.yml -f framework/docker/ollama-local.gpu-amd.yml exec -T ollama-local ollama pull qwen2.5:0.5b && docker compose -f framework/docker/ollama-local.yml -f framework/docker/ollama-local.gpu-amd.yml exec -T ollama-local ollama pull qwen2.5:3b && docker compose -f framework/docker/ollama-local.yml -f framework/docker/ollama-local.gpu-amd.yml exec -T ollama-local ollama pull qwen2.5:7b"
+                ]
             },
             "license": [
                 "MIT"
