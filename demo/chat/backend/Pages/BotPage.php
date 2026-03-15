@@ -11,7 +11,6 @@ use Demo\Chat\Core\Router\DTO\ChatEventSignalDTO;
 use Demo\Chat\Database\DbChatContext;
 use Demo\Chat\Database\View\Collection\Bots;
 use Demo\Chat\Hilos;
-use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\EntitiesChangesDTO;
 use Hilos\Database\Exception\View\CollectionNotManualException;
 use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
@@ -24,15 +23,7 @@ use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
  */
 final class BotPage extends AbstractChatPage
 {
-    /**
-     * Get page name.
-     *
-     * @return string Page name
-     */
-    public function getPageName(): string
-    {
-        return PageConstants::BOT;
-    }
+    public const string PAGE = PageConstants::BOT;
 
     /**
      * Handle page-specific subscription logic.
@@ -82,27 +73,5 @@ final class BotPage extends AbstractChatPage
 
         $bots = Bots::fromSingleItem($bot);
         return new EntitiesChangesDTO(full: [DbChatContext::bots => $bots]);
-    }
-
-    /**
-     * Handle page-specific unsubscription logic.
-     *
-     * @param string $acceptKey Accept key
-     */
-    public function onUnsubscribe(string $acceptKey): void
-    {
-        // TODO: Implement bot page unsubscribe logic
-    }
-
-    /**
-     * Handle page-specific action logic.
-     *
-     * @param string $acceptKey Accept key
-     * @param string $action Action name
-     * @param ActionPayloadDTO $dto Action payload DTO
-     */
-    public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): void
-    {
-        // TODO: Implement bot page action logic
     }
 }

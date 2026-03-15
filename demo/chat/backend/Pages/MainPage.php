@@ -31,15 +31,7 @@ use Hilos\Utils\Logger;
  */
 final class MainPage extends AbstractChatPage
 {
-    /**
-     * Get page name.
-     *
-     * @return string Page name
-     */
-    public function getPageName(): string
-    {
-        return PageConstants::MAIN;
-    }
+    public const string PAGE = PageConstants::MAIN;
 
     /**
      * Handle page-specific subscription logic.
@@ -74,16 +66,6 @@ final class MainPage extends AbstractChatPage
         if ($moderationState !== null) {
             $this->getChatAgent()->sendModerationStateToUserConnections($userId, $moderationState);
         }
-    }
-
-    /**
-     * Handle page-specific unsubscription logic.
-     *
-     * @param string $acceptKey Accept key
-     */
-    public function onUnsubscribe(string $acceptKey): void
-    {
-        // nothing special on unsubscribe
     }
 
     /**

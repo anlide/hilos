@@ -7,7 +7,6 @@ namespace Hilos\Core\Page\HilosPages;
 use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Page\AbstractHilosPage;
-use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\SignalData;
 
 /**
@@ -15,16 +14,13 @@ use Hilos\Core\Router\SignalData;
  */
 class HilosSettingsPage extends AbstractHilosPage
 {
-    /**
-     * {@inheritDoc}
-     */
-    public function getPageName(): string
-    {
-        return HilosPageConstants::HILOS_SETTINGS;
-    }
+    public const string PAGE = HilosPageConstants::HILOS_SETTINGS;
 
     /**
-     * {@inheritDoc}
+     * Handle page subscription.
+     *
+     * @param string $acceptKey WebSocket accept key
+     * @param array<string, string> $params Page params from route (e.g. ['id' => '123'])
      */
     public function onSubscribe(string $acceptKey, array $params = []): void
     {
@@ -33,19 +29,5 @@ class HilosSettingsPage extends AbstractHilosPage
             $acceptKey,
             new SignalData(),
         );
-    }
-
-    /**
-     * {@inheritDoc}
-     */
-    public function onUnsubscribe(string $acceptKey): void
-    {
-    }
-
-    /**
-     * {@inheritDoc}
-     */
-    public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): void
-    {
     }
 }

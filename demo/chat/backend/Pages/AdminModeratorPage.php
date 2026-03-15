@@ -27,15 +27,7 @@ use Hilos\HilosException;
  */
 final class AdminModeratorPage extends AbstractChatPage
 {
-    /**
-     * Get page identifier for routing.
-     *
-     * @return string Page constant
-     */
-    public function getPageName(): string
-    {
-        return PageConstants::ADMIN_MODERATOR;
-    }
+    public const string PAGE = PageConstants::ADMIN_MODERATOR;
 
     /**
      * Sends initial moderator prompt pieces table data to the user on page subscription.
@@ -55,15 +47,6 @@ final class AdminModeratorPage extends AbstractChatPage
                 [TableChatContext::moderatorPromptPieces => $result],
             ),
         );
-    }
-
-    /**
-     * Handles page unsubscription (no-op for moderator page).
-     *
-     * @param string $acceptKey WebSocket accept key for the unsubscribing client
-     */
-    public function onUnsubscribe(string $acceptKey): void
-    {
     }
 
     /**

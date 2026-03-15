@@ -31,15 +31,7 @@ use Hilos\HilosException;
  */
 final class AdminUsersPage extends AbstractChatPage
 {
-    /**
-     * Get page identifier for routing.
-     *
-     * @return string Page constant
-     */
-    public function getPageName(): string
-    {
-        return PageConstants::ADMIN_USERS;
-    }
+    public const string PAGE = PageConstants::ADMIN_USERS;
 
     /**
      * Sends initial users table data to the user on page subscription.
@@ -59,15 +51,6 @@ final class AdminUsersPage extends AbstractChatPage
                 [TableChatContext::users => $result],
             ),
         );
-    }
-
-    /**
-     * Handles page unsubscription (no-op for users page).
-     *
-     * @param string $acceptKey WebSocket accept key for the unsubscribing client
-     */
-    public function onUnsubscribe(string $acceptKey): void
-    {
     }
 
     /**

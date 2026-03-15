@@ -15,6 +15,9 @@ use Hilos\Core\Router\DTO\ActionPayloadDTO;
  */
 abstract class AbstractPage
 {
+    /** @var string Page name/identifier. Override in child classes. */
+    public const string PAGE = '';
+
     /** @var PageAgentInterface Agent instance for page operations */
     protected PageAgentInterface $agent;
 
@@ -31,37 +34,49 @@ abstract class AbstractPage
     /**
      * Get page name (identifier)
      *
-     * @return string Page name/identifier
+     * @return string Page name/identifier from PAGE constant
      */
-    abstract public function getPageName(): string;
+    public function getPageName(): string
+    {
+        return static::PAGE;
+    }
 
     /**
      * Handle page subscription
      *
      * Called when a client subscribes to this page.
+     * Override in child classes when subscription logic is needed.
      *
      * @param string $acceptKey WebSocket accept key
      * @param array<string, string> $params Page params from route (e.g. ['id' => '123'])
      */
-    abstract public function onSubscribe(string $acceptKey, array $params = []): void;
+    public function onSubscribe(string $acceptKey, array $params = []): void
+    {
+    }
 
     /**
      * Handle page unsubscription
      *
      * Called when a client unsubscribes from this page.
+     * Override in child classes when unsubscription logic is needed.
      *
      * @param string $acceptKey WebSocket accept key
      */
-    abstract public function onUnsubscribe(string $acceptKey): void;
+    public function onUnsubscribe(string $acceptKey): void
+    {
+    }
 
     /**
      * Handle action signal
      *
      * Called when a client sends an action signal on this page.
+     * Override in child classes when action handling is needed.
      *
      * @param string $acceptKey WebSocket accept key
      * @param string $action Action name
      * @param ActionPayloadDTO $dto Action payload DTO
      */
-    abstract public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): void;
+    public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): void
+    {
+    }
 }

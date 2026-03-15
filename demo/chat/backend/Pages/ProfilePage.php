@@ -29,15 +29,7 @@ use Hilos\Utils\Logger;
  */
 final class ProfilePage extends AbstractChatPage
 {
-    /**
-     * Get page name.
-     *
-     * @return string Page name
-     */
-    public function getPageName(): string
-    {
-        return PageConstants::PROFILE;
-    }
+    public const string PAGE = PageConstants::PROFILE;
 
     /**
      * Handle page-specific subscription logic.
@@ -52,16 +44,6 @@ final class ProfilePage extends AbstractChatPage
             $acceptKey,
             new ChatEventSignalDTO(new EntitiesChangesDTO()),
         );
-    }
-
-    /**
-     * Handle page-specific unsubscription logic.
-     *
-     * @param string $acceptKey Accept key
-     */
-    public function onUnsubscribe(string $acceptKey): void
-    {
-        // TODO: Implement profile page unsubscribe logic
     }
 
     /**
