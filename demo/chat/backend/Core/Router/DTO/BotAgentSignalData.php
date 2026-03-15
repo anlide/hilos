@@ -12,7 +12,7 @@ use Hilos\Core\Router\SignalDataInterface;
  *
  * Used by BOT_AGENT_START, BOT_AGENT_STOP, BOT_AGENT_RELOAD signals.
  */
-class BotAgentSignalData extends BaseDTO implements SignalDataInterface
+final class BotAgentSignalData extends BaseDTO implements SignalDataInterface
 {
     /**
      * Creates bot agent signal DTO.

@@ -14,7 +14,7 @@ use Hilos\Socket\Server\WorkerServer;
  *
  * Extends WorkerServer to provide chat-specific agent daemon creation.
  */
-class ChatWorkerServer extends WorkerServer
+final class ChatWorkerServer extends WorkerServer
 {
     /**
      * Called when server is started. Workers are not ready yet.

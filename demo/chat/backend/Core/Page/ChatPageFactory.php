@@ -40,7 +40,7 @@ use Hilos\Core\Router\DTO\ActionPayloadDTO;
  *
  * @extends HilosPageFactory<PageAgentInterface>
  */
-class ChatPageFactory extends HilosPageFactory
+final class ChatPageFactory extends HilosPageFactory
 {
     /**
      * Create page instance by name.

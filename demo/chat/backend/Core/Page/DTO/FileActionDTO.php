@@ -11,7 +11,7 @@ use Demo\Chat\Constants\ChatSignalConstants;
  *
  * Represents a file upload/share request.
  */
-class FileActionDTO extends ChatActionPayloadDTO
+final class FileActionDTO extends ChatActionPayloadDTO
 {
     /**
      * Creates file action DTO.

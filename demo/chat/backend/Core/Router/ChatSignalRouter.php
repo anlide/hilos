@@ -24,7 +24,7 @@ use Hilos\Core\Router\SignalSource;
  * Page subscription signals (PAGE_SUBSCRIBE, PAGE_UNSUBSCRIBE, PAGE_UPDATE_SUBSCRIPTION)
  * are routed per-page via 'page_subscription_routing' config, with a default fallback.
  */
-class ChatSignalRouter extends SignalRouter
+final class ChatSignalRouter extends SignalRouter
 {
     /**
      * Creates signal router with chat-specific pages, groups, signals and page subscription routing.

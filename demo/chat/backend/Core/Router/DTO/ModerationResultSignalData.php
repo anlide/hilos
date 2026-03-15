@@ -12,7 +12,7 @@ use Hilos\Core\Router\SignalDataInterface;
  *
  * Routing is configured by signal name in ChatSignalRouter (moderation_result → chat).
  */
-class ModerationResultSignalData extends BaseDTO implements SignalDataInterface
+final class ModerationResultSignalData extends BaseDTO implements SignalDataInterface
 {
     /**
      * Creates moderation result signal data.

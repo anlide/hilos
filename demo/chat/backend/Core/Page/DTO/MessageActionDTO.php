@@ -11,7 +11,7 @@ use Demo\Chat\Constants\ChatSignalConstants;
  *
  * Represents a chat message sent by user.
  */
-class MessageActionDTO extends ChatActionPayloadDTO
+final class MessageActionDTO extends ChatActionPayloadDTO
 {
     /**
      * Creates message action DTO.

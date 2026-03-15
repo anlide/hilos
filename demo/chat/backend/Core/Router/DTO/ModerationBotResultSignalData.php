@@ -10,7 +10,7 @@ use Hilos\Core\Router\SignalDataInterface;
 /**
  * ModerationBotResultSignalData - DTO for bot message moderation result (ModeratorAgent → ChatAgent).
  */
-class ModerationBotResultSignalData extends BaseDTO implements SignalDataInterface
+final class ModerationBotResultSignalData extends BaseDTO implements SignalDataInterface
 {
     /**
      * Creates moderation bot result signal DTO.

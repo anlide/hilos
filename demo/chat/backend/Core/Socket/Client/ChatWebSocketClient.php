@@ -14,7 +14,7 @@ use Hilos\Socket\Client\WebSocketClient;
  *
  * Handles chat-specific WebSocket frame processing and sends signals to chat agent.
  */
-class ChatWebSocketClient extends WebSocketClient
+final class ChatWebSocketClient extends WebSocketClient
 {
     /**
      * Hook: validate action name from parsed payload.

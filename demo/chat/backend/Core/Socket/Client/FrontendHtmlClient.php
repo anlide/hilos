@@ -14,7 +14,7 @@ use Hilos\Socket\Client\Interface\HttpClientInterface;
 /**
  * HTTP client that serves prerendered HTML from HtmlCache based on path and Accept-Language.
  */
-class FrontendHtmlClient extends AbstractClient implements HttpClientInterface
+final class FrontendHtmlClient extends AbstractClient implements HttpClientInterface
 {
     /**
      * Create HTTP client for serving prerendered HTML.

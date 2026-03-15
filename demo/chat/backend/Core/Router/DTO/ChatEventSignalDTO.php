@@ -16,7 +16,7 @@ use Hilos\Core\Exception\NotImplementedException;
  * Simple pass-through of entities to frontend.
  * Optional tables payload for get() responses (e.g. admin page with users table).
  */
-class ChatEventSignalDTO extends SignalData implements SignalDataInterface
+final class ChatEventSignalDTO extends SignalData implements SignalDataInterface
 {
     /**
      * Creates chat event signal DTO.

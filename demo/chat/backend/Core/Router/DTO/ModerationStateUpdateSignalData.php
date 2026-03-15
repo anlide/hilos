@@ -12,7 +12,7 @@ use Hilos\Core\Router\SignalDataInterface;
  *
  * Sent only to the user's own connections. Private data, not broadcast.
  */
-class ModerationStateUpdateSignalData extends BaseDTO implements SignalDataInterface
+final class ModerationStateUpdateSignalData extends BaseDTO implements SignalDataInterface
 {
     /**
      * Creates moderation state update signal data.

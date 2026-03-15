@@ -15,7 +15,7 @@ use Hilos\Socket\SocketException;
  * Extends base WebSocketServer with chat-specific functionality.
  * Queues signals for dispatch through Hilos::$sr.
  */
-class ChatWebSocketServer extends WebSocketServer
+final class ChatWebSocketServer extends WebSocketServer
 {
     /**
      * Accept new connection.

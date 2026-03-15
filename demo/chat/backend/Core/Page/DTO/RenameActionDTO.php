@@ -11,7 +11,7 @@ use Demo\Chat\Constants\ChatSignalConstants;
  *
  * Represents a user rename request.
  */
-class RenameActionDTO extends ChatActionPayloadDTO
+final class RenameActionDTO extends ChatActionPayloadDTO
 {
     /**
      * Creates rename action DTO.
