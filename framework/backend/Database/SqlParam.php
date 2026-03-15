@@ -1,6 +1,10 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Hilos\Database;
+
+use Hilos\Core\Exception\InvalidArgumentException;
 
 /**
  * Single SQL parameter with type information for prepared statements.
@@ -21,7 +25,7 @@ readonly class SqlParam
         public string $type = 's' // i=integer, d=double, s=string, b=blob
     ) {
         if (!in_array($type, ['i', 'd', 's', 'b'], true)) {
-            throw new \InvalidArgumentException("Invalid parameter type: {$type}. Must be one of: i, d, s, b");
+            throw new InvalidArgumentException("Invalid parameter type: {$type}. Must be one of: i, d, s, b");
         }
     }
 

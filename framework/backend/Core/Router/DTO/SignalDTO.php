@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Core\Router\DTO;
 
 use Hilos\BaseDTO;
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Router\SignalData;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\SignalName;
@@ -81,25 +82,25 @@ class SignalDTO extends BaseDTO
     {
         // Validate required fields
         if (!isset($data['signalSource'])) {
-            throw new \InvalidArgumentException("Missing required field: signalSource");
+            throw new InvalidArgumentException("Missing required field: signalSource");
         }
 
         if (!isset($data['signalType'])) {
-            throw new \InvalidArgumentException("Missing required field: signalType");
+            throw new InvalidArgumentException("Missing required field: signalType");
         }
 
         if (!isset($data['signalName'])) {
-            throw new \InvalidArgumentException("Missing required field: signalName");
+            throw new InvalidArgumentException("Missing required field: signalName");
         }
 
         // Validate data field type
         if (isset($data['data']) && !is_array($data['data'])) {
-            throw new \InvalidArgumentException("Field 'data' must be an array, got: " . gettype($data['data']));
+            throw new InvalidArgumentException("Field 'data' must be an array, got: " . gettype($data['data']));
         }
 
         // Validate dataType field type - must be string or null
         if (array_key_exists('dataType', $data) && $data['dataType'] !== null && !is_string($data['dataType'])) {
-            throw new \InvalidArgumentException("Field 'dataType' must be string or null, got: " . gettype($data['dataType']));
+            throw new InvalidArgumentException("Field 'dataType' must be string or null, got: " . gettype($data['dataType']));
         }
 
         // Deserialize signalSource

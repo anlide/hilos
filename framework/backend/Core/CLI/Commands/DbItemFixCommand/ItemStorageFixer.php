@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Core\CLI\Commands\DbItemFixCommand;
 
+use Hilos\Core\CLI\Exception\FixerException;
+
 /**
  * ItemStorageFixer trait.
  *
@@ -1108,7 +1110,7 @@ trait ItemStorageFixer
             $newBody = substr_replace($reloadBody, $caseLine, $insertPos, 0);
         } else {
             // No default case - should not happen
-            throw new \RuntimeException("reloadCollection() method must have a default case");
+            throw new FixerException("reloadCollection() method must have a default case");
         }
 
         // Replace method body (start is already position after opening brace)

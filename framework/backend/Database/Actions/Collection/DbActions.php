@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Database\Actions\Collection;
 
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
@@ -82,7 +83,7 @@ abstract class DbActions
         return match ($name) {
             self::objectCollection => $this->getObjectCollection()
                 ?? throw new ObjectCollectionNullException("ObjectCollection is null (manual collection)"),
-            default => throw new \InvalidArgumentException("Unknown property: {$name}"),
+            default => throw new InvalidArgumentException("Unknown property: {$name}"),
         };
     }
 

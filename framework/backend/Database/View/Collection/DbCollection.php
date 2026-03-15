@@ -21,7 +21,8 @@ use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 use Hilos\Database\Object\Item\Object_;
 use Hilos\Database\Object\Objects;
 use Hilos\Database\View\Item\DbItem;
-use InvalidArgumentException;
+use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\LogicException;
 use Iterator;
 
 /**
@@ -256,7 +257,7 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
         $itemClass = static::DB_ITEM_CLASS;
         $objectCollectionClass = static::OBJECT_COLLECTION_CLASS;
         if ($itemClass === '' || $objectCollectionClass === '') {
-            throw new \LogicException(static::class . ' must define DB_ITEM_CLASS and OBJECT_COLLECTION_CLASS constants');
+            throw new LogicException(static::class . ' must define DB_ITEM_CLASS and OBJECT_COLLECTION_CLASS constants');
         }
         $objectClass = $objectCollectionClass::OBJECT_CLASS;
         if (!($object instanceof $objectClass)) {

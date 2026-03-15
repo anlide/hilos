@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Socket\Worker;
 
 use Hilos\BaseDTO;
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Constants\WorkerConstants;
 use Hilos\Socket\Worker\DTO\AgentStartDTO;
 use Hilos\Socket\Worker\DTO\AgentStopDTO;
@@ -53,12 +54,12 @@ abstract class WorkerDTO extends BaseDTO
         Logger::debug('Parsing worker DTO from JSON: ' . $json);
         $data = json_decode($json, true);
         if ($data === null) {
-            throw new \InvalidArgumentException('Invalid JSON provided: ' . json_last_error_msg());
+            throw new InvalidArgumentException('Invalid JSON provided: ' . json_last_error_msg());
         }
 
         $type = $data[self::TYPE] ?? '';
         if ($type === '') {
-            throw new \InvalidArgumentException('Message type is missing');
+            throw new InvalidArgumentException('Message type is missing');
         }
 
         return match ($type) {
@@ -76,7 +77,7 @@ abstract class WorkerDTO extends BaseDTO
             WorkerRtSyncCreatedMessageDTO::MESSAGE_TYPE => WorkerRtSyncCreatedMessageDTO::fromArray($data),
             WorkerRtSyncUpdatedMessageDTO::MESSAGE_TYPE => WorkerRtSyncUpdatedMessageDTO::fromArray($data),
             WorkerRtSyncDeletedMessageDTO::MESSAGE_TYPE => WorkerRtSyncDeletedMessageDTO::fromArray($data),
-            default => throw new \InvalidArgumentException("Unknown worker message type: {$type}"),
+            default => throw new InvalidArgumentException("Unknown worker message type: {$type}"),
         };
     }
 }

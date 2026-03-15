@@ -11,10 +11,10 @@ use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Collection\EntityCollection;
 use Hilos\Database\Filter\FilterInterface;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Database\Object\Item\Object_;
 use Hilos\Database\SqlParam;
 use Hilos\Database\SqlParamCollection;
-use InvalidArgumentException;
 use Iterator;
 
 /**

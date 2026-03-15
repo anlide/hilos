@@ -2,6 +2,7 @@
 
 namespace Hilos\Database\Object\Collection;
 
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Database\Object\Item\Object_;
 use ArrayAccess;
 use Countable;
@@ -217,7 +218,7 @@ class ObjectCollection implements ArrayAccess, Countable, Iterator
     public function offsetSet(mixed $offset, mixed $value): void
     {
         if (!($value instanceof Object_)) {
-            throw new \InvalidArgumentException("Value must be instance of Object_");
+            throw new InvalidArgumentException("Value must be instance of Object_");
         }
 
         if ($offset === null) {
