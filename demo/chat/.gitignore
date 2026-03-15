@@ -1,7 +1,7 @@
 # Environment configuration
 .env
 .env.local
-.env.test
+tests/.env
 .env.*.local
 
 # Log files

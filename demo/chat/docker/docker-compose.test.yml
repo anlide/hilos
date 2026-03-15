@@ -32,7 +32,7 @@ services:
   chat-test:
     build: .
     env_file:
-      - ../.env.test
+      - ../tests/.env
     container_name: chat-daemon-test
     volumes:
       - ..:/app
@@ -107,7 +107,7 @@ services:
   chat-cli-test:
     build: .
     env_file:
-      - ../.env.test
+      - ../tests/.env
     container_name: chat-cli-test
     volumes:
       - ..:/app

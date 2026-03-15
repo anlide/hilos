@@ -124,9 +124,9 @@ Tests use a separate Docker stack (`docker/docker-compose.test.yml`), isolated f
 
 2. **Copy test environment** (optional; defaults work for Docker):
    ```bash
-   cp .env.test.example .env.test
+   cp tests/.env.example tests/.env
    ```
-   Adjust `.env.test` if running PHPUnit from the host (e.g. `DB_HOST=localhost`, `DB_PORT=33061`).
+   Adjust `tests/.env` if running PHPUnit from the host (e.g. `DB_HOST=localhost`, `DB_PORT=33061`).
 
 ### Commands
 
