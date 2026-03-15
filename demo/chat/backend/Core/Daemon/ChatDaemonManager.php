@@ -21,10 +21,9 @@ use Hilos\Socket\Worker\DTO\CronSignalDTO;
  * ChatDaemonManager - Main daemon manager for chat demo.
  *
  * Extends framework DaemonManager to provide chat functionality.
- * Implements tick() method for project-specific logic.
  * Manages signal routing and server coordination.
  */
-class ChatDaemonManager extends DaemonManager
+final class ChatDaemonManager extends DaemonManager
 {
     /**
      * Initializes chat daemon manager.
@@ -61,19 +60,6 @@ class ChatDaemonManager extends DaemonManager
     protected function createAgentManagerDaemon(): AgentManagerDaemon
     {
         return new ChatAgentManagerDaemon();
-    }
-
-    /**
-     * Daemon tick implementation.
-     *
-     * This is where project-specific logic would be implemented.
-     */
-    protected function onTick(): void
-    {
-        // TODO: Add chat-specific logic here
-        // - Check WebSocket connections
-        // - Process messages
-        // - Manage agents/workers if needed
     }
 
     /**

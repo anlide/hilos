@@ -25,7 +25,7 @@ use Hilos\Core\Router\SignalRouter;
  * Extends base WorkerManager to provide chat-specific agent creation.
  * All daemon connection and agent management is handled by base WorkerManager.
  */
-class ChatWorkerManager extends WorkerManager
+final class ChatWorkerManager extends WorkerManager
 {
     /**
      * Create chat-specific signal router.
@@ -45,13 +45,6 @@ class ChatWorkerManager extends WorkerManager
     protected function createAgentManager(): AgentManager
     {
         return new ChatAgentManager();
-    }
-
-    /**
-     * Periodic tick handler (no-op for chat worker).
-     */
-    protected function onTick(): void
-    {
     }
 
     /**

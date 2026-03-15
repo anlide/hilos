@@ -25,7 +25,7 @@ use Hilos\Core\Agent\HilosAgentWorkerFactory;
  * Creates chat and Hilos agent instances based on agent type.
  * Extends HilosAgentWorkerFactory to delegate unknown types to framework.
  */
-class ChatAgentWorkerFactory extends HilosAgentWorkerFactory
+final class ChatAgentWorkerFactory extends HilosAgentWorkerFactory
 {
     /**
      * Create agent instance based on type.

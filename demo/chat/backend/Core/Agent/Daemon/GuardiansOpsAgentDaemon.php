@@ -6,7 +6,6 @@ namespace Demo\Chat\Core\Agent\Daemon;
 
 use Demo\Chat\Constants\AgentType;
 use Hilos\Core\Agent\Daemon\AbstractAgentDaemon;
-use Hilos\Utils\Logger;
 
 /**
  * GuardiansOpsAgentDaemon - Daemon proxy for GuardiansOpsAgent.
@@ -16,14 +15,6 @@ use Hilos\Utils\Logger;
 final class GuardiansOpsAgentDaemon extends AbstractAgentDaemon
 {
     public const string AGENT_TYPE = AgentType::GUARDIAN_OPS;
-
-    /**
-     * Creates daemon proxy for GuardiansOpsAgent.
-     */
-    public function __construct()
-    {
-        Logger::debug('GuardiansOpsAgentDaemon created [type=' . self::AGENT_TYPE . ']');
-    }
 
     /**
      * Check if agent requires monopolistic worker process.

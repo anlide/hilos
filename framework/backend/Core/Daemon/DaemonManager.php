@@ -815,10 +815,13 @@ abstract class DaemonManager extends BaseManager
     /**
      * Tick method - called regularly in main loop
      *
-     * Must be implemented in child classes to define daemon-specific
-     * work logic. Called on each loop iteration with precise timing.
+     * Child classes can override this method to handle cron job execution.
+     * Default implementation does nothing.
      */
-    abstract protected function onTick(): void;
+    protected function onTick(): void
+    {
+        // Default: do nothing, child classes should override
+    }
 
     /**
      * Called when a cron job should be executed

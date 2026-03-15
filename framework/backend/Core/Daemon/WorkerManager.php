@@ -921,11 +921,12 @@ abstract class WorkerManager extends BaseManager
     /**
      * Tick method - called regularly in main loop
      *
-     * Must be implemented in child classes to define worker-specific
-     * work logic. Called on each loop iteration with precise timing.
-     * Only called when connection to daemon is established.
+     * Child classes can override to implement periodic tasks. Called only when connected to daemon.
      */
-    abstract protected function onTick(): void;
+    protected function onTick(): void
+    {
+        // Default: do nothing, child classes should override
+    }
 
     /**
      * Dispatch accumulated signals

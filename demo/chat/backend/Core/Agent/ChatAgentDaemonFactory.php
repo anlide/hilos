@@ -25,7 +25,7 @@ use Hilos\Core\Agent\Exception\AgentIndexRequiredException;
  * Creates chat and Hilos agent daemon instances based on agent type.
  * Extends HilosAgentDaemonFactory to delegate unknown types to framework.
  */
-class ChatAgentDaemonFactory extends HilosAgentDaemonFactory
+final class ChatAgentDaemonFactory extends HilosAgentDaemonFactory
 {
     /**
      * Create agent daemon instance based on type.

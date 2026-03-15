@@ -14,7 +14,7 @@ use Hilos\Core\Agent\Exception\AgentIndexRequiredException;
  *
  * Extends base AgentManager to provide chat-specific agent creation.
  */
-class ChatAgentManager extends AgentManager
+final class ChatAgentManager extends AgentManager
 {
     /**
      * Create agent instance (factory method).
@@ -23,6 +23,7 @@ class ChatAgentManager extends AgentManager
      * @param ?string $agentIndex Agent index (optional)
      * @return AgentInterface Agent instance
      * @throws AgentIndexRequiredException If agent index is required but not provided
+     * @throws AgentCreationFailedException If agent type is unknown and cannot be created
      */
     protected function createAgent(string $agentType, ?string $agentIndex): AgentInterface
     {
