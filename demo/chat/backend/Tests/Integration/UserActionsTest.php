@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace Demo\Chat\Tests\Integration;
 
 use Demo\Chat\Hilos;
+use Hilos\HilosException;
 use Hilos\Runtime\Exception\RtBaseException;
+use Random\RandomException;
 
 /**
  * Integration tests for UserActions (item-level).
@@ -15,6 +17,9 @@ final class UserActionsTest extends IntegrationTestCase
 {
     /**
      * Rename with valid name updates user in database.
+     *
+     * @throws RandomException On random bytes generation error
+     * @throws HilosException On database error
      */
     public function testRenameSucceeds(): void
     {
@@ -32,6 +37,9 @@ final class UserActionsTest extends IntegrationTestCase
 
     /**
      * Rename with empty/whitespace-only name throws RtBaseException.
+     *
+     * @throws RandomException On random bytes generation error
+     * @throws HilosException On database error
      */
     public function testRenameEmptyThrows(): void
     {
@@ -47,6 +55,9 @@ final class UserActionsTest extends IntegrationTestCase
 
     /**
      * Rename with name exceeding max length throws RtBaseException.
+     *
+     * @throws RandomException On random bytes generation error
+     * @throws HilosException On database error
      */
     public function testRenameTooLongThrows(): void
     {
@@ -62,6 +73,9 @@ final class UserActionsTest extends IntegrationTestCase
 
     /**
      * Rename with same name performs no-op (no DB update).
+     *
+     * @throws RandomException On random bytes generation error
+     * @throws HilosException On database error
      */
     public function testRenameSameNameNoOp(): void
     {

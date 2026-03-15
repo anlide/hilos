@@ -9,7 +9,7 @@ namespace Demo\Chat\Utils;
  *
  * Domain logic for LLM prompts (language instructions, etc.).
  */
-class ChatLLMHelper
+final class ChatLLMHelper
 {
     /**
      * Get language instruction for LLM prompt (English instruction text).

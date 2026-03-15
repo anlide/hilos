@@ -7,6 +7,8 @@ namespace Demo\Chat\Tests\Integration;
 use Demo\Chat\Hilos;
 use Hilos\Core\Exception\DuplicateValueException;
 use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\HilosException;
+use Random\RandomException;
 
 /**
  * Integration tests for UsersActions.
@@ -16,6 +18,9 @@ final class UsersActionsTest extends IntegrationTestCase
 {
     /**
      * Register with valid token creates user with auto-generated name.
+     *
+     * @throws RandomException On random bytes generation error
+     * @throws HilosException On database error
      */
     public function testRegisterCreatesUser(): void
     {
@@ -29,6 +34,8 @@ final class UsersActionsTest extends IntegrationTestCase
 
     /**
      * Register with invalid token format throws InvalidFormatException.
+     *
+     * @throws HilosException On database error
      */
     public function testRegisterInvalidTokenThrows(): void
     {
@@ -40,6 +47,9 @@ final class UsersActionsTest extends IntegrationTestCase
 
     /**
      * Register with existing token throws DuplicateValueException.
+     *
+     * @throws RandomException On random bytes generation error
+     * @throws HilosException On database error
      */
     public function testRegisterDuplicateTokenThrows(): void
     {
