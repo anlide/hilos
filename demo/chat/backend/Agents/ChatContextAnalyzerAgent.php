@@ -12,8 +12,11 @@ use Demo\Chat\Database\DbChatContext;
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\State\Item\ChatContext as StateChatContext;
 use Demo\Chat\Runtime\View\Context\RtChatContext;
-use Demo\Chat\Utils\ContextAnalyzerEnv;
+use Demo\Chat\Constants\ChatLLMConstants;
+use Hilos\Constants\EnvConstants;
+use Hilos\Constants\LLMConstants;
 use Hilos\Core\Agent\AbstractAgent;
+use Hilos\Utils\Env;
 use Hilos\Core\Sync\DTO\DbSyncCreatedSignalData;
 use Hilos\Core\Sync\DTO\DbSyncUpdatedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncCreatedSignalData;
@@ -45,15 +48,19 @@ class ChatContextAnalyzerAgent extends AbstractAgent
     private bool $pendingSummarize = false;
 
     /**
-     * Create ChatContextAnalyzerAgent with LLM client from ContextAnalyzerEnv.
+     * Create ChatContextAnalyzerAgent with LLM client from Env config.
      */
     public function __construct()
     {
-        $this->chatClient = ContextAnalyzerEnv::useExternalProvider()
+        $this->chatClient = Env::isExternalProvider(EnvConstants::CHAT_CONTEXT_ANALYZER_PROVIDER)
             ? ClientFactory::createChatClient()
             : ClientFactory::createChatClientWithConfig(
-                url: ContextAnalyzerEnv::getUrl(),
-                model: ContextAnalyzerEnv::getModel(),
+                url: Env::getNormalizedLlmUrl(
+                    EnvConstants::CHAT_CONTEXT_ANALYZER_URL,
+                    EnvConstants::LLM_LOCAL_URL,
+                    LLMConstants::DEFAULT_LOCAL_URL,
+                ),
+                model: Env::getFilled(EnvConstants::CHAT_CONTEXT_ANALYZER_MODEL, ChatLLMConstants::MODEL_CONTEXT_ANALYZER),
                 apiKey: null,
             );
     }
@@ -286,12 +293,13 @@ PROMPT;
             new Message(Message::ROLE_USER, $eventsText),
         ];
 
+        $timeoutSec = Env::getFloat(EnvConstants::CHAT_CONTEXT_ANALYZER_TIMEOUT_SEC, LLMConstants::DEFAULT_TIMEOUT_SEC);
         $options = new ChatGenerateOptions(
-            model: ContextAnalyzerEnv::getModel(),
+            model: Env::getFilled(EnvConstants::CHAT_CONTEXT_ANALYZER_MODEL, ChatLLMConstants::MODEL_CONTEXT_ANALYZER),
             temperature: 0.0,
-            timeoutSec: ContextAnalyzerEnv::getTimeoutSec(),
+            timeoutSec: $timeoutSec > 0 ? $timeoutSec : LLMConstants::DEFAULT_TIMEOUT_SEC,
             maxTokens: ChatContextAnalyzerConstants::MAX_RESPONSE_TOKENS,
-            responseFormat: ContextAnalyzerEnv::useExternalProvider()
+            responseFormat: Env::isExternalProvider(EnvConstants::CHAT_CONTEXT_ANALYZER_PROVIDER)
                 ? ['type' => 'json_object']
                 : ['format' => 'json'],
         );

@@ -8,10 +8,13 @@ use Demo\Chat\Constants\AgentType;
 use Demo\Chat\Constants\ChatEventType;
 use Demo\Chat\Guardian\Capabilities\DbEventsReadCapability;
 use Demo\Chat\Guardian\Capabilities\RtReadCapability;
+use Demo\Chat\Constants\ChatLLMConstants;
 use Demo\Chat\Guardian\Config\GuardianConfig;
 use Demo\Chat\Guardian\Reports\GuardianReportPayload;
-use Demo\Chat\Utils\ContextAnalyzerEnv;
+use Hilos\Constants\EnvConstants;
+use Hilos\Constants\LLMConstants;
 use Hilos\LLM\ClientFactory;
+use Hilos\Utils\Env;
 use Hilos\LLM\Contract\AsyncChatLLMInterface;
 use Hilos\LLM\DTO\ChatGenerateOptions;
 use Hilos\LLM\DTO\Message;
@@ -49,11 +52,15 @@ final class ChatSituationGuardianAgent extends AbstractGuardianAgent
         parent::__construct();
         $this->eventsCapability = new DbEventsReadCapability();
         $this->rtCapability = new RtReadCapability();
-        $this->chatClient = ContextAnalyzerEnv::useExternalProvider()
+        $this->chatClient = Env::isExternalProvider(EnvConstants::CHAT_CONTEXT_ANALYZER_PROVIDER)
             ? ClientFactory::createChatClient()
             : ClientFactory::createChatClientWithConfig(
-                url: ContextAnalyzerEnv::getUrl(),
-                model: ContextAnalyzerEnv::getModel(),
+                url: Env::getNormalizedLlmUrl(
+                    EnvConstants::CHAT_CONTEXT_ANALYZER_URL,
+                    EnvConstants::LLM_LOCAL_URL,
+                    LLMConstants::DEFAULT_LOCAL_URL,
+                ),
+                model: Env::getFilled(EnvConstants::CHAT_CONTEXT_ANALYZER_MODEL, ChatLLMConstants::MODEL_CONTEXT_ANALYZER),
                 apiKey: null,
             );
     }
@@ -84,10 +91,11 @@ final class ChatSituationGuardianAgent extends AbstractGuardianAgent
         }
 
         $summaryPrompt = $this->buildPromptFromStats($stats);
+        $timeoutSec = Env::getFloat(EnvConstants::CHAT_CONTEXT_ANALYZER_TIMEOUT_SEC, LLMConstants::DEFAULT_TIMEOUT_SEC);
         $options = new ChatGenerateOptions(
-            model: ContextAnalyzerEnv::getModel(),
+            model: Env::getFilled(EnvConstants::CHAT_CONTEXT_ANALYZER_MODEL, ChatLLMConstants::MODEL_CONTEXT_ANALYZER),
             temperature: 0.0,
-            timeoutSec: ContextAnalyzerEnv::getTimeoutSec(),
+            timeoutSec: $timeoutSec > 0 ? $timeoutSec : LLMConstants::DEFAULT_TIMEOUT_SEC,
             maxTokens: 80,
         );
         $messages = [

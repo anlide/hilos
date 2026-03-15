@@ -49,6 +49,27 @@ enum EnvConstants
     /** @var string Database root password */
     case DB_ROOT_PASSWORD;
 
+    /** @var string Database username (Laravel-style, used in demo) */
+    case DB_USERNAME;
+
+    /** @var string Database name (Laravel-style, used in demo) */
+    case DB_DATABASE;
+
+    /** @var string Secondary database host */
+    case DB_SECONDARY_HOST;
+
+    /** @var string Secondary database username */
+    case DB_SECONDARY_USERNAME;
+
+    /** @var string Secondary database password */
+    case DB_SECONDARY_PASSWORD;
+
+    /** @var string Secondary database name */
+    case DB_SECONDARY_DATABASE;
+
+    /** @var string Secondary database port */
+    case DB_SECONDARY_PORT;
+
     /** @var string Daemon log file path */
     case DAEMON_LOG_FILE;
 
@@ -60,6 +81,12 @@ enum EnvConstants
 
     /** @var string Docker daemon IP address */
     case DOCKER_DAEMON_IP;
+
+    /** @var string Docker detection: 'true' when running in container */
+    case DOCKER;
+
+    /** @var string Terminal type (xterm, dumb, etc.) for TUI detection */
+    case TERM;
 
     /** @var string WebSocket server host */
     case WEBSOCKET_HOST;
@@ -161,6 +188,17 @@ enum EnvConstants
 
     /** @var string Chat language: ru, en (ISO 639-1). Bots respond in this language. */
     case CHAT_BOT_LANGUAGE;
+
+    // ── Frontend (demo) ──────────────────────────────────────────────────────
+
+    /** @var string Path to frontend dist for daemon static server */
+    case FRONTEND_DIST_PATH;
+
+    /** @var string Host for HTML file server */
+    case FRONTEND_HTML_HOST;
+
+    /** @var string Port for HTML file server */
+    case FRONTEND_HTML_PORT;
 
     // ── Application environment ──────────────────────────────────────────────
 

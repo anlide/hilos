@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace Demo\Chat\Agents;
 
 use Demo\Chat\Constants\AgentType;
+use Demo\Chat\Constants\ChatLLMConstants;
 use Demo\Chat\Constants\ChatSignalConstants;
-use Demo\Chat\Utils\ModerationEnv;
 use Demo\Chat\Core\Router\DTO\ModerationBotRequestSignalData;
 use Demo\Chat\Core\Router\DTO\ModerationBotResultSignalData;
 use Demo\Chat\Core\Router\DTO\ModerationRequestSignalData;
@@ -18,9 +18,12 @@ use Hilos\LLM\ClientFactory;
 use Hilos\LLM\Contract\AsyncChatLLMInterface;
 use Hilos\LLM\DTO\ChatGenerateOptions;
 use Hilos\LLM\DTO\Message;
+use Hilos\Constants\EnvConstants;
+use Hilos\Constants\LLMConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
+use Hilos\Utils\Env;
 use Hilos\Utils\Helpers\JsonHelper;
 use Hilos\Utils\Logger;
 
@@ -28,7 +31,7 @@ use Hilos\Utils\Logger;
  * ModeratorAgent - Regular agent for content moderation.
  *
  * Runs in regular worker process. Manages content moderation and AI-based checks.
- * Uses framework LLM layer (local Ollama or external OpenAI) via ModerationEnv.
+ * Uses framework LLM layer (local Ollama or external OpenAI) via Env.
  */
 class ModeratorAgent extends AbstractAgent
 {
@@ -44,15 +47,22 @@ class ModeratorAgent extends AbstractAgent
     private ?array $currentPending = null;
 
     /**
-     * Creates moderator agent with LLM client from ModerationEnv.
+     * Creates moderator agent with LLM client from Env config.
      */
     public function __construct()
     {
-        $this->chatClient = ModerationEnv::useExternalProvider()
+        $this->chatClient = Env::isExternalProvider(EnvConstants::CHAT_MODERATION_PROVIDER)
             ? ClientFactory::createChatClient()
             : ClientFactory::createChatClientWithConfig(
-                url: ModerationEnv::getUrl(),
-                model: ModerationEnv::getModel(),
+                url: Env::getNormalizedLlmUrl(
+                    EnvConstants::CHAT_MODERATION_URL,
+                    EnvConstants::LLM_LOCAL_URL,
+                    LLMConstants::DEFAULT_LOCAL_URL,
+                ),
+                model: Env::getFilled(
+                    EnvConstants::CHAT_MODERATION_MODEL,
+                    Env::getFilled(EnvConstants::LLM_LOCAL_CHAT_MODEL, ChatLLMConstants::MODEL_MODERATION),
+                ),
                 apiKey: null,
             );
     }
@@ -184,7 +194,7 @@ class ModeratorAgent extends AbstractAgent
      */
     private function handleModerateRequest(ModerationRequestSignalData $payload): void
     {
-        if (!ModerationEnv::moderateUsersEnabled()) {
+        if (!Env::getBool(EnvConstants::CHAT_MODERATION_USERS, true)) {
             $this->bypassModerationUser($payload);
             return;
         }
@@ -206,7 +216,7 @@ class ModeratorAgent extends AbstractAgent
      */
     private function handleModerateBotRequest(ModerationBotRequestSignalData $payload): void
     {
-        if (!ModerationEnv::moderateBotsEnabled()) {
+        if (!Env::getBool(EnvConstants::CHAT_MODERATION_BOTS, false)) {
             $this->bypassModerationBot($payload);
             return;
         }
@@ -278,10 +288,14 @@ class ModeratorAgent extends AbstractAgent
         $botId = $item['type'] === 'bot' ? $payload->botId : null;
 
         $messages = $this->buildModerationMessages($message, $userId, $botId);
+        $timeoutSec = Env::getFloat(EnvConstants::CHAT_MODERATION_TIMEOUT_SEC, LLMConstants::DEFAULT_TIMEOUT_SEC);
         $options = new ChatGenerateOptions(
-            model: ModerationEnv::getModel(),
+            model: Env::getFilled(
+                EnvConstants::CHAT_MODERATION_MODEL,
+                Env::getFilled(EnvConstants::LLM_LOCAL_CHAT_MODEL, ChatLLMConstants::MODEL_MODERATION),
+            ),
             temperature: 0.0,
-            timeoutSec: ModerationEnv::getTimeoutSec(),
+            timeoutSec: $timeoutSec > 0 ? $timeoutSec : LLMConstants::DEFAULT_TIMEOUT_SEC,
             maxTokens: 32,
         );
 

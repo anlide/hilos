@@ -7,7 +7,7 @@ namespace Demo\Chat\Constants;
 /**
  * ChatContextAnalyzerConstants - Constants for ChatContextAnalyzerAgent.
  *
- * Mirrors structure of ModerationEnv/ChatSignalConstants for moderator.
+ * Constants for chat context analyzer (model, max tokens, events).
  */
 class ChatContextAnalyzerConstants
 {

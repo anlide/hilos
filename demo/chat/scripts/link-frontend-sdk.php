@@ -1,17 +1,21 @@
 <?php
 /**
  * Link frontend SDK from framework to frontend/src/sdk
- * 
+ *
  * This script:
  * 1. Checks if we're in a demo project (framework available via path repository)
  * 2. If demo: SKIP symlink creation (framework is mounted directly in Docker at /hilos/framework)
  * 3. If standalone: creates symlink to vendor/anlide/hilos/frontend
- * 
+ *
  * This script is called automatically after composer install/update
  */
 
+require_once __DIR__ . '/../vendor/autoload.php';
+
+use Hilos\Constants\EnvConstants;
+
 // Detect if we're running in Docker container
-$isDocker = file_exists('/.dockerenv') || getenv('DOCKER') === 'true';
+$isDocker = file_exists('/.dockerenv') || getenv(EnvConstants::DOCKER->name) === 'true';
 
 // Find project root and current working directory
 $currentDir = getcwd();

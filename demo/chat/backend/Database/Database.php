@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Demo\Chat\Database;
 
 use Demo\Chat\Hilos;
+use Hilos\Constants\EnvConstants;
 use Hilos\Database\Database as BaseDatabase;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Schema\Schema;
@@ -43,11 +44,11 @@ class Database extends BaseDatabase
         // Configure primary database connection (index 0)
         self::configure(
             index: 0,
-            host: Env::get('DB_HOST', 'localhost'),
-            user: Env::get('DB_USERNAME', 'root'),
-            password: Env::get('DB_PASSWORD', ''),
-            database: Env::get('DB_DATABASE', 'hilos_demo'),
-            port: Env::getInt('DB_PORT', 3306),
+            host: Env::get(EnvConstants::DB_HOST, 'localhost'),
+            user: Env::get(EnvConstants::DB_USERNAME, 'root'),
+            password: Env::get(EnvConstants::DB_PASSWORD, ''),
+            database: Env::get(EnvConstants::DB_DATABASE, 'hilos_demo'),
+            port: Env::getInt(EnvConstants::DB_PORT, 3306),
             charset: 'utf8mb4',
         );
 
@@ -71,11 +72,11 @@ class Database extends BaseDatabase
         // Example for secondary database:
         // self::configure(
         //     index: 1,
-        //     host: Env::get('DB_SECONDARY_HOST', 'localhost'),
-        //     user: Env::get('DB_SECONDARY_USERNAME', 'root'),
-        //     password: Env::get('DB_SECONDARY_PASSWORD', ''),
-        //     database: Env::get('DB_SECONDARY_DATABASE', 'hilos_demo_secondary'),
-        //     port: Env::getInt('DB_SECONDARY_PORT', 3306),
+        //     host: Env::get(EnvConstants::DB_SECONDARY_HOST, 'localhost'),
+        //     user: Env::get(EnvConstants::DB_SECONDARY_USERNAME, 'root'),
+        //     password: Env::get(EnvConstants::DB_SECONDARY_PASSWORD, ''),
+        //     database: Env::get(EnvConstants::DB_SECONDARY_DATABASE, 'hilos_demo_secondary'),
+        //     port: Env::getInt(EnvConstants::DB_SECONDARY_PORT, 3306),
         //     charset: 'utf8mb4',
         // );
         // self::connect(1);

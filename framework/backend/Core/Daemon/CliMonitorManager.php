@@ -142,7 +142,7 @@ class CliMonitorManager extends BaseManager
         }
 
         // Check TERM variable
-        $term = getenv('TERM');
+        $term = Env::getFilled(EnvConstants::TERM, '');
         if (!$term || $term === 'dumb') {
             Logger::info("WARNING: Terminal capabilities limited (TERM=$term).");
             Logger::info("Monitor may not display correctly.");
@@ -160,7 +160,8 @@ class CliMonitorManager extends BaseManager
     private function updateDisplay(): void
     {
         // Clear screen (cross-platform)
-        if (getenv('TERM') && getenv('TERM') !== 'dumb') {
+        $term = Env::getFilled(EnvConstants::TERM, '');
+        if ($term !== '' && $term !== 'dumb') {
             system('clear');
         } else {
             // Fallback for cases without TERM

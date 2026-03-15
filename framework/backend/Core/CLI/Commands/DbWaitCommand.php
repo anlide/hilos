@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Core\CLI\Commands;
 
 use Hilos\Constants\CliCommands;
+use Hilos\Constants\EnvConstants;
 use Hilos\Constants\ExitCode;
 use Hilos\Utils\Env;
 
@@ -81,10 +82,10 @@ HELP;
         $interval = isset($options['interval']) ? (int)$options['interval'] : self::DEFAULT_INTERVAL_SEC;
         $timeout = isset($options['timeout']) ? (int)$options['timeout'] : self::DEFAULT_TIMEOUT_SEC;
 
-        $host = Env::get('DB_HOST', 'localhost');
-        $port = (int) Env::get('DB_PORT', '3306');
-        $user = Env::get('DB_USERNAME', 'root');
-        $pass = Env::get('DB_PASSWORD', '');
+        $host = Env::get(EnvConstants::DB_HOST, 'localhost');
+        $port = Env::getInt(EnvConstants::DB_PORT, 3306);
+        $user = Env::get(EnvConstants::DB_USERNAME, 'root');
+        $pass = Env::get(EnvConstants::DB_PASSWORD, '');
 
         $start = time();
         $attempt = 0;

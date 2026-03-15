@@ -106,15 +106,15 @@ try {
     $daemon->registerServer($workerServer);
     $daemon->registerServer($webSocketServer);
 
-    $frontendDistPath = Env::get('FRONTEND_DIST_PATH', __DIR__ . '/../../frontend/dist');
+    $frontendDistPath = Env::get(EnvConstants::FRONTEND_DIST_PATH, __DIR__ . '/../../frontend/dist');
     if (is_dir($frontendDistPath)) {
         $htmlResolver = new HtmlResolver();
         $htmlCache = new HtmlCache($frontendDistPath);
         $frontendHtmlServer = new FrontendHtmlServer(
-            Env::get('FRONTEND_HTML_HOST', '0.0.0.0'),
-            (int) Env::get('FRONTEND_HTML_PORT', '8093'),
+            Env::get(EnvConstants::FRONTEND_HTML_HOST, '0.0.0.0'),
+            Env::getInt(EnvConstants::FRONTEND_HTML_PORT, 8093),
             $htmlResolver,
-            $htmlCache
+            $htmlCache,
         );
         $daemon->registerServer($frontendHtmlServer);
     }

@@ -176,6 +176,63 @@ class Env
     }
 
     /**
+     * Get environment variable as boolean.
+     *
+     * Parses: 1|0, true|false, yes|no, on. Case-insensitive.
+     *
+     * @param EnvConstants|string $name Environment variable name or enum constant
+     * @param bool $default Default value when not set or unrecognized
+     * @return bool Parsed boolean value
+     */
+    public static function getBool(EnvConstants|string $name, bool $default = false): bool
+    {
+        $value = self::getFilled($name, $default ? 'true' : 'false');
+        $v = strtolower(trim($value));
+
+        return in_array($v, ['1', 'true', 'yes', 'on'], true);
+    }
+
+    /**
+     * Get normalized LLM base URL (trim, rtrim slash, strip /api/generate).
+     *
+     * @param EnvConstants|string $urlKey Primary URL env key
+     * @param EnvConstants|string|null $fallbackKey Fallback key when primary is empty
+     * @param string $fallbackDefault Default when both primary and fallback are empty
+     * @return string Normalized URL without trailing slash
+     */
+    public static function getNormalizedLlmUrl(
+        EnvConstants|string $urlKey,
+        EnvConstants|string|null $fallbackKey = null,
+        string $fallbackDefault = ''
+    ): string {
+        $url = trim(self::getFilled($urlKey, ''));
+        if ($url === '' && $fallbackKey !== null) {
+            $url = self::getFilled($fallbackKey, $fallbackDefault);
+        } elseif ($url === '') {
+            $url = $fallbackDefault;
+        }
+        $url = rtrim($url, '/');
+        if (str_ends_with($url, '/api/generate')) {
+            $url = substr($url, 0, -strlen('/api/generate'));
+        }
+
+        return $url;
+    }
+
+    /**
+     * Check if external LLM provider is configured (value === 'external').
+     *
+     * @param EnvConstants|string $providerKey Provider env key (e.g. CHAT_MODERATION_PROVIDER)
+     * @return bool True if provider is 'external'
+     */
+    public static function isExternalProvider(EnvConstants|string $providerKey): bool
+    {
+        $value = self::getFilled($providerKey, 'local');
+
+        return strtolower(trim($value)) === 'external';
+    }
+
+    /**
      * Load environment variables from .env file.
      *
      * @param string $envFilePath Path to .env file

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Core\CLI\Commands;
 
 use Hilos\Constants\CliCommands;
+use Hilos\Constants\EnvConstants;
 use Hilos\Constants\ExitCode;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
@@ -74,11 +75,11 @@ HELP;
      */
     public function execute(array $options, array $args): int
     {
-        $host = Env::get('DB_HOST', 'localhost');
-        $port = (int) Env::get('DB_PORT', '3306');
-        $user = Env::get('DB_USERNAME', 'root');
-        $pass = Env::get('DB_PASSWORD', '');
-        $database = Env::get('DB_DATABASE', 'hilos_demo_test');
+        $host = Env::get(EnvConstants::DB_HOST, 'localhost');
+        $port = Env::getInt(EnvConstants::DB_PORT, 3306);
+        $user = Env::get(EnvConstants::DB_USERNAME, 'root');
+        $pass = Env::get(EnvConstants::DB_PASSWORD, '');
+        $database = Env::get(EnvConstants::DB_DATABASE, 'hilos_demo_test');
 
         echo "\n=== Test DB Reset ===\n\n";
 
