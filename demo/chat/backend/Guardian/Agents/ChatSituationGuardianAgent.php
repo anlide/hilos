@@ -15,6 +15,7 @@ use Hilos\LLM\ClientFactory;
 use Hilos\LLM\Contract\AsyncChatLLMInterface;
 use Hilos\LLM\DTO\ChatGenerateOptions;
 use Hilos\LLM\DTO\Message;
+use Hilos\Utils\Helpers\JsonHelper;
 use Hilos\Utils\Logger;
 
 /**
@@ -182,7 +183,7 @@ final class ChatSituationGuardianAgent extends AbstractGuardianAgent
         $severity = 'info';
         $message = 'Chat activity analyzed';
         if (is_string($rawResult) && $rawResult !== '') {
-            $candidate = $this->extractJsonObject($rawResult);
+            $candidate = JsonHelper::extractJsonObject($rawResult);
             if ($candidate !== null) {
                 $decoded = json_decode($candidate, true);
                 if (is_array($decoded)) {
@@ -202,26 +203,5 @@ final class ChatSituationGuardianAgent extends AbstractGuardianAgent
                 details: $stats,
             )
         );
-    }
-
-    /**
-     * Extracts JSON object substring from text.
-     *
-     * @param string $text Input text (may contain JSON)
-     * @return ?string Extracted JSON string or null
-     */
-    private function extractJsonObject(string $text): ?string
-    {
-        $trimmed = trim($text);
-        if ($trimmed === '') {
-            return null;
-        }
-        if (str_starts_with($trimmed, '{') && str_ends_with($trimmed, '}')) {
-            return $trimmed;
-        }
-        if (preg_match('/\{.*}/s', $trimmed, $matches) === 1) {
-            return $matches[0];
-        }
-        return null;
     }
 }

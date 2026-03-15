@@ -21,6 +21,7 @@ use Hilos\LLM\DTO\Message;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
+use Hilos\Utils\Helpers\JsonHelper;
 use Hilos\Utils\Logger;
 
 /**
@@ -315,7 +316,7 @@ class ModeratorAgent extends AbstractAgent
      */
     private static function parseModerationDecision(string $text): ?array
     {
-        $candidate = self::extractJsonObject($text);
+        $candidate = JsonHelper::extractJsonObject($text);
         if ($candidate === null) {
             return null;
         }
@@ -329,30 +330,6 @@ class ModeratorAgent extends AbstractAgent
             'allow' => $decoded['allow'],
             'reason' => is_string($decoded['reason'] ?? null) ? $decoded['reason'] : '',
         ];
-    }
-
-    /**
-     * Extract first JSON object from model output text.
-     *
-     * @param string $text Raw model output
-     * @return ?string JSON object string when found, null otherwise
-     */
-    private static function extractJsonObject(string $text): ?string
-    {
-        $trimmed = trim($text);
-        if ($trimmed === '') {
-            return null;
-        }
-
-        if (str_starts_with($trimmed, '{') && str_ends_with($trimmed, '}')) {
-            return $trimmed;
-        }
-
-        if (preg_match('/\{.*}/s', $trimmed, $matches) === 1) {
-            return $matches[0];
-        }
-
-        return null;
     }
 
     /**

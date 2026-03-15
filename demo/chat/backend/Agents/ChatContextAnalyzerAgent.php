@@ -23,6 +23,7 @@ use Hilos\LLM\Contract\AsyncChatLLMInterface;
 use Hilos\LLM\DTO\ChatGenerateOptions;
 use Hilos\LLM\DTO\Message;
 use Hilos\TruthSource\RtTruthSourceRegistry;
+use Hilos\Utils\Helpers\JsonHelper;
 use Hilos\Utils\Logger;
 
 /**
@@ -348,7 +349,7 @@ PROMPT;
      */
     private function parseAnalyzerOutput(string $text): ?array
     {
-        $candidate = $this->extractJsonObject($text);
+        $candidate = JsonHelper::extractJsonObject($text);
         if ($candidate === null) {
             return null;
         }
@@ -389,27 +390,5 @@ PROMPT;
     private function isTopicAllowed(string $topic): bool
     {
         return in_array($topic, ChatTopicConstants::TOPICS, true);
-    }
-
-    /**
-     * Extracts first JSON object from text.
-     *
-     * @param string $text Raw text possibly containing JSON
-     * @return ?string JSON object string or null
-     */
-    private function extractJsonObject(string $text): ?string
-    {
-        $trimmed = trim($text);
-        if ($trimmed === '') {
-            return null;
-        }
-        if (str_starts_with($trimmed, '{') && str_ends_with($trimmed, '}')) {
-            return $trimmed;
-        }
-        if (preg_match('/\{.*}/s', $trimmed, $matches) === 1) {
-            return $matches[0];
-        }
-
-        return null;
     }
 }
