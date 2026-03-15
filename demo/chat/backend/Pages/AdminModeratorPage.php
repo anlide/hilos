@@ -18,13 +18,14 @@ use Hilos\Core\Router\DTO\EntitiesChangesDTO;
 use Hilos\Core\Table\DTO\TableActionErrorSignalData;
 use Hilos\Core\Table\DTO\TableMutationSignalData;
 use Hilos\Core\Table\Exception\TableActionException;
+use Hilos\HilosException;
 
 /**
  * AdminModeratorPage — Admin moderator prompt pieces page handler.
  *
  * Handles initial data load on subscribe and piece create/update/delete actions.
  */
-class AdminModeratorPage extends AbstractChatPage
+final class AdminModeratorPage extends AbstractChatPage
 {
     /**
      * Get page identifier for routing.
@@ -96,6 +97,7 @@ class AdminModeratorPage extends AbstractChatPage
      * @param string $acceptKey WebSocket accept key for the requesting client
      * @param ModeratorPieceCreateActionDTO $dto Create action payload
      * @throws TableActionException If create fails
+     * @throws HilosException If mutation broadcasting fails
      */
     private function handleCreate(string $acceptKey, ModeratorPieceCreateActionDTO $dto): void
     {

@@ -29,7 +29,7 @@ use Hilos\HilosException;
  * Handles initial data load on subscribe, user_update actions,
  * and the universal table_refresh action (routed here for all tables).
  */
-class AdminUsersPage extends AbstractChatPage
+final class AdminUsersPage extends AbstractChatPage
 {
     /**
      * Get page identifier for routing.

@@ -27,7 +27,7 @@ use Hilos\Utils\Logger;
  *
  * Handles subscription, unsubscription, and actions for the user profile page.
  */
-class ProfilePage extends AbstractChatPage
+final class ProfilePage extends AbstractChatPage
 {
     /**
      * Get page name.

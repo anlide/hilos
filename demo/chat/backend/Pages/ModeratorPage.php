@@ -16,7 +16,7 @@ use Hilos\Core\Router\DTO\EntitiesChangesDTO;
  *
  * Handles subscription, unsubscription, and actions for the moderator page.
  */
-class ModeratorPage extends AbstractChatPage
+final class ModeratorPage extends AbstractChatPage
 {
     /**
      * Get page name.

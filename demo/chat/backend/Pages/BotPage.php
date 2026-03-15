@@ -13,6 +13,8 @@ use Demo\Chat\Database\View\Collection\Bots;
 use Demo\Chat\Hilos;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\EntitiesChangesDTO;
+use Hilos\Database\Exception\View\CollectionNotManualException;
+use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 
 /**
  * BotPage - Bot page handler.
@@ -20,7 +22,7 @@ use Hilos\Core\Router\DTO\EntitiesChangesDTO;
  * Handles subscription, unsubscription, and actions for the bot page.
  * Sends bot profile data on subscribe when bot ID is provided in params.
  */
-class BotPage extends AbstractChatPage
+final class BotPage extends AbstractChatPage
 {
     /**
      * Get page name.
@@ -37,6 +39,8 @@ class BotPage extends AbstractChatPage
      *
      * @param string $acceptKey Accept key
      * @param array<string, string> $params Route params (e.g. ['id' => botId])
+     * @throws ObjectGetIdStringNotImplementedException If Bot object does not implement getIdString() (required for using ID as key in manual collection)
+     * @throws CollectionNotManualException If bots collection is not manual (required for using ID as key in manual collection)
      */
     public function onSubscribe(string $acceptKey, array $params = []): void
     {
@@ -56,6 +60,8 @@ class BotPage extends AbstractChatPage
      *
      * @param array<string, string> $params Route params from page subscription (e.g. ['id' => '123'])
      * @return EntitiesChangesDTO Entity changes for transport (full.bots or empty)
+     * @throws ObjectGetIdStringNotImplementedException If Bot object does not implement getIdString() (required for using ID as key in manual collection)
+     * @throws CollectionNotManualException If bots collection is not manual (required for using ID as key in manual collection)
      */
     private function getBotEntities(array $params): EntitiesChangesDTO
     {

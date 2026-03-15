@@ -21,13 +21,14 @@ use Hilos\Core\Router\DTO\EntitiesChangesDTO;
 use Hilos\Core\Table\DTO\TableActionErrorSignalData;
 use Hilos\Core\Table\DTO\TableMutationSignalData;
 use Hilos\Core\Table\Exception\TableActionException;
+use Hilos\HilosException;
 
 /**
  * AdminBotsPage — Admin bots table page handler.
  *
  * Handles initial data load on subscribe and bot create/update/delete actions.
  */
-class AdminBotsPage extends AbstractChatPage
+final class AdminBotsPage extends AbstractChatPage
 {
     /**
      * Get page identifier for routing.
@@ -99,6 +100,7 @@ class AdminBotsPage extends AbstractChatPage
      *
      * @param string $acceptKey WebSocket accept key for the requesting client
      * @param BotCreateActionDTO $dto Create action payload
+     * @throws HilosException If bot creation fails due to validation or database errors
      */
     private function handleCreate(string $acceptKey, BotCreateActionDTO $dto): void
     {

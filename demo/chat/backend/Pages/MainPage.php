@@ -19,6 +19,8 @@ use Demo\Chat\Database\View\Collection\Events;
 use Demo\Chat\Hilos;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\EntitiesChangesDTO;
+use Hilos\Database\Exception\View\CollectionNotManualException;
+use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 use Hilos\HilosException;
 use Hilos\Utils\Logger;
 
@@ -27,7 +29,7 @@ use Hilos\Utils\Logger;
  *
  * Handles subscription, unsubscription, and actions for the main chat page.
  */
-class MainPage extends AbstractChatPage
+final class MainPage extends AbstractChatPage
 {
     /**
      * Get page name.
@@ -90,6 +92,7 @@ class MainPage extends AbstractChatPage
      * @param string $acceptKey Accept key
      * @param string $action Action name
      * @param ActionPayloadDTO $dto Action payload DTO
+     * @throws HilosException If database or truth source check fails
      */
     public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): void
     {
@@ -152,6 +155,8 @@ class MainPage extends AbstractChatPage
      * Get collection of all active bots (filter: active=true).
      *
      * @return Bots Collection of active bots
+     * @throws CollectionNotManualException If Bots collection is not manual (required for filtering)
+     * @throws ObjectGetIdStringNotImplementedException If Bot object does not implement getIdString (required for collection operations)
      */
     private function getActiveBots(): Bots
     {

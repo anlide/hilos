@@ -16,7 +16,7 @@ use Hilos\Core\Router\DTO\EntitiesChangesDTO;
  *
  * Handles subscription, unsubscription, and actions for the admin page.
  */
-class AdminPage extends AbstractChatPage
+final class AdminPage extends AbstractChatPage
 {
     /**
      * Get page name.
