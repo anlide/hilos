@@ -206,6 +206,16 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface
     }
 
     /**
+     * Default implementation - no action on tick.
+     *
+     * Child classes can override this method.
+     */
+    public function onTick(): void
+    {
+        // Default: do nothing
+    }
+
+    /**
      * Called when agent is stopped.
      *
      * Must be implemented in child classes to handle cleanup.

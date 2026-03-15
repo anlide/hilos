@@ -50,22 +50,6 @@ final class GuardiansOpsAgent extends AbstractGuardianAgent
     }
 
     /**
-     * Called when agent is started.
-     */
-    public function onStart(): void
-    {
-        Logger::logAgentStart($this->getId(), $this->getType());
-    }
-
-    /**
-     * Called when agent is stopped.
-     */
-    public function onStop(): void
-    {
-        Logger::logAgentStop($this->getId(), $this->getType());
-    }
-
-    /**
      * Periodic tick: run capabilities, build report, publish.
      */
     public function onTick(): void

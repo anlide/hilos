@@ -62,6 +62,15 @@ abstract class AbstractGuardianAgent extends AbstractAgent
     }
 
     /**
+     * Default implementation - no cleanup on stop.
+     *
+     * Child classes can override this method.
+     */
+    public function onStop(): void
+    {
+    }
+
+    /**
      * Check if report should be forwarded to chat agent (medium/high/critical).
      *
      * @param GuardianReportPayload $report Report payload

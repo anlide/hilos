@@ -84,7 +84,6 @@ class BotAgent extends AbstractAgent
      */
     public function onStart(): void
     {
-        Logger::logAgentStart($this->getId(), $this->getType());
         $botId = (int) $this->agentIndex;
         $this->sendToAgent(ChatSignalConstants::BOT_JOINED, new BotAgentSignalData(botId: $botId));
 
@@ -100,7 +99,6 @@ class BotAgent extends AbstractAgent
     {
         $botId = (int) $this->agentIndex;
         $this->sendToAgent(ChatSignalConstants::BOT_LEFT, new BotAgentSignalData(botId: $botId));
-        Logger::logAgentStop($this->getId(), $this->getType());
     }
 
     /**

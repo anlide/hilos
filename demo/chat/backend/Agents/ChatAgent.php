@@ -184,14 +184,6 @@ class ChatAgent extends AbstractAgent
     }
 
     /**
-     * Agent-specific tick implementation.
-     */
-    public function onTick(): void
-    {
-        // Presence tracking removed for now.
-    }
-
-    /**
      * Handle cron signal.
      *
      * @param SignalDataInterface $data Cron signal payload

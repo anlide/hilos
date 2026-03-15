@@ -63,8 +63,6 @@ class ModeratorAgent extends AbstractAgent
      */
     public function onStart(): void
     {
-        Logger::logAgentStart($this->getId(), $this->getType());
-
         // Register this agent as truth source for moderator prompt pieces collection (all keys)
         TruthSourceRegistry::register(DbChatContext::moderatorPromptPieces, true, $this->getId());
     }
@@ -77,8 +75,6 @@ class ModeratorAgent extends AbstractAgent
     {
         // Unregister as truth source
         TruthSourceRegistry::unregister(DbChatContext::moderatorPromptPieces, $this->getId());
-
-        Logger::logAgentStop($this->getId(), $this->getType());
     }
 
     /**

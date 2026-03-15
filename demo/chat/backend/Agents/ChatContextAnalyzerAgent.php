@@ -63,8 +63,6 @@ class ChatContextAnalyzerAgent extends AbstractAgent
      */
     public function onStart(): void
     {
-        Logger::logAgentStart($this->getId(), $this->getType());
-
         RtTruthSourceRegistry::register(RtChatContext::chatContexts, true, $this->getId());
 
         $existing = Hilos::$rt->chatContexts->getStateCollection()->get(StateChatContext::ID_MAIN);
@@ -83,8 +81,6 @@ class ChatContextAnalyzerAgent extends AbstractAgent
     public function onStop(): void
     {
         RtTruthSourceRegistry::unregister(RtChatContext::chatContexts, $this->getId());
-
-        Logger::logAgentStop($this->getId(), $this->getType());
     }
 
     /**

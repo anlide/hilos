@@ -13,10 +13,4 @@ use Hilos\Core\Agent\Hilos\AbstractHilosIndexAgent;
  */
 class DemoHilosAgent extends AbstractHilosIndexAgent
 {
-    /**
-     * Periodic tick handler (no-op for Hilos index agent).
-     */
-    public function onTick(): void
-    {
-    }
 }

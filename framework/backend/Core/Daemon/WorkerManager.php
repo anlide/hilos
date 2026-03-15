@@ -178,6 +178,7 @@ abstract class WorkerManager extends BaseManager
                     // Check if agent requested stop
                     if ($agent->shouldStop()) {
                         $agent->onStop();
+                        Logger::logAgentStop($agent->getId(), $agent->getType());
                         $this->agentManager->removeAgent($agentId);
                         Logger::info("Agent {$agentId} stopped (self-requested)");
                         Logger::logAgentInfo($agentId, "Agent stopped (self-requested) on worker [workerIndex={$this->workerIndex}]");
@@ -328,6 +329,7 @@ abstract class WorkerManager extends BaseManager
         // Create agent using factory method
         $agent = $this->agentManager->createAndAddAgent($agentType, $agentIndex);
 
+        Logger::logAgentStart($agent->getId(), $agent->getType());
         $agent->onStart();
         Logger::info("Agent '{$agentId}' started");
         // Additional agent log from worker side
@@ -363,7 +365,8 @@ abstract class WorkerManager extends BaseManager
             return;
         }
 
-        $agent->onStop(); // This will call AgentLogger::logStop inside agent
+        $agent->onStop();
+        Logger::logAgentStop($agent->getId(), $agent->getType());
         $this->agentManager->removeAgent($agentId);
         Logger::info("Agent {$agentId} stopped");
         // Additional agent log from worker side

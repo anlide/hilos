@@ -13,10 +13,4 @@ use Hilos\Core\Agent\Hilos\AbstractHilosGuardianAgent;
  */
 class DemoHilosGuardianAgent extends AbstractHilosGuardianAgent
 {
-    /**
-     * Periodic tick handler (no-op for Hilos guardian agent).
-     */
-    public function onTick(): void
-    {
-    }
 }

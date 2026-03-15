@@ -16,7 +16,6 @@ use Hilos\LLM\Contract\AsyncChatLLMInterface;
 use Hilos\LLM\DTO\ChatGenerateOptions;
 use Hilos\LLM\DTO\Message;
 use Hilos\Utils\Helpers\JsonHelper;
-use Hilos\Utils\Logger;
 
 /**
  * ChatSituationGuardianAgent - Guardian agent for chat situation analysis.
@@ -57,22 +56,6 @@ final class ChatSituationGuardianAgent extends AbstractGuardianAgent
                 model: ContextAnalyzerEnv::getModel(),
                 apiKey: null,
             );
-    }
-
-    /**
-     * Called when agent is started.
-     */
-    public function onStart(): void
-    {
-        Logger::logAgentStart($this->getId(), $this->getType());
-    }
-
-    /**
-     * Called when agent is stopped.
-     */
-    public function onStop(): void
-    {
-        Logger::logAgentStop($this->getId(), $this->getType());
     }
 
     /**
