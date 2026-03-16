@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Hilos\Core\Page\HilosPages;
+namespace Hilos\Pages;
 
 use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosSignalConstants;
@@ -10,9 +10,11 @@ use Hilos\Core\Page\AbstractHilosPage;
 use Hilos\Core\Router\SignalData;
 
 /**
- * HilosDashboardPage - Hilos admin dashboard (main page of hilos section).
+ * AbstractHilosDashboardPage - Abstract base for Hilos dashboard page.
+ *
+ * Projects must implement concrete class (e.g. Demo\Chat\Pages\Hilos\DashboardPage).
  */
-class HilosDashboardPage extends AbstractHilosPage
+abstract class AbstractHilosDashboardPage extends AbstractHilosPage
 {
     public const string PAGE = HilosPageConstants::HILOS_DASHBOARD;
 

@@ -14,6 +14,7 @@ use Demo\Chat\Database\Object\Item\User;
 use Demo\Chat\Database\View\Collection\Events;
 use Demo\Chat\Hilos;
 use Demo\Chat\Tables\DTO\TableRefreshActionDTO;
+use Demo\Chat\Tables\Settings\DTO\SettingsTableResultDTO;
 use Demo\Chat\Tables\TableChatContext;
 use Demo\Chat\Tables\User\DTO\UserUpdateActionDTO;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
@@ -141,6 +142,11 @@ final class AdminUsersPage extends AbstractChatPage
         }
 
         $result = $tableDef->get();
+
+        if ($dto->tableKey === TableChatContext::settings) {
+            $catalogKeys = array_keys(\Demo\Chat\Database\Settings\SettingsCatalog::getCatalog());
+            $result = new SettingsTableResultDTO($result, $catalogKeys);
+        }
 
         $this->getChatAgent()->sendToUser(
             ChatSignalConstants::TABLE_DATA,

@@ -93,7 +93,7 @@ composer run daemon-start-build  # MySQL + daemon + Nginx on :80, :443
 
 ## AI moderation (Ollama)
 
-AI moderation uses Ollama with a lightweight model (`qwen2.5:0.5b`) for low-latency allow/block classification. Override via env var `CHAT_MODERATION_MODEL` (e.g. `qwen2.5:3b` for stronger moderation).
+AI moderation uses Ollama with a lightweight model (`qwen2.5:0.5b`) for low-latency allow/block classification. Override via Hilos Settings at `/hilos/settings` (seed 003 populates defaults).
 
 Ollama runs as a **standalone** framework project, port 11434 exposed to host. Demo connects via `LLM_LOCAL_URL` (default `http://host.docker.internal:11434`) and does not depend on framework internals—it may be external AI farm too. See [Docker + Ollama + GPU (framework)](../../docs/docker-ollama-gpu.md).
 

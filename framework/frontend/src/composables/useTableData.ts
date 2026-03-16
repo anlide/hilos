@@ -22,19 +22,27 @@ export function applyTableMutations(state: TableDataState): ApplyMutationsResult
   const rows = [...state.rows]
   let totalCount = state.totalCount
   const { limit } = state
+  const rowIdField = state.rowIdField ?? 'id'
   let hasDeletes = false
 
   for (const m of state.mutations) {
     switch (m.type) {
       case 'created':
-        totalCount++
-        if (m.row && (limit === 0 || rows.length < limit)) {
-          rows.push(m.row)
+        if (m.row) {
+          const idx = rows.findIndex(r => r[rowIdField] === m.rowId)
+          if (idx >= 0) {
+            rows[idx] = m.row
+          } else {
+            totalCount++
+            if (limit === 0 || rows.length < limit) {
+              rows.push(m.row)
+            }
+          }
         }
         break
       case 'updated':
         if (m.row) {
-          const idx = rows.findIndex(r => r['id'] === m.rowId)
+          const idx = rows.findIndex(r => r[rowIdField] === m.rowId)
           if (idx >= 0) {
             rows[idx] = { ...rows[idx], ...m.row }
           }
@@ -43,7 +51,7 @@ export function applyTableMutations(state: TableDataState): ApplyMutationsResult
       case 'deleted':
         hasDeletes = true
         {
-          const idx = rows.findIndex(r => r['id'] === m.rowId)
+          const idx = rows.findIndex(r => r[rowIdField] === m.rowId)
           if (idx >= 0) {
             rows.splice(idx, 1)
             totalCount--

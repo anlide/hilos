@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Hilos\Core\Page\HilosPages;
+namespace Hilos\Pages;
 
 use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosSignalConstants;
@@ -10,11 +10,13 @@ use Hilos\Core\Page\AbstractHilosPage;
 use Hilos\Core\Router\SignalData;
 
 /**
- * HilosAnalyticsPage - Hilos analytics page (visit statistics).
+ * AbstractHilosI18nPage - Abstract base for Hilos i18n page.
+ *
+ * Projects must implement concrete class (e.g. Demo\Chat\Pages\Hilos\I18nPage).
  */
-class HilosAnalyticsPage extends AbstractHilosPage
+abstract class AbstractHilosI18nPage extends AbstractHilosPage
 {
-    public const string PAGE = HilosPageConstants::HILOS_ANALYTICS;
+    public const string PAGE = HilosPageConstants::HILOS_I18N;
 
     /**
      * Handle page subscription.
@@ -25,7 +27,7 @@ class HilosAnalyticsPage extends AbstractHilosPage
     public function onSubscribe(string $acceptKey, array $params = []): void
     {
         $this->sendToUser(
-            HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_ANALYTICS,
+            HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_I18N,
             $acceptKey,
             new SignalData(),
         );

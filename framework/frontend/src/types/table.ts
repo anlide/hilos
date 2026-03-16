@@ -22,6 +22,8 @@ export interface TableDataState {
   offset: number
   limit: number
   mutations: TableMutationEntry[]
+  /** Row identifier field for matching mutations (default: 'id') */
+  rowIdField?: string
 }
 
 /**

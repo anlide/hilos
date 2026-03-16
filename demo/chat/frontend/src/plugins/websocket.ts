@@ -14,6 +14,7 @@ import {
   SUBSCRIPTION_PAGE_ADMIN_USERS,
   SUBSCRIPTION_PAGE_ADMIN_BOTS,
   SUBSCRIPTION_PAGE_ADMIN_MODERATOR,
+  SUBSCRIPTION_PAGE_HILOS_SETTINGS,
   SUBSCRIPTION_PAGE_BOT,
   SUBSCRIPTION_PAGE_USER,
   TABLE_DATA,
@@ -143,6 +144,7 @@ export function createChatWebSocketPlugin() {
         case SUBSCRIPTION_PAGE_ADMIN_USERS:
         case SUBSCRIPTION_PAGE_ADMIN_BOTS:
         case SUBSCRIPTION_PAGE_ADMIN_MODERATOR:
+        case SUBSCRIPTION_PAGE_HILOS_SETTINGS:
         case TABLE_DATA: {
           if (message.data && typeof message.data === 'object' && 'tables' in message.data && message.data.tables) {
             chatStore.applyTablesPayload(message.data.tables as Record<string, unknown>)

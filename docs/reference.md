@@ -22,6 +22,11 @@ API and component reference documentation.
    - Generator, PhpType
    - *Frontend ORM subset:* `framework/frontend/src/stores`, `framework/frontend/src/types` (part of ORM, implementation in progress)
 
+2a. **Migrations**
+   - Framework provides stub migrations in `framework/backend/Database/Migration/Stub/`
+   - Project copies required SQL files into its own migrations (e.g. 014_create_hilos_settings.sql)
+   - `Stub/` folder is reference SQL only; framework does not execute migrations
+
 3. **Signal Router**
    - SignalRouter, PageSignalRouter, SignalData, SignalName, SignalType
    - Subscriptions: page, group, user

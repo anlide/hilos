@@ -17,21 +17,21 @@ use Demo\Chat\Database\View\Collection\Bots;
 use Demo\Chat\Database\View\Collection\Events;
 use Demo\Chat\Database\View\Collection\ModeratorPromptPieces;
 use Demo\Chat\Database\View\Collection\Users;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Exception\View\ObjectCollectionNotFoundException;
-use Hilos\Database\Context\DbContext;
 use Hilos\Database\Object\Objects;
 
 /**
  * DbChatContext - App-specific database context ($db layer).
  *
- * @extends DbContext<DbChatContext>
+ * @extends HilosDbContext
  * @property-read Users $users
  * @property-read Events $events
  * @property-read Bots $bots
  * @property-read ModeratorPromptPieces $moderatorPromptPieces
  */
-final class DbChatContext extends DbContext
+final class DbChatContext extends HilosDbContext
 {
     public const string users = 'users';
     public const string events = 'events';
@@ -51,6 +51,8 @@ final class DbChatContext extends DbContext
      */
     public function configure(): void
     {
+        parent::configure();
+
         $this->_objectCollections[self::users] = ObjectUsers::initDB(Objects::LAZY_STRATEGY_KEY);
         $this->_objectCollections[self::events] = ObjectEvents::initDB(Objects::LAZY_STRATEGY_NONE);
         $this->_objectCollections[self::bots] = ObjectBots::initDB(Objects::LAZY_STRATEGY_NONE);

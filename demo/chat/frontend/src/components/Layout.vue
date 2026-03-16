@@ -102,6 +102,16 @@ const resolvePage = (routeName: unknown): string | null => {
       return 'user'
     case 'bot':
       return 'bot'
+    case 'hilos':
+      return 'hilos'
+    case 'hilos_settings':
+      return 'hilos_settings'
+    case 'hilos_i18n':
+      return 'hilos_i18n'
+    case 'hilos_guardian':
+      return 'hilos_guardian'
+    case 'hilos_analytics':
+      return 'hilos_analytics'
     default:
       return null
   }

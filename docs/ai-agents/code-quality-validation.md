@@ -29,6 +29,7 @@ Instructions for AI agents to validate code quality. Use these rules to:
    - Object ↔ Entity consistency
    - Db ↔ Object consistency
    - Custom methods preserved after `*:fix`
+   - No Repository/Service on top of DbCollection
 
 4. **Hilos-specific rules**
    - Agent `onTick` duration (< 0.1s guideline)

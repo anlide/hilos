@@ -66,7 +66,7 @@ final class ChatWorkerManager extends WorkerManager
             ChatSignalConstants::RENAME => PageConstants::PROFILE,
             ChatSignalConstants::FILE => PageConstants::MAIN,
 
-            ChatSignalConstants::TABLE_REFRESH => PageConstants::ADMIN_USERS,
+            ChatSignalConstants::TABLE_REFRESH => PageConstants::ADMIN_USERS, // Handles any table including settings
             ChatSignalConstants::USER_UPDATE => PageConstants::ADMIN_USERS,
 
             ChatSignalConstants::BOT_CREATE => PageConstants::ADMIN_BOTS,
@@ -76,6 +76,10 @@ final class ChatWorkerManager extends WorkerManager
             ChatSignalConstants::MODERATOR_PIECE_CREATE => PageConstants::ADMIN_MODERATOR,
             ChatSignalConstants::MODERATOR_PIECE_UPDATE => PageConstants::ADMIN_MODERATOR,
             ChatSignalConstants::MODERATOR_PIECE_DELETE => PageConstants::ADMIN_MODERATOR,
+
+            ChatSignalConstants::SETTING_ADD => PageConstants::HILOS_SETTINGS,
+            ChatSignalConstants::SETTING_UPDATE => PageConstants::HILOS_SETTINGS,
+            ChatSignalConstants::SETTING_DELETE => PageConstants::HILOS_SETTINGS,
         ]);
 
         return new PageSignalRouter($pageFactory, $actionRoutes);

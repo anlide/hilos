@@ -19,8 +19,7 @@ use Demo\Chat\Runtime\State\Item\ChatContext as StateChatContext;
 use Demo\Chat\Runtime\View\Context\RtChatContext;
 use Demo\Chat\Constants\ChatLLMConstants;
 use Demo\Chat\Utils\ChatLLMHelper;
-use Hilos\Constants\EnvConstants;
-use Hilos\Constants\LLMConstants;
+use Demo\Chat\Utils\ChatSettingsHelper;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\Exception\AgentIndexRequiredException;
 use Hilos\Core\Sync\DTO\DbSyncCreatedSignalData;
@@ -32,7 +31,6 @@ use Hilos\LLM\ClientFactory;
 use Hilos\LLM\Contract\AsyncChatLLMInterface;
 use Hilos\LLM\DTO\ChatGenerateOptions;
 use Hilos\LLM\DTO\Message;
-use Hilos\Utils\Env;
 use Hilos\Utils\Logger;
 
 /**
@@ -74,15 +72,11 @@ class BotAgent extends AbstractAgent
         }
         $this->agentIndex = $agentIndex;
 
-        $this->chatClient = Env::isExternalProvider(EnvConstants::CHAT_BOT_PROVIDER)
+        $this->chatClient = ChatSettingsHelper::getBotProviderIsExternal()
             ? ClientFactory::createChatClient()
             : ClientFactory::createChatClientWithConfig(
-                url: Env::getNormalizedLlmUrl(
-                    EnvConstants::CHAT_BOT_URL,
-                    EnvConstants::LLM_LOCAL_URL,
-                    LLMConstants::DEFAULT_LOCAL_URL,
-                ),
-                model: Env::getFilled(EnvConstants::CHAT_BOT_MODEL, ChatLLMConstants::MODEL_BOT),
+                url: ChatSettingsHelper::getBotUrl(),
+                model: ChatSettingsHelper::getBotModel(),
                 apiKey: null,
             );
     }
@@ -375,11 +369,11 @@ class BotAgent extends AbstractAgent
             return;
         }
 
-        $timeoutSec = Env::getFloat(EnvConstants::CHAT_BOT_TIMEOUT_SEC, LLMConstants::DEFAULT_TIMEOUT_SEC);
+        $timeoutSec = ChatSettingsHelper::getBotTimeoutSec();
         $options = new ChatGenerateOptions(
-            model: Env::getFilled(EnvConstants::CHAT_BOT_MODEL, ChatLLMConstants::MODEL_BOT),
+            model: ChatSettingsHelper::getBotModel(),
             temperature: 0.7,
-            timeoutSec: $timeoutSec > 0 ? $timeoutSec : LLMConstants::DEFAULT_TIMEOUT_SEC,
+            timeoutSec: $timeoutSec > 0 ? $timeoutSec : \Hilos\Constants\LLMConstants::DEFAULT_TIMEOUT_SEC,
             maxTokens: self::MAX_RESPONSE_TOKENS,
         );
 
@@ -412,7 +406,7 @@ class BotAgent extends AbstractAgent
             $systemParts[] = "Preferred topics: {$bot->topics}";
         }
         $systemParts[] = "Your personality and style override generic politeness. Be bold in character.";
-        $lang = Env::getFilled(EnvConstants::CHAT_BOT_LANGUAGE, 'ru');
+        $lang = ChatSettingsHelper::getBotLanguage();
         $systemParts[] = "CRITICAL: " . ChatLLMHelper::getLanguageInstruction($lang) . " All your output must be in this language.";
         $systemParts[] = "Never refer to yourself by name. Speak in first person (I, me, my). Do not start with your own name.";
         $systemParts[] = "Respond to what others said. Build on their ideas, challenge them, or agree — but always in character. Do not speak in a vacuum.";

@@ -6,6 +6,14 @@ Instructions for AI agents working with the Hilos framework.
 
 ---
 
+## Anti-patterns
+
+- **Do not use Repository or Service** for data access
+- Use `Hilos::$db-><collection>` and DbCollection methods (`findByKey`, `findBySession`, etc.)
+- Do not introduce Repository abstraction on top of DbCollection
+
+---
+
 ## Sections
 
 - **[Code Quality Validation](ai-agents/code-quality-validation.md)** — How to validate code quality: review output of other agents, humans, or CLI code generation. Checklists and automation hints.

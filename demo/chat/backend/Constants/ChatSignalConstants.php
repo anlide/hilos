@@ -56,6 +56,9 @@ final class ChatSignalConstants
     /** @var string Subscription page admin bots signal name */
     public const string SUBSCRIPTION_PAGE_ADMIN_BOTS = 'subscription_page_admin_bots';
 
+    /** @var string Subscription page Hilos settings signal name */
+    public const string SUBSCRIPTION_PAGE_HILOS_SETTINGS = 'subscription_page_hilos_settings';
+
     /** @var string Moderation state signal name */
     public const string MODERATION_STATE = 'moderation_state';
 
@@ -115,6 +118,15 @@ final class ChatSignalConstants
 
     /** @var string Moderator piece delete signal name */
     public const string MODERATOR_PIECE_DELETE = 'moderator_piece_delete';
+
+    /** @var string Setting add signal name */
+    public const string SETTING_ADD = 'setting_add';
+
+    /** @var string Setting update signal name */
+    public const string SETTING_UPDATE = 'setting_update';
+
+    /** @var string Setting delete signal name */
+    public const string SETTING_DELETE = 'setting_delete';
 
     // ── Table signals (server → client) ──────────────────────────────────
     /** @var string Server responds with fresh table data */

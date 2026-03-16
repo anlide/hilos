@@ -14,6 +14,11 @@ use Demo\Chat\Pages\AdminModeratorPage;
 use Demo\Chat\Pages\AdminPage;
 use Demo\Chat\Pages\AdminUsersPage;
 use Demo\Chat\Pages\BotPage;
+use Demo\Chat\Pages\Hilos\AnalyticsPage;
+use Demo\Chat\Pages\Hilos\DashboardPage;
+use Demo\Chat\Pages\Hilos\GuardianPage;
+use Demo\Chat\Pages\Hilos\I18nPage;
+use Demo\Chat\Pages\Hilos\SettingsPage;
 use Demo\Chat\Pages\MainPage;
 use Demo\Chat\Pages\ModeratorPage;
 use Demo\Chat\Pages\ProfilePage;
@@ -25,7 +30,11 @@ use Demo\Chat\Tables\DTO\TableRefreshActionDTO;
 use Demo\Chat\Tables\ModeratorPiece\DTO\ModeratorPieceCreateActionDTO;
 use Demo\Chat\Tables\ModeratorPiece\DTO\ModeratorPieceDeleteActionDTO;
 use Demo\Chat\Tables\ModeratorPiece\DTO\ModeratorPieceUpdateActionDTO;
+use Demo\Chat\Tables\Settings\DTO\SettingAddActionDTO;
+use Demo\Chat\Tables\Settings\DTO\SettingDeleteActionDTO;
+use Demo\Chat\Tables\Settings\DTO\SettingUpdateActionDTO;
 use Demo\Chat\Tables\User\DTO\UserUpdateActionDTO;
+use Hilos\Constants\HilosPageConstants;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Page\Exception\PageNotFoundException;
 use Hilos\Core\Page\HilosPageFactory;
@@ -61,6 +70,11 @@ final class ChatPageFactory extends HilosPageFactory
             PageConstants::ADMIN_USERS => new AdminUsersPage($this->agent),
             PageConstants::ADMIN_MODERATOR => new AdminModeratorPage($this->agent),
             PageConstants::ADMIN_BOTS => new AdminBotsPage($this->agent),
+            HilosPageConstants::HILOS_DASHBOARD => new DashboardPage($this->agent),
+            HilosPageConstants::HILOS_SETTINGS => new SettingsPage($this->agent),
+            HilosPageConstants::HILOS_I18N => new I18nPage($this->agent),
+            HilosPageConstants::HILOS_GUARDIAN => new GuardianPage($this->agent),
+            HilosPageConstants::HILOS_ANALYTICS => new AnalyticsPage($this->agent),
             default => parent::createPage($pageName),
         };
     }
@@ -107,6 +121,9 @@ final class ChatPageFactory extends HilosPageFactory
             ChatSignalConstants::MODERATOR_PIECE_CREATE => ModeratorPieceCreateActionDTO::fromArray($data),
             ChatSignalConstants::MODERATOR_PIECE_UPDATE => ModeratorPieceUpdateActionDTO::fromArray($data),
             ChatSignalConstants::MODERATOR_PIECE_DELETE => ModeratorPieceDeleteActionDTO::fromArray($data),
+            ChatSignalConstants::SETTING_ADD => SettingAddActionDTO::fromArray($data),
+            ChatSignalConstants::SETTING_UPDATE => SettingUpdateActionDTO::fromArray($data),
+            ChatSignalConstants::SETTING_DELETE => SettingDeleteActionDTO::fromArray($data),
             default => parent::createActionPayloadDTO($action, $data),
         };
     }

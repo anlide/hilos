@@ -203,6 +203,8 @@ export const useChatStore = defineStore('chat', {
             offset: Number(r['offset'] ?? 0),
             limit: Number(r['limit'] ?? 0),
             mutations: [],
+            ...(Array.isArray(r['catalogKeys']) && { catalogKeys: r['catalogKeys'] as string[] }),
+            ...(typeof r['rowIdField'] === 'string' && { rowIdField: r['rowIdField'] as string }),
           },
         }
       }

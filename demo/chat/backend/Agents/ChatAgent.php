@@ -59,6 +59,7 @@ class ChatAgent extends AbstractAgent
         TruthSourceRegistry::register(DbChatContext::users, true, $this->getId());
         TruthSourceRegistry::register(DbChatContext::bots, true, $this->getId());
         TruthSourceRegistry::register(DbChatContext::moderatorPromptPieces, true, $this->getId());
+        TruthSourceRegistry::register(DbChatContext::settings, true, $this->getId());
 
         // Register this agent as truth source for runtime collections (all keys)
         RtTruthSourceRegistry::register(RtChatContext::connections, true, $this->getId());

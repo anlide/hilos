@@ -7,6 +7,7 @@ export const SUBSCRIPTION_PAGE_ADMIN = 'subscription_page_admin'
 export const SUBSCRIPTION_PAGE_ADMIN_USERS = 'subscription_page_admin_users'
 export const SUBSCRIPTION_PAGE_ADMIN_BOTS = 'subscription_page_admin_bots'
 export const SUBSCRIPTION_PAGE_ADMIN_MODERATOR = 'subscription_page_admin_moderator'
+export const SUBSCRIPTION_PAGE_HILOS_SETTINGS = 'subscription_page_hilos_settings'
 export const TABLE_DATA = 'table_data'
 export const TABLE_MUTATION = 'table_mutation'
 export const TABLE_ACTION_ERROR = 'table_action_error'
@@ -30,6 +31,9 @@ export const BOT_DELETE = 'bot_delete'
 export const MODERATOR_PIECE_CREATE = 'moderator_piece_create'
 export const MODERATOR_PIECE_UPDATE = 'moderator_piece_update'
 export const MODERATOR_PIECE_DELETE = 'moderator_piece_delete'
+export const SETTING_ADD = 'setting_add'
+export const SETTING_UPDATE = 'setting_update'
+export const SETTING_DELETE = 'setting_delete'
 
 /** Message rate limit in seconds (displayed to user, backend allows 1 sec earlier). */
 export const MESSAGE_RATE_LIMIT_SECONDS = 10

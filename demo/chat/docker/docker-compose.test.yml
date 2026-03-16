@@ -58,8 +58,6 @@ services:
       - FRONTEND_HTML_HOST=0.0.0.0
       - FRONTEND_HTML_PORT=8093
       - FRONTEND_DIST_PATH=/app/frontend/dist
-      - CHAT_MODERATION_USERS=false
-      - CHAT_MODERATION_BOTS=false
     command: ["php", "backend/Bootstrap/docker.php"]
     depends_on:
       mysql-test:
