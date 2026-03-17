@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../../vendor/autoload.php';
 
+use Demo\Chat\Hilos;
 use Demo\Chat\Core\Daemon\ChatDaemonManager;
 use Demo\Chat\Core\Frontend\HtmlCache;
 use Demo\Chat\Core\Frontend\HtmlResolver;
@@ -39,6 +40,7 @@ Env::init(__DIR__);
 try {
     // Initialize database connection, schema and Hilos context.
     Database::initialize();
+    Hilos::initAnalytics();
 
     // Create chat daemon manager instance first (initializes Hilos::$sr)
     $daemon = new ChatDaemonManager();

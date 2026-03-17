@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Constants;
 
+use Hilos\Constants\HilosHttpHeaders;
+
 /**
  * HTTP Headers constants.
  *
@@ -12,5 +14,5 @@ namespace Demo\Chat\Constants;
 final class HttpHeaders
 {
     /** @var string Session token header name (WebSocket authentication) */
-    public const string SESSION_TOKEN = 'X-Session-Token';
+    public const string SESSION_TOKEN = HilosHttpHeaders::HILOS_SESSION_TOKEN;
 }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Daemon;
 
+use Hilos\Core\Analytics\AnalyticsCollector;
 use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Constants\WorkerConstants;
@@ -114,6 +115,7 @@ abstract class WorkerManager extends BaseManager
         // Setup error handling and signal handlers
         $this->setupErrorHandling();
         $this->setupSignalHandlers();
+        Hilos::$ac?->openWorkerSession($this->workerIndex, $this->isMonopolistic);
 
         Logger::info("Worker #{$this->workerIndex} started");
 
@@ -179,6 +181,7 @@ abstract class WorkerManager extends BaseManager
                     if ($agent->shouldStop()) {
                         $agent->onStop();
                         Logger::logAgentStop($agent->getId(), $agent->getType());
+                        Hilos::$ac?->closeAgentSession($agent->getType(), $agent->getIndex());
                         $this->agentManager->removeAgent($agentId);
                         Logger::info("Agent {$agentId} stopped (self-requested)");
                         Logger::logAgentInfo($agentId, "Agent stopped (self-requested) on worker [workerIndex={$this->workerIndex}]");
@@ -188,6 +191,7 @@ abstract class WorkerManager extends BaseManager
 
                 // Dispatch accumulated signals (send to daemon)
                 $this->dispatchSignals();
+                Hilos::$ac?->tick();
             }
 
             $this->sleepWithPreciseTiming($loopStartTime);
@@ -296,6 +300,10 @@ abstract class WorkerManager extends BaseManager
     {
         // Connection confirmed by daemon
         Logger::info("Connected to daemon");
+        Hilos::$ac?->logWorkerSystemSignal('worker_registered', [
+            'workerIndex' => $this->workerIndex,
+            'isMonopolistic' => $this->isMonopolistic,
+        ]);
     }
 
     /**
@@ -331,6 +339,7 @@ abstract class WorkerManager extends BaseManager
 
         Logger::logAgentStart($agent->getId(), $agent->getType());
         $agent->onStart();
+        Hilos::$ac?->openAgentSession($agentType, $agentIndex);
         Logger::info("Agent '{$agentId}' started");
         // Additional agent log from worker side
         Logger::logAgentInfo($agentId, "Agent started on worker [workerIndex={$this->workerIndex}]");
@@ -367,6 +376,7 @@ abstract class WorkerManager extends BaseManager
 
         $agent->onStop();
         Logger::logAgentStop($agent->getId(), $agent->getType());
+        Hilos::$ac?->closeAgentSession($agent->getType(), $agent->getIndex());
         $this->agentManager->removeAgent($agentId);
         Logger::info("Agent {$agentId} stopped");
         // Additional agent log from worker side
@@ -562,10 +572,17 @@ abstract class WorkerManager extends BaseManager
         $signalData = $data->signal->data;
 
         Logger::debug('Signal routing: agentId=' . $agentId . ', signalType=' . $signalType . ', signalName=' . $name);
+        $apiRequestId = Hilos::$ac?->getSignalMetaInt($data->signal, AnalyticsCollector::META_API_REQUEST_ID);
+        $userActionId = Hilos::$ac?->getSignalMetaInt($data->signal, AnalyticsCollector::META_USER_ACTION_ID);
+
         // Route to appropriate handler in agent based on signal type
         switch ($signalType) {
             case SignalTypeConstants::SYSTEM:
                 if ($signalData instanceof SystemSignalDTO) {
+                    Hilos::$ac?->logAgentSystemSignal($agent->getType(), $agent->getIndex(), $name, $signalData->toArray());
+                    if ($apiRequestId !== null) {
+                        Hilos::$ac?->logApiAgentAction($apiRequestId, $agent->getType(), $agent->getIndex(), $name, $signalData->toArray());
+                    }
                     $agent->onSignalSystem($signalData, $source, $name);
                 } else {
                     Logger::error("onSignalSystem - invalid signal data type: " . get_class($signalData));
@@ -574,6 +591,10 @@ abstract class WorkerManager extends BaseManager
 
             case SignalTypeConstants::CRON:
                 if ($signalData instanceof CronSignalDTO) {
+                    Hilos::$ac?->logAgentCronSignal($agent->getType(), $agent->getIndex(), $name, $signalData->toArray());
+                    if ($apiRequestId !== null) {
+                        Hilos::$ac?->logApiAgentAction($apiRequestId, $agent->getType(), $agent->getIndex(), $name, $signalData->toArray());
+                    }
                     $agent->onSignalCron($signalData, $source, $name);
                 } else {
                     Logger::error("onSignalCron - invalid signal data type: " . get_class($signalData));
@@ -598,6 +619,10 @@ abstract class WorkerManager extends BaseManager
 
             case SignalTypeConstants::ACTION:
                 if ($signalData instanceof WebSocketActionSignalDTO) {
+                    Hilos::$ac?->logAgentUserAction($agent->getType(), $agent->getIndex(), $userActionId, $name, $signalData->toArray());
+                    if ($apiRequestId !== null) {
+                        Hilos::$ac?->logApiAgentAction($apiRequestId, $agent->getType(), $agent->getIndex(), $name, $signalData->toArray());
+                    }
                     $this->onActionHandled($name, $signalData);
                     $agent->onSignalAction($signalData, $source, $name);
                     $this->getPageSignalRouter($agentId, $agent)->dispatchAction($signalData, $source);
@@ -673,6 +698,9 @@ abstract class WorkerManager extends BaseManager
 
             case SignalTypeConstants::AGENT_SIGNAL:
                 if ($signalData instanceof AgentSignalData) {
+                    if ($apiRequestId !== null) {
+                        Hilos::$ac?->logApiAgentAction($apiRequestId, $agent->getType(), $agent->getIndex(), $name, $signalData->toArray());
+                    }
                     $agent->onSignalAgent($signalData, $source, $name);
                 } else {
                     Logger::error("onSignalAgent - invalid signal data type: " . get_class($signalData));
@@ -899,6 +927,7 @@ abstract class WorkerManager extends BaseManager
         // Stop all agents
         foreach ($this->agentManager->getAgents() as $agentId => $agent) {
             $agent->onStop();
+            Hilos::$ac?->closeAgentSession($agent->getType(), $agent->getIndex());
             Logger::info("Agent {$agentId} stopped during cleanup");
             Logger::logAgentInfo($agentId, "Agent stopped during worker cleanup [workerIndex={$this->workerIndex}]");
         }
@@ -916,6 +945,9 @@ abstract class WorkerManager extends BaseManager
             }
             $this->daemonClient = null;
         }
+
+        Hilos::$ac?->closeWorkerSession();
+        Hilos::$ac?->shutdown();
     }
 
     /**

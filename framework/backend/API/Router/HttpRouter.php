@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Hilos\API\Router;
 
 use Hilos\Constants\HttpConstants;
+use Hilos\Constants\HilosHttpHeaders;
+use Hilos\Hilos;
 
 /**
  * HttpRouter - Routes HTTP requests to handlers.
@@ -51,23 +53,45 @@ class HttpRouter
     {
         $method = $request['method'] ?? 'GET';
         $path = $request['path'] ?? '/';
+        $headers = is_array($request['headers'] ?? null) ? $request['headers'] : [];
+        $sessionToken = $headers[HilosHttpHeaders::HILOS_SESSION_TOKEN] ?? null;
+        $userAgent = $headers['User-Agent'] ?? null;
+        $acceptLanguage = $headers['Accept-Language'] ?? null;
 
         // Find matching route
         $route = $this->registry->match($method, $path);
+        $apiRequestId = Hilos::$ac?->startApiRequest(
+            is_string($sessionToken) ? $sessionToken : null,
+            (string)$method,
+            (string)$path,
+            is_array($route['params'] ?? null) ? $route['params'] : null,
+            is_string($userAgent) ? $userAgent : null,
+            is_string($acceptLanguage) ? $acceptLanguage : null,
+        );
 
         if ($route === null) {
-            return [
+            $response = [
                 HttpConstants::RESPONSE_KEY_STATUS => HttpConstants::HTTP_NOT_FOUND,
                 HttpConstants::RESPONSE_KEY_HEADERS => [HttpConstants::HEADER_CONTENT_TYPE => HttpConstants::CONTENT_TYPE_JSON],
                 HttpConstants::RESPONSE_KEY_BODY => json_encode(['error' => 'Not Found']),
             ];
+            Hilos::$ac?->finishApiRequest($apiRequestId, HttpConstants::HTTP_NOT_FOUND, 0);
+            return $response;
         }
 
         // Resolve and execute handler
+        $startedAt = hrtime(true);
         try {
             $response = $this->resolver->resolve($route, $request);
+            $durationMs = (int)round((hrtime(true) - $startedAt) / 1_000_000);
+            $statusCode = isset($response[HttpConstants::RESPONSE_KEY_STATUS])
+                ? (int)$response[HttpConstants::RESPONSE_KEY_STATUS]
+                : HttpConstants::HTTP_OK;
+            Hilos::$ac?->finishApiRequest($apiRequestId, $statusCode, $durationMs);
             return $response;
         } catch (\Throwable $e) {
+            $durationMs = (int)round((hrtime(true) - $startedAt) / 1_000_000);
+            Hilos::$ac?->finishApiRequest($apiRequestId, HttpConstants::HTTP_INTERNAL_ERROR, $durationMs);
             return [
                 HttpConstants::RESPONSE_KEY_STATUS => HttpConstants::HTTP_INTERNAL_ERROR,
                 HttpConstants::RESPONSE_KEY_HEADERS => [HttpConstants::HEADER_CONTENT_TYPE => HttpConstants::CONTENT_TYPE_JSON],

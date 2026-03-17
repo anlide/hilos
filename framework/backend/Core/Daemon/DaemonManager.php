@@ -166,6 +166,9 @@ abstract class DaemonManager extends BaseManager
             // Dispatch accumulated signals
             $this->dispatchSignals();
 
+            // Flush buffered analytics rows on schedule
+            Hilos::$ac?->tick();
+
             // Process signals
             pcntl_signal_dispatch();
 
@@ -175,6 +178,7 @@ abstract class DaemonManager extends BaseManager
 
         // Cleanup
         $this->eventLoop->cleanup();
+        Hilos::$ac?->shutdown();
         Logger::info("Daemon stopped");
     }
 
@@ -769,6 +773,7 @@ abstract class DaemonManager extends BaseManager
                     return;
                 }
                 Hilos::$sr->subscribeToPage($signal->data->page, $signal->data);
+                Hilos::$ac?->openPageSession($signal->data->acceptKey, $signal->data->page, $signal->data->params);
                 break;
 
             case SignalTypeConstants::PAGE_UPDATE_SUBSCRIPTION:
@@ -776,6 +781,7 @@ abstract class DaemonManager extends BaseManager
                     return;
                 }
                 Hilos::$sr->updatePageSubscription($signal->data->page, $signal->data);
+                Hilos::$ac?->updatePageSession($signal->data->acceptKey, $signal->data->params);
                 break;
 
             case SignalTypeConstants::PAGE_UNSUBSCRIBE:
@@ -787,6 +793,7 @@ abstract class DaemonManager extends BaseManager
                     return;
                 }
                 Hilos::$sr->unsubscribeFromPage($page, $signal->data);
+                Hilos::$ac?->closePageSession($signal->data->acceptKey);
                 break;
 
             case SignalTypeConstants::GROUP_SUBSCRIBE:

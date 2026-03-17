@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Socket\Client;
 
 use Hilos\Constants\HttpConstants;
+use Hilos\Constants\HilosHttpHeaders;
 use Hilos\Constants\SignalPayloadConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Router\SignalName;
@@ -528,6 +529,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
      */
     protected function onFrame(string $payload): void
     {
+        $this->trackCurrentClientIp();
         $acceptKey = $this->acceptKey;
         $decoded = JsonHelper::tryDecode($payload);
         if (!is_array($decoded)) {
@@ -561,12 +563,18 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
                     data: $actionData,
                 );
 
-                Hilos::$sr->queueSignal(
-                    new SignalSource(SignalSource::WEBSOCKET),
-                    new SignalType(SignalTypeConstants::ACTION),
-                    new SignalName($actionName),
-                    $dto,
-                );
+                $userActionId = Hilos::$ac?->logUserAction($acceptKey, $actionName, $actionData);
+                Hilos::$ac?->startUserActionCapture($userActionId);
+                try {
+                    Hilos::$sr->queueSignal(
+                        new SignalSource(SignalSource::WEBSOCKET),
+                        new SignalType(SignalTypeConstants::ACTION),
+                        new SignalName($actionName),
+                        $dto,
+                    );
+                } finally {
+                    Hilos::$ac?->clearUserActionCapture();
+                }
                 $this->onActionQueued($actionName, $dto);
                 break;
             }
@@ -792,6 +800,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
      */
     protected function onFrameBinary(string $payload): void
     {
+        $this->trackCurrentClientIp();
         $dto = new WebSocketFrameBinarySignalDTO(
             acceptKey: $this->acceptKey,
             payload: $payload,
@@ -837,6 +846,22 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
     ): void {
         $this->acceptKey = $acceptKey;
         $this->onHandshake($headers, $acceptKey, $cookies, $clientIp, $queryParams);
+
+        $sessionToken = $headers[HilosHttpHeaders::HILOS_SESSION_TOKEN]
+            ?? $queryParams[HilosHttpHeaders::HILOS_SESSION_TOKEN]
+            ?? null;
+        $userAgent = $headers['User-Agent'] ?? null;
+        $acceptLanguage = $headers['Accept-Language'] ?? null;
+        Hilos::$ac?->ensureBrowserSession(
+            is_string($sessionToken) ? $sessionToken : null,
+            is_string($userAgent) ? $userAgent : null,
+            is_string($acceptLanguage) ? $acceptLanguage : null,
+        );
+        Hilos::$ac?->openWsConnection(
+            $acceptKey,
+            is_string($sessionToken) ? $sessionToken : null,
+            $clientIp,
+        );
 
         $dto = new WebSocketHandshakeSignalDTO(
             headers: $headers,
@@ -899,6 +924,9 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
             return;
         }
 
+        Hilos::$ac?->closePageSession($this->acceptKey);
+        Hilos::$ac?->closeWsConnection($this->acceptKey);
+
         $closeDto = new WebSocketCloseSignalDTO(acceptKey: $this->acceptKey);
         Hilos::$sr->queueSignal(
             new SignalSource(SignalSource::WEBSOCKET),
@@ -919,5 +947,18 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
         );
 
         Hilos::$sr->unsubscribeFromAll($this->acceptKey);
+    }
+
+    private function trackCurrentClientIp(): void
+    {
+        if ($this->acceptKey === '') {
+            return;
+        }
+
+        try {
+            Hilos::$ac?->trackWsConnectionIpChange($this->acceptKey, $this->getClientIp());
+        } catch (\Throwable) {
+            // Ignore peer-name lookup errors during analytics tracking.
+        }
     }
 }

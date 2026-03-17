@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../../vendor/autoload.php';
 
+use Demo\Chat\Hilos;
 use Demo\Chat\Core\Daemon\ChatWorkerManager;
 use Demo\Chat\Database\Database;
 use Hilos\Constants\ErrorConstants;
@@ -29,6 +30,7 @@ Env::init(__DIR__);
 try {
     // Initialize database connection, schema and Hilos context.
     Database::initialize();
+    Hilos::initAnalytics();
 
     // Parse command line arguments for worker index
     $workerIndex = ArgumentHelper::getWorkerIndex($argv);

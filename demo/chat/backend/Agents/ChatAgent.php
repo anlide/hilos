@@ -92,6 +92,8 @@ class ChatAgent extends AbstractAgent
             $wasRegisteredNow = true;
         }
 
+        Hilos::$ac?->setBrowserSessionIdentity($sessionToken, 'user_id', (string)$user->id);
+
         $hadNoConnections = count(Hilos::$rt->connections->forUser($user->id)) === 0;
         Hilos::$rt->connections->actions->register($data->acceptKey, $user->id);
 

@@ -71,7 +71,7 @@ export function createChatWebSocketPlugin() {
   return createWebSocketPlugin({
     url: websocketUrl,
     queryParams: {
-      'X-Session-Token': sessionToken,
+      'Hilos-Session-Token': sessionToken,
     },
     autoConnect: true,
     reconnectDelay: 3000,

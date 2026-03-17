@@ -2,6 +2,7 @@
 
 namespace Hilos;
 
+use Hilos\Core\Analytics\AnalyticsCollector;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Table\Context\TableContext;
 use Hilos\Database\Context\DbContext;
@@ -29,6 +30,9 @@ abstract class Hilos
 
     /** @var ?SignalRouter Signal router singleton */
     public static ?SignalRouter $sr = null;
+
+    /** @var ?AnalyticsCollector Analytics collector singleton */
+    public static ?AnalyticsCollector $ac = null;
 
     /**
      * Initialize all layers (db, rt, table).
@@ -62,6 +66,16 @@ abstract class Hilos
     public static function initSignalRouter(SignalRouter $signalRouter): void
     {
         static::$sr = $signalRouter;
+    }
+
+    /**
+     * Initialize analytics collector.
+     *
+     * @param ?AnalyticsCollector $analyticsCollector Analytics collector instance
+     */
+    public static function initAnalytics(?AnalyticsCollector $analyticsCollector = null): void
+    {
+        static::$ac = $analyticsCollector ?? new AnalyticsCollector();
     }
 
     /**

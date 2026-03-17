@@ -36,6 +36,8 @@ class SignalDTO extends BaseDTO
         public readonly SignalTypeInterface $signalType,
         public readonly SignalNameInterface $signalName,
         public readonly SignalDataInterface $data,
+        /** @var array<string, int|string> Analytics correlation metadata */
+        public readonly array $meta = [],
     ) {
     }
 
@@ -68,6 +70,7 @@ class SignalDTO extends BaseDTO
             'signalName' => $this->signalName->getName(),
             'data' => $dataArray,
             'dataType' => $dataType,
+            'meta' => $this->meta,
         ];
     }
 
@@ -101,6 +104,10 @@ class SignalDTO extends BaseDTO
         // Validate dataType field type - must be string or null
         if (array_key_exists('dataType', $data) && $data['dataType'] !== null && !is_string($data['dataType'])) {
             throw new InvalidArgumentException("Field 'dataType' must be string or null, got: " . gettype($data['dataType']));
+        }
+
+        if (array_key_exists('meta', $data) && !is_array($data['meta'])) {
+            throw new InvalidArgumentException("Field 'meta' must be an array, got: " . gettype($data['meta']));
         }
 
         // Deserialize signalSource
@@ -143,6 +150,7 @@ class SignalDTO extends BaseDTO
             signalType: $signalType,
             signalName: $signalName,
             data: $signalData,
+            meta: $data['meta'] ?? [],
         );
     }
 

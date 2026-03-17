@@ -10,6 +10,7 @@ use Hilos\API\Router\Exception\PageSubscriptionNotFoundException;
 use Hilos\Constants\SignalPayloadConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Router\DTO\SignalDTO;
+use Hilos\Hilos;
 use Hilos\Socket\WebSocket\DTO\WebSocketGroupSubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketGroupUnsubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketGroupUpdateSubscriptionSignalDTO;
@@ -161,7 +162,13 @@ class SignalRouter
     public function queueSignal(SignalSourceInterface $signalSource, SignalTypeInterface $signalType, SignalNameInterface $signalName, SignalDataInterface $signalData): void
     {
         // Create SignalDTO and queue it
-        $signal = new SignalDTO($signalSource, $signalType, $signalName, $signalData);
+        $signal = new SignalDTO(
+            $signalSource,
+            $signalType,
+            $signalName,
+            $signalData,
+            Hilos::$ac?->captureSignalMeta() ?? [],
+        );
         $this->queuedSignals[] = $signal;
 
         // Log signal queued
