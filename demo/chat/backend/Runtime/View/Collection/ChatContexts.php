@@ -20,7 +20,7 @@ use Hilos\Runtime\View\Item\RtItem;
  *
  * Singleton collection (key "main") for shared chat context used by BotAgents.
  *
- * @extends RtCollection<ChatContext>
+ * @extends RtCollection<ChatContext, ChatContextsActions>
  * @property-read ChatContextsActions $actions Actions for write operations
  */
 final class ChatContexts extends RtCollection

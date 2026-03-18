@@ -20,6 +20,8 @@ use Hilos\Runtime\View\Actions\RtActions;
  * Usage:
  *   Hilos::$rt->connections->actions->register($acceptKey, $userId);
  *   Hilos::$rt->connections->actions->unregister($acceptKey);
+ *
+ * @extends RtActions<RuntimeConnection>
  */
 final class ConnectionsActions extends RtActions
 {

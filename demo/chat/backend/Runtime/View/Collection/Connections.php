@@ -22,7 +22,7 @@ use Hilos\Runtime\View\Item\RtItem;
  * Provides high-level access to connection data.
  * Write operations go through ConnectionsActions.
  *
- * @extends RtCollection<Connection>
+ * @extends RtCollection<Connection, ConnectionsActions>
  * @property-read ConnectionsActions $actions Actions for write operations
  * @property-read DbUsers $relevantUsers Users who are online or mentioned in events
  */

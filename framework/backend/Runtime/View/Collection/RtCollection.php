@@ -23,9 +23,11 @@ use Iterator;
  *
  * Read-only wrapper around runtime state collection.
  *
- * @template T of RtItem
- * @implements ArrayAccess<string, T>
- * @implements Iterator<string, T>
+ * @template TItem of RtItem
+ * @template TActions of RtActions
+ * @implements ArrayAccess<string, TItem>
+ * @implements Iterator<string, TItem>
+ * @property-read TActions $actions
  */
 abstract class RtCollection implements ArrayAccess, Countable, Iterator
 {
@@ -34,7 +36,7 @@ abstract class RtCollection implements ArrayAccess, Countable, Iterator
     /** @var int current iterator position */
     private int $position = 0;
 
-    /** @var array<string, RtItem> state ID => RtItem cache */
+    /** @var array<string, TItem> state ID => RtItem cache */
     private array $items = [];
 
     /** @var ?RtStates state collection reference */
@@ -43,10 +45,10 @@ abstract class RtCollection implements ArrayAccess, Countable, Iterator
     /** @var ?string collection name for truth source and sync */
     private ?string $_collectionName = null;
 
-    /** @var ?class-string<RtActions> actions class for lazy init */
+    /** @var ?class-string<TActions> actions class for lazy init */
     private ?string $_actionsClass = null;
 
-    /** @var ?RtActions cached actions instance */
+    /** @var ?TActions cached actions instance */
     private ?RtActions $_actions = null;
 
     /**
@@ -119,7 +121,7 @@ abstract class RtCollection implements ArrayAccess, Countable, Iterator
     /**
      * Set actions class for lazy initialization.
      *
-     * @param ?class-string<RtActions> $actionsClass Actions class or null
+     * @param ?class-string<TActions> $actionsClass Actions class or null
      */
     public function setActionsClass(?string $actionsClass): void
     {
@@ -129,7 +131,7 @@ abstract class RtCollection implements ArrayAccess, Countable, Iterator
     /**
      * Get actions instance (creates lazily on first access).
      *
-     * @return RtActions Actions instance
+     * @return TActions Actions instance
      * @throws RtCollectionActionsClassException When actions class not set or invalid
      */
     protected function getActions(): RtActions
@@ -182,7 +184,7 @@ abstract class RtCollection implements ArrayAccess, Countable, Iterator
      * Creates RtItem from RtState (implemented by child classes).
      *
      * @param RtState $state State instance (reference)
-     * @return RtItem RtItem wrapper for the state
+     * @return TItem RtItem wrapper for the state
      */
     abstract protected function createRtItem(RtState &$state): RtItem;
 
@@ -190,7 +192,7 @@ abstract class RtCollection implements ArrayAccess, Countable, Iterator
      * Get RtItem for state key (cached or created).
      *
      * @param string $key State ID
-     * @return ?RtItem RtItem instance or null if state not found
+     * @return ?TItem RtItem instance or null if state not found
      */
     protected function getRtItemForKey(string $key): ?RtItem
     {
@@ -239,7 +241,7 @@ abstract class RtCollection implements ArrayAccess, Countable, Iterator
     /**
      * Get first RtItem.
      *
-     * @return ?RtItem First item or null if empty
+     * @return ?TItem First item or null if empty
      */
     public function first(): ?RtItem
     {
@@ -254,7 +256,7 @@ abstract class RtCollection implements ArrayAccess, Countable, Iterator
     /**
      * Get last RtItem.
      *
-     * @return ?RtItem Last item or null if empty
+     * @return ?TItem Last item or null if empty
      */
     public function last(): ?RtItem
     {
@@ -279,7 +281,7 @@ abstract class RtCollection implements ArrayAccess, Countable, Iterator
      * Magic getter for actions property.
      *
      * @param string $name Property name (actions only)
-     * @return RtActions Actions instance when name is "actions"
+     * @return TActions Actions instance when name is "actions"
      * @throws RtCollectionPropertyNotFoundException When property does not exist
      */
     public function __get(string $name): mixed
@@ -318,7 +320,7 @@ abstract class RtCollection implements ArrayAccess, Countable, Iterator
      * Get item at offset.
      *
      * @param mixed $offset State ID
-     * @return ?RtItem Item or null if not found
+     * @return ?TItem Item or null if not found
      */
     public function offsetGet(mixed $offset): ?RtItem
     {
@@ -363,7 +365,7 @@ abstract class RtCollection implements ArrayAccess, Countable, Iterator
     /**
      * Get current item in iteration.
      *
-     * @return ?RtItem Current item or null if position invalid
+     * @return ?TItem Current item or null if position invalid
      */
     public function current(): ?RtItem
     {

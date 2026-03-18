@@ -18,6 +18,8 @@ use Hilos\Runtime\View\Actions\RtActions;
  * Usage:
  *   Hilos::$rt->moderationStates->actions->set($userId, $message);
  *   Hilos::$rt->moderationStates->actions->clear($userId);
+ *
+ * @extends RtActions<RuntimeModerationState>
  */
 final class ModerationStatesActions extends RtActions
 {
