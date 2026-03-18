@@ -12,7 +12,7 @@ use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\HilosException;
 
 /**
- * Collection-level actions for the settings table.
+ * SettingsTableActions - Collection-level actions for the settings table (table layer).
  *
  * Operation: add setting. Delegates to Hilos::$db->settings->actions->add().
  */

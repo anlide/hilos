@@ -14,7 +14,7 @@ use Hilos\HilosException;
 use Hilos\Runtime\Exception\RtBaseException;
 
 /**
- * Item-level actions for a single user (table layer).
+ * UserItemActions - Item-level actions for a single user (table layer).
  *
  * Delegates to db layer (UserActions) for actual updates.
  */

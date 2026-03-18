@@ -70,10 +70,12 @@ abstract class DbItem
     }
 
     /**
-     * Get ID as string (for use as array key)
+     * Get ID as string (for use as array key).
+     *
      * Delegates to underlying Object instance.
      * Supports composite keys via Object_::getIdString().
      *
+     * @return string ID as string for array key
      * @throws ObjectGetIdStringNotImplementedException If Object does not implement getIdString()
      */
     public function getIdString(): string

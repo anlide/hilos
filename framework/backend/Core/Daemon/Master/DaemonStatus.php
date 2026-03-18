@@ -74,9 +74,9 @@ class DaemonStatus
     }
 
     /**
-     * Get uptime in seconds
+     * Get uptime in seconds.
      *
-     * @return int Uptime seconds
+     * @return int Uptime in seconds
      */
     public function getUptime(): int
     {
@@ -84,7 +84,7 @@ class DaemonStatus
     }
 
     /**
-     * Create DaemonStatus from DTO
+     * Create DaemonStatus from DTO.
      *
      * @param DaemonStatusDTO $dto Source DTO
      * @return self DaemonStatus instance

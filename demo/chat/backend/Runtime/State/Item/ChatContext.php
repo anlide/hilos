@@ -8,7 +8,7 @@ use Hilos\Runtime\Exception\State\RtStatePropertyNotFoundException;
 use Hilos\Runtime\State\Item\RtState;
 
 /**
- * ChatContext state - singleton runtime data for chat context analysis.
+ * ChatContext - Singleton runtime data for chat context analysis.
  *
  * Stores only LLM-produced data: topic, summary, topicConfidence.
  * Id is always "main".

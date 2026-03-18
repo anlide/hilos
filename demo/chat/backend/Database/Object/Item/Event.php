@@ -8,7 +8,7 @@ use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Item\Object_;
 
 /**
- * Event object.
+ * Event - Object wrapper for event entity.
  *
  * Auto-generated from Entity: Demo\Chat\Database\Entity\Item\Event
  *

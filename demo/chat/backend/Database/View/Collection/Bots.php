@@ -8,7 +8,7 @@ use Demo\Chat\Database\View\Item\Bot;
 use Hilos\Database\View\Collection\DbCollection;
 
 /**
- * Bots Db collection - collection of Bot items.
+ * Bots - Db collection of Bot items.
  *
  * @extends DbCollection<Bot, ObjectBots>
  * @method ObjectBots|null getObjectCollection()

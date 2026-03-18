@@ -7,7 +7,7 @@ namespace Demo\Chat\Pages\Hilos;
 use Hilos\Pages\AbstractHilosGuardianPage;
 
 /**
- * Guardian page - concrete implementation for demo.
+ * GuardianPage - Guardian page implementation for demo.
  */
 final class GuardianPage extends AbstractHilosGuardianPage
 {

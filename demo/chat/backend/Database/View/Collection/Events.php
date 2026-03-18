@@ -8,7 +8,7 @@ use Demo\Chat\Database\View\Item\Event;
 use Hilos\Database\View\Collection\DbCollection;
 
 /**
- * Events Db collection - collection of Event items.
+ * Events - Db collection of Event items.
  *
  * @extends DbCollection<Event, ObjectEvents>
  * @method ObjectEvents|null getObjectCollection()

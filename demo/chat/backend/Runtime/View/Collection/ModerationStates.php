@@ -15,7 +15,7 @@ use Hilos\Runtime\View\Collection\RtCollection;
 use Hilos\Runtime\View\Item\RtItem;
 
 /**
- * ModerationStates Rt collection - read-only wrapper around moderation states.
+ * ModerationStates - Read-only wrapper around moderation states.
  *
  * @extends RtCollection<ModerationState>
  * @property-read ModerationStatesActions $actions Actions for write operations

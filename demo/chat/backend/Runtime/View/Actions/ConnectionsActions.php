@@ -39,7 +39,7 @@ final class ConnectionsActions extends RtActions
     }
 
     /**
-     * Unregister connection.
+     * Unregister connection by accept key.
      *
      * @param string $acceptKey WebSocket accept key
      */
@@ -49,7 +49,7 @@ final class ConnectionsActions extends RtActions
     }
 
     /**
-     * Clear all connections.
+     * Clear all connections from the collection.
      */
     public function clear(): void
     {

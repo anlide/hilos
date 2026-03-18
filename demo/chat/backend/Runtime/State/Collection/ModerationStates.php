@@ -8,7 +8,7 @@ use Demo\Chat\Runtime\State\Item\ModerationState;
 use Hilos\Runtime\State\Collection\RtStates;
 
 /**
- * ModerationStates state collection - in-flight moderation state by user.
+ * ModerationStates - In-flight moderation state collection by user.
  *
  * @extends RtStates<ModerationState>
  */

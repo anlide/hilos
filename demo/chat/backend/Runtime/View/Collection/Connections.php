@@ -17,7 +17,7 @@ use Hilos\Runtime\View\Collection\RtCollection;
 use Hilos\Runtime\View\Item\RtItem;
 
 /**
- * Connections Rt collection - read-only wrapper around Connections state.
+ * Connections - Read-only wrapper around Connections state.
  *
  * Provides high-level access to connection data.
  * Write operations go through ConnectionsActions.

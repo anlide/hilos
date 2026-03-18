@@ -8,7 +8,7 @@ use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Item\Object_;
 
 /**
- * User object.
+ * User - Object wrapper for user entity.
  *
  * Auto-generated from Entity: Demo\Chat\Database\Entity\Item\User
  *

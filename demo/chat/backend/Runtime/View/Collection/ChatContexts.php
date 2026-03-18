@@ -16,7 +16,7 @@ use Hilos\Runtime\View\Collection\RtCollection;
 use Hilos\Runtime\View\Item\RtItem;
 
 /**
- * ChatContexts Rt collection - read-only wrapper around chat context state.
+ * ChatContexts - Read-only wrapper around chat context state.
  *
  * Singleton collection (key "main") for shared chat context used by BotAgents.
  *

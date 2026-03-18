@@ -8,7 +8,7 @@ use Hilos\Runtime\Exception\State\RtStatePropertyNotFoundException;
 use Hilos\Runtime\State\Item\RtState;
 
 /**
- * ModerationState state - pending moderation message by user.
+ * ModerationState - Pending moderation message by user.
  *
  * Stores one in-flight moderation message per user.
  * ID is userId as string.

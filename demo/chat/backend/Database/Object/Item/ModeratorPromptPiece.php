@@ -8,7 +8,7 @@ use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Item\Object_;
 
 /**
- * ModeratorPromptPiece object.
+ * ModeratorPromptPiece - Object wrapper for moderator prompt piece entity.
  *
  * Auto-generated from Entity: Demo\Chat\Database\Entity\Item\ModeratorPromptPiece
  *

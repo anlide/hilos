@@ -3,7 +3,8 @@
 declare(strict_types=1);
 
 /**
- * PHPUnit bootstrap — loads autoloader and test environment.
+ * PHPUnit bootstrap - loads autoloader and test environment.
+ *
  * Loads tests/.env if it exists (overrides .env for tests).
  */
 

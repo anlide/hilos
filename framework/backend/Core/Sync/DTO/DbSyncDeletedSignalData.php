@@ -8,7 +8,8 @@ use Hilos\BaseDTO;
 use Hilos\Core\Router\SignalDataInterface;
 
 /**
- * DB sync signal data for deleted row.
+ * DbSyncDeletedSignalData - DB sync signal data for deleted row.
+ *
  * Only idString (collection key).
  */
 class DbSyncDeletedSignalData extends BaseDTO implements SignalDataInterface

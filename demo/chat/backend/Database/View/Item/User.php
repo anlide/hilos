@@ -13,7 +13,7 @@ use Hilos\Database\Exception\View\Item\PropertyNotFoundException;
 use Hilos\Database\View\Item\DbItem;
 
 /**
- * User Db item - high-level abstraction with lazy loading and relationships.
+ * User - Db item with high-level abstraction and lazy loading.
  *
  * Stores reference to ObjectUser instance.
  * Object instances are stored in ObjectCollection in Hilos.

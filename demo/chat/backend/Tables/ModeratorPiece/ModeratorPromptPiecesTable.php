@@ -12,7 +12,7 @@ use Hilos\Core\Table\DataSource\TableDataSourceInterface;
 use Hilos\Core\Table\Definition\TableDefinition;
 
 /**
- * Moderator prompt pieces table definition with create / update / delete actions.
+ * ModeratorPromptPiecesTable - Table definition with create/update/delete actions.
  *
  * @property-read ModeratorPromptPiecesTableActions $actions
  */

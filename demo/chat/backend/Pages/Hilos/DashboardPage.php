@@ -7,7 +7,7 @@ namespace Demo\Chat\Pages\Hilos;
 use Hilos\Pages\AbstractHilosDashboardPage;
 
 /**
- * Dashboard page - concrete implementation for demo.
+ * DashboardPage - Dashboard page implementation for demo.
  */
 final class DashboardPage extends AbstractHilosDashboardPage
 {

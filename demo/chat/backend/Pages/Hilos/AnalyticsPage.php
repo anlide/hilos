@@ -7,7 +7,7 @@ namespace Demo\Chat\Pages\Hilos;
 use Hilos\Pages\AbstractHilosAnalyticsPage;
 
 /**
- * Analytics page - concrete implementation for demo.
+ * AnalyticsPage - Analytics page implementation for demo.
  */
 final class AnalyticsPage extends AbstractHilosAnalyticsPage
 {

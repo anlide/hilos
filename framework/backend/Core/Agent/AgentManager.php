@@ -49,7 +49,7 @@ abstract class AgentManager
      * Parse agent ID to extract type and index.
      *
      * @param string $agentId Agent ID (format: "type" or "type:index")
-     * @return array{agentType: string, agentIndex: ?string} Parsed agent type and index
+     * @return array<string, string|null> Associative array with 'agentType' and 'agentIndex' keys
      */
     public function parseAgentId(string $agentId): array
     {

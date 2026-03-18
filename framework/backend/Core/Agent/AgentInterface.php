@@ -68,110 +68,110 @@ interface AgentInterface
     public function onStop(): void;
 
     /**
-     * Handle system signal
+     * Handle system signal.
      *
+     * @param SignalDataInterface $data Signal data
      * @param string $source Signal source
      * @param string $name Signal name
-     * @param SignalDataInterface $data Signal data
      */
     public function onSignalSystem(SignalDataInterface $data, string $source, string $name): void;
 
     /**
-     * Handle handshake signal
+     * Handle handshake signal.
      *
+     * @param WebSocketHandshakeSignalDTO $data Signal data
      * @param string $source Signal source
      * @param string $name Signal name
-     * @param WebSocketHandshakeSignalDTO $data Signal data
      */
     public function onSignalHandshake(WebSocketHandshakeSignalDTO $data, string $source, string $name): void;
 
     /**
-     * Handle connection close signal (WebSocket connection closed)
+     * Handle connection close signal (WebSocket connection closed).
      *
+     * @param WebSocketCloseSignalDTO $data Signal data
      * @param string $source Signal source
      * @param string $name Signal name
-     * @param WebSocketCloseSignalDTO $data Signal data
      */
     public function onSignalConnectionClose(WebSocketCloseSignalDTO $data, string $source, string $name): void;
 
     /**
-     * Handle page subscribe signal
+     * Handle page subscribe signal.
      *
+     * @param WebSocketPageSubscribeSignalDTO $data Signal data
      * @param string $source Signal source
      * @param string $name Signal name
-     * @param WebSocketPageSubscribeSignalDTO $data Signal data
      */
     public function onSignalPageSubscribe(WebSocketPageSubscribeSignalDTO $data, string $source, string $name): void;
 
     /**
-     * Handle page unsubscribe signal
+     * Handle page unsubscribe signal.
      *
+     * @param WebSocketPageUnsubscribeSignalDTO $data Signal data
      * @param string $source Signal source
      * @param string $name Signal name
-     * @param WebSocketPageUnsubscribeSignalDTO $data Signal data
      */
     public function onSignalPageUnsubscribe(WebSocketPageUnsubscribeSignalDTO $data, string $source, string $name): void;
 
     /**
-     * Handle page update subscription signal
+     * Handle page update subscription signal.
      *
+     * @param WebSocketPageUpdateSubscriptionSignalDTO $data Signal data
      * @param string $source Signal source
      * @param string $name Signal name
-     * @param WebSocketPageUpdateSubscriptionSignalDTO $data Signal data
      */
     public function onSignalPageUpdateSubscription(WebSocketPageUpdateSubscriptionSignalDTO $data, string $source, string $name): void;
 
     /**
-     * Handle group subscribe signal
+     * Handle group subscribe signal.
      *
+     * @param WebSocketGroupSubscribeSignalDTO $data Signal data
      * @param string $source Signal source
      * @param string $name Signal name
-     * @param WebSocketGroupSubscribeSignalDTO $data Signal data
      */
     public function onSignalGroupSubscribe(WebSocketGroupSubscribeSignalDTO $data, string $source, string $name): void;
 
     /**
-     * Handle group unsubscribe signal
+     * Handle group unsubscribe signal.
      *
+     * @param WebSocketGroupUnsubscribeSignalDTO $data Signal data
      * @param string $source Signal source
      * @param string $name Signal name
-     * @param WebSocketGroupUnsubscribeSignalDTO $data Signal data
      */
     public function onSignalGroupUnsubscribe(WebSocketGroupUnsubscribeSignalDTO $data, string $source, string $name): void;
 
     /**
-     * Handle group update subscription signal
+     * Handle group update subscription signal.
      *
+     * @param WebSocketGroupUpdateSubscriptionSignalDTO $data Signal data
      * @param string $source Signal source
      * @param string $name Signal name
-     * @param WebSocketGroupUpdateSubscriptionSignalDTO $data Signal data
      */
     public function onSignalGroupUpdateSubscription(WebSocketGroupUpdateSubscriptionSignalDTO $data, string $source, string $name): void;
 
     /**
-     * Handle action signal
+     * Handle action signal.
      *
+     * @param WebSocketActionSignalDTO $data Signal data
      * @param string $source Signal source
      * @param string $name Signal name
-     * @param WebSocketActionSignalDTO $data Signal data
      */
     public function onSignalAction(WebSocketActionSignalDTO $data, string $source, string $name): void;
 
     /**
-     * Handle binary frame signal
+     * Handle binary frame signal.
      *
+     * @param WebSocketFrameBinarySignalDTO $data Signal data
      * @param string $source Signal source
      * @param string $name Signal name
-     * @param WebSocketFrameBinarySignalDTO $data Signal data
      */
     public function onSignalFrameBinary(WebSocketFrameBinarySignalDTO $data, string $source, string $name): void;
 
     /**
-     * Handle cron signal
+     * Handle cron signal.
      *
+     * @param SignalDataInterface $data Signal data
      * @param string $source Signal source
      * @param string $name Signal name
-     * @param SignalDataInterface $data Signal data
      */
     public function onSignalCron(SignalDataInterface $data, string $source, string $name): void;
 }

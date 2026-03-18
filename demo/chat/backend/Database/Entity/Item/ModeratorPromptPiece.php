@@ -7,7 +7,7 @@ use Hilos\Database\Entity\Item\Entity;
 use Hilos\Database\PhpType;
 
 /**
- * ModeratorPromptPiece Entity - represents moderator_prompt_piece table row.
+ * ModeratorPromptPiece - Entity representing moderator_prompt_piece table row.
  *
  * Auto-generated from table: moderator_prompt_piece.
  * Stores moderator prompt pieces (rules for LLM moderation).

@@ -121,14 +121,8 @@ HELP;
      * If there are errors in Object/IdeaObject files, IdeaCollection/IdeaStorage/Idea.php
      * processing is skipped to prevent cascading errors.
      *
-     * @param array $options Command options:
-     *   - 'table' (string|null): Fix specific table only (filters by Entity table name)
-     *   - 'idea-dir' (string|null): IdeaObject files directory (auto-detect if null)
-     *   - 'idea-collection-dir' (string|null): IdeaCollection files directory (auto-detect if null)
-     *   - 'object-dir' (string|null): Object and ObjectCollection files directory (auto-detect if null)
-     *   - 'dry-run' (bool): Show what would be changed without modifying files
-     *   - 'force-repair' (bool): Attempt to repair broken Idea files (currently not used)
-     * @param array $args Command arguments (not used)
+     * @param array<string, mixed> $options Command options (table, idea-dir, idea-collection-dir, object-dir, dry-run, force-repair)
+     * @param list<string> $args Command arguments (not used)
      * @return int Exit code (ExitCode::SUCCESS on success)
      * @throws CommandException If critical errors occur during processing
      */
@@ -504,7 +498,7 @@ HELP;
      * @param ?string $objectDir Object directory
      * @param int $syntaxErrors Reference to syntax error counter
      * @param array $brokenObjects Reference to broken files array
-     * @return array<string, array{class: string, file: string, reflection: ReflectionClass}> Loaded Object classes
+     * @return array<string, array<string, mixed>> Loaded Object classes (key: class name, value: class, file, reflection)
      */
     private function loadObjects(?string $objectDir, int &$syntaxErrors = 0, array &$brokenObjects = []): array
     {
@@ -636,7 +630,7 @@ HELP;
      * @param array $ideaItems Loaded IdeaItem files
      * @param ?string $tableFilter Table name filter
      * @param array $brokenObjects Broken Object files
-     * @return array<string, array{object_class: string, reflection: ReflectionClass}> IdeaItems to create
+     * @return array<string, array<string, mixed>> IdeaItems to create (key: object class, value: object_class, reflection)
      */
     private function findIdeaItemsToCreate(array $objects, array $ideaItems, ?string $tableFilter, array $brokenObjects): array
     {
@@ -883,7 +877,7 @@ HELP;
      * @param ?string $objectDir Object directory (ObjectCollection is usually in ObjectCollection subdirectory)
      * @param int $syntaxErrors Reference to syntax error counter
      * @param array $brokenObjectCollections Reference to broken files array
-     * @return array<string, array{class: string, file: string, reflection: ReflectionClass}> Loaded ObjectCollection classes
+     * @return array<string, array<string, mixed>> Loaded ObjectCollection classes (key: class name, value: class, file, reflection)
      */
     private function loadObjectCollections(?string $objectDir, int &$syntaxErrors = 0, array &$brokenObjectCollections = []): array
     {
@@ -991,7 +985,7 @@ HELP;
      * @param array $ideaCollections Loaded IdeaCollection files
      * @param ?string $tableFilter Table name filter
      * @param array $brokenObjectCollections Broken ObjectCollection files
-     * @return array<string, array{object_collection_class: string, reflection: ReflectionClass}> IdeaCollections to create
+     * @return array<string, array<string, mixed>> IdeaCollections to create (key: class, value: object_collection_class, reflection)
      */
     private function findIdeaCollectionsToCreate(array $objectCollections, array $ideaCollections, ?string $tableFilter, array $brokenObjectCollections): array
     {
@@ -1044,7 +1038,7 @@ HELP;
      * @param array $ideaCollections Loaded IdeaCollection files
      * @param array $brokenIdeaItems Broken IdeaItem files
      * @param array $brokenObjectCollections Broken ObjectCollection files
-     * @return array<string, array{object_collection_class: string, reflection: ReflectionClass}> IdeaCollections to create
+     * @return array<string, array<string, mixed>> IdeaCollections to create
      */
     private function findIdeaCollectionsToCreateForNewIdeaItems(array $ideaItemsToCreate, array $ideaItemsAfter, array $objectCollectionsAfter, array $ideaCollections, array $brokenIdeaItems, array $brokenObjectCollections): array
     {
@@ -1124,7 +1118,7 @@ HELP;
      * @param array $objectCollections Loaded ObjectCollection classes
      * @param array $ideaCollections Loaded IdeaCollection files
      * @param array $brokenObjectCollections Broken ObjectCollection files
-     * @return array<string, array{object_collection_class: string, reflection: ReflectionClass}> IdeaCollections to create
+     * @return array<string, array<string, mixed>> IdeaCollections to create
      */
     private function findIdeaCollectionsToCreateForNewIdeaItemsEstimate(array $ideaItemsToCreate, array $objectCollections, array $ideaCollections, array $brokenObjectCollections): array
     {
@@ -1191,7 +1185,7 @@ HELP;
     /**
      * Extract Entity class name from ObjectCollection via use statements in file.
      *
-     * @param ReflectionClass<object> $objectCollectionReflection ObjectCollection class reflection
+     * @param ReflectionClass $objectCollectionReflection ObjectCollection class reflection
      * @return ?string Entity fully qualified class name or null if not found
      */
     private function extractEntityClassNameFromObjectCollection(ReflectionClass $objectCollectionReflection): ?string

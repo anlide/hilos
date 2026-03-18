@@ -253,7 +253,9 @@ class ChatContextAnalyzerAgent extends AbstractAgent
     }
 
     /**
-     * Start LLM summarization request if not busy.
+     * Starts LLM summarization request if not busy.
+     *
+     * Builds recent events context, sends to LLM, and updates pending flag.
      */
     private function startSummarize(): void
     {

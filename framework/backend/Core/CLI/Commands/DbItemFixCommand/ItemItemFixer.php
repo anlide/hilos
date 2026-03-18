@@ -31,7 +31,7 @@ trait ItemItemFixer
      * @param ?string $ideaDir dbItem files directory
      * @param int $syntaxErrors Reference to syntax error counter
      * @param array<string, string> $brokenFiles Reference to broken files (file path => error message)
-     * @return array<string, array{class: string, file: string, reflection: ReflectionClass}> Loaded dbItem files info
+     * @return array<string, array> Loaded dbItem files info
      */
     protected function loadIdeaItems(?string $ideaDir, int &$syntaxErrors = 0, array &$brokenFiles = []): array
     {
@@ -165,7 +165,7 @@ trait ItemItemFixer
     /**
      * Extract Object class name from dbItem reflection or file.
      *
-     * @param ReflectionClass<object> $ideaReflection dbItem class reflection
+     * @param ReflectionClass $ideaReflection dbItem class reflection
      * @param string $ideaFile Path to dbItem file
      * @return ?string Object fully qualified class name or null if not found
      */
@@ -222,11 +222,11 @@ trait ItemItemFixer
     /**
      * Prepare fixes for dbItem files.
      *
-     * @param array $objects Loaded Object classes
-     * @param array $ideaItems Loaded dbItem files
+     * @param array<string, array> $objects Loaded Object classes
+     * @param array<string, array> $ideaItems Loaded dbItem files
      * @param ?string $tableFilter Table name filter
-     * @param array $brokenIdeaItems Reference to broken files array (will be populated with parse errors)
-     * @return array Fixes to apply
+     * @param array<string, string> $brokenIdeaItems Reference to broken files array (will be populated with parse errors)
+     * @return array<string, array<string, mixed>> Fixes to apply
      */
     protected function prepareIdeaItemFixes(array $objects, array $ideaItems, ?string $tableFilter, array &$brokenIdeaItems = []): array
     {
@@ -287,10 +287,10 @@ trait ItemItemFixer
     /**
      * Compare dbItem with Object and prepare fixes.
      *
-     * @param array $ideaItemInfo dbItem info
-     * @param array $objectInfo Object info
+     * @param array $ideaItemInfo dbItem info (class, file, reflection, object_class)
+     * @param array $objectInfo Object info (class, file, reflection, object_class)
      * @param ?string $parseError Reference to store parse error message
-     * @return array Fixes to apply
+     * @return array<string, mixed> Fixes to apply
      */
     private function compareIdeaItemWithObject(array $ideaItemInfo, array $objectInfo, ?string &$parseError = null): array
     {
@@ -383,7 +383,7 @@ trait ItemItemFixer
      * Extract Object properties from ReflectionClass.
      *
      * @param ReflectionClass $objectReflection Object reflection
-     * @return array<string, array{type: string, constant: string}> Object properties
+     * @return array<string, array<string, string>> Object properties
      */
     private function extractObjectProperties(ReflectionClass $objectReflection): array
     {
@@ -439,9 +439,9 @@ trait ItemItemFixer
     /**
      * Apply fixes to dbItem files.
      *
-     * @param array $fixes Fixes to apply (keyed by object class name)
-     * @param array $ideaItems Loaded dbItem files info
-     * @param array $objects Loaded Object files info
+     * @param array<string, array<string, mixed>> $fixes Fixes to apply (keyed by object class name)
+     * @param array<string, array> $ideaItems Loaded dbItem files info
+     * @param array<string, array> $objects Loaded Object files info
      * @return int Number of files updated
      */
     protected function applyIdeaItemFixes(array $fixes, array $ideaItems, array $objects): int
@@ -476,7 +476,7 @@ trait ItemItemFixer
      * Apply fixes to a single dbItem file.
      *
      * @param string $ideaFile dbItem file path
-     * @param array $fixes Fixes to apply
+     * @param array<string, mixed> $fixes Fixes to apply
      * @param ReflectionClass $objectReflection Object reflection
      * @return bool Success
      */
@@ -514,7 +514,7 @@ trait ItemItemFixer
     /**
      * Create dbItem file from Object class.
      *
-     * @param string $objectClassName Object class name
+     * @param class-string $objectClassName Object class name
      * @param string $ideaDir dbItem directory
      * @param string $namespace dbItem namespace
      * @param ReflectionClass $objectReflection Object reflection
@@ -682,7 +682,13 @@ trait ItemItemFixer
     }
 
     /**
-     * Build __get() method content
+     * Build __get() method content.
+     *
+     * @param array<string, array<string, string>> $objectProperties Object properties with type information
+     * @param string $objectClassAlias Object class alias from use statement
+     * @param string $objectPropertyName Object property name (e.g. objectUser)
+     * @param string $ideaClassName dbItem class name for display
+     * @return string Generated __get() method code
      */
     private function buildGetterMethod(array $objectProperties, string $objectClassAlias, string $objectPropertyName, string $ideaClassName): string
     {
@@ -714,7 +720,12 @@ trait ItemItemFixer
     }
 
     /**
-     * Build toArray() method content
+     * Build toArray() method content.
+     *
+     * @param array<string, array<string, string>> $objectProperties Object properties with type information
+     * @param string $objectClassAlias Object class alias from use statement
+     * @param string $objectPropertyName Object property name (e.g. objectUser)
+     * @return string Generated toArray() method code
      */
     private function buildToArrayMethod(array $objectProperties, string $objectClassAlias, string $objectPropertyName): string
     {
@@ -760,7 +771,10 @@ trait ItemItemFixer
     }
 
     /**
-     * Convert camelCase to property name (e.g., User -> objectUser)
+     * Convert camelCase to property name (e.g. User -> objectUser).
+     *
+     * @param string $className Class short name in camelCase
+     * @return string Property name with object prefix
      */
     private function camelCaseToPropertyName(string $className): string
     {
@@ -816,7 +830,7 @@ trait ItemItemFixer
      * Parse dbItem file to extract current structure.
      *
      * @param string $filePath dbItem file path
-     * @return ?array Parsed structure or null if failed
+     * @return ?array Parsed structure (getter_properties, toarray_properties, phpdoc_properties) or null if failed
      */
     protected function parseIdeaItemFile(string $filePath): ?array
     {
@@ -1140,7 +1154,15 @@ trait ItemItemFixer
     }
 
     /**
-     * Replace entire __get() method (fallback when parsing fails)
+     * Replace entire __get() method (fallback when parsing fails).
+     *
+     * @param string $content Current file content
+     * @param array $getterMethod Extracted method position info (start, end, body)
+     * @param array<string, array<string, string>> $objectProperties Object properties to include
+     * @param string $objectClassAlias Object class alias from use statement
+     * @param string $objectPropertyName Object property name for variable access
+     * @param ReflectionClass $objectReflection Object class reflection
+     * @return string Updated file content
      */
     private function replaceEntireGetterMethod(string $content, array $getterMethod, array $objectProperties, string $objectClassAlias, string $objectPropertyName, ReflectionClass $objectReflection): string
     {
@@ -1180,7 +1202,11 @@ trait ItemItemFixer
     }
 
     /**
-     * Extract Object class alias from use statements
+     * Extract Object class alias from use statements.
+     *
+     * @param string $content File content with use statements
+     * @param ReflectionClass $objectReflection Object class reflection
+     * @return ?string Alias or short name if found, null otherwise
      */
     private function extractObjectClassAlias(string $content, ReflectionClass $objectReflection): ?string
     {
@@ -1206,10 +1232,12 @@ trait ItemItemFixer
     }
 
     /**
-     * Extract object property info (e.g., $objectUser)
-     * 
-     * First tries to find a private property, then looks for variable usage in __get() method
-     * Returns array with 'name', 'type' ('property' or 'variable'), and optionally 'getter_method'
+     * Extract object property info from dbItem file (e.g. $objectUser or $_object).
+     *
+     * First tries to find a private property, then looks for variable usage in __get() method.
+     *
+     * @param string $content dbItem file content
+     * @return ?array Property info (name, type, getter_method) or null if not found
      */
     private function extractObjectPropertyInfo(string $content): ?array
     {

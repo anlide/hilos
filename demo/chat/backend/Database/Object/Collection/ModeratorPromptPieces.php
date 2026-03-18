@@ -8,7 +8,7 @@ use Demo\Chat\Database\Object\Item\ModeratorPromptPiece as ObjectModeratorPrompt
 use Hilos\Database\Object\Objects;
 
 /**
- * ModeratorPromptPieces object collection.
+ * ModeratorPromptPieces - Object collection for moderator prompt pieces.
  *
  * @extends Objects<ObjectModeratorPromptPiece>
  * @method ObjectModeratorPromptPiece|null current()

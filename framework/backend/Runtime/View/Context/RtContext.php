@@ -19,10 +19,10 @@ use Hilos\Runtime\View\Collection\RtCollection;
  */
 abstract class RtContext
 {
-    /** @var array<string, RtStates> */
+    /** @var array<string, RtStates> Map of collection name to state collection */
     protected array $_stateCollections = [];
 
-    /** @var array<string, RtCollection> */
+    /** @var array<string, RtCollection> Map of collection name to runtime view collection */
     protected array $_rtCollections = [];
 
     /**

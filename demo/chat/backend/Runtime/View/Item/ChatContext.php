@@ -8,7 +8,7 @@ use Demo\Chat\Runtime\State\Item\ChatContext as StateChatContext;
 use Hilos\Runtime\View\Item\RtItem;
 
 /**
- * ChatContext Rt item — read-only wrapper for chat context state.
+ * ChatContext - Read-only wrapper for chat context state.
  *
  * @property-read ?string $topic
  * @property-read float $topicConfidence

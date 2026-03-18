@@ -8,7 +8,7 @@ use Hilos\Constants\WorkerConstants;
 use Hilos\Socket\Worker\WorkerDTO;
 
 /**
- * RT sync deleted message from daemon to worker.
+ * WorkerRtSyncDeletedMessageDTO - RT sync deleted message from daemon to worker.
  */
 class WorkerRtSyncDeletedMessageDTO extends WorkerDTO
 {
@@ -34,6 +34,11 @@ class WorkerRtSyncDeletedMessageDTO extends WorkerDTO
         return self::MESSAGE_TYPE;
     }
 
+    /**
+     * Converts DTO to array for transport.
+     *
+     * @return array<string, mixed> DTO data as array
+     */
     public function toArray(): array
     {
         return [

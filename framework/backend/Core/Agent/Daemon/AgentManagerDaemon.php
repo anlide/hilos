@@ -84,10 +84,10 @@ abstract class AgentManagerDaemon
     }
 
     /**
-     * Extract worker info from workerId
+     * Extract worker info from workerId.
      *
      * @param int $workerId Worker ID
-     * @return array{workerIndex: int, isMonopolistic: bool} Worker info
+     * @return array<string, int|bool> Associative array with 'workerIndex' (int) and 'isMonopolistic' (bool) keys
      */
     public function extractWorkerInfo(int $workerId): array
     {
@@ -145,10 +145,10 @@ abstract class AgentManagerDaemon
     }
 
     /**
-     * Get worker info for agent
+     * Get worker info for agent.
      *
      * @param string $agentId Agent ID
-     * @return ?array{workerIndex: int, isMonopolistic: bool} Worker info or null if not found
+     * @return array<string, int|bool>|null Associative array with 'workerIndex' (int) and 'isMonopolistic' (bool) keys, or null if not found
      */
     public function getAgentWorkerInfo(string $agentId): ?array
     {

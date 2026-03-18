@@ -8,7 +8,7 @@ use Hilos\Constants\WorkerConstants;
 use Hilos\Socket\Worker\WorkerDTO;
 
 /**
- * RT sync updated message from daemon to worker.
+ * WorkerRtSyncUpdatedMessageDTO - RT sync updated message from daemon to worker.
  */
 class WorkerRtSyncUpdatedMessageDTO extends WorkerDTO
 {

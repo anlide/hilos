@@ -7,7 +7,7 @@ use Hilos\Database\Entity\Item\Entity;
 use Hilos\Database\PhpType;
 
 /**
- * Event Entity - represents event table row.
+ * Event - Entity representing event table row.
  *
  * Auto-generated from table: event.
  * Stores chat events (messages, user actions, system events).

@@ -8,7 +8,7 @@ use Demo\Chat\Database\Object\Item\Bot as ObjectBot;
 use Hilos\Database\Object\Objects;
 
 /**
- * Bots object collection.
+ * Bots - Object collection for bots.
  *
  * @extends Objects<ObjectBot>
  * @method ObjectBot|null current()

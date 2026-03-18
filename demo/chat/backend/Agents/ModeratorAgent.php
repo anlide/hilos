@@ -39,10 +39,10 @@ class ModeratorAgent extends AbstractAgent
     /** @var AsyncChatLLMInterface LLM chat client for moderation */
     private AsyncChatLLMInterface $chatClient;
 
-    /** @var list<array{type: 'user'|'bot', payload: ModerationRequestSignalData|ModerationBotRequestSignalData}> */
+    /** @var list<array<string, mixed>> Queue of pending moderation requests (type, payload) */
     private array $pendingQueue = [];
 
-    /** @var ?array{type: 'user'|'bot', payload: ModerationRequestSignalData|ModerationBotRequestSignalData} Request currently in flight */
+    /** @var array<string, mixed>|null Request currently in flight (type, payload) or null */
     private ?array $currentPending = null;
 
     /**
@@ -263,7 +263,9 @@ class ModeratorAgent extends AbstractAgent
     }
 
     /**
-     * Start next pending moderation request via LLM if not busy.
+     * Starts next pending moderation request via LLM if not busy.
+     *
+     * Shifts one item from queue and calls LLM. Re-queues item if LLM is busy.
      */
     private function startNextPending(): void
     {

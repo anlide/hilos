@@ -11,7 +11,7 @@ use Hilos\Core\Table\DataSource\TableDataSourceInterface;
 use Hilos\Core\Table\Definition\TableDefinition;
 
 /**
- * Users table definition (update only, no create/delete).
+ * UsersTable - Table definition (update only, no create/delete).
  *
  * Backed by Hilos::$db->users. Supports user update via item actions.
  */

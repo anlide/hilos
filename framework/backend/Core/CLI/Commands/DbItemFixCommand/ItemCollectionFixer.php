@@ -30,7 +30,7 @@ trait ItemCollectionFixer
      * @param ?string $ideaCollectionDir IdeaCollection files directory
      * @param int $syntaxErrors Reference to syntax error counter
      * @param array<string, string> $brokenFiles Reference to broken files (file path => error message)
-     * @return array<string, array{class: string, file: string, reflection: ReflectionClass, object_collection_class: string}> Loaded IdeaCollection files info
+     * @return array<string, array> Loaded IdeaCollection files info
      */
     protected function loadIdeaCollections(?string $ideaCollectionDir, int &$syntaxErrors = 0, array &$brokenFiles = []): array
     {
@@ -170,7 +170,7 @@ trait ItemCollectionFixer
     /**
      * Extract ObjectCollection class name from IdeaCollection reflection or file content.
      *
-     * @param ReflectionClass<object> $ideaCollectionReflection IdeaCollection class reflection
+     * @param ReflectionClass $ideaCollectionReflection IdeaCollection class reflection
      * @param string $ideaCollectionFile Path to IdeaCollection file
      * @return ?string ObjectCollection fully qualified class name or null if not found
      */
@@ -213,8 +213,8 @@ trait ItemCollectionFixer
     /**
      * Prepare fixes for IdeaCollection files.
      *
-     * @param array<string, array{class: string, file: string, reflection: ReflectionClass, object_collection_class: string}> $objectCollections Loaded ObjectCollection classes
-     * @param array<string, array{class: string, file: string, reflection: ReflectionClass, object_collection_class: string}> $ideaCollections Loaded IdeaCollection files
+     * @param array $objectCollections Loaded ObjectCollection classes
+     * @param array $ideaCollections Loaded IdeaCollection files
      * @param ?string $tableFilter Table name filter
      * @return array<string, array<string, mixed>> Fixes to apply keyed by object collection class name
      */
@@ -303,8 +303,8 @@ trait ItemCollectionFixer
     /**
      * Compare IdeaCollection with ObjectCollection and prepare fixes.
      *
-     * @param array{class: string, file: string, reflection: ReflectionClass, object_collection_class: string} $ideaCollectionInfo IdeaCollection info
-     * @param array{class: string, file: string, reflection: ReflectionClass, object_collection_class: string} $objectCollectionInfo ObjectCollection info
+     * @param array $ideaCollectionInfo IdeaCollection info
+     * @param array $objectCollectionInfo ObjectCollection info
      * @return array<string, mixed> Fixes to apply (e.g. update_objectToIdea, update_imports)
      */
     private function compareIdeaCollectionWithObjectCollection(array $ideaCollectionInfo, array $objectCollectionInfo): array
@@ -422,8 +422,8 @@ trait ItemCollectionFixer
      * Apply fixes to IdeaCollection files.
      *
      * @param array<string, array<string, mixed>> $fixes Fixes to apply keyed by object collection class name
-     * @param array<string, array{class: string, file: string, reflection: ReflectionClass, object_collection_class: string}> $ideaCollections Loaded IdeaCollection files info
-     * @param array<string, array{class: string, file: string, reflection: ReflectionClass, object_collection_class: string}> $objectCollections Loaded ObjectCollection files info
+     * @param array<string, array> $ideaCollections Loaded IdeaCollection files info
+     * @param array<string, array> $objectCollections Loaded ObjectCollection files info
      * @return int Number of files updated
      */
     protected function applyIdeaCollectionFixes(array $fixes, array $ideaCollections, array $objectCollections): int
@@ -571,7 +571,7 @@ trait ItemCollectionFixer
      * Parse IdeaCollection file to extract current structure (object_class, idea_class, imports).
      *
      * @param string $filePath IdeaCollection file path
-     * @return ?array{object_class: ?string, idea_class: ?string, imports: array<string, string>} Parsed structure or null if failed
+     * @return ?array Parsed structure or null if failed
      */
     protected function parseIdeaCollectionFile(string $filePath): ?array
     {
@@ -850,9 +850,9 @@ trait ItemCollectionFixer
     /**
      * Find IdeaCollection files to delete when corresponding ObjectCollection class does not exist.
      *
-     * @param array<string, array{class: string, file: string, reflection: ReflectionClass, object_collection_class: string}> $objectCollections Loaded ObjectCollection classes keyed by class name
-     * @param array<string, array{class: string, file: string, reflection: ReflectionClass, object_collection_class: string}> $ideaCollections Loaded IdeaCollection files keyed by object collection class name
-     * @return array<string, array{class: string, file: string, reflection: ReflectionClass, object_collection_class: string}> IdeaCollection files to delete keyed by object collection class name
+     * @param array<string, array> $objectCollections Loaded ObjectCollection classes keyed by class name
+     * @param array<string, array> $ideaCollections Loaded IdeaCollection files keyed by object collection class name
+     * @return array<string, array> IdeaCollection files to delete keyed by object collection class name
      */
     protected function findIdeaCollectionsToDelete(array $objectCollections, array $ideaCollections): array
     {

@@ -13,7 +13,7 @@ use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\HilosException;
 
 /**
- * Item-level actions for a single bot (table layer).
+ * BotItemActions - Item-level actions for a single bot (table layer).
  *
  * Delegates to db layer (BotActions) for actual updates and deletes.
  */

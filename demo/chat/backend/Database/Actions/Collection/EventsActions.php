@@ -13,7 +13,7 @@ use Hilos\HilosException;
 use Hilos\Utils\Helpers\TimeHelper;
 
 /**
- * Events Actions - write operations for Events collection.
+ * EventsActions - write operations for Events collection.
  *
  * @extends DbActions<DbEvent, ObjectEvents>
  * @property-read DbCollectionEvents $collection

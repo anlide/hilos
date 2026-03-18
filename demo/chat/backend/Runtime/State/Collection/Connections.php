@@ -8,7 +8,7 @@ use Demo\Chat\Runtime\State\Item\Connection;
 use Hilos\Runtime\State\Collection\RtStates;
 
 /**
- * Connections state collection - stores all active WebSocket connections.
+ * Connections - Stores all active WebSocket connections.
  *
  * This is the single source of truth for connection data.
  * RtCollection wrappers provide read-only access.

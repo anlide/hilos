@@ -8,7 +8,7 @@ use Hilos\Constants\WorkerConstants;
 use Hilos\Socket\Worker\WorkerDTO;
 
 /**
- * DB sync deleted message from daemon to worker.
+ * WorkerDbSyncDeletedMessageDTO - DB sync deleted message from daemon to worker.
  */
 class WorkerDbSyncDeletedMessageDTO extends WorkerDTO
 {

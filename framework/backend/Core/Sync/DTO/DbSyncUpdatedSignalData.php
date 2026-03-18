@@ -8,7 +8,7 @@ use Hilos\BaseDTO;
 use Hilos\Core\Router\SignalDataInterface;
 
 /**
- * DB sync signal data for updated row.
+ * DbSyncUpdatedSignalData - DB sync signal data for updated row.
  *
  * Only changed columns.
  */

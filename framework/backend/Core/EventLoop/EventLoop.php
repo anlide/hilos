@@ -33,7 +33,7 @@ class EventLoop
     }
 
     /**
-     * Register socket for read events
+     * Register socket for read events.
      *
      * @param resource|object $socket Socket resource or Socket object
      * @param callable $callback Callback function(resource $socket, int $flags)
@@ -72,7 +72,7 @@ class EventLoop
     }
 
     /**
-     * Register socket for write events
+     * Register socket for write events.
      *
      * @param resource|object $socket Socket resource or Socket object
      * @param callable $callback Callback function(resource $socket, int $flags)
@@ -106,7 +106,7 @@ class EventLoop
     }
 
     /**
-     * Unregister socket events
+     * Unregister socket events.
      *
      * @param resource|object $socket Socket resource or Socket object
      */
@@ -136,7 +136,7 @@ class EventLoop
     }
 
     /**
-     * Run event loop iteration (non-blocking)
+     * Run event loop iteration (non-blocking).
      *
      * Processes all ready events and returns immediately.
      */
@@ -149,7 +149,7 @@ class EventLoop
     }
 
     /**
-     * Get number of active events
+     * Get number of active events.
      *
      * @return int Active events count
      */

@@ -8,7 +8,7 @@ use Hilos\Database\Entity\Collection\EntityCollection;
 use Iterator;
 
 /**
- * Users entity collection.
+ * Users - Entity collection for users.
  *
  * @extends EntityCollection<EntityUser>
  * @implements Iterator<int|string, EntityUser>

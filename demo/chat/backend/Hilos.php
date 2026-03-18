@@ -13,7 +13,7 @@ use Hilos\Runtime\Exception\Rt\StateCollectionNotFoundException;
 use Hilos\Runtime\View\Context\RtContext;
 
 /**
- * Main app facade for data access.
+ * Hilos - Main app facade for data access.
  *
  * Usage:
  * - Hilos::$db->users

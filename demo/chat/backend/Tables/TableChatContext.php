@@ -11,7 +11,7 @@ use Demo\Chat\Tables\User\UsersTable;
 use Hilos\Core\Table\Context\TableContext;
 
 /**
- * App-specific table context ($table layer).
+ * TableChatContext - App-specific table context ($table layer).
  *
  * Registers users, bots, moderator prompt pieces, and settings tables.
  * Accessed via Hilos::$table->users, Hilos::$table->bots, etc.

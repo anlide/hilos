@@ -9,7 +9,7 @@ use Hilos\Database\Exception\View\Item\PropertyNotFoundException;
 use Hilos\Database\View\Item\DbItem;
 
 /**
- * Bot Db item - high-level abstraction with lazy loading and relationships.
+ * Bot - Db item with high-level abstraction and lazy loading.
  *
  * @extends DbItem<ObjectBot>
  * @method __construct(ObjectBot &$objectBot)

@@ -12,7 +12,9 @@ use Hilos\Socket\Client\AbstractClient;
 use Hilos\Socket\Client\Interface\HttpClientInterface;
 
 /**
- * HTTP client that serves prerendered HTML from HtmlCache based on path and Accept-Language.
+ * FrontendHtmlClient - HTTP client that serves prerendered HTML from HtmlCache.
+ *
+ * Serves prerendered HTML based on path and Accept-Language content negotiation.
  */
 final class FrontendHtmlClient extends AbstractClient implements HttpClientInterface
 {
@@ -42,7 +44,7 @@ final class FrontendHtmlClient extends AbstractClient implements HttpClientInter
     }
 
     /**
-     * Process incoming HTTP request and write prerendered HTML response.
+     * Processes incoming HTTP request and writes prerendered HTML response.
      *
      * Parses request, resolves path via HtmlResolver, gets HTML from cache,
      * builds response with status and headers.

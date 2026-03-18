@@ -10,7 +10,7 @@ use Hilos\Database\Exception\View\Item\PropertyNotFoundException;
 use Hilos\Database\View\Item\DbItem;
 
 /**
- * Event Db item - high-level abstraction with lazy loading and relationships.
+ * Event - Db item with high-level abstraction and lazy loading.
  *
  * @extends DbItem<ObjectEvent>
  * @method __construct(ObjectEvent &$objectEvent)

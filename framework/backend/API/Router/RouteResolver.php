@@ -45,7 +45,7 @@ class RouteResolver
      * @param mixed $result Handler result (array, string, or other)
      * @return array<string, mixed> Response with status, headers, body keys
      */
-    private function formatResponse($result): array
+    private function formatResponse(mixed $result): array
     {
         // If result is already formatted response
         if (is_array($result) && isset($result[HttpConstants::RESPONSE_KEY_STATUS])) {

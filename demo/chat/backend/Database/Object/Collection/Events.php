@@ -8,7 +8,7 @@ use Demo\Chat\Database\Object\Item\Event as ObjectEvent;
 use Hilos\Database\Object\Objects;
 
 /**
- * Chat events object collection.
+ * Events - Object collection for chat events.
  *
  * @extends Objects<ObjectEvent>
  * @method ObjectEvent|null current()

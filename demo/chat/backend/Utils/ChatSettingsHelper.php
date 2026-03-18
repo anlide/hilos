@@ -21,6 +21,8 @@ final class ChatSettingsHelper
 {
     /**
      * Bot LLM model name.
+     *
+     * @return string Model name
      */
     public static function getBotModel(): string
     {
@@ -29,6 +31,8 @@ final class ChatSettingsHelper
 
     /**
      * Bot LLM API URL (empty = use LLM_LOCAL_URL).
+     *
+     * @return string API URL
      */
     public static function getBotUrl(): string
     {
@@ -49,6 +53,8 @@ final class ChatSettingsHelper
 
     /**
      * Whether bot uses external LLM provider.
+     *
+     * @return bool True if external
      */
     public static function getBotProviderIsExternal(): bool
     {
@@ -57,6 +63,8 @@ final class ChatSettingsHelper
 
     /**
      * Bot request timeout in seconds.
+     *
+     * @return float Timeout in seconds
      */
     public static function getBotTimeoutSec(): float
     {
@@ -69,6 +77,8 @@ final class ChatSettingsHelper
 
     /**
      * Bot output language (ISO 639-1: ru, en).
+     *
+     * @return string Language code
      */
     public static function getBotLanguage(): string
     {
@@ -77,6 +87,8 @@ final class ChatSettingsHelper
 
     /**
      * Moderation LLM model name.
+     *
+     * @return string Model name
      */
     public static function getModerationModel(): string
     {
@@ -85,6 +97,8 @@ final class ChatSettingsHelper
 
     /**
      * Moderation API URL (empty = use LLM_LOCAL_URL).
+     *
+     * @return string API URL
      */
     public static function getModerationUrl(): string
     {
@@ -97,6 +111,8 @@ final class ChatSettingsHelper
 
     /**
      * Moderation provider: local | external.
+     *
+     * @return string Provider name
      */
     public static function getModerationProvider(): string
     {
@@ -105,6 +121,8 @@ final class ChatSettingsHelper
 
     /**
      * Whether moderation uses external LLM provider.
+     *
+     * @return bool True if external
      */
     public static function isModerationProviderExternal(): bool
     {
@@ -113,6 +131,8 @@ final class ChatSettingsHelper
 
     /**
      * Alias for isModerationProviderExternal (for ModeratorAgent).
+     *
+     * @return bool True if external
      */
     public static function getModerationProviderIsExternal(): bool
     {
@@ -121,6 +141,8 @@ final class ChatSettingsHelper
 
     /**
      * Moderation request timeout in seconds.
+     *
+     * @return float Timeout in seconds
      */
     public static function getModerationTimeoutSec(): float
     {
@@ -133,6 +155,8 @@ final class ChatSettingsHelper
 
     /**
      * Enable moderation for user messages.
+     *
+     * @return bool True if enabled
      */
     public static function getModerationUsers(): bool
     {
@@ -145,6 +169,8 @@ final class ChatSettingsHelper
 
     /**
      * Enable moderation for bot messages.
+     *
+     * @return bool True if enabled
      */
     public static function getModerationBots(): bool
     {
@@ -157,6 +183,9 @@ final class ChatSettingsHelper
 
     /**
      * Get string value from settings. Returns empty string when not found.
+     *
+     * @param string $key Setting key
+     * @return string Value or empty string
      */
     private static function getString(string $key): string
     {

@@ -15,18 +15,29 @@ use Hilos\Database\Settings\SettingsCatalogConstants;
 use Hilos\Database\View\Item\Setting as ViewSetting;
 
 /**
- * Settings table data source: merges catalog (PHP config) with DB rows.
+ * SettingsTableDataSource - Merges catalog (PHP config) with DB rows.
  *
  * For each catalog key: uses DB row if exists, else placeholder (id=null, default value).
  * Appends orphan rows (DB keys not in catalog).
  */
 final class SettingsTableDataSource implements TableDataSourceInterface
 {
+    /**
+     * Get table type (Entity).
+     *
+     * @return TableType Entity type
+     */
     public function getType(): TableType
     {
         return TableType::Entity;
     }
 
+    /**
+     * Query settings (catalog + DB merge with placeholders and orphans).
+     *
+     * @param TableQueryDTO $query Table query (sort, limit, etc.)
+     * @return TableResultDTO Filtered result
+     */
     public function query(TableQueryDTO $query): TableResultDTO
     {
         $catalog = SettingsCatalog::getCatalog();
@@ -83,6 +94,13 @@ final class SettingsTableDataSource implements TableDataSourceInterface
         ];
     }
 
+    /**
+     * Serialize default value to string by type.
+     *
+     * @param mixed $value Default value
+     * @param string $type Type (integer, boolean, string)
+     * @return ?string Serialized value or null
+     */
     private function serializeDefault(mixed $value, string $type): ?string
     {
         return match ($type) {
@@ -93,9 +111,12 @@ final class SettingsTableDataSource implements TableDataSourceInterface
     }
 
     /**
-     * @return array<string, mixed>
+     * Convert setting view item to row.
+     *
+     * @param ViewSetting $setting Setting view item
+     * @return array<string, mixed> Row data
      */
-    private function settingToRow(\Hilos\Database\View\Item\Setting $setting): array
+    private function settingToRow(ViewSetting $setting): array
     {
         return [
             'id' => $setting->id,

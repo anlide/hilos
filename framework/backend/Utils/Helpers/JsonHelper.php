@@ -40,7 +40,7 @@ class JsonHelper
      * Try to decode JSON payload into associative array.
      *
      * @param string $payload Raw JSON string
-     * @return ?array<string,mixed> Decoded payload or null if invalid JSON
+     * @return ?array<string, mixed> Decoded payload or null if invalid JSON
      */
     public static function tryDecode(string $payload): ?array
     {

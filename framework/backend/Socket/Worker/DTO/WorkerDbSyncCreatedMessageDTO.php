@@ -8,7 +8,7 @@ use Hilos\Constants\WorkerConstants;
 use Hilos\Socket\Worker\WorkerDTO;
 
 /**
- * DB sync created message from daemon to worker.
+ * WorkerDbSyncCreatedMessageDTO - DB sync created message from daemon to worker.
  */
 class WorkerDbSyncCreatedMessageDTO extends WorkerDTO
 {

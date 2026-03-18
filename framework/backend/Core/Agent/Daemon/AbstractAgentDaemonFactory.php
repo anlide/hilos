@@ -14,7 +14,7 @@ use Hilos\Core\Agent\Exception\AgentDaemonCreationFailedException;
 abstract class AbstractAgentDaemonFactory
 {
     /**
-     * Create agent daemon instance based on type and index
+     * Create agent daemon instance based on type and index.
      *
      * Factory method for creating agent daemon proxies. Must be implemented by child classes.
      * Should throw AgentDaemonCreationFailedException if agent type is not supported.

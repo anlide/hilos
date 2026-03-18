@@ -42,7 +42,7 @@ abstract class BaseDTO
      *
      * @param string $json JSON string
      * @return static DTO instance
-     * @throws HilosException On invalid JSON
+     * @throws HilosException If JSON string is invalid or cannot be decoded
      */
     public static function fromJson(string $json): static
     {

@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Demo\Chat\Core\Frontend;
 
 /**
- * Resolves request path and Accept-Language to HTML file path and HTTP status.
+ * HtmlResolver - Resolves request path and Accept-Language to HTML file path and HTTP status.
  */
 class HtmlResolver
 {

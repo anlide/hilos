@@ -247,8 +247,8 @@ HELP;
      *
      * Reads table, columns, types, indexes and foreign keys from Entity metadata.
      *
-     * @param ReflectionClass<Entity> $reflection Entity class reflection
-     * @return ?array<string, mixed> Entity info (table, columns, types, etc.) or null
+     * @param ReflectionClass $reflection Entity class reflection (must extend Entity)
+     * @return array<string, mixed>|null Entity info (table, columns, types, etc.) or null
      */
     private function extractEntityInfo(ReflectionClass $reflection): ?array
     {
@@ -291,7 +291,7 @@ HELP;
      * @param array<string, array<string, mixed>> $entities Loaded entity definitions
      * @param array<string, TableInfo> $dbTables Database tables from schema
      * @param ?string $tableFilter Optional table name to restrict comparison
-     * @return array{tables_missing_in_entity: list<string>, tables_missing_in_db: list<string>, table_diffs: array<string, array>} Diff result
+     * @return array<string, mixed> Diff result with keys: tables_missing_in_entity, tables_missing_in_db, table_diffs
      */
     private function compareEntitiesWithDatabase(array $entities, array $dbTables, ?string $tableFilter): array
     {

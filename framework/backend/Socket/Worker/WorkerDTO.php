@@ -47,7 +47,7 @@ abstract class WorkerDTO extends BaseDTO
      *
      * @param string $json JSON string
      * @return WorkerDTO Worker DTO instance
-     * @throws \InvalidArgumentException If JSON is invalid or message type is unknown
+     * @throws InvalidArgumentException If JSON is invalid or message type is unknown
      */
     public static function factoryWorkerDTO(string $json): WorkerDTO
     {

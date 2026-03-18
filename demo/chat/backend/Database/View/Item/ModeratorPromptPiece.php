@@ -8,7 +8,7 @@ use Hilos\Database\Exception\View\Item\PropertyNotFoundException;
 use Hilos\Database\View\Item\DbItem;
 
 /**
- * ModeratorPromptPiece Db item - high-level abstraction with lazy loading and relationships.
+ * ModeratorPromptPiece - Db item with high-level abstraction and lazy loading.
  *
  * @extends DbItem<ObjectModeratorPromptPiece>
  * @method __construct(ObjectModeratorPromptPiece &$objectModeratorPromptPiece)

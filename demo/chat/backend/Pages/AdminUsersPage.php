@@ -25,7 +25,7 @@ use Hilos\Core\Table\Exception\TableActionException;
 use Hilos\HilosException;
 
 /**
- * AdminUsersPage — Admin users table page handler.
+ * AdminUsersPage - Admin users table page handler.
  *
  * Handles initial data load on subscribe, user_update actions,
  * and the universal table_refresh action (routed here for all tables).

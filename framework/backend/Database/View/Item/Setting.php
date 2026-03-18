@@ -21,6 +21,13 @@ use Hilos\Database\Exception\View\Item\PropertyNotFoundException;
  */
 final class Setting extends DbItem
 {
+    /**
+     * Magic getter for entity properties.
+     *
+     * @param string $name Property name (id, key, type, value)
+     * @return mixed Property value (id, key, type, or value)
+     * @throws PropertyNotFoundException If property does not exist
+     */
     public function __get(string $name): mixed
     {
         return match ($name) {
@@ -36,6 +43,7 @@ final class Setting extends DbItem
      * Check if this setting is orphan (key exists in DB but not in catalog).
      *
      * @param array<string, array<string, mixed>> $catalog Catalog: key => [type, default_value]
+     * @return bool True if key is not in catalog
      */
     public function isOrphan(array $catalog): bool
     {
@@ -46,6 +54,7 @@ final class Setting extends DbItem
      * Get effective value (DB value or default from catalog when value is null).
      *
      * @param array<string, array<string, mixed>> $catalog Catalog: key => [type, default_value]
+     * @return mixed Effective value or default from catalog
      */
     public function getEffectiveValue(array $catalog): mixed
     {

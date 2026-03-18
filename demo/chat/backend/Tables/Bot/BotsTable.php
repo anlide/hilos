@@ -12,7 +12,7 @@ use Hilos\Core\Table\DataSource\TableDataSourceInterface;
 use Hilos\Core\Table\Definition\TableDefinition;
 
 /**
- * Bots table definition with create / update / delete actions.
+ * BotsTable - Table definition with create/update/delete actions.
  *
  * @property-read BotsTableActions $actions
  */

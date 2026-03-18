@@ -8,7 +8,7 @@ use Demo\Chat\Runtime\State\Item\ChatContext;
 use Hilos\Runtime\State\Collection\RtStates;
 
 /**
- * ChatContexts state collection - singleton chat context for bot context analysis.
+ * ChatContexts - Singleton chat context collection for bot context analysis.
  *
  * @extends RtStates<ChatContext>
  */

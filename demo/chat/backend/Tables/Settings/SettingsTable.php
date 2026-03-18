@@ -12,9 +12,9 @@ use Hilos\Core\Table\DataSource\TableDataSourceInterface;
 use Hilos\Core\Table\Definition\TableDefinition;
 
 /**
- * Settings table definition.
+ * SettingsTable - Table definition merging catalog (PHP config) and DB.
  *
- * Merge of catalog (PHP config) and DB. Operations: change setting, delete orphan (via item actions).
+ * Operations: change setting, delete orphan (via item actions).
  * Collection-level add via SettingsTableActions.
  */
 final class SettingsTable extends TableDefinition

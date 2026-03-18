@@ -17,10 +17,10 @@ use Iterator;
  */
 class ObjectCollection implements ArrayAccess, Countable, Iterator
 {
-    /** @var array<int|string, Object_> */
+    /** @var array<int|string, Object_> Objects keyed by int or string */
     private array $objects = [];
 
-    /** @var array<int|string> */
+    /** @var array<int|string> Keys in iteration order */
     private array $keys = [];
 
     /** @var int Current iterator position */
@@ -213,7 +213,7 @@ class ObjectCollection implements ArrayAccess, Countable, Iterator
      *
      * @param mixed $offset Offset (null = append)
      * @param mixed $value Object_ instance
-     * @throws \InvalidArgumentException If value is not Object_
+     * @throws InvalidArgumentException If value is not Object_
      */
     public function offsetSet(mixed $offset, mixed $value): void
     {

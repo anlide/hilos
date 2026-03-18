@@ -21,7 +21,7 @@ final class SettingsCatalog
     /**
      * Returns settings catalog for this project.
      *
-     * @return array<string, array{type: string, default_value: mixed}>
+     * @return array<string, array<string, mixed>>
      */
     public static function getCatalog(): array
     {

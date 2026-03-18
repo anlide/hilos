@@ -198,7 +198,7 @@ class AsyncHttpClient
      *
      * Clears the result flag after retrieval.
      *
-     * @return array{success: bool, body: ?string} Result with success and body keys
+     * @return array<string, mixed> Result with success and body keys
      */
     public function getResult(): array
     {

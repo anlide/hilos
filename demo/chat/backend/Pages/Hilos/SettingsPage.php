@@ -20,6 +20,7 @@ use Hilos\Core\Router\DTO\EntitiesChangesDTO;
 use Hilos\Core\Table\DTO\TableActionErrorSignalData;
 use Hilos\Core\Table\DTO\TableMutationSignalData;
 use Hilos\Core\Table\Exception\TableActionException;
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\HilosException;
 
 /**
@@ -70,7 +71,7 @@ final class SettingsPage extends AbstractChatPage
                 $dto instanceof SettingDeleteActionDTO => $this->handleDelete($acceptKey, $dto),
                 default => throw new TableActionException("Unexpected action payload for settings page"),
             };
-        } catch (TableActionException | \InvalidArgumentException $e) {
+        } catch (TableActionException | InvalidArgumentException $e) {
             $this->getChatAgent()->sendToUser(
                 ChatSignalConstants::TABLE_ACTION_ERROR,
                 $acceptKey,

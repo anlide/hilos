@@ -15,7 +15,7 @@ use Hilos\HilosException;
 use Hilos\Utils\Helpers\TimeHelper;
 
 /**
- * Users Actions - write operations for Users collection.
+ * UsersActions - write operations for Users collection.
  *
  * @extends DbActions<User, ObjectUsers>
  * @property-read DbCollectionUsers $collection

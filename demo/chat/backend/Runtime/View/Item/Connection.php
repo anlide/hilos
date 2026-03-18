@@ -12,7 +12,7 @@ use Hilos\Runtime\Exception\Item\RtItemPropertyNotFoundException;
 use Hilos\Runtime\View\Item\RtItem;
 
 /**
- * Connection Rt item - read-only wrapper around Connection state.
+ * Connection - Read-only wrapper around Connection state.
  *
  * Provides high-level access to connection data.
  * Stores only reference to StateConnection for memory efficiency.

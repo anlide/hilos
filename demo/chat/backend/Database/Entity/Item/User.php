@@ -7,7 +7,7 @@ use Hilos\Database\Entity\Item\Entity;
 use Hilos\Database\PhpType;
 
 /**
- * User Entity - represents user table row.
+ * User - Entity representing user table row.
  *
  * Auto-generated from table: user.
  * Used by DbCollection and ObjectCollection for ORM layer.

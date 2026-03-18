@@ -237,7 +237,9 @@ class BotAgent extends AbstractAgent
     }
 
     /**
-     * Schedule next reaction based on bot delay settings.
+     * Schedules next reaction based on bot delay settings.
+     *
+     * Uses bot reactionDelayMin/Max and applies random delay when different.
      */
     private function scheduleReaction(): void
     {
@@ -355,7 +357,9 @@ class BotAgent extends AbstractAgent
     }
 
     /**
-     * Start async LLM generation for bot message.
+     * Starts async LLM generation for bot message.
+     *
+     * Builds messages from bot config and chat context, then calls chatClient->startGenerate.
      */
     private function startGenerate(): void
     {

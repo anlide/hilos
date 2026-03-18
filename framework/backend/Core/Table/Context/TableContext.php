@@ -16,7 +16,7 @@ use Hilos\Core\Table\Exception\TableNotFoundException;
  */
 abstract class TableContext
 {
-    /** @var array<string, TableDefinition> */
+    /** @var array<string, TableDefinition> Map of table name to definition */
     protected array $_tables = [];
 
     /**

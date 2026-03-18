@@ -12,7 +12,7 @@ use Hilos\Core\Table\Mutation\TableMutationEntry;
 use Hilos\Core\Table\Mutation\TableMutationType;
 
 /**
- * Item-level actions for a single setting.
+ * SettingItemActions - Item-level actions for a single setting (table layer).
  *
  * Operations: update, delete (orphans only).
  * Uses key as item identifier. Delegates to Hilos::$db->settings->findByKey($key)->actions.

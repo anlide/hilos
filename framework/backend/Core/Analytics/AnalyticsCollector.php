@@ -19,7 +19,10 @@ final class AnalyticsCollector
     private const int BUFFER_SIZE = 100;
     private const int FLUSH_INTERVAL_MS = 5000;
 
+    /** @var bool Whether collector is enabled */
     private bool $enabled = true;
+
+    /** @var int Timestamp of last buffer flush in milliseconds */
     private int $lastFlushTs;
 
     /** @var array<string, list<array<string, int|string|null>>> */
@@ -55,21 +58,25 @@ final class AnalyticsCollector
     /** @var array<string, int> */
     private array $payloadIds = [];
 
-    /** @var array<string, array{id: int, currentUserAgentId: ?int, currentAcceptLanguageId: ?int}> */
+    /** @var array<string, array<string, int|null>> Map of session token to browser session (id, currentUserAgentId, currentAcceptLanguageId) */
     private array $browserSessions = [];
 
-    /** @var array<string, array{id: int, browserSessionId: ?int, currentIpv4: ?int, currentIpv6Hex: ?string}> */
+    /** @var array<string, array<string, int|string|null>> Map of accept key to WS connection (id, browserSessionId, currentIpv4, currentIpv6Hex) */
     private array $wsConnections = [];
 
     /** @var array<string, int> */
     private array $pageSessions = [];
 
+    /** @var ?int Current worker session ID */
     private ?int $workerSessionId = null;
 
     /** @var array<string, int> */
     private array $agentSessions = [];
 
+    /** @var ?int Active API request ID for signal correlation */
     private ?int $activeApiRequestId = null;
+
+    /** @var ?int Active user action ID for signal correlation */
     private ?int $activeUserActionId = null;
 
     public function __construct()
@@ -811,7 +818,10 @@ final class AnalyticsCollector
     }
 
     /**
-     * @return ?array{id: int, currentUserAgentId: ?int, currentAcceptLanguageId: ?int}
+     * Load browser session by token.
+     *
+     * @param string $sessionToken Session token
+     * @return array<string, int|null>|null Associative array with id, currentUserAgentId, currentAcceptLanguageId or null
      */
     private function loadBrowserSession(string $sessionToken): ?array
     {
@@ -903,7 +913,10 @@ final class AnalyticsCollector
     }
 
     /**
-     * @return array{ipv4: ?int, ipv6Hex: ?string}
+     * Parse IP address to IPv4 or IPv6 components.
+     *
+     * @param string $ip IP address string
+     * @return array<string, int|string|null> Associative array with ipv4 (int|null) and ipv6Hex (string|null) keys
      */
     private function parseIp(string $ip): array
     {

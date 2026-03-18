@@ -24,7 +24,7 @@ use Hilos\Core\Table\Exception\TableActionException;
 use Hilos\HilosException;
 
 /**
- * AdminBotsPage — Admin bots table page handler.
+ * AdminBotsPage - Admin bots table page handler.
  *
  * Handles initial data load on subscribe and bot create/update/delete actions.
  */

@@ -30,13 +30,13 @@ class SignalDTO extends BaseDTO
      * @param SignalTypeInterface $signalType Signal type (frame, handshake, action, etc.)
      * @param SignalNameInterface $signalName Signal name
      * @param SignalDataInterface $data Signal payload data
+     * @param array<string, int|string> $meta Analytics correlation metadata
      */
     public function __construct(
         public readonly SignalSourceInterface $signalSource,
         public readonly SignalTypeInterface $signalType,
         public readonly SignalNameInterface $signalName,
         public readonly SignalDataInterface $data,
-        /** @var array<string, int|string> Analytics correlation metadata */
         public readonly array $meta = [],
     ) {
     }
@@ -79,7 +79,7 @@ class SignalDTO extends BaseDTO
      *
      * @param array<string, mixed> $data Source data (signalSource, signalType, signalName, data required)
      * @return static DTO instance
-     * @throws \InvalidArgumentException If required fields are missing or invalid
+     * @throws InvalidArgumentException If required fields are missing or invalid
      */
     public static function fromArray(array $data): static
     {

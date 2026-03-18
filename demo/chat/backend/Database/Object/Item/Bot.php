@@ -8,7 +8,7 @@ use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Item\Object_;
 
 /**
- * Bot object.
+ * Bot - Object wrapper for bot entity.
  *
  * Auto-generated from Entity: Demo\Chat\Database\Entity\Item\Bot
  *

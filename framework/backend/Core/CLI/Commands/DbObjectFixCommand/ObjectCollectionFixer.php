@@ -100,7 +100,7 @@ trait ObjectCollectionFixer
      * @param ?string $objectCollectionDir ObjectCollection files directory
      * @param int $syntaxErrors Reference to syntax error counter
      * @param array<string, string> $brokenFiles Reference to broken files (file path => error message)
-     * @return array<string, array{class: string, file: string, reflection: ReflectionClass, object_class: string}> Loaded ObjectCollection files info
+     * @return array<string, array> Loaded ObjectCollection files info
      */
     protected function loadObjectCollections(?string $objectCollectionDir, int &$syntaxErrors = 0, array &$brokenFiles = []): array
     {
@@ -294,8 +294,8 @@ trait ObjectCollectionFixer
     /**
      * Prepare fixes for ObjectCollection files.
      *
-     * @param array<string, array{class: string, file: string, reflection: ReflectionClass, object_class: string}> $objects Loaded Object classes info.
-     * @param array<string, array{class: string, file: string, reflection: ReflectionClass, object_class: string}> $objectCollections Loaded ObjectCollection files info.
+     * @param array<string, array> $objects Loaded Object classes info.
+     * @param array<string, array> $objectCollections Loaded ObjectCollection files info.
      * @param ?string $tableFilter Table name filter (null = all tables).
      * @return array<string, array<string, mixed>> Fixes to apply keyed by object class name.
      */
@@ -395,8 +395,8 @@ trait ObjectCollectionFixer
     /**
      * Compare ObjectCollection with Object and prepare fixes.
      *
-     * @param array{class: string, file: string, reflection: ReflectionClass, object_class: string} $objectCollectionInfo ObjectCollection info.
-     * @param array{class: string, file: string, reflection: ReflectionClass, object_class: string} $objectInfo Object info.
+     * @param array $objectCollectionInfo ObjectCollection info.
+     * @param array $objectInfo Object info.
      * @return array<string, mixed> Fixes to apply.
      */
     private function compareObjectCollectionWithObject(array $objectCollectionInfo, array $objectInfo): array
@@ -477,9 +477,8 @@ trait ObjectCollectionFixer
      * Parse ObjectCollection file to extract current structure.
      *
      * @param string $filePath ObjectCollection file path
-     * @param ?class-string<Object_> $expectedObjectClass Expected Object class name (optional)
-     * @return array{object_class: string|null, object_alias: string|null, methods: array<string, array<string, mixed>>}|null
-     *         Parsed structure or null if failed
+     * @param ?class-string $expectedObjectClass Expected Object class name (optional)
+     * @return ?array Parsed structure or null if failed
      */
     protected function parseObjectCollectionFile(string $filePath, ?string $expectedObjectClass = null): ?array
     {
@@ -567,8 +566,8 @@ trait ObjectCollectionFixer
      * Apply fixes to ObjectCollection files.
      *
      * @param array<string, array<string, mixed>> $fixes Fixes to apply keyed by object class name.
-     * @param array<string, array{class: string, file: string, reflection: ReflectionClass, object_class: string}> $objectCollections Loaded ObjectCollection files info.
-     * @param array<string, array{class: string, file: string, reflection: ReflectionClass, object_class: string}> $objects Loaded Object files info.
+     * @param array<string, array> $objectCollections Loaded ObjectCollection files info.
+     * @param array<string, array> $objects Loaded Object files info.
      * @return int Number of files updated.
      */
     protected function applyObjectCollectionFixes(array $fixes, array $objectCollections, array $objects): int
@@ -603,7 +602,7 @@ trait ObjectCollectionFixer
      *
      * @param string $objectCollectionFile ObjectCollection file path.
      * @param array<string, mixed> $fixes Fixes to apply.
-     * @param array{class: string, file: string, reflection: ReflectionClass, object_class: string} $objectInfo Object info.
+     * @param array $objectInfo Object info.
      * @return bool True if fixes were applied successfully.
      */
     private function applyObjectCollectionFileFixes(string $objectCollectionFile, array $fixes, array $objectInfo): bool
@@ -986,7 +985,7 @@ trait ObjectCollectionFixer
      * @param array $objectCollections Loaded ObjectCollection files
      * @param ?string $tableFilter Table name filter
      * @param array $brokenObjects Broken Object files
-     * @return array<string, array{object_class: string, reflection: ReflectionClass}> ObjectCollections to create
+     * @return array<string, array> ObjectCollections to create
      */
     protected function findObjectCollectionsToCreate(array $objects, array $objectCollections, ?string $tableFilter, array $brokenObjects): array
     {
@@ -1061,7 +1060,7 @@ trait ObjectCollectionFixer
      * @param array $objectsAfter Loaded Object classes after creation (includes new ones)
      * @param array $objectCollections Loaded ObjectCollection files
      * @param array $brokenObjects Broken Object files
-     * @return array<string, array{object_class: string, reflection: ReflectionClass}> ObjectCollections to create
+     * @return array<string, array> ObjectCollections to create
      */
     protected function findObjectCollectionsToCreateForNewObjects(array $objectsToCreate, array $objectsAfter, array $objectCollections, array $brokenObjects): array
     {
@@ -1145,11 +1144,11 @@ trait ObjectCollectionFixer
      * Find ObjectCollection files to create for new objects (estimate phase)
      * Uses entity info to predict object class names
      *
-     * @param array<string, array{class: string}> $objectsToCreate Array of tableName => entityInfo for newly created objects
-     * @param array<string, array{class: string, file: string, reflection?: ReflectionClass}> $objects Loaded Object classes
-     * @param array<string, array{class: string, file: string, reflection: ReflectionClass, object_class: string}> $objectCollections Loaded ObjectCollection files
+     * @param array<string, array> $objectsToCreate Array of tableName => entityInfo for newly created objects
+     * @param array<string, array> $objects Loaded Object classes
+     * @param array<string, array> $objectCollections Loaded ObjectCollection files
      * @param array<string, string> $brokenObjects Broken Object files (file path => error message)
-     * @return array<string, array{object_class: string, reflection: ReflectionClass|null}> ObjectCollections to create
+     * @return array<string, array> ObjectCollections to create
      */
     protected function findObjectCollectionsToCreateForNewObjectsEstimate(array $objectsToCreate, array $objects, array $objectCollections, array $brokenObjects): array
     {

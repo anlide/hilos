@@ -13,7 +13,7 @@ use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\HilosException;
 
 /**
- * Item-level actions for a single moderator prompt piece (table layer).
+ * ModeratorPromptPieceItemActions - Item-level actions for a single moderator prompt piece (table layer).
  *
  * Delegates to db layer (ModeratorPromptPieceActions) for actual updates and deletes.
  */

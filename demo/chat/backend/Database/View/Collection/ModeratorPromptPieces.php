@@ -8,7 +8,7 @@ use Demo\Chat\Database\View\Item\ModeratorPromptPiece;
 use Hilos\Database\View\Collection\DbCollection;
 
 /**
- * ModeratorPromptPieces Db collection - collection of ModeratorPromptPiece items.
+ * ModeratorPromptPieces - Db collection of ModeratorPromptPiece items.
  *
  * @extends DbCollection<ModeratorPromptPiece, ObjectModeratorPromptPiecesCollection>
  * @method ObjectModeratorPromptPiecesCollection|null getObjectCollection()

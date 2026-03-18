@@ -21,7 +21,7 @@ use Hilos\Core\Table\Exception\TableActionException;
 use Hilos\HilosException;
 
 /**
- * AdminModeratorPage — Admin moderator prompt pieces page handler.
+ * AdminModeratorPage - Admin moderator prompt pieces page handler.
  *
  * Handles initial data load on subscribe and piece create/update/delete actions.
  */

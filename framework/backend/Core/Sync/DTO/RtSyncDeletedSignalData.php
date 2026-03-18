@@ -8,7 +8,8 @@ use Hilos\BaseDTO;
 use Hilos\Core\Router\SignalDataInterface;
 
 /**
- * RT sync signal data for deleted state.
+ * RtSyncDeletedSignalData - RT sync signal data for deleted state.
+ *
  * Only state ID.
  */
 class RtSyncDeletedSignalData extends BaseDTO implements SignalDataInterface

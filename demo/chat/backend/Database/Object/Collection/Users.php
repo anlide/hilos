@@ -10,7 +10,7 @@ use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Objects;
 
 /**
- * Chat users object collection.
+ * Users - Object collection for chat users.
  *
  * @extends Objects<ObjectUser>
  * @method ObjectUser|null current()

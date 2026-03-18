@@ -11,7 +11,7 @@ use Hilos\Database\SqlParam;
 use Hilos\Database\SqlParamCollection;
 
 /**
- * Base Entity class — represents a row in a database table.
+ * Base Entity class for representing a row in a database table.
  *
  * Child classes must define:
  * - const string _table — table name
@@ -56,7 +56,7 @@ abstract class Entity
     }
 
     /**
-     * Creates entity instance.
+     * Creates entity instance (child classes use this for initialization).
      */
     public function __construct()
     {
@@ -261,8 +261,7 @@ abstract class Entity
      *
      * @param array<string, mixed>|string $filters Column => value pairs or raw WHERE clause
      * @param array<int, mixed>|string $filtersParam Bound parameters for raw WHERE clause
-     *
-     * @return array{string, SqlParamCollection} [whereClause, params]
+     * @return array Tuple of [whereClause, params]
      */
     private static function buildWhere(array|string $filters = [], array|string $filtersParam = []): array
     {
@@ -294,7 +293,6 @@ abstract class Entity
      * Builds ORDER BY clause from orderBy specification.
      *
      * @param array<string, string>|string $orderBy Column => direction pairs or raw ORDER BY clause
-     *
      * @return string ORDER BY clause (with leading space) or empty string
      */
     private static function buildOrderBy(array|string $orderBy = []): string

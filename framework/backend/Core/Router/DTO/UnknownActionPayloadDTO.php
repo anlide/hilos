@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Core\Router\DTO;
 
 /**
- * UnknownActionPayloadDTO - DTO for unrecognized actions
+ * UnknownActionPayloadDTO - DTO for unrecognized actions.
  *
  * Used as fallback when action is not recognized by factory.
  * Preserves raw data for debugging/logging.

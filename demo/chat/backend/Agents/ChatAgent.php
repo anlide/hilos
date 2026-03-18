@@ -351,7 +351,7 @@ class ChatAgent extends AbstractAgent
      * Private data - only the user's own connections receive this.
      *
      * @param int $userId User ID
-     * @param string|null $moderationState Current moderation state (message text or null when cleared)
+     * @param ?string $moderationState Current moderation state (message text or null when cleared)
      */
     public function sendModerationStateToUserConnections(int $userId, ?string $moderationState): void
     {

@@ -9,7 +9,7 @@ use Hilos\Database\DatabaseException;
 use Hilos\Database\View\Collection\DbCollection;
 
 /**
- * Users Db collection - collection of User items with additional filtering methods.
+ * Users - Db collection of User items with additional filtering methods.
  *
  * @extends DbCollection<User, ObjectUsers>
  * @method ObjectUsers|null getObjectCollection()

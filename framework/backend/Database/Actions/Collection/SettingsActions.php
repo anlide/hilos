@@ -54,6 +54,13 @@ final class SettingsActions extends DbActions
         return $this->createDbItemFromObject($setting);
     }
 
+    /**
+     * Serializes value to string by type.
+     *
+     * @param mixed $value Value to serialize
+     * @param string $type Type from catalog (string, integer, boolean)
+     * @return ?string Serialized string or null
+     */
     private function serializeValue(mixed $value, string $type): ?string
     {
         return match ($type) {

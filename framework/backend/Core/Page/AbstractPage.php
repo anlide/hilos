@@ -15,7 +15,7 @@ use Hilos\Core\Router\DTO\ActionPayloadDTO;
  */
 abstract class AbstractPage
 {
-    /** @var string Page name/identifier. Override in child classes. */
+    /** @var string Page name or identifier, override in child classes */
     public const string PAGE = '';
 
     /** @var PageAgentInterface Agent instance for page operations */

@@ -22,14 +22,14 @@ use Hilos\Database\View\Collection\DbCollection;
 class EntitiesChangesDTO extends BaseDTO
 {
     /**
-     * One collection per key.
+     * One collection per key
      *
      * @var array<string, DbCollection>
      */
     private readonly array $full;
 
     /**
-     * Collection keys for which full is a full replace (not merge). Empty = current append behavior.
+     * Collection keys for which full is a full replace (not merge). Empty = current append behavior
      *
      * @var list<string>
      */

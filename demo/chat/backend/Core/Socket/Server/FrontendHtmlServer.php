@@ -13,7 +13,9 @@ use Hilos\Socket\SocketException;
 use Hilos\Socket\SocketOperation;
 
 /**
- * HTTP server that serves prerendered frontend HTML with Accept-Language content negotiation.
+ * FrontendHtmlServer - HTTP server for prerendered frontend HTML.
+ *
+ * Serves HTML with Accept-Language content negotiation.
  * Separate from status server (port 8090).
  */
 final class FrontendHtmlServer extends AbstractServer
@@ -68,7 +70,9 @@ final class FrontendHtmlServer extends AbstractServer
     }
 
     /**
-     * Set forbidden status for admin routes.
+     * Called when server is started.
+     *
+     * Sets forbidden status (403) for admin routes.
      */
     protected function onStart(): void
     {
@@ -80,7 +84,9 @@ final class FrontendHtmlServer extends AbstractServer
     }
 
     /**
-     * Prepare server for graceful shutdown.
+     * Prepares server for graceful shutdown.
+     *
+     * Calls parent implementation.
      */
     public function prepareShutdown(): void
     {

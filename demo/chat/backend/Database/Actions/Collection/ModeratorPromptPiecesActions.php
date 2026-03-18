@@ -13,7 +13,7 @@ use Hilos\HilosException;
 use RuntimeException;
 
 /**
- * ModeratorPromptPieces Actions - write operations for ModeratorPromptPieces collection.
+ * ModeratorPromptPiecesActions - write operations for ModeratorPromptPieces collection.
  *
  * @extends DbActions<ModeratorPromptPiece, ObjectModeratorPromptPieces>
  * @property-read DbCollectionModeratorPromptPieces $collection

@@ -8,7 +8,7 @@ use Hilos\Runtime\Exception\State\RtStatePropertyNotFoundException;
 use Hilos\Runtime\State\Item\RtState;
 
 /**
- * Connection state - stores runtime data for a single WebSocket connection.
+ * Connection - Runtime data for a single WebSocket connection.
  *
  * Maps acceptKey to userId and additional connection metadata.
  * This is the single source of truth for connection data.

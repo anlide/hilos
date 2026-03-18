@@ -59,8 +59,7 @@ final class ChatWebSocketClient extends WebSocketClient
         array $cookies,
         string $clientIp,
         array $queryParams,
-    ): void
-    {
+    ): void {
         // No additional handshake handling needed for chat demo
     }
 }

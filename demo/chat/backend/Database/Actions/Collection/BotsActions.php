@@ -15,7 +15,7 @@ use Hilos\Database\Actions\Collection\DbActions;
 use Hilos\HilosException;
 
 /**
- * Bots Actions - write operations for Bots collection.
+ * BotsActions - write operations for Bots collection.
  *
  * @extends DbActions<Bot, ObjectBots>
  * @property-read DbCollectionBots $collection

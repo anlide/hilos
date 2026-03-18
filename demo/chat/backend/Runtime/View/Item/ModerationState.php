@@ -12,7 +12,7 @@ use Hilos\Runtime\Exception\Item\RtItemPropertyNotFoundException;
 use Hilos\Runtime\View\Item\RtItem;
 
 /**
- * ModerationState Rt item - read-only wrapper around moderation state.
+ * ModerationState - Read-only wrapper around moderation state.
  *
  * @extends RtItem<StateModerationState>
  *
