@@ -29,12 +29,6 @@ final class AgentType
     /** @var string Chat context analyzer agent type (monopolistic) */
     public const string CHAT_CONTEXT_ANALYZER = 'chat_context_analyzer';
 
-    /** @var string Guardian ops agent type (monopolistic) */
-    public const string GUARDIAN_OPS = 'guardian_ops';
-
-    /** @var string Chat situation guardian agent type (monopolistic) */
-    public const string CHAT_SITUATION_GUARDIAN = 'chat_situation_guardian';
-
     /** @var string Hilos index agent type (dashboard, settings, i18n) */
     public const string HILOS_INDEX = HilosAgentType::HILOS_INDEX;
 

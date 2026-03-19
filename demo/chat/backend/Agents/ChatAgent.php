@@ -15,7 +15,6 @@ use Demo\Chat\Core\Router\DTO\ModerationResultSignalData;
 use Demo\Chat\Database\DbChatContext;
 use Demo\Chat\Database\View\Collection\Events;
 use Demo\Chat\Database\View\Collection\Users;
-use Demo\Chat\Guardian\Signals\GuardianReportSignalData;
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\View\Context\RtChatContext;
 use Demo\Chat\Core\Router\DTO\ModerationStateUpdateSignalData;
@@ -244,13 +243,6 @@ class ChatAgent extends AbstractAgent
             case ChatSignalConstants::BOT_LEFT:
                 $this->sendToAllUsers($name, $data->data);
                 return;
-            case ChatSignalConstants::GUARDIAN_REPORT:
-                if ($payload instanceof GuardianReportSignalData) {
-                    $this->handleGuardianReport($payload);
-                } else {
-                    $this->logInvalidAgentPayload($name, $payload);
-                }
-                return;
             default:
                 $this->logInvalidAgentPayload($name, $payload);
         }
@@ -311,38 +303,6 @@ class ChatAgent extends AbstractAgent
         $this->sendToAllUsers(
             ChatSignalConstants::NEW_EVENT,
             new ChatEventSignalDTO(new EntitiesChangesDTO(full: [DbChatContext::events => Events::fromSingleItem($event)])),
-        );
-    }
-
-    /**
-     * Convert guardian report signal into a regular system event.
-     *
-     * @param GuardianReportSignalData $signal Guardian report signal from guardian agent
-     */
-    private function handleGuardianReport(GuardianReportSignalData $signal): void
-    {
-        $report = $signal->report;
-        $event = Hilos::$db->events->actions->add(
-            ChatEventType::GUARDIAN_REPORTED->value,
-            null,
-            null,
-            [
-                'guardian' => $report->guardian,
-                'category' => $report->category,
-                'severity' => $report->severity,
-                'title' => $report->title,
-                'message' => $report->message,
-                'details' => $report->details,
-            ]
-        );
-
-        $this->sendToAllUsers(
-            ChatSignalConstants::NEW_EVENT,
-            new ChatEventSignalDTO(
-                new EntitiesChangesDTO(
-                    full: [DbChatContext::events => Events::fromSingleItem($event)]
-                )
-            ),
         );
     }
 

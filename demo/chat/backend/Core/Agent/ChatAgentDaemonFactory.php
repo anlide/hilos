@@ -8,8 +8,6 @@ use Demo\Chat\Constants\AgentType;
 use Demo\Chat\Core\Agent\Daemon\BotAgentDaemon;
 use Demo\Chat\Core\Agent\Daemon\ChatAgentDaemon;
 use Demo\Chat\Core\Agent\Daemon\ChatContextAnalyzerAgentDaemon;
-use Demo\Chat\Core\Agent\Daemon\ChatSituationGuardianAgentDaemon;
-use Demo\Chat\Core\Agent\Daemon\GuardiansOpsAgentDaemon;
 use Demo\Chat\Core\Agent\Daemon\Hilos\DemoHilosAgentDaemon;
 use Demo\Chat\Core\Agent\Daemon\Hilos\DemoHilosAnalyticsAgentDaemon;
 use Demo\Chat\Core\Agent\Daemon\Hilos\DemoHilosGuardianAgentDaemon;
@@ -41,8 +39,6 @@ final class ChatAgentDaemonFactory extends HilosAgentDaemonFactory
         return match ($agentType) {
             AgentType::CHAT => new ChatAgentDaemon(),
             AgentType::CHAT_CONTEXT_ANALYZER => new ChatContextAnalyzerAgentDaemon(),
-            AgentType::GUARDIAN_OPS => new GuardiansOpsAgentDaemon(),
-            AgentType::CHAT_SITUATION_GUARDIAN => new ChatSituationGuardianAgentDaemon(),
             AgentType::BOT => new BotAgentDaemon(
                 $agentIndex ?? throw new AgentIndexRequiredException('BotAgentDaemon requires agentIndex (bot id)'),
             ),

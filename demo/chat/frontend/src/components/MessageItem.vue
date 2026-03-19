@@ -106,7 +106,6 @@ const getParticipantName = (userId: number | null): string => {
 }
 
 const BOT_ICON = '\u{1F916}' // Unicode robot face
-const GUARDIAN_ICON = '\u{1F6E1}'
 
 const getBotName = (botId: number | null | undefined): string => {
   if (botId == null) {
@@ -125,9 +124,6 @@ const getHeaderUserId = (): number | null => {
 }
 
 const getHeaderUserName = (): string => {
-  if (props.event.type === 'guardian_reported') {
-    return 'Guardian'
-  }
   if (props.event.botId != null) {
     return getBotName(props.event.botId)
   }
@@ -140,9 +136,6 @@ const getHeaderUserName = (): string => {
 }
 
 const getHeaderIcon = (): string => {
-  if (props.event.type === 'guardian_reported') {
-    return GUARDIAN_ICON
-  }
   if (props.event.botId != null) {
     return BOT_ICON
   }
@@ -181,12 +174,6 @@ const getServiceTitle = (): string => {
       return 'Chat stopped'
     case 'chat_cleared':
       return 'Chat history cleared'
-    case 'guardian_reported': {
-      const { data } = props.event
-      const title = typeof data.title === 'string' ? data.title : 'Guardian report'
-      const severity = typeof data.severity === 'string' ? data.severity : 'info'
-      return `${title} (${severity})`
-    }
     default:
       return `Event: ${props.event.type}`
   }
@@ -198,10 +185,6 @@ const getMessageText = (): string => {
     return (props.event.data.message as string) || ''
   }
 
-  if (props.event.type === 'guardian_reported') {
-    return (props.event.data.message as string) || ''
-  }
-  
   // For service messages, only show explicit message payloads
   if (props.event.data.message) {
     return props.event.data.message as string
@@ -253,8 +236,6 @@ const getServiceMessageClass = (): string => {
     case 'chat_stopped':
     case 'chat_cleared':
       return 'bg-primary bg-opacity-25'
-    case 'guardian_reported':
-      return 'bg-danger bg-opacity-25'
     default:
       return 'bg-secondary bg-opacity-25'
   }

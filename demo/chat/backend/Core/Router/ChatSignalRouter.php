@@ -120,8 +120,6 @@ final class ChatSignalRouter extends SignalRouter
                     AgentType::CHAT,
                     AgentType::CHAT_CONTEXT_ANALYZER,
                     AgentType::MODERATOR,
-                    AgentType::GUARDIAN_OPS,
-                    AgentType::CHAT_SITUATION_GUARDIAN,
                     AgentType::HILOS_INDEX,
                     AgentType::HILOS_GUARDIAN,
                     AgentType::HILOS_ANALYTICS,
@@ -136,7 +134,6 @@ final class ChatSignalRouter extends SignalRouter
                     ChatSignalConstants::MODERATION_BOT_RESULT => AgentType::CHAT,
                     ChatSignalConstants::BOT_JOINED => AgentType::CHAT,
                     ChatSignalConstants::BOT_LEFT => AgentType::CHAT,
-                    ChatSignalConstants::GUARDIAN_REPORT => AgentType::CHAT,
                 ],
             ],
             SignalSource::WEBSOCKET => [
