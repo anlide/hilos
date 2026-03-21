@@ -166,6 +166,8 @@ composer run test:phpunit
 
 ### Playwright (E2E)
 
+If you use the **local** Docker stack with Nginx (`docker/docker-compose.local.yml`, profile `full`, e.g. `composer run daemon-start-build`), **stop local Nginx** before starting the E2E test stack (`test:e2e-up` / `test:e2e-full`). Both stacks default to host ports **80** and **443**; leaving `chat-nginx-local` running causes a port conflict or wrong server. See [tests/e2e/README.md](tests/e2e/README.md) for commands and details.
+
 **Full flow (recommended):**
 
 ```bash
