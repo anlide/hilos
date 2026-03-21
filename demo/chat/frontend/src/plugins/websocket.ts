@@ -34,6 +34,12 @@ type RawMessage = {
   data?: unknown
 }
 
+type HandshakeResponseData = {
+  userId: number
+  moderationState?: string | null
+  pageCatalog?: Record<string, unknown>
+} & Record<string, unknown>
+
 const parseIncomingMessage = (data: string | object): RawMessage | null => {
   if (typeof data === 'string') {
     try {
@@ -56,7 +62,7 @@ const toRawMessage = (value: unknown): RawMessage | null => {
   }
 }
 
-const isSubscriptionResponseData = (data: unknown): data is { userId: number } & Record<string, unknown> => {
+const isSubscriptionResponseData = (data: unknown): data is HandshakeResponseData => {
   return isRecord(data) && typeof data.userId === 'number' && hasEntities(data)
 }
 
@@ -112,6 +118,9 @@ export function createChatWebSocketPlugin() {
         case HANDSHAKE_RESPONSE: {
           if (!isSubscriptionResponseData(message.data)) {
             throw new Error('Invalid handshake_response payload')
+          }
+          if (isRecord(message.data.pageCatalog)) {
+            chatStore.setPageCatalog(message.data.pageCatalog)
           }
           const currentUserId = message.data.userId
           const currentUser = chatStore.users.find((u: User) => u.id === currentUserId)

@@ -13,6 +13,7 @@ use Demo\Chat\Core\Router\DTO\ChatEventSignalDTO;
 use Demo\Chat\Core\Router\DTO\ModerationBotResultSignalData;
 use Demo\Chat\Core\Router\DTO\ModerationResultSignalData;
 use Demo\Chat\Database\DbChatContext;
+use Demo\Chat\Database\Pages\ChatPageCatalog;
 use Demo\Chat\Database\View\Collection\Events;
 use Demo\Chat\Database\View\Collection\Users;
 use Demo\Chat\Hilos;
@@ -124,6 +125,7 @@ class ChatAgent extends AbstractAgent
                 entities: $userEntities,
                 userId: $user->id,
                 moderationState: $moderationState,
+                pageCatalog: ChatPageCatalog::getCatalog(),
             ),
         );
     }

@@ -32,94 +32,108 @@ export const demoRoutes: RouteRecordRaw[] = [
       {
         path: '',
         name: 'home',
-        component: Home
+        component: Home,
+        meta: { page: 'main' },
       },
       {
         path: 'profile',
         name: 'profile',
-        component: Profile
+        component: Profile,
+        meta: { page: 'profile' },
       },
       {
         path: 'admin',
         name: 'admin',
-        component: Admin
+        component: Admin,
+        meta: { page: 'admin' },
       },
       {
         path: 'admin/users',
         name: 'admin_users',
-        component: AdminUsers
+        component: AdminUsers,
+        meta: { page: 'admin_users' },
       },
       {
         path: 'admin/moderator',
         name: 'admin_moderator',
-        component: AdminModerator
+        component: AdminModerator,
+        meta: { page: 'admin_moderator' },
       },
       {
         path: 'admin/bots',
         name: 'admin_bots',
-        component: AdminBots
+        component: AdminBots,
+        meta: { page: 'admin_bots' },
       },
       {
         path: 'user/:id',
         name: 'user',
-        component: User
+        component: User,
+        meta: { page: 'user' },
       },
       {
         path: 'bot/:id',
         name: 'bot',
-        component: Bot
+        component: Bot,
+        meta: { page: 'bot' },
       },
       {
         path: 'licence',
         name: 'licence',
-        component: Licence
+        component: Licence,
       },
       {
         path: 'terms',
         name: 'terms',
-        component: Terms
+        component: Terms,
       },
       {
         path: 'privacy',
         name: 'privacy',
-        component: Privacy
+        component: Privacy,
       },
       {
         path: 'hilos',
         name: 'hilos',
-        component: HilosDashboard
+        component: HilosDashboard,
+        meta: { page: 'hilos' },
       },
       {
         path: 'hilos/settings',
         name: 'hilos_settings',
-        component: HilosSettings
+        component: HilosSettings,
+        meta: { page: 'hilos_settings' },
       },
       {
         path: 'hilos/i18n',
         name: 'hilos_i18n',
-        component: HilosI18n
+        component: HilosI18n,
+        meta: { page: 'hilos_i18n' },
       },
       {
         path: 'hilos/guardian',
         name: 'hilos_guardian',
-        component: HilosGuardian
+        component: HilosGuardian,
+        meta: { page: 'hilos_guardian' },
       },
       {
         path: 'hilos/guardian/:agentId',
         name: 'hilos_guardian_agent',
-        component: HilosGuardianAgent
+        component: HilosGuardianAgent,
+        meta: { page: 'hilos_guardian_agent' },
       },
       {
         path: 'hilos/analytics',
         name: 'hilos_analytics',
-        component: HilosAnalytics
+        component: HilosAnalytics,
+        meta: { page: 'hilos_analytics' },
       },
       {
         path: 'agents',
         name: 'agents',
-        component: Agents
-      }
-    ]
+        component: Agents,
+      },
+    ],
   },
   // Error pages for prerendering (4xx, 5xx)
   { path: '/400', name: 'error-400', component: ErrorPage, meta: { errorCode: 400 } },
@@ -135,5 +149,5 @@ export const demoRoutes: RouteRecordRaw[] = [
   { path: '/500', name: 'error-500', component: ErrorPage, meta: { errorCode: 500 } },
   { path: '/502', name: 'error-502', component: ErrorPage, meta: { errorCode: 502 } },
   { path: '/503', name: 'error-503', component: ErrorPage, meta: { errorCode: 503 } },
-  { path: '/504', name: 'error-504', component: ErrorPage, meta: { errorCode: 504 } }
+  { path: '/504', name: 'error-504', component: ErrorPage, meta: { errorCode: 504 } },
 ]

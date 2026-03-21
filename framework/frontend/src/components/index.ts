@@ -2,6 +2,8 @@
  * Re-export components from framework
  */
 // @ts-ignore
+export { default as Breadcrumb } from './Breadcrumb.vue'
+// @ts-ignore
 export { default as Modal } from './Modal.vue'
 // @ts-ignore
 export { default as ConflictHeader } from './ConflictHeader.vue'

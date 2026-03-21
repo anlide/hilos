@@ -5,15 +5,12 @@
       <div class="card d-flex flex-column flex-grow-1 min-h-0 overflow-hidden">
         <div class="card-header d-flex justify-content-between align-items-center">
           <h5 class="mb-0">Settings</h5>
-          <div class="d-flex gap-2">
-            <TableRefreshToolbarButton
-              v-if="tableState"
-              :loading="refreshLoading"
-              aria-label="Refresh"
-              @click="refreshTable"
-            />
-            <router-link to="/hilos" class="btn btn-sm btn-outline-secondary">Back to Hilos</router-link>
-          </div>
+          <TableRefreshToolbarButton
+            v-if="tableState"
+            :loading="refreshLoading"
+            aria-label="Refresh"
+            @click="refreshTable"
+          />
         </div>
         <div class="card-body overflow-auto">
           <Table

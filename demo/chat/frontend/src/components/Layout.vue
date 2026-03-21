@@ -124,6 +124,21 @@
         </div>
       </div>
     </nav>
+    <div
+      v-if="shouldShowAdminBreadcrumb"
+      class="container-fluid py-2 border-bottom flex-shrink-0"
+    >
+      <div
+        v-if="showBreadcrumbPlaceholder"
+        class="d-flex align-items-center gap-2 w-100 placeholder-glow"
+        aria-hidden="true"
+      >
+        <span class="placeholder col-2 mb-0"></span>
+        <span class="placeholder col-3 mb-0"></span>
+        <span class="placeholder col-2 mb-0"></span>
+      </div>
+      <Breadcrumb v-else-if="breadcrumbItems.length > 0" :items="breadcrumbItems" />
+    </div>
     <main class="container-fluid py-3 flex-grow-1 min-h-0 d-flex flex-column overflow-hidden">
       <router-view />
     </main>
@@ -147,10 +162,12 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
+import { Breadcrumb } from '@hilos/sdk/components'
 import { useWebSocket } from '@hilos/sdk/plugins/websocket'
 import { useChatStore } from '@/stores'
 import { MESSAGE_PAGE_FIELD, MESSAGE_PARAMS_FIELD, MESSAGE_TYPE_FIELD } from '@/constants'
 import { localStorageService } from '@/services/LocalStorageService'
+import { useAdminBreadcrumb } from '@/composables/useAdminBreadcrumb'
 import type { ThemePreference } from '@/services/LocalStorageService'
 
 type RouteSnapshot = {
@@ -161,6 +178,11 @@ type RouteSnapshot = {
 const route = useRoute()
 const websocket = useWebSocket()
 const chatStore = useChatStore()
+const {
+  items: breadcrumbItems,
+  showPlaceholder: showBreadcrumbPlaceholder,
+  shouldShowAdminBreadcrumb,
+} = useAdminBreadcrumb()
 
 const themeMenuOpen = ref(false)
 const themePreference = ref<ThemePreference>(localStorageService.getThemePreference())
@@ -218,47 +240,16 @@ const lastSnapshot = ref<RouteSnapshot | null>(null)
 const pendingSnapshot = ref<RouteSnapshot | null>(null)
 const pendingUpdate = ref(false)
 
+const currentPageId = computed(() => {
+  return typeof route.meta.page === 'string' ? route.meta.page : null
+})
+
 const isAdminRoute = computed(() => {
   return route.name === 'admin' ||
     route.name === 'admin_users' ||
     route.name === 'admin_moderator' ||
     route.name === 'admin_bots'
 })
-
-const resolvePage = (routeName: unknown): string | null => {
-  switch (routeName) {
-    case 'home':
-      return 'main'
-    case 'profile':
-      return 'profile'
-    case 'admin':
-      return 'admin'
-    case 'admin_users':
-      return 'admin_users'
-    case 'admin_moderator':
-      return 'admin_moderator'
-    case 'admin_bots':
-      return 'admin_bots'
-    case 'user':
-      return 'user'
-    case 'bot':
-      return 'bot'
-    case 'hilos':
-      return 'hilos'
-    case 'hilos_settings':
-      return 'hilos_settings'
-    case 'hilos_i18n':
-      return 'hilos_i18n'
-    case 'hilos_guardian':
-      return 'hilos_guardian'
-    case 'hilos_guardian_agent':
-      return 'hilos_guardian_agent'
-    case 'hilos_analytics':
-      return 'hilos_analytics'
-    default:
-      return null
-  }
-}
 
 const normalizeParams = (params: Record<string, unknown>): Record<string, string> => {
   const normalized: Record<string, string> = {}
@@ -289,7 +280,7 @@ const queueSubscription = (snapshot: RouteSnapshot, update: boolean) => {
 }
 
 const handleRouteChange = () => {
-  const page = resolvePage(route.name)
+  const page = currentPageId.value
   if (!page) {
     return
   }
@@ -317,7 +308,7 @@ watch(() => chatStore.isConnected, (isConnected) => {
     return
   }
   if (isConnected) {
-    const page = resolvePage(route.name)
+    const page = currentPageId.value
     if (!page) {
       return
     }

@@ -1,6 +1,8 @@
 import { defineStore } from 'pinia'
 import { ChatBot, Event, User } from '@/types'
 import type { Presence } from '@/types/domain/Presence'
+import { normalizePageCatalog } from '@/types'
+import type { PageCatalogState } from '@/types'
 import { applyTableMutations } from '@hilos/sdk/composables'
 import type { TableDataState, TableMutationEntry } from '@hilos/sdk/types'
 
@@ -15,6 +17,8 @@ export const useChatStore = defineStore('chat', {
     events: [] as Event[],
     users: [] as User[],
     bots: [] as ChatBot[],
+    pageCatalog: {} as PageCatalogState,
+    hasPageCatalog: false,
     tableData: {} as Record<string, TableDataState>,
     currentUserId: null as number | null,
     currentUsername: null as string | null,
@@ -79,6 +83,11 @@ export const useChatStore = defineStore('chat', {
 
     setModerationState(value: string | null) {
       this.currentUserModerationState = value
+    },
+
+    setPageCatalog(value: Record<string, unknown>) {
+      this.pageCatalog = normalizePageCatalog(value)
+      this.hasPageCatalog = Object.keys(this.pageCatalog).length > 0
     },
 
     startTableRefresh(tableKey: string) {

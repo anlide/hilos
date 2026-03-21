@@ -2,6 +2,7 @@
  * Re-export domain types
  */
 export * from './domain'
+export * from './PageCatalog'
 
 // Explicitly export classes for better TypeScript support
 export { ChatBot, Event, User } from './domain'
