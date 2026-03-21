@@ -19,10 +19,5 @@
     </testsuites>
     <php>
         <env name="APP_ENV" value="test"/>
-        <env name="DB_HOST" value="localhost"/>
-        <env name="DB_PORT" value="33061"/>
-        <env name="DB_DATABASE" value="hilos-demo-chat-test"/>
-        <env name="DB_USERNAME" value="hilos"/>
-        <env name="DB_PASSWORD" value="hilos_pass"/>
     </php>
 </phpunit>

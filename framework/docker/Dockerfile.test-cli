@@ -1,0 +1,25 @@
+# PHP CLI image for Composer + PHPUnit on the Hilos monorepo (Linux; matches platform reqs).
+# Used only via docker compose — do not rely on host PHP version or OS.
+
+FROM php:8.4-cli
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git \
+    zip \
+    unzip \
+    libonig-dev \
+ && rm -rf /var/lib/apt/lists/*
+
+# Align with root composer.json (ext-posix, pcntl, sockets, mbstring, mysqli, …)
+RUN docker-php-ext-install -j$(nproc) \
+    sockets \
+    pcntl \
+    posix \
+    mbstring \
+    mysqli \
+    pdo \
+    pdo_mysql
+
+COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
+
+WORKDIR /hilos
