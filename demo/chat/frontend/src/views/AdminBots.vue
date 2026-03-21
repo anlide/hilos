@@ -203,6 +203,43 @@
       </LoadingButton>
     </template>
   </Modal>
+
+  <Modal
+    v-model="showDeleteModal"
+    :title="deleteModalTitle"
+    modal-name="admin-bots-delete-modal"
+    modal-type="delete"
+    :close-on-backdrop="!deleteLoading"
+    :close-on-esc="!deleteLoading"
+    @cancel="resetDeleteModal"
+  >
+    <p class="mb-0 text-body-secondary">
+      This removes the bot from the database.
+    </p>
+    <p v-if="deleteTarget?.name" class="mb-0 mt-2">
+      <span class="text-break fw-medium">{{ deleteTarget.name }}</span>
+    </p>
+    <template #actions="{ requestClose }">
+      <button
+        type="button"
+        class="btn btn-secondary"
+        :disabled="deleteLoading"
+        @click="requestClose"
+      >
+        Cancel
+      </button>
+      <LoadingButton
+        type="button"
+        variant="btn-danger"
+        :loading="deleteLoading"
+        :disabled="deleteTarget?.id == null"
+        :loading-delay="300"
+        @click="confirmDeleteBot"
+      >
+        Delete
+      </LoadingButton>
+    </template>
+  </Modal>
   <template #placeholder>
     <div class="card flex-grow-1 overflow-auto">
       <div class="card-header"><h5 class="mb-0">Admin Bots</h5></div>
@@ -221,6 +258,7 @@ import { ref, computed } from 'vue'
 import { useWebSocket } from '@hilos/sdk/plugins/websocket'
 import { Table, Modal, LoadingButton } from '@hilos/sdk/components'
 import { getTableDisplayRows, getTablePendingChanges, getTableChangeMarkers } from '@hilos/sdk/composables'
+import { useTableDeleteMutationModal } from '@/composables/useTableDeleteMutationModal'
 import { useChatStore } from '@/stores'
 import { sendAction } from '@/services/websocketActions'
 import { TableActionConstants } from '@hilos/sdk/constants'
@@ -264,6 +302,21 @@ const formBot = ref<BotEntity>({
 const baselineBot = ref<BotEntity | null>(null)
 
 const modalTitle = computed(() => isCreating.value ? 'Create Bot' : 'Edit Bot')
+
+const {
+  showDeleteModal,
+  deleteTarget,
+  deleteLoading,
+  resetDeleteModal,
+  openDeleteModal,
+  confirmDelete,
+} = useTableDeleteMutationModal<BotEntity>(tableKey, (b) => b.id ?? null)
+
+const deleteModalTitle = computed(() => {
+  const b = deleteTarget.value
+  if (!b) return 'Delete bot'
+  return b.name?.trim() ? `Delete · ${b.name}` : 'Delete bot'
+})
 
 const cloneBot = (bot: BotEntity): BotEntity => {
   return JSON.parse(JSON.stringify(bot)) as BotEntity
@@ -310,7 +363,13 @@ const handleDelete = (item: unknown) => {
   if (typeof item !== 'object' || item === null) return
   const bot = item as BotEntity
   if (bot.id == null) return
-  sendAction(websocket, BOT_DELETE, { id: bot.id })
+  openDeleteModal(bot)
+}
+
+const confirmDeleteBot = () => {
+  const id = deleteTarget.value?.id
+  if (id == null) return
+  confirmDelete(() => sendAction(websocket, BOT_DELETE, { id }))
 }
 
 const saveLoading = ref(false)

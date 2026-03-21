@@ -154,6 +154,44 @@
       </LoadingButton>
     </template>
   </Modal>
+
+  <Modal
+    v-model="showDeleteModal"
+    :title="deleteModalTitle"
+    modal-name="admin-moderator-delete-modal"
+    modal-type="delete"
+    :close-on-backdrop="!deleteLoading"
+    :close-on-esc="!deleteLoading"
+    @cancel="resetDeleteModal"
+  >
+    <p class="mb-0 text-body-secondary">
+      This removes the prompt piece from the database.
+    </p>
+    <p v-if="deleteTarget" class="mb-0 mt-2 small text-break">
+      <span class="badge me-1" :class="getSectionBadgeClass(deleteTarget.section)">{{ deleteTarget.section }}</span>
+      <span>{{ deleteTarget.promptPiece }}</span>
+    </p>
+    <template #actions="{ requestClose }">
+      <button
+        type="button"
+        class="btn btn-secondary"
+        :disabled="deleteLoading"
+        @click="requestClose"
+      >
+        Cancel
+      </button>
+      <LoadingButton
+        type="button"
+        variant="btn-danger"
+        :loading="deleteLoading"
+        :disabled="deleteTarget?.id == null"
+        :loading-delay="300"
+        @click="confirmDeletePiece"
+      >
+        Delete
+      </LoadingButton>
+    </template>
+  </Modal>
   <template #placeholder>
     <div class="card flex-grow-1 overflow-auto">
       <div class="card-header"><h5 class="mb-0">Moderator prompt pieces</h5></div>
@@ -172,6 +210,7 @@ import { ref, computed } from 'vue'
 import { useWebSocket } from '@hilos/sdk/plugins/websocket'
 import { Table, Modal, LoadingButton } from '@hilos/sdk/components'
 import { getTableDisplayRows, getTablePendingChanges, getTableChangeMarkers } from '@hilos/sdk/composables'
+import { useTableDeleteMutationModal } from '@/composables/useTableDeleteMutationModal'
 import { useChatStore } from '@/stores'
 import { sendAction } from '@/services/websocketActions'
 import { TableActionConstants } from '@hilos/sdk/constants'
@@ -211,6 +250,21 @@ const formPiece = ref<ModeratorPromptPieceEntity>({
 const baselinePiece = ref<ModeratorPromptPieceEntity | null>(null)
 
 const modalTitle = computed(() => isCreating.value ? 'Create prompt piece' : 'Edit prompt piece')
+
+const {
+  showDeleteModal,
+  deleteTarget,
+  deleteLoading,
+  resetDeleteModal,
+  openDeleteModal,
+  confirmDelete,
+} = useTableDeleteMutationModal<ModeratorPromptPieceEntity>(tableKey, (p) => p.id ?? null)
+
+const deleteModalTitle = computed(() => {
+  const p = deleteTarget.value
+  if (!p?.id) return 'Delete prompt piece'
+  return `Delete · #${p.id} (${p.section})`
+})
 
 const clonePiece = (piece: ModeratorPromptPieceEntity): ModeratorPromptPieceEntity => {
   return JSON.parse(JSON.stringify(piece)) as ModeratorPromptPieceEntity
@@ -263,7 +317,13 @@ const handleDelete = (item: unknown) => {
   if (typeof item !== 'object' || item === null) return
   const piece = item as ModeratorPromptPieceEntity
   if (piece.id == null) return
-  sendAction(websocket, MODERATOR_PIECE_DELETE, { id: piece.id })
+  openDeleteModal(piece)
+}
+
+const confirmDeletePiece = () => {
+  const id = deleteTarget.value?.id
+  if (id == null) return
+  confirmDelete(() => sendAction(websocket, MODERATOR_PIECE_DELETE, { id }))
 }
 
 const saveLoading = ref(false)

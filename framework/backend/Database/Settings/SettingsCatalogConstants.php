@@ -24,4 +24,8 @@ final class SettingsCatalogConstants
     public const string STUB_KEY_EXAMPLE_STRING = 'example_string';
     public const string STUB_KEY_EXAMPLE_INTEGER = 'example_integer';
     public const string STUB_KEY_EXAMPLE_BOOLEAN = 'example_boolean';
+
+    /** Chat LLM timeout keys (seconds); same names as demo seed — type integer */
+    public const string STUB_KEY_CHAT_BOT_TIMEOUT_SEC = 'chat_bot_timeout_sec';
+    public const string STUB_KEY_CHAT_MODERATION_TIMEOUT_SEC = 'chat_moderation_timeout_sec';
 }

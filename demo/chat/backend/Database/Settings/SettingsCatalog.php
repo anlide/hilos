@@ -52,8 +52,8 @@ final class SettingsCatalog
                 SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => 'local',
             ],
             ChatSettingsConstants::CHAT_BOT_TIMEOUT_SEC => [
-                SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_STRING,
-                SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => '90.0',
+                SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_INTEGER,
+                SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => 90,
             ],
             ChatSettingsConstants::CHAT_BOT_LANGUAGE => [
                 SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_STRING,
@@ -73,8 +73,8 @@ final class SettingsCatalog
                 SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => 'local',
             ],
             ChatSettingsConstants::CHAT_MODERATION_TIMEOUT_SEC => [
-                SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_STRING,
-                SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => '90.0',
+                SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_INTEGER,
+                SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => 90,
             ],
             ChatSettingsConstants::CHAT_MODERATION_USERS => [
                 SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_BOOLEAN,

@@ -24,13 +24,13 @@
           <Table
             :items="displayRows"
             item-key="key"
-            :colspan="5"
+            :colspan="3"
             :placeholder-when-empty="!chatStore.isConnected"
             :searchable="true"
             search-placeholder="Search settings..."
-            :search-fields="['id', 'key', 'type', 'value']"
+            :search-fields="['key', 'value']"
             :sortable="true"
-            :sortable-fields="['id', 'key', 'type']"
+            :sortable-fields="['key']"
             :paginated="false"
             :show-actions="true"
             :show-add-button="true"
@@ -46,19 +46,6 @@
             <template #header="{ sort, handleSort, isFieldSortable }">
               <th>
                 <button
-                  v-if="isFieldSortable('id')"
-                  class="btn btn-link p-0 text-decoration-none text-dark fw-bold"
-                  @click="handleSort('id')"
-                >
-                  ID
-                  <span v-if="sort.field === 'id'">
-                    {{ sort.direction === 'asc' ? '↑' : '↓' }}
-                  </span>
-                </button>
-                <span v-else>ID</span>
-              </th>
-              <th>
-                <button
                   v-if="isFieldSortable('key')"
                   class="btn btn-link p-0 text-decoration-none text-dark fw-bold"
                   @click="handleSort('key')"
@@ -70,30 +57,50 @@
                 </button>
                 <span v-else>Key</span>
               </th>
-              <th>
-                <button
-                  v-if="isFieldSortable('type')"
-                  class="btn btn-link p-0 text-decoration-none text-dark fw-bold"
-                  @click="handleSort('type')"
-                >
-                  Type
-                  <span v-if="sort.field === 'type'">
-                    {{ sort.direction === 'asc' ? '↑' : '↓' }}
-                  </span>
-                </button>
-                <span v-else>Type</span>
-              </th>
               <th>Value</th>
               <th>Actions</th>
             </template>
             <template #row="row">
-              <td>{{ row.item.id ?? '—' }}</td>
               <td><code>{{ row.item.key }}</code></td>
-              <td>
-                <span class="badge bg-secondary">{{ row.item.type }}</span>
-              </td>
-              <td class="text-truncate" style="max-width: 200px" :title="String(row.item.value ?? '')">
-                {{ formatValue(row.item.value, row.item.type) }}
+              <td class="align-middle" style="max-width: 220px">
+                <template v-if="row.item.type === 'boolean'">
+                  <div class="form-check d-inline-flex align-items-center mb-0 user-select-none">
+                    <input
+                      type="checkbox"
+                      class="form-check-input mt-0"
+                      :checked="row.item.value === '1'"
+                      disabled
+                      tabindex="-1"
+                      :aria-label="row.item.value === '1' ? 'Enabled' : 'Disabled'"
+                    />
+                  </div>
+                </template>
+                <template v-else-if="row.item.type === 'integer'">
+                  <span
+                    class="fst-italic text-truncate d-inline-block w-100"
+                    :title="formatValue(row.item.value, row.item.type)"
+                  >
+                    {{ formatValue(row.item.value, row.item.type) }}
+                  </span>
+                </template>
+                <template v-else>
+                  <span
+                    v-if="isEmptyStringSetting(row.item.value, row.item.type)"
+                    class="badge rounded-pill d-inline-flex align-items-center justify-content-center px-2 py-1 bg-secondary-subtle text-secondary-emphasis border border-secondary-subtle"
+                    role="img"
+                    aria-label="Empty string"
+                    title="Empty string"
+                  >
+                    <i class="bi bi-file-earmark" aria-hidden="true"></i>
+                  </span>
+                  <span
+                    v-else
+                    class="text-truncate d-inline-block w-100"
+                    :title="String(row.item.value ?? '')"
+                  >
+                    {{ formatValue(row.item.value, row.item.type) }}
+                  </span>
+                </template>
               </td>
               <td>
                 <div class="d-flex gap-1">
@@ -101,11 +108,14 @@
                     v-if="row.showEditButton"
                     type="button"
                     class="btn btn-sm btn-outline-primary"
-                    title="Edit"
-                    aria-label="Edit"
+                    :title="row.item.id == null ? 'Add value' : 'Edit'"
+                    :aria-label="row.item.id == null ? 'Add value' : 'Edit'"
                     @click="row.handleEdit"
                   >
-                    <i class="bi bi-pencil" aria-hidden="true"></i>
+                    <i
+                      :class="row.item.id == null ? 'bi bi-plus-lg' : 'bi bi-pencil'"
+                      aria-hidden="true"
+                    ></i>
                   </button>
                   <button
                     v-if="row.showDeleteButton && isOrphan(row.item)"
@@ -154,22 +164,27 @@
         </select>
       </div>
       <div class="mb-0">
-        <label class="form-label" for="setting-value">{{ isCreating ? 'Value (optional, uses default if empty)' : 'Value' }}</label>
-        <input
-          v-if="valueInputType === 'checkbox'"
-          id="setting-value"
-          v-model="formSettingValueBool"
-          type="checkbox"
-          class="form-check-input"
-        />
-        <input
-          v-else
-          id="setting-value"
-          v-model="formSetting.value"
-          :type="valueInputType"
-          class="form-control"
-          :required="!isCreating"
-        />
+        <template v-if="valueInputType === 'checkbox'">
+          <div class="form-check">
+            <input
+              id="setting-value"
+              v-model="formSettingValueBool"
+              type="checkbox"
+              class="form-check-input"
+            />
+            <label class="form-check-label text-break" for="setting-value">{{ valueFieldLabel }}</label>
+          </div>
+        </template>
+        <template v-else>
+          <label class="form-label" for="setting-value">{{ valueFieldLabel }}</label>
+          <input
+            id="setting-value"
+            v-model="formSetting.value"
+            :type="valueInputType"
+            class="form-control"
+            :required="!isCreating"
+          />
+        </template>
       </div>
     </form>
     <template #actions="{ requestClose }">
@@ -183,6 +198,43 @@
         @click="saveSetting"
       >
         {{ isCreating ? 'Create' : 'Save' }}
+      </LoadingButton>
+    </template>
+  </Modal>
+
+  <Modal
+    v-model="showDeleteModal"
+    :title="deleteModalTitle"
+    modal-name="hilos-settings-delete-modal"
+    modal-type="delete"
+    :close-on-backdrop="!deleteLoading"
+    :close-on-esc="!deleteLoading"
+    @cancel="resetDeleteModal"
+  >
+    <p class="mb-0 text-body-secondary">
+      This removes the orphan row from the database.
+    </p>
+    <p v-if="deleteTarget?.key" class="mb-0 mt-2">
+      <span class="text-break"><code>{{ deleteTarget.key }}</code></span>
+    </p>
+    <template #actions="{ requestClose }">
+      <button
+        type="button"
+        class="btn btn-secondary"
+        :disabled="deleteLoading"
+        @click="requestClose"
+      >
+        Cancel
+      </button>
+      <LoadingButton
+        type="button"
+        variant="btn-danger"
+        :loading="deleteLoading"
+        :disabled="!deleteTarget?.key"
+        :loading-delay="300"
+        @click="confirmDeleteSetting"
+      >
+        Delete
       </LoadingButton>
     </template>
   </Modal>
@@ -204,6 +256,7 @@ import { ref, computed } from 'vue'
 import { useWebSocket } from '@hilos/sdk/plugins/websocket'
 import { Table, Modal, LoadingButton } from '@hilos/sdk/components'
 import { getTableDisplayRows, getTablePendingChanges, getTableChangeMarkers } from '@hilos/sdk/composables'
+import { useTableDeleteMutationModal } from '@/composables/useTableDeleteMutationModal'
 import { useChatStore } from '@/stores'
 import { sendAction } from '@/services/websocketActions'
 import { TableActionConstants } from '@hilos/sdk/constants'
@@ -256,6 +309,12 @@ const formatValue = (value: string | null | undefined, type: string): string => 
   return String(value)
 }
 
+/** Empty string (type string): show placeholder in table, not raw "". */
+const isEmptyStringSetting = (value: string | null | undefined, type: string): boolean => {
+  if (type !== 'string') return false
+  return value === '' || value === null || value === undefined
+}
+
 const showModal = ref(false)
 const isCreating = ref(false)
 const selectedSetting = ref<SettingEntity | null>(null)
@@ -276,7 +335,19 @@ const valueInputType = computed(() => {
   return 'text'
 })
 
-const modalTitle = computed(() => isCreating.value ? 'Add setting' : 'Edit setting')
+const modalTitle = computed(() => {
+  if (isCreating.value) return 'Add setting'
+  const key = selectedSetting.value?.key
+  return key ? `Edit · ${key}` : 'Edit setting'
+})
+
+/** Label for value control: setting key instead of the word "Value". */
+const valueFieldLabel = computed(() => {
+  const key = isCreating.value ? formSetting.value.key : selectedSetting.value?.key
+  if (key && key.length > 0) return key
+  if (isCreating.value) return 'Value (optional, uses default if empty)'
+  return 'Value'
+})
 
 const cloneSetting = (s: SettingEntity): SettingEntity => JSON.parse(JSON.stringify(s)) as SettingEntity
 
@@ -310,11 +381,31 @@ const handleEdit = (item: unknown) => {
   showModal.value = true
 }
 
+const {
+  showDeleteModal,
+  deleteTarget,
+  deleteLoading,
+  resetDeleteModal,
+  openDeleteModal,
+  confirmDelete,
+} = useTableDeleteMutationModal<SettingEntity>(tableKey, (s) => s.key)
+
+const deleteModalTitle = computed(() => {
+  const k = deleteTarget.value?.key
+  return k ? `Delete · ${k}` : 'Delete setting'
+})
+
 const handleDelete = (item: unknown) => {
   if (typeof item !== 'object' || item === null) return
   const s = item as SettingEntity
   if (!s.key) return
-  sendAction(websocket, SETTING_DELETE, { key: s.key })
+  openDeleteModal(s)
+}
+
+const confirmDeleteSetting = () => {
+  const key = deleteTarget.value?.key
+  if (!key) return
+  confirmDelete(() => sendAction(websocket, SETTING_DELETE, { key }))
 }
 
 const saveLoading = ref(false)
