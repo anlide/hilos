@@ -95,4 +95,28 @@ final class PageConstants
     public const string HILOS_I18N_TRANSLATE_ACTION_ERROR = HilosPageConstants::HILOS_I18N_TRANSLATE_ACTION_ERROR;
 
     public const string HILOS_I18N_TRANSLATE_EMAIL = HilosPageConstants::HILOS_I18N_TRANSLATE_EMAIL;
+
+    public const string HILOS_BACKUP = HilosPageConstants::HILOS_BACKUP;
+
+    public const string HILOS_DAEMON = HilosPageConstants::HILOS_DAEMON;
+
+    public const string HILOS_DAEMON_WORKERS = HilosPageConstants::HILOS_DAEMON_WORKERS;
+
+    public const string HILOS_DAEMON_AGENTS = HilosPageConstants::HILOS_DAEMON_AGENTS;
+
+    public const string HILOS_DAEMON_CRON = HilosPageConstants::HILOS_DAEMON_CRON;
+
+    public const string HILOS_DAEMON_WEBSOCKETS = HilosPageConstants::HILOS_DAEMON_WEBSOCKETS;
+
+    public const string HILOS_DAEMON_HTTP_SERVER = HilosPageConstants::HILOS_DAEMON_HTTP_SERVER;
+
+    public const string HILOS_LOGS = HilosPageConstants::HILOS_LOGS;
+
+    public const string HILOS_LOGS_KEYS = HilosPageConstants::HILOS_LOGS_KEYS;
+
+    public const string HILOS_LOGS_WORKERS = HilosPageConstants::HILOS_LOGS_WORKERS;
+
+    public const string HILOS_LOGS_ROTATIONS = HilosPageConstants::HILOS_LOGS_ROTATIONS;
+
+    public const string HILOS_LOGS_VIEW = HilosPageConstants::HILOS_LOGS_VIEW;
 }

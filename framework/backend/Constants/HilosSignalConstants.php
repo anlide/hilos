@@ -85,4 +85,40 @@ class HilosSignalConstants
 
     /** @var string Subscription signal for Hilos analytics page */
     public const string SUBSCRIPTION_PAGE_HILOS_ANALYTICS = 'subscription_page_hilos_analytics';
+
+    /** @var string Subscription signal for Hilos backup page */
+    public const string SUBSCRIPTION_PAGE_HILOS_BACKUP = 'subscription_page_hilos_backup';
+
+    /** @var string Subscription signal for Hilos daemon dashboard */
+    public const string SUBSCRIPTION_PAGE_HILOS_DAEMON = 'subscription_page_hilos_daemon';
+
+    /** @var string Subscription signal for Hilos daemon workers */
+    public const string SUBSCRIPTION_PAGE_HILOS_DAEMON_WORKERS = 'subscription_page_hilos_daemon_workers';
+
+    /** @var string Subscription signal for Hilos daemon agents */
+    public const string SUBSCRIPTION_PAGE_HILOS_DAEMON_AGENTS = 'subscription_page_hilos_daemon_agents';
+
+    /** @var string Subscription signal for Hilos daemon cron */
+    public const string SUBSCRIPTION_PAGE_HILOS_DAEMON_CRON = 'subscription_page_hilos_daemon_cron';
+
+    /** @var string Subscription signal for Hilos daemon websockets */
+    public const string SUBSCRIPTION_PAGE_HILOS_DAEMON_WEBSOCKETS = 'subscription_page_hilos_daemon_websockets';
+
+    /** @var string Subscription signal for Hilos daemon HTTP server */
+    public const string SUBSCRIPTION_PAGE_HILOS_DAEMON_HTTP_SERVER = 'subscription_page_hilos_daemon_http_server';
+
+    /** @var string Subscription signal for Hilos logs overview */
+    public const string SUBSCRIPTION_PAGE_HILOS_LOGS = 'subscription_page_hilos_logs';
+
+    /** @var string Subscription signal for Hilos logs by key */
+    public const string SUBSCRIPTION_PAGE_HILOS_LOGS_KEYS = 'subscription_page_hilos_logs_keys';
+
+    /** @var string Subscription signal for Hilos logs by worker */
+    public const string SUBSCRIPTION_PAGE_HILOS_LOGS_WORKERS = 'subscription_page_hilos_logs_workers';
+
+    /** @var string Subscription signal for Hilos logs rotations */
+    public const string SUBSCRIPTION_PAGE_HILOS_LOGS_ROTATIONS = 'subscription_page_hilos_logs_rotations';
+
+    /** @var string Subscription signal for Hilos logs viewer */
+    public const string SUBSCRIPTION_PAGE_HILOS_LOGS_VIEW = 'subscription_page_hilos_logs_view';
 }

@@ -41,6 +41,18 @@ import HilosI18nTranslateEmail from '@/views/Hilos/I18n/Translate/HilosI18nTrans
 import HilosGuardian from '@/views/Hilos/HilosGuardian.vue'
 import HilosGuardianAgent from '@/views/Hilos/HilosGuardianAgent.vue'
 import HilosAnalytics from '@/views/Hilos/HilosAnalytics.vue'
+import HilosBackup from '@/views/Hilos/Backup/HilosBackup.vue'
+import HilosDaemon from '@/views/Hilos/Daemon/HilosDaemon.vue'
+import HilosDaemonWorkers from '@/views/Hilos/Daemon/HilosDaemonWorkers.vue'
+import HilosDaemonAgents from '@/views/Hilos/Daemon/HilosDaemonAgents.vue'
+import HilosDaemonCron from '@/views/Hilos/Daemon/HilosDaemonCron.vue'
+import HilosDaemonWebsockets from '@/views/Hilos/Daemon/HilosDaemonWebsockets.vue'
+import HilosDaemonHttpServer from '@/views/Hilos/Daemon/HilosDaemonHttpServer.vue'
+import HilosLogs from '@/views/Hilos/Logs/HilosLogs.vue'
+import HilosLogsKeys from '@/views/Hilos/Logs/HilosLogsKeys.vue'
+import HilosLogsWorkers from '@/views/Hilos/Logs/HilosLogsWorkers.vue'
+import HilosLogsRotations from '@/views/Hilos/Logs/HilosLogsRotations.vue'
+import HilosLogsView from '@/views/Hilos/Logs/HilosLogsView.vue'
 import ErrorPage from '@/views/ErrorPage.vue'
 
 export const demoRoutes: RouteRecordRaw[] = [
@@ -116,6 +128,78 @@ export const demoRoutes: RouteRecordRaw[] = [
         name: 'hilos',
         component: HilosDashboard,
         meta: { page: 'hilos' },
+      },
+      {
+        path: 'hilos/backup',
+        name: 'hilos_backup',
+        component: HilosBackup,
+        meta: { page: 'hilos_backup' },
+      },
+      {
+        path: 'hilos/daemon/http/:serverId',
+        name: 'hilos_daemon_http_server',
+        component: HilosDaemonHttpServer,
+        meta: { page: 'hilos_daemon_http_server' },
+      },
+      {
+        path: 'hilos/daemon/workers',
+        name: 'hilos_daemon_workers',
+        component: HilosDaemonWorkers,
+        meta: { page: 'hilos_daemon_workers' },
+      },
+      {
+        path: 'hilos/daemon/agents',
+        name: 'hilos_daemon_agents',
+        component: HilosDaemonAgents,
+        meta: { page: 'hilos_daemon_agents' },
+      },
+      {
+        path: 'hilos/daemon/cron',
+        name: 'hilos_daemon_cron',
+        component: HilosDaemonCron,
+        meta: { page: 'hilos_daemon_cron' },
+      },
+      {
+        path: 'hilos/daemon/websockets',
+        name: 'hilos_daemon_websockets',
+        component: HilosDaemonWebsockets,
+        meta: { page: 'hilos_daemon_websockets' },
+      },
+      {
+        path: 'hilos/daemon',
+        name: 'hilos_daemon',
+        component: HilosDaemon,
+        meta: { page: 'hilos_daemon' },
+      },
+      {
+        path: 'hilos/logs/view',
+        name: 'hilos_logs_view',
+        component: HilosLogsView,
+        meta: { page: 'hilos_logs_view' },
+      },
+      {
+        path: 'hilos/logs/keys',
+        name: 'hilos_logs_keys',
+        component: HilosLogsKeys,
+        meta: { page: 'hilos_logs_keys' },
+      },
+      {
+        path: 'hilos/logs/workers',
+        name: 'hilos_logs_workers',
+        component: HilosLogsWorkers,
+        meta: { page: 'hilos_logs_workers' },
+      },
+      {
+        path: 'hilos/logs/rotations',
+        name: 'hilos_logs_rotations',
+        component: HilosLogsRotations,
+        meta: { page: 'hilos_logs_rotations' },
+      },
+      {
+        path: 'hilos/logs',
+        name: 'hilos_logs',
+        component: HilosLogs,
+        meta: { page: 'hilos_logs' },
       },
       {
         path: 'hilos/settings',

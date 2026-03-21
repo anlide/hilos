@@ -237,8 +237,13 @@ export function createChatWebSocketPlugin() {
         }
         default: {
           if (
+            message.type === 'subscription_page_hilos' ||
             message.type === SUBSCRIPTION_PAGE_HILOS_I18N ||
-            message.type.startsWith('subscription_page_hilos_i18n_')
+            message.type.startsWith('subscription_page_hilos_i18n_') ||
+            message.type === 'subscription_page_hilos_analytics' ||
+            message.type === 'subscription_page_hilos_backup' ||
+            message.type.startsWith('subscription_page_hilos_daemon') ||
+            message.type.startsWith('subscription_page_hilos_logs')
           ) {
             return
           }

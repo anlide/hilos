@@ -15,9 +15,21 @@ use Demo\Chat\Pages\AdminPage;
 use Demo\Chat\Pages\AdminUsersPage;
 use Demo\Chat\Pages\BotPage;
 use Demo\Chat\Pages\Hilos\AnalyticsPage;
+use Demo\Chat\Pages\Hilos\Backup\BackupPage;
+use Demo\Chat\Pages\Hilos\Daemon\DaemonAgentsPage;
+use Demo\Chat\Pages\Hilos\Daemon\DaemonCronPage;
+use Demo\Chat\Pages\Hilos\Daemon\DaemonHttpServerPage;
+use Demo\Chat\Pages\Hilos\Daemon\DaemonPage;
+use Demo\Chat\Pages\Hilos\Daemon\DaemonWebsocketsPage;
+use Demo\Chat\Pages\Hilos\Daemon\DaemonWorkersPage;
 use Demo\Chat\Pages\Hilos\DashboardPage;
 use Demo\Chat\Pages\Hilos\Guardian\GuardianAgentPage;
 use Demo\Chat\Pages\Hilos\GuardianPage;
+use Demo\Chat\Pages\Hilos\Logs\LogsKeysPage;
+use Demo\Chat\Pages\Hilos\Logs\LogsOverviewPage;
+use Demo\Chat\Pages\Hilos\Logs\LogsRotationsPage;
+use Demo\Chat\Pages\Hilos\Logs\LogsViewPage;
+use Demo\Chat\Pages\Hilos\Logs\LogsWorkersPage;
 use Demo\Chat\Pages\Hilos\I18n\Details\ActionDetailPage;
 use Demo\Chat\Pages\Hilos\I18n\Details\CountryDetailPage;
 use Demo\Chat\Pages\Hilos\I18n\Details\GroupDetailPage;
@@ -115,6 +127,18 @@ final class ChatPageFactory extends HilosPageFactory
             HilosPageConstants::HILOS_I18N_TRANSLATE_GROUP_ITEM => new TranslateGroupItemPage($this->agent),
             HilosPageConstants::HILOS_I18N_TRANSLATE_ACTION_ERROR => new TranslateActionErrorPage($this->agent),
             HilosPageConstants::HILOS_I18N_TRANSLATE_EMAIL => new TranslateEmailPage($this->agent),
+            HilosPageConstants::HILOS_BACKUP => new BackupPage($this->agent),
+            HilosPageConstants::HILOS_DAEMON => new DaemonPage($this->agent),
+            HilosPageConstants::HILOS_DAEMON_WORKERS => new DaemonWorkersPage($this->agent),
+            HilosPageConstants::HILOS_DAEMON_AGENTS => new DaemonAgentsPage($this->agent),
+            HilosPageConstants::HILOS_DAEMON_CRON => new DaemonCronPage($this->agent),
+            HilosPageConstants::HILOS_DAEMON_WEBSOCKETS => new DaemonWebsocketsPage($this->agent),
+            HilosPageConstants::HILOS_DAEMON_HTTP_SERVER => new DaemonHttpServerPage($this->agent),
+            HilosPageConstants::HILOS_LOGS => new LogsOverviewPage($this->agent),
+            HilosPageConstants::HILOS_LOGS_KEYS => new LogsKeysPage($this->agent),
+            HilosPageConstants::HILOS_LOGS_WORKERS => new LogsWorkersPage($this->agent),
+            HilosPageConstants::HILOS_LOGS_ROTATIONS => new LogsRotationsPage($this->agent),
+            HilosPageConstants::HILOS_LOGS_VIEW => new LogsViewPage($this->agent),
             default => parent::createPage($pageName),
         };
     }

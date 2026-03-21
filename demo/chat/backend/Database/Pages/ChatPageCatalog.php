@@ -195,6 +195,66 @@ final class ChatPageCatalog extends PageCatalogStub
                 PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Translate email',
                 PageCatalogConstants::CATALOG_ENTRY_PATH_TEMPLATE => '/hilos/i18n/translate/email/{emailId}',
             ],
+            PageConstants::HILOS_BACKUP => [
+                PageCatalogConstants::CATALOG_ENTRY_PARENT_ID => PageConstants::HILOS_DASHBOARD,
+                PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Backups',
+                PageCatalogConstants::CATALOG_ENTRY_PATH_TEMPLATE => '/hilos/backup',
+            ],
+            PageConstants::HILOS_DAEMON => [
+                PageCatalogConstants::CATALOG_ENTRY_PARENT_ID => PageConstants::HILOS_DASHBOARD,
+                PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Daemon',
+                PageCatalogConstants::CATALOG_ENTRY_PATH_TEMPLATE => '/hilos/daemon',
+            ],
+            PageConstants::HILOS_DAEMON_WORKERS => [
+                PageCatalogConstants::CATALOG_ENTRY_PARENT_ID => PageConstants::HILOS_DAEMON,
+                PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Workers',
+                PageCatalogConstants::CATALOG_ENTRY_PATH_TEMPLATE => '/hilos/daemon/workers',
+            ],
+            PageConstants::HILOS_DAEMON_AGENTS => [
+                PageCatalogConstants::CATALOG_ENTRY_PARENT_ID => PageConstants::HILOS_DAEMON,
+                PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Agents',
+                PageCatalogConstants::CATALOG_ENTRY_PATH_TEMPLATE => '/hilos/daemon/agents',
+            ],
+            PageConstants::HILOS_DAEMON_CRON => [
+                PageCatalogConstants::CATALOG_ENTRY_PARENT_ID => PageConstants::HILOS_DAEMON,
+                PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Cron',
+                PageCatalogConstants::CATALOG_ENTRY_PATH_TEMPLATE => '/hilos/daemon/cron',
+            ],
+            PageConstants::HILOS_DAEMON_WEBSOCKETS => [
+                PageCatalogConstants::CATALOG_ENTRY_PARENT_ID => PageConstants::HILOS_DAEMON,
+                PageCatalogConstants::CATALOG_ENTRY_LABEL => 'WebSocket connections',
+                PageCatalogConstants::CATALOG_ENTRY_PATH_TEMPLATE => '/hilos/daemon/websockets',
+            ],
+            PageConstants::HILOS_DAEMON_HTTP_SERVER => [
+                PageCatalogConstants::CATALOG_ENTRY_PARENT_ID => PageConstants::HILOS_DAEMON,
+                PageCatalogConstants::CATALOG_ENTRY_LABEL => 'HTTP server',
+                PageCatalogConstants::CATALOG_ENTRY_PATH_TEMPLATE => '/hilos/daemon/http/{serverId}',
+            ],
+            PageConstants::HILOS_LOGS => [
+                PageCatalogConstants::CATALOG_ENTRY_PARENT_ID => PageConstants::HILOS_DASHBOARD,
+                PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Logs',
+                PageCatalogConstants::CATALOG_ENTRY_PATH_TEMPLATE => '/hilos/logs',
+            ],
+            PageConstants::HILOS_LOGS_KEYS => [
+                PageCatalogConstants::CATALOG_ENTRY_PARENT_ID => PageConstants::HILOS_LOGS,
+                PageCatalogConstants::CATALOG_ENTRY_LABEL => 'By log key',
+                PageCatalogConstants::CATALOG_ENTRY_PATH_TEMPLATE => '/hilos/logs/keys',
+            ],
+            PageConstants::HILOS_LOGS_WORKERS => [
+                PageCatalogConstants::CATALOG_ENTRY_PARENT_ID => PageConstants::HILOS_LOGS,
+                PageCatalogConstants::CATALOG_ENTRY_LABEL => 'By worker',
+                PageCatalogConstants::CATALOG_ENTRY_PATH_TEMPLATE => '/hilos/logs/workers',
+            ],
+            PageConstants::HILOS_LOGS_ROTATIONS => [
+                PageCatalogConstants::CATALOG_ENTRY_PARENT_ID => PageConstants::HILOS_LOGS,
+                PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Rotations',
+                PageCatalogConstants::CATALOG_ENTRY_PATH_TEMPLATE => '/hilos/logs/rotations',
+            ],
+            PageConstants::HILOS_LOGS_VIEW => [
+                PageCatalogConstants::CATALOG_ENTRY_PARENT_ID => PageConstants::HILOS_LOGS,
+                PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Viewer',
+                PageCatalogConstants::CATALOG_ENTRY_PATH_TEMPLATE => '/hilos/logs/view',
+            ],
         ]);
     }
 }

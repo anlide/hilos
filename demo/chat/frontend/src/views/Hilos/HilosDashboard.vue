@@ -7,6 +7,24 @@
         </div>
         <div class="card-body">
           <div class="list-group">
+            <router-link to="/hilos/backup" class="list-group-item list-group-item-action">
+              <div class="d-flex w-100 justify-content-between">
+                <h6 class="mb-1">Backups</h6>
+              </div>
+              <p class="mb-1">Database and file backup jobs (stub)</p>
+            </router-link>
+            <router-link to="/hilos/daemon" class="list-group-item list-group-item-action">
+              <div class="d-flex w-100 justify-content-between">
+                <h6 class="mb-1">Daemon</h6>
+              </div>
+              <p class="mb-1">Process metrics, workers, cron, HTTP (stub)</p>
+            </router-link>
+            <router-link to="/hilos/logs" class="list-group-item list-group-item-action">
+              <div class="d-flex w-100 justify-content-between">
+                <h6 class="mb-1">Logs</h6>
+              </div>
+              <p class="mb-1">Rotation stats, keys, viewer (stub)</p>
+            </router-link>
             <router-link to="/hilos/settings" class="list-group-item list-group-item-action">
               <div class="d-flex w-100 justify-content-between">
                 <h6 class="mb-1">Settings</h6>

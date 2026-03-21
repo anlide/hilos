@@ -109,6 +109,66 @@ final class ChatSignalRouter extends SignalRouter
                 'agentIndex' => null,
                 'params' => [],
             ],
+            PageConstants::HILOS_BACKUP => [
+                'agentType' => AgentType::HILOS_INDEX,
+                'agentIndex' => null,
+                'params' => [],
+            ],
+            PageConstants::HILOS_DAEMON => [
+                'agentType' => AgentType::HILOS_INDEX,
+                'agentIndex' => null,
+                'params' => [],
+            ],
+            PageConstants::HILOS_DAEMON_WORKERS => [
+                'agentType' => AgentType::HILOS_INDEX,
+                'agentIndex' => null,
+                'params' => [],
+            ],
+            PageConstants::HILOS_DAEMON_AGENTS => [
+                'agentType' => AgentType::HILOS_INDEX,
+                'agentIndex' => null,
+                'params' => [],
+            ],
+            PageConstants::HILOS_DAEMON_CRON => [
+                'agentType' => AgentType::HILOS_INDEX,
+                'agentIndex' => null,
+                'params' => [],
+            ],
+            PageConstants::HILOS_DAEMON_WEBSOCKETS => [
+                'agentType' => AgentType::HILOS_INDEX,
+                'agentIndex' => null,
+                'params' => [],
+            ],
+            PageConstants::HILOS_DAEMON_HTTP_SERVER => [
+                'agentType' => AgentType::HILOS_INDEX,
+                'agentIndex' => null,
+                'params' => [],
+            ],
+            PageConstants::HILOS_LOGS => [
+                'agentType' => AgentType::HILOS_INDEX,
+                'agentIndex' => null,
+                'params' => [],
+            ],
+            PageConstants::HILOS_LOGS_KEYS => [
+                'agentType' => AgentType::HILOS_INDEX,
+                'agentIndex' => null,
+                'params' => [],
+            ],
+            PageConstants::HILOS_LOGS_WORKERS => [
+                'agentType' => AgentType::HILOS_INDEX,
+                'agentIndex' => null,
+                'params' => [],
+            ],
+            PageConstants::HILOS_LOGS_ROTATIONS => [
+                'agentType' => AgentType::HILOS_INDEX,
+                'agentIndex' => null,
+                'params' => [],
+            ],
+            PageConstants::HILOS_LOGS_VIEW => [
+                'agentType' => AgentType::HILOS_INDEX,
+                'agentIndex' => null,
+                'params' => [],
+            ],
         ];
 
         $groups = [
@@ -161,6 +221,18 @@ final class ChatSignalRouter extends SignalRouter
                 PageConstants::HILOS_GUARDIAN => AgentType::HILOS_GUARDIAN,
                 PageConstants::HILOS_GUARDIAN_AGENT => AgentType::HILOS_GUARDIAN,
                 PageConstants::HILOS_ANALYTICS => AgentType::HILOS_ANALYTICS,
+                PageConstants::HILOS_BACKUP => AgentType::HILOS_INDEX,
+                PageConstants::HILOS_DAEMON => AgentType::HILOS_INDEX,
+                PageConstants::HILOS_DAEMON_WORKERS => AgentType::HILOS_INDEX,
+                PageConstants::HILOS_DAEMON_AGENTS => AgentType::HILOS_INDEX,
+                PageConstants::HILOS_DAEMON_CRON => AgentType::HILOS_INDEX,
+                PageConstants::HILOS_DAEMON_WEBSOCKETS => AgentType::HILOS_INDEX,
+                PageConstants::HILOS_DAEMON_HTTP_SERVER => AgentType::HILOS_INDEX,
+                PageConstants::HILOS_LOGS => AgentType::HILOS_INDEX,
+                PageConstants::HILOS_LOGS_KEYS => AgentType::HILOS_INDEX,
+                PageConstants::HILOS_LOGS_WORKERS => AgentType::HILOS_INDEX,
+                PageConstants::HILOS_LOGS_ROTATIONS => AgentType::HILOS_INDEX,
+                PageConstants::HILOS_LOGS_VIEW => AgentType::HILOS_INDEX,
             ],
         ];
 

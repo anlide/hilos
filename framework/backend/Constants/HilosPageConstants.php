@@ -86,4 +86,40 @@ class HilosPageConstants
 
     /** @var string Hilos analytics page (visit statistics) */
     public const string HILOS_ANALYTICS = 'hilos_analytics';
+
+    /** @var string Hilos backups list */
+    public const string HILOS_BACKUP = 'hilos_backup';
+
+    /** @var string Hilos daemon dashboard */
+    public const string HILOS_DAEMON = 'hilos_daemon';
+
+    /** @var string Hilos daemon — workers list */
+    public const string HILOS_DAEMON_WORKERS = 'hilos_daemon_workers';
+
+    /** @var string Hilos daemon — agents list */
+    public const string HILOS_DAEMON_AGENTS = 'hilos_daemon_agents';
+
+    /** @var string Hilos daemon — cron list */
+    public const string HILOS_DAEMON_CRON = 'hilos_daemon_cron';
+
+    /** @var string Hilos daemon — websocket connections list */
+    public const string HILOS_DAEMON_WEBSOCKETS = 'hilos_daemon_websockets';
+
+    /** @var string Hilos daemon — HTTP server detail */
+    public const string HILOS_DAEMON_HTTP_SERVER = 'hilos_daemon_http_server';
+
+    /** @var string Hilos logs overview */
+    public const string HILOS_LOGS = 'hilos_logs';
+
+    /** @var string Hilos logs — by key */
+    public const string HILOS_LOGS_KEYS = 'hilos_logs_keys';
+
+    /** @var string Hilos logs — by worker */
+    public const string HILOS_LOGS_WORKERS = 'hilos_logs_workers';
+
+    /** @var string Hilos logs — rotation history */
+    public const string HILOS_LOGS_ROTATIONS = 'hilos_logs_rotations';
+
+    /** @var string Hilos logs — viewer */
+    public const string HILOS_LOGS_VIEW = 'hilos_logs_view';
 }

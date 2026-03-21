@@ -51,6 +51,18 @@ class HilosPageFactory extends AbstractPageFactory
             HilosPageConstants::HILOS_GUARDIAN,
             HilosPageConstants::HILOS_GUARDIAN_AGENT,
             HilosPageConstants::HILOS_ANALYTICS,
+            HilosPageConstants::HILOS_BACKUP,
+            HilosPageConstants::HILOS_DAEMON,
+            HilosPageConstants::HILOS_DAEMON_WORKERS,
+            HilosPageConstants::HILOS_DAEMON_AGENTS,
+            HilosPageConstants::HILOS_DAEMON_CRON,
+            HilosPageConstants::HILOS_DAEMON_WEBSOCKETS,
+            HilosPageConstants::HILOS_DAEMON_HTTP_SERVER,
+            HilosPageConstants::HILOS_LOGS,
+            HilosPageConstants::HILOS_LOGS_KEYS,
+            HilosPageConstants::HILOS_LOGS_WORKERS,
+            HilosPageConstants::HILOS_LOGS_ROTATIONS,
+            HilosPageConstants::HILOS_LOGS_VIEW,
         ];
     }
 

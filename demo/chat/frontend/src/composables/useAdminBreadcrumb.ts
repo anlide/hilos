@@ -112,6 +112,10 @@ const resolveCatalogStubDynamicLabel = (pageId: string, routeParams: Record<stri
       const id = s('emailId')
       return id !== null ? `Translate email ${id}` : null
     }
+    case 'hilos_daemon_http_server': {
+      const id = s('serverId')
+      return id !== null ? `HTTP server ${id}` : null
+    }
     default:
       return null
   }
@@ -162,6 +166,32 @@ const buildPageLocation = (
     }
     case 'hilos_analytics':
       return '/hilos/analytics'
+    case 'hilos_backup':
+      return '/hilos/backup'
+    case 'hilos_daemon':
+      return '/hilos/daemon'
+    case 'hilos_daemon_workers':
+      return '/hilos/daemon/workers'
+    case 'hilos_daemon_agents':
+      return '/hilos/daemon/agents'
+    case 'hilos_daemon_cron':
+      return '/hilos/daemon/cron'
+    case 'hilos_daemon_websockets':
+      return '/hilos/daemon/websockets'
+    case 'hilos_daemon_http_server': {
+      const serverId = routeParams.serverId
+      return typeof serverId === 'string' ? `/hilos/daemon/http/${encodeURIComponent(serverId)}` : null
+    }
+    case 'hilos_logs':
+      return '/hilos/logs'
+    case 'hilos_logs_keys':
+      return '/hilos/logs/keys'
+    case 'hilos_logs_workers':
+      return '/hilos/logs/workers'
+    case 'hilos_logs_rotations':
+      return '/hilos/logs/rotations'
+    case 'hilos_logs_view':
+      return '/hilos/logs/view'
     default:
       return null
   }
