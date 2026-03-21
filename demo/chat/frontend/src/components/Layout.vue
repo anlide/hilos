@@ -1,7 +1,7 @@
 <template>
   <div class="layout d-flex flex-column app-shell">
     <nav
-      class="navbar navbar-expand-lg navbar-dark flex-shrink-0"
+      class="navbar navbar-expand-lg navbar-dark flex-shrink-0 overflow-visible z-3"
       :class="chatStore.isConnected ? 'bg-primary' : 'bg-danger'"
     >
       <div class="container-fluid">
@@ -25,8 +25,77 @@
         >
           <span class="navbar-toggler-icon"></span>
         </button>
-        <div class="collapse navbar-collapse" id="navbarNav">
-          <ul class="navbar-nav ms-auto">
+        <div class="collapse navbar-collapse overflow-visible" id="navbarNav">
+          <ul class="navbar-nav ms-auto align-items-lg-center gap-lg-1">
+            <li class="nav-item">
+              <button
+                type="button"
+                class="nav-link border-0 bg-transparent p-2 d-inline-flex align-items-center justify-content-center fs-5"
+                title="Language (coming soon)"
+                data-id="nav-language-stub"
+                @click="onLanguageStub"
+              >
+                <i class="bi bi-translate" aria-hidden="true"></i>
+                <span class="visually-hidden">Language</span>
+              </button>
+            </li>
+            <li class="nav-item dropdown" @click.stop>
+              <button
+                type="button"
+                class="nav-link border-0 bg-transparent p-2 d-inline-flex align-items-center justify-content-center fs-5"
+                :class="{ show: themeMenuOpen }"
+                :aria-expanded="themeMenuOpen"
+                aria-haspopup="true"
+                title="Color theme"
+                data-id="nav-theme-toggle"
+                @click="themeMenuOpen = !themeMenuOpen"
+              >
+                <i :class="['bi', themeTriggerIcon]" aria-hidden="true"></i>
+                <span class="visually-hidden">Theme</span>
+              </button>
+              <ul
+                class="dropdown-menu dropdown-menu-end shadow"
+                :class="{ show: themeMenuOpen }"
+                data-id="nav-theme-menu"
+              >
+                <li>
+                  <button
+                    type="button"
+                    class="dropdown-item d-flex align-items-center gap-2"
+                    :class="{ active: themePreference === 'auto' }"
+                    data-id="nav-theme-auto"
+                    @click="setThemePreference('auto')"
+                  >
+                    <i class="bi bi-circle-half flex-shrink-0" aria-hidden="true"></i>
+                    <span>Auto</span>
+                  </button>
+                </li>
+                <li>
+                  <button
+                    type="button"
+                    class="dropdown-item d-flex align-items-center gap-2"
+                    :class="{ active: themePreference === 'light' }"
+                    data-id="nav-theme-light"
+                    @click="setThemePreference('light')"
+                  >
+                    <i class="bi bi-brightness-high-fill flex-shrink-0" aria-hidden="true"></i>
+                    <span>Light</span>
+                  </button>
+                </li>
+                <li>
+                  <button
+                    type="button"
+                    class="dropdown-item d-flex align-items-center gap-2"
+                    :class="{ active: themePreference === 'dark' }"
+                    data-id="nav-theme-dark"
+                    @click="setThemePreference('dark')"
+                  >
+                    <i class="bi bi-moon-stars-fill flex-shrink-0" aria-hidden="true"></i>
+                    <span>Dark</span>
+                  </button>
+                </li>
+              </ul>
+            </li>
             <li class="nav-item">
               <router-link
                 class="nav-link d-inline-flex align-items-center justify-content-center fs-5"
@@ -76,11 +145,13 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useWebSocket } from '@hilos/sdk/plugins/websocket'
 import { useChatStore } from '@/stores'
 import { MESSAGE_PAGE_FIELD, MESSAGE_PARAMS_FIELD, MESSAGE_TYPE_FIELD } from '@/constants'
+import { localStorageService } from '@/services/LocalStorageService'
+import type { ThemePreference } from '@/services/LocalStorageService'
 
 type RouteSnapshot = {
   page: string
@@ -90,6 +161,58 @@ type RouteSnapshot = {
 const route = useRoute()
 const websocket = useWebSocket()
 const chatStore = useChatStore()
+
+const themeMenuOpen = ref(false)
+const themePreference = ref<ThemePreference>(localStorageService.getThemePreference())
+
+const themeTriggerIcon = computed(() => {
+  switch (themePreference.value) {
+    case 'light':
+      return 'bi-brightness-high-fill'
+    case 'dark':
+      return 'bi-moon-stars-fill'
+    default:
+      return 'bi-circle-half'
+  }
+})
+
+let unsubscribeStorage: (() => void) | null = null
+
+const syncThemePreferenceFromStorage = () => {
+  themePreference.value = localStorageService.getThemePreference()
+}
+
+const setThemePreference = (preference: ThemePreference) => {
+  localStorageService.setThemePreference(preference)
+  themeMenuOpen.value = false
+}
+
+const onLanguageStub = () => {
+  // Stub: future i18n switcher
+}
+
+const onDocumentClickCloseTheme = (event: MouseEvent) => {
+  const target = event.target as Node
+  const menu = document.querySelector('[data-id="nav-theme-menu"]')
+  const toggle = document.querySelector('[data-id="nav-theme-toggle"]')
+  if (menu?.contains(target) || toggle?.contains(target)) {
+    return
+  }
+  themeMenuOpen.value = false
+}
+
+onMounted(() => {
+  unsubscribeStorage = localStorageService.onChange(() => {
+    syncThemePreferenceFromStorage()
+  })
+  document.addEventListener('click', onDocumentClickCloseTheme)
+})
+
+onUnmounted(() => {
+  unsubscribeStorage?.()
+  unsubscribeStorage = null
+  document.removeEventListener('click', onDocumentClickCloseTheme)
+})
 
 const lastSnapshot = ref<RouteSnapshot | null>(null)
 const pendingSnapshot = ref<RouteSnapshot | null>(null)
@@ -212,5 +335,15 @@ watch(() => chatStore.isConnected, (isConnected) => {
 
 .min-h-0 {
   min-height: 0;
+}
+
+/* Unstyled <button class="nav-link"> matches <a class="nav-link"> icon weight */
+.navbar .navbar-nav button.nav-link {
+  cursor: pointer;
+}
+
+.navbar .dropdown-menu .dropdown-item.active,
+.navbar .dropdown-menu .dropdown-item:active {
+  font-weight: 600;
 }
 </style>

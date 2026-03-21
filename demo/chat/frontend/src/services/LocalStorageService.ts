@@ -5,8 +5,12 @@
  * using the 'storage' event.
  */
 
+/** Stored as: no key = auto, "true" = light, "false" = dark */
+export type ThemePreference = 'auto' | 'light' | 'dark'
+
 export interface LocalStorageData {
   session: string | null
+  /** Raw localStorage value: null = auto, "true" = light, "false" = dark */
   theme: string | null
 }
 
@@ -19,16 +23,24 @@ export class LocalStorageService {
   private callbacks: Set<StorageChangeCallback> = new Set()
   private isInitialized = false
 
+  private readonly boundHandleStorageChange = (event: StorageEvent): void => {
+    this.handleStorageChange(event)
+  }
+
+  private hasStorage(): boolean {
+    return typeof window !== 'undefined' && typeof localStorage !== 'undefined'
+  }
+
   /**
    * Initialize the service and set up cross-tab event listener
    */
   public init(): void {
-    if (this.isInitialized) {
+    if (this.isInitialized || !this.hasStorage()) {
       return
     }
 
     // Listen for storage changes from other tabs
-    window.addEventListener('storage', this.handleStorageChange.bind(this))
+    window.addEventListener('storage', this.boundHandleStorageChange)
     this.isInitialized = true
   }
 
@@ -40,7 +52,7 @@ export class LocalStorageService {
       return
     }
 
-    window.removeEventListener('storage', this.handleStorageChange.bind(this))
+    window.removeEventListener('storage', this.boundHandleStorageChange)
     this.callbacks.clear()
     this.isInitialized = false
   }
@@ -49,6 +61,9 @@ export class LocalStorageService {
    * Get current session token
    */
   public getSession(): string | null {
+    if (!this.hasStorage()) {
+      return null
+    }
     return localStorage.getItem(LocalStorageService.SESSION_KEY)
   }
 
@@ -76,6 +91,9 @@ export class LocalStorageService {
    * Set session token
    */
   public setSession(session: string | null): void {
+    if (!this.hasStorage()) {
+      return
+    }
     if (session === null) {
       localStorage.removeItem(LocalStorageService.SESSION_KEY)
     } else {
@@ -87,23 +105,63 @@ export class LocalStorageService {
   }
 
   /**
-   * Get current theme
+   * Get raw theme value from localStorage
    */
   public getTheme(): string | null {
+    if (!this.hasStorage()) {
+      return null
+    }
     return localStorage.getItem(LocalStorageService.THEME_KEY)
   }
 
   /**
-   * Set theme
+   * Parse raw theme storage into preference
    */
-  public setTheme(theme: string | null): void {
+  public getThemePreference(): ThemePreference {
+    const raw = this.getTheme()
+    if (raw === null) {
+      return 'auto'
+    }
+    if (raw === 'true') {
+      return 'light'
+    }
+    if (raw === 'false') {
+      return 'dark'
+    }
+    return 'auto'
+  }
+
+  /**
+   * Set theme preference (no key = auto, true = light, false = dark)
+   */
+  public setThemePreference(preference: ThemePreference): void {
+    if (!this.hasStorage()) {
+      return
+    }
+    if (preference === 'auto') {
+      localStorage.removeItem(LocalStorageService.THEME_KEY)
+    } else if (preference === 'light') {
+      localStorage.setItem(LocalStorageService.THEME_KEY, 'true')
+    } else {
+      localStorage.setItem(LocalStorageService.THEME_KEY, 'false')
+    }
+
+    this.notifyCallbacks(this.getData())
+  }
+
+  /**
+   * Set raw theme value (used by setData)
+   */
+  private setThemeRaw(theme: string | null): void {
+    if (!this.hasStorage()) {
+      return
+    }
     if (theme === null) {
       localStorage.removeItem(LocalStorageService.THEME_KEY)
     } else {
       localStorage.setItem(LocalStorageService.THEME_KEY, theme)
     }
-    
-    // Notify callbacks about the change (same-tab update)
+
     this.notifyCallbacks(this.getData())
   }
 
@@ -125,7 +183,7 @@ export class LocalStorageService {
       this.setSession(data.session)
     }
     if (data.theme !== undefined) {
-      this.setTheme(data.theme)
+      this.setThemeRaw(data.theme)
     }
   }
 
@@ -133,6 +191,9 @@ export class LocalStorageService {
    * Clear all data
    */
   public clear(): void {
+    if (!this.hasStorage()) {
+      return
+    }
     localStorage.removeItem(LocalStorageService.SESSION_KEY)
     localStorage.removeItem(LocalStorageService.THEME_KEY)
     this.notifyCallbacks(this.getData())

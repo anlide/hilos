@@ -3,6 +3,7 @@ import { createPinia } from 'pinia'
 import { createChatWebSocketPlugin } from './plugins/websocket'
 import { createWebSocketSSRStub } from './plugins/websocket-ssr-stub'
 import { localStorageService } from './services/LocalStorageService'
+import { initBootstrapTheme } from './theme/bootstrapTheme'
 import 'bootstrap/dist/css/bootstrap.min.css'
 import 'bootstrap-icons/font/bootstrap-icons.css'
 import App from './App.vue'
@@ -34,6 +35,7 @@ export const createApp = ViteSSG(
     } else {
       pinia.state.value = (initialState.pinia as Record<string, unknown>) ?? {}
       localStorageService.init()
+      initBootstrapTheme()
       app.use(createChatWebSocketPlugin() as Parameters<typeof app.use>[0])
     }
   }

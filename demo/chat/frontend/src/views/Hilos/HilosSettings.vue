@@ -9,7 +9,7 @@
             <button
               v-if="tableState"
               type="button"
-              class="btn btn-outline-light btn-sm"
+              class="btn btn-outline-secondary btn-sm"
               title="Refresh table from server"
               aria-label="Refresh"
               @click="refreshTable"
@@ -47,7 +47,7 @@
               <th>
                 <button
                   v-if="isFieldSortable('key')"
-                  class="btn btn-link p-0 text-decoration-none text-dark fw-bold"
+                  class="btn btn-link p-0 text-decoration-none text-body fw-bold"
                   @click="handleSort('key')"
                 >
                   Key

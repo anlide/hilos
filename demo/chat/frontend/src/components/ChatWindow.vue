@@ -1,6 +1,6 @@
 <template>
   <div class="card h-100 d-flex flex-column">
-    <div class="card-body p-0 overflow-auto flex-grow-1" ref="messagesContainer">
+    <div class="card-body p-0 overflow-auto flex-grow-1 bg-body" ref="messagesContainer">
       <div v-if="!chatStore.isConnected" class="list-group list-group-flush p-3 placeholder-glow">
         <div
           v-for="i in 6"
@@ -17,7 +17,7 @@
           <div
             v-for="event in visibleEvents"
             :key="event.id || `event-${event.timestamp}-${event.userId ?? event.botId ?? 'sys'}`"
-            class="list-group-item border-0"
+            class="list-group-item border-0 bg-transparent"
           >
             <MessageItem :event="event" />
           </div>

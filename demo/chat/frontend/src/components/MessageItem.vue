@@ -241,13 +241,13 @@ const getServiceMessageClass = (): string => {
   }
 }
 
-/** Bubble styles: own=primary, others=neutral (theme-aware), service=existing */
+/** Bubble styles: own=primary, others=body secondary (theme-aware), service=existing */
 const getBubbleClass = (): string => {
   if (isOwnMessage.value) {
     return 'bg-primary text-white'
   }
   if (props.event.type === 'message_sent') {
-    return 'bg-light text-dark'
+    return 'bg-body-secondary text-body border border-secondary-subtle'
   }
   return getServiceMessageClass()
 }
