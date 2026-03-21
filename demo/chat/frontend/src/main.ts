@@ -14,8 +14,10 @@ export async function includedRoutes(paths: string[]) {
     (path) =>
       !path.startsWith('user') &&
       !path.startsWith('bot') &&
+      !path.startsWith('hilos/guardian/') &&
       !path.includes('/user/') &&
-      !path.includes('/bot/')
+      !path.includes('/bot/') &&
+      !path.includes('/hilos/guardian/')
   )
 }
 

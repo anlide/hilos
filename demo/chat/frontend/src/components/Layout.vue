@@ -110,6 +110,8 @@ const resolvePage = (routeName: unknown): string | null => {
       return 'hilos_i18n'
     case 'hilos_guardian':
       return 'hilos_guardian'
+    case 'hilos_guardian_agent':
+      return 'hilos_guardian_agent'
     case 'hilos_analytics':
       return 'hilos_analytics'
     default:

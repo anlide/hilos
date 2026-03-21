@@ -23,6 +23,9 @@ class HilosSignalConstants
     /** @var string Subscription signal for Hilos guardian page */
     public const string SUBSCRIPTION_PAGE_HILOS_GUARDIAN = 'subscription_page_hilos_guardian';
 
+    /** @var string Subscription signal for Hilos guardian AI agent page */
+    public const string SUBSCRIPTION_PAGE_HILOS_GUARDIAN_AGENT = 'subscription_page_hilos_guardian_agent';
+
     /** @var string Subscription signal for Hilos analytics page */
     public const string SUBSCRIPTION_PAGE_HILOS_ANALYTICS = 'subscription_page_hilos_analytics';
 }

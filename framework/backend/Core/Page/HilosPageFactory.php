@@ -34,6 +34,7 @@ class HilosPageFactory extends AbstractPageFactory
             HilosPageConstants::HILOS_SETTINGS,
             HilosPageConstants::HILOS_I18N,
             HilosPageConstants::HILOS_GUARDIAN,
+            HilosPageConstants::HILOS_GUARDIAN_AGENT,
             HilosPageConstants::HILOS_ANALYTICS,
         ], true)) {
             throw new PageNotFoundException(
@@ -58,6 +59,7 @@ class HilosPageFactory extends AbstractPageFactory
             HilosPageConstants::HILOS_SETTINGS,
             HilosPageConstants::HILOS_I18N,
             HilosPageConstants::HILOS_GUARDIAN,
+            HilosPageConstants::HILOS_GUARDIAN_AGENT,
             HilosPageConstants::HILOS_ANALYTICS,
         ], true);
     }

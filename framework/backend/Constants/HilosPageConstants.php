@@ -24,6 +24,9 @@ class HilosPageConstants
     /** @var string Hilos guardian page (project validation robots) */
     public const string HILOS_GUARDIAN = 'hilos_guardian';
 
+    /** @var string Hilos guardian AI agent page */
+    public const string HILOS_GUARDIAN_AGENT = 'hilos_guardian_agent';
+
     /** @var string Hilos analytics page (visit statistics) */
     public const string HILOS_ANALYTICS = 'hilos_analytics';
 }

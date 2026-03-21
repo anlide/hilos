@@ -14,6 +14,8 @@ import {
   SUBSCRIPTION_PAGE_ADMIN_USERS,
   SUBSCRIPTION_PAGE_ADMIN_BOTS,
   SUBSCRIPTION_PAGE_ADMIN_MODERATOR,
+  SUBSCRIPTION_PAGE_HILOS_GUARDIAN,
+  SUBSCRIPTION_PAGE_HILOS_GUARDIAN_AGENT,
   SUBSCRIPTION_PAGE_HILOS_SETTINGS,
   SUBSCRIPTION_PAGE_BOT,
   SUBSCRIPTION_PAGE_USER,
@@ -24,6 +26,7 @@ import {
 import {localStorageService} from '@/services/LocalStorageService'
 import {ChatEntitiesReceiver} from '@/entities/ChatEntitiesReceiver'
 import {eventPayloadToEvent, isRecord, parseEventPayloads} from '@/entities/parsers'
+import type { User } from '@/types'
 import type { TableMutationEntry } from '@hilos/sdk/types'
 
 type RawMessage = {
@@ -111,7 +114,7 @@ export function createChatWebSocketPlugin() {
             throw new Error('Invalid handshake_response payload')
           }
           const currentUserId = message.data.userId
-          const currentUser = chatStore.users.find((u) => u.id === currentUserId)
+          const currentUser = chatStore.users.find((u: User) => u.id === currentUserId)
           const moderationState =
             message.data.moderationState !== undefined ? message.data.moderationState : undefined
           chatStore.handleSubscriptionResponse(
@@ -144,6 +147,8 @@ export function createChatWebSocketPlugin() {
         case SUBSCRIPTION_PAGE_ADMIN_USERS:
         case SUBSCRIPTION_PAGE_ADMIN_BOTS:
         case SUBSCRIPTION_PAGE_ADMIN_MODERATOR:
+        case SUBSCRIPTION_PAGE_HILOS_GUARDIAN:
+        case SUBSCRIPTION_PAGE_HILOS_GUARDIAN_AGENT:
         case SUBSCRIPTION_PAGE_HILOS_SETTINGS:
         case TABLE_DATA: {
           if (message.data && typeof message.data === 'object' && 'tables' in message.data && message.data.tables) {

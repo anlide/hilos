@@ -52,6 +52,9 @@ final class PageConstants
     /** @var string Hilos guardian page */
     public const string HILOS_GUARDIAN = HilosPageConstants::HILOS_GUARDIAN;
 
+    /** @var string Hilos guardian AI agent page */
+    public const string HILOS_GUARDIAN_AGENT = HilosPageConstants::HILOS_GUARDIAN_AGENT;
+
     /** @var string Hilos analytics page */
     public const string HILOS_ANALYTICS = HilosPageConstants::HILOS_ANALYTICS;
 }

@@ -99,6 +99,11 @@ final class ChatSignalRouter extends SignalRouter
                 'agentIndex' => null,
                 'params' => [],
             ],
+            PageConstants::HILOS_GUARDIAN_AGENT => [
+                'agentType' => AgentType::HILOS_GUARDIAN,
+                'agentIndex' => null,
+                'params' => [],
+            ],
             PageConstants::HILOS_ANALYTICS => [
                 'agentType' => AgentType::HILOS_ANALYTICS,
                 'agentIndex' => null,
@@ -154,6 +159,7 @@ final class ChatSignalRouter extends SignalRouter
                 PageConstants::HILOS_SETTINGS => AgentType::HILOS_INDEX,
                 PageConstants::HILOS_I18N => AgentType::HILOS_INDEX,
                 PageConstants::HILOS_GUARDIAN => AgentType::HILOS_GUARDIAN,
+                PageConstants::HILOS_GUARDIAN_AGENT => AgentType::HILOS_GUARDIAN,
                 PageConstants::HILOS_ANALYTICS => AgentType::HILOS_ANALYTICS,
             ],
         ];

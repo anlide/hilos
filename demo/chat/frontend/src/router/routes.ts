@@ -20,6 +20,7 @@ import HilosDashboard from '@/views/HilosDashboard.vue'
 import HilosSettings from '@/views/HilosSettings.vue'
 import HilosI18n from '@/views/HilosI18n.vue'
 import HilosGuardian from '@/views/HilosGuardian.vue'
+import HilosGuardianAgent from '@/views/HilosGuardianAgent.vue'
 import HilosAnalytics from '@/views/HilosAnalytics.vue'
 import ErrorPage from '@/views/ErrorPage.vue'
 
@@ -102,6 +103,11 @@ export const demoRoutes: RouteRecordRaw[] = [
         path: 'hilos/guardian',
         name: 'hilos_guardian',
         component: HilosGuardian
+      },
+      {
+        path: 'hilos/guardian/:agentId',
+        name: 'hilos_guardian_agent',
+        component: HilosGuardianAgent
       },
       {
         path: 'hilos/analytics',

@@ -16,6 +16,7 @@ use Demo\Chat\Pages\AdminUsersPage;
 use Demo\Chat\Pages\BotPage;
 use Demo\Chat\Pages\Hilos\AnalyticsPage;
 use Demo\Chat\Pages\Hilos\DashboardPage;
+use Demo\Chat\Pages\Hilos\Guardian\GuardianAgentPage;
 use Demo\Chat\Pages\Hilos\GuardianPage;
 use Demo\Chat\Pages\Hilos\I18nPage;
 use Demo\Chat\Pages\Hilos\SettingsPage;
@@ -74,6 +75,7 @@ final class ChatPageFactory extends HilosPageFactory
             HilosPageConstants::HILOS_SETTINGS => new SettingsPage($this->agent),
             HilosPageConstants::HILOS_I18N => new I18nPage($this->agent),
             HilosPageConstants::HILOS_GUARDIAN => new GuardianPage($this->agent),
+            HilosPageConstants::HILOS_GUARDIAN_AGENT => new GuardianAgentPage($this->agent),
             HilosPageConstants::HILOS_ANALYTICS => new AnalyticsPage($this->agent),
             default => parent::createPage($pageName),
         };
