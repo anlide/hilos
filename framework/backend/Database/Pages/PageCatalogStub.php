@@ -19,7 +19,7 @@ class PageCatalogStub
      * @return array<string, array{
      *     parent_id: ?string,
      *     label: string,
-     *     dynamic_param?: string,
+     *     path_template?: string,
      *     hide_breadcrumb?: bool,
      * }>
      */

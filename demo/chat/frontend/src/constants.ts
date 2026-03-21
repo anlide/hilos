@@ -10,6 +10,7 @@ export const SUBSCRIPTION_PAGE_ADMIN_MODERATOR = 'subscription_page_admin_modera
 export const SUBSCRIPTION_PAGE_HILOS_SETTINGS = 'subscription_page_hilos_settings'
 export const SUBSCRIPTION_PAGE_HILOS_GUARDIAN = 'subscription_page_hilos_guardian'
 export const SUBSCRIPTION_PAGE_HILOS_GUARDIAN_AGENT = 'subscription_page_hilos_guardian_agent'
+export const SUBSCRIPTION_PAGE_HILOS_I18N = 'subscription_page_hilos_i18n'
 export const TABLE_DATA = 'table_data'
 export const TABLE_MUTATION = 'table_mutation'
 export const TABLE_ACTION_ERROR = 'table_action_error'

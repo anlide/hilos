@@ -17,6 +17,7 @@ import {
   SUBSCRIPTION_PAGE_HILOS_GUARDIAN,
   SUBSCRIPTION_PAGE_HILOS_GUARDIAN_AGENT,
   SUBSCRIPTION_PAGE_HILOS_SETTINGS,
+  SUBSCRIPTION_PAGE_HILOS_I18N,
   SUBSCRIPTION_PAGE_BOT,
   SUBSCRIPTION_PAGE_USER,
   TABLE_DATA,
@@ -235,6 +236,12 @@ export function createChatWebSocketPlugin() {
           return
         }
         default: {
+          if (
+            message.type === SUBSCRIPTION_PAGE_HILOS_I18N ||
+            message.type.startsWith('subscription_page_hilos_i18n_')
+          ) {
+            return
+          }
           throw new Error(`Unhandled websocket message type: ${message.type}`)
         }
       }

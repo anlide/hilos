@@ -11,10 +11,10 @@ namespace Hilos\Database\Pages;
  */
 final class PageCatalogConstants
 {
-    // Catalog entry keys
     public const string CATALOG_ENTRY_PARENT_ID = 'parent_id';
     public const string CATALOG_ENTRY_LABEL = 'label';
-    public const string CATALOG_ENTRY_DYNAMIC_PARAM = 'dynamic_param';
+    /** @var string Path template for breadcrumb links, e.g. /hilos/i18n/languages/{languageId} — param names are derived from {placeholders} */
+    public const string CATALOG_ENTRY_PATH_TEMPLATE = 'path_template';
     public const string CATALOG_ENTRY_HIDE_BREADCRUMB = 'hide_breadcrumb';
 
     // Stub page keys (example keys for PageCatalogStub)

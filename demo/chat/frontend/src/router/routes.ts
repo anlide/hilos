@@ -19,6 +19,25 @@ import Agents from '@/views/Agents.vue'
 import HilosDashboard from '@/views/Hilos/HilosDashboard.vue'
 import HilosSettings from '@/views/Hilos/HilosSettings.vue'
 import HilosI18n from '@/views/Hilos/HilosI18n.vue'
+import HilosI18nLanguagesList from '@/views/Hilos/I18n/Lists/HilosI18nLanguagesList.vue'
+import HilosI18nLanguageDetail from '@/views/Hilos/I18n/Details/HilosI18nLanguageDetail.vue'
+import HilosI18nCountriesList from '@/views/Hilos/I18n/Lists/HilosI18nCountriesList.vue'
+import HilosI18nCountryDetail from '@/views/Hilos/I18n/Details/HilosI18nCountryDetail.vue'
+import HilosI18nEntitiesList from '@/views/Hilos/I18n/Lists/HilosI18nEntitiesList.vue'
+import HilosI18nUiPagesList from '@/views/Hilos/I18n/Lists/HilosI18nUiPagesList.vue'
+import HilosI18nUiPageDetail from '@/views/Hilos/I18n/Details/HilosI18nUiPageDetail.vue'
+import HilosI18nGroupsList from '@/views/Hilos/I18n/Lists/HilosI18nGroupsList.vue'
+import HilosI18nGroupDetail from '@/views/Hilos/I18n/Details/HilosI18nGroupDetail.vue'
+import HilosI18nActionsList from '@/views/Hilos/I18n/Lists/HilosI18nActionsList.vue'
+import HilosI18nActionDetail from '@/views/Hilos/I18n/Details/HilosI18nActionDetail.vue'
+import HilosI18nEmailsList from '@/views/Hilos/I18n/Lists/HilosI18nEmailsList.vue'
+import HilosI18nTranslateEntity from '@/views/Hilos/I18n/Translate/HilosI18nTranslateEntity.vue'
+import HilosI18nTranslateUiPage from '@/views/Hilos/I18n/Translate/HilosI18nTranslateUiPage.vue'
+import HilosI18nTranslateUiPageItem from '@/views/Hilos/I18n/Translate/HilosI18nTranslateUiPageItem.vue'
+import HilosI18nTranslateGroup from '@/views/Hilos/I18n/Translate/HilosI18nTranslateGroup.vue'
+import HilosI18nTranslateGroupItem from '@/views/Hilos/I18n/Translate/HilosI18nTranslateGroupItem.vue'
+import HilosI18nTranslateActionError from '@/views/Hilos/I18n/Translate/HilosI18nTranslateActionError.vue'
+import HilosI18nTranslateEmail from '@/views/Hilos/I18n/Translate/HilosI18nTranslateEmail.vue'
 import HilosGuardian from '@/views/Hilos/HilosGuardian.vue'
 import HilosGuardianAgent from '@/views/Hilos/HilosGuardianAgent.vue'
 import HilosAnalytics from '@/views/Hilos/HilosAnalytics.vue'
@@ -109,6 +128,120 @@ export const demoRoutes: RouteRecordRaw[] = [
         name: 'hilos_i18n',
         component: HilosI18n,
         meta: { page: 'hilos_i18n' },
+      },
+      {
+        path: 'hilos/i18n/translate/ui-page/:uiPageId/item/:itemId',
+        name: 'hilos_i18n_translate_ui_page_item',
+        component: HilosI18nTranslateUiPageItem,
+        meta: { page: 'hilos_i18n_translate_ui_page_item' },
+      },
+      {
+        path: 'hilos/i18n/translate/group/:groupId/item/:itemId',
+        name: 'hilos_i18n_translate_group_item',
+        component: HilosI18nTranslateGroupItem,
+        meta: { page: 'hilos_i18n_translate_group_item' },
+      },
+      {
+        path: 'hilos/i18n/translate/action/:actionId/error/:errorId',
+        name: 'hilos_i18n_translate_action_error',
+        component: HilosI18nTranslateActionError,
+        meta: { page: 'hilos_i18n_translate_action_error' },
+      },
+      {
+        path: 'hilos/i18n/translate/entity/:entityId',
+        name: 'hilos_i18n_translate_entity',
+        component: HilosI18nTranslateEntity,
+        meta: { page: 'hilos_i18n_translate_entity' },
+      },
+      {
+        path: 'hilos/i18n/translate/ui-page/:uiPageId',
+        name: 'hilos_i18n_translate_ui_page',
+        component: HilosI18nTranslateUiPage,
+        meta: { page: 'hilos_i18n_translate_ui_page' },
+      },
+      {
+        path: 'hilos/i18n/translate/group/:groupId',
+        name: 'hilos_i18n_translate_group',
+        component: HilosI18nTranslateGroup,
+        meta: { page: 'hilos_i18n_translate_group' },
+      },
+      {
+        path: 'hilos/i18n/translate/email/:emailId',
+        name: 'hilos_i18n_translate_email',
+        component: HilosI18nTranslateEmail,
+        meta: { page: 'hilos_i18n_translate_email' },
+      },
+      {
+        path: 'hilos/i18n/languages/:languageId',
+        name: 'hilos_i18n_language',
+        component: HilosI18nLanguageDetail,
+        meta: { page: 'hilos_i18n_language' },
+      },
+      {
+        path: 'hilos/i18n/languages',
+        name: 'hilos_i18n_languages',
+        component: HilosI18nLanguagesList,
+        meta: { page: 'hilos_i18n_languages' },
+      },
+      {
+        path: 'hilos/i18n/countries/:countryId',
+        name: 'hilos_i18n_country',
+        component: HilosI18nCountryDetail,
+        meta: { page: 'hilos_i18n_country' },
+      },
+      {
+        path: 'hilos/i18n/countries',
+        name: 'hilos_i18n_countries',
+        component: HilosI18nCountriesList,
+        meta: { page: 'hilos_i18n_countries' },
+      },
+      {
+        path: 'hilos/i18n/entities',
+        name: 'hilos_i18n_entities',
+        component: HilosI18nEntitiesList,
+        meta: { page: 'hilos_i18n_entities' },
+      },
+      {
+        path: 'hilos/i18n/ui-pages/:uiPageId',
+        name: 'hilos_i18n_ui_page',
+        component: HilosI18nUiPageDetail,
+        meta: { page: 'hilos_i18n_ui_page' },
+      },
+      {
+        path: 'hilos/i18n/ui-pages',
+        name: 'hilos_i18n_ui_pages',
+        component: HilosI18nUiPagesList,
+        meta: { page: 'hilos_i18n_ui_pages' },
+      },
+      {
+        path: 'hilos/i18n/groups/:groupId',
+        name: 'hilos_i18n_group',
+        component: HilosI18nGroupDetail,
+        meta: { page: 'hilos_i18n_group' },
+      },
+      {
+        path: 'hilos/i18n/groups',
+        name: 'hilos_i18n_groups',
+        component: HilosI18nGroupsList,
+        meta: { page: 'hilos_i18n_groups' },
+      },
+      {
+        path: 'hilos/i18n/actions/:actionId',
+        name: 'hilos_i18n_action',
+        component: HilosI18nActionDetail,
+        meta: { page: 'hilos_i18n_action' },
+      },
+      {
+        path: 'hilos/i18n/actions',
+        name: 'hilos_i18n_actions',
+        component: HilosI18nActionsList,
+        meta: { page: 'hilos_i18n_actions' },
+      },
+      {
+        path: 'hilos/i18n/emails',
+        name: 'hilos_i18n_emails',
+        component: HilosI18nEmailsList,
+        meta: { page: 'hilos_i18n_emails' },
       },
       {
         path: 'hilos/guardian',

@@ -2,6 +2,7 @@ import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { useChatStore } from '@/stores'
 import { guardianAiAgentMap, isGuardianAiAgentId } from '@/constants/guardianAiAgents'
+import { pathTemplateParamKeys, type PageCatalogEntry, type PageCatalogState } from '@/types/PageCatalog'
 
 type BreadcrumbItem = {
   label: string
@@ -19,7 +20,113 @@ const parsePositiveInt = (value: unknown): number | null => {
   return normalized
 }
 
-const buildPageLocation = (pageId: string, routeParams: Record<string, unknown>): string | null => {
+/**
+ * Build URL from backend page catalog path_template; param names come from {placeholders}.
+ */
+const buildPathFromCatalog = (
+  entry: PageCatalogEntry | undefined,
+  routeParams: Record<string, unknown>
+): string | null => {
+  if (!entry?.pathTemplate) {
+    return null
+  }
+  let path = entry.pathTemplate
+  for (const key of pathTemplateParamKeys(entry.pathTemplate)) {
+    const raw = routeParams[key]
+    if (typeof raw !== 'string' || raw === '') {
+      return null
+    }
+    path = path.split(`{${key}}`).join(encodeURIComponent(raw))
+  }
+  return path
+}
+
+/**
+ * Stub dynamic segment labels for breadcrumb (until API-backed titles exist).
+ * Centralized; replace with catalog-driven data later if needed.
+ */
+const resolveCatalogStubDynamicLabel = (pageId: string, routeParams: Record<string, unknown>): string | null => {
+  const s = (key: string): string | null => {
+    const v = routeParams[key]
+    return typeof v === 'string' && v !== '' ? v : null
+  }
+
+  switch (pageId) {
+    case 'hilos_i18n_language': {
+      const id = s('languageId')
+      return id !== null ? `Language ${id}` : null
+    }
+    case 'hilos_i18n_country': {
+      const id = s('countryId')
+      return id !== null ? `Country ${id}` : null
+    }
+    case 'hilos_i18n_ui_page': {
+      const id = s('uiPageId')
+      return id !== null ? `UI page ${id}` : null
+    }
+    case 'hilos_i18n_group': {
+      const id = s('groupId')
+      return id !== null ? `Group ${id}` : null
+    }
+    case 'hilos_i18n_action': {
+      const id = s('actionId')
+      return id !== null ? `Action ${id}` : null
+    }
+    case 'hilos_i18n_translate_entity': {
+      const id = s('entityId')
+      return id !== null ? `Translate entity ${id}` : null
+    }
+    case 'hilos_i18n_translate_ui_page': {
+      const id = s('uiPageId')
+      return id !== null ? `Translate UI page ${id}` : null
+    }
+    case 'hilos_i18n_translate_ui_page_item': {
+      const uiPageId = s('uiPageId')
+      const itemId = s('itemId')
+      if (uiPageId !== null && itemId !== null) {
+        return `UI page item ${uiPageId} / ${itemId}`
+      }
+      return null
+    }
+    case 'hilos_i18n_translate_group': {
+      const id = s('groupId')
+      return id !== null ? `Translate group ${id}` : null
+    }
+    case 'hilos_i18n_translate_group_item': {
+      const groupId = s('groupId')
+      const itemId = s('itemId')
+      if (groupId !== null && itemId !== null) {
+        return `Group item ${groupId} / ${itemId}`
+      }
+      return null
+    }
+    case 'hilos_i18n_translate_action_error': {
+      const actionId = s('actionId')
+      const errorId = s('errorId')
+      if (actionId !== null && errorId !== null) {
+        return `Action error ${actionId} / ${errorId}`
+      }
+      return null
+    }
+    case 'hilos_i18n_translate_email': {
+      const id = s('emailId')
+      return id !== null ? `Translate email ${id}` : null
+    }
+    default:
+      return null
+  }
+}
+
+const buildPageLocation = (
+  pageId: string,
+  routeParams: Record<string, unknown>,
+  catalog: PageCatalogState
+): string | null => {
+  const fromCatalog = buildPathFromCatalog(catalog[pageId], routeParams)
+  if (fromCatalog !== null) {
+    return fromCatalog
+  }
+
   switch (pageId) {
     case 'main':
       return '/'
@@ -93,7 +200,7 @@ const resolveDynamicLabel = (
       return guardianAiAgentMap[agentId].title
     }
     default:
-      return null
+      return resolveCatalogStubDynamicLabel(pageId, routeParams)
   }
 }
 
@@ -145,7 +252,7 @@ export const useAdminBreadcrumb = () => {
 
       return {
         label: dynamicLabel ?? entry?.label ?? pageId,
-        to: isActive ? null : buildPageLocation(pageId, routeParams),
+        to: isActive ? null : buildPageLocation(pageId, routeParams, chatStore.pageCatalog),
         isActive,
       }
     })

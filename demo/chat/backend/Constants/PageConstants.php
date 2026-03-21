@@ -57,4 +57,42 @@ final class PageConstants
 
     /** @var string Hilos analytics page */
     public const string HILOS_ANALYTICS = HilosPageConstants::HILOS_ANALYTICS;
+
+    public const string HILOS_I18N_LANGUAGES = HilosPageConstants::HILOS_I18N_LANGUAGES;
+
+    public const string HILOS_I18N_COUNTRIES = HilosPageConstants::HILOS_I18N_COUNTRIES;
+
+    public const string HILOS_I18N_ENTITIES = HilosPageConstants::HILOS_I18N_ENTITIES;
+
+    public const string HILOS_I18N_UI_PAGES = HilosPageConstants::HILOS_I18N_UI_PAGES;
+
+    public const string HILOS_I18N_GROUPS = HilosPageConstants::HILOS_I18N_GROUPS;
+
+    public const string HILOS_I18N_ACTIONS = HilosPageConstants::HILOS_I18N_ACTIONS;
+
+    public const string HILOS_I18N_EMAILS = HilosPageConstants::HILOS_I18N_EMAILS;
+
+    public const string HILOS_I18N_LANGUAGE = HilosPageConstants::HILOS_I18N_LANGUAGE;
+
+    public const string HILOS_I18N_COUNTRY = HilosPageConstants::HILOS_I18N_COUNTRY;
+
+    public const string HILOS_I18N_UI_PAGE = HilosPageConstants::HILOS_I18N_UI_PAGE;
+
+    public const string HILOS_I18N_GROUP = HilosPageConstants::HILOS_I18N_GROUP;
+
+    public const string HILOS_I18N_ACTION = HilosPageConstants::HILOS_I18N_ACTION;
+
+    public const string HILOS_I18N_TRANSLATE_ENTITY = HilosPageConstants::HILOS_I18N_TRANSLATE_ENTITY;
+
+    public const string HILOS_I18N_TRANSLATE_UI_PAGE = HilosPageConstants::HILOS_I18N_TRANSLATE_UI_PAGE;
+
+    public const string HILOS_I18N_TRANSLATE_UI_PAGE_ITEM = HilosPageConstants::HILOS_I18N_TRANSLATE_UI_PAGE_ITEM;
+
+    public const string HILOS_I18N_TRANSLATE_GROUP = HilosPageConstants::HILOS_I18N_TRANSLATE_GROUP;
+
+    public const string HILOS_I18N_TRANSLATE_GROUP_ITEM = HilosPageConstants::HILOS_I18N_TRANSLATE_GROUP_ITEM;
+
+    public const string HILOS_I18N_TRANSLATE_ACTION_ERROR = HilosPageConstants::HILOS_I18N_TRANSLATE_ACTION_ERROR;
+
+    public const string HILOS_I18N_TRANSLATE_EMAIL = HilosPageConstants::HILOS_I18N_TRANSLATE_EMAIL;
 }

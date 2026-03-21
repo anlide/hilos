@@ -18,6 +18,25 @@ use Demo\Chat\Pages\Hilos\AnalyticsPage;
 use Demo\Chat\Pages\Hilos\DashboardPage;
 use Demo\Chat\Pages\Hilos\Guardian\GuardianAgentPage;
 use Demo\Chat\Pages\Hilos\GuardianPage;
+use Demo\Chat\Pages\Hilos\I18n\Details\ActionDetailPage;
+use Demo\Chat\Pages\Hilos\I18n\Details\CountryDetailPage;
+use Demo\Chat\Pages\Hilos\I18n\Details\GroupDetailPage;
+use Demo\Chat\Pages\Hilos\I18n\Details\LanguageDetailPage;
+use Demo\Chat\Pages\Hilos\I18n\Details\UiPageDetailPage;
+use Demo\Chat\Pages\Hilos\I18n\Lists\ActionsListPage;
+use Demo\Chat\Pages\Hilos\I18n\Lists\CountriesListPage;
+use Demo\Chat\Pages\Hilos\I18n\Lists\EmailsListPage;
+use Demo\Chat\Pages\Hilos\I18n\Lists\EntitiesListPage;
+use Demo\Chat\Pages\Hilos\I18n\Lists\GroupsListPage;
+use Demo\Chat\Pages\Hilos\I18n\Lists\LanguagesListPage;
+use Demo\Chat\Pages\Hilos\I18n\Lists\UiPagesListPage;
+use Demo\Chat\Pages\Hilos\I18n\Translate\TranslateActionErrorPage;
+use Demo\Chat\Pages\Hilos\I18n\Translate\TranslateEmailPage;
+use Demo\Chat\Pages\Hilos\I18n\Translate\TranslateEntityPage;
+use Demo\Chat\Pages\Hilos\I18n\Translate\TranslateGroupItemPage;
+use Demo\Chat\Pages\Hilos\I18n\Translate\TranslateGroupPage;
+use Demo\Chat\Pages\Hilos\I18n\Translate\TranslateUiPageItemPage;
+use Demo\Chat\Pages\Hilos\I18n\Translate\TranslateUiPagePage;
 use Demo\Chat\Pages\Hilos\I18nPage;
 use Demo\Chat\Pages\Hilos\SettingsPage;
 use Demo\Chat\Pages\MainPage;
@@ -77,6 +96,25 @@ final class ChatPageFactory extends HilosPageFactory
             HilosPageConstants::HILOS_GUARDIAN => new GuardianPage($this->agent),
             HilosPageConstants::HILOS_GUARDIAN_AGENT => new GuardianAgentPage($this->agent),
             HilosPageConstants::HILOS_ANALYTICS => new AnalyticsPage($this->agent),
+            HilosPageConstants::HILOS_I18N_LANGUAGES => new LanguagesListPage($this->agent),
+            HilosPageConstants::HILOS_I18N_COUNTRIES => new CountriesListPage($this->agent),
+            HilosPageConstants::HILOS_I18N_ENTITIES => new EntitiesListPage($this->agent),
+            HilosPageConstants::HILOS_I18N_UI_PAGES => new UiPagesListPage($this->agent),
+            HilosPageConstants::HILOS_I18N_GROUPS => new GroupsListPage($this->agent),
+            HilosPageConstants::HILOS_I18N_ACTIONS => new ActionsListPage($this->agent),
+            HilosPageConstants::HILOS_I18N_EMAILS => new EmailsListPage($this->agent),
+            HilosPageConstants::HILOS_I18N_LANGUAGE => new LanguageDetailPage($this->agent),
+            HilosPageConstants::HILOS_I18N_COUNTRY => new CountryDetailPage($this->agent),
+            HilosPageConstants::HILOS_I18N_UI_PAGE => new UiPageDetailPage($this->agent),
+            HilosPageConstants::HILOS_I18N_GROUP => new GroupDetailPage($this->agent),
+            HilosPageConstants::HILOS_I18N_ACTION => new ActionDetailPage($this->agent),
+            HilosPageConstants::HILOS_I18N_TRANSLATE_ENTITY => new TranslateEntityPage($this->agent),
+            HilosPageConstants::HILOS_I18N_TRANSLATE_UI_PAGE => new TranslateUiPagePage($this->agent),
+            HilosPageConstants::HILOS_I18N_TRANSLATE_UI_PAGE_ITEM => new TranslateUiPageItemPage($this->agent),
+            HilosPageConstants::HILOS_I18N_TRANSLATE_GROUP => new TranslateGroupPage($this->agent),
+            HilosPageConstants::HILOS_I18N_TRANSLATE_GROUP_ITEM => new TranslateGroupItemPage($this->agent),
+            HilosPageConstants::HILOS_I18N_TRANSLATE_ACTION_ERROR => new TranslateActionErrorPage($this->agent),
+            HilosPageConstants::HILOS_I18N_TRANSLATE_EMAIL => new TranslateEmailPage($this->agent),
             default => parent::createPage($pageName),
         };
     }
