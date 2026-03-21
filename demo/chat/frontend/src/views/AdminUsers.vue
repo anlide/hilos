@@ -5,17 +5,11 @@
       <div class="card d-flex flex-column flex-grow-1 min-h-0 overflow-hidden">
         <div class="card-header d-flex justify-content-between align-items-center">
           <h5 class="mb-0">Admin Users</h5>
-          <button
+          <TableRefreshToolbarButton
             v-if="tableState"
-            type="button"
-            class="btn btn-outline-secondary btn-sm"
-            title="Refresh table from server"
-            aria-label="Refresh table"
+            :loading="refreshLoading"
             @click="refreshTable"
-          >
-            <i class="bi bi-arrow-clockwise" aria-hidden="true"></i>
-            Refresh
-          </button>
+          />
         </div>
         <div class="card-body overflow-auto">
           <Table
@@ -178,7 +172,8 @@ import { Table, Modal, LoadingButton } from '@hilos/sdk/components'
 import { getTableDisplayRows, getTablePendingChanges, getTableChangeMarkers } from '@hilos/sdk/composables'
 import { useChatStore } from '@/stores'
 import { sendAction } from '@/services/websocketActions'
-import { TableActionConstants } from '@hilos/sdk/constants'
+import { useTableRefresh } from '@/composables/useTableRefresh'
+import TableRefreshToolbarButton from '@/components/TableRefreshToolbarButton.vue'
 import { USER_UPDATE } from '@/constants'
 import type { Presence } from '@/types/domain/Presence'
 
@@ -193,6 +188,7 @@ const chatStore = useChatStore()
 const websocket = useWebSocket()
 
 const tableKey = 'users'
+const { refreshLoading, refreshTable } = useTableRefresh(tableKey)
 const tableState = computed(() => chatStore.tableData[tableKey])
 const displayRows = computed(() => getTableDisplayRows<UserEntity>(chatStore.tableData[tableKey]))
 const pendingChanges = computed(() => getTablePendingChanges(chatStore.tableData[tableKey]))
@@ -205,12 +201,6 @@ const users = computed(() => {
     return { ...row, presence }
   })
 })
-
-const refreshTable = () => {
-  sendAction(websocket, TableActionConstants.TABLE_REFRESH, {
-    [TableActionConstants.PAYLOAD_KEY_TABLE_KEY]: tableKey,
-  })
-}
 
 const handleApplyChanges = () => {
   const { hasDeletes } = chatStore.applyPendingMutations(tableKey)

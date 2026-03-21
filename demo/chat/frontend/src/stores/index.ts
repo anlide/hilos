@@ -19,6 +19,8 @@ export const useChatStore = defineStore('chat', {
     currentUserId: null as number | null,
     currentUsername: null as string | null,
     currentUserModerationState: null as string | null,
+    /** When set, the table refresh control for this key is in loading state. */
+    pendingTableRefreshKey: null as string | null,
     reconnectAttempts: 0,
     maxReconnectAttempts: Infinity,
   }),
@@ -77,6 +79,16 @@ export const useChatStore = defineStore('chat', {
 
     setModerationState(value: string | null) {
       this.currentUserModerationState = value
+    },
+
+    startTableRefresh(tableKey: string) {
+      this.pendingTableRefreshKey = tableKey
+    },
+
+    completeTableRefreshForKey(tableKey: string) {
+      if (this.pendingTableRefreshKey === tableKey) {
+        this.pendingTableRefreshKey = null
+      }
     },
 
     addEvent(event: Event) {

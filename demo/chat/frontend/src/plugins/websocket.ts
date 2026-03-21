@@ -149,10 +149,19 @@ export function createChatWebSocketPlugin() {
         case SUBSCRIPTION_PAGE_ADMIN_MODERATOR:
         case SUBSCRIPTION_PAGE_HILOS_GUARDIAN:
         case SUBSCRIPTION_PAGE_HILOS_GUARDIAN_AGENT:
-        case SUBSCRIPTION_PAGE_HILOS_SETTINGS:
-        case TABLE_DATA: {
+        case SUBSCRIPTION_PAGE_HILOS_SETTINGS: {
           if (message.data && typeof message.data === 'object' && 'tables' in message.data && message.data.tables) {
             chatStore.applyTablesPayload(message.data.tables as Record<string, unknown>)
+          }
+          return
+        }
+        case TABLE_DATA: {
+          if (message.data && typeof message.data === 'object' && 'tables' in message.data && message.data.tables) {
+            const tables = message.data.tables as Record<string, unknown>
+            chatStore.applyTablesPayload(tables)
+            for (const key of Object.keys(tables)) {
+              chatStore.completeTableRefreshForKey(key)
+            }
           }
           return
         }
@@ -170,6 +179,10 @@ export function createChatWebSocketPlugin() {
         case TABLE_ACTION_ERROR: {
           if (message.data && typeof message.data === 'object') {
             const d = message.data as Record<string, unknown>
+            const tableKeyErr = d['tableKey'] as string | undefined
+            if (tableKeyErr) {
+              chatStore.completeTableRefreshForKey(tableKeyErr)
+            }
             const msg = d['message'] as string | undefined
             if (msg) {
               console.error(`[Table action error] ${d['tableKey'] ?? ''}: ${msg}`)

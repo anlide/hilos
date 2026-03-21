@@ -6,17 +6,12 @@
         <div class="card-header d-flex justify-content-between align-items-center">
           <h5 class="mb-0">Settings</h5>
           <div class="d-flex gap-2">
-            <button
+            <TableRefreshToolbarButton
               v-if="tableState"
-              type="button"
-              class="btn btn-outline-secondary btn-sm"
-              title="Refresh table from server"
+              :loading="refreshLoading"
               aria-label="Refresh"
               @click="refreshTable"
-            >
-              <i class="bi bi-arrow-clockwise" aria-hidden="true"></i>
-              Refresh
-            </button>
+            />
             <router-link to="/hilos" class="btn btn-sm btn-outline-secondary">Back to Hilos</router-link>
           </div>
         </div>
@@ -257,9 +252,10 @@ import { useWebSocket } from '@hilos/sdk/plugins/websocket'
 import { Table, Modal, LoadingButton } from '@hilos/sdk/components'
 import { getTableDisplayRows, getTablePendingChanges, getTableChangeMarkers } from '@hilos/sdk/composables'
 import { useTableDeleteMutationModal } from '@/composables/useTableDeleteMutationModal'
+import { useTableRefresh } from '@/composables/useTableRefresh'
+import TableRefreshToolbarButton from '@/components/TableRefreshToolbarButton.vue'
 import { useChatStore } from '@/stores'
 import { sendAction } from '@/services/websocketActions'
-import { TableActionConstants } from '@hilos/sdk/constants'
 import { SETTING_ADD, SETTING_UPDATE, SETTING_DELETE } from '@/constants'
 
 interface SettingEntity {
@@ -273,6 +269,7 @@ const chatStore = useChatStore()
 const websocket = useWebSocket()
 
 const tableKey = 'settings'
+const { refreshLoading, refreshTable } = useTableRefresh(tableKey)
 const tableState = computed(() => chatStore.tableData[tableKey])
 const displayRows = computed(() => getTableDisplayRows<SettingEntity>(chatStore.tableData[tableKey]))
 const pendingChanges = computed(() => getTablePendingChanges(chatStore.tableData[tableKey]))
@@ -289,12 +286,6 @@ const availableCatalogKeys = computed(() => {
 
 /** Orphan = key exists in DB but not in catalog. Only orphans can be deleted. */
 const isOrphan = (item: { key: string }) => !catalogKeys.value.includes(item.key)
-
-const refreshTable = () => {
-  sendAction(websocket, TableActionConstants.TABLE_REFRESH, {
-    [TableActionConstants.PAYLOAD_KEY_TABLE_KEY]: tableKey,
-  })
-}
 
 const handleApplyChanges = () => {
   const { hasDeletes } = chatStore.applyPendingMutations(tableKey)

@@ -5,17 +5,12 @@
       <div class="card d-flex flex-column flex-grow-1 min-h-0 overflow-hidden">
         <div class="card-header d-flex justify-content-between align-items-center">
           <h5 class="mb-0">Moderator prompt pieces</h5>
-          <button
+          <TableRefreshToolbarButton
             v-if="tableState"
-            type="button"
-            class="btn btn-outline-secondary btn-sm"
-            title="Refresh table from server"
+            :loading="refreshLoading"
             aria-label="Refresh"
             @click="refreshTable"
-          >
-            <i class="bi bi-arrow-clockwise" aria-hidden="true"></i>
-            Refresh
-          </button>
+          />
         </div>
         <div class="card-body overflow-auto">
           <Table
@@ -211,9 +206,10 @@ import { useWebSocket } from '@hilos/sdk/plugins/websocket'
 import { Table, Modal, LoadingButton } from '@hilos/sdk/components'
 import { getTableDisplayRows, getTablePendingChanges, getTableChangeMarkers } from '@hilos/sdk/composables'
 import { useTableDeleteMutationModal } from '@/composables/useTableDeleteMutationModal'
+import { useTableRefresh } from '@/composables/useTableRefresh'
+import TableRefreshToolbarButton from '@/components/TableRefreshToolbarButton.vue'
 import { useChatStore } from '@/stores'
 import { sendAction } from '@/services/websocketActions'
-import { TableActionConstants } from '@hilos/sdk/constants'
 import { MODERATOR_PIECE_CREATE, MODERATOR_PIECE_UPDATE, MODERATOR_PIECE_DELETE } from '@/constants'
 import type { ModeratorPromptPieceEntity } from '@/types/domain'
 
@@ -221,16 +217,11 @@ const chatStore = useChatStore()
 const websocket = useWebSocket()
 
 const tableKey = 'moderatorPromptPieces'
+const { refreshLoading, refreshTable } = useTableRefresh(tableKey)
 const tableState = computed(() => chatStore.tableData[tableKey])
 const displayRows = computed(() => getTableDisplayRows<ModeratorPromptPieceEntity>(chatStore.tableData[tableKey]))
 const pendingChanges = computed(() => getTablePendingChanges(chatStore.tableData[tableKey]))
 const changeMarkers = computed(() => getTableChangeMarkers(chatStore.tableData[tableKey]))
-
-const refreshTable = () => {
-  sendAction(websocket, TableActionConstants.TABLE_REFRESH, {
-    [TableActionConstants.PAYLOAD_KEY_TABLE_KEY]: tableKey,
-  })
-}
 
 const handleApplyChanges = () => {
   const { hasDeletes } = chatStore.applyPendingMutations(tableKey)
