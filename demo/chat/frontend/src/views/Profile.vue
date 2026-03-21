@@ -1,7 +1,7 @@
 <template>
-  <div class="row">
-    <div class="col-12 col-lg-8 mx-auto">
-      <div class="card">
+  <div class="row gx-3 gy-2 gy-lg-0 flex-grow-1 h-100 min-h-0 overflow-hidden">
+    <div class="col-12 col-lg-8 mx-auto d-flex flex-column h-100 min-h-0">
+      <div class="card flex-grow-1 overflow-auto">
         <div class="card-header">
           <h5 class="mb-0">Profile</h5>
         </div>

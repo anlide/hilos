@@ -1,7 +1,7 @@
 <template>
-  <div class="row">
-    <div class="col-12 col-xl-10 mx-auto">
-      <div class="card">
+  <div class="row gx-3 gy-2 gy-lg-0 flex-grow-1 h-100 min-h-0 overflow-hidden">
+    <div class="col-12 col-xl-10 mx-auto d-flex flex-column h-100 min-h-0">
+      <div class="card flex-grow-1 overflow-auto">
         <div class="card-header d-flex justify-content-between align-items-center">
           <h5 class="mb-0">Guardian</h5>
           <router-link to="/hilos" class="btn btn-sm btn-outline-secondary">Back to Hilos</router-link>
@@ -47,7 +47,7 @@ import GuardianAgentControls from '@/components/GuardianAgentControls.vue'
 import { guardianAiAgentIds, guardianAiAgents } from '@/constants/guardianAiAgents'
 
 useHead({
-  title: 'Guardian | Demo WebSocket Chat',
+  title: 'Guardian | Chat Hilos Demo',
   meta: [
     {
       name: 'description',
@@ -56,7 +56,10 @@ useHead({
   ]
 })
 
-const runningById = computed(() =>
-  Object.fromEntries(guardianAiAgentIds.map((id) => [id, false]))
-)
+const runningById = computed(() => {
+  return guardianAiAgentIds.reduce<Record<string, boolean>>((acc, id) => {
+    acc[id] = false
+    return acc
+  }, {})
+})
 </script>

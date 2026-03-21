@@ -1,11 +1,13 @@
 <template>
-  <div class="container py-5">
-    <div class="row justify-content-center">
-      <div class="col-12 col-md-8 col-lg-6 text-center">
+  <div class="row gx-3 gy-2 gy-lg-0 flex-grow-1 h-100 min-h-0 overflow-hidden justify-content-center">
+    <div class="col-12 col-md-8 col-lg-6 d-flex flex-column h-100 min-h-0">
+      <div class="d-flex flex-column justify-content-center flex-grow-1 overflow-auto py-5 text-center">
         <h1 class="display-4 fw-bold text-body-secondary">{{ code }}</h1>
         <p class="lead">{{ title }}</p>
         <p class="text-body-secondary">{{ description }}</p>
-        <router-link to="/" class="btn btn-primary mt-3">Back to Home</router-link>
+        <div>
+          <router-link to="/" class="btn btn-primary mt-3">Back to Home</router-link>
+        </div>
       </div>
     </div>
   </div>
@@ -44,7 +46,7 @@ const description = computed(
 )
 
 useHead({
-  title: `${code.value} - ${title.value} | Demo WebSocket Chat`,
+  title: `${code.value} - ${title.value} | Chat Hilos Demo`,
   meta: [
     {
       name: 'description',

@@ -19,7 +19,7 @@ import { useHead } from '@unhead/vue'
 import { useWebSocket } from '@hilos/sdk/plugins/websocket'
 
 useHead({
-  title: 'Demo WebSocket Chat',
+  title: 'Chat Hilos Demo',
   meta: [
     {
       name: 'description',

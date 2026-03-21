@@ -4,9 +4,10 @@ test.describe('Chat app navigation', () => {
   test('navigates to Home, Profile, Admin', async ({ page }) => {
     await page.goto('/')
 
-    await page.getByTestId('nav-home').click()
     await expect(page).toHaveURL('/')
-    await expect(page.getByTestId('nav-home')).toHaveClass(/fw-bold/)
+    await expect(page.getByTestId('nav-brand')).toHaveClass(/fw-bold/)
+    await page.getByTestId('nav-brand').click()
+    await expect(page).toHaveURL('/')
 
     await page.getByTestId('nav-profile').click()
     await expect(page).toHaveURL('/profile')

@@ -5,7 +5,14 @@
       :class="chatStore.isConnected ? 'bg-primary' : 'bg-danger'"
     >
       <div class="container-fluid">
-        <router-link class="navbar-brand" to="/">WebSocket Chat Demo</router-link>
+        <router-link
+          class="navbar-brand"
+          :class="{ 'fw-bold': route.name === 'home' }"
+          to="/"
+          data-id="nav-brand"
+        >
+          Chat Hilos Demo
+        </router-link>
         <span v-if="!chatStore.isConnected" class="badge bg-dark ms-2 align-middle" data-id="nav-offline">offline</span>
         <button
           class="navbar-toggler"
@@ -21,30 +28,34 @@
         <div class="collapse navbar-collapse" id="navbarNav">
           <ul class="navbar-nav ms-auto">
             <li class="nav-item">
-              <router-link class="nav-link" to="/" :class="{ 'fw-bold': $route.name === 'home' }" data-id="nav-home">
-                Home
-              </router-link>
-            </li>
-            <li class="nav-item">
-              <router-link class="nav-link" to="/profile" :class="{ 'fw-bold': $route.name === 'profile' }" data-id="nav-profile">
-                Profile
+              <router-link
+                class="nav-link d-inline-flex align-items-center justify-content-center fs-5"
+                to="/profile"
+                :class="{ 'fw-bold': route.name === 'profile' }"
+                aria-label="Profile"
+                data-id="nav-profile"
+              >
+                <i class="bi bi-person-circle" aria-hidden="true"></i>
+                <span class="visually-hidden">Profile</span>
               </router-link>
             </li>
             <li class="nav-item">
               <router-link
-                class="nav-link"
+                class="nav-link d-inline-flex align-items-center justify-content-center fs-5"
                 to="/admin"
-                :class="{ 'fw-bold': $route.name === 'admin' || $route.name === 'admin_users' || $route.name === 'admin_moderator' || $route.name === 'admin_bots' }"
+                :class="{ 'fw-bold': isAdminRoute }"
+                aria-label="Admin"
                 data-id="nav-admin"
               >
-                Admin
+                <i class="bi bi-gear-fill" aria-hidden="true"></i>
+                <span class="visually-hidden">Admin</span>
               </router-link>
             </li>
           </ul>
         </div>
       </div>
     </nav>
-    <main class="container-fluid py-3 flex-grow-1 overflow-hidden d-flex flex-column">
+    <main class="container-fluid py-3 flex-grow-1 min-h-0 d-flex flex-column overflow-hidden">
       <router-view />
     </main>
     <footer class="footer flex-shrink-0 py-2 border-top">
@@ -65,7 +76,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useWebSocket } from '@hilos/sdk/plugins/websocket'
 import { useChatStore } from '@/stores'
@@ -83,6 +94,13 @@ const chatStore = useChatStore()
 const lastSnapshot = ref<RouteSnapshot | null>(null)
 const pendingSnapshot = ref<RouteSnapshot | null>(null)
 const pendingUpdate = ref(false)
+
+const isAdminRoute = computed(() => {
+  return route.name === 'admin' ||
+    route.name === 'admin_users' ||
+    route.name === 'admin_moderator' ||
+    route.name === 'admin_bots'
+})
 
 const resolvePage = (routeName: unknown): string | null => {
   switch (routeName) {
@@ -120,9 +138,13 @@ const resolvePage = (routeName: unknown): string | null => {
 }
 
 const normalizeParams = (params: Record<string, unknown>): Record<string, string> => {
-  return Object.fromEntries(
-    Object.entries(params).map(([key, value]) => [key, String(value)])
-  )
+  const normalized: Record<string, string> = {}
+
+  for (const key in params) {
+    normalized[key] = String(params[key])
+  }
+
+  return normalized
 }
 
 const queueSubscription = (snapshot: RouteSnapshot, update: boolean) => {
@@ -186,5 +208,9 @@ watch(() => chatStore.isConnected, (isConnected) => {
 .app-shell {
   height: 100dvh;
   overflow: hidden;
+}
+
+.min-h-0 {
+  min-height: 0;
 }
 </style>

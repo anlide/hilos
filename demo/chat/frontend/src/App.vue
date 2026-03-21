@@ -21,4 +21,8 @@ body,
   min-width: 2.5rem;
   font-variant-numeric: tabular-nums;
 }
+
+.min-h-0 {
+  min-height: 0;
+}
 </style>

@@ -1,8 +1,8 @@
 <template>
-  <div class="row">
-    <div class="col-12 col-lg-10 mx-auto">
+  <div class="row gx-3 gy-2 gy-lg-0 flex-grow-1 h-100 min-h-0 overflow-hidden">
+    <div class="col-12 col-lg-10 mx-auto d-flex flex-column h-100 min-h-0">
       <client-only>
-      <div class="card">
+      <div class="card d-flex flex-column flex-grow-1 min-h-0 overflow-hidden">
         <div class="card-header d-flex justify-content-between align-items-center">
           <h5 class="mb-0">Moderator prompt pieces</h5>
           <button
@@ -17,7 +17,7 @@
             Refresh
           </button>
         </div>
-        <div class="card-body">
+        <div class="card-body overflow-auto">
           <Table
             :items="displayRows"
             item-key="id"
@@ -155,7 +155,7 @@
     </template>
   </Modal>
   <template #placeholder>
-    <div class="card">
+    <div class="card flex-grow-1 overflow-auto">
       <div class="card-header"><h5 class="mb-0">Moderator prompt pieces</h5></div>
       <div class="card-body">
         <p class="mb-0 text-body-secondary">Access denied for guests.</p>
