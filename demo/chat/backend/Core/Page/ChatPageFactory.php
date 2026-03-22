@@ -16,6 +16,13 @@ use Demo\Chat\Pages\AdminUsersPage;
 use Demo\Chat\Pages\BotPage;
 use Demo\Chat\Pages\Hilos\AnalyticsPage;
 use Demo\Chat\Pages\Hilos\Backup\BackupPage;
+use Demo\Chat\Pages\Hilos\Billing\BillingPage;
+use Demo\Chat\Pages\Hilos\Billing\BillingPaymentsPage;
+use Demo\Chat\Pages\Hilos\Billing\BillingProviderPage;
+use Demo\Chat\Pages\Hilos\Billing\BillingRefundsPage;
+use Demo\Chat\Pages\Hilos\Communications\CommunicationsChannelPage;
+use Demo\Chat\Pages\Hilos\Communications\CommunicationsDeliveriesPage;
+use Demo\Chat\Pages\Hilos\Communications\CommunicationsPage;
 use Demo\Chat\Pages\Hilos\Daemon\DaemonAgentsPage;
 use Demo\Chat\Pages\Hilos\Daemon\DaemonCronPage;
 use Demo\Chat\Pages\Hilos\Daemon\DaemonHttpServerPage;
@@ -36,6 +43,10 @@ use Demo\Chat\Pages\Hilos\McpSkills\McpSkillsMcpLogsViewPage;
 use Demo\Chat\Pages\Hilos\McpSkills\McpSkillsMcpPage;
 use Demo\Chat\Pages\Hilos\Operations\OperationsPage;
 use Demo\Chat\Pages\Hilos\Roles\RolesPage;
+use Demo\Chat\Pages\Hilos\Security\SecurityOAuthPage;
+use Demo\Chat\Pages\Hilos\Security\SecurityOAuthProviderPage;
+use Demo\Chat\Pages\Hilos\Security\SecurityPage;
+use Demo\Chat\Pages\Hilos\Security\SecurityTwoFactorPage;
 use Demo\Chat\Pages\Hilos\Sil\SilDashboardPage;
 use Demo\Chat\Pages\Hilos\Sil\SilRequestsPage;
 use Demo\Chat\Pages\Hilos\Sil\SilUserHistoryPage;
@@ -161,6 +172,17 @@ final class ChatPageFactory extends HilosPageFactory
             HilosPageConstants::HILOS_SIL => new SilDashboardPage($this->agent),
             HilosPageConstants::HILOS_SIL_REQUESTS => new SilRequestsPage($this->agent),
             HilosPageConstants::HILOS_SIL_USER_HISTORY => new SilUserHistoryPage($this->agent),
+            HilosPageConstants::HILOS_COMMUNICATIONS => new CommunicationsPage($this->agent),
+            HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL => new CommunicationsChannelPage($this->agent),
+            HilosPageConstants::HILOS_COMMUNICATIONS_DELIVERIES => new CommunicationsDeliveriesPage($this->agent),
+            HilosPageConstants::HILOS_SECURITY => new SecurityPage($this->agent),
+            HilosPageConstants::HILOS_SECURITY_2FA => new SecurityTwoFactorPage($this->agent),
+            HilosPageConstants::HILOS_SECURITY_OAUTH => new SecurityOAuthPage($this->agent),
+            HilosPageConstants::HILOS_SECURITY_OAUTH_PROVIDER => new SecurityOAuthProviderPage($this->agent),
+            HilosPageConstants::HILOS_BILLING => new BillingPage($this->agent),
+            HilosPageConstants::HILOS_BILLING_PROVIDER => new BillingProviderPage($this->agent),
+            HilosPageConstants::HILOS_BILLING_PAYMENTS => new BillingPaymentsPage($this->agent),
+            HilosPageConstants::HILOS_BILLING_REFUNDS => new BillingRefundsPage($this->agent),
             default => parent::createPage($pageName),
         };
     }

@@ -74,6 +74,17 @@ class HilosPageFactory extends AbstractPageFactory
             HilosPageConstants::HILOS_SIL,
             HilosPageConstants::HILOS_SIL_REQUESTS,
             HilosPageConstants::HILOS_SIL_USER_HISTORY,
+            HilosPageConstants::HILOS_COMMUNICATIONS,
+            HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL,
+            HilosPageConstants::HILOS_COMMUNICATIONS_DELIVERIES,
+            HilosPageConstants::HILOS_SECURITY,
+            HilosPageConstants::HILOS_SECURITY_2FA,
+            HilosPageConstants::HILOS_SECURITY_OAUTH,
+            HilosPageConstants::HILOS_SECURITY_OAUTH_PROVIDER,
+            HilosPageConstants::HILOS_BILLING,
+            HilosPageConstants::HILOS_BILLING_PROVIDER,
+            HilosPageConstants::HILOS_BILLING_PAYMENTS,
+            HilosPageConstants::HILOS_BILLING_REFUNDS,
         ];
     }
 

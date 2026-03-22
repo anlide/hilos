@@ -249,7 +249,10 @@ export function createChatWebSocketPlugin() {
             message.type.startsWith('subscription_page_hilos_daemon') ||
             message.type.startsWith('subscription_page_hilos_logs') ||
             message.type.startsWith('subscription_page_hilos_mcp_skills') ||
-            message.type.startsWith('subscription_page_hilos_sil')
+            message.type.startsWith('subscription_page_hilos_sil') ||
+            message.type.startsWith('subscription_page_hilos_communications') ||
+            message.type.startsWith('subscription_page_hilos_security') ||
+            message.type.startsWith('subscription_page_hilos_billing')
           ) {
             return
           }

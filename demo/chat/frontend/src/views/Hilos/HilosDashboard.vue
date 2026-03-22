@@ -109,6 +109,30 @@ const dashboardSections: DashboardSection[] = [
     ],
   },
   {
+    title: 'Product and integrations',
+    description: 'Messaging, identity, and commerce configuration (stub).',
+    items: [
+      {
+        to: '/hilos/communications',
+        title: 'Communications',
+        description: 'Email, SMS, push, Telegram, Slack (stub)',
+        icon: 'bi-envelope-paper',
+      },
+      {
+        to: '/hilos/security',
+        title: 'Security Center',
+        description: '2FA, OAuth login providers (stub)',
+        icon: 'bi-shield-lock',
+      },
+      {
+        to: '/hilos/billing',
+        title: 'Billing',
+        description: 'Payment providers, payments, refunds (stub)',
+        icon: 'bi-credit-card',
+      },
+    ],
+  },
+  {
     title: 'Platform operations',
     description: 'Runtime, maintenance, backup, and observability sections.',
     items: [

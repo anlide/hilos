@@ -141,4 +141,26 @@ final class PageConstants
     public const string HILOS_SIL_REQUESTS = HilosPageConstants::HILOS_SIL_REQUESTS;
 
     public const string HILOS_SIL_USER_HISTORY = HilosPageConstants::HILOS_SIL_USER_HISTORY;
+
+    public const string HILOS_COMMUNICATIONS = HilosPageConstants::HILOS_COMMUNICATIONS;
+
+    public const string HILOS_COMMUNICATIONS_CHANNEL = HilosPageConstants::HILOS_COMMUNICATIONS_CHANNEL;
+
+    public const string HILOS_COMMUNICATIONS_DELIVERIES = HilosPageConstants::HILOS_COMMUNICATIONS_DELIVERIES;
+
+    public const string HILOS_SECURITY = HilosPageConstants::HILOS_SECURITY;
+
+    public const string HILOS_SECURITY_2FA = HilosPageConstants::HILOS_SECURITY_2FA;
+
+    public const string HILOS_SECURITY_OAUTH = HilosPageConstants::HILOS_SECURITY_OAUTH;
+
+    public const string HILOS_SECURITY_OAUTH_PROVIDER = HilosPageConstants::HILOS_SECURITY_OAUTH_PROVIDER;
+
+    public const string HILOS_BILLING = HilosPageConstants::HILOS_BILLING;
+
+    public const string HILOS_BILLING_PROVIDER = HilosPageConstants::HILOS_BILLING_PROVIDER;
+
+    public const string HILOS_BILLING_PAYMENTS = HilosPageConstants::HILOS_BILLING_PAYMENTS;
+
+    public const string HILOS_BILLING_REFUNDS = HilosPageConstants::HILOS_BILLING_REFUNDS;
 }

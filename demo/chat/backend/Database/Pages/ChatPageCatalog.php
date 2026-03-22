@@ -310,6 +310,61 @@ final class ChatPageCatalog extends PageCatalogStub
                 PageCatalogConstants::CATALOG_ENTRY_LABEL => 'SIL user history',
                 PageCatalogConstants::CATALOG_ENTRY_PATH_TEMPLATE => '/hilos/sil/users/{userId}',
             ],
+            PageConstants::HILOS_COMMUNICATIONS => [
+                PageCatalogConstants::CATALOG_ENTRY_PARENT_ID => PageConstants::HILOS_DASHBOARD,
+                PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Communications',
+                PageCatalogConstants::CATALOG_ENTRY_PATH_TEMPLATE => '/hilos/communications',
+            ],
+            PageConstants::HILOS_COMMUNICATIONS_CHANNEL => [
+                PageCatalogConstants::CATALOG_ENTRY_PARENT_ID => PageConstants::HILOS_COMMUNICATIONS,
+                PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Channel',
+                PageCatalogConstants::CATALOG_ENTRY_PATH_TEMPLATE => '/hilos/communications/{channelId}',
+            ],
+            PageConstants::HILOS_COMMUNICATIONS_DELIVERIES => [
+                PageCatalogConstants::CATALOG_ENTRY_PARENT_ID => PageConstants::HILOS_COMMUNICATIONS_CHANNEL,
+                PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Deliveries',
+                PageCatalogConstants::CATALOG_ENTRY_PATH_TEMPLATE => '/hilos/communications/{channelId}/deliveries',
+            ],
+            PageConstants::HILOS_SECURITY => [
+                PageCatalogConstants::CATALOG_ENTRY_PARENT_ID => PageConstants::HILOS_DASHBOARD,
+                PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Security Center',
+                PageCatalogConstants::CATALOG_ENTRY_PATH_TEMPLATE => '/hilos/security',
+            ],
+            PageConstants::HILOS_SECURITY_2FA => [
+                PageCatalogConstants::CATALOG_ENTRY_PARENT_ID => PageConstants::HILOS_SECURITY,
+                PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Two-factor authentication',
+                PageCatalogConstants::CATALOG_ENTRY_PATH_TEMPLATE => '/hilos/security/2fa',
+            ],
+            PageConstants::HILOS_SECURITY_OAUTH => [
+                PageCatalogConstants::CATALOG_ENTRY_PARENT_ID => PageConstants::HILOS_SECURITY,
+                PageCatalogConstants::CATALOG_ENTRY_LABEL => 'OAuth providers',
+                PageCatalogConstants::CATALOG_ENTRY_PATH_TEMPLATE => '/hilos/security/oauth',
+            ],
+            PageConstants::HILOS_SECURITY_OAUTH_PROVIDER => [
+                PageCatalogConstants::CATALOG_ENTRY_PARENT_ID => PageConstants::HILOS_SECURITY_OAUTH,
+                PageCatalogConstants::CATALOG_ENTRY_LABEL => 'OAuth provider',
+                PageCatalogConstants::CATALOG_ENTRY_PATH_TEMPLATE => '/hilos/security/oauth/{providerId}',
+            ],
+            PageConstants::HILOS_BILLING => [
+                PageCatalogConstants::CATALOG_ENTRY_PARENT_ID => PageConstants::HILOS_DASHBOARD,
+                PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Billing',
+                PageCatalogConstants::CATALOG_ENTRY_PATH_TEMPLATE => '/hilos/billing',
+            ],
+            PageConstants::HILOS_BILLING_PROVIDER => [
+                PageCatalogConstants::CATALOG_ENTRY_PARENT_ID => PageConstants::HILOS_BILLING,
+                PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Payment provider',
+                PageCatalogConstants::CATALOG_ENTRY_PATH_TEMPLATE => '/hilos/billing/{providerId}',
+            ],
+            PageConstants::HILOS_BILLING_PAYMENTS => [
+                PageCatalogConstants::CATALOG_ENTRY_PARENT_ID => PageConstants::HILOS_BILLING_PROVIDER,
+                PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Payments',
+                PageCatalogConstants::CATALOG_ENTRY_PATH_TEMPLATE => '/hilos/billing/{providerId}/payments',
+            ],
+            PageConstants::HILOS_BILLING_REFUNDS => [
+                PageCatalogConstants::CATALOG_ENTRY_PARENT_ID => PageConstants::HILOS_BILLING_PROVIDER,
+                PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Refunds',
+                PageCatalogConstants::CATALOG_ENTRY_PATH_TEMPLATE => '/hilos/billing/{providerId}/refunds',
+            ],
         ]);
     }
 }

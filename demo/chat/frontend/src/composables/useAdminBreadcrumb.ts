@@ -136,6 +136,30 @@ const resolveCatalogStubDynamicLabel = (pageId: string, routeParams: Record<stri
       const id = s('userId')
       return id !== null ? `SIL user ${id}` : null
     }
+    case 'hilos_communications_channel': {
+      const id = s('channelId')
+      return id !== null ? `Channel ${id}` : null
+    }
+    case 'hilos_communications_deliveries': {
+      const id = s('channelId')
+      return id !== null ? `Deliveries · ${id}` : null
+    }
+    case 'hilos_security_oauth_provider': {
+      const id = s('providerId')
+      return id !== null ? `OAuth ${id}` : null
+    }
+    case 'hilos_billing_provider': {
+      const id = s('providerId')
+      return id !== null ? `Config · ${id}` : null
+    }
+    case 'hilos_billing_payments': {
+      const id = s('providerId')
+      return id !== null ? `Payments · ${id}` : null
+    }
+    case 'hilos_billing_refunds': {
+      const id = s('providerId')
+      return id !== null ? `Refunds · ${id}` : null
+    }
     default:
       return null
   }
@@ -243,6 +267,52 @@ const buildPageLocation = (
     case 'hilos_sil_user_history': {
       const userId = routeParams.userId
       return typeof userId === 'string' ? `/hilos/sil/users/${encodeURIComponent(userId)}` : null
+    }
+    case 'hilos_communications':
+      return '/hilos/communications'
+    case 'hilos_communications_channel': {
+      const channelId = routeParams.channelId
+      return typeof channelId === 'string'
+        ? `/hilos/communications/${encodeURIComponent(channelId)}`
+        : null
+    }
+    case 'hilos_communications_deliveries': {
+      const channelId = routeParams.channelId
+      return typeof channelId === 'string'
+        ? `/hilos/communications/${encodeURIComponent(channelId)}/deliveries`
+        : null
+    }
+    case 'hilos_security':
+      return '/hilos/security'
+    case 'hilos_security_2fa':
+      return '/hilos/security/2fa'
+    case 'hilos_security_oauth':
+      return '/hilos/security/oauth'
+    case 'hilos_security_oauth_provider': {
+      const providerId = routeParams.providerId
+      return typeof providerId === 'string'
+        ? `/hilos/security/oauth/${encodeURIComponent(providerId)}`
+        : null
+    }
+    case 'hilos_billing':
+      return '/hilos/billing'
+    case 'hilos_billing_provider': {
+      const providerId = routeParams.providerId
+      return typeof providerId === 'string'
+        ? `/hilos/billing/${encodeURIComponent(providerId)}`
+        : null
+    }
+    case 'hilos_billing_payments': {
+      const providerId = routeParams.providerId
+      return typeof providerId === 'string'
+        ? `/hilos/billing/${encodeURIComponent(providerId)}/payments`
+        : null
+    }
+    case 'hilos_billing_refunds': {
+      const providerId = routeParams.providerId
+      return typeof providerId === 'string'
+        ? `/hilos/billing/${encodeURIComponent(providerId)}/refunds`
+        : null
     }
     default:
       return null

@@ -64,6 +64,17 @@ import HilosOperations from '@/views/Hilos/HilosOperations.vue'
 import HilosUsers from '@/views/Hilos/HilosUsers.vue'
 import HilosUserDetail from '@/views/Hilos/HilosUserDetail.vue'
 import HilosRoles from '@/views/Hilos/HilosRoles.vue'
+import HilosCommunications from '@/views/Hilos/HilosCommunications.vue'
+import HilosCommunicationsChannel from '@/views/Hilos/Communications/HilosCommunicationsChannel.vue'
+import HilosCommunicationsDeliveries from '@/views/Hilos/Communications/HilosCommunicationsDeliveries.vue'
+import HilosSecurity from '@/views/Hilos/HilosSecurity.vue'
+import HilosSecurityTwoFactor from '@/views/Hilos/Security/HilosSecurityTwoFactor.vue'
+import HilosSecurityOAuth from '@/views/Hilos/Security/HilosSecurityOAuth.vue'
+import HilosSecurityOAuthProvider from '@/views/Hilos/Security/HilosSecurityOAuthProvider.vue'
+import HilosBilling from '@/views/Hilos/Billing/HilosBilling.vue'
+import HilosBillingProvider from '@/views/Hilos/Billing/HilosBillingProvider.vue'
+import HilosBillingPayments from '@/views/Hilos/Billing/HilosBillingPayments.vue'
+import HilosBillingRefunds from '@/views/Hilos/Billing/HilosBillingRefunds.vue'
 import ErrorPage from '@/views/ErrorPage.vue'
 
 export const demoRoutes: RouteRecordRaw[] = [
@@ -421,6 +432,72 @@ export const demoRoutes: RouteRecordRaw[] = [
         name: 'hilos_sil',
         component: HilosSilDashboard,
         meta: { page: 'hilos_sil' },
+      },
+      {
+        path: 'hilos/billing/:providerId/refunds',
+        name: 'hilos_billing_refunds',
+        component: HilosBillingRefunds,
+        meta: { page: 'hilos_billing_refunds' },
+      },
+      {
+        path: 'hilos/billing/:providerId/payments',
+        name: 'hilos_billing_payments',
+        component: HilosBillingPayments,
+        meta: { page: 'hilos_billing_payments' },
+      },
+      {
+        path: 'hilos/billing/:providerId',
+        name: 'hilos_billing_provider',
+        component: HilosBillingProvider,
+        meta: { page: 'hilos_billing_provider' },
+      },
+      {
+        path: 'hilos/billing',
+        name: 'hilos_billing',
+        component: HilosBilling,
+        meta: { page: 'hilos_billing' },
+      },
+      {
+        path: 'hilos/security/oauth/:providerId',
+        name: 'hilos_security_oauth_provider',
+        component: HilosSecurityOAuthProvider,
+        meta: { page: 'hilos_security_oauth_provider' },
+      },
+      {
+        path: 'hilos/security/oauth',
+        name: 'hilos_security_oauth',
+        component: HilosSecurityOAuth,
+        meta: { page: 'hilos_security_oauth' },
+      },
+      {
+        path: 'hilos/security/2fa',
+        name: 'hilos_security_2fa',
+        component: HilosSecurityTwoFactor,
+        meta: { page: 'hilos_security_2fa' },
+      },
+      {
+        path: 'hilos/security',
+        name: 'hilos_security',
+        component: HilosSecurity,
+        meta: { page: 'hilos_security' },
+      },
+      {
+        path: 'hilos/communications/:channelId/deliveries',
+        name: 'hilos_communications_deliveries',
+        component: HilosCommunicationsDeliveries,
+        meta: { page: 'hilos_communications_deliveries' },
+      },
+      {
+        path: 'hilos/communications/:channelId',
+        name: 'hilos_communications_channel',
+        component: HilosCommunicationsChannel,
+        meta: { page: 'hilos_communications_channel' },
+      },
+      {
+        path: 'hilos/communications',
+        name: 'hilos_communications',
+        component: HilosCommunications,
+        meta: { page: 'hilos_communications' },
       },
       {
         path: 'agents',

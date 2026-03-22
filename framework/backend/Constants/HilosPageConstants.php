@@ -155,4 +155,37 @@ class HilosPageConstants
 
     /** @var string Hilos — SIL user history */
     public const string HILOS_SIL_USER_HISTORY = 'hilos_sil_user_history';
+
+    /** @var string Hilos — communications channels hub */
+    public const string HILOS_COMMUNICATIONS = 'hilos_communications';
+
+    /** @var string Hilos — single communication channel (detail) */
+    public const string HILOS_COMMUNICATIONS_CHANNEL = 'hilos_communications_channel';
+
+    /** @var string Hilos — channel deliveries log */
+    public const string HILOS_COMMUNICATIONS_DELIVERIES = 'hilos_communications_deliveries';
+
+    /** @var string Hilos — security center overview */
+    public const string HILOS_SECURITY = 'hilos_security';
+
+    /** @var string Hilos — two-factor authentication */
+    public const string HILOS_SECURITY_2FA = 'hilos_security_2fa';
+
+    /** @var string Hilos — OAuth login providers list */
+    public const string HILOS_SECURITY_OAUTH = 'hilos_security_oauth';
+
+    /** @var string Hilos — single OAuth provider (detail) */
+    public const string HILOS_SECURITY_OAUTH_PROVIDER = 'hilos_security_oauth_provider';
+
+    /** @var string Hilos — billing (payment providers) hub */
+    public const string HILOS_BILLING = 'hilos_billing';
+
+    /** @var string Hilos — single payment provider (config) */
+    public const string HILOS_BILLING_PROVIDER = 'hilos_billing_provider';
+
+    /** @var string Hilos — payments for a provider */
+    public const string HILOS_BILLING_PAYMENTS = 'hilos_billing_payments';
+
+    /** @var string Hilos — refunds for a provider */
+    public const string HILOS_BILLING_REFUNDS = 'hilos_billing_refunds';
 }

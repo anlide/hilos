@@ -28,7 +28,8 @@ const guardianAiAgentCategoryById = {
   feature_flag: 'Additional',
   observability: 'Additional',
   dead_code: 'Additional',
-  cost: 'Additional'
+  cost: 'Additional',
+  oss_budget_distribution: 'Open Source Governance'
 } as const
 
 export const guardianAiAgentIds = Object.keys(guardianAiAgentCategoryById) as Array<keyof typeof guardianAiAgentCategoryById>
@@ -38,6 +39,7 @@ export type GuardianAiAgentId = (typeof guardianAiAgentIds)[number]
 const wordLabels: Record<string, string> = {
   ai: 'AI',
   api: 'API',
+  oss: 'OSS',
   cd: 'CD',
   ci: 'CI',
   cpu: 'CPU',

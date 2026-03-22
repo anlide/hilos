@@ -224,6 +224,61 @@ final class ChatSignalRouter extends SignalRouter
                 'agentIndex' => null,
                 'params' => [],
             ],
+            PageConstants::HILOS_COMMUNICATIONS => [
+                'agentType' => AgentType::HILOS_INDEX,
+                'agentIndex' => null,
+                'params' => [],
+            ],
+            PageConstants::HILOS_COMMUNICATIONS_CHANNEL => [
+                'agentType' => AgentType::HILOS_INDEX,
+                'agentIndex' => null,
+                'params' => [],
+            ],
+            PageConstants::HILOS_COMMUNICATIONS_DELIVERIES => [
+                'agentType' => AgentType::HILOS_INDEX,
+                'agentIndex' => null,
+                'params' => [],
+            ],
+            PageConstants::HILOS_SECURITY => [
+                'agentType' => AgentType::HILOS_INDEX,
+                'agentIndex' => null,
+                'params' => [],
+            ],
+            PageConstants::HILOS_SECURITY_2FA => [
+                'agentType' => AgentType::HILOS_INDEX,
+                'agentIndex' => null,
+                'params' => [],
+            ],
+            PageConstants::HILOS_SECURITY_OAUTH => [
+                'agentType' => AgentType::HILOS_INDEX,
+                'agentIndex' => null,
+                'params' => [],
+            ],
+            PageConstants::HILOS_SECURITY_OAUTH_PROVIDER => [
+                'agentType' => AgentType::HILOS_INDEX,
+                'agentIndex' => null,
+                'params' => [],
+            ],
+            PageConstants::HILOS_BILLING => [
+                'agentType' => AgentType::HILOS_INDEX,
+                'agentIndex' => null,
+                'params' => [],
+            ],
+            PageConstants::HILOS_BILLING_PROVIDER => [
+                'agentType' => AgentType::HILOS_INDEX,
+                'agentIndex' => null,
+                'params' => [],
+            ],
+            PageConstants::HILOS_BILLING_PAYMENTS => [
+                'agentType' => AgentType::HILOS_INDEX,
+                'agentIndex' => null,
+                'params' => [],
+            ],
+            PageConstants::HILOS_BILLING_REFUNDS => [
+                'agentType' => AgentType::HILOS_INDEX,
+                'agentIndex' => null,
+                'params' => [],
+            ],
         ];
 
         $groups = [
@@ -299,6 +354,17 @@ final class ChatSignalRouter extends SignalRouter
                 PageConstants::HILOS_SIL => AgentType::HILOS_INDEX,
                 PageConstants::HILOS_SIL_REQUESTS => AgentType::HILOS_INDEX,
                 PageConstants::HILOS_SIL_USER_HISTORY => AgentType::HILOS_INDEX,
+                PageConstants::HILOS_COMMUNICATIONS => AgentType::HILOS_INDEX,
+                PageConstants::HILOS_COMMUNICATIONS_CHANNEL => AgentType::HILOS_INDEX,
+                PageConstants::HILOS_COMMUNICATIONS_DELIVERIES => AgentType::HILOS_INDEX,
+                PageConstants::HILOS_SECURITY => AgentType::HILOS_INDEX,
+                PageConstants::HILOS_SECURITY_2FA => AgentType::HILOS_INDEX,
+                PageConstants::HILOS_SECURITY_OAUTH => AgentType::HILOS_INDEX,
+                PageConstants::HILOS_SECURITY_OAUTH_PROVIDER => AgentType::HILOS_INDEX,
+                PageConstants::HILOS_BILLING => AgentType::HILOS_INDEX,
+                PageConstants::HILOS_BILLING_PROVIDER => AgentType::HILOS_INDEX,
+                PageConstants::HILOS_BILLING_PAYMENTS => AgentType::HILOS_INDEX,
+                PageConstants::HILOS_BILLING_REFUNDS => AgentType::HILOS_INDEX,
             ],
         ];
 
