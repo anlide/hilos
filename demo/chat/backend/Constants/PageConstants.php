@@ -119,4 +119,12 @@ final class PageConstants
     public const string HILOS_LOGS_ROTATIONS = HilosPageConstants::HILOS_LOGS_ROTATIONS;
 
     public const string HILOS_LOGS_VIEW = HilosPageConstants::HILOS_LOGS_VIEW;
+
+    public const string HILOS_OPERATIONS = HilosPageConstants::HILOS_OPERATIONS;
+
+    public const string HILOS_USERS = HilosPageConstants::HILOS_USERS;
+
+    public const string HILOS_USER = HilosPageConstants::HILOS_USER;
+
+    public const string HILOS_ROLES = HilosPageConstants::HILOS_ROLES;
 }

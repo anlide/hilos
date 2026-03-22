@@ -30,6 +30,10 @@ use Demo\Chat\Pages\Hilos\Logs\LogsOverviewPage;
 use Demo\Chat\Pages\Hilos\Logs\LogsRotationsPage;
 use Demo\Chat\Pages\Hilos\Logs\LogsViewPage;
 use Demo\Chat\Pages\Hilos\Logs\LogsWorkersPage;
+use Demo\Chat\Pages\Hilos\Operations\OperationsPage;
+use Demo\Chat\Pages\Hilos\Roles\RolesPage;
+use Demo\Chat\Pages\Hilos\Users\UserPage as HilosUserPage;
+use Demo\Chat\Pages\Hilos\Users\UsersPage;
 use Demo\Chat\Pages\Hilos\I18n\Details\ActionDetailPage;
 use Demo\Chat\Pages\Hilos\I18n\Details\CountryDetailPage;
 use Demo\Chat\Pages\Hilos\I18n\Details\GroupDetailPage;
@@ -139,6 +143,10 @@ final class ChatPageFactory extends HilosPageFactory
             HilosPageConstants::HILOS_LOGS_WORKERS => new LogsWorkersPage($this->agent),
             HilosPageConstants::HILOS_LOGS_ROTATIONS => new LogsRotationsPage($this->agent),
             HilosPageConstants::HILOS_LOGS_VIEW => new LogsViewPage($this->agent),
+            HilosPageConstants::HILOS_OPERATIONS => new OperationsPage($this->agent),
+            HilosPageConstants::HILOS_USERS => new UsersPage($this->agent),
+            HilosPageConstants::HILOS_USER => new HilosUserPage($this->agent),
+            HilosPageConstants::HILOS_ROLES => new RolesPage($this->agent),
             default => parent::createPage($pageName),
         };
     }

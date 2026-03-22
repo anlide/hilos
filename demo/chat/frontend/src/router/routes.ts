@@ -53,6 +53,10 @@ import HilosLogsKeys from '@/views/Hilos/Logs/HilosLogsKeys.vue'
 import HilosLogsWorkers from '@/views/Hilos/Logs/HilosLogsWorkers.vue'
 import HilosLogsRotations from '@/views/Hilos/Logs/HilosLogsRotations.vue'
 import HilosLogsView from '@/views/Hilos/Logs/HilosLogsView.vue'
+import HilosOperations from '@/views/Hilos/HilosOperations.vue'
+import HilosUsers from '@/views/Hilos/HilosUsers.vue'
+import HilosUserDetail from '@/views/Hilos/HilosUserDetail.vue'
+import HilosRoles from '@/views/Hilos/HilosRoles.vue'
 import ErrorPage from '@/views/ErrorPage.vue'
 
 export const demoRoutes: RouteRecordRaw[] = [
@@ -128,6 +132,30 @@ export const demoRoutes: RouteRecordRaw[] = [
         name: 'hilos',
         component: HilosDashboard,
         meta: { page: 'hilos' },
+      },
+      {
+        path: 'hilos/users/:userId',
+        name: 'hilos_user',
+        component: HilosUserDetail,
+        meta: { page: 'hilos_user' },
+      },
+      {
+        path: 'hilos/users',
+        name: 'hilos_users',
+        component: HilosUsers,
+        meta: { page: 'hilos_users' },
+      },
+      {
+        path: 'hilos/operations',
+        name: 'hilos_operations',
+        component: HilosOperations,
+        meta: { page: 'hilos_operations' },
+      },
+      {
+        path: 'hilos/roles',
+        name: 'hilos_roles',
+        component: HilosRoles,
+        meta: { page: 'hilos_roles' },
       },
       {
         path: 'hilos/backup',

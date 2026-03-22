@@ -255,6 +255,26 @@ final class ChatPageCatalog extends PageCatalogStub
                 PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Viewer',
                 PageCatalogConstants::CATALOG_ENTRY_PATH_TEMPLATE => '/hilos/logs/view',
             ],
+            PageConstants::HILOS_OPERATIONS => [
+                PageCatalogConstants::CATALOG_ENTRY_PARENT_ID => PageConstants::HILOS_DASHBOARD,
+                PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Operations',
+                PageCatalogConstants::CATALOG_ENTRY_PATH_TEMPLATE => '/hilos/operations',
+            ],
+            PageConstants::HILOS_USERS => [
+                PageCatalogConstants::CATALOG_ENTRY_PARENT_ID => PageConstants::HILOS_DASHBOARD,
+                PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Users',
+                PageCatalogConstants::CATALOG_ENTRY_PATH_TEMPLATE => '/hilos/users',
+            ],
+            PageConstants::HILOS_USER => [
+                PageCatalogConstants::CATALOG_ENTRY_PARENT_ID => PageConstants::HILOS_USERS,
+                PageCatalogConstants::CATALOG_ENTRY_LABEL => 'User',
+                PageCatalogConstants::CATALOG_ENTRY_PATH_TEMPLATE => '/hilos/users/{userId}',
+            ],
+            PageConstants::HILOS_ROLES => [
+                PageCatalogConstants::CATALOG_ENTRY_PARENT_ID => PageConstants::HILOS_DASHBOARD,
+                PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Roles',
+                PageCatalogConstants::CATALOG_ENTRY_PATH_TEMPLATE => '/hilos/roles',
+            ],
         ]);
     }
 }

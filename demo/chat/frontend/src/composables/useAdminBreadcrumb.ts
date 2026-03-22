@@ -116,6 +116,10 @@ const resolveCatalogStubDynamicLabel = (pageId: string, routeParams: Record<stri
       const id = s('serverId')
       return id !== null ? `HTTP server ${id}` : null
     }
+    case 'hilos_user': {
+      const id = s('userId')
+      return id !== null ? `User ${id}` : null
+    }
     default:
       return null
   }
@@ -192,6 +196,16 @@ const buildPageLocation = (
       return '/hilos/logs/rotations'
     case 'hilos_logs_view':
       return '/hilos/logs/view'
+    case 'hilos_operations':
+      return '/hilos/operations'
+    case 'hilos_users':
+      return '/hilos/users'
+    case 'hilos_roles':
+      return '/hilos/roles'
+    case 'hilos_user': {
+      const userId = routeParams.userId
+      return typeof userId === 'string' ? `/hilos/users/${encodeURIComponent(userId)}` : null
+    }
     default:
       return null
   }

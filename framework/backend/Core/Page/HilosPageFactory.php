@@ -63,6 +63,10 @@ class HilosPageFactory extends AbstractPageFactory
             HilosPageConstants::HILOS_LOGS_WORKERS,
             HilosPageConstants::HILOS_LOGS_ROTATIONS,
             HilosPageConstants::HILOS_LOGS_VIEW,
+            HilosPageConstants::HILOS_OPERATIONS,
+            HilosPageConstants::HILOS_USERS,
+            HilosPageConstants::HILOS_USER,
+            HilosPageConstants::HILOS_ROLES,
         ];
     }
 

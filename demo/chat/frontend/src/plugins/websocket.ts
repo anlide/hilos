@@ -242,6 +242,10 @@ export function createChatWebSocketPlugin() {
             message.type.startsWith('subscription_page_hilos_i18n_') ||
             message.type === 'subscription_page_hilos_analytics' ||
             message.type === 'subscription_page_hilos_backup' ||
+            message.type === 'subscription_page_hilos_operations' ||
+            message.type === 'subscription_page_hilos_users' ||
+            message.type === 'subscription_page_hilos_user' ||
+            message.type === 'subscription_page_hilos_roles' ||
             message.type.startsWith('subscription_page_hilos_daemon') ||
             message.type.startsWith('subscription_page_hilos_logs')
           ) {

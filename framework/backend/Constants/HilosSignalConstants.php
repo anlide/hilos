@@ -121,4 +121,16 @@ class HilosSignalConstants
 
     /** @var string Subscription signal for Hilos logs viewer */
     public const string SUBSCRIPTION_PAGE_HILOS_LOGS_VIEW = 'subscription_page_hilos_logs_view';
+
+    /** @var string Subscription signal for Hilos operations page */
+    public const string SUBSCRIPTION_PAGE_HILOS_OPERATIONS = 'subscription_page_hilos_operations';
+
+    /** @var string Subscription signal for Hilos users list */
+    public const string SUBSCRIPTION_PAGE_HILOS_USERS = 'subscription_page_hilos_users';
+
+    /** @var string Subscription signal for Hilos single user page */
+    public const string SUBSCRIPTION_PAGE_HILOS_USER = 'subscription_page_hilos_user';
+
+    /** @var string Subscription signal for Hilos roles list */
+    public const string SUBSCRIPTION_PAGE_HILOS_ROLES = 'subscription_page_hilos_roles';
 }

@@ -7,6 +7,24 @@
         </div>
         <div class="card-body">
           <div class="list-group">
+            <router-link to="/hilos/operations" class="list-group-item list-group-item-action">
+              <div class="d-flex w-100 justify-content-between">
+                <h6 class="mb-1">Operations</h6>
+              </div>
+              <p class="mb-1">Sitemap, static HTML, maintenance tasks (stub)</p>
+            </router-link>
+            <router-link to="/hilos/users" class="list-group-item list-group-item-action">
+              <div class="d-flex w-100 justify-content-between">
+                <h6 class="mb-1">Users</h6>
+              </div>
+              <p class="mb-1">Accounts and roles assignment (stub)</p>
+            </router-link>
+            <router-link to="/hilos/roles" class="list-group-item list-group-item-action">
+              <div class="d-flex w-100 justify-content-between">
+                <h6 class="mb-1">Roles</h6>
+              </div>
+              <p class="mb-1">Role catalog (stub)</p>
+            </router-link>
             <router-link to="/hilos/backup" class="list-group-item list-group-item-action">
               <div class="d-flex w-100 justify-content-between">
                 <h6 class="mb-1">Backups</h6>

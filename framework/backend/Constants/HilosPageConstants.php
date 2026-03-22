@@ -122,4 +122,16 @@ class HilosPageConstants
 
     /** @var string Hilos logs — viewer */
     public const string HILOS_LOGS_VIEW = 'hilos_logs_view';
+
+    /** @var string Hilos — maintenance operations (sitemap, static build, etc.) */
+    public const string HILOS_OPERATIONS = 'hilos_operations';
+
+    /** @var string Hilos — users list */
+    public const string HILOS_USERS = 'hilos_users';
+
+    /** @var string Hilos — single user (view/edit) */
+    public const string HILOS_USER = 'hilos_user';
+
+    /** @var string Hilos — roles list */
+    public const string HILOS_ROLES = 'hilos_roles';
 }
