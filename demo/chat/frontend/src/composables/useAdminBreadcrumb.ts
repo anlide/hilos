@@ -120,6 +120,22 @@ const resolveCatalogStubDynamicLabel = (pageId: string, routeParams: Record<stri
       const id = s('userId')
       return id !== null ? `User ${id}` : null
     }
+    case 'hilos_mcp_skills_mcp': {
+      const id = s('mcpId')
+      return id !== null ? `MCP ${id}` : null
+    }
+    case 'hilos_mcp_skills_mcp_logs': {
+      const id = s('mcpId')
+      return id !== null ? `MCP ${id} · overview` : null
+    }
+    case 'hilos_mcp_skills_mcp_logs_view': {
+      const id = s('mcpId')
+      return id !== null ? `MCP ${id} · viewer` : null
+    }
+    case 'hilos_sil_user_history': {
+      const id = s('userId')
+      return id !== null ? `SIL user ${id}` : null
+    }
     default:
       return null
   }
@@ -205,6 +221,28 @@ const buildPageLocation = (
     case 'hilos_user': {
       const userId = routeParams.userId
       return typeof userId === 'string' ? `/hilos/users/${encodeURIComponent(userId)}` : null
+    }
+    case 'hilos_mcp_skills':
+      return '/hilos/mcp-skills'
+    case 'hilos_mcp_skills_mcp': {
+      const mcpId = routeParams.mcpId
+      return typeof mcpId === 'string' ? `/hilos/mcp-skills/${encodeURIComponent(mcpId)}` : null
+    }
+    case 'hilos_mcp_skills_mcp_logs': {
+      const mcpId = routeParams.mcpId
+      return typeof mcpId === 'string' ? `/hilos/mcp-skills/${encodeURIComponent(mcpId)}/logs` : null
+    }
+    case 'hilos_mcp_skills_mcp_logs_view': {
+      const mcpId = routeParams.mcpId
+      return typeof mcpId === 'string' ? `/hilos/mcp-skills/${encodeURIComponent(mcpId)}/logs/view` : null
+    }
+    case 'hilos_sil':
+      return '/hilos/sil'
+    case 'hilos_sil_requests':
+      return '/hilos/sil/requests'
+    case 'hilos_sil_user_history': {
+      const userId = routeParams.userId
+      return typeof userId === 'string' ? `/hilos/sil/users/${encodeURIComponent(userId)}` : null
     }
     default:
       return null

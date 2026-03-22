@@ -41,6 +41,13 @@ import HilosI18nTranslateEmail from '@/views/Hilos/I18n/Translate/HilosI18nTrans
 import HilosGuardian from '@/views/Hilos/HilosGuardian.vue'
 import HilosGuardianAgent from '@/views/Hilos/HilosGuardianAgent.vue'
 import HilosAnalytics from '@/views/Hilos/HilosAnalytics.vue'
+import HilosMcpSkillsDashboard from '@/views/Hilos/McpSkills/HilosMcpSkillsDashboard.vue'
+import HilosMcpSkillsMcp from '@/views/Hilos/McpSkills/HilosMcpSkillsMcp.vue'
+import HilosMcpSkillsMcpLogs from '@/views/Hilos/McpSkills/HilosMcpSkillsMcpLogs.vue'
+import HilosMcpSkillsMcpLogsView from '@/views/Hilos/McpSkills/HilosMcpSkillsMcpLogsView.vue'
+import HilosSilDashboard from '@/views/Hilos/Sil/HilosSilDashboard.vue'
+import HilosSilRequests from '@/views/Hilos/Sil/HilosSilRequests.vue'
+import HilosSilUserHistory from '@/views/Hilos/Sil/HilosSilUserHistory.vue'
 import HilosBackup from '@/views/Hilos/Backup/HilosBackup.vue'
 import HilosDaemon from '@/views/Hilos/Daemon/HilosDaemon.vue'
 import HilosDaemonWorkers from '@/views/Hilos/Daemon/HilosDaemonWorkers.vue'
@@ -372,6 +379,48 @@ export const demoRoutes: RouteRecordRaw[] = [
         name: 'hilos_analytics',
         component: HilosAnalytics,
         meta: { page: 'hilos_analytics' },
+      },
+      {
+        path: 'hilos/mcp-skills/:mcpId/logs/view',
+        name: 'hilos_mcp_skills_mcp_logs_view',
+        component: HilosMcpSkillsMcpLogsView,
+        meta: { page: 'hilos_mcp_skills_mcp_logs_view' },
+      },
+      {
+        path: 'hilos/mcp-skills/:mcpId/logs',
+        name: 'hilos_mcp_skills_mcp_logs',
+        component: HilosMcpSkillsMcpLogs,
+        meta: { page: 'hilos_mcp_skills_mcp_logs' },
+      },
+      {
+        path: 'hilos/mcp-skills/:mcpId',
+        name: 'hilos_mcp_skills_mcp',
+        component: HilosMcpSkillsMcp,
+        meta: { page: 'hilos_mcp_skills_mcp' },
+      },
+      {
+        path: 'hilos/mcp-skills',
+        name: 'hilos_mcp_skills',
+        component: HilosMcpSkillsDashboard,
+        meta: { page: 'hilos_mcp_skills' },
+      },
+      {
+        path: 'hilos/sil/requests',
+        name: 'hilos_sil_requests',
+        component: HilosSilRequests,
+        meta: { page: 'hilos_sil_requests' },
+      },
+      {
+        path: 'hilos/sil/users/:userId',
+        name: 'hilos_sil_user_history',
+        component: HilosSilUserHistory,
+        meta: { page: 'hilos_sil_user_history' },
+      },
+      {
+        path: 'hilos/sil',
+        name: 'hilos_sil',
+        component: HilosSilDashboard,
+        meta: { page: 'hilos_sil' },
       },
       {
         path: 'agents',

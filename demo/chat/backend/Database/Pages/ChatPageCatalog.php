@@ -275,6 +275,41 @@ final class ChatPageCatalog extends PageCatalogStub
                 PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Roles',
                 PageCatalogConstants::CATALOG_ENTRY_PATH_TEMPLATE => '/hilos/roles',
             ],
+            PageConstants::HILOS_MCP_SKILLS => [
+                PageCatalogConstants::CATALOG_ENTRY_PARENT_ID => PageConstants::HILOS_DASHBOARD,
+                PageCatalogConstants::CATALOG_ENTRY_LABEL => 'MCP and Skills',
+                PageCatalogConstants::CATALOG_ENTRY_PATH_TEMPLATE => '/hilos/mcp-skills',
+            ],
+            PageConstants::HILOS_MCP_SKILLS_MCP => [
+                PageCatalogConstants::CATALOG_ENTRY_PARENT_ID => PageConstants::HILOS_MCP_SKILLS,
+                PageCatalogConstants::CATALOG_ENTRY_LABEL => 'MCP',
+                PageCatalogConstants::CATALOG_ENTRY_PATH_TEMPLATE => '/hilos/mcp-skills/{mcpId}',
+            ],
+            PageConstants::HILOS_MCP_SKILLS_MCP_LOGS => [
+                PageCatalogConstants::CATALOG_ENTRY_PARENT_ID => PageConstants::HILOS_MCP_SKILLS_MCP,
+                PageCatalogConstants::CATALOG_ENTRY_LABEL => 'MCP logs overview',
+                PageCatalogConstants::CATALOG_ENTRY_PATH_TEMPLATE => '/hilos/mcp-skills/{mcpId}/logs',
+            ],
+            PageConstants::HILOS_MCP_SKILLS_MCP_LOGS_VIEW => [
+                PageCatalogConstants::CATALOG_ENTRY_PARENT_ID => PageConstants::HILOS_MCP_SKILLS_MCP_LOGS,
+                PageCatalogConstants::CATALOG_ENTRY_LABEL => 'MCP log viewer',
+                PageCatalogConstants::CATALOG_ENTRY_PATH_TEMPLATE => '/hilos/mcp-skills/{mcpId}/logs/view',
+            ],
+            PageConstants::HILOS_SIL => [
+                PageCatalogConstants::CATALOG_ENTRY_PARENT_ID => PageConstants::HILOS_DASHBOARD,
+                PageCatalogConstants::CATALOG_ENTRY_LABEL => 'System Intelligence Layer',
+                PageCatalogConstants::CATALOG_ENTRY_PATH_TEMPLATE => '/hilos/sil',
+            ],
+            PageConstants::HILOS_SIL_REQUESTS => [
+                PageCatalogConstants::CATALOG_ENTRY_PARENT_ID => PageConstants::HILOS_SIL,
+                PageCatalogConstants::CATALOG_ENTRY_LABEL => 'SIL requests',
+                PageCatalogConstants::CATALOG_ENTRY_PATH_TEMPLATE => '/hilos/sil/requests',
+            ],
+            PageConstants::HILOS_SIL_USER_HISTORY => [
+                PageCatalogConstants::CATALOG_ENTRY_PARENT_ID => PageConstants::HILOS_SIL,
+                PageCatalogConstants::CATALOG_ENTRY_LABEL => 'SIL user history',
+                PageCatalogConstants::CATALOG_ENTRY_PATH_TEMPLATE => '/hilos/sil/users/{userId}',
+            ],
         ]);
     }
 }

@@ -133,4 +133,25 @@ class HilosSignalConstants
 
     /** @var string Subscription signal for Hilos roles list */
     public const string SUBSCRIPTION_PAGE_HILOS_ROLES = 'subscription_page_hilos_roles';
+
+    /** @var string Subscription signal for Hilos MCP and Skills hub */
+    public const string SUBSCRIPTION_PAGE_HILOS_MCP_SKILLS = 'subscription_page_hilos_mcp_skills';
+
+    /** @var string Subscription signal for Hilos single MCP page */
+    public const string SUBSCRIPTION_PAGE_HILOS_MCP_SKILLS_MCP = 'subscription_page_hilos_mcp_skills_mcp';
+
+    /** @var string Subscription signal for Hilos MCP log overview */
+    public const string SUBSCRIPTION_PAGE_HILOS_MCP_SKILLS_MCP_LOGS = 'subscription_page_hilos_mcp_skills_mcp_logs';
+
+    /** @var string Subscription signal for Hilos MCP log viewer */
+    public const string SUBSCRIPTION_PAGE_HILOS_MCP_SKILLS_MCP_LOGS_VIEW = 'subscription_page_hilos_mcp_skills_mcp_logs_view';
+
+    /** @var string Subscription signal for Hilos SIL dashboard */
+    public const string SUBSCRIPTION_PAGE_HILOS_SIL = 'subscription_page_hilos_sil';
+
+    /** @var string Subscription signal for Hilos SIL requests list */
+    public const string SUBSCRIPTION_PAGE_HILOS_SIL_REQUESTS = 'subscription_page_hilos_sil_requests';
+
+    /** @var string Subscription signal for Hilos SIL user history */
+    public const string SUBSCRIPTION_PAGE_HILOS_SIL_USER_HISTORY = 'subscription_page_hilos_sil_user_history';
 }

@@ -247,7 +247,9 @@ export function createChatWebSocketPlugin() {
             message.type === 'subscription_page_hilos_user' ||
             message.type === 'subscription_page_hilos_roles' ||
             message.type.startsWith('subscription_page_hilos_daemon') ||
-            message.type.startsWith('subscription_page_hilos_logs')
+            message.type.startsWith('subscription_page_hilos_logs') ||
+            message.type.startsWith('subscription_page_hilos_mcp_skills') ||
+            message.type.startsWith('subscription_page_hilos_sil')
           ) {
             return
           }

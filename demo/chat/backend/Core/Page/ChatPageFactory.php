@@ -30,8 +30,15 @@ use Demo\Chat\Pages\Hilos\Logs\LogsOverviewPage;
 use Demo\Chat\Pages\Hilos\Logs\LogsRotationsPage;
 use Demo\Chat\Pages\Hilos\Logs\LogsViewPage;
 use Demo\Chat\Pages\Hilos\Logs\LogsWorkersPage;
+use Demo\Chat\Pages\Hilos\McpSkills\McpSkillsDashboardPage;
+use Demo\Chat\Pages\Hilos\McpSkills\McpSkillsMcpLogsPage;
+use Demo\Chat\Pages\Hilos\McpSkills\McpSkillsMcpLogsViewPage;
+use Demo\Chat\Pages\Hilos\McpSkills\McpSkillsMcpPage;
 use Demo\Chat\Pages\Hilos\Operations\OperationsPage;
 use Demo\Chat\Pages\Hilos\Roles\RolesPage;
+use Demo\Chat\Pages\Hilos\Sil\SilDashboardPage;
+use Demo\Chat\Pages\Hilos\Sil\SilRequestsPage;
+use Demo\Chat\Pages\Hilos\Sil\SilUserHistoryPage;
 use Demo\Chat\Pages\Hilos\Users\UserPage as HilosUserPage;
 use Demo\Chat\Pages\Hilos\Users\UsersPage;
 use Demo\Chat\Pages\Hilos\I18n\Details\ActionDetailPage;
@@ -147,6 +154,13 @@ final class ChatPageFactory extends HilosPageFactory
             HilosPageConstants::HILOS_USERS => new UsersPage($this->agent),
             HilosPageConstants::HILOS_USER => new HilosUserPage($this->agent),
             HilosPageConstants::HILOS_ROLES => new RolesPage($this->agent),
+            HilosPageConstants::HILOS_MCP_SKILLS => new McpSkillsDashboardPage($this->agent),
+            HilosPageConstants::HILOS_MCP_SKILLS_MCP => new McpSkillsMcpPage($this->agent),
+            HilosPageConstants::HILOS_MCP_SKILLS_MCP_LOGS => new McpSkillsMcpLogsPage($this->agent),
+            HilosPageConstants::HILOS_MCP_SKILLS_MCP_LOGS_VIEW => new McpSkillsMcpLogsViewPage($this->agent),
+            HilosPageConstants::HILOS_SIL => new SilDashboardPage($this->agent),
+            HilosPageConstants::HILOS_SIL_REQUESTS => new SilRequestsPage($this->agent),
+            HilosPageConstants::HILOS_SIL_USER_HISTORY => new SilUserHistoryPage($this->agent),
             default => parent::createPage($pageName),
         };
     }

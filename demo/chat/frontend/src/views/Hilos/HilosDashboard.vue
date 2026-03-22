@@ -67,6 +67,18 @@
               </div>
               <p class="mb-1">Visit statistics</p>
             </router-link>
+            <router-link to="/hilos/mcp-skills" class="list-group-item list-group-item-action">
+              <div class="d-flex w-100 justify-content-between">
+                <h6 class="mb-1">MCP и Skills</h6>
+              </div>
+              <p class="mb-1">MCP servers, skills, usage and logs (stub)</p>
+            </router-link>
+            <router-link to="/hilos/sil" class="list-group-item list-group-item-action">
+              <div class="d-flex w-100 justify-content-between">
+                <h6 class="mb-1">System Intelligence Layer</h6>
+              </div>
+              <p class="mb-1">SIL dashboard, requests, and elevated automation (stub)</p>
+            </router-link>
           </div>
         </div>
       </div>

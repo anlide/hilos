@@ -127,4 +127,18 @@ final class PageConstants
     public const string HILOS_USER = HilosPageConstants::HILOS_USER;
 
     public const string HILOS_ROLES = HilosPageConstants::HILOS_ROLES;
+
+    public const string HILOS_MCP_SKILLS = HilosPageConstants::HILOS_MCP_SKILLS;
+
+    public const string HILOS_MCP_SKILLS_MCP = HilosPageConstants::HILOS_MCP_SKILLS_MCP;
+
+    public const string HILOS_MCP_SKILLS_MCP_LOGS = HilosPageConstants::HILOS_MCP_SKILLS_MCP_LOGS;
+
+    public const string HILOS_MCP_SKILLS_MCP_LOGS_VIEW = HilosPageConstants::HILOS_MCP_SKILLS_MCP_LOGS_VIEW;
+
+    public const string HILOS_SIL = HilosPageConstants::HILOS_SIL;
+
+    public const string HILOS_SIL_REQUESTS = HilosPageConstants::HILOS_SIL_REQUESTS;
+
+    public const string HILOS_SIL_USER_HISTORY = HilosPageConstants::HILOS_SIL_USER_HISTORY;
 }

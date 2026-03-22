@@ -189,6 +189,41 @@ final class ChatSignalRouter extends SignalRouter
                 'agentIndex' => null,
                 'params' => [],
             ],
+            PageConstants::HILOS_MCP_SKILLS => [
+                'agentType' => AgentType::HILOS_INDEX,
+                'agentIndex' => null,
+                'params' => [],
+            ],
+            PageConstants::HILOS_MCP_SKILLS_MCP => [
+                'agentType' => AgentType::HILOS_INDEX,
+                'agentIndex' => null,
+                'params' => [],
+            ],
+            PageConstants::HILOS_MCP_SKILLS_MCP_LOGS => [
+                'agentType' => AgentType::HILOS_INDEX,
+                'agentIndex' => null,
+                'params' => [],
+            ],
+            PageConstants::HILOS_MCP_SKILLS_MCP_LOGS_VIEW => [
+                'agentType' => AgentType::HILOS_INDEX,
+                'agentIndex' => null,
+                'params' => [],
+            ],
+            PageConstants::HILOS_SIL => [
+                'agentType' => AgentType::HILOS_INDEX,
+                'agentIndex' => null,
+                'params' => [],
+            ],
+            PageConstants::HILOS_SIL_REQUESTS => [
+                'agentType' => AgentType::HILOS_INDEX,
+                'agentIndex' => null,
+                'params' => [],
+            ],
+            PageConstants::HILOS_SIL_USER_HISTORY => [
+                'agentType' => AgentType::HILOS_INDEX,
+                'agentIndex' => null,
+                'params' => [],
+            ],
         ];
 
         $groups = [
@@ -257,6 +292,13 @@ final class ChatSignalRouter extends SignalRouter
                 PageConstants::HILOS_USERS => AgentType::HILOS_INDEX,
                 PageConstants::HILOS_USER => AgentType::HILOS_INDEX,
                 PageConstants::HILOS_ROLES => AgentType::HILOS_INDEX,
+                PageConstants::HILOS_MCP_SKILLS => AgentType::HILOS_INDEX,
+                PageConstants::HILOS_MCP_SKILLS_MCP => AgentType::HILOS_INDEX,
+                PageConstants::HILOS_MCP_SKILLS_MCP_LOGS => AgentType::HILOS_INDEX,
+                PageConstants::HILOS_MCP_SKILLS_MCP_LOGS_VIEW => AgentType::HILOS_INDEX,
+                PageConstants::HILOS_SIL => AgentType::HILOS_INDEX,
+                PageConstants::HILOS_SIL_REQUESTS => AgentType::HILOS_INDEX,
+                PageConstants::HILOS_SIL_USER_HISTORY => AgentType::HILOS_INDEX,
             ],
         ];
 

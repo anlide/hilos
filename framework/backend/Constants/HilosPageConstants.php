@@ -134,4 +134,25 @@ class HilosPageConstants
 
     /** @var string Hilos — roles list */
     public const string HILOS_ROLES = 'hilos_roles';
+
+    /** @var string Hilos — MCP and Skills hub */
+    public const string HILOS_MCP_SKILLS = 'hilos_mcp_skills';
+
+    /** @var string Hilos — single MCP (detail) */
+    public const string HILOS_MCP_SKILLS_MCP = 'hilos_mcp_skills_mcp';
+
+    /** @var string Hilos — MCP usage / log overview */
+    public const string HILOS_MCP_SKILLS_MCP_LOGS = 'hilos_mcp_skills_mcp_logs';
+
+    /** @var string Hilos — MCP log viewer */
+    public const string HILOS_MCP_SKILLS_MCP_LOGS_VIEW = 'hilos_mcp_skills_mcp_logs_view';
+
+    /** @var string Hilos — System Intelligence Layer dashboard */
+    public const string HILOS_SIL = 'hilos_sil';
+
+    /** @var string Hilos — SIL requests list */
+    public const string HILOS_SIL_REQUESTS = 'hilos_sil_requests';
+
+    /** @var string Hilos — SIL user history */
+    public const string HILOS_SIL_USER_HISTORY = 'hilos_sil_user_history';
 }
