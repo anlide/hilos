@@ -7,6 +7,23 @@ export type HilosLogsOverviewSnapshot = {
   available: boolean
   totalRotationsAllTime: number | null
   lastRotationAt: string | null
+  logKeysPerAgent: number | null
+  totalWeightAgentKeysBytes: number | null
+  logKeysPerWorker: number | null
+  totalWeightWorkerKeysBytes: number | null
+}
+
+function parseOptionalNonNegativeInt(raw: unknown): number | null {
+  if (raw === null || raw === undefined) {
+    return null
+  }
+  if (typeof raw === 'number' && Number.isFinite(raw)) {
+    return Math.max(0, Math.trunc(raw))
+  }
+  if (typeof raw === 'string' && raw !== '' && Number.isFinite(Number(raw))) {
+    return Math.max(0, Math.trunc(Number(raw)))
+  }
+  return null
 }
 
 /**
@@ -31,5 +48,9 @@ export function parseHilosLogsOverviewPayload(raw: unknown): HilosLogsOverviewSn
     available,
     totalRotationsAllTime,
     lastRotationAt,
+    logKeysPerAgent: parseOptionalNonNegativeInt(raw['logKeysPerAgent']),
+    totalWeightAgentKeysBytes: parseOptionalNonNegativeInt(raw['totalWeightAgentKeysBytes']),
+    logKeysPerWorker: parseOptionalNonNegativeInt(raw['logKeysPerWorker']),
+    totalWeightWorkerKeysBytes: parseOptionalNonNegativeInt(raw['totalWeightWorkerKeysBytes']),
   }
 }

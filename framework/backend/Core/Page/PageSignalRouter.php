@@ -74,8 +74,17 @@ class PageSignalRouter
      */
     public function dispatchPageUnsubscribe(WebSocketPageUnsubscribeSignalDTO $data, string $source, string $name): void
     {
-        // TODO: Page name is no longer available for unsubscribe.
-        // $pageInstance->onUnsubscribe($data->acceptKey);
+        $page = $name;
+        if ($page === '') {
+            return;
+        }
+
+        $pageInstance = $this->resolvePage($page);
+        if ($pageInstance === null) {
+            return;
+        }
+
+        $pageInstance->onUnsubscribe($data->acceptKey);
     }
 
     /**

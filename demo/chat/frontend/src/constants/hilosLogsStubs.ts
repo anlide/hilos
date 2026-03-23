@@ -1,10 +1,4 @@
-/** Stub log statistics and lists (demo only). Rotation counts come from WebSocket subscription. */
-export const hilosLogsOverviewStub = {
-  logKeysPerAgent: 24,
-  totalWeightAgentKeysBytes: 4_128_000,
-  logKeysPerWorker: 9,
-  totalWeightWorkerKeysBytes: 1_024_000,
-} as const
+/** Stub log lists (demo only). Logs overview metrics come from WebSocket subscription. */
 
 export const hilosLogsByKeyStub = [
   { key: 'app.info', weightBytes: 512_000 },

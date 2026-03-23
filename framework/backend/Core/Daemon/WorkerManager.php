@@ -78,6 +78,19 @@ abstract class WorkerManager extends BaseManager
     private array $pageSignalRouters = [];
 
     /**
+     * Worker-local mirror of the current page subscription per WebSocket accept key.
+     *
+     * The daemon-side {@see SignalRouter::subscribeToPage()} overwrites state when the client
+     * sends {@see SignalTypeConstants::PAGE_SUBSCRIBE}; the worker must remember the previous page
+     * so it can invoke {@see PageSignalRouter::dispatchPageUnsubscribe()} before handling the new
+     * subscribe, and on {@see SignalTypeConstants::CONNECTION_CLOSE} to run page teardown without
+     * relying on an explicit {@see SignalTypeConstants::PAGE_UNSUBSCRIBE} frame from the client.
+     *
+     * @var array<string, array{page: string, params: array<string, string>}> Accept key → last page id and route params
+     */
+    private array $pageSubscriptionByAcceptKey = [];
+
+    /**
      * Creates worker manager instance.
      *
      * Initializes signal router via Hilos::initSignalRouter() and creates agent manager.
@@ -611,6 +624,7 @@ abstract class WorkerManager extends BaseManager
 
             case SignalTypeConstants::CONNECTION_CLOSE:
                 if ($signalData instanceof WebSocketCloseSignalDTO) {
+                    $this->dispatchPageUnsubscribeIfTrackedOnConnectionClose($agentId, $agent, $signalData, $source, $name);
                     $agent->onSignalConnectionClose($signalData, $source, $name);
                 } else {
                     Logger::error("onSignalConnectionClose - invalid signal data type: " . get_class($signalData));
@@ -641,9 +655,11 @@ abstract class WorkerManager extends BaseManager
 
             case SignalTypeConstants::PAGE_SUBSCRIBE:
                 if ($signalData instanceof WebSocketPageSubscribeSignalDTO) {
+                    $this->dispatchPreviousPageUnsubscribeIfReplaced($agentId, $agent, $signalData, $name, $source);
                     $this->onPageSubscribed($signalData, $source, $name);
                     $agent->onSignalPageSubscribe($signalData, $source, $name);
                     $this->getPageSignalRouter($agentId, $agent)->dispatchPageSubscribe($signalData, $source, $name);
+                    $this->rememberPageSubscriptionAfterSubscribe($signalData, $name);
                 } else {
                     Logger::error("handlePageSubscribeSignal - invalid signal data type: " . get_class($signalData));
                 }
@@ -654,6 +670,7 @@ abstract class WorkerManager extends BaseManager
                     $this->onPageSubscriptionUpdated($signalData, $source, $name);
                     $agent->onSignalPageUpdateSubscription($signalData, $source, $name);
                     $this->getPageSignalRouter($agentId, $agent)->dispatchPageUpdateSubscription($signalData, $source, $name);
+                    $this->mergePageSubscriptionParamsOnUpdate($signalData);
                 } else {
                     Logger::error("handlePageUpdateSubscriptionSignal - invalid signal data type: " . get_class($signalData));
                 }
@@ -664,6 +681,9 @@ abstract class WorkerManager extends BaseManager
                     $this->onPageUnsubscribed($signalData, $source, $name);
                     $agent->onSignalPageUnsubscribe($signalData, $source, $name);
                     $this->getPageSignalRouter($agentId, $agent)->dispatchPageUnsubscribe($signalData, $source, $name);
+                    if ($signalData->acceptKey !== '') {
+                        unset($this->pageSubscriptionByAcceptKey[$signalData->acceptKey]);
+                    }
                 } else {
                     Logger::error("handlePageUnsubscribeSignal - invalid signal data type: " . get_class($signalData));
                 }
@@ -854,6 +874,155 @@ abstract class WorkerManager extends BaseManager
     protected function createPageSignalRouter(AgentInterface $agent): PageSignalRouter
     {
         throw new PageSignalRouterNotFoundException($agent::class);
+    }
+
+    /**
+     * Build a deterministic string for comparing route param sets on subscription changes.
+     *
+     * Uses {@see ksort()} then {@see serialize()} so two arrays with the same keys and values compare equal.
+     *
+     * @param array<string, string> $params Route parameters from a page subscribe DTO
+     * @return string Serialized representation after sorting keys
+     */
+    private function pageParamsSignature(array $params): string
+    {
+        ksort($params);
+
+        return serialize($params);
+    }
+
+    /**
+     * If this connection was already subscribed to a different page (or the same page with different params),
+     * dispatch an unsubscribe for the previous page before the new subscribe is processed.
+     *
+     * Matches SPA navigation where the client sends only {@see SignalTypeConstants::PAGE_SUBSCRIBE} for the
+     * next route without {@see SignalTypeConstants::PAGE_UNSUBSCRIBE} for the previous one. No-op when there is
+     * no prior subscription or when page id and params are unchanged.
+     *
+     * @param string $agentId Agent instance id in this worker process
+     * @param AgentInterface $agent Agent receiving the signal
+     * @param WebSocketPageSubscribeSignalDTO $dto Incoming subscribe payload (acceptKey, page, params)
+     * @param string $name Signal name (page id when {@see WebSocketPageSubscribeSignalDTO::$page} is empty)
+     * @param string $source Signal source identifier
+     */
+    private function dispatchPreviousPageUnsubscribeIfReplaced(
+        string $agentId,
+        AgentInterface $agent,
+        WebSocketPageSubscribeSignalDTO $dto,
+        string $name,
+        string $source,
+    ): void {
+        $acceptKey = $dto->acceptKey;
+        if ($acceptKey === '') {
+            return;
+        }
+
+        $newPage = $dto->page !== '' ? $dto->page : $name;
+        $newParams = $dto->params;
+        if (!isset($this->pageSubscriptionByAcceptKey[$acceptKey])) {
+            return;
+        }
+
+        $prev = $this->pageSubscriptionByAcceptKey[$acceptKey];
+        $samePage = $prev['page'] === $newPage;
+        $sameParams = $this->pageParamsSignature($prev['params']) === $this->pageParamsSignature($newParams);
+        if ($samePage && $sameParams) {
+            return;
+        }
+
+        try {
+            $router = $this->getPageSignalRouter($agentId, $agent);
+            $unsubDto = new WebSocketPageUnsubscribeSignalDTO(acceptKey: $acceptKey);
+            $router->dispatchPageUnsubscribe($unsubDto, $source, $prev['page']);
+        } catch (PageSignalRouterNotFoundException $e) {
+            Logger::error(
+                'WorkerManager: cannot dispatch synthetic page_unsubscribe before new subscribe (no page router): '
+                . "agentId={$agentId} acceptKey={$acceptKey} previousPage={$prev['page']}, {$e->getMessage()}",
+            );
+        }
+    }
+
+    /**
+     * Store the current page id and params after {@see PageSignalRouter::dispatchPageSubscribe()} succeeds.
+     *
+     * Used by {@see self::dispatchPreviousPageUnsubscribeIfReplaced()} on subsequent subscribe signals.
+     *
+     * @param WebSocketPageSubscribeSignalDTO $dto Subscribe payload (acceptKey, page, params)
+     * @param string $name Signal name fallback when {@see WebSocketPageSubscribeSignalDTO::$page} is empty
+     */
+    private function rememberPageSubscriptionAfterSubscribe(WebSocketPageSubscribeSignalDTO $dto, string $name): void
+    {
+        $acceptKey = $dto->acceptKey;
+        if ($acceptKey === '') {
+            return;
+        }
+
+        $page = $dto->page !== '' ? $dto->page : $name;
+        $this->pageSubscriptionByAcceptKey[$acceptKey] = [
+            'page' => $page,
+            'params' => $dto->params,
+        ];
+    }
+
+    /**
+     * Merge incoming params into the tracked subscription after {@see PageSignalRouter::dispatchPageUpdateSubscription()}.
+     *
+     * Aligns worker-side tracking with daemon {@see SignalRouter::updatePageSubscription()} merge semantics.
+     * No-op when this accept key has no tracked subscription.
+     *
+     * @param WebSocketPageUpdateSubscriptionSignalDTO $dto Update payload (acceptKey, page, params to merge)
+     */
+    private function mergePageSubscriptionParamsOnUpdate(WebSocketPageUpdateSubscriptionSignalDTO $dto): void
+    {
+        $acceptKey = $dto->acceptKey;
+        if ($acceptKey === '' || !isset($this->pageSubscriptionByAcceptKey[$acceptKey])) {
+            return;
+        }
+
+        $this->pageSubscriptionByAcceptKey[$acceptKey]['params'] = array_merge(
+            $this->pageSubscriptionByAcceptKey[$acceptKey]['params'],
+            $dto->params,
+        );
+    }
+
+    /**
+     * On WebSocket disconnect, run page unsubscribe for the last tracked page if any.
+     *
+     * Invoked before {@see AgentInterface::onSignalConnectionClose()} so {@see AbstractPage::onUnsubscribe()}
+     * runs even when the client did not send {@see SignalTypeConstants::PAGE_UNSUBSCRIBE} (e.g. tab closed).
+     * Clears {@see self::$pageSubscriptionByAcceptKey} for this accept key after dispatch.
+     *
+     * @param string $agentId Agent instance id in this worker process
+     * @param AgentInterface $agent Agent receiving the signal
+     * @param WebSocketCloseSignalDTO $dto Close payload (acceptKey)
+     * @param string $source Signal source identifier
+     * @param string $name Signal name (passed to router; typically empty for connection close)
+     */
+    private function dispatchPageUnsubscribeIfTrackedOnConnectionClose(
+        string $agentId,
+        AgentInterface $agent,
+        WebSocketCloseSignalDTO $dto,
+        string $source,
+        string $name,
+    ): void {
+        $acceptKey = $dto->acceptKey;
+        if ($acceptKey === '' || !isset($this->pageSubscriptionByAcceptKey[$acceptKey])) {
+            return;
+        }
+
+        $prevPage = $this->pageSubscriptionByAcceptKey[$acceptKey]['page'];
+        try {
+            $router = $this->getPageSignalRouter($agentId, $agent);
+            $unsubDto = new WebSocketPageUnsubscribeSignalDTO(acceptKey: $acceptKey);
+            $router->dispatchPageUnsubscribe($unsubDto, $source, $prevPage);
+        } catch (PageSignalRouterNotFoundException $e) {
+            Logger::error(
+                'WorkerManager: cannot dispatch page_unsubscribe on connection close (no page router): '
+                . "agentId={$agentId} acceptKey={$acceptKey} page={$prevPage}, {$e->getMessage()}",
+            );
+        }
+
+        unset($this->pageSubscriptionByAcceptKey[$acceptKey]);
     }
 
     /**

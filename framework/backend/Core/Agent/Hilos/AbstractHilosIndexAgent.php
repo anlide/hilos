@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Hilos\Core\Agent\Hilos;
 
 use Hilos\Constants\HilosAgentType;
+use Hilos\Pages\Logs\AbstractHilosLogsPage;
+use Hilos\Socket\WebSocket\DTO\WebSocketCloseSignalDTO;
 
 /**
  * AbstractHilosIndexAgent - Abstract agent for Hilos dashboard, settings and i18n pages.
@@ -15,4 +17,14 @@ use Hilos\Constants\HilosAgentType;
 abstract class AbstractHilosIndexAgent extends AbstractHilosAgent
 {
     public const string AGENT_TYPE = HilosAgentType::HILOS_INDEX;
+
+    public function onTick(): void
+    {
+        AbstractHilosLogsPage::onAgentTick($this);
+    }
+
+    public function onSignalConnectionClose(WebSocketCloseSignalDTO $data, string $source, string $name): void
+    {
+        AbstractHilosLogsPage::removeSubscriber($data->acceptKey);
+    }
 }
