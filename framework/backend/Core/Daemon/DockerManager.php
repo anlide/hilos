@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Core\Daemon;
 
 use Hilos\Constants\EnvConstants;
+use Hilos\Constants\LogRotationConstants;
 use Hilos\Core\Daemon\Exception\InvalidScriptPathException;
 use Hilos\Core\Exception\Process\CouldNotStartException;
 use Hilos\Core\Exception\Process\FailedToClosePipeException;
@@ -355,10 +356,10 @@ class DockerManager extends BaseManager
     }
 
     /**
-     * Rotate log files - move all existing logs to archive directory
+     * Rotate log files — move all existing logs under the log root into the archive.
      *
-     * Creates archive/{timestamp} directory and moves all .log files there.
-     * This should be called before starting processes to ensure clean log directory.
+     * Creates `{@see LogRotationConstants::LOG_ARCHIVE_SUBDIR_NAME}/{@see LogRotationConstants::TIMESTAMP_FORMAT}/`
+     * and moves each `*.log` file there. Invoked before starting processes so the live log directory is clean.
      *
      * @throws LogRotationException If log directory operations fail
      */
@@ -383,16 +384,16 @@ class DockerManager extends BaseManager
         }
 
         // Create archive directory structure
-        $archiveDir = $logDirectory . '/archive';
+        $archiveDir = $logDirectory . DIRECTORY_SEPARATOR . LogRotationConstants::LOG_ARCHIVE_SUBDIR_NAME;
         if (!is_dir($archiveDir)) {
             if (!mkdir($archiveDir, 0755, true)) {
                 throw new LogRotationException("Cannot create archive directory: $archiveDir");
             }
         }
 
-        // Create timestamp directory (format: Y-m-d-H-i-s)
-        $timestamp = date('Y-m-d-H-i-s');
-        $timestampDir = $archiveDir . '/' . $timestamp;
+        // Create timestamp directory (see LogRotationConstants::TIMESTAMP_FORMAT)
+        $timestamp = date(LogRotationConstants::TIMESTAMP_FORMAT);
+        $timestampDir = $archiveDir . DIRECTORY_SEPARATOR . $timestamp;
         if (!mkdir($timestampDir, 0755, true)) {
             throw new LogRotationException("Cannot create timestamp directory: $timestampDir");
         }
@@ -401,7 +402,7 @@ class DockerManager extends BaseManager
         $movedCount = 0;
         foreach ($logFiles as $logFile) {
             $filename = basename($logFile);
-            $targetPath = $timestampDir . '/' . $filename;
+            $targetPath = $timestampDir . DIRECTORY_SEPARATOR . $filename;
 
             if (!rename($logFile, $targetPath)) {
                 Logger::errorLog("Failed to move log file: $logFile to $targetPath");
@@ -412,7 +413,8 @@ class DockerManager extends BaseManager
         }
 
         if ($movedCount > 0) {
-            Logger::info("Log rotation: moved $movedCount log file(s) to archive/$timestamp/");
+            $archiveName = LogRotationConstants::LOG_ARCHIVE_SUBDIR_NAME;
+            Logger::info("Log rotation: moved $movedCount log file(s) to {$archiveName}/$timestamp/");
         }
     }
 

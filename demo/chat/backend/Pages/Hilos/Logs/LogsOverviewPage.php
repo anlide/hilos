@@ -7,7 +7,9 @@ namespace Demo\Chat\Pages\Hilos\Logs;
 use Hilos\Pages\Logs\AbstractHilosLogsPage;
 
 /**
- * LogsOverviewPage - Hilos logs overview page implementation for demo.
+ * Concrete Hilos logs overview page for chat demo (page factory wiring only).
+ *
+ * @see AbstractHilosLogsPage
  */
 final class LogsOverviewPage extends AbstractHilosLogsPage
 {

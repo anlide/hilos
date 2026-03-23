@@ -5,6 +5,7 @@ import { normalizePageCatalog } from '@/types'
 import type { PageCatalogState } from '@/types'
 import { applyTableMutations } from '@hilos/sdk/composables'
 import type { TableDataState, TableMutationEntry } from '@hilos/sdk/types'
+import type { HilosLogsOverviewSnapshot } from '@/types/hilosLogsOverview'
 
 /**
  * WebSocket chat store - uses base connection store pattern from framework
@@ -27,6 +28,8 @@ export const useChatStore = defineStore('chat', {
     pendingTableRefreshKey: null as string | null,
     reconnectAttempts: 0,
     maxReconnectAttempts: Infinity,
+    /** Hilos /logs overview (subscription_page_hilos_logs); null until first payload. */
+    hilosLogsOverview: null as HilosLogsOverviewSnapshot | null,
   }),
   
   getters: {
@@ -263,6 +266,10 @@ export const useChatStore = defineStore('chat', {
       }
 
       return { hasDeletes: result.hasDeletes }
+    },
+
+    setHilosLogsOverview(snapshot: HilosLogsOverviewSnapshot | null) {
+      this.hilosLogsOverview = snapshot
     },
   }
 })

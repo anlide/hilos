@@ -18,6 +18,7 @@ import {
   SUBSCRIPTION_PAGE_HILOS_GUARDIAN_AGENT,
   SUBSCRIPTION_PAGE_HILOS_SETTINGS,
   SUBSCRIPTION_PAGE_HILOS_I18N,
+  SUBSCRIPTION_PAGE_HILOS_LOGS,
   SUBSCRIPTION_PAGE_BOT,
   SUBSCRIPTION_PAGE_USER,
   TABLE_DATA,
@@ -29,6 +30,7 @@ import {ChatEntitiesReceiver} from '@/entities/ChatEntitiesReceiver'
 import {eventPayloadToEvent, isRecord, parseEventPayloads} from '@/entities/parsers'
 import type { User } from '@/types'
 import type { TableMutationEntry } from '@hilos/sdk/types'
+import { parseHilosLogsOverviewPayload } from '@/types/hilosLogsOverview'
 
 type RawMessage = {
   type: string
@@ -154,6 +156,13 @@ export function createChatWebSocketPlugin() {
         case SUBSCRIPTION_PAGE_ADMIN: {
           return
         }
+        case SUBSCRIPTION_PAGE_HILOS_LOGS: {
+          const parsed = parseHilosLogsOverviewPayload(message.data)
+          if (parsed) {
+            chatStore.setHilosLogsOverview(parsed)
+          }
+          return
+        }
         case SUBSCRIPTION_PAGE_ADMIN_USERS:
         case SUBSCRIPTION_PAGE_ADMIN_BOTS:
         case SUBSCRIPTION_PAGE_ADMIN_MODERATOR:
@@ -247,7 +256,8 @@ export function createChatWebSocketPlugin() {
             message.type === 'subscription_page_hilos_user' ||
             message.type === 'subscription_page_hilos_roles' ||
             message.type.startsWith('subscription_page_hilos_daemon') ||
-            message.type.startsWith('subscription_page_hilos_logs') ||
+            (message.type.startsWith('subscription_page_hilos_logs') &&
+              message.type !== SUBSCRIPTION_PAGE_HILOS_LOGS) ||
             message.type.startsWith('subscription_page_hilos_mcp_skills') ||
             message.type.startsWith('subscription_page_hilos_sil') ||
             message.type.startsWith('subscription_page_hilos_communications') ||

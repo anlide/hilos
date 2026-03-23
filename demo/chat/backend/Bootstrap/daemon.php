@@ -31,8 +31,8 @@ use Hilos\Utils\Logger;
  * Includes HTTP server for status endpoint and Worker server for worker communication.
  */
 
-// Initialize environment (reads .env from local directory)
-Env::init(__DIR__);
+// Project root (demo/chat): .env lives here, not under Bootstrap/
+Env::init(dirname(__DIR__, 2));
 
 // Enable debug logging (optional - uncomment to enable)
 #Logger::setDebugEnabled(true);

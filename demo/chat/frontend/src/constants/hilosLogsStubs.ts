@@ -1,11 +1,9 @@
-/** Stub log statistics and lists (demo only). */
+/** Stub log statistics and lists (demo only). Rotation counts come from WebSocket subscription. */
 export const hilosLogsOverviewStub = {
-  lastRotationAt: '2025-03-22T04:00:00Z',
   logKeysPerAgent: 24,
   totalWeightAgentKeysBytes: 4_128_000,
   logKeysPerWorker: 9,
   totalWeightWorkerKeysBytes: 1_024_000,
-  totalRotationsAllTime: 1284,
 } as const
 
 export const hilosLogsByKeyStub = [

@@ -21,8 +21,8 @@ use Hilos\Utils\Logger;
  * Parses worker ID from command line and starts ChatWorkerManager.
  */
 
-// Initialize environment (reads .env from local directory)
-Env::init(__DIR__);
+// Project root (demo/chat): .env lives here, not under Bootstrap/
+Env::init(dirname(__DIR__, 2));
 
 // Enable debug logging (optional - uncomment to enable)
 #Logger::setDebugEnabled(true);

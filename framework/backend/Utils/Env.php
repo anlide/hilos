@@ -273,10 +273,13 @@ class Env
     /**
      * Initialize environment.
      *
-     * This should be called at the start of the application.
-     * It will copy .env.example to .env if needed and load the .env file.
+     * Call once at process startup. Optionally copies `.env.example` to `.env` and loads `.env`
+     * into {@see $envCache}. Subsequent {@see get()} reads that cache first, then `getenv()`,
+     * then `.env.example` (via {@see getFromExample()} — relative to CWD, not `$rootPath`).
      *
-     * @param ?string $rootPath Root path of the application (null = auto-detect from project root)
+     * @param ?string $rootPath Directory that **contains** the `.env` file (application / project root).
+     *                          Do not pass a subdirectory such as `backend/Bootstrap` unless `.env`
+     *                          lives there. Null = auto-detect (framework package layout; not for app bootstraps).
      */
     public static function init(?string $rootPath = null): void
     {

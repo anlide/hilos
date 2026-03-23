@@ -17,8 +17,8 @@ use Hilos\Database\Migration;
 use Hilos\Utils\Env;
 use Hilos\Utils\Logger;
 
-// Initialize environment (reads .env from local directory)
-Env::init(__DIR__);
+// Project root (demo/chat): .env lives here, not under Bootstrap/
+Env::init(dirname(__DIR__, 2));
 
 /**
  * Docker Watchdog - Process manager for Docker containers.
