@@ -6,6 +6,8 @@ vendor/
 
 # Node
 node_modules/
+framework/agent-openai/dist/
+framework/agent-openai/.tmp-data/
 
 # IDE
 .vscode/

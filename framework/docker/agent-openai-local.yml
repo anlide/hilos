@@ -1,0 +1,39 @@
+# Docker Compose for local OpenAI agent server (framework-level, standalone).
+# Exposes port 9307 to host. Run separately from demos.
+#
+# Usage:
+#   docker compose -f framework/docker/agent-openai-local.yml up -d
+
+name: hilos-agent-openai-local
+
+services:
+  agent-openai-local:
+    build:
+      context: ../..
+      dockerfile: framework/agent-openai/Dockerfile
+    container_name: hilos-agent-openai-local
+    environment:
+      - AGENT_OPENAI_HOST=0.0.0.0
+      - AGENT_OPENAI_PORT=9307
+      - AGENT_OPENAI_WORKSPACE_ROOT=/workspace
+      - AGENT_OPENAI_ALLOWED_ROOTS=${AGENT_OPENAI_ALLOWED_ROOTS:-/workspace}
+      - AGENT_OPENAI_DATA_DIR=/data
+      - AGENT_OPENAI_REPORTS_DIR=/data/reports
+      - AGENT_OPENAI_RUNS_DIR=/data/runs
+      - AGENT_OPENAI_FINGERPRINT_FILE=/data/fingerprints.json
+      - AGENT_OPENAI_MAX_FILE_SIZE_BYTES=${AGENT_OPENAI_MAX_FILE_SIZE_BYTES:-256000}
+      - AGENT_OPENAI_MAX_LIST_FILES=${AGENT_OPENAI_MAX_LIST_FILES:-1000}
+      - AGENT_OPENAI_REASONING_EFFORT=${AGENT_OPENAI_REASONING_EFFORT:-medium}
+      - AGENT_OPENAI_PROMPT_TEMPLATE_VERSION=${AGENT_OPENAI_PROMPT_TEMPLATE_VERSION:-2026-04-05}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - OPENAI_MODEL=${OPENAI_MODEL:-gpt-5}
+    volumes:
+      - ../..:/workspace:ro
+      - agent-openai-local-data:/data
+    ports:
+      - "9307:9307"
+    restart: unless-stopped
+
+volumes:
+  agent-openai-local-data:
+    name: hilos-agent-openai-local-data

@@ -16,6 +16,8 @@ Instructions for AI agents working with the Hilos framework.
 
 ## Sections
 
+- **[Agent OpenAI Service](../framework/agent-openai/README.md)** — Standalone OpenAI agent server with HTTP API, WebSocket progress stream, MCP tools and fingerprint cache.
+
 - **[Code Quality Validation](ai-agents/code-quality-validation.md)** — How to validate code quality: review output of other agents, humans, or CLI code generation. Checklists and automation hints.
 
 - **[Feature Specification](ai-agents/feature-specification.md)** — How to turn a user wish into a technical specification. Clarifying questions, spec format, request format for executors.
