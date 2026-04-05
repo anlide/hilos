@@ -10,6 +10,7 @@ use Demo\Chat\Agents\ChatContextAnalyzerAgent;
 use Demo\Chat\Agents\Hilos\DemoHilosAgent;
 use Demo\Chat\Agents\Hilos\DemoHilosAnalyticsAgent;
 use Demo\Chat\Agents\Hilos\DemoHilosGuardianAgent;
+use Demo\Chat\Agents\Hilos\DemoHilosLogsAgent;
 use Demo\Chat\Agents\ModeratorAgent;
 use Demo\Chat\Constants\AgentType;
 use Hilos\Core\Agent\AgentInterface;
@@ -46,6 +47,7 @@ final class ChatAgentWorkerFactory extends HilosAgentWorkerFactory
             AgentType::HILOS_INDEX => new DemoHilosAgent(),
             AgentType::HILOS_GUARDIAN => new DemoHilosGuardianAgent(),
             AgentType::HILOS_ANALYTICS => new DemoHilosAnalyticsAgent(),
+            AgentType::HILOS_LOGS => new DemoHilosLogsAgent(),
             default => parent::createAgent($agentType, $agentIndex),
         };
     }

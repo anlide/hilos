@@ -35,7 +35,7 @@ use JsonException;
  * Raw file weights are kept in private static structures (per-process). A full archive walk runs once per worker
  * process while {@see self::$logsOverviewMetricsInitialized} is false ({@see self::onSubscribe()}); further
  * subscribes and ticks use incremental rescans. Live updates are pushed while at least one subscriber is connected
- * ({@see self::onAgentTick()}).
+ * ({@see self::onAgentTick()}), invoked from {@see \Hilos\Core\Agent\Hilos\AbstractHilosLogsAgent}.
  *
  * Projects register a concrete empty subclass in the page factory (wiring only).
  */
@@ -103,7 +103,7 @@ abstract class AbstractHilosLogsPage extends AbstractHilosPage
      * Remove a connection from the subscriber set after {@see self::onUnsubscribe()} or when the connection
      * is already torn down (safety net; idempotent with {@see self::onUnsubscribe()}).
      *
-     * Called from {@see \Hilos\Core\Agent\Hilos\AbstractHilosIndexAgent::onSignalConnectionClose()}.
+     * Called from {@see \Hilos\Core\Agent\Hilos\AbstractHilosLogsAgent::onSignalConnectionClose()}.
      *
      * @param string $acceptKey Target connection accept key
      */
@@ -113,9 +113,9 @@ abstract class AbstractHilosLogsPage extends AbstractHilosPage
     }
 
     /**
-     * Worker tick hook for the Hilos index agent: throttled incremental rescan (~100ms) and broadcast on change.
+     * Worker tick hook for the Hilos logs agent: throttled incremental rescan (~100ms) and broadcast on change.
      *
-     * @param PageAgentInterface $agent Hilos index agent (for {@see PageAgentInterface::getAgentSignalSource()} when broadcasting)
+     * @param PageAgentInterface $agent Hilos logs agent (for {@see PageAgentInterface::getAgentSignalSource()} when broadcasting)
      */
     public static function onAgentTick(PageAgentInterface $agent): void
     {
@@ -152,7 +152,7 @@ abstract class AbstractHilosLogsPage extends AbstractHilosPage
      */
     public function onSubscribe(string $acceptKey, array $params = []): void
     {
-        Logger::logAgentInfo(HilosAgentType::HILOS_INDEX, "hilos_logs onSubscribe acceptKey={$acceptKey}");
+        Logger::logAgentInfo(HilosAgentType::HILOS_LOGS, "hilos_logs onSubscribe acceptKey={$acceptKey}");
         self::$logsOverviewSubscribers[$acceptKey] = true;
         if (!self::$logsOverviewMetricsInitialized) {
             self::refreshOverviewFull();
@@ -176,14 +176,14 @@ abstract class AbstractHilosLogsPage extends AbstractHilosPage
      */
     public function onUnsubscribe(string $acceptKey): void
     {
-        Logger::logAgentInfo(HilosAgentType::HILOS_INDEX, "hilos_logs onUnsubscribe acceptKey={$acceptKey}");
+        Logger::logAgentInfo(HilosAgentType::HILOS_LOGS, "hilos_logs onUnsubscribe acceptKey={$acceptKey}");
         self::removeSubscriber($acceptKey);
     }
 
     /**
      * Full rescan of archive batches and live log directory; used on {@see self::onSubscribe()}.
      *
-     * Logs wall duration with 0.001s precision via {@see Logger::logAgentInfo()} (agent id {@see HilosAgentType::HILOS_INDEX}).
+     * Logs wall duration with 0.001s precision via {@see Logger::logAgentInfo()} (agent id {@see HilosAgentType::HILOS_LOGS}).
      */
     private static function refreshOverviewFull(): void
     {
@@ -234,7 +234,7 @@ abstract class AbstractHilosLogsPage extends AbstractHilosPage
         } finally {
             $elapsed = microtime(true) - $t0;
             Logger::logAgentInfo(
-                HilosAgentType::HILOS_INDEX,
+                HilosAgentType::HILOS_LOGS,
                 sprintf('hilos_logs refreshOverviewFull duration_s=%.3f', $elapsed),
             );
         }
@@ -243,7 +243,7 @@ abstract class AbstractHilosLogsPage extends AbstractHilosPage
     /**
      * Incremental rescan: always refresh live files; add/remove archive batch entries when folders appear or disappear.
      *
-     * Logs wall duration with 0.001s precision via {@see Logger::logAgentInfo()} (agent id {@see HilosAgentType::HILOS_INDEX}).
+     * Logs wall duration with 0.001s precision via {@see Logger::logAgentInfo()} (agent id {@see HilosAgentType::HILOS_LOGS}).
      */
     private static function refreshOverviewIncremental(): void
     {
@@ -310,7 +310,7 @@ abstract class AbstractHilosLogsPage extends AbstractHilosPage
         } finally {
             $elapsed = microtime(true) - $t0;
             Logger::logAgentInfo(
-                HilosAgentType::HILOS_INDEX,
+                HilosAgentType::HILOS_LOGS,
                 sprintf('hilos_logs refreshOverviewIncremental duration_s=%.3f', $elapsed),
             );
         }
@@ -533,7 +533,7 @@ abstract class AbstractHilosLogsPage extends AbstractHilosPage
     /**
      * Push the current overview DTO to every tracked subscriber (after a fingerprint change on tick).
      *
-     * @param PageAgentInterface $agent Hilos index agent used for signal routing
+     * @param PageAgentInterface $agent Hilos logs agent used for signal routing
      */
     private static function broadcastOverviewToSubscribers(PageAgentInterface $agent): void
     {
@@ -546,7 +546,7 @@ abstract class AbstractHilosLogsPage extends AbstractHilosPage
     /**
      * Queue a user-targeted WebSocket signal with the logs overview DTO.
      *
-     * @param PageAgentInterface $agent Agent providing {@see PageAgentInterface::getAgentSignalSource()}
+     * @param PageAgentInterface $agent Logs agent providing {@see PageAgentInterface::getAgentSignalSource()}
      * @param string $acceptKey Connection accept key
      * @param HilosLogsOverviewSignalData $data Payload
      */

@@ -11,6 +11,7 @@ use Demo\Chat\Core\Agent\Daemon\ChatContextAnalyzerAgentDaemon;
 use Demo\Chat\Core\Agent\Daemon\Hilos\DemoHilosAgentDaemon;
 use Demo\Chat\Core\Agent\Daemon\Hilos\DemoHilosAnalyticsAgentDaemon;
 use Demo\Chat\Core\Agent\Daemon\Hilos\DemoHilosGuardianAgentDaemon;
+use Demo\Chat\Core\Agent\Daemon\Hilos\DemoHilosLogsAgentDaemon;
 use Demo\Chat\Core\Agent\Daemon\ModeratorAgentDaemon;
 use Hilos\Core\Agent\Daemon\AgentDaemonInterface;
 use Hilos\Core\Agent\Daemon\HilosAgentDaemonFactory;
@@ -46,6 +47,7 @@ final class ChatAgentDaemonFactory extends HilosAgentDaemonFactory
             AgentType::HILOS_INDEX => new DemoHilosAgentDaemon(),
             AgentType::HILOS_GUARDIAN => new DemoHilosGuardianAgentDaemon(),
             AgentType::HILOS_ANALYTICS => new DemoHilosAnalyticsAgentDaemon(),
+            AgentType::HILOS_LOGS => new DemoHilosLogsAgentDaemon(),
             default => parent::createAgentDaemon($agentType, $agentIndex),
         };
     }

@@ -21,4 +21,7 @@ class HilosAgentType
 
     /** @var string Hilos analytics agent (visit statistics) */
     public const string HILOS_ANALYTICS = 'hilos_analytics';
+
+    /** @var string Hilos logs overview agent (rotation metrics under daemon log archive) */
+    public const string HILOS_LOGS = 'hilos_logs';
 }

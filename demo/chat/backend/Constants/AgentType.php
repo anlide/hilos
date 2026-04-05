@@ -37,4 +37,7 @@ final class AgentType
 
     /** @var string Hilos analytics agent type */
     public const string HILOS_ANALYTICS = HilosAgentType::HILOS_ANALYTICS;
+
+    /** @var string Hilos logs overview agent type */
+    public const string HILOS_LOGS = HilosAgentType::HILOS_LOGS;
 }
