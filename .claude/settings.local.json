@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(powershell.exe -Command 'Get-ChildItem C:\\\\Code\\\\hilos\\\\framework -Recurse -Exclude node_modules -Depth 3 | Where-Object { $_.FullName -notmatch '\\\\''node_modules'\\\\'' } | Select-Object FullName')",
+      "Read(//c/Users/elfan/AppData/Roaming/npm/node_modules/**)",
+      "Read(//c/Users/elfan/**)",
+      "WebFetch(domain:www.npmjs.com)",
+      "WebSearch",
+      "Bash(docker run:*)"
+    ]
+  }
+}

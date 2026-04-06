@@ -8,6 +8,8 @@ vendor/
 node_modules/
 framework/agent-openai/dist/
 framework/agent-openai/.tmp-data/
+framework/agent-claude/dist/
+framework/agent-claude/.tmp-data/
 
 # IDE
 .vscode/
