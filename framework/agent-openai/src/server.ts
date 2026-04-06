@@ -27,7 +27,6 @@ if (config.openAiApiKey) {
   process.env.OPENAI_API_KEY = config.openAiApiKey;
 }
 const runStore = new RunStore(config.runsDir);
-const SERVICE_BUILD_ID = '2026-04-05-openai-env-fix';
 
 const querySchema = z.object({
   status: z.enum(RUN_STATUSES).optional(),
@@ -144,11 +143,9 @@ async function main(): Promise<void> {
     response.json({
       status: config.openAiApiKey ? 'ok' : 'degraded',
       service: 'agent-openai',
-      buildId: SERVICE_BUILD_ID,
       port: config.port,
       model: config.model,
       openAiConfigured: Boolean(config.openAiApiKey),
-      openAiConfiguredInRuntimeEnv: Boolean(process.env.OPENAI_API_KEY),
       rolesCount: guardianRoles.length,
       runsCount: runs.length,
     });
@@ -270,20 +267,6 @@ async function executeRun(input: {
   onSummaryPatch: (patch: Partial<RunSummary>) => Promise<void>;
 }): Promise<void> {
   try {
-    console.log(
-      '[agent-openai] executeRun start',
-      JSON.stringify({
-        runId: input.summary.runId,
-        role: input.request.role,
-        env: input.request.env,
-        initiator: input.request.initiator,
-        configHasOpenAiKey: Boolean(config.openAiApiKey),
-        runtimeEnvHasOpenAiKey: Boolean(process.env.OPENAI_API_KEY),
-        configOpenAiKeyLength: config.openAiApiKey?.length ?? 0,
-        runtimeEnvOpenAiKeyLength: process.env.OPENAI_API_KEY?.length ?? 0,
-      }),
-    );
-
     await runAgentTask({
       summary: input.summary,
       request: input.request,
@@ -299,23 +282,6 @@ async function executeRun(input: {
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown agent error';
-    const diagnostic = {
-      configHasOpenAiKey: Boolean(config.openAiApiKey),
-      runtimeEnvHasOpenAiKey: Boolean(process.env.OPENAI_API_KEY),
-      configOpenAiKeyLength: config.openAiApiKey?.length ?? 0,
-      runtimeEnvOpenAiKeyLength: process.env.OPENAI_API_KEY?.length ?? 0,
-      buildId: SERVICE_BUILD_ID,
-    };
-
-    console.error(
-      '[agent-openai] executeRun failed',
-      JSON.stringify({
-        runId: input.summary.runId,
-        message,
-        diagnostic,
-      }),
-    );
-
     await input.onSummaryPatch({
       status: 'failed',
       finishedAt: new Date().toISOString(),
@@ -328,7 +294,6 @@ async function executeRun(input: {
       timestamp: new Date().toISOString(),
       payload: {
         message,
-        diagnostic,
       },
     });
   }

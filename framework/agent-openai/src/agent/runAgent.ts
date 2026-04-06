@@ -31,27 +31,7 @@ interface FileFingerprint {
 
 export async function runAgentTask(options: RunAgentOptions): Promise<void> {
   const { request, config, summary, onEvent, onSummaryPatch } = options;
-  const configHasOpenAiKey = Boolean(config.openAiApiKey);
-  const envHasOpenAiKey = Boolean(process.env.OPENAI_API_KEY);
-  const configOpenAiKeyLength = config.openAiApiKey?.length ?? 0;
-  const envOpenAiKeyLength = process.env.OPENAI_API_KEY?.length ?? 0;
   const effectiveApiKey = config.openAiApiKey ?? process.env.OPENAI_API_KEY;
-
-  console.log(
-    '[agent-openai] run bootstrap',
-    JSON.stringify({
-      runId: summary.runId,
-      role: request.role,
-      env: request.env,
-      initiator: request.initiator,
-      model: config.model,
-      configHasOpenAiKey,
-      envHasOpenAiKey,
-      configOpenAiKeyLength,
-      envOpenAiKeyLength,
-      effectiveApiKeyLength: effectiveApiKey?.length ?? 0,
-    }),
-  );
 
   if (!effectiveApiKey) {
     throw new Error('OPENAI_API_KEY is required for agent execution');
@@ -59,15 +39,6 @@ export async function runAgentTask(options: RunAgentOptions): Promise<void> {
 
   // Keep the runtime env in sync for SDK calls that resolve credentials lazily.
   process.env.OPENAI_API_KEY = effectiveApiKey;
-
-  console.log(
-    '[agent-openai] run credentials synced',
-    JSON.stringify({
-      runId: summary.runId,
-      runtimeEnvHasOpenAiKey: Boolean(process.env.OPENAI_API_KEY),
-      runtimeEnvOpenAiKeyLength: process.env.OPENAI_API_KEY?.length ?? 0,
-    }),
-  );
 
   const now = new Date().toISOString();
   const fingerprintStore = new FingerprintStore(config.fingerprintFile);
