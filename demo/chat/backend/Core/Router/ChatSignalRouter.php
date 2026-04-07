@@ -279,6 +279,21 @@ final class ChatSignalRouter extends SignalRouter
                 'agentIndex' => null,
                 'params' => [],
             ],
+            PageConstants::HILOS_CHANGE_LOG => [
+                'agentType' => AgentType::HILOS_INDEX,
+                'agentIndex' => null,
+                'params' => [],
+            ],
+            PageConstants::HILOS_CHANGE_LOG_TABLES => [
+                'agentType' => AgentType::HILOS_INDEX,
+                'agentIndex' => null,
+                'params' => [],
+            ],
+            PageConstants::HILOS_CHANGE_LOG_TABLE => [
+                'agentType' => AgentType::HILOS_INDEX,
+                'agentIndex' => null,
+                'params' => [],
+            ],
         ];
 
         $groups = [
@@ -366,6 +381,9 @@ final class ChatSignalRouter extends SignalRouter
                 PageConstants::HILOS_BILLING_PROVIDER => AgentType::HILOS_INDEX,
                 PageConstants::HILOS_BILLING_PAYMENTS => AgentType::HILOS_INDEX,
                 PageConstants::HILOS_BILLING_REFUNDS => AgentType::HILOS_INDEX,
+                PageConstants::HILOS_CHANGE_LOG => AgentType::HILOS_INDEX,
+                PageConstants::HILOS_CHANGE_LOG_TABLES => AgentType::HILOS_INDEX,
+                PageConstants::HILOS_CHANGE_LOG_TABLE => AgentType::HILOS_INDEX,
             ],
         ];
 

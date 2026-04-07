@@ -116,6 +116,10 @@ const resolveCatalogStubDynamicLabel = (pageId: string, routeParams: Record<stri
       const id = s('serverId')
       return id !== null ? `HTTP server ${id}` : null
     }
+    case 'hilos_change_log_table': {
+      const id = s('tableId')
+      return id !== null ? `Table ${id}` : null
+    }
     case 'hilos_user': {
       const id = s('userId')
       return id !== null ? `User ${id}` : null
@@ -212,6 +216,16 @@ const buildPageLocation = (
       return '/hilos/analytics'
     case 'hilos_backup':
       return '/hilos/backup'
+    case 'hilos_change_log':
+      return '/hilos/change-log'
+    case 'hilos_change_log_tables':
+      return '/hilos/change-log/tables'
+    case 'hilos_change_log_table': {
+      const tableId = routeParams.tableId
+      return typeof tableId === 'string'
+        ? `/hilos/change-log/tables/${encodeURIComponent(tableId)}`
+        : null
+    }
     case 'hilos_daemon':
       return '/hilos/daemon'
     case 'hilos_daemon_workers':

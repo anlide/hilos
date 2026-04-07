@@ -188,4 +188,13 @@ class HilosPageConstants
 
     /** @var string Hilos — refunds for a provider */
     public const string HILOS_BILLING_REFUNDS = 'hilos_billing_refunds';
+
+    /** @var string Hilos — change log dashboard (audit triggers / config) */
+    public const string HILOS_CHANGE_LOG = 'hilos_change_log';
+
+    /** @var string Hilos — change log tracked tables list */
+    public const string HILOS_CHANGE_LOG_TABLES = 'hilos_change_log_tables';
+
+    /** @var string Hilos — change log single tracked table detail */
+    public const string HILOS_CHANGE_LOG_TABLE = 'hilos_change_log_table';
 }

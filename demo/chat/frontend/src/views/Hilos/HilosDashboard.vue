@@ -155,6 +155,12 @@ const dashboardSections: DashboardSection[] = [
         icon: 'bi-journal-text',
       },
       {
+        to: '/hilos/change-log',
+        title: 'Change Log',
+        description: 'Audit triggers, change tracking configuration (stub)',
+        icon: 'bi-clock-history',
+      },
+      {
         to: '/hilos/backup',
         title: 'Backups',
         description: 'Database and file backup jobs (stub)',

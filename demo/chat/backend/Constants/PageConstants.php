@@ -163,4 +163,10 @@ final class PageConstants
     public const string HILOS_BILLING_PAYMENTS = HilosPageConstants::HILOS_BILLING_PAYMENTS;
 
     public const string HILOS_BILLING_REFUNDS = HilosPageConstants::HILOS_BILLING_REFUNDS;
+
+    public const string HILOS_CHANGE_LOG = HilosPageConstants::HILOS_CHANGE_LOG;
+
+    public const string HILOS_CHANGE_LOG_TABLES = HilosPageConstants::HILOS_CHANGE_LOG_TABLES;
+
+    public const string HILOS_CHANGE_LOG_TABLE = HilosPageConstants::HILOS_CHANGE_LOG_TABLE;
 }

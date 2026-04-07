@@ -49,6 +49,9 @@ import HilosSilDashboard from '@/views/Hilos/Sil/HilosSilDashboard.vue'
 import HilosSilRequests from '@/views/Hilos/Sil/HilosSilRequests.vue'
 import HilosSilUserHistory from '@/views/Hilos/Sil/HilosSilUserHistory.vue'
 import HilosBackup from '@/views/Hilos/Backup/HilosBackup.vue'
+import HilosChangeLogDashboard from '@/views/Hilos/ChangeLog/HilosChangeLogDashboard.vue'
+import HilosChangeLogTables from '@/views/Hilos/ChangeLog/HilosChangeLogTables.vue'
+import HilosChangeLogTable from '@/views/Hilos/ChangeLog/HilosChangeLogTable.vue'
 import HilosDaemon from '@/views/Hilos/Daemon/HilosDaemon.vue'
 import HilosDaemonWorkers from '@/views/Hilos/Daemon/HilosDaemonWorkers.vue'
 import HilosDaemonAgents from '@/views/Hilos/Daemon/HilosDaemonAgents.vue'
@@ -180,6 +183,24 @@ export const demoRoutes: RouteRecordRaw[] = [
         name: 'hilos_backup',
         component: HilosBackup,
         meta: { page: 'hilos_backup' },
+      },
+      {
+        path: 'hilos/change-log/tables/:tableId',
+        name: 'hilos_change_log_table',
+        component: HilosChangeLogTable,
+        meta: { page: 'hilos_change_log_table' },
+      },
+      {
+        path: 'hilos/change-log/tables',
+        name: 'hilos_change_log_tables',
+        component: HilosChangeLogTables,
+        meta: { page: 'hilos_change_log_tables' },
+      },
+      {
+        path: 'hilos/change-log',
+        name: 'hilos_change_log',
+        component: HilosChangeLogDashboard,
+        meta: { page: 'hilos_change_log' },
       },
       {
         path: 'hilos/daemon/http/:serverId',

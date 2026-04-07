@@ -19,6 +19,9 @@ use Hilos\Hilos;
  */
 abstract class AbstractHilosPage extends AbstractPage
 {
+    // TODO: [change-log] Before each DB write that should attribute hilos_change_log rows, set MySQL session
+    // variable (e.g. SET @hilos_user_id = <userId>;) so triggers can read the acting user. Wire this in the
+    // database layer or connection wrapper used for authenticated requests.
     /**
      * Send signal to a specific user (WebSocket connection by acceptKey).
      *

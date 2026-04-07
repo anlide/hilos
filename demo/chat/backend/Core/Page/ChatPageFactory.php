@@ -18,6 +18,9 @@ use Demo\Chat\Pages\AdminUsersPage;
 use Demo\Chat\Pages\BotPage;
 use Demo\Chat\Pages\Hilos\AnalyticsPage;
 use Demo\Chat\Pages\Hilos\Backup\BackupPage;
+use Demo\Chat\Pages\Hilos\ChangeLog\ChangeLogDashboardPage;
+use Demo\Chat\Pages\Hilos\ChangeLog\ChangeLogTablePage;
+use Demo\Chat\Pages\Hilos\ChangeLog\ChangeLogTablesPage;
 use Demo\Chat\Pages\Hilos\Billing\BillingPage;
 use Demo\Chat\Pages\Hilos\Billing\BillingPaymentsPage;
 use Demo\Chat\Pages\Hilos\Billing\BillingProviderPage;
@@ -185,6 +188,9 @@ final class ChatPageFactory extends HilosPageFactory
             HilosPageConstants::HILOS_BILLING_PROVIDER => new BillingProviderPage($this->agent),
             HilosPageConstants::HILOS_BILLING_PAYMENTS => new BillingPaymentsPage($this->agent),
             HilosPageConstants::HILOS_BILLING_REFUNDS => new BillingRefundsPage($this->agent),
+            HilosPageConstants::HILOS_CHANGE_LOG => new ChangeLogDashboardPage($this->agent),
+            HilosPageConstants::HILOS_CHANGE_LOG_TABLES => new ChangeLogTablesPage($this->agent),
+            HilosPageConstants::HILOS_CHANGE_LOG_TABLE => new ChangeLogTablePage($this->agent),
             default => parent::createPage($pageName),
         };
     }

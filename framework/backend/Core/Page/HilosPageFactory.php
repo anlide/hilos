@@ -85,6 +85,9 @@ class HilosPageFactory extends AbstractPageFactory
             HilosPageConstants::HILOS_BILLING_PROVIDER,
             HilosPageConstants::HILOS_BILLING_PAYMENTS,
             HilosPageConstants::HILOS_BILLING_REFUNDS,
+            HilosPageConstants::HILOS_CHANGE_LOG,
+            HilosPageConstants::HILOS_CHANGE_LOG_TABLES,
+            HilosPageConstants::HILOS_CHANGE_LOG_TABLE,
         ];
     }
 

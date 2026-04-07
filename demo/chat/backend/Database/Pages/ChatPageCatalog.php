@@ -200,6 +200,21 @@ final class ChatPageCatalog extends PageCatalogStub
                 PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Backups',
                 PageCatalogConstants::CATALOG_ENTRY_PATH_TEMPLATE => '/hilos/backup',
             ],
+            PageConstants::HILOS_CHANGE_LOG => [
+                PageCatalogConstants::CATALOG_ENTRY_PARENT_ID => PageConstants::HILOS_DASHBOARD,
+                PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Change Log',
+                PageCatalogConstants::CATALOG_ENTRY_PATH_TEMPLATE => '/hilos/change-log',
+            ],
+            PageConstants::HILOS_CHANGE_LOG_TABLES => [
+                PageCatalogConstants::CATALOG_ENTRY_PARENT_ID => PageConstants::HILOS_CHANGE_LOG,
+                PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Tracked tables',
+                PageCatalogConstants::CATALOG_ENTRY_PATH_TEMPLATE => '/hilos/change-log/tables',
+            ],
+            PageConstants::HILOS_CHANGE_LOG_TABLE => [
+                PageCatalogConstants::CATALOG_ENTRY_PARENT_ID => PageConstants::HILOS_CHANGE_LOG_TABLES,
+                PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Table',
+                PageCatalogConstants::CATALOG_ENTRY_PATH_TEMPLATE => '/hilos/change-log/tables/{tableId}',
+            ],
             PageConstants::HILOS_DAEMON => [
                 PageCatalogConstants::CATALOG_ENTRY_PARENT_ID => PageConstants::HILOS_DASHBOARD,
                 PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Daemon',

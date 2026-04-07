@@ -280,7 +280,8 @@ export function createChatWebSocketPlugin() {
             message.type.startsWith('subscription_page_hilos_sil') ||
             message.type.startsWith('subscription_page_hilos_communications') ||
             message.type.startsWith('subscription_page_hilos_security') ||
-            message.type.startsWith('subscription_page_hilos_billing')
+            message.type.startsWith('subscription_page_hilos_billing') ||
+            message.type.startsWith('subscription_page_hilos_change_log')
           ) {
             return
           }
