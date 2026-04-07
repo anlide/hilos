@@ -16,9 +16,7 @@ Instructions for AI agents working with the Hilos framework.
 
 ## Sections
 
-- **[Agent OpenAI Service](../framework/agent-openai/README.md)** — Standalone OpenAI agent server with HTTP API, WebSocket progress stream, MCP tools and fingerprint cache.
-
-- **[Agent Claude Service](../framework/agent-claude/README.md)** — Standalone Claude agent server with HTTP API, WebSocket progress stream, MCP tools and fingerprint cache.
+- **[Agent Host Service](../framework/agent-host/README.md)** — Unified multi-provider agent server with HTTP API, WebSocket progress stream, MCP tools and fingerprint cache for Claude and OpenAI runs.
 
 - **[Code Quality Validation](ai-agents/code-quality-validation.md)** — How to validate code quality: review output of other agents, humans, or CLI code generation. Checklists and automation hints.
 

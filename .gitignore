@@ -6,10 +6,10 @@ vendor/
 
 # Node
 node_modules/
-framework/agent-openai/dist/
-framework/agent-openai/.tmp-data/
-framework/agent-claude/dist/
-framework/agent-claude/.tmp-data/
+framework/agent-core/dist/
+framework/agent-core/.tmp-data/
+framework/agent-host/dist/
+framework/agent-host/.tmp-data/
 
 # IDE
 .vscode/

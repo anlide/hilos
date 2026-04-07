@@ -1,0 +1,43 @@
+# Docker Compose for local unified agent host (framework-level, standalone).
+# Exposes port 9309 to host. Run separately from demos.
+#
+# Usage:
+#   docker compose --env-file .env -f framework/docker/agent-host-local.yml up -d --build
+
+name: hilos-agent-host-local
+
+services:
+  agent-host-local:
+    build:
+      context: ../..
+      dockerfile: framework/agent-host/Dockerfile
+    container_name: hilos-agent-host-local
+    environment:
+      AGENT_HOST: ${AGENT_HOST:-0.0.0.0}
+      AGENT_PORT: ${AGENT_PORT:-9309}
+      AGENT_WORKSPACE_ROOT: ${AGENT_WORKSPACE_ROOT:-/workspace}
+      AGENT_ALLOWED_ROOTS: ${AGENT_ALLOWED_ROOTS:-/workspace}
+      AGENT_DATA_DIR: ${AGENT_DATA_DIR:-/data}
+      AGENT_REPORTS_DIR: ${AGENT_REPORTS_DIR:-/data/reports}
+      AGENT_RUNS_DIR: ${AGENT_RUNS_DIR:-/data/runs}
+      AGENT_FINGERPRINT_FILE: ${AGENT_FINGERPRINT_FILE:-/data/fingerprints.json}
+      AGENT_MAX_FILE_SIZE_BYTES: ${AGENT_MAX_FILE_SIZE_BYTES:-256000}
+      AGENT_MAX_LIST_FILES: ${AGENT_MAX_LIST_FILES:-1000}
+      AGENT_PROMPT_TEMPLATE_VERSION: ${AGENT_PROMPT_TEMPLATE_VERSION:-2026-04-05}
+      AGENT_DEFAULT_PROVIDER: ${AGENT_DEFAULT_PROVIDER:-claude}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:?ANTHROPIC_API_KEY is required in .env}
+      CLAUDE_MODEL: ${CLAUDE_MODEL:-claude-sonnet-4-6}
+      CLAUDE_MAX_TURNS: ${CLAUDE_MAX_TURNS:-25}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:?OPENAI_API_KEY is required in .env}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-5}
+      OPENAI_REASONING_EFFORT: ${OPENAI_REASONING_EFFORT:-medium}
+    volumes:
+      - ../..:/workspace:ro
+      - agent-host-local-data:/data
+    ports:
+      - "${AGENT_PORT:-9309}:${AGENT_PORT:-9309}"
+    restart: unless-stopped
+
+volumes:
+  agent-host-local-data:
+    name: hilos-agent-host-local-data
