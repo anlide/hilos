@@ -2,46 +2,104 @@
   <div class="d-flex flex-column flex-sm-row align-items-start align-items-sm-center justify-content-sm-end gap-2">
     <span
       class="badge rounded-pill d-inline-flex align-items-center"
-      :class="running ? 'text-bg-success' : 'bg-warning text-dark'"
+      :class="statusMeta.badgeClass"
     >
       <i
         class="bi me-1"
-        :class="running ? 'bi-play-circle-fill' : 'bi-stop-circle-fill'"
+        :class="statusMeta.iconClass"
         aria-hidden="true"
       ></i>
-      {{ running ? 'Running' : 'Stopped' }}
+      {{ statusMeta.label }}
     </span>
     <div class="btn-group btn-group-sm" role="group" aria-label="Guardian agent controls">
-      <span
-        class="btn btn-outline-success disabled"
-        aria-disabled="true"
-        title="Start"
-        aria-label="Start"
+      <LoadingButton
+        type="button"
+        :variant="actionButtonClass"
+        :loading="loading"
+        :disabled="disabled"
+        :title="actionLabel"
+        :aria-label="actionLabel"
+        @click.stop="handleAction"
       >
-        <i class="bi bi-play-fill" aria-hidden="true"></i>
-      </span>
-      <span
-        class="btn btn-outline-warning disabled"
-        aria-disabled="true"
-        title="Stop"
-        aria-label="Stop"
-      >
-        <i class="bi bi-stop-fill" aria-hidden="true"></i>
-      </span>
-      <span
-        class="btn btn-outline-danger disabled"
-        aria-disabled="true"
-        title="Restart"
-        aria-label="Restart"
-      >
-        <i class="bi bi-arrow-clockwise" aria-hidden="true"></i>
-      </span>
+        <i class="bi" :class="actionIconClass" aria-hidden="true"></i>
+        <span class="ms-1">{{ actionLabel }}</span>
+      </LoadingButton>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-defineProps<{
-  running: boolean
+import { computed } from 'vue'
+import { LoadingButton } from '@hilos/sdk/components'
+import type { GuardianRunStatus } from '@/types/guardianAgentRuns'
+
+const props = withDefaults(defineProps<{
+  status: GuardianRunStatus
+  disabled?: boolean
+  loading?: boolean
+}>(), {
+  disabled: false,
+  loading: false,
+})
+
+const emit = defineEmits<{
+  start: []
+  stop: []
 }>()
+
+const statusMetaById: Record<GuardianRunStatus, { label: string; badgeClass: string; iconClass: string }> = {
+  not_started: {
+    label: 'Not started',
+    badgeClass: 'bg-secondary-subtle text-body-secondary',
+    iconClass: 'bi-dash-circle-fill',
+  },
+  in_progress: {
+    label: 'In progress',
+    badgeClass: 'text-bg-primary',
+    iconClass: 'bi-arrow-repeat',
+  },
+  done: {
+    label: 'Done',
+    badgeClass: 'text-bg-success',
+    iconClass: 'bi-check-circle-fill',
+  },
+  stopped: {
+    label: 'Stopped',
+    badgeClass: 'bg-warning text-dark',
+    iconClass: 'bi-stop-circle-fill',
+  },
+  failed: {
+    label: 'Failed',
+    badgeClass: 'text-bg-danger',
+    iconClass: 'bi-exclamation-circle-fill',
+  },
+}
+
+const isInProgress = computed(() => props.status === 'in_progress')
+
+const statusMeta = computed(() => statusMetaById[props.status])
+
+const actionLabel = computed(() => (isInProgress.value ? 'Stop' : 'Start'))
+
+const actionButtonClass = computed(() => (
+  isInProgress.value ? 'btn-outline-warning' : 'btn-outline-success'
+))
+
+const actionIconClass = computed(() => (
+  isInProgress.value ? 'bi-stop-fill' : 'bi-play-fill'
+))
+
+const handleAction = () => {
+  if (props.disabled) {
+    return
+  }
+
+  if (isInProgress.value) {
+    emit('stop')
+    return
+  }
+
+  emit('start')
+}
+
 </script>

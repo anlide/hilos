@@ -83,6 +83,9 @@ class HilosSignalConstants
     /** @var string Subscription signal for Hilos guardian AI agent page */
     public const string SUBSCRIPTION_PAGE_HILOS_GUARDIAN_AGENT = 'subscription_page_hilos_guardian_agent';
 
+    /** @var string Push signal for guardian agent status updates */
+    public const string GUARDIAN_AGENT_STATUS_UPDATE = 'guardian_agent_status_update';
+
     /** @var string Subscription signal for Hilos analytics page */
     public const string SUBSCRIPTION_PAGE_HILOS_ANALYTICS = 'subscription_page_hilos_analytics';
 

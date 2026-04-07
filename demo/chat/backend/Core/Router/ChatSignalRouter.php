@@ -373,6 +373,19 @@ final class ChatSignalRouter extends SignalRouter
             ChatSignalConstants::MESSAGE => AgentType::CHAT,
             ChatSignalConstants::FILE => AgentType::CHAT,
             ChatSignalConstants::RENAME => AgentType::CHAT,
+            ChatSignalConstants::TABLE_REFRESH => AgentType::CHAT,
+            ChatSignalConstants::USER_UPDATE => AgentType::CHAT,
+            ChatSignalConstants::BOT_CREATE => AgentType::CHAT,
+            ChatSignalConstants::BOT_UPDATE => AgentType::CHAT,
+            ChatSignalConstants::BOT_DELETE => AgentType::CHAT,
+            ChatSignalConstants::MODERATOR_PIECE_CREATE => AgentType::CHAT,
+            ChatSignalConstants::MODERATOR_PIECE_UPDATE => AgentType::CHAT,
+            ChatSignalConstants::MODERATOR_PIECE_DELETE => AgentType::CHAT,
+            ChatSignalConstants::SETTING_ADD => AgentType::CHAT,
+            ChatSignalConstants::SETTING_UPDATE => AgentType::CHAT,
+            ChatSignalConstants::SETTING_DELETE => AgentType::CHAT,
+            ChatSignalConstants::GUARDIAN_AGENT_RUN_START => AgentType::HILOS_GUARDIAN,
+            ChatSignalConstants::GUARDIAN_AGENT_RUN_STOP => AgentType::HILOS_GUARDIAN,
         ];
 
         $this->config = [

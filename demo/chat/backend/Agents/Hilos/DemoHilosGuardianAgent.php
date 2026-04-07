@@ -6,6 +6,7 @@ namespace Demo\Chat\Agents\Hilos;
 
 use Demo\Chat\AI\Agent\ChatAiAgentFactory;
 use Hilos\AI\Agent\AiAgentInterface;
+use Hilos\AI\Agent\GuardianAiAgentId;
 use Hilos\Core\Agent\Hilos\AbstractHilosGuardianAgent;
 
 /**
@@ -15,6 +16,10 @@ use Hilos\Core\Agent\Hilos\AbstractHilosGuardianAgent;
  */
 class DemoHilosGuardianAgent extends AbstractHilosGuardianAgent
 {
+    private const DEMO_ONLY_AGENT_IDS = [
+        'oss_budget_distribution',
+    ];
+
     /** @var array<string, AiAgentInterface> */
     private array $guardianAiAgents = [];
 
@@ -24,6 +29,7 @@ class DemoHilosGuardianAgent extends AbstractHilosGuardianAgent
     public function onStart(): void
     {
         $this->guardianAiAgents = ChatAiAgentFactory::createAll();
+        $this->getGuardianRunStatuses();
     }
 
     /**
@@ -31,6 +37,8 @@ class DemoHilosGuardianAgent extends AbstractHilosGuardianAgent
      */
     public function onTick(): void
     {
+        $this->processPendingGuardianRuns();
+
         foreach ($this->guardianAiAgents as $guardianAiAgent) {
             $guardianAiAgent->onTick();
         }
@@ -42,5 +50,24 @@ class DemoHilosGuardianAgent extends AbstractHilosGuardianAgent
     public function onStop(): void
     {
         $this->guardianAiAgents = [];
+        $this->resetGuardianRunStates();
+    }
+
+    /**
+     * Get all guardian agent ids supported by the demo UI.
+     *
+     * @return list<string> Guardian agent identifiers
+     */
+    protected function getKnownGuardianAgentIds(): array
+    {
+        $agentIds = array_map(
+            static fn(GuardianAiAgentId $agentId): string => $agentId->value,
+            GuardianAiAgentId::cases(),
+        );
+
+        return array_values(array_unique([
+            ...$agentIds,
+            ...self::DEMO_ONLY_AGENT_IDS,
+        ]));
     }
 }

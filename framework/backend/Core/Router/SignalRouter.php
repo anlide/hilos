@@ -474,6 +474,17 @@ class SignalRouter
             SignalTypeConstants::PAGE_UPDATE_SUBSCRIPTION,
         ], true)) {
             $destinations = array_merge($destinations, $this->getPageSubscriptionDestinations($signal));
+        } elseif ($signalType === SignalTypeConstants::ACTION) {
+            $actionDestinations = $this->getActionDestinations($signal);
+
+            if ($actionDestinations !== []) {
+                $destinations = array_merge($destinations, $actionDestinations);
+            } else {
+                $routes = $this->route($signal->signalSource, $signal->signalType, $signal->data);
+                foreach ($routes as $route) {
+                    $destinations[] = array_merge(['type' => 'agent'], $route);
+                }
+            }
         } elseif ($signalType === SignalTypeConstants::AGENT_SIGNAL) {
             $destinations = array_merge($destinations, $this->getAgentDestinations($signal));
         } else {
@@ -484,6 +495,40 @@ class SignalRouter
         }
 
         return $destinations;
+    }
+
+    /**
+     * Get agent destinations for user actions.
+     *
+     * Uses config['actions'][actionName] -> agentType mapping.
+     * Falls back to regular source/type routing when no explicit action mapping is declared.
+     *
+     * @param SignalDTO $signal Signal DTO
+     * @return list<array{type: string, agentType: string, agentIndex: null}>
+     *         List of agent destination configs
+     */
+    private function getActionDestinations(SignalDTO $signal): array
+    {
+        $actionName = $signal->signalName->getName();
+        if ($actionName === '') {
+            return [];
+        }
+
+        $actionRoutes = $this->config['actions'] ?? [];
+        if (!is_array($actionRoutes)) {
+            return [];
+        }
+
+        $agentType = $actionRoutes[$actionName] ?? null;
+        if (!is_string($agentType) || $agentType === '') {
+            return [];
+        }
+
+        return [[
+            'type' => 'agent',
+            'agentType' => $agentType,
+            'agentIndex' => null,
+        ]];
     }
 
     /**

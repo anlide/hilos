@@ -7,6 +7,8 @@ namespace Demo\Chat\Core\Page;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Page\DTO\FileActionDTO;
+use Demo\Chat\Core\Page\DTO\GuardianAgentRunStartActionDTO;
+use Demo\Chat\Core\Page\DTO\GuardianAgentRunStopActionDTO;
 use Demo\Chat\Core\Page\DTO\MessageActionDTO;
 use Demo\Chat\Core\Page\DTO\RenameActionDTO;
 use Demo\Chat\Pages\AdminBotsPage;
@@ -232,6 +234,8 @@ final class ChatPageFactory extends HilosPageFactory
             ChatSignalConstants::SETTING_ADD => SettingAddActionDTO::fromArray($data),
             ChatSignalConstants::SETTING_UPDATE => SettingUpdateActionDTO::fromArray($data),
             ChatSignalConstants::SETTING_DELETE => SettingDeleteActionDTO::fromArray($data),
+            ChatSignalConstants::GUARDIAN_AGENT_RUN_START => GuardianAgentRunStartActionDTO::fromArray($data),
+            ChatSignalConstants::GUARDIAN_AGENT_RUN_STOP => GuardianAgentRunStopActionDTO::fromArray($data),
             default => parent::createActionPayloadDTO($action, $data),
         };
     }

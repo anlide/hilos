@@ -6,8 +6,10 @@ namespace Hilos\Pages;
 
 use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Core\Agent\Hilos\AbstractHilosGuardianAgent;
 use Hilos\Core\Page\AbstractHilosPage;
 use Hilos\Core\Router\SignalData;
+use LogicException;
 
 /**
  * AbstractHilosGuardianAgentPage - Abstract base for Hilos guardian AI agent page.
@@ -33,7 +35,22 @@ abstract class AbstractHilosGuardianAgentPage extends AbstractHilosPage
             $acceptKey,
             new SignalData([
                 'agentId' => $agentId,
+                'guardianAgentStatuses' => $this->getGuardianAgent()->getGuardianRunStatuses(),
             ]),
         );
+    }
+
+    /**
+     * Get the guardian agent backing this page.
+     *
+     * @return AbstractHilosGuardianAgent Guardian agent instance
+     */
+    protected function getGuardianAgent(): AbstractHilosGuardianAgent
+    {
+        if (!$this->agent instanceof AbstractHilosGuardianAgent) {
+            throw new LogicException('Guardian agent page requires AbstractHilosGuardianAgent.');
+        }
+
+        return $this->agent;
     }
 }

@@ -80,6 +80,8 @@ final class ChatWorkerManager extends WorkerManager
             ChatSignalConstants::SETTING_ADD => PageConstants::HILOS_SETTINGS,
             ChatSignalConstants::SETTING_UPDATE => PageConstants::HILOS_SETTINGS,
             ChatSignalConstants::SETTING_DELETE => PageConstants::HILOS_SETTINGS,
+            ChatSignalConstants::GUARDIAN_AGENT_RUN_START => PageConstants::HILOS_GUARDIAN_AGENT,
+            ChatSignalConstants::GUARDIAN_AGENT_RUN_STOP => PageConstants::HILOS_GUARDIAN_AGENT,
         ]);
 
         return new PageSignalRouter($pageFactory, $actionRoutes);

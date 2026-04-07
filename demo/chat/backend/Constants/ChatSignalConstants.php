@@ -125,6 +125,12 @@ final class ChatSignalConstants
     /** @var string Setting delete signal name */
     public const string SETTING_DELETE = 'setting_delete';
 
+    /** @var string Guardian agent run start action name */
+    public const string GUARDIAN_AGENT_RUN_START = 'guardian_agent_run_start';
+
+    /** @var string Guardian agent run stop action name */
+    public const string GUARDIAN_AGENT_RUN_STOP = 'guardian_agent_run_stop';
+
     // ── Table signals (server → client) ──────────────────────────────────
     /** @var string Server responds with fresh table data */
     public const string TABLE_DATA = 'table_data';

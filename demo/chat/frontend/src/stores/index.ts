@@ -6,6 +6,9 @@ import type { PageCatalogState } from '@/types'
 import { applyTableMutations } from '@hilos/sdk/composables'
 import type { TableDataState, TableMutationEntry } from '@hilos/sdk/types'
 import type { HilosLogsOverviewSnapshot } from '@/types/hilosLogsOverview'
+import type { GuardianAgentStatusMap, GuardianRunStatus } from '@/types/guardianAgentRuns'
+
+const guardianActionUnlockTimers: Record<string, ReturnType<typeof setTimeout> | undefined> = {}
 
 /**
  * WebSocket chat store - uses base connection store pattern from framework
@@ -30,6 +33,9 @@ export const useChatStore = defineStore('chat', {
     maxReconnectAttempts: Infinity,
     /** Hilos /logs overview (subscription_page_hilos_logs); null until first payload. */
     hilosLogsOverview: null as HilosLogsOverviewSnapshot | null,
+    guardianAgentStatuses: {} as GuardianAgentStatusMap,
+    guardianAgentPendingById: {} as Record<string, boolean>,
+    guardianAgentCooldownById: {} as Record<string, boolean>,
   }),
   
   getters: {
@@ -53,6 +59,13 @@ export const useChatStore = defineStore('chat', {
     },
     isModeratingMessage(): boolean {
       return this.currentUserModerationState !== null
+    },
+    isGuardianAgentActionPending(): (agentId: string) => boolean {
+      return (agentId: string) => this.guardianAgentPendingById[agentId] === true
+    },
+    isGuardianAgentActionBlocked(): (agentId: string) => boolean {
+      return (agentId: string) =>
+        this.guardianAgentPendingById[agentId] === true || this.guardianAgentCooldownById[agentId] === true
     },
   },
   
@@ -270,6 +283,49 @@ export const useChatStore = defineStore('chat', {
 
     setHilosLogsOverview(snapshot: HilosLogsOverviewSnapshot | null) {
       this.hilosLogsOverview = snapshot
+    },
+
+    setGuardianAgentStatuses(snapshot: GuardianAgentStatusMap) {
+      this.guardianAgentStatuses = {
+        ...snapshot,
+      }
+    },
+
+    setGuardianAgentActionPending(agentId: string) {
+      this.guardianAgentPendingById = {
+        ...this.guardianAgentPendingById,
+        [agentId]: true,
+      }
+    },
+
+    setGuardianAgentStatus(agentId: string, status: GuardianRunStatus) {
+      this.guardianAgentStatuses = {
+        ...this.guardianAgentStatuses,
+        [agentId]: status,
+      }
+
+      this.guardianAgentPendingById = {
+        ...this.guardianAgentPendingById,
+        [agentId]: false,
+      }
+
+      this.guardianAgentCooldownById = {
+        ...this.guardianAgentCooldownById,
+        [agentId]: true,
+      }
+
+      const existingTimer = guardianActionUnlockTimers[agentId]
+      if (existingTimer) {
+        clearTimeout(existingTimer)
+      }
+
+      guardianActionUnlockTimers[agentId] = setTimeout(() => {
+        this.guardianAgentCooldownById = {
+          ...this.guardianAgentCooldownById,
+          [agentId]: false,
+        }
+        delete guardianActionUnlockTimers[agentId]
+      }, 1000)
     },
   }
 })

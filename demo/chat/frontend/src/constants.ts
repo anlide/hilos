@@ -12,6 +12,7 @@ export const SUBSCRIPTION_PAGE_HILOS_GUARDIAN = 'subscription_page_hilos_guardia
 export const SUBSCRIPTION_PAGE_HILOS_GUARDIAN_AGENT = 'subscription_page_hilos_guardian_agent'
 export const SUBSCRIPTION_PAGE_HILOS_I18N = 'subscription_page_hilos_i18n'
 export const SUBSCRIPTION_PAGE_HILOS_LOGS = 'subscription_page_hilos_logs'
+export const GUARDIAN_AGENT_STATUS_UPDATE = 'guardian_agent_status_update'
 export const TABLE_DATA = 'table_data'
 export const TABLE_MUTATION = 'table_mutation'
 export const TABLE_ACTION_ERROR = 'table_action_error'
@@ -38,6 +39,8 @@ export const MODERATOR_PIECE_DELETE = 'moderator_piece_delete'
 export const SETTING_ADD = 'setting_add'
 export const SETTING_UPDATE = 'setting_update'
 export const SETTING_DELETE = 'setting_delete'
+export const GUARDIAN_AGENT_RUN_START = 'guardian_agent_run_start'
+export const GUARDIAN_AGENT_RUN_STOP = 'guardian_agent_run_stop'
 
 /** Message rate limit in seconds (displayed to user, backend allows 1 sec earlier). */
 export const MESSAGE_RATE_LIMIT_SECONDS = 10

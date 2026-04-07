@@ -27,8 +27,14 @@
                     <code>{{ agent.id }}</code>
                   </div>
                 </div>
-                <div class="w-100 w-xl-auto ms-xl-auto">
-                  <GuardianAgentControls :running="runningById[agent.id] ?? false" />
+                <div class="w-100 w-xl-auto ms-xl-auto" @click.stop.prevent>
+                  <GuardianAgentControls
+                    :status="guardianStatusesById[agent.id] ?? 'not_started'"
+                    :loading="chatStore.isGuardianAgentActionPending(agent.id)"
+                    :disabled="!chatStore.isConnected || chatStore.isGuardianAgentActionBlocked(agent.id)"
+                    @start="handleStart(agent.id)"
+                    @stop="handleStop(agent.id)"
+                  />
                 </div>
               </div>
             </router-link>
@@ -42,8 +48,13 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useHead } from '@unhead/vue'
+import { useWebSocket } from '@hilos/sdk/plugins/websocket'
 import GuardianAgentControls from '@/components/GuardianAgentControls.vue'
 import { guardianAiAgentIds, guardianAiAgents } from '@/constants/guardianAiAgents'
+import { GUARDIAN_AGENT_RUN_START, GUARDIAN_AGENT_RUN_STOP } from '@/constants'
+import { sendAction } from '@/services/websocketActions'
+import { useChatStore } from '@/stores'
+import type { GuardianRunStatus } from '@/types/guardianAgentRuns'
 
 useHead({
   title: 'Guardian | Chat Hilos Demo',
@@ -55,10 +66,23 @@ useHead({
   ]
 })
 
-const runningById = computed(() => {
-  return guardianAiAgentIds.reduce<Record<string, boolean>>((acc, id) => {
-    acc[id] = false
+const chatStore = useChatStore()
+const websocket = useWebSocket()
+
+const guardianStatusesById = computed(() => {
+  return guardianAiAgentIds.reduce<Record<string, GuardianRunStatus>>((acc, id) => {
+    acc[id] = chatStore.guardianAgentStatuses[id] ?? 'not_started'
     return acc
   }, {})
 })
+
+const handleStart = (agentId: string) => {
+  chatStore.setGuardianAgentActionPending(agentId)
+  sendAction(websocket, GUARDIAN_AGENT_RUN_START, { agentId })
+}
+
+const handleStop = (agentId: string) => {
+  chatStore.setGuardianAgentActionPending(agentId)
+  sendAction(websocket, GUARDIAN_AGENT_RUN_STOP, { agentId })
+}
 </script>

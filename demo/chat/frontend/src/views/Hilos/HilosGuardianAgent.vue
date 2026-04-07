@@ -13,7 +13,13 @@
                 <p class="mb-2 text-body-secondary">{{ agent.category }}</p>
                 <code>{{ agent.id }}</code>
               </div>
-              <GuardianAgentControls :running="false" />
+              <GuardianAgentControls
+                :status="agentStatus"
+                :loading="agent ? chatStore.isGuardianAgentActionPending(agent.id) : false"
+                :disabled="!chatStore.isConnected || (agent ? chatStore.isGuardianAgentActionBlocked(agent.id) : true)"
+                @start="handleStart"
+                @stop="handleStop"
+              />
             </div>
             <p class="text-body-secondary mb-4">
               Intelligence: recommends how to allocate an annual open-source sponsorship budget from dependency
@@ -81,10 +87,17 @@
                 <p class="mb-2 text-body-secondary">{{ agent.category }}</p>
                 <code>{{ agent.id }}</code>
               </div>
-              <GuardianAgentControls :running="false" />
+              <GuardianAgentControls
+                :status="agentStatus"
+                :loading="agent ? chatStore.isGuardianAgentActionPending(agent.id) : false"
+                :disabled="!chatStore.isConnected || (agent ? chatStore.isGuardianAgentActionBlocked(agent.id) : true)"
+                @start="handleStart"
+                @stop="handleStop"
+              />
             </div>
             <p class="text-body-secondary mb-0">
-              Controls are disabled for now. This page is ready for per-agent actions and live status wiring.
+              This stub simulates one guardian agent run. Start triggers a 5-second execution that ends in
+              either done or failed unless you stop it first.
             </p>
           </template>
         </div>
@@ -96,17 +109,24 @@
 <script setup lang="ts">
 import { computed, watch } from 'vue'
 import { useHead } from '@unhead/vue'
+import { useWebSocket } from '@hilos/sdk/plugins/websocket'
 import { useRoute, useRouter } from 'vue-router'
 import GuardianAgentControls from '@/components/GuardianAgentControls.vue'
 import { guardianAiAgentMap, isGuardianAiAgentId } from '@/constants/guardianAiAgents'
+import { GUARDIAN_AGENT_RUN_START, GUARDIAN_AGENT_RUN_STOP } from '@/constants'
 import {
   hilosOssBudgetPoolStub,
   hilosOssBudgetRulesStub,
   hilosOssBudgetTopDependenciesStub,
 } from '@/constants/hilosGuardianStubs'
+import { sendAction } from '@/services/websocketActions'
+import { useChatStore } from '@/stores'
+import type { GuardianRunStatus } from '@/types/guardianAgentRuns'
 
 const route = useRoute()
 const router = useRouter()
+const websocket = useWebSocket()
+const chatStore = useChatStore()
 
 const agentId = computed(() => {
   const value = route.params.agentId
@@ -118,11 +138,34 @@ const agent = computed(() => {
   return value && isGuardianAiAgentId(value) ? guardianAiAgentMap[value] : null
 })
 
+const agentStatus = computed<GuardianRunStatus>(() => {
+  const id = agent.value?.id
+  return id ? chatStore.guardianAgentStatuses[id] ?? 'not_started' : 'not_started'
+})
+
 watch(agentId, (value) => {
   if (!value || !isGuardianAiAgentId(value)) {
     void router.replace('/hilos/guardian')
   }
 }, { immediate: true })
+
+const handleStart = () => {
+  if (!agent.value) {
+    return
+  }
+
+  chatStore.setGuardianAgentActionPending(agent.value.id)
+  sendAction(websocket, GUARDIAN_AGENT_RUN_START, { agentId: agent.value.id })
+}
+
+const handleStop = () => {
+  if (!agent.value) {
+    return
+  }
+
+  chatStore.setGuardianAgentActionPending(agent.value.id)
+  sendAction(websocket, GUARDIAN_AGENT_RUN_STOP, { agentId: agent.value.id })
+}
 
 useHead(() => ({
   title: agent.value ? `${agent.value.title} | Guardian | Chat Hilos Demo` : 'Guardian | Chat Hilos Demo',

@@ -6,6 +6,7 @@ import {
   BOT_JOINED,
   BOT_LEFT,
   BOT_UPDATED,
+  GUARDIAN_AGENT_STATUS_UPDATE,
   HANDSHAKE_RESPONSE,
   MODERATION_STATE_UPDATE,
   SUBSCRIPTION_PAGE_MAIN,
@@ -31,6 +32,10 @@ import {eventPayloadToEvent, isRecord, parseEventPayloads} from '@/entities/pars
 import type { User } from '@/types'
 import type { TableMutationEntry } from '@hilos/sdk/types'
 import { parseHilosLogsOverviewPayload } from '@/types/hilosLogsOverview'
+import {
+  parseGuardianAgentStatusesSnapshot,
+  parseGuardianAgentStatusUpdate,
+} from '@/types/guardianAgentRuns'
 
 type RawMessage = {
   type: string
@@ -163,14 +168,27 @@ export function createChatWebSocketPlugin() {
           }
           return
         }
+        case SUBSCRIPTION_PAGE_HILOS_GUARDIAN:
+        case SUBSCRIPTION_PAGE_HILOS_GUARDIAN_AGENT: {
+          const snapshot = parseGuardianAgentStatusesSnapshot(message.data)
+          if (snapshot) {
+            chatStore.setGuardianAgentStatuses(snapshot)
+          }
+          return
+        }
         case SUBSCRIPTION_PAGE_ADMIN_USERS:
         case SUBSCRIPTION_PAGE_ADMIN_BOTS:
         case SUBSCRIPTION_PAGE_ADMIN_MODERATOR:
-        case SUBSCRIPTION_PAGE_HILOS_GUARDIAN:
-        case SUBSCRIPTION_PAGE_HILOS_GUARDIAN_AGENT:
         case SUBSCRIPTION_PAGE_HILOS_SETTINGS: {
           if (message.data && typeof message.data === 'object' && 'tables' in message.data && message.data.tables) {
             chatStore.applyTablesPayload(message.data.tables as Record<string, unknown>)
+          }
+          return
+        }
+        case GUARDIAN_AGENT_STATUS_UPDATE: {
+          const update = parseGuardianAgentStatusUpdate(message.data)
+          if (update) {
+            chatStore.setGuardianAgentStatus(update.agentId, update.status)
           }
           return
         }

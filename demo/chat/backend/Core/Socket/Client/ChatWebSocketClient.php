@@ -39,6 +39,8 @@ final class ChatWebSocketClient extends WebSocketClient
             ChatSignalConstants::SETTING_ADD,
             ChatSignalConstants::SETTING_UPDATE,
             ChatSignalConstants::SETTING_DELETE,
+            ChatSignalConstants::GUARDIAN_AGENT_RUN_START,
+            ChatSignalConstants::GUARDIAN_AGENT_RUN_STOP,
         ], true)) {
             throw new AgentUnknownActionException("Unknown websocket action type: {$actionName}");
         }
