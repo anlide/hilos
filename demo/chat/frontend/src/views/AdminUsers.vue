@@ -16,7 +16,7 @@
             :items="users"
             item-key="id"
             :colspan="5"
-            :placeholder-when-empty="!chatStore.isConnected"
+            :placeholder-when-empty="!connectionStore.isConnected"
             :searchable="true"
             search-placeholder="Search users..."
             :search-fields="['id', 'name']"
@@ -165,11 +165,13 @@
   </div>
 </template>
 
+<!-- TODO: extract useTableCrud composable after conflict resolution feature is implemented -->
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { useWebSocket } from '@hilos/sdk/plugins/websocket'
 import { Table, Modal, LoadingButton } from '@hilos/sdk/components'
 import { getTableDisplayRows, getTablePendingChanges, getTableChangeMarkers } from '@hilos/sdk/composables'
+import { useConnectionStore, useTableStore } from '@hilos/sdk/stores'
 import { useChatStore } from '@/stores'
 import { sendAction } from '@/services/websocketActions'
 import { useTableRefresh } from '@/composables/useTableRefresh'
@@ -185,14 +187,16 @@ interface UserEntity {
 }
 
 const chatStore = useChatStore()
+const connectionStore = useConnectionStore()
+const tableStore = useTableStore()
 const websocket = useWebSocket()
 
 const tableKey = 'users'
 const { refreshLoading, refreshTable } = useTableRefresh(tableKey)
-const tableState = computed(() => chatStore.tableData[tableKey])
-const displayRows = computed(() => getTableDisplayRows<UserEntity>(chatStore.tableData[tableKey]))
-const pendingChanges = computed(() => getTablePendingChanges(chatStore.tableData[tableKey]))
-const changeMarkers = computed(() => getTableChangeMarkers(chatStore.tableData[tableKey]))
+const tableState = computed(() => tableStore.tableData[tableKey])
+const displayRows = computed(() => getTableDisplayRows<UserEntity>(tableStore.tableData[tableKey]))
+const pendingChanges = computed(() => getTablePendingChanges(tableStore.tableData[tableKey]))
+const changeMarkers = computed(() => getTableChangeMarkers(tableStore.tableData[tableKey]))
 
 const users = computed(() => {
   return displayRows.value.map((row) => {
@@ -203,7 +207,7 @@ const users = computed(() => {
 })
 
 const handleApplyChanges = () => {
-  const { hasDeletes } = chatStore.applyPendingMutations(tableKey)
+  const { hasDeletes } = tableStore.applyPendingMutations(tableKey)
   if (hasDeletes) {
     refreshTable()
   }

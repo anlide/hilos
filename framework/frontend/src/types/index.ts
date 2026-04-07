@@ -3,7 +3,7 @@
  * These types can be extended in demo projects
  */
 
-// Re-export DomainObject abstract class
+// DomainObject base class
 export { DomainObject } from './DomainObject'
 
 // Re-export websocket options
@@ -18,3 +18,20 @@ export { extractEntitiesEnvelope, hasEntities } from './entities'
 
 // Table types
 export type { TableMutationEntry, TableDataState, PendingChanges, ChangeMarkers, ApplyMutationsResult } from './table'
+
+// Page catalog
+export type { PageCatalogEntry, PageCatalogState } from './pageCatalog'
+export { pathTemplateParamKeys, normalizePageCatalog } from './pageCatalog'
+
+// Hilos logs overview
+export type { HilosLogsOverviewSnapshot } from './hilosLogsOverview'
+export { parseHilosLogsOverviewPayload } from './hilosLogsOverview'
+
+// Guardian agent runs
+export type { GuardianRunStatus, GuardianAgentStatusMap } from './guardianAgentRuns'
+export {
+  guardianRunStatuses,
+  isGuardianRunStatus,
+  parseGuardianAgentStatusesSnapshot,
+  parseGuardianAgentStatusUpdate,
+} from './guardianAgentRuns'

@@ -17,7 +17,7 @@
             :items="displayRows"
             item-key="key"
             :colspan="3"
-            :placeholder-when-empty="!chatStore.isConnected"
+            :placeholder-when-empty="!connectionStore.isConnected"
             :searchable="true"
             search-placeholder="Search settings..."
             :search-fields="['key', 'value']"
@@ -251,7 +251,7 @@ import { getTableDisplayRows, getTablePendingChanges, getTableChangeMarkers } fr
 import { useTableDeleteMutationModal } from '@/composables/useTableDeleteMutationModal'
 import { useTableRefresh } from '@/composables/useTableRefresh'
 import TableRefreshToolbarButton from '@/components/TableRefreshToolbarButton.vue'
-import { useChatStore } from '@/stores'
+import { useConnectionStore, useTableStore } from '@hilos/sdk/stores'
 import { sendAction } from '@/services/websocketActions'
 import { SETTING_ADD, SETTING_UPDATE, SETTING_DELETE } from '@/constants'
 
@@ -262,15 +262,16 @@ interface SettingEntity {
   value: string | null
 }
 
-const chatStore = useChatStore()
+const connectionStore = useConnectionStore()
+const tableStore = useTableStore()
 const websocket = useWebSocket()
 
 const tableKey = 'settings'
 const { refreshLoading, refreshTable } = useTableRefresh(tableKey)
-const tableState = computed(() => chatStore.tableData[tableKey])
-const displayRows = computed(() => getTableDisplayRows<SettingEntity>(chatStore.tableData[tableKey]))
-const pendingChanges = computed(() => getTablePendingChanges(chatStore.tableData[tableKey]))
-const changeMarkers = computed(() => getTableChangeMarkers(chatStore.tableData[tableKey]))
+const tableState = computed(() => tableStore.tableData[tableKey])
+const displayRows = computed(() => getTableDisplayRows<SettingEntity>(tableStore.tableData[tableKey]))
+const pendingChanges = computed(() => getTablePendingChanges(tableStore.tableData[tableKey]))
+const changeMarkers = computed(() => getTableChangeMarkers(tableStore.tableData[tableKey]))
 
 /** Catalog keys from subscription payload (backend). */
 const catalogKeys = computed(() => (tableState.value as { catalogKeys?: string[] })?.catalogKeys ?? [])
@@ -285,7 +286,7 @@ const availableCatalogKeys = computed(() => {
 const isOrphan = (item: { key: string }) => !catalogKeys.value.includes(item.key)
 
 const handleApplyChanges = () => {
-  const { hasDeletes } = chatStore.applyPendingMutations(tableKey)
+  const { hasDeletes } = tableStore.applyPendingMutations(tableKey)
   if (hasDeletes) {
     refreshTable()
   }

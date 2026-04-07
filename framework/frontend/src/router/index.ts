@@ -1,6 +1,3 @@
-// Note: Vue Router types are resolved by demo projects via tsconfig.app.json
-// IDE may show errors here, but TypeScript compiler in demo projects will resolve them correctly
-// @ts-expect-error - Vue Router types are provided by demo project's node_modules
 import { createRouter, createWebHistory, type RouteRecordRaw, type Router } from 'vue-router'
 
 /**

@@ -7,14 +7,14 @@
           type="text"
           class="form-control"
           placeholder="Type your message..."
-          :disabled="!chatStore.isConnected"
+          :disabled="!connectionStore.isConnected"
           required
           maxlength="500"
         />
         <button 
           type="submit" 
           class="btn btn-primary"
-          :disabled="!chatStore.isConnected || !message.trim()"
+          :disabled="!connectionStore.isConnected || !message.trim()"
         >
           Send
         </button>
@@ -25,9 +25,9 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
-import { useChatStore } from '@/stores'
+import { useConnectionStore } from '@hilos/sdk/stores'
 
-const chatStore = useChatStore()
+const connectionStore = useConnectionStore()
 const message = ref('')
 
 const emit = defineEmits<{
@@ -35,7 +35,7 @@ const emit = defineEmits<{
 }>()
 
 const handleSubmit = () => {
-  if (message.value.trim() && chatStore.isConnected) {
+  if (message.value.trim() && connectionStore.isConnected) {
     emit('send', message.value.trim())
     message.value = ''
   }

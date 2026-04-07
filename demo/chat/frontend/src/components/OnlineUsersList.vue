@@ -3,7 +3,7 @@
     <div class="card-header d-flex justify-content-between align-items-center" data-id="participants-header">
       <strong>Participants</strong>
       <span
-        v-if="chatStore.isConnected"
+        v-if="connectionStore.isConnected"
         class="badge text-bg-secondary"
       >
         {{ sortedUsers.length + sortedBots.length }}
@@ -11,7 +11,7 @@
       <span v-else class="placeholder rounded-pill" style="width: 2rem; height: 1.25rem"></span>
     </div>
     <div class="card-body p-0 overflow-auto flex-grow-1 min-h-0">
-      <template v-if="!chatStore.isConnected">
+      <template v-if="!connectionStore.isConnected">
         <div class="px-3 py-2 border-bottom placeholder-glow">
           <span class="placeholder col-6" style="height: 0.875rem"></span>
         </div>
@@ -90,8 +90,10 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { RouterLink } from 'vue-router'
+import { useConnectionStore } from '@hilos/sdk/stores'
 import { useChatStore } from '@/stores'
 
+const connectionStore = useConnectionStore()
 const chatStore = useChatStore()
 
 const sortedUsers = computed(() =>

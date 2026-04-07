@@ -15,8 +15,8 @@
               </div>
               <GuardianAgentControls
                 :status="agentStatus"
-                :loading="agent ? chatStore.isGuardianAgentActionPending(agent.id) : false"
-                :disabled="!chatStore.isConnected || (agent ? chatStore.isGuardianAgentActionBlocked(agent.id) : true)"
+                :loading="agent ? guardianStore.isGuardianAgentActionPending(agent.id) : false"
+                :disabled="!connectionStore.isConnected || (agent ? guardianStore.isGuardianAgentActionBlocked(agent.id) : true)"
                 @start="handleStart"
                 @stop="handleStop"
               />
@@ -89,8 +89,8 @@
               </div>
               <GuardianAgentControls
                 :status="agentStatus"
-                :loading="agent ? chatStore.isGuardianAgentActionPending(agent.id) : false"
-                :disabled="!chatStore.isConnected || (agent ? chatStore.isGuardianAgentActionBlocked(agent.id) : true)"
+                :loading="agent ? guardianStore.isGuardianAgentActionPending(agent.id) : false"
+                :disabled="!connectionStore.isConnected || (agent ? guardianStore.isGuardianAgentActionBlocked(agent.id) : true)"
                 @start="handleStart"
                 @stop="handleStop"
               />
@@ -120,13 +120,14 @@ import {
   hilosOssBudgetTopDependenciesStub,
 } from '@/constants/hilosGuardianStubs'
 import { sendAction } from '@/services/websocketActions'
-import { useChatStore } from '@/stores'
+import { useConnectionStore, useGuardianStore } from '@hilos/sdk/stores'
 import type { GuardianRunStatus } from '@/types/guardianAgentRuns'
 
 const route = useRoute()
 const router = useRouter()
 const websocket = useWebSocket()
-const chatStore = useChatStore()
+const connectionStore = useConnectionStore()
+const guardianStore = useGuardianStore()
 
 const agentId = computed(() => {
   const value = route.params.agentId
@@ -140,7 +141,7 @@ const agent = computed(() => {
 
 const agentStatus = computed<GuardianRunStatus>(() => {
   const id = agent.value?.id
-  return id ? chatStore.guardianAgentStatuses[id] ?? 'not_started' : 'not_started'
+  return id ? guardianStore.guardianAgentStatuses[id] ?? 'not_started' : 'not_started'
 })
 
 watch(agentId, (value) => {
@@ -154,7 +155,7 @@ const handleStart = () => {
     return
   }
 
-  chatStore.setGuardianAgentActionPending(agent.value.id)
+  guardianStore.setGuardianAgentActionPending(agent.value.id)
   sendAction(websocket, GUARDIAN_AGENT_RUN_START, { agentId: agent.value.id })
 }
 
@@ -163,7 +164,7 @@ const handleStop = () => {
     return
   }
 
-  chatStore.setGuardianAgentActionPending(agent.value.id)
+  guardianStore.setGuardianAgentActionPending(agent.value.id)
   sendAction(websocket, GUARDIAN_AGENT_RUN_STOP, { agentId: agent.value.id })
 }
 

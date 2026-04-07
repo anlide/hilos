@@ -1,41 +1,14 @@
-import {createWebSocketPlugin} from '@hilos/sdk/plugins/websocket'
-import {extractEntitiesEnvelope, hasEntities} from '@hilos/sdk/types'
-import {config} from '@/config'
-import {useChatStore} from '@/stores'
-import {
-  BOT_JOINED,
-  BOT_LEFT,
-  BOT_UPDATED,
-  GUARDIAN_AGENT_STATUS_UPDATE,
-  HANDSHAKE_RESPONSE,
-  MODERATION_STATE_UPDATE,
-  SUBSCRIPTION_PAGE_MAIN,
-  SUBSCRIPTION_PAGE_PROFILE,
-  SUBSCRIPTION_PAGE_ADMIN,
-  SUBSCRIPTION_PAGE_ADMIN_USERS,
-  SUBSCRIPTION_PAGE_ADMIN_BOTS,
-  SUBSCRIPTION_PAGE_ADMIN_MODERATOR,
-  SUBSCRIPTION_PAGE_HILOS_GUARDIAN,
-  SUBSCRIPTION_PAGE_HILOS_GUARDIAN_AGENT,
-  SUBSCRIPTION_PAGE_HILOS_SETTINGS,
-  SUBSCRIPTION_PAGE_HILOS_I18N,
-  SUBSCRIPTION_PAGE_HILOS_LOGS,
-  SUBSCRIPTION_PAGE_BOT,
-  SUBSCRIPTION_PAGE_USER,
-  TABLE_DATA,
-  TABLE_MUTATION,
-  TABLE_ACTION_ERROR,
-} from '@/constants'
-import {localStorageService} from '@/services/LocalStorageService'
-import {ChatEntitiesReceiver} from '@/entities/ChatEntitiesReceiver'
-import {eventPayloadToEvent, isRecord, parseEventPayloads} from '@/entities/parsers'
+import { createWebSocketPlugin } from '@hilos/sdk/plugins/websocket'
+import { useConnectionStore, usePageCatalogStore, useHilosLogsStore } from '@hilos/sdk/stores'
+import { extractEntitiesEnvelope, hasEntities } from '@hilos/sdk/types'
+import { createHilosSignalRouter } from '@hilos/sdk/services/hilosSignalHandlers'
+import { config } from '@/config'
+import { useChatStore } from '@/stores'
+import { localStorageService } from '@/services/LocalStorageService'
+import { ChatEntitiesReceiver } from '@/entities/ChatEntitiesReceiver'
+import { eventPayloadToEvent, isRecord, parseEventPayloads } from '@/entities/parsers'
 import type { User } from '@/types'
-import type { TableMutationEntry } from '@hilos/sdk/types'
 import { parseHilosLogsOverviewPayload } from '@/types/hilosLogsOverview'
-import {
-  parseGuardianAgentStatusesSnapshot,
-  parseGuardianAgentStatusUpdate,
-} from '@/types/guardianAgentRuns'
 
 type RawMessage = {
   type: string
@@ -77,13 +50,90 @@ const isSubscriptionResponseData = (data: unknown): data is HandshakeResponseDat
 const entitiesReceiver = new ChatEntitiesReceiver()
 
 /**
+ * Build the signal router with framework + chat-specific handlers.
+ */
+function buildSignalRouter() {
+  const signalRouter = createHilosSignalRouter()
+
+  signalRouter.on('handshake_response', (data: unknown) => {
+    if (!isSubscriptionResponseData(data)) {
+      throw new Error('Invalid handshake_response payload')
+    }
+    if (isRecord(data.pageCatalog)) {
+      const pageCatalogStore = usePageCatalogStore()
+      pageCatalogStore.setPageCatalog(data.pageCatalog)
+    }
+    const chatStore = useChatStore()
+    const currentUserId = data.userId
+    const currentUser = chatStore.users.find((u: User) => u.id === currentUserId)
+    const moderationState =
+      data.moderationState !== undefined ? data.moderationState : undefined
+    chatStore.handleSubscriptionResponse(
+      currentUserId,
+      currentUser?.name ?? '',
+      moderationState as string | null | undefined
+    )
+  })
+
+  signalRouter.on('moderation_state_update', (data: unknown) => {
+    if (data && typeof data === 'object' && 'moderationState' in data) {
+      const value = (data as { moderationState: string | null }).moderationState
+      const chatStore = useChatStore()
+      chatStore.setModerationState(value ?? null)
+    }
+  })
+
+  signalRouter.on('subscription_page_hilos_logs', (data: unknown) => {
+    const parsed = parseHilosLogsOverviewPayload(data)
+    if (parsed) {
+      const hilosLogsStore = useHilosLogsStore()
+      hilosLogsStore.setHilosLogsOverview(parsed)
+    }
+  })
+
+  signalRouter.on('bot_joined', () => {})
+  signalRouter.on('bot_left', () => {})
+  signalRouter.on('bot_updated', () => {})
+
+  signalRouter.on('new_event', (data: unknown) => {
+    const chatStore = useChatStore()
+    const envelope = extractEntitiesEnvelope(data)
+    const fromUpdates = parseEventPayloads(envelope?.updates?.events) ?? []
+    const fromFull = parseEventPayloads(envelope?.full?.events) ?? []
+    const eventPayloads = fromUpdates.length > 0 ? fromUpdates : fromFull
+
+    for (const eventPayload of eventPayloads) {
+      const event = eventPayloadToEvent(eventPayload)
+      if (event.type === 'user_renamed' || event.type === 'user_renamed_by_admin') {
+        const newName =
+          typeof event.data.newName === 'string'
+            ? event.data.newName
+            : typeof event.data.username === 'string'
+              ? event.data.username
+              : undefined
+        const oldName = event.data.oldName as string | undefined
+        if (
+          newName &&
+          (event.userId === chatStore.currentUserId ||
+            (oldName && oldName === chatStore.currentUsername))
+        ) {
+          chatStore.currentUsername = newName
+        }
+      }
+    }
+  })
+
+  return signalRouter
+}
+
+/**
  * WebSocket plugin configuration for chat application.
  * Entity changes (full/updates/deleted) are applied via framework EntitiesReceiver.
  */
 export function createChatWebSocketPlugin() {
   const websocketUrl = `${config.websocketProtocol}://${config.websocketHost}:${config.websocketPort}`
-
   const sessionToken = localStorageService.getSessionWithInit()
+  const signalRouter = buildSignalRouter()
 
   return createWebSocketPlugin({
     url: websocketUrl,
@@ -95,24 +145,23 @@ export function createChatWebSocketPlugin() {
     pingInterval: 40000,
     pingMessage: 'ping',
     onOpen: () => {
-      const chatStore = useChatStore()
-      chatStore.setConnected(true)
-      chatStore.setConnecting(false)
-      chatStore.setError(null)
+      const connectionStore = useConnectionStore()
+      connectionStore.setConnected(true)
+      connectionStore.setConnecting(false)
+      connectionStore.setError(null)
     },
     onClose: () => {
-      const chatStore = useChatStore()
-      chatStore.setConnected(false)
-      chatStore.setConnecting(false)
+      const connectionStore = useConnectionStore()
+      connectionStore.setConnected(false)
+      connectionStore.setConnecting(false)
     },
     onError: () => {
-      const chatStore = useChatStore()
-      chatStore.setError('Connection error occurred')
-      chatStore.setConnecting(false)
+      const connectionStore = useConnectionStore()
+      connectionStore.setError('Connection error occurred')
+      connectionStore.setConnecting(false)
     },
     onMessage: (data: string | object) => {
       const chatStore = useChatStore()
-
       const message = parseIncomingMessage(data)
       if (!message) {
         throw new Error('Invalid websocket message payload')
@@ -122,172 +171,7 @@ export function createChatWebSocketPlugin() {
         entitiesReceiver.apply(message.data, chatStore)
       }
 
-      switch (message.type) {
-        case HANDSHAKE_RESPONSE: {
-          if (!isSubscriptionResponseData(message.data)) {
-            throw new Error('Invalid handshake_response payload')
-          }
-          if (isRecord(message.data.pageCatalog)) {
-            chatStore.setPageCatalog(message.data.pageCatalog)
-          }
-          const currentUserId = message.data.userId
-          const currentUser = chatStore.users.find((u: User) => u.id === currentUserId)
-          const moderationState =
-            message.data.moderationState !== undefined ? message.data.moderationState : undefined
-          chatStore.handleSubscriptionResponse(
-            currentUserId,
-            currentUser?.name ?? '',
-            moderationState as string | null | undefined
-          )
-          return
-        }
-        case MODERATION_STATE_UPDATE: {
-          if (message.data && typeof message.data === 'object' && 'moderationState' in message.data) {
-            const value = (message.data as { moderationState: string | null }).moderationState
-            chatStore.setModerationState(value ?? null)
-          }
-          return
-        }
-        case SUBSCRIPTION_PAGE_MAIN: {
-          return
-        }
-        case SUBSCRIPTION_PAGE_PROFILE: {
-          return
-        }
-        case SUBSCRIPTION_PAGE_USER:
-        case SUBSCRIPTION_PAGE_BOT: {
-          return
-        }
-        case SUBSCRIPTION_PAGE_ADMIN: {
-          return
-        }
-        case SUBSCRIPTION_PAGE_HILOS_LOGS: {
-          const parsed = parseHilosLogsOverviewPayload(message.data)
-          if (parsed) {
-            chatStore.setHilosLogsOverview(parsed)
-          }
-          return
-        }
-        case SUBSCRIPTION_PAGE_HILOS_GUARDIAN:
-        case SUBSCRIPTION_PAGE_HILOS_GUARDIAN_AGENT: {
-          const snapshot = parseGuardianAgentStatusesSnapshot(message.data)
-          if (snapshot) {
-            chatStore.setGuardianAgentStatuses(snapshot)
-          }
-          return
-        }
-        case SUBSCRIPTION_PAGE_ADMIN_USERS:
-        case SUBSCRIPTION_PAGE_ADMIN_BOTS:
-        case SUBSCRIPTION_PAGE_ADMIN_MODERATOR:
-        case SUBSCRIPTION_PAGE_HILOS_SETTINGS: {
-          if (message.data && typeof message.data === 'object' && 'tables' in message.data && message.data.tables) {
-            chatStore.applyTablesPayload(message.data.tables as Record<string, unknown>)
-          }
-          return
-        }
-        case GUARDIAN_AGENT_STATUS_UPDATE: {
-          const update = parseGuardianAgentStatusUpdate(message.data)
-          if (update) {
-            chatStore.setGuardianAgentStatus(update.agentId, update.status)
-          }
-          return
-        }
-        case TABLE_DATA: {
-          if (message.data && typeof message.data === 'object' && 'tables' in message.data && message.data.tables) {
-            const tables = message.data.tables as Record<string, unknown>
-            chatStore.applyTablesPayload(tables)
-            for (const key of Object.keys(tables)) {
-              chatStore.completeTableRefreshForKey(key)
-            }
-          }
-          return
-        }
-        case TABLE_MUTATION: {
-          if (message.data && typeof message.data === 'object') {
-            const d = message.data as Record<string, unknown>
-            const tableKey = d['tableKey'] as string | undefined
-            const mutation = d['mutation'] as TableMutationEntry | undefined
-            if (tableKey && mutation) {
-              chatStore.applyTableMutation(tableKey, mutation)
-            }
-          }
-          return
-        }
-        case TABLE_ACTION_ERROR: {
-          if (message.data && typeof message.data === 'object') {
-            const d = message.data as Record<string, unknown>
-            const tableKeyErr = d['tableKey'] as string | undefined
-            if (tableKeyErr) {
-              chatStore.completeTableRefreshForKey(tableKeyErr)
-            }
-            const msg = d['message'] as string | undefined
-            if (msg) {
-              console.error(`[Table action error] ${d['tableKey'] ?? ''}: ${msg}`)
-            }
-          }
-          return
-        }
-        case 'subscription_updated': {
-          return
-        }
-        case BOT_JOINED:
-        case BOT_LEFT:
-        case BOT_UPDATED: {
-          return
-        }
-        case 'new_event': {
-          const envelope = extractEntitiesEnvelope(message.data)
-          const fromUpdates = parseEventPayloads(envelope?.updates?.events) ?? []
-          const fromFull = parseEventPayloads(envelope?.full?.events) ?? []
-          const eventPayloads = fromUpdates.length > 0 ? fromUpdates : fromFull
-
-          for (const eventPayload of eventPayloads) {
-            const event = eventPayloadToEvent(eventPayload)
-            if (event.type === 'user_renamed' || event.type === 'user_renamed_by_admin') {
-              const newName =
-                typeof event.data.newName === 'string'
-                  ? event.data.newName
-                  : typeof event.data.username === 'string'
-                    ? event.data.username
-                    : undefined
-              const oldName = event.data.oldName as string | undefined
-              if (
-                newName &&
-                (event.userId === chatStore.currentUserId ||
-                  (oldName && oldName === chatStore.currentUsername))
-              ) {
-                chatStore.currentUsername = newName
-              }
-            }
-          }
-          return
-        }
-        default: {
-          if (
-            message.type === 'subscription_page_hilos' ||
-            message.type === SUBSCRIPTION_PAGE_HILOS_I18N ||
-            message.type.startsWith('subscription_page_hilos_i18n_') ||
-            message.type === 'subscription_page_hilos_analytics' ||
-            message.type === 'subscription_page_hilos_backup' ||
-            message.type === 'subscription_page_hilos_operations' ||
-            message.type === 'subscription_page_hilos_users' ||
-            message.type === 'subscription_page_hilos_user' ||
-            message.type === 'subscription_page_hilos_roles' ||
-            message.type.startsWith('subscription_page_hilos_daemon') ||
-            (message.type.startsWith('subscription_page_hilos_logs') &&
-              message.type !== SUBSCRIPTION_PAGE_HILOS_LOGS) ||
-            message.type.startsWith('subscription_page_hilos_mcp_skills') ||
-            message.type.startsWith('subscription_page_hilos_sil') ||
-            message.type.startsWith('subscription_page_hilos_communications') ||
-            message.type.startsWith('subscription_page_hilos_security') ||
-            message.type.startsWith('subscription_page_hilos_billing') ||
-            message.type.startsWith('subscription_page_hilos_change_log')
-          ) {
-            return
-          }
-          throw new Error(`Unhandled websocket message type: ${message.type}`)
-        }
-      }
+      signalRouter.dispatch(message.type, message.data)
     },
   })
 }

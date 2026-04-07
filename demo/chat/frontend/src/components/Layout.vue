@@ -2,7 +2,7 @@
   <div class="layout d-flex flex-column app-shell">
     <nav
       class="navbar navbar-expand-lg navbar-dark flex-shrink-0 overflow-visible z-3"
-      :class="chatStore.isConnected ? 'bg-primary' : 'bg-danger'"
+      :class="connectionStore.isConnected ? 'bg-primary' : 'bg-danger'"
     >
       <div class="container-fluid">
         <router-link
@@ -13,7 +13,7 @@
         >
           Chat Hilos Demo
         </router-link>
-        <span v-if="!chatStore.isConnected" class="badge bg-dark ms-2 align-middle" data-id="nav-offline">offline</span>
+        <span v-if="!connectionStore.isConnected" class="badge bg-dark ms-2 align-middle" data-id="nav-offline">offline</span>
         <button
           class="navbar-toggler"
           type="button"
@@ -164,6 +164,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { Breadcrumb } from '@hilos/sdk/components'
 import { useWebSocket } from '@hilos/sdk/plugins/websocket'
+import { useConnectionStore } from '@hilos/sdk/stores'
 import { useChatStore } from '@/stores'
 import { MESSAGE_PAGE_FIELD, MESSAGE_PARAMS_FIELD, MESSAGE_TYPE_FIELD } from '@/constants'
 import { localStorageService } from '@/services/LocalStorageService'
@@ -177,6 +178,7 @@ type RouteSnapshot = {
 
 const route = useRoute()
 const websocket = useWebSocket()
+const connectionStore = useConnectionStore()
 const chatStore = useChatStore()
 const {
   items: breadcrumbItems,
@@ -262,7 +264,7 @@ const normalizeParams = (params: Record<string, unknown>): Record<string, string
 }
 
 const queueSubscription = (snapshot: RouteSnapshot, update: boolean) => {
-  if (!chatStore.isConnected) {
+  if (!connectionStore.isConnected) {
     pendingSnapshot.value = snapshot
     pendingUpdate.value = update
     return
@@ -302,7 +304,7 @@ const handleRouteChange = () => {
 
 watch(() => [route.name, route.params], handleRouteChange, { deep: true, immediate: true })
 
-watch(() => chatStore.isConnected, (isConnected) => {
+watch(() => connectionStore.isConnected, (isConnected) => {
   if (isConnected && pendingSnapshot.value) {
     queueSubscription(pendingSnapshot.value, pendingUpdate.value)
     return

@@ -1,7 +1,7 @@
 <template>
   <div class="card h-100 d-flex flex-column">
     <div class="card-body p-0 overflow-auto flex-grow-1 bg-body" ref="messagesContainer">
-      <div v-if="!chatStore.isConnected" class="list-group list-group-flush p-3 placeholder-glow">
+      <div v-if="!connectionStore.isConnected" class="list-group list-group-flush p-3 placeholder-glow">
         <div
           v-for="i in 6"
           :key="i"
@@ -37,7 +37,7 @@
           placeholder="Type your message..."
           data-id="chat-input"
           :readonly="chatStore.isModeratingMessage"
-          :disabled="!chatStore.isConnected || chatStore.isModeratingMessage"
+          :disabled="!connectionStore.isConnected || chatStore.isModeratingMessage"
           required
           maxlength="500"
         />
@@ -51,7 +51,7 @@
           type="submit"
           variant="btn-primary"
           :loading="chatStore.isModeratingMessage"
-          :disabled="!chatStore.isConnected || chatStore.isModeratingMessage || isRateLimited || !draftMessage.trim()"
+          :disabled="!connectionStore.isConnected || chatStore.isModeratingMessage || isRateLimited || !draftMessage.trim()"
           :loading-delay="300"
           data-id="chat-send"
         >
@@ -64,11 +64,13 @@
 
 <script setup lang="ts">
 import { computed, ref, watch, nextTick, onMounted, onUnmounted } from 'vue'
+import { useConnectionStore } from '@hilos/sdk/stores'
 import { useChatStore } from '@/stores'
 import { MESSAGE_RATE_LIMIT_SECONDS } from '@/constants'
 import MessageItem from './MessageItem.vue'
 import { LoadingButton } from '@hilos/sdk/components'
 
+const connectionStore = useConnectionStore()
 const chatStore = useChatStore()
 const messagesContainer = ref<HTMLElement | null>(null)
 const draftMessage = ref('')
@@ -111,7 +113,7 @@ const startRateLimitCountdown = () => {
 }
 
 const handleSubmit = () => {
-  if (!draftMessage.value.trim() || !chatStore.isConnected || chatStore.isModeratingMessage || isRateLimited.value) return
+  if (!draftMessage.value.trim() || !connectionStore.isConnected || chatStore.isModeratingMessage || isRateLimited.value) return
   const text = draftMessage.value.trim()
   draftMessage.value = ''
   emit('send', text)

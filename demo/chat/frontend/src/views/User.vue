@@ -6,7 +6,7 @@
           <h5 class="mb-0">User</h5>
         </div>
         <div class="card-body">
-          <template v-if="!chatStore.isConnected">
+          <template v-if="!connectionStore.isConnected">
             <div class="placeholder-glow">
               <span class="placeholder col-4 mb-2 d-block" style="height: 0.875rem"></span>
               <span class="placeholder col-3 mb-2 d-block" style="height: 0.875rem"></span>
@@ -28,9 +28,11 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
+import { useConnectionStore } from '@hilos/sdk/stores'
 import { useChatStore } from '@/stores'
 
 const route = useRoute()
+const connectionStore = useConnectionStore()
 const chatStore = useChatStore()
 
 const userId = computed(() => Number(route.params.id))

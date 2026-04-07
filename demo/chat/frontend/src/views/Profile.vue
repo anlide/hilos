@@ -6,7 +6,7 @@
           <h5 class="mb-0">Profile</h5>
         </div>
         <div class="card-body">
-          <div v-if="!chatStore.isConnected" class="mb-3 placeholder-glow">
+          <div v-if="!connectionStore.isConnected" class="mb-3 placeholder-glow">
             <span class="placeholder col-3 mb-2 d-block" style="height: 0.875rem"></span>
             <div class="d-flex align-items-center gap-3">
               <span class="placeholder col-6" style="height: 1.5rem"></span>
@@ -94,11 +94,13 @@
 
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
+import { useConnectionStore } from '@hilos/sdk/stores'
 import { useChatStore } from '@/stores'
 import { useWebSocket } from '@hilos/sdk/plugins/websocket'
 import { sendAction } from '@/services/websocketActions'
 import { Modal, ConflictHeader, ConflictActions, LoadingButton } from '@hilos/sdk/components'
 
+const connectionStore = useConnectionStore()
 const chatStore = useChatStore()
 const websocket = useWebSocket()
 const showModal = ref(false)

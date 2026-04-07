@@ -1,15 +1,12 @@
 /**
  * Re-export components from framework
  */
-// @ts-ignore
 export { default as Breadcrumb } from './Breadcrumb.vue'
-// @ts-ignore
 export { default as Modal } from './Modal.vue'
-// @ts-ignore
 export { default as ConflictHeader } from './ConflictHeader.vue'
-// @ts-ignore
 export { default as ConflictActions } from './ConflictActions.vue'
-// @ts-ignore
 export { default as Table } from './Table.vue'
-// @ts-ignore
 export { default as LoadingButton } from './LoadingButton.vue'
+export { default as PageShell } from './PageShell.vue'
+export { default as TableRefreshToolbarButton } from './TableRefreshToolbarButton.vue'
+export { default as GuardianAgentControls } from './GuardianAgentControls.vue'

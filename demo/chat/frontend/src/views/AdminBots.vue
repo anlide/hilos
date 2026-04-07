@@ -16,7 +16,7 @@
             :items="displayRows"
             item-key="id"
             :colspan="6"
-            :placeholder-when-empty="!chatStore.isConnected"
+            :placeholder-when-empty="!connectionStore.isConnected"
             :searchable="true"
             search-placeholder="Search bots..."
             :search-fields="['id', 'name', 'description', 'style']"
@@ -247,6 +247,7 @@
   </div>
 </template>
 
+<!-- TODO: extract useTableCrud composable after conflict resolution feature is implemented -->
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { useWebSocket } from '@hilos/sdk/plugins/websocket'
@@ -255,23 +256,24 @@ import { getTableDisplayRows, getTablePendingChanges, getTableChangeMarkers } fr
 import { useTableDeleteMutationModal } from '@/composables/useTableDeleteMutationModal'
 import { useTableRefresh } from '@/composables/useTableRefresh'
 import TableRefreshToolbarButton from '@/components/TableRefreshToolbarButton.vue'
-import { useChatStore } from '@/stores'
+import { useConnectionStore, useTableStore } from '@hilos/sdk/stores'
 import { sendAction } from '@/services/websocketActions'
 import { BOT_CREATE, BOT_UPDATE, BOT_DELETE } from '@/constants'
 import type { BotEntity } from '@/types/domain'
 
-const chatStore = useChatStore()
+const connectionStore = useConnectionStore()
+const tableStore = useTableStore()
 const websocket = useWebSocket()
 
 const tableKey = 'bots'
 const { refreshLoading, refreshTable } = useTableRefresh(tableKey)
-const tableState = computed(() => chatStore.tableData[tableKey])
-const displayRows = computed(() => getTableDisplayRows<BotEntity>(chatStore.tableData[tableKey]))
-const pendingChanges = computed(() => getTablePendingChanges(chatStore.tableData[tableKey]))
-const changeMarkers = computed(() => getTableChangeMarkers(chatStore.tableData[tableKey]))
+const tableState = computed(() => tableStore.tableData[tableKey])
+const displayRows = computed(() => getTableDisplayRows<BotEntity>(tableStore.tableData[tableKey]))
+const pendingChanges = computed(() => getTablePendingChanges(tableStore.tableData[tableKey]))
+const changeMarkers = computed(() => getTableChangeMarkers(tableStore.tableData[tableKey]))
 
 const handleApplyChanges = () => {
-  const { hasDeletes } = chatStore.applyPendingMutations(tableKey)
+  const { hasDeletes } = tableStore.applyPendingMutations(tableKey)
   if (hasDeletes) {
     refreshTable()
   }
