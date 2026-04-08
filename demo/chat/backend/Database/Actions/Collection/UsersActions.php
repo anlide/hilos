@@ -8,6 +8,7 @@ use Demo\Chat\Database\Object\Collection\Users as ObjectUsers;
 use Demo\Chat\Database\Object\Item\User as ObjectUser;
 use Demo\Chat\Database\View\Collection\Users as DbCollectionUsers;
 use Demo\Chat\Database\View\Item\User;
+use Demo\Chat\Hilos;
 use Hilos\Core\Exception\DuplicateValueException;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Database\Actions\Collection\DbActions;
@@ -51,6 +52,8 @@ final class UsersActions extends DbActions
         $user->sync();
 
         $this->addObjectToCollection($user);
+
+        Hilos::$rt->userStates->actions->ensure((int)$user->id);
 
         return $this->createDbItemFromObject($user);
     }

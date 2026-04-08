@@ -6,13 +6,13 @@ namespace Demo\Chat\Runtime\View\Context;
 
 use Demo\Chat\Runtime\State\Collection\ChatContexts as StateChatContexts;
 use Demo\Chat\Runtime\State\Collection\Connections as StateConnections;
-use Demo\Chat\Runtime\State\Collection\ModerationStates as StateModerationStates;
+use Demo\Chat\Runtime\State\Collection\UserStates as StateUserStates;
 use Demo\Chat\Runtime\View\Actions\ChatContextsActions;
 use Demo\Chat\Runtime\View\Actions\ConnectionsActions;
-use Demo\Chat\Runtime\View\Actions\ModerationStatesActions;
+use Demo\Chat\Runtime\View\Actions\UserStatesActions;
 use Demo\Chat\Runtime\View\Collection\ChatContexts;
 use Demo\Chat\Runtime\View\Collection\Connections;
-use Demo\Chat\Runtime\View\Collection\ModerationStates;
+use Demo\Chat\Runtime\View\Collection\UserStates;
 use Hilos\Runtime\Exception\Rt\StateCollectionNotFoundException;
 use Hilos\Runtime\View\Context\RtContext;
 
@@ -21,45 +21,44 @@ use Hilos\Runtime\View\Context\RtContext;
  *
  * Available collections:
  *   - connections: Active WebSocket connections (acceptKey → userId mapping)
- *   - moderationStates: Pending moderation message per user (userId → message)
+ *   - userStates: Per-user runtime (text moderation, file upload UI/session)
  *   - chatContexts: Shared chat context for bots (topic, summary, online participants)
  *
  * Usage:
- *   Hilos::$rt->connections[$acceptKey];  // Get connection by accept key
- *   Hilos::$rt->connections->actions->register($acceptKey, $userId);  // Register connection
- *   Hilos::$rt->chatContexts[ChatContext::ID_MAIN];  // Get main chat context
+ *   Hilos::$rt->connections[$acceptKey];
+ *   Hilos::$rt->connections->actions->register($acceptKey, $userId);
+ *   Hilos::$rt->userStates->actions->ensure($userId);
+ *   Hilos::$rt->chatContexts[ChatContext::ID_MAIN];
  *
  * @property-read Connections $connections Active connections collection
- * @property-read ModerationStates $moderationStates Pending moderation states collection
+ * @property-read UserStates $userStates Per-user chat runtime state
  * @property-read ChatContexts $chatContexts Chat context collection (singleton key "main")
  */
 final class RtChatContext extends RtContext
 {
-    // Collections (plural)
     public const string connections = 'connections';
-    public const string moderationStates = 'moderationStates';
+    public const string userStates = 'userStates';
     public const string chatContexts = 'chatContexts';
 
-    // Singular property keys (used in User frontend payload, etc.)
     public const string connection = 'connection';
-    public const string moderationState = 'moderationState';
+    public const string chatUserState = 'chatUserState';
     public const string chatContext = 'chatContext';
 
     /**
-     * Initialize chat runtime context with connections, moderation states, chat contexts.
+     * @return static
      *
-     * @return static Initialized context
-     * @throws StateCollectionNotFoundException If state collection init fails
+     * @throws StateCollectionNotFoundException
      */
     public static function init(): static
     {
         $instance = new static();
         $instance->_stateCollections[self::connections] = StateConnections::init();
-        $instance->_stateCollections[self::moderationStates] = StateModerationStates::init();
+        $instance->_stateCollections[self::userStates] = StateUserStates::init();
         $instance->_stateCollections[self::chatContexts] = StateChatContexts::init();
         $instance->setRepresent(self::connections, Connections::class, ConnectionsActions::class);
-        $instance->setRepresent(self::moderationStates, ModerationStates::class, ModerationStatesActions::class);
+        $instance->setRepresent(self::userStates, UserStates::class, UserStatesActions::class);
         $instance->setRepresent(self::chatContexts, ChatContexts::class, ChatContextsActions::class);
+
         return $instance;
     }
 }

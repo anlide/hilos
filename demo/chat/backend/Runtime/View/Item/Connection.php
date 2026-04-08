@@ -22,6 +22,7 @@ use Hilos\Runtime\View\Item\RtItem;
  * @property-read string $acceptKey WebSocket accept key
  * @property-read int $userId User ID
  * @property-read int $connectedAt Unix timestamp when connected
+ * @property-read bool $fileUploadInitiatedHere Upload started on this socket
  * @property-read ?User $user User for this connection (null if user not found)
  */
 final class Connection extends RtItem
@@ -40,10 +41,10 @@ final class Connection extends RtItem
      * Property getter.
      *
      * @param string $name Property name
-     * @return string|int|User|null Property value
+     * @return string|int|bool|User|null Property value
      * @throws RtItemPropertyNotFoundException If property not found
      */
-    public function __get(string $name): string|int|User|null
+    public function __get(string $name): string|int|bool|User|null
     {
         /** @var StateConnection $state */
         $state = $this->_state;
@@ -52,6 +53,7 @@ final class Connection extends RtItem
             StateConnection::acceptKey => $state->acceptKey,
             StateConnection::userId => $state->userId,
             StateConnection::connectedAt => $state->connectedAt,
+            StateConnection::fileUploadInitiatedHere => $state->fileUploadInitiatedHere,
             DbChatContext::user => Hilos::$db->users[$state->userId] ?? null,
             default => parent::__get($name),
         };
@@ -70,6 +72,7 @@ final class Connection extends RtItem
             StateConnection::acceptKey => $state->acceptKey,
             StateConnection::userId => $state->userId,
             StateConnection::connectedAt => $state->connectedAt,
+            StateConnection::fileUploadInitiatedHere => $state->fileUploadInitiatedHere,
         ];
     }
 }

@@ -6,7 +6,9 @@ namespace Demo\Chat\Tests\Integration;
 
 use Demo\Chat\Database\Database;
 use Demo\Chat\Database\DbChatContext;
+use Demo\Chat\Runtime\View\Context\RtChatContext;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
+use Hilos\TruthSource\RtTruthSourceRegistry;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -35,6 +37,7 @@ abstract class IntegrationTestCase extends TestCase
         TruthSourceRegistry::register(DbChatContext::events, true, self::TEST_AGENT_ID);
         TruthSourceRegistry::register(DbChatContext::bots, true, self::TEST_AGENT_ID);
         TruthSourceRegistry::register(DbChatContext::moderatorPromptPieces, true, self::TEST_AGENT_ID);
+        RtTruthSourceRegistry::register(RtChatContext::userStates, true, self::TEST_AGENT_ID);
     }
 
     /**
@@ -43,6 +46,7 @@ abstract class IntegrationTestCase extends TestCase
     protected function tearDown(): void
     {
         TruthSourceRegistry::unregisterAgent(self::TEST_AGENT_ID);
+        RtTruthSourceRegistry::unregisterAgent(self::TEST_AGENT_ID);
         parent::tearDown();
     }
 }

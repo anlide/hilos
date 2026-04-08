@@ -57,4 +57,19 @@ final class ConnectionsActions extends RtActions
     {
         $this->clearAllStates();
     }
+
+    /**
+     * Mark which connection initiated the current file upload for this user (others false).
+     *
+     * @param ?string $initiatorAcceptKey Accept key that called FILE_UPLOAD_INIT successfully, or null to clear all
+     */
+    public function setFileUploadInitiatorForUser(int $userId, ?string $initiatorAcceptKey): void
+    {
+        $this->ensureCanWrite();
+        foreach ($this->getStateCollection()->findAllByUserId($userId) as $acceptKey => $state) {
+            $flag = $initiatorAcceptKey !== null && $acceptKey === $initiatorAcceptKey;
+            $this->applyDiffToState($state, [StateConnection::fileUploadInitiatedHere => $flag]);
+        }
+        $this->clearCollectionCache();
+    }
 }

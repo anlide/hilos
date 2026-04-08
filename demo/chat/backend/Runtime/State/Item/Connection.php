@@ -16,12 +16,14 @@ use Hilos\Runtime\State\Item\RtState;
  * @property string $acceptKey WebSocket accept key (unique connection identifier)
  * @property int $userId User ID associated with this connection
  * @property int $connectedAt Unix timestamp when connection was established
+ * @property bool $fileUploadInitiatedHere True if current upload was started on this connection
  */
 final class Connection extends RtState
 {
     public const string acceptKey = 'acceptKey';
     public const string userId = 'userId';
     public const string connectedAt = 'connectedAt';
+    public const string fileUploadInitiatedHere = 'fileUploadInitiatedHere';
 
     private string $acceptKey {
         get {
@@ -39,6 +41,12 @@ final class Connection extends RtState
         }
     }
 
+    private bool $fileUploadInitiatedHere = false {
+        get {
+            return $this->fileUploadInitiatedHere;
+        }
+    }
+
     /**
      * Create connection state instance.
      *
@@ -52,6 +60,7 @@ final class Connection extends RtState
         $instance->acceptKey = $acceptKey;
         $instance->userId = $userId;
         $instance->connectedAt = time();
+        $instance->fileUploadInitiatedHere = false;
         return $instance;
     }
 
@@ -67,6 +76,7 @@ final class Connection extends RtState
         $instance->acceptKey = (string)($row[self::acceptKey] ?? '');
         $instance->userId = (int)($row[self::userId] ?? 0);
         $instance->connectedAt = (int)($row[self::connectedAt] ?? time());
+        $instance->fileUploadInitiatedHere = (bool)($row[self::fileUploadInitiatedHere] ?? false);
         return $instance;
     }
 
@@ -82,6 +92,9 @@ final class Connection extends RtState
         }
         if (isset($diff[self::connectedAt])) {
             $this->connectedAt = (int)$diff[self::connectedAt];
+        }
+        if (isset($diff[self::fileUploadInitiatedHere])) {
+            $this->fileUploadInitiatedHere = (bool)$diff[self::fileUploadInitiatedHere];
         }
     }
 
@@ -99,15 +112,16 @@ final class Connection extends RtState
      * Get property value by name (acceptKey, userId, connectedAt).
      *
      * @param string $name Property name
-     * @return string|int Property value
+     * @return string|int|bool Property value
      * @throws RtStatePropertyNotFoundException If property name is invalid
      */
-    public function __get(string $name): string|int
+    public function __get(string $name): string|int|bool
     {
         return match ($name) {
             self::acceptKey => $this->acceptKey,
             self::userId => $this->userId,
             self::connectedAt => $this->connectedAt,
+            self::fileUploadInitiatedHere => $this->fileUploadInitiatedHere,
             default => parent::__get($name),
         };
     }
@@ -123,6 +137,7 @@ final class Connection extends RtState
             self::acceptKey => $this->acceptKey,
             self::userId => $this->userId,
             self::connectedAt => $this->connectedAt,
+            self::fileUploadInitiatedHere => $this->fileUploadInitiatedHere,
         ];
     }
 }

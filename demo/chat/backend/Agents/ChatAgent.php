@@ -66,7 +66,9 @@ class ChatAgent extends AbstractAgent
 
         // Register this agent as truth source for runtime collections (all keys)
         RtTruthSourceRegistry::register(RtChatContext::connections, true, $this->getId());
-        RtTruthSourceRegistry::register(RtChatContext::moderationStates, true, $this->getId());
+        RtTruthSourceRegistry::register(RtChatContext::userStates, true, $this->getId());
+
+        Hilos::$rt->userStates->actions->seedAllFromDb();
 
         // Add chat started event to history (system event with userId = null)
         Hilos::$db->events->actions->add(ChatEventType::CHAT_STARTED->value);
@@ -117,9 +119,9 @@ class ChatAgent extends AbstractAgent
             );
         }
 
-        $moderationState = isset(Hilos::$rt->moderationStates[$user->id])
-            ? Hilos::$rt->moderationStates[$user->id]->message
-            : null;
+        Hilos::$rt->userStates->actions->ensure($user->id);
+        $pending = Hilos::$rt->userStates[(string)$user->id]->moderationMessage;
+        $moderationState = $pending !== '' ? $pending : null;
 
         $fileMod = $this->getFileModerationUiPayloadForUser($user->id);
         $fileProgress = $this->getFileUploadProgressPayloadForUser($user->id);
@@ -287,7 +289,8 @@ class ChatAgent extends AbstractAgent
         $acceptKey = $result->acceptKey;
         $userId = $result->userId;
 
-        Hilos::$rt->moderationStates->actions->clear($userId);
+        Hilos::$rt->userStates->actions->ensure($userId);
+        Hilos::$rt->userStates->actions->clearTextModerationMessage($userId);
         $this->sendModerationStateToUserConnections($userId, null);
 
         if (!$result->allow) {

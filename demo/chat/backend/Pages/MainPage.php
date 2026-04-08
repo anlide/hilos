@@ -61,9 +61,9 @@ final class MainPage extends AbstractChatPage
         }
 
         $userId = Hilos::$rt->connections[$acceptKey]->userId;
-        $moderationState = isset(Hilos::$rt->moderationStates[$userId])
-            ? Hilos::$rt->moderationStates[$userId]->message
-            : null;
+        Hilos::$rt->userStates->actions->ensure($userId);
+        $pending = Hilos::$rt->userStates[(string)$userId]->moderationMessage;
+        $moderationState = $pending !== '' ? $pending : null;
         if ($moderationState !== null) {
             $this->getChatAgent()->sendModerationStateToUserConnections($userId, $moderationState);
         }
@@ -147,7 +147,8 @@ final class MainPage extends AbstractChatPage
             return;
         }
 
-        Hilos::$rt->moderationStates->actions->set($userId, $dto->content);
+        Hilos::$rt->userStates->actions->ensure($userId);
+        Hilos::$rt->userStates->actions->setTextModerationMessage($userId, $dto->content);
         $this->getChatAgent()->sendModerationStateToUserConnections($userId, $dto->content);
 
         $this->getChatAgent()->sendToAgent(
