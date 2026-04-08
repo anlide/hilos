@@ -2,6 +2,13 @@ import { defineStore } from 'pinia'
 import { ChatBot, Event, User } from '@/types'
 import type { Presence } from '@/types/domain/Presence'
 
+/** In-flight binary upload progress from server (throttled updates). */
+export type FileUploadProgressPayload = {
+  filename: string
+  uploadedBytes: number
+  totalBytes: number
+}
+
 /**
  * Chat-specific store — domain entities and user session state.
  * Connection, table, pageCatalog, and guardian state live in framework stores.
@@ -14,6 +21,10 @@ export const useChatStore = defineStore('chat', {
     currentUserId: null as number | null,
     currentUsername: null as string | null,
     currentUserModerationState: null as string | null,
+    /** Server-driven file moderation UI: moderating | rejected (handshake + WS) */
+    fileModerationState: null as Record<string, unknown> | null,
+    /** Binary upload bytes progress (separate from moderation; handshake + WS) */
+    fileUploadProgress: null as FileUploadProgressPayload | null,
   }),
 
   getters: {
@@ -32,14 +43,30 @@ export const useChatStore = defineStore('chat', {
   },
 
   actions: {
-    handleSubscriptionResponse(userId: number, username: string, moderationState?: string | null) {
+    handleSubscriptionResponse(
+      userId: number,
+      username: string,
+      moderationState?: string | null,
+      fileModerationState: Record<string, unknown> | null = null,
+      fileUploadProgress: FileUploadProgressPayload | null = null,
+    ) {
       this.currentUserId = userId
       this.currentUsername = username
       this.currentUserModerationState = moderationState ?? null
+      this.fileModerationState = fileModerationState
+      this.fileUploadProgress = fileUploadProgress
     },
 
     setModerationState(value: string | null) {
       this.currentUserModerationState = value
+    },
+
+    setFileModerationState(value: Record<string, unknown> | null) {
+      this.fileModerationState = value
+    },
+
+    setFileUploadProgress(value: FileUploadProgressPayload | null) {
+      this.fileUploadProgress = value
     },
 
     addEvent(event: Event) {

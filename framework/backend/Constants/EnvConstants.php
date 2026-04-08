@@ -25,6 +25,9 @@ enum EnvConstants
     /** @var string HTTP status server port */
     case HTTP_STATUS_PORT;
 
+    /** @var string HTTP status server: allow persistent connections (keep-alive); true|false */
+    case HTTP_STATUS_KEEP_ALIVE;
+
     /** @var string Worker communication host */
     case WORKER_COMM_HOST;
 

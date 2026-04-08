@@ -41,6 +41,8 @@ export const SETTING_UPDATE = 'setting_update'
 export const SETTING_DELETE = 'setting_delete'
 export const GUARDIAN_AGENT_RUN_START = 'guardian_agent_run_start'
 export const GUARDIAN_AGENT_RUN_STOP = 'guardian_agent_run_stop'
+export const FILE_UPLOAD_INIT = 'file_upload_init'
+export const FILE_MODERATION_DISMISS = 'file_moderation_dismiss'
 
 /** Message rate limit in seconds (displayed to user, backend allows 1 sec earlier). */
 export const MESSAGE_RATE_LIMIT_SECONDS = 10

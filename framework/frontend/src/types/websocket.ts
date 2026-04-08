@@ -21,5 +21,5 @@ export interface WebSocketOptions {
   /** Callback when error occurs */
   onError?: (error: Event) => void
   /** Callback when message is received */
-  onMessage?: (data: string | object) => void
+  onMessage?: (data: string | object | Blob | ArrayBuffer) => void
 }

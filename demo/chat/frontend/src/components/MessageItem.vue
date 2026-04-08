@@ -8,7 +8,7 @@
       class="d-flex flex-column p-2 rounded"
       :class="[
         getBubbleClass(),
-        { 'w-75': props.event.type === 'message_sent' }
+        { 'w-75': props.event.type === 'message_sent' || props.event.type === 'file_shared' }
       ]"
     >
       <div v-if="!isOwnMessage" class="d-flex align-items-baseline gap-2">
@@ -42,7 +42,33 @@
         </span>
         <small class="text-muted">{{ formatTime(event.timestamp) }}</small>
       </div>
-      <div v-if="getMessageText()" :class="isOwnMessage ? 'mt-1' : 'ms-3 mt-1'">
+      <div v-if="props.event.type === 'file_shared'" :class="isOwnMessage ? 'mt-1' : 'ms-3 mt-1'">
+        <template v-if="isImageAttachment">
+          <a :href="attachmentDownloadUrl" target="_blank" rel="noopener noreferrer" class="d-inline-block">
+            <img
+              :src="attachmentDownloadUrl"
+              :alt="attachmentFilename"
+              :class="[
+                'img-fluid rounded border border-secondary-subtle d-block',
+                attachmentPreviewWideLayout ? 'chat-attachment-preview--lg' : 'chat-attachment-preview--sm',
+              ]"
+            />
+          </a>
+        </template>
+        <template v-else>
+          <a
+            :href="attachmentDownloadUrl"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="d-inline-flex align-items-center gap-2 text-decoration-none"
+            :class="isOwnMessage ? 'link-light' : 'link-primary'"
+          >
+            <span class="fs-4" aria-hidden="true">{{ fileTypeIcon }}</span>
+            <span class="text-break">{{ attachmentFilename }}</span>
+          </a>
+        </template>
+      </div>
+      <div v-else-if="getMessageText()" :class="isOwnMessage ? 'mt-1' : 'ms-3 mt-1'">
         <template v-for="(segment, i) in getLinkifiedSegments()" :key="i">
           <a
             v-if="segment.type === 'link'"
@@ -63,10 +89,12 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { RouterLink } from 'vue-router'
 import { Event } from '@/types'
 import { useChatStore } from '@/stores'
+import { config } from '@/config'
+import { localStorageService } from '@/services/LocalStorageService'
 
 interface Props {
   event: Event
@@ -76,16 +104,74 @@ const props = defineProps<Props>()
 const chatStore = useChatStore()
 
 const isServiceMessage = computed(() => {
-  return props.event.type !== 'message_sent'
+  return props.event.type !== 'message_sent' && props.event.type !== 'file_shared'
 })
 
 /** True if this is a message_sent from the current user (own message, show on right) */
 const isOwnMessage = computed(() => {
-  return (
-    props.event.type === 'message_sent' &&
-    props.event.userId !== null &&
-    props.event.userId === chatStore.currentUserId
-  )
+  if (props.event.userId === null || props.event.userId !== chatStore.currentUserId) {
+    return false
+  }
+  return props.event.type === 'message_sent' || props.event.type === 'file_shared'
+})
+
+const attachmentToken = computed(() => {
+  const t = props.event.data.downloadToken
+  return typeof t === 'string' ? t : ''
+})
+
+const attachmentFilename = computed(() => {
+  const n = props.event.data.originalFilename ?? props.event.data.filename
+  return typeof n === 'string' ? n : 'file'
+})
+
+const attachmentMime = computed(() => {
+  const m = props.event.data.mimeType
+  return typeof m === 'string' ? m : ''
+})
+
+const attachmentDownloadUrl = computed(() => {
+  const tok = attachmentToken.value
+  if (!tok) {
+    return '#'
+  }
+  const session = localStorageService.getSessionWithInit()
+  const base = `${config.httpStatusProtocol}://${config.httpStatusHost}:${config.httpStatusPort}`
+  const q = new URLSearchParams({
+    token: tok,
+    'Hilos-Session-Token': session,
+  })
+  return `${base}/chat/attachment?${q.toString()}`
+})
+
+const isImageAttachment = computed(() => attachmentMime.value.startsWith('image/'))
+
+/**
+ * Bootstrap sm (576px) — toggles preview size classes below. Theme (light/dark) uses border utilities on the img.
+ */
+const attachmentPreviewWideLayout = ref(false)
+
+onMounted(() => {
+  const mql = window.matchMedia('(min-width: 576px)')
+  const sync = () => {
+    attachmentPreviewWideLayout.value = mql.matches
+  }
+  sync()
+  mql.addEventListener('change', sync)
+  onUnmounted(() => {
+    mql.removeEventListener('change', sync)
+  })
+})
+
+const fileTypeIcon = computed(() => {
+  const m = attachmentMime.value
+  if (m === 'application/pdf') {
+    return '\u{1F4C4}'
+  }
+  if (m.startsWith('text/')) {
+    return '\u{1F4C3}'
+  }
+  return '\u{1F4CE}'
 })
 
 const formatTime = (timestamp: string): string => {
@@ -246,9 +332,31 @@ const getBubbleClass = (): string => {
   if (isOwnMessage.value) {
     return 'bg-primary text-white'
   }
-  if (props.event.type === 'message_sent') {
+  if (props.event.type === 'message_sent' || props.event.type === 'file_shared') {
     return 'bg-body-secondary text-body border border-secondary-subtle'
   }
   return getServiceMessageClass()
 }
 </script>
+
+<style scoped>
+/*
+ * Cannot achieve responsive max-height (including min(50vh, 220px)) with Bootstrap 5 classes alone.
+ * Breakpoint is driven by Vue :class via matchMedia; only the numeric caps stay in CSS.
+ */
+.chat-attachment-preview--sm {
+  max-width: 100%;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  max-height: min(50vh, 220px);
+}
+
+.chat-attachment-preview--lg {
+  max-width: 100%;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  max-height: 240px;
+}
+</style>

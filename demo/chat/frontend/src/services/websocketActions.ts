@@ -1,7 +1,8 @@
 import { MESSAGE_ACTION_FIELD, MESSAGE_ACTION_TYPE, MESSAGE_DATA_FIELD } from '@/constants'
 
-type WebSocketSender = {
+export type WebSocketSender = {
   send: (data: string | object) => void
+  sendBinary?: (data: ArrayBuffer | Blob) => void
 }
 
 export const sendAction = (

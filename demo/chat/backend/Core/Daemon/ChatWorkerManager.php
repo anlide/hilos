@@ -64,7 +64,8 @@ final class ChatWorkerManager extends WorkerManager
         $actionRoutes = new ActionRouteConfig([
             ChatSignalConstants::MESSAGE => PageConstants::MAIN,
             ChatSignalConstants::RENAME => PageConstants::PROFILE,
-            ChatSignalConstants::FILE => PageConstants::MAIN,
+            ChatSignalConstants::FILE_UPLOAD_INIT => PageConstants::MAIN,
+            ChatSignalConstants::FILE_MODERATION_DISMISS => PageConstants::MAIN,
 
             ChatSignalConstants::TABLE_REFRESH => PageConstants::ADMIN_USERS, // Handles any table including settings
             ChatSignalConstants::USER_UPDATE => PageConstants::ADMIN_USERS,

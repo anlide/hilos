@@ -1,2 +1,8 @@
 mysql/
 ollama/
+
+# Chat file uploads (quarantine + published); keep .gitkeep so empty dirs stay tracked
+chat_attachments/quarantine/*
+chat_attachments/published/*
+!chat_attachments/quarantine/.gitkeep
+!chat_attachments/published/.gitkeep

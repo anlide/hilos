@@ -4,18 +4,19 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Pages;
 
-use Demo\Chat\Constants\ChatEventType;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Agents\ChatAgent;
 use Demo\Chat\Core\Page\AbstractChatPage;
-use Demo\Chat\Core\Page\DTO\FileActionDTO;
+use Demo\Chat\Core\Page\DTO\FileModerationDismissActionDTO;
+use Demo\Chat\Core\Page\DTO\FileUploadInitActionDTO;
 use Demo\Chat\Core\Page\DTO\MessageActionDTO;
+use Demo\Chat\Core\Router\DTO\FileModerationStateUpdateSignalData;
+use Demo\Chat\Core\Router\DTO\FileUploadProgressUpdateSignalData;
 use Demo\Chat\Core\Router\DTO\ChatEventSignalDTO;
 use Demo\Chat\Core\Router\DTO\ModerationRequestSignalData;
 use Demo\Chat\Database\DbChatContext;
 use Demo\Chat\Database\View\Collection\Bots;
-use Demo\Chat\Database\View\Collection\Events;
 use Demo\Chat\Hilos;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\EntitiesChangesDTO;
@@ -66,6 +67,26 @@ final class MainPage extends AbstractChatPage
         if ($moderationState !== null) {
             $this->getChatAgent()->sendModerationStateToUserConnections($userId, $moderationState);
         }
+
+        $agent = $this->getChatAgent();
+        if ($agent instanceof ChatAgent) {
+            $fileUi = $agent->getFileModerationUiPayloadForUser($userId);
+            if ($fileUi !== null) {
+                $agent->sendToUser(
+                    ChatSignalConstants::FILE_MODERATION_STATE_UPDATE,
+                    $acceptKey,
+                    new FileModerationStateUpdateSignalData($fileUi),
+                );
+            }
+            $fileProgress = $agent->getFileUploadProgressPayloadForUser($userId);
+            if ($fileProgress !== null) {
+                $agent->sendToUser(
+                    ChatSignalConstants::FILE_UPLOAD_PROGRESS_UPDATE,
+                    $acceptKey,
+                    new FileUploadProgressUpdateSignalData($fileProgress),
+                );
+            }
+        }
     }
 
     /**
@@ -85,9 +106,15 @@ final class MainPage extends AbstractChatPage
                 }
                 break;
 
-            case ChatSignalConstants::FILE:
-                if ($dto instanceof FileActionDTO) {
-                    $this->handleFile($acceptKey, $dto);
+            case ChatSignalConstants::FILE_UPLOAD_INIT:
+                if ($dto instanceof FileUploadInitActionDTO) {
+                    $this->handleFileUploadInit($acceptKey, $dto);
+                }
+                break;
+
+            case ChatSignalConstants::FILE_MODERATION_DISMISS:
+                if ($dto instanceof FileModerationDismissActionDTO) {
+                    $this->handleFileModerationDismiss($acceptKey);
                 }
                 break;
 
@@ -151,34 +178,24 @@ final class MainPage extends AbstractChatPage
         return $collection;
     }
 
-    /**
-     * Handle file action.
-     *
-     * @param string $acceptKey Accept key
-     * @param FileActionDTO $dto File DTO
-     * @throws HilosException If database or truth source check fails
-     */
-    private function handleFile(string $acceptKey, FileActionDTO $dto): void
+    private function handleFileUploadInit(string $acceptKey, FileUploadInitActionDTO $dto): void
     {
-        if (!$dto->isValid()) {
-            Logger::logAgentError('MainPage', "Invalid file data (acceptKey={$acceptKey})");
+        $agent = $this->getChatAgent();
+        if (!$agent instanceof ChatAgent) {
             return;
         }
+        $agent->handleFileUploadInit($acceptKey, $dto);
+    }
 
+    private function handleFileModerationDismiss(string $acceptKey): void
+    {
         if (!isset(Hilos::$rt->connections[$acceptKey])) {
-            Logger::logAgentError('MainPage', "User not found for acceptKey={$acceptKey}");
             return;
         }
-
         $userId = Hilos::$rt->connections[$acceptKey]->userId;
-        $event = Hilos::$db->events->actions->add(ChatEventType::FILE_SHARED->value, $userId, null, [
-            'filename' => $dto->filename,
-            'mimeType' => $dto->mimeType,
-            'size' => $dto->size,
-        ]);
-        $this->getChatAgent()->sendToAllUsers(
-            ChatSignalConstants::NEW_EVENT,
-            new ChatEventSignalDTO(new EntitiesChangesDTO(full: [DbChatContext::events => Events::fromSingleItem($event)])),
-        );
+        $agent = $this->getChatAgent();
+        if ($agent instanceof ChatAgent) {
+            $agent->handleFileModerationDismiss($userId);
+        }
     }
 }

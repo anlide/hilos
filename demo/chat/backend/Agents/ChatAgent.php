@@ -11,6 +11,7 @@ use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\HttpHeaders;
 use Demo\Chat\Core\Router\DTO\ChatEventSignalDTO;
 use Demo\Chat\Core\Router\DTO\ModerationBotResultSignalData;
+use Demo\Chat\Core\Router\DTO\ModerationFileResultSignalData;
 use Demo\Chat\Core\Router\DTO\ModerationResultSignalData;
 use Demo\Chat\Database\DbChatContext;
 use Demo\Chat\Database\Pages\ChatPageCatalog;
@@ -39,6 +40,8 @@ use Hilos\Utils\Logger;
  */
 class ChatAgent extends AbstractAgent
 {
+    use ChatAgentFileAttachments;
+
     public const string AGENT_TYPE = AgentType::CHAT;
 
     /** @var int Message rate limit in seconds per user */
@@ -118,6 +121,9 @@ class ChatAgent extends AbstractAgent
             ? Hilos::$rt->moderationStates[$user->id]->message
             : null;
 
+        $fileMod = $this->getFileModerationUiPayloadForUser($user->id);
+        $fileProgress = $this->getFileUploadProgressPayloadForUser($user->id);
+
         $this->sendToUser(
             ChatSignalConstants::HANDSHAKE_RESPONSE,
             $data->acceptKey,
@@ -125,6 +131,8 @@ class ChatAgent extends AbstractAgent
                 entities: $userEntities,
                 userId: $user->id,
                 moderationState: $moderationState,
+                fileModerationState: $fileMod,
+                fileUploadProgress: $fileProgress,
                 pageCatalog: ChatPageCatalog::getCatalog(),
             ),
         );
@@ -199,6 +207,7 @@ class ChatAgent extends AbstractAgent
     {
         // Handle cleanup cron task
         if ($name === ChatCronConstants::CLEANUP_HISTORY) {
+            $this->deleteAllAttachmentFilesFromDisk();
             Hilos::$db->events->actions->deleteAll();
 
             $event = Hilos::$db->events->actions->add(ChatEventType::CHAT_CLEARED->value);
@@ -237,6 +246,13 @@ class ChatAgent extends AbstractAgent
             case ChatSignalConstants::MODERATION_BOT_RESULT:
                 if ($payload instanceof ModerationBotResultSignalData) {
                     $this->handleModerationBotResult($payload);
+                } else {
+                    $this->logInvalidAgentPayload($name, $payload);
+                }
+                return;
+            case ChatSignalConstants::MODERATION_FILE_RESULT:
+                if ($payload instanceof ModerationFileResultSignalData) {
+                    $this->handleModerationFileResult($payload);
                 } else {
                     $this->logInvalidAgentPayload($name, $payload);
                 }

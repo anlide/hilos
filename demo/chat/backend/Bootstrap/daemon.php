@@ -8,6 +8,7 @@ use Demo\Chat\Hilos;
 use Demo\Chat\Core\Daemon\ChatDaemonManager;
 use Demo\Chat\Core\Frontend\HtmlCache;
 use Demo\Chat\Core\Frontend\HtmlResolver;
+use Demo\Chat\Http\ChatAttachmentDownloadHandler;
 use Demo\Chat\Core\Socket\Server\ChatWebSocketServer;
 use Demo\Chat\Core\Socket\Server\ChatWorkerServer;
 use Demo\Chat\Core\Socket\Server\FrontendHtmlServer;
@@ -77,6 +78,8 @@ try {
     $status = new DaemonStatus();
 
     // Setup routes
+    $router->addRoute('GET', '/chat/attachment', static fn (array $args): array => ChatAttachmentDownloadHandler::handle($args));
+
     $router->addRoute('GET', '/status', function($args) use ($status, $workerServer) {
         $status->update();
 

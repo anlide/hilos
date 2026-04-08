@@ -169,6 +169,17 @@ export class WebSocketService {
   }
 
   /**
+   * Send a WebSocket binary frame (opcode 0x2).
+   */
+  sendBinary(data: ArrayBuffer | Blob): void {
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      this.ws.send(data)
+    } else {
+      console.warn('WebSocket is not connected')
+    }
+  }
+
+  /**
    * Send WebSocket ping message
    */
   private sendPing(): void {

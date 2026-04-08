@@ -27,7 +27,8 @@ final class ChatWebSocketClient extends WebSocketClient
         if (!in_array($actionName, [
             ChatSignalConstants::RENAME,
             ChatSignalConstants::MESSAGE,
-            ChatSignalConstants::FILE,
+            ChatSignalConstants::FILE_UPLOAD_INIT,
+            ChatSignalConstants::FILE_MODERATION_DISMISS,
             ChatSignalConstants::TABLE_REFRESH,
             ChatSignalConstants::USER_UPDATE,
             ChatSignalConstants::BOT_CREATE,

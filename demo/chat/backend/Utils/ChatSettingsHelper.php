@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Utils;
 
+use Demo\Chat\Constants\ChatAttachmentDefaults;
 use Demo\Chat\Constants\ChatLLMConstants;
 use Demo\Chat\Database\Settings\ChatSettingsConstants;
 use Demo\Chat\Hilos;
@@ -182,6 +183,26 @@ final class ChatSettingsHelper
     }
 
     /**
+     * Max size in bytes for a single chat attachment.
+     */
+    public static function getAttachmentMaxFileBytes(): int
+    {
+        $v = self::getInt(ChatSettingsConstants::CHAT_ATTACHMENT_MAX_FILE_BYTES, ChatAttachmentDefaults::DEFAULT_MAX_FILE_BYTES);
+
+        return $v > 0 ? $v : ChatAttachmentDefaults::DEFAULT_MAX_FILE_BYTES;
+    }
+
+    /**
+     * Max combined size in bytes of published attachments (soft global cap).
+     */
+    public static function getAttachmentMaxTotalBytes(): int
+    {
+        $v = self::getInt(ChatSettingsConstants::CHAT_ATTACHMENT_MAX_TOTAL_BYTES, ChatAttachmentDefaults::DEFAULT_MAX_TOTAL_BYTES);
+
+        return $v > 0 ? $v : ChatAttachmentDefaults::DEFAULT_MAX_TOTAL_BYTES;
+    }
+
+    /**
      * Get string value from settings. Returns empty string when not found.
      *
      * @param string $key Setting key
@@ -195,5 +216,18 @@ final class ChatSettingsHelper
         }
         $value = $setting->value;
         return $value !== null ? (string) $value : '';
+    }
+
+    private static function getInt(string $key, int $default): int
+    {
+        $setting = Hilos::$db->settings->findByKey($key);
+        if ($setting === null || $setting->value === null || $setting->value === '') {
+            return $default;
+        }
+        if (is_numeric($setting->value)) {
+            return (int) $setting->value;
+        }
+
+        return $default;
     }
 }

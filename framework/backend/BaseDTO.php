@@ -34,7 +34,13 @@ abstract class BaseDTO
      */
     public function toJson(): string
     {
-        return json_encode($this->toArray());
+        $flags = JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE;
+        $json = json_encode($this->toArray(), $flags);
+        if ($json === false) {
+            return '{"error":"json_encode_failed"}';
+        }
+
+        return $json;
     }
 
     /**

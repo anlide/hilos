@@ -26,6 +26,9 @@ class HttpConstants
     /** @var int HTTP status code for success */
     public const int HTTP_OK = 200;
 
+    /** @var int HTTP status code for unauthorized */
+    public const int HTTP_UNAUTHORIZED = 401;
+
     /** @var int HTTP status code for not found */
     public const int HTTP_NOT_FOUND = 404;
 

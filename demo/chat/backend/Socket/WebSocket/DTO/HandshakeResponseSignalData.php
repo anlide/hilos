@@ -24,12 +24,16 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
      * @param EntitiesChangesDTO $entities Entity payload (full.users with current user)
      * @param int $userId Current user ID
      * @param ?string $moderationState Current user's moderation state or null
+     * @param ?array<string, mixed> $fileModerationState File moderation UI state or null (moderating/rejected)
+     * @param ?array<string, mixed> $fileUploadProgress In-flight binary upload progress or null
      * @param array<string, array<string, mixed>> $pageCatalog Page catalog for breadcrumb rendering
      */
     public function __construct(
         public readonly EntitiesChangesDTO $entities,
         public readonly int $userId,
         public readonly ?string $moderationState = null,
+        public readonly ?array $fileModerationState = null,
+        public readonly ?array $fileUploadProgress = null,
         public readonly array $pageCatalog = [],
     ) {
     }
@@ -50,6 +54,8 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
         } else {
             $result['moderationState'] = null;
         }
+        $result['fileModerationState'] = $this->fileModerationState;
+        $result['fileUploadProgress'] = $this->fileUploadProgress;
         $result['pageCatalog'] = $this->pageCatalog;
         return $result;
     }

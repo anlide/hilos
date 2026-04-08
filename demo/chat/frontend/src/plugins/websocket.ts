@@ -3,12 +3,16 @@ import { useConnectionStore, usePageCatalogStore, useHilosLogsStore } from '@hil
 import { extractEntitiesEnvelope, hasEntities } from '@hilos/sdk/types'
 import { createHilosSignalRouter } from '@hilos/sdk/services/hilosSignalHandlers'
 import { config } from '@/config'
-import { useChatStore } from '@/stores'
+import { useChatStore, type FileUploadProgressPayload } from '@/stores'
 import { localStorageService } from '@/services/LocalStorageService'
 import { ChatEntitiesReceiver } from '@/entities/ChatEntitiesReceiver'
 import { eventPayloadToEvent, isRecord, parseEventPayloads } from '@/entities/parsers'
 import type { User } from '@/types'
 import { parseHilosLogsOverviewPayload } from '@/types/hilosLogsOverview'
+import {
+  rejectFileUploadPending,
+  resolveFileUploadOutcome,
+} from '@/services/chatFileUpload'
 
 type RawMessage = {
   type: string
@@ -18,8 +22,27 @@ type RawMessage = {
 type HandshakeResponseData = {
   userId: number
   moderationState?: string | null
+  fileModerationState?: Record<string, unknown> | null
+  fileUploadProgress?: unknown
   pageCatalog?: Record<string, unknown>
 } & Record<string, unknown>
+
+const parseFileUploadProgress = (raw: unknown): FileUploadProgressPayload | null => {
+  if (raw === null || raw === undefined) {
+    return null
+  }
+  if (!isRecord(raw)) {
+    return null
+  }
+  const { filename, uploadedBytes, totalBytes } = raw
+  if (typeof filename !== 'string') {
+    return null
+  }
+  if (typeof uploadedBytes !== 'number' || typeof totalBytes !== 'number') {
+    return null
+  }
+  return { filename, uploadedBytes, totalBytes }
+}
 
 const parseIncomingMessage = (data: string | object): RawMessage | null => {
   if (typeof data === 'string') {
@@ -68,10 +91,18 @@ function buildSignalRouter() {
     const currentUser = chatStore.users.find((u: User) => u.id === currentUserId)
     const moderationState =
       data.moderationState !== undefined ? data.moderationState : undefined
+    const rawFile = data.fileModerationState
+    const fileModerationState =
+      rawFile !== null && rawFile !== undefined && typeof rawFile === 'object' && !Array.isArray(rawFile)
+        ? (rawFile as Record<string, unknown>)
+        : null
+    const fileUploadProgress = parseFileUploadProgress(data.fileUploadProgress)
     chatStore.handleSubscriptionResponse(
       currentUserId,
       currentUser?.name ?? '',
-      moderationState as string | null | undefined
+      moderationState as string | null | undefined,
+      fileModerationState,
+      fileUploadProgress,
     )
   })
 
@@ -81,6 +112,55 @@ function buildSignalRouter() {
       const chatStore = useChatStore()
       chatStore.setModerationState(value ?? null)
     }
+  })
+
+  signalRouter.on('file_moderation_state_update', (data: unknown) => {
+    if (!isRecord(data) || !('fileModerationState' in data)) {
+      return
+    }
+    const v = (data as { fileModerationState: unknown }).fileModerationState
+    const chatStore = useChatStore()
+    if (v === null || v === undefined) {
+      chatStore.setFileModerationState(null)
+    } else if (typeof v === 'object' && !Array.isArray(v)) {
+      chatStore.setFileModerationState(v as Record<string, unknown>)
+    }
+  })
+
+  signalRouter.on('file_upload_progress_update', (data: unknown) => {
+    if (!isRecord(data) || !('fileUploadProgress' in data)) {
+      return
+    }
+    const v = (data as { fileUploadProgress: unknown }).fileUploadProgress
+    const chatStore = useChatStore()
+    chatStore.setFileUploadProgress(parseFileUploadProgress(v))
+  })
+
+  signalRouter.on('file_upload_ready', () => {
+    resolveFileUploadOutcome({ ok: true })
+  })
+
+  signalRouter.on('file_upload_rejected', (data: unknown) => {
+    if (!isRecord(data)) {
+      return
+    }
+    resolveFileUploadOutcome({
+      ok: false,
+      code: String(data.code ?? ''),
+      message: typeof data.message === 'string' ? data.message : undefined,
+    })
+  })
+
+  signalRouter.on('file_upload_aborted', () => {
+    rejectFileUploadPending('aborted')
+  })
+
+  signalRouter.on('file_upload_invalid', () => {
+    rejectFileUploadPending('invalid')
+  })
+
+  signalRouter.on('file_upload_complete', () => {
+    // UI state comes from file_moderation_state_update (moderating)
   })
 
   signalRouter.on('subscription_page_hilos_logs', (data: unknown) => {
@@ -151,6 +231,8 @@ export function createChatWebSocketPlugin() {
       connectionStore.setError(null)
     },
     onClose: () => {
+      rejectFileUploadPending('disconnected')
+      useChatStore().setFileUploadProgress(null)
       const connectionStore = useConnectionStore()
       connectionStore.setConnected(false)
       connectionStore.setConnecting(false)
@@ -160,7 +242,10 @@ export function createChatWebSocketPlugin() {
       connectionStore.setError('Connection error occurred')
       connectionStore.setConnecting(false)
     },
-    onMessage: (data: string | object) => {
+    onMessage: (data: string | object | Blob | ArrayBuffer) => {
+      if (data instanceof Blob || data instanceof ArrayBuffer) {
+        return
+      }
       const chatStore = useChatStore()
       const message = parseIncomingMessage(data)
       if (!message) {

@@ -33,6 +33,12 @@ abstract class AbstractClient extends AbstractSocket implements ClientInterface
     protected bool $shouldClose = false;
 
     /**
+     * When true, {@see shouldClose} is set only after {@see writeBuffer} has been fully flushed.
+     * Used by HttpClient for Connection: close without truncating large responses on partial writes.
+     */
+    protected bool $closeWhenOutputDrained = false;
+
+    /**
      * Create client with socket. Reads buffer size from env.
      *
      * @param resource|object $socket Client socket resource or Socket object
@@ -107,6 +113,23 @@ abstract class AbstractClient extends AbstractSocket implements ClientInterface
         }
 
         $this->writeBuffer = substr($this->writeBuffer, $written);
+
+        if ($this->writeBuffer === '') {
+            if ($this->closeWhenOutputDrained) {
+                $this->closeWhenOutputDrained = false;
+                $this->shouldClose = true;
+            } else {
+                $this->onAfterOutboundDrained();
+            }
+        }
+    }
+
+    /**
+     * Called when the outbound buffer becomes empty and the connection is not scheduled for close.
+     * HttpClient uses this to process pipelined or subsequent HTTP requests on keep-alive.
+     */
+    protected function onAfterOutboundDrained(): void
+    {
     }
 
     /**

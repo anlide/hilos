@@ -54,7 +54,9 @@ class HttpRouter
         $method = $request['method'] ?? 'GET';
         $path = $request['path'] ?? '/';
         $headers = is_array($request['headers'] ?? null) ? $request['headers'] : [];
-        $sessionToken = $headers[HilosHttpHeaders::HILOS_SESSION_TOKEN] ?? null;
+        $queryParams = is_array($request['queryParams'] ?? null) ? $request['queryParams'] : [];
+        $sessionToken = $headers[HilosHttpHeaders::HILOS_SESSION_TOKEN]
+            ?? ($queryParams[HilosHttpHeaders::HILOS_SESSION_TOKEN] ?? null);
         $userAgent = $headers['User-Agent'] ?? null;
         $acceptLanguage = $headers['Accept-Language'] ?? null;
 

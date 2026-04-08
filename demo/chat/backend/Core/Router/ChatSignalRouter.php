@@ -321,6 +321,8 @@ final class ChatSignalRouter extends SignalRouter
                 SignalTypeConstants::AGENT_SIGNAL => [
                     ChatSignalConstants::MODERATE_REQUEST => AgentType::MODERATOR,
                     ChatSignalConstants::MODERATION_RESULT => AgentType::CHAT,
+                    ChatSignalConstants::MODERATE_FILE_REQUEST => AgentType::MODERATOR,
+                    ChatSignalConstants::MODERATION_FILE_RESULT => AgentType::CHAT,
                     ChatSignalConstants::MODERATE_BOT_REQUEST => AgentType::MODERATOR,
                     ChatSignalConstants::MODERATION_BOT_RESULT => AgentType::CHAT,
                     ChatSignalConstants::BOT_JOINED => AgentType::CHAT,
@@ -330,6 +332,7 @@ final class ChatSignalRouter extends SignalRouter
             SignalSource::WEBSOCKET => [
                 SignalTypeConstants::HANDSHAKE => AgentType::CHAT,
                 SignalTypeConstants::CONNECTION_CLOSE => AgentType::CHAT,
+                SignalTypeConstants::FRAME_BINARY => AgentType::CHAT,
                 SignalTypeConstants::GROUP_SUBSCRIBE => AgentType::CHAT,
                 SignalTypeConstants::GROUP_UNSUBSCRIBE => AgentType::CHAT,
                 SignalTypeConstants::GROUP_UPDATE_SUBSCRIPTION => AgentType::CHAT,
@@ -389,7 +392,8 @@ final class ChatSignalRouter extends SignalRouter
 
         $actions = [
             ChatSignalConstants::MESSAGE => AgentType::CHAT,
-            ChatSignalConstants::FILE => AgentType::CHAT,
+            ChatSignalConstants::FILE_UPLOAD_INIT => AgentType::CHAT,
+            ChatSignalConstants::FILE_MODERATION_DISMISS => AgentType::CHAT,
             ChatSignalConstants::RENAME => AgentType::CHAT,
             ChatSignalConstants::TABLE_REFRESH => AgentType::CHAT,
             ChatSignalConstants::USER_UPDATE => AgentType::CHAT,

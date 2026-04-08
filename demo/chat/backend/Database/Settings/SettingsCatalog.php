@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Database\Settings;
 
+use Demo\Chat\Constants\ChatAttachmentDefaults;
 use Demo\Chat\Constants\ChatLLMConstants;
 use Hilos\Database\Settings\SettingsCatalogConstants;
 
@@ -83,6 +84,14 @@ final class SettingsCatalog
             ChatSettingsConstants::CHAT_MODERATION_BOTS => [
                 SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_BOOLEAN,
                 SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => false,
+            ],
+            ChatSettingsConstants::CHAT_ATTACHMENT_MAX_FILE_BYTES => [
+                SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_INTEGER,
+                SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => ChatAttachmentDefaults::DEFAULT_MAX_FILE_BYTES,
+            ],
+            ChatSettingsConstants::CHAT_ATTACHMENT_MAX_TOTAL_BYTES => [
+                SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_INTEGER,
+                SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => ChatAttachmentDefaults::DEFAULT_MAX_TOTAL_BYTES,
             ],
         ];
     }

@@ -34,13 +34,15 @@ class WebSocketFrameBinarySignalDTO extends BaseDTO implements SignalDataDTO, Si
     /**
      * Converts DTO to array for transport.
      *
+     * Payload is base64-encoded so JSON serialization (daemon log, worker IPC) never fails on binary bytes.
+     *
      * @return array<string, string> DTO data as array
      */
     public function toArray(): array
     {
         return [
             self::ACCEPT_KEY => $this->acceptKey,
-            self::PAYLOAD => $this->payload,
+            self::PAYLOAD => base64_encode($this->payload),
         ];
     }
 
@@ -52,9 +54,25 @@ class WebSocketFrameBinarySignalDTO extends BaseDTO implements SignalDataDTO, Si
      */
     public static function fromArray(array $data): static
     {
+        $encoded = $data[self::PAYLOAD] ?? '';
+        $encoded = is_string($encoded) ? $encoded : '';
+
         return new self(
-            acceptKey: $data[self::ACCEPT_KEY] ?? '',
-            payload: $data[self::PAYLOAD] ?? '',
+            acceptKey: is_string($data[self::ACCEPT_KEY] ?? null) ? $data[self::ACCEPT_KEY] : '',
+            payload: self::decodePayloadFromTransport($encoded),
         );
+    }
+
+    /**
+     * Decode payload from JSON transport (strict base64) or pass through legacy raw string.
+     */
+    private static function decodePayloadFromTransport(string $encoded): string
+    {
+        if ($encoded === '') {
+            return '';
+        }
+        $decoded = base64_decode($encoded, true);
+
+        return $decoded !== false ? $decoded : $encoded;
     }
 }

@@ -20,6 +20,39 @@ final class ChatSignalConstants
     /** @var string File signal name */
     public const string FILE = 'file';
 
+    /** @var string Client → server: start binary file upload (metadata only) */
+    public const string FILE_UPLOAD_INIT = 'file_upload_init';
+
+    /** @var string Client → server: dismiss file moderation rejected UI */
+    public const string FILE_MODERATION_DISMISS = 'file_moderation_dismiss';
+
+    /** @var string Server → client: upload session ready, client may send binary */
+    public const string FILE_UPLOAD_READY = 'file_upload_ready';
+
+    /** @var string Server → client: init rejected (limits, duplicate name, etc.) */
+    public const string FILE_UPLOAD_REJECTED = 'file_upload_rejected';
+
+    /** @var string Server → client: previous upload cancelled (new init while in progress) */
+    public const string FILE_UPLOAD_ABORTED = 'file_upload_aborted';
+
+    /** @var string Server → client: all bytes received, moderation started */
+    public const string FILE_UPLOAD_COMPLETE = 'file_upload_complete';
+
+    /** @var string Server → client: binary protocol error, session cleared */
+    public const string FILE_UPLOAD_INVALID = 'file_upload_invalid';
+
+    /** @var string Server → client: file attachment UI state (private to user); moderating/rejected only */
+    public const string FILE_MODERATION_STATE_UPDATE = 'file_moderation_state_update';
+
+    /** @var string Server → client: binary upload progress (throttled); separate from moderation */
+    public const string FILE_UPLOAD_PROGRESS_UPDATE = 'file_upload_progress_update';
+
+    /** @var string ChatAgent → ModeratorAgent: moderate uploaded file (synthetic description) */
+    public const string MODERATE_FILE_REQUEST = 'moderate_file_request';
+
+    /** @var string ModeratorAgent → ChatAgent: file moderation result */
+    public const string MODERATION_FILE_RESULT = 'moderation_file_result';
+
     /** @var string Rename signal name */
     public const string RENAME = 'rename';
 

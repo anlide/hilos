@@ -27,6 +27,12 @@ final class ChatSettingsConstants
     public const string CHAT_MODERATION_USERS = 'chat_moderation_users';
     public const string CHAT_MODERATION_BOTS = 'chat_moderation_bots';
 
+    /** Max single attachment size in bytes */
+    public const string CHAT_ATTACHMENT_MAX_FILE_BYTES = 'chat_attachment_max_file_bytes';
+
+    /** Max sum of published attachment sizes in bytes (approximate global cap) */
+    public const string CHAT_ATTACHMENT_MAX_TOTAL_BYTES = 'chat_attachment_max_total_bytes';
+
     /** Key for orphan test — NOT in catalog. Used in seed to test orphan detection. */
     public const string ORPHAN_TEST_KEY = 'orphan_test';
 }

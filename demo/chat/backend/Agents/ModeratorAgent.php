@@ -9,6 +9,8 @@ use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Utils\ChatSettingsHelper;
 use Demo\Chat\Core\Router\DTO\ModerationBotRequestSignalData;
 use Demo\Chat\Core\Router\DTO\ModerationBotResultSignalData;
+use Demo\Chat\Core\Router\DTO\ModerationFileRequestSignalData;
+use Demo\Chat\Core\Router\DTO\ModerationFileResultSignalData;
 use Demo\Chat\Core\Router\DTO\ModerationRequestSignalData;
 use Demo\Chat\Core\Router\DTO\ModerationResultSignalData;
 use Demo\Chat\Database\DbChatContext;
@@ -110,9 +112,11 @@ class ModeratorAgent extends AbstractAgent
             }
         }
 
-        $authorContext = $pending['type'] === 'user'
-            ? 'userId=' . ($pending['payload']->userId ?? '?')
-            : 'botId=' . ($pending['payload']->botId ?? '?');
+        $authorContext = match ($pending['type']) {
+            'user' => 'userId=' . ($pending['payload']->userId ?? '?'),
+            'file' => 'file userId=' . ($pending['payload']->userId ?? '?'),
+            default => 'botId=' . ($pending['payload']->botId ?? '?'),
+        };
         Logger::logAgentInfo(
             'ModeratorAgent',
             "Moderation request finished [{$authorContext}; decision=" . ($allow ? 'allow' : 'block') . "; reason={$reason}]"
@@ -129,6 +133,22 @@ class ModeratorAgent extends AbstractAgent
                     message: $payload->message,
                     allow: $allow,
                     reason: $reason,
+                ),
+            );
+        } elseif ($pending['type'] === 'file') {
+            /** @var ModerationFileRequestSignalData $payload */
+            $payload = $pending['payload'];
+            $this->sendToAgent(
+                ChatSignalConstants::MODERATION_FILE_RESULT,
+                new ModerationFileResultSignalData(
+                    acceptKey: $payload->acceptKey,
+                    userId: $payload->userId,
+                    allow: $allow,
+                    reason: $reason,
+                    quarantineBasename: $payload->quarantineBasename,
+                    originalFilename: $payload->originalFilename,
+                    mimeType: $payload->mimeType,
+                    size: $payload->size,
                 ),
             );
         } else {
@@ -174,6 +194,13 @@ class ModeratorAgent extends AbstractAgent
                     $this->logInvalidPayload($name, $payload);
                 }
                 return;
+            case ChatSignalConstants::MODERATE_FILE_REQUEST:
+                if ($payload instanceof ModerationFileRequestSignalData) {
+                    $this->handleModerateFileRequest($payload);
+                } else {
+                    $this->logInvalidPayload($name, $payload);
+                }
+                return;
             default:
                 $this->logInvalidPayload($name, $payload);
         }
@@ -184,6 +211,43 @@ class ModeratorAgent extends AbstractAgent
      *
      * @param ModerationRequestSignalData $payload User message moderation request
      */
+    private function handleModerateFileRequest(ModerationFileRequestSignalData $payload): void
+    {
+        if (!ChatSettingsHelper::getModerationUsers()) {
+            $this->bypassModerationFile($payload);
+            return;
+        }
+
+        Logger::logAgentInfo(
+            'ModeratorAgent',
+            "Moderation file request queued [userId={$payload->userId}; file={$payload->originalFilename}]"
+        );
+
+        $this->pendingQueue[] = ['type' => 'file', 'payload' => $payload];
+        $this->startNextPending();
+    }
+
+    /**
+     * Send allow result without LLM when user moderation is disabled (files).
+     */
+    private function bypassModerationFile(ModerationFileRequestSignalData $payload): void
+    {
+        Logger::logAgentInfo('ModeratorAgent', "File moderation bypassed [userId={$payload->userId}] (disabled)");
+        $this->sendToAgent(
+            ChatSignalConstants::MODERATION_FILE_RESULT,
+            new ModerationFileResultSignalData(
+                acceptKey: $payload->acceptKey,
+                userId: $payload->userId,
+                allow: true,
+                reason: 'disabled',
+                quarantineBasename: $payload->quarantineBasename,
+                originalFilename: $payload->originalFilename,
+                mimeType: $payload->mimeType,
+                size: $payload->size,
+            ),
+        );
+    }
+
     private function handleModerateRequest(ModerationRequestSignalData $payload): void
     {
         if (!ChatSettingsHelper::getModerationUsers()) {
@@ -277,8 +341,10 @@ class ModeratorAgent extends AbstractAgent
         $this->currentPending = $item;
 
         $payload = $item['payload'];
-        $message = $payload->message;
-        $userId = $item['type'] === 'user' ? $payload->userId : null;
+        $message = $item['type'] === 'file'
+            ? $payload->syntheticMessage
+            : $payload->message;
+        $userId = $item['type'] === 'user' || $item['type'] === 'file' ? $payload->userId : null;
         $botId = $item['type'] === 'bot' ? $payload->botId : null;
 
         $messages = $this->buildModerationMessages($message, $userId, $botId);
