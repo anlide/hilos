@@ -153,10 +153,12 @@ function buildSignalRouter() {
 
   signalRouter.on('file_upload_aborted', () => {
     rejectFileUploadPending('aborted')
+    useChatStore().setFileUploadProgress(null)
   })
 
   signalRouter.on('file_upload_invalid', () => {
     rejectFileUploadPending('invalid')
+    useChatStore().setFileUploadProgress(null)
   })
 
   signalRouter.on('file_upload_complete', () => {

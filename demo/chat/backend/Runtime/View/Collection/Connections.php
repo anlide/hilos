@@ -65,6 +65,24 @@ final class Connections extends RtCollection
     }
 
     /**
+     * Sum of (declaredSize - receivedBytes) over connections with an active file upload session (quota reserved until bytes arrive).
+     *
+     * @return int Non-negative sum of unreceived bytes for in-flight uploads.
+     */
+    public function sumActiveUploadReservedBytes(): int
+    {
+        $sum = 0;
+        foreach ($this as $c) {
+            if ($c->fileSessionUploadId === null) {
+                continue;
+            }
+            $sum += (int)$c->fileSessionDeclaredSize - (int)$c->fileSessionReceivedBytes;
+        }
+
+        return $sum;
+    }
+
+    /**
      * Create Rt item from state.
      *
      * @param RtState $state StateConnection instance (passed by reference)

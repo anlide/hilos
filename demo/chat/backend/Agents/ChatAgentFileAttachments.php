@@ -25,8 +25,11 @@ use Demo\Chat\Utils\ChatAttachmentStorage;
 use Demo\Chat\Utils\ChatSettingsHelper;
 use Hilos\Core\Router\DTO\EntitiesChangesDTO;
 use Hilos\Core\Router\SignalDataInterface;
+use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
+use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\Socket\WebSocket\DTO\WebSocketFrameBinarySignalDTO;
 use Hilos\Utils\Logger;
+use Random\RandomException;
 
 /**
  * File upload (WebSocket action + binary frames), quarantine storage, async file moderation, and per-connection UI state.
@@ -42,6 +45,9 @@ trait ChatAgentFileAttachments
      * Start or replace a binary upload on this connection (validates limits, creates quarantine .part file).
      *
      * @param string $acceptKey WebSocket connection id
+     * @throws RandomException If {@see random_bytes()} fails.
+     * @throws RtActionsCollectionNameNullException When collection name is null.
+     * @throws RtTruthSourceWriteNotAllowedException When truth source does not allow write.
      */
     public function handleFileUploadInit(string $acceptKey, FileUploadInitActionDTO $dto): void
     {
@@ -50,7 +56,16 @@ trait ChatAgentFileAttachments
         }
 
         if (Hilos::$rt->connections[$acceptKey]->fileSessionUploadId !== null) {
-            $this->abortFileUploadSession($acceptKey, 'superseded_by_new_init');
+            ChatAttachmentStorage::deleteIfExists(
+                ChatAttachmentStorage::quarantinePathForBasename(
+                    Hilos::$rt->connections[$acceptKey]->fileSessionQuarantineBasename,
+                ),
+            );
+            Hilos::$rt->connections->actions->abortFileUploadClearSessionAndProgress($acceptKey);
+            Logger::logAgentInfo(
+                $this->getId(),
+                "file upload aborted acceptKey={$acceptKey} reason=superseded_by_new_init",
+            );
             $this->sendToUser(
                 ChatSignalConstants::FILE_UPLOAD_ABORTED,
                 $acceptKey,
@@ -80,8 +95,8 @@ trait ChatAgentFileAttachments
             return;
         }
 
-        $publishedTotal = $this->sumPublishedAttachmentBytes();
-        $reserved = $this->sumActiveUploadDeclaredBytes();
+        $publishedTotal = Hilos::$db->events->sumPublishedAttachmentBytes();
+        $reserved = Hilos::$rt->connections->sumActiveUploadReservedBytes();
         if ($publishedTotal + $reserved + $dto->size > $maxTotal) {
             $this->sendToUser(
                 ChatSignalConstants::FILE_UPLOAD_REJECTED,
@@ -117,19 +132,14 @@ trait ChatAgentFileAttachments
             return;
         }
 
-        $sessionArr = [
-            'uploadId' => $uploadId,
-            'declaredSize' => $dto->size,
-            'receivedBytes' => 0,
-            'quarantineBasename' => $quarantineBasename,
-            'originalFilename' => $dto->filename,
-            'mimeType' => $dto->mimeType,
-            'clientUploadId' => $dto->clientUploadId,
-            'normalizedFilename' => $norm,
-        ];
-
-        Hilos::$rt->connections[$acceptKey]?->actions->beginBinaryFileUpload(
-            $sessionArr,
+        Hilos::$rt->connections[$acceptKey]->actions->beginBinaryFileUpload(
+            $uploadId,
+            $dto->size,
+            $quarantineBasename,
+            $dto->filename,
+            $dto->mimeType,
+            $dto->clientUploadId,
+            $norm,
             $dto->filename,
             $dto->size,
         );
@@ -494,31 +504,21 @@ trait ChatAgentFileAttachments
     }
 
     /**
-     * Remove quarantine file if any, clear session and progress on this connection; optionally clear progress WS payload.
-     *
-     * @param string $reason Log label (not sent to client unless combined with {@see failFileUploadSession})
-     */
-    private function abortFileUploadSession(string $acceptKey, string $reason): void
-    {
-        $conn = Hilos::$rt->connections[$acceptKey] ?? null;
-        $hadProgress = $conn !== null && $conn->fileProgressFilename !== null;
-        if ($conn !== null && $conn->fileSessionUploadId !== null) {
-            $path = ChatAttachmentStorage::quarantinePathForBasename($conn->fileSessionQuarantineBasename);
-            ChatAttachmentStorage::deleteIfExists($path);
-        }
-        Hilos::$rt->connections->actions->abortFileUploadClearSessionAndProgress($acceptKey);
-        if ($hadProgress) {
-            $this->sendFileUploadProgress($acceptKey, null);
-        }
-        Logger::logAgentInfo($this->getId(), "file upload aborted acceptKey={$acceptKey} reason={$reason}");
-    }
-
-    /**
      * Abort upload and send {@see ChatSignalConstants::FILE_UPLOAD_INVALID} to this connection.
+     *
+     * @throws RtActionsCollectionNameNullException When collection name is null.
+     * @throws RtTruthSourceWriteNotAllowedException When truth source does not allow write.
      */
     private function failFileUploadSession(string $acceptKey, string $reason): void
     {
-        $this->abortFileUploadSession($acceptKey, $reason);
+        $conn = Hilos::$rt->connections[$acceptKey] ?? null;
+        if ($conn !== null && $conn->fileSessionUploadId !== null) {
+            ChatAttachmentStorage::deleteIfExists(
+                ChatAttachmentStorage::quarantinePathForBasename($conn->fileSessionQuarantineBasename),
+            );
+        }
+        Hilos::$rt->connections->actions->abortFileUploadClearSessionAndProgress($acceptKey);
+        Logger::logAgentInfo($this->getId(), "file upload aborted acceptKey={$acceptKey} reason={$reason}");
         $this->sendToUser(
             ChatSignalConstants::FILE_UPLOAD_INVALID,
             $acceptKey,
@@ -678,46 +678,6 @@ trait ChatAgentFileAttachments
         }
 
         return false;
-    }
-
-    /**
-     * Total size in bytes of all {@see ChatEventType::FILE_SHARED} events (for global quota).
-     */
-    private function sumPublishedAttachmentBytes(): int
-    {
-        $sum = 0;
-        foreach (Hilos::$db->events as $event) {
-            if ($event->type !== ChatEventType::FILE_SHARED->value) {
-                continue;
-            }
-            $raw = $event->data;
-            if (!is_string($raw) || $raw === '') {
-                continue;
-            }
-            $decoded = json_decode($raw, true);
-            if (!is_array($decoded) || !isset($decoded['size'])) {
-                continue;
-            }
-            $sum += (int)$decoded['size'];
-        }
-
-        return $sum;
-    }
-
-    /**
-     * Sum of not-yet-received bytes over all active connection upload sessions (reserved quota).
-     */
-    private function sumActiveUploadDeclaredBytes(): int
-    {
-        $sum = 0;
-        foreach (Hilos::$rt->connections as $c) {
-            if ($c->fileSessionUploadId === null) {
-                continue;
-            }
-            $sum += (int)$c->fileSessionDeclaredSize - (int)$c->fileSessionReceivedBytes;
-        }
-
-        return $sum;
     }
 
     /**

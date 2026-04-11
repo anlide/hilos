@@ -7,6 +7,7 @@ namespace Demo\Chat\Runtime\View\Actions\Item;
 use Demo\Chat\Runtime\State\Item\Connection as StateConnection;
 use Demo\Chat\Runtime\View\Item\Connection as RuntimeConnection;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
+use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\Runtime\View\Actions\Item\RtActions;
 
 /**
@@ -20,25 +21,30 @@ final class ConnectionActions extends RtActions
     /**
      * After successful FILE_UPLOAD_INIT: open session row + progress bar fields on this socket.
      *
-     * @param array<string, mixed> $session Map with uploadId, declaredSize, receivedBytes, quarantineBasename, originalFilename, mimeType, clientUploadId, normalizedFilename
-     * @throws RtActionsCollectionNameNullException
+     * @throws RtActionsCollectionNameNullException When collection name is null.
+     * @throws RtTruthSourceWriteNotAllowedException When truth source does not allow write.
      */
     public function beginBinaryFileUpload(
-        array $session,
+        string $uploadId,
+        int $declaredSize,
+        string $quarantineBasename,
+        string $originalFilename,
+        string $mimeType,
+        string $clientUploadId,
+        string $normalizedFilename,
         string $progressFilename,
         int $progressTotalBytes,
     ): void {
         $this->ensureCanWrite();
 
-        $this->state->fileSessionUploadId = (string)$session['uploadId'];
-        $this->state->fileSessionDeclaredSize = (int)$session['declaredSize'];
-        $this->state->fileSessionReceivedBytes = (int)$session['receivedBytes'];
-        $this->state->fileSessionQuarantineBasename = (string)$session['quarantineBasename'];
-        $this->state->fileSessionOriginalFilename = (string)$session['originalFilename'];
-        $this->state->fileSessionMimeType = (string)$session['mimeType'];
-        $this->state->fileSessionClientUploadId = (string)$session['clientUploadId'];
-        $this->state->fileSessionNormalizedFilename = (string)$session['normalizedFilename'];
-
+        $this->state->fileSessionUploadId = $uploadId;
+        $this->state->fileSessionDeclaredSize = $declaredSize;
+        $this->state->fileSessionReceivedBytes = 0;
+        $this->state->fileSessionQuarantineBasename = $quarantineBasename;
+        $this->state->fileSessionOriginalFilename = $originalFilename;
+        $this->state->fileSessionMimeType = $mimeType;
+        $this->state->fileSessionClientUploadId = $clientUploadId;
+        $this->state->fileSessionNormalizedFilename = $normalizedFilename;
         $this->state->fileProgressFilename = $progressFilename;
         $this->state->fileProgressUploadedBytes = 0;
         $this->state->fileProgressTotalBytes = $progressTotalBytes;
@@ -54,8 +60,10 @@ final class ConnectionActions extends RtActions
     public function clearBinaryUploadSessionAndProgressUi(): void
     {
         $this->ensureCanWrite();
+
         $this->resetBinaryUploadSessionFields();
         $this->resetUploadProgressUiFields();
+
         $this->sync();
     }
 
@@ -66,7 +74,9 @@ final class ConnectionActions extends RtActions
     public function clearFileModerationBanner(): void
     {
         $this->ensureCanWrite();
+
         $this->resetFileModerationUiFields();
+
         $this->sync();
     }
 
@@ -77,9 +87,11 @@ final class ConnectionActions extends RtActions
     public function clearAllFileRuntimeOnSocket(): void
     {
         $this->ensureCanWrite();
+
         $this->resetBinaryUploadSessionFields();
         $this->resetUploadProgressUiFields();
         $this->resetFileModerationUiFields();
+
         $this->sync();
     }
 
@@ -90,8 +102,10 @@ final class ConnectionActions extends RtActions
     public function applyStoredBinaryChunkProgress(int $newReceivedBytes): void
     {
         $this->ensureCanWrite();
+
         $this->state->fileSessionReceivedBytes = $newReceivedBytes;
         $this->state->fileProgressUploadedBytes = $newReceivedBytes;
+
         $this->sync();
     }
 
@@ -102,12 +116,14 @@ final class ConnectionActions extends RtActions
     public function enterFileModerationPending(string $originalFilename, int $sizeBytes): void
     {
         $this->ensureCanWrite();
+
         $this->state->fileModPhase = 'moderating';
         $this->state->fileModFilename = $originalFilename;
         $this->state->fileModUploadedBytes = $sizeBytes;
         $this->state->fileModTotalBytes = $sizeBytes;
         $this->state->fileModReason = '';
         $this->state->fileModUpdatedAt = time();
+
         $this->sync();
     }
 
@@ -121,12 +137,14 @@ final class ConnectionActions extends RtActions
         string $reason,
     ): void {
         $this->ensureCanWrite();
+
         $this->state->fileModPhase = 'rejected';
         $this->state->fileModFilename = $originalFilename;
         $this->state->fileModUploadedBytes = $sizeBytes;
         $this->state->fileModTotalBytes = $sizeBytes;
         $this->state->fileModReason = $reason;
         $this->state->fileModUpdatedAt = time();
+
         $this->sync();
     }
 
@@ -137,7 +155,9 @@ final class ConnectionActions extends RtActions
     public function noteUploadProgressSentAt(float $sentAtMicrotime): void
     {
         $this->ensureCanWrite();
+
         $this->state->uploadProgressLastSentAt = $sentAtMicrotime;
+
         $this->sync();
     }
 
