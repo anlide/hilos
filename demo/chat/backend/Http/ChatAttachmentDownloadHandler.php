@@ -4,9 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Http;
 
-use Demo\Chat\Constants\ChatEventType;
 use Demo\Chat\Hilos;
-use Demo\Chat\Utils\ChatAttachmentStorage;
 use Hilos\Constants\HttpConstants;
 use Hilos\Constants\HilosHttpHeaders;
 
@@ -38,18 +36,19 @@ final class ChatAttachmentDownloadHandler
             return self::unauthorized();
         }
 
-        $match = self::findPublishedFileMetaByToken($token);
+        $match = Hilos::$db->events->findPublishedFileMetaByToken($token);
         if ($match === null) {
             return self::notFound();
         }
 
-        $path = ChatAttachmentStorage::publishedPathForBasename($match['storedName']);
-        if (!is_file($path) || !is_readable($path)) {
+        $publishedFile = Hilos::$fs->published[$match['storedName']];
+        if (!$publishedFile->exists()) {
             return self::notFound();
         }
 
-        $body = file_get_contents($path);
-        if ($body === false) {
+        try {
+            $body = $publishedFile->read();
+        } catch (\Hilos\Fs\FsException) {
             return self::notFound();
         }
 
@@ -66,44 +65,6 @@ final class ChatAttachmentDownloadHandler
             ],
             HttpConstants::RESPONSE_KEY_BODY => $body,
         ];
-    }
-
-    /**
-     * @return ?array{storedName: string, originalFilename: string, mimeType: string}
-     */
-    private static function findPublishedFileMetaByToken(string $token): ?array
-    {
-        foreach (Hilos::$db->events as $event) {
-            if ($event->type !== ChatEventType::FILE_SHARED->value) {
-                continue;
-            }
-            $raw = $event->data;
-            if (!is_string($raw) || $raw === '') {
-                continue;
-            }
-            $d = json_decode($raw, true);
-            if (!is_array($d)) {
-                continue;
-            }
-            $dt = $d['downloadToken'] ?? '';
-            if (!is_string($dt) || $dt !== $token) {
-                continue;
-            }
-            $stored = $d['storedName'] ?? '';
-            if (!is_string($stored) || $stored === '') {
-                continue;
-            }
-            $orig = $d['originalFilename'] ?? $d['filename'] ?? 'file';
-            $mime = $d['mimeType'] ?? 'application/octet-stream';
-
-            return [
-                'storedName' => basename($stored),
-                'originalFilename' => is_string($orig) ? $orig : 'file',
-                'mimeType' => is_string($mime) ? $mime : 'application/octet-stream',
-            ];
-        }
-
-        return null;
     }
 
     private static function contentDispositionFilename(string $name): string

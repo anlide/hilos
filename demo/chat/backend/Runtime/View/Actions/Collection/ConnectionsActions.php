@@ -8,7 +8,6 @@ use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\State\Item\Connection as StateConnection;
 use Demo\Chat\Runtime\View\Collection\Connections;
 use Demo\Chat\Runtime\View\Item\Connection as RuntimeConnection;
-use Demo\Chat\Utils\ChatAttachmentStorage;
 use Hilos\Runtime\Exception\Actions\RtActionsCallbackNotSetException;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
@@ -77,8 +76,7 @@ final class ConnectionsActions extends RtActions
         $this->ensureCanWrite();
         $conn = Hilos::$rt->connections[$acceptKey] ?? null;
         if ($conn !== null && $conn->fileSessionUploadId !== null) {
-            $path = ChatAttachmentStorage::quarantinePathForBasename($conn->fileSessionQuarantineBasename);
-            ChatAttachmentStorage::deleteIfExists($path);
+            Hilos::$fs->tmp[$conn->fileSessionQuarantineBasename]->unlink();
         }
         $this->removeStateFromCollection($acceptKey);
     }

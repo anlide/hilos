@@ -6,6 +6,7 @@ use Hilos\Core\Analytics\AnalyticsCollector;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Table\Context\TableContext;
 use Hilos\Database\Context\DbContext;
+use Hilos\Fs\Context\FsContext;
 use Hilos\Runtime\View\Context\RtContext;
 
 /**
@@ -15,6 +16,7 @@ use Hilos\Runtime\View\Context\RtContext;
  * - Hilos::$db    — database layer
  * - Hilos::$rt    — runtime layer
  * - Hilos::$table — table layer
+ * - Hilos::$fs    — filesystem layer
  * - Hilos::$sr    — signal router
  */
 abstract class Hilos
@@ -27,6 +29,9 @@ abstract class Hilos
 
     /** @var ?TableContext Table layer singleton */
     public static ?TableContext $table = null;
+
+    /** @var ?FsContext Filesystem layer singleton */
+    public static ?FsContext $fs = null;
 
     /** @var ?SignalRouter Signal router singleton */
     public static ?SignalRouter $sr = null;
@@ -51,6 +56,11 @@ abstract class Hilos
         if (static::$table === null) {
             static::$table = static::createTable();
             static::$table?->configure();
+        }
+
+        if (static::$fs === null) {
+            static::$fs = static::createFs();
+            static::$fs?->configure();
         }
     }
 
@@ -101,6 +111,16 @@ abstract class Hilos
      * @return ?TableContext Table context or null if not used
      */
     protected static function createTable(): ?TableContext
+    {
+        return null;
+    }
+
+    /**
+     * Create filesystem context instance.
+     *
+     * @return ?FsContext Filesystem context or null if not used
+     */
+    protected static function createFs(): ?FsContext
     {
         return null;
     }

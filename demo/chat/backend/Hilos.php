@@ -5,10 +5,12 @@ declare(strict_types=1);
 namespace Demo\Chat;
 
 use Demo\Chat\Database\DbChatContext;
+use Demo\Chat\Fs\FsChatContext;
 use Demo\Chat\Runtime\View\Context\RtChatContext;
 use Demo\Chat\Tables\TableChatContext;
 use Hilos\Core\Table\Context\TableContext;
 use Hilos\Database\Context\DbContext;
+use Hilos\Fs\Context\FsContext;
 use Hilos\Runtime\Exception\Rt\StateCollectionNotFoundException;
 use Hilos\Runtime\View\Context\RtContext;
 
@@ -20,10 +22,12 @@ use Hilos\Runtime\View\Context\RtContext;
  * - Hilos::$rt->connections
  * - Hilos::$rt->userStates
  * - Hilos::$table->users
+ * - Hilos::$fs->quarantine, Hilos::$fs->published, Hilos::$fs->tmp
  *
  * @property-read DbChatContext $db Database context (narrows parent's DbContext for IDE)
  * @property-read RtChatContext $rt Runtime context (narrows parent's RtContext for IDE)
  * @property-read TableChatContext $table Table context (narrows parent's TableContext for IDE)
+ * @property-read FsChatContext $fs Filesystem context (narrows parent's FsContext for IDE)
  */
 final class Hilos extends \Hilos\Hilos
 {
@@ -56,5 +60,15 @@ final class Hilos extends \Hilos\Hilos
     protected static function createTable(): ?TableContext
     {
         return new TableChatContext();
+    }
+
+    /**
+     * Creates and returns the filesystem context.
+     *
+     * @return FsChatContext The filesystem context instance.
+     */
+    protected static function createFs(): ?FsContext
+    {
+        return new FsChatContext();
     }
 }

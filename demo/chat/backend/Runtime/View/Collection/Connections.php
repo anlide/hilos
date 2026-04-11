@@ -83,6 +83,26 @@ final class Connections extends RtCollection
     }
 
     /**
+     * Check whether an active upload already uses the normalized filename.
+     *
+     * @param string $normalized Normalized basename
+     * @return bool True when any connection has an in-flight upload with that name
+     */
+    public function hasActiveUploadWithNormalizedFilename(string $normalized): bool
+    {
+        foreach ($this as $connection) {
+            if ($connection->fileSessionUploadId === null) {
+                continue;
+            }
+            if ($connection->fileSessionNormalizedFilename === $normalized) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
      * Create Rt item from state.
      *
      * @param RtState $state StateConnection instance (passed by reference)

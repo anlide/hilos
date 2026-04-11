@@ -50,4 +50,20 @@ final class FileSystemHelper
             set_error_handler($previous);
         }
     }
+
+    /**
+     * Normalize a client-provided filename to a lowercase basename.
+     *
+     * Used for duplicate checks where path segments, null bytes, and surrounding
+     * whitespace must not affect collision detection.
+     *
+     * @param string $name Original filename or path segment from the client
+     * @return string Normalized basename
+     */
+    public static function normalizeBasename(string $name): string
+    {
+        $base = basename(str_replace(["\0"], '', $name));
+
+        return strtolower(trim($base));
+    }
 }

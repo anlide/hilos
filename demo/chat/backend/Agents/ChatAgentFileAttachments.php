@@ -21,15 +21,16 @@ use Demo\Chat\Database\DbChatContext;
 use Demo\Chat\Database\View\Collection\Events;
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\View\Item\Connection as RuntimeConnection;
-use Demo\Chat\Utils\ChatAttachmentStorage;
 use Demo\Chat\Utils\ChatSettingsHelper;
 use Hilos\Core\Router\DTO\EntitiesChangesDTO;
-use Hilos\Core\Router\SignalDataInterface;
+use Hilos\Fs\FsException;
+use Hilos\Fs\FsFile;
 use Hilos\HilosException;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\Socket\WebSocket\DTO\WebSocketFrameBinarySignalDTO;
 use Hilos\Utils\Logger;
+use Hilos\Utils\Helpers\FileSystemHelper;
 use Random\RandomException;
 
 /**
@@ -48,7 +49,7 @@ trait ChatAgentFileAttachments
     private const float FILE_UPLOAD_PROGRESS_MIN_INTERVAL_SEC = 0.3;
 
     /**
-     * Handle {@see ChatSignalConstants::FILE_UPLOAD_INIT}: validate limits and filename, create quarantine `.part` file,
+     * Handle {@see ChatSignalConstants::FILE_UPLOAD_INIT}: validate limits and filename, create tmp file,
      * start session, send {@see ChatSignalConstants::FILE_UPLOAD_READY}. Replaces an in-flight upload on the same socket.
      *
      * @param string $acceptKey WebSocket connection id
@@ -63,11 +64,7 @@ trait ChatAgentFileAttachments
         }
 
         if (Hilos::$rt->connections[$acceptKey]->fileSessionUploadId !== null) {
-            ChatAttachmentStorage::deleteIfExists(
-                ChatAttachmentStorage::quarantinePathForBasename(
-                    Hilos::$rt->connections[$acceptKey]->fileSessionQuarantineBasename,
-                ),
-            );
+            Hilos::$fs->tmp[Hilos::$rt->connections[$acceptKey]->fileSessionQuarantineBasename]->unlink();
             Hilos::$rt->connections[$acceptKey]->actions->clearBinaryUploadSessionAndProgressUi();
             Logger::logAgentInfo(
                 $this->getId(),
@@ -114,7 +111,7 @@ trait ChatAgentFileAttachments
             return;
         }
 
-        $norm = $this->normalizeFilename($dto->filename);
+        $norm = FileSystemHelper::normalizeBasename($dto->filename);
         if ($this->isFilenameInUse($norm)) {
             $this->sendToUser(
                 ChatSignalConstants::FILE_UPLOAD_REJECTED,
@@ -125,11 +122,10 @@ trait ChatAgentFileAttachments
             return;
         }
 
-        $uploadId = bin2hex(random_bytes(16));
-        $quarantineBasename = $uploadId . '.part';
-        $path = ChatAttachmentStorage::quarantinePathForBasename($quarantineBasename);
-        if (file_put_contents($path, '') === false) {
-            Logger::logAgentError($this->getId(), "Cannot create quarantine file: {$path}");
+        try {
+            $tmpIndex = Hilos::$fs->tmp->create();
+        } catch (FsException $e) {
+            Logger::logAgentError($this->getId(), "Cannot create tmp file: {$e->getMessage()}");
             $this->sendToUser(
                 ChatSignalConstants::FILE_UPLOAD_REJECTED,
                 $acceptKey,
@@ -140,9 +136,9 @@ trait ChatAgentFileAttachments
         }
 
         Hilos::$rt->connections[$acceptKey]->actions->beginBinaryFileUpload(
-            $uploadId,
+            $tmpIndex,
             $dto->size,
-            $quarantineBasename,
+            $tmpIndex,
             $dto->filename,
             $dto->mimeType,
             $dto->clientUploadId,
@@ -155,7 +151,7 @@ trait ChatAgentFileAttachments
             ChatSignalConstants::FILE_UPLOAD_READY,
             $acceptKey,
             new FileUploadReadySignalData(
-                uploadId: $uploadId,
+                uploadId: $tmpIndex,
                 filename: $dto->filename,
                 mimeType: $dto->mimeType,
                 size: $dto->size,
@@ -236,15 +232,15 @@ trait ChatAgentFileAttachments
             return;
         }
 
-        $path = ChatAttachmentStorage::quarantinePathForBasename(
-            Hilos::$rt->connections[$acceptKey]->fileSessionQuarantineBasename,
-        );
-        if (file_put_contents($path, $data->payload, FILE_APPEND) === false) {
+        $tmpIndex = Hilos::$rt->connections[$acceptKey]->fileSessionQuarantineBasename;
+        try {
+            Hilos::$fs->tmp[$tmpIndex]->append($data->payload);
+        } catch (FsException $e) {
             Logger::logAgentError(
                 $this->getId(),
-                'frame_binary: quarantine append failed acceptKey=' . $acceptKey
+                'frame_binary: tmp append failed acceptKey=' . $acceptKey
                 . ' userId=' . Hilos::$rt->connections[$acceptKey]->userId
-                . ' path=' . $path,
+                . ' error=' . $e->getMessage(),
             );
             $this->failFileUploadSession($acceptKey, 'write_error');
 
@@ -268,10 +264,8 @@ trait ChatAgentFileAttachments
      */
     public function deleteAllAttachmentFilesFromDisk(): void
     {
-        $published = ChatAttachmentStorage::publishedDir();
-        $quarantine = ChatAttachmentStorage::quarantineDir();
-        $this->deleteFilesInDir($published);
-        $this->deleteFilesInDir($quarantine);
+        Hilos::$fs->published->deleteAll();
+        Hilos::$fs->quarantine->deleteAll();
         Hilos::$rt->connections->actions->clearAllFileRuntimeOnAllConnections();
 
         foreach (Hilos::$rt->connections as $conn) {
@@ -290,8 +284,9 @@ trait ChatAgentFileAttachments
     }
 
     /**
-     * After the last binary chunk: clear upload session and progress UI, enter `moderating` phase, send
-     * {@see ChatSignalConstants::FILE_UPLOAD_COMPLETE}, and dispatch {@see ChatSignalConstants::MODERATE_FILE_REQUEST} to the moderator agent.
+     * After the last binary chunk: move tmp → quarantine, clear upload session and progress UI,
+     * enter `moderating` phase, send {@see ChatSignalConstants::FILE_UPLOAD_COMPLETE},
+     * and dispatch {@see ChatSignalConstants::MODERATE_FILE_REQUEST} to the moderator agent.
      *
      * @param string $acceptKey WebSocket connection id
      * @throws RtActionsCollectionNameNullException
@@ -306,11 +301,22 @@ trait ChatAgentFileAttachments
             return;
         }
         $uploadId = $conn->fileSessionUploadId;
+        $tmpIndex = $conn->fileSessionQuarantineBasename;
         $declaredSize = $conn->fileSessionDeclaredSize;
         $originalFilename = $conn->fileSessionOriginalFilename;
         $mimeType = $conn->fileSessionMimeType;
-        $quarantineBasename = $conn->fileSessionQuarantineBasename;
         $userId = $conn->userId;
+
+        $ext = FsFile::extensionForMime($mimeType);
+        $storedName = $uploadId . $ext;
+        try {
+            Hilos::$fs->quarantine->createFromTmp($storedName, $tmpIndex);
+        } catch (FsException $e) {
+            Logger::logAgentError($this->getId(), "Cannot move tmp to quarantine: {$e->getMessage()}");
+            $this->failFileUploadSession($acceptKey, 'storage_error');
+
+            return;
+        }
 
         $conn->actions->clearBinaryUploadSessionAndProgressUi();
         $this->sendToUser(
@@ -357,7 +363,7 @@ trait ChatAgentFileAttachments
             new ModerationFileRequestSignalData(
                 acceptKey: $acceptKey,
                 userId: $userId,
-                quarantineBasename: $quarantineBasename,
+                quarantineBasename: $storedName,
                 originalFilename: $originalFilename,
                 mimeType: $mimeType,
                 size: $declaredSize,
@@ -372,18 +378,18 @@ trait ChatAgentFileAttachments
      * Updates moderation UI on the uploader's socket only while {@see ModerationFileResultSignalData::$acceptKey} is still
      * registered and {@see ModerationFileResultSignalData::$userId} matches that connection.
      *
-     * @throws RandomException If {@see random_bytes()} fails when generating a published storage token
      * @throws HilosException
      */
     public function handleModerationFileResult(ModerationFileResultSignalData $result): void
     {
-        $path = ChatAttachmentStorage::quarantinePathForBasename($result->quarantineBasename);
+        $storedName = $result->quarantineBasename;
+        $quarantineFile = Hilos::$fs->quarantine[$storedName];
         $acceptKey = $result->acceptKey;
         $live = isset(Hilos::$rt->connections[$acceptKey])
             && Hilos::$rt->connections[$acceptKey]->userId === $result->userId;
 
         if (!$result->allow) {
-            ChatAttachmentStorage::deleteIfExists($path);
+            $quarantineFile->unlink();
             $reason = $result->reason !== '' ? $result->reason : 'unknown';
             Logger::logAgentError($this->getId(), "File blocked by moderation (userId={$result->userId}; reason={$reason})");
             if ($live) {
@@ -413,8 +419,8 @@ trait ChatAgentFileAttachments
             return;
         }
 
-        if (!is_file($path)) {
-            Logger::logAgentError($this->getId(), "Moderation allow but quarantine file missing: {$result->quarantineBasename}");
+        if (!$quarantineFile->exists()) {
+            Logger::logAgentError($this->getId(), "Moderation allow but quarantine file missing: {$storedName}");
             if ($live) {
                 Hilos::$rt->connections[$acceptKey]->actions->clearFileModerationBanner();
                 $this->sendToUser(
@@ -427,13 +433,11 @@ trait ChatAgentFileAttachments
             return;
         }
 
-        $token = bin2hex(random_bytes(16));
-        $ext = ChatAttachmentStorage::extensionForMime($result->mimeType);
-        $storedName = $token . $ext;
-
-        if (!ChatAttachmentStorage::moveToPublished($path, $storedName)) {
-            Logger::logAgentError($this->getId(), 'Failed to move file to published storage');
-            ChatAttachmentStorage::deleteIfExists($path);
+        try {
+            $quarantineFile->move('published');
+        } catch (FsException $e) {
+            Logger::logAgentError($this->getId(), "Failed to move file to published: {$e->getMessage()}");
+            $quarantineFile->unlink();
             if ($live) {
                 Hilos::$rt->connections[$acceptKey]->actions->clearFileModerationBanner();
                 $this->sendToUser(
@@ -455,6 +459,7 @@ trait ChatAgentFileAttachments
             );
         }
 
+        $token = pathinfo($storedName, PATHINFO_FILENAME);
         $event = Hilos::$db->events->actions->add(ChatEventType::FILE_SHARED->value, $result->userId, null, [
             'originalFilename' => $result->originalFilename,
             'mimeType' => $result->mimeType,
@@ -470,7 +475,7 @@ trait ChatAgentFileAttachments
     }
 
     /**
-     * Abort the active upload: delete quarantine file, clear session/progress runtime, notify the client.
+     * Abort the active upload: delete tmp file, clear session/progress runtime, notify the client.
      *
      * @param string $acceptKey WebSocket connection id
      * @param string $reason Short code forwarded in {@see FileUploadInvalidSignalData}
@@ -478,11 +483,7 @@ trait ChatAgentFileAttachments
      */
     private function failFileUploadSession(string $acceptKey, string $reason): void
     {
-        ChatAttachmentStorage::deleteIfExists(
-            ChatAttachmentStorage::quarantinePathForBasename(
-                Hilos::$rt->connections[$acceptKey]->fileSessionQuarantineBasename,
-            ),
-        );
+        Hilos::$fs->tmp[Hilos::$rt->connections[$acceptKey]->fileSessionQuarantineBasename]->unlink();
         Hilos::$rt->connections[$acceptKey]->actions->clearBinaryUploadSessionAndProgressUi();
         $this->sendToUser(
             ChatSignalConstants::FILE_UPLOAD_INVALID,
@@ -545,76 +546,15 @@ trait ChatAgentFileAttachments
     }
 
     /**
-     * Normalize a client filename for duplicate checks: strip null bytes, basename only, trim, ASCII lower case.
-     *
-     * @param string $name Original filename or path segment from the client
-     * @return string Normalized basename used for collision detection
-     */
-    private function normalizeFilename(string $name): string
-    {
-        $base = basename(str_replace(["\0"], '', $name));
-
-        return strtolower(trim($base));
-    }
-
-    /**
      * Whether another in-flight upload or an existing {@see ChatEventType::FILE_SHARED} event already uses this normalized name.
      *
-     * @param string $normalized Output of {@see self::normalizeFilename()}
+     * @param string $normalized Output of {@see FileSystemHelper::normalizeBasename()}
      * @return bool True if the name collides with an active session or published attachment metadata
      */
     private function isFilenameInUse(string $normalized): bool
     {
-        foreach (Hilos::$rt->connections as $c) {
-            if ($c->fileSessionUploadId === null) {
-                continue;
-            }
-            if ($c->fileSessionNormalizedFilename === $normalized) {
-                return true;
-            }
-        }
-        foreach (Hilos::$db->events as $event) {
-            if ($event->type !== ChatEventType::FILE_SHARED->value) {
-                continue;
-            }
-            $raw = $event->data;
-            if (!is_string($raw) || $raw === '') {
-                continue;
-            }
-            $decoded = json_decode($raw, true);
-            if (!is_array($decoded)) {
-                continue;
-            }
-            $fn = $decoded['originalFilename'] ?? $decoded['filename'] ?? '';
-            if (!is_string($fn)) {
-                continue;
-            }
-            if ($this->normalizeFilename($fn) === $normalized) {
-                return true;
-            }
-        }
-
-        return false;
+        return Hilos::$rt->connections->hasActiveUploadWithNormalizedFilename($normalized)
+            || Hilos::$db->events->hasPublishedFileWithNormalizedFilename($normalized);
     }
 
-    /**
-     * Best-effort delete of every regular file in `$dir` (non-recursive); ignores missing dir and unlink failures.
-     *
-     * @param string $dir Absolute filesystem directory path
-     */
-    private function deleteFilesInDir(string $dir): void
-    {
-        if (!is_dir($dir)) {
-            return;
-        }
-        foreach (scandir($dir) ?: [] as $f) {
-            if ($f === '.' || $f === '..') {
-                continue;
-            }
-            $p = $dir . DIRECTORY_SEPARATOR . $f;
-            if (is_file($p)) {
-                @unlink($p);
-            }
-        }
-    }
 }

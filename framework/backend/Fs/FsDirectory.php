@@ -1,0 +1,171 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Hilos\Fs;
+
+use ArrayAccess;
+use Hilos\Fs\Context\FsContext;
+use Hilos\Fs\Exception\DirectoryCreateException;
+use Hilos\Fs\Exception\FileNotFoundException;
+use Hilos\Fs\Exception\FileMoveException;
+use Hilos\Fs\Exception\FileWriteException;
+use LogicException;
+
+/**
+ * Named file directory registered in {@see FsContext} (e.g. quarantine, published).
+ *
+ * @implements ArrayAccess<string, FsFile>
+ */
+final class FsDirectory implements ArrayAccess
+{
+    /**
+     * @param FsContext $context Owning FS context (used by {@see FsFile::move()})
+     * @param string $name Logical directory name as registered in the context
+     * @param string $path Absolute filesystem path
+     */
+    public function __construct(
+        private readonly FsContext $context,
+        private readonly string $name,
+        private readonly string $path,
+    ) {
+    }
+
+    /**
+     * Create a new empty file in this directory.
+     *
+     * @throws FileWriteException If the file cannot be created
+     * @throws DirectoryCreateException If the directory cannot be created
+     */
+    public function create(string $filename): FsFile
+    {
+        $this->ensureDirectory();
+        $safe = basename($filename);
+        $full = $this->path . DIRECTORY_SEPARATOR . $safe;
+        if (file_put_contents($full, '') === false) {
+            throw new FileWriteException("Cannot create file: {$safe} in {$this->name}");
+        }
+
+        return new FsFile($this, $safe);
+    }
+
+    /**
+     * Move a tmp file into this directory under the given name.
+     *
+     * @param string $filename Target basename inside this directory
+     * @param string $tmpIndex Hex index of the source tmp file
+     * @throws FileNotFoundException If the tmp source file does not exist
+     * @throws FileMoveException If the rename operation fails
+     * @throws DirectoryCreateException If the directory cannot be created
+     */
+    public function createFromTmp(string $filename, string $tmpIndex): FsFile
+    {
+        $this->ensureDirectory();
+        $tmpFile = $this->context->getTmp()[$tmpIndex];
+        $source = $tmpFile->getPath();
+        if (!is_file($source)) {
+            throw new FileNotFoundException("Tmp file not found: {$tmpIndex}");
+        }
+        $safe = basename($filename);
+        $target = $this->path . DIRECTORY_SEPARATOR . $safe;
+        if (!@rename($source, $target)) {
+            throw new FileMoveException("Cannot move tmp file {$tmpIndex} to {$this->name}/{$safe}");
+        }
+
+        return new FsFile($this, $safe);
+    }
+
+    /**
+     * Best-effort delete of every regular file (non-recursive).
+     */
+    public function deleteAll(): void
+    {
+        if (!is_dir($this->path)) {
+            return;
+        }
+        foreach (scandir($this->path) ?: [] as $entry) {
+            if ($entry === '.' || $entry === '..') {
+                continue;
+            }
+            $full = $this->path . DIRECTORY_SEPARATOR . $entry;
+            if (is_file($full)) {
+                @unlink($full);
+            }
+        }
+    }
+
+    /**
+     * Total size of all files in the directory (non-recursive).
+     */
+    public function size(): int
+    {
+        if (!is_dir($this->path)) {
+            return 0;
+        }
+        $total = 0;
+        foreach (scandir($this->path) ?: [] as $entry) {
+            if ($entry === '.' || $entry === '..') {
+                continue;
+            }
+            $full = $this->path . DIRECTORY_SEPARATOR . $entry;
+            if (is_file($full)) {
+                $total += filesize($full) ?: 0;
+            }
+        }
+
+        return $total;
+    }
+
+    /**
+     * @throws DirectoryCreateException If the directory cannot be created
+     */
+    public function ensureDirectory(): void
+    {
+        if (!is_dir($this->path) && !@mkdir($this->path, 0775, true) && !is_dir($this->path)) {
+            throw new DirectoryCreateException("Cannot create directory: {$this->path}");
+        }
+    }
+
+    public function getContext(): FsContext
+    {
+        return $this->context;
+    }
+
+    public function getName(): string
+    {
+        return $this->name;
+    }
+
+    public function getPath(): string
+    {
+        return $this->path;
+    }
+
+    // ── ArrayAccess ──────────────────────────────────────────────
+
+    /**
+     * @param string $offset Filename inside this directory
+     */
+    public function offsetExists(mixed $offset): bool
+    {
+        return is_file($this->path . DIRECTORY_SEPARATOR . basename((string)$offset));
+    }
+
+    /**
+     * @param string $offset Filename inside this directory
+     */
+    public function offsetGet(mixed $offset): FsFile
+    {
+        return new FsFile($this, (string)$offset);
+    }
+
+    public function offsetSet(mixed $offset, mixed $value): void
+    {
+        throw new LogicException('FsDirectory is read-only via ArrayAccess; use create() or createFromTmp()');
+    }
+
+    public function offsetUnset(mixed $offset): void
+    {
+        throw new LogicException('FsDirectory is read-only via ArrayAccess; use $file->unlink()');
+    }
+}
