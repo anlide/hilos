@@ -36,7 +36,7 @@ use Hilos\Runtime\State\Item\RtState;
  * @property ?string $fileProgressFilename Upload progress bar filename or null
  * @property int $fileProgressUploadedBytes Bytes uploaded for progress UI
  * @property int $fileProgressTotalBytes Total bytes for progress UI
- * @property float $uploadProgressLastSentAt Microtime of last progress signal (throttle)
+ * @property float $uploadProgressLastSentAt Microtime of last upload-progress baseline to client (READY or progress_update)
  */
 final class Connection extends RtState
 {
@@ -126,7 +126,7 @@ final class Connection extends RtState
     /** @var int Total for upload progress UI */
     private int $fileProgressTotalBytes = 0;
 
-    /** @var float Last upload-progress WS send time for throttling (microtime) */
+    /** @var float Last FILE_UPLOAD_READY or FILE_UPLOAD_PROGRESS_UPDATE for throttle (microtime) */
     private float $uploadProgressLastSentAt = 0.0;
 
     /**

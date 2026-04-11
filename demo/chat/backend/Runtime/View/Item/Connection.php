@@ -42,7 +42,7 @@ use Hilos\Runtime\View\Item\RtItem;
  * @property-read ?string $fileProgressFilename Progress bar filename or null
  * @property-read int $fileProgressUploadedBytes Progress uploaded bytes
  * @property-read int $fileProgressTotalBytes Progress total bytes
- * @property-read float $uploadProgressLastSentAt Microtime of last progress send (throttle)
+ * @property-read float $uploadProgressLastSentAt Microtime of last upload-progress baseline (READY or progress_update)
  * @property-read ?User $user User row or null if not found in DB view
  * @property-read ConnectionActions $actions Write operations for this connection
  */

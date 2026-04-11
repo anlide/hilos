@@ -161,6 +161,8 @@ trait ChatAgentFileAttachments
                 clientUploadId: $dto->clientUploadId,
             ),
         );
+        // Same moment as client seeds progress UI from READY (0 / size); avoids an immediate redundant progress_update.
+        Hilos::$rt->connections->actions->markUploadProgressThrottleTimestamp($acceptKey, microtime(true));
     }
 
     /**
@@ -252,7 +254,7 @@ trait ChatAgentFileAttachments
                     $force ? '1' : '0',
                 ),
             );
-            $this->broadcastUploadProgressThrottled($acceptKey, $force);
+            $this->sendFileUploadProgressUpdateThrottled($acceptKey, $force);
         } else {
             Logger::logAgentInfo(
                 $this->getId(),
@@ -364,7 +366,7 @@ trait ChatAgentFileAttachments
         }
 
         Hilos::$rt->connections->actions->clearFileUploadSessionAfterReceiveComplete($acceptKey);
-        $this->sendFileUploadProgress($acceptKey, null);
+        $this->sendFileUploadProgressCleared($acceptKey);
 
         Hilos::$rt->connections->actions->enterFileModerationPending(
             $acceptKey,
@@ -534,48 +536,35 @@ trait ChatAgentFileAttachments
     }
 
     /**
-     * Send {@see ChatSignalConstants::FILE_UPLOAD_PROGRESS_UPDATE} to one connection (logs bytes when payload is non-null).
+     * Send {@see ChatSignalConstants::FILE_UPLOAD_PROGRESS_UPDATE} with null payload (clear progress UI on client).
      *
      * @param string $acceptKey WebSocket connection id
-     * @param ?array<string, mixed> $payload Keys `filename`, `uploadedBytes`, `totalBytes`, or null to clear progress UI
      */
-    private function sendFileUploadProgress(string $acceptKey, ?array $payload): void
+    private function sendFileUploadProgressCleared(string $acceptKey): void
     {
-        if ($payload !== null) {
-            $up = (int)($payload['uploadedBytes'] ?? 0);
-            $tot = (int)($payload['totalBytes'] ?? 0);
-            Logger::logAgentInfo(
-                $this->getId(),
-                sprintf(
-                    'upload_progress: ws_send FILE_UPLOAD_PROGRESS_UPDATE acceptKey=%s uploaded=%d/%d',
-                    $acceptKey,
-                    $up,
-                    $tot,
-                ),
-            );
-        } else {
-            Logger::logAgentInfo(
-                $this->getId(),
-                "upload_progress: ws_send FILE_UPLOAD_PROGRESS_UPDATE acceptKey={$acceptKey} payload=null",
-            );
-        }
+        Logger::logAgentInfo(
+            $this->getId(),
+            "upload_progress: ws_send FILE_UPLOAD_PROGRESS_UPDATE acceptKey={$acceptKey} payload=null",
+        );
         $this->sendToUser(
             ChatSignalConstants::FILE_UPLOAD_PROGRESS_UPDATE,
             $acceptKey,
-            new FileUploadProgressUpdateSignalData($payload),
+            new FileUploadProgressUpdateSignalData(null),
         );
     }
 
     /**
-     * Send {@see ChatSignalConstants::FILE_UPLOAD_PROGRESS_UPDATE} at most every {@see self::FILE_UPLOAD_PROGRESS_MIN_INTERVAL_SEC}
-     * unless `$force` is true or the upload is complete (`uploadedBytes` >= `totalBytes` > 0).
+     * Send {@see ChatSignalConstants::FILE_UPLOAD_PROGRESS_UPDATE} to this WebSocket connection at most every
+     * {@see self::FILE_UPLOAD_PROGRESS_MIN_INTERVAL_SEC} unless `$force` is true or the upload is complete
+     * (`uploadedBytes` >= `totalBytes` > 0).
      *
-     * Reads progress from {@see RuntimeConnection::$fileProgressFilename} and related fields on the connection.
+     * Throttle clock is primed when {@see ChatSignalConstants::FILE_UPLOAD_READY} is sent (same baseline the client
+     * uses for 0 / total). Reads progress from {@see RuntimeConnection::$fileProgressFilename} and related fields.
      *
      * @param string $acceptKey WebSocket connection id
      * @param bool $force When true, send immediately (e.g. last chunk), bypassing the min-interval throttle
      */
-    private function broadcastUploadProgressThrottled(string $acceptKey, bool $force): void
+    private function sendFileUploadProgressUpdateThrottled(string $acceptKey, bool $force): void
     {
         if (!isset(Hilos::$rt->connections[$acceptKey])) {
             Logger::logAgentInfo(
@@ -585,8 +574,7 @@ trait ChatAgentFileAttachments
 
             return;
         }
-        $connProgress = Hilos::$rt->connections[$acceptKey];
-        $progressName = $connProgress->fileProgressFilename;
+        $progressName = Hilos::$rt->connections[$acceptKey]->fileProgressFilename;
         if ($progressName === null) {
             Logger::logAgentInfo(
                 $this->getId(),
@@ -595,50 +583,35 @@ trait ChatAgentFileAttachments
 
             return;
         }
-        $uploaded = $connProgress->fileProgressUploadedBytes;
-        $total = $connProgress->fileProgressTotalBytes;
-        $progress = [
-            'filename' => $progressName,
-            'uploadedBytes' => $uploaded,
-            'totalBytes' => $total,
-        ];
+        $uploaded = Hilos::$rt->connections[$acceptKey]->fileProgressUploadedBytes;
+        $total = Hilos::$rt->connections[$acceptKey]->fileProgressTotalBytes;
         $isComplete = $total > 0 && $uploaded >= $total;
         $now = microtime(true);
-        $last = (float)$connProgress->uploadProgressLastSentAt;
+        $last = Hilos::$rt->connections[$acceptKey]->uploadProgressLastSentAt;
         $elapsed = $last > 0.0 ? ($now - $last) : null;
-        $elapsedLabel = $elapsed === null ? 'n/a_first_send' : sprintf('%.4fs', $elapsed);
         $minSec = self::FILE_UPLOAD_PROGRESS_MIN_INTERVAL_SEC;
         if (!$force && !$isComplete && $elapsed !== null && $elapsed < $minSec) {
-            Logger::logAgentInfo(
-                $this->getId(),
-                sprintf(
-                    'upload_progress: throttle SKIP acceptKey=%s uploaded=%d/%d elapsedSinceLastSend=%s need>=%.2fs force=%s isComplete=%s',
-                    $acceptKey,
-                    $uploaded,
-                    $total,
-                    $elapsedLabel,
-                    $minSec,
-                    $force ? '1' : '0',
-                    $isComplete ? '1' : '0',
-                ),
-            );
-
             return;
         }
+        Hilos::$rt->connections->actions->markUploadProgressThrottleTimestamp($acceptKey, $now);
         Logger::logAgentInfo(
             $this->getId(),
             sprintf(
-                'upload_progress: throttle SEND acceptKey=%s uploaded=%d/%d elapsedSinceLastSend=%s force=%s isComplete=%s',
+                'upload_progress: ws_send FILE_UPLOAD_PROGRESS_UPDATE acceptKey=%s uploaded=%d/%d',
                 $acceptKey,
                 $uploaded,
                 $total,
-                $elapsedLabel,
-                $force ? '1' : '0',
-                $isComplete ? '1' : '0',
             ),
         );
-        Hilos::$rt->connections->actions->markUploadProgressThrottleTimestamp($acceptKey, $now);
-        $this->sendFileUploadProgress($acceptKey, $progress);
+        $this->sendToUser(
+            ChatSignalConstants::FILE_UPLOAD_PROGRESS_UPDATE,
+            $acceptKey,
+            new FileUploadProgressUpdateSignalData([
+                'filename' => $progressName,
+                'uploadedBytes' => $uploaded,
+                'totalBytes' => $total,
+            ]),
+        );
     }
 
     /**

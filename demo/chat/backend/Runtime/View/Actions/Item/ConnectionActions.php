@@ -21,6 +21,10 @@ final class ConnectionActions extends RtActions
     /**
      * After successful FILE_UPLOAD_INIT: open session row + progress bar fields on this socket.
      *
+     * Caller should send {@see \Demo\Chat\Constants\ChatSignalConstants::FILE_UPLOAD_READY} and then record the
+     * upload-progress throttle time ({@see self::noteUploadProgressSentAt()}) so the first binary chunk does not
+     * duplicate that baseline.
+     *
      * @throws RtActionsCollectionNameNullException When collection name is null.
      * @throws RtTruthSourceWriteNotAllowedException When truth source does not allow write.
      */
@@ -48,7 +52,6 @@ final class ConnectionActions extends RtActions
         $this->state->fileProgressFilename = $progressFilename;
         $this->state->fileProgressUploadedBytes = 0;
         $this->state->fileProgressTotalBytes = $progressTotalBytes;
-        $this->state->uploadProgressLastSentAt = 0.0;
 
         $this->sync();
     }
@@ -149,7 +152,9 @@ final class ConnectionActions extends RtActions
     }
 
     /**
-     * Record last FILE_UPLOAD_PROGRESS_UPDATE send time (throttle).
+     * Record last upload-progress notify time (throttle): {@see \Demo\Chat\Constants\ChatSignalConstants::FILE_UPLOAD_READY}
+     * or {@see \Demo\Chat\Constants\ChatSignalConstants::FILE_UPLOAD_PROGRESS_UPDATE}.
+     *
      * @throws RtActionsCollectionNameNullException
      */
     public function noteUploadProgressSentAt(float $sentAtMicrotime): void

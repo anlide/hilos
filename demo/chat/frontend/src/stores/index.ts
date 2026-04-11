@@ -2,7 +2,7 @@ import { defineStore } from 'pinia'
 import { ChatBot, Event, User } from '@/types'
 import type { Presence } from '@/types/domain/Presence'
 
-/** In-flight binary upload progress from server (throttled updates). */
+/** Binary upload progress: seeded at 0/total by file_upload_ready, then throttled progress_update + handshake. */
 export type FileUploadProgressPayload = {
   filename: string
   uploadedBytes: number

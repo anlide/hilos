@@ -141,6 +141,7 @@ function buildSignalRouter() {
   })
 
   signalRouter.on('file_upload_ready', (data: unknown) => {
+    // Baseline progress bar (0 / size); server throttles file_upload_progress_update from the first binary chunks.
     if (isRecord(data)) {
       const filename = data.filename
       const size = data.size
