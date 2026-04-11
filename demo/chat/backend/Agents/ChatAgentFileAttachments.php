@@ -67,7 +67,7 @@ trait ChatAgentFileAttachments
                     Hilos::$rt->connections[$acceptKey]->fileSessionQuarantineBasename,
                 ),
             );
-            Hilos::$rt->connections->actions->abortFileUploadClearSessionAndProgress($acceptKey);
+            Hilos::$rt->connections[$acceptKey]->actions->clearBinaryUploadSessionAndProgressUi();
             Logger::logAgentInfo(
                 $this->getId(),
                 "file upload aborted acceptKey={$acceptKey} reason=superseded_by_new_init",
@@ -466,23 +466,20 @@ trait ChatAgentFileAttachments
     }
 
     /**
-     * Abort the active upload (delete quarantine if present), clear session/progress runtime, and notify the client.
+     * Abort the active upload: delete quarantine file, clear session/progress runtime, notify the client.
      *
      * @param string $acceptKey WebSocket connection id
      * @param string $reason Short code forwarded in {@see FileUploadInvalidSignalData}
      * @throws RtActionsCollectionNameNullException When the connections actions collection name is null
-     * @throws RtTruthSourceWriteNotAllowedException When the truth source rejects a runtime write
      */
     private function failFileUploadSession(string $acceptKey, string $reason): void
     {
-        $conn = Hilos::$rt->connections[$acceptKey] ?? null;
-        if ($conn !== null && $conn->fileSessionUploadId !== null) {
-            ChatAttachmentStorage::deleteIfExists(
-                ChatAttachmentStorage::quarantinePathForBasename($conn->fileSessionQuarantineBasename),
-            );
-        }
-        Hilos::$rt->connections->actions->abortFileUploadClearSessionAndProgress($acceptKey);
-        Logger::logAgentInfo($this->getId(), "file upload aborted acceptKey={$acceptKey} reason={$reason}");
+        ChatAttachmentStorage::deleteIfExists(
+            ChatAttachmentStorage::quarantinePathForBasename(
+                Hilos::$rt->connections[$acceptKey]->fileSessionQuarantineBasename,
+            ),
+        );
+        Hilos::$rt->connections[$acceptKey]->actions->clearBinaryUploadSessionAndProgressUi();
         $this->sendToUser(
             ChatSignalConstants::FILE_UPLOAD_INVALID,
             $acceptKey,

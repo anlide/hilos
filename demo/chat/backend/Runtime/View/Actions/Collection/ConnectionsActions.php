@@ -185,20 +185,6 @@ final class ConnectionsActions extends RtActions
     }
 
     /**
-     * Abort or supersede upload: clear session + progress (quarantine file removed by caller if needed).
-     *
-     * @throws RtActionsCollectionNameNullException When collection name is null.
-     * @throws RtTruthSourceWriteNotAllowedException When truth source does not allow write.
-     */
-    public function abortFileUploadClearSessionAndProgress(string $acceptKey): void
-    {
-        $this->withConnectionActions(
-            $acceptKey,
-            static fn ($a) => $a->clearBinaryUploadSessionAndProgressUi(),
-        );
-    }
-
-    /**
      * Clear file session, moderation UI, and upload progress on every connection (e.g. disk wipe).
      *
      * @throws RtActionsCollectionNameNullException

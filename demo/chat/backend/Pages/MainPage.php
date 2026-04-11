@@ -23,7 +23,10 @@ use Hilos\Core\Router\DTO\EntitiesChangesDTO;
 use Hilos\Database\Exception\View\CollectionNotManualException;
 use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 use Hilos\HilosException;
+use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
+use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\Utils\Logger;
+use Random\RandomException;
 
 /**
  * MainPage - Main chat page handler.
@@ -186,6 +189,16 @@ final class MainPage extends AbstractChatPage
         return $collection;
     }
 
+    /**
+     * Forward {@see ChatSignalConstants::FILE_UPLOAD_INIT} to {@see ChatAgent::handleFileUploadInit} when the page
+     * agent is {@see ChatAgent}; otherwise no-op.
+     *
+     * @param string $acceptKey Accept key
+     * @param FileUploadInitActionDTO $dto Upload metadata from the client
+     * @throws RandomException If {@see random_bytes()} fails inside the chat agent
+     * @throws RtActionsCollectionNameNullException When the connections actions collection name is null
+     * @throws RtTruthSourceWriteNotAllowedException When the truth source rejects a runtime write
+     */
     private function handleFileUploadInit(string $acceptKey, FileUploadInitActionDTO $dto): void
     {
         $agent = $this->getChatAgent();
@@ -195,6 +208,14 @@ final class MainPage extends AbstractChatPage
         $agent->handleFileUploadInit($acceptKey, $dto);
     }
 
+    /**
+     * Forward {@see ChatSignalConstants::FILE_MODERATION_DISMISS} to {@see ChatAgent::handleFileModerationDismiss}
+     * when the page agent is {@see ChatAgent}; otherwise no-op. Skips delegation if the connection is missing.
+     *
+     * @param string $acceptKey Accept key
+     * @throws RtActionsCollectionNameNullException When the connections actions collection name is null
+     * @throws RtTruthSourceWriteNotAllowedException When the truth source rejects a runtime write
+     */
     private function handleFileModerationDismiss(string $acceptKey): void
     {
         if (!isset(Hilos::$rt->connections[$acceptKey])) {
