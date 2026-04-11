@@ -25,6 +25,7 @@ use Demo\Chat\Utils\ChatAttachmentStorage;
 use Demo\Chat\Utils\ChatSettingsHelper;
 use Hilos\Core\Router\DTO\EntitiesChangesDTO;
 use Hilos\Core\Router\SignalDataInterface;
+use Hilos\HilosException;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\Socket\WebSocket\DTO\WebSocketFrameBinarySignalDTO;
@@ -35,9 +36,9 @@ use Random\RandomException;
  * File attachments: binary WebSocket upload, quarantine disk storage, async moderation, and per-connection UI signals.
  *
  * Connection-scoped state is read and written only via {@see Hilos::$rt->connections}[`$acceptKey`] (no cached
- * {@see RuntimeConnection} items across mutations). Updates go through
- * {@see \Demo\Chat\Runtime\View\Actions\Collection\ConnectionsActions} named methods. User-targeted signals use the
- * owning connection `acceptKey` only.
+ * {@see RuntimeConnection} items across mutations). Per-socket writes use {@see RuntimeConnection::$actions};
+ * collection-level helpers remain on {@see \Demo\Chat\Runtime\View\Actions\Collection\ConnectionsActions} (register,
+ * unregister, clear, bulk file reset). User-targeted signals use the owning connection `acceptKey` only.
  */
 trait ChatAgentFileAttachments
 {
@@ -171,18 +172,22 @@ trait ChatAgentFileAttachments
      * No-op if the connection is unknown or moderation phase is not `rejected`.
      *
      * @param string $acceptKey WebSocket connection id
+     * @throws RtActionsCollectionNameNullException
      */
     public function handleFileModerationDismiss(string $acceptKey): void
     {
         if (!isset(Hilos::$rt->connections[$acceptKey])) {
             return;
         }
-        $payload = $this->getFileModerationUiPayloadForAcceptKey($acceptKey);
-        if ($payload === null || ($payload['phase'] ?? '') !== 'rejected') {
+        if (Hilos::$rt->connections[$acceptKey]->fileModPhase !== 'rejected') {
             return;
         }
-        Hilos::$rt->connections->actions->clearFileModerationBannerAfterDismiss($acceptKey);
-        $this->sendFileModerationStateUpdate($acceptKey, null);
+        Hilos::$rt->connections[$acceptKey]->actions->clearFileModerationBanner();
+        $this->sendToUser(
+            ChatSignalConstants::FILE_MODERATION_STATE_UPDATE,
+            $acceptKey,
+            new FileModerationStateUpdateSignalData(null),
+        );
     }
 
     /**
@@ -193,7 +198,6 @@ trait ChatAgentFileAttachments
      * @param string $source Framework signal source identifier (unused)
      * @param string $name Framework signal name (unused)
      * @throws RtActionsCollectionNameNullException When the connections actions collection name is null
-     * @throws RtTruthSourceWriteNotAllowedException When the truth source rejects a runtime write
      */
     public function onSignalFrameBinary(WebSocketFrameBinarySignalDTO $data, string $source, string $name): void
     {
@@ -248,7 +252,7 @@ trait ChatAgentFileAttachments
         }
 
         $newReceived = $received + $len;
-        Hilos::$rt->connections->actions->applyStoredBinaryChunkProgress($acceptKey, $newReceived);
+        Hilos::$rt->connections[$acceptKey]->actions->applyStoredBinaryChunkProgress($newReceived);
 
         $this->sendFileUploadProgressUpdateThrottled($acceptKey, $newReceived === $declared);
 
@@ -258,37 +262,9 @@ trait ChatAgentFileAttachments
     }
 
     /**
-     * Build file moderation UI payload for handshake or resubscribe, or null when this socket has no moderation UI state.
-     *
-     * @param string $acceptKey WebSocket connection id
-     * @return ?array<string, mixed> Keys: `phase`, `filename`, `uploadedBytes`, `totalBytes`, `reason`, `updatedAt`
-     */
-    public function getFileModerationUiPayloadForAcceptKey(string $acceptKey): ?array
-    {
-        $conn = Hilos::$rt->connections[$acceptKey] ?? null;
-        if ($conn === null) {
-            return null;
-        }
-        $phase = $conn->fileModPhase;
-        if ($phase === null) {
-            return null;
-        }
-        $reason = $conn->fileModReason;
-
-        return [
-            'phase' => $phase,
-            'filename' => $conn->fileModFilename,
-            'uploadedBytes' => $conn->fileModUploadedBytes,
-            'totalBytes' => $conn->fileModTotalBytes,
-            'reason' => is_string($reason) && $reason !== '' ? $reason : null,
-            'updatedAt' => $conn->fileModUpdatedAt,
-        ];
-    }
-
-    /**
      * Delete all attachment files on disk, reset file-related runtime fields on every connection, notify clients.
      *
-     * Used from admin/cron cleanup ({@see \Demo\Chat\Agents\ChatAgent::onSignalCron}) so all tabs drop moderation and progress UI.
+     * Used from admin/cron cleanup ({@see ChatAgent::onSignalCron}) so all tabs drop moderation and progress UI.
      */
     public function deleteAllAttachmentFilesFromDisk(): void
     {
@@ -318,6 +294,7 @@ trait ChatAgentFileAttachments
      * {@see ChatSignalConstants::FILE_UPLOAD_COMPLETE}, and dispatch {@see ChatSignalConstants::MODERATE_FILE_REQUEST} to the moderator agent.
      *
      * @param string $acceptKey WebSocket connection id
+     * @throws RtActionsCollectionNameNullException
      */
     private function completeFileUpload(string $acceptKey): void
     {
@@ -335,15 +312,29 @@ trait ChatAgentFileAttachments
         $quarantineBasename = $conn->fileSessionQuarantineBasename;
         $userId = $conn->userId;
 
-        Hilos::$rt->connections->actions->clearFileUploadSessionAfterReceiveComplete($acceptKey);
-        $this->sendFileUploadProgressCleared($acceptKey);
-
-        Hilos::$rt->connections->actions->enterFileModerationPending(
+        $conn->actions->clearBinaryUploadSessionAndProgressUi();
+        $this->sendToUser(
+            ChatSignalConstants::FILE_UPLOAD_PROGRESS_UPDATE,
             $acceptKey,
-            $originalFilename,
-            $declaredSize,
+            new FileUploadProgressUpdateSignalData(null),
         );
-        $this->sendFileModerationStateUpdate($acceptKey, $this->getFileModerationUiPayloadForAcceptKey($acceptKey));
+
+        $conn->actions->enterFileModerationPending($originalFilename, $declaredSize);
+        $modPhase = $conn->fileModPhase;
+        $this->sendToUser(
+            ChatSignalConstants::FILE_MODERATION_STATE_UPDATE,
+            $acceptKey,
+            new FileModerationStateUpdateSignalData(
+                $modPhase === null ? null : [
+                    'phase' => $modPhase,
+                    'filename' => $conn->fileModFilename,
+                    'uploadedBytes' => $conn->fileModUploadedBytes,
+                    'totalBytes' => $conn->fileModTotalBytes,
+                    'reason' => $conn->fileModReason !== '' ? $conn->fileModReason : null,
+                    'updatedAt' => $conn->fileModUpdatedAt,
+                ],
+            ),
+        );
 
         $this->sendToUser(
             ChatSignalConstants::FILE_UPLOAD_COMPLETE,
@@ -382,25 +373,41 @@ trait ChatAgentFileAttachments
      * registered and {@see ModerationFileResultSignalData::$userId} matches that connection.
      *
      * @throws RandomException If {@see random_bytes()} fails when generating a published storage token
+     * @throws HilosException
      */
     public function handleModerationFileResult(ModerationFileResultSignalData $result): void
     {
         $path = ChatAttachmentStorage::quarantinePathForBasename($result->quarantineBasename);
         $acceptKey = $result->acceptKey;
-        $live = $this->isModerationTargetConnectionLive($result);
+        $live = isset(Hilos::$rt->connections[$acceptKey])
+            && Hilos::$rt->connections[$acceptKey]->userId === $result->userId;
 
         if (!$result->allow) {
             ChatAttachmentStorage::deleteIfExists($path);
             $reason = $result->reason !== '' ? $result->reason : 'unknown';
             Logger::logAgentError($this->getId(), "File blocked by moderation (userId={$result->userId}; reason={$reason})");
             if ($live) {
-                Hilos::$rt->connections->actions->markFileModerationRejected(
-                    $acceptKey,
+                $rejConn = Hilos::$rt->connections[$acceptKey];
+                $rejConn->actions->markFileModerationRejected(
                     $result->originalFilename,
                     $result->size,
                     $reason,
                 );
-                $this->sendFileModerationStateUpdate($acceptKey, $this->getFileModerationUiPayloadForAcceptKey($acceptKey));
+                $rejPhase = $rejConn->fileModPhase;
+                $this->sendToUser(
+                    ChatSignalConstants::FILE_MODERATION_STATE_UPDATE,
+                    $acceptKey,
+                    new FileModerationStateUpdateSignalData(
+                        $rejPhase === null ? null : [
+                            'phase' => $rejPhase,
+                            'filename' => $rejConn->fileModFilename,
+                            'uploadedBytes' => $rejConn->fileModUploadedBytes,
+                            'totalBytes' => $rejConn->fileModTotalBytes,
+                            'reason' => $rejConn->fileModReason !== '' ? $rejConn->fileModReason : null,
+                            'updatedAt' => $rejConn->fileModUpdatedAt,
+                        ],
+                    ),
+                );
             }
 
             return;
@@ -409,8 +416,12 @@ trait ChatAgentFileAttachments
         if (!is_file($path)) {
             Logger::logAgentError($this->getId(), "Moderation allow but quarantine file missing: {$result->quarantineBasename}");
             if ($live) {
-                Hilos::$rt->connections->actions->clearFileModerationBannerAfterAllowMissingQuarantine($acceptKey);
-                $this->sendFileModerationStateUpdate($acceptKey, null);
+                Hilos::$rt->connections[$acceptKey]->actions->clearFileModerationBanner();
+                $this->sendToUser(
+                    ChatSignalConstants::FILE_MODERATION_STATE_UPDATE,
+                    $acceptKey,
+                    new FileModerationStateUpdateSignalData(null),
+                );
             }
 
             return;
@@ -424,16 +435,24 @@ trait ChatAgentFileAttachments
             Logger::logAgentError($this->getId(), 'Failed to move file to published storage');
             ChatAttachmentStorage::deleteIfExists($path);
             if ($live) {
-                Hilos::$rt->connections->actions->clearFileModerationBannerAfterPublishFailed($acceptKey);
-                $this->sendFileModerationStateUpdate($acceptKey, null);
+                Hilos::$rt->connections[$acceptKey]->actions->clearFileModerationBanner();
+                $this->sendToUser(
+                    ChatSignalConstants::FILE_MODERATION_STATE_UPDATE,
+                    $acceptKey,
+                    new FileModerationStateUpdateSignalData(null),
+                );
             }
 
             return;
         }
 
         if ($live) {
-            Hilos::$rt->connections->actions->clearFileModerationBannerAfterPublishSuccess($acceptKey);
-            $this->sendFileModerationStateUpdate($acceptKey, null);
+            Hilos::$rt->connections[$acceptKey]->actions->clearFileModerationBanner();
+            $this->sendToUser(
+                ChatSignalConstants::FILE_MODERATION_STATE_UPDATE,
+                $acceptKey,
+                new FileModerationStateUpdateSignalData(null),
+            );
         }
 
         $event = Hilos::$db->events->actions->add(ChatEventType::FILE_SHARED->value, $result->userId, null, [
@@ -448,21 +467,6 @@ trait ChatAgentFileAttachments
             ChatSignalConstants::NEW_EVENT,
             new ChatEventSignalDTO(new EntitiesChangesDTO(full: [DbChatContext::events => Events::fromSingleItem($event)])),
         );
-    }
-
-    /**
-     * Whether the accept key from the moderation result still exists and its `userId` matches the result.
-     *
-     * @param ModerationFileResultSignalData $result Moderation outcome targeting a connection and user
-     * @return bool True when the socket is still open for the same user
-     */
-    private function isModerationTargetConnectionLive(ModerationFileResultSignalData $result): bool
-    {
-        if (!isset(Hilos::$rt->connections[$result->acceptKey])) {
-            return false;
-        }
-
-        return Hilos::$rt->connections[$result->acceptKey]->userId === $result->userId;
     }
 
     /**
@@ -484,39 +488,6 @@ trait ChatAgentFileAttachments
             ChatSignalConstants::FILE_UPLOAD_INVALID,
             $acceptKey,
             new FileUploadInvalidSignalData($reason),
-        );
-    }
-
-    /**
-     * Send {@see ChatSignalConstants::FILE_MODERATION_STATE_UPDATE} to one connection.
-     *
-     * @param string $acceptKey WebSocket connection id
-     * @param ?array<string, mixed> $payload Moderation UI map or null to clear the banner/state
-     */
-    private function sendFileModerationStateUpdate(string $acceptKey, ?array $payload): void
-    {
-        $this->sendToUser(
-            ChatSignalConstants::FILE_MODERATION_STATE_UPDATE,
-            $acceptKey,
-            new FileModerationStateUpdateSignalData($payload),
-        );
-    }
-
-    /**
-     * Send {@see ChatSignalConstants::FILE_UPLOAD_PROGRESS_UPDATE} with null payload (clear progress UI on client).
-     *
-     * @param string $acceptKey WebSocket connection id
-     */
-    private function sendFileUploadProgressCleared(string $acceptKey): void
-    {
-        Logger::logAgentInfo(
-            $this->getId(),
-            "upload_progress: ws_send FILE_UPLOAD_PROGRESS_UPDATE acceptKey={$acceptKey} payload=null",
-        );
-        $this->sendToUser(
-            ChatSignalConstants::FILE_UPLOAD_PROGRESS_UPDATE,
-            $acceptKey,
-            new FileUploadProgressUpdateSignalData(null),
         );
     }
 
@@ -598,7 +569,7 @@ trait ChatAgentFileAttachments
             if ($c->fileSessionUploadId === null) {
                 continue;
             }
-            if ((string)$c->fileSessionNormalizedFilename === $normalized) {
+            if ($c->fileSessionNormalizedFilename === $normalized) {
                 return true;
             }
         }

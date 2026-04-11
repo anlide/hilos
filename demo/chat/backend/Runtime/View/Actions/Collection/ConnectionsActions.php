@@ -6,30 +6,37 @@ namespace Demo\Chat\Runtime\View\Actions\Collection;
 
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\State\Item\Connection as StateConnection;
-use Demo\Chat\Runtime\View\Actions\Item\ConnectionActions;
 use Demo\Chat\Runtime\View\Collection\Connections;
 use Demo\Chat\Runtime\View\Item\Connection as RuntimeConnection;
 use Demo\Chat\Utils\ChatAttachmentStorage;
 use Hilos\Runtime\Exception\Actions\RtActionsCallbackNotSetException;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
+use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\Runtime\State\Item\RtState;
 use Hilos\Runtime\View\Actions\Collection\RtActions;
+use LogicException;
 
 /**
- * Write operations for connections runtime data (semantic mutations, not raw diffs).
+ * Write API for the active WebSocket connections runtime collection.
  *
- * Cross-process / truth-source sync uses framework mechanisms; agent logic calls the named methods below.
- * Per-socket file fields are mutated via {@see RuntimeConnection::actions}.
+ * Per-socket file upload and moderation UI use {@see RuntimeConnection::$actions}.
  *
  * @extends RtActions<RuntimeConnection, Connections>
  */
 final class ConnectionsActions extends RtActions
 {
     /**
-     * Register new connection.
+     * Add a connection row for a new socket.
      *
-     * @throws RtActionsCallbackNotSetException If callback for creating Rt item is not set
+     * @param string $acceptKey WebSocket accept key (connection id)
+     * @param int $userId Chat user id for this socket
+     * @return RuntimeConnection View item for the new connection
+     *
+     * @throws RtActionsCallbackNotSetException
+     * @throws RtActionsCollectionNameNullException
+     * @throws RtActionsStateCollectionNullException
+     * @throws RtTruthSourceWriteNotAllowedException
      */
     public function register(string $acceptKey, int $userId): RuntimeConnection
     {
@@ -41,22 +48,29 @@ final class ConnectionsActions extends RtActions
 
     /**
      * Narrows parent return type to this collection's RtItem ({@see RuntimeConnection}).
+     *
+     * @param RtState $state State instance (reference)
+     * @return RuntimeConnection
+     *
+     * @throws RtActionsCallbackNotSetException
      */
     protected function createRtItemFromState(RtState &$state): RuntimeConnection
     {
         $item = parent::createRtItemFromState($state);
         if (!$item instanceof RuntimeConnection) {
-            throw new \LogicException('Connections item factory must return ' . RuntimeConnection::class);
+            throw new LogicException('Connections item factory must return ' . RuntimeConnection::class);
         }
 
         return $item;
     }
 
     /**
-     * Unregister connection by accept key (deletes active quarantine part file if any).
+     * Remove a connection by accept key (deletes an active quarantine `.part` file if present).
      *
-     * @throws RtActionsCollectionNameNullException When collection name is null.
-     * @throws RtTruthSourceWriteNotAllowedException When truth source does not allow write.
+     * @param string $acceptKey WebSocket accept key
+     *
+     * @throws RtActionsCollectionNameNullException
+     * @throws RtTruthSourceWriteNotAllowedException
      */
     public function unregister(string $acceptKey): void
     {
@@ -70,7 +84,12 @@ final class ConnectionsActions extends RtActions
     }
 
     /**
-     * Clear all connections from the collection.
+     * Remove every connection from runtime (full reset).
+     *
+     * @throws RtActionsCallbackNotSetException
+     * @throws RtActionsCollectionNameNullException
+     * @throws RtActionsStateCollectionNullException
+     * @throws RtTruthSourceWriteNotAllowedException
      */
     public function clear(): void
     {
@@ -78,114 +97,7 @@ final class ConnectionsActions extends RtActions
     }
 
     /**
-     * User dismissed rejected-file banner (client FILE_MODERATION_DISMISS).
-     *
-     * @throws RtActionsCollectionNameNullException When collection name is null.
-     * @throws RtTruthSourceWriteNotAllowedException When truth source does not allow write.
-     */
-    public function clearFileModerationBannerAfterDismiss(string $acceptKey): void
-    {
-        $this->withConnectionActions($acceptKey, static fn ($a) => $a->clearFileModerationBanner());
-    }
-
-    /**
-     * After appending a binary chunk: update received byte counters and progress UI bytes.
-     *
-     * @throws RtActionsCollectionNameNullException When collection name is null.
-     * @throws RtTruthSourceWriteNotAllowedException When truth source does not allow write.
-     */
-    public function applyStoredBinaryChunkProgress(string $acceptKey, int $newReceivedBytes): void
-    {
-        $this->withConnectionActions(
-            $acceptKey,
-            static fn ($a) => $a->applyStoredBinaryChunkProgress($newReceivedBytes),
-        );
-    }
-
-    /**
-     * When upload bytes are complete: drop session + progress bar state before moderation UI.
-     *
-     * @throws RtActionsCollectionNameNullException When collection name is null.
-     * @throws RtTruthSourceWriteNotAllowedException When truth source does not allow write.
-     */
-    public function clearFileUploadSessionAfterReceiveComplete(string $acceptKey): void
-    {
-        $this->withConnectionActions(
-            $acceptKey,
-            static fn ($a) => $a->clearBinaryUploadSessionAndProgressUi(),
-        );
-    }
-
-    /**
-     * Show "moderating" file banner while ModeratorAgent runs.
-     *
-     * @throws RtActionsCollectionNameNullException When collection name is null.
-     * @throws RtTruthSourceWriteNotAllowedException When truth source does not allow write.
-     */
-    public function enterFileModerationPending(
-        string $acceptKey,
-        string $originalFilename,
-        int $sizeBytes,
-    ): void {
-        $this->withConnectionActions(
-            $acceptKey,
-            static fn ($a) => $a->enterFileModerationPending($originalFilename, $sizeBytes),
-        );
-    }
-
-    /**
-     * Moderator denied the file: show rejected banner on this socket.
-     *
-     * @throws RtActionsCollectionNameNullException When collection name is null.
-     * @throws RtTruthSourceWriteNotAllowedException When truth source does not allow write.
-     */
-    public function markFileModerationRejected(
-        string $acceptKey,
-        string $originalFilename,
-        int $sizeBytes,
-        string $reason,
-    ): void {
-        $this->withConnectionActions(
-            $acceptKey,
-            static fn ($a) => $a->markFileModerationRejected($originalFilename, $sizeBytes, $reason),
-        );
-    }
-
-    /**
-     * Allow path but quarantine file missing: clear moderation UI.
-     *
-     * @throws RtActionsCollectionNameNullException When collection name is null.
-     * @throws RtTruthSourceWriteNotAllowedException When truth source does not allow write.
-     */
-    public function clearFileModerationBannerAfterAllowMissingQuarantine(string $acceptKey): void
-    {
-        $this->withConnectionActions($acceptKey, static fn ($a) => $a->clearFileModerationBanner());
-    }
-
-    /**
-     * Move to published failed: clear moderation UI.
-     *
-     * @throws RtActionsCollectionNameNullException When collection name is null.
-     * @throws RtTruthSourceWriteNotAllowedException When truth source does not allow write.
-     */
-    public function clearFileModerationBannerAfterPublishFailed(string $acceptKey): void
-    {
-        $this->withConnectionActions($acceptKey, static fn ($a) => $a->clearFileModerationBanner());
-    }
-
-    /**
-     * File published: clear moderation UI on the initiating socket.
-     *
-     * @throws RtActionsCollectionNameNullException When collection name is null.
-     * @throws RtTruthSourceWriteNotAllowedException When truth source does not allow write.
-     */
-    public function clearFileModerationBannerAfterPublishSuccess(string $acceptKey): void
-    {
-        $this->withConnectionActions($acceptKey, static fn ($a) => $a->clearFileModerationBanner());
-    }
-
-    /**
-     * Clear file session, moderation UI, and upload progress on every connection (e.g. disk wipe).
+     * Clear file session, moderation UI, and upload progress on each connection (e.g. after disk wipe).
      *
      * @throws RtActionsCollectionNameNullException
      * @throws RtTruthSourceWriteNotAllowedException
@@ -196,23 +108,5 @@ final class ConnectionsActions extends RtActions
         foreach ($this->collection as $connection) {
             $connection->actions->clearAllFileRuntimeOnSocket();
         }
-    }
-
-    /**
-     * @param callable(ConnectionActions): void $fn
-     * @throws RtActionsCollectionNameNullException When collection name is null.
-     * @throws RtTruthSourceWriteNotAllowedException When truth source does not allow write.
-     */
-    private function withConnectionActions(string $acceptKey, callable $fn): void
-    {
-        $this->ensureCanWrite();
-        if (!isset($this->collection[$acceptKey])) {
-            return;
-        }
-        $item = $this->collection[$acceptKey];
-        if (!$item instanceof RuntimeConnection) {
-            return;
-        }
-        $fn($item->actions);
     }
 }

@@ -346,14 +346,20 @@ class ChatAgent extends AbstractAgent
             ];
         }
 
-        $userId = Hilos::$rt->connections[$acceptKey]->userId;
-        $userState = Hilos::$rt->userStates[$userId];
-        $pending = $userState !== null ? $userState->moderationMessage : '';
+        $conn = Hilos::$rt->connections[$acceptKey];
+        $pending = Hilos::$rt->userStates[$conn->userId]?->moderationMessage;
         $moderationState = $pending !== '' ? $pending : null;
 
-        $fileMod = $this->getFileModerationUiPayloadForAcceptKey($acceptKey);
+        $fileModPhase = $conn->fileModPhase;
+        $fileModerationState = $fileModPhase === null ? null : [
+            'phase' => $fileModPhase,
+            'filename' => $conn->fileModFilename,
+            'uploadedBytes' => $conn->fileModUploadedBytes,
+            'totalBytes' => $conn->fileModTotalBytes,
+            'reason' => $conn->fileModReason !== '' ? $conn->fileModReason : null,
+            'updatedAt' => $conn->fileModUpdatedAt,
+        ];
 
-        $conn = Hilos::$rt->connections[$acceptKey];
         $fileProgress = null;
         if ($conn->fileProgressFilename !== null) {
             $fileProgress = [
@@ -365,7 +371,7 @@ class ChatAgent extends AbstractAgent
 
         return [
             'moderationState' => $moderationState,
-            'fileModerationState' => $fileMod,
+            'fileModerationState' => $fileModerationState,
             'fileUploadProgress' => $fileProgress,
         ];
     }
