@@ -70,7 +70,7 @@ final class MainPage extends AbstractChatPage
                 new EntitiesChangesDTO(
                     full: [
                         DbChatContext::users => Hilos::$rt->connections->relevantUsers,
-                        DbChatContext::bots => $this->getActiveBots(),
+                        DbChatContext::bots => Bots::fromActiveOnly(),
                         DbChatContext::events => Hilos::$db->events,
                     ],
                 ),
@@ -90,6 +90,9 @@ final class MainPage extends AbstractChatPage
      * @param string $action Action name
      * @param ActionPayloadDTO $dto Action payload DTO
      * @throws HilosException If database or truth source check fails
+     * @throws RandomException From {@see ChatAgent::handleFileUploadInit}
+     * @throws RtActionsCollectionNameNullException From {@see ChatAgent::handleFileUploadInit}
+     * @throws RtTruthSourceWriteNotAllowedException From {@see ChatAgent::handleFileUploadInit}
      */
     public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): void
     {
@@ -102,13 +105,13 @@ final class MainPage extends AbstractChatPage
 
             case ChatSignalConstants::FILE_UPLOAD_INIT:
                 if ($dto instanceof FileUploadInitActionDTO) {
-                    $this->handleFileUploadInit($acceptKey, $dto);
+                    $this->getChatAgent()->handleFileUploadInit($acceptKey, $dto);
                 }
                 break;
 
             case ChatSignalConstants::FILE_MODERATION_DISMISS:
                 if ($dto instanceof FileModerationDismissActionDTO) {
-                    $this->handleFileModerationDismiss($acceptKey);
+                    $this->getChatAgent()->handleFileModerationDismiss($acceptKey);
                 }
                 break;
 
@@ -122,6 +125,10 @@ final class MainPage extends AbstractChatPage
      *
      * @param string $acceptKey Accept key
      * @param MessageActionDTO $dto Message DTO
+     * @throws RtActionsCallbackNotSetException
+     * @throws RtActionsCollectionNameNullException
+     * @throws RtActionsStateCollectionNullException
+     * @throws RtTruthSourceWriteNotAllowedException
      */
     private function handleMessage(string $acceptKey, MessageActionDTO $dto): void
     {
@@ -152,53 +159,5 @@ final class MainPage extends AbstractChatPage
                 message: $dto->content,
             ),
         );
-    }
-
-    /**
-     * Get collection of all active bots (filter: active=true).
-     *
-     * @return Bots Collection of active bots
-     * @throws CollectionNotManualException If Bots collection is not manual (required for filtering)
-     * @throws ObjectGetIdStringNotImplementedException If Bot object does not implement getIdString (required for collection operations)
-     */
-    private function getActiveBots(): Bots
-    {
-        $collection = Bots::initEmpty();
-        foreach (Hilos::$db->bots as $bot) {
-            if ($bot->active) {
-                $collection->add($bot);
-            }
-        }
-        return $collection;
-    }
-
-    /**
-     * Forward {@see ChatSignalConstants::FILE_UPLOAD_INIT} to {@see ChatAgent::handleFileUploadInit}.
-     *
-     * @param string $acceptKey Accept key
-     * @param FileUploadInitActionDTO $dto Upload metadata from the client
-     * @throws RandomException If {@see random_bytes()} fails inside the chat agent
-     * @throws RtActionsCollectionNameNullException When the connections actions collection name is null
-     * @throws RtTruthSourceWriteNotAllowedException When the truth source rejects a runtime write
-     */
-    private function handleFileUploadInit(string $acceptKey, FileUploadInitActionDTO $dto): void
-    {
-        $this->getChatAgent()->handleFileUploadInit($acceptKey, $dto);
-    }
-
-    /**
-     * Forward {@see ChatSignalConstants::FILE_MODERATION_DISMISS} to {@see ChatAgent::handleFileModerationDismiss}.
-     * Skips delegation if the connection is missing.
-     *
-     * @param string $acceptKey Accept key
-     * @throws RtActionsCollectionNameNullException When the connections actions collection name is null
-     * @throws RtTruthSourceWriteNotAllowedException When the truth source rejects a runtime write
-     */
-    private function handleFileModerationDismiss(string $acceptKey): void
-    {
-        if (!isset(Hilos::$rt->connections[$acceptKey])) {
-            return;
-        }
-        $this->getChatAgent()->handleFileModerationDismiss($acceptKey);
     }
 }

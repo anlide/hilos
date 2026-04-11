@@ -83,8 +83,8 @@ class ChatAgent extends AbstractAgent
 
     /**
      * Authenticate session token, register the connection, optionally emit user registration/online events, and send
-     * {@see ChatSignalConstants::HANDSHAKE_RESPONSE} with entities, moderation text state, file moderation UI, and
-     * in-flight upload progress when present.
+     * {@see ChatSignalConstants::HANDSHAKE_RESPONSE} with the current user in entities and page catalog.
+     * Moderation and file-upload session state are sent on main page subscribe only.
      *
      * @param WebSocketHandshakeSignalDTO $data Accept key and query params (expects {@see HttpHeaders::SESSION_TOKEN})
      * @param string $source Framework signal source identifier (unused)
@@ -129,17 +129,12 @@ class ChatAgent extends AbstractAgent
         }
 
         Hilos::$rt->userStates->actions->ensure($user->id);
-        $session = $this->buildUserSessionSnapshotForAcceptKey($data->acceptKey);
 
         $this->sendToUser(
             ChatSignalConstants::HANDSHAKE_RESPONSE,
             $data->acceptKey,
             new HandshakeResponseSignalData(
                 entities: $userEntities,
-                userId: $user->id,
-                moderationState: $session['moderationState'],
-                fileModerationState: $session['fileModerationState'],
-                fileUploadProgress: $session['fileUploadProgress'],
                 pageCatalog: ChatPageCatalog::getCatalog(),
             ),
         );

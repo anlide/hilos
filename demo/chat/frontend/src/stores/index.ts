@@ -2,7 +2,7 @@ import { defineStore } from 'pinia'
 import { ChatBot, Event, User } from '@/types'
 import type { Presence } from '@/types/domain/Presence'
 
-/** Binary upload progress: seeded at 0/total by file_upload_ready, then throttled progress_update + handshake. */
+/** Binary upload progress: seeded at 0/total by file_upload_ready, then throttled progress_update + main subscribe. */
 export type FileUploadProgressPayload = {
   filename: string
   uploadedBytes: number
@@ -21,9 +21,9 @@ export const useChatStore = defineStore('chat', {
     currentUserId: null as number | null,
     currentUsername: null as string | null,
     currentUserModerationState: null as string | null,
-    /** Server-driven file moderation UI: moderating | rejected (handshake + WS) */
+    /** Server-driven file moderation UI: moderating | rejected (main subscribe + WS) */
     fileModerationState: null as Record<string, unknown> | null,
-    /** Binary upload bytes progress (separate from moderation; handshake + WS) */
+    /** Binary upload bytes progress (separate from moderation; main subscribe + WS) */
     fileUploadProgress: null as FileUploadProgressPayload | null,
   }),
 

@@ -6,8 +6,7 @@ import { config } from '@/config'
 import { useChatStore, type FileUploadProgressPayload } from '@/stores'
 import { localStorageService } from '@/services/LocalStorageService'
 import { ChatEntitiesReceiver } from '@/entities/ChatEntitiesReceiver'
-import { eventPayloadToEvent, isRecord, parseEventPayloads } from '@/entities/parsers'
-import type { User } from '@/types'
+import { eventPayloadToEvent, isRecord, parseEventPayloads, parseUserPayloads } from '@/entities/parsers'
 import { parseHilosLogsOverviewPayload } from '@/types/hilosLogsOverview'
 import {
   rejectFileUploadPending,
@@ -19,17 +18,9 @@ type RawMessage = {
   data?: unknown
 }
 
-type HandshakeResponseData = {
-  userId: number
-  moderationState?: string | null
-  fileModerationState?: Record<string, unknown> | null
-  fileUploadProgress?: unknown
-  pageCatalog?: Record<string, unknown>
-} & Record<string, unknown>
-
 /**
  * Apply moderation text, file moderation UI, and upload progress from a payload
- * (handshake_response or subscription_page_main). Keys match server handshake JSON shape.
+ * (subscription_page_main or dedicated WS signals). Keys match ChatEventSignalDTO session fields.
  */
 const applyChatSessionFieldsFromData = (data: Record<string, unknown>): void => {
   const chatStore = useChatStore()
@@ -91,8 +82,20 @@ const toRawMessage = (value: unknown): RawMessage | null => {
   }
 }
 
-const isSubscriptionResponseData = (data: unknown): data is HandshakeResponseData => {
-  return isRecord(data) && typeof data.userId === 'number' && hasEntities(data)
+/**
+ * Current user for handshake: exactly one record in entities.full.users (server contract).
+ */
+const parseHandshakeSelfUser = (data: unknown): { id: number; name: string } => {
+  if (!isRecord(data) || !hasEntities(data)) {
+    throw new Error('Invalid handshake_response payload')
+  }
+  const envelope = extractEntitiesEnvelope(data)
+  const users = parseUserPayloads(envelope?.full?.users)
+  if (users === null || users.length !== 1) {
+    throw new Error('Invalid handshake_response payload')
+  }
+  const self = users[0]!
+  return { id: self.id, name: self.name }
 }
 
 const entitiesReceiver = new ChatEntitiesReceiver()
@@ -104,18 +107,12 @@ function buildSignalRouter() {
   const signalRouter = createHilosSignalRouter()
 
   signalRouter.on('handshake_response', (data: unknown) => {
-    if (!isSubscriptionResponseData(data)) {
-      throw new Error('Invalid handshake_response payload')
-    }
-    if (isRecord(data.pageCatalog)) {
+    const self = parseHandshakeSelfUser(data)
+    if (isRecord(data) && isRecord(data.pageCatalog)) {
       const pageCatalogStore = usePageCatalogStore()
       pageCatalogStore.setPageCatalog(data.pageCatalog)
     }
-    const chatStore = useChatStore()
-    const currentUserId = data.userId
-    const currentUser = chatStore.users.find((u: User) => u.id === currentUserId)
-    applyChatSessionFieldsFromData(data)
-    chatStore.handleSubscriptionResponse(currentUserId, currentUser?.name ?? '')
+    useChatStore().handleSubscriptionResponse(self.id, self.name)
   })
 
   signalRouter.on('subscription_page_main', (data: unknown) => {

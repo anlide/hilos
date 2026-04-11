@@ -15,7 +15,8 @@ use Hilos\Core\Exception\NotImplementedException;
  *
  * Simple pass-through of entities to frontend.
  * Optional tables payload for get() responses (e.g. admin page with users table).
- * Optional user session fields (same keys as handshake) when {@see self::$includeUserSessionFields} is true.
+ * Optional user session fields for page subscribe (moderation text, file moderation UI, upload progress)
+ * when {@see self::$includeUserSessionFields} is true.
  */
 final class ChatEventSignalDTO extends SignalData implements SignalDataInterface
 {
@@ -27,7 +28,7 @@ final class ChatEventSignalDTO extends SignalData implements SignalDataInterface
      * @param ?string $moderationState Pending text moderation message or null
      * @param ?array<string, mixed> $fileModerationState File moderation UI state or null
      * @param ?array<string, mixed> $fileUploadProgress In-flight binary upload progress or null
-     * @param bool $includeUserSessionFields When true, merge session keys into payload (handshake-compatible shape)
+     * @param bool $includeUserSessionFields When true, merge session keys into the payload
      */
     public function __construct(
         public readonly EntitiesChangesDTO $entities,

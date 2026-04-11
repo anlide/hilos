@@ -12,8 +12,9 @@ use Hilos\Core\Exception\NotImplementedException;
 /**
  * HandshakeResponseSignalData - Signal data for handshake response.
  *
- * Contains only the current (authorized) user in entities and current userId.
- * Full events + users are sent from MainPage on subscribe (main_page_initial).
+ * {@see self::$entities} must contain exactly the current (authorized) user under full.users;
+ * the client reads id and name from that record. Full chat snapshot (users, bots, events) and
+ * session fields (moderation, file UI, upload progress) are sent on main page subscribe.
  * Target client ID is handled by WebSocketSignalData wrapper for routing.
  */
 final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInterface
@@ -21,19 +22,11 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
     /**
      * Creates handshake response signal data.
      *
-     * @param EntitiesChangesDTO $entities Entity payload (full.users with current user)
-     * @param int $userId Current user ID
-     * @param ?string $moderationState Current user's moderation state or null
-     * @param ?array<string, mixed> $fileModerationState File moderation UI state or null (moderating/rejected)
-     * @param ?array<string, mixed> $fileUploadProgress In-flight binary upload progress or null
+     * @param EntitiesChangesDTO $entities Entity payload (full.users with exactly the current user)
      * @param array<string, array<string, mixed>> $pageCatalog Page catalog for breadcrumb rendering
      */
     public function __construct(
         public readonly EntitiesChangesDTO $entities,
-        public readonly int $userId,
-        public readonly ?string $moderationState = null,
-        public readonly ?array $fileModerationState = null,
-        public readonly ?array $fileUploadProgress = null,
         public readonly array $pageCatalog = [],
     ) {
     }
@@ -45,19 +38,10 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
      */
     public function toArray(): array
     {
-        $result = [
+        return [
             'entities' => $this->entities->toArray(),
-            'userId' => $this->userId,
+            'pageCatalog' => $this->pageCatalog,
         ];
-        if ($this->moderationState !== null) {
-            $result['moderationState'] = $this->moderationState;
-        } else {
-            $result['moderationState'] = null;
-        }
-        $result['fileModerationState'] = $this->fileModerationState;
-        $result['fileUploadProgress'] = $this->fileUploadProgress;
-        $result['pageCatalog'] = $this->pageCatalog;
-        return $result;
     }
 
     /**
