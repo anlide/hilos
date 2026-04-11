@@ -43,18 +43,9 @@ export const useChatStore = defineStore('chat', {
   },
 
   actions: {
-    handleSubscriptionResponse(
-      userId: number,
-      username: string,
-      moderationState?: string | null,
-      fileModerationState: Record<string, unknown> | null = null,
-      fileUploadProgress: FileUploadProgressPayload | null = null,
-    ) {
+    handleSubscriptionResponse(userId: number, username: string) {
       this.currentUserId = userId
       this.currentUsername = username
-      this.currentUserModerationState = moderationState ?? null
-      this.fileModerationState = fileModerationState
-      this.fileUploadProgress = fileUploadProgress
     },
 
     setModerationState(value: string | null) {

@@ -15,6 +15,7 @@ use Hilos\Core\Exception\NotImplementedException;
  *
  * Simple pass-through of entities to frontend.
  * Optional tables payload for get() responses (e.g. admin page with users table).
+ * Optional user session fields (same keys as handshake) when {@see self::$includeUserSessionFields} is true.
  */
 final class ChatEventSignalDTO extends SignalData implements SignalDataInterface
 {
@@ -23,10 +24,18 @@ final class ChatEventSignalDTO extends SignalData implements SignalDataInterface
      *
      * @param EntitiesChangesDTO $entities Entity changes
      * @param array<string, TableResultDTO> $tables Table key → result DTO
+     * @param ?string $moderationState Pending text moderation message or null
+     * @param ?array<string, mixed> $fileModerationState File moderation UI state or null
+     * @param ?array<string, mixed> $fileUploadProgress In-flight binary upload progress or null
+     * @param bool $includeUserSessionFields When true, merge session keys into payload (handshake-compatible shape)
      */
     public function __construct(
         public readonly EntitiesChangesDTO $entities,
         public readonly array $tables = [],
+        public readonly ?string $moderationState = null,
+        public readonly ?array $fileModerationState = null,
+        public readonly ?array $fileUploadProgress = null,
+        public readonly bool $includeUserSessionFields = false,
     ) {
         parent::__construct($this->toArray());
     }
@@ -44,6 +53,15 @@ final class ChatEventSignalDTO extends SignalData implements SignalDataInterface
                 return $dto->toArray();
             }, $this->tables);
             $data['tables'] = $tablesArr;
+        }
+        if ($this->includeUserSessionFields) {
+            if ($this->moderationState !== null) {
+                $data['moderationState'] = $this->moderationState;
+            } else {
+                $data['moderationState'] = null;
+            }
+            $data['fileModerationState'] = $this->fileModerationState;
+            $data['fileUploadProgress'] = $this->fileUploadProgress;
         }
         return $data;
     }

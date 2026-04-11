@@ -27,6 +27,31 @@ type HandshakeResponseData = {
   pageCatalog?: Record<string, unknown>
 } & Record<string, unknown>
 
+/**
+ * Apply moderation text, file moderation UI, and upload progress from a payload
+ * (handshake_response or subscription_page_main). Keys match server handshake JSON shape.
+ */
+const applyChatSessionFieldsFromData = (data: Record<string, unknown>): void => {
+  const chatStore = useChatStore()
+  if ('moderationState' in data) {
+    const v = data.moderationState
+    chatStore.setModerationState(
+      v === null || v === undefined ? null : typeof v === 'string' ? v : null,
+    )
+  }
+  if ('fileModerationState' in data) {
+    const rawFile = data.fileModerationState
+    if (rawFile === null || rawFile === undefined) {
+      chatStore.setFileModerationState(null)
+    } else if (typeof rawFile === 'object' && !Array.isArray(rawFile)) {
+      chatStore.setFileModerationState(rawFile as Record<string, unknown>)
+    }
+  }
+  if ('fileUploadProgress' in data) {
+    chatStore.setFileUploadProgress(parseFileUploadProgress(data.fileUploadProgress))
+  }
+}
+
 const parseFileUploadProgress = (raw: unknown): FileUploadProgressPayload | null => {
   if (raw === null || raw === undefined) {
     return null
@@ -89,21 +114,15 @@ function buildSignalRouter() {
     const chatStore = useChatStore()
     const currentUserId = data.userId
     const currentUser = chatStore.users.find((u: User) => u.id === currentUserId)
-    const moderationState =
-      data.moderationState !== undefined ? data.moderationState : undefined
-    const rawFile = data.fileModerationState
-    const fileModerationState =
-      rawFile !== null && rawFile !== undefined && typeof rawFile === 'object' && !Array.isArray(rawFile)
-        ? (rawFile as Record<string, unknown>)
-        : null
-    const fileUploadProgress = parseFileUploadProgress(data.fileUploadProgress)
-    chatStore.handleSubscriptionResponse(
-      currentUserId,
-      currentUser?.name ?? '',
-      moderationState as string | null | undefined,
-      fileModerationState,
-      fileUploadProgress,
-    )
+    applyChatSessionFieldsFromData(data)
+    chatStore.handleSubscriptionResponse(currentUserId, currentUser?.name ?? '')
+  })
+
+  signalRouter.on('subscription_page_main', (data: unknown) => {
+    if (!isRecord(data)) {
+      return
+    }
+    applyChatSessionFieldsFromData(data)
   })
 
   signalRouter.on('moderation_state_update', (data: unknown) => {

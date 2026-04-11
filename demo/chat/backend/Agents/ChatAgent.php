@@ -129,22 +129,7 @@ class ChatAgent extends AbstractAgent
         }
 
         Hilos::$rt->userStates->actions->ensure($user->id);
-        $pending = Hilos::$rt->userStates[(string)$user->id]->moderationMessage;
-        $moderationState = $pending !== '' ? $pending : null;
-
-        $fileMod = $this->getFileModerationUiPayloadForAcceptKey($data->acceptKey);
-        $handshakeConn = Hilos::$rt->connections[$data->acceptKey] ?? null;
-        $fileProgress = null;
-        if (
-            $handshakeConn !== null
-            && $handshakeConn->fileProgressFilename !== null
-        ) {
-            $fileProgress = [
-                'filename' => $handshakeConn->fileProgressFilename,
-                'uploadedBytes' => $handshakeConn->fileProgressUploadedBytes,
-                'totalBytes' => $handshakeConn->fileProgressTotalBytes,
-            ];
-        }
+        $session = $this->buildUserSessionSnapshotForAcceptKey($data->acceptKey);
 
         $this->sendToUser(
             ChatSignalConstants::HANDSHAKE_RESPONSE,
@@ -152,9 +137,9 @@ class ChatAgent extends AbstractAgent
             new HandshakeResponseSignalData(
                 entities: $userEntities,
                 userId: $user->id,
-                moderationState: $moderationState,
-                fileModerationState: $fileMod,
-                fileUploadProgress: $fileProgress,
+                moderationState: $session['moderationState'],
+                fileModerationState: $session['fileModerationState'],
+                fileUploadProgress: $session['fileUploadProgress'],
                 pageCatalog: ChatPageCatalog::getCatalog(),
             ),
         );
@@ -345,6 +330,46 @@ class ChatAgent extends AbstractAgent
             ChatSignalConstants::NEW_EVENT,
             new ChatEventSignalDTO(new EntitiesChangesDTO(full: [DbChatContext::events => Events::fromSingleItem($event)])),
         );
+    }
+
+    /**
+     * Build text moderation, file moderation UI, and binary upload progress for one connection (handshake / main subscribe).
+     *
+     * @param string $acceptKey Connection accept key
+     * @return array{moderationState: ?string, fileModerationState: ?array, fileUploadProgress: ?array<string, mixed>}
+     */
+    public function buildUserSessionSnapshotForAcceptKey(string $acceptKey): array
+    {
+        if (!isset(Hilos::$rt->connections[$acceptKey])) {
+            return [
+                'moderationState' => null,
+                'fileModerationState' => null,
+                'fileUploadProgress' => null,
+            ];
+        }
+
+        $userId = Hilos::$rt->connections[$acceptKey]->userId;
+        Hilos::$rt->userStates->actions->ensure($userId);
+        $pending = Hilos::$rt->userStates[(string)$userId]->moderationMessage;
+        $moderationState = $pending !== '' ? $pending : null;
+
+        $fileMod = $this->getFileModerationUiPayloadForAcceptKey($acceptKey);
+
+        $conn = Hilos::$rt->connections[$acceptKey];
+        $fileProgress = null;
+        if ($conn->fileProgressFilename !== null) {
+            $fileProgress = [
+                'filename' => $conn->fileProgressFilename,
+                'uploadedBytes' => $conn->fileProgressUploadedBytes,
+                'totalBytes' => $conn->fileProgressTotalBytes,
+            ];
+        }
+
+        return [
+            'moderationState' => $moderationState,
+            'fileModerationState' => $fileMod,
+            'fileUploadProgress' => $fileProgress,
+        ];
     }
 
     /**

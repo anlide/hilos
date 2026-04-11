@@ -11,8 +11,6 @@ use Demo\Chat\Core\Page\AbstractChatPage;
 use Demo\Chat\Core\Page\DTO\FileModerationDismissActionDTO;
 use Demo\Chat\Core\Page\DTO\FileUploadInitActionDTO;
 use Demo\Chat\Core\Page\DTO\MessageActionDTO;
-use Demo\Chat\Core\Router\DTO\FileModerationStateUpdateSignalData;
-use Demo\Chat\Core\Router\DTO\FileUploadProgressUpdateSignalData;
 use Demo\Chat\Core\Router\DTO\ChatEventSignalDTO;
 use Demo\Chat\Core\Router\DTO\ModerationRequestSignalData;
 use Demo\Chat\Database\DbChatContext;
@@ -63,6 +61,8 @@ final class MainPage extends AbstractChatPage
      */
     public function onSubscribe(string $acceptKey, array $params = []): void
     {
+        $session = $this->getChatAgent()->buildUserSessionSnapshotForAcceptKey($acceptKey);
+
         $this->getChatAgent()->sendToUser(
             ChatSignalConstants::SUBSCRIPTION_PAGE_MAIN,
             $acceptKey,
@@ -74,45 +74,13 @@ final class MainPage extends AbstractChatPage
                         DbChatContext::events => Hilos::$db->events,
                     ],
                 ),
+                [],
+                moderationState: $session['moderationState'],
+                fileModerationState: $session['fileModerationState'],
+                fileUploadProgress: $session['fileUploadProgress'],
+                includeUserSessionFields: true,
             ),
         );
-
-        if (!isset(Hilos::$rt->connections[$acceptKey])) {
-            return;
-        }
-
-        $userId = Hilos::$rt->connections[$acceptKey]->userId;
-        Hilos::$rt->userStates->actions->ensure($userId);
-        $pending = Hilos::$rt->userStates[(string)$userId]->moderationMessage;
-        $moderationState = $pending !== '' ? $pending : null;
-        if ($moderationState !== null) {
-            $this->getChatAgent()->sendModerationStateToUserConnections($userId, $moderationState);
-        }
-
-        $agent = $this->getChatAgent();
-        $fileUi = $agent->getFileModerationUiPayloadForAcceptKey($acceptKey);
-        if ($fileUi !== null) {
-            $agent->sendToUser(
-                ChatSignalConstants::FILE_MODERATION_STATE_UPDATE,
-                $acceptKey,
-                new FileModerationStateUpdateSignalData($fileUi),
-            );
-        }
-        $subConn = Hilos::$rt->connections[$acceptKey] ?? null;
-        if (
-            $subConn !== null
-            && $subConn->fileProgressFilename !== null
-        ) {
-            $agent->sendToUser(
-                ChatSignalConstants::FILE_UPLOAD_PROGRESS_UPDATE,
-                $acceptKey,
-                new FileUploadProgressUpdateSignalData([
-                    'filename' => $subConn->fileProgressFilename,
-                    'uploadedBytes' => $subConn->fileProgressUploadedBytes,
-                    'totalBytes' => $subConn->fileProgressTotalBytes,
-                ]),
-            );
-        }
     }
 
     /**
