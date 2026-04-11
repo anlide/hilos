@@ -23,7 +23,9 @@ use Hilos\Core\Router\DTO\EntitiesChangesDTO;
 use Hilos\Database\Exception\View\CollectionNotManualException;
 use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 use Hilos\HilosException;
+use Hilos\Runtime\Exception\Actions\RtActionsCallbackNotSetException;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
+use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\Utils\Logger;
 use Random\RandomException;
@@ -32,16 +34,32 @@ use Random\RandomException;
  * MainPage - Main chat page handler.
  *
  * Handles subscription, unsubscription, and actions for the main chat page.
+ * Used only with {@see ChatAgent} (MAIN subscriptions and chat actions are routed to the chat worker).
  */
 final class MainPage extends AbstractChatPage
 {
     public const string PAGE = PageConstants::MAIN;
 
     /**
+     * Narrows {@see AbstractChatPage::getChatAgent()} to {@see ChatAgent} (see class description).
+     */
+    protected function getChatAgent(): ChatAgent
+    {
+        assert($this->agent instanceof ChatAgent);
+        return $this->agent;
+    }
+
+    /**
      * Handle page-specific subscription logic.
      *
      * @param string $acceptKey Accept key
      * @param array<string, string> $params Route params from page subscription (unused for main page)
+     * @throws CollectionNotManualException If Bots collection is not manual (required for filtering)
+     * @throws ObjectGetIdStringNotImplementedException If Bot object does not implement getIdString (required for collection operations)
+     * @throws RtActionsCallbackNotSetException
+     * @throws RtActionsCollectionNameNullException
+     * @throws RtActionsStateCollectionNullException
+     * @throws RtTruthSourceWriteNotAllowedException
      */
     public function onSubscribe(string $acceptKey, array $params = []): void
     {
@@ -72,30 +90,28 @@ final class MainPage extends AbstractChatPage
         }
 
         $agent = $this->getChatAgent();
-        if ($agent instanceof ChatAgent) {
-            $fileUi = $agent->getFileModerationUiPayloadForAcceptKey($acceptKey);
-            if ($fileUi !== null) {
-                $agent->sendToUser(
-                    ChatSignalConstants::FILE_MODERATION_STATE_UPDATE,
-                    $acceptKey,
-                    new FileModerationStateUpdateSignalData($fileUi),
-                );
-            }
-            $subConn = Hilos::$rt->connections[$acceptKey] ?? null;
-            if (
-                $subConn !== null
-                && $subConn->fileProgressFilename !== null
-            ) {
-                $agent->sendToUser(
-                    ChatSignalConstants::FILE_UPLOAD_PROGRESS_UPDATE,
-                    $acceptKey,
-                    new FileUploadProgressUpdateSignalData([
-                        'filename' => $subConn->fileProgressFilename,
-                        'uploadedBytes' => $subConn->fileProgressUploadedBytes,
-                        'totalBytes' => $subConn->fileProgressTotalBytes,
-                    ]),
-                );
-            }
+        $fileUi = $agent->getFileModerationUiPayloadForAcceptKey($acceptKey);
+        if ($fileUi !== null) {
+            $agent->sendToUser(
+                ChatSignalConstants::FILE_MODERATION_STATE_UPDATE,
+                $acceptKey,
+                new FileModerationStateUpdateSignalData($fileUi),
+            );
+        }
+        $subConn = Hilos::$rt->connections[$acceptKey] ?? null;
+        if (
+            $subConn !== null
+            && $subConn->fileProgressFilename !== null
+        ) {
+            $agent->sendToUser(
+                ChatSignalConstants::FILE_UPLOAD_PROGRESS_UPDATE,
+                $acceptKey,
+                new FileUploadProgressUpdateSignalData([
+                    'filename' => $subConn->fileProgressFilename,
+                    'uploadedBytes' => $subConn->fileProgressUploadedBytes,
+                    'totalBytes' => $subConn->fileProgressTotalBytes,
+                ]),
+            );
         }
     }
 
@@ -152,8 +168,7 @@ final class MainPage extends AbstractChatPage
         }
 
         $userId = Hilos::$rt->connections[$acceptKey]->userId;
-        $chatAgent = $this->getChatAgent();
-        if ($chatAgent instanceof ChatAgent && !$chatAgent->canSendMessage($userId)) {
+        if (!$this->getChatAgent()->canSendMessage($userId)) {
             return;
         }
 
@@ -190,8 +205,7 @@ final class MainPage extends AbstractChatPage
     }
 
     /**
-     * Forward {@see ChatSignalConstants::FILE_UPLOAD_INIT} to {@see ChatAgent::handleFileUploadInit} when the page
-     * agent is {@see ChatAgent}; otherwise no-op.
+     * Forward {@see ChatSignalConstants::FILE_UPLOAD_INIT} to {@see ChatAgent::handleFileUploadInit}.
      *
      * @param string $acceptKey Accept key
      * @param FileUploadInitActionDTO $dto Upload metadata from the client
@@ -201,16 +215,12 @@ final class MainPage extends AbstractChatPage
      */
     private function handleFileUploadInit(string $acceptKey, FileUploadInitActionDTO $dto): void
     {
-        $agent = $this->getChatAgent();
-        if (!$agent instanceof ChatAgent) {
-            return;
-        }
-        $agent->handleFileUploadInit($acceptKey, $dto);
+        $this->getChatAgent()->handleFileUploadInit($acceptKey, $dto);
     }
 
     /**
-     * Forward {@see ChatSignalConstants::FILE_MODERATION_DISMISS} to {@see ChatAgent::handleFileModerationDismiss}
-     * when the page agent is {@see ChatAgent}; otherwise no-op. Skips delegation if the connection is missing.
+     * Forward {@see ChatSignalConstants::FILE_MODERATION_DISMISS} to {@see ChatAgent::handleFileModerationDismiss}.
+     * Skips delegation if the connection is missing.
      *
      * @param string $acceptKey Accept key
      * @throws RtActionsCollectionNameNullException When the connections actions collection name is null
@@ -221,9 +231,6 @@ final class MainPage extends AbstractChatPage
         if (!isset(Hilos::$rt->connections[$acceptKey])) {
             return;
         }
-        $agent = $this->getChatAgent();
-        if ($agent instanceof ChatAgent) {
-            $agent->handleFileModerationDismiss($acceptKey);
-        }
+        $this->getChatAgent()->handleFileModerationDismiss($acceptKey);
     }
 }
