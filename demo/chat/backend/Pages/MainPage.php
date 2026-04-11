@@ -78,12 +78,19 @@ final class MainPage extends AbstractChatPage
                     new FileModerationStateUpdateSignalData($fileUi),
                 );
             }
-            $fileProgress = $agent->getFileUploadProgressPayloadForAcceptKey($acceptKey);
-            if ($fileProgress !== null) {
+            $subConn = Hilos::$rt->connections[$acceptKey] ?? null;
+            if (
+                $subConn !== null
+                && $subConn->fileProgressFilename !== null
+            ) {
                 $agent->sendToUser(
                     ChatSignalConstants::FILE_UPLOAD_PROGRESS_UPDATE,
                     $acceptKey,
-                    new FileUploadProgressUpdateSignalData($fileProgress),
+                    new FileUploadProgressUpdateSignalData([
+                        'filename' => $subConn->fileProgressFilename,
+                        'uploadedBytes' => $subConn->fileProgressUploadedBytes,
+                        'totalBytes' => $subConn->fileProgressTotalBytes,
+                    ]),
                 );
             }
         }

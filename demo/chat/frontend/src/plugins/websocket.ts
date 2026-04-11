@@ -133,10 +133,25 @@ function buildSignalRouter() {
     }
     const v = (data as { fileUploadProgress: unknown }).fileUploadProgress
     const chatStore = useChatStore()
+    if (v === null || v === undefined) {
+      chatStore.setFileUploadProgress(null)
+      return
+    }
     chatStore.setFileUploadProgress(parseFileUploadProgress(v))
   })
 
-  signalRouter.on('file_upload_ready', () => {
+  signalRouter.on('file_upload_ready', (data: unknown) => {
+    if (isRecord(data)) {
+      const filename = data.filename
+      const size = data.size
+      if (typeof filename === 'string' && typeof size === 'number') {
+        useChatStore().setFileUploadProgress({
+          filename,
+          uploadedBytes: 0,
+          totalBytes: size,
+        })
+      }
+    }
     resolveFileUploadOutcome({ ok: true })
   })
 

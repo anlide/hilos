@@ -33,10 +33,11 @@ use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Utils\Logger;
 
 /**
- * ChatAgent - Monopolistic agent for chat management.
+ * Monopolistic chat worker: database entities (users, events, bots, settings), runtime connections and user state,
+ * WebSocket handshake/close, text and bot moderation routing, message rate limiting, and file attachments
+ * ({@see ChatAgentFileAttachments}).
  *
- * Runs in monopolistic worker process. Manages chat state and history.
- * State stored only in memory (no persistence).
+ * Registers as truth source for {@see DbChatContext} tables and {@see RtChatContext} collections on {@see self::onStart()}.
  */
 class ChatAgent extends AbstractAgent
 {
@@ -44,16 +45,22 @@ class ChatAgent extends AbstractAgent
 
     public const string AGENT_TYPE = AgentType::CHAT;
 
-    /** @var int Message rate limit in seconds per user */
+    /**
+     * Minimum interval in seconds between chat messages from the same user (see {@see self::canSendMessage()}).
+     */
     private const int MESSAGE_RATE_LIMIT_SECONDS = 10;
 
-    /** @var array<int, float> userId => last message timestamp (microtime) */
+    /**
+     * Last successful text message send time per user (`microtime(true)`), for rate limiting.
+     *
+     * @var array<int, float>
+     */
     private array $lastMessageTimestampByUser = [];
 
     /**
-     * Called when agent is started.
+     * Register truth sources, seed runtime user states from DB, append {@see ChatEventType::CHAT_STARTED} to history.
      *
-     * @throws HilosException If database operation fails or truth source registration fails
+     * @throws HilosException On database failure or truth source registration failure
      */
     public function onStart(): void
     {
@@ -75,12 +82,14 @@ class ChatAgent extends AbstractAgent
     }
 
     /**
-     * Handle handshake signal from WebSocket client.
+     * Authenticate session token, register the connection, optionally emit user registration/online events, and send
+     * {@see ChatSignalConstants::HANDSHAKE_RESPONSE} with entities, moderation text state, file moderation UI, and
+     * in-flight upload progress when present.
      *
-     * @param WebSocketHandshakeSignalDTO $data Handshake data (acceptKey, queryParams)
-     * @param string $source Signal source identifier
-     * @param string $name Signal name
-     * @throws HilosException If database, runtime or truth source check fails
+     * @param WebSocketHandshakeSignalDTO $data Accept key and query params (expects {@see HttpHeaders::SESSION_TOKEN})
+     * @param string $source Framework signal source identifier (unused)
+     * @param string $name Framework signal name (unused)
+     * @throws HilosException On database, runtime, or truth source failure
      */
     public function onSignalHandshake(WebSocketHandshakeSignalDTO $data, string $source, string $name): void
     {
@@ -124,7 +133,18 @@ class ChatAgent extends AbstractAgent
         $moderationState = $pending !== '' ? $pending : null;
 
         $fileMod = $this->getFileModerationUiPayloadForAcceptKey($data->acceptKey);
-        $fileProgress = $this->getFileUploadProgressPayloadForAcceptKey($data->acceptKey);
+        $handshakeConn = Hilos::$rt->connections[$data->acceptKey] ?? null;
+        $fileProgress = null;
+        if (
+            $handshakeConn !== null
+            && $handshakeConn->fileProgressFilename !== null
+        ) {
+            $fileProgress = [
+                'filename' => $handshakeConn->fileProgressFilename,
+                'uploadedBytes' => $handshakeConn->fileProgressUploadedBytes,
+                'totalBytes' => $handshakeConn->fileProgressTotalBytes,
+            ];
+        }
 
         $this->sendToUser(
             ChatSignalConstants::HANDSHAKE_RESPONSE,
@@ -141,13 +161,12 @@ class ChatAgent extends AbstractAgent
     }
 
     /**
-     * Handle connection close signal (WebSocket connection closed).
-     * Unregisters connection from runtime so that relevantUsers and state stay correct.
+     * Unregister the WebSocket connection; if that was the user's last tab, append {@see ChatEventType::USER_OFFLINE} and broadcast.
      *
-     * @param WebSocketCloseSignalDTO $data Close signal data (acceptKey)
-     * @param string $source Signal source identifier
-     * @param string $name Signal name
-     * @throws HilosException If runtime unregister fails
+     * @param WebSocketCloseSignalDTO $data Closed connection {@see WebSocketCloseSignalDTO::$acceptKey}
+     * @param string $source Framework signal source identifier (unused)
+     * @param string $name Framework signal name (unused)
+     * @throws HilosException When runtime unregister fails
      */
     public function onSignalConnectionClose(WebSocketCloseSignalDTO $data, string $source, string $name): void
     {
@@ -180,9 +199,9 @@ class ChatAgent extends AbstractAgent
     }
 
     /**
-     * Called when agent is stopped.
+     * Append {@see ChatEventType::CHAT_STOPPED}, clear all runtime connections, unregister truth sources.
      *
-     * @throws HilosException If database operation or unregistration fails
+     * @throws HilosException On database failure or truth source unregistration failure
      */
     public function onStop(): void
     {
@@ -198,12 +217,13 @@ class ChatAgent extends AbstractAgent
     }
 
     /**
-     * Handle cron signal.
+     * Run scheduled tasks: for {@see ChatCronConstants::CLEANUP_HISTORY}, wipe attachments, delete all events,
+     * broadcast {@see ChatEventType::CHAT_CLEARED}.
      *
-     * @param SignalDataInterface $data Cron signal payload
-     * @param string $source Signal source identifier
-     * @param string $name Signal name (e.g. CLEANUP_HISTORY)
-     * @throws HilosException If database or truth source check fails
+     * @param SignalDataInterface $data Cron payload (type-specific; may be unused)
+     * @param string $source Framework signal source identifier (unused)
+     * @param string $name Task name (e.g. {@see ChatCronConstants::CLEANUP_HISTORY})
+     * @throws HilosException On database or truth source failure
      */
     public function onSignalCron(SignalDataInterface $data, string $source, string $name): void
     {
@@ -227,11 +247,11 @@ class ChatAgent extends AbstractAgent
     }
 
     /**
-     * Handle agent-to-agent signals (moderation result from ModeratorAgent).
+     * Dispatch inter-agent signals: text/bot/file moderation results, and bot presence fan-out to all users.
      *
-     * @param AgentSignalData $data Agent signal payload (e.g. ModerationResultSignalData)
-     * @param string $source Source agent identifier
-     * @param string $name Signal name (e.g. MODERATION_RESULT)
+     * @param AgentSignalData $data Wrapped inner payload in {@see AgentSignalData::$data}
+     * @param string $source Framework signal source identifier (unused)
+     * @param string $name One of {@see ChatSignalConstants} moderation/bot agent signal names
      */
     public function onSignalAgent(AgentSignalData $data, string $source, string $name): void
     {
@@ -269,10 +289,10 @@ class ChatAgent extends AbstractAgent
     }
 
     /**
-     * Log invalid agent payload type for signal.
+     * Log a type mismatch for an incoming agent signal (expected DTO not received).
      *
-     * @param string $name Signal name
-     * @param mixed $payload Actual payload (logged for debugging)
+     * @param string $name Signal name that failed validation
+     * @param mixed $payload Value received in {@see AgentSignalData::$data}
      */
     private function logInvalidAgentPayload(string $name, mixed $payload): void
     {
@@ -280,9 +300,9 @@ class ChatAgent extends AbstractAgent
     }
 
     /**
-     * Process moderation result: clear state, notify user, publish message if allowed.
+     * Apply text message moderation: clear pending moderation on all user tabs; if allowed, record rate limit and add {@see ChatEventType::MESSAGE_SENT}.
      *
-     * @param ModerationResultSignalData $result Moderation result from ModeratorAgent
+     * @param ModerationResultSignalData $result Uploader connection key, user id, allow flag, message body, reason
      */
     private function handleModerationResult(ModerationResultSignalData $result): void
     {
@@ -308,9 +328,9 @@ class ChatAgent extends AbstractAgent
     }
 
     /**
-     * Process bot message moderation result: publish message if allowed.
+     * Apply bot message moderation: on allow, append {@see ChatEventType::MESSAGE_SENT} with `botId` and broadcast.
      *
-     * @param ModerationBotResultSignalData $result Moderation result for bot message
+     * @param ModerationBotResultSignalData $result Bot id, allow flag, message body, reason
      */
     private function handleModerationBotResult(ModerationBotResultSignalData $result): void
     {
@@ -328,11 +348,10 @@ class ChatAgent extends AbstractAgent
     }
 
     /**
-     * Sends moderation state update to all connections of a user.
-     * Private data - only the user's own connections receive this.
+     * Push {@see ChatSignalConstants::MODERATION_STATE_UPDATE} to every WebSocket connection of `$userId` (pending message text or null).
      *
-     * @param int $userId User ID
-     * @param ?string $moderationState Current moderation state (message text or null when cleared)
+     * @param int $userId Chat user id
+     * @param ?string $moderationState Pending moderated message text, or null to clear the banner
      */
     public function sendModerationStateToUserConnections(int $userId, ?string $moderationState): void
     {
@@ -344,13 +363,12 @@ class ChatAgent extends AbstractAgent
     }
 
     /**
-     * Check whether user is allowed to send a message under rate limit.
+     * Whether enough time has passed since {@see self::recordMessageSent()} for this user to send another message.
      *
-     * Limit: one message per {@see MESSAGE_RATE_LIMIT_SECONDS} seconds per user.
-     * Applied as (limit - 1) seconds to avoid blocking legitimate messages from frontend timer drift.
+     * Uses {@see self::MESSAGE_RATE_LIMIT_SECONDS} minus one second effective window to reduce false blocks from client timer drift.
      *
-     * @param int $userId User ID
-     * @return bool True if user can send, false if rate limited
+     * @param int $userId Chat user id
+     * @return bool True if sending is allowed, false if still within the limit window
      */
     public function canSendMessage(int $userId): bool
     {
@@ -361,11 +379,9 @@ class ChatAgent extends AbstractAgent
     }
 
     /**
-     * Record that user has successfully sent a message (updates rate limit timestamp).
+     * Store `microtime(true)` for `$userId` after a moderated message is persisted and broadcast.
      *
-     * Call after message is stored and broadcast to all users.
-     *
-     * @param int $userId User ID
+     * @param int $userId Chat user id
      */
     public function recordMessageSent(int $userId): void
     {

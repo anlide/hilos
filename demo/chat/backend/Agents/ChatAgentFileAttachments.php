@@ -32,22 +32,28 @@ use Hilos\Utils\Logger;
 use Random\RandomException;
 
 /**
- * File upload (WebSocket action + binary frames), quarantine storage, async file moderation, and per-connection UI state.
+ * File attachments: binary WebSocket upload, quarantine disk storage, async moderation, and per-connection UI signals.
  *
- * Reads connection file state only as {@see Hilos::$rt->connections}[`$acceptKey`] (no local RtItem variables). Mutations use {@see \Demo\Chat\Runtime\View\Actions\Collection\ConnectionsActions} named methods. Signals go to the owning `acceptKey` only.
+ * Connection-scoped state is read and written only via {@see Hilos::$rt->connections}[`$acceptKey`] (no cached
+ * {@see RuntimeConnection} items across mutations). Updates go through
+ * {@see \Demo\Chat\Runtime\View\Actions\Collection\ConnectionsActions} named methods. User-targeted signals use the
+ * owning connection `acceptKey` only.
  */
 trait ChatAgentFileAttachments
 {
-    /** Minimum interval between non-forced {@see ChatSignalConstants::FILE_UPLOAD_PROGRESS_UPDATE} sends. */
+    /**
+     * Minimum wall-clock interval between {@see ChatSignalConstants::FILE_UPLOAD_PROGRESS_UPDATE} sends when not forced.
+     */
     private const float FILE_UPLOAD_PROGRESS_MIN_INTERVAL_SEC = 0.3;
 
     /**
-     * Start or replace a binary upload on this connection (validates limits, creates quarantine .part file).
+     * Handle {@see ChatSignalConstants::FILE_UPLOAD_INIT}: validate limits and filename, create quarantine `.part` file,
+     * start session, send {@see ChatSignalConstants::FILE_UPLOAD_READY}. Replaces an in-flight upload on the same socket.
      *
      * @param string $acceptKey WebSocket connection id
-     * @throws RandomException If {@see random_bytes()} fails.
-     * @throws RtActionsCollectionNameNullException When collection name is null.
-     * @throws RtTruthSourceWriteNotAllowedException When truth source does not allow write.
+     * @throws RandomException If {@see random_bytes()} fails
+     * @throws RtActionsCollectionNameNullException When the connections actions collection name is null
+     * @throws RtTruthSourceWriteNotAllowedException When the truth source rejects a runtime write
      */
     public function handleFileUploadInit(string $acceptKey, FileUploadInitActionDTO $dto): void
     {
@@ -144,17 +150,6 @@ trait ChatAgentFileAttachments
             $dto->size,
         );
 
-        Logger::logAgentInfo(
-            $this->getId(),
-            sprintf(
-                'upload_progress: after_init acceptKey=%s userId=%d totalBytes=%d (force send)',
-                $acceptKey,
-                Hilos::$rt->connections[$acceptKey]->userId,
-                $dto->size,
-            ),
-        );
-        $this->broadcastUploadProgressThrottled($acceptKey, true);
-
         $this->sendToUser(
             ChatSignalConstants::FILE_UPLOAD_READY,
             $acceptKey,
@@ -169,7 +164,9 @@ trait ChatAgentFileAttachments
     }
 
     /**
-     * Clear rejected-file moderation banner on this connection (no-op if not in rejected phase).
+     * Handle {@see ChatSignalConstants::FILE_MODERATION_DISMISS}: clear rejected-phase banner when the user dismisses it.
+     *
+     * No-op if the connection is unknown or moderation phase is not `rejected`.
      *
      * @param string $acceptKey WebSocket connection id
      */
@@ -187,10 +184,12 @@ trait ChatAgentFileAttachments
     }
 
     /**
-     * Append binary payload to the active upload session for {@see WebSocketFrameBinarySignalDTO::$acceptKey}.
+     * WebSocket binary frame handler: append chunk to the quarantine file, update received bytes, optionally emit
+     * throttled {@see ChatSignalConstants::FILE_UPLOAD_PROGRESS_UPDATE}, then finalize when size matches declared total.
      *
-     * @param string $source Signal source identifier (framework)
-     * @param string $name Signal name (framework)
+     * @param WebSocketFrameBinarySignalDTO $data Frame payload and {@see WebSocketFrameBinarySignalDTO::$acceptKey}
+     * @param string $source Framework signal source identifier (unused)
+     * @param string $name Framework signal name (unused)
      */
     public function onSignalFrameBinary(WebSocketFrameBinarySignalDTO $data, string $source, string $name): void
     {
@@ -240,7 +239,7 @@ trait ChatAgentFileAttachments
             return;
         }
 
-        if ($this->getFileUploadProgressPayloadForAcceptKey($acceptKey) !== null) {
+        if ($conn->fileProgressFilename !== null) {
             $force = $newReceived === $declared;
             Logger::logAgentInfo(
                 $this->getId(),
@@ -257,7 +256,7 @@ trait ChatAgentFileAttachments
         } else {
             Logger::logAgentInfo(
                 $this->getId(),
-                "upload_progress: binary_chunk acceptKey={$acceptKey} skipped_no_progress_map (session exists)",
+                "upload_progress: binary_chunk acceptKey={$acceptKey} skipped_no_progress_ui (session exists)",
             );
         }
 
@@ -267,10 +266,10 @@ trait ChatAgentFileAttachments
     }
 
     /**
-     * File moderation UI payload for handshake/subscribe, or null if no file moderation state on this socket.
+     * Build file moderation UI payload for handshake or resubscribe, or null when this socket has no moderation UI state.
      *
      * @param string $acceptKey WebSocket connection id
-     * @return ?array<string, mixed>
+     * @return ?array<string, mixed> Keys: `phase`, `filename`, `uploadedBytes`, `totalBytes`, `reason`, `updatedAt`
      */
     public function getFileModerationUiPayloadForAcceptKey(string $acceptKey): ?array
     {
@@ -295,29 +294,11 @@ trait ChatAgentFileAttachments
     }
 
     /**
-     * In-flight upload progress for handshake/subscribe, or null if no progress bar state on this socket.
+     * Snapshot of the active binary upload session for handler logic.
      *
-     * @param string $acceptKey WebSocket connection id
-     * @return ?array<string, mixed>
-     */
-    public function getFileUploadProgressPayloadForAcceptKey(string $acceptKey): ?array
-    {
-        $conn = Hilos::$rt->connections[$acceptKey] ?? null;
-        if ($conn === null || $conn->fileProgressFilename === null) {
-            return null;
-        }
-
-        return [
-            'filename' => $conn->fileProgressFilename,
-            'uploadedBytes' => $conn->fileProgressUploadedBytes,
-            'totalBytes' => $conn->fileProgressTotalBytes,
-        ];
-    }
-
-    /**
-     * Binary upload session map for handler logic, or null when {@see RuntimeConnection::$fileSessionUploadId} is unset.
-     *
-     * @return ?array<string, mixed>
+     * @param RuntimeConnection $conn Runtime view item for the WebSocket connection
+     * @return ?array<string, mixed> Keys: `uploadId`, `declaredSize`, `receivedBytes`, `quarantineBasename`,
+     *         `originalFilename`, `mimeType`, `clientUploadId`, `normalizedFilename`. Null when no session.
      */
     private function fileUploadSessionArrayFromConnection(RuntimeConnection $conn): ?array
     {
@@ -338,7 +319,9 @@ trait ChatAgentFileAttachments
     }
 
     /**
-     * Wipe published and quarantine dirs, clear file runtime on every connection, notify clients (admin/cron path).
+     * Delete all attachment files on disk, reset file-related runtime fields on every connection, notify clients.
+     *
+     * Used from admin/cron cleanup ({@see \Demo\Chat\Agents\ChatAgent::onSignalCron}) so all tabs drop moderation and progress UI.
      */
     public function deleteAllAttachmentFilesFromDisk(): void
     {
@@ -364,7 +347,8 @@ trait ChatAgentFileAttachments
     }
 
     /**
-     * Finalize upload: clear session/progress, enter moderating UI, notify client, send request to ModeratorAgent.
+     * After the last binary chunk: clear upload session and progress UI, enter `moderating` phase, send
+     * {@see ChatSignalConstants::FILE_UPLOAD_COMPLETE}, and dispatch {@see ChatSignalConstants::MODERATE_FILE_REQUEST} to the moderator agent.
      *
      * @param string $acceptKey WebSocket connection id
      */
@@ -420,9 +404,12 @@ trait ChatAgentFileAttachments
     }
 
     /**
-     * Apply ModeratorAgent outcome: reject (delete quarantine) or publish/move to published and broadcast {@see ChatSignalConstants::NEW_EVENT}.
+     * Apply {@see ChatSignalConstants::MODERATION_FILE_RESULT}: delete quarantine on reject, or move to published and append a {@see ChatEventType::FILE_SHARED} event.
      *
-     * Updates file moderation UI only if the target connection is still open and {@see ModerationFileResultSignalData::$userId} matches.
+     * Updates moderation UI on the uploader's socket only while {@see ModerationFileResultSignalData::$acceptKey} is still
+     * registered and {@see ModerationFileResultSignalData::$userId} matches that connection.
+     *
+     * @throws RandomException If {@see random_bytes()} fails when generating a published storage token
      */
     public function handleModerationFileResult(ModerationFileResultSignalData $result): void
     {
@@ -492,7 +479,10 @@ trait ChatAgentFileAttachments
     }
 
     /**
-     * True if the connection from the moderation result is still registered and belongs to the same user.
+     * Whether the accept key from the moderation result still exists and its `userId` matches the result.
+     *
+     * @param ModerationFileResultSignalData $result Moderation outcome targeting a connection and user
+     * @return bool True when the socket is still open for the same user
      */
     private function isModerationTargetConnectionLive(ModerationFileResultSignalData $result): bool
     {
@@ -504,10 +494,12 @@ trait ChatAgentFileAttachments
     }
 
     /**
-     * Abort upload and send {@see ChatSignalConstants::FILE_UPLOAD_INVALID} to this connection.
+     * Abort the active upload (delete quarantine if present), clear session/progress runtime, and notify the client.
      *
-     * @throws RtActionsCollectionNameNullException When collection name is null.
-     * @throws RtTruthSourceWriteNotAllowedException When truth source does not allow write.
+     * @param string $acceptKey WebSocket connection id
+     * @param string $reason Short code forwarded in {@see FileUploadInvalidSignalData}
+     * @throws RtActionsCollectionNameNullException When the connections actions collection name is null
+     * @throws RtTruthSourceWriteNotAllowedException When the truth source rejects a runtime write
      */
     private function failFileUploadSession(string $acceptKey, string $reason): void
     {
@@ -527,7 +519,10 @@ trait ChatAgentFileAttachments
     }
 
     /**
-     * @param ?array<string, mixed> $payload UI state or null to clear
+     * Send {@see ChatSignalConstants::FILE_MODERATION_STATE_UPDATE} to one connection.
+     *
+     * @param string $acceptKey WebSocket connection id
+     * @param ?array<string, mixed> $payload Moderation UI map or null to clear the banner/state
      */
     private function sendFileModerationStateUpdate(string $acceptKey, ?array $payload): void
     {
@@ -539,7 +534,10 @@ trait ChatAgentFileAttachments
     }
 
     /**
-     * @param ?array<string, mixed> $payload Progress map or null to clear
+     * Send {@see ChatSignalConstants::FILE_UPLOAD_PROGRESS_UPDATE} to one connection (logs bytes when payload is non-null).
+     *
+     * @param string $acceptKey WebSocket connection id
+     * @param ?array<string, mixed> $payload Keys `filename`, `uploadedBytes`, `totalBytes`, or null to clear progress UI
      */
     private function sendFileUploadProgress(string $acceptKey, ?array $payload): void
     {
@@ -569,9 +567,13 @@ trait ChatAgentFileAttachments
     }
 
     /**
-     * Send throttled {@see ChatSignalConstants::FILE_UPLOAD_PROGRESS_UPDATE} to this connection unless interval not elapsed.
+     * Send {@see ChatSignalConstants::FILE_UPLOAD_PROGRESS_UPDATE} at most every {@see self::FILE_UPLOAD_PROGRESS_MIN_INTERVAL_SEC}
+     * unless `$force` is true or the upload is complete (`uploadedBytes` >= `totalBytes` > 0).
      *
-     * @param bool $force When true, send immediately (subscribe, first progress after init, or final chunk)
+     * Reads progress from {@see RuntimeConnection::$fileProgressFilename} and related fields on the connection.
+     *
+     * @param string $acceptKey WebSocket connection id
+     * @param bool $force When true, send immediately (e.g. last chunk), bypassing the min-interval throttle
      */
     private function broadcastUploadProgressThrottled(string $acceptKey, bool $force): void
     {
@@ -583,8 +585,9 @@ trait ChatAgentFileAttachments
 
             return;
         }
-        $progress = $this->getFileUploadProgressPayloadForAcceptKey($acceptKey);
-        if ($progress === null) {
+        $connProgress = Hilos::$rt->connections[$acceptKey];
+        $progressName = $connProgress->fileProgressFilename;
+        if ($progressName === null) {
             Logger::logAgentInfo(
                 $this->getId(),
                 "upload_progress: throttle acceptKey={$acceptKey} abort_no_progress_state",
@@ -592,11 +595,16 @@ trait ChatAgentFileAttachments
 
             return;
         }
-        $uploaded = (int)($progress['uploadedBytes'] ?? 0);
-        $total = (int)($progress['totalBytes'] ?? 0);
+        $uploaded = $connProgress->fileProgressUploadedBytes;
+        $total = $connProgress->fileProgressTotalBytes;
+        $progress = [
+            'filename' => $progressName,
+            'uploadedBytes' => $uploaded,
+            'totalBytes' => $total,
+        ];
         $isComplete = $total > 0 && $uploaded >= $total;
         $now = microtime(true);
-        $last = (float)Hilos::$rt->connections[$acceptKey]->uploadProgressLastSentAt;
+        $last = (float)$connProgress->uploadProgressLastSentAt;
         $elapsed = $last > 0.0 ? ($now - $last) : null;
         $elapsedLabel = $elapsed === null ? 'n/a_first_send' : sprintf('%.4fs', $elapsed);
         $minSec = self::FILE_UPLOAD_PROGRESS_MIN_INTERVAL_SEC;
@@ -634,7 +642,10 @@ trait ChatAgentFileAttachments
     }
 
     /**
-     * Lowercase basename for collision checks (null bytes stripped).
+     * Normalize a client filename for duplicate checks: strip null bytes, basename only, trim, ASCII lower case.
+     *
+     * @param string $name Original filename or path segment from the client
+     * @return string Normalized basename used for collision detection
      */
     private function normalizeFilename(string $name): string
     {
@@ -644,7 +655,10 @@ trait ChatAgentFileAttachments
     }
 
     /**
-     * True if any active upload or published {@see ChatEventType::FILE_SHARED} uses the same normalized name.
+     * Whether another in-flight upload or an existing {@see ChatEventType::FILE_SHARED} event already uses this normalized name.
+     *
+     * @param string $normalized Output of {@see self::normalizeFilename()}
+     * @return bool True if the name collides with an active session or published attachment metadata
      */
     private function isFilenameInUse(string $normalized): bool
     {
@@ -681,7 +695,9 @@ trait ChatAgentFileAttachments
     }
 
     /**
-     * Best-effort unlink of all regular files directly under a directory.
+     * Best-effort delete of every regular file in `$dir` (non-recursive); ignores missing dir and unlink failures.
+     *
+     * @param string $dir Absolute filesystem directory path
      */
     private function deleteFilesInDir(string $dir): void
     {
