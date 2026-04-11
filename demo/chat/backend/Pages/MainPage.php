@@ -13,18 +13,14 @@ use Demo\Chat\Core\Page\DTO\FileUploadInitActionDTO;
 use Demo\Chat\Core\Page\DTO\MessageActionDTO;
 use Demo\Chat\Core\Router\DTO\ChatEventSignalDTO;
 use Demo\Chat\Core\Router\DTO\ModerationRequestSignalData;
+use Demo\Chat\Core\Router\DTO\ModerationStateUpdateSignalData;
 use Demo\Chat\Database\DbChatContext;
 use Demo\Chat\Database\View\Collection\Bots;
 use Demo\Chat\Hilos;
+use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\EntitiesChangesDTO;
-use Hilos\Database\Exception\View\CollectionNotManualException;
-use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 use Hilos\HilosException;
-use Hilos\Runtime\Exception\Actions\RtActionsCallbackNotSetException;
-use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
-use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
-use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\Utils\Logger;
 use Random\RandomException;
 
@@ -39,11 +35,17 @@ final class MainPage extends AbstractChatPage
     public const string PAGE = PageConstants::MAIN;
 
     /**
-     * Narrows {@see AbstractChatPage::getChatAgent()} to {@see ChatAgent} (see class description).
+     * Returns the {@see ChatAgent} bound to this page (same object as {@see AbstractPage::$agent}).
+     *
+     * {@see AbstractPage::$agent} is typed as {@see \Hilos\Core\Page\PageAgentInterface}; the assert narrows it for
+     * static analysis and for dev when `zend.assertions=1`.
+     *
+     * @return ChatAgent
      */
     protected function getChatAgent(): ChatAgent
     {
         assert($this->agent instanceof ChatAgent);
+
         return $this->agent;
     }
 
@@ -52,12 +54,7 @@ final class MainPage extends AbstractChatPage
      *
      * @param string $acceptKey Accept key
      * @param array<string, string> $params Route params from page subscription (unused for main page)
-     * @throws CollectionNotManualException If Bots collection is not manual (required for filtering)
-     * @throws ObjectGetIdStringNotImplementedException If Bot object does not implement getIdString (required for collection operations)
-     * @throws RtActionsCallbackNotSetException
-     * @throws RtActionsCollectionNameNullException
-     * @throws RtActionsStateCollectionNullException
-     * @throws RtTruthSourceWriteNotAllowedException
+     * @throws HilosException On database, runtime, or truth source failure
      */
     public function onSubscribe(string $acceptKey, array $params = []): void
     {
@@ -89,10 +86,8 @@ final class MainPage extends AbstractChatPage
      * @param string $acceptKey Accept key
      * @param string $action Action name
      * @param ActionPayloadDTO $dto Action payload DTO
-     * @throws HilosException If database or truth source check fails
-     * @throws RandomException From {@see ChatAgent::handleFileUploadInit}
-     * @throws RtActionsCollectionNameNullException From {@see ChatAgent::handleFileUploadInit}
-     * @throws RtTruthSourceWriteNotAllowedException From {@see ChatAgent::handleFileUploadInit}
+     * @throws HilosException On database, runtime, or truth source failure
+     * @throws RandomException From {@see ChatAgent::handleFileUploadInit} (file upload id generation)
      */
     public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): void
     {
@@ -105,13 +100,13 @@ final class MainPage extends AbstractChatPage
 
             case ChatSignalConstants::FILE_UPLOAD_INIT:
                 if ($dto instanceof FileUploadInitActionDTO) {
-                    $this->getChatAgent()->handleFileUploadInit($acceptKey, $dto);
+                    $this->handleFileUploadInit($acceptKey, $dto);
                 }
                 break;
 
             case ChatSignalConstants::FILE_MODERATION_DISMISS:
                 if ($dto instanceof FileModerationDismissActionDTO) {
-                    $this->getChatAgent()->handleFileModerationDismiss($acceptKey);
+                    $this->handleFileModerationDismiss($acceptKey);
                 }
                 break;
 
@@ -125,10 +120,7 @@ final class MainPage extends AbstractChatPage
      *
      * @param string $acceptKey Accept key
      * @param MessageActionDTO $dto Message DTO
-     * @throws RtActionsCallbackNotSetException
-     * @throws RtActionsCollectionNameNullException
-     * @throws RtActionsStateCollectionNullException
-     * @throws RtTruthSourceWriteNotAllowedException
+     * @throws HilosException On database, runtime, or truth source failure
      */
     private function handleMessage(string $acceptKey, MessageActionDTO $dto): void
     {
@@ -148,7 +140,11 @@ final class MainPage extends AbstractChatPage
         }
 
         Hilos::$rt->userStates->actions->setTextModerationMessage($userId, $dto->content);
-        $this->getChatAgent()->sendModerationStateToUserConnections($userId, $dto->content);
+        $this->getChatAgent()->sendToUser(
+            ChatSignalConstants::MODERATION_STATE_UPDATE,
+            $acceptKey,
+            new ModerationStateUpdateSignalData(moderationState: $dto->content),
+        );
 
         $this->getChatAgent()->sendToAgent(
             ChatSignalConstants::MODERATE_REQUEST,
@@ -158,5 +154,29 @@ final class MainPage extends AbstractChatPage
                 message: $dto->content,
             ),
         );
+    }
+
+    /**
+     * Handle file upload init action.
+     *
+     * @param string $acceptKey Accept key
+     * @param FileUploadInitActionDTO $dto Upload init payload
+     * @throws HilosException On database, runtime, or truth source failure
+     * @throws RandomException From {@see ChatAgent::handleFileUploadInit}
+     */
+    private function handleFileUploadInit(string $acceptKey, FileUploadInitActionDTO $dto): void
+    {
+        $this->getChatAgent()->handleFileUploadInit($acceptKey, $dto);
+    }
+
+    /**
+     * Handle file moderation dismiss action.
+     *
+     * @param string $acceptKey Accept key
+     * @throws HilosException On database, runtime, or truth source failure
+     */
+    private function handleFileModerationDismiss(string $acceptKey): void
+    {
+        $this->getChatAgent()->handleFileModerationDismiss($acceptKey);
     }
 }

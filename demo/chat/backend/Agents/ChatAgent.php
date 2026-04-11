@@ -280,7 +280,7 @@ class ChatAgent extends AbstractAgent
     }
 
     /**
-     * Apply text message moderation: clear pending moderation on all user tabs; if allowed, record rate limit and add {@see ChatEventType::MESSAGE_SENT}.
+     * Apply text message moderation: clear pending state for this connection; if allowed, record rate limit and add {@see ChatEventType::MESSAGE_SENT}.
      *
      * @param ModerationResultSignalData $result Uploader connection key, user id, allow flag, message body, reason
      */
@@ -290,7 +290,11 @@ class ChatAgent extends AbstractAgent
         $userId = $result->userId;
 
         Hilos::$rt->userStates->actions->clearTextModerationMessage($userId);
-        $this->sendModerationStateToUserConnections($userId, null);
+        $this->sendToUser(
+            ChatSignalConstants::MODERATION_STATE_UPDATE,
+            $acceptKey,
+            new ModerationStateUpdateSignalData(moderationState: null),
+        );
 
         if (!$result->allow) {
             $reason = $result->reason !== '' ? $result->reason : 'unknown';
@@ -364,21 +368,6 @@ class ChatAgent extends AbstractAgent
             'fileModerationState' => $fileMod,
             'fileUploadProgress' => $fileProgress,
         ];
-    }
-
-    /**
-     * Push {@see ChatSignalConstants::MODERATION_STATE_UPDATE} to every WebSocket connection of `$userId` (pending message text or null).
-     *
-     * @param int $userId Chat user id
-     * @param ?string $moderationState Pending moderated message text, or null to clear the banner
-     */
-    public function sendModerationStateToUserConnections(int $userId, ?string $moderationState): void
-    {
-        $connections = Hilos::$rt->connections->forUser($userId);
-        $data = new ModerationStateUpdateSignalData(moderationState: $moderationState);
-        foreach ($connections as $connection) {
-            $this->sendToUser(ChatSignalConstants::MODERATION_STATE_UPDATE, $connection->acceptKey, $data);
-        }
     }
 
     /**
