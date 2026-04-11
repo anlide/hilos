@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Hilos\Runtime\View\Actions;
+namespace Hilos\Runtime\View\Actions\Collection;
 
 use Hilos\Constants\SignalConstants;
 use Hilos\Core\Sync\DTO\RtSyncCreatedSignalData;
@@ -26,11 +26,11 @@ use Hilos\TruthSource\RtTruthSourceRegistry;
  * All modifications to runtime data must go through this class.
  *
  * @template T of RtItem
- * @property-read RtCollection $collection
+ * @template TCollection of RtCollection = RtCollection
  */
 abstract class RtActions
 {
-    /** @var RtCollection Rt collection instance for write operations */
+    /** @var TCollection Owning view collection (typed as {@see RtCollection} for the field declaration) */
     protected RtCollection $collection;
 
     /** @var ?callable(RtState): RtItem Callback to create RtItem from RtState */
@@ -73,7 +73,7 @@ abstract class RtActions
      * Creates RtItem from RtState via registered callback.
      *
      * @param RtState $state State instance (reference)
-     * @return T RtItem wrapper for the state
+     * @return T Concrete {@see RtItem} for this collection (bound by subclass @extends)
      * @throws RtActionsCallbackNotSetException When createRtItemCallback is not set
      */
     protected function createRtItemFromState(RtState &$state): RtItem
@@ -143,6 +143,9 @@ abstract class RtActions
      * Adds state to collection and queues RT sync created signal.
      *
      * @param RtState $state State instance to add
+     * @throws RtActionsCollectionNameNullException When collection name is null.
+     * @throws RtTruthSourceWriteNotAllowedException When truth source does not allow write.
+     * @throws RtActionsStateCollectionNullException
      */
     protected function addStateToCollection(RtState $state): void
     {
@@ -158,12 +161,15 @@ abstract class RtActions
      *
      * @param RtState $state State instance to apply diff to
      * @param array<string, mixed> $diff Changed fields and values
+     * @throws RtActionsCollectionNameNullException When collection name is null.
+     * @throws RtTruthSourceWriteNotAllowedException When truth source does not allow write.
      */
     protected function applyDiffToState(RtState $state, array $diff): void
     {
         $this->ensureCanWrite();
         $state->applyDiff($diff);
         $this->queueRtSyncUpdated($state->getId(), $diff);
+        $state->markRtSyncBaseline();
     }
 
     /**

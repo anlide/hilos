@@ -8,29 +8,48 @@ use Demo\Chat\Database\DbChatContext;
 use Demo\Chat\Database\View\Item\User;
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\State\Item\Connection as StateConnection;
+use Demo\Chat\Runtime\View\Actions\Item\ConnectionActions;
+use Hilos\Runtime\Exception\Item\RtItemActionsClassException;
 use Hilos\Runtime\Exception\Item\RtItemPropertyNotFoundException;
 use Hilos\Runtime\View\Item\RtItem;
 
 /**
- * Connection - Read-only wrapper around Connection state.
+ * Read-only {@see RtItem} over {@see StateConnection}: every state field plus virtual `user`.
  *
- * Provides high-level access to connection data.
- * Stores only reference to StateConnection for memory efficiency.
+ * Use {@see Hilos::$rt->connections} for access in agents/pages. Collection writes: {@see \Demo\Chat\Runtime\View\Actions\Collection\ConnectionsActions};
+ * per-connection writes (e.g. file upload session): {@see ConnectionActions}.
+ * File-runtime mutations: {@see ConnectionActions}; collection-level helpers: {@see \Demo\Chat\Runtime\View\Actions\Collection\ConnectionsActions}.
  *
  * @extends RtItem<StateConnection>
  *
  * @property-read string $acceptKey WebSocket accept key
- * @property-read int $userId User ID
+ * @property-read int $userId User ID for this connection
  * @property-read int $connectedAt Unix timestamp when connected
- * @property-read bool $fileUploadInitiatedHere Upload started on this socket
- * @property-read ?User $user User for this connection (null if user not found)
+ * @property-read ?string $fileSessionUploadId Active binary upload id or null
+ * @property-read int $fileSessionDeclaredSize Declared total bytes for current upload session
+ * @property-read int $fileSessionReceivedBytes Bytes received for current upload session
+ * @property-read string $fileSessionQuarantineBasename Quarantine basename (.part)
+ * @property-read string $fileSessionOriginalFilename Original filename for current session
+ * @property-read string $fileSessionMimeType MIME type for current session
+ * @property-read string $fileSessionClientUploadId Client upload correlation id
+ * @property-read string $fileSessionNormalizedFilename Normalized basename for dedup
+ * @property-read ?string $fileModPhase File moderation UI phase or null
+ * @property-read string $fileModFilename Filename in file moderation UI
+ * @property-read int $fileModUploadedBytes Bytes in moderation UI
+ * @property-read int $fileModTotalBytes Total bytes in moderation UI
+ * @property-read string $fileModReason Rejection reason in moderation UI
+ * @property-read int $fileModUpdatedAt Last moderation UI update unix time
+ * @property-read ?string $fileProgressFilename Progress bar filename or null
+ * @property-read int $fileProgressUploadedBytes Progress uploaded bytes
+ * @property-read int $fileProgressTotalBytes Progress total bytes
+ * @property-read float $uploadProgressLastSentAt Microtime of last progress send (throttle)
+ * @property-read ?User $user User row or null if not found in DB view
+ * @property-read ConnectionActions $actions Write operations for this connection
  */
 final class Connection extends RtItem
 {
     /**
-     * Creates connection Rt item from state reference.
-     *
-     * @param StateConnection $state Connection state (passed by reference)
+     * @param StateConnection $state Backing state (by reference, same as parent contract)
      */
     public function __construct(StateConnection &$state)
     {
@@ -38,13 +57,12 @@ final class Connection extends RtItem
     }
 
     /**
-     * Property getter.
+     * Delegates known keys to the backing state; virtual `user` loads from the DB users collection.
      *
-     * @param string $name Property name
-     * @return string|int|bool|User|null Property value
-     * @throws RtItemPropertyNotFoundException If property not found
+     * @throws RtItemActionsClassException
+     * @throws RtItemPropertyNotFoundException When $name is not a declared property
      */
-    public function __get(string $name): string|int|bool|User|null
+    public function __get(string $name): string|int|float|User|null|ConnectionActions
     {
         /** @var StateConnection $state */
         $state = $this->_state;
@@ -53,26 +71,38 @@ final class Connection extends RtItem
             StateConnection::acceptKey => $state->acceptKey,
             StateConnection::userId => $state->userId,
             StateConnection::connectedAt => $state->connectedAt,
-            StateConnection::fileUploadInitiatedHere => $state->fileUploadInitiatedHere,
+            StateConnection::fileSessionUploadId => $state->fileSessionUploadId,
+            StateConnection::fileSessionDeclaredSize => $state->fileSessionDeclaredSize,
+            StateConnection::fileSessionReceivedBytes => $state->fileSessionReceivedBytes,
+            StateConnection::fileSessionQuarantineBasename => $state->fileSessionQuarantineBasename,
+            StateConnection::fileSessionOriginalFilename => $state->fileSessionOriginalFilename,
+            StateConnection::fileSessionMimeType => $state->fileSessionMimeType,
+            StateConnection::fileSessionClientUploadId => $state->fileSessionClientUploadId,
+            StateConnection::fileSessionNormalizedFilename => $state->fileSessionNormalizedFilename,
+            StateConnection::fileModPhase => $state->fileModPhase,
+            StateConnection::fileModFilename => $state->fileModFilename,
+            StateConnection::fileModUploadedBytes => $state->fileModUploadedBytes,
+            StateConnection::fileModTotalBytes => $state->fileModTotalBytes,
+            StateConnection::fileModReason => $state->fileModReason,
+            StateConnection::fileModUpdatedAt => $state->fileModUpdatedAt,
+            StateConnection::fileProgressFilename => $state->fileProgressFilename,
+            StateConnection::fileProgressUploadedBytes => $state->fileProgressUploadedBytes,
+            StateConnection::fileProgressTotalBytes => $state->fileProgressTotalBytes,
+            StateConnection::uploadProgressLastSentAt => $state->uploadProgressLastSentAt,
+            RtItem::actions => $this->getItemActions(),
             DbChatContext::user => Hilos::$db->users[$state->userId] ?? null,
             default => parent::__get($name),
         };
     }
 
     /**
-     * Convert to array.
-     *
-     * @return array<string, mixed> Item as associative array
+     * @return array<string, mixed> Full state row (same as {@see StateConnection::toArray()})
      */
     public function toArray(): array
     {
         /** @var StateConnection $state */
         $state = $this->_state;
-        return [
-            StateConnection::acceptKey => $state->acceptKey,
-            StateConnection::userId => $state->userId,
-            StateConnection::connectedAt => $state->connectedAt,
-            StateConnection::fileUploadInitiatedHere => $state->fileUploadInitiatedHere,
-        ];
+
+        return $state->toArray();
     }
 }

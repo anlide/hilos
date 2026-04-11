@@ -14,7 +14,8 @@ use Hilos\Runtime\Exception\Collection\RtCollectionPropertyNotFoundException;
 use Hilos\Runtime\Exception\Collection\RtCollectionUnserializeException;
 use Hilos\Runtime\State\Collection\RtStates;
 use Hilos\Runtime\State\Item\RtState;
-use Hilos\Runtime\View\Actions\RtActions;
+use Hilos\Runtime\View\Actions\Collection\RtActions;
+use Hilos\Runtime\View\Actions\Item\RtActions as RtItemActions;
 use Hilos\Runtime\View\Item\RtItem;
 use Iterator;
 
@@ -47,6 +48,9 @@ abstract class RtCollection implements ArrayAccess, Countable, Iterator
 
     /** @var ?class-string<TActions> actions class for lazy init */
     private ?string $_actionsClass = null;
+
+    /** @var ?class-string<RtItemActions> item actions class for each RtItem */
+    private ?string $_itemActionsClass = null;
 
     /** @var ?TActions cached actions instance */
     private ?RtActions $_actions = null;
@@ -129,6 +133,25 @@ abstract class RtCollection implements ArrayAccess, Countable, Iterator
     }
 
     /**
+     * Set item actions class for lazy initialization on each RtItem.
+     *
+     * @param ?class-string<RtItemActions> $itemActionsClass
+     */
+    public function setItemActionsClass(?string $itemActionsClass): void
+    {
+        $this->_itemActionsClass = $itemActionsClass;
+    }
+
+    /**
+     * Wires item to this collection (parent ref + item actions class). Call after createRtItem().
+     */
+    protected function attachItemToCollection(RtItem $item): void
+    {
+        $item->setCollection($this);
+        $item->setItemActionsClass($this->_itemActionsClass);
+    }
+
+    /**
      * Get actions instance (creates lazily on first access).
      *
      * @return TActions Actions instance
@@ -153,7 +176,10 @@ abstract class RtCollection implements ArrayAccess, Countable, Iterator
             $this->_actions = new $class($this);
 
             $this->_actions->setCreateRtItemCallback(function (RtState &$state): RtItem {
-                return $this->createRtItem($state);
+                $item = $this->createRtItem($state);
+                $this->attachItemToCollection($item);
+
+                return $item;
             });
 
             $this->_actions->setClearCacheCallback(function (): void {
@@ -207,6 +233,7 @@ abstract class RtCollection implements ArrayAccess, Countable, Iterator
         }
 
         $item = $this->createRtItem($state);
+        $this->attachItemToCollection($item);
         $this->items[$key] = $item;
 
         return $item;
@@ -404,7 +431,9 @@ abstract class RtCollection implements ArrayAccess, Countable, Iterator
         $stateCollection = $this->getStateCollection();
         $this->items = [];
         foreach ($stateCollection as $key => $state) {
-            $this->items[$key] = $this->createRtItem($state);
+            $item = $this->createRtItem($state);
+            $this->attachItemToCollection($item);
+            $this->items[$key] = $item;
             unset($state);
         }
         $stateCollection->rewind();

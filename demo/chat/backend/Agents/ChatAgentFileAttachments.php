@@ -20,7 +20,7 @@ use Demo\Chat\Core\Router\DTO\ModerationFileResultSignalData;
 use Demo\Chat\Database\DbChatContext;
 use Demo\Chat\Database\View\Collection\Events;
 use Demo\Chat\Hilos;
-use Demo\Chat\Runtime\State\Item\ChatUserState as StateChatUserState;
+use Demo\Chat\Runtime\View\Item\Connection as RuntimeConnection;
 use Demo\Chat\Utils\ChatAttachmentStorage;
 use Demo\Chat\Utils\ChatSettingsHelper;
 use Hilos\Core\Router\DTO\EntitiesChangesDTO;
@@ -29,30 +29,31 @@ use Hilos\Socket\WebSocket\DTO\WebSocketFrameBinarySignalDTO;
 use Hilos\Utils\Logger;
 
 /**
- * File upload (action + binary), quarantine, moderation, and UI state for ChatAgent.
+ * File upload (WebSocket action + binary frames), quarantine storage, async file moderation, and per-connection UI state.
+ *
+ * Reads connection file state only as {@see Hilos::$rt->connections}[`$acceptKey`] (no local RtItem variables). Mutations use {@see \Demo\Chat\Runtime\View\Actions\Collection\ConnectionsActions} named methods. Signals go to the owning `acceptKey` only.
  */
 trait ChatAgentFileAttachments
 {
+    /** Minimum interval between non-forced {@see ChatSignalConstants::FILE_UPLOAD_PROGRESS_UPDATE} sends. */
     private const float FILE_UPLOAD_PROGRESS_MIN_INTERVAL_SEC = 0.3;
 
+    /**
+     * Start or replace a binary upload on this connection (validates limits, creates quarantine .part file).
+     *
+     * @param string $acceptKey WebSocket connection id
+     */
     public function handleFileUploadInit(string $acceptKey, FileUploadInitActionDTO $dto): void
     {
         if (!isset(Hilos::$rt->connections[$acceptKey])) {
             return;
         }
-        $userId = Hilos::$rt->connections[$acceptKey]->userId;
-        Hilos::$rt->userStates->actions->ensure($userId);
 
-        $state = Hilos::$rt->userStates->getStateCollection()->get((string)$userId);
-        if (!$state instanceof StateChatUserState) {
-            return;
-        }
-
-        if ($state->hasActiveFileUploadSession()) {
-            $this->abortFileUploadSession($userId, 'superseded_by_new_init');
-            $this->sendToAllUserConnections(
-                $userId,
+        if (Hilos::$rt->connections[$acceptKey]->fileSessionUploadId !== null) {
+            $this->abortFileUploadSession($acceptKey, 'superseded_by_new_init');
+            $this->sendToUser(
                 ChatSignalConstants::FILE_UPLOAD_ABORTED,
+                $acceptKey,
                 new FileUploadAbortedSignalData('superseded_by_new_init'),
             );
         }
@@ -127,30 +128,22 @@ trait ChatAgentFileAttachments
             'normalizedFilename' => $norm,
         ];
 
-        Hilos::$rt->userStates->actions->applyDiffForUser(
-            $userId,
-            array_merge(
-                StateChatUserState::diffForFileSession($sessionArr),
-                [
-                    StateChatUserState::fileProgressFilename => $dto->filename,
-                    StateChatUserState::fileProgressUploadedBytes => 0,
-                    StateChatUserState::fileProgressTotalBytes => $dto->size,
-                    StateChatUserState::uploadProgressLastSentAt => 0.0,
-                ],
-            ),
+        Hilos::$rt->connections[$acceptKey]?->actions->beginBinaryFileUpload(
+            $sessionArr,
+            $dto->filename,
+            $dto->size,
         );
-
-        Hilos::$rt->connections->actions->setFileUploadInitiatorForUser($userId, $acceptKey);
 
         Logger::logAgentInfo(
             $this->getId(),
             sprintf(
-                'upload_progress: after_init userId=%d totalBytes=%d (force broadcast)',
-                $userId,
+                'upload_progress: after_init acceptKey=%s userId=%d totalBytes=%d (force send)',
+                $acceptKey,
+                Hilos::$rt->connections[$acceptKey]->userId,
                 $dto->size,
             ),
         );
-        $this->broadcastUploadProgressThrottled($userId, true);
+        $this->broadcastUploadProgressThrottled($acceptKey, true);
 
         $this->sendToUser(
             ChatSignalConstants::FILE_UPLOAD_READY,
@@ -165,41 +158,49 @@ trait ChatAgentFileAttachments
         );
     }
 
-    public function handleFileModerationDismiss(int $userId): void
+    /**
+     * Clear rejected-file moderation banner on this connection (no-op if not in rejected phase).
+     *
+     * @param string $acceptKey WebSocket connection id
+     */
+    public function handleFileModerationDismiss(string $acceptKey): void
     {
-        Hilos::$rt->userStates->actions->ensure($userId);
-        $state = Hilos::$rt->userStates->getStateCollection()->get((string)$userId);
-        if (!$state instanceof StateChatUserState) {
+        if (!isset(Hilos::$rt->connections[$acceptKey])) {
             return;
         }
-        $payload = $state->getFileModerationUiPayload();
+        $payload = $this->getFileModerationUiPayloadForAcceptKey($acceptKey);
         if ($payload === null || ($payload['phase'] ?? '') !== 'rejected') {
             return;
         }
-        Hilos::$rt->userStates->actions->applyDiffForUser($userId, StateChatUserState::diffClearFileModerationUi());
-        $this->broadcastFileModerationUi($userId);
+        Hilos::$rt->connections->actions->clearFileModerationBannerAfterDismiss($acceptKey);
+        $this->sendFileModerationStateUpdate($acceptKey, null);
     }
 
+    /**
+     * Append binary payload to the active upload session for {@see WebSocketFrameBinarySignalDTO::$acceptKey}.
+     *
+     * @param string $source Signal source identifier (framework)
+     * @param string $name Signal name (framework)
+     */
     public function onSignalFrameBinary(WebSocketFrameBinarySignalDTO $data, string $source, string $name): void
     {
-        if (!isset(Hilos::$rt->connections[$data->acceptKey])) {
+        $acceptKey = $data->acceptKey;
+        if (!isset(Hilos::$rt->connections[$acceptKey])) {
             Logger::logAgentInfo($this->getId(), 'frame_binary: unknown acceptKey, ignoring');
+
             return;
         }
-        $userId = Hilos::$rt->connections[$data->acceptKey]->userId;
-        Hilos::$rt->userStates->actions->ensure($userId);
-        $state = Hilos::$rt->userStates->getStateCollection()->get((string)$userId);
-        if (!$state instanceof StateChatUserState) {
-            return;
-        }
-        $session = $state->getFileUploadSessionArray();
+        $conn = Hilos::$rt->connections[$acceptKey];
+        $userId = $conn->userId;
+        $session = $this->fileUploadSessionArrayFromConnection($conn);
         if ($session === null) {
-            Logger::logAgentInfo($this->getId(), "frame_binary: no upload session userId={$userId}");
-            $this->sendToAllUserConnections(
-                $userId,
+            Logger::logAgentInfo($this->getId(), "frame_binary: no upload session acceptKey={$acceptKey} userId={$userId}");
+            $this->sendToUser(
                 ChatSignalConstants::FILE_UPLOAD_INVALID,
+                $acceptKey,
                 new FileUploadInvalidSignalData('no_active_upload'),
             );
+
             return;
         }
 
@@ -208,149 +209,179 @@ trait ChatAgentFileAttachments
         $declared = (int)$session['declaredSize'];
         $received = (int)$session['receivedBytes'];
         if ($received + $len > $declared) {
-            Logger::logAgentError($this->getId(), "frame_binary: overflow userId={$userId}");
-            $this->failFileUploadSession($userId, 'size_overflow');
+            Logger::logAgentError($this->getId(), "frame_binary: overflow acceptKey={$acceptKey} userId={$userId}");
+            $this->failFileUploadSession($acceptKey, 'size_overflow');
 
             return;
         }
 
         $path = ChatAttachmentStorage::quarantinePathForBasename((string)$session['quarantineBasename']);
         if (file_put_contents($path, $chunk, FILE_APPEND) === false) {
-            $this->failFileUploadSession($userId, 'write_error');
+            $this->failFileUploadSession($acceptKey, 'write_error');
+
             return;
         }
 
         $newReceived = $received + $len;
-        Hilos::$rt->userStates->actions->applyDiffForUser($userId, [
-            StateChatUserState::fileSessionReceivedBytes => $newReceived,
-            StateChatUserState::fileProgressUploadedBytes => $newReceived,
-        ]);
+        Hilos::$rt->connections->actions->applyStoredBinaryChunkProgress($acceptKey, $newReceived);
 
-        $state = Hilos::$rt->userStates->getStateCollection()->get((string)$userId);
-        if (!$state instanceof StateChatUserState) {
-            return;
-        }
-        $session = $state->getFileUploadSessionArray();
-        if ($session === null) {
+        $conn = Hilos::$rt->connections[$acceptKey] ?? null;
+        if ($conn === null || $conn->fileSessionUploadId === null) {
             return;
         }
 
-        if ($state->getFileUploadProgressPayload() !== null) {
+        if ($this->getFileUploadProgressPayloadForAcceptKey($acceptKey) !== null) {
             $force = $newReceived === $declared;
             Logger::logAgentInfo(
                 $this->getId(),
                 sprintf(
-                    'upload_progress: binary_chunk userId=%d chunkBytes=%d receivedAfter=%d declared=%d forceLastChunk=%s',
-                    $userId,
+                    'upload_progress: binary_chunk acceptKey=%s chunkBytes=%d receivedAfter=%d declared=%d forceLastChunk=%s',
+                    $acceptKey,
                     $len,
                     $newReceived,
                     $declared,
                     $force ? '1' : '0',
                 ),
             );
-            $this->broadcastUploadProgressThrottled($userId, $force);
+            $this->broadcastUploadProgressThrottled($acceptKey, $force);
         } else {
             Logger::logAgentInfo(
                 $this->getId(),
-                "upload_progress: binary_chunk userId={$userId} skipped_no_progress_map (session exists)",
+                "upload_progress: binary_chunk acceptKey={$acceptKey} skipped_no_progress_map (session exists)",
             );
         }
 
         if ($newReceived === $declared) {
-            $this->completeFileUpload($userId, $data->acceptKey);
+            $this->completeFileUpload($acceptKey);
         }
     }
 
     /**
+     * File moderation UI payload for handshake/subscribe, or null if no file moderation state on this socket.
+     *
+     * @param string $acceptKey WebSocket connection id
      * @return ?array<string, mixed>
      */
-    public function getFileModerationUiPayloadForUser(int $userId): ?array
+    public function getFileModerationUiPayloadForAcceptKey(string $acceptKey): ?array
     {
-        $state = Hilos::$rt->userStates->getStateCollection()->get((string)$userId);
-        if (!$state instanceof StateChatUserState) {
+        $conn = Hilos::$rt->connections[$acceptKey] ?? null;
+        if ($conn === null) {
             return null;
         }
+        $phase = $conn->fileModPhase;
+        if ($phase === null) {
+            return null;
+        }
+        $reason = $conn->fileModReason;
 
-        return $state->getFileModerationUiPayload();
+        return [
+            'phase' => $phase,
+            'filename' => $conn->fileModFilename,
+            'uploadedBytes' => $conn->fileModUploadedBytes,
+            'totalBytes' => $conn->fileModTotalBytes,
+            'reason' => is_string($reason) && $reason !== '' ? $reason : null,
+            'updatedAt' => $conn->fileModUpdatedAt,
+        ];
     }
 
     /**
+     * In-flight upload progress for handshake/subscribe, or null if no progress bar state on this socket.
+     *
+     * @param string $acceptKey WebSocket connection id
      * @return ?array<string, mixed>
      */
-    public function getFileUploadProgressPayloadForUser(int $userId): ?array
+    public function getFileUploadProgressPayloadForAcceptKey(string $acceptKey): ?array
     {
-        $state = Hilos::$rt->userStates->getStateCollection()->get((string)$userId);
-        if (!$state instanceof StateChatUserState) {
+        $conn = Hilos::$rt->connections[$acceptKey] ?? null;
+        if ($conn === null || $conn->fileProgressFilename === null) {
             return null;
         }
 
-        return $state->getFileUploadProgressPayload();
+        return [
+            'filename' => $conn->fileProgressFilename,
+            'uploadedBytes' => $conn->fileProgressUploadedBytes,
+            'totalBytes' => $conn->fileProgressTotalBytes,
+        ];
     }
 
+    /**
+     * Binary upload session map for handler logic, or null when {@see RuntimeConnection::$fileSessionUploadId} is unset.
+     *
+     * @return ?array<string, mixed>
+     */
+    private function fileUploadSessionArrayFromConnection(RuntimeConnection $conn): ?array
+    {
+        if ($conn->fileSessionUploadId === null) {
+            return null;
+        }
+
+        return [
+            'uploadId' => $conn->fileSessionUploadId,
+            'declaredSize' => $conn->fileSessionDeclaredSize,
+            'receivedBytes' => $conn->fileSessionReceivedBytes,
+            'quarantineBasename' => $conn->fileSessionQuarantineBasename,
+            'originalFilename' => $conn->fileSessionOriginalFilename,
+            'mimeType' => $conn->fileSessionMimeType,
+            'clientUploadId' => $conn->fileSessionClientUploadId,
+            'normalizedFilename' => $conn->fileSessionNormalizedFilename,
+        ];
+    }
+
+    /**
+     * Wipe published and quarantine dirs, clear file runtime on every connection, notify clients (admin/cron path).
+     */
     public function deleteAllAttachmentFilesFromDisk(): void
     {
         $published = ChatAttachmentStorage::publishedDir();
         $quarantine = ChatAttachmentStorage::quarantineDir();
         $this->deleteFilesInDir($published);
         $this->deleteFilesInDir($quarantine);
-        Hilos::$rt->userStates->actions->clearAllFileRuntimeForAllUsers();
+        Hilos::$rt->connections->actions->clearAllFileRuntimeOnAllConnections();
 
-        $userIds = [];
         foreach (Hilos::$rt->connections as $conn) {
-            $userIds[$conn->userId] = true;
-        }
-        foreach (array_keys($userIds) as $uid) {
-            Hilos::$rt->connections->actions->setFileUploadInitiatorForUser((int)$uid, null);
-        }
-
-        foreach (array_keys($userIds) as $uid) {
-            $this->sendToAllUserConnections(
-                (int)$uid,
+            $ak = $conn->acceptKey;
+            $this->sendToUser(
                 ChatSignalConstants::FILE_MODERATION_STATE_UPDATE,
+                $ak,
                 new FileModerationStateUpdateSignalData(null),
             );
-            $this->sendToAllUserConnections(
-                (int)$uid,
+            $this->sendToUser(
                 ChatSignalConstants::FILE_UPLOAD_PROGRESS_UPDATE,
+                $ak,
                 new FileUploadProgressUpdateSignalData(null),
             );
         }
     }
 
-    private function completeFileUpload(int $userId, string $acceptKey): void
+    /**
+     * Finalize upload: clear session/progress, enter moderating UI, notify client, send request to ModeratorAgent.
+     *
+     * @param string $acceptKey WebSocket connection id
+     */
+    private function completeFileUpload(string $acceptKey): void
     {
-        $state = Hilos::$rt->userStates->getStateCollection()->get((string)$userId);
-        if (!$state instanceof StateChatUserState) {
+        if (!isset(Hilos::$rt->connections[$acceptKey])) {
             return;
         }
-        $session = $state->getFileUploadSessionArray();
+        $conn = Hilos::$rt->connections[$acceptKey];
+        $session = $this->fileUploadSessionArrayFromConnection($conn);
         if ($session === null) {
             return;
         }
 
-        Hilos::$rt->userStates->actions->applyDiffForUser(
-            $userId,
-            array_merge(
-                StateChatUserState::diffClearFileSession(),
-                StateChatUserState::diffClearFileProgress(),
-            ),
+        Hilos::$rt->connections->actions->clearFileUploadSessionAfterReceiveComplete($acceptKey);
+        $this->sendFileUploadProgress($acceptKey, null);
+
+        Hilos::$rt->connections->actions->enterFileModerationPending(
+            $acceptKey,
+            (string)$session['originalFilename'],
+            (int)$session['declaredSize'],
         );
-        Hilos::$rt->connections->actions->setFileUploadInitiatorForUser($userId, null);
-        $this->sendFileUploadProgressToAllConnections($userId, null);
+        $this->sendFileModerationStateUpdate($acceptKey, $this->getFileModerationUiPayloadForAcceptKey($acceptKey));
 
-        Hilos::$rt->userStates->actions->applyDiffForUser($userId, [
-            StateChatUserState::fileModPhase => 'moderating',
-            StateChatUserState::fileModFilename => (string)$session['originalFilename'],
-            StateChatUserState::fileModUploadedBytes => (int)$session['declaredSize'],
-            StateChatUserState::fileModTotalBytes => (int)$session['declaredSize'],
-            StateChatUserState::fileModReason => '',
-            StateChatUserState::fileModUpdatedAt => time(),
-        ]);
-        $this->broadcastFileModerationUi($userId);
-
-        $this->sendToAllUserConnections(
-            $userId,
+        $this->sendToUser(
             ChatSignalConstants::FILE_UPLOAD_COMPLETE,
+            $acceptKey,
             new FileUploadCompleteSignalData(
                 uploadId: (string)$session['uploadId'],
                 filename: (string)$session['originalFilename'],
@@ -368,7 +399,7 @@ trait ChatAgentFileAttachments
             ChatSignalConstants::MODERATE_FILE_REQUEST,
             new ModerationFileRequestSignalData(
                 acceptKey: $acceptKey,
-                userId: $userId,
+                userId: $conn->userId,
                 quarantineBasename: (string)$session['quarantineBasename'],
                 originalFilename: (string)$session['originalFilename'],
                 mimeType: (string)$session['mimeType'],
@@ -378,33 +409,40 @@ trait ChatAgentFileAttachments
         );
     }
 
+    /**
+     * Apply ModeratorAgent outcome: reject (delete quarantine) or publish/move to published and broadcast {@see ChatSignalConstants::NEW_EVENT}.
+     *
+     * Updates file moderation UI only if the target connection is still open and {@see ModerationFileResultSignalData::$userId} matches.
+     */
     public function handleModerationFileResult(ModerationFileResultSignalData $result): void
     {
-        $userId = $result->userId;
-        Hilos::$rt->userStates->actions->ensure($userId);
         $path = ChatAttachmentStorage::quarantinePathForBasename($result->quarantineBasename);
+        $acceptKey = $result->acceptKey;
+        $live = $this->isModerationTargetConnectionLive($result);
 
         if (!$result->allow) {
             ChatAttachmentStorage::deleteIfExists($path);
             $reason = $result->reason !== '' ? $result->reason : 'unknown';
-            Logger::logAgentError($this->getId(), "File blocked by moderation (userId={$userId}; reason={$reason})");
-            Hilos::$rt->userStates->actions->applyDiffForUser($userId, [
-                StateChatUserState::fileModPhase => 'rejected',
-                StateChatUserState::fileModFilename => $result->originalFilename,
-                StateChatUserState::fileModUploadedBytes => $result->size,
-                StateChatUserState::fileModTotalBytes => $result->size,
-                StateChatUserState::fileModReason => $reason,
-                StateChatUserState::fileModUpdatedAt => time(),
-            ]);
-            $this->broadcastFileModerationUi($userId);
+            Logger::logAgentError($this->getId(), "File blocked by moderation (userId={$result->userId}; reason={$reason})");
+            if ($live) {
+                Hilos::$rt->connections->actions->markFileModerationRejected(
+                    $acceptKey,
+                    $result->originalFilename,
+                    $result->size,
+                    $reason,
+                );
+                $this->sendFileModerationStateUpdate($acceptKey, $this->getFileModerationUiPayloadForAcceptKey($acceptKey));
+            }
 
             return;
         }
 
         if (!is_file($path)) {
             Logger::logAgentError($this->getId(), "Moderation allow but quarantine file missing: {$result->quarantineBasename}");
-            Hilos::$rt->userStates->actions->applyDiffForUser($userId, StateChatUserState::diffClearFileModerationUi());
-            $this->broadcastFileModerationUi($userId);
+            if ($live) {
+                Hilos::$rt->connections->actions->clearFileModerationBannerAfterAllowMissingQuarantine($acceptKey);
+                $this->sendFileModerationStateUpdate($acceptKey, null);
+            }
 
             return;
         }
@@ -416,16 +454,20 @@ trait ChatAgentFileAttachments
         if (!ChatAttachmentStorage::moveToPublished($path, $storedName)) {
             Logger::logAgentError($this->getId(), 'Failed to move file to published storage');
             ChatAttachmentStorage::deleteIfExists($path);
-            Hilos::$rt->userStates->actions->applyDiffForUser($userId, StateChatUserState::diffClearFileModerationUi());
-            $this->broadcastFileModerationUi($userId);
+            if ($live) {
+                Hilos::$rt->connections->actions->clearFileModerationBannerAfterPublishFailed($acceptKey);
+                $this->sendFileModerationStateUpdate($acceptKey, null);
+            }
 
             return;
         }
 
-        Hilos::$rt->userStates->actions->applyDiffForUser($userId, StateChatUserState::diffClearFileModerationUi());
-        $this->broadcastFileModerationUi($userId);
+        if ($live) {
+            Hilos::$rt->connections->actions->clearFileModerationBannerAfterPublishSuccess($acceptKey);
+            $this->sendFileModerationStateUpdate($acceptKey, null);
+        }
 
-        $event = Hilos::$db->events->actions->add(ChatEventType::FILE_SHARED->value, $userId, null, [
+        $event = Hilos::$db->events->actions->add(ChatEventType::FILE_SHARED->value, $result->userId, null, [
             'originalFilename' => $result->originalFilename,
             'mimeType' => $result->mimeType,
             'size' => $result->size,
@@ -439,56 +481,67 @@ trait ChatAgentFileAttachments
         );
     }
 
-    private function abortFileUploadSession(int $userId, string $reason): void
+    /**
+     * True if the connection from the moderation result is still registered and belongs to the same user.
+     */
+    private function isModerationTargetConnectionLive(ModerationFileResultSignalData $result): bool
     {
-        $state = Hilos::$rt->userStates->getStateCollection()->get((string)$userId);
-        $hadProgress = $state instanceof StateChatUserState && $state->getFileUploadProgressPayload() !== null;
-        if ($state instanceof StateChatUserState && $state->hasActiveFileUploadSession()) {
-            $session = $state->getFileUploadSessionArray();
-            if ($session !== null) {
-                $path = ChatAttachmentStorage::quarantinePathForBasename((string)$session['quarantineBasename']);
-                ChatAttachmentStorage::deleteIfExists($path);
-            }
+        if (!isset(Hilos::$rt->connections[$result->acceptKey])) {
+            return false;
         }
-        Hilos::$rt->userStates->actions->applyDiffForUser(
-            $userId,
-            array_merge(
-                StateChatUserState::diffClearFileSession(),
-                StateChatUserState::diffClearFileProgress(),
-            ),
-        );
-        Hilos::$rt->connections->actions->setFileUploadInitiatorForUser($userId, null);
-        if ($hadProgress) {
-            $this->sendFileUploadProgressToAllConnections($userId, null);
-        }
-        Logger::logAgentInfo($this->getId(), "file upload aborted userId={$userId} reason={$reason}");
+
+        return Hilos::$rt->connections[$result->acceptKey]->userId === $result->userId;
     }
 
-    private function failFileUploadSession(int $userId, string $reason): void
+    /**
+     * Remove quarantine file if any, clear session and progress on this connection; optionally clear progress WS payload.
+     *
+     * @param string $reason Log label (not sent to client unless combined with {@see failFileUploadSession})
+     */
+    private function abortFileUploadSession(string $acceptKey, string $reason): void
     {
-        $this->abortFileUploadSession($userId, $reason);
-        $this->sendToAllUserConnections(
-            $userId,
+        $conn = Hilos::$rt->connections[$acceptKey] ?? null;
+        $hadProgress = $conn !== null && $conn->fileProgressFilename !== null;
+        if ($conn !== null && $conn->fileSessionUploadId !== null) {
+            $path = ChatAttachmentStorage::quarantinePathForBasename($conn->fileSessionQuarantineBasename);
+            ChatAttachmentStorage::deleteIfExists($path);
+        }
+        Hilos::$rt->connections->actions->abortFileUploadClearSessionAndProgress($acceptKey);
+        if ($hadProgress) {
+            $this->sendFileUploadProgress($acceptKey, null);
+        }
+        Logger::logAgentInfo($this->getId(), "file upload aborted acceptKey={$acceptKey} reason={$reason}");
+    }
+
+    /**
+     * Abort upload and send {@see ChatSignalConstants::FILE_UPLOAD_INVALID} to this connection.
+     */
+    private function failFileUploadSession(string $acceptKey, string $reason): void
+    {
+        $this->abortFileUploadSession($acceptKey, $reason);
+        $this->sendToUser(
             ChatSignalConstants::FILE_UPLOAD_INVALID,
+            $acceptKey,
             new FileUploadInvalidSignalData($reason),
         );
     }
 
-    private function sendToAllUserConnections(int $userId, string $signalName, SignalDataInterface $dto): void
+    /**
+     * @param ?array<string, mixed> $payload UI state or null to clear
+     */
+    private function sendFileModerationStateUpdate(string $acceptKey, ?array $payload): void
     {
-        foreach (Hilos::$rt->connections->forUser($userId) as $connection) {
-            $this->sendToUser($signalName, $connection->acceptKey, $dto);
-        }
+        $this->sendToUser(
+            ChatSignalConstants::FILE_MODERATION_STATE_UPDATE,
+            $acceptKey,
+            new FileModerationStateUpdateSignalData($payload),
+        );
     }
 
-    private function broadcastFileModerationUi(int $userId): void
-    {
-        $payload = $this->getFileModerationUiPayloadForUser($userId);
-        $data = new FileModerationStateUpdateSignalData($payload);
-        $this->sendToAllUserConnections($userId, ChatSignalConstants::FILE_MODERATION_STATE_UPDATE, $data);
-    }
-
-    private function sendFileUploadProgressToAllConnections(int $userId, ?array $payload): void
+    /**
+     * @param ?array<string, mixed> $payload Progress map or null to clear
+     */
+    private function sendFileUploadProgress(string $acceptKey, ?array $payload): void
     {
         if ($payload !== null) {
             $up = (int)($payload['uploadedBytes'] ?? 0);
@@ -496,8 +549,8 @@ trait ChatAgentFileAttachments
             Logger::logAgentInfo(
                 $this->getId(),
                 sprintf(
-                    'upload_progress: ws_send FILE_UPLOAD_PROGRESS_UPDATE userId=%d uploaded=%d/%d',
-                    $userId,
+                    'upload_progress: ws_send FILE_UPLOAD_PROGRESS_UPDATE acceptKey=%s uploaded=%d/%d',
+                    $acceptKey,
                     $up,
                     $tot,
                 ),
@@ -505,35 +558,36 @@ trait ChatAgentFileAttachments
         } else {
             Logger::logAgentInfo(
                 $this->getId(),
-                "upload_progress: ws_send FILE_UPLOAD_PROGRESS_UPDATE userId={$userId} payload=null",
+                "upload_progress: ws_send FILE_UPLOAD_PROGRESS_UPDATE acceptKey={$acceptKey} payload=null",
             );
         }
-        $this->sendToAllUserConnections(
-            $userId,
+        $this->sendToUser(
             ChatSignalConstants::FILE_UPLOAD_PROGRESS_UPDATE,
+            $acceptKey,
             new FileUploadProgressUpdateSignalData($payload),
         );
     }
 
     /**
-     * @param bool $force When true, send immediately (subscribe, first progress after init, or final chunk).
+     * Send throttled {@see ChatSignalConstants::FILE_UPLOAD_PROGRESS_UPDATE} to this connection unless interval not elapsed.
+     *
+     * @param bool $force When true, send immediately (subscribe, first progress after init, or final chunk)
      */
-    private function broadcastUploadProgressThrottled(int $userId, bool $force): void
+    private function broadcastUploadProgressThrottled(string $acceptKey, bool $force): void
     {
-        $state = Hilos::$rt->userStates->getStateCollection()->get((string)$userId);
-        if (!$state instanceof StateChatUserState) {
+        if (!isset(Hilos::$rt->connections[$acceptKey])) {
             Logger::logAgentInfo(
                 $this->getId(),
-                "upload_progress: throttle userId={$userId} abort_no_state",
+                "upload_progress: throttle acceptKey={$acceptKey} abort_no_state",
             );
 
             return;
         }
-        $progress = $state->getFileUploadProgressPayload();
+        $progress = $this->getFileUploadProgressPayloadForAcceptKey($acceptKey);
         if ($progress === null) {
             Logger::logAgentInfo(
                 $this->getId(),
-                "upload_progress: throttle userId={$userId} abort_no_progress_state",
+                "upload_progress: throttle acceptKey={$acceptKey} abort_no_progress_state",
             );
 
             return;
@@ -542,7 +596,7 @@ trait ChatAgentFileAttachments
         $total = (int)($progress['totalBytes'] ?? 0);
         $isComplete = $total > 0 && $uploaded >= $total;
         $now = microtime(true);
-        $last = (float)$state->__get(StateChatUserState::uploadProgressLastSentAt);
+        $last = (float)Hilos::$rt->connections[$acceptKey]->uploadProgressLastSentAt;
         $elapsed = $last > 0.0 ? ($now - $last) : null;
         $elapsedLabel = $elapsed === null ? 'n/a_first_send' : sprintf('%.4fs', $elapsed);
         $minSec = self::FILE_UPLOAD_PROGRESS_MIN_INTERVAL_SEC;
@@ -550,8 +604,8 @@ trait ChatAgentFileAttachments
             Logger::logAgentInfo(
                 $this->getId(),
                 sprintf(
-                    'upload_progress: throttle SKIP userId=%d uploaded=%d/%d elapsedSinceLastSend=%s need>=%.2fs force=%s isComplete=%s',
-                    $userId,
+                    'upload_progress: throttle SKIP acceptKey=%s uploaded=%d/%d elapsedSinceLastSend=%s need>=%.2fs force=%s isComplete=%s',
+                    $acceptKey,
                     $uploaded,
                     $total,
                     $elapsedLabel,
@@ -566,8 +620,8 @@ trait ChatAgentFileAttachments
         Logger::logAgentInfo(
             $this->getId(),
             sprintf(
-                'upload_progress: throttle SEND userId=%d uploaded=%d/%d elapsedSinceLastSend=%s force=%s isComplete=%s',
-                $userId,
+                'upload_progress: throttle SEND acceptKey=%s uploaded=%d/%d elapsedSinceLastSend=%s force=%s isComplete=%s',
+                $acceptKey,
                 $uploaded,
                 $total,
                 $elapsedLabel,
@@ -575,12 +629,13 @@ trait ChatAgentFileAttachments
                 $isComplete ? '1' : '0',
             ),
         );
-        Hilos::$rt->userStates->actions->applyDiffForUser($userId, [
-            StateChatUserState::uploadProgressLastSentAt => $now,
-        ]);
-        $this->sendFileUploadProgressToAllConnections($userId, $progress);
+        Hilos::$rt->connections->actions->markUploadProgressThrottleTimestamp($acceptKey, $now);
+        $this->sendFileUploadProgress($acceptKey, $progress);
     }
 
+    /**
+     * Lowercase basename for collision checks (null bytes stripped).
+     */
     private function normalizeFilename(string $name): string
     {
         $base = basename(str_replace(["\0"], '', $name));
@@ -588,13 +643,16 @@ trait ChatAgentFileAttachments
         return strtolower(trim($base));
     }
 
+    /**
+     * True if any active upload or published {@see ChatEventType::FILE_SHARED} uses the same normalized name.
+     */
     private function isFilenameInUse(string $normalized): bool
     {
-        foreach (Hilos::$rt->userStates->getStateCollection() as $st) {
-            if (!$st instanceof StateChatUserState || !$st->hasActiveFileUploadSession()) {
+        foreach (Hilos::$rt->connections as $c) {
+            if ($c->fileSessionUploadId === null) {
                 continue;
             }
-            if ((string)$st->__get(StateChatUserState::fileSessionNormalizedFilename) === $normalized) {
+            if ((string)$c->fileSessionNormalizedFilename === $normalized) {
                 return true;
             }
         }
@@ -622,6 +680,9 @@ trait ChatAgentFileAttachments
         return false;
     }
 
+    /**
+     * Total size in bytes of all {@see ChatEventType::FILE_SHARED} events (for global quota).
+     */
     private function sumPublishedAttachmentBytes(): int
     {
         $sum = 0;
@@ -643,20 +704,25 @@ trait ChatAgentFileAttachments
         return $sum;
     }
 
+    /**
+     * Sum of not-yet-received bytes over all active connection upload sessions (reserved quota).
+     */
     private function sumActiveUploadDeclaredBytes(): int
     {
         $sum = 0;
-        foreach (Hilos::$rt->userStates->getStateCollection() as $st) {
-            if (!$st instanceof StateChatUserState || !$st->hasActiveFileUploadSession()) {
+        foreach (Hilos::$rt->connections as $c) {
+            if ($c->fileSessionUploadId === null) {
                 continue;
             }
-            $sum += (int)$st->__get(StateChatUserState::fileSessionDeclaredSize)
-                - (int)$st->__get(StateChatUserState::fileSessionReceivedBytes);
+            $sum += (int)$c->fileSessionDeclaredSize - (int)$c->fileSessionReceivedBytes;
         }
 
         return $sum;
     }
 
+    /**
+     * Best-effort unlink of all regular files directly under a directory.
+     */
     private function deleteFilesInDir(string $dir): void
     {
         if (!is_dir($dir)) {

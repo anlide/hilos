@@ -123,8 +123,8 @@ class ChatAgent extends AbstractAgent
         $pending = Hilos::$rt->userStates[(string)$user->id]->moderationMessage;
         $moderationState = $pending !== '' ? $pending : null;
 
-        $fileMod = $this->getFileModerationUiPayloadForUser($user->id);
-        $fileProgress = $this->getFileUploadProgressPayloadForUser($user->id);
+        $fileMod = $this->getFileModerationUiPayloadForAcceptKey($data->acceptKey);
+        $fileProgress = $this->getFileUploadProgressPayloadForAcceptKey($data->acceptKey);
 
         $this->sendToUser(
             ChatSignalConstants::HANDSHAKE_RESPONSE,

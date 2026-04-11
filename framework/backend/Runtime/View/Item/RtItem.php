@@ -4,11 +4,14 @@ declare(strict_types=1);
 
 namespace Hilos\Runtime\View\Item;
 
+use Hilos\Runtime\Exception\Item\RtItemActionsClassException;
 use Hilos\Runtime\Exception\Item\RtItemCloneException;
 use Hilos\Runtime\Exception\Item\RtItemPropertyNotFoundException;
 use Hilos\Runtime\Exception\Item\RtItemReadOnlyException;
 use Hilos\Runtime\Exception\Item\RtItemUnserializeException;
 use Hilos\Runtime\State\Item\RtState;
+use Hilos\Runtime\View\Actions\Item\RtActions as RtItemActions;
+use Hilos\Runtime\View\Collection\RtCollection;
 
 /**
  * RtItem - read-only wrapper around runtime state.
@@ -20,8 +23,19 @@ use Hilos\Runtime\State\Item\RtState;
  */
 abstract class RtItem
 {
+    public const string actions = 'actions';
+
     /** @var RtState reference to runtime state instance */
     protected RtState $_state;
+
+    /** @var ?RtCollection Parent collection (set by RtCollection when item is created) */
+    private ?RtCollection $_rtCollection = null;
+
+    /** @var ?class-string<RtItemActions> Item actions class for lazy init */
+    private ?string $_itemActionsClass = null;
+
+    /** @var ?RtItemActions Cached item actions */
+    private ?RtItemActions $_itemActions = null;
 
     /**
      * Creates Rt item wrapper around state reference.
@@ -51,6 +65,59 @@ abstract class RtItem
     public function getId(): string
     {
         return $this->_state->getId();
+    }
+
+    /**
+     * Sets parent collection reference (called from RtCollection).
+     */
+    public function setCollection(RtCollection $collection): void
+    {
+        $this->_rtCollection = $collection;
+    }
+
+    /**
+     * Returns parent collection or null if not attached.
+     */
+    public function getCollection(): ?RtCollection
+    {
+        return $this->_rtCollection;
+    }
+
+    /**
+     * Sets item actions class for lazy initialization (called from RtCollection).
+     *
+     * @param ?class-string<RtItemActions> $itemActionsClass
+     */
+    public function setItemActionsClass(?string $itemActionsClass): void
+    {
+        $this->_itemActionsClass = $itemActionsClass;
+    }
+
+    /**
+     * Item-level write operations (optional; class must be set on the collection).
+     *
+     * @return RtItemActions
+     *
+     * @throws RtItemActionsClassException If class not set or invalid
+     */
+    protected function getItemActions(): RtItemActions
+    {
+        if ($this->_itemActions === null) {
+            $class = $this->_itemActionsClass;
+            if ($class === null) {
+                throw new RtItemActionsClassException(
+                    'Item actions class is not set for ' . static::class
+                );
+            }
+            if (!is_subclass_of($class, RtItemActions::class)) {
+                throw new RtItemActionsClassException(
+                    "Item actions class [{$class}] must extend " . RtItemActions::class
+                );
+            }
+            $this->_itemActions = new $class($this);
+        }
+
+        return $this->_itemActions;
     }
 
     /**

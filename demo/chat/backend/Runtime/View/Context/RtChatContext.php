@@ -7,9 +7,10 @@ namespace Demo\Chat\Runtime\View\Context;
 use Demo\Chat\Runtime\State\Collection\ChatContexts as StateChatContexts;
 use Demo\Chat\Runtime\State\Collection\Connections as StateConnections;
 use Demo\Chat\Runtime\State\Collection\UserStates as StateUserStates;
-use Demo\Chat\Runtime\View\Actions\ChatContextsActions;
-use Demo\Chat\Runtime\View\Actions\ConnectionsActions;
-use Demo\Chat\Runtime\View\Actions\UserStatesActions;
+use Demo\Chat\Runtime\View\Actions\Collection\ChatContextsActions;
+use Demo\Chat\Runtime\View\Actions\Collection\ConnectionsActions;
+use Demo\Chat\Runtime\View\Actions\Collection\UserStatesActions;
+use Demo\Chat\Runtime\View\Actions\Item\ConnectionActions;
 use Demo\Chat\Runtime\View\Collection\ChatContexts;
 use Demo\Chat\Runtime\View\Collection\Connections;
 use Demo\Chat\Runtime\View\Collection\UserStates;
@@ -27,6 +28,7 @@ use Hilos\Runtime\View\Context\RtContext;
  * Usage:
  *   Hilos::$rt->connections[$acceptKey];
  *   Hilos::$rt->connections->actions->register($acceptKey, $userId);
+ *   Hilos::$rt->connections[$acceptKey]->actions->… (per-connection writes, e.g. file upload)
  *   Hilos::$rt->userStates->actions->ensure($userId);
  *   Hilos::$rt->chatContexts[ChatContext::ID_MAIN];
  *
@@ -55,7 +57,7 @@ final class RtChatContext extends RtContext
         $instance->_stateCollections[self::connections] = StateConnections::init();
         $instance->_stateCollections[self::userStates] = StateUserStates::init();
         $instance->_stateCollections[self::chatContexts] = StateChatContexts::init();
-        $instance->setRepresent(self::connections, Connections::class, ConnectionsActions::class);
+        $instance->setRepresent(self::connections, Connections::class, ConnectionsActions::class, ConnectionActions::class);
         $instance->setRepresent(self::userStates, UserStates::class, UserStatesActions::class);
         $instance->setRepresent(self::chatContexts, ChatContexts::class, ChatContextsActions::class);
 

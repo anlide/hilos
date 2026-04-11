@@ -6,14 +6,13 @@ namespace Demo\Chat\Runtime\View\Collection;
 
 use Demo\Chat\Runtime\State\Collection\UserStates as StateUserStates;
 use Demo\Chat\Runtime\State\Item\ChatUserState as StateChatUserState;
-use Demo\Chat\Runtime\View\Actions\UserStatesActions;
+use Demo\Chat\Runtime\View\Actions\Collection\UserStatesActions;
 use Demo\Chat\Runtime\View\Item\ChatUserState;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Runtime\Exception\Collection\RtCollectionActionsClassException;
 use Hilos\Runtime\Exception\Collection\RtCollectionPropertyNotFoundException;
 use Hilos\Runtime\State\Item\RtState;
 use Hilos\Runtime\View\Collection\RtCollection;
-use Hilos\Runtime\View\Item\RtItem;
 
 /**
  * UserStates - Read-only wrapper around per-user chat runtime states.
@@ -34,9 +33,9 @@ final class UserStates extends RtCollection
 
     /**
      * @param RtState $state StateChatUserState instance
-     * @return RtItem ChatUserState instance
+     * @return ChatUserState View item for this user state
      */
-    protected function createRtItem(RtState &$state): RtItem
+    protected function createRtItem(RtState &$state): ChatUserState
     {
         /** @var StateChatUserState $state */
         return new ChatUserState($state);
@@ -50,6 +49,7 @@ final class UserStates extends RtCollection
     {
         /** @var ?ChatUserState $item */
         $item = parent::offsetGet($offset);
+
         return $item;
     }
 
@@ -60,6 +60,7 @@ final class UserStates extends RtCollection
     {
         /** @var ?ChatUserState $item */
         $item = parent::first();
+
         return $item;
     }
 
@@ -70,6 +71,7 @@ final class UserStates extends RtCollection
     {
         /** @var ?ChatUserState $item */
         $item = parent::last();
+
         return $item;
     }
 
@@ -80,6 +82,7 @@ final class UserStates extends RtCollection
     {
         /** @var ?ChatUserState $item */
         $item = parent::current();
+
         return $item;
     }
 
@@ -91,6 +94,7 @@ final class UserStates extends RtCollection
     {
         /** @var ?ChatUserState $item */
         $item = parent::getRtItemForKey($key);
+
         return $item;
     }
 
@@ -102,11 +106,13 @@ final class UserStates extends RtCollection
     {
         /** @var UserStatesActions $actions */
         $actions = parent::getActions();
+
         return $actions;
     }
 
     /**
      * @throws RtCollectionPropertyNotFoundException
+     * @throws RtCollectionActionsClassException
      */
     public function __get(string $name): UserStatesActions
     {

@@ -6,14 +6,13 @@ namespace Demo\Chat\Runtime\View\Collection;
 
 use Demo\Chat\Runtime\State\Collection\ChatContexts as StateChatContexts;
 use Demo\Chat\Runtime\State\Item\ChatContext as StateChatContext;
-use Demo\Chat\Runtime\View\Actions\ChatContextsActions;
+use Demo\Chat\Runtime\View\Actions\Collection\ChatContextsActions;
 use Demo\Chat\Runtime\View\Item\ChatContext;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Runtime\Exception\Collection\RtCollectionActionsClassException;
 use Hilos\Runtime\Exception\Collection\RtCollectionPropertyNotFoundException;
 use Hilos\Runtime\State\Item\RtState;
 use Hilos\Runtime\View\Collection\RtCollection;
-use Hilos\Runtime\View\Item\RtItem;
 
 /**
  * ChatContexts - Read-only wrapper around chat context state.
@@ -41,9 +40,9 @@ final class ChatContexts extends RtCollection
      * Create Rt item from state.
      *
      * @param RtState $state StateChatContext instance
-     * @return RtItem ChatContext instance
+     * @return ChatContext View item for this context state
      */
-    protected function createRtItem(RtState &$state): RtItem
+    protected function createRtItem(RtState &$state): ChatContext
     {
         /** @var StateChatContext $state */
         return new ChatContext($state);
@@ -59,6 +58,7 @@ final class ChatContexts extends RtCollection
     {
         /** @var ?ChatContext $item */
         $item = parent::offsetGet($offset);
+
         return $item;
     }
 
@@ -71,6 +71,7 @@ final class ChatContexts extends RtCollection
     {
         /** @var ?ChatContext $item */
         $item = parent::first();
+
         return $item;
     }
 
@@ -83,6 +84,7 @@ final class ChatContexts extends RtCollection
     {
         /** @var ?ChatContext $item */
         $item = parent::last();
+
         return $item;
     }
 
@@ -95,6 +97,7 @@ final class ChatContexts extends RtCollection
     {
         /** @var ?ChatContext $item */
         $item = parent::current();
+
         return $item;
     }
 
@@ -108,6 +111,7 @@ final class ChatContexts extends RtCollection
     {
         /** @var ?ChatContext $item */
         $item = parent::getRtItemForKey($key);
+
         return $item;
     }
 
@@ -121,6 +125,7 @@ final class ChatContexts extends RtCollection
     {
         /** @var ChatContextsActions $actions */
         $actions = parent::getActions();
+
         return $actions;
     }
 

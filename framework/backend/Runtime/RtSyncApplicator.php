@@ -84,6 +84,7 @@ final class RtSyncApplicator
         }
 
         $state->applyDiff($row);
+        $state->markRtSyncBaseline();
     }
 
     /**

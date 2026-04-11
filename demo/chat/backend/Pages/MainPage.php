@@ -70,7 +70,7 @@ final class MainPage extends AbstractChatPage
 
         $agent = $this->getChatAgent();
         if ($agent instanceof ChatAgent) {
-            $fileUi = $agent->getFileModerationUiPayloadForUser($userId);
+            $fileUi = $agent->getFileModerationUiPayloadForAcceptKey($acceptKey);
             if ($fileUi !== null) {
                 $agent->sendToUser(
                     ChatSignalConstants::FILE_MODERATION_STATE_UPDATE,
@@ -78,7 +78,7 @@ final class MainPage extends AbstractChatPage
                     new FileModerationStateUpdateSignalData($fileUi),
                 );
             }
-            $fileProgress = $agent->getFileUploadProgressPayloadForUser($userId);
+            $fileProgress = $agent->getFileUploadProgressPayloadForAcceptKey($acceptKey);
             if ($fileProgress !== null) {
                 $agent->sendToUser(
                     ChatSignalConstants::FILE_UPLOAD_PROGRESS_UPDATE,
@@ -193,10 +193,9 @@ final class MainPage extends AbstractChatPage
         if (!isset(Hilos::$rt->connections[$acceptKey])) {
             return;
         }
-        $userId = Hilos::$rt->connections[$acceptKey]->userId;
         $agent = $this->getChatAgent();
         if ($agent instanceof ChatAgent) {
-            $agent->handleFileModerationDismiss($userId);
+            $agent->handleFileModerationDismiss($acceptKey);
         }
     }
 }

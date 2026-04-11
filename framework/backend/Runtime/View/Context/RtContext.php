@@ -8,7 +8,8 @@ use Hilos\Runtime\Exception\Rt\RtCloneException;
 use Hilos\Runtime\Exception\Rt\RtCollectionNotFoundException;
 use Hilos\Runtime\Exception\Rt\StateCollectionNotFoundException;
 use Hilos\Runtime\State\Collection\RtStates;
-use Hilos\Runtime\View\Actions\RtActions;
+use Hilos\Runtime\View\Actions\Collection\RtActions;
+use Hilos\Runtime\View\Actions\Item\RtActions as RtItemActions;
 use Hilos\Runtime\View\Collection\RtCollection;
 
 /**
@@ -58,10 +59,15 @@ abstract class RtContext
      * @param string $name Collection name
      * @param class-string<RtCollection> $rtCollectionClass RtCollection class name
      * @param ?class-string<RtActions> $actionsClass RtActions class name (optional)
+     * @param ?class-string<RtItemActions> $itemActionsClass Per-item RtActions class (optional)
      * @throws StateCollectionNotFoundException When state collection not found
      */
-    public function setRepresent(string $name, string $rtCollectionClass, ?string $actionsClass = null): void
-    {
+    public function setRepresent(
+        string $name,
+        string $rtCollectionClass,
+        ?string $actionsClass = null,
+        ?string $itemActionsClass = null,
+    ): void {
         if (!isset($this->_stateCollections[$name])) {
             throw new StateCollectionNotFoundException(
                 "State collection [{$name}] not found in _stateCollections. Create it before calling setRepresent()."
@@ -76,6 +82,9 @@ abstract class RtContext
             $rtCollection->setCollectionName($name);
             if ($actionsClass !== null) {
                 $rtCollection->setActionsClass($actionsClass);
+            }
+            if ($itemActionsClass !== null) {
+                $rtCollection->setItemActionsClass($itemActionsClass);
             }
             $this->_rtCollections[$name] = $rtCollection;
         }

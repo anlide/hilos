@@ -8,13 +8,15 @@ use Demo\Chat\Database\View\Collection\Users as DbUsers;
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\State\Collection\Connections as StateConnections;
 use Demo\Chat\Runtime\State\Item\Connection as StateConnection;
-use Demo\Chat\Runtime\View\Actions\ConnectionsActions;
+use Demo\Chat\Runtime\View\Actions\Collection\ConnectionsActions;
 use Demo\Chat\Runtime\View\Item\Connection;
+use Hilos\Database\Exception\View\CollectionNotManualException;
+use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
+use Hilos\Runtime\Exception\Collection\RtCollectionActionsClassException;
 use Hilos\Runtime\Exception\Collection\RtCollectionPropertyNotFoundException;
 use Hilos\Runtime\State\Item\RtState;
 use Hilos\Runtime\View\Collection\RtCollection;
-use Hilos\Runtime\View\Item\RtItem;
 
 /**
  * Connections - Read-only wrapper around Connections state.
@@ -66,9 +68,9 @@ final class Connections extends RtCollection
      * Create Rt item from state.
      *
      * @param RtState $state StateConnection instance (passed by reference)
-     * @return RtItem Connection Rt item instance
+     * @return Connection View item for this connection state
      */
-    protected function createRtItem(RtState &$state): RtItem
+    protected function createRtItem(RtState &$state): Connection
     {
         /** @var StateConnection $state */
         return new Connection($state);
@@ -82,7 +84,10 @@ final class Connections extends RtCollection
      */
     public function offsetGet(mixed $offset): ?Connection
     {
-        return parent::offsetGet($offset);
+        /** @var ?Connection $item */
+        $item = parent::offsetGet($offset);
+
+        return $item;
     }
 
     /**
@@ -92,7 +97,10 @@ final class Connections extends RtCollection
      */
     public function first(): ?Connection
     {
-        return parent::first();
+        /** @var ?Connection $item */
+        $item = parent::first();
+
+        return $item;
     }
 
     /**
@@ -102,7 +110,10 @@ final class Connections extends RtCollection
      */
     public function last(): ?Connection
     {
-        return parent::last();
+        /** @var ?Connection $item */
+        $item = parent::last();
+
+        return $item;
     }
 
     /**
@@ -112,7 +123,10 @@ final class Connections extends RtCollection
      */
     public function current(): ?Connection
     {
-        return parent::current();
+        /** @var ?Connection $item */
+        $item = parent::current();
+
+        return $item;
     }
 
     /**
@@ -123,23 +137,32 @@ final class Connections extends RtCollection
      */
     protected function getRtItemForKey(string $key): ?Connection
     {
-        return parent::getRtItemForKey($key);
+        /** @var ?Connection $item */
+        $item = parent::getRtItemForKey($key);
+
+        return $item;
     }
 
     /**
      * Get connections actions instance.
      *
      * @return ConnectionsActions Actions for write operations
+     * @throws RtCollectionActionsClassException
      */
     protected function getActions(): ConnectionsActions
     {
-        return parent::getActions();
+        /** @var ConnectionsActions $actions */
+        $actions = parent::getActions();
+
+        return $actions;
     }
 
     /**
      * Get users who are online or mentioned in events.
      *
      * @return DbUsers Users collection with relevant users
+     * @throws CollectionNotManualException If collection is not manual, or item has no ID
+     * @throws ObjectGetIdStringNotImplementedException If DbItem's Object does not implement getIdString() (required for manual collections to use ID as key)
      */
     private function getRelevantUsers(): DbUsers
     {
@@ -169,6 +192,9 @@ final class Connections extends RtCollection
      * @param string $name Property name (actions, relevantUsers)
      * @return ConnectionsActions|DbUsers Actions or relevant users collection
      * @throws RtCollectionPropertyNotFoundException If property name is not recognized
+     * @throws RtCollectionActionsClassException
+     * @throws CollectionNotManualException If collection is not manual, or item has no ID
+     * @throws ObjectGetIdStringNotImplementedException If DbItem's Object does not implement getIdString() (required for manual collections to use ID as key)
      */
     public function __get(string $name): ConnectionsActions|DbUsers
     {

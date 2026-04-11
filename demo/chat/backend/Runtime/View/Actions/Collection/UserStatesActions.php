@@ -2,26 +2,33 @@
 
 declare(strict_types=1);
 
-namespace Demo\Chat\Runtime\View\Actions;
+namespace Demo\Chat\Runtime\View\Actions\Collection;
 
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\State\Item\ChatUserState as StateChatUserState;
+use Demo\Chat\Runtime\View\Collection\UserStates;
 use Demo\Chat\Runtime\View\Item\ChatUserState as ViewChatUserState;
 use Hilos\Runtime\Exception\Actions\RtActionsCallbackNotSetException;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
-use Hilos\Runtime\View\Actions\RtActions;
+use Hilos\Runtime\State\Item\RtState;
+use Hilos\Runtime\View\Actions\Collection\RtActions;
 
 /**
- * UserStatesActions - write operations for per-user chat runtime state.
+ * Write API for per-user chat runtime state (text moderation only).
  *
- * @extends RtActions<ViewChatUserState>
+ * File upload and file moderation UI live on {@see \Demo\Chat\Runtime\State\Item\Connection}.
+ *
+ * @extends RtActions<ViewChatUserState, UserStates>
  */
 final class UserStatesActions extends RtActions
 {
     /**
-     * Ensure a ChatUserState row exists for the user (empty template).
+     * Ensure a {@see StateChatUserState} row exists for the user (creates an empty template if missing).
+     *
+     * @param int $userId Database user id
+     * @return ViewChatUserState Read wrapper around the ensured state
      *
      * @throws RtActionsCallbackNotSetException
      * @throws RtActionsCollectionNameNullException
@@ -44,7 +51,22 @@ final class UserStatesActions extends RtActions
     }
 
     /**
-     * Create empty ChatUserState for every user in the database (demo seed).
+     * Narrows parent return type to this collection's RtItem ({@see ViewChatUserState}).
+     */
+    protected function createRtItemFromState(RtState &$state): ViewChatUserState
+    {
+        $item = parent::createRtItemFromState($state);
+        if (!$item instanceof ViewChatUserState) {
+            throw new \LogicException('UserStates item factory must return ' . ViewChatUserState::class);
+        }
+
+        return $item;
+    }
+
+    /**
+     * Create an empty {@see StateChatUserState} for every user in the database (demo startup seed).
+     *
+     * Skips ids that already have a row in the runtime collection.
      *
      * @throws RtActionsCallbackNotSetException
      * @throws RtActionsCollectionNameNullException
@@ -70,6 +92,11 @@ final class UserStatesActions extends RtActions
     }
 
     /**
+     * Store pending message text for LLM moderation and bump {@see StateChatUserState::moderationUpdatedAt}.
+     *
+     * @param int $userId Database user id
+     * @param string $message Raw message text from the client
+     *
      * @throws RtActionsCallbackNotSetException
      * @throws RtActionsCollectionNameNullException
      * @throws RtActionsStateCollectionNullException
@@ -77,8 +104,7 @@ final class UserStatesActions extends RtActions
      */
     public function setTextModerationMessage(int $userId, string $message): void
     {
-        $state = $this->getExistingStateOrThrow($userId);
-        $this->applyDiffToState($state, [
+        $this->applyDiffToState($this->stateRowForMutation($userId), [
             StateChatUserState::moderationMessage => $message,
             StateChatUserState::moderationUpdatedAt => time(),
         ]);
@@ -86,6 +112,10 @@ final class UserStatesActions extends RtActions
     }
 
     /**
+     * Clear pending text moderation for the user.
+     *
+     * @param int $userId Database user id
+     *
      * @throws RtActionsCallbackNotSetException
      * @throws RtActionsCollectionNameNullException
      * @throws RtActionsStateCollectionNullException
@@ -93,8 +123,7 @@ final class UserStatesActions extends RtActions
      */
     public function clearTextModerationMessage(int $userId): void
     {
-        $state = $this->getExistingStateOrThrow($userId);
-        $this->applyDiffToState($state, [
+        $this->applyDiffToState($this->stateRowForMutation($userId), [
             StateChatUserState::moderationMessage => '',
             StateChatUserState::moderationUpdatedAt => time(),
         ]);
@@ -102,9 +131,10 @@ final class UserStatesActions extends RtActions
     }
 
     /**
-     * Apply a partial update to the user's runtime state (file upload paths, etc.).
+     * Apply a partial update to the user's runtime state (keys must match {@see StateChatUserState} fields).
      *
-     * @param array<string, mixed> $diff
+     * @param int $userId Database user id
+     * @param array<string, mixed> $diff Field name => value
      *
      * @throws RtActionsCallbackNotSetException
      * @throws RtActionsCollectionNameNullException
@@ -116,57 +146,16 @@ final class UserStatesActions extends RtActions
         if ($diff === []) {
             return;
         }
-        $state = $this->getExistingStateOrThrow($userId);
-        $this->applyDiffToState($state, $diff);
+        $this->applyDiffToState($this->stateRowForMutation($userId), $diff);
         $this->clearCollectionCache();
     }
 
     /**
-     * Clear file session, file moderation UI, and upload progress for one user.
+     * Backing state row for a write path (not a public read API — use {@see ViewChatUserState} for reads).
      *
-     * @throws RtActionsCallbackNotSetException
-     * @throws RtActionsCollectionNameNullException
-     * @throws RtActionsStateCollectionNullException
-     * @throws RtTruthSourceWriteNotAllowedException
+     * @throws \RuntimeException If state is missing (call {@see ensure()} first)
      */
-    public function clearAllFileRuntimeForUser(int $userId): void
-    {
-        $state = $this->getExistingStateOrThrow($userId);
-        $diff = array_merge(
-            StateChatUserState::diffClearFileSession(),
-            StateChatUserState::diffClearFileModerationUi(),
-            StateChatUserState::diffClearFileProgress(),
-        );
-        $this->applyDiffToState($state, $diff);
-        $this->clearCollectionCache();
-    }
-
-    /**
-     * Clear file runtime fields for every user (e.g. disk wipe).
-     *
-     * @throws RtActionsCallbackNotSetException
-     * @throws RtActionsCollectionNameNullException
-     * @throws RtActionsStateCollectionNullException
-     * @throws RtTruthSourceWriteNotAllowedException
-     */
-    public function clearAllFileRuntimeForAllUsers(): void
-    {
-        $this->ensureCanWrite();
-        foreach ($this->getStateCollection() as $state) {
-            if (!$state instanceof StateChatUserState) {
-                continue;
-            }
-            $diff = array_merge(
-                StateChatUserState::diffClearFileSession(),
-                StateChatUserState::diffClearFileModerationUi(),
-                StateChatUserState::diffClearFileProgress(),
-            );
-            $this->applyDiffToState($state, $diff);
-        }
-        $this->clearCollectionCache();
-    }
-
-    private function getExistingStateOrThrow(int $userId): StateChatUserState
+    private function stateRowForMutation(int $userId): StateChatUserState
     {
         $this->ensureCanWrite();
         $raw = $this->getStateCollection()->get((string)$userId);

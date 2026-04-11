@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Hilos\Runtime\State\Item;
 
+use Hilos\Constants\SignalConstants;
+use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
+use Hilos\Hilos;
 use Hilos\Runtime\Exception\State\RtStatePropertyNotFoundException;
 use Hilos\Runtime\Exception\State\RtStateReadOnlyException;
 use Hilos\Runtime\Exception\State\RtStateUnserializeException;
@@ -13,9 +16,21 @@ use Hilos\Runtime\Exception\State\RtStateUnserializeException;
  *
  * RtState is the single source of truth for runtime data (analogous to Object_).
  * Child classes must use typed/private fields and expose read access via __get and/or explicit getters.
+ *
+ * {@see sync()} broadcasts RT_SYNC_UPDATED for fields changed since {@see markRtSyncBaseline()} (worker sync only).
+ * After inbound RT applyDiff, callers must call {@see markRtSyncBaseline()} so local sync() does not re-send stale diffs.
  */
 abstract class RtState
 {
+    /**
+     * Copy of the row as of the last "synced" moment: {@see sync()} diffs {@see toArray()} against this
+     * to know which fields to put in RT_SYNC_UPDATED (same idea as Object_ entity vs entitySync, without DB).
+     * Written only by {@see markRtSyncBaseline()} and at the end of {@see sync()}.
+     *
+     * @var array<string, mixed>
+     */
+    private array $rtSyncBaseline = [];
+
     /**
      * Protected constructor. Child classes must use static factory methods (e.g. fromRow).
      */
@@ -67,18 +82,63 @@ abstract class RtState
     }
 
     /**
-     * Magic setter. RtState is read-only from outside; all state changes go via applyDiff/RT sync.
+     * Magic setter. Default: read-only. Subclasses may override to allow writes from item actions (see StateConnection).
      *
      * @param string $name Property name
-     * @param mixed $value Value (ignored, always throws)
-     * @throws RtStateReadOnlyException Always, external writes not allowed
+     * @param mixed $value New value
+     *
+     * @throws RtStateReadOnlyException When the property is not writable on this state class
      */
-    final public function __set(string $name, mixed $value): never
+    public function __set(string $name, mixed $value): void
     {
         $className = static::class;
         throw new RtStateReadOnlyException(
             "Cannot set property [{$name}] on {$className}: RtState is read-only from outside."
         );
+    }
+
+    /**
+     * RT collection key for {@see sync()} (e.g. chat "connections"). Empty string skips queue (baseline still advances).
+     */
+    public static function getRtCollectionKey(): string
+    {
+        return '';
+    }
+
+    /**
+     * Resets diff baseline to the current row (call after create/fromRow and after inbound RT applyDiff).
+     */
+    public function markRtSyncBaseline(): void
+    {
+        $this->rtSyncBaseline = $this->toArray();
+    }
+
+    /**
+     * Queue RT_SYNC_UPDATED for all fields that differ from the last baseline, then advance the baseline.
+     * Does not persist to DB — cross-worker runtime sync only (analogous role to Object_::sync for workers).
+     */
+    public function sync(): void
+    {
+        $current = $this->toArray();
+        $diff = [];
+        foreach ($current as $k => $v) {
+            if (($this->rtSyncBaseline[$k] ?? null) !== $v) {
+                $diff[$k] = $v;
+            }
+        }
+        if ($diff === []) {
+            return;
+        }
+
+        $collectionKey = static::getRtCollectionKey();
+        if ($collectionKey !== '' && Hilos::$sr !== null) {
+            Hilos::$sr->queueRtSyncSignal(
+                SignalConstants::RT_SYNC_UPDATED,
+                new RtSyncUpdatedSignalData($collectionKey, $this->getId(), $diff),
+            );
+        }
+
+        $this->rtSyncBaseline = $current;
     }
 
     /**

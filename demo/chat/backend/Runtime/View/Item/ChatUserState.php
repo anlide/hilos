@@ -12,26 +12,29 @@ use Hilos\Runtime\Exception\Item\RtItemPropertyNotFoundException;
 use Hilos\Runtime\View\Item\RtItem;
 
 /**
- * ChatUserState - Read-only view over per-user chat runtime state.
+ * Read-only {@see RtItem} over {@see StateChatUserState} (mirrors state fields + virtual `user`).
  *
  * @extends RtItem<StateChatUserState>
  *
  * @property-read int $userId User ID
  * @property-read string $moderationMessage Pending text moderation (empty if none)
  * @property-read int $moderationUpdatedAt Last text moderation update unix time
- * @property-read ?User $user User row for this state
+ * @property-read ?User $user User row or null if not found in DB view
  */
 final class ChatUserState extends RtItem
 {
+    /**
+     * @param StateChatUserState $state Backing state (by reference, same as parent contract)
+     */
     public function __construct(StateChatUserState &$state)
     {
         parent::__construct($state);
     }
 
     /**
-     * @return int|string|User|null
+     * Delegates known keys to the backing state; virtual `user` loads from the DB users collection.
      *
-     * @throws RtItemPropertyNotFoundException
+     * @throws RtItemPropertyNotFoundException When $name is not a declared virtual property
      */
     public function __get(string $name): int|string|User|null
     {
@@ -48,17 +51,13 @@ final class ChatUserState extends RtItem
     }
 
     /**
-     * @return array<string, int|string|float|null>
+     * @return array<string, mixed> Full state row (same as {@see StateChatUserState::toArray()})
      */
     public function toArray(): array
     {
         /** @var StateChatUserState $state */
         $state = $this->_state;
 
-        return [
-            StateChatUserState::userId => $state->userId,
-            StateChatUserState::moderationMessage => $state->moderationMessage,
-            StateChatUserState::moderationUpdatedAt => $state->moderationUpdatedAt,
-        ];
+        return $state->toArray();
     }
 }

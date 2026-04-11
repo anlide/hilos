@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Runtime\State\Item;
 
+use Demo\Chat\Runtime\View\Context\RtChatContext;
 use Hilos\Runtime\Exception\State\RtStatePropertyNotFoundException;
 use Hilos\Runtime\State\Item\RtState;
 
@@ -40,7 +41,10 @@ final class ChatContext extends RtState
      */
     public static function create(): static
     {
-        return new static();
+        $instance = new static();
+        $instance->markRtSyncBaseline();
+
+        return $instance;
     }
 
     /**
@@ -56,7 +60,14 @@ final class ChatContext extends RtState
         $instance->topic = $topicVal !== null && $topicVal !== '' ? (string)$topicVal : null;
         $instance->topicConfidence = (float)($row[self::topicConfidence] ?? 0.0);
         $instance->summary = (string)($row[self::summary] ?? '');
+        $instance->markRtSyncBaseline();
+
         return $instance;
+    }
+
+    public static function getRtCollectionKey(): string
+    {
+        return RtChatContext::chatContexts;
     }
 
     /**
