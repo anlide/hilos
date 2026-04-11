@@ -199,20 +199,6 @@ final class ConnectionsActions extends RtActions
     }
 
     /**
-     * Throttle: record last FILE_UPLOAD_PROGRESS_UPDATE send time.
-     *
-     * @throws RtActionsCollectionNameNullException When collection name is null.
-     * @throws RtTruthSourceWriteNotAllowedException When truth source does not allow write.
-     */
-    public function markUploadProgressThrottleTimestamp(string $acceptKey, float $sentAtMicrotime): void
-    {
-        $this->withConnectionActions(
-            $acceptKey,
-            static fn ($a) => $a->noteUploadProgressSentAt($sentAtMicrotime),
-        );
-    }
-
-    /**
      * Clear file session, moderation UI, and upload progress on every connection (e.g. disk wipe).
      *
      * @throws RtActionsCollectionNameNullException
