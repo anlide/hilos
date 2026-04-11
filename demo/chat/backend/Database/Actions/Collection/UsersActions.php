@@ -53,8 +53,6 @@ final class UsersActions extends DbActions
 
         $this->addObjectToCollection($user);
 
-        Hilos::$rt->userStates->actions->ensure((int)$user->id);
-
         return $this->createDbItemFromObject($user);
     }
 }

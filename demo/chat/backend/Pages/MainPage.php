@@ -147,7 +147,6 @@ final class MainPage extends AbstractChatPage
             return;
         }
 
-        Hilos::$rt->userStates->actions->ensure($userId);
         Hilos::$rt->userStates->actions->setTextModerationMessage($userId, $dto->content);
         $this->getChatAgent()->sendModerationStateToUserConnections($userId, $dto->content);
 

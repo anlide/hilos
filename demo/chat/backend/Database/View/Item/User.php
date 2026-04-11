@@ -52,7 +52,7 @@ final class User extends DbItem
             ObjectUser::lastActivity => $this->_object->lastActivity,
             RtChatContext::connections => Hilos::$rt->connections->forUser($this->id),
             RtChatContext::chatUserState => $this->_object->id !== null
-                ? Hilos::$rt->userStates->actions->ensure((int)$this->_object->id)
+                ? Hilos::$rt->userStates[$this->_object->id]
                 : null,
             default => parent::__get($name),
         };

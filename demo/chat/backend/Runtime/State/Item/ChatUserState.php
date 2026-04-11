@@ -11,8 +11,9 @@ use Hilos\Runtime\State\Item\RtState;
 /**
  * Per-user chat runtime row: pending text moderation only.
  *
- * State id is `(string) userId`. Created by {@see \Demo\Chat\Runtime\View\Actions\Collection\UserStatesActions::ensure()}
- * and {@see \Demo\Chat\Runtime\View\Actions\Collection\UserStatesActions::seedAllFromDb()}. Mutations go through
+ * State id is `(string) userId`. Created at chat WebSocket handshake via
+ * {@see \Demo\Chat\Runtime\View\Actions\Collection\UserStatesActions::ensure()}, or by
+ * {@see \Demo\Chat\Runtime\View\Actions\Collection\UserStatesActions::seedAllFromDb()} at demo startup. Mutations go through
  * {@see \Demo\Chat\Runtime\View\Actions\Collection\UserStatesActions}; file uploads live on {@see \Demo\Chat\Runtime\State\Item\Connection}.
  *
  * @property int $userId User ID (same as numeric id in {@see self::getId()})

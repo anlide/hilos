@@ -289,7 +289,6 @@ class ChatAgent extends AbstractAgent
         $acceptKey = $result->acceptKey;
         $userId = $result->userId;
 
-        Hilos::$rt->userStates->actions->ensure($userId);
         Hilos::$rt->userStates->actions->clearTextModerationMessage($userId);
         $this->sendModerationStateToUserConnections($userId, null);
 
@@ -344,8 +343,8 @@ class ChatAgent extends AbstractAgent
         }
 
         $userId = Hilos::$rt->connections[$acceptKey]->userId;
-        Hilos::$rt->userStates->actions->ensure($userId);
-        $pending = Hilos::$rt->userStates[(string)$userId]->moderationMessage;
+        $userState = Hilos::$rt->userStates[$userId];
+        $pending = $userState !== null ? $userState->moderationMessage : '';
         $moderationState = $pending !== '' ? $pending : null;
 
         $fileMod = $this->getFileModerationUiPayloadForAcceptKey($acceptKey);

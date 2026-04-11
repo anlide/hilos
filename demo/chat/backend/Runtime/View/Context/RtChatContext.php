@@ -29,7 +29,7 @@ use Hilos\Runtime\View\Context\RtContext;
  *   Hilos::$rt->connections[$acceptKey];
  *   Hilos::$rt->connections->actions->register($acceptKey, $userId);
  *   Hilos::$rt->connections[$acceptKey]->actions->… (per-connection writes, e.g. file upload)
- *   Hilos::$rt->userStates->actions->ensure($userId);
+ *   Hilos::$rt->userStates[$userId]; // key is string user id; offsetGet casts int to string
  *   Hilos::$rt->chatContexts[ChatContext::ID_MAIN];
  *
  * @property-read Connections $connections Active connections collection
