@@ -13,6 +13,8 @@ use Hilos\Core\Router\SignalData;
  * AbstractHilosUserPage - Abstract base for Hilos single user page.
  *
  * Projects must implement concrete class (e.g. Demo\Chat\Pages\Hilos\Users\UserPage).
+ * Default subscribe sends an empty payload; apps with a shared `users` table typically override
+ * {@see self::onSubscribe()} to include `tables.users` (full snapshot or filtered) for the client.
  */
 abstract class AbstractHilosUserPage extends AbstractHilosPage
 {

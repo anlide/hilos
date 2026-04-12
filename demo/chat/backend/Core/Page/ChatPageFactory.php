@@ -56,6 +56,7 @@ use Demo\Chat\Pages\Hilos\Security\SecurityTwoFactorPage;
 use Demo\Chat\Pages\Hilos\Sil\SilDashboardPage;
 use Demo\Chat\Pages\Hilos\Sil\SilRequestsPage;
 use Demo\Chat\Pages\Hilos\Sil\SilUserHistoryPage;
+use Demo\Chat\Pages\Hilos\Users\DTO\HilosUserUpdateActionDTO;
 use Demo\Chat\Pages\Hilos\Users\UserPage as HilosUserPage;
 use Demo\Chat\Pages\Hilos\Users\UsersPage;
 use Demo\Chat\Pages\Hilos\I18n\Details\ActionDetailPage;
@@ -233,6 +234,7 @@ final class ChatPageFactory extends HilosPageFactory
             ChatSignalConstants::FILE_MODERATION_DISMISS => FileModerationDismissActionDTO::fromArray($data),
             ChatSignalConstants::TABLE_REFRESH => TableRefreshActionDTO::fromArray($data),
             ChatSignalConstants::USER_UPDATE => UserUpdateActionDTO::fromArray($data),
+            ChatSignalConstants::HILOS_USER_UPDATE => HilosUserUpdateActionDTO::fromArray($data),
             ChatSignalConstants::BOT_CREATE => BotCreateActionDTO::fromArray($data),
             ChatSignalConstants::BOT_UPDATE => BotUpdateActionDTO::fromArray($data),
             ChatSignalConstants::BOT_DELETE => BotDeleteActionDTO::fromArray($data),

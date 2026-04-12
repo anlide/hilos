@@ -238,6 +238,25 @@ abstract class Entity
     }
 
     /**
+     * Apply partial column values from cross-process DB sync.
+     * Keys must be Entity::_columns (same contract as fromRow / DB_SYNC_CREATED row).
+     *
+     * @param array<string, mixed> $row Column name => value (typically a diff subset)
+     */
+    public function applySyncPartialRow(array $row): void
+    {
+        foreach (static::_columns as $column) {
+            if (!array_key_exists($column, $row)) {
+                continue;
+            }
+            $this->$column = self::castValue($row[$column], static::_types[$column]);
+        }
+        if ($this->_related) {
+            $this->_originalData = $this->toArray();
+        }
+    }
+
+    /**
      * Check if entity is persisted to a database row.
      *
      * @return bool True if entity has DB row

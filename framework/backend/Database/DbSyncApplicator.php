@@ -62,7 +62,8 @@ final class DbSyncApplicator
     }
 
     /**
-     * Apply DB sync updated: find Object by idString, apply diff, call syncRelated.
+     * Apply DB sync updated: find Object by idString, merge diff into wrapped Entity.
+     * Row keys are entity column names (same as DB_SYNC_CREATED / fromRow).
      *
      * @param array<string, mixed> $signalData collectionKey, idString, row (diff)
      */
@@ -85,25 +86,12 @@ final class DbSyncApplicator
             return;
         }
 
-        $objectClass = $collection::OBJECT_CLASS;
-        if ($objectClass === '') {
-            return;
-        }
-
-        /** @var class-string<Entity> $entityClass */
-        $entityClass = $objectClass::ENTITY_CLASS;
         $object = $collection[$idString] ?? null;
         if (!$object instanceof Object_) {
             return;
         }
 
-        $columns = $entityClass::_columns;
-        foreach ($row as $column => $value) {
-            if (in_array($column, $columns, true)) {
-                $object->$column = $value;
-            }
-        }
-        $object->syncRelated();
+        $object->applyDbSyncEntityUpdate($row);
     }
 
     /**

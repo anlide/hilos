@@ -69,6 +69,7 @@ final class ChatWorkerManager extends WorkerManager
 
             ChatSignalConstants::TABLE_REFRESH => PageConstants::ADMIN_USERS, // Handles any table including settings
             ChatSignalConstants::USER_UPDATE => PageConstants::ADMIN_USERS,
+            ChatSignalConstants::HILOS_USER_UPDATE => PageConstants::HILOS_USER,
 
             ChatSignalConstants::BOT_CREATE => PageConstants::ADMIN_BOTS,
             ChatSignalConstants::BOT_UPDATE => PageConstants::ADMIN_BOTS,

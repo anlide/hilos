@@ -131,6 +131,9 @@ final class ChatSignalConstants
     /** @var string User update signal name */
     public const string USER_UPDATE = 'user_update';
 
+    /** @var string Hilos user detail: update display name (handled on HILOS_USER page) */
+    public const string HILOS_USER_UPDATE = 'hilos_user_update';
+
     /** @var string Bot create signal name */
     public const string BOT_CREATE = 'bot_create';
 

@@ -13,6 +13,9 @@ use Hilos\Core\Router\SignalData;
  * AbstractHilosUsersPage - Abstract base for Hilos users list page.
  *
  * Projects must implement concrete class (e.g. Demo\Chat\Pages\Hilos\Users\UsersPage).
+ * Default subscribe sends an empty payload; apps that use a `users` entity table should override
+ * {@see self::onSubscribe()} and send a subscription signal whose body includes `tables.users`
+ * so the frontend table store can hydrate (see demo chat AdminUsersPage / Hilos UsersPage).
  */
 abstract class AbstractHilosUsersPage extends AbstractHilosPage
 {

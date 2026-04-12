@@ -176,15 +176,11 @@ import { useChatStore } from '@/stores'
 import { sendAction } from '@/services/websocketActions'
 import { useTableRefresh } from '@/composables/useTableRefresh'
 import TableRefreshToolbarButton from '@/components/TableRefreshToolbarButton.vue'
-import { USER_UPDATE } from '@/constants'
+import { TableActionConstants } from '@hilos/sdk/constants/tableActions'
+import type { ChatUserTableRow } from '@hilos/sdk/types/chatUserTableRow'
 import type { Presence } from '@/types/domain/Presence'
 
-interface UserEntity {
-  id: number
-  name: string
-  lastActivity: string
-  presence?: Presence
-}
+type UserEntity = ChatUserTableRow & { presence?: Presence }
 
 const chatStore = useChatStore()
 const connectionStore = useConnectionStore()
@@ -276,7 +272,7 @@ const saveLoading = ref(false)
 const saveUser = () => {
   if (!selectedUser.value || !isFormValid.value) return
   saveLoading.value = true
-  sendAction(websocket, USER_UPDATE, {
+  sendAction(websocket, TableActionConstants.USER_UPDATE, {
     id: selectedUser.value.id,
     name: formUser.value.name.trim(),
   })

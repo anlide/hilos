@@ -1,10 +1,7 @@
-/** Stub users and roles for Hilos access admin (demo only). */
-
-export const hilosUsersStub = [
-  { userId: '1', email: 'alice@example.com', name: 'Alice', roleLabel: 'Admin' },
-  { userId: '2', email: 'bob@example.com', name: 'Bob', roleLabel: 'Moderator' },
-  { userId: '3', email: 'carol@example.com', name: 'Carol', roleLabel: 'User' },
-] as const
+/**
+ * Stub data for Hilos demo sections that are not yet backed by the app API.
+ * User list/detail use live WebSocket table data (same `users` table as chat admin).
+ */
 
 export const hilosRolesStub = [
   { roleId: 'admin', name: 'Admin', description: 'Full access to Hilos and project settings.' },

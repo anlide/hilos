@@ -4,7 +4,7 @@
     variant="btn-outline-secondary btn-sm"
     :title="title"
     :aria-label="ariaLabel"
-    :loading="loading"
+    :loading="toValue(loading)"
     :loading-delay="300"
     @click="emit('click')"
   >
@@ -14,11 +14,14 @@
 </template>
 
 <script setup lang="ts">
+import type { MaybeRef } from 'vue'
+import { toValue } from 'vue'
 import LoadingButton from './LoadingButton.vue'
 
 withDefaults(
   defineProps<{
-    loading: boolean
+    /** Supports Ref/ComputedRef from useTableRefresh(). */
+    loading: MaybeRef<boolean>
     title?: string
     ariaLabel?: string
   }>(),

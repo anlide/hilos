@@ -87,6 +87,18 @@ abstract class Object_
     }
 
     /**
+     * Apply partial entity update from another process (DB_SYNC_UPDATED).
+     * Wire format: keys are Entity::_columns, same as created row / fromRow.
+     *
+     * @param array<string, mixed> $row Column name => value (diff)
+     */
+    public function applyDbSyncEntityUpdate(array $row): void
+    {
+        $this->entity->applySyncPartialRow($row);
+        $this->syncRelated();
+    }
+
+    /**
      * Debug info for var_dump/print_r.
      *
      * @return array<string, mixed> Entity data as array
