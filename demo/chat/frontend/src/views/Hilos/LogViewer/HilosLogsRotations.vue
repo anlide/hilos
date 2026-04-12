@@ -23,7 +23,7 @@
 
 <script setup lang="ts">
 import { useHead } from '@unhead/vue'
-import LogViewerSectionShell from '@/views/Hilos/LogViewer/LogViewerSectionShell.vue'
+import LogViewerSectionShell from '@hilos/sdk/views/Hilos/LogViewer/LogViewerSectionShell.vue'
 import { hilosLogsRotationsStub as rows } from '@/constants/hilosLogsStubs'
 
 const formatBytes = (n: number): string => `${(n / 1_048_576).toFixed(2)} MiB`

@@ -29,8 +29,8 @@
 import { computed, watch } from 'vue'
 import { useHead } from '@unhead/vue'
 import { useRoute, useRouter } from 'vue-router'
-import DaemonSectionShell from '@/views/Hilos/Daemon/DaemonSectionShell.vue'
-import BillingProviderNav from '@/views/Hilos/Billing/BillingProviderNav.vue'
+import DaemonSectionShell from '@hilos/sdk/views/Hilos/Daemon/DaemonSectionShell.vue'
+import BillingProviderNav from '@hilos/sdk/views/Hilos/Billing/BillingProviderNav.vue'
 import {
   hilosBillingProviderConfigById,
   hilosBillingProvidersStub,

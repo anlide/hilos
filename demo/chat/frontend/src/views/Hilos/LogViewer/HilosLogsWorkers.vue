@@ -21,7 +21,7 @@
 
 <script setup lang="ts">
 import { useHead } from '@unhead/vue'
-import LogViewerSectionShell from '@/views/Hilos/LogViewer/LogViewerSectionShell.vue'
+import LogViewerSectionShell from '@hilos/sdk/views/Hilos/LogViewer/LogViewerSectionShell.vue'
 import { hilosLogsByWorkerStub as rows } from '@/constants/hilosLogsStubs'
 
 const formatBytes = (n: number): string => `${(n / 1024).toFixed(1)} KiB`

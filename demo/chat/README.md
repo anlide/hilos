@@ -37,7 +37,7 @@ This is a chat application demo that showcases WebSocket real-time communication
    composer run setup-env
    ```
 
-2. **Install dependencies** (backend Composer packages; also triggers Hilos SDK link via post-install):
+2. **Install dependencies** (backend Composer packages):
    ```bash
    composer run install-deps
    ```
@@ -72,11 +72,14 @@ composer run daemon-start
 composer run frontend-dev    # Vite on http://localhost:5173
 ```
 
-**Build mode** (profile `full`): Nginx serves static assets + prerendered HTML (content negotiation via daemon). HTTPS only: port 80 redirects to 443.
+**Build mode** (profile `full`): Nginx serves static assets + prerendered HTML. HTTPS only: port 80 redirects to 443.
 ```bash
 composer run frontend-build      # One-time: npm run build in Docker → dist/
 composer run daemon-start-build  # MySQL + daemon + Nginx on :80, :443
 # Open https://localhost (browser will warn about self-signed cert — accept to continue)
+# Direct SPA deep-links also work, for example:
+# https://localhost/admin/users
+# https://localhost/hilos/users
 ```
 
 ### Frontend and daemon commands
@@ -122,11 +125,11 @@ Tests use a separate Docker stack (`docker/docker-compose.test.yml`), isolated f
    composer run test:install-deps
    ```
 
-2. **Copy test environment** (optional; defaults work for Docker):
+2. **Copy test environment**:
    ```bash
    cp tests/.env.example tests/.env
    ```
-   Adjust `tests/.env` if running PHPUnit from the host (e.g. `DB_HOST=localhost`, `DB_PORT=33061`).
+   This file is used by PHPUnit and Docker-based test bootstraps. Adjust `tests/.env` if running PHPUnit from the host (e.g. `DB_HOST=localhost`, `DB_PORT=33061`).
 
 ### Commands
 
@@ -167,6 +170,8 @@ composer run test:phpunit
 ### Playwright (E2E)
 
 If you use the **local** Docker stack with Nginx (`docker/docker-compose.local.yml`, profile `full`, e.g. `composer run daemon-start-build`), **stop local Nginx** before starting the E2E test stack (`test:e2e-up` / `test:e2e-full`). Both stacks default to host ports **80** and **443**; leaving `chat-nginx-local` running causes a port conflict or wrong server. See [tests/e2e/README.md](tests/e2e/README.md) for commands and details.
+
+The E2E stack is self-contained. You do **not** need to start the main local application first. `test:e2e-build` builds the frontend for the test stack, and `test:e2e-up` starts dedicated MySQL, daemon, and Nginx containers for tests.
 
 **Full flow (recommended):**
 

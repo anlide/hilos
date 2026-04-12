@@ -88,7 +88,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useHead } from '@unhead/vue'
-import DaemonSectionShell from '@/views/Hilos/Daemon/DaemonSectionShell.vue'
+import DaemonSectionShell from '@hilos/sdk/views/Hilos/Daemon/DaemonSectionShell.vue'
 import { hilosDaemonStub as stub } from '@/constants/hilosDaemonStubs'
 
 const httpRequestsSum = computed(() =>

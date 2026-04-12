@@ -12,10 +12,11 @@
             "dist": {
                 "type": "path",
                 "url": "/hilos",
-                "reference": "639f204da0e4ba98d9a91d78b8131aee1ab1705f"
+                "reference": "635a137435aaf2ff87c355ac45f79310bf3159c1"
             },
             "require": {
                 "ext-ctype": "*",
+                "ext-fileinfo": "*",
                 "ext-mbstring": "*",
                 "ext-mysqli": "*",
                 "ext-pcntl": "*",
@@ -23,10 +24,18 @@
                 "ext-sockets": "*",
                 "php": ">=8.4"
             },
+            "require-dev": {
+                "phpunit/phpunit": "^11.0"
+            },
             "type": "library",
             "autoload": {
                 "psr-4": {
                     "Hilos\\": "framework/backend/"
+                }
+            },
+            "autoload-dev": {
+                "psr-4": {
+                    "Hilos\\Tests\\": "framework/tests/"
                 }
             },
             "scripts": {
@@ -50,6 +59,30 @@
                 ],
                 "ollama:pull-gpu-amd": [
                     "docker compose -f framework/docker/ollama-local.yml -f framework/docker/ollama-local.gpu-amd.yml exec -T ollama-local ollama pull qwen2.5:0.5b && docker compose -f framework/docker/ollama-local.yml -f framework/docker/ollama-local.gpu-amd.yml exec -T ollama-local ollama pull qwen2.5:3b && docker compose -f framework/docker/ollama-local.yml -f framework/docker/ollama-local.gpu-amd.yml exec -T ollama-local ollama pull qwen2.5:7b"
+                ],
+                "test:framework:install-deps": [
+                    "docker compose -f framework/docker/docker-compose.test.yml --profile cli run --rm hilos-cli-test composer install --no-interaction"
+                ],
+                "test:framework:up": [
+                    "docker compose -f framework/docker/docker-compose.test.yml up -d mysql-framework-test"
+                ],
+                "test:framework:down": [
+                    "docker compose -f framework/docker/docker-compose.test.yml down"
+                ],
+                "test:framework:down-volumes": [
+                    "docker compose -f framework/docker/docker-compose.test.yml down -v"
+                ],
+                "test:framework:unit": [
+                    "docker compose -f framework/docker/docker-compose.test.yml --profile cli run --rm hilos-cli-test php vendor/bin/phpunit -c framework/tests/phpunit.xml --testsuite unit"
+                ],
+                "test:framework:integration": [
+                    "docker compose -f framework/docker/docker-compose.test.yml --profile cli run --rm hilos-cli-test php vendor/bin/phpunit -c framework/tests/phpunit.xml --testsuite integration"
+                ],
+                "test:framework:phpunit": [
+                    "docker compose -f framework/docker/docker-compose.test.yml --profile cli run --rm hilos-cli-test php vendor/bin/phpunit -c framework/tests/phpunit.xml"
+                ],
+                "test:framework:all": [
+                    "composer run test:framework:install-deps && composer run test:framework:up && composer run test:framework:phpunit && composer run test:framework:down"
                 ]
             },
             "license": [

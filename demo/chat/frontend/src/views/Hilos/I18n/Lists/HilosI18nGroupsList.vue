@@ -20,7 +20,7 @@
 
 <script setup lang="ts">
 import { useHead } from '@unhead/vue'
-import I18nSectionShell from '@/views/Hilos/I18n/I18nSectionShell.vue'
+import I18nSectionShell from '@hilos/sdk/views/Hilos/I18n/I18nSectionShell.vue'
 import { hilosI18nStub as stub } from '@/constants/hilosI18nStubs'
 
 useHead({ title: 'Groups | I18n | Chat Hilos Demo' })

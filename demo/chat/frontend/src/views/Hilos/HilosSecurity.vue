@@ -49,7 +49,7 @@
 
 <script setup lang="ts">
 import { useHead } from '@unhead/vue'
-import DaemonSectionShell from '@/views/Hilos/Daemon/DaemonSectionShell.vue'
+import DaemonSectionShell from '@hilos/sdk/views/Hilos/Daemon/DaemonSectionShell.vue'
 import { hilosSecurityOverviewStub } from '@/constants/hilosSecurityStubs'
 
 useHead({

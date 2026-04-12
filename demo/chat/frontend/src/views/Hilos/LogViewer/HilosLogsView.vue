@@ -49,7 +49,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useHead } from '@unhead/vue'
 import { useRoute, useRouter } from 'vue-router'
-import LogViewerSectionShell from '@/views/Hilos/LogViewer/LogViewerSectionShell.vue'
+import LogViewerSectionShell from '@hilos/sdk/views/Hilos/LogViewer/LogViewerSectionShell.vue'
 import { hilosLogsViewerLinesStub } from '@/constants/hilosLogsStubs'
 
 const route = useRoute()

@@ -2,95 +2,73 @@
 
 Vue 3 + TypeScript + Vite chat frontend with WebSocket client integration.
 
-## Development Setup
+## Prerequisites
 
-### Prerequisites
+- Work from the full Hilos repository: `framework/` must be a sibling of `demo/`
+- Docker and Docker Compose
 
-The frontend uses `@hilos/sdk` from the framework. From demo root (`demo/chat/`):
+The frontend resolves shared code from `../../../framework/frontend/src` via `@hilos/sdk`. No frontend symlink is required.
+
+## First-Time Setup
+
+Run from `demo/chat/`:
 
 ```bash
 composer run install-deps
 composer run frontend-install
 ```
 
-The demo must live inside the full Hilos repo: `framework/` is a sibling of `demo/`.
-
-### Install Dependencies
+If needed, create `.env` first:
 
 ```bash
-composer run frontend-install
+composer run setup-env
 ```
 
-### Development Server (Local)
+## Development Mode
 
-Run frontend development server locally (recommended for Windows):
+Development mode uses Vite in Docker with hot reload.
 
 ```bash
-npm run dev
+composer run daemon-start
+composer run frontend-dev
 ```
 
-Frontend will be available at `http://localhost:5173`
+Open `http://localhost:5173`.
 
-**Note:** Backend should be running in Docker with WebSocket port exposed (see main README).
+Backend daemon/WebSocket endpoints remain in Docker; Vite serves only the frontend.
 
-### Environment Variables
+## Build Mode
 
-Create `.env` file in project root (`demo/chat/.env`):
-
-```env
-VITE_WEBSOCKET_HOST=localhost
-VITE_WEBSOCKET_PORT=8092
-VITE_WEBSOCKET_PROTOCOL=ws
-```
-
-Variables with `VITE_` prefix are injected at build time and accessible via `import.meta.env`.
-
-## Production Build
-
-### Build for Production
+Build mode produces `dist/` with `vite-ssg`, then serves it through Nginx over HTTPS.
 
 ```bash
-npm run build
+composer run frontend-build
+composer run daemon-start-build
 ```
 
-This creates optimized production build in `dist/` directory.
+Open `https://localhost` and accept the self-signed certificate warning.
 
-### Preview Production Build
+Direct deep-links also work in build mode, for example:
+
+- `https://localhost/admin/users`
+- `https://localhost/hilos/users`
+
+## Useful Commands
+
+- `composer run frontend-install` - Install frontend npm dependencies in Docker
+- `composer run frontend-dev` - Start Vite dev server in Docker
+- `composer run frontend-build` - Build frontend in Docker and write `dist/`
+- `composer run frontend-stop` - Stop the Vite dev container
+- `composer run daemon-start` - Start MySQL + daemon for dev mode
+- `composer run daemon-start-build` - Start MySQL + daemon + Nginx for build mode
+- `composer run daemon-stop` - Stop the local Docker stack
+
+## Notes
+
+- Shared frontend components, routes, stores, and views are loaded from `framework/frontend/src`.
+- Demo-specific route overrides are wired through `createHilosRoutes(...)`.
+- If you change `docker/nginx.conf.template`, rebuild the Nginx image:
 
 ```bash
-npm run preview
+docker compose -f docker/docker-compose.local.yml --profile full up -d --build --force-recreate chat-nginx-local
 ```
-
-### Production Deployment
-
-For production deployment with Docker:
-
-1. Build the frontend:
-   ```bash
-   npm run build
-   ```
-
-2. Start Docker services (includes Nginx serving frontend):
-   ```bash
-   cd ../docker
-   docker-compose -f docker-compose.prod.yml up -d
-   ```
-
-Frontend will be served via Nginx at `http://localhost:8080` (or `FRONTEND_PORT` from `.env`).
-
-## Features
-
-- **Vue 3** with Composition API
-- **TypeScript** for type safety
-- **Pinia** for state management
-- **Vue Router** for navigation
-- **Bootstrap 5.1** for UI styling
-- **Auto-reconnect** WebSocket client
-- **Real-time chat** interface
-
-## Scripts
-
-- `npm run dev` - Start development server
-- `npm run build` - Build for production
-- `npm run preview` - Preview production build
-- `npm run type-check` - Type check (if configured)

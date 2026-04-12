@@ -18,7 +18,7 @@
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { useHead } from '@unhead/vue'
-import I18nSectionShell from '@/views/Hilos/I18n/I18nSectionShell.vue'
+import I18nSectionShell from '@hilos/sdk/views/Hilos/I18n/I18nSectionShell.vue'
 
 const route = useRoute()
 const languageId = computed(() => (typeof route.params.languageId === 'string' ? route.params.languageId : ''))

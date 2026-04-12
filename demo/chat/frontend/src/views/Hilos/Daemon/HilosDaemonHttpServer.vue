@@ -14,7 +14,7 @@
 import { computed } from 'vue'
 import { useHead } from '@unhead/vue'
 import { useRoute } from 'vue-router'
-import DaemonSectionShell from '@/views/Hilos/Daemon/DaemonSectionShell.vue'
+import DaemonSectionShell from '@hilos/sdk/views/Hilos/Daemon/DaemonSectionShell.vue'
 import { hilosDaemonStub } from '@/constants/hilosDaemonStubs'
 
 const route = useRoute()

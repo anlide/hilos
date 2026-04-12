@@ -73,9 +73,8 @@ services:
     image: node:20-alpine
     container_name: chat-frontend-builder-test
     volumes:
-      - ../frontend:/app
-      - ../../../framework:/hilos/framework:ro
-    working_dir: /app
+      - ../../..:/workspace
+    working_dir: /workspace/demo/chat/frontend
     environment:
       - NODE_ENV=production
       - DOCKER=true

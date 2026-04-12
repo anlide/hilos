@@ -65,7 +65,7 @@
 import { computed } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useHead } from '@unhead/vue'
-import LogViewerSectionShell from '@/views/Hilos/LogViewer/LogViewerSectionShell.vue'
+import LogViewerSectionShell from '@hilos/sdk/views/Hilos/LogViewer/LogViewerSectionShell.vue'
 import { useChatStore } from '@/stores'
 
 const chatStore = useChatStore()

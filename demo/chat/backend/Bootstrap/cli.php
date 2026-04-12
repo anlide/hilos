@@ -14,7 +14,15 @@ use Hilos\Utils\Env;
 use Hilos\Utils\Logger;
 
 // Project root (demo/chat): .env lives here, not under Bootstrap/
-Env::init(dirname(__DIR__, 2));
+$projectRoot = dirname(__DIR__, 2);
+Env::init($projectRoot);
+
+// Test CLI commands should prefer tests/.env over the default project .env.
+$appEnv = getenv('APP_ENV');
+$testEnvPath = $projectRoot . '/tests/.env';
+if ($appEnv === 'test' && file_exists($testEnvPath)) {
+    Env::load($testEnvPath);
+}
 
 /**
  * CLI - Entry point for CLI interface.

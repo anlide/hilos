@@ -36,12 +36,6 @@
         }
     },
     "scripts": {
-        "post-install-cmd": [
-            "@php scripts/link-frontend-sdk.php"
-        ],
-        "post-update-cmd": [
-            "@php scripts/link-frontend-sdk.php"
-        ],
         "setup-env": "docker-compose -f docker/docker-compose.local.yml run --rm chat-cli-local sh -c \"if [ ! -f ../.env ] && [ -f ../.env.example ]; then cp ../.env.example ../.env && echo '.env file created from .env.example'; else echo '.env file already exists or .env.example not found'; fi\"",
         "install-deps": "docker-compose -f docker/docker-compose.local.yml run --rm chat-cli-local composer install",
         "daemon-start": "docker-compose -f docker/docker-compose.local.yml up -d",

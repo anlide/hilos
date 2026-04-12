@@ -39,33 +39,37 @@ const detectWindowsHost = (): boolean => {
 
 const isWindowsHost = detectWindowsHost()
 const needsPolling = isDocker && isWindowsHost
-
-// Resolve SDK path for Docker
-// Framework is mounted at /hilos/framework in Docker container
-const dockerSdkPath = '/hilos/framework/frontend/src'
-
-// In Docker: use mounted volume path; fallback for local development
-const resolvedSdkPath =
-  isDocker && existsSync(dockerSdkPath)
-    ? dockerSdkPath
-    : resolve(fileURLToPath(new URL('../../../framework/frontend/src', import.meta.url)))
+const projectNodeModulesPath = fileURLToPath(new URL('./node_modules', import.meta.url))
+const resolvedSdkPath = resolve(fileURLToPath(new URL('../../../framework/frontend/src', import.meta.url)))
 
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [vue()],
   resolve: {
-    preserveSymlinks: false, // Resolve symlinks to their real paths
-    alias: {
-      '@': fileURLToPath(new URL('./src', import.meta.url)),
-      '@hilos/sdk': resolvedSdkPath
-    },
+    preserveSymlinks: false, // Keep real paths stable across host and Docker
+    alias: [
+      { find: '@', replacement: fileURLToPath(new URL('./src', import.meta.url)) },
+      { find: '@hilos/sdk', replacement: resolvedSdkPath },
+      // Force framework imports to reuse the demo app's runtime dependencies.
+      { find: /^vue$/, replacement: fileURLToPath(new URL('./node_modules/vue/dist/vue.runtime.esm-bundler.js', import.meta.url)) },
+      { find: /^vue-router$/, replacement: fileURLToPath(new URL('./node_modules/vue-router/dist/vue-router.mjs', import.meta.url)) },
+      { find: /^pinia$/, replacement: fileURLToPath(new URL('./node_modules/pinia/dist/pinia.mjs', import.meta.url)) },
+      { find: /^@unhead\/vue$/, replacement: fileURLToPath(new URL('./node_modules/@unhead/vue/dist/index.mjs', import.meta.url)) },
+      { find: /^@unhead\/vue\/client$/, replacement: fileURLToPath(new URL('./node_modules/@unhead/vue/dist/client.mjs', import.meta.url)) },
+      { find: /^@unhead\/vue\/server$/, replacement: fileURLToPath(new URL('./node_modules/@unhead/vue/dist/server.mjs', import.meta.url)) },
+      { find: /^@unhead\/vue\/components$/, replacement: fileURLToPath(new URL('./node_modules/@unhead/vue/dist/components.mjs', import.meta.url)) },
+      { find: /^@unhead\/vue\/plugins$/, replacement: fileURLToPath(new URL('./node_modules/@unhead/vue/dist/plugins.mjs', import.meta.url)) },
+      { find: /^@unhead\/vue\/utils$/, replacement: fileURLToPath(new URL('./node_modules/@unhead/vue/dist/utils.mjs', import.meta.url)) },
+      { find: /^@unhead\/vue\/legacy$/, replacement: fileURLToPath(new URL('./node_modules/@unhead/vue/dist/legacy.mjs', import.meta.url)) },
+      { find: /^@unhead\/vue\/scripts$/, replacement: fileURLToPath(new URL('./node_modules/@unhead/vue/dist/scripts.mjs', import.meta.url)) },
+    ],
     // Explicitly tell Vite to look for node_modules in current project directory
     // This is critical when framework code imports dependencies like vue-router, pinia, vue
-    // Without this, Vite searches node_modules relative to framework path (/hilos/framework/...)
-    // instead of project path (/app/...)
+    // Without this, Vite searches node_modules relative to framework path
+    // instead of the demo frontend directory.
     // @ts-expect-error - resolve.modules is a valid Rollup resolver option but not in Vite's ResolveOptions type
     modules: [
-      fileURLToPath(new URL('./node_modules', import.meta.url)), // Project's node_modules first
+      projectNodeModulesPath, // Project's node_modules first
       'node_modules' // Fallback
     ],
     // Ensure dependencies from demo project are always used, not from framework's location
