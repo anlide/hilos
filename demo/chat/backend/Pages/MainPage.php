@@ -8,6 +8,7 @@ use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Agents\ChatAgent;
 use Demo\Chat\Core\Page\AbstractChatPage;
+use Demo\Chat\Pages\Main\UploadFileTrait;
 use Demo\Chat\Core\Page\DTO\FileModerationDismissActionDTO;
 use Demo\Chat\Core\Page\DTO\FileUploadInitActionDTO;
 use Demo\Chat\Core\Page\DTO\MessageActionDTO;
@@ -32,6 +33,8 @@ use Random\RandomException;
  */
 final class MainPage extends AbstractChatPage
 {
+    use UploadFileTrait;
+
     public const string PAGE = PageConstants::MAIN;
 
     /**
@@ -87,7 +90,7 @@ final class MainPage extends AbstractChatPage
      * @param string $action Action name
      * @param ActionPayloadDTO $dto Action payload DTO
      * @throws HilosException On database, runtime, or truth source failure
-     * @throws RandomException From {@see ChatAgent::handleFileUploadInit} (file upload id generation)
+     * @throws RandomException From {@see UploadFileTrait::handleFileUploadInit} (file upload id generation)
      */
     public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): void
     {
@@ -154,29 +157,5 @@ final class MainPage extends AbstractChatPage
                 message: $dto->content,
             ),
         );
-    }
-
-    /**
-     * Handle file upload init action.
-     *
-     * @param string $acceptKey Accept key
-     * @param FileUploadInitActionDTO $dto Upload init payload
-     * @throws HilosException On database, runtime, or truth source failure
-     * @throws RandomException From {@see ChatAgent::handleFileUploadInit}
-     */
-    private function handleFileUploadInit(string $acceptKey, FileUploadInitActionDTO $dto): void
-    {
-        $this->getChatAgent()->handleFileUploadInit($acceptKey, $dto);
-    }
-
-    /**
-     * Handle file moderation dismiss action.
-     *
-     * @param string $acceptKey Accept key
-     * @throws HilosException On database, runtime, or truth source failure
-     */
-    private function handleFileModerationDismiss(string $acceptKey): void
-    {
-        $this->getChatAgent()->handleFileModerationDismiss($acceptKey);
     }
 }
