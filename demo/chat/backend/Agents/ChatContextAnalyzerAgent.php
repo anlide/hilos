@@ -19,8 +19,6 @@ use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Utils\Env;
 use Hilos\Core\Sync\DTO\DbSyncCreatedSignalData;
 use Hilos\Core\Sync\DTO\DbSyncUpdatedSignalData;
-use Hilos\Core\Sync\DTO\RtSyncCreatedSignalData;
-use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
 use Hilos\LLM\ClientFactory;
 use Hilos\LLM\Contract\AsyncChatLLMInterface;
 use Hilos\LLM\DTO\ChatGenerateOptions;
@@ -33,8 +31,7 @@ use Hilos\Utils\Logger;
  * ChatContextAnalyzerAgent - Monopolistic agent for chat context analysis.
  *
  * Runs in monopolistic worker process. Single instance maintains shared chat context
- * for all bots. Listens to DbSync (events, users, bots) and RtSync (connections) to
- * build and update context. Sends LLM requests to summarize/analyze chat state.
+ * for all bots. Listens to DbSync events to build and update context. Sends LLM requests to summarize/analyze chat state.
  * Writes results to Runtime (chatContext collection) for BotAgents to consume.
  */
 class ChatContextAnalyzerAgent extends AbstractAgent
@@ -75,10 +72,6 @@ class ChatContextAnalyzerAgent extends AbstractAgent
         $existing = Hilos::$rt->chatContexts->getStateCollection()->get(StateChatContext::ID_MAIN);
         if ($existing === null) {
             Hilos::$rt->chatContexts->actions->init();
-            Logger::logAgentInfo(
-                $this->getType(),
-                '[env_update] ChatContext initialized (empty)'
-            );
         }
     }
 
@@ -127,12 +120,6 @@ class ChatContextAnalyzerAgent extends AbstractAgent
                 . ', confidence=' . round($confidence, 2)
                 . ', summary=' . json_encode(mb_substr($summary, 0, 300), JSON_UNESCAPED_UNICODE)
             );
-            Logger::logAgentInfo(
-                $this->getType(),
-                '[env_update] ChatContext updated: topic=' . ($topic ?? 'null')
-                . ', confidence=' . round($confidence, 2)
-                . ', summaryLen=' . mb_strlen($summary)
-            );
         } else {
             Logger::logAgentInfo($this->getType(), '[llm_done] Parse failed, raw=' . json_encode(mb_substr($text, 0, 200), JSON_UNESCAPED_UNICODE));
         }
@@ -151,7 +138,7 @@ class ChatContextAnalyzerAgent extends AbstractAgent
      */
     public function onSignalDbSyncCreated(DbSyncCreatedSignalData $data, string $source, string $name): void
     {
-        $this->handleDbSyncChange($data->collectionKey, $data->idString, $data->row);
+        $this->handleDbSyncChange($data->collectionKey, $data->row);
     }
 
     /**
@@ -163,48 +150,19 @@ class ChatContextAnalyzerAgent extends AbstractAgent
      */
     public function onSignalDbSyncUpdated(DbSyncUpdatedSignalData $data, string $source, string $name): void
     {
-        $this->handleDbSyncChange($data->collectionKey, $data->idString, $data->row);
+        $this->handleDbSyncChange($data->collectionKey, $data->row);
     }
 
     /**
-     * Handle RT sync created signal.
+     * Process DB sync change (events).
      *
-     * @param RtSyncCreatedSignalData $data Sync data with created state
-     * @param string $source Signal source
-     * @param string $name Signal name
-     */
-    public function onSignalRtSyncCreated(RtSyncCreatedSignalData $data, string $source, string $name): void
-    {
-        $this->handleRtSyncChange($data->collectionKey, $data->stateId, $data->row);
-    }
-
-    /**
-     * Handle RT sync updated signal.
-     *
-     * @param RtSyncUpdatedSignalData $data Sync data with updated state
-     * @param string $source Signal source
-     * @param string $name Signal name
-     */
-    public function onSignalRtSyncUpdated(RtSyncUpdatedSignalData $data, string $source, string $name): void
-    {
-        $this->handleRtSyncChange($data->collectionKey, $data->stateId, $data->row);
-    }
-
-    /**
-     * Process DB sync change (events, users, bots).
-     *
-     * @param string $collectionKey Collection key (events, users, bots)
-     * @param string $idString Row ID
+     * @param string $collectionKey Collection key (events)
      * @param array<string, mixed> $row Row data
      */
-    private function handleDbSyncChange(string $collectionKey, string $idString, array $row): void
+    private function handleDbSyncChange(string $collectionKey, array $row): void
     {
         if ($collectionKey === DbChatContext::events) {
             $eventType = $row['type'] ?? '';
-            Logger::logAgentInfo(
-                $this->getType(),
-                "[env_update] DbSync event: id={$idString}, type={$eventType}"
-            );
             if ($eventType === ChatEventType::CHAT_CLEARED->value) {
                 $this->pendingSummarize = false;
                 Hilos::$rt->chatContexts->actions->update([
@@ -212,43 +170,9 @@ class ChatContextAnalyzerAgent extends AbstractAgent
                     StateChatContext::topicConfidence => 0.0,
                     StateChatContext::summary => '',
                 ]);
-                Logger::logAgentInfo($this->getType(), '[env_update] ChatContext reset (chat cleared)');
             } elseif ($eventType === ChatEventType::MESSAGE_SENT->value) {
                 $this->pendingSummarize = true;
             }
-            return;
-        }
-        if ($collectionKey === DbChatContext::users) {
-            Logger::logAgentInfo(
-                $this->getType(),
-                "[env_update] DbSync user: id={$idString}"
-            );
-            return;
-        }
-        if ($collectionKey === DbChatContext::bots) {
-            Logger::logAgentInfo(
-                $this->getType(),
-                "[env_update] DbSync bot: id={$idString}"
-            );
-            return;
-        }
-    }
-
-    /**
-     * Process RT sync change (connections).
-     *
-     * @param string $collectionKey Collection key (connections)
-     * @param string $stateId State ID
-     * @param array<string, mixed> $row State row data
-     */
-    private function handleRtSyncChange(string $collectionKey, string $stateId, array $row): void
-    {
-        if ($collectionKey === RtChatContext::connections) {
-            Logger::logAgentInfo(
-                $this->getType(),
-                "[env_update] RtSync connection: stateId={$stateId}"
-            );
-            return;
         }
     }
 
