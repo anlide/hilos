@@ -1,67 +1,19 @@
-import { useTableStore } from '../stores/useTableStore'
 import { useGuardianStore } from '../stores/useGuardianStore'
-import { parseGuardianAgentStatusesSnapshot, parseGuardianAgentStatusUpdate } from '../types/guardianAgentRuns'
-import type { TableMutationEntry } from '../types/table'
+import { useTableStore } from '../stores/useTableStore'
+import {
+  tableData,
+  tableMutation,
+  tableActionError,
+  guardianAgentStatusUpdate,
+  subscriptionPageHilosGuardian,
+  subscriptionPageHilosGuardianAgent,
+  subscriptionUpdated,
+  SUBSCRIPTION_PAGE_PREFIX,
+} from '../signals'
 import { VueSignalRouter } from './VueSignalRouter'
 
 const isRecord = (value: unknown): value is Record<string, unknown> => {
   return typeof value === 'object' && value !== null
-}
-
-function handleTableData(data: unknown): void {
-  if (!isRecord(data) || !isRecord(data.tables)) return
-
-  const tableStore = useTableStore()
-  const tables = data.tables as Record<string, unknown>
-  tableStore.applyTablesPayload(tables)
-
-  for (const key of Object.keys(tables)) {
-    tableStore.completeTableRefreshForKey(key)
-  }
-}
-
-function handleTableMutation(data: unknown): void {
-  if (!isRecord(data)) return
-
-  const tableStore = useTableStore()
-  const tableKey = data['tableKey'] as string | undefined
-  const mutation = data['mutation'] as TableMutationEntry | undefined
-
-  if (tableKey && mutation) {
-    tableStore.applyTableMutation(tableKey, mutation)
-  }
-}
-
-function handleTableActionError(data: unknown): void {
-  if (!isRecord(data)) return
-
-  const tableStore = useTableStore()
-  const tableKey = data['tableKey'] as string | undefined
-
-  if (tableKey) {
-    tableStore.completeTableRefreshForKey(tableKey)
-  }
-
-  const msg = data['message'] as string | undefined
-  if (msg) {
-    console.error(`[Table action error] ${data['tableKey'] ?? ''}: ${msg}`)
-  }
-}
-
-function handleGuardianAgentStatusUpdate(data: unknown): void {
-  const update = parseGuardianAgentStatusUpdate(data)
-  if (update) {
-    const guardianStore = useGuardianStore()
-    guardianStore.setGuardianAgentStatus(update.agentId, update.status)
-  }
-}
-
-function handleGuardianSnapshot(data: unknown): void {
-  const snapshot = parseGuardianAgentStatusesSnapshot(data)
-  if (snapshot) {
-    const guardianStore = useGuardianStore()
-    guardianStore.setGuardianAgentStatuses(snapshot)
-  }
 }
 
 /**
@@ -69,15 +21,45 @@ function handleGuardianSnapshot(data: unknown): void {
  * Demo projects call this, then add their own handlers.
  */
 export function registerHilosSignalHandlers(router: VueSignalRouter): void {
-  router.on('table_data', handleTableData)
-  router.on('table_mutation', handleTableMutation)
-  router.on('table_action_error', handleTableActionError)
-  router.on('guardian_agent_status_update', handleGuardianAgentStatusUpdate)
-  router.on('subscription_page_hilos_guardian', handleGuardianSnapshot)
-  router.on('subscription_page_hilos_guardian_agent', handleGuardianSnapshot)
-  router.on('subscription_updated', () => {})
+  router.on(tableData, ({ tables }) => {
+    const tableStore = useTableStore()
+    tableStore.applyTablesPayload(tables)
+    for (const key of Object.keys(tables)) {
+      tableStore.completeTableRefreshForKey(key)
+    }
+  })
 
-  router.onPrefix('subscription_page_', (data: unknown) => {
+  router.on(tableMutation, ({ tableKey, mutation }) => {
+    const tableStore = useTableStore()
+    tableStore.applyTableMutation(tableKey, mutation)
+  })
+
+  router.on(tableActionError, ({ tableKey, message }) => {
+    const tableStore = useTableStore()
+    tableStore.completeTableRefreshForKey(tableKey)
+    if (message) {
+      console.error(`[Table action error] ${tableKey}: ${message}`)
+    }
+  })
+
+  router.on(guardianAgentStatusUpdate, ({ agentId, status }) => {
+    const guardianStore = useGuardianStore()
+    guardianStore.setGuardianAgentStatus(agentId, status)
+  })
+
+  router.on(subscriptionPageHilosGuardian, (snapshot) => {
+    const guardianStore = useGuardianStore()
+    guardianStore.setGuardianAgentStatuses(snapshot)
+  })
+
+  router.on(subscriptionPageHilosGuardianAgent, (snapshot) => {
+    const guardianStore = useGuardianStore()
+    guardianStore.setGuardianAgentStatuses(snapshot)
+  })
+
+  router.on(subscriptionUpdated, () => {})
+
+  router.onPrefix(SUBSCRIPTION_PAGE_PREFIX, (data: unknown) => {
     if (!isRecord(data)) return
     if (isRecord(data.tables)) {
       const tableStore = useTableStore()

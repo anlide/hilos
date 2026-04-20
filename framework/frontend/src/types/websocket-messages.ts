@@ -1,113 +1,111 @@
 /**
- * WebSocket message types
- * Types for WebSocket communication
+ * WebSocket transport types.
+ *
+ * Protocol (matches backend contract in docs/agents/frontend-sdk/backend-contract.md):
+ * - Incoming (server -> client): { type, data, time?, outcome? }
+ * - Outgoing (client -> server):
+ *   - Action:          { type: 'action', action, data }
+ *   - Page subscribe:  { type: 'page_subscribe' | 'page_update_subscription', page, params? }
  */
 
 /**
- * Base type for WebSocket receive messages
+ * Envelope-level outcome marker for action-acknowledgement signals.
+ *
+ * Absent for regular broadcast signals. Present (= 'success' | 'fail') only on
+ * signals addressed to the initiator of a client-originated action, following
+ * the convention `<action>_success` / `<action>_fail`.
  */
-export interface WebSocketReceiveMessage {
-  signal: string
-  [key: string]: unknown
+export type WebSocketOutcome = 'success' | 'fail'
+
+/**
+ * Base incoming envelope (server -> client).
+ *
+ * Payload always lives under `data`. `time` is an optional server clock tick
+ * for clock-sync capable signals (interactive apps, games). `outcome` is an
+ * architectural marker for action-ack signals (see {@link WebSocketOutcome}).
+ */
+export interface WebSocketIncoming<T extends string = string, D = unknown> {
+  type: T
+  data: D
+  time?: number
+  outcome?: WebSocketOutcome
 }
 
 /**
- * Type for WebSocket messages with timestamp
+ * Incoming signal with no payload body.
+ * Used for events that carry only their type, e.g. `bot_joined`, `file_upload_complete`.
  */
-export interface WebSocketReceiveMessageTime extends WebSocketReceiveMessage {
+export interface WebSocketIncomingEmpty<T extends string = string> {
+  type: T
+  time?: number
+  outcome?: WebSocketOutcome
+}
+
+/**
+ * Clock-sync only signal: server clock tick without any `data` payload.
+ * Reserved for interactive apps (games) that need server time synchronization.
+ */
+export interface WebSocketTimeSync<T extends string = string> {
+  type: T
+  time: number
+}
+
+/**
+ * Standard shape of fail-outcome signal payload.
+ *
+ * `message` is human-readable text and is always provided by the backend
+ * (i18n-ready, suitable for direct display in UI / toast).
+ * `reason` is an enum-like code for programmatic handling.
+ */
+export interface ActionFailData<R extends string = string> {
+  reason: R
+  message: string
+}
+
+/**
+ * Success-outcome acknowledgement of a client-initiated action.
+ *
+ * Convention: emitted as `<action>_success` addressed only to the initiator.
+ * Optional `data` payload and optional top-level `message` (for future toast UI).
+ */
+export type WebSocketActionSuccess<T extends string = string, D = undefined> =
+  D extends undefined
+    ? { type: T; outcome: 'success'; time?: number; message?: string }
+    : { type: T; outcome: 'success'; data: D; time?: number; message?: string }
+
+/**
+ * Fail-outcome acknowledgement of a client-initiated action.
+ *
+ * Convention: emitted as `<action>_fail` addressed only to the initiator.
+ * `data` is a mandatory {@link ActionFailData} — backend always provides both
+ * reason code and human-readable message.
+ */
+export interface WebSocketActionFail<T extends string = string, R extends string = string> {
+  type: T
+  outcome: 'fail'
+  data: ActionFailData<R>
   time?: number
 }
 
 /**
- * Type for empty WebSocket messages (only signal)
+ * Outgoing action envelope (client -> server).
+ *
+ * Routed server-side to the current page's agent `onAction()`.
  */
-export interface WebSocketReceiveMessageEmpty<T extends string = string> {
-  signal: T
-}
-
-/**
- * Type for WebSocket messages with error
- */
-export interface WebSocketReceiveMessageError<T extends string = string> {
-  signal: T
-  reason: string
-}
-
-/**
- * Type for WebSocket messages with data
- */
-export interface WebSocketReceiveMessageData<T extends string = string, D = unknown> {
-  signal: T
+export interface WebSocketActionMessage<
+  A extends string = string,
+  D = Record<string, unknown>,
+> {
+  type: 'action'
+  action: A
   data: D
 }
 
-// Utility types for creating message types
-export type WebSocketMessageEmpty<T extends string> = WebSocketReceiveMessageEmpty<T>
-
-export type WebSocketMessageError<T extends string> = WebSocketReceiveMessageError<T>
-
-export type WebSocketMessageData<T extends string, D = unknown> = WebSocketReceiveMessageData<T, D>
-
 /**
- * Utility type for creating message type with additional fields
+ * Outgoing page subscription envelope (client -> server).
  */
-export type WebSocketMessageWithFields<T extends string, F = Record<string, unknown>> = {
-  signal: T
-} & F
-
-/**
- * Type for WebSocket messages with timestamp
- */
-export type WebSocketMessageTime<T extends string = string> = WebSocketReceiveMessageTime & {
-  signal: T
+export interface WebSocketPageSubscribeMessage<P extends string = string> {
+  type: 'page_subscribe' | 'page_update_subscription'
+  page: P
+  params?: Record<string, string>
 }
-
-/**
- * Type for WebSocket messages with data and timestamp
- */
-export type WebSocketMessageWithDataAndTime<T extends string = string, D = Record<string, unknown>> = WebSocketReceiveMessageTime & {
-  signal: T
-} & D
-
-/**
- * Utility functions for quickly creating message types
- */
-export const createWebSocketTypes = <T extends string>(signal: T) => ({
-  empty: () => ({ signal } as WebSocketMessageEmpty<T>),
-  error: () => ({ signal, reason: '' } as WebSocketMessageError<T>),
-  withFields: <F extends Record<string, unknown>>(fields: F) => ({ signal, ...fields } as WebSocketMessageWithFields<T, F>),
-  withData: <D = unknown>(data: D) => ({ signal, data } as WebSocketMessageData<T, D>),
-  withTime: () => ({ signal, time: 0 } as WebSocketMessageTime<T>)
-})
-
-// Ready-made types for commonly used patterns
-export type WebSocketMessageSuccess<T extends string> = WebSocketMessageEmpty<T>
-
-export type WebSocketMessageFail<T extends string> = WebSocketMessageError<T>
-
-export type WebSocketMessageProgress<T extends string, P = Record<string, unknown>> = WebSocketMessageWithFields<T, P>
-
-/**
- * Types for WebSocket send messages
- */
-export interface WebSocketSendMessage {
-  action: string
-  data: unknown
-}
-
-/**
- * WebSocket configuration
- */
-export interface WebSocketConfig {
-  wsPort: number
-  host: string
-}
-
-/**
- * Types for event handlers
- */
-export type WebSocketEventHandler = (event: Event) => void
-
-export type WebSocketCloseHandler = (event: CloseEvent) => void
-
-export type WebSocketMessageHandler = (event: MessageEvent) => void

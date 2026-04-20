@@ -714,8 +714,35 @@ abstract class DaemonManager extends BaseManager
             'type' => $wireSignalName,
             'data' => $inner->toArray(),
         ];
+        $this->mergeEnvelopeMetadata($message, $inner);
 
         return json_encode($message, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    }
+
+    /**
+     * Inject envelope-level metadata (outcome, time) from an
+     * {@see \Hilos\Core\Router\WebSocketEnvelopeAware} DTO into the
+     * outgoing WebSocket frame array.
+     *
+     * Order of keys is preserved: type first, then data, then optional
+     * metadata. Consumers rely on this for log readability.
+     *
+     * @param array<string, mixed> $message Frame array (mutated in place)
+     * @param SignalDataInterface $inner Inner signal data
+     */
+    private function mergeEnvelopeMetadata(array &$message, SignalDataInterface $inner): void
+    {
+        if (!$inner instanceof \Hilos\Core\Router\WebSocketEnvelopeAware) {
+            return;
+        }
+        $outcome = $inner->getEnvelopeOutcome();
+        if ($outcome !== null) {
+            $message['outcome'] = $outcome;
+        }
+        $time = $inner->getEnvelopeTime();
+        if ($time !== null) {
+            $message['time'] = $time;
+        }
     }
 
     /**
@@ -746,6 +773,7 @@ abstract class DaemonManager extends BaseManager
             'type' => $signalName,
             'data' => $dataArray,
         ];
+        $this->mergeEnvelopeMetadata($message, $innerData);
 
         $messageJson = json_encode($message, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 

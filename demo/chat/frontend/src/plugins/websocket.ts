@@ -1,63 +1,51 @@
 import { createWebSocketPlugin } from '@hilos/sdk/plugins/websocket'
 import { useConnectionStore, usePageCatalogStore, useHilosLogsStore } from '@hilos/sdk/stores'
-import { extractEntitiesEnvelope, hasEntities } from '@hilos/sdk/types'
+import { hasEntities } from '@hilos/sdk/types'
 import { createHilosSignalRouter } from '@hilos/sdk/services/hilosSignalHandlers'
+import type { VueSignalRouter } from '@hilos/sdk/services/VueSignalRouter'
+import type { WebSocketOutcome } from '@hilos/sdk/types/websocket-messages'
 import { config } from '@/config'
-import { useChatStore, type FileUploadProgressPayload } from '@/stores'
+import { useChatStore } from '@/stores'
 import { localStorageService } from '@/services/LocalStorageService'
 import { ChatEntitiesReceiver } from '@/entities/ChatEntitiesReceiver'
-import { eventPayloadToEvent, isRecord, parseEventPayloads, parseUserPayloads } from '@/entities/parsers'
-import { parseHilosLogsOverviewPayload } from '@/types/hilosLogsOverview'
+import { isRecord } from '@/entities/parsers'
 import {
   rejectFileUploadPending,
   resolveFileUploadOutcome,
 } from '@/services/chatFileUpload'
+import {
+  handshakeResponse,
+  subscriptionPageMain,
+  moderationStateUpdate,
+  fileModerationStateUpdate,
+  fileUploadProgressUpdate,
+  fileUploadReady,
+  fileUploadRejected,
+  fileUploadAborted,
+  fileUploadInvalid,
+  fileUploadComplete,
+  botJoined,
+  botLeft,
+  botUpdated,
+  newEvent,
+  subscriptionPageHilosLogs,
+} from '@/signals'
 
+/**
+ * Shape of a raw parsed WebSocket envelope: `{type, data?, time?, outcome?}`.
+ * `time` is accepted but not yet consumed (reserved for clock-sync in future
+ * interactive apps). `outcome` is the action-ack marker — router uses it to
+ * dispatch to `<type>::success` / `<type>::fail` handlers.
+ */
 type RawMessage = {
   type: string
   data?: unknown
+  time?: number
+  outcome?: WebSocketOutcome
 }
 
-/**
- * Apply moderation text, file moderation UI, and upload progress from a payload
- * (subscription_page_main or dedicated WS signals). Keys match ChatEventSignalDTO session fields.
- */
-const applyChatSessionFieldsFromData = (data: Record<string, unknown>): void => {
-  const chatStore = useChatStore()
-  if ('moderationState' in data) {
-    const v = data.moderationState
-    chatStore.setModerationState(
-      v === null || v === undefined ? null : typeof v === 'string' ? v : null,
-    )
-  }
-  if ('fileModerationState' in data) {
-    const rawFile = data.fileModerationState
-    if (rawFile === null || rawFile === undefined) {
-      chatStore.setFileModerationState(null)
-    } else if (typeof rawFile === 'object' && !Array.isArray(rawFile)) {
-      chatStore.setFileModerationState(rawFile as Record<string, unknown>)
-    }
-  }
-  if ('fileUploadProgress' in data) {
-    chatStore.setFileUploadProgress(parseFileUploadProgress(data.fileUploadProgress))
-  }
-}
-
-const parseFileUploadProgress = (raw: unknown): FileUploadProgressPayload | null => {
-  if (raw === null || raw === undefined) {
-    return null
-  }
-  if (!isRecord(raw)) {
-    return null
-  }
-  const { filename, uploadedBytes, totalBytes } = raw
-  if (typeof filename !== 'string') {
-    return null
-  }
-  if (typeof uploadedBytes !== 'number' || typeof totalBytes !== 'number') {
-    return null
-  }
-  return { filename, uploadedBytes, totalBytes }
+const isOutcome = (value: unknown): value is WebSocketOutcome => {
+  return value === 'success' || value === 'fail'
 }
 
 const parseIncomingMessage = (data: string | object): RawMessage | null => {
@@ -76,148 +64,119 @@ const toRawMessage = (value: unknown): RawMessage | null => {
   if (!isRecord(value) || typeof value.type !== 'string') {
     return null
   }
-  return {
+  const message: RawMessage = {
     type: value.type,
     data: value.data,
   }
-}
-
-/**
- * Current user for handshake: exactly one record in entities.full.users (server contract).
- */
-const parseHandshakeSelfUser = (data: unknown): { id: number; name: string } => {
-  if (!isRecord(data) || !hasEntities(data)) {
-    throw new Error('Invalid handshake_response payload')
+  if (typeof value.time === 'number') {
+    message.time = value.time
   }
-  const envelope = extractEntitiesEnvelope(data)
-  const users = parseUserPayloads(envelope?.full?.users)
-  if (users === null || users.length !== 1) {
-    throw new Error('Invalid handshake_response payload')
+  if (isOutcome(value.outcome)) {
+    message.outcome = value.outcome
   }
-  const self = users[0]!
-  return { id: self.id, name: self.name }
+  return message
 }
 
 const entitiesReceiver = new ChatEntitiesReceiver()
 
 /**
- * Build the signal router with framework + chat-specific handlers.
+ * Module-level reference to the signal router, set by
+ * {@link createChatWebSocketPlugin} at app bootstrap.
+ *
+ * Components can use {@link useSignalRouter} to register additional typed
+ * handlers (e.g. per-view action-ack handlers like rename_success/rename_fail)
+ * on top of the baseline set wired inside this plugin.
+ */
+let signalRouterInstance: VueSignalRouter | null = null
+
+/**
+ * Access the chat signal router. Throws if the plugin has not been installed yet.
+ */
+export function useSignalRouter(): VueSignalRouter {
+  if (signalRouterInstance === null) {
+    throw new Error('Signal router is not available. Make sure createChatWebSocketPlugin() ran.')
+  }
+  return signalRouterInstance
+}
+
+/**
+ * Build the signal router with framework + chat-specific typed handlers.
  */
 function buildSignalRouter() {
   const signalRouter = createHilosSignalRouter()
 
-  signalRouter.on('handshake_response', (data: unknown) => {
-    const self = parseHandshakeSelfUser(data)
-    if (isRecord(data) && isRecord(data.pageCatalog)) {
+  signalRouter.on(handshakeResponse, ({ self, pageCatalog }) => {
+    if (pageCatalog !== null && pageCatalog !== undefined) {
       const pageCatalogStore = usePageCatalogStore()
-      pageCatalogStore.setPageCatalog(data.pageCatalog)
+      pageCatalogStore.setPageCatalog(pageCatalog)
     }
     useChatStore().handleSubscriptionResponse(self.id, self.name)
   })
 
-  signalRouter.on('subscription_page_main', (data: unknown) => {
-    if (!isRecord(data)) {
-      return
-    }
-    applyChatSessionFieldsFromData(data)
-  })
-
-  signalRouter.on('moderation_state_update', (data: unknown) => {
-    if (data && typeof data === 'object' && 'moderationState' in data) {
-      const value = (data as { moderationState: string | null }).moderationState
-      const chatStore = useChatStore()
-      chatStore.setModerationState(value ?? null)
-    }
-  })
-
-  signalRouter.on('file_moderation_state_update', (data: unknown) => {
-    if (!isRecord(data) || !('fileModerationState' in data)) {
-      return
-    }
-    const v = (data as { fileModerationState: unknown }).fileModerationState
+  signalRouter.on(subscriptionPageMain, ({ moderationState, fileModerationState, fileUploadProgress }) => {
     const chatStore = useChatStore()
-    if (v === null || v === undefined) {
-      chatStore.setFileModerationState(null)
-    } else if (typeof v === 'object' && !Array.isArray(v)) {
-      chatStore.setFileModerationState(v as Record<string, unknown>)
+    if (moderationState !== undefined) {
+      chatStore.setModerationState(moderationState)
+    }
+    if (fileModerationState !== undefined) {
+      chatStore.setFileModerationState(fileModerationState)
+    }
+    if (fileUploadProgress !== undefined) {
+      chatStore.setFileUploadProgress(fileUploadProgress)
     }
   })
 
-  signalRouter.on('file_upload_progress_update', (data: unknown) => {
-    if (!isRecord(data) || !('fileUploadProgress' in data)) {
-      return
-    }
-    const v = (data as { fileUploadProgress: unknown }).fileUploadProgress
-    const chatStore = useChatStore()
-    if (v === null || v === undefined) {
-      chatStore.setFileUploadProgress(null)
-      return
-    }
-    chatStore.setFileUploadProgress(parseFileUploadProgress(v))
+  signalRouter.on(moderationStateUpdate, ({ moderationState }) => {
+    useChatStore().setModerationState(moderationState)
   })
 
-  signalRouter.on('file_upload_ready', (data: unknown) => {
+  signalRouter.on(fileModerationStateUpdate, ({ fileModerationState }) => {
+    useChatStore().setFileModerationState(fileModerationState)
+  })
+
+  signalRouter.on(fileUploadProgressUpdate, ({ fileUploadProgress }) => {
+    useChatStore().setFileUploadProgress(fileUploadProgress)
+  })
+
+  signalRouter.on(fileUploadReady, ({ filename, size }) => {
     // Baseline progress bar (0 / size); server throttles file_upload_progress_update from the first binary chunks.
-    if (isRecord(data)) {
-      const filename = data.filename
-      const size = data.size
-      if (typeof filename === 'string' && typeof size === 'number') {
-        useChatStore().setFileUploadProgress({
-          filename,
-          uploadedBytes: 0,
-          totalBytes: size,
-        })
-      }
-    }
+    useChatStore().setFileUploadProgress({
+      filename,
+      uploadedBytes: 0,
+      totalBytes: size,
+    })
     resolveFileUploadOutcome({ ok: true })
   })
 
-  signalRouter.on('file_upload_rejected', (data: unknown) => {
-    if (!isRecord(data)) {
-      return
-    }
-    resolveFileUploadOutcome({
-      ok: false,
-      code: String(data.code ?? ''),
-      message: typeof data.message === 'string' ? data.message : undefined,
-    })
+  signalRouter.on(fileUploadRejected, ({ code, message }) => {
+    resolveFileUploadOutcome({ ok: false, code, message })
   })
 
-  signalRouter.on('file_upload_aborted', () => {
+  signalRouter.on(fileUploadAborted, () => {
     rejectFileUploadPending('aborted')
     useChatStore().setFileUploadProgress(null)
   })
 
-  signalRouter.on('file_upload_invalid', () => {
+  signalRouter.on(fileUploadInvalid, () => {
     rejectFileUploadPending('invalid')
     useChatStore().setFileUploadProgress(null)
   })
 
-  signalRouter.on('file_upload_complete', () => {
+  signalRouter.on(fileUploadComplete, () => {
     // UI state comes from file_moderation_state_update (moderating)
   })
 
-  signalRouter.on('subscription_page_hilos_logs', (data: unknown) => {
-    const parsed = parseHilosLogsOverviewPayload(data)
-    if (parsed) {
-      const hilosLogsStore = useHilosLogsStore()
-      hilosLogsStore.setHilosLogsOverview(parsed)
-    }
+  signalRouter.on(subscriptionPageHilosLogs, (snapshot) => {
+    useHilosLogsStore().setHilosLogsOverview(snapshot)
   })
 
-  signalRouter.on('bot_joined', () => {})
-  signalRouter.on('bot_left', () => {})
-  signalRouter.on('bot_updated', () => {})
+  signalRouter.on(botJoined, () => {})
+  signalRouter.on(botLeft, () => {})
+  signalRouter.on(botUpdated, () => {})
 
-  signalRouter.on('new_event', (data: unknown) => {
+  signalRouter.on(newEvent, ({ events }) => {
     const chatStore = useChatStore()
-    const envelope = extractEntitiesEnvelope(data)
-    const fromUpdates = parseEventPayloads(envelope?.updates?.events) ?? []
-    const fromFull = parseEventPayloads(envelope?.full?.events) ?? []
-    const eventPayloads = fromUpdates.length > 0 ? fromUpdates : fromFull
-
-    for (const eventPayload of eventPayloads) {
-      const event = eventPayloadToEvent(eventPayload)
+    for (const event of events) {
       if (event.type === 'user_renamed' || event.type === 'user_renamed_by_admin') {
         const newName =
           typeof event.data.newName === 'string'
@@ -248,6 +207,7 @@ export function createChatWebSocketPlugin() {
   const websocketUrl = `${config.websocketProtocol}://${config.websocketHost}:${config.websocketPort}`
   const sessionToken = localStorageService.getSessionWithInit()
   const signalRouter = buildSignalRouter()
+  signalRouterInstance = signalRouter
 
   return createWebSocketPlugin({
     url: websocketUrl,
@@ -290,7 +250,7 @@ export function createChatWebSocketPlugin() {
         entitiesReceiver.apply(message.data, chatStore)
       }
 
-      signalRouter.dispatch(message.type, message.data)
+      signalRouter.dispatch(message.type, message.data, message.outcome)
     },
   })
 }

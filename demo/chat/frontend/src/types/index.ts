@@ -8,29 +8,22 @@ export * from './PageCatalog'
 export { ChatBot, Event, User } from './domain'
 
 /**
- * Re-export WebSocket types from framework
+ * Re-export WebSocket transport types from framework.
+ *
+ * Historical note: earlier iterations re-exported a dozen flat-protocol
+ * message types that never matched this project's actual `{type, data, time?,
+ * outcome?}` wire shape. The modern set is intentionally small — envelope
+ * types plus action-ack payload shapes — and the whole module is re-exported
+ * below so downstream imports don't need to know internal filenames.
  */
 export type {
-  WebSocketReceiveMessage,
-  WebSocketReceiveMessageTime,
-  WebSocketReceiveMessageEmpty,
-  WebSocketReceiveMessageError,
-  WebSocketReceiveMessageData,
-  WebSocketMessageEmpty,
-  WebSocketMessageError,
-  WebSocketMessageData,
-  WebSocketMessageWithFields,
-  WebSocketMessageTime,
-  WebSocketMessageWithDataAndTime,
-  WebSocketMessageSuccess,
-  WebSocketMessageFail,
-  WebSocketMessageProgress,
-  WebSocketSendMessage,
-  WebSocketConfig,
-  WebSocketEventHandler,
-  WebSocketCloseHandler,
-  WebSocketMessageHandler
-} from '@hilos/sdk/types'
-
-// Export function (not type)
-export { createWebSocketTypes } from '@hilos/sdk/types'
+  WebSocketIncoming,
+  WebSocketIncomingEmpty,
+  WebSocketTimeSync,
+  WebSocketActionSuccess,
+  WebSocketActionFail,
+  WebSocketActionMessage,
+  WebSocketPageSubscribeMessage,
+  WebSocketOutcome,
+  ActionFailData,
+} from '@hilos/sdk/types/websocket-messages'

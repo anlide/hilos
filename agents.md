@@ -65,6 +65,12 @@ Quick navigation for AI agents. Read the relevant file before starting work.
 |---|---|
 | [cli/commands.md](docs/agents/cli/commands.md) | running migrations, schema checks, DB reset, monitoring |
 
+## Testing
+
+| File | Read when... |
+|---|---|
+| [testing.md](docs/agents/testing.md) | running unit / integration / e2e tests — **always** via the composer scripts, never `phpunit` directly |
+
 ---
 
 ## Key rules (always apply)

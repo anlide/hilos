@@ -6,6 +6,8 @@ namespace Demo\Chat\Pages\Hilos\Users;
 
 use Demo\Chat\Constants\ChatEventType;
 use Demo\Chat\Constants\ChatSignalConstants;
+use Demo\Chat\Core\Router\DTO\ActionFailSignalData;
+use Demo\Chat\Core\Router\DTO\ActionSuccessSignalData;
 use Demo\Chat\Core\Router\DTO\ChatEventSignalDTO;
 use Demo\Chat\Database\DbChatContext;
 use Demo\Chat\Database\Object\Item\User;
@@ -18,7 +20,6 @@ use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\EmitDbChangeSignalData;
 use Hilos\Core\Router\DTO\EntitiesChangesDTO;
-use Hilos\Core\Table\DTO\TableActionErrorSignalData;
 use Hilos\Core\Table\DTO\TableMutationSignalData;
 use Hilos\Core\Table\Exception\TableActionException;
 use Hilos\Core\Table\Mutation\TableMutationEntry;
@@ -60,34 +61,31 @@ final class UserPage extends AbstractHilosUserPage
             return;
         }
 
-        try {
-            $this->handleHilosUserUpdate($acceptKey, $dto);
-        } catch (TableActionException $e) {
-            $this->broadcastAgent()->sendToUser(
-                ChatSignalConstants::TABLE_ACTION_ERROR,
-                $acceptKey,
-                new TableActionErrorSignalData(TableChatContext::users, $action, $e->getMessage()),
-            );
-        }
+        $this->handleHilosUserUpdate($acceptKey, $dto);
     }
 
     /**
      * Rename user through {@see \Demo\Chat\Database\Actions\Item\UserActions::rename} and fan out updates.
      *
-     * @throws TableActionException On validation or rename failure
+     * On validation or runtime failure, sends a dedicated {@see ChatSignalConstants::HILOS_USER_UPDATE_FAIL}
+     * ack to the initiator (reason + human-readable message); on success, sends
+     * {@see ChatSignalConstants::HILOS_USER_UPDATE_SUCCESS} after the broadcast fan-out.
      */
     private function handleHilosUserUpdate(string $acceptKey, HilosUserUpdateActionDTO $dto): void
     {
         if ($dto->id <= 0) {
-            throw new TableActionException('Invalid user ID');
+            $this->sendFail($acceptKey, 'invalid_id', 'Invalid user ID');
+            return;
         }
 
         if ($dto->name === '') {
-            throw new TableActionException('User name cannot be empty');
+            $this->sendFail($acceptKey, 'empty_name', 'User name cannot be empty');
+            return;
         }
 
         if (!isset(Hilos::$db->users[$dto->id])) {
-            throw new TableActionException("User #{$dto->id} not found");
+            $this->sendFail($acceptKey, 'not_found', "User #{$dto->id} not found");
+            return;
         }
 
         $dbUser = Hilos::$db->users[$dto->id];
@@ -96,7 +94,8 @@ final class UserPage extends AbstractHilosUserPage
         try {
             $dbUser->actions->rename($dto->name);
         } catch (RtBaseException $e) {
-            throw new TableActionException($e->getMessage());
+            $this->sendFail($acceptKey, 'rename_failed', $e->getMessage());
+            return;
         }
 
         $mutation = new TableMutationEntry(
@@ -129,6 +128,27 @@ final class UserPage extends AbstractHilosUserPage
                 full: [DbChatContext::events => Events::fromSingleItem($event)],
                 updates: [DbChatContext::users => [[User::id => $dto->id, User::name => $dto->name]]],
             )),
+        );
+
+        $agent->sendToUser(
+            ChatSignalConstants::HILOS_USER_UPDATE_SUCCESS,
+            $acceptKey,
+            new ActionSuccessSignalData(),
+        );
+    }
+
+    /**
+     * Send a {@see ChatSignalConstants::HILOS_USER_UPDATE_FAIL} ack to the initiator.
+     *
+     * Reason is a stable enum-like code for programmatic handling; message is
+     * a human-readable text (backend-owned, i18n-ready, safe for direct display).
+     */
+    private function sendFail(string $acceptKey, string $reason, string $message): void
+    {
+        $this->broadcastAgent()->sendToUser(
+            ChatSignalConstants::HILOS_USER_UPDATE_FAIL,
+            $acceptKey,
+            new ActionFailSignalData($reason, $message),
         );
     }
 

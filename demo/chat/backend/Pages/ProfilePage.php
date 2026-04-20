@@ -9,6 +9,8 @@ use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Page\AbstractChatPage;
 use Demo\Chat\Core\Page\DTO\RenameActionDTO;
+use Demo\Chat\Core\Router\DTO\ActionFailSignalData;
+use Demo\Chat\Core\Router\DTO\ActionSuccessSignalData;
 use Demo\Chat\Core\Router\DTO\ChatEventSignalDTO;
 use Demo\Chat\Database\DbChatContext;
 use Demo\Chat\Database\View\Collection\Events;
@@ -79,6 +81,11 @@ final class ProfilePage extends AbstractChatPage
     {
         if (!$dto->isValid()) {
             Logger::logAgentError('ProfilePage', "Empty new name (acceptKey={$acceptKey})");
+            $this->getChatAgent()->sendToUser(
+                ChatSignalConstants::RENAME_FAIL,
+                $acceptKey,
+                new ActionFailSignalData('empty', 'User name cannot be empty'),
+            );
             return;
         }
 
@@ -112,6 +119,13 @@ final class ProfilePage extends AbstractChatPage
         $this->getChatAgent()->sendToAllUsers(
             ChatSignalConstants::TABLE_MUTATION,
             new TableMutationSignalData(TableChatContext::users, $mutation),
+        );
+
+        // Dedicated ack to the initiator: closes the modal / clears UI loading state.
+        $this->getChatAgent()->sendToUser(
+            ChatSignalConstants::RENAME_SUCCESS,
+            $acceptKey,
+            new ActionSuccessSignalData(),
         );
     }
 }

@@ -30,6 +30,9 @@
             maxlength="50"
             autocomplete="off"
           />
+          <div v-if="updateErrorMessage" class="form-text text-danger" role="alert">
+            {{ updateErrorMessage }}
+          </div>
         </div>
         <div class="col-12 col-md-6">
           <label class="form-label">Last activity</label>
@@ -61,7 +64,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useHead } from '@unhead/vue'
 import DaemonSectionShell from '@hilos/sdk/views/Hilos/Daemon/DaemonSectionShell.vue'
@@ -70,9 +73,15 @@ import { getTableDisplayRows } from '@hilos/sdk/composables'
 import { TableActionConstants } from '@hilos/sdk/constants/tableActions'
 import { useConnectionStore, useTableStore } from '@hilos/sdk/stores'
 import { useWebSocket } from '@hilos/sdk/plugins/websocket'
-import { sendAction } from '@hilos/sdk/services/websocketActions'
+import { sendAction } from '@/services/websocketActions'
 import type { ChatUserTableRow } from '@hilos/sdk/types/chatUserTableRow'
 import { useChatStore } from '@/stores'
+import { useSignalRouter } from '@/plugins/websocket'
+import {
+  hilosUserUpdateSuccess,
+  hilosUserUpdateFail,
+  type HilosUserUpdateFailReason,
+} from '@/signals'
 
 const route = useRoute()
 const connectionStore = useConnectionStore()
@@ -112,11 +121,14 @@ const currentRow = computed((): ChatUserTableRow | null => {
 const form = ref({ name: '' })
 const baselineName = ref('')
 const saveLoading = ref(false)
+const updateErrorMessage = ref<string | null>(null)
+const signalRouter = useSignalRouter()
 
 watch(
   baseRow,
   (row) => {
     saveLoading.value = false
+    updateErrorMessage.value = null
     if (row) {
       form.value = { name: row.name }
       baselineName.value = row.name
@@ -164,17 +176,33 @@ const getPresenceBadgeClass = (presence: string | null | undefined): string => {
   }
 }
 
+const onUpdateSuccess = () => {
+  saveLoading.value = false
+  updateErrorMessage.value = null
+  if (baseRow.value) {
+    baselineName.value = baseRow.value.name
+  }
+}
+
+const onUpdateFail = ({ message }: { reason: HilosUserUpdateFailReason; message: string }) => {
+  saveLoading.value = false
+  updateErrorMessage.value = message
+}
+
+onMounted(() => {
+  signalRouter.on(hilosUserUpdateSuccess, onUpdateSuccess)
+  signalRouter.on(hilosUserUpdateFail, onUpdateFail)
+})
+
 const saveUser = () => {
   const id = parsedUserId.value
   if (id === null || !isFormValid.value) return
   saveLoading.value = true
+  updateErrorMessage.value = null
   sendAction(websocket, TableActionConstants.HILOS_USER_UPDATE, {
     id,
     name: form.value.name.trim(),
   })
-  window.setTimeout(() => {
-    saveLoading.value = false
-  }, 12_000)
 }
 
 useHead({

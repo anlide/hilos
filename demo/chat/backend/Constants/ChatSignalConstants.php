@@ -56,6 +56,12 @@ final class ChatSignalConstants
     /** @var string Rename signal name */
     public const string RENAME = 'rename';
 
+    /** @var string Rename success ack (sent only to initiator; envelope outcome='success') */
+    public const string RENAME_SUCCESS = 'rename_success';
+
+    /** @var string Rename failure ack (sent only to initiator; envelope outcome='fail') */
+    public const string RENAME_FAIL = 'rename_fail';
+
     /** @var string Handshake response signal name */
     public const string HANDSHAKE_RESPONSE = 'handshake_response';
 
@@ -133,6 +139,12 @@ final class ChatSignalConstants
 
     /** @var string Hilos user detail: update display name (handled on HILOS_USER page) */
     public const string HILOS_USER_UPDATE = 'hilos_user_update';
+
+    /** @var string Ack: hilos_user_update succeeded (sent to initiator) */
+    public const string HILOS_USER_UPDATE_SUCCESS = 'hilos_user_update_success';
+
+    /** @var string Ack: hilos_user_update failed (sent to initiator with reason + message) */
+    public const string HILOS_USER_UPDATE_FAIL = 'hilos_user_update_fail';
 
     /** @var string Bot create signal name */
     public const string BOT_CREATE = 'bot_create';

@@ -1,5 +1,7 @@
 import { ViteSSG } from 'vite-ssg'
 import { createPinia } from 'pinia'
+// Must come before any sendAction() reference so the HilosActionMap augmentation is active.
+import './types/actionMap'
 import { createChatWebSocketPlugin } from './plugins/websocket'
 import { createWebSocketSSRStub } from './plugins/websocket-ssr-stub'
 import { localStorageService } from './services/LocalStorageService'

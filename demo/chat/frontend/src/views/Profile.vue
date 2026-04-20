@@ -61,6 +61,9 @@
         />
         <div class="form-text">Username must be between 2 and 20 characters</div>
       </div>
+      <div v-if="renameErrorMessage" class="alert alert-danger mb-0" role="alert">
+        {{ renameErrorMessage }}
+      </div>
     </form>
 
     <template #actions>
@@ -93,24 +96,26 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { useConnectionStore } from '@hilos/sdk/stores'
 import { useChatStore } from '@/stores'
 import { useWebSocket } from '@hilos/sdk/plugins/websocket'
+import { useSignalRouter } from '@/plugins/websocket'
 import { sendAction } from '@/services/websocketActions'
+import { renameSuccess, renameFail } from '@/signals'
 import { Modal, ConflictHeader, ConflictActions, LoadingButton } from '@hilos/sdk/components'
 
 const connectionStore = useConnectionStore()
 const chatStore = useChatStore()
 const websocket = useWebSocket()
+const signalRouter = useSignalRouter()
 const showModal = ref(false)
 const localUsername = ref('')
 const conflictState = ref(false)
 const baselineUsername = ref('')
 const remoteUsername = ref('')
 const saveLoading = ref(false)
-/** Set when rename is sent; cleared when store gets the new username */
-const pendingRenameUsername = ref<string | null>(null)
+const renameErrorMessage = ref<string | null>(null)
 
 const displayUsername = computed(() => {
   return chatStore.currentUsername || 'User'
@@ -129,12 +134,13 @@ watch(showModal, (isOpen) => {
     baselineUsername.value = current
     remoteUsername.value = current
     conflictState.value = false
-    pendingRenameUsername.value = null
     saveLoading.value = false
+    renameErrorMessage.value = null
   }
 })
 
-// Watch for username changes from backend
+// Watch for username changes from backend (external rename sync only).
+// Rename acknowledgement for the local user is handled via renameSuccess signal.
 watch(() => chatStore.currentUsername, (newUsername) => {
   if (!newUsername) {
     return
@@ -155,11 +161,6 @@ watch(() => chatStore.currentUsername, (newUsername) => {
     baselineUsername.value = newUsername
     remoteUsername.value = newUsername
     conflictState.value = false
-    if (pendingRenameUsername.value !== null && newUsername.trim() === pendingRenameUsername.value) {
-      saveLoading.value = false
-      pendingRenameUsername.value = null
-      showModal.value = false
-    }
     return
   }
 
@@ -169,11 +170,34 @@ watch(() => chatStore.currentUsername, (newUsername) => {
   }
 })
 
+const onRenameSuccess = () => {
+  saveLoading.value = false
+  renameErrorMessage.value = null
+  showModal.value = false
+}
+
+const onRenameFail = ({ message }: { reason: string; message: string }) => {
+  saveLoading.value = false
+  renameErrorMessage.value = message
+}
+
+onMounted(() => {
+  signalRouter.on(renameSuccess, onRenameSuccess)
+  signalRouter.on(renameFail, onRenameFail)
+})
+
+onBeforeUnmount(() => {
+  // No-op: router currently keeps a single handler per dispatch key, but
+  // since this view is the only registrar of these keys during its lifetime
+  // there's nothing to tear down. When multi-subscriber semantics are added
+  // the router API will expose an explicit unsubscribe.
+})
+
 const handleSubmit = () => {
   if (!isValidUsername.value || conflictState.value) return
   const trimmedUsername = localUsername.value.trim()
   saveLoading.value = true
-  pendingRenameUsername.value = trimmedUsername
+  renameErrorMessage.value = null
   sendAction(websocket, 'rename', { newName: trimmedUsername })
 }
 
@@ -183,8 +207,8 @@ const resetForm = () => {
   baselineUsername.value = current
   remoteUsername.value = current
   conflictState.value = false
-  pendingRenameUsername.value = null
   saveLoading.value = false
+  renameErrorMessage.value = null
   showModal.value = false
 }
 
