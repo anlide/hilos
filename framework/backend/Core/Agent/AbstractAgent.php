@@ -7,6 +7,8 @@ namespace Hilos\Core\Agent;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Page\PageAgentInterface;
 use Hilos\Core\Router\AgentSignalData;
+use Hilos\Core\Router\DTO\EmitDbChangeSignalData;
+use Hilos\Core\Router\DTO\EmitRtChangeSignalData;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalSource;
@@ -150,6 +152,36 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface
             signalType: new SignalType(SignalTypeConstants::WS_GROUP),
             signalName: new SignalName($signalName),
             signalData: new WebSocketSignalData(data: $data, targetGroup: $targetGroup, excludeAcceptKey: $excludeAcceptKey),
+        );
+    }
+
+    /**
+     * Emit a DB-layer change; the daemon {@see SignalMapperInterface} expands it to WebSocket deliveries.
+     *
+     * @param string $eventKey Logical event name for the project mapper (e.g. EMIT_CHAT_USER_ROW_UPDATED)
+     */
+    public function emitChangeDb(string $eventKey, EmitDbChangeSignalData $data): void
+    {
+        Hilos::$sr->queueSignal(
+            signalSource: $this->getAgentSignalSource(),
+            signalType: new SignalType(SignalTypeConstants::EMIT_DB_CHANGE),
+            signalName: new SignalName($eventKey),
+            signalData: $data,
+        );
+    }
+
+    /**
+     * Emit an RT-layer change; the daemon {@see SignalMapperInterface} expands it to WebSocket deliveries.
+     *
+     * @param string $eventKey Logical event name for the project mapper
+     */
+    public function emitChangeRt(string $eventKey, EmitRtChangeSignalData $data): void
+    {
+        Hilos::$sr->queueSignal(
+            signalSource: $this->getAgentSignalSource(),
+            signalType: new SignalType(SignalTypeConstants::EMIT_RT_CHANGE),
+            signalName: new SignalName($eventKey),
+            signalData: $data,
         );
     }
 

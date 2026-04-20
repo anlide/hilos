@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Demo\Chat\Core\Daemon;
 
 use Demo\Chat\Constants\ChatCronConstants;
+use Demo\Chat\Core\Router\ChatSignalMapper;
 use Demo\Chat\Core\Router\ChatSignalRouter;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
@@ -49,7 +50,10 @@ final class ChatDaemonManager extends DaemonManager
      */
     protected function createSignalRouter(): SignalRouter
     {
-        return new ChatSignalRouter();
+        $router = new ChatSignalRouter();
+        $router->setEmitMapper(new ChatSignalMapper());
+
+        return $router;
     }
 
     /**

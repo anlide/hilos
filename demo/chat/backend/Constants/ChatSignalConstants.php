@@ -167,6 +167,10 @@ final class ChatSignalConstants
     /** @var string Guardian agent run stop action name */
     public const string GUARDIAN_AGENT_RUN_STOP = 'guardian_agent_run_stop';
 
+    // ── Emit events (worker → daemon → mapper → WebSocket) ───────────────
+    /** @var string DB user row updated; {@see \Demo\Chat\Core\Router\ChatSignalMapper} fan-out rules */
+    public const string EMIT_CHAT_USER_ROW_UPDATED = 'emit_chat_user_row_updated';
+
     // ── Table signals (server → client) ──────────────────────────────────
     /** @var string Server responds with fresh table data */
     public const string TABLE_DATA = 'table_data';

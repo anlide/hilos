@@ -93,6 +93,8 @@ class SignalRouter
      */
     private array $subscriptionGroups = [];
 
+    private ?SignalMapperInterface $emitMapper = null;
+
     /**
      * Creates signal router with empty configuration.
      *
@@ -434,6 +436,46 @@ class SignalRouter
     {
         unset($this->subscriptionPages[$acceptKey]);
         unset($this->subscriptionGroups[$acceptKey]);
+    }
+
+    /**
+     * Register mapper that expands EMIT_* signals to WebSocket fan-out on the daemon.
+     */
+    public function setEmitMapper(?SignalMapperInterface $emitMapper): void
+    {
+        $this->emitMapper = $emitMapper;
+    }
+
+    public function getEmitMapper(): ?SignalMapperInterface
+    {
+        return $this->emitMapper;
+    }
+
+    /**
+     * Accept keys currently subscribed to a page, optionally filtered by a single route param.
+     *
+     * @return list<string>
+     */
+    public function getAcceptKeysForPage(string $page, ?string $paramKey = null, ?string $paramValue = null): array
+    {
+        $keys = [];
+        foreach ($this->subscriptionPages as $acceptKey => $subscription) {
+            $subPage = $subscription[SignalPayloadConstants::SUBSCRIPTION_PAGE_KEY] ?? '';
+            if ($subPage !== $page) {
+                continue;
+            }
+            if ($paramKey === null || $paramValue === null) {
+                $keys[] = $acceptKey;
+                continue;
+            }
+            $params = $subscription[SignalPayloadConstants::SUBSCRIPTION_PARAMS_KEY] ?? [];
+            $v = $params[$paramKey] ?? null;
+            if ((string) $v === $paramValue) {
+                $keys[] = $acceptKey;
+            }
+        }
+
+        return $keys;
     }
 
     /**

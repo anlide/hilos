@@ -16,6 +16,7 @@ use Demo\Chat\Tables\TableChatContext;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
+use Hilos\Core\Router\DTO\EmitDbChangeSignalData;
 use Hilos\Core\Router\DTO\EntitiesChangesDTO;
 use Hilos\Core\Table\DTO\TableActionErrorSignalData;
 use Hilos\Core\Table\DTO\TableMutationSignalData;
@@ -107,7 +108,15 @@ final class UserPage extends AbstractHilosUserPage
 
         $agent = $this->broadcastAgent();
         $agent->sendToUser(ChatSignalConstants::TABLE_MUTATION, $acceptKey, $signal);
-        $agent->sendToAllUsers(ChatSignalConstants::TABLE_MUTATION, $signal, $acceptKey);
+        $agent->emitChangeDb(
+            ChatSignalConstants::EMIT_CHAT_USER_ROW_UPDATED,
+            EmitDbChangeSignalData::fromTableMutationSignal(
+                entityId: (string) $dto->id,
+                signal: $signal,
+                excludeAcceptKey: $acceptKey,
+                actorUserId: Hilos::$rt->connections[$acceptKey]?->userId,
+            ),
+        );
 
         $event = Hilos::$db->events->actions->add(ChatEventType::USER_RENAMED_BY_ADMIN->value, $dto->id, null, [
             'oldName' => $oldName,
