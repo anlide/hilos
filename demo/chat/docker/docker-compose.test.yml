@@ -128,6 +128,46 @@ services:
     networks:
       - hilos-chat-test-network
 
+  # Vitest runner for demo/chat/frontend.
+  # Self-contained node-22 container; no DB, no app-stack network.
+  # Repo mounted as /workspace so that `@hilos/sdk` alias can reach the
+  # framework sources at /workspace/framework/frontend/src.
+  # node_modules live in an anonymous volume to keep the Windows FS clean.
+  chat-frontend-test:
+    image: node:22-alpine
+    container_name: chat-frontend-test
+    volumes:
+      - ../../..:/workspace
+      - /workspace/demo/chat/tests/frontend/node_modules
+    working_dir: /workspace/demo/chat/tests/frontend
+    environment:
+      CI: "1"
+    profiles:
+      - cli
+
+  # Playwright E2E runner (dockerized).
+  # Uses the official Playwright image with browsers baked in — version tag
+  # MUST match `@playwright/test` in tests/e2e/package.json, otherwise
+  # Playwright cannot locate its browser executables.
+  # BASE_URL points to the in-network nginx service, so we never depend on
+  # host ports 80/443 for the E2E run itself.
+  chat-e2e-runner:
+    image: mcr.microsoft.com/playwright:v1.58.2-noble
+    container_name: chat-e2e-runner
+    volumes:
+      - ../../..:/workspace
+      - /workspace/demo/chat/tests/e2e/node_modules
+    working_dir: /workspace/demo/chat/tests/e2e
+    environment:
+      BASE_URL: https://chat-nginx-test
+      CI: "1"
+    depends_on:
+      - chat-nginx-test
+    profiles:
+      - e2e
+    networks:
+      - hilos-chat-test-network
+
 volumes:
   mysql-test-data:
     name: hilos-chat-mysql-test-data

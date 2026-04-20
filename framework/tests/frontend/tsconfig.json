@@ -1,0 +1,11 @@
+{
+  "extends": "../../frontend/tsconfig.json",
+  "compilerOptions": {
+    "types": ["node", "vue"],
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["../../frontend/src/*"]
+    }
+  },
+  "include": ["tests/**/*.ts", "vitest.config.ts"]
+}

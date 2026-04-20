@@ -73,13 +73,14 @@
         "test:unit": "docker compose -f docker/docker-compose.test.yml --profile cli run --rm chat-cli-test php vendor/bin/phpunit -c tests/phpunit.xml --testsuite unit",
         "test:integration": "docker compose -f docker/docker-compose.test.yml --profile cli run --rm chat-cli-test php vendor/bin/phpunit -c tests/phpunit.xml --testsuite integration",
         "test:phpunit": "docker compose -f docker/docker-compose.test.yml --profile cli run --rm chat-cli-test php vendor/bin/phpunit -c tests/phpunit.xml",
-        "test:all": "composer run test:db-reset && composer run test:phpunit && composer run test:down",
+        "test:frontend-install": "docker compose -f docker/docker-compose.test.yml --profile cli run --rm chat-frontend-test npm install",
+        "test:frontend": "docker compose -f docker/docker-compose.test.yml --profile cli run --rm chat-frontend-test sh -c \"npm ci && npm test\"",
+        "test:all": "composer run test:frontend && composer run test:db-reset && composer run test:phpunit && composer run test:down && composer run test:e2e-full",
         "test:e2e-build": "docker compose -f docker/docker-compose.test.yml --profile build run --rm chat-frontend-builder",
         "test:e2e-up": "docker compose -f docker/docker-compose.test.yml up -d mysql-test chat-test chat-nginx-test",
         "test:e2e-down": "docker compose -f docker/docker-compose.test.yml down",
-        "test:e2e-install": "cd tests/e2e && npm ci && npx playwright install --with-deps",
-        "test:e2e": "cd tests/e2e && npm test",
-        "test:e2e-full": "composer run test:e2e-build && composer run test:e2e-up && composer run test:db-wait && composer run test:db-reset && composer run test:e2e-install && composer run test:e2e && composer run test:e2e-down"
+        "test:e2e": "docker compose -f docker/docker-compose.test.yml --profile e2e run --rm chat-e2e-runner sh -c \"npm ci && npx playwright test\"",
+        "test:e2e-full": "composer run test:e2e-build && composer run test:e2e-up && composer run test:db-wait && composer run test:db-reset && composer run test:e2e && composer run test:e2e-down"
     }
 }
 

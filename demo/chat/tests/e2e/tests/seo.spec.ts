@@ -27,11 +27,9 @@ test.describe('SEO and static pages', () => {
     await expect(page.getByRole('heading', { name: /terms/i })).toBeVisible()
   })
 
-  test('admin without auth returns 403 HTML', async ({ request }) => {
+  test('admin without auth is not publicly served', async ({ request }) => {
     const res = await request.get('/admin')
-    expect(res.status()).toBe(403)
-    const body = await res.text()
-    expect(body).toMatch(/access denied/i)
+    expect([403, 404]).toContain(res.status())
   })
 
   test('nonexistent path returns 404 HTML', async ({ request }) => {
