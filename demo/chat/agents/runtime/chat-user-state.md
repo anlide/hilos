@@ -1,0 +1,33 @@
+# ChatUserState
+
+**Collection:** `RtChatContext::userStates` | **Key:** `(string) userId`
+
+Per-user runtime state. Tracks text message moderation state for each registered user.
+
+## Fields
+
+| Field | Type | Meaning |
+|---|---|---|
+| `userId` | `int` | DB user ID (also numeric value of collection key) |
+| `moderationMessage` | `string` | Message text currently under LLM moderation (empty = none pending) |
+| `moderationUpdatedAt` | `int` | Unix time of last moderation field change |
+
+## Lifecycle
+
+- **Created**: `UserStatesActions::ensure(userId)` on WS handshake, or `seedAllFromDb()` on agent start
+- **Updated**: when message submitted for moderation (`moderationMessage` set), cleared on result
+- **Never deleted** during a session — persists as long as user exists in DB
+
+## Truth source
+
+`ChatAgent` owns this collection (`RtTruthSourceRegistry::register(RtChatContext::userStates, ...)`).
+Only `ChatAgent` should write to it.
+
+## Seeding
+
+On `ChatAgent::onStart()`: `Hilos::$rt->userStates->actions->seedAllFromDb()` — pre-populates all known users from DB so `ensure()` calls are instant.
+
+## Note
+
+File upload state is **not** here — it lives on `Connection` (per-connection, not per-user).
+This was intentional: one user can have multiple connections, each with its own upload session.
