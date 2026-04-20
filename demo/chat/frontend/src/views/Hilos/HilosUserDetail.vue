@@ -14,25 +14,14 @@
     </p>
     <template v-else-if="currentRow">
       <p class="text-body-secondary small mb-3">
-        Email and Hilos roles are not stored on the chat <code>user</code> row. Edit display name below; changes use the same backend action as
+        Email and Hilos roles are not stored on the chat <code>user</code> row. Rename the user via
+        the modal below; changes use the same backend action as
         <router-link to="/admin/users">Admin → Users</router-link>.
       </p>
-      <form class="row g-3" @submit.prevent="saveUser">
+      <div class="row g-3">
         <div class="col-12 col-md-6">
-          <label class="form-label" for="hilos-user-name">Name</label>
-          <input
-            id="hilos-user-name"
-            v-model="form.name"
-            type="text"
-            class="form-control"
-            required
-            minlength="2"
-            maxlength="50"
-            autocomplete="off"
-          />
-          <div v-if="updateErrorMessage" class="form-text text-danger" role="alert">
-            {{ updateErrorMessage }}
-          </div>
+          <label class="form-label">Name</label>
+          <div class="form-control-plaintext">{{ currentRow.name }}</div>
         </div>
         <div class="col-12 col-md-6">
           <label class="form-label">Last activity</label>
@@ -47,28 +36,66 @@
           </div>
         </div>
         <div class="col-12 d-flex flex-wrap gap-2">
+          <button type="button" class="btn btn-primary" @click="handleEdit">
+            <i class="bi bi-pencil" aria-hidden="true"></i>
+            Rename
+          </button>
+          <router-link class="btn btn-outline-secondary" to="/hilos/users">Back to list</router-link>
+        </div>
+      </div>
+
+      <Modal
+        v-model="showModal"
+        title="Edit User"
+        modal-name="hilos-user-modal"
+        modal-type="edit"
+        :confirm-on-close="isFormDirty"
+        @cancel="resetForm"
+        @ok="saveUser"
+      >
+        <form @submit.prevent="saveUser">
+          <div class="mb-3">
+            <label class="form-label" for="hilos-user-name">Name</label>
+            <input
+              id="hilos-user-name"
+              v-model="form.name"
+              type="text"
+              class="form-control"
+              required
+              minlength="2"
+              maxlength="50"
+              autocomplete="off"
+              data-autofocus
+            />
+            <div v-if="updateErrorMessage" class="form-text text-danger" role="alert">
+              {{ updateErrorMessage }}
+            </div>
+          </div>
+        </form>
+        <template #actions="{ requestClose }">
+          <button type="button" class="btn btn-secondary" @click="requestClose">Cancel</button>
           <LoadingButton
-            type="submit"
+            type="button"
             variant="btn-primary"
             :loading="saveLoading"
             :disabled="!isFormValid || !isFormDirty"
             :loading-delay="300"
+            @click="saveUser"
           >
             Save
           </LoadingButton>
-          <router-link class="btn btn-outline-secondary" to="/hilos/users">Back to list</router-link>
-        </div>
-      </form>
+        </template>
+      </Modal>
     </template>
   </DaemonSectionShell>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { useHead } from '@unhead/vue'
 import DaemonSectionShell from '@hilos/sdk/views/Hilos/Daemon/DaemonSectionShell.vue'
-import { LoadingButton } from '@hilos/sdk/components'
+import { LoadingButton, Modal } from '@hilos/sdk/components'
 import { getTableDisplayRows } from '@hilos/sdk/composables'
 import { TableActionConstants } from '@hilos/sdk/constants/tableActions'
 import { useConnectionStore, useTableStore } from '@hilos/sdk/stores'
@@ -118,27 +145,12 @@ const currentRow = computed((): ChatUserTableRow | null => {
   return { ...row, presence }
 })
 
+const showModal = ref(false)
 const form = ref({ name: '' })
 const baselineName = ref('')
 const saveLoading = ref(false)
 const updateErrorMessage = ref<string | null>(null)
 const signalRouter = useSignalRouter()
-
-watch(
-  baseRow,
-  (row) => {
-    saveLoading.value = false
-    updateErrorMessage.value = null
-    if (row) {
-      form.value = { name: row.name }
-      baselineName.value = row.name
-    } else {
-      form.value = { name: '' }
-      baselineName.value = ''
-    }
-  },
-  { immediate: true },
-)
 
 const isFormDirty = computed(() => form.value.name.trim() !== baselineName.value.trim())
 
@@ -176,12 +188,35 @@ const getPresenceBadgeClass = (presence: string | null | undefined): string => {
   }
 }
 
+const handleEdit = () => {
+  const row = baseRow.value
+  if (!row) return
+  form.value = { name: row.name }
+  baselineName.value = row.name
+  updateErrorMessage.value = null
+  saveLoading.value = false
+  showModal.value = true
+}
+
+const resetForm = () => {
+  showModal.value = false
+  saveLoading.value = false
+  updateErrorMessage.value = null
+  const row = baseRow.value
+  form.value = { name: row?.name ?? '' }
+  baselineName.value = row?.name ?? ''
+}
+
+// Closes the modal only on success — on fail we keep it open so the user can see the error
+// and retry. This differs from AdminUsers.vue (which closes synchronously) because that page
+// does not render an error message for this action.
 const onUpdateSuccess = () => {
   saveLoading.value = false
   updateErrorMessage.value = null
   if (baseRow.value) {
     baselineName.value = baseRow.value.name
   }
+  showModal.value = false
 }
 
 const onUpdateFail = ({ message }: { reason: HilosUserUpdateFailReason; message: string }) => {
@@ -196,7 +231,7 @@ onMounted(() => {
 
 const saveUser = () => {
   const id = parsedUserId.value
-  if (id === null || !isFormValid.value) return
+  if (id === null || !isFormValid.value || !isFormDirty.value) return
   saveLoading.value = true
   updateErrorMessage.value = null
   sendAction(websocket, TableActionConstants.HILOS_USER_UPDATE, {

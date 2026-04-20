@@ -51,6 +51,7 @@ Quick navigation for AI agents. Read the relevant file before starting work.
 |---|---|
 | [frontend-sdk/websocket-connection.md](docs/agents/frontend-sdk/websocket-connection.md) | WS connection lifecycle, acceptKey, reconnect |
 | [frontend-sdk/backend-contract.md](docs/agents/frontend-sdk/backend-contract.md) | actions (client→server), signals (server→client), page subscription |
+| [frontend-sdk/edit-in-modal.md](docs/agents/frontend-sdk/edit-in-modal.md) | editing an entity from a Vue page (rename, update fields) — always use Modal, never inline forms |
 
 ## Anti-patterns (read before writing code)
 
@@ -80,6 +81,7 @@ Quick navigation for AI agents. Read the relevant file before starting work.
 3. **Only the truth source agent** writes to its DB/RT collection
 4. All PHP files: `declare(strict_types=1)` at top
 5. Signal routing is **declarative** in `SignalRouter` — do not add routing logic in agents
+6. **Frontend edits go through `Modal` only** — inline edit forms on pages are forbidden (see [frontend-sdk/edit-in-modal.md](docs/agents/frontend-sdk/edit-in-modal.md))
 
 ## Project docs (existing)
 
