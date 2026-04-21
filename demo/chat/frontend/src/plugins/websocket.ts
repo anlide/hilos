@@ -172,9 +172,8 @@ function buildSignalRouter() {
   })
 
   // The user entity is applied by ChatEntitiesReceiver before this handler runs.
-  signalRouter.on(subscriptionPageHilosUser, ({ userId }) => {
-    useChatStore().setLastHilosUserSubscribeAckId(userId)
-  })
+  // Page-level subscription handling moved to individual page components
+  signalRouter.on(subscriptionPageHilosUser, () => {})
 
   signalRouter.on(botJoined, () => {})
   signalRouter.on(botLeft, () => {})

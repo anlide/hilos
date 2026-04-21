@@ -7,7 +7,17 @@
       Invalid user ID.
       <router-link to="/hilos/users">Back to users</router-link>
     </p>
-    <p v-else-if="!hasSubscribeResponse" class="text-body-secondary mb-3">Loading…</p>
+    <p v-else-if="subscriptionState === 'loading'" class="text-body-secondary mb-3">Loading…</p>
+    <div v-else-if="subscriptionState === 'error' && pageError" class="alert alert-warning" role="alert">
+      <h5 class="alert-heading">
+        <i class="bi bi-exclamation-triangle-fill" aria-hidden="true"></i>
+        {{ pageError.httpCode === 404 ? 'User Not Found' : 'Error' }}
+      </h5>
+      <p class="mb-2">{{ pageError.message }}</p>
+      <router-link to="/hilos/users" class="btn btn-sm btn-outline-secondary">
+        Back to users
+      </router-link>
+    </div>
     <p v-else-if="!currentUser" class="text-body-secondary mb-3">
       User not found.
       <router-link to="/hilos/users">Back to users</router-link>
@@ -91,7 +101,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useHead } from '@unhead/vue'
 import DaemonSectionShell from '@hilos/sdk/views/Hilos/Daemon/DaemonSectionShell.vue'
@@ -100,6 +110,7 @@ import { TableActionConstants } from '@hilos/sdk/constants/tableActions'
 import { useConnectionStore } from '@hilos/sdk/stores'
 import { HilosPageRouteParams } from '@hilos/sdk/constants/hilosPageRouteParams'
 import { useWebSocket } from '@hilos/sdk/plugins/websocket'
+import { subscriptionPageError, type PageSubscriptionError } from '@hilos/sdk/signals'
 import { sendAction } from '@/services/websocketActions'
 import type { User } from '@/types'
 import { useChatStore } from '@/stores'
@@ -107,6 +118,7 @@ import { useSignalRouter } from '@/plugins/websocket'
 import {
   hilosUserUpdateSuccess,
   hilosUserUpdateFail,
+  subscriptionPageHilosUser,
   type HilosUserUpdateFailReason,
 } from '@/signals'
 
@@ -127,17 +139,15 @@ const parsedUserId = computed((): number | null => {
   return Number.isFinite(n) && n > 0 ? n : null
 })
 
-// Stay in loading until this route's subscription response arrives.
-const hasSubscribeResponse = computed(() => {
-  const id = parsedUserId.value
-  return id !== null && chatStore.lastHilosUserSubscribeAckId === id
-})
-
 const currentUser = computed((): User | null => {
   const id = parsedUserId.value
   if (id === null) return null
   return chatStore.users.find((u) => u.id === id) ?? null
 })
+
+// Local subscription state for this page
+const subscriptionState = ref<'loading' | 'success' | 'error'>('loading')
+const pageError = ref<PageSubscriptionError | null>(null)
 
 const showModal = ref(false)
 const form = ref({ name: '' })
@@ -217,9 +227,36 @@ const onUpdateFail = ({ message }: { reason: HilosUserUpdateFailReason; message:
   updateErrorMessage.value = message
 }
 
+const onSubscriptionSuccess = ({ userId }: { userId: number }) => {
+  if (userId === parsedUserId.value) {
+    subscriptionState.value = 'success'
+    pageError.value = null
+  }
+}
+
+const onSubscriptionError = (error: PageSubscriptionError) => {
+  if (error.page === 'hilos_user') {
+    // Extract userId from message like "User #123 not found"
+    const match = error.message?.match(/User #(\d+)/)
+    const errorUserId = match?.[1] ? parseInt(match[1], 10) : null
+    if (errorUserId === parsedUserId.value) {
+      subscriptionState.value = 'error'
+      pageError.value = error
+    }
+  }
+}
+
 onMounted(() => {
   signalRouter.on(hilosUserUpdateSuccess, onUpdateSuccess)
   signalRouter.on(hilosUserUpdateFail, onUpdateFail)
+  signalRouter.on(subscriptionPageHilosUser, onSubscriptionSuccess)
+  signalRouter.on(subscriptionPageError, onSubscriptionError)
+})
+
+// Reset subscription state when navigating to a different user
+watch(parsedUserId, () => {
+  subscriptionState.value = 'loading'
+  pageError.value = null
 })
 
 const saveUser = () => {

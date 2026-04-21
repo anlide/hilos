@@ -26,11 +26,23 @@ class HttpConstants
     /** @var int HTTP status code for success */
     public const int HTTP_OK = 200;
 
+    /** @var int HTTP status code for bad request */
+    public const int HTTP_BAD_REQUEST = 400;
+
     /** @var int HTTP status code for unauthorized */
     public const int HTTP_UNAUTHORIZED = 401;
 
+    /** @var int HTTP status code for forbidden */
+    public const int HTTP_FORBIDDEN = 403;
+
     /** @var int HTTP status code for not found */
     public const int HTTP_NOT_FOUND = 404;
+
+    /** @var int HTTP status code for conflict */
+    public const int HTTP_CONFLICT = 409;
+
+    /** @var int HTTP status code for gone */
+    public const int HTTP_GONE = 410;
 
     /** @var int HTTP status code for internal server error */
     public const int HTTP_INTERNAL_ERROR = 500;

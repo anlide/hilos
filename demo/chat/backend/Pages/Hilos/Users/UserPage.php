@@ -20,6 +20,7 @@ use Demo\Chat\Pages\Hilos\Users\DTO\HilosUserUpdateActionDTO;
 use Demo\Chat\Tables\TableChatContext;
 use Hilos\Constants\HilosPageRouteParams;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Core\Page\Exception\PageResourceNotFoundException;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\EmitDbChangeSignalData;
 use Hilos\Core\Router\DTO\EntitiesChangesDTO;
@@ -40,25 +41,28 @@ final class UserPage extends AbstractHilosUserPage
     /**
      * Sends the initial single-user entity snapshot to a Hilos user-detail subscriber.
      *
-     * Payload carries one user in `entities.full.users`, or an empty envelope when the id
-     * is missing, invalid, or unknown.
+     * Throws PageResourceNotFoundException when user is not found, which triggers
+     * subscription_page_error signal while keeping the subscription active.
      *
      * @param string $acceptKey WebSocket accept key for the subscribing client
      * @param array<string, string> $params Route params from page subscription
+     * @throws PageResourceNotFoundException When user ID is invalid or user not found
      */
     public function onSubscribe(string $acceptKey, array $params = []): void
     {
         $userId = (int) ($params[HilosPageRouteParams::HILOS_USER_USER_ID] ?? 0);
         $dbUser = $userId > 0 ? Hilos::$db->users[$userId] : null;
 
+        if ($dbUser === null) {
+            throw new PageResourceNotFoundException("User #{$userId} not found");
+        }
+
         $this->sendToUser(
             HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_USER,
             $acceptKey,
             HilosUserSubscriptionSignalData::fromEntities(
                 $userId,
-                $dbUser !== null
-                    ? new EntitiesChangesDTO(full: [DbChatContext::users => Users::fromSingleItem($dbUser)])
-                    : new EntitiesChangesDTO(),
+                new EntitiesChangesDTO(full: [DbChatContext::users => Users::fromSingleItem($dbUser)]),
             ),
         );
     }

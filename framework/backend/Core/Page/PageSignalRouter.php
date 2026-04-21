@@ -4,12 +4,21 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Page;
 
+use Hilos\Constants\SignalConstants;
+use Hilos\Constants\SignalTypeConstants;
+use Hilos\Core\Page\DTO\PageSubscriptionErrorSignalData;
 use Hilos\Core\Page\Exception\PageNotFoundException;
+use Hilos\Core\Page\Exception\PageSubscriptionException;
+use Hilos\Core\Router\SignalName;
+use Hilos\Core\Router\SignalType;
+use Hilos\Core\Router\WebSocketSignalData;
+use Hilos\Hilos;
 use Hilos\Socket\WebSocket\DTO\WebSocketActionSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageUnsubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageUpdateSubscriptionSignalDTO;
 use Hilos\Utils\Logger;
+use Throwable;
 
 /**
  * PageSignalRouter - Routes page signals to page handlers.
@@ -33,6 +42,9 @@ class PageSignalRouter
     /**
      * Dispatch page subscribe signal to page handler
      *
+     * Catches PageSubscriptionException and sends structured error signal while
+     * preserving the subscription. Catches any other exception as internal error.
+     *
      * @param WebSocketPageSubscribeSignalDTO $data Signal data
      * @param string $source Signal source
      * @param string $name Signal name (page name fallback)
@@ -50,7 +62,41 @@ class PageSignalRouter
             return;
         }
 
-        $pageInstance->onSubscribe($data->acceptKey, $data->params);
+        try {
+            $pageInstance->onSubscribe($data->acceptKey, $data->params);
+        } catch (PageSubscriptionException $e) {
+            Logger::info("Page subscription error: page={$page}, httpCode={$e->httpCode}, error={$e->errorCode}, message={$e->getMessage()}");
+            Hilos::$sr->queueSignal(
+                signalSource: $pageInstance->getAgent()->getAgentSignalSource(),
+                signalType: new SignalType(SignalTypeConstants::WS_USER),
+                signalName: new SignalName(SignalConstants::SUBSCRIPTION_PAGE_ERROR),
+                signalData: new WebSocketSignalData(
+                    data: new PageSubscriptionErrorSignalData(
+                        page: $page,
+                        httpCode: $e->httpCode,
+                        errorCode: $e->errorCode,
+                        message: $e->getMessage(),
+                    ),
+                    targetAcceptKey: $data->acceptKey,
+                ),
+            );
+        } catch (Throwable $e) {
+            Logger::error("Unexpected page subscription error: page={$page}, exception={$e->getMessage()}");
+            Hilos::$sr->queueSignal(
+                signalSource: $pageInstance->getAgent()->getAgentSignalSource(),
+                signalType: new SignalType(SignalTypeConstants::WS_USER),
+                signalName: new SignalName(SignalConstants::SUBSCRIPTION_PAGE_ERROR),
+                signalData: new WebSocketSignalData(
+                    data: new PageSubscriptionErrorSignalData(
+                        page: $page,
+                        httpCode: 500,
+                        errorCode: 'internal_error',
+                        message: 'Internal error during subscription',
+                    ),
+                    targetAcceptKey: $data->acceptKey,
+                ),
+            );
+        }
     }
 
     /**

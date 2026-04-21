@@ -26,4 +26,7 @@ class SignalConstants
     public const string RT_SYNC_CREATED = 'rt_sync_created';
     public const string RT_SYNC_UPDATED = 'rt_sync_updated';
     public const string RT_SYNC_DELETED = 'rt_sync_deleted';
+
+    /** @var string Page subscription error signal - sent when onSubscribe throws PageSubscriptionException */
+    public const string SUBSCRIPTION_PAGE_ERROR = 'subscription_page_error';
 }

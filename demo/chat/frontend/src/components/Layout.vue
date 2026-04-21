@@ -165,7 +165,6 @@ import { useRoute } from 'vue-router'
 import { Breadcrumb } from '@hilos/sdk/components'
 import { useWebSocket } from '@hilos/sdk/plugins/websocket'
 import { useConnectionStore } from '@hilos/sdk/stores'
-import { useChatStore } from '@/stores'
 import { MESSAGE_PAGE_FIELD, MESSAGE_PARAMS_FIELD, MESSAGE_TYPE_FIELD } from '@/constants'
 import { localStorageService } from '@/services/LocalStorageService'
 import { useAdminBreadcrumb } from '@/composables/useAdminBreadcrumb'
@@ -179,7 +178,6 @@ type RouteSnapshot = {
 const route = useRoute()
 const websocket = useWebSocket()
 const connectionStore = useConnectionStore()
-const chatStore = useChatStore()
 const {
   items: breadcrumbItems,
   showPlaceholder: showBreadcrumbPlaceholder,
@@ -271,9 +269,6 @@ const queueSubscription = (snapshot: RouteSnapshot, update: boolean) => {
   }
 
   const hasParams = Object.keys(snapshot.params).length > 0
-  if (snapshot.page === 'hilos_user') {
-    chatStore.setLastHilosUserSubscribeAckId(null)
-  }
 
   websocket.send({
     [MESSAGE_TYPE_FIELD]: update ? 'page_update_subscription' : 'page_subscribe',

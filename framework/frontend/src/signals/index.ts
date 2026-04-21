@@ -14,4 +14,9 @@ export {
   type GuardianAgentStatusUpdatePayload,
 } from './guardianSignals'
 
-export { subscriptionUpdated, SUBSCRIPTION_PAGE_PREFIX } from './subscriptionSignals'
+export {
+  subscriptionUpdated,
+  subscriptionPageError,
+  SUBSCRIPTION_PAGE_PREFIX,
+  type PageSubscriptionError,
+} from './subscriptionSignals'

@@ -42,6 +42,16 @@ abstract class AbstractPage
     }
 
     /**
+     * Get page agent instance
+     *
+     * @return PageAgentInterface Agent instance
+     */
+    public function getAgent(): PageAgentInterface
+    {
+        return $this->agent;
+    }
+
+    /**
      * Handle page subscription
      *
      * Called when a client subscribes to this page.
