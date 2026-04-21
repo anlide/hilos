@@ -7,6 +7,7 @@ namespace Hilos\Fs\Context;
 use Hilos\Fs\Exception\DirectoryNotFoundException;
 use Hilos\Fs\FsDirectory;
 use Hilos\Fs\FsTmpDirectory;
+use Hilos\Hilos;
 
 /**
  * Base filesystem context — project subclasses register named directories.
@@ -22,7 +23,7 @@ abstract class FsContext
 
     /**
      * Register named directories and configure tmp path.
-     * Called automatically by {@see \Hilos\Hilos::init()}.
+     * Called automatically by {@see Hilos::init()}.
      */
     abstract public function configure(): void;
 

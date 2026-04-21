@@ -41,16 +41,15 @@ final class SettingsPage extends AbstractChatPage
      */
     public function onSubscribe(string $acceptKey, array $params = []): void
     {
-        $result = Hilos::$table->settings->get();
-        $catalogKeys = array_keys(SettingsCatalog::getCatalog());
-        $enrichedResult = new SettingsTableResultDTO($result, $catalogKeys);
-
         $this->getChatAgent()->sendToUser(
             ChatSignalConstants::SUBSCRIPTION_PAGE_HILOS_SETTINGS,
             $acceptKey,
             new ChatEventSignalDTO(
                 new EntitiesChangesDTO(),
-                [TableChatContext::settings => $enrichedResult],
+                [TableChatContext::settings => new SettingsTableResultDTO(
+                    Hilos::$table->settings->get(),
+                    array_keys(SettingsCatalog::getCatalog()),
+                )],
             ),
         );
     }
@@ -65,12 +64,31 @@ final class SettingsPage extends AbstractChatPage
     public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): void
     {
         try {
-            match (true) {
-                $dto instanceof SettingAddActionDTO => $this->handleAdd($acceptKey, $dto),
-                $dto instanceof SettingUpdateActionDTO => $this->handleUpdate($acceptKey, $dto),
-                $dto instanceof SettingDeleteActionDTO => $this->handleDelete($acceptKey, $dto),
-                default => throw new TableActionException("Unexpected action payload for settings page"),
-            };
+            switch ($action) {
+                case ChatSignalConstants::SETTING_ADD:
+                    if ($dto instanceof SettingAddActionDTO) {
+                        $this->handleAdd($acceptKey, $dto);
+                    }
+
+                    break;
+
+                case ChatSignalConstants::SETTING_UPDATE:
+                    if ($dto instanceof SettingUpdateActionDTO) {
+                        $this->handleUpdate($acceptKey, $dto);
+                    }
+
+                    break;
+
+                case ChatSignalConstants::SETTING_DELETE:
+                    if ($dto instanceof SettingDeleteActionDTO) {
+                        $this->handleDelete($acceptKey, $dto);
+                    }
+
+                    break;
+
+                default:
+                    throw new TableActionException("Unknown action: {$action}");
+            }
         } catch (TableActionException | InvalidArgumentException $e) {
             $this->getChatAgent()->sendToUser(
                 ChatSignalConstants::TABLE_ACTION_ERROR,

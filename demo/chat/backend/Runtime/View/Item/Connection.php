@@ -7,6 +7,7 @@ namespace Demo\Chat\Runtime\View\Item;
 use Demo\Chat\Database\DbChatContext;
 use Demo\Chat\Database\View\Item\User;
 use Demo\Chat\Hilos;
+use Demo\Chat\Runtime\View\Actions\Collection\ConnectionsActions;
 use Demo\Chat\Runtime\State\Item\Connection as StateConnection;
 use Demo\Chat\Runtime\View\Actions\Item\ConnectionActions;
 use Hilos\Runtime\Exception\Item\RtItemActionsClassException;
@@ -16,9 +17,9 @@ use Hilos\Runtime\View\Item\RtItem;
 /**
  * Read-only {@see RtItem} over {@see StateConnection}: every state field plus virtual `user`.
  *
- * Use {@see Hilos::$rt->connections} for access in agents/pages. Collection writes: {@see \Demo\Chat\Runtime\View\Actions\Collection\ConnectionsActions};
+ * Use {@see Hilos::$rt->connections} for access in agents/pages. Collection writes: {@see ConnectionsActions};
  * per-connection writes (e.g. file upload session): {@see ConnectionActions}.
- * File-runtime mutations: {@see ConnectionActions}; collection-level helpers: {@see \Demo\Chat\Runtime\View\Actions\Collection\ConnectionsActions}.
+ * File-runtime mutations: {@see ConnectionActions}; collection-level helpers: {@see ConnectionsActions}.
  *
  * @extends RtItem<StateConnection>
  *

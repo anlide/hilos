@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Demo\Chat\Tests\Unit;
 
 use Demo\Chat\Core\Router\DTO\ActionSuccessSignalData;
+use Hilos\Core\Daemon\DaemonManager;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\WebSocketEnvelopeAware;
 use PHPUnit\Framework\TestCase;
@@ -13,7 +14,7 @@ use PHPUnit\Framework\TestCase;
  * Unit tests for {@see ActionSuccessSignalData}.
  *
  * These assertions pin down the envelope contract that
- * {@see \Hilos\Core\Daemon\DaemonManager::mergeEnvelopeMetadata()} relies on:
+ * {@see DaemonManager::mergeEnvelopeMetadata()} relies on:
  * a DTO that returns `outcome='success'` and an optional `message`
  * merged into the inner payload.
  */

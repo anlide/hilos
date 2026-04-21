@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Demo\Chat\Database\View\Item;
 
 use Demo\Chat\Database\Actions\Item\UserActions;
@@ -59,7 +61,16 @@ final class User extends DbItem
     }
 
     /**
-     * {@inheritDoc}
+     * Serializes the user item for backend or frontend payloads.
+     *
+     * Frontend payloads omit the session token and add a calculated presence field.
+     *
+     * @param bool $withId Include the user ID
+     * @param bool $idAsIndex Use the ID as array index when supported by the parent serializer
+     * @param bool $withBridges Include bridge fields
+     * @param bool $withCalculation Include calculated fields from the parent serializer
+     * @param bool $toFrontend Prepare a frontend-safe payload
+     * @return array<string, mixed> Serialized user data
      */
     public function toArray(bool $withId = true, bool $idAsIndex = true, bool $withBridges = false, bool $withCalculation = false, bool $toFrontend = false): array
     {

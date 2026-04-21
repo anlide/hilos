@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Runtime\View\Actions\Item;
 
+use Hilos\Database\Actions\Item\DbActions;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
 use Hilos\Runtime\Exception\Item\RtItemParentCollectionNullException;
 use Hilos\Runtime\State\Item\RtState;
@@ -16,7 +17,7 @@ use Hilos\TruthSource\RtTruthSourceRegistry;
  *
  * @template T of RtItem
  * @template TState of RtState
- * @property-read TState $state Backing runtime state (same pattern as {@see \Hilos\Database\Actions\Item\DbActions}::$object)
+ * @property-read TState $state Backing runtime state (same pattern as {@see DbActions}::$object)
  */
 abstract class RtActions
 {

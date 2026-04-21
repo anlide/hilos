@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Runtime\State\Item;
 
+use Demo\Chat\Runtime\View\Actions\Item\ConnectionActions;
 use Demo\Chat\Runtime\View\Context\RtChatContext;
 use Hilos\Runtime\Exception\State\RtStatePropertyNotFoundException;
 use Hilos\Runtime\Exception\State\RtStateReadOnlyException;
@@ -203,7 +204,7 @@ final class Connection extends RtState
     }
 
     /**
-     * Writable from {@see \Demo\Chat\Runtime\View\Actions\Item\ConnectionActions} (then call {@see sync()}).
+     * Writable from {@see ConnectionActions} (then call {@see sync()}).
      *
      * @throws RtStateReadOnlyException For unknown or immutable properties
      */

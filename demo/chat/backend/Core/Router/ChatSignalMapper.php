@@ -9,6 +9,7 @@ use Hilos\Core\Router\DTO\EmitDbChangeSignalData;
 use Hilos\Core\Router\DTO\EmitFanoutItem;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\EmitFanoutDelivery;
+use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalMapperInterface;
 
 /**
@@ -19,7 +20,7 @@ use Hilos\Core\Router\SignalMapperInterface;
  * - Admin users table and Hilos users list, main/profile, and any page listening for {@see ChatSignalConstants::TABLE_MUTATION}
  * - Hilos user detail and guest user page for the same row id
  *
- * When payloads differ per page, use {@see \Hilos\Core\Router\SignalRouter::getAcceptKeysForPage} and extra {@see EmitFanoutItem}
+ * When payloads differ per page, use {@see SignalRouter::getAcceptKeysForPage} and extra {@see EmitFanoutItem}
  * with {@see EmitFanoutDelivery::Single}, deduping against clients that already received the broadcast leg.
  */
 final class ChatSignalMapper implements SignalMapperInterface

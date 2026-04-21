@@ -23,6 +23,8 @@ use Demo\Chat\Database\Pages\ChatPageCatalog;
 use Demo\Chat\Database\View\Collection\Events;
 use Demo\Chat\Database\View\Collection\Users;
 use Demo\Chat\Hilos;
+use Demo\Chat\Pages\Main\UploadFileTrait;
+use Demo\Chat\Runtime\View\Actions\Collection\ConnectionsActions;
 use Demo\Chat\Runtime\View\Context\RtChatContext;
 use Demo\Chat\Runtime\View\Item\Connection as RuntimeConnection;
 use Demo\Chat\Core\Router\DTO\ModerationStateUpdateSignalData;
@@ -44,7 +46,7 @@ use Hilos\Utils\Logger;
 /**
  * Monopolistic chat worker: database entities (users, events, bots, settings), runtime connections and user state,
  * WebSocket handshake/close, text and bot moderation routing, message rate limiting, and file attachments
- * (binary WebSocket upload, quarantine, moderation result handling; main-page upload init lives in {@see \Demo\Chat\Pages\Main\UploadFileTrait}).
+ * (binary WebSocket upload, quarantine, moderation result handling; main-page upload init lives in {@see UploadFileTrait}).
  *
  * Registers as truth source for {@see DbChatContext} tables and {@see RtChatContext} collections on {@see self::onStart()}.
  */
@@ -420,7 +422,7 @@ class ChatAgent extends AbstractAgent
      *
      * Connection-scoped state is read and written only via {@see Hilos::$rt->connections}[`$acceptKey`] (no cached
      * {@see RuntimeConnection} items across mutations). Per-socket writes use {@see RuntimeConnection::$actions};
-     * collection-level helpers remain on {@see \Demo\Chat\Runtime\View\Actions\Collection\ConnectionsActions} (register,
+     * collection-level helpers remain on {@see ConnectionsActions} (register,
      * unregister, clear, bulk file reset). User-targeted signals use the owning connection `acceptKey` only.
      *
      * @param WebSocketFrameBinarySignalDTO $data Frame payload and {@see WebSocketFrameBinarySignalDTO::$acceptKey}

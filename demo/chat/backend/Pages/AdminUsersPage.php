@@ -42,14 +42,12 @@ final class AdminUsersPage extends AbstractChatPage
      */
     public function onSubscribe(string $acceptKey, array $params = []): void
     {
-        $result = Hilos::$table->users->get();
-
         $this->getChatAgent()->sendToUser(
             ChatSignalConstants::SUBSCRIPTION_PAGE_ADMIN_USERS,
             $acceptKey,
             new ChatEventSignalDTO(
                 new EntitiesChangesDTO(),
-                [TableChatContext::users => $result],
+                [TableChatContext::users => Hilos::$table->users->get()],
             ),
         );
     }
@@ -64,11 +62,24 @@ final class AdminUsersPage extends AbstractChatPage
     public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): void
     {
         try {
-            match (true) {
-                $dto instanceof UserUpdateActionDTO => $this->handleUserUpdate($acceptKey, $dto),
-                $dto instanceof TableRefreshActionDTO => $this->handleTableRefresh($acceptKey, $dto),
-                default => throw new TableActionException("Unexpected action payload for users page"),
-            };
+            switch ($action) {
+                case ChatSignalConstants::USER_UPDATE:
+                    if ($dto instanceof UserUpdateActionDTO) {
+                        $this->handleUserUpdate($acceptKey, $dto);
+                    }
+
+                    break;
+
+                case ChatSignalConstants::TABLE_REFRESH:
+                    if ($dto instanceof TableRefreshActionDTO) {
+                        $this->handleTableRefresh($acceptKey, $dto);
+                    }
+
+                    break;
+
+                default:
+                    throw new TableActionException("Unknown action: {$action}");
+            }
         } catch (TableActionException $e) {
             $tableKey = $dto instanceof TableRefreshActionDTO ? ($dto->tableKey ?: TableChatContext::users) : TableChatContext::users;
 

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Demo\Chat\Runtime\View\Actions\Collection;
 
 use Demo\Chat\Hilos;
+use Demo\Chat\Runtime\State\Item\Connection as StateConnection;
 use Demo\Chat\Runtime\State\Item\ChatUserState as StateChatUserState;
 use Demo\Chat\Runtime\View\Collection\UserStates;
 use Demo\Chat\Runtime\View\Item\ChatUserState as ViewChatUserState;
@@ -18,7 +19,7 @@ use Hilos\Runtime\View\Actions\Collection\RtActions;
 /**
  * Write API for per-user chat runtime state (text moderation only).
  *
- * File upload and file moderation UI live on {@see \Demo\Chat\Runtime\State\Item\Connection}.
+ * File upload and file moderation UI live on {@see StateConnection}.
  *
  * @extends RtActions<ViewChatUserState, UserStates>
  */

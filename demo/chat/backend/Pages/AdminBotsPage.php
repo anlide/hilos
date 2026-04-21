@@ -40,14 +40,12 @@ final class AdminBotsPage extends AbstractChatPage
      */
     public function onSubscribe(string $acceptKey, array $params = []): void
     {
-        $result = Hilos::$table->bots->get();
-
         $this->getChatAgent()->sendToUser(
             ChatSignalConstants::SUBSCRIPTION_PAGE_ADMIN_BOTS,
             $acceptKey,
             new ChatEventSignalDTO(
                 new EntitiesChangesDTO(),
-                [TableChatContext::bots => $result],
+                [TableChatContext::bots => Hilos::$table->bots->get()],
             ),
         );
     }
@@ -62,12 +60,31 @@ final class AdminBotsPage extends AbstractChatPage
     public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): void
     {
         try {
-            match (true) {
-                $dto instanceof BotCreateActionDTO => $this->handleCreate($acceptKey, $dto),
-                $dto instanceof BotUpdateActionDTO => $this->handleUpdate($acceptKey, $dto),
-                $dto instanceof BotDeleteActionDTO => $this->handleDelete($acceptKey, $dto),
-                default => throw new TableActionException("Unexpected action payload for bots page"),
-            };
+            switch ($action) {
+                case ChatSignalConstants::BOT_CREATE:
+                    if ($dto instanceof BotCreateActionDTO) {
+                        $this->handleCreate($acceptKey, $dto);
+                    }
+
+                    break;
+
+                case ChatSignalConstants::BOT_UPDATE:
+                    if ($dto instanceof BotUpdateActionDTO) {
+                        $this->handleUpdate($acceptKey, $dto);
+                    }
+
+                    break;
+
+                case ChatSignalConstants::BOT_DELETE:
+                    if ($dto instanceof BotDeleteActionDTO) {
+                        $this->handleDelete($acceptKey, $dto);
+                    }
+
+                    break;
+
+                default:
+                    throw new TableActionException("Unknown action: {$action}");
+            }
         } catch (TableActionException $e) {
             $this->getChatAgent()->sendToUser(
                 ChatSignalConstants::TABLE_ACTION_ERROR,

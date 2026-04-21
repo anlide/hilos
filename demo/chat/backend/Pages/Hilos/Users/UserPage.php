@@ -9,6 +9,7 @@ use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Core\Router\DTO\ActionFailSignalData;
 use Demo\Chat\Core\Router\DTO\ActionSuccessSignalData;
 use Demo\Chat\Core\Router\DTO\ChatEventSignalDTO;
+use Demo\Chat\Database\Actions\Item\UserActions;
 use Demo\Chat\Database\DbChatContext;
 use Demo\Chat\Database\Object\Item\User;
 use Demo\Chat\Database\View\Collection\Events;
@@ -24,8 +25,8 @@ use Hilos\Core\Table\DTO\TableMutationSignalData;
 use Hilos\Core\Table\Exception\TableActionException;
 use Hilos\Core\Table\Mutation\TableMutationEntry;
 use Hilos\Core\Table\Mutation\TableMutationType;
+use Hilos\HilosException;
 use Hilos\Pages\Users\AbstractHilosUserPage;
-use Hilos\Runtime\Exception\RtBaseException;
 
 /**
  * UserPage - Hilos single user page implementation for demo.
@@ -36,74 +37,82 @@ use Hilos\Runtime\Exception\RtBaseException;
 final class UserPage extends AbstractHilosUserPage
 {
     /**
-     * {@inheritDoc}
+     * Sends the initial users table snapshot to a Hilos user-detail subscriber.
+     *
+     * @param string $acceptKey WebSocket accept key for the subscribing client
+     * @param array<string, string> $params Route params from page subscription
      */
     public function onSubscribe(string $acceptKey, array $params = []): void
     {
-        $result = Hilos::$table->users->get();
-
         $this->sendToUser(
             HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_USER,
             $acceptKey,
             new ChatEventSignalDTO(
                 new EntitiesChangesDTO(),
-                [TableChatContext::users => $result],
+                [TableChatContext::users => Hilos::$table->users->get()],
             ),
         );
     }
 
     /**
-     * {@inheritDoc}
+     * Routes Hilos user-detail actions to page handlers.
+     *
+     * @param string $acceptKey WebSocket accept key for the client
+     * @param string $action Action name from the WebSocket envelope
+     * @param ActionPayloadDTO $dto Parsed action payload
      */
     public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): void
     {
-        if (!$dto instanceof HilosUserUpdateActionDTO) {
-            return;
-        }
+        switch ($action) {
+            case ChatSignalConstants::HILOS_USER_UPDATE:
+                if ($dto instanceof HilosUserUpdateActionDTO) {
+                    $this->handleHilosUserUpdate($acceptKey, $dto);
+                }
 
-        $this->handleHilosUserUpdate($acceptKey, $dto);
+                break;
+
+            default:
+                return;
+        }
     }
 
     /**
-     * Rename user through {@see \Demo\Chat\Database\Actions\Item\UserActions::rename} and fan out updates.
+     * Renames a user through {@see UserActions::rename} and fans out updates.
      *
-     * On validation or runtime failure, sends a dedicated {@see ChatSignalConstants::HILOS_USER_UPDATE_FAIL}
-     * ack to the initiator (reason + human-readable message); on success, sends
-     * {@see ChatSignalConstants::HILOS_USER_UPDATE_SUCCESS} after the broadcast fan-out.
+     * Action-layer validation failures become a dedicated
+     * {@see ChatSignalConstants::HILOS_USER_UPDATE_FAIL} ack to the initiator.
+     * On success, sends {@see ChatSignalConstants::HILOS_USER_UPDATE_SUCCESS}
+     * after the broadcast fan-out.
+     *
+     * @param string $acceptKey WebSocket accept key for the requesting client
+     * @param HilosUserUpdateActionDTO $dto Update action payload
      */
     private function handleHilosUserUpdate(string $acceptKey, HilosUserUpdateActionDTO $dto): void
     {
-        if ($dto->id <= 0) {
-            $this->sendFail($acceptKey, 'invalid_id', 'Invalid user ID');
-            return;
-        }
-
-        if ($dto->name === '') {
-            $this->sendFail($acceptKey, 'empty_name', 'User name cannot be empty');
-            return;
-        }
-
-        if (!isset(Hilos::$db->users[$dto->id])) {
+        $dbUser = Hilos::$db->users[$dto->id];
+        if ($dbUser === null) {
             $this->sendFail($acceptKey, 'not_found', "User #{$dto->id} not found");
             return;
         }
 
-        $dbUser = Hilos::$db->users[$dto->id];
         $oldName = $dbUser->name;
 
         try {
             $dbUser->actions->rename($dto->name);
-        } catch (RtBaseException $e) {
+        } catch (HilosException $e) {
             $this->sendFail($acceptKey, 'rename_failed', $e->getMessage());
             return;
         }
 
-        $mutation = new TableMutationEntry(
-            TableMutationType::Updated,
-            $dto->id,
-            $dbUser->toArray(toFrontend: true),
+        $newName = $dbUser->name;
+        $signal = new TableMutationSignalData(
+            TableChatContext::users,
+            new TableMutationEntry(
+                TableMutationType::Updated,
+                $dto->id,
+                $dbUser->toArray(toFrontend: true),
+            ),
         );
-        $signal = new TableMutationSignalData(TableChatContext::users, $mutation);
 
         $agent = $this->broadcastAgent();
         $agent->sendToUser(ChatSignalConstants::TABLE_MUTATION, $acceptKey, $signal);
@@ -119,14 +128,14 @@ final class UserPage extends AbstractHilosUserPage
 
         $event = Hilos::$db->events->actions->add(ChatEventType::USER_RENAMED_BY_ADMIN->value, $dto->id, null, [
             'oldName' => $oldName,
-            'newName' => $dto->name,
+            'newName' => $newName,
             'adminUserId' => Hilos::$rt->connections[$acceptKey]?->userId,
         ]);
         $agent->sendToAllUsers(
             ChatSignalConstants::NEW_EVENT,
             new ChatEventSignalDTO(new EntitiesChangesDTO(
                 full: [DbChatContext::events => Events::fromSingleItem($event)],
-                updates: [DbChatContext::users => [[User::id => $dto->id, User::name => $dto->name]]],
+                updates: [DbChatContext::users => [[User::id => $dto->id, User::name => $newName]]],
             )),
         );
 

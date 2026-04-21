@@ -7,12 +7,13 @@ namespace Demo\Chat\Pages\Hilos\Users\DTO;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Core\Page\DTO\ChatActionPayloadDTO;
 use Demo\Chat\Database\Object\Item\User as ObjectUser;
+use Demo\Chat\Tables\User\DTO\UserUpdateActionDTO;
 use Hilos\Constants\SignalPayloadConstants;
 
 /**
  * DTO for hilos_user_update action (Hilos single-user page).
  *
- * Same payload shape as {@see \Demo\Chat\Tables\User\DTO\UserUpdateActionDTO}; different action name for routing.
+ * Same payload shape as {@see UserUpdateActionDTO}; different action name for routing.
  */
 final class HilosUserUpdateActionDTO extends ChatActionPayloadDTO
 {

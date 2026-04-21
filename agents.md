@@ -2,6 +2,11 @@
 
 Quick navigation for AI agents. Read the relevant file before starting work.
 
+## Critical Git Rule
+
+- Never run `git commit`.
+- Never run `git push`.
+
 ---
 
 ## Architecture
@@ -72,6 +77,15 @@ Quick navigation for AI agents. Read the relevant file before starting work.
 |---|---|
 | [testing.md](docs/agents/testing.md) | running unit / integration / e2e tests — **always** via the composer scripts, never `phpunit` directly |
 
+## Code Style Rules
+
+| File | Read when... |
+|---|---|
+| [code-style/README.md](docs/agents/code-style/README.md) | choosing which small style rule applies to a code change |
+| [code-style/phpdoc.md](docs/agents/code-style/phpdoc.md) | writing PHPDoc, overriding inherited methods, adding `@see` links |
+| [code-style/page-action-handlers.md](docs/agents/code-style/page-action-handlers.md) | editing `Page::onAction()`, action DTO routing, page action acks/errors |
+| [code-style/local-variables.md](docs/agents/code-style/local-variables.md) | introducing temporary variables or reviewing one-use locals |
+
 ---
 
 ## Key rules (always apply)
@@ -82,6 +96,7 @@ Quick navigation for AI agents. Read the relevant file before starting work.
 4. All PHP files: `declare(strict_types=1)` at top
 5. Signal routing is **declarative** in `SignalRouter` — do not add routing logic in agents
 6. **Frontend edits go through `Modal` only** — inline edit forms on pages are forbidden (see [frontend-sdk/edit-in-modal.md](docs/agents/frontend-sdk/edit-in-modal.md))
+7. For code style, use the matching small rule from [code-style/README.md](docs/agents/code-style/README.md)
 
 ## Project docs (existing)
 

@@ -1,56 +1,45 @@
 # Code Style Guide
 
-> Draft. To be expanded.
+This file is the stable entry point for project code style. Detailed rules are
+split into small agent guides so agents can read only the rule that applies to
+the current change.
 
-Code style guidelines for Hilos projects.
+## Agent Rule Catalog
 
----
+Use [docs/agents/code-style/README.md](agents/code-style/README.md) as the
+catalog for small code-style rules.
 
-## Plan for filling this file
+| Rule | Read when... |
+|---|---|
+| [PHPDoc](agents/code-style/phpdoc.md) | writing or changing PHPDoc, overrides, `@see` links |
+| [Page Action Handlers](agents/code-style/page-action-handlers.md) | editing `Page::onAction()` and action handlers |
+| [Local Variables](agents/code-style/local-variables.md) | introducing temporary variables or reviewing one-use locals |
 
-1. **PHP (Backend)**
-   - PSR-12 / PSR-1 compliance
-   - `declare(strict_types=1)` usage
-   - Namespace conventions (Hilos\\, App\\, Demo\\)
-   - Class naming: PascalCase, suffixes (Entity, Object, Db, Command, etc.)
-   - Method naming: camelCase
-   - Property visibility (private/protected/public)
-   - PHPDoc: blocks, `@param`, `@return`, `@throws`
-   - Line length, indentation (4 spaces)
-   - Use statements ordering
+## Baseline
 
-2. **TypeScript / Vue (Frontend)**
-   - Vue 3 Composition API vs Options API
-   - TypeScript strict mode, typing conventions
-   - Component structure (script setup, template, style)
-   - File naming (PascalCase for components, camelCase for utils)
-   - Import ordering
+- PHP follows PSR-12 style with 4-space indentation.
+- Every project PHP file starts with `declare(strict_types=1);`.
+- Use project architecture docs in `docs/agents/` before inventing a new
+  backend pattern.
+- Prefer local project helpers and existing abstractions over new generic
+  layers.
+- Keep comments and PHPDoc contractual; remove boilerplate that repeats the
+  signature.
 
-3. **File & Directory Structure**
-   - Backend: backend/, Bootstrap/, Database/, etc.
-   - Entity/Object/Db placement
-   - Migration files naming (e.g. `001_initial.sql`)
+## Planned Rule Areas
 
-4. **Naming Conventions**
-   - Tables: snake_case
-   - Database columns: snake_case
-   - Entity properties vs column mapping
-   - Object-exclude directives
+The old content in this file was a draft plan, not active rules. Keep these
+areas as backlog for future small rule files:
 
-5. **Error Handling & Logging**
-   - When to throw vs log
-   - Exception hierarchy usage
-   - Log levels (debug, info, error)
-
-6. **Database & ORM**
-   - Entity -> Object -> Db flow
-   - **Runtime (ORM part):** `Runtime/Rt/`, `Runtime/State/` (RtContext, RtState, RtStates)
-   - **Frontend ORM subset:** `framework/frontend/src/stores`, `framework/frontend/src/types` (part of ORM, implementation in progress)
-   - When to use `db:entity:fix`, `db:object:fix`, legacy `db:idea:fix`
-   - Custom methods preservation
-
-7. **Docker & Environment**
-   - .env usage
-   - docker-compose naming (local, dev, prod)
-
-*Consider referencing existing demos (e.g. chat) as style examples.*
+- PHP backend: namespaces, class/method/property naming, imports, line length,
+  PHPDoc details.
+- TypeScript/Vue frontend: Composition API, strict typing, component structure,
+  file naming, imports.
+- File and directory structure: backend layout, Entity/Object/Db placement,
+  migration naming.
+- Naming conventions: tables, database columns, entity properties,
+  object-exclude directives.
+- Error handling and logging: throw vs log, exception hierarchy, log levels.
+- Database and ORM: Entity -> Object -> Db flow, runtime ORM, frontend ORM,
+  generator/fixer commands, custom method preservation.
+- Docker and environment: `.env` usage and compose naming.

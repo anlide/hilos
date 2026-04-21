@@ -37,14 +37,12 @@ final class AdminModeratorPage extends AbstractChatPage
      */
     public function onSubscribe(string $acceptKey, array $params = []): void
     {
-        $result = Hilos::$table->moderatorPromptPieces->get();
-
         $this->getChatAgent()->sendToUser(
             ChatSignalConstants::SUBSCRIPTION_PAGE_ADMIN_MODERATOR,
             $acceptKey,
             new ChatEventSignalDTO(
                 new EntitiesChangesDTO(),
-                [TableChatContext::moderatorPromptPieces => $result],
+                [TableChatContext::moderatorPromptPieces => Hilos::$table->moderatorPromptPieces->get()],
             ),
         );
     }
@@ -59,12 +57,31 @@ final class AdminModeratorPage extends AbstractChatPage
     public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): void
     {
         try {
-            match (true) {
-                $dto instanceof ModeratorPieceCreateActionDTO => $this->handleCreate($acceptKey, $dto),
-                $dto instanceof ModeratorPieceUpdateActionDTO => $this->handleUpdate($acceptKey, $dto),
-                $dto instanceof ModeratorPieceDeleteActionDTO => $this->handleDelete($acceptKey, $dto),
-                default => throw new TableActionException("Unexpected action payload for moderator page"),
-            };
+            switch ($action) {
+                case ChatSignalConstants::MODERATOR_PIECE_CREATE:
+                    if ($dto instanceof ModeratorPieceCreateActionDTO) {
+                        $this->handleCreate($acceptKey, $dto);
+                    }
+
+                    break;
+
+                case ChatSignalConstants::MODERATOR_PIECE_UPDATE:
+                    if ($dto instanceof ModeratorPieceUpdateActionDTO) {
+                        $this->handleUpdate($acceptKey, $dto);
+                    }
+
+                    break;
+
+                case ChatSignalConstants::MODERATOR_PIECE_DELETE:
+                    if ($dto instanceof ModeratorPieceDeleteActionDTO) {
+                        $this->handleDelete($acceptKey, $dto);
+                    }
+
+                    break;
+
+                default:
+                    throw new TableActionException("Unknown action: {$action}");
+            }
         } catch (TableActionException $e) {
             $this->getChatAgent()->sendToUser(
                 ChatSignalConstants::TABLE_ACTION_ERROR,

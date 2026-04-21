@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Demo\Chat\Tests\Unit;
 
 use Demo\Chat\Core\Router\DTO\ActionFailSignalData;
+use Hilos\Core\Daemon\DaemonManager;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\WebSocketEnvelopeAware;
 use PHPUnit\Framework\TestCase;
@@ -13,7 +14,7 @@ use PHPUnit\Framework\TestCase;
  * Unit tests for {@see ActionFailSignalData}.
  *
  * Pins down the envelope contract consumed by
- * {@see \Hilos\Core\Daemon\DaemonManager::mergeEnvelopeMetadata()}:
+ * {@see DaemonManager::mergeEnvelopeMetadata()}:
  * envelope outcome is `fail`, and the inner payload always contains
  * both `reason` (enum-like code) and `message` (human-readable, i18n-ready).
  */

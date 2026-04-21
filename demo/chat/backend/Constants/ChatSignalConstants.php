@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Constants;
 
+use Demo\Chat\Core\Router\ChatSignalMapper;
+
 /**
  * ChatSignalConstants - Chat signal name constants.
  *
@@ -180,7 +182,7 @@ final class ChatSignalConstants
     public const string GUARDIAN_AGENT_RUN_STOP = 'guardian_agent_run_stop';
 
     // ── Emit events (worker → daemon → mapper → WebSocket) ───────────────
-    /** @var string DB user row updated; {@see \Demo\Chat\Core\Router\ChatSignalMapper} fan-out rules */
+    /** @var string DB user row updated; {@see ChatSignalMapper} fan-out rules */
     public const string EMIT_CHAT_USER_ROW_UPDATED = 'emit_chat_user_row_updated';
 
     // ── Table signals (server → client) ──────────────────────────────────

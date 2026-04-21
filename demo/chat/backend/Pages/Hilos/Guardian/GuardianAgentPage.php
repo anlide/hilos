@@ -24,21 +24,34 @@ final class GuardianAgentPage extends AbstractHilosGuardianAgentPage
      */
     public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): void
     {
-        match ($action) {
-            ChatSignalConstants::GUARDIAN_AGENT_RUN_START => $this->handleStart($dto),
-            ChatSignalConstants::GUARDIAN_AGENT_RUN_STOP => $this->handleStop($dto),
-            default => null,
-        };
+        switch ($action) {
+            case ChatSignalConstants::GUARDIAN_AGENT_RUN_START:
+                if ($dto instanceof GuardianAgentRunStartActionDTO) {
+                    $this->handleStart($dto);
+                }
+
+                break;
+
+            case ChatSignalConstants::GUARDIAN_AGENT_RUN_STOP:
+                if ($dto instanceof GuardianAgentRunStopActionDTO) {
+                    $this->handleStop($dto);
+                }
+
+                break;
+
+            default:
+                return;
+        }
     }
 
     /**
      * Handle one guardian run start action.
      *
-     * @param ActionPayloadDTO $dto Action payload
+     * @param GuardianAgentRunStartActionDTO $dto Action payload
      */
-    private function handleStart(ActionPayloadDTO $dto): void
+    private function handleStart(GuardianAgentRunStartActionDTO $dto): void
     {
-        if (!$dto instanceof GuardianAgentRunStartActionDTO || !$this->getGuardianAgent()->hasGuardianAgent($dto->agentId)) {
+        if (!$this->getGuardianAgent()->hasGuardianAgent($dto->agentId)) {
             return;
         }
 
@@ -48,11 +61,11 @@ final class GuardianAgentPage extends AbstractHilosGuardianAgentPage
     /**
      * Handle one guardian run stop action.
      *
-     * @param ActionPayloadDTO $dto Action payload
+     * @param GuardianAgentRunStopActionDTO $dto Action payload
      */
-    private function handleStop(ActionPayloadDTO $dto): void
+    private function handleStop(GuardianAgentRunStopActionDTO $dto): void
     {
-        if (!$dto instanceof GuardianAgentRunStopActionDTO || !$this->getGuardianAgent()->hasGuardianAgent($dto->agentId)) {
+        if (!$this->getGuardianAgent()->hasGuardianAgent($dto->agentId)) {
             return;
         }
 

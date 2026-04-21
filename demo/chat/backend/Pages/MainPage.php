@@ -19,6 +19,7 @@ use Demo\Chat\Database\DbChatContext;
 use Demo\Chat\Database\View\Collection\Bots;
 use Demo\Chat\Hilos;
 use Hilos\Core\Page\AbstractPage;
+use Hilos\Core\Page\PageAgentInterface;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\EntitiesChangesDTO;
 use Hilos\HilosException;
@@ -40,7 +41,7 @@ final class MainPage extends AbstractChatPage
     /**
      * Returns the {@see ChatAgent} bound to this page (same object as {@see AbstractPage::$agent}).
      *
-     * {@see AbstractPage::$agent} is typed as {@see \Hilos\Core\Page\PageAgentInterface}; the assert narrows it for
+     * {@see AbstractPage::$agent} is typed as {@see PageAgentInterface}; the assert narrows it for
      * static analysis and for dev when `zend.assertions=1`.
      *
      * @return ChatAgent

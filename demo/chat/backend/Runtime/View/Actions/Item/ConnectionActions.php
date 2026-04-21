@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Runtime\View\Actions\Item;
 
+use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Runtime\State\Item\Connection as StateConnection;
 use Demo\Chat\Runtime\View\Item\Connection as RuntimeConnection;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
@@ -21,7 +22,7 @@ final class ConnectionActions extends RtActions
     /**
      * After successful FILE_UPLOAD_INIT: open session row + progress bar fields on this socket.
      *
-     * Caller should send {@see \Demo\Chat\Constants\ChatSignalConstants::FILE_UPLOAD_READY} and then record the
+     * Caller should send {@see ChatSignalConstants::FILE_UPLOAD_READY} and then record the
      * upload-progress throttle time ({@see self::noteUploadProgressSentAt()}) so the first binary chunk does not
      * duplicate that baseline.
      *
@@ -152,8 +153,8 @@ final class ConnectionActions extends RtActions
     }
 
     /**
-     * Record last upload-progress notify time (throttle): {@see \Demo\Chat\Constants\ChatSignalConstants::FILE_UPLOAD_READY}
-     * or {@see \Demo\Chat\Constants\ChatSignalConstants::FILE_UPLOAD_PROGRESS_UPDATE}.
+     * Record last upload-progress notify time (throttle): {@see ChatSignalConstants::FILE_UPLOAD_READY}
+     * or {@see ChatSignalConstants::FILE_UPLOAD_PROGRESS_UPDATE}.
      *
      * @throws RtActionsCollectionNameNullException
      */

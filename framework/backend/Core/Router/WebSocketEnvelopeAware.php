@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Router;
 
+use Hilos\Core\Daemon\DaemonManager;
+
 /**
  * Marker interface for signal data DTOs that need to inject extra fields
  * into the WebSocket envelope alongside the standard `{type, data}`.
@@ -12,7 +14,7 @@ namespace Hilos\Core\Router;
  * `outcome` marker, and reserved for future clock-sync DTOs to add a `time`
  * tick.
  *
- * Inspected by {@see \Hilos\Core\Daemon\DaemonManager} when building the
+ * Inspected by {@see DaemonManager} when building the
  * outgoing frame.
  */
 interface WebSocketEnvelopeAware

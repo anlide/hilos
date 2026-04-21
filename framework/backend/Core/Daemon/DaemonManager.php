@@ -18,6 +18,7 @@ use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\EmitFanoutDelivery;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\SignalRouter;
+use Hilos\Core\Router\WebSocketEnvelopeAware;
 use Hilos\Database\DbSyncApplicator;
 use Hilos\Runtime\RtSyncApplicator;
 use Hilos\Core\Router\WebSocketSignalData;
@@ -721,7 +722,7 @@ abstract class DaemonManager extends BaseManager
 
     /**
      * Inject envelope-level metadata (outcome, time) from an
-     * {@see \Hilos\Core\Router\WebSocketEnvelopeAware} DTO into the
+     * {@see WebSocketEnvelopeAware} DTO into the
      * outgoing WebSocket frame array.
      *
      * Order of keys is preserved: type first, then data, then optional
@@ -732,7 +733,7 @@ abstract class DaemonManager extends BaseManager
      */
     private function mergeEnvelopeMetadata(array &$message, SignalDataInterface $inner): void
     {
-        if (!$inner instanceof \Hilos\Core\Router\WebSocketEnvelopeAware) {
+        if (!$inner instanceof WebSocketEnvelopeAware) {
             return;
         }
         $outcome = $inner->getEnvelopeOutcome();

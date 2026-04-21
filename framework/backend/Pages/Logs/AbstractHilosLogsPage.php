@@ -12,6 +12,7 @@ use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\LogRotationConstants;
 use Hilos\Constants\SignalTypeConstants;
+use Hilos\Core\Agent\Hilos\AbstractHilosLogsAgent;
 use Hilos\Core\Page\AbstractHilosPage;
 use Hilos\Core\Page\PageAgentInterface;
 use Hilos\Core\Router\SignalName;
@@ -35,7 +36,7 @@ use JsonException;
  * Raw file weights are kept in private static structures (per-process). A full archive walk runs once per worker
  * process while {@see self::$logsOverviewMetricsInitialized} is false ({@see self::onSubscribe()}); further
  * subscribes and ticks use incremental rescans. Live updates are pushed while at least one subscriber is connected
- * ({@see self::onAgentTick()}), invoked from {@see \Hilos\Core\Agent\Hilos\AbstractHilosLogsAgent}.
+ * ({@see self::onAgentTick()}), invoked from {@see AbstractHilosLogsAgent}.
  *
  * Projects register a concrete empty subclass in the page factory (wiring only).
  */
@@ -103,7 +104,7 @@ abstract class AbstractHilosLogsPage extends AbstractHilosPage
      * Remove a connection from the subscriber set after {@see self::onUnsubscribe()} or when the connection
      * is already torn down (safety net; idempotent with {@see self::onUnsubscribe()}).
      *
-     * Called from {@see \Hilos\Core\Agent\Hilos\AbstractHilosLogsAgent::onSignalConnectionClose()}.
+     * Called from {@see AbstractHilosLogsAgent::onSignalConnectionClose()}.
      *
      * @param string $acceptKey Target connection accept key
      */
