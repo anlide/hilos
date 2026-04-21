@@ -285,7 +285,7 @@ class Env
     {
         // Auto-detect project root if not provided
         if ($rootPath === null) {
-            // Starting from framework/src/Utils, go up 3 levels to project root
+            // Starting from framework/backend/Utils, go up 3 levels to project root
             $rootPath = dirname(realpath(__DIR__), 4);
         }
 
