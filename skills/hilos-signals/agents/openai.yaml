@@ -1,0 +1,4 @@
+interface:
+  display_name: "Hilos Signals"
+  short_description: "Routing, DTOs, subscriptions, and delivery"
+  default_prompt: "Use $hilos-signals to add or trace a Hilos signal."

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Hilos Runtime"
+  short_description: "Runtime state, Hilos::$rt, and worker sync"
+  default_prompt: "Use $hilos-runtime to work with Hilos runtime state."

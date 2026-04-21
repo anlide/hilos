@@ -1,0 +1,4 @@
+interface:
+  display_name: "Hilos Agent System"
+  short_description: "Agent creation, lifecycle, and truth-source rules"
+  default_prompt: "Use $hilos-agent-system to create or change a Hilos agent."

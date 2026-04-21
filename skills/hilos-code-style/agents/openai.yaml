@@ -1,0 +1,4 @@
+interface:
+  display_name: "Hilos Code Style"
+  short_description: "PHPDoc, strict types, handlers, and style rules"
+  default_prompt: "Use $hilos-code-style to apply Hilos code style rules."
