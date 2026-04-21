@@ -23,9 +23,14 @@
 import { computed } from 'vue'
 import { useHead } from '@unhead/vue'
 import { useRoute } from 'vue-router'
+import { HilosPageRouteParams } from '../../../constants/hilosPageRouteParams'
 
 const route = useRoute()
-const userId = computed(() => (typeof route.params.userId === 'string' ? route.params.userId : ''))
+
+const userId = computed(() => {
+  const raw = route.params[HilosPageRouteParams.HILOS_SIL_USER_HISTORY_USER_ID]
+  return typeof raw === 'string' ? raw : ''
+})
 
 const lines = computed(() => [
   `[stub] 2025-03-19 User #${userId.value} opened SIL session (policy=elevated)`,

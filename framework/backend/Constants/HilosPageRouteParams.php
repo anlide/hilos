@@ -1,0 +1,24 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Hilos\Constants;
+
+/**
+ * HilosPageRouteParams - Dynamic segment names for Hilos admin routes.
+ *
+ * Keys match Vue Router params and WebSocket `page_subscribe.params`.
+ * Keep in sync with `framework/frontend/src/constants/hilosPageRouteParams.ts`.
+ */
+class HilosPageRouteParams
+{
+    /**
+     * Route param for {@see HilosPageConstants::HILOS_USER} (`/hilos/users/{userId}`).
+     */
+    public const string HILOS_USER_USER_ID = 'userId';
+
+    /**
+     * Route param for {@see HilosPageConstants::HILOS_SIL_USER_HISTORY} (`/hilos/sil/users/{userId}`).
+     */
+    public const string HILOS_SIL_USER_HISTORY_USER_ID = self::HILOS_USER_USER_ID;
+}

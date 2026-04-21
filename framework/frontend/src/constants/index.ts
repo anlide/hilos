@@ -2,6 +2,7 @@
  * Framework constants
  */
 export { TableActionConstants } from './tableActions'
+export { HilosPageRouteParams } from './hilosPageRouteParams'
 export {
   SETTING_ADD,
   SETTING_UPDATE,

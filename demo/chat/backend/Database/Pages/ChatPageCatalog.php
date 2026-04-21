@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Demo\Chat\Database\Pages;
 
 use Demo\Chat\Constants\PageConstants;
+use Hilos\Constants\HilosPageRouteParams;
 use Hilos\Database\Pages\PageCatalogConstants;
 use Hilos\Database\Pages\PageCatalogStub;
 
@@ -283,7 +284,7 @@ final class ChatPageCatalog extends PageCatalogStub
             PageConstants::HILOS_USER => [
                 PageCatalogConstants::CATALOG_ENTRY_PARENT_ID => PageConstants::HILOS_USERS,
                 PageCatalogConstants::CATALOG_ENTRY_LABEL => 'User',
-                PageCatalogConstants::CATALOG_ENTRY_PATH_TEMPLATE => '/hilos/users/{userId}',
+                PageCatalogConstants::CATALOG_ENTRY_PATH_TEMPLATE => '/hilos/users/{' . HilosPageRouteParams::HILOS_USER_USER_ID . '}',
             ],
             PageConstants::HILOS_ROLES => [
                 PageCatalogConstants::CATALOG_ENTRY_PARENT_ID => PageConstants::HILOS_DASHBOARD,
@@ -323,7 +324,7 @@ final class ChatPageCatalog extends PageCatalogStub
             PageConstants::HILOS_SIL_USER_HISTORY => [
                 PageCatalogConstants::CATALOG_ENTRY_PARENT_ID => PageConstants::HILOS_SIL,
                 PageCatalogConstants::CATALOG_ENTRY_LABEL => 'SIL user history',
-                PageCatalogConstants::CATALOG_ENTRY_PATH_TEMPLATE => '/hilos/sil/users/{userId}',
+                PageCatalogConstants::CATALOG_ENTRY_PATH_TEMPLATE => '/hilos/sil/users/{' . HilosPageRouteParams::HILOS_SIL_USER_HISTORY_USER_ID . '}',
             ],
             PageConstants::HILOS_COMMUNICATIONS => [
                 PageCatalogConstants::CATALOG_ENTRY_PARENT_ID => PageConstants::HILOS_DASHBOARD,

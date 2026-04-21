@@ -1,4 +1,5 @@
 import type { RouteRecordRaw } from 'vue-router'
+import { HilosPageRouteParams } from '../constants/hilosPageRouteParams'
 
 export type HilosRouteOverrides = Partial<Record<string, NonNullable<RouteRecordRaw['component']>>>
 
@@ -21,7 +22,7 @@ export function createHilosRoutes(overrides?: HilosRouteOverrides): RouteRecordR
       meta: { page: 'hilos' },
     },
     {
-      path: 'hilos/users/:userId',
+      path: `hilos/users/:${HilosPageRouteParams.HILOS_USER_USER_ID}`,
       name: 'hilos_user',
       component: withOverride(overrides, 'hilos_user', () => import('../views/Hilos/HilosUserDetail.vue')),
       meta: { page: 'hilos_user' },
@@ -309,7 +310,7 @@ export function createHilosRoutes(overrides?: HilosRouteOverrides): RouteRecordR
       meta: { page: 'hilos_sil_requests' },
     },
     {
-      path: 'hilos/sil/users/:userId',
+      path: `hilos/sil/users/:${HilosPageRouteParams.HILOS_SIL_USER_HISTORY_USER_ID}`,
       name: 'hilos_sil_user_history',
       component: withOverride(overrides, 'hilos_sil_user_history', () => import('../views/Hilos/Sil/HilosSilUserHistory.vue')),
       meta: { page: 'hilos_sil_user_history' },

@@ -20,6 +20,7 @@ use Demo\Chat\Database\View\Collection\Users;
 use Demo\Chat\Hilos;
 use Demo\Chat\Pages\Hilos\Users\DTO\HilosUserUpdateActionDTO;
 use Demo\Chat\Tables\TableChatContext;
+use Hilos\Constants\HilosPageRouteParams;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Page\PageAgentInterface;
@@ -52,11 +53,11 @@ final class UserPage extends AbstractHilosUserPage
      * is missing, invalid, or unknown.
      *
      * @param string $acceptKey WebSocket accept key for the subscribing client
-     * @param array<string, string> $params Route params from page subscription (expects 'userId')
+     * @param array<string, string> $params Route params from page subscription
      */
     public function onSubscribe(string $acceptKey, array $params = []): void
     {
-        $userId = (int) ($params['userId'] ?? 0);
+        $userId = (int) ($params[HilosPageRouteParams::HILOS_USER_USER_ID] ?? 0);
         $dbUser = $userId > 0 ? Hilos::$db->users[$userId] : null;
 
         $this->sendToUser(

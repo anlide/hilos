@@ -4,6 +4,7 @@ import { usePageCatalogStore } from '../stores/usePageCatalogStore'
 import { pathTemplateParamKeys } from '../types/pageCatalog'
 import type { PageCatalogEntry } from '../types/pageCatalog'
 import { guardianAiAgentMap, isGuardianAiAgentId } from '../constants/guardianAiAgents'
+import { HilosPageRouteParams } from '../constants/hilosPageRouteParams'
 
 type BreadcrumbItem = {
   label: string
@@ -111,7 +112,7 @@ const resolveCatalogStubDynamicLabel = (pageId: string, routeParams: Record<stri
       return id !== null ? `Table ${id}` : null
     }
     case 'hilos_user': {
-      const id = s('userId')
+      const id = s(HilosPageRouteParams.HILOS_USER_USER_ID)
       return id !== null ? `User ${id}` : null
     }
     case 'hilos_mcp_skills_mcp': {
@@ -127,7 +128,7 @@ const resolveCatalogStubDynamicLabel = (pageId: string, routeParams: Record<stri
       return id !== null ? `MCP ${id} · viewer` : null
     }
     case 'hilos_sil_user_history': {
-      const id = s('userId')
+      const id = s(HilosPageRouteParams.HILOS_SIL_USER_HISTORY_USER_ID)
       return id !== null ? `SIL user ${id}` : null
     }
     case 'hilos_communications_channel': {

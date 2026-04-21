@@ -98,6 +98,7 @@ import DaemonSectionShell from '@hilos/sdk/views/Hilos/Daemon/DaemonSectionShell
 import { LoadingButton, Modal } from '@hilos/sdk/components'
 import { TableActionConstants } from '@hilos/sdk/constants/tableActions'
 import { useConnectionStore } from '@hilos/sdk/stores'
+import { HilosPageRouteParams } from '@hilos/sdk/constants/hilosPageRouteParams'
 import { useWebSocket } from '@hilos/sdk/plugins/websocket'
 import { sendAction } from '@/services/websocketActions'
 import type { User } from '@/types'
@@ -116,7 +117,7 @@ const websocket = useWebSocket()
 const signalRouter = useSignalRouter()
 
 const userIdParam = computed(() => {
-  const raw = route.params.userId
+  const raw = route.params[HilosPageRouteParams.HILOS_USER_USER_ID]
   return typeof raw === 'string' ? raw : ''
 })
 

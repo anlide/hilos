@@ -67,6 +67,7 @@ import { useHead } from '@unhead/vue'
 import DaemonSectionShell from './Daemon/DaemonSectionShell.vue'
 import LoadingButton from '../../components/LoadingButton.vue'
 import { getTableDisplayRows } from '../../composables'
+import { HilosPageRouteParams } from '../../constants/hilosPageRouteParams'
 import { TableActionConstants } from '../../constants/tableActions'
 import { useConnectionStore, useTableStore } from '../../stores'
 import { useWebSocket } from '../../plugins/websocket'
@@ -83,7 +84,7 @@ const tableState = computed(() => tableStore.tableData[tableKey])
 const displayRows = computed(() => getTableDisplayRows<ChatUserTableRow>(tableState.value))
 
 const userIdParam = computed(() => {
-  const raw = route.params.userId
+  const raw = route.params[HilosPageRouteParams.HILOS_USER_USER_ID]
   return typeof raw === 'string' ? raw : ''
 })
 
