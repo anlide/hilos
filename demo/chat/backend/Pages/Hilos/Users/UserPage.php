@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Pages\Hilos\Users;
 
-use Demo\Chat\Agents\ChatAgent;
-use Demo\Chat\Agents\Hilos\DemoHilosAgent;
 use Demo\Chat\Constants\ChatEventType;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Core\Router\DTO\ActionFailSignalData;
@@ -22,8 +20,6 @@ use Demo\Chat\Pages\Hilos\Users\DTO\HilosUserUpdateActionDTO;
 use Demo\Chat\Tables\TableChatContext;
 use Hilos\Constants\HilosPageRouteParams;
 use Hilos\Constants\HilosSignalConstants;
-use Hilos\Core\Page\AbstractPage;
-use Hilos\Core\Page\PageAgentInterface;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\EmitDbChangeSignalData;
 use Hilos\Core\Router\DTO\EntitiesChangesDTO;
@@ -38,11 +34,6 @@ use Hilos\Pages\Users\AbstractHilosUserPage;
  *
  * On subscribe, sends one requested user entity. {@see ChatSignalConstants::HILOS_USER_UPDATE}
  * renames through DB actions and broadcasts the same signals as admin user update.
- *
- * @property ChatAgent|DemoHilosAgent $agent
- *     Inherited page agent narrowed from {@see AbstractPage::$agent}.
- *     Subscriptions are routed to {@see DemoHilosAgent}; update actions are routed to {@see ChatAgent}.
- *     The framework constructor still accepts {@see PageAgentInterface}.
  */
 final class UserPage extends AbstractHilosUserPage
 {
@@ -107,10 +98,9 @@ final class UserPage extends AbstractHilosUserPage
      */
     private function handleHilosUserUpdate(string $acceptKey, HilosUserUpdateActionDTO $dto): void
     {
-        $agent = $this->getChatAgent();
         $dbUser = Hilos::$db->users[$dto->id];
         if ($dbUser === null) {
-            $agent->sendToUser(
+            $this->sendToUser(
                 ChatSignalConstants::HILOS_USER_UPDATE_FAIL,
                 $acceptKey,
                 new ActionFailSignalData('not_found', "User #{$dto->id} not found"),
@@ -123,7 +113,7 @@ final class UserPage extends AbstractHilosUserPage
         try {
             $dbUser->actions->rename($dto->name);
         } catch (HilosException $e) {
-            $agent->sendToUser(
+            $this->sendToUser(
                 ChatSignalConstants::HILOS_USER_UPDATE_FAIL,
                 $acceptKey,
                 new ActionFailSignalData('rename_failed', $e->getMessage()),
@@ -141,8 +131,8 @@ final class UserPage extends AbstractHilosUserPage
             ),
         );
 
-        $agent->sendToUser(ChatSignalConstants::TABLE_MUTATION, $acceptKey, $signal);
-        $agent->emitChangeDb(
+        $this->sendToUser(ChatSignalConstants::TABLE_MUTATION, $acceptKey, $signal);
+        $this->emitChangeDb(
             ChatSignalConstants::EMIT_CHAT_USER_ROW_UPDATED,
             EmitDbChangeSignalData::fromTableMutationSignal(
                 entityId: (string) $dto->id,
@@ -157,7 +147,7 @@ final class UserPage extends AbstractHilosUserPage
             'newName' => $newName,
             'adminUserId' => Hilos::$rt->connections[$acceptKey]?->userId,
         ]);
-        $agent->sendToAllUsers(
+        $this->sendToAllUsers(
             ChatSignalConstants::NEW_EVENT,
             new ChatEventSignalDTO(new EntitiesChangesDTO(
                 full: [DbChatContext::events => Events::fromSingleItem($event)],
@@ -165,22 +155,10 @@ final class UserPage extends AbstractHilosUserPage
             )),
         );
 
-        $agent->sendToUser(
+        $this->sendToUser(
             ChatSignalConstants::HILOS_USER_UPDATE_SUCCESS,
             $acceptKey,
             new ActionSuccessSignalData(),
         );
-    }
-
-    /**
-     * Returns the chat worker agent used for user update actions.
-     *
-     * @return ChatAgent
-     */
-    private function getChatAgent(): ChatAgent
-    {
-        assert($this->agent instanceof ChatAgent);
-
-        return $this->agent;
     }
 }

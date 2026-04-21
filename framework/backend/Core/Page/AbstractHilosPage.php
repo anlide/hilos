@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Core\Page;
 
 use Hilos\Constants\SignalTypeConstants;
+use Hilos\Core\Router\DTO\EmitDbChangeSignalData;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalType;
@@ -38,6 +39,43 @@ abstract class AbstractHilosPage extends AbstractPage
             signalType: new SignalType(SignalTypeConstants::WS_USER),
             signalName: new SignalName($signalName),
             signalData: new WebSocketSignalData(data: $data, targetAcceptKey: $acceptKey),
+        );
+    }
+
+    /**
+     * Send signal to all users (broadcast). Optionally exclude one connection.
+     *
+     * Uses agent's signal source for routing context without depending on agent's concrete type.
+     *
+     * @param string $signalName Signal name
+     * @param SignalDataInterface $data Signal payload
+     * @param ?string $excludeAcceptKey Optional acceptKey to exclude from delivery
+     */
+    protected function sendToAllUsers(string $signalName, SignalDataInterface $data, ?string $excludeAcceptKey = null): void
+    {
+        Hilos::$sr->queueSignal(
+            signalSource: $this->agent->getAgentSignalSource(),
+            signalType: new SignalType(SignalTypeConstants::WS_ALL),
+            signalName: new SignalName($signalName),
+            signalData: new WebSocketSignalData(data: $data, excludeAcceptKey: $excludeAcceptKey),
+        );
+    }
+
+    /**
+     * Emit a DB-layer change; the daemon signal mapper expands it to WebSocket deliveries.
+     *
+     * Uses agent's signal source for routing context without depending on agent's concrete type.
+     *
+     * @param string $eventKey Logical event name for the project mapper
+     * @param EmitDbChangeSignalData $data DB change payload
+     */
+    protected function emitChangeDb(string $eventKey, EmitDbChangeSignalData $data): void
+    {
+        Hilos::$sr->queueSignal(
+            signalSource: $this->agent->getAgentSignalSource(),
+            signalType: new SignalType(SignalTypeConstants::EMIT_DB_CHANGE),
+            signalName: new SignalName($eventKey),
+            signalData: $data,
         );
     }
 }
