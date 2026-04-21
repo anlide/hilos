@@ -25,6 +25,8 @@ export const useChatStore = defineStore('chat', {
     fileModerationState: null as Record<string, unknown> | null,
     /** Binary upload bytes progress (separate from moderation; main subscribe + WS) */
     fileUploadProgress: null as FileUploadProgressPayload | null,
+    /** Last user id acknowledged by `subscription_page_hilos_user`. */
+    lastHilosUserSubscribeAckId: null as number | null,
   }),
 
   getters: {
@@ -58,6 +60,10 @@ export const useChatStore = defineStore('chat', {
 
     setFileUploadProgress(value: FileUploadProgressPayload | null) {
       this.fileUploadProgress = value
+    },
+
+    setLastHilosUserSubscribeAckId(value: number | null) {
+      this.lastHilosUserSubscribeAckId = value
     },
 
     addEvent(event: Event) {

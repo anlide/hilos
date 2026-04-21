@@ -7,12 +7,12 @@
       Invalid user ID.
       <router-link to="/hilos/users">Back to users</router-link>
     </p>
-    <p v-else-if="!tableState" class="text-body-secondary mb-3">Loading…</p>
-    <p v-else-if="!baseRow" class="text-body-secondary mb-3">
+    <p v-else-if="!hasSubscribeResponse" class="text-body-secondary mb-3">Loading…</p>
+    <p v-else-if="!currentUser" class="text-body-secondary mb-3">
       User not found.
       <router-link to="/hilos/users">Back to users</router-link>
     </p>
-    <template v-else-if="currentRow">
+    <template v-else>
       <p class="text-body-secondary small mb-3">
         Email and Hilos roles are not stored on the chat <code>user</code> row. Rename the user via
         the modal below; changes use the same backend action as
@@ -21,17 +21,17 @@
       <div class="row g-3">
         <div class="col-12 col-md-6">
           <label class="form-label">Name</label>
-          <div class="form-control-plaintext">{{ currentRow.name }}</div>
+          <div class="form-control-plaintext">{{ currentUser.name }}</div>
         </div>
         <div class="col-12 col-md-6">
           <label class="form-label">Last activity</label>
-          <div class="form-control-plaintext">{{ formatDate(currentRow.lastActivity) }}</div>
+          <div class="form-control-plaintext">{{ formatDate(currentUser.lastActivity) }}</div>
         </div>
         <div class="col-12 col-md-6">
           <label class="form-label">Presence</label>
           <div class="form-control-plaintext">
-            <span class="badge" :class="getPresenceBadgeClass(currentRow.presence)">
-              {{ currentRow.presence || 'offline' }}
+            <span class="badge" :class="getPresenceBadgeClass(currentUser.presence)">
+              {{ currentUser.presence || 'offline' }}
             </span>
           </div>
         </div>
@@ -96,12 +96,11 @@ import { useRoute } from 'vue-router'
 import { useHead } from '@unhead/vue'
 import DaemonSectionShell from '@hilos/sdk/views/Hilos/Daemon/DaemonSectionShell.vue'
 import { LoadingButton, Modal } from '@hilos/sdk/components'
-import { getTableDisplayRows } from '@hilos/sdk/composables'
 import { TableActionConstants } from '@hilos/sdk/constants/tableActions'
-import { useConnectionStore, useTableStore } from '@hilos/sdk/stores'
+import { useConnectionStore } from '@hilos/sdk/stores'
 import { useWebSocket } from '@hilos/sdk/plugins/websocket'
 import { sendAction } from '@/services/websocketActions'
-import type { ChatUserTableRow } from '@hilos/sdk/types/chatUserTableRow'
+import type { User } from '@/types'
 import { useChatStore } from '@/stores'
 import { useSignalRouter } from '@/plugins/websocket'
 import {
@@ -112,13 +111,9 @@ import {
 
 const route = useRoute()
 const connectionStore = useConnectionStore()
-const tableStore = useTableStore()
 const chatStore = useChatStore()
 const websocket = useWebSocket()
-
-const tableKey = 'users'
-const tableState = computed(() => tableStore.tableData[tableKey])
-const displayRows = computed(() => getTableDisplayRows<ChatUserTableRow>(tableState.value))
+const signalRouter = useSignalRouter()
 
 const userIdParam = computed(() => {
   const raw = route.params.userId
@@ -131,18 +126,16 @@ const parsedUserId = computed((): number | null => {
   return Number.isFinite(n) && n > 0 ? n : null
 })
 
-const baseRow = computed((): ChatUserTableRow | null => {
+// Stay in loading until this route's subscription response arrives.
+const hasSubscribeResponse = computed(() => {
   const id = parsedUserId.value
-  if (id === null) return null
-  return displayRows.value.find((r) => r.id === id) ?? null
+  return id !== null && chatStore.lastHilosUserSubscribeAckId === id
 })
 
-const currentRow = computed((): ChatUserTableRow | null => {
-  const row = baseRow.value
-  if (!row) return null
-  const liveUser = chatStore.users.find((u) => u.id === row.id)
-  const presence = liveUser?.presence ?? row.presence
-  return { ...row, presence }
+const currentUser = computed((): User | null => {
+  const id = parsedUserId.value
+  if (id === null) return null
+  return chatStore.users.find((u) => u.id === id) ?? null
 })
 
 const showModal = ref(false)
@@ -150,7 +143,6 @@ const form = ref({ name: '' })
 const baselineName = ref('')
 const saveLoading = ref(false)
 const updateErrorMessage = ref<string | null>(null)
-const signalRouter = useSignalRouter()
 
 const isFormDirty = computed(() => form.value.name.trim() !== baselineName.value.trim())
 
@@ -162,7 +154,7 @@ const isFormValid = computed(() => {
 const pageTitle = computed(() => {
   const id = parsedUserId.value
   if (id === null) return 'User'
-  if (baseRow.value) return `User · ${baseRow.value.name}`
+  if (currentUser.value) return `User · ${currentUser.value.name}`
   return `User · #${id}`
 })
 
@@ -189,10 +181,10 @@ const getPresenceBadgeClass = (presence: string | null | undefined): string => {
 }
 
 const handleEdit = () => {
-  const row = baseRow.value
-  if (!row) return
-  form.value = { name: row.name }
-  baselineName.value = row.name
+  const user = currentUser.value
+  if (!user) return
+  form.value = { name: user.name }
+  baselineName.value = user.name
   updateErrorMessage.value = null
   saveLoading.value = false
   showModal.value = true
@@ -202,9 +194,9 @@ const resetForm = () => {
   showModal.value = false
   saveLoading.value = false
   updateErrorMessage.value = null
-  const row = baseRow.value
-  form.value = { name: row?.name ?? '' }
-  baselineName.value = row?.name ?? ''
+  const user = currentUser.value
+  form.value = { name: user?.name ?? '' }
+  baselineName.value = user?.name ?? ''
 }
 
 // Closes the modal only on success — on fail we keep it open so the user can see the error
@@ -213,8 +205,8 @@ const resetForm = () => {
 const onUpdateSuccess = () => {
   saveLoading.value = false
   updateErrorMessage.value = null
-  if (baseRow.value) {
-    baselineName.value = baseRow.value.name
+  if (currentUser.value) {
+    baselineName.value = currentUser.value.name
   }
   showModal.value = false
 }

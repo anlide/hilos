@@ -29,6 +29,7 @@ import {
   botUpdated,
   newEvent,
   subscriptionPageHilosLogs,
+  subscriptionPageHilosUser,
 } from '@/signals'
 
 /**
@@ -168,6 +169,11 @@ function buildSignalRouter() {
 
   signalRouter.on(subscriptionPageHilosLogs, (snapshot) => {
     useHilosLogsStore().setHilosLogsOverview(snapshot)
+  })
+
+  // The user entity is applied by ChatEntitiesReceiver before this handler runs.
+  signalRouter.on(subscriptionPageHilosUser, ({ userId }) => {
+    useChatStore().setLastHilosUserSubscribeAckId(userId)
   })
 
   signalRouter.on(botJoined, () => {})

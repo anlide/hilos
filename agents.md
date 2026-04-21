@@ -86,6 +86,15 @@ Quick navigation for AI agents. Read the relevant file before starting work.
 | [code-style/page-action-handlers.md](docs/agents/code-style/page-action-handlers.md) | editing `Page::onAction()`, action DTO routing, page action acks/errors |
 | [code-style/local-variables.md](docs/agents/code-style/local-variables.md) | introducing temporary variables or reviewing one-use locals |
 
+## AI Tool Integration
+
+| File | Purpose |
+|---|---|
+| [ai-tools.md](docs/agents/ai-tools.md) | applying these rules in Codex, Claude, and Cursor |
+| [skills/](skills) | Codex-format Hilos skill wrappers |
+| [CLAUDE.md](CLAUDE.md) | Claude project instructions |
+| [.cursor/rules/hilos-framework.mdc](.cursor/rules/hilos-framework.mdc) | Cursor project rule |
+
 ---
 
 ## Key rules (always apply)

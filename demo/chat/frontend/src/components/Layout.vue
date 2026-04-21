@@ -271,6 +271,10 @@ const queueSubscription = (snapshot: RouteSnapshot, update: boolean) => {
   }
 
   const hasParams = Object.keys(snapshot.params).length > 0
+  if (snapshot.page === 'hilos_user') {
+    chatStore.setLastHilosUserSubscribeAckId(null)
+  }
+
   websocket.send({
     [MESSAGE_TYPE_FIELD]: update ? 'page_update_subscription' : 'page_subscribe',
     [MESSAGE_PAGE_FIELD]: snapshot.page,

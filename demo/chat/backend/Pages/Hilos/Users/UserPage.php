@@ -4,25 +4,29 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Pages\Hilos\Users;
 
+use Demo\Chat\Agents\ChatAgent;
+use Demo\Chat\Agents\Hilos\DemoHilosAgent;
 use Demo\Chat\Constants\ChatEventType;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Core\Router\DTO\ActionFailSignalData;
 use Demo\Chat\Core\Router\DTO\ActionSuccessSignalData;
 use Demo\Chat\Core\Router\DTO\ChatEventSignalDTO;
+use Demo\Chat\Core\Router\DTO\HilosUserSubscriptionSignalData;
 use Demo\Chat\Database\Actions\Item\UserActions;
 use Demo\Chat\Database\DbChatContext;
 use Demo\Chat\Database\Object\Item\User;
 use Demo\Chat\Database\View\Collection\Events;
+use Demo\Chat\Database\View\Collection\Users;
 use Demo\Chat\Hilos;
 use Demo\Chat\Pages\Hilos\Users\DTO\HilosUserUpdateActionDTO;
 use Demo\Chat\Tables\TableChatContext;
 use Hilos\Constants\HilosSignalConstants;
-use Hilos\Core\Agent\AbstractAgent;
+use Hilos\Core\Page\AbstractPage;
+use Hilos\Core\Page\PageAgentInterface;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\EmitDbChangeSignalData;
 use Hilos\Core\Router\DTO\EntitiesChangesDTO;
 use Hilos\Core\Table\DTO\TableMutationSignalData;
-use Hilos\Core\Table\Exception\TableActionException;
 use Hilos\Core\Table\Mutation\TableMutationEntry;
 use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\HilosException;
@@ -31,25 +35,38 @@ use Hilos\Pages\Users\AbstractHilosUserPage;
 /**
  * UserPage - Hilos single user page implementation for demo.
  *
- * Sends full users table snapshot on subscribe; {@see ChatSignalConstants::HILOS_USER_UPDATE} renames via DB actions
- * and broadcasts the same signals as admin user update (table_mutation + chat event).
+ * On subscribe, sends one requested user entity. {@see ChatSignalConstants::HILOS_USER_UPDATE}
+ * renames through DB actions and broadcasts the same signals as admin user update.
+ *
+ * @property ChatAgent|DemoHilosAgent $agent
+ *     Inherited page agent narrowed from {@see AbstractPage::$agent}.
+ *     Subscriptions are routed to {@see DemoHilosAgent}; update actions are routed to {@see ChatAgent}.
+ *     The framework constructor still accepts {@see PageAgentInterface}.
  */
 final class UserPage extends AbstractHilosUserPage
 {
     /**
-     * Sends the initial users table snapshot to a Hilos user-detail subscriber.
+     * Sends the initial single-user entity snapshot to a Hilos user-detail subscriber.
+     *
+     * Payload carries one user in `entities.full.users`, or an empty envelope when the id
+     * is missing, invalid, or unknown.
      *
      * @param string $acceptKey WebSocket accept key for the subscribing client
-     * @param array<string, string> $params Route params from page subscription
+     * @param array<string, string> $params Route params from page subscription (expects 'userId')
      */
     public function onSubscribe(string $acceptKey, array $params = []): void
     {
+        $userId = (int) ($params['userId'] ?? 0);
+        $dbUser = $userId > 0 ? Hilos::$db->users[$userId] : null;
+
         $this->sendToUser(
             HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_USER,
             $acceptKey,
-            new ChatEventSignalDTO(
-                new EntitiesChangesDTO(),
-                [TableChatContext::users => Hilos::$table->users->get()],
+            HilosUserSubscriptionSignalData::fromEntities(
+                $userId,
+                $dbUser !== null
+                    ? new EntitiesChangesDTO(full: [DbChatContext::users => Users::fromSingleItem($dbUser)])
+                    : new EntitiesChangesDTO(),
             ),
         );
     }
@@ -89,9 +106,14 @@ final class UserPage extends AbstractHilosUserPage
      */
     private function handleHilosUserUpdate(string $acceptKey, HilosUserUpdateActionDTO $dto): void
     {
+        $agent = $this->getChatAgent();
         $dbUser = Hilos::$db->users[$dto->id];
         if ($dbUser === null) {
-            $this->sendFail($acceptKey, 'not_found', "User #{$dto->id} not found");
+            $agent->sendToUser(
+                ChatSignalConstants::HILOS_USER_UPDATE_FAIL,
+                $acceptKey,
+                new ActionFailSignalData('not_found', "User #{$dto->id} not found"),
+            );
             return;
         }
 
@@ -100,7 +122,11 @@ final class UserPage extends AbstractHilosUserPage
         try {
             $dbUser->actions->rename($dto->name);
         } catch (HilosException $e) {
-            $this->sendFail($acceptKey, 'rename_failed', $e->getMessage());
+            $agent->sendToUser(
+                ChatSignalConstants::HILOS_USER_UPDATE_FAIL,
+                $acceptKey,
+                new ActionFailSignalData('rename_failed', $e->getMessage()),
+            );
             return;
         }
 
@@ -114,7 +140,6 @@ final class UserPage extends AbstractHilosUserPage
             ),
         );
 
-        $agent = $this->broadcastAgent();
         $agent->sendToUser(ChatSignalConstants::TABLE_MUTATION, $acceptKey, $signal);
         $agent->emitChangeDb(
             ChatSignalConstants::EMIT_CHAT_USER_ROW_UPDATED,
@@ -147,25 +172,13 @@ final class UserPage extends AbstractHilosUserPage
     }
 
     /**
-     * Send a {@see ChatSignalConstants::HILOS_USER_UPDATE_FAIL} ack to the initiator.
+     * Returns the chat worker agent used for user update actions.
      *
-     * Reason is a stable enum-like code for programmatic handling; message is
-     * a human-readable text (backend-owned, i18n-ready, safe for direct display).
+     * @return ChatAgent
      */
-    private function sendFail(string $acceptKey, string $reason, string $message): void
+    private function getChatAgent(): ChatAgent
     {
-        $this->broadcastAgent()->sendToUser(
-            ChatSignalConstants::HILOS_USER_UPDATE_FAIL,
-            $acceptKey,
-            new ActionFailSignalData($reason, $message),
-        );
-    }
-
-    private function broadcastAgent(): AbstractAgent
-    {
-        if (!$this->agent instanceof AbstractAgent) {
-            throw new TableActionException('Hilos user update requires AbstractAgent (chat worker context)');
-        }
+        assert($this->agent instanceof ChatAgent);
 
         return $this->agent;
     }
