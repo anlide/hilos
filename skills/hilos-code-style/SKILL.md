@@ -11,6 +11,7 @@ Use this skill for style-sensitive Hilos edits and reviews. Start with `agents.m
 
 - Style rule index: `docs/agents/code-style/README.md`
 - PHPDoc and inherited method docs: `docs/agents/code-style/phpdoc.md`
+- Exception taxonomy and `@throws`: `docs/agents/code-style/exceptions.md`
 - `Page::onAction()` and action handler routing: `docs/agents/code-style/page-action-handlers.md`
 - Temporary/local variable rules: `docs/agents/code-style/local-variables.md`
 - Broader style guide: `docs/code-style.md`
@@ -27,6 +28,8 @@ Use this skill for style-sensitive Hilos edits and reviews. Start with `agents.m
 7. For `Page::onAction()`, keep a `try/catch` around the routing `switch` and
    convert thrown handler failures to the page's user-facing fail/error signal
    with `sendToUser()`.
+8. Use `ValidationException` and its children for user/business validation;
+   read `docs/agents/code-style/exceptions.md` before changing exception types.
 
 ## Hard Rules
 

@@ -6,6 +6,7 @@ that matches the change; do not read every rule file by default.
 | File | Read when... |
 |---|---|
 | [phpdoc.md](phpdoc.md) | writing or changing PHPDoc, overriding inherited methods, adding `@see` links |
+| [exceptions.md](exceptions.md) | choosing exception classes, documenting `@throws`, handling validation/business errors |
 | [page-action-handlers.md](page-action-handlers.md) | editing `Page::onAction()`, action DTO routing, action acks/errors |
 | [local-variables.md](local-variables.md) | introducing temporary/local variables or reviewing noisy one-use variables |
 

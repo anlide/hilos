@@ -5,8 +5,9 @@ declare(strict_types=1);
 namespace Demo\Chat\Tests\Integration;
 
 use Demo\Chat\Hilos;
+use Hilos\Core\Exception\EmptyValueException;
+use Hilos\Core\Exception\ValueTooLongException;
 use Hilos\HilosException;
-use Hilos\Runtime\Exception\RtBaseException;
 use Random\RandomException;
 
 /**
@@ -36,7 +37,7 @@ final class UserActionsTest extends IntegrationTestCase
     }
 
     /**
-     * Rename with empty/whitespace-only name throws RtBaseException.
+     * Rename with empty/whitespace-only name throws EmptyValueException.
      *
      * @throws RandomException On random bytes generation error
      * @throws HilosException On database error
@@ -47,14 +48,14 @@ final class UserActionsTest extends IntegrationTestCase
         $user = Hilos::$db->users->actions->register($token);
         $dbUser = Hilos::$db->users[$user->id];
 
-        $this->expectException(RtBaseException::class);
+        $this->expectException(EmptyValueException::class);
         $this->expectExceptionMessage('cannot be empty');
 
         $dbUser->actions->rename('   ');
     }
 
     /**
-     * Rename with name exceeding max length throws RtBaseException.
+     * Rename with name exceeding max length throws ValueTooLongException.
      *
      * @throws RandomException On random bytes generation error
      * @throws HilosException On database error
@@ -65,7 +66,7 @@ final class UserActionsTest extends IntegrationTestCase
         $user = Hilos::$db->users->actions->register($token);
         $dbUser = Hilos::$db->users[$user->id];
 
-        $this->expectException(RtBaseException::class);
+        $this->expectException(ValueTooLongException::class);
         $this->expectExceptionMessage('exceeds maximum length');
 
         $dbUser->actions->rename(str_repeat('x', 65));

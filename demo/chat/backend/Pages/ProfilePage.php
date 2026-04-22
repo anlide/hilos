@@ -16,6 +16,8 @@ use Demo\Chat\Database\DbChatContext;
 use Demo\Chat\Database\View\Collection\Events;
 use Demo\Chat\Hilos;
 use Demo\Chat\Tables\TableChatContext;
+use Hilos\Core\Exception\EmptyValueException;
+use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Core\Table\DTO\TableMutationSignalData;
 use Hilos\Core\Table\Mutation\TableMutationEntry;
 use Hilos\Core\Table\Mutation\TableMutationType;
@@ -23,7 +25,6 @@ use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\EntitiesChangesDTO;
 use Hilos\HilosException;
 use Hilos\Utils\Logger;
-use RuntimeException;
 use Throwable;
 
 /**
@@ -92,12 +93,12 @@ final class ProfilePage extends AbstractChatPage
     {
         if (!$dto->isValid()) {
             Logger::logAgentError('ProfilePage', "Empty new name (acceptKey={$acceptKey})");
-            throw new RuntimeException('User name cannot be empty');
+            throw new EmptyValueException('User name cannot be empty');
         }
 
         if (!isset(Hilos::$rt->connections[$acceptKey])) {
             Logger::logAgentError('ProfilePage', "User not found for acceptKey={$acceptKey}");
-            throw new RuntimeException('User session not found');
+            throw new ItemNotFoundForUpdateException('User session not found');
         }
 
         $userId = Hilos::$rt->connections[$acceptKey]->userId;

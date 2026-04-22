@@ -1,0 +1,4 @@
+interface:
+  display_name: "Hilos Exceptions"
+  short_description: "Choose exception classes and document @throws contracts"
+  default_prompt: "Use $hilos-exception to choose Hilos exception classes and update @throws docs."

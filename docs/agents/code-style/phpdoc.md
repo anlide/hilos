@@ -27,10 +27,28 @@ Read this when writing or changing PHPDoc in project PHP code.
    the current namespace. Do not use leading-backslash fully qualified names in
    docblocks unless there is no importable symbol.
 
+## `@throws` and error contracts
+
+Read [exceptions.md](exceptions.md) before changing thrown exception classes or
+documenting non-obvious error contracts.
+
+- Document exceptions that are meaningful to the caller or caller-facing error
+  path. Do not list every incidental infrastructure exception if a broader local
+  contract is clearer.
+- Prefer the narrowest useful exception when the caller can act on it
+  (`EmptyValueException`, `ValueTooLongException`, `PageResourceNotFoundException`).
+- Use the relevant base exception when the caller only needs the category
+  (`ValidationException`, `HilosException`).
+- Add a short reason to each `@throws` entry:
+  `@throws ValidationException When rename payload violates user validation rules`.
+- Keep `@throws` imports consistent with `{@see ...}` imports: import the class
+  with `use` and reference the short class name in the docblock.
+
 ## Example
 
 ```php
 use Demo\Chat\Database\Actions\Item\UserActions;
+use Hilos\Core\Exception\ValidationException;
 
 /**
  * Routes user-detail actions to their page handlers.
@@ -45,6 +63,8 @@ public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dt
 
 /**
  * Renames a user through {@see UserActions::rename} and sends page acks.
+ *
+ * @throws ValidationException When the new name violates user validation rules
  */
 private function handleRename(...): void
 {

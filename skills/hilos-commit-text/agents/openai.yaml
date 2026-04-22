@@ -1,0 +1,4 @@
+interface:
+  display_name: "Hilos Commit Text"
+  short_description: "Generate commit message options using project format"
+  default_prompt: "Use $hilos-commit-text to draft commit message options."

@@ -6,9 +6,12 @@ namespace Demo\Chat\Database\Actions\Item;
 
 use Demo\Chat\Database\Object\Item\User as ObjectUser;
 use Demo\Chat\Database\View\Item\User;
+use Hilos\Core\Exception\EmptyValueException;
+use Hilos\Core\Exception\ItemNotFoundForUpdateException;
+use Hilos\Core\Exception\ValueTooLongException;
+use Hilos\Core\Exception\ValueTooShortException;
 use Hilos\Database\Actions\Item\DbActions;
 use Hilos\HilosException;
-use Hilos\Runtime\Exception\RtBaseException;
 use Hilos\Utils\Helpers\TimeHelper;
 
 /**
@@ -26,10 +29,10 @@ final class UserActions extends DbActions
      * Renames current user item (only editable field). Validates and persists.
      *
      * @param string $newName New display name (trimmed)
-     * @throws RtBaseException When user not found for rename (id is null)
-     * @throws RtBaseException When name is empty
-     * @throws RtBaseException When name is too short
-     * @throws RtBaseException When name exceeds maximum length
+     * @throws ItemNotFoundForUpdateException When user not found for rename (id is null)
+     * @throws EmptyValueException When name is empty
+     * @throws ValueTooShortException When name is too short
+     * @throws ValueTooLongException When name exceeds maximum length
      * @throws HilosException On database error or other failure
      */
     public function rename(string $newName): void
@@ -37,18 +40,18 @@ final class UserActions extends DbActions
         $this->ensureCanWrite();
 
         if ($this->object->id === null) {
-            throw new RtBaseException('User not found for rename (id is null)');
+            throw new ItemNotFoundForUpdateException('User not found for rename (id is null)');
         }
 
         $name = trim($newName);
         if ($name === '') {
-            throw new RtBaseException('User name cannot be empty');
+            throw new EmptyValueException('User name cannot be empty');
         }
         if (mb_strlen($name) < self::NAME_MIN_LENGTH) {
-            throw new RtBaseException('User name is too short');
+            throw new ValueTooShortException('User name is too short');
         }
         if (mb_strlen($name) > self::NAME_MAX_LENGTH) {
-            throw new RtBaseException('User name exceeds maximum length of ' . self::NAME_MAX_LENGTH . ' characters');
+            throw new ValueTooLongException('User name exceeds maximum length of ' . self::NAME_MAX_LENGTH . ' characters');
         }
 
         if ($this->object->name === $name) {

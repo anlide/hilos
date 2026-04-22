@@ -20,6 +20,8 @@ use Demo\Chat\Pages\Hilos\Users\DTO\HilosUserUpdateActionDTO;
 use Demo\Chat\Tables\TableChatContext;
 use Hilos\Constants\HilosPageRouteParams;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Core\Exception\ItemNotFoundForUpdateException;
+use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Page\Exception\PageResourceNotFoundException;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\EmitDbChangeSignalData;
@@ -27,8 +29,10 @@ use Hilos\Core\Router\DTO\EntitiesChangesDTO;
 use Hilos\Core\Table\DTO\TableMutationSignalData;
 use Hilos\Core\Table\Mutation\TableMutationEntry;
 use Hilos\Core\Table\Mutation\TableMutationType;
+use Hilos\Database\Exception\View\CollectionNotManualException;
+use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
+use Hilos\HilosException;
 use Hilos\Pages\Users\AbstractHilosUserPage;
-use RuntimeException;
 use Throwable;
 
 /**
@@ -48,6 +52,8 @@ final class UserPage extends AbstractHilosUserPage
      * @param string $acceptKey WebSocket accept key for the subscribing client
      * @param array<string, string> $params Route params from page subscription
      * @throws PageResourceNotFoundException When user ID is invalid or user not found
+     * @throws ObjectGetIdStringNotImplementedException When user entity cannot be converted to an ID string
+     * @throws CollectionNotManualException When user snapshot cannot be created from an automatic collection
      */
     public function onSubscribe(string $acceptKey, array $params = []): void
     {
@@ -108,12 +114,14 @@ final class UserPage extends AbstractHilosUserPage
      *
      * @param string $acceptKey WebSocket accept key for the requesting client
      * @param HilosUserUpdateActionDTO $dto Update action payload
+     * @throws ValidationException When rename payload violates user validation rules
+     * @throws HilosException On database error or broadcast failure
      */
     private function handleHilosUserUpdate(string $acceptKey, HilosUserUpdateActionDTO $dto): void
     {
         $dbUser = Hilos::$db->users[$dto->id];
         if ($dbUser === null) {
-            throw new RuntimeException("User #{$dto->id} not found");
+            throw new ItemNotFoundForUpdateException("User #{$dto->id} not found");
         }
 
         $oldName = $dbUser->name;

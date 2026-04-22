@@ -6,12 +6,12 @@ namespace Demo\Chat\Tables\User\Actions;
 
 use Demo\Chat\Hilos;
 use Demo\Chat\Tables\User\DTO\UserUpdateActionDTO;
+use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
 use Hilos\Core\Table\Actions\TableItemActions;
 use Hilos\Core\Table\Mutation\TableMutationEntry;
 use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\HilosException;
-use Hilos\Runtime\Exception\RtBaseException;
 
 /**
  * UserItemActions - Item-level actions for a single user (table layer).
@@ -33,7 +33,7 @@ final class UserItemActions extends TableItemActions
         try {
             $dbUser = Hilos::$db->users[$this->itemId];
             $dbUser->actions->rename($dto->name);
-        } catch (RtBaseException $e) {
+        } catch (ValidationException $e) {
             throw new HilosException('Failed to update user: ' . $e->getMessage(), previous: $e);
         }
         return $this->mutation(TableMutationType::Updated, $dbUser->toArray(toFrontend: true));
