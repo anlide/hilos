@@ -53,13 +53,11 @@ export interface WebSocketTimeSync<T extends string = string> {
 /**
  * Standard shape of fail-outcome signal payload.
  *
- * `message` is human-readable text and is always provided by the backend
+ * `reason` is human-readable text and is always provided by the backend
  * (i18n-ready, suitable for direct display in UI / toast).
- * `reason` is an enum-like code for programmatic handling.
  */
-export interface ActionFailData<R extends string = string> {
-  reason: R
-  message: string
+export interface ActionFailData {
+  reason: string
 }
 
 /**
@@ -77,13 +75,12 @@ export type WebSocketActionSuccess<T extends string = string, D = undefined> =
  * Fail-outcome acknowledgement of a client-initiated action.
  *
  * Convention: emitted as `<action>_fail` addressed only to the initiator.
- * `data` is a mandatory {@link ActionFailData} — backend always provides both
- * reason code and human-readable message.
+ * `data` is a mandatory {@link ActionFailData}.
  */
-export interface WebSocketActionFail<T extends string = string, R extends string = string> {
+export interface WebSocketActionFail<T extends string = string> {
   type: T
   outcome: 'fail'
-  data: ActionFailData<R>
+  data: ActionFailData
   time?: number
 }
 

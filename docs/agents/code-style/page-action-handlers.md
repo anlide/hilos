@@ -20,27 +20,40 @@ especially `onAction()`.
 5. Page handlers may validate page context that the action layer cannot know,
    such as the current connection, requested page params, or whether the target
    item exists before an item-level action can be created.
-6. Catch the declared action-layer exceptions at the call site and map them to
-   the page's fail/error signal. Keep success acks after the mutation and
-   required fan-out have completed.
+6. Wrap the whole `switch ($action)` in `try/catch`. Handlers should throw
+   validation, logic, SQL, and action-layer failures; `onAction()` maps them to
+   the page's fail/error signal with `sendToUser()`. Prefer `catch (Throwable
+   $e)` when the page has a user-visible failure signal, so unexpected DB/runtime
+   failures also clear frontend loading state.
 7. Use action constants in `case` labels and signal constants in acks/errors.
    Do not duplicate raw action names as strings in handlers.
+8. Do not invent hidden fail signals. If an action has no user-facing pending
+   state or fail UI, log the caught error in a small helper; add a real signal
+   contract before trying to surface it in the frontend.
 
 ## Shape
 
 ```php
 public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): void
 {
-    switch ($action) {
-        case ChatSignalConstants::USER_UPDATE:
-            if ($dto instanceof UserUpdateActionDTO) {
-                $this->handleUserUpdate($acceptKey, $dto);
-            }
+    try {
+        switch ($action) {
+            case ChatSignalConstants::USER_UPDATE:
+                if ($dto instanceof UserUpdateActionDTO) {
+                    $this->handleUserUpdate($acceptKey, $dto);
+                }
 
-            break;
+                break;
 
-        default:
-            return;
+            default:
+                return;
+        }
+    } catch (Throwable $e) {
+        $this->sendToUser(
+            ChatSignalConstants::USER_UPDATE_FAIL,
+            $acceptKey,
+            new ActionFailSignalData($e->getMessage()),
+        );
     }
 }
 ```

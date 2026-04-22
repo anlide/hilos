@@ -119,7 +119,6 @@ import {
   hilosUserUpdateSuccess,
   hilosUserUpdateFail,
   subscriptionPageHilosUser,
-  type HilosUserUpdateFailReason,
 } from '@/signals'
 
 const route = useRoute()
@@ -222,9 +221,9 @@ const onUpdateSuccess = () => {
   showModal.value = false
 }
 
-const onUpdateFail = ({ message }: { reason: HilosUserUpdateFailReason; message: string }) => {
+const onUpdateFail = ({ reason }: { reason: string }) => {
   saveLoading.value = false
-  updateErrorMessage.value = message
+  updateErrorMessage.value = reason
 }
 
 const onSubscriptionSuccess = ({ userId }: { userId: number }) => {

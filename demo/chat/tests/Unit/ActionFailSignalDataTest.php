@@ -15,14 +15,14 @@ use PHPUnit\Framework\TestCase;
  *
  * Pins down the envelope contract consumed by
  * {@see DaemonManager::mergeEnvelopeMetadata()}:
- * envelope outcome is `fail`, and the inner payload always contains
- * both `reason` (enum-like code) and `message` (human-readable, i18n-ready).
+ * envelope outcome is `fail`, and the inner payload contains a
+ * human-readable `reason`.
  */
 final class ActionFailSignalDataTest extends TestCase
 {
     public function testImplementsRequiredInterfaces(): void
     {
-        $dto = new ActionFailSignalData('empty', 'User name cannot be empty');
+        $dto = new ActionFailSignalData('User name cannot be empty');
 
         $this->assertInstanceOf(SignalDataInterface::class, $dto);
         $this->assertInstanceOf(WebSocketEnvelopeAware::class, $dto);
@@ -30,48 +30,47 @@ final class ActionFailSignalDataTest extends TestCase
 
     public function testEnvelopeOutcomeIsFail(): void
     {
-        $dto = new ActionFailSignalData('empty', 'User name cannot be empty');
+        $dto = new ActionFailSignalData('User name cannot be empty');
 
         $this->assertSame('fail', $dto->getEnvelopeOutcome());
     }
 
     public function testEnvelopeTimeDefaultsToNull(): void
     {
-        $dto = new ActionFailSignalData('empty', 'User name cannot be empty');
+        $dto = new ActionFailSignalData('User name cannot be empty');
 
         $this->assertNull($dto->getEnvelopeTime());
     }
 
-    public function testPayloadContainsReasonAndMessage(): void
+    public function testPayloadContainsReason(): void
     {
-        $dto = new ActionFailSignalData('name_taken', 'This name is already taken');
+        $dto = new ActionFailSignalData('This name is already taken');
 
         $this->assertSame(
-            ['reason' => 'name_taken', 'message' => 'This name is already taken'],
+            ['reason' => 'This name is already taken'],
             $dto->toArray(),
         );
     }
 
-    public function testReasonAndMessageArePublicReadonlyFields(): void
+    public function testReasonIsPublicReadonlyField(): void
     {
-        $dto = new ActionFailSignalData('empty', 'User name cannot be empty');
+        $dto = new ActionFailSignalData('User name cannot be empty');
 
-        $this->assertSame('empty', $dto->reason);
-        $this->assertSame('User name cannot be empty', $dto->message);
+        $this->assertSame('User name cannot be empty', $dto->reason);
     }
 
-    public function testMessageIsNeverEmptyInContract(): void
+    public function testReasonIsNeverEmptyInContract(): void
     {
-        // The contract is: backend always provides a human-readable message.
+        // The contract is: backend always provides a human-readable reason.
         // We cannot enforce non-empty string at the type level in PHP, but
         // we can at least document and assert the expected shape here so
-        // accidental empty-message regressions surface in code review.
-        $dto = new ActionFailSignalData('empty', 'User name cannot be empty');
+        // accidental empty-reason regressions surface in code review.
+        $dto = new ActionFailSignalData('User name cannot be empty');
 
         $arr = $dto->toArray();
-        $this->assertArrayHasKey('message', $arr);
-        $this->assertIsString($arr['message']);
-        $this->assertNotSame('', $arr['message']);
+        $this->assertArrayHasKey('reason', $arr);
+        $this->assertIsString($arr['reason']);
+        $this->assertNotSame('', $arr['reason']);
     }
 
     /**
@@ -82,17 +81,16 @@ final class ActionFailSignalDataTest extends TestCase
      */
     public function testRoundtripPreservesConcreteTypeAndEnvelopeMarker(): void
     {
-        $original = new ActionFailSignalData('name_taken', 'This name is already taken');
+        $original = new ActionFailSignalData('This name is already taken');
 
         $restored = ActionFailSignalData::fromArray($original->toArray());
 
         $this->assertInstanceOf(ActionFailSignalData::class, $restored);
         $this->assertInstanceOf(WebSocketEnvelopeAware::class, $restored);
         $this->assertSame('fail', $restored->getEnvelopeOutcome());
-        $this->assertSame('name_taken', $restored->reason);
-        $this->assertSame('This name is already taken', $restored->message);
+        $this->assertSame('This name is already taken', $restored->reason);
         $this->assertSame(
-            ['reason' => 'name_taken', 'message' => 'This name is already taken'],
+            ['reason' => 'This name is already taken'],
             $restored->toArray(),
         );
     }

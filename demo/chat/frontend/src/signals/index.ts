@@ -22,9 +22,5 @@ export { botJoined, botLeft, botUpdated } from './botEvents'
 export { newEvent, type NewEventPayload } from './newEvent'
 export { subscriptionPageHilosLogs } from './subscriptionPageHilosLogs'
 export { subscriptionPageHilosUser } from './subscriptionPageHilosUser'
-export { renameSuccess, renameFail, type RenameFailReason } from './rename'
-export {
-  hilosUserUpdateSuccess,
-  hilosUserUpdateFail,
-  type HilosUserUpdateFailReason,
-} from './hilosUserUpdate'
+export { renameSuccess, renameFail } from './rename'
+export { hilosUserUpdateSuccess, hilosUserUpdateFail } from './hilosUserUpdate'

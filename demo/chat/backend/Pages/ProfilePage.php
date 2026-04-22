@@ -23,6 +23,8 @@ use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\EntitiesChangesDTO;
 use Hilos\HilosException;
 use Hilos\Utils\Logger;
+use RuntimeException;
+use Throwable;
 
 /**
  * ProfilePage - User profile page handler.
@@ -58,15 +60,24 @@ final class ProfilePage extends AbstractChatPage
      */
     public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): void
     {
-        switch ($action) {
-            case ChatSignalConstants::RENAME:
-                if ($dto instanceof RenameActionDTO) {
-                    $this->handleRename($acceptKey, $dto);
-                }
-                break;
+        try {
+            switch ($action) {
+                case ChatSignalConstants::RENAME:
+                    if ($dto instanceof RenameActionDTO) {
+                        $this->handleRename($acceptKey, $dto);
+                    }
 
-            default:
-                Logger::logAgentError('ProfilePage', "Unknown action: {$action}");
+                    break;
+
+                default:
+                    Logger::logAgentError('ProfilePage', "Unknown action: {$action}");
+            }
+        } catch (Throwable $e) {
+            $this->getChatAgent()->sendToUser(
+                ChatSignalConstants::RENAME_FAIL,
+                $acceptKey,
+                new ActionFailSignalData($e->getMessage()),
+            );
         }
     }
 
@@ -81,17 +92,12 @@ final class ProfilePage extends AbstractChatPage
     {
         if (!$dto->isValid()) {
             Logger::logAgentError('ProfilePage', "Empty new name (acceptKey={$acceptKey})");
-            $this->getChatAgent()->sendToUser(
-                ChatSignalConstants::RENAME_FAIL,
-                $acceptKey,
-                new ActionFailSignalData('empty', 'User name cannot be empty'),
-            );
-            return;
+            throw new RuntimeException('User name cannot be empty');
         }
 
         if (!isset(Hilos::$rt->connections[$acceptKey])) {
             Logger::logAgentError('ProfilePage', "User not found for acceptKey={$acceptKey}");
-            return;
+            throw new RuntimeException('User session not found');
         }
 
         $userId = Hilos::$rt->connections[$acceptKey]->userId;

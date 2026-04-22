@@ -27,8 +27,9 @@ use Hilos\Core\Router\DTO\EntitiesChangesDTO;
 use Hilos\Core\Table\DTO\TableMutationSignalData;
 use Hilos\Core\Table\Mutation\TableMutationEntry;
 use Hilos\Core\Table\Mutation\TableMutationType;
-use Hilos\HilosException;
 use Hilos\Pages\Users\AbstractHilosUserPage;
+use RuntimeException;
+use Throwable;
 
 /**
  * UserPage - Hilos single user page implementation for demo.
@@ -76,23 +77,31 @@ final class UserPage extends AbstractHilosUserPage
      */
     public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): void
     {
-        switch ($action) {
-            case ChatSignalConstants::HILOS_USER_UPDATE:
-                if ($dto instanceof HilosUserUpdateActionDTO) {
-                    $this->handleHilosUserUpdate($acceptKey, $dto);
-                }
+        try {
+            switch ($action) {
+                case ChatSignalConstants::HILOS_USER_UPDATE:
+                    if ($dto instanceof HilosUserUpdateActionDTO) {
+                        $this->handleHilosUserUpdate($acceptKey, $dto);
+                    }
 
-                break;
+                    break;
 
-            default:
-                return;
+                default:
+                    return;
+            }
+        } catch (Throwable $e) {
+            $this->sendToUser(
+                ChatSignalConstants::HILOS_USER_UPDATE_FAIL,
+                $acceptKey,
+                new ActionFailSignalData($e->getMessage()),
+            );
         }
     }
 
     /**
      * Renames a user through {@see UserActions::rename} and fans out updates.
      *
-     * Action-layer validation failures become a dedicated
+     * Thrown failures become a dedicated
      * {@see ChatSignalConstants::HILOS_USER_UPDATE_FAIL} ack to the initiator.
      * On success, sends {@see ChatSignalConstants::HILOS_USER_UPDATE_SUCCESS}
      * after the broadcast fan-out.
@@ -104,26 +113,11 @@ final class UserPage extends AbstractHilosUserPage
     {
         $dbUser = Hilos::$db->users[$dto->id];
         if ($dbUser === null) {
-            $this->sendToUser(
-                ChatSignalConstants::HILOS_USER_UPDATE_FAIL,
-                $acceptKey,
-                new ActionFailSignalData('not_found', "User #{$dto->id} not found"),
-            );
-            return;
+            throw new RuntimeException("User #{$dto->id} not found");
         }
 
         $oldName = $dbUser->name;
-
-        try {
-            $dbUser->actions->rename($dto->name);
-        } catch (HilosException $e) {
-            $this->sendToUser(
-                ChatSignalConstants::HILOS_USER_UPDATE_FAIL,
-                $acceptKey,
-                new ActionFailSignalData('rename_failed', $e->getMessage()),
-            );
-            return;
-        }
+        $dbUser->actions->rename($dto->name);
 
         $newName = $dbUser->name;
         $signal = new TableMutationSignalData(

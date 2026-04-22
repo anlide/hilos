@@ -24,6 +24,9 @@ Use this skill for style-sensitive Hilos edits and reviews. Start with `agents.m
 4. Keep action routing and handler code aligned with the page action handler guide.
 5. Avoid one-use locals unless they improve clarity under the local variable rule.
 6. Keep comments concise and in English.
+7. For `Page::onAction()`, keep a `try/catch` around the routing `switch` and
+   convert thrown handler failures to the page's user-facing fail/error signal
+   with `sendToUser()`.
 
 ## Hard Rules
 

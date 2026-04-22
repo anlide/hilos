@@ -31,26 +31,22 @@ describe('hilosUserUpdateFail', () => {
   })
 
   it('parses a well-formed fail payload', () => {
-    const parsed = hilosUserUpdateFail.parse({ reason: 'not_found', message: 'No such user' })
+    const parsed = hilosUserUpdateFail.parse({ reason: 'No such user' })
 
-    expect(parsed).toEqual({ reason: 'not_found', message: 'No such user' })
+    expect(parsed).toEqual({ reason: 'No such user' })
   })
 
-  it.each(['invalid_id', 'empty_name', 'not_found', 'rename_failed'] as const)(
-    'accepts known reason code %s',
+  it.each(['Invalid user id', 'User name cannot be empty', 'No such user'] as const)(
+    'accepts failure reason %s',
     (reason) => {
-      const parsed = hilosUserUpdateFail.parse({ reason, message: 'msg' })
-      expect(parsed).toEqual({ reason, message: 'msg' })
+      const parsed = hilosUserUpdateFail.parse({ reason })
+      expect(parsed).toEqual({ reason })
     },
   )
 
-  it('returns null for unknown reason codes', () => {
-    expect(hilosUserUpdateFail.parse({ reason: 'weird', message: 'x' })).toBeNull()
-  })
-
-  it('returns null when message is missing or not a string', () => {
-    expect(hilosUserUpdateFail.parse({ reason: 'not_found' })).toBeNull()
-    expect(hilosUserUpdateFail.parse({ reason: 'not_found', message: 42 })).toBeNull()
+  it('returns null when reason is missing or not a string', () => {
+    expect(hilosUserUpdateFail.parse({ message: 'No such user' })).toBeNull()
+    expect(hilosUserUpdateFail.parse({ reason: 42 })).toBeNull()
   })
 
   it('returns null for completely malformed input', () => {

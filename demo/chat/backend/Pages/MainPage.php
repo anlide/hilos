@@ -13,6 +13,7 @@ use Demo\Chat\Core\Page\DTO\FileModerationDismissActionDTO;
 use Demo\Chat\Core\Page\DTO\FileUploadInitActionDTO;
 use Demo\Chat\Core\Page\DTO\MessageActionDTO;
 use Demo\Chat\Core\Router\DTO\ChatEventSignalDTO;
+use Demo\Chat\Core\Router\DTO\FileUploadRejectedSignalData;
 use Demo\Chat\Core\Router\DTO\ModerationRequestSignalData;
 use Demo\Chat\Core\Router\DTO\ModerationStateUpdateSignalData;
 use Demo\Chat\Database\DbChatContext;
@@ -25,6 +26,7 @@ use Hilos\Core\Router\DTO\EntitiesChangesDTO;
 use Hilos\HilosException;
 use Hilos\Utils\Logger;
 use Random\RandomException;
+use Throwable;
 
 /**
  * MainPage - Main chat page handler.
@@ -95,27 +97,47 @@ final class MainPage extends AbstractChatPage
      */
     public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): void
     {
-        switch ($action) {
-            case ChatSignalConstants::MESSAGE:
-                if ($dto instanceof MessageActionDTO) {
-                    $this->handleMessage($acceptKey, $dto);
-                }
-                break;
+        try {
+            switch ($action) {
+                case ChatSignalConstants::MESSAGE:
+                    if ($dto instanceof MessageActionDTO) {
+                        $this->handleMessage($acceptKey, $dto);
+                    }
 
-            case ChatSignalConstants::FILE_UPLOAD_INIT:
-                if ($dto instanceof FileUploadInitActionDTO) {
-                    $this->handleFileUploadInit($acceptKey, $dto);
-                }
-                break;
+                    break;
 
-            case ChatSignalConstants::FILE_MODERATION_DISMISS:
-                if ($dto instanceof FileModerationDismissActionDTO) {
-                    $this->handleFileModerationDismiss($acceptKey);
-                }
-                break;
+                case ChatSignalConstants::FILE_UPLOAD_INIT:
+                    if ($dto instanceof FileUploadInitActionDTO) {
+                        $this->handleFileUploadInit($acceptKey, $dto);
+                    }
 
-            default:
-                Logger::logAgentError('MainPage', "Unknown action: {$action}");
+                    break;
+
+                case ChatSignalConstants::FILE_MODERATION_DISMISS:
+                    if ($dto instanceof FileModerationDismissActionDTO) {
+                        $this->handleFileModerationDismiss($acceptKey);
+                    }
+
+                    break;
+
+                default:
+                    Logger::logAgentError('MainPage', "Unknown action: {$action}");
+            }
+        } catch (Throwable $e) {
+            $this->handleActionFailure($acceptKey, $action, $e);
+        }
+    }
+
+    private function handleActionFailure(string $acceptKey, string $action, Throwable $e): void
+    {
+        Logger::logAgentError('MainPage', "Action {$action} failed: {$e->getMessage()}");
+
+        if ($action === ChatSignalConstants::FILE_UPLOAD_INIT) {
+            $this->getChatAgent()->sendToUser(
+                ChatSignalConstants::FILE_UPLOAD_REJECTED,
+                $acceptKey,
+                new FileUploadRejectedSignalData('server_error', $e->getMessage()),
+            );
         }
     }
 

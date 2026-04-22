@@ -145,7 +145,7 @@ final class ChatSignalConstants
     /** @var string Ack: hilos_user_update succeeded (sent to initiator) */
     public const string HILOS_USER_UPDATE_SUCCESS = 'hilos_user_update_success';
 
-    /** @var string Ack: hilos_user_update failed (sent to initiator with reason + message) */
+    /** @var string Ack: hilos_user_update failed (sent to initiator with reason text) */
     public const string HILOS_USER_UPDATE_FAIL = 'hilos_user_update_fail';
 
     /** @var string Bot create signal name */

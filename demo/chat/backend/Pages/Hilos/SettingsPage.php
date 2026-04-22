@@ -18,9 +18,9 @@ use Hilos\Core\Router\DTO\EntitiesChangesDTO;
 use Hilos\Core\Table\DTO\TableActionErrorSignalData;
 use Hilos\Core\Table\DTO\TableMutationSignalData;
 use Hilos\Core\Table\Exception\TableActionException;
-use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\HilosException;
 use Hilos\Pages\AbstractHilosSettingsPage;
+use Throwable;
 
 /**
  * SettingsPage - Hilos settings page handler.
@@ -86,7 +86,7 @@ final class SettingsPage extends AbstractHilosSettingsPage
                 default:
                     throw new TableActionException("Unknown action: {$action}");
             }
-        } catch (TableActionException | InvalidArgumentException $e) {
+        } catch (Throwable $e) {
             $this->sendToUser(
                 ChatSignalConstants::TABLE_ACTION_ERROR,
                 $acceptKey,

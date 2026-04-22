@@ -176,9 +176,9 @@ const onRenameSuccess = () => {
   showModal.value = false
 }
 
-const onRenameFail = ({ message }: { reason: string; message: string }) => {
+const onRenameFail = ({ reason }: { reason: string }) => {
   saveLoading.value = false
-  renameErrorMessage.value = message
+  renameErrorMessage.value = reason
 }
 
 onMounted(() => {

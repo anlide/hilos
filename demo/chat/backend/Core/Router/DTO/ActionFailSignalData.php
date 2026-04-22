@@ -18,24 +18,19 @@ use Hilos\Core\Router\WebSocketEnvelopeAware;
  * Carries an envelope-level `outcome='fail'` marker that the frontend
  * router uses to dispatch to failure handlers (see {@see WebSocketEnvelopeAware}).
  *
- * The `data` payload always contains:
- * - `reason` — enum-like code for programmatic handling (e.g. `empty`, `name_taken`);
- * - `message` — human-readable text, always populated by the backend (i18n-ready,
- *   toast-ready, suitable for direct display in UI).
+ * The `data` payload contains `reason` as human-readable text owned by the
+ * backend, suitable for direct display in UI.
  */
 final class ActionFailSignalData extends SignalData implements SignalDataInterface, WebSocketEnvelopeAware
 {
     /**
-     * @param string $reason Enum-like reason code for programmatic handling
-     * @param string $message Human-readable error text (backend-owned, i18n-ready)
+     * @param string $reason Human-readable error text
      */
     public function __construct(
         public readonly string $reason,
-        public readonly string $message,
     ) {
         parent::__construct([
             'reason' => $this->reason,
-            'message' => $this->message,
         ]);
     }
 
@@ -62,7 +57,6 @@ final class ActionFailSignalData extends SignalData implements SignalDataInterfa
     public static function fromArray(array $data): static
     {
         $reason = isset($data['reason']) && is_string($data['reason']) ? $data['reason'] : '';
-        $message = isset($data['message']) && is_string($data['message']) ? $data['message'] : '';
-        return new self($reason, $message);
+        return new self($reason);
     }
 }

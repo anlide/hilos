@@ -23,6 +23,7 @@ use Hilos\Core\Table\DTO\TableActionErrorSignalData;
 use Hilos\Core\Table\DTO\TableMutationSignalData;
 use Hilos\Core\Table\Exception\TableActionException;
 use Hilos\HilosException;
+use Throwable;
 
 /**
  * AdminUsersPage - Admin users table page handler.
@@ -80,7 +81,7 @@ final class AdminUsersPage extends AbstractChatPage
                 default:
                     throw new TableActionException("Unknown action: {$action}");
             }
-        } catch (TableActionException $e) {
+        } catch (Throwable $e) {
             $tableKey = $dto instanceof TableRefreshActionDTO ? ($dto->tableKey ?: TableChatContext::users) : TableChatContext::users;
 
             $this->getChatAgent()->sendToUser(

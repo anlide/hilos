@@ -7,8 +7,12 @@ namespace Demo\Chat\Pages\Hilos\Guardian;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Core\Page\DTO\GuardianAgentRunStartActionDTO;
 use Demo\Chat\Core\Page\DTO\GuardianAgentRunStopActionDTO;
+use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
+use Hilos\Core\Router\SignalData;
 use Hilos\Pages\AbstractHilosGuardianAgentPage;
+use Hilos\Utils\Logger;
+use Throwable;
 
 /**
  * GuardianAgentPage - Guardian AI agent page implementation for demo.
@@ -24,23 +28,38 @@ final class GuardianAgentPage extends AbstractHilosGuardianAgentPage
      */
     public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): void
     {
-        switch ($action) {
-            case ChatSignalConstants::GUARDIAN_AGENT_RUN_START:
-                if ($dto instanceof GuardianAgentRunStartActionDTO) {
-                    $this->handleStart($dto);
-                }
+        try {
+            switch ($action) {
+                case ChatSignalConstants::GUARDIAN_AGENT_RUN_START:
+                    if ($dto instanceof GuardianAgentRunStartActionDTO) {
+                        $this->handleStart($dto);
+                    }
 
-                break;
+                    break;
 
-            case ChatSignalConstants::GUARDIAN_AGENT_RUN_STOP:
-                if ($dto instanceof GuardianAgentRunStopActionDTO) {
-                    $this->handleStop($dto);
-                }
+                case ChatSignalConstants::GUARDIAN_AGENT_RUN_STOP:
+                    if ($dto instanceof GuardianAgentRunStopActionDTO) {
+                        $this->handleStop($dto);
+                    }
 
-                break;
+                    break;
 
-            default:
-                return;
+                default:
+                    return;
+            }
+        } catch (Throwable $e) {
+            Logger::logAgentError('GuardianAgentPage', "Action {$action} failed: {$e->getMessage()}");
+
+            if ($dto instanceof GuardianAgentRunStartActionDTO || $dto instanceof GuardianAgentRunStopActionDTO) {
+                $this->sendToUser(
+                    HilosSignalConstants::GUARDIAN_AGENT_STATUS_UPDATE,
+                    $acceptKey,
+                    new SignalData([
+                        'agentId' => $dto->agentId,
+                        'status' => 'failed',
+                    ]),
+                );
+            }
         }
     }
 
