@@ -25,7 +25,9 @@ Browser                    WS Server (Daemon)         ChatAgent (Worker)
   │                              │                          │
   ├──{ page:"main", params:{} }─▶│                          │
   │    PAGE_SUBSCRIBE             │──PAGE_SUBSCRIBE─────────▶│
-  │                              │                   MainPage::onSubscribe():
+  │                              │                   MainPage::onSubscribe(
+  │                              │                     acceptKey,
+  │                              │                     PageRouteParams):
   │                              │                   send SUBSCRIPTION_PAGE_MAIN
   │                              │                   with full state snapshot
   │◀────{ type:"subscription_page_main",                     │
@@ -47,3 +49,14 @@ Invalid token → sends error response and closes connection.
 
 Vue SDK auto-reconnects on disconnect. After reconnect it re-sends handshake + re-subscribes to current page.
 Server treats this as a new connection (new `acceptKey`), old connection state cleaned up on close.
+
+## Page route params
+
+The `params` field on a PAGE_SUBSCRIBE envelope is still transported as
+`Record<string, string>`. The page signal router wraps it into
+`Hilos\Core\Page\PageRouteParams` before calling `onSubscribe()`. Pages read
+the map through typed accessors (`requirePositiveInt()`, `requireString()`,
+`requireEnum()`, …). A missing or malformed route param becomes a structured
+HTTP 400 subscription error (`missing_page_route_param` or
+`invalid_page_route_param`) — the connection stays open, only the subscribe
+attempt fails.

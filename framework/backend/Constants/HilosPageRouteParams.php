@@ -21,4 +21,9 @@ class HilosPageRouteParams
      * Route param for {@see HilosPageConstants::HILOS_SIL_USER_HISTORY} (`/hilos/sil/users/{userId}`).
      */
     public const string HILOS_SIL_USER_HISTORY_USER_ID = self::HILOS_USER_USER_ID;
+
+    /**
+     * Route param for {@see HilosPageConstants::HILOS_GUARDIAN_AGENT} (`/hilos/guardian/{agentId}`).
+     */
+    public const string HILOS_GUARDIAN_AGENT_AGENT_ID = 'agentId';
 }

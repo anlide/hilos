@@ -9,6 +9,7 @@ use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Page\AbstractChatPage;
 use Demo\Chat\Core\Router\DTO\ChatEventSignalDTO;
 use Hilos\Core\Router\DTO\EntitiesChangesDTO;
+use Hilos\Core\Page\PageRouteParams;
 
 /**
  * UserPage - User page handler.
@@ -23,9 +24,9 @@ final class UserPage extends AbstractChatPage
      * Handle page-specific subscription logic.
      *
      * @param string $acceptKey Accept key
-     * @param array<string, string> $params Route params from page subscription (e.g. ['id' => userId])
+     * @param PageRouteParams $params Route params from page subscription (e.g. ['id' => userId])
      */
-    public function onSubscribe(string $acceptKey, array $params = []): void
+    public function onSubscribe(string $acceptKey, PageRouteParams $params): void
     {
         $this->getChatAgent()->sendToUser(
             ChatSignalConstants::SUBSCRIPTION_PAGE_USER,

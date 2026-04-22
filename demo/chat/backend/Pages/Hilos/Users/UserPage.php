@@ -18,7 +18,6 @@ use Demo\Chat\Database\View\Collection\Users;
 use Demo\Chat\Hilos;
 use Demo\Chat\Pages\Hilos\Users\DTO\HilosUserUpdateActionDTO;
 use Demo\Chat\Tables\TableChatContext;
-use Hilos\Constants\HilosPageRouteParams;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Core\Exception\ValidationException;
@@ -33,6 +32,7 @@ use Hilos\Database\Exception\View\CollectionNotManualException;
 use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 use Hilos\HilosException;
 use Hilos\Pages\Users\AbstractHilosUserPage;
+use Hilos\Pages\Users\DTO\HilosUserPageSubscribeParams;
 use Throwable;
 
 /**
@@ -47,28 +47,28 @@ final class UserPage extends AbstractHilosUserPage
      * Sends the initial single-user entity snapshot to a Hilos user-detail subscriber.
      *
      * Throws PageResourceNotFoundException when user is not found, which triggers
-     * subscription_page_error signal while keeping the subscription active.
+     * subscription_page_error signal while keeping the subscription active. The
+     * `userId` param is already validated to be `> 0` by
+     * {@see HilosUserPageSubscribeParams::fromPageRouteParams()}.
      *
      * @param string $acceptKey WebSocket accept key for the subscribing client
-     * @param array<string, string> $params Route params from page subscription
-     * @throws PageResourceNotFoundException When user ID is invalid or user not found
+     * @param HilosUserPageSubscribeParams $params Parsed subscribe params
+     * @throws PageResourceNotFoundException When the user does not exist in the DB
      * @throws ObjectGetIdStringNotImplementedException When user entity cannot be converted to an ID string
      * @throws CollectionNotManualException When user snapshot cannot be created from an automatic collection
      */
-    public function onSubscribe(string $acceptKey, array $params = []): void
+    protected function onHilosUserSubscribe(string $acceptKey, HilosUserPageSubscribeParams $params): void
     {
-        $userId = (int) ($params[HilosPageRouteParams::HILOS_USER_USER_ID] ?? 0);
-        $dbUser = $userId > 0 ? Hilos::$db->users[$userId] : null;
-
+        $dbUser = Hilos::$db->users[$params->userId];
         if ($dbUser === null) {
-            throw new PageResourceNotFoundException("User #{$userId} not found");
+            throw new PageResourceNotFoundException("User #{$params->userId} not found");
         }
 
         $this->sendToUser(
             HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_USER,
             $acceptKey,
             HilosUserSubscriptionSignalData::fromEntities(
-                $userId,
+                $params->userId,
                 new EntitiesChangesDTO(full: [DbChatContext::users => Users::fromSingleItem($dbUser)]),
             ),
         );

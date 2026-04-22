@@ -8,6 +8,7 @@ use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Page\AbstractHilosPage;
 use Hilos\Core\Router\SignalData;
+use Hilos\Core\Page\PageRouteParams;
 
 /**
  * AbstractHilosUsersPage - Abstract base for Hilos users list page.
@@ -25,9 +26,9 @@ abstract class AbstractHilosUsersPage extends AbstractHilosPage
      * Handle page subscription.
      *
      * @param string $acceptKey WebSocket accept key
-     * @param array<string, string> $params Page params from route (e.g. ['id' => '123'])
+     * @param PageRouteParams $params Page params from route (e.g. ['id' => '123'])
      */
-    public function onSubscribe(string $acceptKey, array $params = []): void
+    public function onSubscribe(string $acceptKey, PageRouteParams $params): void
     {
         $this->sendToUser(
             HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_USERS,

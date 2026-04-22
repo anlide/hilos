@@ -25,6 +25,7 @@ use Hilos\Utils\Exception\MissingEnvironmentVariableException;
 use Hilos\Utils\Helpers\FileSystemHelper;
 use Hilos\Utils\Logger;
 use JsonException;
+use Hilos\Core\Page\PageRouteParams;
 
 /**
  * Abstract Hilos admin page: logs overview (rotation batch metrics under the daemon log archive).
@@ -149,9 +150,9 @@ abstract class AbstractHilosLogsPage extends AbstractHilosPage
      * so the whole archive tree is not rescanned on every tab.
      *
      * @param string $acceptKey Target connection accept key
-     * @param array<string, string> $params Route parameters (unused for this page)
+     * @param PageRouteParams $params Route parameters (unused for this page)
      */
-    public function onSubscribe(string $acceptKey, array $params = []): void
+    public function onSubscribe(string $acceptKey, PageRouteParams $params): void
     {
         Logger::logAgentInfo(HilosAgentType::HILOS_LOGS, "hilos_logs onSubscribe acceptKey={$acceptKey}");
         self::$logsOverviewSubscribers[$acceptKey] = true;

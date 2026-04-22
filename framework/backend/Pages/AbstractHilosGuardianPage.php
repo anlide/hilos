@@ -10,6 +10,7 @@ use Hilos\Core\Agent\Hilos\AbstractHilosGuardianAgent;
 use Hilos\Core\Page\AbstractHilosPage;
 use Hilos\Core\Router\SignalData;
 use LogicException;
+use Hilos\Core\Page\PageRouteParams;
 
 /**
  * AbstractHilosGuardianPage - Abstract base for Hilos guardian page.
@@ -24,9 +25,9 @@ abstract class AbstractHilosGuardianPage extends AbstractHilosPage
      * Handle page subscription.
      *
      * @param string $acceptKey WebSocket accept key
-     * @param array<string, string> $params Page params from route (e.g. ['id' => '123'])
+     * @param PageRouteParams $params Page params from route (e.g. ['id' => '123'])
      */
-    public function onSubscribe(string $acceptKey, array $params = []): void
+    public function onSubscribe(string $acceptKey, PageRouteParams $params): void
     {
         $this->sendToUser(
             HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_GUARDIAN,

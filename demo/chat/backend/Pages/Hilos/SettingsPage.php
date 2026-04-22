@@ -21,6 +21,7 @@ use Hilos\Core\Table\Exception\TableActionException;
 use Hilos\HilosException;
 use Hilos\Pages\AbstractHilosSettingsPage;
 use Throwable;
+use Hilos\Core\Page\PageRouteParams;
 
 /**
  * SettingsPage - Hilos settings page handler.
@@ -34,9 +35,9 @@ final class SettingsPage extends AbstractHilosSettingsPage
      * Sends initial settings table data with catalog keys to the user on page subscription.
      *
      * @param string $acceptKey WebSocket accept key for the subscribing client
-     * @param array<string, string> $params Route params from page subscription (unused)
+     * @param PageRouteParams $params Route params from page subscription (unused)
      */
-    public function onSubscribe(string $acceptKey, array $params = []): void
+    public function onSubscribe(string $acceptKey, PageRouteParams $params): void
     {
         $this->sendToUser(
             ChatSignalConstants::SUBSCRIPTION_PAGE_HILOS_SETTINGS,

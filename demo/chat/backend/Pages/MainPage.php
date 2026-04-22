@@ -27,6 +27,7 @@ use Hilos\HilosException;
 use Hilos\Utils\Logger;
 use Random\RandomException;
 use Throwable;
+use Hilos\Core\Page\PageRouteParams;
 
 /**
  * MainPage - Main chat page handler.
@@ -59,10 +60,10 @@ final class MainPage extends AbstractChatPage
      * Handle page-specific subscription logic.
      *
      * @param string $acceptKey Accept key
-     * @param array<string, string> $params Route params from page subscription (unused for main page)
+     * @param PageRouteParams $params Route params from page subscription (unused for main page)
      * @throws HilosException On database, runtime, or truth source failure
      */
-    public function onSubscribe(string $acceptKey, array $params = []): void
+    public function onSubscribe(string $acceptKey, PageRouteParams $params): void
     {
         $session = $this->getChatAgent()->buildUserSessionSnapshotForAcceptKey($acceptKey);
 

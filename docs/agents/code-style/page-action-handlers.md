@@ -57,3 +57,62 @@ public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dt
     }
 }
 ```
+
+## Subscribe handlers and route params
+
+`AbstractPage::onSubscribe()` and `AbstractPage::onUpdateSubscription()` receive
+a typed `PageRouteParams` value object, not a raw `array<string, string>`. All
+route-param parsing goes through its accessors, which keep "missing" and
+"invalid" as distinct 400 errors:
+
+- `getString()` / `requireString()` — raw strings, empty value treated as absent.
+- `getInt()` / `requireInt()` — any integer, including `"0"` and negatives.
+- `getPositiveInt()` / `requirePositiveInt()` — the default for DB ids (`> 0`).
+- `getEnum()` / `requireEnum()` — `BackedEnum` cases.
+
+`require*` throws `MissingPageRouteParamException` when the key is absent or an
+empty string; any accessor (including `get*`) throws
+`InvalidPageRouteParamException` when a non-empty value fails its typed
+contract. Both exceptions extend `PageSubscriptionException` with
+`httpCode=400`, so the router surfaces them as a `subscription_page_error`
+signal without tearing down the connection.
+
+Pages with real route params should not read `PageRouteParams` inline. Define
+an `AbstractPageSubscribeParamsDTO` subclass alongside the abstract page, parse
+everything inside `fromPageRouteParams()`, and expose a `final onSubscribe()` in
+the abstract class that dispatches to a typed hook:
+
+```php
+final class HilosUserPageSubscribeParams extends AbstractPageSubscribeParamsDTO
+{
+    public function __construct(public readonly int $userId) {}
+
+    public static function fromPageRouteParams(PageRouteParams $params): static
+    {
+        return new self(
+            userId: $params->requirePositiveInt(HilosPageRouteParams::HILOS_USER_USER_ID),
+        );
+    }
+}
+
+abstract class AbstractHilosUserPage extends AbstractHilosPage
+{
+    final public function onSubscribe(string $acceptKey, PageRouteParams $params): void
+    {
+        $this->onHilosUserSubscribe(
+            $acceptKey,
+            HilosUserPageSubscribeParams::fromPageRouteParams($params),
+        );
+    }
+
+    abstract protected function onHilosUserSubscribe(
+        string $acceptKey,
+        HilosUserPageSubscribeParams $params,
+    ): void;
+}
+```
+
+Domain checks (existence of the entity in the DB, permissions, etc.) stay in
+the page handler and throw `PageResourceNotFoundException` / other
+`PageSubscriptionException` subclasses after the DTO has validated the raw
+route shape. `PageRouteParams` never performs DB lookups.

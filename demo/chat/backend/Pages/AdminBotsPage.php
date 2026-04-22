@@ -23,6 +23,7 @@ use Hilos\Core\Table\DTO\TableMutationSignalData;
 use Hilos\Core\Table\Exception\TableActionException;
 use Hilos\HilosException;
 use Throwable;
+use Hilos\Core\Page\PageRouteParams;
 
 /**
  * AdminBotsPage - Admin bots table page handler.
@@ -37,9 +38,9 @@ final class AdminBotsPage extends AbstractChatPage
      * Sends initial bots table data to the user on page subscription.
      *
      * @param string $acceptKey WebSocket accept key for the subscribing client
-     * @param array<string, string> $params Route params from page subscription (unused for admin bots page)
+     * @param PageRouteParams $params Route params from page subscription (unused for admin bots page)
      */
-    public function onSubscribe(string $acceptKey, array $params = []): void
+    public function onSubscribe(string $acceptKey, PageRouteParams $params): void
     {
         $this->getChatAgent()->sendToUser(
             ChatSignalConstants::SUBSCRIPTION_PAGE_ADMIN_BOTS,

@@ -63,7 +63,7 @@ class PageSignalRouter
         }
 
         try {
-            $pageInstance->onSubscribe($data->acceptKey, $data->params);
+            $pageInstance->onSubscribe($data->acceptKey, new PageRouteParams($data->params));
         } catch (PageSubscriptionException $e) {
             Logger::info("Page subscription error: page={$page}, httpCode={$e->httpCode}, error={$e->errorCode}, message={$e->getMessage()}");
             Hilos::$sr->queueSignal(
@@ -108,7 +108,17 @@ class PageSignalRouter
      */
     public function dispatchPageUpdateSubscription(WebSocketPageUpdateSubscriptionSignalDTO $data, string $source, string $name): void
     {
-        // Default: no-op (routing only, no page-level update yet).
+        $page = $name;
+        if ($page === '') {
+            return;
+        }
+
+        $pageInstance = $this->resolvePage($page);
+        if ($pageInstance === null) {
+            return;
+        }
+
+        $pageInstance->onUpdateSubscription($data->acceptKey, new PageRouteParams($data->params));
     }
 
     /**

@@ -26,6 +26,7 @@ use Hilos\Core\Router\DTO\EntitiesChangesDTO;
 use Hilos\HilosException;
 use Hilos\Utils\Logger;
 use Throwable;
+use Hilos\Core\Page\PageRouteParams;
 
 /**
  * ProfilePage - User profile page handler.
@@ -40,9 +41,9 @@ final class ProfilePage extends AbstractChatPage
      * Handle page-specific subscription logic.
      *
      * @param string $acceptKey Accept key
-     * @param array<string, string> $params Route params from page subscription (unused for profile page)
+     * @param PageRouteParams $params Route params from page subscription (unused for profile page)
      */
-    public function onSubscribe(string $acceptKey, array $params = []): void
+    public function onSubscribe(string $acceptKey, PageRouteParams $params): void
     {
         $this->getChatAgent()->sendToUser(
             ChatSignalConstants::SUBSCRIPTION_PAGE_PROFILE,

@@ -52,15 +52,33 @@ abstract class AbstractPage
     }
 
     /**
-     * Handle page subscription
+     * Handle page subscription.
      *
-     * Called when a client subscribes to this page.
-     * Override in child classes when subscription logic is needed.
+     * Called when a client subscribes to this page. Override in child classes
+     * when subscription logic is needed. Route params are available through
+     * the typed accessors on {@see PageRouteParams}; family-level abstract
+     * pages typically convert them into an {@see AbstractPageSubscribeParamsDTO}
+     * subclass before dispatching to a page-specific hook.
      *
      * @param string $acceptKey WebSocket accept key
-     * @param array<string, string> $params Page params from route (e.g. ['id' => '123'])
+     * @param PageRouteParams $params Route params from page subscription
      */
-    public function onSubscribe(string $acceptKey, array $params = []): void
+    public function onSubscribe(string $acceptKey, PageRouteParams $params): void
+    {
+    }
+
+    /**
+     * Handle page subscription update.
+     *
+     * Called when a client updates params of an existing page subscription.
+     * Default is a no-op; override in child classes when partial-state
+     * refresh is needed. Route params arrive as a merged snapshot for the
+     * subscription after applying the update payload.
+     *
+     * @param string $acceptKey WebSocket accept key
+     * @param PageRouteParams $params Merged route params for the subscription
+     */
+    public function onUpdateSubscription(string $acceptKey, PageRouteParams $params): void
     {
     }
 

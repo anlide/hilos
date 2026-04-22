@@ -8,33 +8,60 @@ use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Agent\Hilos\AbstractHilosGuardianAgent;
 use Hilos\Core\Page\AbstractHilosPage;
+use Hilos\Core\Page\Exception\InvalidPageRouteParamException;
+use Hilos\Core\Page\Exception\MissingPageRouteParamException;
+use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Router\SignalData;
+use Hilos\Pages\DTO\HilosGuardianAgentPageSubscribeParams;
 use LogicException;
 
 /**
  * AbstractHilosGuardianAgentPage - Abstract base for Hilos guardian AI agent page.
  *
  * Projects must implement concrete class (e.g. Demo\Chat\Pages\Hilos\Guardian\GuardianAgentPage).
+ * Parses the `agentId` route param into {@see HilosGuardianAgentPageSubscribeParams}
+ * before dispatching to {@see self::onHilosGuardianAgentSubscribe()}.
  */
 abstract class AbstractHilosGuardianAgentPage extends AbstractHilosPage
 {
     public const string PAGE = HilosPageConstants::HILOS_GUARDIAN_AGENT;
 
     /**
-     * Handle page subscription.
+     * Parses route params into {@see HilosGuardianAgentPageSubscribeParams} and delegates to
+     * {@see self::onHilosGuardianAgentSubscribe()}. Final: subclasses customize the subscribe
+     * behavior by overriding the typed hook, not this method.
      *
      * @param string $acceptKey WebSocket accept key
-     * @param array<string, string> $params Page params from route (e.g. ['agentId' => 'static_analysis'])
+     * @param PageRouteParams $params Route params for the page subscription
+     * @throws MissingPageRouteParamException When `agentId` is absent or empty
+     * @throws InvalidPageRouteParamException Reserved for future typed constraints on the id
      */
-    public function onSubscribe(string $acceptKey, array $params = []): void
+    final public function onSubscribe(string $acceptKey, PageRouteParams $params): void
     {
-        $agentId = $params['agentId'] ?? '';
+        $this->onHilosGuardianAgentSubscribe(
+            $acceptKey,
+            HilosGuardianAgentPageSubscribeParams::fromPageRouteParams($params),
+        );
+    }
 
+    /**
+     * Handle subscribe for a specific guardian agent.
+     *
+     * Default sends the current guardian run statuses plus the requested `agentId`
+     * echo back to the subscriber. Override when a project needs a richer payload.
+     *
+     * @param string $acceptKey WebSocket accept key
+     * @param HilosGuardianAgentPageSubscribeParams $params Parsed subscribe params
+     */
+    protected function onHilosGuardianAgentSubscribe(
+        string $acceptKey,
+        HilosGuardianAgentPageSubscribeParams $params,
+    ): void {
         $this->sendToUser(
             HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_GUARDIAN_AGENT,
             $acceptKey,
             new SignalData([
-                'agentId' => $agentId,
+                'agentId' => $params->agentId,
                 'guardianAgentStatuses' => $this->getGuardianAgent()->getGuardianRunStatuses(),
             ]),
         );

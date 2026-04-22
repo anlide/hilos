@@ -11,6 +11,11 @@ use Demo\Chat\Core\Router\DTO\ChatEventSignalDTO;
 use Demo\Chat\Database\DbChatContext;
 use Demo\Chat\Database\View\Collection\Bots;
 use Demo\Chat\Hilos;
+use Demo\Chat\Pages\DTO\BotPageSubscribeParams;
+use Hilos\Core\Page\Exception\InvalidPageRouteParamException;
+use Hilos\Core\Page\Exception\MissingPageRouteParamException;
+use Hilos\Core\Page\Exception\PageResourceNotFoundException;
+use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Router\DTO\EntitiesChangesDTO;
 use Hilos\Database\Exception\View\CollectionNotManualException;
 use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
@@ -19,59 +24,39 @@ use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
  * BotPage - Bot page handler.
  *
  * Handles subscription, unsubscription, and actions for the bot page.
- * Sends bot profile data on subscribe when bot ID is provided in params.
+ * Sends the requested bot profile on subscribe; a missing or malformed `id`
+ * surfaces as a structured 400 subscription error.
  */
 final class BotPage extends AbstractChatPage
 {
     public const string PAGE = PageConstants::BOT;
 
     /**
-     * Handle page-specific subscription logic.
+     * Sends the requested bot profile on subscribe.
      *
-     * @param string $acceptKey Accept key
-     * @param array<string, string> $params Route params (e.g. ['id' => botId])
-     * @throws ObjectGetIdStringNotImplementedException If Bot object does not implement getIdString() (required for using ID as key in manual collection)
-     * @throws CollectionNotManualException If bots collection is not manual (required for using ID as key in manual collection)
+     * @param string $acceptKey WebSocket accept key
+     * @param PageRouteParams $params Route params for the page subscription
+     * @throws MissingPageRouteParamException When `id` is absent
+     * @throws InvalidPageRouteParamException When `id` is non-numeric or `<= 0`
+     * @throws PageResourceNotFoundException When the bot does not exist
+     * @throws ObjectGetIdStringNotImplementedException If Bot object does not implement getIdString()
+     * @throws CollectionNotManualException If bots collection is not manual
      */
-    public function onSubscribe(string $acceptKey, array $params = []): void
+    public function onSubscribe(string $acceptKey, PageRouteParams $params): void
     {
-        $entities = $this->getBotEntities($params);
+        $subscribeParams = BotPageSubscribeParams::fromPageRouteParams($params);
+
+        $bot = Hilos::$db->bots[$subscribeParams->botId];
+        if ($bot === null) {
+            throw new PageResourceNotFoundException("Bot #{$subscribeParams->botId} not found");
+        }
+
         $this->getChatAgent()->sendToUser(
             ChatSignalConstants::SUBSCRIPTION_PAGE_BOT,
             $acceptKey,
-            new ChatEventSignalDTO($entities),
+            new ChatEventSignalDTO(new EntitiesChangesDTO(
+                full: [DbChatContext::bots => Bots::fromSingleItem($bot)],
+            )),
         );
-    }
-
-    /**
-     * Build entities DTO for bot page.
-     *
-     * When params contain valid 'id', returns DTO with single bot in full.bots.
-     * Otherwise returns empty DTO.
-     *
-     * @param array<string, string> $params Route params from page subscription (e.g. ['id' => '123'])
-     * @return EntitiesChangesDTO Entity changes for transport (full.bots or empty)
-     * @throws ObjectGetIdStringNotImplementedException If Bot object does not implement getIdString() (required for using ID as key in manual collection)
-     * @throws CollectionNotManualException If bots collection is not manual (required for using ID as key in manual collection)
-     */
-    private function getBotEntities(array $params): EntitiesChangesDTO
-    {
-        $idParam = $params['id'] ?? null;
-        if ($idParam === null || $idParam === '') {
-            return new EntitiesChangesDTO();
-        }
-
-        $botId = (int) $idParam;
-        if ($botId <= 0) {
-            return new EntitiesChangesDTO();
-        }
-
-        $bot = Hilos::$db->bots[$botId] ?? null;
-        if ($bot === null) {
-            return new EntitiesChangesDTO();
-        }
-
-        $bots = Bots::fromSingleItem($bot);
-        return new EntitiesChangesDTO(full: [DbChatContext::bots => $bots]);
     }
 }

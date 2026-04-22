@@ -1,0 +1,4 @@
+interface:
+  display_name: "Hilos Page Subscribe"
+  short_description: "Page route params, subscribe DTOs, and subscription errors"
+  default_prompt: "Use $hilos-page-subscribe when adding or changing Hilos page subscription parameters."
