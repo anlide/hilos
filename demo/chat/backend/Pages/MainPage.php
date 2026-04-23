@@ -20,6 +20,7 @@ use Demo\Chat\Database\DbChatContext;
 use Demo\Chat\Database\View\Collection\Bots;
 use Demo\Chat\Hilos;
 use Hilos\Core\Page\AbstractPage;
+use Hilos\Core\Page\Exception\PageInternalErrorException;
 use Hilos\Core\Page\PageAgentInterface;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\EntitiesChangesDTO;
@@ -61,12 +62,17 @@ final class MainPage extends AbstractChatPage
      *
      * @param string $acceptKey Accept key
      * @param PageRouteParams $params Route params from page subscription (unused for main page)
+     * @throws PageInternalErrorException If `acceptKey` is missing from `Hilos::$rt->connections` (invariant; should not occur in normal operation)
      * @throws HilosException On database, runtime, or truth source failure
      */
     public function onSubscribe(string $acceptKey, PageRouteParams $params): void
     {
-        $session = $this->getChatAgent()->buildUserSessionSnapshotForAcceptKey($acceptKey);
-
+        if (!isset(Hilos::$rt->connections[$acceptKey])) {
+            throw new PageInternalErrorException('No RT connection for this subscribe acceptKey');
+        }
+        $conn = Hilos::$rt->connections[$acceptKey];
+        $pending = Hilos::$rt->userStates[$conn->userId]?->moderationMessage;
+        $fileModPhase = $conn->fileModPhase;
         $this->getChatAgent()->sendToUser(
             ChatSignalConstants::SUBSCRIPTION_PAGE_MAIN,
             $acceptKey,
@@ -79,9 +85,20 @@ final class MainPage extends AbstractChatPage
                     ],
                 ),
                 [],
-                moderationState: $session['moderationState'],
-                fileModerationState: $session['fileModerationState'],
-                fileUploadProgress: $session['fileUploadProgress'],
+                moderationState: $pending !== '' ? $pending : null,
+                fileModerationState: $fileModPhase === null ? null : [
+                    'phase' => $fileModPhase,
+                    'filename' => $conn->fileModFilename,
+                    'uploadedBytes' => $conn->fileModUploadedBytes,
+                    'totalBytes' => $conn->fileModTotalBytes,
+                    'reason' => $conn->fileModReason !== '' ? $conn->fileModReason : null,
+                    'updatedAt' => $conn->fileModUpdatedAt,
+                ],
+                fileUploadProgress: $conn->fileProgressFilename === null ? null : [
+                    'filename' => $conn->fileProgressFilename,
+                    'uploadedBytes' => $conn->fileProgressUploadedBytes,
+                    'totalBytes' => $conn->fileProgressTotalBytes,
+                ],
                 includeUserSessionFields: true,
             ),
         );

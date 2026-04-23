@@ -6,8 +6,9 @@ The primary chat page. Handles subscription (initial state delivery) and all use
 
 ## onSubscribe
 
-1. Calls `ChatAgent::buildUserSessionSnapshotForAcceptKey($acceptKey)` to get current moderation state
-2. Sends `SUBSCRIPTION_PAGE_MAIN` signal to user with:
+1. Invariant: `acceptKey` must exist in `Hilos::$rt->connections`, otherwise `PageInternalErrorException` (→ `subscription_page_error` with `internal_error`)
+2. Reads text moderation, file-mod UI, and binary upload progress from the connection and `userStates`
+3. Sends `SUBSCRIPTION_PAGE_MAIN` signal to user with:
    - Full entities snapshot: `users` (online), `bots` (active), `events` (history)
    - Current `moderationState`, `fileModerationState`, `fileUploadProgress`
 

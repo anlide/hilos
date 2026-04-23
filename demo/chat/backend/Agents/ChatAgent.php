@@ -345,52 +345,6 @@ class ChatAgent extends AbstractAgent
     }
 
     /**
-     * Build text moderation, file moderation UI, and binary upload progress for one connection (handshake / main subscribe).
-     *
-     * @param string $acceptKey Connection accept key
-     * @return array{moderationState: ?string, fileModerationState: ?array, fileUploadProgress: ?array<string, mixed>}
-     */
-    public function buildUserSessionSnapshotForAcceptKey(string $acceptKey): array
-    {
-        if (!isset(Hilos::$rt->connections[$acceptKey])) {
-            return [
-                'moderationState' => null,
-                'fileModerationState' => null,
-                'fileUploadProgress' => null,
-            ];
-        }
-
-        $conn = Hilos::$rt->connections[$acceptKey];
-        $pending = Hilos::$rt->userStates[$conn->userId]?->moderationMessage;
-        $moderationState = $pending !== '' ? $pending : null;
-
-        $fileModPhase = $conn->fileModPhase;
-        $fileModerationState = $fileModPhase === null ? null : [
-            'phase' => $fileModPhase,
-            'filename' => $conn->fileModFilename,
-            'uploadedBytes' => $conn->fileModUploadedBytes,
-            'totalBytes' => $conn->fileModTotalBytes,
-            'reason' => $conn->fileModReason !== '' ? $conn->fileModReason : null,
-            'updatedAt' => $conn->fileModUpdatedAt,
-        ];
-
-        $fileProgress = null;
-        if ($conn->fileProgressFilename !== null) {
-            $fileProgress = [
-                'filename' => $conn->fileProgressFilename,
-                'uploadedBytes' => $conn->fileProgressUploadedBytes,
-                'totalBytes' => $conn->fileProgressTotalBytes,
-            ];
-        }
-
-        return [
-            'moderationState' => $moderationState,
-            'fileModerationState' => $fileModerationState,
-            'fileUploadProgress' => $fileProgress,
-        ];
-    }
-
-    /**
      * Whether enough time has passed since {@see self::recordMessageSent()} for this user to send another message.
      *
      * Uses {@see self::MESSAGE_RATE_LIMIT_SECONDS} minus one second effective window to reduce false blocks from client timer drift.
