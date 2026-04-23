@@ -92,7 +92,7 @@ class ChatAgent extends AbstractAgent
         Hilos::$rt->userStates->actions->seedAllFromDb();
 
         // Add chat started event to history (system event with userId = null)
-        Hilos::$db->events->actions->add(ChatEventType::CHAT_STARTED->value);
+        Hilos::$db->events->actions->addChatStarted();
     }
 
     /**
@@ -128,10 +128,10 @@ class ChatAgent extends AbstractAgent
         $userEntities = new EntitiesChangesDTO(full: [DbChatContext::users => Users::fromSingleItem($user)]);
         $newEvents = Events::initEmpty();
         if ($wasRegisteredNow) {
-            $newEvents->add(Hilos::$db->events->actions->add(ChatEventType::USER_REGISTERED->value, $user->id));
+            $newEvents->add(Hilos::$db->events->actions->addUserRegistered($user->id));
         }
         if ($hadNoConnections) {
-            $newEvents->add(Hilos::$db->events->actions->add(ChatEventType::USER_ONLINE->value, $user->id));
+            $newEvents->add(Hilos::$db->events->actions->addUserOnline($user->id));
         }
 
         if (count($newEvents) > 0) {
@@ -172,7 +172,7 @@ class ChatAgent extends AbstractAgent
         Hilos::$rt->connections->actions->unregister($data->acceptKey);
 
         if (count(Hilos::$rt->connections->forUser($userId)) === 0) {
-            $event = Hilos::$db->events->actions->add(ChatEventType::USER_OFFLINE->value, $userId);
+            $event = Hilos::$db->events->actions->addUserOffline($userId);
             $user = Hilos::$db->users[$userId] ?? null;
             if ($user === null) {
                 return;
@@ -200,7 +200,7 @@ class ChatAgent extends AbstractAgent
     public function onStop(): void
     {
         // Add chat stopped event to history (system event with userId = null)
-        Hilos::$db->events->actions->add(ChatEventType::CHAT_STOPPED->value);
+        Hilos::$db->events->actions->addChatStopped();
 
         // Clear all connections before unregistering
         Hilos::$rt->connections->actions->clear();
@@ -226,7 +226,7 @@ class ChatAgent extends AbstractAgent
             $this->deleteAllAttachmentFilesFromDisk();
             Hilos::$db->events->actions->deleteAll();
 
-            $event = Hilos::$db->events->actions->add(ChatEventType::CHAT_CLEARED->value);
+            $event = Hilos::$db->events->actions->addChatCleared();
 
             $this->sendToAllUsers(
                 ChatSignalConstants::NEW_EVENT,
@@ -317,7 +317,7 @@ class ChatAgent extends AbstractAgent
         }
 
         $this->recordMessageSent($userId);
-        $event = Hilos::$db->events->actions->add(ChatEventType::MESSAGE_SENT->value, $userId, null, ['message' => $result->message]);
+        $event = Hilos::$db->events->actions->addMessage($result->message, userId: $userId);
         $this->sendToAllUsers(
             ChatSignalConstants::NEW_EVENT,
             new ChatEventSignalDTO(new EntitiesChangesDTO(full: [DbChatContext::events => Events::fromSingleItem($event)])),
@@ -337,7 +337,7 @@ class ChatAgent extends AbstractAgent
             return;
         }
 
-        $event = Hilos::$db->events->actions->add(ChatEventType::MESSAGE_SENT->value, null, $result->botId, ['message' => $result->message]);
+        $event = Hilos::$db->events->actions->addMessage($result->message, botId: $result->botId);
         $this->sendToAllUsers(
             ChatSignalConstants::NEW_EVENT,
             new ChatEventSignalDTO(new EntitiesChangesDTO(full: [DbChatContext::events => Events::fromSingleItem($event)])),
@@ -606,13 +606,14 @@ class ChatAgent extends AbstractAgent
         }
 
         $token = pathinfo($storedName, PATHINFO_FILENAME);
-        $event = Hilos::$db->events->actions->add(ChatEventType::FILE_SHARED->value, $result->userId, null, [
-            'originalFilename' => $result->originalFilename,
-            'mimeType' => $result->mimeType,
-            'size' => $result->size,
-            'downloadToken' => $token,
-            'storedName' => $storedName,
-        ]);
+        $event = Hilos::$db->events->actions->addFile(
+            userId: $result->userId,
+            originalFilename: $result->originalFilename,
+            mimeType: $result->mimeType,
+            size: $result->size,
+            downloadToken: $token,
+            storedName: $storedName,
+        );
 
         $this->sendToAllUsers(
             ChatSignalConstants::NEW_EVENT,

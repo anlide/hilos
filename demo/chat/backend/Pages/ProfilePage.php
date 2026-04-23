@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Pages;
 
-use Demo\Chat\Constants\ChatEventType;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Page\AbstractChatPage;
@@ -107,10 +106,11 @@ final class ProfilePage extends AbstractChatPage
         $oldName = $user->name;
         $user->actions->rename($dto->newName);
 
-        $event = Hilos::$db->events->actions->add(ChatEventType::USER_RENAMED->value, $userId, null, [
-            'oldName' => $oldName,
-            'newName' => $dto->newName,
-        ]);
+        $event = Hilos::$db->events->actions->addUserRenamed(
+            userId: $userId,
+            oldName: $oldName,
+            newName: $dto->newName,
+        );
         $this->getChatAgent()->sendToAllUsers(
             ChatSignalConstants::NEW_EVENT,
             new ChatEventSignalDTO(new EntitiesChangesDTO(

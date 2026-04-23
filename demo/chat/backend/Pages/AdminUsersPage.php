@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Pages;
 
-use Demo\Chat\Constants\ChatEventType;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Page\AbstractChatPage;
@@ -121,11 +120,12 @@ final class AdminUsersPage extends AbstractChatPage
         $this->getChatAgent()->sendToUser(ChatSignalConstants::TABLE_MUTATION, $acceptKey, $signal);
         $this->getChatAgent()->sendToAllUsers(ChatSignalConstants::TABLE_MUTATION, $signal, $acceptKey);
 
-        $event = Hilos::$db->events->actions->add(ChatEventType::USER_RENAMED_BY_ADMIN->value, $dto->id, null, [
-            'oldName' => $oldName,
-            'newName' => $dto->name,
-            'adminUserId' => Hilos::$rt->connections[$acceptKey]?->userId,
-        ]);
+        $event = Hilos::$db->events->actions->addUserRenamedByAdmin(
+            userId: $dto->id,
+            oldName: $oldName,
+            newName: $dto->name,
+            adminUserId: Hilos::$rt->connections[$acceptKey]?->userId,
+        );
         $this->getChatAgent()->sendToAllUsers(
             ChatSignalConstants::NEW_EVENT,
             new ChatEventSignalDTO(new EntitiesChangesDTO(
