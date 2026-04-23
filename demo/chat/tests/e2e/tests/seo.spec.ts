@@ -27,8 +27,8 @@ test.describe('SEO and static pages', () => {
     await expect(page.getByRole('heading', { name: /terms/i })).toBeVisible()
   })
 
-  test('admin without auth is not publicly served', async ({ request }) => {
-    const res = await request.get('/admin')
+  test('hilos without auth is not publicly served', async ({ request }) => {
+    const res = await request.get('/hilos')
     expect([403, 404]).toContain(res.status())
   })
 

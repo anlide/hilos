@@ -3,7 +3,7 @@
     <div class="d-flex flex-wrap align-items-start gap-2 mb-3">
       <p class="text-body-secondary mb-0 flex-grow-1">
         Same <code>user</code> records as the chat app (ID, name, activity, presence). For table search and chat-focused admin tools, use
-        <router-link to="/admin/users">Admin → Users</router-link>.
+        <router-link to="/hilos/admin_users">User management</router-link>.
       </p>
       <TableRefreshToolbarButton
         v-if="tableState"

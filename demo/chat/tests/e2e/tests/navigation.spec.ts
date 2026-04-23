@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test'
 
 test.describe('Chat app navigation', () => {
-  test('navigates to Home, Profile, Admin', async ({ page }) => {
+  test('navigates to Home, Profile, Hilos', async ({ page }) => {
     await page.goto('/')
 
     await expect(page).toHaveURL('/')
@@ -14,7 +14,7 @@ test.describe('Chat app navigation', () => {
     await expect(page.getByTestId('nav-profile')).toHaveClass(/fw-bold/)
 
     await page.getByTestId('nav-admin').click()
-    await expect(page).toHaveURL('/admin')
+    await expect(page).toHaveURL('/hilos')
     await expect(page.getByTestId('nav-admin')).toHaveClass(/fw-bold/)
   })
 })

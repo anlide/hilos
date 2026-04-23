@@ -79,6 +79,30 @@ type DashboardSection = {
 
 const dashboardSections: DashboardSection[] = [
   {
+    title: 'Chat demo administration',
+    description: 'Users, moderation prompts, and bots for this demo chat.',
+    items: [
+      {
+        to: '/hilos/admin_users',
+        title: 'User management',
+        description: 'View and manage chat user accounts (full table, search, edit).',
+        icon: 'bi-people',
+      },
+      {
+        to: '/hilos/admin_moderator',
+        title: 'Moderator prompt pieces',
+        description: 'Moderator rules, prompts, and policy fragments.',
+        icon: 'bi-chat-left-quote',
+      },
+      {
+        to: '/hilos/admin_bots',
+        title: 'Bots',
+        description: 'Configure and manage chat bots.',
+        icon: 'bi-robot',
+      },
+    ],
+  },
+  {
     title: 'Core administration',
     description: 'Daily administrative tools and shared project configuration.',
     items: [

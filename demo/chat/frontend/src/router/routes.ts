@@ -89,25 +89,19 @@ export const demoRoutes: RouteRecordRaw[] = [
         meta: { page: 'profile' },
       },
       {
-        path: 'admin',
-        name: 'admin',
-        component: () => import('@/views/Admin.vue'),
-        meta: { page: 'admin' },
-      },
-      {
-        path: 'admin/users',
+        path: 'hilos/admin_users',
         name: 'admin_users',
         component: () => import('@/views/AdminUsers.vue'),
         meta: { page: 'admin_users' },
       },
       {
-        path: 'admin/moderator',
+        path: 'hilos/admin_moderator',
         name: 'admin_moderator',
         component: () => import('@/views/AdminModerator.vue'),
         meta: { page: 'admin_moderator' },
       },
       {
-        path: 'admin/bots',
+        path: 'hilos/admin_bots',
         name: 'admin_bots',
         component: () => import('@/views/AdminBots.vue'),
         meta: { page: 'admin_bots' },

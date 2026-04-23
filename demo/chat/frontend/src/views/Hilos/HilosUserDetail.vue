@@ -26,7 +26,7 @@
       <p class="text-body-secondary small mb-3">
         Email and Hilos roles are not stored on the chat <code>user</code> row. Rename the user via
         the modal below; changes use the same backend action as
-        <router-link to="/admin/users">Admin → Users</router-link>.
+        <router-link to="/hilos/admin_users">User management</router-link>.
       </p>
       <div class="row g-3">
         <div class="col-12 col-md-6">

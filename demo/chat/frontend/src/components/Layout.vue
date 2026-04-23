@@ -111,13 +111,13 @@
             <li class="nav-item">
               <router-link
                 class="nav-link d-inline-flex align-items-center justify-content-center fs-5"
-                to="/admin"
+                to="/hilos"
                 :class="{ 'fw-bold': isAdminRoute }"
-                aria-label="Admin"
+                aria-label="Hilos"
                 data-id="nav-admin"
               >
                 <i class="bi bi-gear-fill" aria-hidden="true"></i>
-                <span class="visually-hidden">Admin</span>
+                <span class="visually-hidden">Hilos</span>
               </router-link>
             </li>
           </ul>
@@ -245,7 +245,7 @@ const currentPageId = computed(() => {
 })
 
 const isAdminRoute = computed(() => {
-  return route.name === 'admin' ||
+  return route.name === 'hilos' ||
     route.name === 'admin_users' ||
     route.name === 'admin_moderator' ||
     route.name === 'admin_bots'

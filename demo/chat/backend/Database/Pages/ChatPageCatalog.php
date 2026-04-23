@@ -41,15 +41,10 @@ final class ChatPageCatalog extends PageCatalogStub
                 PageCatalogConstants::CATALOG_ENTRY_PATH_TEMPLATE => '/profile',
                 PageCatalogConstants::CATALOG_ENTRY_HIDE_BREADCRUMB => true,
             ],
-            PageConstants::ADMIN => [
-                PageCatalogConstants::CATALOG_ENTRY_PARENT_ID => null,
-                PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Admin',
-                PageCatalogConstants::CATALOG_ENTRY_PATH_TEMPLATE => '/admin',
-            ],
             PageConstants::ADMIN_USERS => [
-                PageCatalogConstants::CATALOG_ENTRY_PARENT_ID => PageConstants::ADMIN,
-                PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Users',
-                PageCatalogConstants::CATALOG_ENTRY_PATH_TEMPLATE => '/admin/users',
+                PageCatalogConstants::CATALOG_ENTRY_PARENT_ID => PageConstants::HILOS_DASHBOARD,
+                PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Admin users',
+                PageCatalogConstants::CATALOG_ENTRY_PATH_TEMPLATE => '/hilos/admin_users',
             ],
             PageConstants::USER => [
                 PageCatalogConstants::CATALOG_ENTRY_PARENT_ID => PageConstants::MAIN,
@@ -57,14 +52,14 @@ final class ChatPageCatalog extends PageCatalogStub
                 PageCatalogConstants::CATALOG_ENTRY_PATH_TEMPLATE => '/user/{id}',
             ],
             PageConstants::ADMIN_MODERATOR => [
-                PageCatalogConstants::CATALOG_ENTRY_PARENT_ID => PageConstants::ADMIN,
+                PageCatalogConstants::CATALOG_ENTRY_PARENT_ID => PageConstants::HILOS_DASHBOARD,
                 PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Moderator',
-                PageCatalogConstants::CATALOG_ENTRY_PATH_TEMPLATE => '/admin/moderator',
+                PageCatalogConstants::CATALOG_ENTRY_PATH_TEMPLATE => '/hilos/admin_moderator',
             ],
             PageConstants::ADMIN_BOTS => [
-                PageCatalogConstants::CATALOG_ENTRY_PARENT_ID => PageConstants::ADMIN,
+                PageCatalogConstants::CATALOG_ENTRY_PARENT_ID => PageConstants::HILOS_DASHBOARD,
                 PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Bots',
-                PageCatalogConstants::CATALOG_ENTRY_PATH_TEMPLATE => '/admin/bots',
+                PageCatalogConstants::CATALOG_ENTRY_PATH_TEMPLATE => '/hilos/admin_bots',
             ],
             PageConstants::BOT => [
                 PageCatalogConstants::CATALOG_ENTRY_PARENT_ID => PageConstants::MAIN,
@@ -72,7 +67,7 @@ final class ChatPageCatalog extends PageCatalogStub
                 PageCatalogConstants::CATALOG_ENTRY_PATH_TEMPLATE => '/bot/{id}',
             ],
             PageConstants::HILOS_DASHBOARD => [
-                PageCatalogConstants::CATALOG_ENTRY_PARENT_ID => PageConstants::ADMIN,
+                PageCatalogConstants::CATALOG_ENTRY_PARENT_ID => PageConstants::MAIN,
                 PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Hilos',
                 PageCatalogConstants::CATALOG_ENTRY_PATH_TEMPLATE => '/hilos',
             ],
