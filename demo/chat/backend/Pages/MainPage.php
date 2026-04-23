@@ -142,20 +142,15 @@ final class MainPage extends AbstractChatPage
                     Logger::logAgentError('MainPage', "Unknown action: {$action}");
             }
         } catch (Throwable $e) {
-            $this->handleActionFailure($acceptKey, $action, $e);
-        }
-    }
+            Logger::logAgentError('MainPage', "Action {$action} failed: {$e->getMessage()}");
 
-    private function handleActionFailure(string $acceptKey, string $action, Throwable $e): void
-    {
-        Logger::logAgentError('MainPage', "Action {$action} failed: {$e->getMessage()}");
-
-        if ($action === ChatSignalConstants::FILE_UPLOAD_INIT) {
-            $this->getChatAgent()->sendToUser(
-                ChatSignalConstants::FILE_UPLOAD_REJECTED,
-                $acceptKey,
-                new FileUploadRejectedSignalData('server_error', $e->getMessage()),
-            );
+            if ($action === ChatSignalConstants::FILE_UPLOAD_INIT) {
+                $this->getChatAgent()->sendToUser(
+                    ChatSignalConstants::FILE_UPLOAD_REJECTED,
+                    $acceptKey,
+                    new FileUploadRejectedSignalData('server_error', $e->getMessage()),
+                );
+            }
         }
     }
 
