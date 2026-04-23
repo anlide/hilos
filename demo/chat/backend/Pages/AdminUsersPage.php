@@ -10,17 +10,20 @@ use Demo\Chat\Core\Page\AbstractChatPage;
 use Demo\Chat\Core\Router\DTO\ChatEventSignalDTO;
 use Demo\Chat\Database\DbChatContext;
 use Demo\Chat\Database\Object\Item\User;
+use Demo\Chat\Database\Settings\SettingsCatalog;
 use Demo\Chat\Database\View\Collection\Events;
 use Demo\Chat\Hilos;
+use Demo\Chat\Tables\AdminUser\DTO\AdminUserUpdateActionDTO;
 use Demo\Chat\Tables\DTO\TableRefreshActionDTO;
 use Demo\Chat\Tables\Settings\DTO\SettingsTableResultDTO;
 use Demo\Chat\Tables\TableChatContext;
-use Demo\Chat\Tables\User\DTO\UserUpdateActionDTO;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\EntitiesChangesDTO;
 use Hilos\Core\Table\DTO\TableActionErrorSignalData;
 use Hilos\Core\Table\DTO\TableMutationSignalData;
 use Hilos\Core\Table\Exception\TableActionException;
+use Hilos\Core\Table\Mutation\TableMutationEntry;
+use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\HilosException;
 use Throwable;
 use Hilos\Core\Page\PageRouteParams;
@@ -48,7 +51,7 @@ final class AdminUsersPage extends AbstractChatPage
             $acceptKey,
             new ChatEventSignalDTO(
                 new EntitiesChangesDTO(),
-                [TableChatContext::users => Hilos::$table->users->get()],
+                [TableChatContext::adminUsers => Hilos::$table->adminUsers->get()],
             ),
         );
     }
@@ -58,14 +61,14 @@ final class AdminUsersPage extends AbstractChatPage
      *
      * @param string $acceptKey WebSocket accept key for the client
      * @param string $action Action name (for error reporting)
-     * @param ActionPayloadDTO $dto Action payload (UserUpdateActionDTO|TableRefreshActionDTO)
+     * @param ActionPayloadDTO $dto Action payload (AdminUserUpdateActionDTO|TableRefreshActionDTO)
      */
     public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): void
     {
         try {
             switch ($action) {
                 case ChatSignalConstants::USER_UPDATE:
-                    if ($dto instanceof UserUpdateActionDTO) {
+                    if ($dto instanceof AdminUserUpdateActionDTO) {
                         $this->handleUserUpdate($acceptKey, $dto);
                     }
 
@@ -82,7 +85,7 @@ final class AdminUsersPage extends AbstractChatPage
                     throw new TableActionException("Unknown action: {$action}");
             }
         } catch (Throwable $e) {
-            $tableKey = $dto instanceof TableRefreshActionDTO ? ($dto->tableKey ?: TableChatContext::users) : TableChatContext::users;
+            $tableKey = $dto instanceof TableRefreshActionDTO ? ($dto->tableKey ?: TableChatContext::adminUsers) : TableChatContext::adminUsers;
 
             $this->getChatAgent()->sendToUser(
                 ChatSignalConstants::TABLE_ACTION_ERROR,
@@ -96,12 +99,12 @@ final class AdminUsersPage extends AbstractChatPage
      * Updates an existing user and broadcasts the mutation to all clients.
      *
      * @param string $acceptKey WebSocket accept key for the requesting client
-     * @param UserUpdateActionDTO $dto Update action payload
+     * @param AdminUserUpdateActionDTO $dto Update action payload
      *
      * @throws TableActionException If user ID is invalid or user not found
      * @throws HilosException If update or broadcast fails
      */
-    private function handleUserUpdate(string $acceptKey, UserUpdateActionDTO $dto): void
+    private function handleUserUpdate(string $acceptKey, AdminUserUpdateActionDTO $dto): void
     {
         if ($dto->id <= 0) {
             throw new TableActionException('Invalid user ID');
@@ -114,11 +117,20 @@ final class AdminUsersPage extends AbstractChatPage
         $dbUser = Hilos::$db->users[$dto->id];
         $oldName = $dbUser->name;
 
-        $mutation = Hilos::$table->users[$dto->id]->actions->update($dto);
-        $signal = new TableMutationSignalData(TableChatContext::users, $mutation);
+        $mutation = Hilos::$table->adminUsers[$dto->id]->actions->update($dto);
+        $signal = new TableMutationSignalData(TableChatContext::adminUsers, $mutation);
+        $hilosUsersSignal = new TableMutationSignalData(
+            TableChatContext::hilosUsers,
+            new TableMutationEntry(
+                TableMutationType::Updated,
+                $dto->id,
+                Hilos::$table->hilosUsers->makeRow($dbUser->toArray(toFrontend: true)),
+            ),
+        );
 
         $this->getChatAgent()->sendToUser(ChatSignalConstants::TABLE_MUTATION, $acceptKey, $signal);
         $this->getChatAgent()->sendToAllUsers(ChatSignalConstants::TABLE_MUTATION, $signal, $acceptKey);
+        $this->getChatAgent()->sendToAllUsers(ChatSignalConstants::TABLE_MUTATION, $hilosUsersSignal, $acceptKey);
 
         $event = Hilos::$db->events->actions->addUserRenamedByAdmin(
             userId: $dto->id,
@@ -157,7 +169,7 @@ final class AdminUsersPage extends AbstractChatPage
         $result = $tableDef->get();
 
         if ($dto->tableKey === TableChatContext::settings) {
-            $catalogKeys = array_keys(\Demo\Chat\Database\Settings\SettingsCatalog::getCatalog());
+            $catalogKeys = array_keys(SettingsCatalog::getCatalog());
             $result = new SettingsTableResultDTO($result, $catalogKeys);
         }
 

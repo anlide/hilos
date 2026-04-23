@@ -35,6 +35,6 @@ final class ModeratorPromptPiecesTableActions extends TableActions
 
         $dbPiece = Hilos::$db->moderatorPromptPieces->actions->create($data);
 
-        return $this->mutation(TableMutationType::Created, $dbPiece->id, $dbPiece->toArray(toFrontend: true));
+        return $this->mutation(TableMutationType::Created, $dbPiece->id, $this->definition->makeRow($dbPiece->toArray(toFrontend: true)));
     }
 }

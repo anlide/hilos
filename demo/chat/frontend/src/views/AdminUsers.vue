@@ -187,7 +187,7 @@ const connectionStore = useConnectionStore()
 const tableStore = useTableStore()
 const websocket = useWebSocket()
 
-const tableKey = 'users'
+const tableKey = 'adminUsers'
 const { refreshLoading, refreshTable } = useTableRefresh(tableKey)
 const tableState = computed(() => tableStore.tableData[tableKey])
 const displayRows = computed(() => getTableDisplayRows<UserEntity>(tableStore.tableData[tableKey]))

@@ -38,7 +38,7 @@ final class ModeratorPromptPieceItemActions extends TableItemActions
             $dbPiece->actions->update($data);
         }
 
-        return $this->mutation(TableMutationType::Updated, $dbPiece->toArray(toFrontend: true));
+        return $this->mutation(TableMutationType::Updated, $this->definition->makeRow($dbPiece->toArray(toFrontend: true)));
     }
 
     /**

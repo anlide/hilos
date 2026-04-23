@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Hilos\Core\Table\DTO;
 
 use Hilos\BaseDTO;
+use Hilos\Core\Table\Row\AbstractTableRow;
+use Hilos\Core\Table\Row\GenericTableRow;
 use Hilos\Core\Table\TableConstants;
 
 /**
@@ -17,7 +19,7 @@ class TableResultDTO extends BaseDTO
     /**
      * Creates table result DTO.
      *
-     * @param list<array<string, mixed>> $rows Result rows (assoc arrays, frontend-ready)
+     * @param list<AbstractTableRow|array<string, mixed>> $rows Result rows
      * @param int $totalCount Total rows matching the query (before pagination)
      * @param int $offset Zero-based offset used
      * @param int $limit Page size used (TableConstants::NO_LIMIT = all rows)
@@ -38,7 +40,10 @@ class TableResultDTO extends BaseDTO
     public function toArray(): array
     {
         return [
-            TableConstants::RESULT_KEY_ROWS => $this->rows,
+            TableConstants::RESULT_KEY_ROWS => array_map(
+                static fn(AbstractTableRow|array $row): array => $row instanceof AbstractTableRow ? $row->toArray() : $row,
+                $this->rows,
+            ),
             TableConstants::RESULT_KEY_TOTAL_COUNT => $this->totalCount,
             TableConstants::RESULT_KEY_OFFSET => $this->offset,
             TableConstants::RESULT_KEY_LIMIT => $this->limit,
@@ -54,7 +59,10 @@ class TableResultDTO extends BaseDTO
     public static function fromArray(array $data): static
     {
         return new static(
-            rows: is_array($data[TableConstants::RESULT_KEY_ROWS] ?? null) ? $data[TableConstants::RESULT_KEY_ROWS] : [],
+            rows: array_map(
+                static fn(mixed $row): AbstractTableRow => is_array($row) ? GenericTableRow::fromArray($row) : GenericTableRow::fromArray([]),
+                is_array($data[TableConstants::RESULT_KEY_ROWS] ?? null) ? $data[TableConstants::RESULT_KEY_ROWS] : [],
+            ),
             totalCount: (int) ($data[TableConstants::RESULT_KEY_TOTAL_COUNT] ?? 0),
             offset: (int) ($data[TableConstants::RESULT_KEY_OFFSET] ?? 0),
             limit: (int) ($data[TableConstants::RESULT_KEY_LIMIT] ?? 0),

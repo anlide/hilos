@@ -34,6 +34,7 @@ final class SettingsTable extends TableDefinition
      */
     protected function init(): void
     {
+        $this->setRowClass(SettingTableRow::class);
         $this->setActionsClass(SettingsTableActions::class);
         $this->setItemActionsClass(SettingItemActions::class);
     }

@@ -8,8 +8,6 @@ use Hilos\BaseDTO;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Table\DTO\TableMutationSignalData;
 use Hilos\Core\Table\Mutation\TableMutationEntry;
-use Hilos\Core\Table\Mutation\TableMutationType;
-use Hilos\Core\Table\TableConstants;
 
 /**
  * Canonical DB change payload for {@see SignalTypeConstants::EMIT_DB_CHANGE}.
@@ -49,7 +47,13 @@ final class EmitDbChangeSignalData extends BaseDTO implements SignalDataInterfac
     }
 
     /**
-     * Build emit payload from an existing table mutation signal.
+     * Builds an emit payload from an existing table mutation signal.
+     *
+     * @param string $entityId Domain entity id used by signal fanout rules
+     * @param TableMutationSignalData $signal Table mutation signal to serialize for IPC
+     * @param ?string $excludeAcceptKey Initiator connection to skip on broadcast leg
+     * @param ?int $actorUserId Optional acting user id for audit-aware rules
+     * @param ?string $collectionKey Optional DB collection key for future routing rules
      */
     public static function fromTableMutationSignal(
         string $entityId,
@@ -68,22 +72,22 @@ final class EmitDbChangeSignalData extends BaseDTO implements SignalDataInterfac
         );
     }
 
+    /**
+     * Restores the table mutation signal used on the WebSocket fanout side.
+     */
     public function toTableMutationSignalData(): TableMutationSignalData
     {
-        $m = $this->mutationArray;
-        $typeRaw = $m[TableConstants::MUTATION_KEY_TYPE] ?? '';
-        $type = TableMutationType::from((string) $typeRaw);
-
         return new TableMutationSignalData(
             $this->tableKey,
-            new TableMutationEntry(
-                type: $type,
-                rowId: $m[TableConstants::MUTATION_KEY_ROW_ID] ?? 0,
-                row: $m[TableConstants::MUTATION_KEY_ROW] ?? null,
-            ),
+            TableMutationEntry::fromArray($this->mutationArray),
         );
     }
 
+    /**
+     * Serializes the emit payload for worker-to-daemon transport.
+     *
+     * @return array<string, mixed>
+     */
     public function toArray(): array
     {
         return [
@@ -96,6 +100,11 @@ final class EmitDbChangeSignalData extends BaseDTO implements SignalDataInterfac
         ];
     }
 
+    /**
+     * Rebuilds the emit payload from serialized transport data.
+     *
+     * @param array<string, mixed> $data Serialized emit payload
+     */
     public static function fromArray(array $data): static
     {
         return new self(

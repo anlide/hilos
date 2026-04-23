@@ -33,6 +33,7 @@ final class ModeratorPromptPiecesTable extends TableDefinition
      */
     protected function init(): void
     {
+        $this->setRowClass(ModeratorPromptPieceTableRow::class);
         $this->setActionsClass(ModeratorPromptPiecesTableActions::class);
         $this->setItemActionsClass(ModeratorPromptPieceItemActions::class);
     }

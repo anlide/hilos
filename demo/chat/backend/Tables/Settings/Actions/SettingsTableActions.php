@@ -31,6 +31,6 @@ final class SettingsTableActions extends TableActions
         $catalog = SettingsCatalog::getCatalog();
         $dbSetting = Hilos::$db->settings->actions->add($key, $value, $catalog);
 
-        return $this->mutation(TableMutationType::Created, $dbSetting->key, $dbSetting->toArray());
+        return $this->mutation(TableMutationType::Created, $dbSetting->key, $this->definition->makeRow($dbSetting->toArray()));
     }
 }

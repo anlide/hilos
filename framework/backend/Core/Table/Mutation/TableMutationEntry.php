@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Table\Mutation;
 
+use Hilos\Core\Table\Row\AbstractTableRow;
+use Hilos\Core\Table\Row\GenericTableRow;
 use Hilos\Core\Table\TableConstants;
 
 /**
@@ -18,12 +20,12 @@ readonly class TableMutationEntry
      *
      * @param TableMutationType $type Mutation type (created, updated, deleted)
      * @param string|int $rowId Affected row ID
-     * @param ?array<string, mixed> $row Optional row data for create/update
+     * @param ?AbstractTableRow $row Optional row data for create/update
      */
     public function __construct(
         public TableMutationType $type,
         public string|int $rowId,
-        public ?array $row = null,
+        public ?AbstractTableRow $row = null,
     ) {
     }
 
@@ -39,8 +41,30 @@ readonly class TableMutationEntry
             TableConstants::MUTATION_KEY_ROW_ID => $this->rowId,
         ];
         if ($this->row !== null) {
-            $data[TableConstants::MUTATION_KEY_ROW] = $this->row;
+            $data[TableConstants::MUTATION_KEY_ROW] = $this->row->toArray();
         }
         return $data;
+    }
+
+    /**
+     * Rebuilds a mutation entry from its serialized form.
+     *
+     * When the concrete table row class is unknown in the current context, the
+     * row is restored as {@see GenericTableRow}.
+     *
+     * @param array<string, mixed> $data Serialized mutation payload
+     */
+    public static function fromArray(array $data): self
+    {
+        $row = null;
+        if (isset($data[TableConstants::MUTATION_KEY_ROW]) && is_array($data[TableConstants::MUTATION_KEY_ROW])) {
+            $row = GenericTableRow::fromArray($data[TableConstants::MUTATION_KEY_ROW]);
+        }
+
+        return new self(
+            type: TableMutationType::from((string) ($data[TableConstants::MUTATION_KEY_TYPE] ?? '')),
+            rowId: $data[TableConstants::MUTATION_KEY_ROW_ID] ?? 0,
+            row: $row,
+        );
     }
 }

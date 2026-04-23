@@ -70,7 +70,7 @@ import { useChatStore } from '@/stores'
 const connectionStore = useConnectionStore()
 const tableStore = useTableStore()
 const chatStore = useChatStore()
-const tableKey = 'users'
+const tableKey = 'hilosUsers'
 const { refreshLoading, refreshTable } = useTableRefresh(tableKey)
 const tableState = computed(() => tableStore.tableData[tableKey])
 const displayRows = computed(() => getTableDisplayRows<ChatUserTableRow>(tableState.value))

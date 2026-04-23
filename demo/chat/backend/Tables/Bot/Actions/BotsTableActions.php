@@ -40,6 +40,6 @@ final class BotsTableActions extends TableActions
 
         $dbBot = Hilos::$db->bots->actions->create($data);
 
-        return $this->mutation(TableMutationType::Created, $dbBot->id, $dbBot->toArray(toFrontend: true));
+        return $this->mutation(TableMutationType::Created, $dbBot->id, $this->definition->makeRow($dbBot->toArray(toFrontend: true)));
     }
 }

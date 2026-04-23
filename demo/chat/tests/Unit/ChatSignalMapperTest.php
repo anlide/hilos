@@ -17,6 +17,7 @@ use Hilos\Core\Router\SignalType;
 use Hilos\Core\Table\DTO\TableMutationSignalData;
 use Hilos\Core\Table\Mutation\TableMutationEntry;
 use Hilos\Core\Table\Mutation\TableMutationType;
+use Hilos\Core\Table\Row\GenericTableRow;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -26,8 +27,12 @@ final class ChatSignalMapperTest extends TestCase
 {
     public function testMapChatUserRowUpdatedProducesSingleAllExceptTableMutation(): void
     {
-        $mutation = new TableMutationEntry(TableMutationType::Updated, 7, ['id' => 7, 'name' => 'N']);
-        $tableSignal = new TableMutationSignalData(TableChatContext::users, $mutation);
+        $mutation = new TableMutationEntry(
+            TableMutationType::Updated,
+            7,
+            GenericTableRow::fromArray(['id' => 7, 'name' => 'N']),
+        );
+        $tableSignal = new TableMutationSignalData(TableChatContext::hilosUsers, $mutation);
         $emitData = EmitDbChangeSignalData::fromTableMutationSignal(
             entityId: '7',
             signal: $tableSignal,
@@ -50,15 +55,19 @@ final class ChatSignalMapperTest extends TestCase
         $this->assertSame(ChatSignalConstants::TABLE_MUTATION, $items[0]->wireSignalName);
         $this->assertSame('key-admin', $items[0]->excludeAcceptKey);
         $this->assertInstanceOf(TableMutationSignalData::class, $items[0]->innerPayload);
-        $this->assertSame(TableChatContext::users, $items[0]->innerPayload->tableKey);
+        $this->assertSame(TableChatContext::hilosUsers, $items[0]->innerPayload->tableKey);
     }
 
     public function testUnknownEventKeyReturnsEmpty(): void
     {
-        $mutation = new TableMutationEntry(TableMutationType::Updated, 1, ['id' => 1]);
+        $mutation = new TableMutationEntry(
+            TableMutationType::Updated,
+            1,
+            GenericTableRow::fromArray(['id' => 1]),
+        );
         $emitData = EmitDbChangeSignalData::fromTableMutationSignal(
             entityId: '1',
-            signal: new TableMutationSignalData(TableChatContext::users, $mutation),
+            signal: new TableMutationSignalData(TableChatContext::hilosUsers, $mutation),
             excludeAcceptKey: null,
         );
         $signal = new SignalDTO(

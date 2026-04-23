@@ -43,7 +43,7 @@ final class BotItemActions extends TableItemActions
             $dbBot->actions->update($data);
         }
 
-        return $this->mutation(TableMutationType::Updated, $dbBot->toArray(toFrontend: true));
+        return $this->mutation(TableMutationType::Updated, $this->definition->makeRow($dbBot->toArray(toFrontend: true)));
     }
 
     /**

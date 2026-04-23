@@ -122,11 +122,22 @@ final class ProfilePage extends AbstractChatPage
         $mutation = new TableMutationEntry(
             TableMutationType::Updated,
             $userId,
-            $user->toArray(toFrontend: true),
+            Hilos::$table->adminUsers->makeRow($user->toArray(toFrontend: true)),
         );
         $this->getChatAgent()->sendToAllUsers(
             ChatSignalConstants::TABLE_MUTATION,
-            new TableMutationSignalData(TableChatContext::users, $mutation),
+            new TableMutationSignalData(TableChatContext::adminUsers, $mutation),
+        );
+        $this->getChatAgent()->sendToAllUsers(
+            ChatSignalConstants::TABLE_MUTATION,
+            new TableMutationSignalData(
+                TableChatContext::hilosUsers,
+                new TableMutationEntry(
+                    TableMutationType::Updated,
+                    $userId,
+                    Hilos::$table->hilosUsers->makeRow($user->toArray(toFrontend: true)),
+                ),
+            ),
         );
 
         // Dedicated ack to the initiator: closes the modal / clears UI loading state.

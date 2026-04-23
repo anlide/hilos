@@ -16,9 +16,9 @@ use Hilos\Core\Router\SignalMapperInterface;
  * Maps EMIT_* signals to concrete WebSocket payloads for the chat demo.
  *
  * {@see ChatSignalConstants::EMIT_CHAT_USER_ROW_UPDATED}: one {@see ChatSignalConstants::TABLE_MUTATION}
- * broadcast to every subscribed client except the initiator. That covers:
- * - Admin users table and Hilos users list, main/profile, and any page listening for {@see ChatSignalConstants::TABLE_MUTATION}
- * - Hilos user detail and guest user page for the same row id
+ * broadcast to every subscribed client except the initiator.
+ * The mapper preserves the source table key embedded in {@see EmitDbChangeSignalData},
+ * so user-related emits can target `adminUsers` or `hilosUsers` independently.
  *
  * When payloads differ per page, use {@see SignalRouter::getAcceptKeysForPage} and extra {@see EmitFanoutItem}
  * with {@see EmitFanoutDelivery::Single}, deduping against clients that already received the broadcast leg.

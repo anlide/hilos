@@ -21,6 +21,10 @@ use Hilos\Database\Object\Item\Object_;
 final class Setting extends Object_
 {
     public const string ENTITY_CLASS = EntitySetting::class;
+    public const string id = 'id';
+    public const string key = 'key';
+    public const string type = 'type';
+    public const string value = 'value';
 
     /**
      * Returns the database collection key.
@@ -41,10 +45,10 @@ final class Setting extends Object_
     public function __get(string $property): mixed
     {
         return match ($property) {
-            'id' => $this->entity->id,
-            'key' => $this->entity->key,
-            'type' => $this->entity->type,
-            'value' => $this->entity->value,
+            self::id => $this->entity->id,
+            self::key => $this->entity->key,
+            self::type => $this->entity->type,
+            self::value => $this->entity->value,
             default => parent::__get($property),
         };
     }
@@ -58,9 +62,9 @@ final class Setting extends Object_
     public function __set(string $property, mixed $value): void
     {
         match ($property) {
-            'key' => $this->entity->key = (string)$value,
-            'type' => $this->entity->type = (string)$value,
-            'value' => $this->entity->value = is_scalar($value) ? (string)$value : null,
+            self::key => $this->entity->key = (string)$value,
+            self::type => $this->entity->type = (string)$value,
+            self::value => $this->entity->value = is_scalar($value) ? (string)$value : null,
             default => parent::__set($property, $value),
         };
     }
@@ -84,10 +88,10 @@ final class Setting extends Object_
     public function toArray(): array
     {
         return [
-            'id' => $this->entity->id,
-            'key' => $this->entity->key,
-            'type' => $this->entity->type,
-            'value' => $this->entity->value,
+            self::id => $this->entity->id,
+            self::key => $this->entity->key,
+            self::type => $this->entity->type,
+            self::value => $this->entity->value,
         ];
     }
 }

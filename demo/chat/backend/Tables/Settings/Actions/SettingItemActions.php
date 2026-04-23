@@ -33,7 +33,7 @@ final class SettingItemActions extends TableItemActions
             throw new TableActionException("Setting '{$this->itemId}' not found");
         }
         $dbSetting->actions->update($data);
-        return $this->mutation(TableMutationType::Updated, $dbSetting->toArray());
+        return $this->mutation(TableMutationType::Updated, $this->definition->makeRow($dbSetting->toArray()));
     }
 
     /**

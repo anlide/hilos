@@ -56,7 +56,6 @@ use Demo\Chat\Pages\Hilos\Security\SecurityTwoFactorPage;
 use Demo\Chat\Pages\Hilos\Sil\SilDashboardPage;
 use Demo\Chat\Pages\Hilos\Sil\SilRequestsPage;
 use Demo\Chat\Pages\Hilos\Sil\SilUserHistoryPage;
-use Demo\Chat\Pages\Hilos\Users\DTO\HilosUserUpdateActionDTO;
 use Demo\Chat\Pages\Hilos\Users\UserPage as HilosUserPage;
 use Demo\Chat\Pages\Hilos\Users\UsersPage;
 use Demo\Chat\Pages\Hilos\I18n\Details\ActionDetailPage;
@@ -84,17 +83,18 @@ use Demo\Chat\Pages\MainPage;
 use Demo\Chat\Pages\ModeratorPage;
 use Demo\Chat\Pages\ProfilePage;
 use Demo\Chat\Pages\UserPage;
+use Demo\Chat\Tables\AdminUser\DTO\AdminUserUpdateActionDTO;
 use Demo\Chat\Tables\Bot\DTO\BotCreateActionDTO;
 use Demo\Chat\Tables\Bot\DTO\BotDeleteActionDTO;
 use Demo\Chat\Tables\Bot\DTO\BotUpdateActionDTO;
 use Demo\Chat\Tables\DTO\TableRefreshActionDTO;
+use Demo\Chat\Tables\HilosUser\DTO\HilosUserUpdateActionDTO;
 use Demo\Chat\Tables\ModeratorPiece\DTO\ModeratorPieceCreateActionDTO;
 use Demo\Chat\Tables\ModeratorPiece\DTO\ModeratorPieceDeleteActionDTO;
 use Demo\Chat\Tables\ModeratorPiece\DTO\ModeratorPieceUpdateActionDTO;
 use Demo\Chat\Tables\Settings\DTO\SettingAddActionDTO;
 use Demo\Chat\Tables\Settings\DTO\SettingDeleteActionDTO;
 use Demo\Chat\Tables\Settings\DTO\SettingUpdateActionDTO;
-use Demo\Chat\Tables\User\DTO\UserUpdateActionDTO;
 use Hilos\Constants\HilosPageConstants;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Page\Exception\PageNotFoundException;
@@ -233,7 +233,7 @@ final class ChatPageFactory extends HilosPageFactory
             ChatSignalConstants::FILE_UPLOAD_INIT => FileUploadInitActionDTO::fromArray($data),
             ChatSignalConstants::FILE_MODERATION_DISMISS => FileModerationDismissActionDTO::fromArray($data),
             ChatSignalConstants::TABLE_REFRESH => TableRefreshActionDTO::fromArray($data),
-            ChatSignalConstants::USER_UPDATE => UserUpdateActionDTO::fromArray($data),
+            ChatSignalConstants::USER_UPDATE => AdminUserUpdateActionDTO::fromArray($data),
             ChatSignalConstants::HILOS_USER_UPDATE => HilosUserUpdateActionDTO::fromArray($data),
             ChatSignalConstants::BOT_CREATE => BotCreateActionDTO::fromArray($data),
             ChatSignalConstants::BOT_UPDATE => BotUpdateActionDTO::fromArray($data),

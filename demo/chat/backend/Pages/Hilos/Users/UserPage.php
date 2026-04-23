@@ -15,8 +15,8 @@ use Demo\Chat\Database\Object\Item\User;
 use Demo\Chat\Database\View\Collection\Events;
 use Demo\Chat\Database\View\Collection\Users;
 use Demo\Chat\Hilos;
-use Demo\Chat\Pages\Hilos\Users\DTO\HilosUserUpdateActionDTO;
 use Demo\Chat\Tables\TableChatContext;
+use Demo\Chat\Tables\HilosUser\DTO\HilosUserUpdateActionDTO;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Core\Exception\ValidationException;
@@ -124,15 +124,15 @@ final class UserPage extends AbstractHilosUserPage
         }
 
         $oldName = $dbUser->name;
-        $dbUser->actions->rename($dto->name);
-
+        $mutation = Hilos::$table->hilosUsers[$dto->id]->actions->update($dto);
         $newName = $dbUser->name;
-        $signal = new TableMutationSignalData(
-            TableChatContext::users,
+        $signal = new TableMutationSignalData(TableChatContext::hilosUsers, $mutation);
+        $adminUsersSignal = new TableMutationSignalData(
+            TableChatContext::adminUsers,
             new TableMutationEntry(
                 TableMutationType::Updated,
                 $dto->id,
-                $dbUser->toArray(toFrontend: true),
+                Hilos::$table->adminUsers->makeRow($dbUser->toArray(toFrontend: true)),
             ),
         );
 
@@ -146,6 +146,7 @@ final class UserPage extends AbstractHilosUserPage
                 actorUserId: Hilos::$rt->connections[$acceptKey]?->userId,
             ),
         );
+        $this->sendToAllUsers(ChatSignalConstants::TABLE_MUTATION, $adminUsersSignal, $acceptKey);
 
         $event = Hilos::$db->events->actions->addUserRenamedByAdmin(
             userId: $dto->id,

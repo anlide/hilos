@@ -33,6 +33,7 @@ final class BotsTable extends TableDefinition
      */
     protected function init(): void
     {
+        $this->setRowClass(BotTableRow::class);
         $this->setActionsClass(BotsTableActions::class);
         $this->setItemActionsClass(BotItemActions::class);
     }

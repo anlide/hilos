@@ -7,6 +7,7 @@ namespace Hilos\Core\Table\Actions;
 use Hilos\Core\Table\Definition\TableDefinition;
 use Hilos\Core\Table\Mutation\TableMutationEntry;
 use Hilos\Core\Table\Mutation\TableMutationType;
+use Hilos\Core\Table\Row\AbstractTableRow;
 
 /**
  * Base class for table-level actions (e.g. create).
@@ -31,11 +32,11 @@ abstract class TableActions
      *
      * @param TableMutationType $type Mutation type (e.g. insert, update, delete)
      * @param string|int $rowId Row/item ID affected
-     * @param ?array<string, mixed> $row Optional row data for the mutation
+     * @param ?AbstractTableRow $row Optional row data for create/update mutations
      *
      * @return TableMutationEntry Created mutation entry for broadcasting
      */
-    protected function mutation(TableMutationType $type, string|int $rowId, ?array $row = null): TableMutationEntry
+    protected function mutation(TableMutationType $type, string|int $rowId, ?AbstractTableRow $row = null): TableMutationEntry
     {
         return new TableMutationEntry($type, $rowId, $row);
     }

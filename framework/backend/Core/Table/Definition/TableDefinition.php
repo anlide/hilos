@@ -16,6 +16,8 @@ use Hilos\Core\Table\Exception\TableOffsetSetNotSupportedException;
 use Hilos\Core\Table\Exception\TableOffsetUnsetNotSupportedException;
 use Hilos\Core\Table\Exception\TablePropertyNotFoundException;
 use Hilos\Core\Table\Item\TableItem;
+use Hilos\Core\Table\Row\AbstractTableRow;
+use Hilos\Core\Table\Row\GenericTableRow;
 use Hilos\Core\Table\TableConstants;
 
 /**
@@ -39,6 +41,9 @@ abstract class TableDefinition implements ArrayAccess
 
     /** @var ?class-string<TableItemActions> item actions class for update, delete */
     private ?string $_itemActionsClass = null;
+
+    /** @var class-string<AbstractTableRow> row class used by this table */
+    private string $_rowClass = GenericTableRow::class;
 
     /**
      * Creates table definition with optional data source.
@@ -93,6 +98,53 @@ abstract class TableDefinition implements ArrayAccess
     }
 
     /**
+     * Registers the row class used by this table.
+     *
+     * @param class-string<AbstractTableRow> $class Table row class name
+     */
+    protected function setRowClass(string $class): void
+    {
+        $this->_rowClass = $class;
+    }
+
+    /**
+     * Returns the row class used by this table.
+     *
+     * @return class-string<AbstractTableRow>
+     */
+    public function getRowClass(): string
+    {
+        return $this->_rowClass;
+    }
+
+    /**
+     * Builds one row object from an array payload.
+     *
+     * @param array<string, mixed> $row Row payload
+     * @return AbstractTableRow Typed row object
+     */
+    public function makeRow(array $row): AbstractTableRow
+    {
+        $rowClass = $this->getRowClass();
+
+        return $rowClass::fromArray($row);
+    }
+
+    /**
+     * Builds row objects for each payload array.
+     *
+     * @param list<AbstractTableRow|array<string, mixed>> $rows Raw row payloads
+     * @return list<AbstractTableRow>
+     */
+    public function makeRows(array $rows): array
+    {
+        return array_map(
+            fn(AbstractTableRow|array $row): AbstractTableRow => $row instanceof AbstractTableRow ? $row : $this->makeRow($row),
+            $rows,
+        );
+    }
+
+    /**
      * Returns the registered item actions class, or null if not configured.
      *
      * @return ?class-string<TableItemActions> Item actions class or null
@@ -131,13 +183,20 @@ abstract class TableDefinition implements ArrayAccess
         int $offset = 0,
         int $limit = TableConstants::NO_LIMIT,
     ): TableResultDTO {
-        return $this->dataSource->query(new TableQueryDTO(
+        $result = $this->dataSource->query(new TableQueryDTO(
             search: $search,
             orderBy: $orderBy,
             orderDirection: $orderDirection,
             offset: $offset,
             limit: $limit,
         ));
+
+        return new TableResultDTO(
+            rows: $this->makeRows($result->rows),
+            totalCount: $result->totalCount,
+            offset: $result->offset,
+            limit: $result->limit,
+        );
     }
 
     // ── Actions property ─────────────────────────────────────────────────
