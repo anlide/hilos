@@ -1,2 +1,5 @@
-# Ensure line endings are LF in Docker
+# Ensure text file line endings are LF in Docker/Linux.
+* text=auto eol=lf
+
+# Keep PHP explicit because runtime code is especially sensitive to CRLF drift.
 *.php text eol=lf

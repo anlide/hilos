@@ -19,6 +19,8 @@ catalog for small code-style rules.
 
 - PHP follows PSR-12 style with 4-space indentation.
 - Every project PHP file starts with `declare(strict_types=1);`.
+- Repository text files use LF line endings; `.gitattributes` enforces this
+  with `* text=auto eol=lf`.
 - Use project architecture docs in `docs/agents/` before inventing a new
   backend pattern.
 - Prefer local project helpers and existing abstractions over new generic
