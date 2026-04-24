@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Demo\Chat\Runtime\View\Actions\Collection;
 
 use Demo\Chat\Hilos;
-use Demo\Chat\Runtime\State\Item\Connection as StateConnection;
+use Demo\Chat\Runtime\State\Collection\UserStates as StateUserStates;
 use Demo\Chat\Runtime\State\Item\ChatUserState as StateChatUserState;
 use Demo\Chat\Runtime\View\Collection\UserStates;
 use Demo\Chat\Runtime\View\Item\ChatUserState as ViewChatUserState;
@@ -15,13 +15,15 @@ use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\Runtime\State\Item\RtState;
 use Hilos\Runtime\View\Actions\Collection\RtActions;
+use OutOfBoundsException;
 
 /**
  * Write API for per-user chat runtime state (text moderation only).
  *
- * File upload and file moderation UI live on {@see StateConnection}.
+ * File upload and file moderation UI live on the connection runtime state.
  *
- * @extends RtActions<ViewChatUserState, UserStates>
+ * @extends RtActions<ViewChatUserState, UserStates, StateUserStates>
+ * @property-read StateUserStates $stateCollection
  */
 final class UserStatesActions extends RtActions
 {
@@ -102,13 +104,16 @@ final class UserStatesActions extends RtActions
      * @throws RtActionsCollectionNameNullException
      * @throws RtActionsStateCollectionNullException
      * @throws RtTruthSourceWriteNotAllowedException
+     * @throws OutOfBoundsException When user runtime state is not initialized
      */
     public function setTextModerationMessage(int $userId, string $message): void
     {
-        $this->applyDiffToState($this->stateRowForMutation($userId), [
-            StateChatUserState::moderationMessage => $message,
-            StateChatUserState::moderationUpdatedAt => time(),
-        ]);
+        $this->ensureCanWrite();
+
+        $this->stateCollection[$userId]->moderationMessage = $message;
+        $this->stateCollection[$userId]->moderationUpdatedAt = time();
+        $this->stateCollection[$userId]->sync();
+
         $this->clearCollectionCache();
     }
 
@@ -121,49 +126,16 @@ final class UserStatesActions extends RtActions
      * @throws RtActionsCollectionNameNullException
      * @throws RtActionsStateCollectionNullException
      * @throws RtTruthSourceWriteNotAllowedException
+     * @throws OutOfBoundsException When user runtime state is not initialized
      */
     public function clearTextModerationMessage(int $userId): void
     {
-        $this->applyDiffToState($this->stateRowForMutation($userId), [
-            StateChatUserState::moderationMessage => '',
-            StateChatUserState::moderationUpdatedAt => time(),
-        ]);
-        $this->clearCollectionCache();
-    }
-
-    /**
-     * Apply a partial update to the user's runtime state (keys must match {@see StateChatUserState} fields).
-     *
-     * @param int $userId Database user id
-     * @param array<string, mixed> $diff Field name => value
-     *
-     * @throws RtActionsCallbackNotSetException
-     * @throws RtActionsCollectionNameNullException
-     * @throws RtActionsStateCollectionNullException
-     * @throws RtTruthSourceWriteNotAllowedException
-     */
-    public function applyDiffForUser(int $userId, array $diff): void
-    {
-        if ($diff === []) {
-            return;
-        }
-        $this->applyDiffToState($this->stateRowForMutation($userId), $diff);
-        $this->clearCollectionCache();
-    }
-
-    /**
-     * Backing state row for a write path (not a public read API — use {@see ViewChatUserState} for reads).
-     *
-     * @throws \RuntimeException If state is missing (call {@see ensure()} first)
-     */
-    private function stateRowForMutation(int $userId): StateChatUserState
-    {
         $this->ensureCanWrite();
-        $raw = $this->getStateCollection()->get((string)$userId);
-        if (!$raw instanceof StateChatUserState) {
-            throw new \RuntimeException('ChatUserState missing for userId=' . $userId . '; call ensure() first');
-        }
 
-        return $raw;
+        $this->stateCollection[$userId]->moderationMessage = '';
+        $this->stateCollection[$userId]->moderationUpdatedAt = time();
+        $this->stateCollection[$userId]->sync();
+
+        $this->clearCollectionCache();
     }
 }

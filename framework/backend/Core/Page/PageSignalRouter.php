@@ -169,7 +169,11 @@ class PageSignalRouter
         // Create typed DTO via PageFactory
         $dto = $this->pageFactory->createActionPayloadDTO($data->action, $data->data);
 
-        $pageInstance->onAction($data->acceptKey, $data->action, $dto);
+        try {
+            $pageInstance->onAction($data->acceptKey, $data->action, $dto);
+        } catch (Throwable $e) {
+            $pageInstance->onActionException($data->acceptKey, $data->action, $dto, $e);
+        }
     }
 
     /**

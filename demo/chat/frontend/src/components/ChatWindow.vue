@@ -74,8 +74,8 @@
       </template>
     </div>
 
-    <div v-if="uploadClientError" class="px-3 py-1 small text-danger border-top">
-      {{ uploadClientError }}
+    <div v-if="uploadClientError || chatStore.messageError" class="px-3 py-1 small text-danger border-top">
+      {{ uploadClientError || chatStore.messageError }}
     </div>
 
     <div class="card-footer flex-shrink-0">
@@ -223,6 +223,7 @@ const handleSubmit = () => {
   if (!draftMessage.value.trim() || !connectionStore.isConnected || chatStore.isModeratingMessage || isRateLimited.value) return
   const text = draftMessage.value.trim()
   draftMessage.value = ''
+  chatStore.setMessageError(null)
   emit('send', text)
   startRateLimitCountdown()
 }

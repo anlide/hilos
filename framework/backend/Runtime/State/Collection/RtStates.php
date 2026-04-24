@@ -87,7 +87,7 @@ abstract class RtStates implements Iterator, ArrayAccess, Countable
     /**
      * Add state to collection.
      *
-     * @param RtState $state State instance to add
+     * @param T $state State instance to add
      */
     public function add(RtState $state): void
     {
@@ -119,7 +119,7 @@ abstract class RtStates implements Iterator, ArrayAccess, Countable
      * Get state by ID.
      *
      * @param string $id State ID
-     * @return ?RtState State instance or null if not found
+     * @return ?T State instance or null if not found
      */
     public function get(string $id): ?RtState
     {
@@ -158,7 +158,7 @@ abstract class RtStates implements Iterator, ArrayAccess, Countable
     /**
      * Get first state.
      *
-     * @return ?RtState First state or null if empty
+     * @return ?T First state or null if empty
      */
     public function first(): ?RtState
     {
@@ -170,7 +170,7 @@ abstract class RtStates implements Iterator, ArrayAccess, Countable
     /**
      * Get last state.
      *
-     * @return ?RtState Last state or null if empty
+     * @return ?T Last state or null if empty
      */
     public function last(): ?RtState
     {
@@ -212,7 +212,7 @@ abstract class RtStates implements Iterator, ArrayAccess, Countable
      * Get state at offset.
      *
      * @param mixed $offset State ID (string)
-     * @return ?RtState State instance or null if not found
+     * @return ?T State instance or null if not found
      */
     public function offsetGet(mixed $offset): ?RtState
     {
@@ -223,7 +223,7 @@ abstract class RtStates implements Iterator, ArrayAccess, Countable
      * Set state at offset.
      *
      * @param mixed $offset State ID or null (uses value ID when null)
-     * @param mixed $value RtState instance to set
+     * @param T $value RtState instance to set
      */
     public function offsetSet(mixed $offset, mixed $value): void
     {
@@ -259,7 +259,7 @@ abstract class RtStates implements Iterator, ArrayAccess, Countable
     /**
      * Get current state in iteration.
      *
-     * @return ?RtState Current state or null if position invalid
+     * @return ?T Current state or null if position invalid
      */
     public function current(): ?RtState
     {

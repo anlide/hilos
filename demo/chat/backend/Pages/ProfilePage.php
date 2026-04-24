@@ -15,8 +15,10 @@ use Demo\Chat\Database\DbChatContext;
 use Demo\Chat\Database\View\Collection\Events;
 use Demo\Chat\Hilos;
 use Demo\Chat\Tables\TableChatContext;
+use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
+use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Table\DTO\TableMutationSignalData;
 use Hilos\Core\Table\Mutation\TableMutationEntry;
 use Hilos\Core\Table\Mutation\TableMutationType;
@@ -25,7 +27,6 @@ use Hilos\Core\Router\DTO\EntitiesChangesDTO;
 use Hilos\HilosException;
 use Hilos\Utils\Logger;
 use Throwable;
-use Hilos\Core\Page\PageRouteParams;
 
 /**
  * ProfilePage - User profile page handler.
@@ -57,29 +58,45 @@ final class ProfilePage extends AbstractChatPage
      * @param string $acceptKey Accept key
      * @param string $action Action name
      * @param ActionPayloadDTO $dto Action payload DTO
+     * @throws AgentUnknownActionException When action is not supported by this page
      * @throws HilosException On error during action handling
      */
     public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): void
     {
-        try {
-            switch ($action) {
-                case ChatSignalConstants::RENAME:
-                    if ($dto instanceof RenameActionDTO) {
-                        $this->handleRename($acceptKey, $dto);
-                    }
+        switch ($action) {
+            case ChatSignalConstants::RENAME:
+                if ($dto instanceof RenameActionDTO) {
+                    $this->handleRename($acceptKey, $dto);
+                }
 
-                    break;
+                break;
 
-                default:
-                    Logger::logAgentError('ProfilePage', "Unknown action: {$action}");
-            }
-        } catch (Throwable $e) {
+            default:
+                throw new AgentUnknownActionException("Unknown action: {$action}");
+        }
+    }
+
+    /**
+     * Sends rename failures through the profile modal ack contract.
+     *
+     * @param string $acceptKey WebSocket accept key for the client
+     * @param string $action Action name that failed
+     * @param ActionPayloadDTO $dto Action payload
+     * @param Throwable $e Action failure
+     */
+    public function onActionException(string $acceptKey, string $action, ActionPayloadDTO $dto, Throwable $e): void
+    {
+        if ($action === ChatSignalConstants::RENAME) {
             $this->getChatAgent()->sendToUser(
                 ChatSignalConstants::RENAME_FAIL,
                 $acceptKey,
                 new ActionFailSignalData($e->getMessage()),
             );
+
+            return;
         }
+
+        parent::onActionException($acceptKey, $action, $dto, $e);
     }
 
     /**

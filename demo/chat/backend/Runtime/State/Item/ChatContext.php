@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Demo\Chat\Runtime\State\Item;
 
 use Demo\Chat\Runtime\View\Context\RtChatContext;
-use Hilos\Runtime\Exception\State\RtStatePropertyNotFoundException;
 use Hilos\Runtime\State\Item\RtState;
 
 /**
@@ -13,10 +12,6 @@ use Hilos\Runtime\State\Item\RtState;
  *
  * Stores only LLM-produced data: topic, summary, topicConfidence.
  * Id is always "main".
- *
- * @property ?string $topic Current conversation topic (null if none)
- * @property float $topicConfidence Topic confidence 0..1
- * @property string $summary LLM-generated summary of recent messages
  */
 final class ChatContext extends RtState
 {
@@ -25,14 +20,14 @@ final class ChatContext extends RtState
     public const string topicConfidence = 'topicConfidence';
     public const string summary = 'summary';
 
-    /** @var ?string Current conversation topic (null if none) */
-    private ?string $topic = null;
+    /** Current conversation topic (null if none). */
+    public ?string $topic = null;
 
-    /** @var float Topic confidence 0..1 */
-    private float $topicConfidence = 0.0;
+    /** Topic confidence 0..1. */
+    public float $topicConfidence = 0.0;
 
-    /** @var string LLM-generated summary of recent messages */
-    private string $summary = '';
+    /** LLM-generated summary of recent messages. */
+    public string $summary = '';
 
     /**
      * Create empty chat context instance.
@@ -97,23 +92,6 @@ final class ChatContext extends RtState
     public function getId(): string
     {
         return self::ID_MAIN;
-    }
-
-    /**
-     * Returns property value by name.
-     *
-     * @param string $name Property name (topic, topicConfidence, summary)
-     * @return mixed Property value
-     * @throws RtStatePropertyNotFoundException If property name is invalid
-     */
-    public function __get(string $name): mixed
-    {
-        return match ($name) {
-            self::topic => $this->topic,
-            self::topicConfidence => $this->topicConfidence,
-            self::summary => $this->summary,
-            default => parent::__get($name),
-        };
     }
 
     /**

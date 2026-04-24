@@ -29,4 +29,7 @@ class SignalConstants
 
     /** @var string Page subscription error signal - sent when onSubscribe throws PageSubscriptionException */
     public const string SUBSCRIPTION_PAGE_ERROR = 'subscription_page_error';
+
+    /** @var string Page action error signal - sent when onAction throws and page does not override handling */
+    public const string ACTION_ERROR = 'action_error';
 }

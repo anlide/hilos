@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Runtime\View\Actions\Collection;
 
+use Demo\Chat\Runtime\State\Collection\ChatContexts as StateChatContexts;
 use Demo\Chat\Runtime\State\Item\ChatContext as StateChatContext;
 use Demo\Chat\Runtime\View\Collection\ChatContexts;
 use Demo\Chat\Runtime\View\Item\ChatContext as RuntimeChatContext;
@@ -14,6 +15,7 @@ use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\Runtime\State\Item\RtState;
 use Hilos\Runtime\View\Actions\Collection\RtActions;
+use OutOfBoundsException;
 
 /**
  * ChatContextsActions - write operations for chat context.
@@ -22,7 +24,8 @@ use Hilos\Runtime\View\Actions\Collection\RtActions;
  *   Hilos::$rt->chatContexts->actions->init();  // Creates empty context
  *   Hilos::$rt->chatContexts->actions->update($data);  // Updates existing
  *
- * @extends RtActions<RuntimeChatContext, ChatContexts>
+ * @extends RtActions<RuntimeChatContext, ChatContexts, StateChatContexts>
+ * @property-read StateChatContexts $stateCollection
  */
 final class ChatContextsActions extends RtActions
 {
@@ -63,7 +66,6 @@ final class ChatContextsActions extends RtActions
      * @param array<string, mixed> $data Fields to set (topic, summary, topicConfidence)
      * @return RuntimeChatContext Updated context
      * @throws InvalidStateException When context not initialized (call init() first)
-     * @throws RtActionsStateCollectionNullException When state collection is null (should not happen if init() was called)
      * @throws RtActionsCallbackNotSetException When callback for creating RT item from state is not set (should be set in constructor of parent class)
      * @throws RtActionsCollectionNameNullException When collection name is null.
      * @throws RtTruthSourceWriteNotAllowedException When truth source does not allow write.
@@ -71,13 +73,22 @@ final class ChatContextsActions extends RtActions
     public function update(array $data): RuntimeChatContext
     {
         $this->ensureCanWrite();
-        $stateCollection = $this->getStateCollection();
-        $existing = $stateCollection->get(StateChatContext::ID_MAIN);
-        if ($existing === null) {
+        try {
+            $existing = $this->stateCollection[StateChatContext::ID_MAIN];
+        } catch (OutOfBoundsException) {
             throw new InvalidStateException('ChatContext not initialized. Call init() first.');
         }
 
-        $this->applyDiffToState($existing, $data);
+        foreach ($data as $field => $value) {
+            match ($field) {
+                StateChatContext::topic => $existing->topic = $value !== null && $value !== '' ? (string)$value : null,
+                StateChatContext::topicConfidence => $existing->topicConfidence = (float)$value,
+                StateChatContext::summary => $existing->summary = (string)$value,
+                default => throw new InvalidStateException("Unknown ChatContext field: {$field}"),
+            };
+        }
+        $existing->sync();
+        $this->clearCollectionCache();
 
         return $this->createRtItemFromState($existing);
     }

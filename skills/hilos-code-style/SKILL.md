@@ -25,10 +25,17 @@ Use this skill for style-sensitive Hilos edits and reviews. Start with `agents.m
 4. Keep action routing and handler code aligned with the page action handler guide.
 5. Avoid one-use locals unless they improve clarity under the local variable rule.
 6. Keep comments concise and in English.
-7. For `Page::onAction()`, keep a `try/catch` around the routing `switch` and
-   convert thrown handler failures to the page's user-facing fail/error signal
-   with `sendToUser()`.
-8. Use `ValidationException` and its children for user/business validation;
+7. For `Page::onAction()`, do not add a local `try/catch` around the routing
+   `switch`; the framework catches action exceptions and calls
+   `onActionException()`.
+8. Override `onActionException()` only when the page has a specific fail/error
+   contract; otherwise let the default framework `action_error` signal notify
+   the initiator.
+9. Use `AgentUnknownActionException` in `onAction()` default branches.
+10. In PHPDoc, import exception classes with `use` and reference short names;
+   do not write leading-backslash fully qualified exceptions such as
+   `@throws \OutOfBoundsException`.
+11. Use `ValidationException` and its children for user/business validation;
    read `docs/agents/code-style/exceptions.md` before changing exception types.
 
 ## Hard Rules

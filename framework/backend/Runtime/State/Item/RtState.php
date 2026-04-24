@@ -15,7 +15,8 @@ use Hilos\Runtime\Exception\State\RtStateUnserializeException;
  * Base class for runtime state objects.
  *
  * RtState is the single source of truth for runtime data (analogous to Object_).
- * Child classes must use typed/private fields and expose read access via __get and/or explicit getters.
+ * Child classes should expose row fields as real typed properties; use PHP 8.4
+ * asymmetric visibility (`public private(set)`) for immutable ids.
  *
  * {@see sync()} broadcasts RT_SYNC_UPDATED for fields changed since {@see markRtSyncBaseline()} (worker sync only).
  * After inbound RT applyDiff, callers must call {@see markRtSyncBaseline()} so local sync() does not re-send stale diffs.
@@ -69,7 +70,7 @@ abstract class RtState
     }
 
     /**
-     * Magic getter for property access. Override in child classes to expose state fields.
+     * Legacy fallback for dynamic property reads. Concrete state fields should be real typed properties.
      *
      * @param string $name Property name
      * @return mixed Property value (child classes must override; base always throws)
@@ -82,7 +83,7 @@ abstract class RtState
     }
 
     /**
-     * Magic setter. Default: read-only. Subclasses may override to allow writes from item actions (see StateConnection).
+     * Legacy fallback for dynamic property writes. Concrete writable state fields should be real typed properties.
      *
      * @param string $name Property name
      * @param mixed $value New value

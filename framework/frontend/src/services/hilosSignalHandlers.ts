@@ -1,6 +1,7 @@
 import { useGuardianStore } from '../stores/useGuardianStore'
 import { useTableStore } from '../stores/useTableStore'
 import {
+  actionError,
   tableData,
   tableMutation,
   tableActionError,
@@ -21,6 +22,10 @@ const isRecord = (value: unknown): value is Record<string, unknown> => {
  * Demo projects call this, then add their own handlers.
  */
 export function registerHilosSignalHandlers(router: VueSignalRouter): void {
+  router.on(actionError, ({ action, reason }) => {
+    console.error(`[Action error] ${action}: ${reason}`)
+  })
+
   router.on(tableData, ({ tables }) => {
     const tableStore = useTableStore()
     tableStore.applyTablesPayload(tables)

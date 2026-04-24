@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Demo\Chat\Runtime\View\Actions\Collection;
 
 use Demo\Chat\Hilos;
+use Demo\Chat\Runtime\State\Collection\Connections as StateConnections;
 use Demo\Chat\Runtime\State\Item\Connection as StateConnection;
 use Demo\Chat\Runtime\View\Collection\Connections;
 use Demo\Chat\Runtime\View\Item\Connection as RuntimeConnection;
@@ -21,7 +22,8 @@ use LogicException;
  *
  * Per-socket file upload and moderation UI use {@see RuntimeConnection::$actions}.
  *
- * @extends RtActions<RuntimeConnection, Connections>
+ * @extends RtActions<RuntimeConnection, Connections, StateConnections>
+ * @property-read StateConnections $stateCollection
  */
 final class ConnectionsActions extends RtActions
 {

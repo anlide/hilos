@@ -27,9 +27,13 @@ use Hilos\TruthSource\RtTruthSourceRegistry;
  *
  * @template T of RtItem
  * @template TCollection of RtCollection = RtCollection
+ * @template TStateCollection of RtStates = RtStates
+ * @property-read TStateCollection $stateCollection Backing runtime state collection
  */
 abstract class RtActions
 {
+    public const string stateCollection = 'stateCollection';
+
     /** @var TCollection Owning view collection (typed as {@see RtCollection} for the field declaration) */
     protected RtCollection $collection;
 
@@ -47,6 +51,20 @@ abstract class RtActions
     public function __construct(RtCollection $collection)
     {
         $this->collection = $collection;
+    }
+
+    /**
+     * @param string $name Property name
+     * @return RtStates Backing state collection
+     *
+     * @throws \InvalidArgumentException If property is unknown
+     */
+    public function __get(string $name): mixed
+    {
+        return match ($name) {
+            self::stateCollection => $this->getStateCollection(),
+            default => throw new \InvalidArgumentException("Unknown property: {$name}"),
+        };
     }
 
     /**

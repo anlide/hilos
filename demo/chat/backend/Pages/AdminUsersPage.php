@@ -17,6 +17,8 @@ use Demo\Chat\Tables\AdminUser\DTO\AdminUserUpdateActionDTO;
 use Demo\Chat\Tables\DTO\TableRefreshActionDTO;
 use Demo\Chat\Tables\Settings\DTO\SettingsTableResultDTO;
 use Demo\Chat\Tables\TableChatContext;
+use Hilos\Core\Agent\Exception\AgentUnknownActionException;
+use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\EntitiesChangesDTO;
 use Hilos\Core\Table\DTO\TableActionErrorSignalData;
@@ -26,7 +28,6 @@ use Hilos\Core\Table\Mutation\TableMutationEntry;
 use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\HilosException;
 use Throwable;
-use Hilos\Core\Page\PageRouteParams;
 
 /**
  * AdminUsersPage - Admin users table page handler.
@@ -62,37 +63,48 @@ final class AdminUsersPage extends AbstractChatPage
      * @param string $acceptKey WebSocket accept key for the client
      * @param string $action Action name (for error reporting)
      * @param ActionPayloadDTO $dto Action payload (AdminUserUpdateActionDTO|TableRefreshActionDTO)
+     * @throws AgentUnknownActionException When action is not supported by this page
+     * @throws HilosException On table mutation or signal failure
      */
     public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): void
     {
-        try {
-            switch ($action) {
-                case ChatSignalConstants::USER_UPDATE:
-                    if ($dto instanceof AdminUserUpdateActionDTO) {
-                        $this->handleUserUpdate($acceptKey, $dto);
-                    }
+        switch ($action) {
+            case ChatSignalConstants::USER_UPDATE:
+                if ($dto instanceof AdminUserUpdateActionDTO) {
+                    $this->handleUserUpdate($acceptKey, $dto);
+                }
 
-                    break;
+                break;
 
-                case ChatSignalConstants::TABLE_REFRESH:
-                    if ($dto instanceof TableRefreshActionDTO) {
-                        $this->handleTableRefresh($acceptKey, $dto);
-                    }
+            case ChatSignalConstants::TABLE_REFRESH:
+                if ($dto instanceof TableRefreshActionDTO) {
+                    $this->handleTableRefresh($acceptKey, $dto);
+                }
 
-                    break;
+                break;
 
-                default:
-                    throw new TableActionException("Unknown action: {$action}");
-            }
-        } catch (Throwable $e) {
-            $tableKey = $dto instanceof TableRefreshActionDTO ? ($dto->tableKey ?: TableChatContext::adminUsers) : TableChatContext::adminUsers;
-
-            $this->getChatAgent()->sendToUser(
-                ChatSignalConstants::TABLE_ACTION_ERROR,
-                $acceptKey,
-                new TableActionErrorSignalData($tableKey, $action, $e->getMessage()),
-            );
+            default:
+                throw new AgentUnknownActionException("Unknown action: {$action}");
         }
+    }
+
+    /**
+     * Sends admin users table action failures to the initiating client.
+     *
+     * @param string $acceptKey WebSocket accept key for the client
+     * @param string $action Action name that failed
+     * @param ActionPayloadDTO $dto Action payload
+     * @param Throwable $e Action failure
+     */
+    public function onActionException(string $acceptKey, string $action, ActionPayloadDTO $dto, Throwable $e): void
+    {
+        $tableKey = $dto instanceof TableRefreshActionDTO ? ($dto->tableKey ?: TableChatContext::adminUsers) : TableChatContext::adminUsers;
+
+        $this->getChatAgent()->sendToUser(
+            ChatSignalConstants::TABLE_ACTION_ERROR,
+            $acceptKey,
+            new TableActionErrorSignalData($tableKey, $action, $e->getMessage()),
+        );
     }
 
     /**

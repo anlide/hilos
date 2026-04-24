@@ -1,6 +1,7 @@
 import { createWebSocketPlugin } from '@hilos/sdk/plugins/websocket'
 import { useConnectionStore, usePageCatalogStore, useHilosLogsStore } from '@hilos/sdk/stores'
 import { hasEntities } from '@hilos/sdk/types'
+import { actionError } from '@hilos/sdk/signals'
 import { createHilosSignalRouter } from '@hilos/sdk/services/hilosSignalHandlers'
 import type { VueSignalRouter } from '@hilos/sdk/services/VueSignalRouter'
 import type { WebSocketOutcome } from '@hilos/sdk/types/websocket-messages'
@@ -129,6 +130,22 @@ function buildSignalRouter() {
 
   signalRouter.on(moderationStateUpdate, ({ moderationState }) => {
     useChatStore().setModerationState(moderationState)
+  })
+
+  signalRouter.on(actionError, ({ action, reason }) => {
+    const chatStore = useChatStore()
+    switch (action) {
+      case 'message':
+        chatStore.setMessageError(reason)
+        break
+
+      case 'file_upload_init':
+        resolveFileUploadOutcome({ ok: false, code: 'action_error', message: reason })
+        break
+
+      default:
+        console.error(`[Action error] ${action}: ${reason}`)
+    }
   })
 
   signalRouter.on(fileModerationStateUpdate, ({ fileModerationState }) => {

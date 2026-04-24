@@ -18,6 +18,7 @@ use Demo\Chat\Hilos;
 use Demo\Chat\Tables\TableChatContext;
 use Demo\Chat\Tables\HilosUser\DTO\HilosUserUpdateActionDTO;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Page\Exception\PageResourceNotFoundException;
@@ -79,28 +80,45 @@ final class UserPage extends AbstractHilosUserPage
      * @param string $acceptKey WebSocket accept key for the client
      * @param string $action Action name from the WebSocket envelope
      * @param ActionPayloadDTO $dto Parsed action payload
+     * @throws AgentUnknownActionException When action is not supported by this page
+     * @throws HilosException On update or signal failure
      */
     public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): void
     {
-        try {
-            switch ($action) {
-                case ChatSignalConstants::HILOS_USER_UPDATE:
-                    if ($dto instanceof HilosUserUpdateActionDTO) {
-                        $this->handleHilosUserUpdate($acceptKey, $dto);
-                    }
+        switch ($action) {
+            case ChatSignalConstants::HILOS_USER_UPDATE:
+                if ($dto instanceof HilosUserUpdateActionDTO) {
+                    $this->handleHilosUserUpdate($acceptKey, $dto);
+                }
 
-                    break;
+                break;
 
-                default:
-                    return;
-            }
-        } catch (Throwable $e) {
+            default:
+                throw new AgentUnknownActionException("Unknown action: {$action}");
+        }
+    }
+
+    /**
+     * Sends Hilos user update failures through the user-detail modal ack contract.
+     *
+     * @param string $acceptKey WebSocket accept key for the client
+     * @param string $action Action name that failed
+     * @param ActionPayloadDTO $dto Action payload
+     * @param Throwable $e Action failure
+     */
+    public function onActionException(string $acceptKey, string $action, ActionPayloadDTO $dto, Throwable $e): void
+    {
+        if ($action === ChatSignalConstants::HILOS_USER_UPDATE) {
             $this->sendToUser(
                 ChatSignalConstants::HILOS_USER_UPDATE_FAIL,
                 $acceptKey,
                 new ActionFailSignalData($e->getMessage()),
             );
+
+            return;
         }
+
+        parent::onActionException($acceptKey, $action, $dto, $e);
     }
 
     /**

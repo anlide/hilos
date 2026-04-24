@@ -21,6 +21,7 @@ export const useChatStore = defineStore('chat', {
     currentUserId: null as number | null,
     currentUsername: null as string | null,
     currentUserModerationState: null as string | null,
+    messageError: null as string | null,
     /** Server-driven file moderation UI: moderating | rejected (main subscribe + WS) */
     fileModerationState: null as Record<string, unknown> | null,
     /** Binary upload bytes progress (separate from moderation; main subscribe + WS) */
@@ -50,6 +51,10 @@ export const useChatStore = defineStore('chat', {
 
     setModerationState(value: string | null) {
       this.currentUserModerationState = value
+    },
+
+    setMessageError(value: string | null) {
+      this.messageError = value
     },
 
     setFileModerationState(value: Record<string, unknown> | null) {

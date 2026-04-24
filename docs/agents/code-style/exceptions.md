@@ -42,8 +42,10 @@ means DB infrastructure or SQL execution failed.
 ## Page and table actions
 
 For `Page::onAction()` handlers, throw validation exceptions from private
-handlers and let the page-level `try/catch` convert them to the correct
-user-facing fail/error signal.
+handlers and let the framework action dispatcher call
+`AbstractPage::onActionException()`. Override `onActionException()` only when
+the page has a specific user-facing fail/error contract; otherwise the default
+`action_error` signal is sent to the initiator.
 
 Use `TableActionException` for table-specific action validation where the
 frontend expects `TABLE_ACTION_ERROR`.

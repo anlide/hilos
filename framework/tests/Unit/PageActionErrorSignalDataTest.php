@@ -1,0 +1,34 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Hilos\Tests\Unit;
+
+use Hilos\Core\Page\DTO\PageActionErrorSignalData;
+use Hilos\Core\Router\WebSocketEnvelopeAware;
+use PHPUnit\Framework\TestCase;
+
+final class PageActionErrorSignalDataTest extends TestCase
+{
+    public function testStoresActionAndReason(): void
+    {
+        $data = new PageActionErrorSignalData('message', 'Message cannot be empty');
+
+        $this->assertSame('message', $data->action);
+        $this->assertSame('Message cannot be empty', $data->reason);
+        $this->assertSame([
+            'action' => 'message',
+            'reason' => 'Message cannot be empty',
+        ], $data->toArray());
+    }
+
+    public function testRoundtripPreservesEnvelopeMarker(): void
+    {
+        $original = new PageActionErrorSignalData('message', 'Message cannot be empty');
+        $restored = PageActionErrorSignalData::fromArray($original->toArray());
+
+        $this->assertInstanceOf(WebSocketEnvelopeAware::class, $restored);
+        $this->assertSame('fail', $restored->getEnvelopeOutcome());
+        $this->assertNull($restored->getEnvelopeTime());
+    }
+}

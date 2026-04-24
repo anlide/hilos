@@ -6,38 +6,14 @@ namespace Demo\Chat\Runtime\State\Item;
 
 use Demo\Chat\Runtime\View\Actions\Item\ConnectionActions;
 use Demo\Chat\Runtime\View\Context\RtChatContext;
-use Hilos\Runtime\Exception\State\RtStatePropertyNotFoundException;
-use Hilos\Runtime\Exception\State\RtStateReadOnlyException;
 use Hilos\Runtime\State\Item\RtState;
 
 /**
  * Runtime row for one WebSocket connection (`acceptKey` is the collection id).
  *
  * Holds transport metadata plus in-memory file upload session, progress UI, and file-moderation UI for this socket only.
- * Inbound RT updates use {@see applyDiff()}; local writes from item actions use magic assignment + {@see sync()}.
+ * Inbound RT updates use {@see applyDiff()}; local writes from item actions use typed properties + {@see sync()}.
  * Public string constants name row keys.
- *
- * @property string $acceptKey WebSocket accept key (unique connection identifier)
- * @property int $userId User ID associated with this connection
- * @property int $connectedAt Unix timestamp when connection was established
- * @property ?string $fileSessionUploadId Active binary upload id or null
- * @property int $fileSessionDeclaredSize Declared total bytes for current upload session
- * @property int $fileSessionReceivedBytes Bytes received so far for current upload session
- * @property string $fileSessionQuarantineBasename Quarantine filename basename (.part)
- * @property string $fileSessionOriginalFilename Original client filename for current session
- * @property string $fileSessionMimeType MIME type for current session
- * @property string $fileSessionClientUploadId Opaque client-side upload correlation id
- * @property string $fileSessionNormalizedFilename Lowercase normalized basename for dedup checks
- * @property ?string $fileModPhase File moderation UI phase (moderating, rejected) or null
- * @property string $fileModFilename Filename shown in file moderation UI
- * @property int $fileModUploadedBytes Bytes shown in moderation UI
- * @property int $fileModTotalBytes Total bytes shown in moderation UI
- * @property string $fileModReason Rejection reason for moderation UI
- * @property int $fileModUpdatedAt Last moderation UI update unix time
- * @property ?string $fileProgressFilename Upload progress bar filename or null
- * @property int $fileProgressUploadedBytes Bytes uploaded for progress UI
- * @property int $fileProgressTotalBytes Total bytes for progress UI
- * @property float $uploadProgressLastSentAt Microtime of last upload-progress baseline to client (READY or progress_update)
  */
 final class Connection extends RtState
 {
@@ -67,68 +43,68 @@ final class Connection extends RtState
 
     public const string uploadProgressLastSentAt = 'uploadProgressLastSentAt';
 
-    /** @var string WebSocket accept key (primary id) */
-    private string $acceptKey = '';
+    /** WebSocket accept key (primary id). */
+    public private(set) string $acceptKey = '';
 
-    /** @var int Owning database user id */
-    private int $userId = 0;
+    /** Owning database user id. */
+    public private(set) int $userId = 0;
 
-    /** @var int Unix time when the socket was registered */
-    private int $connectedAt = 0;
+    /** Unix time when the socket was registered. */
+    public private(set) int $connectedAt = 0;
 
-    /** @var ?string Active upload id or null */
-    private ?string $fileSessionUploadId = null;
+    /** Active upload id or null. */
+    public ?string $fileSessionUploadId = null;
 
-    /** @var int Declared total size for current upload */
-    private int $fileSessionDeclaredSize = 0;
+    /** Declared total size for current upload. */
+    public int $fileSessionDeclaredSize = 0;
 
-    /** @var int Bytes appended so far for current upload */
-    private int $fileSessionReceivedBytes = 0;
+    /** Bytes appended so far for current upload. */
+    public int $fileSessionReceivedBytes = 0;
 
-    /** @var string Quarantine file basename */
-    private string $fileSessionQuarantineBasename = '';
+    /** Quarantine file basename. */
+    public string $fileSessionQuarantineBasename = '';
 
-    /** @var string Client original filename for session */
-    private string $fileSessionOriginalFilename = '';
+    /** Client original filename for session. */
+    public string $fileSessionOriginalFilename = '';
 
-    /** @var string MIME type for session */
-    private string $fileSessionMimeType = '';
+    /** MIME type for session. */
+    public string $fileSessionMimeType = '';
 
-    /** @var string Client-side upload correlation id */
-    private string $fileSessionClientUploadId = '';
+    /** Client-side upload correlation id. */
+    public string $fileSessionClientUploadId = '';
 
-    /** @var string Normalized basename for duplicate-name checks */
-    private string $fileSessionNormalizedFilename = '';
+    /** Normalized basename for duplicate-name checks. */
+    public string $fileSessionNormalizedFilename = '';
 
-    /** @var ?string File moderation banner phase or null */
-    private ?string $fileModPhase = null;
+    /** File moderation banner phase or null. */
+    public ?string $fileModPhase = null;
 
-    /** @var string Filename shown in file moderation UI */
-    private string $fileModFilename = '';
+    /** Filename shown in file moderation UI. */
+    public string $fileModFilename = '';
 
-    /** @var int Uploaded bytes shown in moderation UI */
-    private int $fileModUploadedBytes = 0;
+    /** Uploaded bytes shown in moderation UI. */
+    public int $fileModUploadedBytes = 0;
 
-    /** @var int Total bytes shown in moderation UI */
-    private int $fileModTotalBytes = 0;
+    /** Total bytes shown in moderation UI. */
+    public int $fileModTotalBytes = 0;
 
-    /** @var string Rejection reason text */
-    private string $fileModReason = '';
+    /** Rejection reason text. */
+    public string $fileModReason = '';
 
-    /** @var int Last moderation UI update unix time */
-    private int $fileModUpdatedAt = 0;
+    /** Last moderation UI update unix time. */
+    public int $fileModUpdatedAt = 0;
 
-    /** @var ?string Progress bar filename or null */
-    private ?string $fileProgressFilename = null;
+    /** Progress bar filename or null. */
+    public ?string $fileProgressFilename = null;
 
-    /** @var int Bytes for upload progress UI */
-    private int $fileProgressUploadedBytes = 0;
+    /** Bytes for upload progress UI. */
+    public int $fileProgressUploadedBytes = 0;
 
-    /** @var int Total for upload progress UI */
-    private int $fileProgressTotalBytes = 0;
+    /** Total for upload progress UI. */
+    public int $fileProgressTotalBytes = 0;
 
-    /** @var float Last FILE_UPLOAD_READY or FILE_UPLOAD_PROGRESS_UPDATE for throttle (microtime) */
-    private float $uploadProgressLastSentAt = 0.0;
+    /** Last FILE_UPLOAD_READY or FILE_UPLOAD_PROGRESS_UPDATE for throttle (microtime). */
+    public float $uploadProgressLastSentAt = 0.0;
 
     /**
      * @param string $acceptKey WebSocket accept key (unique identifier)
@@ -201,39 +177,6 @@ final class Connection extends RtState
     public static function getRtCollectionKey(): string
     {
         return RtChatContext::connections;
-    }
-
-    /**
-     * Writable from {@see ConnectionActions} (then call {@see sync()}).
-     *
-     * @throws RtStateReadOnlyException For unknown or immutable properties
-     */
-    public function __set(string $name, mixed $value): void
-    {
-        match ($name) {
-            self::acceptKey => throw new RtStateReadOnlyException('acceptKey is immutable'),
-            self::userId => $this->userId = (int)$value,
-            self::connectedAt => $this->connectedAt = (int)$value,
-            self::fileSessionUploadId => $this->fileSessionUploadId = is_string($value) && $value !== '' ? $value : null,
-            self::fileSessionDeclaredSize => $this->fileSessionDeclaredSize = (int)$value,
-            self::fileSessionReceivedBytes => $this->fileSessionReceivedBytes = (int)$value,
-            self::fileSessionQuarantineBasename => $this->fileSessionQuarantineBasename = (string)$value,
-            self::fileSessionOriginalFilename => $this->fileSessionOriginalFilename = (string)$value,
-            self::fileSessionMimeType => $this->fileSessionMimeType = (string)$value,
-            self::fileSessionClientUploadId => $this->fileSessionClientUploadId = (string)$value,
-            self::fileSessionNormalizedFilename => $this->fileSessionNormalizedFilename = (string)$value,
-            self::fileModPhase => $this->fileModPhase = is_string($value) && $value !== '' ? $value : null,
-            self::fileModFilename => $this->fileModFilename = (string)$value,
-            self::fileModUploadedBytes => $this->fileModUploadedBytes = (int)$value,
-            self::fileModTotalBytes => $this->fileModTotalBytes = (int)$value,
-            self::fileModReason => $this->fileModReason = (string)$value,
-            self::fileModUpdatedAt => $this->fileModUpdatedAt = (int)$value,
-            self::fileProgressFilename => $this->fileProgressFilename = is_string($value) && $value !== '' ? $value : null,
-            self::fileProgressUploadedBytes => $this->fileProgressUploadedBytes = (int)$value,
-            self::fileProgressTotalBytes => $this->fileProgressTotalBytes = (int)$value,
-            self::uploadProgressLastSentAt => $this->uploadProgressLastSentAt = (float)$value,
-            default => parent::__set($name, $value),
-        };
     }
 
     /**
@@ -312,39 +255,6 @@ final class Connection extends RtState
     public function getId(): string
     {
         return $this->acceptKey;
-    }
-
-    /**
-     * Read-only access for code outside this class (private fields route through here).
-     *
-     * @throws RtStatePropertyNotFoundException When $name is not a declared field
-     */
-    public function __get(string $name): string|int|float|null
-    {
-        return match ($name) {
-            self::acceptKey => $this->acceptKey,
-            self::userId => $this->userId,
-            self::connectedAt => $this->connectedAt,
-            self::fileSessionUploadId => $this->fileSessionUploadId,
-            self::fileSessionDeclaredSize => $this->fileSessionDeclaredSize,
-            self::fileSessionReceivedBytes => $this->fileSessionReceivedBytes,
-            self::fileSessionQuarantineBasename => $this->fileSessionQuarantineBasename,
-            self::fileSessionOriginalFilename => $this->fileSessionOriginalFilename,
-            self::fileSessionMimeType => $this->fileSessionMimeType,
-            self::fileSessionClientUploadId => $this->fileSessionClientUploadId,
-            self::fileSessionNormalizedFilename => $this->fileSessionNormalizedFilename,
-            self::fileModPhase => $this->fileModPhase,
-            self::fileModFilename => $this->fileModFilename,
-            self::fileModUploadedBytes => $this->fileModUploadedBytes,
-            self::fileModTotalBytes => $this->fileModTotalBytes,
-            self::fileModReason => $this->fileModReason,
-            self::fileModUpdatedAt => $this->fileModUpdatedAt,
-            self::fileProgressFilename => $this->fileProgressFilename,
-            self::fileProgressUploadedBytes => $this->fileProgressUploadedBytes,
-            self::fileProgressTotalBytes => $this->fileProgressTotalBytes,
-            self::uploadProgressLastSentAt => $this->uploadProgressLastSentAt,
-            default => parent::__get($name),
-        };
     }
 
     /**

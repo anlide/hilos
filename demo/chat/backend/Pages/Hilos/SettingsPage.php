@@ -13,6 +13,8 @@ use Demo\Chat\Tables\Settings\DTO\SettingsTableResultDTO;
 use Demo\Chat\Tables\Settings\DTO\SettingDeleteActionDTO;
 use Demo\Chat\Tables\Settings\DTO\SettingUpdateActionDTO;
 use Demo\Chat\Tables\TableChatContext;
+use Hilos\Core\Agent\Exception\AgentUnknownActionException;
+use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\EntitiesChangesDTO;
 use Hilos\Core\Table\DTO\TableActionErrorSignalData;
@@ -21,7 +23,6 @@ use Hilos\Core\Table\Exception\TableActionException;
 use Hilos\HilosException;
 use Hilos\Pages\AbstractHilosSettingsPage;
 use Throwable;
-use Hilos\Core\Page\PageRouteParams;
 
 /**
  * SettingsPage - Hilos settings page handler.
@@ -58,42 +59,53 @@ final class SettingsPage extends AbstractHilosSettingsPage
      * @param string $acceptKey WebSocket accept key for the client
      * @param string $action Action name (for error reporting)
      * @param ActionPayloadDTO $dto Action payload (SettingAddActionDTO|SettingUpdateActionDTO|SettingDeleteActionDTO)
+     * @throws AgentUnknownActionException When action is not supported by this page
+     * @throws HilosException On table mutation or signal failure
      */
     public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): void
     {
-        try {
-            switch ($action) {
-                case ChatSignalConstants::SETTING_ADD:
-                    if ($dto instanceof SettingAddActionDTO) {
-                        $this->handleAdd($acceptKey, $dto);
-                    }
+        switch ($action) {
+            case ChatSignalConstants::SETTING_ADD:
+                if ($dto instanceof SettingAddActionDTO) {
+                    $this->handleAdd($acceptKey, $dto);
+                }
 
-                    break;
+                break;
 
-                case ChatSignalConstants::SETTING_UPDATE:
-                    if ($dto instanceof SettingUpdateActionDTO) {
-                        $this->handleUpdate($acceptKey, $dto);
-                    }
+            case ChatSignalConstants::SETTING_UPDATE:
+                if ($dto instanceof SettingUpdateActionDTO) {
+                    $this->handleUpdate($acceptKey, $dto);
+                }
 
-                    break;
+                break;
 
-                case ChatSignalConstants::SETTING_DELETE:
-                    if ($dto instanceof SettingDeleteActionDTO) {
-                        $this->handleDelete($acceptKey, $dto);
-                    }
+            case ChatSignalConstants::SETTING_DELETE:
+                if ($dto instanceof SettingDeleteActionDTO) {
+                    $this->handleDelete($acceptKey, $dto);
+                }
 
-                    break;
+                break;
 
-                default:
-                    throw new TableActionException("Unknown action: {$action}");
-            }
-        } catch (Throwable $e) {
-            $this->sendToUser(
-                ChatSignalConstants::TABLE_ACTION_ERROR,
-                $acceptKey,
-                new TableActionErrorSignalData(TableChatContext::settings, $action, $e->getMessage()),
-            );
+            default:
+                throw new AgentUnknownActionException("Unknown action: {$action}");
         }
+    }
+
+    /**
+     * Sends settings table action failures to the initiating client.
+     *
+     * @param string $acceptKey WebSocket accept key for the client
+     * @param string $action Action name that failed
+     * @param ActionPayloadDTO $dto Action payload
+     * @param Throwable $e Action failure
+     */
+    public function onActionException(string $acceptKey, string $action, ActionPayloadDTO $dto, Throwable $e): void
+    {
+        $this->sendToUser(
+            ChatSignalConstants::TABLE_ACTION_ERROR,
+            $acceptKey,
+            new TableActionErrorSignalData(TableChatContext::settings, $action, $e->getMessage()),
+        );
     }
 
     /**

@@ -20,40 +20,52 @@ especially `onAction()`.
 5. Page handlers may validate page context that the action layer cannot know,
    such as the current connection, requested page params, or whether the target
    item exists before an item-level action can be created.
-6. Wrap the whole `switch ($action)` in `try/catch`. Handlers should throw
-   validation, logic, SQL, and action-layer failures; `onAction()` maps them to
-   the page's fail/error signal with `sendToUser()`. Prefer `catch (Throwable
-   $e)` when the page has a user-visible failure signal, so unexpected DB/runtime
-   failures also clear frontend loading state.
+6. Do not wrap `onAction()` routing in a local `try/catch`. Handlers should
+   throw validation, logic, SQL, and action-layer failures; the framework wraps
+   action dispatch and calls `AbstractPage::onActionException()`. Override
+   `onActionException()` only when the page has a more specific user-facing
+   error contract (for example table errors or modal acks).
 7. Use action constants in `case` labels and signal constants in acks/errors.
    Do not duplicate raw action names as strings in handlers.
-8. Do not invent hidden fail signals. If an action has no user-facing pending
-   state or fail UI, log the caught error in a small helper; add a real signal
-   contract before trying to surface it in the frontend.
+8. The `default` branch must throw `AgentUnknownActionException`; do not log and
+   return on unknown actions.
+9. Do not invent hidden fail signals. If an action has a user-facing pending
+   state or fail UI, add a real signal contract or override
+   `onActionException()` before trying to surface it in the frontend. Otherwise
+   rely on the framework `action_error` signal.
 
 ## Shape
 
 ```php
 public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): void
 {
-    try {
-        switch ($action) {
-            case ChatSignalConstants::USER_UPDATE:
-                if ($dto instanceof UserUpdateActionDTO) {
-                    $this->handleUserUpdate($acceptKey, $dto);
-                }
+    switch ($action) {
+        case ChatSignalConstants::USER_UPDATE:
+            if ($dto instanceof UserUpdateActionDTO) {
+                $this->handleUserUpdate($acceptKey, $dto);
+            }
 
-                break;
+            break;
 
-            default:
-                return;
-        }
-    } catch (Throwable $e) {
-        $this->sendToUser(
-            ChatSignalConstants::USER_UPDATE_FAIL,
-            $acceptKey,
-            new ActionFailSignalData($e->getMessage()),
-        );
+        default:
+            throw new AgentUnknownActionException("Unknown action: {$action}");
+    }
+}
+
+public function onActionException(string $acceptKey, string $action, ActionPayloadDTO $dto, Throwable $e): void
+{
+    switch ($action) {
+        case ChatSignalConstants::USER_UPDATE:
+            $this->sendToUser(
+                ChatSignalConstants::USER_UPDATE_FAIL,
+                $acceptKey,
+                new ActionFailSignalData($e->getMessage()),
+            );
+
+            break;
+
+        default:
+            parent::onActionException($acceptKey, $action, $dto, $e);
     }
 }
 ```

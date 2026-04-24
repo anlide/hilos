@@ -13,6 +13,8 @@ use Demo\Chat\Tables\ModeratorPiece\DTO\ModeratorPieceCreateActionDTO;
 use Demo\Chat\Tables\ModeratorPiece\DTO\ModeratorPieceDeleteActionDTO;
 use Demo\Chat\Tables\ModeratorPiece\DTO\ModeratorPieceUpdateActionDTO;
 use Demo\Chat\Tables\TableChatContext;
+use Hilos\Core\Agent\Exception\AgentUnknownActionException;
+use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\EntitiesChangesDTO;
 use Hilos\Core\Table\DTO\TableActionErrorSignalData;
@@ -20,7 +22,6 @@ use Hilos\Core\Table\DTO\TableMutationSignalData;
 use Hilos\Core\Table\Exception\TableActionException;
 use Hilos\HilosException;
 use Throwable;
-use Hilos\Core\Page\PageRouteParams;
 
 /**
  * AdminModeratorPage - Admin moderator prompt pieces page handler.
@@ -55,42 +56,53 @@ final class AdminModeratorPage extends AbstractChatPage
      * @param string $acceptKey WebSocket accept key for the client
      * @param string $action Action name (for error reporting)
      * @param ActionPayloadDTO $dto Action payload (ModeratorPieceCreateActionDTO|ModeratorPieceUpdateActionDTO|ModeratorPieceDeleteActionDTO)
+     * @throws AgentUnknownActionException When action is not supported by this page
+     * @throws HilosException On table mutation or signal failure
      */
     public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): void
     {
-        try {
-            switch ($action) {
-                case ChatSignalConstants::MODERATOR_PIECE_CREATE:
-                    if ($dto instanceof ModeratorPieceCreateActionDTO) {
-                        $this->handleCreate($acceptKey, $dto);
-                    }
+        switch ($action) {
+            case ChatSignalConstants::MODERATOR_PIECE_CREATE:
+                if ($dto instanceof ModeratorPieceCreateActionDTO) {
+                    $this->handleCreate($acceptKey, $dto);
+                }
 
-                    break;
+                break;
 
-                case ChatSignalConstants::MODERATOR_PIECE_UPDATE:
-                    if ($dto instanceof ModeratorPieceUpdateActionDTO) {
-                        $this->handleUpdate($acceptKey, $dto);
-                    }
+            case ChatSignalConstants::MODERATOR_PIECE_UPDATE:
+                if ($dto instanceof ModeratorPieceUpdateActionDTO) {
+                    $this->handleUpdate($acceptKey, $dto);
+                }
 
-                    break;
+                break;
 
-                case ChatSignalConstants::MODERATOR_PIECE_DELETE:
-                    if ($dto instanceof ModeratorPieceDeleteActionDTO) {
-                        $this->handleDelete($acceptKey, $dto);
-                    }
+            case ChatSignalConstants::MODERATOR_PIECE_DELETE:
+                if ($dto instanceof ModeratorPieceDeleteActionDTO) {
+                    $this->handleDelete($acceptKey, $dto);
+                }
 
-                    break;
+                break;
 
-                default:
-                    throw new TableActionException("Unknown action: {$action}");
-            }
-        } catch (Throwable $e) {
-            $this->getChatAgent()->sendToUser(
-                ChatSignalConstants::TABLE_ACTION_ERROR,
-                $acceptKey,
-                new TableActionErrorSignalData(TableChatContext::moderatorPromptPieces, $action, $e->getMessage()),
-            );
+            default:
+                throw new AgentUnknownActionException("Unknown action: {$action}");
         }
+    }
+
+    /**
+     * Sends moderator prompt table action failures to the initiating client.
+     *
+     * @param string $acceptKey WebSocket accept key for the client
+     * @param string $action Action name that failed
+     * @param ActionPayloadDTO $dto Action payload
+     * @param Throwable $e Action failure
+     */
+    public function onActionException(string $acceptKey, string $action, ActionPayloadDTO $dto, Throwable $e): void
+    {
+        $this->getChatAgent()->sendToUser(
+            ChatSignalConstants::TABLE_ACTION_ERROR,
+            $acceptKey,
+            new TableActionErrorSignalData(TableChatContext::moderatorPromptPieces, $action, $e->getMessage()),
+        );
     }
 
     /**

@@ -1,4 +1,9 @@
 export {
+  actionError,
+  type PageActionErrorPayload,
+} from './actionSignals'
+
+export {
   tableData,
   tableMutation,
   tableActionError,

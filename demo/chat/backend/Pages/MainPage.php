@@ -13,22 +13,23 @@ use Demo\Chat\Core\Page\DTO\FileModerationDismissActionDTO;
 use Demo\Chat\Core\Page\DTO\FileUploadInitActionDTO;
 use Demo\Chat\Core\Page\DTO\MessageActionDTO;
 use Demo\Chat\Core\Router\DTO\ChatEventSignalDTO;
-use Demo\Chat\Core\Router\DTO\FileUploadRejectedSignalData;
 use Demo\Chat\Core\Router\DTO\ModerationRequestSignalData;
 use Demo\Chat\Core\Router\DTO\ModerationStateUpdateSignalData;
 use Demo\Chat\Database\DbChatContext;
 use Demo\Chat\Database\View\Collection\Bots;
 use Demo\Chat\Hilos;
+use Hilos\Core\Agent\Exception\AgentUnknownActionException;
+use Hilos\Core\Exception\EmptyValueException;
+use Hilos\Core\Exception\ItemNotFoundForUpdateException;
+use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Page\Exception\PageInternalErrorException;
+use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Page\PageAgentInterface;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\EntitiesChangesDTO;
 use Hilos\HilosException;
-use Hilos\Utils\Logger;
 use Random\RandomException;
-use Throwable;
-use Hilos\Core\Page\PageRouteParams;
 
 /**
  * MainPage - Main chat page handler.
@@ -110,47 +111,36 @@ final class MainPage extends AbstractChatPage
      * @param string $acceptKey Accept key
      * @param string $action Action name
      * @param ActionPayloadDTO $dto Action payload DTO
-     * @throws HilosException On database, runtime, or truth source failure
-     * @throws RandomException From {@see UploadFileTrait::handleFileUploadInit} (file upload id generation)
+     * @throws AgentUnknownActionException When action is not supported by this page
+     * @throws HilosException On database, runtime, truth source, or signal failure
+     * @throws RandomException When file upload id generation fails
      */
     public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): void
     {
-        try {
-            switch ($action) {
-                case ChatSignalConstants::MESSAGE:
-                    if ($dto instanceof MessageActionDTO) {
-                        $this->handleMessage($acceptKey, $dto);
-                    }
+        switch ($action) {
+            case ChatSignalConstants::MESSAGE:
+                if ($dto instanceof MessageActionDTO) {
+                    $this->handleMessage($acceptKey, $dto);
+                }
 
-                    break;
+                break;
 
-                case ChatSignalConstants::FILE_UPLOAD_INIT:
-                    if ($dto instanceof FileUploadInitActionDTO) {
-                        $this->handleFileUploadInit($acceptKey, $dto);
-                    }
+            case ChatSignalConstants::FILE_UPLOAD_INIT:
+                if ($dto instanceof FileUploadInitActionDTO) {
+                    $this->handleFileUploadInit($acceptKey, $dto);
+                }
 
-                    break;
+                break;
 
-                case ChatSignalConstants::FILE_MODERATION_DISMISS:
-                    if ($dto instanceof FileModerationDismissActionDTO) {
-                        $this->handleFileModerationDismiss($acceptKey);
-                    }
+            case ChatSignalConstants::FILE_MODERATION_DISMISS:
+                if ($dto instanceof FileModerationDismissActionDTO) {
+                    $this->handleFileModerationDismiss($acceptKey);
+                }
 
-                    break;
+                break;
 
-                default:
-                    Logger::logAgentError('MainPage', "Unknown action: {$action}");
-            }
-        } catch (Throwable $e) {
-            Logger::logAgentError('MainPage', "Action {$action} failed: {$e->getMessage()}");
-
-            if ($action === ChatSignalConstants::FILE_UPLOAD_INIT) {
-                $this->getChatAgent()->sendToUser(
-                    ChatSignalConstants::FILE_UPLOAD_REJECTED,
-                    $acceptKey,
-                    new FileUploadRejectedSignalData('server_error', $e->getMessage()),
-                );
-            }
+            default:
+                throw new AgentUnknownActionException("Unknown action: {$action}");
         }
     }
 
@@ -159,23 +149,24 @@ final class MainPage extends AbstractChatPage
      *
      * @param string $acceptKey Accept key
      * @param MessageActionDTO $dto Message DTO
+     * @throws EmptyValueException When message text is empty
+     * @throws ItemNotFoundForUpdateException When the WebSocket session is missing
+     * @throws ValidationException When the user is still rate-limited
      * @throws HilosException On database, runtime, or truth source failure
      */
     private function handleMessage(string $acceptKey, MessageActionDTO $dto): void
     {
         if (!$dto->isValid()) {
-            Logger::logAgentError('MainPage', "Empty message content (acceptKey={$acceptKey})");
-            return;
+            throw new EmptyValueException('Message cannot be empty');
         }
 
         if (!isset(Hilos::$rt->connections[$acceptKey])) {
-            Logger::logAgentError('MainPage', "User not found for acceptKey={$acceptKey}");
-            return;
+            throw new ItemNotFoundForUpdateException('User session not found');
         }
 
         $userId = Hilos::$rt->connections[$acceptKey]->userId;
         if (!$this->getChatAgent()->canSendMessage($userId)) {
-            return;
+            throw new ValidationException('Message rate limit is active');
         }
 
         Hilos::$rt->userStates->actions->setTextModerationMessage($userId, $dto->content);

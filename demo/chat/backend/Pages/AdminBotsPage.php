@@ -16,6 +16,8 @@ use Demo\Chat\Tables\Bot\DTO\BotCreateActionDTO;
 use Demo\Chat\Tables\Bot\DTO\BotDeleteActionDTO;
 use Demo\Chat\Tables\Bot\DTO\BotUpdateActionDTO;
 use Demo\Chat\Tables\TableChatContext;
+use Hilos\Core\Agent\Exception\AgentUnknownActionException;
+use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\EntitiesChangesDTO;
 use Hilos\Core\Table\DTO\TableActionErrorSignalData;
@@ -23,7 +25,6 @@ use Hilos\Core\Table\DTO\TableMutationSignalData;
 use Hilos\Core\Table\Exception\TableActionException;
 use Hilos\HilosException;
 use Throwable;
-use Hilos\Core\Page\PageRouteParams;
 
 /**
  * AdminBotsPage - Admin bots table page handler.
@@ -58,42 +59,53 @@ final class AdminBotsPage extends AbstractChatPage
      * @param string $acceptKey WebSocket accept key for the client
      * @param string $action Action name (for error reporting)
      * @param ActionPayloadDTO $dto Action payload (BotCreateActionDTO|BotUpdateActionDTO|BotDeleteActionDTO)
+     * @throws AgentUnknownActionException When action is not supported by this page
+     * @throws HilosException On table mutation or signal failure
      */
     public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): void
     {
-        try {
-            switch ($action) {
-                case ChatSignalConstants::BOT_CREATE:
-                    if ($dto instanceof BotCreateActionDTO) {
-                        $this->handleCreate($acceptKey, $dto);
-                    }
+        switch ($action) {
+            case ChatSignalConstants::BOT_CREATE:
+                if ($dto instanceof BotCreateActionDTO) {
+                    $this->handleCreate($acceptKey, $dto);
+                }
 
-                    break;
+                break;
 
-                case ChatSignalConstants::BOT_UPDATE:
-                    if ($dto instanceof BotUpdateActionDTO) {
-                        $this->handleUpdate($acceptKey, $dto);
-                    }
+            case ChatSignalConstants::BOT_UPDATE:
+                if ($dto instanceof BotUpdateActionDTO) {
+                    $this->handleUpdate($acceptKey, $dto);
+                }
 
-                    break;
+                break;
 
-                case ChatSignalConstants::BOT_DELETE:
-                    if ($dto instanceof BotDeleteActionDTO) {
-                        $this->handleDelete($acceptKey, $dto);
-                    }
+            case ChatSignalConstants::BOT_DELETE:
+                if ($dto instanceof BotDeleteActionDTO) {
+                    $this->handleDelete($acceptKey, $dto);
+                }
 
-                    break;
+                break;
 
-                default:
-                    throw new TableActionException("Unknown action: {$action}");
-            }
-        } catch (Throwable $e) {
-            $this->getChatAgent()->sendToUser(
-                ChatSignalConstants::TABLE_ACTION_ERROR,
-                $acceptKey,
-                new TableActionErrorSignalData(TableChatContext::bots, $action, $e->getMessage()),
-            );
+            default:
+                throw new AgentUnknownActionException("Unknown action: {$action}");
         }
+    }
+
+    /**
+     * Sends bot table action failures to the initiating client.
+     *
+     * @param string $acceptKey WebSocket accept key for the client
+     * @param string $action Action name that failed
+     * @param ActionPayloadDTO $dto Action payload
+     * @param Throwable $e Action failure
+     */
+    public function onActionException(string $acceptKey, string $action, ActionPayloadDTO $dto, Throwable $e): void
+    {
+        $this->getChatAgent()->sendToUser(
+            ChatSignalConstants::TABLE_ACTION_ERROR,
+            $acceptKey,
+            new TableActionErrorSignalData(TableChatContext::bots, $action, $e->getMessage()),
+        );
     }
 
     /**

@@ -6,7 +6,6 @@ namespace Demo\Chat\Runtime\State\Item;
 
 use Demo\Chat\Runtime\View\Context\RtChatContext;
 use Demo\Chat\Runtime\View\Actions\Collection\UserStatesActions;
-use Hilos\Runtime\Exception\State\RtStatePropertyNotFoundException;
 use Hilos\Runtime\State\Item\RtState;
 
 /**
@@ -15,10 +14,6 @@ use Hilos\Runtime\State\Item\RtState;
  * State id is `(string) userId`. Created at chat WebSocket handshake via
  * {@see UserStatesActions::ensure()}, or by {@see UserStatesActions::seedAllFromDb()} at demo startup.
  * Mutations go through {@see UserStatesActions}; file uploads live on {@see Connection}.
- *
- * @property int $userId User ID (same as numeric id in {@see self::getId()})
- * @property string $moderationMessage Message text awaiting moderation (empty when none)
- * @property int $moderationUpdatedAt Unix time of last change to moderation fields
  */
 final class ChatUserState extends RtState
 {
@@ -26,14 +21,14 @@ final class ChatUserState extends RtState
     public const string moderationMessage = 'moderationMessage';
     public const string moderationUpdatedAt = 'moderationUpdatedAt';
 
-    /** @var int User ID (equals collection key as integer) */
-    private int $userId = 0;
+    /** User ID (equals collection key as integer). */
+    public private(set) int $userId = 0;
 
-    /** @var string Pending message text for LLM moderation */
-    private string $moderationMessage = '';
+    /** Pending message text for LLM moderation. */
+    public string $moderationMessage = '';
 
-    /** @var int Unix time of last moderation field update */
-    private int $moderationUpdatedAt = 0;
+    /** Unix time of last moderation field update. */
+    public int $moderationUpdatedAt = 0;
 
     /**
      * @param int $userId Database user id
@@ -88,21 +83,6 @@ final class ChatUserState extends RtState
     public function getId(): string
     {
         return (string)$this->userId;
-    }
-
-    /**
-     * Read-only access for external code; private fields resolve through this magic getter.
-     *
-     * @throws RtStatePropertyNotFoundException When $name is not a declared field
-     */
-    public function __get(string $name): int|string
-    {
-        return match ($name) {
-            self::userId => $this->userId,
-            self::moderationMessage => $this->moderationMessage,
-            self::moderationUpdatedAt => $this->moderationUpdatedAt,
-            default => parent::__get($name),
-        };
     }
 
     /**
