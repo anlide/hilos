@@ -25,16 +25,27 @@ Collections are defined in the project's `RtContext` subclass (e.g. `RtChatConte
 Project defines collections in a `RtContext` subclass:
 
 ```php
-class RtChatContext extends RtContext {
+final class RtChatContext extends RtContext
+{
     public const string connections = 'connections';
     public const string userStates  = 'userStates';
     public const string chatContexts = 'chatContexts';
 
-    public Connections $connections;
-    public UserStates  $userStates;
-    public ChatContexts $chatContexts;
+    public function configure(): void
+    {
+        $this->_stateCollections[self::connections] = StateConnections::init();
+        $this->_stateCollections[self::userStates] = StateUserStates::init();
+        $this->_stateCollections[self::chatContexts] = StateChatContexts::init();
+
+        $this->setRepresent(self::connections, Connections::class);
+        $this->setRepresent(self::userStates, UserStates::class);
+        $this->setRepresent(self::chatContexts, ChatContexts::class);
+    }
 }
 ```
+
+The project facade should create the context with `new RtChatContext()`;
+`Hilos::init()` calls `configure()` after `createRuntime()`.
 
 ## Sync mechanism
 

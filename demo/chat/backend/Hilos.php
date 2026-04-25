@@ -11,7 +11,6 @@ use Demo\Chat\Tables\TableChatContext;
 use Hilos\Core\Table\Context\TableContext;
 use Hilos\Database\Context\DbContext;
 use Hilos\Fs\Context\FsContext;
-use Hilos\Runtime\Exception\Rt\StateCollectionNotFoundException;
 use Hilos\Runtime\View\Context\RtContext;
 
 /**
@@ -45,11 +44,10 @@ final class Hilos extends \Hilos\Hilos
      * Creates and returns the runtime context instance.
      *
      * @return ?RtChatContext Runtime context or null if runtime is not available
-     * @throws StateCollectionNotFoundException If required state collection is not found
      */
     protected static function createRuntime(): ?RtContext
     {
-        return RtChatContext::init();
+        return new RtChatContext();
     }
 
     /**

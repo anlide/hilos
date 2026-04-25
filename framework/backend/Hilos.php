@@ -51,6 +51,7 @@ abstract class Hilos
 
         if (static::$rt === null) {
             static::$rt = static::createRuntime();
+            static::$rt?->configure();
         }
 
         if (static::$table === null) {

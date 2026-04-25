@@ -47,20 +47,15 @@ final class RtChatContext extends RtContext
     public const string chatContext = 'chatContext';
 
     /**
-     * @return static
-     *
      * @throws StateCollectionNotFoundException
      */
-    public static function init(): static
+    public function configure(): void
     {
-        $instance = new static();
-        $instance->_stateCollections[self::connections] = StateConnections::init();
-        $instance->_stateCollections[self::userStates] = StateUserStates::init();
-        $instance->_stateCollections[self::chatContexts] = StateChatContexts::init();
-        $instance->setRepresent(self::connections, Connections::class, ConnectionsActions::class, ConnectionActions::class);
-        $instance->setRepresent(self::userStates, UserStates::class, UserStatesActions::class);
-        $instance->setRepresent(self::chatContexts, ChatContexts::class, ChatContextsActions::class);
-
-        return $instance;
+        $this->_stateCollections[self::connections] = StateConnections::init();
+        $this->_stateCollections[self::userStates] = StateUserStates::init();
+        $this->_stateCollections[self::chatContexts] = StateChatContexts::init();
+        $this->setRepresent(self::connections, Connections::class, ConnectionsActions::class, ConnectionActions::class);
+        $this->setRepresent(self::userStates, UserStates::class, UserStatesActions::class);
+        $this->setRepresent(self::chatContexts, ChatContexts::class, ChatContextsActions::class);
     }
 }

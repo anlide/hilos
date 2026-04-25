@@ -27,9 +27,11 @@ abstract class RtContext
     protected array $_rtCollections = [];
 
     /**
-     * Protected constructor. Child classes use init() to create instance.
+     * Creates runtime context.
+     *
+     * Called from facade createRuntime().
      */
-    protected function __construct()
+    public function __construct()
     {
     }
 
@@ -44,14 +46,11 @@ abstract class RtContext
     }
 
     /**
-     * Creates new runtime context instance.
+     * Configure state collections and runtime view representations.
      *
-     * @return static New RtContext instance
+     * Called from facade init() after createRuntime().
      */
-    public static function init(): static
-    {
-        return new static();
-    }
+    abstract public function configure(): void;
 
     /**
      * Set representation for state collection.
