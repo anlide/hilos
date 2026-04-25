@@ -7,9 +7,10 @@ namespace Demo\Chat\Tables\ModeratorPiece;
 use Demo\Chat\Hilos;
 use Demo\Chat\Tables\ModeratorPiece\Actions\ModeratorPromptPieceItemActions;
 use Demo\Chat\Tables\ModeratorPiece\Actions\ModeratorPromptPiecesTableActions;
-use Hilos\Core\Table\DataSource\EntityTableDataSource;
-use Hilos\Core\Table\DataSource\TableDataSourceInterface;
 use Hilos\Core\Table\Definition\TableDefinition;
+use Hilos\Core\Table\DTO\TableQueryDTO;
+use Hilos\Core\Table\DTO\TableResultDTO;
+use Hilos\Database\DatabaseException;
 
 /**
  * ModeratorPromptPiecesTable - Table definition with create/update/delete actions.
@@ -19,13 +20,15 @@ use Hilos\Core\Table\Definition\TableDefinition;
 final class ModeratorPromptPiecesTable extends TableDefinition
 {
     /**
-     * Provides entity data source for the moderator prompt pieces collection.
+     * Queries moderator prompt pieces for the table.
      *
-     * @return TableDataSourceInterface Entity table data source for moderator prompt pieces
+     * @param TableQueryDTO $query Table query parameters
+     * @return TableResultDTO Moderator prompt piece rows
+     * @throws DatabaseException If prompt piece query execution fails
      */
-    protected function createDataSource(): TableDataSourceInterface
+    protected function query(TableQueryDTO $query): TableResultDTO
     {
-        return new EntityTableDataSource(Hilos::$db->moderatorPromptPieces);
+        return $this->queryDbCollection(Hilos::$db->moderatorPromptPieces, $query);
     }
 
     /**

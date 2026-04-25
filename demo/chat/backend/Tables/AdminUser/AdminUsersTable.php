@@ -6,9 +6,10 @@ namespace Demo\Chat\Tables\AdminUser;
 
 use Demo\Chat\Hilos;
 use Demo\Chat\Tables\AdminUser\Actions\AdminUserItemActions;
-use Hilos\Core\Table\DataSource\EntityTableDataSource;
-use Hilos\Core\Table\DataSource\TableDataSourceInterface;
 use Hilos\Core\Table\Definition\TableDefinition;
+use Hilos\Core\Table\DTO\TableQueryDTO;
+use Hilos\Core\Table\DTO\TableResultDTO;
+use Hilos\Database\DatabaseException;
 
 /**
  * Table definition for the admin users grid.
@@ -16,11 +17,15 @@ use Hilos\Core\Table\Definition\TableDefinition;
 final class AdminUsersTable extends TableDefinition
 {
     /**
-     * Uses the chat users collection as the source for admin table rows.
+     * Queries chat users for the admin users table.
+     *
+     * @param TableQueryDTO $query Table query parameters
+     * @return TableResultDTO Admin users table rows
+     * @throws DatabaseException If user query execution fails
      */
-    protected function createDataSource(): TableDataSourceInterface
+    protected function query(TableQueryDTO $query): TableResultDTO
     {
-        return new EntityTableDataSource(Hilos::$db->users);
+        return $this->queryDbCollection(Hilos::$db->users, $query);
     }
 
     /**

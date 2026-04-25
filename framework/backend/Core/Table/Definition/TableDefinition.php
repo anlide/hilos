@@ -7,11 +7,10 @@ namespace Hilos\Core\Table\Definition;
 use ArrayAccess;
 use Hilos\Core\Table\Actions\TableActions;
 use Hilos\Core\Table\Actions\TableItemActions;
-use Hilos\Core\Table\DataSource\TableDataSourceInterface;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableResultDTO;
+use Hilos\Core\Table\InMemoryTableFilter;
 use Hilos\Core\Table\Exception\TableActionsNotConfiguredException;
-use Hilos\Core\Table\Exception\TableDataSourceNotProvidedException;
 use Hilos\Core\Table\Exception\TableOffsetSetNotSupportedException;
 use Hilos\Core\Table\Exception\TableOffsetUnsetNotSupportedException;
 use Hilos\Core\Table\Exception\TablePropertyNotFoundException;
@@ -19,20 +18,19 @@ use Hilos\Core\Table\Item\TableItem;
 use Hilos\Core\Table\Row\AbstractTableRow;
 use Hilos\Core\Table\Row\GenericTableRow;
 use Hilos\Core\Table\TableConstants;
+use Hilos\Database\DatabaseException;
+use Hilos\Database\View\Collection\DbCollection;
 
 /**
  * Base table definition — one per registered table.
  *
- * Stateless: each get() call pulls fresh data from the data source.
+ * Stateless: each get() call pulls fresh data through the table query.
  * Supports ArrayAccess for item-level operations: $table->bots[$id]->actions->delete().
  *
  * @implements ArrayAccess<string|int, TableItem>
  */
 abstract class TableDefinition implements ArrayAccess
 {
-    /** @var TableDataSourceInterface data source for loading rows (entity collection, view, etc) */
-    private readonly TableDataSourceInterface $dataSource;
-
     /** @var ?TableActions lazy-loaded table-level actions instance */
     private ?TableActions $_actions = null;
 
@@ -46,32 +44,17 @@ abstract class TableDefinition implements ArrayAccess
     private string $_rowClass = GenericTableRow::class;
 
     /**
-     * Creates table definition with optional data source.
-     *
-     * @param ?TableDataSourceInterface $dataSource Optional. If null, createDataSource() is called.
+     * Creates table definition and applies table-specific configuration.
      */
-    public function __construct(?TableDataSourceInterface $dataSource = null)
+    public function __construct()
     {
-        $this->dataSource = $dataSource ?? $this->createDataSource();
         $this->init();
-    }
-
-    /**
-     * Override to provide data source when constructor is called without args.
-     * Subclasses that support parameterless construction must override.
-     *
-     * @return TableDataSourceInterface Created data source instance
-     * @throws TableDataSourceNotProvidedException If not overridden and no data source passed
-     */
-    protected function createDataSource(): TableDataSourceInterface
-    {
-        throw new TableDataSourceNotProvidedException();
     }
 
     /**
      * Override in subclasses to configure actions classes.
      *
-     * Called from constructor after data source init.
+     * Called from the constructor after the base table state is initialized.
      */
     protected function init(): void
     {
@@ -154,20 +137,52 @@ abstract class TableDefinition implements ArrayAccess
         return $this->_itemActionsClass;
     }
 
-    /**
-     * Returns the data source used for loading table rows.
-     *
-     * @return TableDataSourceInterface Data source instance
-     */
-    public function getDataSource(): TableDataSourceInterface
-    {
-        return $this->dataSource;
-    }
-
     // ── Stateless query ──────────────────────────────────────────────────
 
     /**
-     * Loads table data (stateless). Delegates query to the data source.
+     * Loads table data for the given table query.
+     *
+     * Each concrete table owns its row source and may combine DB, runtime,
+     * config, SQL aggregates, or any other data needed for its row shape.
+     *
+     * @param TableQueryDTO $query Query parameters
+     * @return TableResultDTO Query result with raw or typed rows
+     */
+    abstract protected function query(TableQueryDTO $query): TableResultDTO;
+
+    /**
+     * Queries a DbCollection using the standard table search, sort and pagination behavior.
+     *
+     * This helper is intended for simple tables whose rows are direct frontend
+     * projections of a single DbCollection. Tables with joined, calculated, or
+     * runtime-enriched rows should implement {@see self::query()} directly.
+     *
+     * @param DbCollection $collection Db collection used as the row source
+     * @param TableQueryDTO $query Query parameters
+     * @return TableResultDTO Query result with raw rows
+     * @throws DatabaseException If query execution fails
+     */
+    protected function queryDbCollection(DbCollection $collection, TableQueryDTO $query): TableResultDTO
+    {
+        $objectCollection = $collection->getObjectCollection();
+
+        if ($objectCollection === null || $objectCollection->isAllLoaded()) {
+            $rows = $collection->toArray(idAsIndex: false, toFrontend: true);
+            return InMemoryTableFilter::apply($rows, $query);
+        }
+
+        $result = $collection->queryPage($query);
+
+        return new TableResultDTO(
+            rows: $result[TableConstants::RESULT_KEY_ROWS],
+            totalCount: $result[TableConstants::RESULT_KEY_TOTAL_COUNT],
+            offset: $query->offset,
+            limit: $query->limit,
+        );
+    }
+
+    /**
+     * Loads table data (stateless). Delegates query construction to the concrete table.
      *
      * @param string $search Full-text search across row values
      * @param string $orderBy Field name to order by (empty = no ordering)
@@ -183,7 +198,7 @@ abstract class TableDefinition implements ArrayAccess
         int $offset = 0,
         int $limit = TableConstants::NO_LIMIT,
     ): TableResultDTO {
-        $result = $this->dataSource->query(new TableQueryDTO(
+        $result = $this->query(new TableQueryDTO(
             search: $search,
             orderBy: $orderBy,
             orderDirection: $orderDirection,

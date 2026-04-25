@@ -2,24 +2,23 @@
 
 declare(strict_types=1);
 
-namespace Hilos\Core\Table\DataSource;
+namespace Hilos\Core\Table;
 
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableResultDTO;
-use Hilos\Core\Table\TableConstants;
 
 /**
- * In-memory search, sort and pagination for table data sources that load all rows into PHP memory.
+ * In-memory search, sort and pagination for tables that already have all rows in PHP memory.
  *
- * Data sources that can push these operations to SQL or another backend
- * should implement query() directly instead of using this helper.
+ * Tables that can push these operations to SQL or another backend should
+ * implement query handling directly instead of using this helper.
  */
 final class InMemoryTableFilter
 {
     /**
      * Applies search, sort and pagination to an in-memory row set.
      *
-     * @param list<array<string, mixed>> $rows All rows from the data source
+     * @param list<array<string, mixed>> $rows All rows to filter
      * @param TableQueryDTO $query Query parameters
      * @return TableResultDTO Filtered/sorted/paginated result
      */

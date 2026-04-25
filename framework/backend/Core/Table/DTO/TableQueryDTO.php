@@ -9,7 +9,7 @@ use Hilos\Core\Table\TableConstants;
 /**
  * Query parameters for a stateless table data request.
  *
- * Passed from TableDefinition::get() to DataSource::query().
+ * Passed from TableDefinition::get() to the concrete table query.
  */
 readonly class TableQueryDTO
 {

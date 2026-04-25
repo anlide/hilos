@@ -32,7 +32,7 @@ final class TableChatContext extends TableContext
     public const string settings = 'settings';
 
     /**
-     * Registers all chat tables with their data sources.
+     * Registers all chat table definitions.
      */
     public function configure(): void
     {
