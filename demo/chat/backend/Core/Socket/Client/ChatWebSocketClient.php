@@ -29,7 +29,6 @@ final class ChatWebSocketClient extends WebSocketClient
             ChatSignalConstants::MESSAGE,
             ChatSignalConstants::FILE_UPLOAD_INIT,
             ChatSignalConstants::FILE_MODERATION_DISMISS,
-            ChatSignalConstants::TABLE_REFRESH,
             ChatSignalConstants::USER_UPDATE,
             ChatSignalConstants::HILOS_USER_UPDATE,
             ChatSignalConstants::BOT_CREATE,

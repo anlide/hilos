@@ -10,12 +10,9 @@ use Demo\Chat\Core\Page\AbstractChatPage;
 use Demo\Chat\Core\Router\DTO\ChatEventSignalDTO;
 use Demo\Chat\Database\DbChatContext;
 use Demo\Chat\Database\Object\Item\User;
-use Demo\Chat\Database\Settings\SettingsCatalog;
 use Demo\Chat\Database\View\Collection\Events;
 use Demo\Chat\Hilos;
 use Demo\Chat\Tables\AdminUser\DTO\AdminUserUpdateActionDTO;
-use Demo\Chat\Tables\DTO\TableRefreshActionDTO;
-use Demo\Chat\Tables\Settings\DTO\SettingsTableResultDTO;
 use Demo\Chat\Tables\TableChatContext;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Page\PageRouteParams;
@@ -32,8 +29,7 @@ use Throwable;
 /**
  * AdminUsersPage - Admin users table page handler.
  *
- * Handles initial data load on subscribe, user_update actions,
- * and the universal table_refresh action (routed here for all tables).
+ * Handles initial data load on subscribe and user_update actions.
  */
 final class AdminUsersPage extends AbstractChatPage
 {
@@ -58,11 +54,11 @@ final class AdminUsersPage extends AbstractChatPage
     }
 
     /**
-     * Routes incoming actions (user_update, table_refresh) to the appropriate handler.
+     * Routes incoming actions to the appropriate handler.
      *
      * @param string $acceptKey WebSocket accept key for the client
      * @param string $action Action name (for error reporting)
-     * @param ActionPayloadDTO $dto Action payload (AdminUserUpdateActionDTO|TableRefreshActionDTO)
+     * @param ActionPayloadDTO $dto Action payload
      * @throws AgentUnknownActionException When action is not supported by this page
      * @throws HilosException On table mutation or signal failure
      */
@@ -72,13 +68,6 @@ final class AdminUsersPage extends AbstractChatPage
             case ChatSignalConstants::USER_UPDATE:
                 if ($dto instanceof AdminUserUpdateActionDTO) {
                     $this->handleUserUpdate($acceptKey, $dto);
-                }
-
-                break;
-
-            case ChatSignalConstants::TABLE_REFRESH:
-                if ($dto instanceof TableRefreshActionDTO) {
-                    $this->handleTableRefresh($acceptKey, $dto);
                 }
 
                 break;
@@ -98,12 +87,10 @@ final class AdminUsersPage extends AbstractChatPage
      */
     public function onActionException(string $acceptKey, string $action, ActionPayloadDTO $dto, Throwable $e): void
     {
-        $tableKey = $dto instanceof TableRefreshActionDTO ? ($dto->tableKey ?: TableChatContext::adminUsers) : TableChatContext::adminUsers;
-
         $this->getChatAgent()->sendToUser(
             ChatSignalConstants::TABLE_ACTION_ERROR,
             $acceptKey,
-            new TableActionErrorSignalData($tableKey, $action, $e->getMessage()),
+            new TableActionErrorSignalData(TableChatContext::adminUsers, $action, $e->getMessage()),
         );
     }
 
@@ -159,39 +146,4 @@ final class AdminUsersPage extends AbstractChatPage
         );
     }
 
-    /**
-     * Refreshes table data by key and sends it to the requesting client.
-     *
-     * @param string $acceptKey WebSocket accept key for the requesting client
-     * @param TableRefreshActionDTO $dto Refresh action payload (contains tableKey)
-     *
-     * @throws TableActionException If table key is empty or table not found
-     */
-    private function handleTableRefresh(string $acceptKey, TableRefreshActionDTO $dto): void
-    {
-        if ($dto->tableKey === '') {
-            throw new TableActionException('Table key is required for refresh');
-        }
-
-        $tableDef = Hilos::$table?->get($dto->tableKey);
-        if ($tableDef === null) {
-            throw new TableActionException("Table '{$dto->tableKey}' not found");
-        }
-
-        $result = $tableDef->get();
-
-        if ($dto->tableKey === TableChatContext::settings) {
-            $catalogKeys = array_keys(SettingsCatalog::getCatalog());
-            $result = new SettingsTableResultDTO($result, $catalogKeys);
-        }
-
-        $this->getChatAgent()->sendToUser(
-            ChatSignalConstants::TABLE_DATA,
-            $acceptKey,
-            new ChatEventSignalDTO(
-                new EntitiesChangesDTO(),
-                [$dto->tableKey => $result],
-            ),
-        );
-    }
 }

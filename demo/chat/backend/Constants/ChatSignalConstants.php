@@ -133,9 +133,6 @@ final class ChatSignalConstants
     public const string BOT_UPDATED = 'bot_updated';
 
     // ── Table actions (client → server) ──────────────────────────────────
-    /** @var string Table refresh signal name */
-    public const string TABLE_REFRESH = 'table_refresh';
-
     /** @var string User update signal name */
     public const string USER_UPDATE = 'user_update';
 

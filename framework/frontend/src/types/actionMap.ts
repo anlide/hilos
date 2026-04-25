@@ -34,9 +34,6 @@ export interface HilosActionMap {
   /** Stop a guardian agent run. */
   guardian_agent_run_stop: { agentId: string | number }
 
-  /** Refresh one table's data (Table component bulk reload). */
-  table_refresh: { tableKey: string }
-
   /** Update a user from the Hilos user-detail page. */
   hilos_user_update: { id: number; name: string }
 }

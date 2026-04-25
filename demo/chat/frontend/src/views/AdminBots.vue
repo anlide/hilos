@@ -1,15 +1,10 @@
 <template>
   <div class="row gx-3 gy-2 gy-lg-0 flex-grow-1 h-100 min-h-0 overflow-hidden">
     <div class="col-12 col-lg-10 mx-auto d-flex flex-column h-100 min-h-0">
-      <client-only>
+      <ClientOnly>
       <div class="card d-flex flex-column flex-grow-1 min-h-0 overflow-hidden">
-        <div class="card-header d-flex justify-content-between align-items-center">
+        <div class="card-header">
           <h5 class="mb-0">Admin Bots</h5>
-          <TableRefreshToolbarButton
-            v-if="tableState"
-            :loading="refreshLoading"
-            @click="refreshTable"
-          />
         </div>
         <div class="card-body overflow-auto">
           <Table
@@ -242,7 +237,7 @@
       </div>
     </div>
   </template>
-  </client-only>
+  </ClientOnly>
     </div>
   </div>
 </template>
@@ -254,8 +249,6 @@ import { useWebSocket } from '@hilos/sdk/plugins/websocket'
 import { Table, Modal, LoadingButton } from '@hilos/sdk/components'
 import { getTableDisplayRows, getTablePendingChanges, getTableChangeMarkers } from '@hilos/sdk/composables'
 import { useTableDeleteMutationModal } from '@/composables/useTableDeleteMutationModal'
-import { useTableRefresh } from '@/composables/useTableRefresh'
-import TableRefreshToolbarButton from '@/components/TableRefreshToolbarButton.vue'
 import { useConnectionStore, useTableStore } from '@hilos/sdk/stores'
 import { sendAction } from '@/services/websocketActions'
 import { BOT_CREATE, BOT_UPDATE, BOT_DELETE } from '@/constants'
@@ -266,17 +259,13 @@ const tableStore = useTableStore()
 const websocket = useWebSocket()
 
 const tableKey = 'bots'
-const { refreshLoading, refreshTable } = useTableRefresh(tableKey)
 const tableState = computed(() => tableStore.tableData[tableKey])
 const displayRows = computed(() => getTableDisplayRows<BotEntity>(tableStore.tableData[tableKey]))
 const pendingChanges = computed(() => getTablePendingChanges(tableStore.tableData[tableKey]))
 const changeMarkers = computed(() => getTableChangeMarkers(tableStore.tableData[tableKey]))
 
 const handleApplyChanges = () => {
-  const { hasDeletes } = tableStore.applyPendingMutations(tableKey)
-  if (hasDeletes) {
-    refreshTable()
-  }
+  tableStore.applyPendingMutations(tableKey)
 }
 
 const showModal = ref(false)

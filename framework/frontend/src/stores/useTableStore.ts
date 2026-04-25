@@ -5,7 +5,6 @@ import type { TableDataState, TableMutationEntry } from '../types/table'
 export const useTableStore = defineStore('table', {
   state: () => ({
     tableData: {} as Record<string, TableDataState>,
-    pendingTableRefreshKey: null as string | null,
   }),
 
   actions: {
@@ -70,14 +69,5 @@ export const useTableStore = defineStore('table', {
       return { hasDeletes: result.hasDeletes }
     },
 
-    startTableRefresh(tableKey: string) {
-      this.pendingTableRefreshKey = tableKey
-    },
-
-    completeTableRefreshForKey(tableKey: string) {
-      if (this.pendingTableRefreshKey === tableKey) {
-        this.pendingTableRefreshKey = null
-      }
-    },
   },
 })

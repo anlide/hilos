@@ -29,9 +29,6 @@ export function registerHilosSignalHandlers(router: VueSignalRouter): void {
   router.on(tableData, ({ tables }) => {
     const tableStore = useTableStore()
     tableStore.applyTablesPayload(tables)
-    for (const key of Object.keys(tables)) {
-      tableStore.completeTableRefreshForKey(key)
-    }
   })
 
   router.on(tableMutation, ({ tableKey, mutation }) => {
@@ -40,8 +37,6 @@ export function registerHilosSignalHandlers(router: VueSignalRouter): void {
   })
 
   router.on(tableActionError, ({ tableKey, message }) => {
-    const tableStore = useTableStore()
-    tableStore.completeTableRefreshForKey(tableKey)
     if (message) {
       console.error(`[Table action error] ${tableKey}: ${message}`)
     }

@@ -85,6 +85,7 @@ Quick navigation for AI agents. Read the relevant file before starting work.
 | [code-style/phpdoc.md](docs/agents/code-style/phpdoc.md) | writing PHPDoc, overriding inherited methods, adding `@see` links |
 | [code-style/page-action-handlers.md](docs/agents/code-style/page-action-handlers.md) | editing `Page::onAction()`, action DTO routing, page action acks/errors |
 | [code-style/local-variables.md](docs/agents/code-style/local-variables.md) | introducing temporary variables or reviewing one-use locals |
+| [code-style/frontend-vue.md](docs/agents/code-style/frontend-vue.md) | editing Vue SFC templates, global components, or frontend line endings |
 
 ## AI Tool Integration
 

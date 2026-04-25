@@ -87,7 +87,6 @@ use Demo\Chat\Tables\AdminUser\DTO\AdminUserUpdateActionDTO;
 use Demo\Chat\Tables\Bot\DTO\BotCreateActionDTO;
 use Demo\Chat\Tables\Bot\DTO\BotDeleteActionDTO;
 use Demo\Chat\Tables\Bot\DTO\BotUpdateActionDTO;
-use Demo\Chat\Tables\DTO\TableRefreshActionDTO;
 use Demo\Chat\Tables\HilosUser\DTO\HilosUserUpdateActionDTO;
 use Demo\Chat\Tables\ModeratorPiece\DTO\ModeratorPieceCreateActionDTO;
 use Demo\Chat\Tables\ModeratorPiece\DTO\ModeratorPieceDeleteActionDTO;
@@ -232,7 +231,6 @@ final class ChatPageFactory extends HilosPageFactory
             ChatSignalConstants::RENAME => RenameActionDTO::fromArray($data),
             ChatSignalConstants::FILE_UPLOAD_INIT => FileUploadInitActionDTO::fromArray($data),
             ChatSignalConstants::FILE_MODERATION_DISMISS => FileModerationDismissActionDTO::fromArray($data),
-            ChatSignalConstants::TABLE_REFRESH => TableRefreshActionDTO::fromArray($data),
             ChatSignalConstants::USER_UPDATE => AdminUserUpdateActionDTO::fromArray($data),
             ChatSignalConstants::HILOS_USER_UPDATE => HilosUserUpdateActionDTO::fromArray($data),
             ChatSignalConstants::BOT_CREATE => BotCreateActionDTO::fromArray($data),

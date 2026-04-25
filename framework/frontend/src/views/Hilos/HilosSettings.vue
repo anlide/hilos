@@ -1,16 +1,10 @@
 <template>
   <div class="row gx-3 gy-2 gy-lg-0 flex-grow-1 h-100 min-h-0 overflow-hidden">
     <div class="col-12 col-lg-10 mx-auto d-flex flex-column h-100 min-h-0">
-      <client-only>
+      <ClientOnly>
       <div class="card d-flex flex-column flex-grow-1 min-h-0 overflow-hidden">
-        <div class="card-header d-flex justify-content-between align-items-center">
+        <div class="card-header">
           <h5 class="mb-0">Settings</h5>
-          <TableRefreshToolbarButton
-            v-if="tableState"
-            :loading="refreshLoading"
-            aria-label="Refresh"
-            @click="refreshTable"
-          />
         </div>
         <div class="card-body overflow-auto">
           <Table
@@ -238,7 +232,7 @@
       </div>
     </div>
   </template>
-  </client-only>
+  </ClientOnly>
     </div>
   </div>
 </template>
@@ -250,8 +244,6 @@ import { useWebSocket } from '../../plugins/websocket'
 import { Table, Modal, LoadingButton } from '../../components'
 import { getTableDisplayRows, getTablePendingChanges, getTableChangeMarkers } from '../../composables'
 import { useTableDeleteMutationModal } from '../../composables/useTableDeleteMutationModal'
-import { useTableRefresh } from '../../composables/useTableRefresh'
-import TableRefreshToolbarButton from '../../components/TableRefreshToolbarButton.vue'
 import { useConnectionStore, useTableStore } from '../../stores'
 import { sendAction } from '../../services/websocketActions'
 import { SETTING_ADD, SETTING_UPDATE, SETTING_DELETE } from '../../constants/hilosActions'
@@ -268,7 +260,6 @@ const tableStore = useTableStore()
 const websocket = useWebSocket()
 
 const tableKey = 'settings'
-const { refreshLoading, refreshTable } = useTableRefresh(tableKey)
 const tableState = computed(() => tableStore.tableData[tableKey])
 const displayRows = computed(() => getTableDisplayRows<SettingEntity>(tableStore.tableData[tableKey]))
 const pendingChanges = computed(() => getTablePendingChanges(tableStore.tableData[tableKey]))
@@ -287,10 +278,7 @@ const availableCatalogKeys = computed(() => {
 const isOrphan = (item: { key: string }) => !catalogKeys.value.includes(item.key)
 
 const handleApplyChanges = () => {
-  const { hasDeletes } = tableStore.applyPendingMutations(tableKey)
-  if (hasDeletes) {
-    refreshTable()
-  }
+  tableStore.applyPendingMutations(tableKey)
 }
 
 const formatValue = (value: string | null | undefined, type: string): string => {

@@ -395,7 +395,6 @@ final class ChatSignalRouter extends SignalRouter
             ChatSignalConstants::FILE_UPLOAD_INIT => AgentType::CHAT,
             ChatSignalConstants::FILE_MODERATION_DISMISS => AgentType::CHAT,
             ChatSignalConstants::RENAME => AgentType::CHAT,
-            ChatSignalConstants::TABLE_REFRESH => AgentType::CHAT,
             ChatSignalConstants::USER_UPDATE => AgentType::CHAT,
             ChatSignalConstants::HILOS_USER_UPDATE => AgentType::CHAT,
             ChatSignalConstants::BOT_CREATE => AgentType::CHAT,

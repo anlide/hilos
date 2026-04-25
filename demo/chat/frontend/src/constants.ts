@@ -46,6 +46,3 @@ export const FILE_MODERATION_DISMISS = 'file_moderation_dismiss'
 
 /** Message rate limit in seconds (displayed to user, backend allows 1 sec earlier). */
 export const MESSAGE_RATE_LIMIT_SECONDS = 10
-
-/** Max time the table refresh button stays in loading state if the server does not respond. */
-export const TABLE_REFRESH_UI_TIMEOUT_MS = 12_000

@@ -5,12 +5,6 @@
         Same <code>user</code> records as the chat app (ID, name, activity, presence). For table search and chat-focused admin tools, use
         <router-link to="/admin/users">Admin → Users</router-link>.
       </p>
-      <TableRefreshToolbarButton
-        v-if="tableState"
-        :loading="refreshLoading"
-        aria-label="Refresh users"
-        @click="refreshTable"
-      />
     </div>
     <p v-if="!connectionStore.isConnected" class="text-body-secondary mb-0">
       Connect to the server to load users.
@@ -60,16 +54,14 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useHead } from '@unhead/vue'
-import TableRefreshToolbarButton from '../../components/TableRefreshToolbarButton.vue'
 import DaemonSectionShell from './Daemon/DaemonSectionShell.vue'
-import { getTableDisplayRows, useTableRefresh } from '../../composables'
+import { getTableDisplayRows } from '../../composables'
 import { useConnectionStore, useTableStore } from '../../stores'
 import type { ChatUserTableRow } from '../../types/chatUserTableRow'
 
 const connectionStore = useConnectionStore()
 const tableStore = useTableStore()
 const tableKey = 'users'
-const { refreshLoading, refreshTable } = useTableRefresh(tableKey)
 const tableState = computed(() => tableStore.tableData[tableKey])
 const displayRows = computed(() => getTableDisplayRows<ChatUserTableRow>(tableState.value))
 

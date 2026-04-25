@@ -14,6 +14,7 @@ catalog for small code-style rules.
 | [PHPDoc](agents/code-style/phpdoc.md) | writing or changing PHPDoc, overrides, `@see` links |
 | [Page Action Handlers](agents/code-style/page-action-handlers.md) | editing `Page::onAction()` and action handlers |
 | [Local Variables](agents/code-style/local-variables.md) | introducing temporary variables or reviewing one-use locals |
+| [Frontend Vue](agents/code-style/frontend-vue.md) | editing Vue SFC templates, global components, or frontend line endings |
 
 ## Baseline
 
