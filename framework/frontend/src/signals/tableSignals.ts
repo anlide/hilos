@@ -1,15 +1,15 @@
 import { SignalDefinition } from '../services/signals'
-import type { TableMutationEntry, TableMutationType } from '../types/table'
+import type { TableRowMutationDTO, TableMutationType } from '../types/table'
 
 const isRecord = (value: unknown): value is Record<string, unknown> => {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 const isTableMutationType = (value: unknown): value is TableMutationType => {
-  return value === 'created' || value === 'updated' || value === 'deleted'
+  return value === 'create' || value === 'update' || value === 'delete'
 }
 
-const parseTableMutationEntry = (value: unknown): TableMutationEntry | null => {
+const parseTableRowMutationDTO = (value: unknown): TableRowMutationDTO | null => {
   if (!isRecord(value) || !isTableMutationType(value.type)) {
     return null
   }
@@ -52,7 +52,7 @@ export const tableData = new SignalDefinition<'table_data', TableDataPayload>(
  */
 export interface TableMutationPayload {
   tableKey: string
-  mutation: TableMutationEntry
+  mutation: TableRowMutationDTO
 }
 
 export const tableMutation = new SignalDefinition<'table_mutation', TableMutationPayload>(
@@ -61,7 +61,7 @@ export const tableMutation = new SignalDefinition<'table_mutation', TableMutatio
     if (!isRecord(raw) || typeof raw.tableKey !== 'string') {
       return null
     }
-    const mutation = parseTableMutationEntry(raw.mutation)
+    const mutation = parseTableRowMutationDTO(raw.mutation)
     if (mutation === null) {
       return null
     }

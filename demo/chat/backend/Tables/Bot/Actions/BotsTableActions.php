@@ -8,7 +8,7 @@ use Demo\Chat\Database\Object\Item\Bot as ObjectBot;
 use Demo\Chat\Hilos;
 use Demo\Chat\Tables\Bot\DTO\BotCreateActionDTO;
 use Hilos\Core\Table\Actions\TableActions;
-use Hilos\Core\Table\Mutation\TableMutationEntry;
+use Hilos\Core\Table\DTO\TableRowMutationDTO;
 use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\HilosException;
 
@@ -24,10 +24,10 @@ final class BotsTableActions extends TableActions
      * DB_SYNC broadcast is triggered automatically by Object_::sync().
      *
      * @param BotCreateActionDTO $dto Create payload (name, description, style, etc.)
-     * @return TableMutationEntry Mutation entry for broadcast
+     * @return TableRowMutationDTO Row mutation DTO for broadcast
      * @throws HilosException On db or validation error
      */
-    public function create(BotCreateActionDTO $dto): TableMutationEntry
+    public function create(BotCreateActionDTO $dto): TableRowMutationDTO
     {
         $data = [
             ObjectBot::name => $dto->name,
@@ -40,6 +40,6 @@ final class BotsTableActions extends TableActions
 
         $dbBot = Hilos::$db->bots->actions->create($data);
 
-        return $this->mutation(TableMutationType::Created, $dbBot->id, $this->definition->makeRow($dbBot->toArray(toFrontend: true)));
+        return $this->mutation(TableMutationType::Create, $dbBot->id, $this->definition->makeRow($dbBot->toArray(toFrontend: true)));
     }
 }

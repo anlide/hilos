@@ -17,7 +17,7 @@ export type { EntitiesEnvelope } from './entities'
 export { extractEntitiesEnvelope, hasEntities } from './entities'
 
 // Table types
-export type { TableMutationEntry, TableDataState, PendingChanges, ChangeMarkers, ApplyMutationsResult } from './table'
+export type { TableRowMutationDTO, TableDataState, PendingChanges, ChangeMarkers, ApplyMutationsResult } from './table'
 
 // Page catalog
 export type { PageCatalogEntry, PageCatalogState } from './pageCatalog'

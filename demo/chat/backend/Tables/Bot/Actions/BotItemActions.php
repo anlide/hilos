@@ -8,7 +8,7 @@ use Demo\Chat\Database\Object\Item\Bot as ObjectBot;
 use Demo\Chat\Hilos;
 use Demo\Chat\Tables\Bot\DTO\BotUpdateActionDTO;
 use Hilos\Core\Table\Actions\TableItemActions;
-use Hilos\Core\Table\Mutation\TableMutationEntry;
+use Hilos\Core\Table\DTO\TableRowMutationDTO;
 use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\HilosException;
 
@@ -24,10 +24,10 @@ final class BotItemActions extends TableItemActions
      * DB_SYNC broadcast is triggered automatically by Object_::sync().
      *
      * @param BotUpdateActionDTO $dto Update payload (only non-null fields applied)
-     * @return TableMutationEntry Mutation entry for broadcast
+     * @return TableRowMutationDTO Row mutation DTO for broadcast
      * @throws HilosException On db or permission error
      */
-    public function update(BotUpdateActionDTO $dto): TableMutationEntry
+    public function update(BotUpdateActionDTO $dto): TableRowMutationDTO
     {
         $data = array_filter([
             ObjectBot::name => $dto->name,
@@ -43,19 +43,19 @@ final class BotItemActions extends TableItemActions
             $dbBot->actions->update($data);
         }
 
-        return $this->mutation(TableMutationType::Updated, $this->definition->makeRow($dbBot->toArray(toFrontend: true)));
+        return $this->mutation(TableMutationType::Update, $this->definition->makeRow($dbBot->toArray(toFrontend: true)));
     }
 
     /**
      * Deletes bot and returns mutation for broadcasting.
      * DB_SYNC broadcast is triggered automatically by Object_::delete().
      *
-     * @return TableMutationEntry Mutation entry for broadcast
+     * @return TableRowMutationDTO Row mutation DTO for broadcast
      * @throws HilosException On db or permission error
      */
-    public function delete(): TableMutationEntry
+    public function delete(): TableRowMutationDTO
     {
         Hilos::$db->bots[$this->rowKey]->actions->delete();
-        return $this->mutation(TableMutationType::Deleted);
+        return $this->mutation(TableMutationType::Delete);
     }
 }

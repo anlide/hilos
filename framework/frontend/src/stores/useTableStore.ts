@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { applyTableMutations } from '../composables/useTableData'
-import type { TableDataState, TableMutationEntry } from '../types/table'
+import type { TableDataState, TableRowMutationDTO } from '../types/table'
 
 export const useTableStore = defineStore('table', {
   state: () => ({
@@ -38,7 +38,7 @@ export const useTableStore = defineStore('table', {
     /**
      * Append a single table mutation (real-time broadcast).
      */
-    applyTableMutation(tableKey: string, mutation: TableMutationEntry) {
+    applyTableMutation(tableKey: string, mutation: TableRowMutationDTO) {
       const existing = this.tableData[tableKey]
       if (!existing) return
 

@@ -71,7 +71,7 @@ export function useTableDeleteMutationModal<T>(
       const muts = mutations ?? []
       const tail = muts.slice(mutationsLengthBeforeDelete.value)
       const ok = tail.some(
-        (m) => m.type === 'deleted' && String(m.rowKey) === String(rowKey),
+        (m) => m.type === 'delete' && String(m.rowKey) === String(rowKey),
       )
       if (!ok) return
 

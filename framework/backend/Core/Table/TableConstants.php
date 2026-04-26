@@ -30,16 +30,16 @@ final class TableConstants
     /** Payload key for error message in error signal. */
     public const string PAYLOAD_KEY_MESSAGE = 'message';
 
-    /** Payload key for mutation entry in mutation signal. */
+    /** Payload key for row mutation DTO in mutation signal. */
     public const string PAYLOAD_KEY_MUTATION = 'mutation';
 
-    /** Mutation entry key: type (created/updated/deleted). */
+    /** Mutation DTO key: type (create/update/delete). */
     public const string MUTATION_KEY_TYPE = 'type';
 
-    /** Mutation entry key: stable row key. */
+    /** Mutation DTO key: stable row key. */
     public const string MUTATION_KEY_ROW_KEY = 'rowKey';
 
-    /** Mutation entry key: row data (optional). */
+    /** Mutation DTO key: row data (optional). */
     public const string MUTATION_KEY_ROW = 'row';
 
     /** Result key for rows array. */

@@ -21,7 +21,7 @@ use Hilos\Core\Router\DTO\EntitiesChangesDTO;
 use Hilos\Core\Table\DTO\TableActionErrorSignalData;
 use Hilos\Core\Table\DTO\TableMutationSignalData;
 use Hilos\Core\Table\Exception\TableActionException;
-use Hilos\Core\Table\Mutation\TableMutationEntry;
+use Hilos\Core\Table\DTO\TableRowMutationDTO;
 use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\HilosException;
 use Throwable;
@@ -120,8 +120,8 @@ final class AdminUsersPage extends AbstractChatPage
         $signal = new TableMutationSignalData(TableChatContext::adminUsers, $mutation);
         $hilosUsersSignal = new TableMutationSignalData(
             TableChatContext::hilosUsers,
-            new TableMutationEntry(
-                TableMutationType::Updated,
+            new TableRowMutationDTO(
+                TableMutationType::Update,
                 $dto->id,
                 Hilos::$table->hilosUsers->makeRow($dbUser->toArray(toFrontend: true)),
             ),

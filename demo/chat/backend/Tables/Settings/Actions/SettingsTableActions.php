@@ -7,7 +7,7 @@ namespace Demo\Chat\Tables\Settings\Actions;
 use Demo\Chat\Database\Settings\SettingsCatalog;
 use Demo\Chat\Hilos;
 use Hilos\Core\Table\Actions\TableActions;
-use Hilos\Core\Table\Mutation\TableMutationEntry;
+use Hilos\Core\Table\DTO\TableRowMutationDTO;
 use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\HilosException;
 
@@ -23,14 +23,14 @@ final class SettingsTableActions extends TableActions
      *
      * @param string $key Setting key (must be in catalog)
      * @param mixed $value Value (null = use default_value from catalog)
-     * @return TableMutationEntry Mutation entry for broadcast
+     * @return TableRowMutationDTO Row mutation DTO for broadcast
      * @throws HilosException On db or validation error
      */
-    public function add(string $key, mixed $value = null): TableMutationEntry
+    public function add(string $key, mixed $value = null): TableRowMutationDTO
     {
         $catalog = SettingsCatalog::getCatalog();
         $dbSetting = Hilos::$db->settings->actions->add($key, $value, $catalog);
 
-        return $this->mutation(TableMutationType::Created, $dbSetting->key, $this->definition->makeRow($dbSetting->toArray()));
+        return $this->mutation(TableMutationType::Create, $dbSetting->key, $this->definition->makeRow($dbSetting->toArray()));
     }
 }

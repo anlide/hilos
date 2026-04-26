@@ -7,7 +7,6 @@ namespace Hilos\Core\Table\DTO;
 use Hilos\Core\Router\SignalData;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Table\Exception\TableSignalNotDeserializableException;
-use Hilos\Core\Table\Mutation\TableMutationEntry;
 use Hilos\Core\Table\TableConstants;
 
 /**
@@ -21,11 +20,11 @@ class TableMutationSignalData extends SignalData implements SignalDataInterface
      * Creates table mutation signal data.
      *
      * @param string $tableKey Table identifier (e.g. users, bots)
-     * @param TableMutationEntry $mutation Mutation entry (type, rowKey, row)
+     * @param TableRowMutationDTO $mutation Row mutation DTO (type, rowKey, row)
      */
     public function __construct(
         public readonly string $tableKey,
-        public readonly TableMutationEntry $mutation,
+        public readonly TableRowMutationDTO $mutation,
     ) {
         parent::__construct();
     }

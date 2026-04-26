@@ -10,7 +10,7 @@ describe('applyTableMutations', () => {
       offset: 0,
       limit: 10,
       mutations: [
-        { type: 'updated', rowKey: 'chat.title', row: { value: 'New' } },
+        { type: 'update', rowKey: 'chat.title', row: { value: 'New' } },
       ],
       rowKeyField: 'key',
     }
@@ -19,5 +19,32 @@ describe('applyTableMutations', () => {
 
     expect(result.state.rows).toEqual([{ key: 'chat.title', value: 'New' }])
     expect(result.state.mutations).toEqual([])
+  })
+
+  it('applies create, update, and delete row mutations', () => {
+    const state: TableDataState = {
+      rows: [
+        { id: 1, name: 'Old' },
+        { id: 2, name: 'Gone' },
+      ],
+      totalCount: 2,
+      offset: 0,
+      limit: 10,
+      mutations: [
+        { type: 'create', rowKey: 3, row: { id: 3, name: 'New' } },
+        { type: 'update', rowKey: 1, row: { name: 'Updated' } },
+        { type: 'delete', rowKey: 2 },
+      ],
+    }
+
+    const result = applyTableMutations(state)
+
+    expect(result.state.rows).toEqual([
+      { id: 1, name: 'Updated' },
+      { id: 3, name: 'New' },
+    ])
+    expect(result.state.totalCount).toBe(2)
+    expect(result.state.mutations).toEqual([])
+    expect(result.hasDeletes).toBe(true)
   })
 })

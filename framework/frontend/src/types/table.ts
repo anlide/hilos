@@ -1,12 +1,12 @@
 /**
  * Table mutation types matching the backend TableMutationType enum.
  */
-export type TableMutationType = 'created' | 'updated' | 'deleted'
+export type TableMutationType = 'create' | 'update' | 'delete'
 
 /**
- * Single mutation entry from the server (broadcast in real-time).
+ * Single row mutation DTO from the server (broadcast in real-time).
  */
-export interface TableMutationEntry {
+export interface TableRowMutationDTO {
   type: TableMutationType
   rowKey: string | number
   row?: Record<string, unknown>
@@ -21,7 +21,7 @@ export interface TableDataState {
   totalCount: number
   offset: number
   limit: number
-  mutations: TableMutationEntry[]
+  mutations: TableRowMutationDTO[]
   /** Row key field for matching mutations (default: 'id') */
   rowKeyField?: string
 }

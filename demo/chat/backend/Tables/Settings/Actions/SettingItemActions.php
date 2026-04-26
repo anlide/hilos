@@ -8,7 +8,7 @@ use Demo\Chat\Database\Settings\SettingsCatalog;
 use Demo\Chat\Hilos;
 use Hilos\Core\Table\Actions\TableItemActions;
 use Hilos\Core\Table\Exception\TableActionException;
-use Hilos\Core\Table\Mutation\TableMutationEntry;
+use Hilos\Core\Table\DTO\TableRowMutationDTO;
 use Hilos\Core\Table\Mutation\TableMutationType;
 
 /**
@@ -23,27 +23,27 @@ final class SettingItemActions extends TableItemActions
      * Updates setting value and returns mutation for broadcasting.
      *
      * @param array<string, mixed> $data Keys: 'value' (required), optionally 'type'
-     * @return TableMutationEntry Mutation entry for broadcast
+     * @return TableRowMutationDTO Row mutation DTO for broadcast
      * @throws TableActionException If setting not found
      */
-    public function update(array $data): TableMutationEntry
+    public function update(array $data): TableRowMutationDTO
     {
         $dbSetting = Hilos::$db->settings->findByKey((string) $this->rowKey);
         if ($dbSetting === null) {
             throw new TableActionException("Setting '{$this->rowKey}' not found");
         }
         $dbSetting->actions->update($data);
-        return $this->mutation(TableMutationType::Updated, $this->definition->makeRow($dbSetting->toArray()));
+        return $this->mutation(TableMutationType::Update, $this->definition->makeRow($dbSetting->toArray()));
     }
 
     /**
      * Deletes orphan setting and returns mutation for broadcasting.
      * Only settings whose key is NOT in catalog can be deleted.
      *
-     * @return TableMutationEntry Mutation entry for broadcast
+     * @return TableRowMutationDTO Row mutation DTO for broadcast
      * @throws TableActionException If setting is in catalog (not orphan) or not found
      */
-    public function delete(): TableMutationEntry
+    public function delete(): TableRowMutationDTO
     {
         $setting = Hilos::$db->settings->findByKey((string) $this->rowKey);
         if ($setting === null) {
@@ -54,6 +54,6 @@ final class SettingItemActions extends TableItemActions
             throw new TableActionException('Only orphan settings (not in catalog) can be deleted');
         }
         $setting->actions->delete();
-        return $this->mutation(TableMutationType::Deleted);
+        return $this->mutation(TableMutationType::Delete);
     }
 }

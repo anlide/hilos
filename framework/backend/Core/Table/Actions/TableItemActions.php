@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Core\Table\Actions;
 
 use Hilos\Core\Table\Definition\TableDefinition;
-use Hilos\Core\Table\Mutation\TableMutationEntry;
+use Hilos\Core\Table\DTO\TableRowMutationDTO;
 use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\Core\Table\Row\AbstractTableRow;
 
@@ -13,7 +13,7 @@ use Hilos\Core\Table\Row\AbstractTableRow;
  * Base class for single-item actions (e.g. update, delete).
  *
  * Subclasses implement domain-specific item actions.
- * Return a TableMutationEntry from each mutating method so the caller can broadcast it.
+ * Return a TableRowMutationDTO from each mutating method so the caller can broadcast it.
  */
 abstract class TableItemActions
 {
@@ -30,15 +30,15 @@ abstract class TableItemActions
     }
 
     /**
-     * Creates a mutation entry for broadcasting.
+     * Creates a row mutation DTO for broadcasting.
      *
      * @param TableMutationType $type Mutation type (e.g. update, delete)
      * @param ?AbstractTableRow $row Optional row data for create/update mutations
      *
-     * @return TableMutationEntry Created mutation entry for broadcasting
+     * @return TableRowMutationDTO Created row mutation DTO for broadcasting
      */
-    protected function mutation(TableMutationType $type, ?AbstractTableRow $row = null): TableMutationEntry
+    protected function mutation(TableMutationType $type, ?AbstractTableRow $row = null): TableRowMutationDTO
     {
-        return new TableMutationEntry($type, $this->rowKey, $row);
+        return new TableRowMutationDTO($type, $this->rowKey, $row);
     }
 }

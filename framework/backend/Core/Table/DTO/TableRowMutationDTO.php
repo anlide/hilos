@@ -2,23 +2,24 @@
 
 declare(strict_types=1);
 
-namespace Hilos\Core\Table\Mutation;
+namespace Hilos\Core\Table\DTO;
 
+use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\Core\Table\Row\AbstractTableRow;
 use Hilos\Core\Table\Row\GenericTableRow;
 use Hilos\Core\Table\TableConstants;
 
 /**
- * Single table mutation event (create/update/delete).
+ * DTO for one table row mutation (create/update/delete).
  *
  * Broadcast to all connected users so the frontend can show pending-change indicators.
  */
-readonly class TableMutationEntry
+readonly class TableRowMutationDTO
 {
     /**
-     * Creates table mutation entry.
+     * Creates a table row mutation DTO.
      *
-     * @param TableMutationType $type Mutation type (created, updated, deleted)
+     * @param TableMutationType $type Mutation type (create, update, delete)
      * @param string|int $rowKey Affected row key
      * @param ?AbstractTableRow $row Optional row data for create/update
      */
@@ -47,7 +48,7 @@ readonly class TableMutationEntry
     }
 
     /**
-     * Rebuilds a mutation entry from its serialized form.
+     * Rebuilds a table row mutation DTO from its serialized form.
      *
      * When the concrete table row class is unknown in the current context, the
      * row is restored as {@see GenericTableRow}.

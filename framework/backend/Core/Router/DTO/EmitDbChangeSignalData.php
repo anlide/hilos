@@ -7,7 +7,7 @@ namespace Hilos\Core\Router\DTO;
 use Hilos\BaseDTO;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Table\DTO\TableMutationSignalData;
-use Hilos\Core\Table\Mutation\TableMutationEntry;
+use Hilos\Core\Table\DTO\TableRowMutationDTO;
 
 /**
  * Canonical DB change payload for {@see SignalTypeConstants::EMIT_DB_CHANGE}.
@@ -31,7 +31,7 @@ final class EmitDbChangeSignalData extends BaseDTO implements SignalDataInterfac
     /**
      * @param string $entityId Domain entity id (e.g. user id) for subscription routing
      * @param string $tableKey Table key for {@see TableMutationSignalData}
-     * @param array<string, mixed> $mutationArray {@see TableMutationEntry::toArray()}
+     * @param array<string, mixed> $mutationArray {@see TableRowMutationDTO::toArray()}
      * @param ?string $excludeAcceptKey Initiator connection to skip on broadcast leg
      * @param ?int $actorUserId Optional acting user id (audit / future rules)
      * @param ?string $collectionKey Optional DB collection key for future rules
@@ -79,7 +79,7 @@ final class EmitDbChangeSignalData extends BaseDTO implements SignalDataInterfac
     {
         return new TableMutationSignalData(
             $this->tableKey,
-            TableMutationEntry::fromArray($this->mutationArray),
+            TableRowMutationDTO::fromArray($this->mutationArray),
         );
     }
 

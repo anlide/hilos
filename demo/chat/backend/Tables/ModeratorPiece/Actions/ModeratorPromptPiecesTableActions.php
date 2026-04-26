@@ -8,7 +8,7 @@ use Demo\Chat\Database\Object\Item\ModeratorPromptPiece as ObjectModeratorPrompt
 use Demo\Chat\Hilos;
 use Demo\Chat\Tables\ModeratorPiece\DTO\ModeratorPieceCreateActionDTO;
 use Hilos\Core\Table\Actions\TableActions;
-use Hilos\Core\Table\Mutation\TableMutationEntry;
+use Hilos\Core\Table\DTO\TableRowMutationDTO;
 use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\HilosException;
 
@@ -23,10 +23,10 @@ final class ModeratorPromptPiecesTableActions extends TableActions
      * Creates a moderator prompt piece and returns mutation for broadcasting.
      *
      * @param ModeratorPieceCreateActionDTO $dto Create payload
-     * @return TableMutationEntry Mutation entry for broadcast
+     * @return TableRowMutationDTO Row mutation DTO for broadcast
      * @throws HilosException On db or permission error
      */
-    public function create(ModeratorPieceCreateActionDTO $dto): TableMutationEntry
+    public function create(ModeratorPieceCreateActionDTO $dto): TableRowMutationDTO
     {
         $data = [
             ObjectModeratorPromptPiece::section => $dto->section,
@@ -35,6 +35,6 @@ final class ModeratorPromptPiecesTableActions extends TableActions
 
         $dbPiece = Hilos::$db->moderatorPromptPieces->actions->create($data);
 
-        return $this->mutation(TableMutationType::Created, $dbPiece->id, $this->definition->makeRow($dbPiece->toArray(toFrontend: true)));
+        return $this->mutation(TableMutationType::Create, $dbPiece->id, $this->definition->makeRow($dbPiece->toArray(toFrontend: true)));
     }
 }

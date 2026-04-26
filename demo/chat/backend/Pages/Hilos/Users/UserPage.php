@@ -26,7 +26,7 @@ use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\EmitDbChangeSignalData;
 use Hilos\Core\Router\DTO\EntitiesChangesDTO;
 use Hilos\Core\Table\DTO\TableMutationSignalData;
-use Hilos\Core\Table\Mutation\TableMutationEntry;
+use Hilos\Core\Table\DTO\TableRowMutationDTO;
 use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\Database\Exception\View\CollectionNotManualException;
 use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
@@ -147,8 +147,8 @@ final class UserPage extends AbstractHilosUserPage
         $signal = new TableMutationSignalData(TableChatContext::hilosUsers, $mutation);
         $adminUsersSignal = new TableMutationSignalData(
             TableChatContext::adminUsers,
-            new TableMutationEntry(
-                TableMutationType::Updated,
+            new TableRowMutationDTO(
+                TableMutationType::Update,
                 $dto->id,
                 Hilos::$table->adminUsers->makeRow($dbUser->toArray(toFrontend: true)),
             ),

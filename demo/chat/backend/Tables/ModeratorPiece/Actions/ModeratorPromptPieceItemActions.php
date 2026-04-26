@@ -8,7 +8,7 @@ use Demo\Chat\Database\Object\Item\ModeratorPromptPiece as ObjectModeratorPrompt
 use Demo\Chat\Hilos;
 use Demo\Chat\Tables\ModeratorPiece\DTO\ModeratorPieceUpdateActionDTO;
 use Hilos\Core\Table\Actions\TableItemActions;
-use Hilos\Core\Table\Mutation\TableMutationEntry;
+use Hilos\Core\Table\DTO\TableRowMutationDTO;
 use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\HilosException;
 
@@ -23,10 +23,10 @@ final class ModeratorPromptPieceItemActions extends TableItemActions
      * Updates piece and returns mutation for broadcasting.
      *
      * @param ModeratorPieceUpdateActionDTO $dto Update payload (only non-null fields applied)
-     * @return TableMutationEntry Mutation entry for broadcast
+     * @return TableRowMutationDTO Row mutation DTO for broadcast
      * @throws HilosException On db or permission error
      */
-    public function update(ModeratorPieceUpdateActionDTO $dto): TableMutationEntry
+    public function update(ModeratorPieceUpdateActionDTO $dto): TableRowMutationDTO
     {
         $data = array_filter([
             ObjectModeratorPromptPiece::section => $dto->section,
@@ -38,18 +38,18 @@ final class ModeratorPromptPieceItemActions extends TableItemActions
             $dbPiece->actions->update($data);
         }
 
-        return $this->mutation(TableMutationType::Updated, $this->definition->makeRow($dbPiece->toArray(toFrontend: true)));
+        return $this->mutation(TableMutationType::Update, $this->definition->makeRow($dbPiece->toArray(toFrontend: true)));
     }
 
     /**
      * Deletes piece and returns mutation for broadcasting.
      *
-     * @return TableMutationEntry Mutation entry for broadcast
+     * @return TableRowMutationDTO Row mutation DTO for broadcast
      * @throws HilosException On db or permission error
      */
-    public function delete(): TableMutationEntry
+    public function delete(): TableRowMutationDTO
     {
         Hilos::$db->moderatorPromptPieces[$this->rowKey]->actions->delete();
-        return $this->mutation(TableMutationType::Deleted);
+        return $this->mutation(TableMutationType::Delete);
     }
 }

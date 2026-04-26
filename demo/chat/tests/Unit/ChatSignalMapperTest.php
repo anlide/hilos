@@ -15,7 +15,7 @@ use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
 use Hilos\Core\Table\DTO\TableMutationSignalData;
-use Hilos\Core\Table\Mutation\TableMutationEntry;
+use Hilos\Core\Table\DTO\TableRowMutationDTO;
 use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\Core\Table\Row\GenericTableRow;
 use PHPUnit\Framework\TestCase;
@@ -27,8 +27,8 @@ final class ChatSignalMapperTest extends TestCase
 {
     public function testMapChatUserRowUpdatedProducesSingleAllExceptTableMutation(): void
     {
-        $mutation = new TableMutationEntry(
-            TableMutationType::Updated,
+        $mutation = new TableRowMutationDTO(
+            TableMutationType::Update,
             7,
             GenericTableRow::fromArray(['id' => 7, 'name' => 'N']),
         );
@@ -60,8 +60,8 @@ final class ChatSignalMapperTest extends TestCase
 
     public function testUnknownEventKeyReturnsEmpty(): void
     {
-        $mutation = new TableMutationEntry(
-            TableMutationType::Updated,
+        $mutation = new TableRowMutationDTO(
+            TableMutationType::Update,
             1,
             GenericTableRow::fromArray(['id' => 1]),
         );

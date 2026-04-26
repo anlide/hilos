@@ -5,11 +5,11 @@ declare(strict_types=1);
 namespace Hilos\Core\Table\Mutation;
 
 /**
- * Mutation type for table change log entries.
+ * Mutation type for table row changes.
  */
 enum TableMutationType: string
 {
-    case Created = 'created';
-    case Updated = 'updated';
-    case Deleted = 'deleted';
+    case Create = 'create';
+    case Update = 'update';
+    case Delete = 'delete';
 }

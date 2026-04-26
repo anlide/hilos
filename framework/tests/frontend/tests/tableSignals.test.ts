@@ -9,27 +9,39 @@ import { tableActionError, tableMutation } from '@/signals/tableSignals'
  * when the shape is invalid (router logs and skips on `null`).
  */
 describe('tableMutation parser', () => {
-  it('parses a valid mutation payload', () => {
+  it.each(['create', 'update', 'delete'] as const)('parses %s mutation payloads', (type) => {
     const parsed = tableMutation.parse({
       tableKey: 'users',
-      mutation: { type: 'created', rowKey: 42, row: { id: 42, name: 'Ada' } },
+      mutation: { type, rowKey: 42, row: { id: 42, name: 'Ada' } },
     })
 
     expect(parsed).toEqual({
       tableKey: 'users',
-      mutation: { type: 'created', rowKey: 42, row: { id: 42, name: 'Ada' } },
+      mutation: { type, rowKey: 42, row: { id: 42, name: 'Ada' } },
     })
   })
 
   it('accepts mutations without the optional row snapshot', () => {
     const parsed = tableMutation.parse({
       tableKey: 'users',
-      mutation: { type: 'deleted', rowKey: 'abc' },
+      mutation: { type: 'delete', rowKey: 'abc' },
     })
 
     expect(parsed).toEqual({
       tableKey: 'users',
-      mutation: { type: 'deleted', rowKey: 'abc' },
+      mutation: { type: 'delete', rowKey: 'abc' },
+    })
+  })
+
+  it('drops routing metadata from row mutation payloads', () => {
+    const parsed = tableMutation.parse({
+      tableKey: 'users',
+      mutation: { type: 'update', rowKey: 42, row: { id: 42 }, acceptKey: 'client-a' },
+    })
+
+    expect(parsed).toEqual({
+      tableKey: 'users',
+      mutation: { type: 'update', rowKey: 42, row: { id: 42 } },
     })
   })
 
@@ -44,7 +56,7 @@ describe('tableMutation parser', () => {
 
   it('returns null when tableKey is missing', () => {
     const parsed = tableMutation.parse({
-      mutation: { type: 'created', rowKey: 1 },
+      mutation: { type: 'create', rowKey: 1 },
     })
 
     expect(parsed).toBeNull()

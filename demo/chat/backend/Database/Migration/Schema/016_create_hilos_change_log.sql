@@ -35,7 +35,7 @@ CREATE TABLE `hilos_change_log` (
     `table_id` INT UNSIGNED NOT NULL,
     `record_id` BIGINT UNSIGNED NOT NULL,
     `field_id` INT UNSIGNED NOT NULL,
-    `mutation_type` ENUM('created', 'updated', 'deleted') NOT NULL,
+    `mutation_type` ENUM('create', 'update', 'delete') NOT NULL,
     `user_id` INT UNSIGNED DEFAULT NULL,
     `created_at` TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
     `old_value` TEXT DEFAULT NULL,

@@ -12,9 +12,9 @@ export function getTableDisplayRows<T>(state: TableDataState | undefined): T[] {
 /**
  * Apply pending mutations to table state (called when user clicks "Apply changes").
  *
- * - Created: row is appended only if the current page has room (rows.length < limit, or limit=0).
- * - Updated: row data is merged into matching existing row.
- * - Deleted: row is removed from current page if present.
+ * - Create: row is appended only if the current page has room (rows.length < limit, or limit=0).
+ * - Update: row data is merged into matching existing row.
+ * - Delete: row is removed from current page if present.
  *
  * Returns the new state (with cleared mutations) and metadata about the result.
  */
@@ -27,7 +27,7 @@ export function applyTableMutations(state: TableDataState): ApplyMutationsResult
 
   for (const m of state.mutations) {
     switch (m.type) {
-      case 'created':
+      case 'create':
         if (m.row) {
           const idx = rows.findIndex(r => r[rowKeyField] === m.rowKey)
           if (idx >= 0) {
@@ -40,7 +40,7 @@ export function applyTableMutations(state: TableDataState): ApplyMutationsResult
           }
         }
         break
-      case 'updated':
+      case 'update':
         if (m.row) {
           const idx = rows.findIndex(r => r[rowKeyField] === m.rowKey)
           if (idx >= 0) {
@@ -48,7 +48,7 @@ export function applyTableMutations(state: TableDataState): ApplyMutationsResult
           }
         }
         break
-      case 'deleted':
+      case 'delete':
         hasDeletes = true
         {
           const idx = rows.findIndex(r => r[rowKeyField] === m.rowKey)
@@ -76,9 +76,9 @@ export function getTablePendingChanges(state: TableDataState | undefined): Pendi
   let added = 0, updated = 0, deleted = 0
   for (const m of state.mutations) {
     switch (m.type) {
-      case 'created': added++; break
-      case 'updated': updated++; break
-      case 'deleted': deleted++; break
+      case 'create': added++; break
+      case 'update': updated++; break
+      case 'delete': deleted++; break
     }
   }
   return { added, updated, deleted }
@@ -96,9 +96,9 @@ export function getTableChangeMarkers(state: TableDataState | undefined): Change
 
   for (const m of state.mutations) {
     switch (m.type) {
-      case 'created': added.push(m.rowKey); break
-      case 'updated': updated.push(m.rowKey); break
-      case 'deleted': deleted.push(m.rowKey); break
+      case 'create': added.push(m.rowKey); break
+      case 'update': updated.push(m.rowKey); break
+      case 'delete': deleted.push(m.rowKey); break
     }
   }
   return { added, updated, deleted }
