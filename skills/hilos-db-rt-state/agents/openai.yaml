@@ -1,0 +1,4 @@
+interface:
+  display_name: "Hilos DB/RT State"
+  short_description: "DB-backed state with runtime overlays"
+  default_prompt: "Use $hilos-db-rt-state to connect Hilos DB-backed data with runtime state."
