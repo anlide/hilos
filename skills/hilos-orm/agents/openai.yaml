@@ -1,4 +1,4 @@
 interface:
   display_name: "Hilos ORM"
-  short_description: "Entities, objects, DbCollection, and migrations"
+  short_description: "Hilos::$db, DbContext, collections, actions, and migrations"
   default_prompt: "Use $hilos-orm to implement a database-backed Hilos change."
