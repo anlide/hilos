@@ -1,16 +1,22 @@
 # Runtime: RtContext
 
-`RtContext` is the runtime state layer — in-memory data shared across agents in a worker, synced across workers via RT sync signals.
+`Hilos::$rt` is the runtime state context entry point for the current
+application. It exposes in-memory state shared across agents in a worker and
+synced across workers via RT sync signals.
 
 ## Access
 
+Use typed runtime collections through `Hilos::$rt`:
+
 ```php
-Hilos::$rt->connections    // RtStates collection of Connection items
-Hilos::$rt->userStates     // RtStates collection of ChatUserState items
-Hilos::$rt->chatContexts   // RtStates collection of ChatContext items
+Hilos::$rt->connections    // RtCollection of Connection view items
+Hilos::$rt->userStates     // RtCollection of ChatUserState view items
+Hilos::$rt->chatContexts   // RtCollection of ChatContext view items
 ```
 
-Collections are defined in the project's `RtContext` subclass (e.g. `RtChatContext`).
+The available names are defined in the project's `RtContext` subclass, such as
+`RtChatContext`. A caller should use these existing access paths before adding a
+new runtime collection, helper, table method, or page-level state map.
 
 ## RtContext vs DbContext
 
@@ -20,9 +26,18 @@ Collections are defined in the project's `RtContext` subclass (e.g. `RtChatConte
 | Speed | Very fast (no I/O) | Requires DB query |
 | Use for | Live connection state, transient UI state | Business data, history |
 
-## RtContext subclass
+Runtime state is appropriate for active WebSocket connections, socket-scoped
+upload sessions, temporary progress UI, moderation UI state, pending per-user
+text, and shared context that can be rebuilt or safely lost on restart.
 
-Project defines collections in a `RtContext` subclass:
+Durable business entities, audit/history, catalog settings, billing state, and
+anything that must survive process restart belongs in `Hilos::$db`.
+
+## Layer Model
+
+`RtContext` owns the app-level runtime context. It registers backing state
+collections in `_stateCollections`, then maps each one to a view collection with
+`setRepresent()`.
 
 ```php
 final class RtChatContext extends RtContext
@@ -37,20 +52,153 @@ final class RtChatContext extends RtContext
         $this->_stateCollections[self::userStates] = StateUserStates::init();
         $this->_stateCollections[self::chatContexts] = StateChatContexts::init();
 
-        $this->setRepresent(self::connections, Connections::class);
-        $this->setRepresent(self::userStates, UserStates::class);
-        $this->setRepresent(self::chatContexts, ChatContexts::class);
+        $this->setRepresent(
+            self::connections,
+            Connections::class,
+            ConnectionsActions::class,
+            ConnectionActions::class,
+        );
+        $this->setRepresent(self::userStates, UserStates::class, UserStatesActions::class);
+        $this->setRepresent(self::chatContexts, ChatContexts::class, ChatContextsActions::class);
     }
 }
 ```
 
-The project facade should create the context with `new RtChatContext()`;
+`Hilos::$rt->connections` calls the context magic getter and returns the
+registered `RtCollection` wrapper.
+
+The layers are:
+
+| Layer | Role | Example |
+|---|---|---|
+| State item (`RtState`) | In-memory row with typed fields and sync diff logic | `Runtime/State/Item/Connection.php` |
+| State collection (`RtStates`) | Backing runtime map keyed by state id | `Runtime/State/Collection/Connections.php` |
+| View item (`RtItem`) | Read-only caller-facing item wrapper | `Runtime/View/Item/Connection.php` |
+| View collection (`RtCollection`) | Caller-facing collection API and lookup helpers | `Runtime/View/Collection/Connections.php` |
+| Actions | Write operations for collection or item | `Runtime/View/Actions/...` |
+
+Do not skip these layers with page/table-specific arrays or duplicated runtime
+mutation logic when the behavior belongs to a collection, item, or action.
+
+The project facade should create the context with `new RtChatContext()`.
 `Hilos::init()` calls `configure()` after `createRuntime()`.
+
+## Finding Existing Logic
+
+Before writing runtime-backed code:
+
+1. Find the app context: search for `extends RtContext` or the collection
+   constant in `RtChatContext`.
+2. Check `setRepresent()` to locate the View collection, collection actions, and
+   item actions.
+3. Inspect the View collection for existing lookup methods such as `forUser()`.
+4. Inspect the State collection for typed `get()`, `offsetGet()`, and lookup
+   helpers.
+5. Inspect collection actions for create/register/clear operations.
+6. Inspect item actions for updates on one loaded runtime item.
+7. Find the truth source registration in the owning agent's `onStart()` and
+   `onStop()`.
+8. Only then add the smallest missing method to the owning layer.
+
+## Reads
+
+Use `Hilos::$rt->{collection}` from agents, pages, and handlers:
+
+```php
+$connection = Hilos::$rt->connections[$acceptKey] ?? null;
+$connections = Hilos::$rt->connections->forUser($userId);
+
+if ($connection !== null) {
+    $userId = $connection->userId;
+}
+```
+
+Runtime state can complement DB-backed frontend state:
+
+```php
+$user = Hilos::$db->users[$userId] ?? null;
+$onlineConnections = Hilos::$rt->connections->forUser($userId);
+```
+
+Put reusable runtime lookups on the collection layer instead of rebuilding the
+same filter in pages or tables.
+
+## Collection Actions
+
+Collection actions are for writes that create or mutate collection-level runtime
+state: register a connection, unregister a socket, clear all runtime rows, or
+perform a collection-owned transient state transition.
+
+```php
+$connection = Hilos::$rt->connections->actions->register($acceptKey, $userId);
+Hilos::$rt->connections->actions->unregister($acceptKey);
+```
+
+A collection action receives the `RtCollection`, checks truth source write
+permission, mutates the backing `RtStates` collection, and keeps the view
+collection cache synchronized.
+
+## Item Actions
+
+Item actions are for writes on a single loaded `RtItem`:
+
+```php
+$connection = Hilos::$rt->connections[$acceptKey] ?? null;
+$connection?->actions->clearFileModerationBanner();
+$connection?->actions->applyStoredBinaryChunkProgress($receivedBytes);
+```
+
+Use item actions when the operation naturally belongs to an existing runtime
+item and needs that item's state. Do not put update logic in a page handler when
+an item action should own it.
+
+## Choosing Where New Logic Belongs
+
+| Need | Put it in |
+|---|---|
+| New runtime collection | `RtContext` plus `RtStates` and `RtCollection` |
+| New runtime row field | `RtState` typed field, `toArray()`, `fromRow()`, and `applyDiff()` |
+| Runtime lookup helper | State collection plus View collection wrapper |
+| Caller-facing read transformation | View item or View collection |
+| Create/register/clear operation | Collection actions |
+| Update one runtime item | Item actions |
+| Durable business data | DB layer, not runtime |
+| Page response assembly | Page handler, using existing RT/DB APIs only |
+| Table query/result shaping | Table layer, delegating runtime behavior to collections/actions |
 
 ## Sync mechanism
 
 RT changes are broadcast to all workers via `RT_SYNC_*` signals:
-- Write in one worker → signal queued → daemon broadcasts → all workers apply via `RtSyncApplicator`
 
-Only the **truth source** agent should write to a collection.
-Other agents receive `onSignalRtSync*()` to stay in sync.
+- Write in one worker
+- Signal queued
+- Daemon broadcasts
+- All workers apply via `RtSyncApplicator`
+
+Only the **truth source** agent should write to a runtime collection. Other
+agents read the synchronized state.
+
+Application code should write through runtime actions, typed `RtState` fields,
+and `sync()`. Reserve `applyDiff()` / `applyDiffToState()` for inbound RT
+synchronization internals after another worker already made the write.
+
+## Anti-Patterns
+
+Do not use runtime state as a hidden durable database:
+
+```php
+// Wrong: durable business history must not live only in runtime state.
+Hilos::$rt->connections[$acceptKey]?->actions->storePermanentOrder($orderId);
+```
+
+Persist durable facts through `Hilos::$db` and keep `Hilos::$rt` for live state:
+
+```php
+Hilos::$db->events->actions->add($type, $userId, $payload);
+Hilos::$rt->connections[$acceptKey]?->actions->clearFileModerationBanner();
+```
+
+Do not add runtime arrays, duplicated connection maps, or transient mutation
+logic to page/table layers just because a screen needs the value. Page/table
+code should orchestrate existing typed runtime APIs; the runtime layer should
+own shared in-memory behavior.
