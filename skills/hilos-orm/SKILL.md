@@ -15,6 +15,9 @@ document that matches the change.
   `docs/agents/orm/db-collection.md`
 - Magic, array, result, and finder selection:
   `docs/agents/orm/accessor-contracts.md` or `$hilos-accessor-contracts`
+- Frontend-safe DB item serialization and computed item fields:
+  `docs/agents/orm/frontend-representation.md` or
+  `$hilos-frontend-representation`
 - Entity classes and DB table mapping: `docs/agents/orm/entity.md`
 - Object layer and view transformations: `docs/agents/orm/object.md`
 - Migrations and seeds: `docs/agents/orm/migrations.md`

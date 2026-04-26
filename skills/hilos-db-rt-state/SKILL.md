@@ -17,8 +17,10 @@ table or page.
   `$hilos-runtime`, `docs/agents/runtime/rt-context.md`, and
   `docs/agents/runtime/rt-state.md`.
 - DB vs RT choice and extension checklist: use `$hilos-data-extension`.
+- Frontend representation, `toFrontend`, `withCalculation`, and computed DB
+  item fields: use `$hilos-frontend-representation`.
 - Table/page subscription and frontend payload contracts: use
-  `$hilos-frontend-sdk` when the value is sent to the browser.
+  `$hilos-frontend-sdk` when the value is sent through page/WebSocket state.
 
 ## Mental Model
 

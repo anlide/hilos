@@ -16,8 +16,9 @@ you choose.
 - Runtime state, `RtContext`, `RtState`, runtime collections, sync, and actions:
   use `$hilos-runtime`, `docs/agents/runtime/rt-context.md`, and
   `docs/agents/runtime/rt-state.md`.
-- DB-backed item plus live runtime overlay or computed frontend property:
-  use `$hilos-db-rt-state`.
+- DB-backed item plus live runtime overlay: use `$hilos-db-rt-state`.
+- Frontend-safe computed DB item fields and `toFrontend` serialization:
+  use `$hilos-frontend-representation`.
 - Truth source ownership: `docs/agents/agent-system/monopolistic-agent.md`.
 - Repository/service anti-pattern:
   `docs/agents/antipatterns/no-repository-service.md`.

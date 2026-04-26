@@ -1,0 +1,4 @@
+interface:
+  display_name: "Hilos Frontend Representation"
+  short_description: "Frontend-safe DB item serialization"
+  default_prompt: "Use $hilos-frontend-representation to shape Hilos DB/View item payloads with toFrontend, withCalculation, and computed fields."
