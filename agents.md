@@ -107,6 +107,7 @@ Quick navigation for AI agents. Read the relevant file before starting work.
 5. Signal routing is **declarative** in `SignalRouter` — do not add routing logic in agents
 6. **Frontend edits go through `Modal` only** — inline edit forms on pages are forbidden (see [frontend-sdk/edit-in-modal.md](docs/agents/frontend-sdk/edit-in-modal.md))
 7. For code style, use the matching small rule from [code-style/README.md](docs/agents/code-style/README.md)
+8. Internal backend API uses typed parameters, DTOs, value objects, or typed collections — unstructured arrays need a boundary or explicit reason
 
 ## Project docs (existing)
 

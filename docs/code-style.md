@@ -13,6 +13,7 @@ catalog for small code-style rules.
 |---|---|
 | [PHPDoc](agents/code-style/phpdoc.md) | writing or changing PHPDoc, overrides, `@see` links |
 | [Page Action Handlers](agents/code-style/page-action-handlers.md) | editing `Page::onAction()` and action handlers |
+| [Internal Backend API](agents/code-style/internal-backend-api.md) | changing backend contracts, DB actions, table actions, DTO/value object boundaries, or typed collections |
 | [Local Variables](agents/code-style/local-variables.md) | introducing temporary variables or reviewing one-use locals |
 | [Frontend Vue](agents/code-style/frontend-vue.md) | editing Vue SFC templates, global components, or frontend line endings |
 
@@ -26,6 +27,8 @@ catalog for small code-style rules.
   backend pattern.
 - Prefer local project helpers and existing abstractions over new generic
   layers.
+- Use typed parameters, DTOs, value objects, or typed collections for internal
+  backend API. Keep unstructured arrays at system boundaries.
 - Keep comments and PHPDoc contractual; remove boilerplate that repeats the
   signature.
 
