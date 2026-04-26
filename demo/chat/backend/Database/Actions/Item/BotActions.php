@@ -27,25 +27,36 @@ final class BotActions extends DbActions
     private const int NAME_MAX_LENGTH = 255;
 
     /**
-     * Updates bot fields. Only provided keys are updated.
+     * Updates bot fields. Null parameters are left unchanged.
      *
-     * @param array<string, mixed> $data Fields to update (keys: ObjectBot::name, ObjectBot::description, etc.)
+     * @param ?string $name Display name
+     * @param ?string $description Description
+     * @param ?string $style Writing style
+     * @param ?string $topics Preferred topics
+     * @param ?string $personality Personality traits
+     * @param ?bool $active Active flag
      * @throws ItemNotFoundForUpdateException If bot id is null (not persisted)
      * @throws EmptyValueException If name is empty
      * @throws ValueTooShortException If name is too short
      * @throws ValueTooLongException If name exceeds max length
      * @throws HilosException On database error
      */
-    public function update(array $data): void
-    {
+    public function update(
+        ?string $name = null,
+        ?string $description = null,
+        ?string $style = null,
+        ?string $topics = null,
+        ?string $personality = null,
+        ?bool $active = null,
+    ): void {
         $this->ensureCanWrite();
 
         if ($this->object->id === null) {
             throw new ItemNotFoundForUpdateException('Bot not found for update (id is null)');
         }
 
-        if (array_key_exists(ObjectBot::name, $data)) {
-            $name = is_string($data[ObjectBot::name]) ? trim($data[ObjectBot::name]) : '';
+        if ($name !== null) {
+            $name = trim($name);
             if ($name === '') {
                 throw new EmptyValueException('Bot name cannot be empty');
             }
@@ -58,38 +69,20 @@ final class BotActions extends DbActions
             $this->object->name = $name;
         }
 
-        if (array_key_exists(ObjectBot::description, $data)) {
-            $this->object->description = $data[ObjectBot::description];
+        if ($description !== null) {
+            $this->object->description = $description;
         }
-        if (array_key_exists(ObjectBot::style, $data)) {
-            $this->object->style = $data[ObjectBot::style];
+        if ($style !== null) {
+            $this->object->style = $style;
         }
-        if (array_key_exists(ObjectBot::topics, $data)) {
-            $this->object->topics = $data[ObjectBot::topics];
+        if ($topics !== null) {
+            $this->object->topics = $topics;
         }
-        if (array_key_exists(ObjectBot::personality, $data)) {
-            $this->object->personality = $data[ObjectBot::personality];
+        if ($personality !== null) {
+            $this->object->personality = $personality;
         }
-        if (array_key_exists(ObjectBot::active, $data)) {
-            $this->object->active = $data[ObjectBot::active];
-        }
-        if (array_key_exists(ObjectBot::reactionDelayMin, $data)) {
-            $this->object->reactionDelayMin = (int)$data[ObjectBot::reactionDelayMin];
-        }
-        if (array_key_exists(ObjectBot::reactionDelayMax, $data)) {
-            $this->object->reactionDelayMax = (int)$data[ObjectBot::reactionDelayMax];
-        }
-        if (array_key_exists(ObjectBot::reactionChance, $data)) {
-            $this->object->reactionChance = (int)$data[ObjectBot::reactionChance];
-        }
-        if (array_key_exists(ObjectBot::topicMatchRequired, $data)) {
-            $this->object->topicMatchRequired = (bool)$data[ObjectBot::topicMatchRequired];
-        }
-        if (array_key_exists(ObjectBot::cooldownAfterMessage, $data)) {
-            $this->object->cooldownAfterMessage = (int)$data[ObjectBot::cooldownAfterMessage];
-        }
-        if (array_key_exists(ObjectBot::priority, $data)) {
-            $this->object->priority = (int)$data[ObjectBot::priority];
+        if ($active !== null) {
+            $this->object->active = $active;
         }
 
         $this->object->sync();

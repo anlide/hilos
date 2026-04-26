@@ -14,6 +14,8 @@ use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalType;
 use Hilos\Core\Router\WebSocketSignalData;
+use Hilos\Core\Table\Collection\TableMutationSignalCollection;
+use Hilos\Core\Table\DTO\TableSourceEventDTO;
 use Hilos\Hilos;
 use Throwable;
 
@@ -197,6 +199,27 @@ abstract class AbstractPage
             signalType: new SignalType(SignalTypeConstants::EMIT_DB_CHANGE),
             signalName: new SignalName($eventKey),
             signalData: $data,
+        );
+    }
+
+    /**
+     * Builds table mutation payloads for tables declared as affected by the event.
+     *
+     * @param string $eventKey Logical project event name used by SignalRouter table routes
+     * @param TableSourceEventDTO $event Source event to project into routed table mutations
+     * @return TableMutationSignalCollection Table mutation payloads for immediate or pending fan-out
+     */
+    protected function buildTableMutationSignalsForSourceEvent(
+        string $eventKey,
+        TableSourceEventDTO $event,
+    ): TableMutationSignalCollection {
+        if (Hilos::$table === null || Hilos::$sr === null) {
+            return new TableMutationSignalCollection();
+        }
+
+        return Hilos::$table->buildMutationSignalsForSourceEvent(
+            $event,
+            Hilos::$sr->getTableKeysForEvent($eventKey),
         );
     }
 }

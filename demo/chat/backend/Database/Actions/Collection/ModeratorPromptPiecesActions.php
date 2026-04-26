@@ -10,7 +10,6 @@ use Demo\Chat\Database\View\Collection\ModeratorPromptPieces as DbCollectionMode
 use Demo\Chat\Database\View\Item\ModeratorPromptPiece;
 use Hilos\Database\Actions\Collection\DbActions;
 use Hilos\HilosException;
-use RuntimeException;
 
 /**
  * ModeratorPromptPiecesActions - write operations for ModeratorPromptPieces collection.
@@ -24,17 +23,18 @@ final class ModeratorPromptPiecesActions extends DbActions
     /**
      * Creates a new moderator prompt piece and adds it to the collection.
      *
-     * @param array<string, mixed> $data Piece fields (ObjectModeratorPromptPiece::section, ObjectModeratorPromptPiece::promptPiece)
+     * @param string $section Section identifier
+     * @param string $promptPiece Prompt text
      * @return ModeratorPromptPiece Created piece Db item
      * @throws HilosException On error (invalid data, database error, etc.)
      */
-    public function create(array $data): ModeratorPromptPiece
+    public function create(string $section, string $promptPiece): ModeratorPromptPiece
     {
         $this->ensureCanWrite();
 
         $piece = ObjectModeratorPromptPiece::create();
-        $piece->section = $data[ObjectModeratorPromptPiece::section];
-        $piece->promptPiece = $data[ObjectModeratorPromptPiece::promptPiece];
+        $piece->section = $section;
+        $piece->promptPiece = $promptPiece;
         $piece->sync();
 
         $this->addObjectToCollection($piece);

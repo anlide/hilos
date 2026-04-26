@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Tables\ModeratorPiece\Actions;
 
-use Demo\Chat\Database\Object\Item\ModeratorPromptPiece as ObjectModeratorPromptPiece;
 use Demo\Chat\Hilos;
 use Demo\Chat\Tables\ModeratorPiece\DTO\ModeratorPieceCreateActionDTO;
 use Hilos\Core\Table\Actions\TableActions;
@@ -28,12 +27,7 @@ final class ModeratorPromptPiecesTableActions extends TableActions
      */
     public function create(ModeratorPieceCreateActionDTO $dto): TableRowMutationDTO
     {
-        $data = [
-            ObjectModeratorPromptPiece::section => $dto->section,
-            ObjectModeratorPromptPiece::promptPiece => $dto->promptPiece,
-        ];
-
-        $dbPiece = Hilos::$db->moderatorPromptPieces->actions->create($data);
+        $dbPiece = Hilos::$db->moderatorPromptPieces->actions->create($dto->section, $dto->promptPiece);
 
         return $this->mutation(TableMutationType::Create, $dbPiece->id, $this->definition->makeRow($dbPiece->toArray(toFrontend: true)));
     }

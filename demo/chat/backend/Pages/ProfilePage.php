@@ -14,16 +14,15 @@ use Demo\Chat\Core\Router\DTO\ChatEventSignalDTO;
 use Demo\Chat\Database\DbChatContext;
 use Demo\Chat\Database\View\Collection\Events;
 use Demo\Chat\Hilos;
-use Demo\Chat\Tables\TableChatContext;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Core\Page\PageRouteParams;
-use Hilos\Core\Table\DTO\TableMutationSignalData;
-use Hilos\Core\Table\DTO\TableRowMutationDTO;
-use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
+use Hilos\Core\Router\DTO\EmitDbChangeSignalData;
 use Hilos\Core\Router\DTO\EntitiesChangesDTO;
+use Hilos\Core\Table\DTO\TableSourceEventDTO;
+use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\HilosException;
 use Hilos\Utils\Logger;
 use Throwable;
@@ -136,39 +135,22 @@ final class ProfilePage extends AbstractChatPage
             )),
         );
 
-        $mutation = new TableRowMutationDTO(
-            TableMutationType::Update,
-            $userId,
-            Hilos::$table->adminUsers->makeRow($user->toArray(toFrontend: true)),
+        $sourceEvent = new TableSourceEventDTO(
+            sourceKey: DbChatContext::users,
+            sourceRowKey: $userId,
+            mutationType: TableMutationType::Update,
         );
-        $adminUsersSignal = new TableMutationSignalData(TableChatContext::adminUsers, $mutation);
-        $hilosUsersSignal = new TableMutationSignalData(
-            TableChatContext::hilosUsers,
-            new TableRowMutationDTO(
-                TableMutationType::Update,
-                $userId,
-                Hilos::$table->hilosUsers->makeRow($user->toArray(toFrontend: true)),
+
+        foreach ($this->buildTableMutationSignalsForSourceEvent(ChatSignalConstants::EMIT_CHAT_USER_ROW_UPDATED, $sourceEvent) as $tableSignal) {
+            $this->getChatAgent()->sendToUser(ChatSignalConstants::TABLE_MUTATION, $acceptKey, $tableSignal);
+        }
+        $this->emitChangeDb(
+            ChatSignalConstants::EMIT_CHAT_USER_ROW_UPDATED,
+            new EmitDbChangeSignalData(
+                sourceEvent: $sourceEvent,
+                excludeAcceptKey: $acceptKey,
+                actorUserId: $userId,
             ),
-        );
-        $this->getChatAgent()->sendToUser(
-            ChatSignalConstants::TABLE_MUTATION,
-            $acceptKey,
-            $adminUsersSignal,
-        );
-        $this->getChatAgent()->sendToUser(
-            ChatSignalConstants::TABLE_MUTATION,
-            $acceptKey,
-            $hilosUsersSignal,
-        );
-        $this->getChatAgent()->sendToAllUsers(
-            ChatSignalConstants::TABLE_MUTATION_PENDING,
-            $adminUsersSignal,
-            $acceptKey,
-        );
-        $this->getChatAgent()->sendToAllUsers(
-            ChatSignalConstants::TABLE_MUTATION_PENDING,
-            $hilosUsersSignal,
-            $acceptKey,
         );
 
         // Dedicated ack to the initiator: closes the modal / clears UI loading state.

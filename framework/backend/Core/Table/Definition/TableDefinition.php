@@ -10,6 +10,8 @@ use Hilos\Core\Table\Actions\TableActions;
 use Hilos\Core\Table\Actions\TableItemActions;
 use Hilos\Core\Table\DTO\TablePageQueryDTO;
 use Hilos\Core\Table\DTO\TableQueryDTO;
+use Hilos\Core\Table\DTO\TableRowMutationDTO;
+use Hilos\Core\Table\DTO\TableSourceEventDTO;
 use Hilos\Core\Table\DTO\TableSnapshotDTO;
 use Hilos\Core\Table\Exception\TableActionsNotConfiguredException;
 use Hilos\Core\Table\Exception\TableOffsetSetNotSupportedException;
@@ -17,6 +19,7 @@ use Hilos\Core\Table\Exception\TableOffsetUnsetNotSupportedException;
 use Hilos\Core\Table\Exception\TablePropertyNotFoundException;
 use Hilos\Core\Table\InMemoryTableFilter;
 use Hilos\Core\Table\Item\TableItem;
+use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\Core\Table\Row\AbstractTableRow;
 use Hilos\Core\Table\Row\GenericTableRow;
 use Hilos\Core\Table\TableConstants;
@@ -140,6 +143,33 @@ abstract class TableDefinition implements ArrayAccess
     }
 
     // ── Stateless query ──────────────────────────────────────────────────
+
+    /**
+     * Builds a table row mutation for a source event this table reacts to.
+     *
+     * Concrete tables decide whether the source event affects their projection.
+     * The base contract stays source-agnostic and does not assume DB, RT, or any
+     * other backing store.
+     *
+     * @param TableSourceEventDTO $event Source event that may affect this table
+     * @return ?TableRowMutationDTO Mutation to fan out, or null when the table is unaffected
+     */
+    public function buildMutationForSourceEvent(TableSourceEventDTO $event): ?TableRowMutationDTO
+    {
+        return null;
+    }
+
+    /**
+     * Creates a row mutation DTO for source-event fan-out.
+     *
+     * @param TableMutationType $type Mutation type
+     * @param string|int $rowKey Affected table row key
+     * @param ?AbstractTableRow $row Row payload for create/update mutations
+     */
+    protected function mutation(TableMutationType $type, string|int $rowKey, ?AbstractTableRow $row = null): TableRowMutationDTO
+    {
+        return new TableRowMutationDTO($type, $rowKey, $row);
+    }
 
     /**
      * Loads table data for the given table query.

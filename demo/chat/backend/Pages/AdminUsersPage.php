@@ -17,11 +17,11 @@ use Demo\Chat\Tables\TableChatContext;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
+use Hilos\Core\Router\DTO\EmitDbChangeSignalData;
 use Hilos\Core\Router\DTO\EntitiesChangesDTO;
 use Hilos\Core\Table\DTO\TableActionErrorSignalData;
-use Hilos\Core\Table\DTO\TableMutationSignalData;
+use Hilos\Core\Table\DTO\TableSourceEventDTO;
 use Hilos\Core\Table\Exception\TableActionException;
-use Hilos\Core\Table\DTO\TableRowMutationDTO;
 use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\HilosException;
 use Throwable;
@@ -116,20 +116,24 @@ final class AdminUsersPage extends AbstractChatPage
         $dbUser = Hilos::$db->users[$dto->id];
         $oldName = $dbUser->name;
 
-        $mutation = Hilos::$table->adminUsers[$dto->id]->actions->update($dto);
-        $signal = new TableMutationSignalData(TableChatContext::adminUsers, $mutation);
-        $hilosUsersSignal = new TableMutationSignalData(
-            TableChatContext::hilosUsers,
-            new TableRowMutationDTO(
-                TableMutationType::Update,
-                $dto->id,
-                Hilos::$table->hilosUsers->makeRow($dbUser->toArray(toFrontend: true)),
-            ),
+        Hilos::$table->adminUsers[$dto->id]->actions->update($dto);
+        $sourceEvent = new TableSourceEventDTO(
+            sourceKey: DbChatContext::users,
+            sourceRowKey: $dto->id,
+            mutationType: TableMutationType::Update,
         );
 
-        $this->getChatAgent()->sendToUser(ChatSignalConstants::TABLE_MUTATION, $acceptKey, $signal);
-        $this->getChatAgent()->sendToAllUsers(ChatSignalConstants::TABLE_MUTATION_PENDING, $signal, $acceptKey);
-        $this->getChatAgent()->sendToAllUsers(ChatSignalConstants::TABLE_MUTATION_PENDING, $hilosUsersSignal, $acceptKey);
+        foreach ($this->buildTableMutationSignalsForSourceEvent(ChatSignalConstants::EMIT_CHAT_USER_ROW_UPDATED, $sourceEvent) as $tableSignal) {
+            $this->getChatAgent()->sendToUser(ChatSignalConstants::TABLE_MUTATION, $acceptKey, $tableSignal);
+        }
+        $this->emitChangeDb(
+            ChatSignalConstants::EMIT_CHAT_USER_ROW_UPDATED,
+            new EmitDbChangeSignalData(
+                sourceEvent: $sourceEvent,
+                excludeAcceptKey: $acceptKey,
+                actorUserId: Hilos::$rt->connections[$acceptKey]?->userId,
+            ),
+        );
 
         $event = Hilos::$db->events->actions->addUserRenamedByAdmin(
             userId: $dto->id,

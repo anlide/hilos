@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Table\Context;
 
+use Hilos\Core\Table\Collection\TableMutationSignalCollection;
 use Hilos\Core\Table\Definition\TableDefinition;
+use Hilos\Core\Table\DTO\TableMutationSignalData;
+use Hilos\Core\Table\DTO\TableSourceEventDTO;
 use Hilos\Core\Table\Exception\TableNotFoundException;
 
 /**
@@ -44,6 +47,40 @@ abstract class TableContext
     public function get(string $name): ?TableDefinition
     {
         return $this->_tables[$name] ?? null;
+    }
+
+    /**
+     * Builds table mutation payloads for the routed tables that react to the source event.
+     *
+     * @param TableSourceEventDTO $event Source event being projected to tables
+     * @param iterable<string> $tableKeys Table keys from the signal router declaration
+     * @return TableMutationSignalCollection Table mutation payloads ready for WebSocket fan-out
+     */
+    public function buildMutationSignalsForSourceEvent(
+        TableSourceEventDTO $event,
+        iterable $tableKeys,
+    ): TableMutationSignalCollection {
+        $signals = new TableMutationSignalCollection();
+
+        foreach ($tableKeys as $tableKey) {
+            if (!is_string($tableKey) || $tableKey === '') {
+                continue;
+            }
+
+            $table = $this->get($tableKey);
+            if ($table === null) {
+                continue;
+            }
+
+            $mutation = $table->buildMutationForSourceEvent($event);
+            if ($mutation === null) {
+                continue;
+            }
+
+            $signals->add(new TableMutationSignalData($tableKey, $mutation));
+        }
+
+        return $signals;
     }
 
     /**

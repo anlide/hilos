@@ -24,10 +24,10 @@ final class SettingActions extends DbActions
     /**
      * Updates setting value.
      *
-     * @param array<string, mixed> $data Keys: 'value' (required), optionally 'type'
+     * @param mixed $value New value
      * @throws ItemNotFoundForUpdateException If setting id is null
      */
-    public function update(array $data): void
+    public function updateValue(mixed $value): void
     {
         $this->ensureCanWrite();
 
@@ -35,14 +35,7 @@ final class SettingActions extends DbActions
             throw new ItemNotFoundForUpdateException('Setting not found for update (id is null)');
         }
 
-        if (array_key_exists('value', $data)) {
-            $type = $this->object->type;
-            $value = $data['value'];
-            $this->object->value = $value !== null ? $this->serializeValue($value, $type) : null;
-        }
-        if (array_key_exists('type', $data) && is_string($data['type'])) {
-            $this->object->type = $data['type'];
-        }
+        $this->object->value = $value !== null ? $this->serializeValue($value, $this->object->type) : null;
 
         $this->object->sync();
     }

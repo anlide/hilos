@@ -11,6 +11,7 @@ use Demo\Chat\Constants\ChatEventType;
 use Demo\Chat\Database\DbChatContext;
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\State\Item\ChatContext as StateChatContext;
+use Demo\Chat\Runtime\View\DTO\ChatContextUpdateData;
 use Demo\Chat\Runtime\View\Context\RtChatContext;
 use Demo\Chat\Constants\ChatLLMConstants;
 use Hilos\Constants\EnvConstants;
@@ -107,9 +108,9 @@ class ChatContextAnalyzerAgent extends AbstractAgent
 
         $parsed = $this->parseAnalyzerOutput($text);
         if ($parsed !== null) {
-            $topic = $parsed['topic'] ?? null;
-            $confidence = $parsed['topicConfidence'] ?? 0.0;
-            $summary = $parsed['summary'] ?? '';
+            $topic = $parsed->topic;
+            $confidence = $parsed->topicConfidence;
+            $summary = $parsed->summary;
 
             Hilos::$rt->chatContexts->actions->update($parsed);
 
@@ -165,11 +166,7 @@ class ChatContextAnalyzerAgent extends AbstractAgent
             $eventType = $row['type'] ?? '';
             if ($eventType === ChatEventType::CHAT_CLEARED->value) {
                 $this->pendingSummarize = false;
-                Hilos::$rt->chatContexts->actions->update([
-                    StateChatContext::topic => null,
-                    StateChatContext::topicConfidence => 0.0,
-                    StateChatContext::summary => '',
-                ]);
+                Hilos::$rt->chatContexts->actions->update(new ChatContextUpdateData(null, 0.0, ''));
             } elseif ($eventType === ChatEventType::MESSAGE_SENT->value) {
                 $this->pendingSummarize = true;
             }
@@ -275,9 +272,9 @@ PROMPT;
      * Parses LLM JSON output into structured topic, confidence and summary.
      *
      * @param string $text Raw LLM response text
-     * @return array<string, mixed>|null Parsed data (topic, topicConfidence, summary) or null on failure
+     * @return ?ChatContextUpdateData Parsed context update data, or null on failure
      */
-    private function parseAnalyzerOutput(string $text): ?array
+    private function parseAnalyzerOutput(string $text): ?ChatContextUpdateData
     {
         $candidate = JsonHelper::extractJsonObject($text);
         if ($candidate === null) {
@@ -304,11 +301,11 @@ PROMPT;
             : 0.0;
         $summary = isset($decoded['summary']) ? (string)$decoded['summary'] : '';
 
-        return [
-            StateChatContext::topic => $topic,
-            StateChatContext::topicConfidence => max(0, min(1, $confidence)),
-            StateChatContext::summary => $summary,
-        ];
+        return new ChatContextUpdateData(
+            topic: $topic,
+            topicConfidence: max(0, min(1, $confidence)),
+            summary: $summary,
+        );
     }
 
     /**

@@ -146,7 +146,7 @@ final class SettingsPage extends AbstractHilosSettingsPage
             throw new TableActionException("Setting '{$dto->key}' not found");
         }
 
-        $mutation = Hilos::$table->settings[$dto->key]->actions->update(['value' => $dto->value]);
+        $mutation = Hilos::$table->settings[$dto->key]->actions->updateValue($dto->value);
         $signal = new TableMutationSignalData(TableChatContext::settings, $mutation);
 
         $this->sendToUser(ChatSignalConstants::TABLE_MUTATION, $acceptKey, $signal);

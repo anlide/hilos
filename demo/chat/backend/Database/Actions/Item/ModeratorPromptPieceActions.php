@@ -21,13 +21,14 @@ use Hilos\HilosException;
 final class ModeratorPromptPieceActions extends DbActions
 {
     /**
-     * Updates piece fields. Only provided keys are updated.
+     * Updates piece fields. Null parameters are left unchanged.
      *
-     * @param array<string, mixed> $data Fields to update (keys: ObjectModeratorPromptPiece::section, ObjectModeratorPromptPiece::promptPiece)
+     * @param ?string $section Section identifier
+     * @param ?string $promptPiece Prompt text
      * @throws HilosException On error (invalid data, database error, etc.)
      * @throws ItemNotFoundForUpdateException If piece not found for update
      */
-    public function update(array $data): void
+    public function update(?string $section = null, ?string $promptPiece = null): void
     {
         $this->ensureCanWrite();
 
@@ -35,11 +36,11 @@ final class ModeratorPromptPieceActions extends DbActions
             throw new ItemNotFoundForUpdateException('Moderator prompt piece not found for update (id is null)');
         }
 
-        if (array_key_exists(ObjectModeratorPromptPiece::section, $data)) {
-            $this->object->section = $data[ObjectModeratorPromptPiece::section];
+        if ($section !== null) {
+            $this->object->section = $section;
         }
-        if (array_key_exists(ObjectModeratorPromptPiece::promptPiece, $data)) {
-            $this->object->promptPiece = $data[ObjectModeratorPromptPiece::promptPiece];
+        if ($promptPiece !== null) {
+            $this->object->promptPiece = $promptPiece;
         }
 
         $this->object->sync();

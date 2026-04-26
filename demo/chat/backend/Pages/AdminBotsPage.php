@@ -10,7 +10,6 @@ use Demo\Chat\Core\Page\AbstractChatPage;
 use Demo\Chat\Core\Router\DTO\BotAgentSignalData;
 use Demo\Chat\Core\Router\DTO\ChatEventSignalDTO;
 use Demo\Chat\Database\DbChatContext;
-use Demo\Chat\Database\Object\Item\Bot as ObjectBot;
 use Demo\Chat\Hilos;
 use Demo\Chat\Tables\Bot\DTO\BotCreateActionDTO;
 use Demo\Chat\Tables\Bot\DTO\BotDeleteActionDTO;
@@ -153,7 +152,7 @@ final class AdminBotsPage extends AbstractChatPage
 
         $oldActive = Hilos::$db->bots[$dto->id]->active;
         $mutation = Hilos::$table->bots[$dto->id]->actions->update($dto);
-        $newActive = ($mutation->row[ObjectBot::active] ?? $oldActive) === true;
+        $newActive = Hilos::$db->bots[$dto->id]->active === true;
 
         $signal = new TableMutationSignalData(TableChatContext::bots, $mutation);
 

@@ -22,17 +22,17 @@ final class SettingItemActions extends TableItemActions
     /**
      * Updates setting value and returns mutation for broadcasting.
      *
-     * @param array<string, mixed> $data Keys: 'value' (required), optionally 'type'
+     * @param mixed $value New setting value
      * @return TableRowMutationDTO Row mutation DTO for broadcast
      * @throws TableActionException If setting not found
      */
-    public function update(array $data): TableRowMutationDTO
+    public function updateValue(mixed $value): TableRowMutationDTO
     {
         $dbSetting = Hilos::$db->settings->findByKey((string) $this->rowKey);
         if ($dbSetting === null) {
             throw new TableActionException("Setting '{$this->rowKey}' not found");
         }
-        $dbSetting->actions->update($data);
+        $dbSetting->actions->updateValue($value);
         return $this->mutation(TableMutationType::Update, $this->definition->makeRow($dbSetting->toArray()));
     }
 

@@ -29,18 +29,29 @@ final class BotsActions extends DbActions
     /**
      * Creates a new bot and adds it to the collection.
      *
-     * @param array<string, mixed> $data Bot fields (ObjectBot::name, ObjectBot::description, etc.)
+     * @param string $name Bot display name
+     * @param ?string $description Bot description
+     * @param ?string $style Writing style
+     * @param ?string $topics Preferred topics
+     * @param ?string $personality Personality traits
+     * @param bool $active Whether the bot is active
      * @return Bot Created bot Db item
      * @throws EmptyValueException When bot name is empty
      * @throws ValueTooShortException When bot name is too short
      * @throws ValueTooLongException When bot name exceeds maximum length
      * @throws HilosException On database error or truth source check failure
      */
-    public function create(array $data): Bot
-    {
+    public function create(
+        string $name,
+        ?string $description = null,
+        ?string $style = null,
+        ?string $topics = null,
+        ?string $personality = null,
+        bool $active = true,
+    ): Bot {
         $this->ensureCanCreate();
 
-        $name = isset($data[ObjectBot::name]) && is_string($data[ObjectBot::name]) ? trim($data[ObjectBot::name]) : '';
+        $name = trim($name);
         if ($name === '') {
             throw new EmptyValueException('Bot name cannot be empty');
         }
@@ -52,18 +63,18 @@ final class BotsActions extends DbActions
         }
 
         $bot = ObjectBot::create();
-        $bot->name = $data[ObjectBot::name];
-        $bot->description = $data[ObjectBot::description] ?? null;
-        $bot->style = $data[ObjectBot::style] ?? null;
-        $bot->topics = $data[ObjectBot::topics] ?? null;
-        $bot->personality = $data[ObjectBot::personality] ?? null;
-        $bot->active = $data[ObjectBot::active] ?? true;
-        $bot->reactionDelayMin = $data[ObjectBot::reactionDelayMin] ?? 5;
-        $bot->reactionDelayMax = $data[ObjectBot::reactionDelayMax] ?? 30;
-        $bot->reactionChance = $data[ObjectBot::reactionChance] ?? 80;
-        $bot->topicMatchRequired = $data[ObjectBot::topicMatchRequired] ?? true;
-        $bot->cooldownAfterMessage = $data[ObjectBot::cooldownAfterMessage] ?? 60;
-        $bot->priority = $data[ObjectBot::priority] ?? 0;
+        $bot->name = $name;
+        $bot->description = $description;
+        $bot->style = $style;
+        $bot->topics = $topics;
+        $bot->personality = $personality;
+        $bot->active = $active;
+        $bot->reactionDelayMin = 5;
+        $bot->reactionDelayMax = 30;
+        $bot->reactionChance = 80;
+        $bot->topicMatchRequired = true;
+        $bot->cooldownAfterMessage = 60;
+        $bot->priority = 0;
         $bot->sync();
 
         $this->addObjectToCollection($bot);

@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Tables\Bot\Actions;
 
-use Demo\Chat\Database\Object\Item\Bot as ObjectBot;
 use Demo\Chat\Hilos;
 use Demo\Chat\Tables\Bot\DTO\BotUpdateActionDTO;
 use Hilos\Core\Table\Actions\TableItemActions;
@@ -29,18 +28,23 @@ final class BotItemActions extends TableItemActions
      */
     public function update(BotUpdateActionDTO $dto): TableRowMutationDTO
     {
-        $data = array_filter([
-            ObjectBot::name => $dto->name,
-            ObjectBot::description => $dto->description,
-            ObjectBot::style => $dto->style,
-            ObjectBot::topics => $dto->topics,
-            ObjectBot::personality => $dto->personality,
-            ObjectBot::active => $dto->active,
-        ], static fn($v) => $v !== null);
-
         $dbBot = Hilos::$db->bots[$this->rowKey];
-        if ($data !== []) {
-            $dbBot->actions->update($data);
+        if (
+            $dto->name !== null
+            || $dto->description !== null
+            || $dto->style !== null
+            || $dto->topics !== null
+            || $dto->personality !== null
+            || $dto->active !== null
+        ) {
+            $dbBot->actions->update(
+                name: $dto->name,
+                description: $dto->description,
+                style: $dto->style,
+                topics: $dto->topics,
+                personality: $dto->personality,
+                active: $dto->active,
+            );
         }
 
         return $this->mutation(TableMutationType::Update, $this->definition->makeRow($dbBot->toArray(toFrontend: true)));

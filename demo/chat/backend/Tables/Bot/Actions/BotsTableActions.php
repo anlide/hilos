@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Tables\Bot\Actions;
 
-use Demo\Chat\Database\Object\Item\Bot as ObjectBot;
 use Demo\Chat\Hilos;
 use Demo\Chat\Tables\Bot\DTO\BotCreateActionDTO;
 use Hilos\Core\Table\Actions\TableActions;
@@ -29,16 +28,14 @@ final class BotsTableActions extends TableActions
      */
     public function create(BotCreateActionDTO $dto): TableRowMutationDTO
     {
-        $data = [
-            ObjectBot::name => $dto->name,
-            ObjectBot::description => $dto->description,
-            ObjectBot::style => $dto->style,
-            ObjectBot::topics => $dto->topics,
-            ObjectBot::personality => $dto->personality,
-            ObjectBot::active => $dto->active,
-        ];
-
-        $dbBot = Hilos::$db->bots->actions->create($data);
+        $dbBot = Hilos::$db->bots->actions->create(
+            name: $dto->name,
+            description: $dto->description,
+            style: $dto->style,
+            topics: $dto->topics,
+            personality: $dto->personality,
+            active: $dto->active,
+        );
 
         return $this->mutation(TableMutationType::Create, $dbBot->id, $this->definition->makeRow($dbBot->toArray(toFrontend: true)));
     }
