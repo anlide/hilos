@@ -2,7 +2,7 @@
   <DaemonSectionShell title="Users">
     <div class="d-flex flex-wrap align-items-start gap-2 mb-3">
       <p class="text-body-secondary mb-0 flex-grow-1">
-        Same <code>user</code> records as the chat app (ID, name, activity, presence). For table search and chat-focused admin tools, use
+        Same <code>user</code> records as the chat app (ID, name, activity, online sessions, presence). For table search and chat-focused admin tools, use
         <router-link to="/admin/users">Admin → Users</router-link>.
       </p>
     </div>
@@ -20,6 +20,7 @@
               <th scope="col">ID</th>
               <th scope="col">Name</th>
               <th scope="col">Last activity</th>
+              <th scope="col">Online sessions</th>
               <th scope="col">Presence</th>
               <th scope="col" class="text-end">Actions</th>
             </tr>
@@ -29,6 +30,7 @@
               <td><code>{{ u.id }}</code></td>
               <td>{{ u.name }}</td>
               <td class="small">{{ formatDate(u.lastActivity) }}</td>
+              <td>{{ u.onlineSessionCount ?? 0 }}</td>
               <td>
                 <span class="badge" :class="getPresenceBadgeClass(u.presence)">
                   {{ u.presence || 'offline' }}

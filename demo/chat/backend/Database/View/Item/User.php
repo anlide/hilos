@@ -28,12 +28,14 @@ use Hilos\Database\View\Item\DbItem;
  * @property-read ?string $sessionToken User session token (32 hex characters)
  * @property-read ?string $lastActivity Last activity timestamp
  * @property-read Connections $connections Connections for this user (online check)
+ * @property-read int $onlineSessionCount Number of active online sessions for this user
  * @property-read ?RuntimeChatUserState $chatUserState Per-user chat runtime state (moderation, files)
  * @property-read UserActions $actions Actions for write operations on this user
  */
 final class User extends DbItem
 {
     private const string PRESENCE_KEY = 'presence';
+    private const string ONLINE_SESSION_COUNT_KEY = 'onlineSessionCount';
     private const string PRESENCE_ONLINE = 'online';
     private const string PRESENCE_OFFLINE = 'offline';
 
@@ -53,6 +55,7 @@ final class User extends DbItem
             ObjectUser::sessionToken => $this->_object->sessionToken,
             ObjectUser::lastActivity => $this->_object->lastActivity,
             RtChatContext::connections => Hilos::$rt->connections->forUser($this->id),
+            self::ONLINE_SESSION_COUNT_KEY => $this->_object->id !== null ? count($this->connections) : 0,
             RtChatContext::chatUserState => $this->_object->id !== null
                 ? Hilos::$rt->userStates[$this->_object->id]
                 : null,
@@ -77,8 +80,10 @@ final class User extends DbItem
         $result = parent::toArray($withId, $idAsIndex, $withBridges, $withCalculation, $toFrontend);
 
         if ($toFrontend) {
+            $onlineSessionCount = $this->onlineSessionCount;
             unset($result[ObjectUser::sessionToken]);
-            $result[self::PRESENCE_KEY] = count($this->connections) > 0 ? self::PRESENCE_ONLINE : self::PRESENCE_OFFLINE;
+            $result[self::ONLINE_SESSION_COUNT_KEY] = $onlineSessionCount;
+            $result[self::PRESENCE_KEY] = $onlineSessionCount > 0 ? self::PRESENCE_ONLINE : self::PRESENCE_OFFLINE;
             // chatUserState is private - sent via handshake and MODERATION_STATE_UPDATE only
         }
 

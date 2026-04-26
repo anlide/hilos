@@ -1,6 +1,7 @@
 # Local Variables
 
-Read this when introducing temporary/local variables or reviewing noisy code.
+Read this when introducing temporary/local variables, private helper methods, or
+reviewing noisy code.
 
 ## Rules
 
@@ -10,10 +11,14 @@ Read this when introducing temporary/local variables or reviewing noisy code.
    nullable checks, a meaningful domain name, preserving a side-effect result
    for readability, avoiding repeated expensive work, or keeping a complex
    constructor readable.
-3. Avoid generic names such as `$result`, `$data`, or `$item` when the variable
+3. Do not create a one-use private helper for a simple guard, ternary, property
+   access, or short computed expression. Inline it unless the helper is reused,
+   hides genuinely complex logic, names a meaningful domain concept, or isolates
+   side effects.
+4. Avoid generic names such as `$result`, `$data`, or `$item` when the variable
    survives more than a couple of lines. Prefer the domain name (`$userTable`,
    `$mutationSignal`, `$dbUser`).
-4. Do not inline expressions if doing so hides failure handling or makes a
+5. Do not inline expressions if doing so hides failure handling or makes a
    nested call hard to read. The goal is less noise, not denser code.
 
 ## Example

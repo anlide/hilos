@@ -15,12 +15,14 @@ final class HilosUserTableRow extends AbstractTableRow
     public const string id = ObjectUser::id;
     public const string name = ObjectUser::name;
     public const string lastActivity = ObjectUser::lastActivity;
+    public const string onlineSessionCount = 'onlineSessionCount';
     public const string presence = 'presence';
 
     public function __construct(
         public int $id,
         public string $name,
         public ?string $lastActivity,
+        public int $onlineSessionCount = 0,
         public ?string $presence = null,
     ) {
     }
@@ -36,7 +38,7 @@ final class HilosUserTableRow extends AbstractTableRow
     /**
      * Serializes the row to the frontend table payload shape.
      *
-     * @return array{id: int, name: string, lastActivity: ?string, presence: ?string}
+     * @return array{id: int, name: string, lastActivity: ?string, onlineSessionCount: int, presence: ?string}
      */
     public function toArray(): array
     {
@@ -44,6 +46,7 @@ final class HilosUserTableRow extends AbstractTableRow
             self::id => $this->id,
             self::name => $this->name,
             self::lastActivity => $this->lastActivity,
+            self::onlineSessionCount => $this->onlineSessionCount,
             self::presence => $this->presence,
         ];
     }
@@ -59,6 +62,7 @@ final class HilosUserTableRow extends AbstractTableRow
             id: (int) ($data[self::id] ?? 0),
             name: (string) ($data[self::name] ?? ''),
             lastActivity: isset($data[self::lastActivity]) ? (string) $data[self::lastActivity] : null,
+            onlineSessionCount: (int) ($data[self::onlineSessionCount] ?? 0),
             presence: isset($data[self::presence]) ? (string) $data[self::presence] : null,
         );
     }

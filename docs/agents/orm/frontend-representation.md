@@ -36,7 +36,7 @@ public function toArray(
 
     if ($toFrontend) {
         unset($result[ObjectUser::sessionToken]);
-        $result['onlineSessionCount'] = count($this->connections);
+        $result['onlineSessionCount'] = $this->_object->id !== null ? count($this->connections) : 0;
     }
 
     return $result;
@@ -83,8 +83,13 @@ If the computed value describes one model item, put it on the View item or a
 typed payload:
 
 ```php
-$result['onlineSessionCount'] = count($this->connections);
+$result['onlineSessionCount'] = $this->_object->id !== null ? count($this->connections) : 0;
 ```
+
+Simple computed frontend fields may be expressed directly in `__get()` or
+`toArray()`. Do not add a private helper just to wrap a one-line guard or
+`count($this->connections)` expression; add a helper only when the calculation
+is reused, non-trivial, or names a meaningful domain concept.
 
 The runtime bridge should also live on the item or runtime collection:
 
@@ -93,6 +98,7 @@ public function __get(string $name): mixed
 {
     return match ($name) {
         RtChatContext::connections => Hilos::$rt->connections->forUser($this->id),
+        'onlineSessionCount' => $this->_object->id !== null ? count($this->connections) : 0,
         default => parent::__get($name),
     };
 }
@@ -136,7 +142,7 @@ foreach (Hilos::$db->users as $user) {
 Expose the item-level value once:
 
 ```php
-$result['onlineSessionCount'] = count($this->connections);
+$result['onlineSessionCount'] = $this->_object->id !== null ? count($this->connections) : 0;
 ```
 
 Do not send raw Object or Entity arrays to the browser when a View item has

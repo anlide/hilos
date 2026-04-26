@@ -6,5 +6,6 @@ export type ChatUserTableRow = {
   id: number
   name: string
   lastActivity: string | null
+  onlineSessionCount?: number
   presence?: string
 }
