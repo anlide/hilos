@@ -1,0 +1,4 @@
+interface:
+  display_name: "Hilos Data Extension"
+  short_description: "Extend Hilos::$db and Hilos::$rt correctly"
+  default_prompt: "Use $hilos-data-extension to add DB or runtime state logic in Hilos."

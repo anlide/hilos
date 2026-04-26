@@ -14,7 +14,9 @@ Install the Codex skill wrappers into the Codex skill directory:
 powershell -ExecutionPolicy Bypass -File scripts/install-codex-skills.ps1
 ```
 
-After installation, Codex can invoke skills such as `$hilos-orm`, `$hilos-signals`, and `$hilos-testing-cli`.
+After installation, Codex can invoke skills such as `$hilos-orm`,
+`$hilos-runtime`, `$hilos-data-extension`, `$hilos-signals`, and
+`$hilos-testing-cli`.
 
 ## Claude
 
