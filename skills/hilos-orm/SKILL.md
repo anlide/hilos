@@ -1,6 +1,6 @@
 ---
 name: hilos-orm
-description: Work with Hilos ORM entities, object layers, DbCollection queries, collection actions, migrations, seeds, schema consistency, Hilos::$db usage, and database-backed features. Use when creating or modifying Entity classes, Object classes, migrations, DB actions, schema checks, or persistence behavior.
+description: Work with Hilos ORM entities, object layers, DbCollection queries, collection actions, migrations, seeds, schema consistency, Hilos::$db usage, accessor contracts, and database-backed features. Use when creating or modifying Entity classes, Object classes, migrations, DB actions, schema checks, collection access, or persistence behavior.
 ---
 
 # Hilos ORM
@@ -13,6 +13,8 @@ document that matches the change.
 
 - `Hilos::$db`, `DbContext`, `DbCollection`, `DbItem`, actions, and examples:
   `docs/agents/orm/db-collection.md`
+- Magic, array, result, and finder selection:
+  `docs/agents/orm/accessor-contracts.md` or `$hilos-accessor-contracts`
 - Entity classes and DB table mapping: `docs/agents/orm/entity.md`
 - Object layer and view transformations: `docs/agents/orm/object.md`
 - Migrations and seeds: `docs/agents/orm/migrations.md`
@@ -40,15 +42,19 @@ document that matches the change.
    Actions classes.
 3. Decide whether the change belongs in an Entity, Object, View collection
    method, collection action, item action, migration, or caller code.
-4. Use existing `Hilos::$db` access paths directly from callers:
+4. Use existing `Hilos::$db` access paths and accessor contracts directly from
+   callers:
    `Hilos::$db->users`, `Hilos::$db->users->actions->register(...)`,
    `$user->actions->update(...)`.
-5. Put new DB writes in collection actions or item actions, not in page/table
+5. Prefer documented array/magic/result accessors before adding or calling a
+   redundant finder. Use named finders for business-key or complex queries when
+   the collection does not document matching array access.
+6. Put new DB writes in collection actions or item actions, not in page/table
    handlers.
-6. Put read helpers and lookup methods on the existing collection/item layer
+7. Put read helpers and lookup methods on the existing collection/item layer
    before introducing new API surface.
-7. Add migrations for schema changes and update Entities to match schema.
-8. Run schema/test validation through composer scripts, never direct host
+8. Add migrations for schema changes and update Entities to match schema.
+9. Run schema/test validation through composer scripts, never direct host
    phpunit.
 
 ## Examples
@@ -69,11 +75,22 @@ $user = Hilos::$db->users[$userId] ?? null;
 $setting = $settings[$key] ?? null; // If the collection supports key access.
 ```
 
+Use the named finder when the offset contract does not match the business key:
+
+```php
+$setting = Hilos::$db->settings->findByKey($key);
+```
+
 ## Hard Rules
 
 - Never run `git commit` or `git push`.
 - Never add Repository or Service classes on top of `DbCollection`.
 - Never bypass the DB layer with raw SQL or manual mutation logic in page/table
   layers when a collection/item/action exists or should own the behavior.
+- Never add a `findById()` or caller-local helper when the collection already
+  documents `[$id]`, `get($id)`, or a typed item/result accessor for the same
+  value.
+- Never replace a named finder with `[$key]` unless the collection documents
+  that offset as the same key.
 - Never put business logic or DB queries inside Entity classes.
 - Only the truth source agent writes to its owned DB/RT collection.

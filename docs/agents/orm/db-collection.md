@@ -59,8 +59,8 @@ Before writing DB-backed code:
    constant in `DbChatContext`.
 2. Check `setRepresent()` to locate the View collection, collection actions, and
    item actions.
-3. Inspect the View collection for existing lookup methods such as
-   `findBySession()` or `findByKey()`.
+3. Inspect the View collection for existing array/magic access contracts and
+   lookup methods such as `offsetGet()`, `findBySession()`, or `findByKey()`.
 4. Inspect the Object collection for DB-loading/query helpers.
 5. Inspect collection actions for create/register/add operations.
 6. Inspect item actions for update/delete operations on one loaded item.
@@ -83,6 +83,9 @@ foreach (Hilos::$db->events as $event) {
 Put reusable lookups on the collection layer instead of rebuilding the same
 filter in pages or tables. Example: `Users::findBySession()` delegates to the
 Object collection and returns the matching `DbItem`.
+
+For choosing between `[]`, magic/item properties, result accessors, and
+`findBy*()` methods, read `docs/agents/orm/accessor-contracts.md`.
 
 ## Collection Actions
 
@@ -113,7 +116,7 @@ Use item actions when the operation naturally belongs to an existing item and
 needs that item's object state. Do not put update/delete logic in a page handler
 when an item action should own it.
 
-## Settings And Magic Access
+## Accessors And Settings
 
 The settings collection is available through `Hilos::$db->settings`.
 
@@ -122,8 +125,8 @@ $setting = Hilos::$db->settings->findByKey($key);
 $value = $setting?->getEffectiveValue($catalog);
 ```
 
-If a collection explicitly supports array-style or magic access, use that
-collection API rather than duplicating lookup logic:
+If a collection explicitly supports array-style, magic, or result access, use
+that collection API rather than duplicating lookup logic:
 
 ```php
 $settings = Hilos::$db->settings;
@@ -131,9 +134,11 @@ $user = Hilos::$db->users[$userId] ?? null;
 $setting = $settings[$key] ?? null; // If settings support key-based access.
 ```
 
-Array-style access is collection-specific. If it is not already supported by the
-target collection, add a typed collection method instead of relying on an
-unstructured array convention.
+Array-style access is collection-specific. Prefer `$settings[$key]` over
+`$settings->findByKey($key)` only when the settings collection documents the
+setting key as its offset. If the target collection does not support that key,
+use the existing named accessor or add a typed collection method instead of
+relying on an unstructured array convention.
 
 ## Choosing Where New Logic Belongs
 

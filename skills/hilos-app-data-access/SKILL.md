@@ -1,6 +1,6 @@
 ---
 name: hilos-app-data-access
-description: Use Hilos::$db and Hilos::$rt correctly from application code. Use when reading DB or runtime data in pages, tables, agents, action handlers, table actions, signal handlers, or when choosing collection access, item access, action calls, settings access, or existing magic/accessor APIs before adding helpers.
+description: Use Hilos::$db and Hilos::$rt correctly from application code. Use when reading DB or runtime data in pages, tables, agents, action handlers, table actions, signal handlers, or when choosing collection access, item access, action calls, settings access, existing magic/result accessors, array access, or find helpers.
 ---
 
 # Hilos App Data Access
@@ -17,6 +17,8 @@ switch to the focused data-layer skill first.
   `$hilos-runtime`.
 - Adding DB/RT shape, lookup APIs, or write paths: use `$hilos-data-extension`.
 - DB-backed item plus live runtime overlay: use `$hilos-db-rt-state`.
+- Choosing between magic, array, result, and `findBy*()` access:
+  use `$hilos-accessor-contracts`.
 - Page action routing and action error behavior:
   `docs/agents/code-style/page-action-handlers.md`.
 - Frontend page subscription and signal contracts: use `$hilos-frontend-sdk`
@@ -53,7 +55,8 @@ switch to the focused data-layer skill first.
    `Hilos::$db->users`, `Hilos::$db->settings`, `Hilos::$rt->connections`,
    magic accessors, array access, `findBy*()` methods, and item properties.
 4. Prefer an existing accessor or magic/array contract when it is part of that
-   collection API.
+   collection API. Use `$hilos-accessor-contracts` when the correct accessor is
+   not obvious.
 5. For reads, call the collection or item directly and keep local projection
    minimal.
 6. For writes, call a collection action or item action. Do not write raw DB/RT
@@ -73,8 +76,8 @@ switch to the focused data-layer skill first.
 | Need | Prefer |
 |---|---|
 | Load a known DB item | `Hilos::$db->collection[$id]` when supported |
-| Load by business key | Existing collection accessor such as `findByKey()` |
-| Read key-based settings | `Hilos::$db->settings[$dto->key]` when supported |
+| Load by business key | Array access only when documented; otherwise an existing accessor such as `findByKey()` |
+| Read key-based settings | `Hilos::$db->settings[$dto->key]` only when settings documents key-based offsets |
 | Create a DB item | `Hilos::$db->collection->actions->create(...)` |
 | Update one DB item | `$item->actions->update(...)` |
 | Read runtime item | `Hilos::$rt->collection[$id]` when supported |
@@ -85,7 +88,8 @@ switch to the focused data-layer skill first.
 
 If both array access and a finder exist, use the contract that best matches the
 collection semantics. For settings and other key-based collections, array access
-by key is often the clearer API when the collection documents it.
+by key is often the clearer API when the collection documents it; otherwise use
+the named finder or add a typed collection contract first.
 
 ## Examples
 
@@ -111,6 +115,13 @@ Use actions for writes:
 ```php
 $setting = Hilos::$db->settings->findByKey($dto->key);
 $setting?->actions->update(['value' => $dto->value]);
+```
+
+Do not add a helper when a result or item accessor already exposes the value:
+
+```php
+$onlineSessionCount = count($user->connections);
+$value = $setting->getEffectiveValue($catalog);
 ```
 
 Read runtime state through `Hilos::$rt` without storing durable business truth
@@ -170,6 +181,8 @@ then call that API from the table/page.
 ## Hard Rules
 
 - Search existing magic/accessor results before adding a new finder or helper.
+- Do not use `[$key]` blindly; verify that the collection documents the offset
+  key you plan to use.
 - Do not bypass `Hilos::$db` or `Hilos::$rt` with raw arrays, raw SQL, or
   duplicated filters in page/table/agent code.
 - Do not store durable business state in `Hilos::$rt`.

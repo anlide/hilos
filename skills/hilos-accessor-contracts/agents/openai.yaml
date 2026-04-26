@@ -1,0 +1,4 @@
+interface:
+  display_name: "Hilos Accessor Contracts"
+  short_description: "Prefer existing Hilos accessors before find helpers"
+  default_prompt: "Use $hilos-accessor-contracts to choose magic, array, result, and find accessors in Hilos."

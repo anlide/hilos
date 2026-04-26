@@ -41,6 +41,7 @@ Quick navigation for AI agents. Read the relevant file before starting work.
 | [orm/entity.md](docs/agents/orm/entity.md) | creating or modifying Entity classes, DB table mapping |
 | [orm/object.md](docs/agents/orm/object.md) | creating Object layer, transforming entity data for views |
 | [orm/db-collection.md](docs/agents/orm/db-collection.md) | querying data, writing actions, Hilos::$db usage |
+| [orm/accessor-contracts.md](docs/agents/orm/accessor-contracts.md) | choosing magic/array/result accessors vs `findBy*` helpers |
 | [orm/migrations.md](docs/agents/orm/migrations.md) | DB schema changes, migration files, seeds |
 
 ## Runtime
