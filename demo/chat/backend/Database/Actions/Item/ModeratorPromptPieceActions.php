@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Database\Actions\Item;
 
-use Demo\Chat\Database\Object\Item\ModeratorPromptPiece as ObjectPiece;
+use Demo\Chat\Database\Object\Item\ModeratorPromptPiece as ObjectModeratorPromptPiece;
 use Demo\Chat\Database\View\Item\ModeratorPromptPiece;
 use Hilos\Core\Exception\ItemNotFoundForDeleteException;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
@@ -15,15 +15,15 @@ use Hilos\HilosException;
 /**
  * ModeratorPromptPieceActions - write operations for a single ModeratorPromptPiece item.
  *
- * @extends DbActions<ModeratorPromptPiece, ObjectPiece>
- * @property-read ObjectPiece $object
+ * @extends DbActions<ModeratorPromptPiece, ObjectModeratorPromptPiece>
+ * @property-read ObjectModeratorPromptPiece $object
  */
 final class ModeratorPromptPieceActions extends DbActions
 {
     /**
      * Updates piece fields. Only provided keys are updated.
      *
-     * @param array<string, mixed> $data Fields to update (keys: ObjectPiece::section, ObjectPiece::promptPiece)
+     * @param array<string, mixed> $data Fields to update (keys: ObjectModeratorPromptPiece::section, ObjectModeratorPromptPiece::promptPiece)
      * @throws HilosException On error (invalid data, database error, etc.)
      * @throws ItemNotFoundForUpdateException If piece not found for update
      */
@@ -35,11 +35,11 @@ final class ModeratorPromptPieceActions extends DbActions
             throw new ItemNotFoundForUpdateException('Moderator prompt piece not found for update (id is null)');
         }
 
-        if (array_key_exists(ObjectPiece::section, $data)) {
-            $this->object->section = $data[ObjectPiece::section];
+        if (array_key_exists(ObjectModeratorPromptPiece::section, $data)) {
+            $this->object->section = $data[ObjectModeratorPromptPiece::section];
         }
-        if (array_key_exists(ObjectPiece::promptPiece, $data)) {
-            $this->object->promptPiece = $data[ObjectPiece::promptPiece];
+        if (array_key_exists(ObjectModeratorPromptPiece::promptPiece, $data)) {
+            $this->object->promptPiece = $data[ObjectModeratorPromptPiece::promptPiece];
         }
 
         $this->object->sync();

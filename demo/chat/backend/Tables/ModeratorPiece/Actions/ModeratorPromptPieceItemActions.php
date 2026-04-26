@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Tables\ModeratorPiece\Actions;
 
-use Demo\Chat\Database\Object\Item\ModeratorPromptPiece as ObjectPiece;
+use Demo\Chat\Database\Object\Item\ModeratorPromptPiece as ObjectModeratorPromptPiece;
 use Demo\Chat\Hilos;
 use Demo\Chat\Tables\ModeratorPiece\DTO\ModeratorPieceUpdateActionDTO;
 use Hilos\Core\Table\Actions\TableItemActions;
@@ -29,8 +29,8 @@ final class ModeratorPromptPieceItemActions extends TableItemActions
     public function update(ModeratorPieceUpdateActionDTO $dto): TableMutationEntry
     {
         $data = array_filter([
-            ObjectPiece::section => $dto->section,
-            ObjectPiece::promptPiece => $dto->promptPiece,
+            ObjectModeratorPromptPiece::section => $dto->section,
+            ObjectModeratorPromptPiece::promptPiece => $dto->promptPiece,
         ], static fn($v) => $v !== null);
 
         $dbPiece = Hilos::$db->moderatorPromptPieces[$this->itemId];

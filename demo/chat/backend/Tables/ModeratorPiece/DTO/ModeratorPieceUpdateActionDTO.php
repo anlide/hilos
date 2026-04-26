@@ -6,7 +6,7 @@ namespace Demo\Chat\Tables\ModeratorPiece\DTO;
 
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Core\Page\DTO\ChatActionPayloadDTO;
-use Demo\Chat\Database\Object\Item\ModeratorPromptPiece as ObjectPiece;
+use Demo\Chat\Database\Object\Item\ModeratorPromptPiece as ObjectModeratorPromptPiece;
 use Hilos\Constants\SignalPayloadConstants;
 
 /**
@@ -54,9 +54,9 @@ final class ModeratorPieceUpdateActionDTO extends ChatActionPayloadDTO
         }
 
         return new static(
-            id: (int) ($inner[ObjectPiece::id] ?? 0),
-            section: isset($inner[ObjectPiece::section]) && is_string($inner[ObjectPiece::section]) ? trim($inner[ObjectPiece::section]) : null,
-            promptPiece: isset($inner[ObjectPiece::promptPiece]) && is_string($inner[ObjectPiece::promptPiece]) ? trim($inner[ObjectPiece::promptPiece]) : null,
+            id: (int) ($inner[ObjectModeratorPromptPiece::id] ?? 0),
+            section: isset($inner[ObjectModeratorPromptPiece::section]) && is_string($inner[ObjectModeratorPromptPiece::section]) ? trim($inner[ObjectModeratorPromptPiece::section]) : null,
+            promptPiece: isset($inner[ObjectModeratorPromptPiece::promptPiece]) && is_string($inner[ObjectModeratorPromptPiece::promptPiece]) ? trim($inner[ObjectModeratorPromptPiece::promptPiece]) : null,
         );
     }
 
@@ -68,9 +68,9 @@ final class ModeratorPieceUpdateActionDTO extends ChatActionPayloadDTO
     public function toArray(): array
     {
         return array_filter([
-            ObjectPiece::id => $this->id,
-            ObjectPiece::section => $this->section,
-            ObjectPiece::promptPiece => $this->promptPiece,
+            ObjectModeratorPromptPiece::id => $this->id,
+            ObjectModeratorPromptPiece::section => $this->section,
+            ObjectModeratorPromptPiece::promptPiece => $this->promptPiece,
         ], static fn($v) => $v !== null);
     }
 }

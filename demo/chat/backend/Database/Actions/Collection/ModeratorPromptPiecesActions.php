@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Demo\Chat\Database\Actions\Collection;
 
 use Demo\Chat\Database\Object\Collection\ModeratorPromptPieces as ObjectModeratorPromptPieces;
-use Demo\Chat\Database\Object\Item\ModeratorPromptPiece as ObjectPiece;
+use Demo\Chat\Database\Object\Item\ModeratorPromptPiece as ObjectModeratorPromptPiece;
 use Demo\Chat\Database\View\Collection\ModeratorPromptPieces as DbCollectionModeratorPromptPieces;
 use Demo\Chat\Database\View\Item\ModeratorPromptPiece;
 use Hilos\Database\Actions\Collection\DbActions;
@@ -24,7 +24,7 @@ final class ModeratorPromptPiecesActions extends DbActions
     /**
      * Creates a new moderator prompt piece and adds it to the collection.
      *
-     * @param array<string, mixed> $data Piece fields (ObjectPiece::section, ObjectPiece::promptPiece)
+     * @param array<string, mixed> $data Piece fields (ObjectModeratorPromptPiece::section, ObjectModeratorPromptPiece::promptPiece)
      * @return ModeratorPromptPiece Created piece Db item
      * @throws HilosException On error (invalid data, database error, etc.)
      */
@@ -32,9 +32,9 @@ final class ModeratorPromptPiecesActions extends DbActions
     {
         $this->ensureCanWrite();
 
-        $piece = ObjectPiece::create();
-        $piece->section = $data[ObjectPiece::section];
-        $piece->promptPiece = $data[ObjectPiece::promptPiece];
+        $piece = ObjectModeratorPromptPiece::create();
+        $piece->section = $data[ObjectModeratorPromptPiece::section];
+        $piece->promptPiece = $data[ObjectModeratorPromptPiece::promptPiece];
         $piece->sync();
 
         $this->addObjectToCollection($piece);

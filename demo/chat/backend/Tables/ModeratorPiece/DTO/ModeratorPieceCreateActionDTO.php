@@ -6,7 +6,7 @@ namespace Demo\Chat\Tables\ModeratorPiece\DTO;
 
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Core\Page\DTO\ChatActionPayloadDTO;
-use Demo\Chat\Database\Object\Item\ModeratorPromptPiece as ObjectPiece;
+use Demo\Chat\Database\Object\Item\ModeratorPromptPiece as ObjectModeratorPromptPiece;
 use Hilos\Constants\SignalPayloadConstants;
 
 /**
@@ -17,7 +17,7 @@ final class ModeratorPieceCreateActionDTO extends ChatActionPayloadDTO
     /**
      * Creates moderator piece create action DTO.
      *
-     * @param string $section Section identifier (e.g. ObjectPiece::SECTION_MESSAGE_RULE)
+     * @param string $section Section identifier (e.g. ObjectModeratorPromptPiece::SECTION_MESSAGE_RULE)
      * @param string $promptPiece Prompt text for the piece
      */
     public function __construct(
@@ -50,8 +50,8 @@ final class ModeratorPieceCreateActionDTO extends ChatActionPayloadDTO
         }
 
         return new static(
-            section: is_string($inner[ObjectPiece::section] ?? null) ? trim($inner[ObjectPiece::section]) : '',
-            promptPiece: is_string($inner[ObjectPiece::promptPiece] ?? null) ? trim($inner[ObjectPiece::promptPiece]) : '',
+            section: is_string($inner[ObjectModeratorPromptPiece::section] ?? null) ? trim($inner[ObjectModeratorPromptPiece::section]) : '',
+            promptPiece: is_string($inner[ObjectModeratorPromptPiece::promptPiece] ?? null) ? trim($inner[ObjectModeratorPromptPiece::promptPiece]) : '',
         );
     }
 
@@ -63,8 +63,8 @@ final class ModeratorPieceCreateActionDTO extends ChatActionPayloadDTO
     public function toArray(): array
     {
         return [
-            ObjectPiece::section => $this->section,
-            ObjectPiece::promptPiece => $this->promptPiece,
+            ObjectModeratorPromptPiece::section => $this->section,
+            ObjectModeratorPromptPiece::promptPiece => $this->promptPiece,
         ];
     }
 }

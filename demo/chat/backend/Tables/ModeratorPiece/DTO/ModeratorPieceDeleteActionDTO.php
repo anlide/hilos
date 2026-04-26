@@ -6,7 +6,7 @@ namespace Demo\Chat\Tables\ModeratorPiece\DTO;
 
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Core\Page\DTO\ChatActionPayloadDTO;
-use Demo\Chat\Database\Object\Item\ModeratorPromptPiece as ObjectPiece;
+use Demo\Chat\Database\Object\Item\ModeratorPromptPiece as ObjectModeratorPromptPiece;
 use Hilos\Constants\SignalPayloadConstants;
 
 /**
@@ -48,7 +48,7 @@ final class ModeratorPieceDeleteActionDTO extends ChatActionPayloadDTO
         }
 
         return new static(
-            id: (int) ($inner[ObjectPiece::id] ?? 0),
+            id: (int) ($inner[ObjectModeratorPromptPiece::id] ?? 0),
         );
     }
 
@@ -59,6 +59,6 @@ final class ModeratorPieceDeleteActionDTO extends ChatActionPayloadDTO
      */
     public function toArray(): array
     {
-        return [ObjectPiece::id => $this->id];
+        return [ObjectModeratorPromptPiece::id => $this->id];
     }
 }

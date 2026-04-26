@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Tables\ModeratorPiece;
 
-use Demo\Chat\Database\Object\Item\ModeratorPromptPiece as ObjectPiece;
+use Demo\Chat\Database\Object\Item\ModeratorPromptPiece as ObjectModeratorPromptPiece;
 use Hilos\Core\Table\Row\AbstractTableRow;
 
 /**
@@ -12,9 +12,9 @@ use Hilos\Core\Table\Row\AbstractTableRow;
  */
 final class ModeratorPromptPieceTableRow extends AbstractTableRow
 {
-    public const string id = ObjectPiece::id;
-    public const string section = ObjectPiece::section;
-    public const string promptPiece = ObjectPiece::promptPiece;
+    public const string id = ObjectModeratorPromptPiece::id;
+    public const string section = ObjectModeratorPromptPiece::section;
+    public const string promptPiece = ObjectModeratorPromptPiece::promptPiece;
 
     public function __construct(
         public int $id,
