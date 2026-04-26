@@ -22,16 +22,16 @@ final class GenericTableRow extends AbstractTableRow
     }
 
     /**
-     * Returns the conventional row identifier from the generic payload.
+     * Returns the conventional row key from the generic payload.
      *
      * Uses `id` first, then `key`, and falls back to `null` when neither field
      * is a scalar row key.
      */
-    public function getRowId(): string|int|null
+    public function getRowKey(): string|int|null
     {
-        $id = $this->data[self::FIELD_ID] ?? $this->data[self::FIELD_KEY] ?? null;
+        $key = $this->data[self::FIELD_ID] ?? $this->data[self::FIELD_KEY] ?? null;
 
-        return is_string($id) || is_int($id) ? $id : null;
+        return is_string($key) || is_int($key) ? $key : null;
     }
 
     /**

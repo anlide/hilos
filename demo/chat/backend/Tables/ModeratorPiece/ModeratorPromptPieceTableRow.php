@@ -24,9 +24,9 @@ final class ModeratorPromptPieceTableRow extends AbstractTableRow
     }
 
     /**
-     * Returns the stable row id used by the moderator prompt pieces table.
+     * Returns the stable row key used by the moderator prompt pieces table.
      */
-    public function getRowId(): int
+    public function getRowKey(): int
     {
         return $this->id;
     }

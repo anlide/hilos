@@ -15,11 +15,11 @@ use Hilos\BaseDTO;
 abstract class AbstractTableRow extends BaseDTO
 {
     /**
-     * Stable row identifier inside the owning table.
+     * Stable row key inside the owning table.
      *
-     * @return string|int|null Row id, or null when the row is only a placeholder
+     * @return string|int|null Row key, or null when the row is only a placeholder
      */
-    abstract public function getRowId(): string|int|null;
+    abstract public function getRowKey(): string|int|null;
 
     /**
      * Routing subjects derived from the row payload.

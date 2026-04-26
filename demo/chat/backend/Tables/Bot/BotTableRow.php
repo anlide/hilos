@@ -44,9 +44,9 @@ final class BotTableRow extends AbstractTableRow
     }
 
     /**
-     * Returns the stable row id used by the bots table.
+     * Returns the stable row key used by the bots table.
      */
-    public function getRowId(): int
+    public function getRowKey(): int
     {
         return $this->id;
     }

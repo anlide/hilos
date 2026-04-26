@@ -26,11 +26,11 @@ final class SettingTableRow extends AbstractTableRow
     }
 
     /**
-     * Returns the stable row id used by the settings table.
+     * Returns the stable row key used by the settings table.
      *
      * Settings rows are keyed by the setting key instead of the numeric DB id.
      */
-    public function getRowId(): string
+    public function getRowKey(): string
     {
         return $this->key;
     }

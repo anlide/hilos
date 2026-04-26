@@ -38,7 +38,7 @@ final class BotItemActions extends TableItemActions
             ObjectBot::active => $dto->active,
         ], static fn($v) => $v !== null);
 
-        $dbBot = Hilos::$db->bots[$this->itemId];
+        $dbBot = Hilos::$db->bots[$this->rowKey];
         if ($data !== []) {
             $dbBot->actions->update($data);
         }
@@ -55,7 +55,7 @@ final class BotItemActions extends TableItemActions
      */
     public function delete(): TableMutationEntry
     {
-        Hilos::$db->bots[$this->itemId]->actions->delete();
+        Hilos::$db->bots[$this->rowKey]->actions->delete();
         return $this->mutation(TableMutationType::Deleted);
     }
 }

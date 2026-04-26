@@ -13,8 +13,8 @@ const parseTableMutationEntry = (value: unknown): TableMutationEntry | null => {
   if (!isRecord(value) || !isTableMutationType(value.type)) {
     return null
   }
-  const rowId = value.rowId
-  if (typeof rowId !== 'string' && typeof rowId !== 'number') {
+  const rowKey = value.rowKey
+  if (typeof rowKey !== 'string' && typeof rowKey !== 'number') {
     return null
   }
   const row = value.row
@@ -23,7 +23,7 @@ const parseTableMutationEntry = (value: unknown): TableMutationEntry | null => {
   }
   return {
     type: value.type,
-    rowId,
+    rowKey,
     ...(row !== undefined ? { row } : {}),
   }
 }

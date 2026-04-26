@@ -21,11 +21,11 @@ abstract class TableItemActions
      * Creates item actions for a single table row.
      *
      * @param TableDefinition $definition Table definition this actions instance belongs to
-     * @param string|int $itemId ID of the item these actions operate on
+     * @param string|int $rowKey Key of the row these actions operate on
      */
     public function __construct(
         protected readonly TableDefinition $definition,
-        protected readonly string|int $itemId,
+        protected readonly string|int $rowKey,
     ) {
     }
 
@@ -39,6 +39,6 @@ abstract class TableItemActions
      */
     protected function mutation(TableMutationType $type, ?AbstractTableRow $row = null): TableMutationEntry
     {
-        return new TableMutationEntry($type, $this->itemId, $row);
+        return new TableMutationEntry($type, $this->rowKey, $row);
     }
 }

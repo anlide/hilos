@@ -21,7 +21,7 @@ class TableMutationSignalData extends SignalData implements SignalDataInterface
      * Creates table mutation signal data.
      *
      * @param string $tableKey Table identifier (e.g. users, bots)
-     * @param TableMutationEntry $mutation Mutation entry (type, rowId, row)
+     * @param TableMutationEntry $mutation Mutation entry (type, rowKey, row)
      */
     public function __construct(
         public readonly string $tableKey,

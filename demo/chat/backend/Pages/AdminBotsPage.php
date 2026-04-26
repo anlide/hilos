@@ -124,10 +124,10 @@ final class AdminBotsPage extends AbstractChatPage
         $this->getChatAgent()->sendToUser(ChatSignalConstants::TABLE_MUTATION, $acceptKey, $signal);
         $this->getChatAgent()->sendToAllUsers(ChatSignalConstants::TABLE_MUTATION, $signal, $acceptKey);
 
-        if ((Hilos::$db->bots[$mutation->rowId]->active ?? false) === true) {
+        if ((Hilos::$db->bots[$mutation->rowKey]->active ?? false) === true) {
             $this->getChatAgent()->sendToAgent(
                 ChatSignalConstants::BOT_AGENT_START,
-                new BotAgentSignalData(botId: (int) $mutation->rowId),
+                new BotAgentSignalData(botId: (int) $mutation->rowKey),
             );
         }
     }

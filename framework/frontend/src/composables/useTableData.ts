@@ -22,14 +22,14 @@ export function applyTableMutations(state: TableDataState): ApplyMutationsResult
   const rows = [...state.rows]
   let totalCount = state.totalCount
   const { limit } = state
-  const rowIdField = state.rowIdField ?? 'id'
+  const rowKeyField = state.rowKeyField ?? 'id'
   let hasDeletes = false
 
   for (const m of state.mutations) {
     switch (m.type) {
       case 'created':
         if (m.row) {
-          const idx = rows.findIndex(r => r[rowIdField] === m.rowId)
+          const idx = rows.findIndex(r => r[rowKeyField] === m.rowKey)
           if (idx >= 0) {
             rows[idx] = m.row
           } else {
@@ -42,7 +42,7 @@ export function applyTableMutations(state: TableDataState): ApplyMutationsResult
         break
       case 'updated':
         if (m.row) {
-          const idx = rows.findIndex(r => r[rowIdField] === m.rowId)
+          const idx = rows.findIndex(r => r[rowKeyField] === m.rowKey)
           if (idx >= 0) {
             rows[idx] = { ...rows[idx], ...m.row }
           }
@@ -51,7 +51,7 @@ export function applyTableMutations(state: TableDataState): ApplyMutationsResult
       case 'deleted':
         hasDeletes = true
         {
-          const idx = rows.findIndex(r => r[rowIdField] === m.rowId)
+          const idx = rows.findIndex(r => r[rowKeyField] === m.rowKey)
           if (idx >= 0) {
             rows.splice(idx, 1)
             totalCount--
@@ -85,7 +85,7 @@ export function getTablePendingChanges(state: TableDataState | undefined): Pendi
 }
 
 /**
- * Compute change markers (row IDs per change type) from table state.
+ * Compute change markers (row keys per change type) from table state.
  */
 export function getTableChangeMarkers(state: TableDataState | undefined): ChangeMarkers {
   if (!state) return { added: [], updated: [], deleted: [] }
@@ -96,9 +96,9 @@ export function getTableChangeMarkers(state: TableDataState | undefined): Change
 
   for (const m of state.mutations) {
     switch (m.type) {
-      case 'created': added.push(m.rowId); break
-      case 'updated': updated.push(m.rowId); break
-      case 'deleted': deleted.push(m.rowId); break
+      case 'created': added.push(m.rowKey); break
+      case 'updated': updated.push(m.rowKey); break
+      case 'deleted': deleted.push(m.rowKey); break
     }
   }
   return { added, updated, deleted }

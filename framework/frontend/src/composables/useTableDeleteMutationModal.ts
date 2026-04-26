@@ -5,11 +5,11 @@ import { useTableStore } from '../stores'
 export const TABLE_DELETE_FAIL_TIMEOUT_MS = 12000
 
 /**
- * Delete confirmation flow: send action, show loading, close when TABLE_MUTATION delete matches row id.
+ * Delete confirmation flow: send action, show loading, close when TABLE_MUTATION delete matches row key.
  */
 export function useTableDeleteMutationModal<T>(
   tableKey: string,
-  getRowId: (item: T) => string | number | null | undefined,
+  getRowKey: (item: T) => string | number | null | undefined,
 ) {
   const tableStore = useTableStore()
   const showDeleteModal = ref(false)
@@ -42,8 +42,8 @@ export function useTableDeleteMutationModal<T>(
 
   const confirmDelete = (sendAction: () => void) => {
     if (deleteTarget.value == null) return
-    const rowId = getRowId(deleteTarget.value)
-    if (rowId === null || rowId === undefined || rowId === '') return
+    const rowKey = getRowKey(deleteTarget.value)
+    if (rowKey === null || rowKey === undefined || rowKey === '') return
 
     const state = tableStore.tableData[tableKey]
     mutationsLengthBeforeDelete.value = state?.mutations.length ?? 0
@@ -64,14 +64,14 @@ export function useTableDeleteMutationModal<T>(
     () => tableStore.tableData[tableKey]?.mutations,
     (mutations) => {
       if (deleteTarget.value == null) return
-      const rowId = getRowId(deleteTarget.value)
-      if (rowId === null || rowId === undefined || rowId === '' || !deleteLoading.value || deleteSuccessHandled.value) {
+      const rowKey = getRowKey(deleteTarget.value)
+      if (rowKey === null || rowKey === undefined || rowKey === '' || !deleteLoading.value || deleteSuccessHandled.value) {
         return
       }
       const muts = mutations ?? []
       const tail = muts.slice(mutationsLengthBeforeDelete.value)
       const ok = tail.some(
-        (m) => m.type === 'deleted' && String(m.rowId) === String(rowId),
+        (m) => m.type === 'deleted' && String(m.rowKey) === String(rowKey),
       )
       if (!ok) return
 

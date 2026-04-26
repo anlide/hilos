@@ -26,9 +26,9 @@ final class HilosUserTableRow extends AbstractTableRow
     }
 
     /**
-     * Returns the stable row id used by the Hilos users table.
+     * Returns the stable row key used by the Hilos users table.
      */
-    public function getRowId(): int
+    public function getRowKey(): int
     {
         return $this->id;
     }

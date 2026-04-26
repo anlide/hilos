@@ -19,12 +19,12 @@ readonly class TableMutationEntry
      * Creates table mutation entry.
      *
      * @param TableMutationType $type Mutation type (created, updated, deleted)
-     * @param string|int $rowId Affected row ID
+     * @param string|int $rowKey Affected row key
      * @param ?AbstractTableRow $row Optional row data for create/update
      */
     public function __construct(
         public TableMutationType $type,
-        public string|int $rowId,
+        public string|int $rowKey,
         public ?AbstractTableRow $row = null,
     ) {
     }
@@ -32,13 +32,13 @@ readonly class TableMutationEntry
     /**
      * Converts to array for WebSocket serialization.
      *
-     * @return array<string, mixed> Payload with type, rowId, optional row
+     * @return array<string, mixed> Payload with type, rowKey, optional row
      */
     public function toArray(): array
     {
         $data = [
             TableConstants::MUTATION_KEY_TYPE => $this->type->value,
-            TableConstants::MUTATION_KEY_ROW_ID => $this->rowId,
+            TableConstants::MUTATION_KEY_ROW_KEY => $this->rowKey,
         ];
         if ($this->row !== null) {
             $data[TableConstants::MUTATION_KEY_ROW] = $this->row->toArray();
@@ -63,7 +63,7 @@ readonly class TableMutationEntry
 
         return new self(
             type: TableMutationType::from((string) ($data[TableConstants::MUTATION_KEY_TYPE] ?? '')),
-            rowId: $data[TableConstants::MUTATION_KEY_ROW_ID] ?? 0,
+            rowKey: $data[TableConstants::MUTATION_KEY_ROW_KEY] ?? 0,
             row: $row,
         );
     }

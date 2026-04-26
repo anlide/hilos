@@ -28,7 +28,7 @@ class TableItem
      * Creates table item for a single row.
      *
      * @param TableDefinition $definition Parent table definition
-     * @param string|int $id Row identifier
+     * @param string|int $id Row key
      */
     public function __construct(
         private readonly TableDefinition $definition,
@@ -37,9 +37,9 @@ class TableItem
     }
 
     /**
-     * Returns the row identifier.
+     * Returns the row key.
      *
-     * @return string|int Row ID
+     * @return string|int Row key
      */
     public function getId(): string|int
     {

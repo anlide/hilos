@@ -25,7 +25,7 @@ final class HilosUserItemActions extends TableItemActions
     public function update(HilosUserUpdateActionDTO $dto): TableMutationEntry
     {
         try {
-            $dbUser = Hilos::$db->users[$this->itemId];
+            $dbUser = Hilos::$db->users[$this->rowKey];
             $dbUser->actions->rename($dto->name);
         } catch (ValidationException $e) {
             throw new HilosException('Failed to update user: ' . $e->getMessage(), previous: $e);

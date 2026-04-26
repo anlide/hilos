@@ -41,7 +41,7 @@ final class SettingsTableResultDTO extends TableResultDTO
     {
         return array_merge($this->source->toArray(), [
             'catalogKeys' => $this->catalogKeys,
-            'rowIdField' => 'key',
+            'rowKeyField' => 'key',
         ]);
     }
 }

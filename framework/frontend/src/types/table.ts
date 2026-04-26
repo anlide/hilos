@@ -8,7 +8,7 @@ export type TableMutationType = 'created' | 'updated' | 'deleted'
  */
 export interface TableMutationEntry {
   type: TableMutationType
-  rowId: string | number
+  rowKey: string | number
   row?: Record<string, unknown>
 }
 
@@ -22,8 +22,8 @@ export interface TableDataState {
   offset: number
   limit: number
   mutations: TableMutationEntry[]
-  /** Row identifier field for matching mutations (default: 'id') */
-  rowIdField?: string
+  /** Row key field for matching mutations (default: 'id') */
+  rowKeyField?: string
 }
 
 /**
@@ -36,7 +36,7 @@ export interface PendingChanges {
 }
 
 /**
- * Change markers (row IDs) for the Table component.
+ * Change markers (row keys) for the Table component.
  */
 export interface ChangeMarkers {
   added: (string | number)[]

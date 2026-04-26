@@ -36,8 +36,8 @@ final class TableConstants
     /** Mutation entry key: type (created/updated/deleted). */
     public const string MUTATION_KEY_TYPE = 'type';
 
-    /** Mutation entry key: row ID. */
-    public const string MUTATION_KEY_ROW_ID = 'rowId';
+    /** Mutation entry key: stable row key. */
+    public const string MUTATION_KEY_ROW_KEY = 'rowKey';
 
     /** Mutation entry key: row data (optional). */
     public const string MUTATION_KEY_ROW = 'row';

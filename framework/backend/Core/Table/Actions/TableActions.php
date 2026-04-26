@@ -31,13 +31,13 @@ abstract class TableActions
      * Creates a mutation entry for broadcasting.
      *
      * @param TableMutationType $type Mutation type (e.g. insert, update, delete)
-     * @param string|int $rowId Row/item ID affected
+     * @param string|int $rowKey Row key affected
      * @param ?AbstractTableRow $row Optional row data for create/update mutations
      *
      * @return TableMutationEntry Created mutation entry for broadcasting
      */
-    protected function mutation(TableMutationType $type, string|int $rowId, ?AbstractTableRow $row = null): TableMutationEntry
+    protected function mutation(TableMutationType $type, string|int $rowKey, ?AbstractTableRow $row = null): TableMutationEntry
     {
-        return new TableMutationEntry($type, $rowId, $row);
+        return new TableMutationEntry($type, $rowKey, $row);
     }
 }

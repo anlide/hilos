@@ -29,7 +29,7 @@ export const useTableStore = defineStore('table', {
             limit: Number(r['limit'] ?? 0),
             mutations: [],
             ...(Array.isArray(r['catalogKeys']) && { catalogKeys: r['catalogKeys'] as string[] }),
-            ...(typeof r['rowIdField'] === 'string' && { rowIdField: r['rowIdField'] as string }),
+            ...(typeof r['rowKeyField'] === 'string' && { rowKeyField: r['rowKeyField'] as string }),
           },
         }
       }

@@ -265,7 +265,7 @@ abstract class TableDefinition implements ArrayAccess
     /**
      * ArrayAccess: always returns true (item creation is deferred to offsetGet).
      *
-     * @param mixed $offset Row ID (unused)
+     * @param mixed $offset Row key (unused)
      * @return bool Always true
      */
     public function offsetExists(mixed $offset): bool
@@ -274,9 +274,9 @@ abstract class TableDefinition implements ArrayAccess
     }
 
     /**
-     * ArrayAccess: returns a TableItem for the given row ID.
+     * ArrayAccess: returns a TableItem for the given row key.
      *
-     * @param mixed $offset Row ID
+     * @param mixed $offset Row key
      * @return TableItem Table item for the row
      */
     public function offsetGet(mixed $offset): TableItem
@@ -287,7 +287,7 @@ abstract class TableDefinition implements ArrayAccess
     /**
      * ArrayAccess: set is not supported (tables are read-only).
      *
-     * @param mixed $offset Row ID (unused)
+     * @param mixed $offset Row key (unused)
      * @param mixed $value Value to set (unused)
      * @throws TableOffsetSetNotSupportedException Always thrown
      */
@@ -299,7 +299,7 @@ abstract class TableDefinition implements ArrayAccess
     /**
      * ArrayAccess: unset is not supported (tables are read-only).
      *
-     * @param mixed $offset Row ID (unused)
+     * @param mixed $offset Row key (unused)
      * @throws TableOffsetUnsetNotSupportedException Always thrown
      */
     public function offsetUnset(mixed $offset): void

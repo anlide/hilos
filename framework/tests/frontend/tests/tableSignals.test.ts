@@ -12,31 +12,31 @@ describe('tableMutation parser', () => {
   it('parses a valid mutation payload', () => {
     const parsed = tableMutation.parse({
       tableKey: 'users',
-      mutation: { type: 'created', rowId: 42, row: { id: 42, name: 'Ada' } },
+      mutation: { type: 'created', rowKey: 42, row: { id: 42, name: 'Ada' } },
     })
 
     expect(parsed).toEqual({
       tableKey: 'users',
-      mutation: { type: 'created', rowId: 42, row: { id: 42, name: 'Ada' } },
+      mutation: { type: 'created', rowKey: 42, row: { id: 42, name: 'Ada' } },
     })
   })
 
   it('accepts mutations without the optional row snapshot', () => {
     const parsed = tableMutation.parse({
       tableKey: 'users',
-      mutation: { type: 'deleted', rowId: 'abc' },
+      mutation: { type: 'deleted', rowKey: 'abc' },
     })
 
     expect(parsed).toEqual({
       tableKey: 'users',
-      mutation: { type: 'deleted', rowId: 'abc' },
+      mutation: { type: 'deleted', rowKey: 'abc' },
     })
   })
 
   it('returns null when mutation.type is not a known enum value', () => {
     const parsed = tableMutation.parse({
       tableKey: 'users',
-      mutation: { type: 'moved', rowId: 1 },
+      mutation: { type: 'moved', rowKey: 1 },
     })
 
     expect(parsed).toBeNull()
@@ -44,7 +44,7 @@ describe('tableMutation parser', () => {
 
   it('returns null when tableKey is missing', () => {
     const parsed = tableMutation.parse({
-      mutation: { type: 'created', rowId: 1 },
+      mutation: { type: 'created', rowKey: 1 },
     })
 
     expect(parsed).toBeNull()

@@ -33,7 +33,7 @@ final class ModeratorPromptPieceItemActions extends TableItemActions
             ObjectModeratorPromptPiece::promptPiece => $dto->promptPiece,
         ], static fn($v) => $v !== null);
 
-        $dbPiece = Hilos::$db->moderatorPromptPieces[$this->itemId];
+        $dbPiece = Hilos::$db->moderatorPromptPieces[$this->rowKey];
         if ($data !== []) {
             $dbPiece->actions->update($data);
         }
@@ -49,7 +49,7 @@ final class ModeratorPromptPieceItemActions extends TableItemActions
      */
     public function delete(): TableMutationEntry
     {
-        Hilos::$db->moderatorPromptPieces[$this->itemId]->actions->delete();
+        Hilos::$db->moderatorPromptPieces[$this->rowKey]->actions->delete();
         return $this->mutation(TableMutationType::Deleted);
     }
 }
