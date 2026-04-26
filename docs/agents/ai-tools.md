@@ -15,8 +15,8 @@ powershell -ExecutionPolicy Bypass -File scripts/install-codex-skills.ps1
 ```
 
 After installation, Codex can invoke skills such as `$hilos-orm`,
-`$hilos-runtime`, `$hilos-data-extension`, `$hilos-signals`, and
-`$hilos-testing-cli`.
+`$hilos-runtime`, `$hilos-data-extension`, `$hilos-db-rt-state`,
+`$hilos-app-data-access`, `$hilos-signals`, and `$hilos-testing-cli`.
 
 ## Claude
 
