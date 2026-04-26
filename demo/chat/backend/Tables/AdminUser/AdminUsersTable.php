@@ -8,7 +8,7 @@ use Demo\Chat\Hilos;
 use Demo\Chat\Tables\AdminUser\Actions\AdminUserItemActions;
 use Hilos\Core\Table\Definition\TableDefinition;
 use Hilos\Core\Table\DTO\TableQueryDTO;
-use Hilos\Core\Table\DTO\TableResultDTO;
+use Hilos\Core\Table\DTO\TableSnapshotDTO;
 use Hilos\Database\DatabaseException;
 
 /**
@@ -20,10 +20,10 @@ final class AdminUsersTable extends TableDefinition
      * Queries chat users for the admin users table.
      *
      * @param TableQueryDTO $query Table query parameters
-     * @return TableResultDTO Admin users table rows
+     * @return TableSnapshotDTO Admin users table snapshot
      * @throws DatabaseException If user query execution fails
      */
-    protected function query(TableQueryDTO $query): TableResultDTO
+    protected function query(TableQueryDTO $query): TableSnapshotDTO
     {
         return $this->queryDbCollection(Hilos::$db->users, $query);
     }

@@ -36,7 +36,7 @@ final class AdminUsersPage extends AbstractChatPage
     public const string PAGE = PageConstants::ADMIN_USERS;
 
     /**
-     * Sends initial users table data to the user on page subscription.
+     * Sends the initial users table full snapshot to the user on page subscription.
      *
      * @param string $acceptKey WebSocket accept key for the subscribing client
      * @param PageRouteParams $params Route params from page subscription (unused for admin users page)
@@ -48,7 +48,7 @@ final class AdminUsersPage extends AbstractChatPage
             $acceptKey,
             new ChatEventSignalDTO(
                 new EntitiesChangesDTO(),
-                [TableChatContext::adminUsers => Hilos::$table->adminUsers->get()],
+                [TableChatContext::adminUsers => Hilos::$table->adminUsers->getFullSnapshot()],
             ),
         );
     }

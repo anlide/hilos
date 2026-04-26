@@ -10,7 +10,7 @@ use Demo\Chat\Tables\Settings\Actions\SettingItemActions;
 use Demo\Chat\Tables\Settings\Actions\SettingsTableActions;
 use Hilos\Core\Table\Definition\TableDefinition;
 use Hilos\Core\Table\DTO\TableQueryDTO;
-use Hilos\Core\Table\DTO\TableResultDTO;
+use Hilos\Core\Table\DTO\TableSnapshotDTO;
 use Hilos\Core\Table\InMemoryTableFilter;
 use Hilos\Database\Settings\SettingsCatalogConstants;
 use Hilos\Database\View\Item\Setting as ViewSetting;
@@ -31,9 +31,9 @@ final class SettingsTable extends TableDefinition
      * are appended as orphan rows.
      *
      * @param TableQueryDTO $query Table query parameters
-     * @return TableResultDTO Settings table rows
+     * @return TableSnapshotDTO Settings table snapshot
      */
-    protected function query(TableQueryDTO $query): TableResultDTO
+    protected function query(TableQueryDTO $query): TableSnapshotDTO
     {
         $catalog = SettingsCatalog::getCatalog();
         $dbByKey = $this->buildDbByKey();

@@ -7,14 +7,15 @@ namespace Hilos\Core\Table\DTO;
 use Hilos\Core\Table\TableConstants;
 
 /**
- * Internal query parameters used while building a table snapshot.
+ * Query parameters for future partial table loading.
  *
- * Passed from TableDefinition::getFullSnapshot() to the concrete table query.
+ * Paging/partial loading is part of the public table API shape, but
+ * TableDefinition::getPage() deliberately does not implement it yet.
  */
-readonly class TableQueryDTO
+readonly class TablePageQueryDTO
 {
     /**
-     * Creates query parameters for full snapshot construction.
+     * Creates page query parameters for a partial table data request.
      *
      * @param string $search Full-text search across row values
      * @param string $orderBy Field name to order by (empty = no ordering)

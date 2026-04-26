@@ -14,7 +14,7 @@ export interface TableMutationEntry {
 
 /**
  * Table data state stored per table key.
- * Stateless: rows come from the latest get() call, mutations accumulate until refresh.
+ * Stateless: rows come from the latest full snapshot, mutations accumulate until refresh.
  */
 export interface TableDataState {
   rows: Record<string, unknown>[]

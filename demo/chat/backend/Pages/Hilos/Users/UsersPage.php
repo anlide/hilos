@@ -33,7 +33,7 @@ final class UsersPage extends AbstractHilosUsersPage
             $acceptKey,
             new ChatEventSignalDTO(
                 new EntitiesChangesDTO(),
-                [TableChatContext::hilosUsers => Hilos::$table->hilosUsers->get()],
+                [TableChatContext::hilosUsers => Hilos::$table->hilosUsers->getFullSnapshot()],
             ),
         );
     }

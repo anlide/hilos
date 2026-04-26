@@ -5,15 +5,17 @@ declare(strict_types=1);
 namespace Hilos\Core\Table\Definition;
 
 use ArrayAccess;
+use Hilos\Core\Exception\NotImplementedException;
 use Hilos\Core\Table\Actions\TableActions;
 use Hilos\Core\Table\Actions\TableItemActions;
+use Hilos\Core\Table\DTO\TablePageQueryDTO;
 use Hilos\Core\Table\DTO\TableQueryDTO;
-use Hilos\Core\Table\DTO\TableResultDTO;
-use Hilos\Core\Table\InMemoryTableFilter;
+use Hilos\Core\Table\DTO\TableSnapshotDTO;
 use Hilos\Core\Table\Exception\TableActionsNotConfiguredException;
 use Hilos\Core\Table\Exception\TableOffsetSetNotSupportedException;
 use Hilos\Core\Table\Exception\TableOffsetUnsetNotSupportedException;
 use Hilos\Core\Table\Exception\TablePropertyNotFoundException;
+use Hilos\Core\Table\InMemoryTableFilter;
 use Hilos\Core\Table\Item\TableItem;
 use Hilos\Core\Table\Row\AbstractTableRow;
 use Hilos\Core\Table\Row\GenericTableRow;
@@ -24,7 +26,7 @@ use Hilos\Database\View\Collection\DbCollection;
 /**
  * Base table definition — one per registered table.
  *
- * Stateless: each get() call pulls fresh data through the table query.
+ * Stateless: each full snapshot pulls fresh data through the table query.
  * Supports ArrayAccess for item-level operations: $table->bots[$id]->actions->delete().
  *
  * @implements ArrayAccess<string|int, TableItem>
@@ -146,9 +148,9 @@ abstract class TableDefinition implements ArrayAccess
      * config, SQL aggregates, or any other data needed for its row shape.
      *
      * @param TableQueryDTO $query Query parameters
-     * @return TableResultDTO Query result with raw or typed rows
+     * @return TableSnapshotDTO Snapshot with raw or typed rows
      */
-    abstract protected function query(TableQueryDTO $query): TableResultDTO;
+    abstract protected function query(TableQueryDTO $query): TableSnapshotDTO;
 
     /**
      * Queries a DbCollection using the standard table search, sort and pagination behavior.
@@ -159,10 +161,10 @@ abstract class TableDefinition implements ArrayAccess
      *
      * @param DbCollection $collection Db collection used as the row source
      * @param TableQueryDTO $query Query parameters
-     * @return TableResultDTO Query result with raw rows
+     * @return TableSnapshotDTO Snapshot with raw rows
      * @throws DatabaseException If query execution fails
      */
-    protected function queryDbCollection(DbCollection $collection, TableQueryDTO $query): TableResultDTO
+    protected function queryDbCollection(DbCollection $collection, TableQueryDTO $query): TableSnapshotDTO
     {
         $objectCollection = $collection->getObjectCollection();
 
@@ -173,7 +175,7 @@ abstract class TableDefinition implements ArrayAccess
 
         $result = $collection->queryPage($query);
 
-        return new TableResultDTO(
+        return new TableSnapshotDTO(
             rows: $result[TableConstants::RESULT_KEY_ROWS],
             totalCount: $result[TableConstants::RESULT_KEY_TOTAL_COUNT],
             offset: $query->offset,
@@ -182,36 +184,35 @@ abstract class TableDefinition implements ArrayAccess
     }
 
     /**
-     * Loads table data (stateless). Delegates query construction to the concrete table.
+     * Loads a complete table snapshot for initial page rendering.
      *
-     * @param string $search Full-text search across row values
-     * @param string $orderBy Field name to order by (empty = no ordering)
-     * @param string $orderDirection TableConstants::ORDER_ASC or ORDER_DESC
-     * @param int $offset Zero-based offset for pagination
-     * @param int $limit Page size (NO_LIMIT = all rows)
-     * @return TableResultDTO Query result with rows and total count
+     * @return TableSnapshotDTO Full snapshot with typed rows and metadata
      */
-    public function get(
-        string $search = '',
-        string $orderBy = '',
-        string $orderDirection = TableConstants::ORDER_ASC,
-        int $offset = 0,
-        int $limit = TableConstants::NO_LIMIT,
-    ): TableResultDTO {
-        $result = $this->query(new TableQueryDTO(
-            search: $search,
-            orderBy: $orderBy,
-            orderDirection: $orderDirection,
-            offset: $offset,
-            limit: $limit,
-        ));
+    public function getFullSnapshot(): TableSnapshotDTO
+    {
+        $result = $this->query(new TableQueryDTO());
 
-        return new TableResultDTO(
+        return new TableSnapshotDTO(
             rows: $this->makeRows($result->rows),
             totalCount: $result->totalCount,
             offset: $result->offset,
             limit: $result->limit,
         );
+    }
+
+    /**
+     * Reserved API for future partial table loading.
+     *
+     * Paging is intentionally not implemented yet; current page subscriptions
+     * must use {@see self::getFullSnapshot()} and receive a full table snapshot.
+     *
+     * @param TablePageQueryDTO $query Page query parameters
+     * @return TableSnapshotDTO Partial table page once implemented
+     * @throws NotImplementedException Always, until partial table loading is implemented
+     */
+    public function getPage(TablePageQueryDTO $query): TableSnapshotDTO
+    {
+        throw new NotImplementedException('TableDefinition::getPage() is not implemented; use getFullSnapshot() for the current full table snapshot');
     }
 
     // ── Actions property ─────────────────────────────────────────────────

@@ -4,17 +4,17 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Core\Router\DTO;
 
+use Hilos\Core\Exception\NotImplementedException;
 use Hilos\Core\Router\DTO\EntitiesChangesDTO;
 use Hilos\Core\Router\SignalData;
 use Hilos\Core\Router\SignalDataInterface;
-use Hilos\Core\Table\DTO\TableResultDTO;
-use Hilos\Core\Exception\NotImplementedException;
+use Hilos\Core\Table\DTO\TableSnapshotDTO;
 
 /**
  * ChatEventSignalDTO - Signal data for chat events.
  *
  * Simple pass-through of entities to frontend.
- * Optional tables payload for get() responses (e.g. admin page with users table).
+ * Optional tables payload for full snapshot responses (e.g. admin page with users table).
  * Optional user session fields for page subscribe (moderation text, file moderation UI, upload progress)
  * when {@see self::$includeUserSessionFields} is true.
  */
@@ -24,7 +24,7 @@ final class ChatEventSignalDTO extends SignalData implements SignalDataInterface
      * Creates chat event signal DTO.
      *
      * @param EntitiesChangesDTO $entities Entity changes
-     * @param array<string, TableResultDTO> $tables Table key → result DTO
+     * @param array<string, TableSnapshotDTO> $tables Table key → full snapshot DTO
      * @param ?string $moderationState Pending text moderation message or null
      * @param ?array<string, mixed> $fileModerationState File moderation UI state or null
      * @param ?array<string, mixed> $fileUploadProgress In-flight binary upload progress or null

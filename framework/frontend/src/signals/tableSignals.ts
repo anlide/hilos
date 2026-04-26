@@ -29,7 +29,9 @@ const parseTableMutationEntry = (value: unknown): TableMutationEntry | null => {
 }
 
 /**
- * Signal: `table_data` — bulk payload with one-or-many tables snapshot.
+ * Signal: `table_data` — bulk payload with one-or-many full table snapshots.
+ *
+ * Paging/partial loading is reserved in the backend API but is not implemented yet.
  */
 export interface TableDataPayload {
   tables: Record<string, unknown>

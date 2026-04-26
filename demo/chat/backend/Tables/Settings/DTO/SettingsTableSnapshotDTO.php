@@ -4,24 +4,24 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Tables\Settings\DTO;
 
-use Hilos\Core\Table\DTO\TableResultDTO;
+use Hilos\Core\Table\DTO\TableSnapshotDTO;
 
 /**
- * Settings table result DTO with optional catalog keys for Add modal.
+ * Settings table snapshot DTO with optional catalog keys for Add modal.
  *
- * Extends TableResultDTO to include catalogKeys in payload without modifying ChatEventSignalDTO.
+ * Extends TableSnapshotDTO to include catalogKeys in payload without modifying ChatEventSignalDTO.
  * Frontend uses catalogKeys to populate the Add modal key selector (excluding already-used keys).
  */
-final class SettingsTableResultDTO extends TableResultDTO
+final class SettingsTableSnapshotDTO extends TableSnapshotDTO
 {
     /**
-     * Creates settings table result with catalog keys.
+     * Creates settings table snapshot with catalog keys.
      *
-     * @param TableResultDTO $source Base table result from settings->get()
+     * @param TableSnapshotDTO $source Base table snapshot from settings->getFullSnapshot()
      * @param list<string> $catalogKeys Keys from SettingsCatalog (for Add form dropdown)
      */
     public function __construct(
-        private readonly TableResultDTO $source,
+        private readonly TableSnapshotDTO $source,
         private readonly array $catalogKeys,
     ) {
         parent::__construct(

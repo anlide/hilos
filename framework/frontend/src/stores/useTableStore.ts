@@ -9,7 +9,7 @@ export const useTableStore = defineStore('table', {
 
   actions: {
     /**
-     * Apply tables payload from subscription or refresh response.
+     * Apply full table snapshots from subscription or refresh response.
      * Payload: { [tableKey]: { rows, totalCount, offset, limit } }
      * Resets mutations for each table key received.
      */

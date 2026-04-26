@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Core\Table;
 
 use Hilos\Core\Table\DTO\TableQueryDTO;
-use Hilos\Core\Table\DTO\TableResultDTO;
+use Hilos\Core\Table\DTO\TableSnapshotDTO;
 
 /**
  * In-memory search, sort and pagination for tables that already have all rows in PHP memory.
@@ -20,9 +20,9 @@ final class InMemoryTableFilter
      *
      * @param list<array<string, mixed>> $rows All rows to filter
      * @param TableQueryDTO $query Query parameters
-     * @return TableResultDTO Filtered/sorted/paginated result
+     * @return TableSnapshotDTO Filtered/sorted/paginated snapshot
      */
-    public static function apply(array $rows, TableQueryDTO $query): TableResultDTO
+    public static function apply(array $rows, TableQueryDTO $query): TableSnapshotDTO
     {
         if ($query->search !== '') {
             $search = mb_strtolower($query->search);
@@ -51,7 +51,7 @@ final class InMemoryTableFilter
             $rows = array_slice($rows, $query->offset);
         }
 
-        return new TableResultDTO(
+        return new TableSnapshotDTO(
             rows: $rows,
             totalCount: $totalCount,
             offset: $query->offset,

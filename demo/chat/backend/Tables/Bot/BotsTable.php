@@ -9,7 +9,7 @@ use Demo\Chat\Tables\Bot\Actions\BotItemActions;
 use Demo\Chat\Tables\Bot\Actions\BotsTableActions;
 use Hilos\Core\Table\Definition\TableDefinition;
 use Hilos\Core\Table\DTO\TableQueryDTO;
-use Hilos\Core\Table\DTO\TableResultDTO;
+use Hilos\Core\Table\DTO\TableSnapshotDTO;
 use Hilos\Database\DatabaseException;
 
 /**
@@ -23,10 +23,10 @@ final class BotsTable extends TableDefinition
      * Queries bots for the bots table.
      *
      * @param TableQueryDTO $query Table query parameters
-     * @return TableResultDTO Bot table rows
+     * @return TableSnapshotDTO Bot table snapshot
      * @throws DatabaseException If bot query execution fails
      */
-    protected function query(TableQueryDTO $query): TableResultDTO
+    protected function query(TableQueryDTO $query): TableSnapshotDTO
     {
         return $this->queryDbCollection(Hilos::$db->bots, $query);
     }

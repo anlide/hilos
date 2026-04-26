@@ -9,9 +9,9 @@ use Demo\Chat\Core\Router\DTO\ChatEventSignalDTO;
 use Demo\Chat\Database\Settings\SettingsCatalog;
 use Demo\Chat\Hilos;
 use Demo\Chat\Tables\Settings\DTO\SettingAddActionDTO;
-use Demo\Chat\Tables\Settings\DTO\SettingsTableResultDTO;
 use Demo\Chat\Tables\Settings\DTO\SettingDeleteActionDTO;
 use Demo\Chat\Tables\Settings\DTO\SettingUpdateActionDTO;
+use Demo\Chat\Tables\Settings\DTO\SettingsTableSnapshotDTO;
 use Demo\Chat\Tables\TableChatContext;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Page\PageRouteParams;
@@ -33,7 +33,7 @@ use Throwable;
 final class SettingsPage extends AbstractHilosSettingsPage
 {
     /**
-     * Sends initial settings table data with catalog keys to the user on page subscription.
+     * Sends the initial settings table full snapshot with catalog keys to the user on page subscription.
      *
      * @param string $acceptKey WebSocket accept key for the subscribing client
      * @param PageRouteParams $params Route params from page subscription (unused)
@@ -45,8 +45,8 @@ final class SettingsPage extends AbstractHilosSettingsPage
             $acceptKey,
             new ChatEventSignalDTO(
                 new EntitiesChangesDTO(),
-                [TableChatContext::settings => new SettingsTableResultDTO(
-                    Hilos::$table->settings->get(),
+                [TableChatContext::settings => new SettingsTableSnapshotDTO(
+                    Hilos::$table->settings->getFullSnapshot(),
                     array_keys(SettingsCatalog::getCatalog()),
                 )],
             ),

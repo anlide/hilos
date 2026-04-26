@@ -10,17 +10,17 @@ use Hilos\Core\Table\Row\GenericTableRow;
 use Hilos\Core\Table\TableConstants;
 
 /**
- * Result of a stateless table query (get).
+ * Full snapshot of a table.
  *
- * Contains the rows and pagination metadata.
+ * Contains all rows and metadata needed for initial frontend rendering.
  */
-class TableResultDTO extends BaseDTO
+class TableSnapshotDTO extends BaseDTO
 {
     /**
-     * Creates table result DTO.
+     * Creates table snapshot DTO.
      *
-     * @param list<AbstractTableRow|array<string, mixed>> $rows Result rows
-     * @param int $totalCount Total rows matching the query (before pagination)
+     * @param list<AbstractTableRow|array<string, mixed>> $rows Snapshot rows
+     * @param int $totalCount Total rows in the full snapshot
      * @param int $offset Zero-based offset used
      * @param int $limit Page size used (TableConstants::NO_LIMIT = all rows)
      */
@@ -33,7 +33,7 @@ class TableResultDTO extends BaseDTO
     }
 
     /**
-     * Converts to array for WebSocket serialization.
+     * Converts the snapshot to array for WebSocket serialization.
      *
      * @return array<string, mixed> Rows, totalCount, offset, limit keys
      */
@@ -51,7 +51,7 @@ class TableResultDTO extends BaseDTO
     }
 
     /**
-     * Creates DTO from payload array.
+     * Creates snapshot DTO from payload array.
      *
      * @param array<string, mixed> $data Raw payload with rows, totalCount, offset, limit keys
      * @return static DTO instance

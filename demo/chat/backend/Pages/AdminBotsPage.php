@@ -36,7 +36,7 @@ final class AdminBotsPage extends AbstractChatPage
     public const string PAGE = PageConstants::ADMIN_BOTS;
 
     /**
-     * Sends initial bots table data to the user on page subscription.
+     * Sends the initial bots table full snapshot to the user on page subscription.
      *
      * @param string $acceptKey WebSocket accept key for the subscribing client
      * @param PageRouteParams $params Route params from page subscription (unused for admin bots page)
@@ -48,7 +48,7 @@ final class AdminBotsPage extends AbstractChatPage
             $acceptKey,
             new ChatEventSignalDTO(
                 new EntitiesChangesDTO(),
-                [TableChatContext::bots => Hilos::$table->bots->get()],
+                [TableChatContext::bots => Hilos::$table->bots->getFullSnapshot()],
             ),
         );
     }

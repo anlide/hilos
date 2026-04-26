@@ -85,6 +85,30 @@ On subscription, server typically sends `EntitiesChangesDTO`:
 
 Frontend applies this as initial state and subscribes to incremental updates.
 
+## Table snapshots
+
+Pages that include table data send full table snapshots in the `tables` payload:
+
+```json
+{
+  "tables": {
+    "users": {
+      "rows": [{ "id": 1, "name": "Ada" }],
+      "totalCount": 1,
+      "offset": 0,
+      "limit": 0
+    }
+  }
+}
+```
+
+Backend page subscriptions load this through
+`TableDefinition::getFullSnapshot()`, which returns `TableSnapshotDTO`.
+The public `TableDefinition::getPage(TablePageQueryDTO $query)` shape is
+reserved for future paging/partial loading, but currently throws
+`NotImplementedException`; frontend code must treat table subscription data as
+a full snapshot.
+
 ## Binary messages (file upload)
 
 After `FILE_UPLOAD_READY` signal, frontend sends raw binary WS frames.

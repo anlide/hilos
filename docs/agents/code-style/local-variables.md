@@ -26,7 +26,7 @@ $this->sendToUser(
     $acceptKey,
     new ChatEventSignalDTO(
         new EntitiesChangesDTO(),
-        [TableChatContext::users => Hilos::$table->users->get()],
+        [TableChatContext::users => Hilos::$table->users->getFullSnapshot()],
     ),
 );
 ```
@@ -34,14 +34,14 @@ $this->sendToUser(
 Over this:
 
 ```php
-$result = Hilos::$table->users->get();
+$snapshot = Hilos::$table->users->getFullSnapshot();
 
 $this->sendToUser(
     ChatSignalConstants::SUBSCRIPTION_PAGE_USERS,
     $acceptKey,
     new ChatEventSignalDTO(
         new EntitiesChangesDTO(),
-        [TableChatContext::users => $result],
+        [TableChatContext::users => $snapshot],
     ),
 );
 ```

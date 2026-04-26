@@ -2,7 +2,7 @@ import type { TableDataState, PendingChanges, ChangeMarkers, ApplyMutationsResul
 
 /**
  * Compute display rows from table state.
- * Returns only the server-fetched rows; mutations are not applied until the user triggers apply.
+ * Returns only the rows from the current full snapshot; mutations are not applied until the user triggers apply.
  */
 export function getTableDisplayRows<T>(state: TableDataState | undefined): T[] {
   if (!state) return []

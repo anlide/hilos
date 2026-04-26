@@ -9,7 +9,7 @@ use Demo\Chat\Tables\ModeratorPiece\Actions\ModeratorPromptPieceItemActions;
 use Demo\Chat\Tables\ModeratorPiece\Actions\ModeratorPromptPiecesTableActions;
 use Hilos\Core\Table\Definition\TableDefinition;
 use Hilos\Core\Table\DTO\TableQueryDTO;
-use Hilos\Core\Table\DTO\TableResultDTO;
+use Hilos\Core\Table\DTO\TableSnapshotDTO;
 use Hilos\Database\DatabaseException;
 
 /**
@@ -23,10 +23,10 @@ final class ModeratorPromptPiecesTable extends TableDefinition
      * Queries moderator prompt pieces for the table.
      *
      * @param TableQueryDTO $query Table query parameters
-     * @return TableResultDTO Moderator prompt piece rows
+     * @return TableSnapshotDTO Moderator prompt piece table snapshot
      * @throws DatabaseException If prompt piece query execution fails
      */
-    protected function query(TableQueryDTO $query): TableResultDTO
+    protected function query(TableQueryDTO $query): TableSnapshotDTO
     {
         return $this->queryDbCollection(Hilos::$db->moderatorPromptPieces, $query);
     }

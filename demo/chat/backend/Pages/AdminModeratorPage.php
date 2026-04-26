@@ -33,7 +33,7 @@ final class AdminModeratorPage extends AbstractChatPage
     public const string PAGE = PageConstants::ADMIN_MODERATOR;
 
     /**
-     * Sends initial moderator prompt pieces table data to the user on page subscription.
+     * Sends the initial moderator prompt pieces table full snapshot to the user on page subscription.
      *
      * @param string $acceptKey WebSocket accept key for the subscribing client
      * @param PageRouteParams $params Route params from page subscription (unused for moderator page)
@@ -45,7 +45,7 @@ final class AdminModeratorPage extends AbstractChatPage
             $acceptKey,
             new ChatEventSignalDTO(
                 new EntitiesChangesDTO(),
-                [TableChatContext::moderatorPromptPieces => Hilos::$table->moderatorPromptPieces->get()],
+                [TableChatContext::moderatorPromptPieces => Hilos::$table->moderatorPromptPieces->getFullSnapshot()],
             ),
         );
     }
