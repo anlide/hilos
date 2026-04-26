@@ -25,7 +25,7 @@ use PHPUnit\Framework\TestCase;
  */
 final class ChatSignalMapperTest extends TestCase
 {
-    public function testMapChatUserRowUpdatedProducesSingleAllExceptTableMutation(): void
+    public function testMapChatUserRowUpdatedProducesSingleAllExceptPendingTableMutation(): void
     {
         $mutation = new TableRowMutationDTO(
             TableMutationType::Update,
@@ -52,10 +52,11 @@ final class ChatSignalMapperTest extends TestCase
 
         $this->assertCount(1, $items);
         $this->assertSame(EmitFanoutDelivery::AllExcept, $items[0]->delivery);
-        $this->assertSame(ChatSignalConstants::TABLE_MUTATION, $items[0]->wireSignalName);
+        $this->assertSame(ChatSignalConstants::TABLE_MUTATION_PENDING, $items[0]->wireSignalName);
         $this->assertSame('key-admin', $items[0]->excludeAcceptKey);
         $this->assertInstanceOf(TableMutationSignalData::class, $items[0]->innerPayload);
         $this->assertSame(TableChatContext::hilosUsers, $items[0]->innerPayload->tableKey);
+        $this->assertArrayNotHasKey('excludeAcceptKey', $items[0]->innerPayload->toArray());
     }
 
     public function testUnknownEventKeyReturnsEmpty(): void

@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { tableActionError, tableMutation } from '@/signals/tableSignals'
+import { tableActionError, tableMutation, tableMutationPending } from '@/signals/tableSignals'
 
 /**
  * Infrastructure-level unit tests for the framework signal parsers.
  *
- * These pin down the wire-format contract of `table_mutation` and
- * `table_action_error`: signals parsed into typed payloads, or `null`
- * when the shape is invalid (router logs and skips on `null`).
+ * These pin down the wire-format contract of table signals: signals parsed
+ * into typed payloads, or `null` when the shape is invalid (router logs and
+ * skips on `null`).
  */
 describe('tableMutation parser', () => {
   it.each(['create', 'update', 'delete'] as const)('parses %s mutation payloads', (type) => {
@@ -33,16 +33,40 @@ describe('tableMutation parser', () => {
     })
   })
 
-  it('drops routing metadata from row mutation payloads', () => {
-    const parsed = tableMutation.parse({
+  it('parses pending mutation payloads', () => {
+    const parsed = tableMutationPending.parse({
       tableKey: 'users',
-      mutation: { type: 'update', rowKey: 42, row: { id: 42 }, acceptKey: 'client-a' },
+      mutation: { type: 'update', rowKey: 42, row: { id: 42, name: 'Ada' } },
     })
 
     expect(parsed).toEqual({
       tableKey: 'users',
-      mutation: { type: 'update', rowKey: 42, row: { id: 42 } },
+      mutation: { type: 'update', rowKey: 42, row: { id: 42, name: 'Ada' } },
     })
+  })
+
+  it.each(['acceptKey', 'targetAcceptKey', 'excludeAcceptKey', 'targetGroup'])(
+    'returns null when routing metadata %s is present',
+    (key) => {
+      expect(tableMutation.parse({
+        tableKey: 'users',
+        mutation: { type: 'update', rowKey: 42, row: { id: 42 } },
+        [key]: 'client-a',
+      })).toBeNull()
+
+      expect(tableMutation.parse({
+        tableKey: 'users',
+        mutation: { type: 'update', rowKey: 42, row: { id: 42 }, [key]: 'client-a' },
+      })).toBeNull()
+    },
+  )
+
+  it('uses the same routing metadata guard for pending mutations', () => {
+    expect(tableMutationPending.parse({
+      tableKey: 'users',
+      mutation: { type: 'update', rowKey: 42, row: { id: 42 } },
+      excludeAcceptKey: 'client-a',
+    })).toBeNull()
   })
 
   it('returns null when mutation.type is not a known enum value', () => {

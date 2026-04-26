@@ -164,7 +164,7 @@ final class UserPage extends AbstractHilosUserPage
                 actorUserId: Hilos::$rt->connections[$acceptKey]?->userId,
             ),
         );
-        $this->sendToAllUsers(ChatSignalConstants::TABLE_MUTATION, $adminUsersSignal, $acceptKey);
+        $this->sendToAllUsers(ChatSignalConstants::TABLE_MUTATION_PENDING, $adminUsersSignal, $acceptKey);
 
         $event = Hilos::$db->events->actions->addUserRenamedByAdmin(
             userId: $dto->id,

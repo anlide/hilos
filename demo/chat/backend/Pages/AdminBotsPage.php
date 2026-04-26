@@ -122,7 +122,7 @@ final class AdminBotsPage extends AbstractChatPage
         $signal = new TableMutationSignalData(TableChatContext::bots, $mutation);
 
         $this->getChatAgent()->sendToUser(ChatSignalConstants::TABLE_MUTATION, $acceptKey, $signal);
-        $this->getChatAgent()->sendToAllUsers(ChatSignalConstants::TABLE_MUTATION, $signal, $acceptKey);
+        $this->getChatAgent()->sendToAllUsers(ChatSignalConstants::TABLE_MUTATION_PENDING, $signal, $acceptKey);
 
         if ((Hilos::$db->bots[$mutation->rowKey]->active ?? false) === true) {
             $this->getChatAgent()->sendToAgent(
@@ -158,7 +158,7 @@ final class AdminBotsPage extends AbstractChatPage
         $signal = new TableMutationSignalData(TableChatContext::bots, $mutation);
 
         $this->getChatAgent()->sendToUser(ChatSignalConstants::TABLE_MUTATION, $acceptKey, $signal);
-        $this->getChatAgent()->sendToAllUsers(ChatSignalConstants::TABLE_MUTATION, $signal, $acceptKey);
+        $this->getChatAgent()->sendToAllUsers(ChatSignalConstants::TABLE_MUTATION_PENDING, $signal, $acceptKey);
 
         if (!$oldActive && $newActive) {
             $this->getChatAgent()->sendToAgent(
@@ -199,6 +199,6 @@ final class AdminBotsPage extends AbstractChatPage
         $signal = new TableMutationSignalData(TableChatContext::bots, $mutation);
 
         $this->getChatAgent()->sendToUser(ChatSignalConstants::TABLE_MUTATION, $acceptKey, $signal);
-        $this->getChatAgent()->sendToAllUsers(ChatSignalConstants::TABLE_MUTATION, $signal, $acceptKey);
+        $this->getChatAgent()->sendToAllUsers(ChatSignalConstants::TABLE_MUTATION_PENDING, $signal, $acceptKey);
     }
 }

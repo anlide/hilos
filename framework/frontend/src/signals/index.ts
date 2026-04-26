@@ -6,6 +6,7 @@ export {
 export {
   tableData,
   tableMutation,
+  tableMutationPending,
   tableActionError,
   type TableDataPayload,
   type TableMutationPayload,

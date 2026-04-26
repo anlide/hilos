@@ -141,20 +141,34 @@ final class ProfilePage extends AbstractChatPage
             $userId,
             Hilos::$table->adminUsers->makeRow($user->toArray(toFrontend: true)),
         );
-        $this->getChatAgent()->sendToAllUsers(
+        $adminUsersSignal = new TableMutationSignalData(TableChatContext::adminUsers, $mutation);
+        $hilosUsersSignal = new TableMutationSignalData(
+            TableChatContext::hilosUsers,
+            new TableRowMutationDTO(
+                TableMutationType::Update,
+                $userId,
+                Hilos::$table->hilosUsers->makeRow($user->toArray(toFrontend: true)),
+            ),
+        );
+        $this->getChatAgent()->sendToUser(
             ChatSignalConstants::TABLE_MUTATION,
-            new TableMutationSignalData(TableChatContext::adminUsers, $mutation),
+            $acceptKey,
+            $adminUsersSignal,
+        );
+        $this->getChatAgent()->sendToUser(
+            ChatSignalConstants::TABLE_MUTATION,
+            $acceptKey,
+            $hilosUsersSignal,
         );
         $this->getChatAgent()->sendToAllUsers(
-            ChatSignalConstants::TABLE_MUTATION,
-            new TableMutationSignalData(
-                TableChatContext::hilosUsers,
-                new TableRowMutationDTO(
-                    TableMutationType::Update,
-                    $userId,
-                    Hilos::$table->hilosUsers->makeRow($user->toArray(toFrontend: true)),
-                ),
-            ),
+            ChatSignalConstants::TABLE_MUTATION_PENDING,
+            $adminUsersSignal,
+            $acceptKey,
+        );
+        $this->getChatAgent()->sendToAllUsers(
+            ChatSignalConstants::TABLE_MUTATION_PENDING,
+            $hilosUsersSignal,
+            $acceptKey,
         );
 
         // Dedicated ack to the initiator: closes the modal / clears UI loading state.

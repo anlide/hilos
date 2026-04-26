@@ -109,6 +109,21 @@ reserved for future paging/partial loading, but currently throws
 `NotImplementedException`; frontend code must treat table subscription data as
 a full snapshot.
 
+## Table mutation delivery
+
+`table_mutation` is an immediate mutation. Backend sends it directly to the
+initiating connection, usually with `sendToUser()`, and the frontend applies it
+to the table rows immediately.
+
+`table_mutation_pending` is an external mutation. Backend uses it for
+broadcast or group delivery, usually excluding the initiator, and the frontend
+adds it to the table pending queue until the user applies pending changes.
+
+Routing metadata stays in backend routing wrappers only. Fields such as
+`acceptKey`, `targetAcceptKey`, `excludeAcceptKey`, and `targetGroup` must not
+appear in the WebSocket `data` payload for table mutations; frontend parsers
+reject such payloads.
+
 ## Binary messages (file upload)
 
 After `FILE_UPLOAD_READY` signal, frontend sends raw binary WS frames.

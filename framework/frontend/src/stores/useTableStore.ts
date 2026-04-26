@@ -1,5 +1,8 @@
 import { defineStore } from 'pinia'
-import { applyTableMutations } from '../composables/useTableData'
+import {
+  applyTableMutation as applyTableMutationToState,
+  applyTableMutations,
+} from '../composables/useTableData'
 import type { TableDataState, TableRowMutationDTO } from '../types/table'
 
 export const useTableStore = defineStore('table', {
@@ -35,10 +38,19 @@ export const useTableStore = defineStore('table', {
       }
     },
 
-    /**
-     * Append a single table mutation (real-time broadcast).
-     */
-    applyTableMutation(tableKey: string, mutation: TableRowMutationDTO) {
+    applyImmediateTableMutation(tableKey: string, mutation: TableRowMutationDTO) {
+      const existing = this.tableData[tableKey]
+      if (!existing) return
+
+      const result = applyTableMutationToState(existing, mutation)
+
+      this.tableData = {
+        ...this.tableData,
+        [tableKey]: result.state,
+      }
+    },
+
+    queuePendingTableMutation(tableKey: string, mutation: TableRowMutationDTO) {
       const existing = this.tableData[tableKey]
       if (!existing) return
 
@@ -49,6 +61,13 @@ export const useTableStore = defineStore('table', {
           mutations: [...existing.mutations, mutation],
         },
       }
+    },
+
+    /**
+     * Append a single pending table mutation.
+     */
+    applyTableMutation(tableKey: string, mutation: TableRowMutationDTO) {
+      this.queuePendingTableMutation(tableKey, mutation)
     },
 
     /**

@@ -119,7 +119,7 @@ final class AdminModeratorPage extends AbstractChatPage
         $signal = new TableMutationSignalData(TableChatContext::moderatorPromptPieces, $mutation);
 
         $this->getChatAgent()->sendToUser(ChatSignalConstants::TABLE_MUTATION, $acceptKey, $signal);
-        $this->getChatAgent()->sendToAllUsers(ChatSignalConstants::TABLE_MUTATION, $signal, $acceptKey);
+        $this->getChatAgent()->sendToAllUsers(ChatSignalConstants::TABLE_MUTATION_PENDING, $signal, $acceptKey);
     }
 
     /**
@@ -144,7 +144,7 @@ final class AdminModeratorPage extends AbstractChatPage
         $signal = new TableMutationSignalData(TableChatContext::moderatorPromptPieces, $mutation);
 
         $this->getChatAgent()->sendToUser(ChatSignalConstants::TABLE_MUTATION, $acceptKey, $signal);
-        $this->getChatAgent()->sendToAllUsers(ChatSignalConstants::TABLE_MUTATION, $signal, $acceptKey);
+        $this->getChatAgent()->sendToAllUsers(ChatSignalConstants::TABLE_MUTATION_PENDING, $signal, $acceptKey);
     }
 
     /**
@@ -169,6 +169,6 @@ final class AdminModeratorPage extends AbstractChatPage
         $signal = new TableMutationSignalData(TableChatContext::moderatorPromptPieces, $mutation);
 
         $this->getChatAgent()->sendToUser(ChatSignalConstants::TABLE_MUTATION, $acceptKey, $signal);
-        $this->getChatAgent()->sendToAllUsers(ChatSignalConstants::TABLE_MUTATION, $signal, $acceptKey);
+        $this->getChatAgent()->sendToAllUsers(ChatSignalConstants::TABLE_MUTATION_PENDING, $signal, $acceptKey);
     }
 }

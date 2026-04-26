@@ -1,4 +1,10 @@
-import type { TableDataState, PendingChanges, ChangeMarkers, ApplyMutationsResult } from '../types/table'
+import type {
+  TableDataState,
+  PendingChanges,
+  ChangeMarkers,
+  ApplyMutationsResult,
+  TableRowMutationDTO,
+} from '../types/table'
 
 /**
  * Compute display rows from table state.
@@ -9,23 +15,14 @@ export function getTableDisplayRows<T>(state: TableDataState | undefined): T[] {
   return state.rows as T[]
 }
 
-/**
- * Apply pending mutations to table state (called when user clicks "Apply changes").
- *
- * - Create: row is appended only if the current page has room (rows.length < limit, or limit=0).
- * - Update: row data is merged into matching existing row.
- * - Delete: row is removed from current page if present.
- *
- * Returns the new state (with cleared mutations) and metadata about the result.
- */
-export function applyTableMutations(state: TableDataState): ApplyMutationsResult {
+function applyMutationsToState(state: TableDataState, mutations: TableRowMutationDTO[]): ApplyMutationsResult {
   const rows = [...state.rows]
   let totalCount = state.totalCount
   const { limit } = state
   const rowKeyField = state.rowKeyField ?? 'id'
   let hasDeletes = false
 
-  for (const m of state.mutations) {
+  for (const m of mutations) {
     switch (m.type) {
       case 'create':
         if (m.row) {
@@ -65,6 +62,31 @@ export function applyTableMutations(state: TableDataState): ApplyMutationsResult
     state: { ...state, rows, totalCount, mutations: [] },
     hasDeletes,
   }
+}
+
+/**
+ * Apply one immediate table mutation without changing the pending queue.
+ */
+export function applyTableMutation(state: TableDataState, mutation: TableRowMutationDTO): ApplyMutationsResult {
+  const result = applyMutationsToState(state, [mutation])
+
+  return {
+    state: { ...result.state, mutations: state.mutations },
+    hasDeletes: result.hasDeletes,
+  }
+}
+
+/**
+ * Apply pending mutations to table state (called when user clicks "Apply changes").
+ *
+ * - Create: row is appended only if the current page has room (rows.length < limit, or limit=0).
+ * - Update: row data is merged into matching existing row.
+ * - Delete: row is removed from current page if present.
+ *
+ * Returns the new state (with cleared mutations) and metadata about the result.
+ */
+export function applyTableMutations(state: TableDataState): ApplyMutationsResult {
+  return applyMutationsToState(state, state.mutations)
 }
 
 /**

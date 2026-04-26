@@ -126,7 +126,7 @@ final class SettingsPage extends AbstractHilosSettingsPage
         $signal = new TableMutationSignalData(TableChatContext::settings, $mutation);
 
         $this->sendToUser(ChatSignalConstants::TABLE_MUTATION, $acceptKey, $signal);
-        $this->sendToAllUsers(ChatSignalConstants::TABLE_MUTATION, $signal, $acceptKey);
+        $this->sendToAllUsers(ChatSignalConstants::TABLE_MUTATION_PENDING, $signal, $acceptKey);
     }
 
     /**
@@ -150,7 +150,7 @@ final class SettingsPage extends AbstractHilosSettingsPage
         $signal = new TableMutationSignalData(TableChatContext::settings, $mutation);
 
         $this->sendToUser(ChatSignalConstants::TABLE_MUTATION, $acceptKey, $signal);
-        $this->sendToAllUsers(ChatSignalConstants::TABLE_MUTATION, $signal, $acceptKey);
+        $this->sendToAllUsers(ChatSignalConstants::TABLE_MUTATION_PENDING, $signal, $acceptKey);
     }
 
     /**
@@ -174,6 +174,6 @@ final class SettingsPage extends AbstractHilosSettingsPage
         $signal = new TableMutationSignalData(TableChatContext::settings, $mutation);
 
         $this->sendToUser(ChatSignalConstants::TABLE_MUTATION, $acceptKey, $signal);
-        $this->sendToAllUsers(ChatSignalConstants::TABLE_MUTATION, $signal, $acceptKey);
+        $this->sendToAllUsers(ChatSignalConstants::TABLE_MUTATION_PENDING, $signal, $acceptKey);
     }
 }

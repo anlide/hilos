@@ -15,8 +15,9 @@ use Hilos\Core\Router\SignalMapperInterface;
 /**
  * Maps EMIT_* signals to concrete WebSocket payloads for the chat demo.
  *
- * {@see ChatSignalConstants::EMIT_CHAT_USER_ROW_UPDATED}: one {@see ChatSignalConstants::TABLE_MUTATION}
- * broadcast to every subscribed client except the initiator.
+ * {@see ChatSignalConstants::EMIT_CHAT_USER_ROW_UPDATED}: one
+ * {@see ChatSignalConstants::TABLE_MUTATION_PENDING} broadcast to every
+ * subscribed client except the initiator.
  * The mapper preserves the source table key embedded in {@see EmitDbChangeSignalData},
  * so user-related emits can target `adminUsers` or `hilosUsers` independently.
  *
@@ -53,7 +54,7 @@ final class ChatSignalMapper implements SignalMapperInterface
         return [
             new EmitFanoutItem(
                 delivery: EmitFanoutDelivery::AllExcept,
-                wireSignalName: ChatSignalConstants::TABLE_MUTATION,
+                wireSignalName: ChatSignalConstants::TABLE_MUTATION_PENDING,
                 innerPayload: $tableMutation,
                 excludeAcceptKey: $data->excludeAcceptKey,
             ),

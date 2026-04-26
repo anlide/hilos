@@ -186,8 +186,11 @@ final class ChatSignalConstants
     /** @var string Server responds with fresh table data */
     public const string TABLE_DATA = 'table_data';
 
-    /** @var string Server broadcasts a single table mutation */
+    /** @var string Server sends a single immediate table mutation */
     public const string TABLE_MUTATION = 'table_mutation';
+
+    /** @var string Server broadcasts a single pending table mutation */
+    public const string TABLE_MUTATION_PENDING = 'table_mutation_pending';
 
     /** @var string Server sends a table action error to the originating client */
     public const string TABLE_ACTION_ERROR = 'table_action_error';

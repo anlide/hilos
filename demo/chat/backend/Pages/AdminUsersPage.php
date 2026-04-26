@@ -128,8 +128,8 @@ final class AdminUsersPage extends AbstractChatPage
         );
 
         $this->getChatAgent()->sendToUser(ChatSignalConstants::TABLE_MUTATION, $acceptKey, $signal);
-        $this->getChatAgent()->sendToAllUsers(ChatSignalConstants::TABLE_MUTATION, $signal, $acceptKey);
-        $this->getChatAgent()->sendToAllUsers(ChatSignalConstants::TABLE_MUTATION, $hilosUsersSignal, $acceptKey);
+        $this->getChatAgent()->sendToAllUsers(ChatSignalConstants::TABLE_MUTATION_PENDING, $signal, $acceptKey);
+        $this->getChatAgent()->sendToAllUsers(ChatSignalConstants::TABLE_MUTATION_PENDING, $hilosUsersSignal, $acceptKey);
 
         $event = Hilos::$db->events->actions->addUserRenamedByAdmin(
             userId: $dto->id,

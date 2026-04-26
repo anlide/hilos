@@ -9,8 +9,17 @@ const isTableMutationType = (value: unknown): value is TableMutationType => {
   return value === 'create' || value === 'update' || value === 'delete'
 }
 
+const ROUTING_METADATA_KEYS = ['acceptKey', 'targetAcceptKey', 'excludeAcceptKey', 'targetGroup'] as const
+
+const hasRoutingMetadata = (value: Record<string, unknown>): boolean => {
+  return ROUTING_METADATA_KEYS.some((key) => key in value)
+}
+
 const parseTableRowMutationDTO = (value: unknown): TableRowMutationDTO | null => {
   if (!isRecord(value) || !isTableMutationType(value.type)) {
+    return null
+  }
+  if (hasRoutingMetadata(value)) {
     return null
   }
   const rowKey = value.rowKey
@@ -55,18 +64,31 @@ export interface TableMutationPayload {
   mutation: TableRowMutationDTO
 }
 
+const parseTableMutationPayload = (raw: unknown): TableMutationPayload | null => {
+  if (!isRecord(raw) || typeof raw.tableKey !== 'string') {
+    return null
+  }
+  if (hasRoutingMetadata(raw)) {
+    return null
+  }
+  const mutation = parseTableRowMutationDTO(raw.mutation)
+  if (mutation === null) {
+    return null
+  }
+  return { tableKey: raw.tableKey, mutation }
+}
+
 export const tableMutation = new SignalDefinition<'table_mutation', TableMutationPayload>(
   'table_mutation',
-  (raw: unknown): TableMutationPayload | null => {
-    if (!isRecord(raw) || typeof raw.tableKey !== 'string') {
-      return null
-    }
-    const mutation = parseTableRowMutationDTO(raw.mutation)
-    if (mutation === null) {
-      return null
-    }
-    return { tableKey: raw.tableKey, mutation }
-  },
+  parseTableMutationPayload,
+)
+
+/**
+ * Signal: `table_mutation_pending` — single row mutation queued for user-controlled apply.
+ */
+export const tableMutationPending = new SignalDefinition<'table_mutation_pending', TableMutationPayload>(
+  'table_mutation_pending',
+  parseTableMutationPayload,
 )
 
 /**

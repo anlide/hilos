@@ -12,7 +12,7 @@ use Hilos\Core\Table\TableConstants;
 /**
  * Signal data for pushing a single table mutation to subscribers.
  *
- * Sent via WebSocket as `table_mutation` signal.
+ * Sent via WebSocket as `table_mutation` or `table_mutation_pending` signal.
  */
 class TableMutationSignalData extends SignalData implements SignalDataInterface
 {

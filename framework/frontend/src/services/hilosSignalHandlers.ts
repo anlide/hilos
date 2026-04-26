@@ -4,6 +4,7 @@ import {
   actionError,
   tableData,
   tableMutation,
+  tableMutationPending,
   tableActionError,
   guardianAgentStatusUpdate,
   subscriptionPageHilosGuardian,
@@ -33,7 +34,12 @@ export function registerHilosSignalHandlers(router: VueSignalRouter): void {
 
   router.on(tableMutation, ({ tableKey, mutation }) => {
     const tableStore = useTableStore()
-    tableStore.applyTableMutation(tableKey, mutation)
+    tableStore.applyImmediateTableMutation(tableKey, mutation)
+  })
+
+  router.on(tableMutationPending, ({ tableKey, mutation }) => {
+    const tableStore = useTableStore()
+    tableStore.queuePendingTableMutation(tableKey, mutation)
   })
 
   router.on(tableActionError, ({ tableKey, message }) => {

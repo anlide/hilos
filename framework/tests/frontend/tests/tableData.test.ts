@@ -1,6 +1,31 @@
 import { describe, expect, it } from 'vitest'
-import { applyTableMutations } from '@/composables/useTableData'
+import { applyTableMutation, applyTableMutations } from '@/composables/useTableData'
 import type { TableDataState } from '@/types/table'
+
+describe('applyTableMutation', () => {
+  it('applies immediate mutation without clearing pending mutations', () => {
+    const state: TableDataState = {
+      rows: [{ id: 1, name: 'Old' }],
+      totalCount: 1,
+      offset: 0,
+      limit: 10,
+      mutations: [
+        { type: 'update', rowKey: 2, row: { id: 2, name: 'Pending' } },
+      ],
+    }
+
+    const result = applyTableMutation(state, {
+      type: 'update',
+      rowKey: 1,
+      row: { name: 'Immediate' },
+    })
+
+    expect(result.state.rows).toEqual([{ id: 1, name: 'Immediate' }])
+    expect(result.state.mutations).toEqual([
+      { type: 'update', rowKey: 2, row: { id: 2, name: 'Pending' } },
+    ])
+  })
+})
 
 describe('applyTableMutations', () => {
   it('matches rows by configured string row key field', () => {

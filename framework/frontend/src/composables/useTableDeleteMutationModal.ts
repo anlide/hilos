@@ -5,7 +5,7 @@ import { useTableStore } from '../stores'
 export const TABLE_DELETE_FAIL_TIMEOUT_MS = 12000
 
 /**
- * Delete confirmation flow: send action, show loading, close when TABLE_MUTATION delete matches row key.
+ * Delete confirmation flow: send action, show loading, close when the row delete is applied.
  */
 export function useTableDeleteMutationModal<T>(
   tableKey: string,
@@ -61,19 +61,23 @@ export function useTableDeleteMutationModal<T>(
   }
 
   watch(
-    () => tableStore.tableData[tableKey]?.mutations,
-    (mutations) => {
+    () => tableStore.tableData[tableKey],
+    (state) => {
       if (deleteTarget.value == null) return
       const rowKey = getRowKey(deleteTarget.value)
       if (rowKey === null || rowKey === undefined || rowKey === '' || !deleteLoading.value || deleteSuccessHandled.value) {
         return
       }
-      const muts = mutations ?? []
+      const muts = state?.mutations ?? []
       const tail = muts.slice(mutationsLengthBeforeDelete.value)
-      const ok = tail.some(
+      const pendingDeleteArrived = tail.some(
         (m) => m.type === 'delete' && String(m.rowKey) === String(rowKey),
       )
-      if (!ok) return
+      const rowKeyField = state?.rowKeyField ?? 'id'
+      const rowStillVisible = state?.rows.some(
+        (row) => String(row[rowKeyField]) === String(rowKey),
+      ) ?? true
+      if (!pendingDeleteArrived && rowStillVisible) return
 
       deleteSuccessHandled.value = true
       clearFailTimeout()
