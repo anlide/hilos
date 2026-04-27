@@ -18,7 +18,7 @@ Browser                    WS Server (Daemon)         ChatAgent (Worker)
   │                              │                   1. validate token → userId
   │                              │                   2. Connection::create(acceptKey, userId)
   │                              │                   3. send to RT connections collection
-  │                              │                   4. emit user online event if first connection
+  │                              │                   4. send user_presence_update if first connection
   │                              │                          │
   │◀────{ type:"handshake_response",                        │
   │       data:{user, token} }───────────────────────────────┤

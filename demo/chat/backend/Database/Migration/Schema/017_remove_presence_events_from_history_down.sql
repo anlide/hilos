@@ -1,0 +1,5 @@
+-- Migration Rollback: Remove runtime presence events from chat history
+-- Created: 2026-04-27
+-- Index: 017
+--
+-- Irreversible data cleanup: removed runtime presence events are not restored.

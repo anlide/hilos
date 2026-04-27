@@ -84,32 +84,6 @@ final class EventsActions extends DbActions
     }
 
     /**
-     * Appends the event emitted when a user gets their first active connection.
-     *
-     * @param int $userId User id that became online
-     * @return DbEvent Created event
-     * @throws HilosException On database or truth-source failure
-     * @throws CommandException If event id is null after sync
-     */
-    public function addUserOnline(int $userId): DbEvent
-    {
-        return $this->add(ChatEventType::USER_ONLINE->value, userId: $userId);
-    }
-
-    /**
-     * Appends the event emitted when a user loses their last active connection.
-     *
-     * @param int $userId User id that became offline
-     * @return DbEvent Created event
-     * @throws HilosException On database or truth-source failure
-     * @throws CommandException If event id is null after sync
-     */
-    public function addUserOffline(int $userId): DbEvent
-    {
-        return $this->add(ChatEventType::USER_OFFLINE->value, userId: $userId);
-    }
-
-    /**
      * Appends the event emitted when a user renames themselves.
      *
      * @param int $userId Renamed user id

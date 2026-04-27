@@ -29,6 +29,7 @@ import {
   botLeft,
   botUpdated,
   newEvent,
+  userPresenceUpdate,
   subscriptionPageHilosLogs,
   subscriptionPageHilosUser,
 } from '@/signals'
@@ -195,6 +196,7 @@ function buildSignalRouter() {
   signalRouter.on(botJoined, () => {})
   signalRouter.on(botLeft, () => {})
   signalRouter.on(botUpdated, () => {})
+  signalRouter.on(userPresenceUpdate, () => {})
 
   signalRouter.on(newEvent, ({ events }) => {
     const chatStore = useChatStore()

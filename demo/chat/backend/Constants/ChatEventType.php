@@ -23,12 +23,6 @@ enum ChatEventType: string
     /** User registered in chat */
     case USER_REGISTERED = 'user_registered';
 
-    /** User became online (first active connection) */
-    case USER_ONLINE = 'user_online';
-
-    /** User became offline (no active connections left) */
-    case USER_OFFLINE = 'user_offline';
-
     /** User renamed themselves */
     case USER_RENAMED = 'user_renamed';
 

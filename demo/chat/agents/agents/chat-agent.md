@@ -6,7 +6,7 @@ The central agent. Owns all shared DB and RT state. Handles WS connections, mess
 
 ## Responsibilities
 
-- **Handshake**: authenticate session token, create `Connection` RT state, send `HANDSHAKE_RESPONSE`
+- **Handshake**: authenticate session token, create `Connection` RT state, send `HANDSHAKE_RESPONSE`, broadcast runtime presence changes
 - **Message**: rate-limit check (10s), send to `ModeratorAgent` for moderation, on approval → save to `DbChatContext::events`, broadcast `NEW_EVENT`
 - **File upload**: receive binary WS frames, write to quarantine, then send to `ModeratorAgent`
 - **Moderation results**: receive approved/rejected from `ModeratorAgent`, update RT state, broadcast accordingly

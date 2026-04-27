@@ -21,14 +21,14 @@
       <template v-else>
         <div class="list-group list-group-flush">
           <div
-            v-for="event in visibleEvents"
+            v-for="event in chatStore.events"
             :key="event.id || `event-${event.timestamp}-${event.userId ?? event.botId ?? 'sys'}`"
             class="list-group-item border-0 bg-transparent"
           >
             <MessageItem :event="event" />
           </div>
         </div>
-        <div v-if="visibleEvents.length === 0" class="text-center text-muted p-5">
+        <div v-if="chatStore.events.length === 0" class="text-center text-muted p-5">
           <p class="mb-0">No events yet. Start chatting!</p>
         </div>
       </template>
@@ -160,8 +160,6 @@ const emit = defineEmits<{
   send: [message: string]
 }>()
 
-const hiddenEventTypes = new Set(['user_online', 'user_offline'])
-const visibleEvents = computed(() => chatStore.events.filter((event) => !hiddenEventTypes.has(event.type)))
 const currentUserModerationState = computed(() => chatStore.currentUserModerationState ?? null)
 const displayMessage = computed(() => {
   if (currentUserModerationState.value !== null) {
@@ -240,7 +238,7 @@ const handleInput = (event: Event) => {
   draftMessage.value = target.value
 }
 
-watch(() => visibleEvents.value.length, scrollToBottom)
+watch(() => chatStore.events.length, scrollToBottom)
 onMounted(scrollToBottom)
 
 const openFilePicker = () => {

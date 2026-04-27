@@ -56,9 +56,7 @@ final class User extends DbItem
             ObjectUser::lastActivity => $this->_object->lastActivity,
             RtChatContext::connections => Hilos::$rt->connections->forUser($this->id),
             self::ONLINE_SESSION_COUNT_KEY => $this->_object->id !== null ? count($this->connections) : 0,
-            RtChatContext::chatUserState => $this->_object->id !== null
-                ? Hilos::$rt->userStates[$this->_object->id]
-                : null,
+            RtChatContext::chatUserState => $this->_object->id !== null ? Hilos::$rt->userStates[$this->_object->id] : null,
             default => parent::__get($name),
         };
     }

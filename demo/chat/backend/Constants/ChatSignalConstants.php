@@ -70,6 +70,9 @@ final class ChatSignalConstants
     /** @var string New event signal name */
     public const string NEW_EVENT = 'new_event';
 
+    /** @var string Server → frontend: runtime-derived user presence changed */
+    public const string USER_PRESENCE_UPDATE = 'user_presence_update';
+
     /** @var string Subscription page main signal name */
     public const string SUBSCRIPTION_PAGE_MAIN = 'subscription_page_main';
 

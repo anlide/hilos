@@ -18,6 +18,7 @@ use Demo\Chat\Core\Router\DTO\ModerationBotResultSignalData;
 use Demo\Chat\Core\Router\DTO\ModerationFileRequestSignalData;
 use Demo\Chat\Core\Router\DTO\ModerationFileResultSignalData;
 use Demo\Chat\Core\Router\DTO\ModerationResultSignalData;
+use Demo\Chat\Core\Router\DTO\UserPresenceSignalData;
 use Demo\Chat\Database\DbChatContext;
 use Demo\Chat\Database\Pages\ChatPageCatalog;
 use Demo\Chat\Database\View\Collection\Events;
@@ -96,7 +97,7 @@ class ChatAgent extends AbstractAgent
     }
 
     /**
-     * Authenticate session token, register the connection, optionally emit user registration/online events, and send
+     * Authenticate session token, register the connection, emit user registration or presence updates, and send
      * {@see ChatSignalConstants::HANDSHAKE_RESPONSE} with the current user in entities and page catalog.
      * Moderation and file-upload session state are sent on main page subscribe only.
      *
@@ -130,9 +131,6 @@ class ChatAgent extends AbstractAgent
         if ($wasRegisteredNow) {
             $newEvents->add(Hilos::$db->events->actions->addUserRegistered($user->id));
         }
-        if ($hadNoConnections) {
-            $newEvents->add(Hilos::$db->events->actions->addUserOnline($user->id));
-        }
 
         if (count($newEvents) > 0) {
             $this->sendToAllUsers(
@@ -140,6 +138,10 @@ class ChatAgent extends AbstractAgent
                 new ChatEventSignalDTO($userEntities->withFullAppended(DbChatContext::events, $newEvents)),
                 $data->acceptKey,
             );
+        }
+
+        if ($hadNoConnections) {
+            $this->broadcastUserPresence($user->id, $data->acceptKey);
         }
 
         Hilos::$rt->userStates->actions->ensure($user->id);
@@ -155,7 +157,7 @@ class ChatAgent extends AbstractAgent
     }
 
     /**
-     * Unregister the WebSocket connection; if that was the user's last tab, append {@see ChatEventType::USER_OFFLINE} and broadcast.
+     * Unregister the WebSocket connection and broadcast presence when that was the user's last tab.
      *
      * @param WebSocketCloseSignalDTO $data Closed connection {@see WebSocketCloseSignalDTO::$acceptKey}
      * @param string $source Framework signal source identifier (unused)
@@ -172,24 +174,30 @@ class ChatAgent extends AbstractAgent
         Hilos::$rt->connections->actions->unregister($data->acceptKey);
 
         if (count(Hilos::$rt->connections->forUser($userId)) === 0) {
-            $event = Hilos::$db->events->actions->addUserOffline($userId);
-            $user = Hilos::$db->users[$userId] ?? null;
-            if ($user === null) {
-                return;
-            }
-
-            $this->sendToAllUsers(
-                ChatSignalConstants::NEW_EVENT,
-                new ChatEventSignalDTO(
-                    new EntitiesChangesDTO(
-                        full: [
-                            DbChatContext::users => Users::fromSingleItem($user),
-                            DbChatContext::events => Events::fromSingleItem($event),
-                        ],
-                    ),
-                ),
-            );
+            $this->broadcastUserPresence($userId);
         }
+    }
+
+    /**
+     * Broadcasts runtime-derived presence through a user entity update, without appending chat history events.
+     *
+     * @param int $userId User whose active connection count changed
+     * @param ?string $excludeAcceptKey Optional connection to exclude from broadcast
+     */
+    private function broadcastUserPresence(int $userId, ?string $excludeAcceptKey = null): void
+    {
+        $user = Hilos::$db->users[$userId] ?? null;
+        if ($user === null) {
+            return;
+        }
+
+        $this->sendToAllUsers(
+            ChatSignalConstants::USER_PRESENCE_UPDATE,
+            UserPresenceSignalData::fromEntities(
+                new EntitiesChangesDTO(full: [DbChatContext::users => Users::fromSingleItem($user)]),
+            ),
+            $excludeAcceptKey,
+        );
     }
 
     /**
