@@ -13,42 +13,86 @@
       Loading users…
     </p>
     <template v-else>
-      <div class="table-responsive">
-        <table class="table table-sm table-striped align-middle mb-0">
-          <thead>
-            <tr>
-              <th scope="col">ID</th>
-              <th scope="col">Name</th>
-              <th scope="col">Last activity</th>
-              <th scope="col">Online sessions</th>
-              <th scope="col">Presence</th>
-              <th scope="col" class="text-end">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="u in rowsWithPresence" :key="u.id">
-              <td><code>{{ u.id }}</code></td>
-              <td>{{ u.name }}</td>
-              <td class="small">{{ formatDate(u.lastActivity) }}</td>
-              <td>{{ u.onlineSessionCount ?? 0 }}</td>
-              <td>
-                <span class="badge" :class="getPresenceBadgeClass(u.presence)">
-                  {{ u.presence || 'offline' }}
-                </span>
-              </td>
-              <td class="text-end">
-                <router-link
-                  class="btn btn-sm btn-outline-primary"
-                  :to="`/hilos/users/${encodeURIComponent(String(u.id))}`"
-                >
-                  Open
-                </router-link>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-        <p v-if="rowsWithPresence.length === 0" class="text-body-secondary small mb-0 mt-2">No users found.</p>
-      </div>
+      <Table
+        :items="rowsWithPresence"
+        item-key="id"
+        :colspan="6"
+        :searchable="true"
+        search-placeholder="Search users..."
+        :search-fields="['id', 'name']"
+        :sortable="true"
+        :sortable-fields="['id', 'name', 'lastActivity']"
+        :pending-changes="pendingChanges"
+        :change-markers="changeMarkers"
+        @update-snapshot="handleApplyChanges"
+      >
+        <template #header="{ sort, handleSort, isFieldSortable }">
+          <th scope="col">
+            <button
+              v-if="isFieldSortable('id')"
+              class="btn btn-link p-0 text-decoration-none text-body fw-bold"
+              @click="handleSort('id')"
+            >
+              ID
+              <span v-if="sort.field === 'id'">
+                {{ sort.direction === 'asc' ? '↑' : '↓' }}
+              </span>
+            </button>
+            <span v-else>ID</span>
+          </th>
+          <th scope="col">
+            <button
+              v-if="isFieldSortable('name')"
+              class="btn btn-link p-0 text-decoration-none text-body fw-bold"
+              @click="handleSort('name')"
+            >
+              Name
+              <span v-if="sort.field === 'name'">
+                {{ sort.direction === 'asc' ? '↑' : '↓' }}
+              </span>
+            </button>
+            <span v-else>Name</span>
+          </th>
+          <th scope="col">
+            <button
+              v-if="isFieldSortable('lastActivity')"
+              class="btn btn-link p-0 text-decoration-none text-body fw-bold"
+              @click="handleSort('lastActivity')"
+            >
+              Last activity
+              <span v-if="sort.field === 'lastActivity'">
+                {{ sort.direction === 'asc' ? '↑' : '↓' }}
+              </span>
+            </button>
+            <span v-else>Last activity</span>
+          </th>
+          <th scope="col">Online sessions</th>
+          <th scope="col">Presence</th>
+          <th scope="col" class="text-end">Actions</th>
+        </template>
+        <template #row="row">
+          <td><code>{{ row.item.id }}</code></td>
+          <td>{{ row.item.name }}</td>
+          <td class="small">{{ formatDate(row.item.lastActivity) }}</td>
+          <td>{{ row.item.onlineSessionCount ?? 0 }}</td>
+          <td>
+            <span class="badge" :class="getPresenceBadgeClass(row.item.presence)">
+              {{ row.item.presence || 'offline' }}
+            </span>
+          </td>
+          <td class="text-end">
+            <router-link
+              class="btn btn-sm btn-outline-primary"
+              :to="`/hilos/users/${encodeURIComponent(String(row.item.id))}`"
+            >
+              Open
+            </router-link>
+          </td>
+        </template>
+        <template #empty>
+          <p class="mb-0">No users found.</p>
+        </template>
+      </Table>
     </template>
   </DaemonSectionShell>
 </template>
@@ -57,7 +101,8 @@
 import { computed } from 'vue'
 import { useHead } from '@unhead/vue'
 import DaemonSectionShell from '@hilos/sdk/views/Hilos/Daemon/DaemonSectionShell.vue'
-import { getTableDisplayRows } from '@hilos/sdk/composables'
+import { Table } from '@hilos/sdk/components'
+import { getTableDisplayRows, getTablePendingChanges, getTableChangeMarkers } from '@hilos/sdk/composables'
 import { useConnectionStore, useTableStore } from '@hilos/sdk/stores'
 import type { ChatUserTableRow } from '@hilos/sdk/types/chatUserTableRow'
 import { useChatStore } from '@/stores'
@@ -68,6 +113,8 @@ const chatStore = useChatStore()
 const tableKey = 'hilosUsers'
 const tableState = computed(() => tableStore.tableData[tableKey])
 const displayRows = computed(() => getTableDisplayRows<ChatUserTableRow>(tableState.value))
+const pendingChanges = computed(() => getTablePendingChanges(tableState.value))
+const changeMarkers = computed(() => getTableChangeMarkers(tableState.value))
 
 const rowsWithPresence = computed(() =>
   displayRows.value.map((row) => {
@@ -77,6 +124,10 @@ const rowsWithPresence = computed(() =>
     return { ...row, presence, onlineSessionCount }
   }),
 )
+
+const handleApplyChanges = () => {
+  tableStore.applyPendingMutations(tableKey)
+}
 
 const formatDate = (dateStr: string | null | undefined): string => {
   if (!dateStr) return 'Never'

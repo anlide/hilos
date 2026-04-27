@@ -5,11 +5,18 @@ declare(strict_types=1);
 namespace Demo\Chat\Tests\Unit;
 
 use Demo\Chat\Constants\ChatSignalConstants;
+use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Router\ChatSignalMapper;
+use Demo\Chat\Core\Router\DTO\UserPresenceEmitPayload;
 use Demo\Chat\Database\DbChatContext;
+use Demo\Chat\Runtime\View\Context\RtChatContext;
 use Demo\Chat\Tables\TableChatContext;
+use Hilos\Constants\HilosPageConstants;
+use Hilos\Constants\HilosPageRouteParams;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Router\DTO\EmitDbChangeSignalData;
+use Hilos\Core\Router\DTO\EmitRtChangeSignalData;
+use Hilos\Core\Router\DTO\FrontendChangesDTO;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\EmitFanoutDelivery;
 use Hilos\Core\Router\SignalName;
@@ -24,6 +31,7 @@ use Hilos\Core\Table\DTO\TableSourceEventDTO;
 use Hilos\Core\Table\DTO\TableSnapshotDTO;
 use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\Core\Table\Row\GenericTableRow;
+use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -75,6 +83,87 @@ final class ChatSignalMapperTest extends TestCase
         );
 
         $this->assertSame([], (new ChatSignalMapper($this->makeRouter(), $this->makeTableContext()))->mapDbEmit($signal));
+    }
+
+    public function testMapChatUserPresenceUpdatedBuildsPageScopedFanout(): void
+    {
+        $router = $this->makeRouter();
+        $router->subscribeToPage(PageConstants::MAIN, new WebSocketPageSubscribeSignalDTO(
+            'main-ak',
+            PageConstants::MAIN,
+            [],
+        ));
+        $router->subscribeToPage(PageConstants::ADMIN_USERS, new WebSocketPageSubscribeSignalDTO(
+            'admin-ak',
+            PageConstants::ADMIN_USERS,
+            [],
+        ));
+        $router->subscribeToPage(PageConstants::ADMIN_USERS, new WebSocketPageSubscribeSignalDTO(
+            'excluded-ak',
+            PageConstants::ADMIN_USERS,
+            [],
+        ));
+        $router->subscribeToPage(HilosPageConstants::HILOS_USERS, new WebSocketPageSubscribeSignalDTO(
+            'hilos-users-ak',
+            HilosPageConstants::HILOS_USERS,
+            [],
+        ));
+        $router->subscribeToPage(HilosPageConstants::HILOS_USER, new WebSocketPageSubscribeSignalDTO(
+            'hilos-user-7-ak',
+            HilosPageConstants::HILOS_USER,
+            [HilosPageRouteParams::HILOS_USER_USER_ID => '7'],
+        ));
+        $router->subscribeToPage(HilosPageConstants::HILOS_USER, new WebSocketPageSubscribeSignalDTO(
+            'hilos-user-8-ak',
+            HilosPageConstants::HILOS_USER,
+            [HilosPageRouteParams::HILOS_USER_USER_ID => '8'],
+        ));
+
+        $signal = new SignalDTO(
+            new SignalSource(SignalSource::AGENT, 'chat', null),
+            new SignalType(SignalTypeConstants::EMIT_RT_CHANGE),
+            new SignalName(ChatSignalConstants::EMIT_CHAT_USER_PRESENCE_UPDATED),
+            new EmitRtChangeSignalData(
+                collectionKey: RtChatContext::connections,
+                stateId: '7',
+                payload: UserPresenceEmitPayload::fromFrontendChanges(
+                    7,
+                    new FrontendChangesDTO(updates: [
+                        'userPresence' => [['userId' => 7, 'presence' => 'online']],
+                    ]),
+                    new FrontendChangesDTO(updates: [
+                        'userPresence' => [['userId' => 7, 'presence' => 'online']],
+                        'userConnectionStats' => [['userId' => 7, 'onlineSessionCount' => 2]],
+                    ]),
+                )->toArray(),
+                excludeAcceptKey: 'excluded-ak',
+            ),
+        );
+
+        $items = (new ChatSignalMapper($router, $this->makeTableContext()))->mapRtEmit($signal);
+
+        $this->assertCount(4, $items);
+        $this->assertSame(
+            ['main-ak', 'admin-ak', 'hilos-users-ak', 'hilos-user-7-ak'],
+            array_map(static fn ($item) => $item->targetAcceptKey, $items),
+        );
+        foreach ($items as $item) {
+            $this->assertSame(EmitFanoutDelivery::Single, $item->delivery);
+            $this->assertSame(ChatSignalConstants::USER_PRESENCE_UPDATE, $item->wireSignalName);
+        }
+
+        $this->assertArrayNotHasKey(
+            'userConnectionStats',
+            $items[0]->innerPayload->toArray()['frontend']['updates'],
+        );
+        $this->assertSame(
+            [['userId' => 7, 'onlineSessionCount' => 2]],
+            $items[1]->innerPayload->toArray()['frontend']['updates']['userConnectionStats'],
+        );
+        $this->assertSame(
+            [['userId' => 7, 'onlineSessionCount' => 2]],
+            $items[3]->innerPayload->toArray()['frontend']['updates']['userConnectionStats'],
+        );
     }
 
     private function makeRouter(): SignalRouter

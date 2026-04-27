@@ -8,9 +8,11 @@ use Demo\Chat\Agents\ChatAgent;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\HttpHeaders;
 use Demo\Chat\Constants\PageConstants;
+use Demo\Chat\Core\Router\DTO\UserPresenceEmitPayload;
 use Demo\Chat\Core\Router\ChatSignalRouter;
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\View\Context\RtChatContext;
+use Hilos\Core\Router\DTO\EmitRtChangeSignalData;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketCloseSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
@@ -59,7 +61,7 @@ final class ChatAgentPresenceTest extends IntegrationTestCase
             $this->assertSame($eventCountBeforeHandshake, count(Hilos::$db->events));
             $this->assertSame(1, count(Hilos::$rt->connections->forUser($user->id)));
             $this->assertNoPresenceEventsInHistory();
-            $this->assertContains(ChatSignalConstants::USER_PRESENCE_UPDATE, $this->drainQueuedSignalNames());
+            $this->assertContains(ChatSignalConstants::EMIT_CHAT_USER_PRESENCE_UPDATED, $this->drainQueuedSignalNames());
 
             $eventCountBeforeClose = count(Hilos::$db->events);
             Hilos::initSignalRouter(new ChatSignalRouter());
@@ -74,7 +76,57 @@ final class ChatAgentPresenceTest extends IntegrationTestCase
             $this->assertSame($eventCountBeforeClose, count(Hilos::$db->events));
             $this->assertSame(0, count(Hilos::$rt->connections->forUser($user->id)));
             $this->assertNoPresenceEventsInHistory();
-            $this->assertContains(ChatSignalConstants::USER_PRESENCE_UPDATE, $this->drainQueuedSignalNames());
+            $this->assertContains(ChatSignalConstants::EMIT_CHAT_USER_PRESENCE_UPDATED, $this->drainQueuedSignalNames());
+        } finally {
+            Hilos::$rt->connections->actions->clear();
+        }
+    }
+
+    public function testEveryConnectionCountChangeEmitsPresenceStats(): void
+    {
+        RtTruthSourceRegistry::register(RtChatContext::connections, true, self::TEST_AGENT_ID);
+        Hilos::$rt->connections->actions->clear();
+        Hilos::$db->events->actions->deleteAll();
+
+        $sessionToken = bin2hex(random_bytes(16));
+        $user = Hilos::$db->users->actions->register($sessionToken);
+        $agent = new ChatAgent();
+
+        Hilos::initSignalRouter(new ChatSignalRouter());
+
+        try {
+            $agent->onSignalHandshake(
+                new WebSocketHandshakeSignalDTO(
+                    headers: [],
+                    acceptKey: 'presence-ak-1',
+                    cookies: [],
+                    clientIp: '127.0.0.1',
+                    queryParams: [HttpHeaders::SESSION_TOKEN => $sessionToken],
+                ),
+                '',
+                '',
+            );
+            $this->assertSinglePresenceEmitStatsCount($user->id, 1);
+
+            $agent->onSignalHandshake(
+                new WebSocketHandshakeSignalDTO(
+                    headers: [],
+                    acceptKey: 'presence-ak-2',
+                    cookies: [],
+                    clientIp: '127.0.0.1',
+                    queryParams: [HttpHeaders::SESSION_TOKEN => $sessionToken],
+                ),
+                '',
+                '',
+            );
+            $this->assertSinglePresenceEmitStatsCount($user->id, 2);
+
+            $agent->onSignalConnectionClose(new WebSocketCloseSignalDTO('presence-ak-2'), '', '');
+            $this->assertSinglePresenceEmitStatsCount($user->id, 1);
+
+            $agent->onSignalConnectionClose(new WebSocketCloseSignalDTO('presence-ak-1'), '', '');
+            $this->assertSinglePresenceEmitStatsCount($user->id, 0);
+            $this->assertNoPresenceEventsInHistory();
         } finally {
             Hilos::$rt->connections->actions->clear();
         }
@@ -91,6 +143,37 @@ final class ChatAgentPresenceTest extends IntegrationTestCase
         }
 
         return $names;
+    }
+
+    /**
+     * @return list<SignalDTO>
+     */
+    private function drainPresenceEmitSignals(): array
+    {
+        $signals = [];
+        while (($signal = Hilos::$sr?->getNextQueuedSignal()) instanceof SignalDTO) {
+            if ($signal->signalName->getName() === ChatSignalConstants::EMIT_CHAT_USER_PRESENCE_UPDATED) {
+                $signals[] = $signal;
+            }
+        }
+
+        return $signals;
+    }
+
+    private function assertSinglePresenceEmitStatsCount(int $userId, int $onlineSessionCount): void
+    {
+        $signals = $this->drainPresenceEmitSignals();
+        $this->assertCount(1, $signals);
+        $emitData = $signals[0]->data;
+        $this->assertInstanceOf(EmitRtChangeSignalData::class, $emitData);
+
+        $payload = UserPresenceEmitPayload::fromArray($emitData->payload);
+
+        $this->assertSame($userId, $payload->userId);
+        $this->assertSame(
+            [['userId' => $userId, 'onlineSessionCount' => $onlineSessionCount]],
+            $payload->statsFrontend()->toArray()['updates']['userConnectionStats'],
+        );
     }
 
     private function assertNoPresenceEventsInHistory(): void

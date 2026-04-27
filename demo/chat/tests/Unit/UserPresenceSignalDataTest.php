@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Demo\Chat\Tests\Unit;
 
 use Demo\Chat\Core\Router\DTO\UserPresenceSignalData;
+use Demo\Chat\Core\Router\DTO\UserPresenceEmitPayload;
 use Hilos\Core\Router\DTO\FrontendChangesDTO;
 use Hilos\Core\Router\SignalDataInterface;
 use PHPUnit\Framework\TestCase;
@@ -58,5 +59,36 @@ final class UserPresenceSignalDataTest extends TestCase
         $restored = UserPresenceSignalData::fromArray(['frontend' => 'bad']);
 
         $this->assertSame(['frontend' => []], $restored->toArray());
+    }
+
+    public function testEmitPayloadRoundtripPreservesFrontendVariants(): void
+    {
+        $original = UserPresenceEmitPayload::fromFrontendChanges(
+            7,
+            new FrontendChangesDTO(updates: [
+                'userPresence' => [['userId' => 7, 'presence' => 'online']],
+            ]),
+            new FrontendChangesDTO(updates: [
+                'userPresence' => [['userId' => 7, 'presence' => 'online']],
+                'userConnectionStats' => [['userId' => 7, 'onlineSessionCount' => 2]],
+            ]),
+        );
+
+        $restored = UserPresenceEmitPayload::fromArray($original->toArray());
+
+        $this->assertSame(7, $restored->userId);
+        $this->assertSame(
+            ['updates' => ['userPresence' => [['userId' => 7, 'presence' => 'online']]]],
+            $restored->frontend()->toArray(),
+        );
+        $this->assertSame(
+            [
+                'updates' => [
+                    'userPresence' => [['userId' => 7, 'presence' => 'online']],
+                    'userConnectionStats' => [['userId' => 7, 'onlineSessionCount' => 2]],
+                ],
+            ],
+            $restored->statsFrontend()->toArray(),
+        );
     }
 }

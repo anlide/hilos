@@ -9,7 +9,6 @@ use Demo\Chat\Constants\ChatCronConstants;
 use Demo\Chat\Constants\ChatEventType;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\HttpHeaders;
-use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Router\DTO\ChatEventSignalDTO;
 use Demo\Chat\Core\Router\DTO\FileModerationStateUpdateSignalData;
 use Demo\Chat\Core\Router\DTO\FileUploadCompleteSignalData;
@@ -19,7 +18,7 @@ use Demo\Chat\Core\Router\DTO\ModerationBotResultSignalData;
 use Demo\Chat\Core\Router\DTO\ModerationFileRequestSignalData;
 use Demo\Chat\Core\Router\DTO\ModerationFileResultSignalData;
 use Demo\Chat\Core\Router\DTO\ModerationResultSignalData;
-use Demo\Chat\Core\Router\DTO\UserPresenceSignalData;
+use Demo\Chat\Core\Router\DTO\UserPresenceEmitPayload;
 use Demo\Chat\Database\DbChatContext;
 use Demo\Chat\Database\Pages\ChatPageCatalog;
 use Demo\Chat\Database\View\Collection\Events;
@@ -31,12 +30,10 @@ use Demo\Chat\Runtime\View\Context\RtChatContext;
 use Demo\Chat\Runtime\View\Item\Connection as RuntimeConnection;
 use Demo\Chat\Core\Router\DTO\ModerationStateUpdateSignalData;
 use Demo\Chat\Socket\WebSocket\DTO\HandshakeResponseSignalData;
-use Hilos\Constants\HilosPageConstants;
-use Hilos\Constants\HilosPageRouteParams;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\EntitiesChangesDTO;
-use Hilos\Core\Router\DTO\FrontendChangesDTO;
+use Hilos\Core\Router\DTO\EmitRtChangeSignalData;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Fs\FsException;
@@ -127,7 +124,6 @@ class ChatAgent extends AbstractAgent
 
         Hilos::$ac?->setBrowserSessionIdentity($sessionToken, 'user_id', (string)$user->id);
 
-        $hadNoConnections = count(Hilos::$rt->connections->forUser($user->id)) === 0;
         Hilos::$rt->connections->actions->register($data->acceptKey, $user->id);
 
         $userFrontend = UserFrontendStateProjector::fullForUser($user);
@@ -147,9 +143,7 @@ class ChatAgent extends AbstractAgent
             );
         }
 
-        if ($hadNoConnections) {
-            $this->broadcastUserPresence($user->id, $data->acceptKey);
-        }
+        $this->broadcastUserPresence($user->id, $data->acceptKey);
 
         Hilos::$rt->userStates->actions->ensure($user->id);
 
@@ -164,7 +158,7 @@ class ChatAgent extends AbstractAgent
     }
 
     /**
-     * Unregister the WebSocket connection and broadcast presence when that was the user's last tab.
+     * Unregister the WebSocket connection and broadcast the new runtime presence summary.
      *
      * @param WebSocketCloseSignalDTO $data Closed connection {@see WebSocketCloseSignalDTO::$acceptKey}
      * @param string $source Framework signal source identifier (unused)
@@ -179,18 +173,9 @@ class ChatAgent extends AbstractAgent
 
         $userId = Hilos::$rt->connections[$data->acceptKey]->userId;
         Hilos::$rt->connections->actions->unregister($data->acceptKey);
-
-        if (count(Hilos::$rt->connections->forUser($userId)) === 0) {
-            $this->broadcastUserPresence($userId);
-        }
+        $this->broadcastUserPresence($userId);
     }
 
-    /**
-     * Sends runtime-derived user state to subscribers whose page contract includes it.
-     *
-     * @param int $userId User whose active connection count changed
-     * @param ?string $excludeAcceptKey Optional connection to exclude from broadcast
-     */
     private function broadcastUserPresence(int $userId, ?string $excludeAcceptKey = null): void
     {
         $user = Hilos::$db->users[$userId] ?? null;
@@ -198,56 +183,19 @@ class ChatAgent extends AbstractAgent
             return;
         }
 
-        $statsFrontend = UserFrontendStateProjector::updatesForUser($user, includeConnectionStats: true);
-
-        $this->sendUserStateUpdateToPage(
-            PageConstants::MAIN,
-            UserFrontendStateProjector::updatesForUser($user),
-            $excludeAcceptKey,
+        $this->emitChangeRt(
+            ChatSignalConstants::EMIT_CHAT_USER_PRESENCE_UPDATED,
+            new EmitRtChangeSignalData(
+                collectionKey: RtChatContext::connections,
+                stateId: (string) $userId,
+                payload: UserPresenceEmitPayload::fromFrontendChanges(
+                    $userId,
+                    UserFrontendStateProjector::updatesForUser($user),
+                    UserFrontendStateProjector::updatesForUser($user, includeConnectionStats: true),
+                )->toArray(),
+                excludeAcceptKey: $excludeAcceptKey,
+            ),
         );
-        $this->sendUserStateUpdateToPage(PageConstants::ADMIN_USERS, $statsFrontend, $excludeAcceptKey);
-        $this->sendUserStateUpdateToPage(HilosPageConstants::HILOS_USERS, $statsFrontend, $excludeAcceptKey);
-
-        foreach (Hilos::$sr->getAcceptKeysForPage(
-            HilosPageConstants::HILOS_USER,
-            HilosPageRouteParams::HILOS_USER_USER_ID,
-            (string) $userId,
-        ) as $targetAcceptKey) {
-            if ($targetAcceptKey === $excludeAcceptKey) {
-                continue;
-            }
-
-            $this->sendToUser(
-                ChatSignalConstants::USER_PRESENCE_UPDATE,
-                $targetAcceptKey,
-                UserPresenceSignalData::fromFrontendChanges($statsFrontend),
-            );
-        }
-    }
-
-    /**
-     * Sends user frontend state updates to every current subscriber of one page.
-     *
-     * @param string $page Page contract key
-     * @param FrontendChangesDTO $frontend Frontend state update
-     * @param ?string $excludeAcceptKey Optional connection to exclude
-     */
-    private function sendUserStateUpdateToPage(
-        string $page,
-        FrontendChangesDTO $frontend,
-        ?string $excludeAcceptKey,
-    ): void {
-        foreach (Hilos::$sr->getAcceptKeysForPage($page) as $targetAcceptKey) {
-            if ($targetAcceptKey === $excludeAcceptKey) {
-                continue;
-            }
-
-            $this->sendToUser(
-                ChatSignalConstants::USER_PRESENCE_UPDATE,
-                $targetAcceptKey,
-                UserPresenceSignalData::fromFrontendChanges($frontend),
-            );
-        }
     }
 
     /**

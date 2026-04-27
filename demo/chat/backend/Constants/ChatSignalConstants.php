@@ -185,6 +185,9 @@ final class ChatSignalConstants
     /** @var string DB user row updated; {@see ChatSignalMapper} fan-out rules */
     public const string EMIT_CHAT_USER_ROW_UPDATED = 'emit_chat_user_row_updated';
 
+    /** @var string RT user presence changed; {@see ChatSignalMapper} page-scoped fan-out rules */
+    public const string EMIT_CHAT_USER_PRESENCE_UPDATED = 'emit_chat_user_presence_updated';
+
     // ── Table signals (server → client) ──────────────────────────────────
     /** @var string Server responds with fresh table data */
     public const string TABLE_DATA = 'table_data';

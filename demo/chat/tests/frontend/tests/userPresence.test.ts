@@ -16,6 +16,17 @@ describe('userPresenceUpdate', () => {
     })).toBeUndefined()
   })
 
+  it('accepts a frontend state envelope with user presence and connection stats', () => {
+    expect(userPresenceUpdate.parse({
+      frontend: {
+        updates: {
+          userPresence: [{ userId: 7, presence: 'online' }],
+          userConnectionStats: [{ userId: 7, onlineSessionCount: 2 }],
+        },
+      },
+    })).toBeUndefined()
+  })
+
   it('rejects malformed payloads', () => {
     expect(userPresenceUpdate.parse(null)).toBeNull()
     expect(userPresenceUpdate.parse([])).toBeNull()

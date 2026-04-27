@@ -5,9 +5,17 @@ declare(strict_types=1);
 namespace Demo\Chat\Core\Router;
 
 use Demo\Chat\Constants\ChatSignalConstants;
+use Demo\Chat\Constants\PageConstants;
+use Demo\Chat\Core\Router\DTO\UserPresenceEmitPayload;
+use Demo\Chat\Core\Router\DTO\UserPresenceSignalData;
 use Demo\Chat\Hilos;
+use Demo\Chat\Runtime\View\Context\RtChatContext;
+use Hilos\Constants\HilosPageConstants;
+use Hilos\Constants\HilosPageRouteParams;
 use Hilos\Core\Router\DTO\EmitDbChangeSignalData;
 use Hilos\Core\Router\DTO\EmitFanoutItem;
+use Hilos\Core\Router\DTO\EmitRtChangeSignalData;
+use Hilos\Core\Router\DTO\FrontendChangesDTO;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\EmitFanoutDelivery;
 use Hilos\Core\Router\SignalMapperInterface;
@@ -68,7 +76,15 @@ final class ChatSignalMapper implements SignalMapperInterface
      */
     public function mapRtEmit(SignalDTO $emit): array
     {
-        return [];
+        $data = $emit->data;
+        if (!$data instanceof EmitRtChangeSignalData) {
+            return [];
+        }
+
+        return match ($emit->signalName->getName()) {
+            ChatSignalConstants::EMIT_CHAT_USER_PRESENCE_UPDATED => $this->mapChatUserPresenceUpdated($data),
+            default => [],
+        };
     }
 
     /**
@@ -102,5 +118,96 @@ final class ChatSignalMapper implements SignalMapperInterface
         }
 
         return $items;
+    }
+
+    /**
+     * Builds page-scoped user presence fan-out from the daemon-side subscription registry.
+     *
+     * @param EmitRtChangeSignalData $data Runtime emit payload from ChatAgent
+     * @return list<EmitFanoutItem>
+     */
+    private function mapChatUserPresenceUpdated(EmitRtChangeSignalData $data): array
+    {
+        if ($data->collectionKey !== RtChatContext::connections) {
+            return [];
+        }
+
+        $router = $this->router ?? Hilos::$sr;
+        if ($router === null) {
+            return [];
+        }
+
+        $payload = UserPresenceEmitPayload::fromArray($data->payload);
+        if ($payload->userId <= 0) {
+            return [];
+        }
+
+        $items = [];
+        $this->appendPresenceUpdatesForPageSubscribers(
+            $items,
+            $router,
+            PageConstants::MAIN,
+            $payload->frontend(),
+            $data->excludeAcceptKey,
+        );
+        $this->appendPresenceUpdatesForPageSubscribers(
+            $items,
+            $router,
+            PageConstants::ADMIN_USERS,
+            $payload->statsFrontend(),
+            $data->excludeAcceptKey,
+        );
+        $this->appendPresenceUpdatesForPageSubscribers(
+            $items,
+            $router,
+            HilosPageConstants::HILOS_USERS,
+            $payload->statsFrontend(),
+            $data->excludeAcceptKey,
+        );
+        $this->appendPresenceUpdatesForPageSubscribers(
+            $items,
+            $router,
+            HilosPageConstants::HILOS_USER,
+            $payload->statsFrontend(),
+            $data->excludeAcceptKey,
+            HilosPageRouteParams::HILOS_USER_USER_ID,
+            (string) $payload->userId,
+        );
+
+        return $items;
+    }
+
+    /**
+     * Appends one single-target user presence message per matching page subscriber.
+     *
+     * @param list<EmitFanoutItem> $items Fan-out items being assembled
+     * @param SignalRouter $router Daemon-side router with current subscriptions
+     * @param string $page Page contract key
+     * @param FrontendChangesDTO $frontend Frontend state update for this page contract
+     * @param ?string $excludeAcceptKey Optional connection to skip
+     * @param ?string $paramKey Optional route param filter key
+     * @param ?string $paramValue Optional route param filter value
+     */
+    private function appendPresenceUpdatesForPageSubscribers(
+        array &$items,
+        SignalRouter $router,
+        string $page,
+        FrontendChangesDTO $frontend,
+        ?string $excludeAcceptKey,
+        ?string $paramKey = null,
+        ?string $paramValue = null,
+    ): void {
+        foreach ($router->getAcceptKeysForPage($page, $paramKey, $paramValue) as $targetAcceptKey) {
+            if ($targetAcceptKey === $excludeAcceptKey) {
+                continue;
+            }
+
+            $items[] = new EmitFanoutItem(
+                delivery: EmitFanoutDelivery::Single,
+                wireSignalName: ChatSignalConstants::USER_PRESENCE_UPDATE,
+                innerPayload: UserPresenceSignalData::fromFrontendChanges($frontend),
+                targetAcceptKey: $targetAcceptKey,
+            );
+        }
     }
 }
