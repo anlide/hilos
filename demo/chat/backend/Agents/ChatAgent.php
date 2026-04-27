@@ -98,9 +98,13 @@ class ChatAgent extends AbstractAgent
     }
 
     /**
-     * Authenticate session token, register the connection, emit user registration or presence updates, and send
+     * Authenticate session token, register the connection, emit user registration and presence updates, and send
      * {@see ChatSignalConstants::HANDSHAKE_RESPONSE} with the current user frontend projection and page catalog.
-     * Moderation and file-upload session state are sent on main page subscribe only.
+     *
+     * Runtime presence is emitted after every successful connection register so
+     * pages that show online session counts update for additional tabs, not only
+     * first online transitions. Moderation and file-upload session state are sent
+     * on main page subscribe only.
      *
      * @param WebSocketHandshakeSignalDTO $data Accept key and query params (expects {@see HttpHeaders::SESSION_TOKEN})
      * @param string $source Framework signal source identifier (unused)
@@ -158,7 +162,10 @@ class ChatAgent extends AbstractAgent
     }
 
     /**
-     * Unregister the WebSocket connection and broadcast the new runtime presence summary.
+     * Unregister the WebSocket connection and emit the new runtime presence summary.
+     *
+     * The summary is emitted after every close so online session counters update
+     * when a user still has other active tabs.
      *
      * @param WebSocketCloseSignalDTO $data Closed connection {@see WebSocketCloseSignalDTO::$acceptKey}
      * @param string $source Framework signal source identifier (unused)
@@ -176,6 +183,16 @@ class ChatAgent extends AbstractAgent
         $this->broadcastUserPresence($userId);
     }
 
+    /**
+     * Queue a runtime presence emit for daemon-side page fan-out.
+     *
+     * The worker owns the runtime collection mutation, while the daemon-side
+     * mapper owns current page subscription lookup and targeted WebSocket
+     * delivery.
+     *
+     * @param int $userId User whose active connection summary changed
+     * @param ?string $excludeAcceptKey Optional connection to skip during fan-out
+     */
     private function broadcastUserPresence(int $userId, ?string $excludeAcceptKey = null): void
     {
         $user = Hilos::$db->users[$userId] ?? null;
