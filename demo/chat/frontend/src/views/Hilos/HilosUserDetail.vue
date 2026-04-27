@@ -112,8 +112,8 @@ import { HilosPageRouteParams } from '@hilos/sdk/constants/hilosPageRouteParams'
 import { useWebSocket } from '@hilos/sdk/plugins/websocket'
 import { subscriptionPageError, type PageSubscriptionError } from '@hilos/sdk/signals'
 import { sendAction } from '@/services/websocketActions'
-import type { User } from '@/types'
 import { useChatStore } from '@/stores'
+import type { UserViewModel } from '@/stores'
 import { useSignalRouter } from '@/plugins/websocket'
 import {
   hilosUserUpdateSuccess,
@@ -138,10 +138,10 @@ const parsedUserId = computed((): number | null => {
   return Number.isFinite(n) && n > 0 ? n : null
 })
 
-const currentUser = computed((): User | null => {
+const currentUser = computed((): UserViewModel | null => {
   const id = parsedUserId.value
   if (id === null) return null
-  return chatStore.users.find((u) => u.id === id) ?? null
+  return chatStore.userViewModels.find((u) => u.id === id) ?? null
 })
 
 // Local subscription state for this page

@@ -6,11 +6,11 @@ describe('userPresenceUpdate', () => {
     expect(userPresenceUpdate.dispatchKey).toBe('user_presence_update')
   })
 
-  it('accepts an entity envelope with user presence', () => {
+  it('accepts a frontend state envelope with user presence', () => {
     expect(userPresenceUpdate.parse({
-      entities: {
-        full: {
-          users: [{ id: 7, name: 'Ada', presence: 'online' }],
+      frontend: {
+        updates: {
+          userPresence: [{ userId: 7, presence: 'online' }],
         },
       },
     })).toBeUndefined()
@@ -20,6 +20,7 @@ describe('userPresenceUpdate', () => {
     expect(userPresenceUpdate.parse(null)).toBeNull()
     expect(userPresenceUpdate.parse([])).toBeNull()
     expect(userPresenceUpdate.parse({})).toBeNull()
-    expect(userPresenceUpdate.parse({ entities: [] })).toBeNull()
+    expect(userPresenceUpdate.parse({ frontend: [] })).toBeNull()
+    expect(userPresenceUpdate.parse({ frontend: { updates: { userPresence: [{ userId: 7, presence: 'away' }] } } })).toBeNull()
   })
 })

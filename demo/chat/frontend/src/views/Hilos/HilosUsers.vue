@@ -71,9 +71,10 @@ const displayRows = computed(() => getTableDisplayRows<ChatUserTableRow>(tableSt
 
 const rowsWithPresence = computed(() =>
   displayRows.value.map((row) => {
-    const liveUser = chatStore.users.find((u) => u.id === row.id)
-    const presence = liveUser?.presence ?? row.presence
-    return { ...row, presence }
+    const presence = chatStore.userPresenceById[row.id]?.presence ?? row.presence
+    const onlineSessionCount =
+      chatStore.userConnectionStatsById[row.id]?.onlineSessionCount ?? row.onlineSessionCount
+    return { ...row, presence, onlineSessionCount }
   }),
 )
 

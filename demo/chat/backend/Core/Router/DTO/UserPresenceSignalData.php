@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Core\Router\DTO;
 
-use Hilos\Core\Router\DTO\EntitiesChangesDTO;
+use Hilos\Core\Router\DTO\FrontendChangesDTO;
 use Hilos\Core\Router\SignalData;
 use Hilos\Core\Router\SignalDataInterface;
 
@@ -14,23 +14,23 @@ use Hilos\Core\Router\SignalDataInterface;
 final class UserPresenceSignalData extends SignalData implements SignalDataInterface
 {
     /**
-     * @param array<string, mixed> $entities Serialized {@see EntitiesChangesDTO} payload
+     * @param array<string, mixed> $frontend Serialized {@see FrontendChangesDTO} payload
      */
     private function __construct(
-        private readonly array $entities,
+        private readonly array $frontend,
     ) {
         parent::__construct($this->toArray());
     }
 
     /**
-     * Creates the payload from entity changes before worker-daemon serialization.
+     * Creates the payload from frontend state changes before worker-daemon serialization.
      *
-     * @param EntitiesChangesDTO $entities User entity update with computed runtime presence
+     * @param FrontendChangesDTO $frontend User presence and connection state update
      * @return self
      */
-    public static function fromEntities(EntitiesChangesDTO $entities): self
+    public static function fromFrontendChanges(FrontendChangesDTO $frontend): self
     {
-        return new self($entities->toArray());
+        return new self($frontend->toArray());
     }
 
     /**
@@ -40,7 +40,7 @@ final class UserPresenceSignalData extends SignalData implements SignalDataInter
      */
     public function toArray(): array
     {
-        return ['entities' => $this->entities];
+        return ['frontend' => $this->frontend];
     }
 
     /**
@@ -52,7 +52,7 @@ final class UserPresenceSignalData extends SignalData implements SignalDataInter
     public static function fromArray(array $data): static
     {
         return new self(
-            isset($data['entities']) && is_array($data['entities']) ? $data['entities'] : [],
+            isset($data['frontend']) && is_array($data['frontend']) ? $data['frontend'] : [],
         );
     }
 }

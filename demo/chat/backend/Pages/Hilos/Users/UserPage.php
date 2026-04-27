@@ -11,9 +11,8 @@ use Demo\Chat\Core\Router\DTO\ChatEventSignalDTO;
 use Demo\Chat\Core\Router\DTO\HilosUserSubscriptionSignalData;
 use Demo\Chat\Database\Actions\Item\UserActions;
 use Demo\Chat\Database\DbChatContext;
-use Demo\Chat\Database\Object\Item\User;
 use Demo\Chat\Database\View\Collection\Events;
-use Demo\Chat\Database\View\Collection\Users;
+use Demo\Chat\Frontend\UserFrontendStateProjector;
 use Demo\Chat\Hilos;
 use Demo\Chat\Tables\HilosUser\DTO\HilosUserUpdateActionDTO;
 use Hilos\Constants\HilosSignalConstants;
@@ -65,9 +64,9 @@ final class UserPage extends AbstractHilosUserPage
         $this->sendToUser(
             HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_USER,
             $acceptKey,
-            HilosUserSubscriptionSignalData::fromEntities(
+            HilosUserSubscriptionSignalData::fromFrontendChanges(
                 $params->userId,
-                new EntitiesChangesDTO(full: [DbChatContext::users => Users::fromSingleItem($dbUser)]),
+                UserFrontendStateProjector::fullForUser($dbUser, includeConnectionStats: true),
             ),
         );
     }
@@ -170,8 +169,7 @@ final class UserPage extends AbstractHilosUserPage
             ChatSignalConstants::NEW_EVENT,
             new ChatEventSignalDTO(new EntitiesChangesDTO(
                 full: [DbChatContext::events => Events::fromSingleItem($event)],
-                updates: [DbChatContext::users => [[User::id => $dto->id, User::name => $newName]]],
-            )),
+            ), frontend: UserFrontendStateProjector::updatesForUser($dbUser, includePublicUser: true)),
         );
 
         $this->sendToUser(

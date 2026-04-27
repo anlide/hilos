@@ -5,15 +5,15 @@ declare(strict_types=1);
 namespace Demo\Chat\Socket\WebSocket\DTO;
 
 use Hilos\BaseDTO;
-use Hilos\Core\Router\DTO\EntitiesChangesDTO;
+use Hilos\Core\Router\DTO\FrontendChangesDTO;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Exception\NotImplementedException;
 
 /**
  * HandshakeResponseSignalData - Signal data for handshake response.
  *
- * {@see self::$entities} must contain exactly the current (authorized) user under full.users;
- * the client reads id and name from that record. Full chat snapshot (users, bots, events) and
+ * {@see self::$frontend} must contain exactly the current authorized user under full.users;
+ * the client reads id and name from that projection. Full chat snapshot (users, bots, events) and
  * session fields (moderation, file UI, upload progress) are sent on main page subscribe.
  * Target client ID is handled by WebSocketSignalData wrapper for routing.
  */
@@ -22,11 +22,11 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
     /**
      * Creates handshake response signal data.
      *
-     * @param EntitiesChangesDTO $entities Entity payload (full.users with exactly the current user)
+     * @param FrontendChangesDTO $frontend Frontend state payload (full.users with exactly the current user)
      * @param array<string, array<string, mixed>> $pageCatalog Page catalog for breadcrumb rendering
      */
     public function __construct(
-        public readonly EntitiesChangesDTO $entities,
+        public readonly FrontendChangesDTO $frontend,
         public readonly array $pageCatalog = [],
     ) {
     }
@@ -39,7 +39,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
     public function toArray(): array
     {
         return [
-            'entities' => $this->entities->toArray(),
+            'frontend' => $this->frontend->toArray(),
             'pageCatalog' => $this->pageCatalog,
         ];
     }

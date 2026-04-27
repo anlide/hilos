@@ -16,6 +16,10 @@ export * from './websocket-messages'
 export type { EntitiesEnvelope } from './entities'
 export { extractEntitiesEnvelope, hasEntities } from './entities'
 
+// Explicit frontend state transport (full/updates/deleted envelope)
+export type { FrontendChangesEnvelope } from './frontendState'
+export { extractFrontendChangesEnvelope, hasFrontendChanges } from './frontendState'
+
 // Table types
 export type { TableRowMutationDTO, TableDataState, PendingChanges, ChangeMarkers, ApplyMutationsResult } from './table'
 

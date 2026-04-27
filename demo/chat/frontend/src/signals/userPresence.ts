@@ -1,11 +1,27 @@
 import { ChatSignalDefinition } from '@/services/signals'
+import {
+  parseUserConnectionStatsPayloads,
+  parseUserPresencePayloads,
+} from '@/entities/frontendStateParsers'
 
 /**
  * Runtime-derived user presence update.
  *
- * The user entity is applied by ChatEntitiesReceiver before this marker handler runs.
+ * User state is applied by ChatFrontendStateReceiver before this marker handler runs.
  */
-export const userPresenceUpdate = ChatSignalDefinition.fromEntitiesEnvelope<'user_presence_update', undefined>(
+export const userPresenceUpdate = ChatSignalDefinition.fromFrontendChangesEnvelope<'user_presence_update', undefined>(
   'user_presence_update',
-  () => undefined,
+  (envelope) => {
+    const presenceItems = envelope.updates?.userPresence ?? envelope.full?.userPresence
+    if (parseUserPresencePayloads(presenceItems) === null) {
+      return null
+    }
+
+    const statsItems = envelope.updates?.userConnectionStats ?? envelope.full?.userConnectionStats
+    if (statsItems !== undefined && parseUserConnectionStatsPayloads(statsItems) === null) {
+      return null
+    }
+
+    return undefined
+  },
 )

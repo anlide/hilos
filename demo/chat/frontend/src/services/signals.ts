@@ -1,5 +1,12 @@
 import { SignalDefinition, type SignalParser } from '@hilos/sdk/services/signals'
-import { extractEntitiesEnvelope, hasEntities, type EntitiesEnvelope } from '@hilos/sdk/types'
+import {
+  extractEntitiesEnvelope,
+  extractFrontendChangesEnvelope,
+  hasEntities,
+  hasFrontendChanges,
+  type EntitiesEnvelope,
+  type FrontendChangesEnvelope,
+} from '@hilos/sdk/types'
 import type { WebSocketOutcome } from '@hilos/sdk/types/websocket-messages'
 
 const isRecord = (value: unknown): value is Record<string, unknown> => {
@@ -10,9 +17,7 @@ const isRecord = (value: unknown): value is Record<string, unknown> => {
  * Chat-specific signal definition — adds demo/chat-level conveniences on top
  * of the framework {@link SignalDefinition}.
  *
- * Currently provides the {@link fromEntitiesEnvelope} factory used by several
- * chat signals whose `data` payload is always an EntitiesEnvelope-carrying
- * object (handshake_response, subscription_page_main, new_event).
+ * Provides factories for signals that carry framework transport envelopes.
  */
 export class ChatSignalDefinition<
   T extends string = string,
@@ -36,6 +41,27 @@ export class ChatSignalDefinition<
         return null
       }
       const envelope = extractEntitiesEnvelope(raw)
+      if (envelope === null) {
+        return null
+      }
+      return extract(envelope, raw)
+    }
+    return new ChatSignalDefinition(type, parser, null)
+  }
+
+  /**
+   * Build a signal definition whose `data` payload must contain a `frontend`
+   * key (server's FrontendChangesDTO transport shape).
+   */
+  static fromFrontendChangesEnvelope<T extends string, D>(
+    type: T,
+    extract: (envelope: FrontendChangesEnvelope, raw: Record<string, unknown>) => D | null,
+  ): ChatSignalDefinition<T, D, null> {
+    const parser: SignalParser<D> = (raw: unknown): D | null => {
+      if (!isRecord(raw) || !hasFrontendChanges(raw)) {
+        return null
+      }
+      const envelope = extractFrontendChangesEnvelope(raw)
       if (envelope === null) {
         return null
       }

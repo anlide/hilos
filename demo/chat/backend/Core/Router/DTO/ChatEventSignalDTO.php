@@ -6,6 +6,7 @@ namespace Demo\Chat\Core\Router\DTO;
 
 use Hilos\Core\Exception\NotImplementedException;
 use Hilos\Core\Router\DTO\EntitiesChangesDTO;
+use Hilos\Core\Router\DTO\FrontendChangesDTO;
 use Hilos\Core\Router\SignalData;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Table\DTO\TableSnapshotDTO;
@@ -14,6 +15,7 @@ use Hilos\Core\Table\DTO\TableSnapshotDTO;
  * ChatEventSignalDTO - Signal data for chat events.
  *
  * Simple pass-through of entities to frontend.
+ * Optional frontend payload carries explicit frontend state collection changes.
  * Optional tables payload for full snapshot responses (e.g. admin page with users table).
  * Optional user session fields for page subscribe (moderation text, file moderation UI, upload progress)
  * when {@see self::$includeUserSessionFields} is true.
@@ -29,6 +31,7 @@ final class ChatEventSignalDTO extends SignalData implements SignalDataInterface
      * @param ?array<string, mixed> $fileModerationState File moderation UI state or null
      * @param ?array<string, mixed> $fileUploadProgress In-flight binary upload progress or null
      * @param bool $includeUserSessionFields When true, merge session keys into the payload
+     * @param ?FrontendChangesDTO $frontend Explicit frontend state collection changes
      */
     public function __construct(
         public readonly EntitiesChangesDTO $entities,
@@ -37,6 +40,7 @@ final class ChatEventSignalDTO extends SignalData implements SignalDataInterface
         public readonly ?array $fileModerationState = null,
         public readonly ?array $fileUploadProgress = null,
         public readonly bool $includeUserSessionFields = false,
+        public readonly ?FrontendChangesDTO $frontend = null,
     ) {
         parent::__construct($this->toArray());
     }
@@ -49,6 +53,10 @@ final class ChatEventSignalDTO extends SignalData implements SignalDataInterface
     public function toArray(): array
     {
         $data = ['entities' => $this->entities->toArray()];
+        $frontend = $this->frontend?->toArray();
+        if ($frontend !== null && $frontend !== []) {
+            $data['frontend'] = $frontend;
+        }
         if (!empty($this->tables)) {
             $tablesArr = array_map(function ($dto) {
                 return $dto->toArray();

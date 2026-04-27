@@ -17,6 +17,7 @@ use Demo\Chat\Core\Router\DTO\ModerationRequestSignalData;
 use Demo\Chat\Core\Router\DTO\ModerationStateUpdateSignalData;
 use Demo\Chat\Database\DbChatContext;
 use Demo\Chat\Database\View\Collection\Bots;
+use Demo\Chat\Frontend\UserFrontendStateProjector;
 use Demo\Chat\Hilos;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Exception\EmptyValueException;
@@ -80,7 +81,6 @@ final class MainPage extends AbstractChatPage
             new ChatEventSignalDTO(
                 new EntitiesChangesDTO(
                     full: [
-                        DbChatContext::users => Hilos::$rt->connections->relevantUsers,
                         DbChatContext::bots => Bots::fromActiveOnly(),
                         DbChatContext::events => Hilos::$db->events,
                     ],
@@ -101,6 +101,7 @@ final class MainPage extends AbstractChatPage
                     'totalBytes' => $conn->fileProgressTotalBytes,
                 ],
                 includeUserSessionFields: true,
+                frontend: UserFrontendStateProjector::fullForUsers(Hilos::$rt->connections->relevantUsers),
             ),
         );
     }

@@ -4,7 +4,7 @@ import type { PageCatalogState } from '@hilos/sdk/types/pageCatalog'
 
 /**
  * Handshake payload: server's view of the current user + page catalog.
- * Exactly one user record in entities.full.users (server contract).
+ * Exactly one user record in frontend.full.users (server contract).
  */
 export interface HandshakePayload {
   self: { id: number; name: string }
@@ -15,7 +15,7 @@ const isRecord = (value: unknown): value is Record<string, unknown> => {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-export const handshakeResponse = ChatSignalDefinition.fromEntitiesEnvelope<
+export const handshakeResponse = ChatSignalDefinition.fromFrontendChangesEnvelope<
   'handshake_response',
   HandshakePayload
 >('handshake_response', (envelope, raw) => {

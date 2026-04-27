@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Demo\Chat\Tests\Unit;
 
 use Demo\Chat\Core\Router\DTO\HilosUserSubscriptionSignalData;
-use Hilos\Core\Router\DTO\EntitiesChangesDTO;
+use Hilos\Core\Router\DTO\FrontendChangesDTO;
 use Hilos\Core\Router\SignalDataInterface;
 use PHPUnit\Framework\TestCase;
 
@@ -16,22 +16,22 @@ final class HilosUserSubscriptionSignalDataTest extends TestCase
 {
     public function testImplementsSignalDataInterface(): void
     {
-        $dto = HilosUserSubscriptionSignalData::fromEntities(7, new EntitiesChangesDTO());
+        $dto = HilosUserSubscriptionSignalData::fromFrontendChanges(7, new FrontendChangesDTO());
 
         $this->assertInstanceOf(SignalDataInterface::class, $dto);
     }
 
     public function testPayloadContainsUserIdAndEntities(): void
     {
-        $dto = HilosUserSubscriptionSignalData::fromEntities(
+        $dto = HilosUserSubscriptionSignalData::fromFrontendChanges(
             7,
-            new EntitiesChangesDTO(updates: ['users' => [['id' => 7, 'name' => 'Ada']]]),
+            new FrontendChangesDTO(updates: ['users' => [['id' => 7, 'name' => 'Ada']]]),
         );
 
         $this->assertSame(
             [
                 'userId' => 7,
-                'entities' => [
+                'frontend' => [
                     'updates' => [
                         'users' => [
                             ['id' => 7, 'name' => 'Ada'],
@@ -45,16 +45,16 @@ final class HilosUserSubscriptionSignalDataTest extends TestCase
 
     public function testEmptyEntityEnvelopeIsPreserved(): void
     {
-        $dto = HilosUserSubscriptionSignalData::fromEntities(404, new EntitiesChangesDTO());
+        $dto = HilosUserSubscriptionSignalData::fromFrontendChanges(404, new FrontendChangesDTO());
 
-        $this->assertSame(['userId' => 404, 'entities' => []], $dto->toArray());
+        $this->assertSame(['userId' => 404, 'frontend' => []], $dto->toArray());
     }
 
     public function testRoundtripPreservesPayload(): void
     {
-        $original = HilosUserSubscriptionSignalData::fromEntities(
+        $original = HilosUserSubscriptionSignalData::fromFrontendChanges(
             7,
-            new EntitiesChangesDTO(updates: ['users' => [['id' => 7, 'name' => 'Ada']]]),
+            new FrontendChangesDTO(updates: ['users' => [['id' => 7, 'name' => 'Ada']]]),
         );
 
         $restored = HilosUserSubscriptionSignalData::fromArray($original->toArray());
@@ -67,9 +67,9 @@ final class HilosUserSubscriptionSignalDataTest extends TestCase
     {
         $restored = HilosUserSubscriptionSignalData::fromArray([
             'userId' => '7',
-            'entities' => 'bad',
+            'frontend' => 'bad',
         ]);
 
-        $this->assertSame(['userId' => 0, 'entities' => []], $restored->toArray());
+        $this->assertSame(['userId' => 0, 'frontend' => []], $restored->toArray());
     }
 }

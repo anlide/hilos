@@ -9,8 +9,8 @@ use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Page\AbstractChatPage;
 use Demo\Chat\Core\Router\DTO\ChatEventSignalDTO;
 use Demo\Chat\Database\DbChatContext;
-use Demo\Chat\Database\Object\Item\User;
 use Demo\Chat\Database\View\Collection\Events;
+use Demo\Chat\Frontend\UserFrontendStateProjector;
 use Demo\Chat\Hilos;
 use Demo\Chat\Tables\AdminUser\DTO\AdminUserUpdateActionDTO;
 use Demo\Chat\Tables\TableChatContext;
@@ -49,6 +49,7 @@ final class AdminUsersPage extends AbstractChatPage
             new ChatEventSignalDTO(
                 new EntitiesChangesDTO(),
                 [TableChatContext::adminUsers => Hilos::$table->adminUsers->getFullSnapshot()],
+                frontend: UserFrontendStateProjector::fullForUsers(Hilos::$db->users, includeConnectionStats: true),
             ),
         );
     }
@@ -145,8 +146,7 @@ final class AdminUsersPage extends AbstractChatPage
             ChatSignalConstants::NEW_EVENT,
             new ChatEventSignalDTO(new EntitiesChangesDTO(
                 full: [DbChatContext::events => Events::fromSingleItem($event)],
-                updates: [DbChatContext::users => [[User::id => $dto->id, User::name => $dto->name]]],
-            )),
+            ), frontend: UserFrontendStateProjector::updatesForUser($dbUser, includePublicUser: true)),
         );
     }
 

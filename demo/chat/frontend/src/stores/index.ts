@@ -1,12 +1,18 @@
 import { defineStore } from 'pinia'
 import { ChatBot, Event, User } from '@/types'
 import type { Presence } from '@/types/domain/Presence'
+import type { UserConnectionStatsPayload, UserPresencePayload } from '@/entities/frontendStateParsers'
 
 /** Binary upload progress: seeded at 0/total by file_upload_ready, then throttled progress_update + main subscribe. */
 export type FileUploadProgressPayload = {
   filename: string
   uploadedBytes: number
   totalBytes: number
+}
+
+export type UserViewModel = User & {
+  presence: Presence
+  onlineSessionCount: number
 }
 
 /**
@@ -16,7 +22,9 @@ export type FileUploadProgressPayload = {
 export const useChatStore = defineStore('chat', {
   state: () => ({
     events: [] as Event[],
-    users: [] as User[],
+    usersById: {} as Record<number, User>,
+    userPresenceById: {} as Record<number, UserPresencePayload>,
+    userConnectionStatsById: {} as Record<number, UserConnectionStatsPayload>,
     bots: [] as ChatBot[],
     currentUserId: null as number | null,
     currentUsername: null as string | null,
@@ -29,14 +37,27 @@ export const useChatStore = defineStore('chat', {
   }),
 
   getters: {
-    onlineUsers(): User[] {
-      return this.users.filter((user) => user.presence === 'online')
+    users(): User[] {
+      return Object.values(this.usersById).sort((a, b) => (a.id ?? 0) - (b.id ?? 0))
     },
-    currentUser(): User | null {
+    userViewModels(): UserViewModel[] {
+      return this.users.map((user) => {
+        const userId = user.id ?? 0
+        return {
+          ...user,
+          presence: this.userPresenceById[userId]?.presence ?? 'offline',
+          onlineSessionCount: this.userConnectionStatsById[userId]?.onlineSessionCount ?? 0,
+        }
+      })
+    },
+    onlineUsers(): UserViewModel[] {
+      return this.userViewModels.filter((user) => user.presence === 'online')
+    },
+    currentUser(): UserViewModel | null {
       if (this.currentUserId === null) {
         return null
       }
-      return this.users.find((user) => user.id === this.currentUserId) ?? null
+      return this.userViewModels.find((user) => user.id === this.currentUserId) ?? null
     },
     isModeratingMessage(): boolean {
       return this.currentUserModerationState !== null
@@ -89,12 +110,10 @@ export const useChatStore = defineStore('chat', {
     },
 
     addUser(user: User) {
-      const existingIndex = this.users.findIndex(u => u.id === user.id)
-      if (existingIndex >= 0) {
-        this.users[existingIndex] = user
-      } else {
-        this.users.push(user)
+      if (user.id === null) {
+        return
       }
+      this.usersById[user.id] = user
     },
 
     upsertBots(bots: ChatBot[]) {
@@ -108,30 +127,27 @@ export const useChatStore = defineStore('chat', {
       }
     },
 
-    upsertUsers(users: Array<{ id: number; name: string; lastActivity?: string | null; presence?: Presence }>) {
+    upsertUsers(users: Array<{ id: number; name: string; lastActivity?: string | null }>, replace = false) {
+      if (replace) {
+        this.usersById = {}
+      }
       for (const user of users) {
         this.addUser(User.fromObject({
           id: user.id,
           name: user.name,
           lastActivity: user.lastActivity ?? null,
-          presence: user.presence ?? 'offline',
-          moderationState: null,
         }))
       }
     },
 
-    patchUsers(partials: Array<{ id: number; name?: string; lastActivity?: string | null; presence?: Presence }>) {
+    patchUsers(partials: Array<{ id: number; name?: string; lastActivity?: string | null }>) {
       for (const p of partials) {
-        const idx = this.users.findIndex((user) => user.id === p.id)
-        if (idx >= 0) {
-          const existing = this.users[idx]!
-          this.users[idx] = User.fromObject({
+        const existing = this.usersById[p.id]
+        if (existing !== undefined) {
+          this.usersById[p.id] = User.fromObject({
             id: existing.id,
             name: p.name ?? existing.name,
-            sessionToken: existing.sessionToken,
             lastActivity: p.lastActivity ?? existing.lastActivity ?? null,
-            presence: p.presence ?? existing.presence,
-            moderationState: null,
           })
         } else if (p.name !== undefined) {
           this.addUser(
@@ -139,8 +155,6 @@ export const useChatStore = defineStore('chat', {
               id: p.id,
               name: p.name,
               lastActivity: p.lastActivity ?? null,
-              presence: p.presence ?? 'offline',
-              moderationState: null,
             })
           )
         }
@@ -151,8 +165,41 @@ export const useChatStore = defineStore('chat', {
       if (userIds.length === 0) {
         return
       }
-      const ids = new Set(userIds)
-      this.users = this.users.filter(user => user.id === null || !ids.has(user.id))
+      for (const id of userIds) {
+        delete this.usersById[id]
+        delete this.userPresenceById[id]
+        delete this.userConnectionStatsById[id]
+      }
+    },
+
+    upsertUserPresence(items: UserPresencePayload[], replace = false) {
+      if (replace) {
+        this.userPresenceById = {}
+      }
+      for (const item of items) {
+        this.userPresenceById[item.userId] = item
+      }
+    },
+
+    removeUserPresence(userIds: number[]) {
+      for (const id of userIds) {
+        delete this.userPresenceById[id]
+      }
+    },
+
+    upsertUserConnectionStats(items: UserConnectionStatsPayload[], replace = false) {
+      if (replace) {
+        this.userConnectionStatsById = {}
+      }
+      for (const item of items) {
+        this.userConnectionStatsById[item.userId] = item
+      }
+    },
+
+    removeUserConnectionStats(userIds: number[]) {
+      for (const id of userIds) {
+        delete this.userConnectionStatsById[id]
+      }
     },
 
     clearEvents() {

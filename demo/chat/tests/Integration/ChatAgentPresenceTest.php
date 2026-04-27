@@ -7,12 +7,14 @@ namespace Demo\Chat\Tests\Integration;
 use Demo\Chat\Agents\ChatAgent;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\HttpHeaders;
+use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Router\ChatSignalRouter;
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\View\Context\RtChatContext;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketCloseSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
+use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 
 /**
@@ -33,6 +35,11 @@ final class ChatAgentPresenceTest extends IntegrationTestCase
         $agent = new ChatAgent();
 
         Hilos::initSignalRouter(new ChatSignalRouter());
+        Hilos::$sr->subscribeToPage(PageConstants::MAIN, new WebSocketPageSubscribeSignalDTO(
+            'presence-listener-ak',
+            PageConstants::MAIN,
+            [],
+        ));
 
         try {
             $eventCountBeforeHandshake = count(Hilos::$db->events);
@@ -56,6 +63,11 @@ final class ChatAgentPresenceTest extends IntegrationTestCase
 
             $eventCountBeforeClose = count(Hilos::$db->events);
             Hilos::initSignalRouter(new ChatSignalRouter());
+            Hilos::$sr->subscribeToPage(PageConstants::MAIN, new WebSocketPageSubscribeSignalDTO(
+                'presence-listener-ak',
+                PageConstants::MAIN,
+                [],
+            ));
 
             $agent->onSignalConnectionClose(new WebSocketCloseSignalDTO('presence-ak-1'), '', '');
 

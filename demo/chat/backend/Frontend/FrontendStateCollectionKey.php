@@ -1,0 +1,15 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Demo\Chat\Frontend;
+
+/**
+ * Stable frontend state collection keys for the chat demo.
+ */
+final class FrontendStateCollectionKey
+{
+    public const string USERS = 'users';
+    public const string USER_PRESENCE = 'userPresence';
+    public const string USER_CONNECTION_STATS = 'userConnectionStats';
+}

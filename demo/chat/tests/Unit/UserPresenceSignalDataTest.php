@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Demo\Chat\Tests\Unit;
 
 use Demo\Chat\Core\Router\DTO\UserPresenceSignalData;
-use Hilos\Core\Router\DTO\EntitiesChangesDTO;
+use Hilos\Core\Router\DTO\FrontendChangesDTO;
 use Hilos\Core\Router\SignalDataInterface;
 use PHPUnit\Framework\TestCase;
 
@@ -16,23 +16,23 @@ final class UserPresenceSignalDataTest extends TestCase
 {
     public function testImplementsSignalDataInterface(): void
     {
-        $dto = UserPresenceSignalData::fromEntities(new EntitiesChangesDTO());
+        $dto = UserPresenceSignalData::fromFrontendChanges(new FrontendChangesDTO());
 
         $this->assertInstanceOf(SignalDataInterface::class, $dto);
     }
 
     public function testPayloadContainsEntities(): void
     {
-        $dto = UserPresenceSignalData::fromEntities(
-            new EntitiesChangesDTO(updates: ['users' => [['id' => 7, 'presence' => 'online']]]),
+        $dto = UserPresenceSignalData::fromFrontendChanges(
+            new FrontendChangesDTO(updates: ['userPresence' => [['userId' => 7, 'presence' => 'online']]]),
         );
 
         $this->assertSame(
             [
-                'entities' => [
+                'frontend' => [
                     'updates' => [
-                        'users' => [
-                            ['id' => 7, 'presence' => 'online'],
+                        'userPresence' => [
+                            ['userId' => 7, 'presence' => 'online'],
                         ],
                     ],
                 ],
@@ -43,8 +43,8 @@ final class UserPresenceSignalDataTest extends TestCase
 
     public function testRoundtripPreservesPayload(): void
     {
-        $original = UserPresenceSignalData::fromEntities(
-            new EntitiesChangesDTO(updates: ['users' => [['id' => 7, 'presence' => 'offline']]]),
+        $original = UserPresenceSignalData::fromFrontendChanges(
+            new FrontendChangesDTO(updates: ['userPresence' => [['userId' => 7, 'presence' => 'offline']]]),
         );
 
         $restored = UserPresenceSignalData::fromArray($original->toArray());
@@ -55,8 +55,8 @@ final class UserPresenceSignalDataTest extends TestCase
 
     public function testMalformedRoundtripPayloadFallsBackToEmptyShape(): void
     {
-        $restored = UserPresenceSignalData::fromArray(['entities' => 'bad']);
+        $restored = UserPresenceSignalData::fromArray(['frontend' => 'bad']);
 
-        $this->assertSame(['entities' => []], $restored->toArray());
+        $this->assertSame(['frontend' => []], $restored->toArray());
     }
 }

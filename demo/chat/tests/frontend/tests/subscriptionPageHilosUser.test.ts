@@ -6,12 +6,13 @@ describe('subscriptionPageHilosUser', () => {
     expect(subscriptionPageHilosUser.dispatchKey).toBe('subscription_page_hilos_user')
   })
 
-  it('parses the subscribe acknowledgement with an entity snapshot', () => {
+  it('parses the subscribe acknowledgement with a frontend state snapshot', () => {
     const parsed = subscriptionPageHilosUser.parse({
       userId: 7,
-      entities: {
+      frontend: {
         full: {
           users: [{ id: 7, name: 'Ada' }],
+          userPresence: [{ userId: 7, presence: 'online' }],
         },
       },
     })
@@ -19,8 +20,8 @@ describe('subscriptionPageHilosUser', () => {
     expect(parsed).toEqual({ userId: 7 })
   })
 
-  it('parses not-found acknowledgements with an empty entity envelope', () => {
-    expect(subscriptionPageHilosUser.parse({ userId: 404, entities: [] })).toEqual({
+  it('parses not-found acknowledgements with an empty frontend envelope', () => {
+    expect(subscriptionPageHilosUser.parse({ userId: 404, frontend: [] })).toEqual({
       userId: 404,
     })
   })

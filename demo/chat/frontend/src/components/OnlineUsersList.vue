@@ -97,7 +97,7 @@ const connectionStore = useConnectionStore()
 const chatStore = useChatStore()
 
 const sortedUsers = computed(() =>
-  [...chatStore.users].sort((a, b) => {
+  [...chatStore.userViewModels].sort((a, b) => {
     if (a.presence !== b.presence) {
       return a.presence === 'online' ? -1 : 1
     }

@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Core\Router\DTO;
 
-use Hilos\Core\Router\DTO\EntitiesChangesDTO;
+use Hilos\Core\Router\DTO\FrontendChangesDTO;
 use Hilos\Core\Router\SignalData;
 use Hilos\Core\Router\SignalDataInterface;
 
@@ -15,25 +15,25 @@ final class HilosUserSubscriptionSignalData extends SignalData implements Signal
 {
     /**
      * @param int $userId Requested user id from the route
-     * @param array<string, mixed> $entities Serialized {@see EntitiesChangesDTO} payload
+     * @param array<string, mixed> $frontend Serialized {@see FrontendChangesDTO} payload
      */
     private function __construct(
         public readonly int $userId,
-        private readonly array $entities,
+        private readonly array $frontend,
     ) {
         parent::__construct($this->toArray());
     }
 
     /**
-     * Creates the payload from entity changes before worker-daemon serialization.
+     * Creates the payload from frontend state changes before worker-daemon serialization.
      *
      * @param int $userId Requested user id from the route
-     * @param EntitiesChangesDTO $entities Entity snapshot for the requested user
+     * @param FrontendChangesDTO $frontend Frontend state snapshot for the requested user
      * @return self
      */
-    public static function fromEntities(int $userId, EntitiesChangesDTO $entities): self
+    public static function fromFrontendChanges(int $userId, FrontendChangesDTO $frontend): self
     {
-        return new self($userId, $entities->toArray());
+        return new self($userId, $frontend->toArray());
     }
 
     /**
@@ -45,7 +45,7 @@ final class HilosUserSubscriptionSignalData extends SignalData implements Signal
     {
         return [
             'userId' => $this->userId,
-            'entities' => $this->entities,
+            'frontend' => $this->frontend,
         ];
     }
 
@@ -59,7 +59,7 @@ final class HilosUserSubscriptionSignalData extends SignalData implements Signal
     {
         return new self(
             isset($data['userId']) && is_int($data['userId']) ? $data['userId'] : 0,
-            isset($data['entities']) && is_array($data['entities']) ? $data['entities'] : [],
+            isset($data['frontend']) && is_array($data['frontend']) ? $data['frontend'] : [],
         );
     }
 }

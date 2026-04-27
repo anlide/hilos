@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Demo\Chat\Pages\Hilos\Users;
 
 use Demo\Chat\Core\Router\DTO\ChatEventSignalDTO;
+use Demo\Chat\Frontend\UserFrontendStateProjector;
 use Demo\Chat\Hilos;
 use Demo\Chat\Pages\AdminUsersPage;
 use Demo\Chat\Tables\TableChatContext;
@@ -34,6 +35,7 @@ final class UsersPage extends AbstractHilosUsersPage
             new ChatEventSignalDTO(
                 new EntitiesChangesDTO(),
                 [TableChatContext::hilosUsers => Hilos::$table->hilosUsers->getFullSnapshot()],
+                frontend: UserFrontendStateProjector::fullForUsers(Hilos::$db->users, includeConnectionStats: true),
             ),
         );
     }
