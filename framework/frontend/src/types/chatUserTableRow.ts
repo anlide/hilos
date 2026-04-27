@@ -1,6 +1,6 @@
 /**
- * Row shape for the chat `users` table from WebSocket table payloads (toFrontend serialization).
- * Matches backend View\User::toArray(toFrontend: true) — no sessionToken.
+ * Row shape for chat user table payloads.
+ * Runtime-only fields such as onlineSessionCount are table projection fields, not generic user entity fields.
  */
 export type ChatUserTableRow = {
   id: number

@@ -10,7 +10,7 @@
           <Table
             :items="users"
             item-key="id"
-            :colspan="5"
+            :colspan="6"
             :placeholder-when-empty="!connectionStore.isConnected"
             :searchable="true"
             search-placeholder="Search users..."
@@ -70,6 +70,9 @@
               <th>
                 Presence
               </th>
+              <th>
+                Online Sessions
+              </th>
               <th>Actions</th>
             </template>
             <template #row="row">
@@ -83,6 +86,7 @@
                   {{ row.item.presence || 'offline' }}
                 </span>
               </td>
+              <td>{{ row.item.onlineSessionCount ?? 0 }}</td>
               <td>
                 <div v-if="row.showEditButton" class="d-flex gap-1">
                   <button
@@ -204,6 +208,7 @@ const formUser = ref<UserEntity>({
   id: 0,
   name: '',
   lastActivity: '',
+  onlineSessionCount: 0,
   presence: 'offline'
 })
 const baselineUser = ref<UserEntity | null>(null)
@@ -277,6 +282,7 @@ const resetForm = () => {
     id: 0,
     name: '',
     lastActivity: '',
+    onlineSessionCount: 0,
     presence: 'offline'
   }
 }

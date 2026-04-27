@@ -23,6 +23,9 @@ export function isPartialUserPayload(value: unknown): value is PartialUserPayloa
   if (!isRecord(value) || typeof value.id !== 'number') {
     return false
   }
+  if ('onlineSessionCount' in value) {
+    return false
+  }
   if (value.name !== undefined && typeof value.name !== 'string') {
     return false
   }

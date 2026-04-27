@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Demo\Chat\Tables\HilosUser\Actions;
 
 use Demo\Chat\Hilos;
+use Demo\Chat\Tables\HilosUser\HilosUserTableRow;
 use Demo\Chat\Tables\HilosUser\DTO\HilosUserUpdateActionDTO;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Table\Actions\TableItemActions;
@@ -31,6 +32,6 @@ final class HilosUserItemActions extends TableItemActions
             throw new HilosException('Failed to update user: ' . $e->getMessage(), previous: $e);
         }
 
-        return $this->mutation(TableMutationType::Update, $this->definition->makeRow($dbUser->toArray(toFrontend: true)));
+        return $this->mutation(TableMutationType::Update, HilosUserTableRow::fromDbUser($dbUser));
     }
 }

@@ -65,6 +65,7 @@ final class User extends DbItem
      * Serializes the user item for backend or frontend payloads.
      *
      * Frontend payloads omit the session token and add a calculated presence field.
+     * Runtime-only counters belong to table/detail projections, not the generic user entity.
      *
      * @param bool $withId Include the user ID
      * @param bool $idAsIndex Use the ID as array index when supported by the parent serializer
@@ -78,10 +79,8 @@ final class User extends DbItem
         $result = parent::toArray($withId, $idAsIndex, $withBridges, $withCalculation, $toFrontend);
 
         if ($toFrontend) {
-            $onlineSessionCount = $this->onlineSessionCount;
             unset($result[ObjectUser::sessionToken]);
-            $result[self::ONLINE_SESSION_COUNT_KEY] = $onlineSessionCount;
-            $result[self::PRESENCE_KEY] = $onlineSessionCount > 0 ? self::PRESENCE_ONLINE : self::PRESENCE_OFFLINE;
+            $result[self::PRESENCE_KEY] = $this->onlineSessionCount > 0 ? self::PRESENCE_ONLINE : self::PRESENCE_OFFLINE;
             // chatUserState is private - sent via handshake and MODERATION_STATE_UPDATE only
         }
 

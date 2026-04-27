@@ -13,6 +13,7 @@ use Hilos\Core\Table\DTO\TableRowMutationDTO;
 use Hilos\Core\Table\DTO\TableSourceEventDTO;
 use Hilos\Core\Table\DTO\TableSnapshotDTO;
 use Hilos\Core\Table\Mutation\TableMutationType;
+use Hilos\Core\Table\Row\AbstractTableRow;
 use Hilos\Database\DatabaseException;
 
 /**
@@ -50,7 +51,7 @@ final class HilosUsersTable extends TableDefinition
         return $this->mutation(
             $event->mutationType,
             $userId,
-            $this->makeRow($dbUser->toArray(toFrontend: true)),
+            HilosUserTableRow::fromDbUser($dbUser),
         );
     }
 
@@ -63,7 +64,31 @@ final class HilosUsersTable extends TableDefinition
      */
     protected function query(TableQueryDTO $query): TableSnapshotDTO
     {
-        return $this->queryDbCollection(Hilos::$db->users, $query);
+        $snapshot = $this->queryDbCollection(Hilos::$db->users, $query);
+
+        return new TableSnapshotDTO(
+            rows: array_map(
+                fn(AbstractTableRow|array $row): HilosUserTableRow => $this->makeHilosUserTableRow($row),
+                $snapshot->rows,
+            ),
+            totalCount: $snapshot->totalCount,
+            offset: $snapshot->offset,
+            limit: $snapshot->limit,
+        );
+    }
+
+    /**
+     * Converts a DB user row payload into the runtime-enriched Hilos users table row.
+     *
+     * @param AbstractTableRow|array<string, mixed> $row Source row returned by the DB collection table query
+     */
+    private function makeHilosUserTableRow(AbstractTableRow|array $row): HilosUserTableRow
+    {
+        $rowPayload = $row instanceof AbstractTableRow ? $row->toArray() : $row;
+        $userId = (int) ($rowPayload[HilosUserTableRow::id] ?? 0);
+        $dbUser = $userId > 0 ? Hilos::$db->users[$userId] ?? null : null;
+
+        return $dbUser === null ? HilosUserTableRow::fromArray($rowPayload) : HilosUserTableRow::fromDbUser($dbUser);
     }
 
     /**

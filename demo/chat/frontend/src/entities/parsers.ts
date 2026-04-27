@@ -51,6 +51,9 @@ export const isUserPayload = (value: unknown): value is UserPayload => {
   if (!isRecord(value) || typeof value.id !== 'number' || typeof value.name !== 'string') {
     return false
   }
+  if ('onlineSessionCount' in value) {
+    return false
+  }
   if (value.lastActivity !== undefined && value.lastActivity !== null && typeof value.lastActivity !== 'string') {
     return false
   }

@@ -2,15 +2,17 @@
 
 Use `DbItem::toArray(..., toFrontend: true)` and `DbCollection::toArray(...)`
 for frontend-safe model representation. Computed item fields that describe one
-DB-backed model should live on the View item or a typed payload, not in a table
-or page pass that rebuilds model state by hand.
+DB-backed model should live on the View item or a typed payload. Runtime-only
+telemetry that is needed by one table, detail view, or diagnostic surface should
+live in that table row or runtime summary payload.
 
 ## Rule
 
 Frontend representation is part of the model contract. Add fields such as
-`presence`, `onlineSessionCount`, display labels, or other item-level derived
-values where the item is serialized for callers. Table/page code should consume
-that representation unless the row is truly screen-specific.
+`presence`, display labels, or other item-level derived values where the item is
+serialized for callers. Table/page code should consume that representation unless
+the row is truly screen-specific. Do not add table-only runtime counters such as
+`onlineSessionCount` to a generic entity payload.
 
 ## Serialization Pipeline
 
@@ -36,7 +38,7 @@ public function toArray(
 
     if ($toFrontend) {
         unset($result[ObjectUser::sessionToken]);
-        $result['onlineSessionCount'] = $this->_object->id !== null ? count($this->connections) : 0;
+        $result['presence'] = $this->_object->id !== null && count($this->connections) > 0 ? 'online' : 'offline';
     }
 
     return $result;
@@ -79,17 +81,16 @@ safety and field filtering.
 
 ## Computed Item Fields
 
-If the computed value describes one model item, put it on the View item or a
-typed payload:
+If a computed value is needed by several callers, expose it through the View
+item or a typed payload:
 
 ```php
-$result['onlineSessionCount'] = $this->_object->id !== null ? count($this->connections) : 0;
+$onlineSessionCount = $user->onlineSessionCount;
 ```
 
 Simple computed frontend fields may be expressed directly in `__get()` or
-`toArray()`. Do not add a private helper just to wrap a one-line guard or
-`count($this->connections)` expression; add a helper only when the calculation
-is reused, non-trivial, or names a meaningful domain concept.
+`toArray()`. Keep table-only runtime counters in a typed row/runtime summary and
+use the View item property as the source of the value.
 
 The runtime bridge should also live on the item or runtime collection:
 
@@ -104,10 +105,11 @@ public function __get(string $name): mixed
 }
 ```
 
-Then tables, pages, and DTOs can use the model API:
+Then table/detail projections that need the count can use the model API without
+putting the count into the generic entity payload:
 
 ```php
-$rows = Hilos::$db->users->toArray(idAsIndex: false, toFrontend: true);
+$row = HilosUserTableRow::fromDbUser($user);
 ```
 
 ## Table Projection vs Model Representation
@@ -123,14 +125,15 @@ code just because a table is the first frontend consumer.
 | Optional richer serialization | `withCalculation` branch in item `toArray()` |
 | Runtime overlay for one DB item | View item bridge plus RT collection lookup |
 | Direct DB collection table rows | `queryDbCollection()` / collection `toArray(toFrontend: true)` |
+| Runtime-enriched table/detail rows | Concrete row DTO or runtime summary payload |
 | Screen-specific joined row | Concrete table `query()` and typed row class |
 
 ## Anti-Patterns
 
-Do not compute item fields through a manual table-level pass:
+Do not recompute runtime table fields by bypassing the item API:
 
 ```php
-// Wrong: hides a User computed property in table code.
+// Wrong: bypasses the User runtime bridge.
 foreach (Hilos::$db->users as $user) {
     $rows[] = [
         'id' => $user->id,
@@ -139,10 +142,10 @@ foreach (Hilos::$db->users as $user) {
 }
 ```
 
-Expose the item-level value once:
+Expose the item-level value once and add it only to the row that needs it:
 
 ```php
-$result['onlineSessionCount'] = $this->_object->id !== null ? count($this->connections) : 0;
+HilosUserTableRow::fromDbUser($user);
 ```
 
 Do not send raw Object or Entity arrays to the browser when a View item has
