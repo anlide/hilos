@@ -6,6 +6,7 @@ namespace Demo\Chat\Tables\Settings\Actions;
 
 use Demo\Chat\Database\Settings\SettingsCatalog;
 use Demo\Chat\Hilos;
+use Demo\Chat\Tables\Settings\SettingsTable;
 use Hilos\Core\Table\Actions\TableActions;
 use Hilos\Core\Table\DTO\TableRowMutationDTO;
 use Hilos\Core\Table\Mutation\TableMutationType;
@@ -15,6 +16,8 @@ use Hilos\HilosException;
  * SettingsTableActions - Collection-level actions for the settings table (table layer).
  *
  * Operation: add setting. Delegates to Hilos::$db->settings->actions->add().
+ *
+ * @property SettingsTable $definition Settings table definition that builds row mutation payloads.
  */
 final class SettingsTableActions extends TableActions
 {
@@ -31,6 +34,6 @@ final class SettingsTableActions extends TableActions
         $catalog = SettingsCatalog::getCatalog();
         $dbSetting = Hilos::$db->settings->actions->add($key, $value, $catalog);
 
-        return $this->mutation(TableMutationType::Create, $dbSetting->key, $this->definition->makeRow($dbSetting->toArray()));
+        return $this->mutation(TableMutationType::Create, $dbSetting->key, $this->definition->rowFromSetting($dbSetting));
     }
 }

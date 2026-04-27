@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Demo\Chat\Tables\Bot;
 
 use Demo\Chat\Database\DbChatContext;
+use Demo\Chat\Database\View\Item\Bot as DbBot;
 use Demo\Chat\Hilos;
 use Demo\Chat\Tables\Bot\Actions\BotItemActions;
 use Demo\Chat\Tables\Bot\Actions\BotsTableActions;
@@ -14,6 +15,7 @@ use Hilos\Core\Table\DTO\TableRowMutationDTO;
 use Hilos\Core\Table\DTO\TableSourceEventDTO;
 use Hilos\Core\Table\DTO\TableSnapshotDTO;
 use Hilos\Core\Table\Mutation\TableMutationType;
+use Hilos\Core\Table\TableConstants;
 use Hilos\Database\DatabaseException;
 
 /**
@@ -53,7 +55,7 @@ final class BotsTable extends TableDefinition
         return $this->mutation(
             $event->mutationType,
             $botId,
-            $this->makeRow($dbBot->toArray(toFrontend: true)),
+            $this->rowFromBot($dbBot),
         );
     }
 
@@ -66,7 +68,42 @@ final class BotsTable extends TableDefinition
      */
     protected function query(TableQueryDTO $query): TableSnapshotDTO
     {
-        return $this->queryDbCollection(Hilos::$db->bots, $query);
+        $result = Hilos::$db->bots->queryPageItems($query);
+
+        return new TableSnapshotDTO(
+            rows: array_map(
+                fn(DbBot $bot): BotTableRow => $this->rowFromBot($bot),
+                $result[TableConstants::RESULT_KEY_ROWS],
+            ),
+            totalCount: $result[TableConstants::RESULT_KEY_TOTAL_COUNT],
+            offset: $query->offset,
+            limit: $query->limit,
+        );
+    }
+
+    /**
+     * Builds the bots table row from the bot DB item.
+     *
+     * @param DbBot $bot Bot DB item to project into the bots table
+     * @return BotTableRow Bots table row payload
+     */
+    public function rowFromBot(DbBot $bot): BotTableRow
+    {
+        return new BotTableRow(
+            id: (int) $bot->id,
+            name: $bot->name,
+            description: $bot->description,
+            style: $bot->style,
+            topics: $bot->topics,
+            personality: $bot->personality,
+            active: $bot->active,
+            reactionDelayMin: $bot->reactionDelayMin,
+            reactionDelayMax: $bot->reactionDelayMax,
+            reactionChance: $bot->reactionChance,
+            topicMatchRequired: $bot->topicMatchRequired,
+            cooldownAfterMessage: $bot->cooldownAfterMessage,
+            priority: $bot->priority,
+        );
     }
 
     /**

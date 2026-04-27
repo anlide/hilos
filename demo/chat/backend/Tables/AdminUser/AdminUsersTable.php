@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Demo\Chat\Tables\AdminUser;
 
 use Demo\Chat\Database\DbChatContext;
+use Demo\Chat\Database\View\Item\User as DbUser;
 use Demo\Chat\Hilos;
 use Demo\Chat\Tables\AdminUser\Actions\AdminUserItemActions;
 use Hilos\Core\Table\Definition\TableDefinition;
@@ -12,8 +13,9 @@ use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableRowMutationDTO;
 use Hilos\Core\Table\DTO\TableSourceEventDTO;
 use Hilos\Core\Table\DTO\TableSnapshotDTO;
+use Hilos\Core\Table\InMemoryTableFilter;
 use Hilos\Core\Table\Mutation\TableMutationType;
-use Hilos\Core\Table\Row\AbstractTableRow;
+use Hilos\Core\Table\TableConstants;
 use Hilos\Database\DatabaseException;
 
 /**
@@ -51,7 +53,7 @@ final class AdminUsersTable extends TableDefinition
         return $this->mutation(
             $event->mutationType,
             $userId,
-            AdminUserTableRow::fromDbUser($dbUser),
+            $this->rowFromUser($dbUser),
         );
     }
 
@@ -64,31 +66,34 @@ final class AdminUsersTable extends TableDefinition
      */
     protected function query(TableQueryDTO $query): TableSnapshotDTO
     {
-        $snapshot = $this->queryDbCollection(Hilos::$db->users, $query);
+        $result = Hilos::$db->users->queryPageItems(new TableQueryDTO());
 
-        return new TableSnapshotDTO(
+        return InMemoryTableFilter::apply(
             rows: array_map(
-                fn(AbstractTableRow|array $row): AdminUserTableRow => $this->makeAdminUserTableRow($row),
-                $snapshot->rows,
+                fn(DbUser $user): array => $this->rowFromUser($user)->toArray(),
+                $result[TableConstants::RESULT_KEY_ROWS],
             ),
-            totalCount: $snapshot->totalCount,
-            offset: $snapshot->offset,
-            limit: $snapshot->limit,
+            query: $query,
         );
     }
 
     /**
-     * Converts a DB user row payload into the runtime-enriched admin users table row.
+     * Builds the admin users table row from DB fields plus runtime connection state.
      *
-     * @param AbstractTableRow|array<string, mixed> $row Source row returned by the DB collection table query
+     * @param DbUser $user User DB item to project into the admin table
+     * @return AdminUserTableRow Runtime-enriched admin users table row
      */
-    private function makeAdminUserTableRow(AbstractTableRow|array $row): AdminUserTableRow
+    public function rowFromUser(DbUser $user): AdminUserTableRow
     {
-        $rowPayload = $row instanceof AbstractTableRow ? $row->toArray() : $row;
-        $userId = (int) ($rowPayload[AdminUserTableRow::id] ?? 0);
-        $dbUser = $userId > 0 ? Hilos::$db->users[$userId] ?? null : null;
+        $summary = Hilos::$rt->connections->summaryForUser((int) $user->id);
 
-        return $dbUser === null ? AdminUserTableRow::fromArray($rowPayload) : AdminUserTableRow::fromDbUser($dbUser);
+        return new AdminUserTableRow(
+            id: (int) $user->id,
+            name: $user->name,
+            lastActivity: $user->lastActivity,
+            onlineSessionCount: $summary->onlineSessionCount,
+            presence: $summary->presence,
+        );
     }
 
     /**

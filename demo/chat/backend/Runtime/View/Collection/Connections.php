@@ -6,6 +6,7 @@ namespace Demo\Chat\Runtime\View\Collection;
 
 use Demo\Chat\Database\View\Collection\Users as DbUsers;
 use Demo\Chat\Hilos;
+use Demo\Chat\Runtime\View\DTO\UserConnectionSummary;
 use Demo\Chat\Runtime\State\Collection\Connections as StateConnections;
 use Demo\Chat\Runtime\State\Item\Connection as StateConnection;
 use Demo\Chat\Runtime\View\Actions\Collection\ConnectionsActions;
@@ -62,6 +63,17 @@ final class Connections extends RtCollection
         $collection = self::init();
         $collection->setStateCollection($filteredState);
         return $collection;
+    }
+
+    /**
+     * Builds the runtime connection summary used by user-facing table rows.
+     *
+     * @param int $userId User id to summarize active runtime connections for
+     * @return UserConnectionSummary Runtime presence and session count summary
+     */
+    public function summaryForUser(int $userId): UserConnectionSummary
+    {
+        return new UserConnectionSummary(count($this->forUser($userId)));
     }
 
     /**

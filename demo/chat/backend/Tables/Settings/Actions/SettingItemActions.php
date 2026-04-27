@@ -6,6 +6,7 @@ namespace Demo\Chat\Tables\Settings\Actions;
 
 use Demo\Chat\Database\Settings\SettingsCatalog;
 use Demo\Chat\Hilos;
+use Demo\Chat\Tables\Settings\SettingsTable;
 use Hilos\Core\Table\Actions\TableItemActions;
 use Hilos\Core\Table\Exception\TableActionException;
 use Hilos\Core\Table\DTO\TableRowMutationDTO;
@@ -16,6 +17,8 @@ use Hilos\Core\Table\Mutation\TableMutationType;
  *
  * Operations: update, delete (orphans only).
  * Uses key as item identifier. Delegates to Hilos::$db->settings->findByKey($key)->actions.
+ *
+ * @property SettingsTable $definition Settings table definition that builds row mutation payloads.
  */
 final class SettingItemActions extends TableItemActions
 {
@@ -33,7 +36,8 @@ final class SettingItemActions extends TableItemActions
             throw new TableActionException("Setting '{$this->rowKey}' not found");
         }
         $dbSetting->actions->updateValue($value);
-        return $this->mutation(TableMutationType::Update, $this->definition->makeRow($dbSetting->toArray()));
+
+        return $this->mutation(TableMutationType::Update, $this->definition->rowFromSetting($dbSetting));
     }
 
     /**

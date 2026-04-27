@@ -12,6 +12,7 @@ use Hilos\Core\Table\Definition\TableDefinition;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableSnapshotDTO;
 use Hilos\Core\Table\InMemoryTableFilter;
+use Hilos\Core\Table\TableConstants;
 use Hilos\Database\Settings\SettingsCatalogConstants;
 use Hilos\Database\View\Item\Setting as ViewSetting;
 
@@ -41,14 +42,14 @@ final class SettingsTable extends TableDefinition
         $rows = [];
         foreach ($catalog as $key => $entry) {
             if (isset($dbByKey[$key])) {
-                $rows[] = $dbByKey[$key];
+                $rows[] = $this->rowFromSetting($dbByKey[$key])->toArray();
             } else {
-                $rows[] = $this->createPlaceholderRow($key, $entry);
+                $rows[] = $this->rowFromCatalogEntry($key, $entry)->toArray();
             }
         }
 
         foreach (Hilos::$db->settings->getOrphans($catalog) as $orphan) {
-            $rows[] = $this->settingToRow($orphan);
+            $rows[] = $this->rowFromSetting($orphan)->toArray();
         }
 
         return InMemoryTableFilter::apply($rows, $query);
@@ -67,18 +68,14 @@ final class SettingsTable extends TableDefinition
     /**
      * Builds an index of persisted setting rows by setting key.
      *
-     * @return array<string, array<string, mixed>>
+     * @return array<string, ViewSetting>
      */
     private function buildDbByKey(): array
     {
         $result = [];
-        $collection = Hilos::$db->settings;
-        $arr = $collection->toArray(idAsIndex: false, toFrontend: true);
-        foreach ($arr as $row) {
-            $key = $row['key'] ?? null;
-            if (is_string($key)) {
-                $result[$key] = $row;
-            }
+        $settings = Hilos::$db->settings->queryPageItems(new TableQueryDTO());
+        foreach ($settings[TableConstants::RESULT_KEY_ROWS] as $setting) {
+            $result[$setting->key] = $setting;
         }
         return $result;
     }
@@ -86,25 +83,30 @@ final class SettingsTable extends TableDefinition
     /**
      * Creates a frontend row for a catalog key that has no persisted DB row.
      *
+     * @param string $key Setting key from the catalog
      * @param array<string, mixed> $entry Catalog entry
-     * @return array<string, mixed> Placeholder row
+     * @return SettingTableRow Placeholder settings table row
      */
-    private function createPlaceholderRow(string $key, array $entry): array
+    private function rowFromCatalogEntry(string $key, array $entry): SettingTableRow
     {
         $type = $entry[SettingsCatalogConstants::CATALOG_ENTRY_TYPE] ?? SettingsCatalogConstants::TYPE_STRING;
         $default = $entry[SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE] ?? null;
         $value = $this->serializeDefault($default, $type);
 
-        return [
-            'id' => null,
-            'key' => $key,
-            'type' => $type,
-            'value' => $value,
-        ];
+        return new SettingTableRow(
+            id: null,
+            key: $key,
+            type: $type,
+            value: $value,
+        );
     }
 
     /**
      * Serializes a catalog default value for display in the settings table.
+     *
+     * @param mixed $value Catalog default value
+     * @param string $type Setting type from the catalog
+     * @return ?string Serialized display value
      */
     private function serializeDefault(mixed $value, string $type): ?string
     {
@@ -116,17 +118,18 @@ final class SettingsTable extends TableDefinition
     }
 
     /**
-     * Converts a persisted setting item to a table row payload.
+     * Builds the settings table row from a persisted setting item.
      *
-     * @return array<string, mixed>
+     * @param ViewSetting $setting Persisted setting DB item
+     * @return SettingTableRow Settings table row payload
      */
-    private function settingToRow(ViewSetting $setting): array
+    public function rowFromSetting(ViewSetting $setting): SettingTableRow
     {
-        return [
-            'id' => $setting->id,
-            'key' => $setting->key,
-            'type' => $setting->type,
-            'value' => $setting->value,
-        ];
+        return new SettingTableRow(
+            id: $setting->id,
+            key: $setting->key,
+            type: $setting->type,
+            value: $setting->value,
+        );
     }
 }

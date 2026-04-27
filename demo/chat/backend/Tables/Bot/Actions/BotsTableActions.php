@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Demo\Chat\Tables\Bot\Actions;
 
 use Demo\Chat\Hilos;
+use Demo\Chat\Tables\Bot\BotsTable;
 use Demo\Chat\Tables\Bot\DTO\BotCreateActionDTO;
 use Hilos\Core\Table\Actions\TableActions;
 use Hilos\Core\Table\DTO\TableRowMutationDTO;
@@ -15,6 +16,8 @@ use Hilos\HilosException;
  * BotsTableActions - Collection-level actions for the bots table (table layer).
  *
  * Delegates to db layer (BotsActions) for actual create.
+ *
+ * @property BotsTable $definition Bots table definition that builds row mutation payloads.
  */
 final class BotsTableActions extends TableActions
 {
@@ -37,6 +40,6 @@ final class BotsTableActions extends TableActions
             active: $dto->active,
         );
 
-        return $this->mutation(TableMutationType::Create, $dbBot->id, $this->definition->makeRow($dbBot->toArray(toFrontend: true)));
+        return $this->mutation(TableMutationType::Create, $dbBot->id, $this->definition->rowFromBot($dbBot));
     }
 }

@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Demo\Chat\Tables\AdminUser;
 
 use Demo\Chat\Database\Object\Item\User as ObjectUser;
-use Demo\Chat\Database\View\Item\User as DbUser;
 use Hilos\Core\Table\Row\AbstractTableRow;
 
 /**
@@ -34,24 +33,6 @@ final class AdminUserTableRow extends AbstractTableRow
     public function getRowKey(): int
     {
         return $this->id;
-    }
-
-    /**
-     * Builds an admin users table row from the DB user plus runtime presence state.
-     *
-     * @param DbUser $user DB user view item
-     */
-    public static function fromDbUser(DbUser $user): static
-    {
-        $onlineSessionCount = $user->onlineSessionCount;
-
-        return new self(
-            id: (int) $user->id,
-            name: $user->name,
-            lastActivity: $user->lastActivity,
-            onlineSessionCount: $onlineSessionCount,
-            presence: $onlineSessionCount > 0 ? 'online' : 'offline',
-        );
     }
 
     /**

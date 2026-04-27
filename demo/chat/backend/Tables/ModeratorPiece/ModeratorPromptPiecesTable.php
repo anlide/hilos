@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Demo\Chat\Tables\ModeratorPiece;
 
 use Demo\Chat\Database\DbChatContext;
+use Demo\Chat\Database\View\Item\ModeratorPromptPiece as DbModeratorPromptPiece;
 use Demo\Chat\Hilos;
 use Demo\Chat\Tables\ModeratorPiece\Actions\ModeratorPromptPieceItemActions;
 use Demo\Chat\Tables\ModeratorPiece\Actions\ModeratorPromptPiecesTableActions;
@@ -14,6 +15,7 @@ use Hilos\Core\Table\DTO\TableRowMutationDTO;
 use Hilos\Core\Table\DTO\TableSourceEventDTO;
 use Hilos\Core\Table\DTO\TableSnapshotDTO;
 use Hilos\Core\Table\Mutation\TableMutationType;
+use Hilos\Core\Table\TableConstants;
 use Hilos\Database\DatabaseException;
 
 /**
@@ -53,7 +55,7 @@ final class ModeratorPromptPiecesTable extends TableDefinition
         return $this->mutation(
             $event->mutationType,
             $pieceId,
-            $this->makeRow($dbPiece->toArray(toFrontend: true)),
+            $this->rowFromModeratorPromptPiece($dbPiece),
         );
     }
 
@@ -66,7 +68,32 @@ final class ModeratorPromptPiecesTable extends TableDefinition
      */
     protected function query(TableQueryDTO $query): TableSnapshotDTO
     {
-        return $this->queryDbCollection(Hilos::$db->moderatorPromptPieces, $query);
+        $result = Hilos::$db->moderatorPromptPieces->queryPageItems($query);
+
+        return new TableSnapshotDTO(
+            rows: array_map(
+                fn(DbModeratorPromptPiece $moderatorPromptPiece): ModeratorPromptPieceTableRow => $this->rowFromModeratorPromptPiece($moderatorPromptPiece),
+                $result[TableConstants::RESULT_KEY_ROWS],
+            ),
+            totalCount: $result[TableConstants::RESULT_KEY_TOTAL_COUNT],
+            offset: $query->offset,
+            limit: $query->limit,
+        );
+    }
+
+    /**
+     * Builds the moderator prompt pieces table row from the DB item.
+     *
+     * @param DbModeratorPromptPiece $moderatorPromptPiece DB item to project into the prompt pieces table
+     * @return ModeratorPromptPieceTableRow Moderator prompt pieces table row payload
+     */
+    public function rowFromModeratorPromptPiece(DbModeratorPromptPiece $moderatorPromptPiece): ModeratorPromptPieceTableRow
+    {
+        return new ModeratorPromptPieceTableRow(
+            id: (int) $moderatorPromptPiece->id,
+            section: $moderatorPromptPiece->section,
+            promptPiece: $moderatorPromptPiece->promptPiece,
+        );
     }
 
     /**

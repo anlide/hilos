@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Demo\Chat\Tables\Bot\Actions;
 
 use Demo\Chat\Hilos;
+use Demo\Chat\Tables\Bot\BotsTable;
 use Demo\Chat\Tables\Bot\DTO\BotUpdateActionDTO;
 use Hilos\Core\Table\Actions\TableItemActions;
 use Hilos\Core\Table\DTO\TableRowMutationDTO;
@@ -15,6 +16,8 @@ use Hilos\HilosException;
  * BotItemActions - Item-level actions for a single bot (table layer).
  *
  * Delegates to db layer (BotActions) for actual updates and deletes.
+ *
+ * @property BotsTable $definition Bots table definition that builds row mutation payloads.
  */
 final class BotItemActions extends TableItemActions
 {
@@ -47,7 +50,7 @@ final class BotItemActions extends TableItemActions
             );
         }
 
-        return $this->mutation(TableMutationType::Update, $this->definition->makeRow($dbBot->toArray(toFrontend: true)));
+        return $this->mutation(TableMutationType::Update, $this->definition->rowFromBot($dbBot));
     }
 
     /**

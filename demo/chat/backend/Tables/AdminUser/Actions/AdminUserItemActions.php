@@ -6,7 +6,7 @@ namespace Demo\Chat\Tables\AdminUser\Actions;
 
 use Demo\Chat\Hilos;
 use Demo\Chat\Tables\AdminUser\DTO\AdminUserUpdateActionDTO;
-use Demo\Chat\Tables\AdminUser\AdminUserTableRow;
+use Demo\Chat\Tables\AdminUser\AdminUsersTable;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Table\Actions\TableItemActions;
 use Hilos\Core\Table\DTO\TableRowMutationDTO;
@@ -15,6 +15,8 @@ use Hilos\HilosException;
 
 /**
  * Item actions for rows in the admin users table.
+ *
+ * @property AdminUsersTable $definition Admin users table definition that builds row mutation payloads.
  */
 final class AdminUserItemActions extends TableItemActions
 {
@@ -32,6 +34,6 @@ final class AdminUserItemActions extends TableItemActions
             throw new HilosException('Failed to update user: ' . $e->getMessage(), previous: $e);
         }
 
-        return $this->mutation(TableMutationType::Update, AdminUserTableRow::fromDbUser($dbUser));
+        return $this->mutation(TableMutationType::Update, $this->definition->rowFromUser($dbUser));
     }
 }

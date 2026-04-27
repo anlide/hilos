@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace Demo\Chat\Tables\HilosUser\Actions;
 
 use Demo\Chat\Hilos;
-use Demo\Chat\Tables\HilosUser\HilosUserTableRow;
 use Demo\Chat\Tables\HilosUser\DTO\HilosUserUpdateActionDTO;
+use Demo\Chat\Tables\HilosUser\HilosUsersTable;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Table\Actions\TableItemActions;
 use Hilos\Core\Table\DTO\TableRowMutationDTO;
@@ -15,6 +15,8 @@ use Hilos\HilosException;
 
 /**
  * Item actions for rows in the Hilos users table.
+ *
+ * @property HilosUsersTable $definition Hilos users table definition that builds row mutation payloads.
  */
 final class HilosUserItemActions extends TableItemActions
 {
@@ -32,6 +34,6 @@ final class HilosUserItemActions extends TableItemActions
             throw new HilosException('Failed to update user: ' . $e->getMessage(), previous: $e);
         }
 
-        return $this->mutation(TableMutationType::Update, HilosUserTableRow::fromDbUser($dbUser));
+        return $this->mutation(TableMutationType::Update, $this->definition->rowFromUser($dbUser));
     }
 }

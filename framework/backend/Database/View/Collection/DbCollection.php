@@ -428,6 +428,29 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
      */
     public function queryPage(TableQueryDTO $query): array
     {
+        $result = $this->queryPageItems($query);
+
+        $rows = [];
+        foreach ($result[TableConstants::RESULT_KEY_ROWS] as $item) {
+            $rows[] = $item->toArray(toFrontend: true);
+        }
+
+        return [TableConstants::RESULT_KEY_ROWS => $rows, TableConstants::RESULT_KEY_TOTAL_COUNT => $result[TableConstants::RESULT_KEY_TOTAL_COUNT]];
+    }
+
+    /**
+     * Query a page of typed DbItems from DB via the Object layer.
+     *
+     * Use this when a caller owns a projection that must not be sourced from
+     * the generic frontend serialization of the DbItem.
+     *
+     * @param TableQueryDTO $query Query parameters
+     *
+     * @return array{rows: list<T>, totalCount: int} Keys: rows (list of DbItems), totalCount (int)
+     * @throws DatabaseException On query or connection error
+     */
+    public function queryPageItems(TableQueryDTO $query): array
+    {
         $objectCollection = $this->getObjectCollection();
         if ($objectCollection === null) {
             return [TableConstants::RESULT_KEY_ROWS => [], TableConstants::RESULT_KEY_TOTAL_COUNT => 0];
@@ -436,10 +459,10 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
         $result = $objectCollection->queryPage($query);
 
         $rows = [];
-        foreach ($result[TableConstants::RESULT_KEY_OBJECTS] as $key => $object) {
+        foreach (array_keys($result[TableConstants::RESULT_KEY_OBJECTS]) as $key) {
             $item = $this->getItemForKey($key);
             if ($item !== null) {
-                $rows[] = $item->toArray(toFrontend: true);
+                $rows[] = $item;
             }
         }
 

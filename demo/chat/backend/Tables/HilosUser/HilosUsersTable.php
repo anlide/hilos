@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Demo\Chat\Tables\HilosUser;
 
 use Demo\Chat\Database\DbChatContext;
+use Demo\Chat\Database\View\Item\User as DbUser;
 use Demo\Chat\Hilos;
 use Demo\Chat\Tables\HilosUser\Actions\HilosUserItemActions;
 use Hilos\Core\Table\Definition\TableDefinition;
@@ -12,8 +13,9 @@ use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableRowMutationDTO;
 use Hilos\Core\Table\DTO\TableSourceEventDTO;
 use Hilos\Core\Table\DTO\TableSnapshotDTO;
+use Hilos\Core\Table\InMemoryTableFilter;
 use Hilos\Core\Table\Mutation\TableMutationType;
-use Hilos\Core\Table\Row\AbstractTableRow;
+use Hilos\Core\Table\TableConstants;
 use Hilos\Database\DatabaseException;
 
 /**
@@ -51,7 +53,7 @@ final class HilosUsersTable extends TableDefinition
         return $this->mutation(
             $event->mutationType,
             $userId,
-            HilosUserTableRow::fromDbUser($dbUser),
+            $this->rowFromUser($dbUser),
         );
     }
 
@@ -64,31 +66,34 @@ final class HilosUsersTable extends TableDefinition
      */
     protected function query(TableQueryDTO $query): TableSnapshotDTO
     {
-        $snapshot = $this->queryDbCollection(Hilos::$db->users, $query);
+        $result = Hilos::$db->users->queryPageItems(new TableQueryDTO());
 
-        return new TableSnapshotDTO(
+        return InMemoryTableFilter::apply(
             rows: array_map(
-                fn(AbstractTableRow|array $row): HilosUserTableRow => $this->makeHilosUserTableRow($row),
-                $snapshot->rows,
+                fn(DbUser $user): array => $this->rowFromUser($user)->toArray(),
+                $result[TableConstants::RESULT_KEY_ROWS],
             ),
-            totalCount: $snapshot->totalCount,
-            offset: $snapshot->offset,
-            limit: $snapshot->limit,
+            query: $query,
         );
     }
 
     /**
-     * Converts a DB user row payload into the runtime-enriched Hilos users table row.
+     * Builds the Hilos users table row from DB fields plus runtime connection state.
      *
-     * @param AbstractTableRow|array<string, mixed> $row Source row returned by the DB collection table query
+     * @param DbUser $user User DB item to project into the Hilos users table
+     * @return HilosUserTableRow Runtime-enriched Hilos users table row
      */
-    private function makeHilosUserTableRow(AbstractTableRow|array $row): HilosUserTableRow
+    public function rowFromUser(DbUser $user): HilosUserTableRow
     {
-        $rowPayload = $row instanceof AbstractTableRow ? $row->toArray() : $row;
-        $userId = (int) ($rowPayload[HilosUserTableRow::id] ?? 0);
-        $dbUser = $userId > 0 ? Hilos::$db->users[$userId] ?? null : null;
+        $summary = Hilos::$rt->connections->summaryForUser((int) $user->id);
 
-        return $dbUser === null ? HilosUserTableRow::fromArray($rowPayload) : HilosUserTableRow::fromDbUser($dbUser);
+        return new HilosUserTableRow(
+            id: (int) $user->id,
+            name: $user->name,
+            lastActivity: $user->lastActivity,
+            onlineSessionCount: $summary->onlineSessionCount,
+            presence: $summary->presence,
+        );
     }
 
     /**

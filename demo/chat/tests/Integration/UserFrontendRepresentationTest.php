@@ -63,11 +63,11 @@ final class UserFrontendRepresentationTest extends IntegrationTestCase
             Hilos::$rt->connections->actions->register('test-accept-key-1', $user->id);
             Hilos::$rt->connections->actions->register('test-accept-key-2', $user->id);
 
-            $hilosRow = HilosUserTableRow::fromDbUser($user)->toArray();
+            $hilosRow = Hilos::$table->hilosUsers->rowFromUser($user)->toArray();
             $this->assertSame(2, $hilosRow[HilosUserTableRow::onlineSessionCount]);
             $this->assertSame('online', $hilosRow[HilosUserTableRow::presence]);
 
-            $adminRow = AdminUserTableRow::fromDbUser($user)->toArray();
+            $adminRow = Hilos::$table->adminUsers->rowFromUser($user)->toArray();
             $this->assertSame(2, $adminRow[AdminUserTableRow::onlineSessionCount]);
             $this->assertSame('online', $adminRow[AdminUserTableRow::presence]);
 
