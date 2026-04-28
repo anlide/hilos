@@ -11,19 +11,31 @@ Read this when writing or changing PHPDoc in project PHP code.
    contract: what the method sends, mutates, routes, validates, or deliberately
    ignores. Do not leave the reader to jump to a parent class for page-specific
    behavior.
-3. Use a short summary line, then a blank line, then details only when they add
-   information. Keep `@param` entries specific to the local meaning of the
-   argument. Add `@throws` for exceptions the caller or caller-facing error path
-   should know about.
-4. Avoid empty PHPDoc. If a private method is obvious from its name and types,
+3. Keep the free-text PHPDoc body compact. Prefer a one-line summary. Add
+   extra description only when it explains a non-obvious local contract, side
+   effect, routing decision, validation rule, deliberate ignore, or
+   caller-visible error behavior. As a rule of thumb, keep the description body
+   within 1-3 lines. Do not restate the method body step by step.
+4. Separate the description body from `@param`, `@return`, `@throws`, and other
+   tags with one blank PHPDoc line. Do not place tags directly after the summary
+   or details text.
+5. Keep `@param` entries specific to the local meaning of the argument. Add
+   `@throws` for exceptions the caller or caller-facing error path should know
+   about.
+6. Avoid empty PHPDoc. If a private method is obvious from its name and types,
    no docblock is better than a boilerplate docblock.
-5. In PHPDoc `{@see ...}` references, import the class with `use` and reference
+7. Avoid `{@see ...}` in normal prose. Use it only when the docblock needs to
+   point to a contract symbol that is not already visible in the method
+   signature or method body, or when the target lives outside the local code path
+   being documented. Do not wrap constants, DTOs, methods, or properties in
+   `{@see ...}` just because they are mentioned by the code below.
+8. In PHPDoc `{@see ...}` references, import the class with `use` and reference
    the short class name or alias:
    `{@see UserActions::rename}`, not
    `{@see \Demo\Chat\Database\Actions\Item\UserActions::rename}`.
-6. If two imported names conflict, alias the import and use the alias in
+9. If two imported names conflict, alias the import and use the alias in
    PHPDoc, for example `use Foo\Bar\User as RuntimeUser;`.
-7. Prefer `self::`, `static::`, or a short imported class name for links inside
+10. Prefer `self::`, `static::`, or a short imported class name for links inside
    the current namespace. Do not use leading-backslash fully qualified names in
    docblocks unless there is no importable symbol.
 
@@ -41,13 +53,12 @@ documenting non-obvious error contracts.
   (`ValidationException`, `HilosException`).
 - Add a short reason to each `@throws` entry:
   `@throws ValidationException When rename payload violates user validation rules`.
-- Keep `@throws` imports consistent with `{@see ...}` imports: import the class
-  with `use` and reference the short class name in the docblock.
+- Keep `@throws` and `{@see ...}` imports consistent: import the class with
+  `use` and reference the short class name in the docblock.
 
 ## Example
 
 ```php
-use Demo\Chat\Database\Actions\Item\UserActions;
 use Hilos\Core\Exception\ValidationException;
 
 /**
@@ -62,7 +73,7 @@ public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dt
 }
 
 /**
- * Renames a user through {@see UserActions::rename} and sends page acks.
+ * Renames a user and sends page acks.
  *
  * @throws ValidationException When the new name violates user validation rules
  */
