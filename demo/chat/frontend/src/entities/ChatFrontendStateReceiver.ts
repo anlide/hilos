@@ -2,8 +2,10 @@ import { FrontendStateReceiver } from '@hilos/sdk/entities'
 import { parseUserPayloads } from './parsers'
 import { parsePartialUserPayloads } from './partialUserPayload'
 import {
+  parseBotPresencePayloads,
   parseUserConnectionStatsPayloads,
   parseUserPresencePayloads,
+  type BotPresencePayload,
   type UserConnectionStatsPayload,
   type UserPresencePayload,
 } from './frontendStateParsers'
@@ -16,6 +18,8 @@ interface ChatStoreForFrontendState {
   removeUserPresence(ids: number[]): void
   upsertUserConnectionStats(items: UserConnectionStatsPayload[], replace?: boolean): void
   removeUserConnectionStats(ids: number[]): void
+  upsertBotPresence(items: BotPresencePayload[], replace?: boolean): void
+  removeBotPresence(ids: number[]): void
 }
 
 export class ChatFrontendStateReceiver extends FrontendStateReceiver {
@@ -48,6 +52,14 @@ export class ChatFrontendStateReceiver extends FrontendStateReceiver {
       const stats = parseUserConnectionStatsPayloads(rawItems)
       if (stats !== null) {
         store.upsertUserConnectionStats(stats, replace)
+      }
+      return
+    }
+
+    if (collectionKey === 'botPresence') {
+      const presence = parseBotPresencePayloads(rawItems)
+      if (presence !== null) {
+        store.upsertBotPresence(presence, replace)
       }
     }
   }
@@ -82,6 +94,14 @@ export class ChatFrontendStateReceiver extends FrontendStateReceiver {
       if (stats !== null) {
         store.upsertUserConnectionStats(stats)
       }
+      return
+    }
+
+    if (collectionKey === 'botPresence') {
+      const presence = parseBotPresencePayloads(rawItems)
+      if (presence !== null) {
+        store.upsertBotPresence(presence)
+      }
     }
   }
 
@@ -95,6 +115,8 @@ export class ChatFrontendStateReceiver extends FrontendStateReceiver {
       store.removeUserPresence(ids)
     } else if (collectionKey === 'userConnectionStats') {
       store.removeUserConnectionStats(ids)
+    } else if (collectionKey === 'botPresence') {
+      store.removeBotPresence(ids)
     }
   }
 }

@@ -10,6 +10,7 @@ use Hilos\Hilos;
 use Hilos\Runtime\Exception\State\RtStatePropertyNotFoundException;
 use Hilos\Runtime\Exception\State\RtStateReadOnlyException;
 use Hilos\Runtime\Exception\State\RtStateUnserializeException;
+use Hilos\TruthSource\RtTruthSourceRegistry;
 
 /**
  * Base class for runtime state objects.
@@ -133,6 +134,7 @@ abstract class RtState
 
         $collectionKey = static::getRtCollectionKey();
         if ($collectionKey !== '' && Hilos::$sr !== null) {
+            RtTruthSourceRegistry::checkCanWriteState($collectionKey, $this->getId());
             Hilos::$sr->queueRtSyncSignal(
                 SignalConstants::RT_SYNC_UPDATED,
                 new RtSyncUpdatedSignalData($collectionKey, $this->getId(), $diff),

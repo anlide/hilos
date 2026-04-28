@@ -91,8 +91,8 @@ final class BotAgentStatusesActions extends RtActions
      */
     private function setStatus(int $botId, string $status): ViewBotAgentStatus
     {
-        $this->ensureCanWrite();
         $id = (string)$botId;
+        $this->ensureCanWriteState($id);
         $state = $this->stateCollection->get($id);
         if (!$state instanceof StateBotAgentStatus) {
             $state = StateBotAgentStatus::create($botId, $status);

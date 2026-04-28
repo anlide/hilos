@@ -72,7 +72,7 @@ abstract class RtActions
                 'Cannot ensure write: collection name is null'
             );
         }
-        RtTruthSourceRegistry::checkCanWrite($collectionName);
+        RtTruthSourceRegistry::checkCanWriteState($collectionName, $this->state->getId());
     }
 
     /**

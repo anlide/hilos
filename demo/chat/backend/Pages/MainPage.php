@@ -19,6 +19,7 @@ use Demo\Chat\Core\Router\DTO\ModerationRequestSignalData;
 use Demo\Chat\Core\Router\DTO\ModerationStateUpdateSignalData;
 use Demo\Chat\Database\DbChatContext;
 use Demo\Chat\Database\View\Collection\Bots;
+use Demo\Chat\Frontend\BotFrontendStateProjector;
 use Demo\Chat\Frontend\UserFrontendStateProjector;
 use Demo\Chat\Hilos;
 use Demo\Chat\Pages\Main\UploadFileTrait;
@@ -87,13 +88,14 @@ final class MainPage extends AbstractChatPage
         $conn = Hilos::$rt->connections[$acceptKey];
         $pending = Hilos::$rt->userStates[$conn->userId]?->moderationMessage;
         $fileModPhase = $conn->fileModPhase;
+        $activeBots = Bots::fromActiveOnly();
         $this->getChatAgent()->sendToUser(
             ChatSignalConstants::SUBSCRIPTION_PAGE_MAIN,
             $acceptKey,
             new ChatEventSignalDTO(
                 new EntitiesChangesDTO(
                     full: [
-                        DbChatContext::bots => Bots::fromActiveOnly(),
+                        DbChatContext::bots => $activeBots,
                         DbChatContext::events => Hilos::$db->events,
                     ],
                 ),
@@ -113,7 +115,10 @@ final class MainPage extends AbstractChatPage
                     'totalBytes' => $conn->fileProgressTotalBytes,
                 ],
                 includeUserSessionFields: true,
-                frontend: UserFrontendStateProjector::fullForUsers(Hilos::$rt->connections->relevantUsers),
+                frontend: BotFrontendStateProjector::appendFullForBots(
+                    UserFrontendStateProjector::fullForUsers(Hilos::$rt->connections->relevantUsers),
+                    $activeBots,
+                ),
             ),
         );
     }

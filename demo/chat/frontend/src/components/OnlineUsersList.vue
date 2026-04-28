@@ -64,7 +64,7 @@
         </div>
 
         <div class="px-3 py-2 text-muted small border-bottom">
-          Bots ({{ chatStore.bots.length }})
+          Bots ({{ chatStore.onlineBots.length }} online)
         </div>
         <div v-if="sortedBots.length === 0" class="text-muted p-3">
           No bots yet
@@ -74,13 +74,18 @@
           :key="bot.id"
           class="d-flex align-items-center gap-2 px-3 py-2 border-bottom"
         >
-          <span class="rounded-circle flex-shrink-0 bg-secondary" style="width: 10px; height: 10px" />
+          <span
+            class="rounded-circle flex-shrink-0"
+            :class="bot.presence === 'online' ? 'bg-success' : 'bg-danger'"
+            style="width: 10px; height: 10px"
+          />
           <RouterLink
             class="text-decoration-none text-body"
             :to="{ name: 'bot', params: { id: bot.id } }"
           >
             {{ bot.name }}
           </RouterLink>
+          <span class="ms-auto text-muted small">{{ bot.presence }}</span>
         </div>
       </template>
     </div>
@@ -106,6 +111,11 @@ const sortedUsers = computed(() =>
 )
 
 const sortedBots = computed(() =>
-  [...chatStore.bots].sort((a, b) => a.id - b.id)
+  [...chatStore.botViewModels].sort((a, b) => {
+    if (a.presence !== b.presence) {
+      return a.presence === 'online' ? -1 : 1
+    }
+    return a.id - b.id
+  })
 )
 </script>

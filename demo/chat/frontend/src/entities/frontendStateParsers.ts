@@ -12,6 +12,11 @@ export type UserConnectionStatsPayload = {
   onlineSessionCount: number
 }
 
+export type BotPresencePayload = {
+  botId: number
+  presence: Presence
+}
+
 function isRecord(value: unknown): value is JsonRecord {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
@@ -36,4 +41,15 @@ export function parseUserConnectionStatsPayloads(value: unknown): UserConnection
     return null
   }
   return value.every(isUserConnectionStatsPayload) ? value : null
+}
+
+export function isBotPresencePayload(value: unknown): value is BotPresencePayload {
+  return isRecord(value) && typeof value.botId === 'number' && isPresence(value.presence)
+}
+
+export function parseBotPresencePayloads(value: unknown): BotPresencePayload[] | null {
+  if (!Array.isArray(value)) {
+    return null
+  }
+  return value.every(isBotPresencePayload) ? value : null
 }

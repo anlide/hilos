@@ -12,4 +12,5 @@ final class FrontendStateCollectionKey
     public const string USERS = 'users';
     public const string USER_PRESENCE = 'userPresence';
     public const string USER_CONNECTION_STATS = 'userConnectionStats';
+    public const string BOT_PRESENCE = 'botPresence';
 }

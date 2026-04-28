@@ -9,14 +9,12 @@ use Demo\Chat\Constants\AgentType;
 use Demo\Chat\Constants\ChatCronConstants;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\HttpHeaders;
-use Demo\Chat\Core\Router\DTO\BotAgentSignalData;
 use Demo\Chat\Core\Router\DTO\ModerationBotResultSignalData;
 use Demo\Chat\Core\Router\DTO\UserPresenceEmitPayload;
 use Demo\Chat\Database\DbChatContext;
 use Demo\Chat\Database\Pages\ChatPageCatalog;
 use Demo\Chat\Frontend\UserFrontendStateProjector;
 use Demo\Chat\Hilos;
-use Demo\Chat\Runtime\State\Item\BotAgentStatus as StateBotAgentStatus;
 use Demo\Chat\Runtime\View\Context\RtChatContext;
 use Demo\Chat\Socket\WebSocket\DTO\HandshakeResponseSignalData;
 use Hilos\Core\Agent\AbstractAgent;
@@ -60,7 +58,6 @@ class ChatAgent extends AbstractAgent
         $this->registerDbTruthSource(DbChatContext::settings);
         $this->registerRtTruthSource(RtChatContext::connections);
         $this->registerRtTruthSource(RtChatContext::userStates);
-        $this->registerRtTruthSource(RtChatContext::botAgentStatuses);
 
         Hilos::$rt->userStates->actions->seedAllFromDb();
         Hilos::$db->events->actions->addChatStarted();
@@ -194,7 +191,6 @@ class ChatAgent extends AbstractAgent
         Hilos::$db->events->actions->addChatStopped();
         Hilos::$rt->connections->actions->clear();
         Hilos::$rt->userStates->actions->clear();
-        Hilos::$rt->botAgentStatuses->actions->clear();
     }
 
     /**
@@ -252,13 +248,6 @@ class ChatAgent extends AbstractAgent
                 }
                 $this->handleModerationBotResult($data->data);
                 return;
-            case ChatSignalConstants::BOT_JOINED:
-            case ChatSignalConstants::BOT_LEFT:
-                if (!$data->data instanceof BotAgentSignalData) {
-                    throw new InvalidAgentSignalPayloadException($name, BotAgentSignalData::class, $data->data);
-                }
-                $this->handleBotAgentStatus($name, $data->data);
-                return;
             default:
                 throw new AgentUnknownSignalException($name);
         }
@@ -291,37 +280,6 @@ class ChatAgent extends AbstractAgent
                     sourceRowKey: $event->id,
                     mutationType: TableMutationType::Create,
                 ),
-            ),
-        );
-    }
-
-    /**
-     * Update bot lifecycle runtime state and emit it for daemon-side fan-out.
-     *
-     * @param string $signalName Bot lifecycle agent signal name
-     * @param BotAgentSignalData $data Bot lifecycle payload
-     */
-    private function handleBotAgentStatus(string $signalName, BotAgentSignalData $data): void
-    {
-        $status = $signalName === ChatSignalConstants::BOT_JOINED
-            ? StateBotAgentStatus::STATUS_JOINED
-            : StateBotAgentStatus::STATUS_LEFT;
-
-        if ($status === StateBotAgentStatus::STATUS_JOINED) {
-            Hilos::$rt->botAgentStatuses->actions->markJoined($data->botId);
-        } else {
-            Hilos::$rt->botAgentStatuses->actions->markLeft($data->botId);
-        }
-
-        $this->emitChangeRt(
-            ChatSignalConstants::EMIT_CHAT_BOT_AGENT_STATUS_UPDATED,
-            new EmitRtChangeSignalData(
-                collectionKey: RtChatContext::botAgentStatuses,
-                stateId: (string)$data->botId,
-                payload: [
-                    StateBotAgentStatus::botId => $data->botId,
-                    StateBotAgentStatus::status => $status,
-                ],
             ),
         );
     }

@@ -158,6 +158,25 @@ abstract class RtActions
     }
 
     /**
+     * Ensures write is allowed for one runtime state id.
+     *
+     * @param string $stateId Runtime state id
+     *
+     * @throws RtActionsCollectionNameNullException When collection name is null.
+     * @throws RtTruthSourceWriteNotAllowedException When truth source does not allow write.
+     */
+    protected function ensureCanWriteState(string $stateId): void
+    {
+        $collectionName = $this->getCollectionName();
+        if ($collectionName === null) {
+            throw new RtActionsCollectionNameNullException(
+                "Cannot ensure write: collection name is null"
+            );
+        }
+        RtTruthSourceRegistry::checkCanWriteState($collectionName, $stateId);
+    }
+
+    /**
      * Adds state to collection and queues RT sync created signal.
      *
      * @param RtState $state State instance to add
@@ -167,7 +186,7 @@ abstract class RtActions
      */
     protected function addStateToCollection(RtState $state): void
     {
-        $this->ensureCanWrite();
+        $this->ensureCanWriteState($state->getId());
         $this->getStateCollection()->add($state);
         $this->queueRtSyncCreated($state->getId(), $state->toArray());
     }
@@ -184,7 +203,7 @@ abstract class RtActions
      */
     protected function applyDiffToState(RtState $state, array $diff): void
     {
-        $this->ensureCanWrite();
+        $this->ensureCanWriteState($state->getId());
         $state->applyDiff($diff);
         $this->queueRtSyncUpdated($state->getId(), $diff);
         $state->markRtSyncBaseline();
@@ -197,7 +216,7 @@ abstract class RtActions
      */
     protected function removeStateFromCollection(string $id): void
     {
-        $this->ensureCanWrite();
+        $this->ensureCanWriteState($id);
         $this->getStateCollection()->remove($id);
         $this->queueRtSyncDeleted($id);
     }

@@ -11,6 +11,7 @@ use Demo\Chat\Core\Page\AbstractChatPage;
 use Demo\Chat\Core\Router\DTO\BotAgentSignalData;
 use Demo\Chat\Core\Router\DTO\ChatEventSignalDTO;
 use Demo\Chat\Database\DbChatContext;
+use Demo\Chat\Frontend\BotFrontendStateProjector;
 use Demo\Chat\Hilos;
 use Demo\Chat\Tables\Bot\DTO\BotCreateActionDTO;
 use Demo\Chat\Tables\Bot\DTO\BotDeleteActionDTO;
@@ -65,6 +66,7 @@ final class AdminBotsPage extends AbstractChatPage
             new ChatEventSignalDTO(
                 new EntitiesChangesDTO(),
                 [TableChatContext::bots => Hilos::$table->bots->getFullSnapshot()],
+                frontend: BotFrontendStateProjector::fullForBots(Hilos::$db->bots),
             ),
         );
     }

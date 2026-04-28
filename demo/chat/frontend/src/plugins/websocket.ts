@@ -195,8 +195,12 @@ function buildSignalRouter() {
   // Page-level subscription handling moved to individual page components
   signalRouter.on(subscriptionPageHilosUser, () => {})
 
-  signalRouter.on(botJoined, () => {})
-  signalRouter.on(botLeft, () => {})
+  signalRouter.on(botJoined, ({ botId }) => {
+    useChatStore().setBotPresence(botId, 'online')
+  })
+  signalRouter.on(botLeft, ({ botId }) => {
+    useChatStore().setBotPresence(botId, 'offline')
+  })
   signalRouter.on(botUpdated, () => {})
   signalRouter.on(userPresenceUpdate, () => {})
 

@@ -10,7 +10,7 @@
           <Table
             :items="displayRows"
             item-key="id"
-            :colspan="6"
+            :colspan="7"
             :placeholder-when-empty="!connectionStore.isConnected"
             :searchable="true"
             search-placeholder="Search bots..."
@@ -71,6 +71,7 @@
                 </button>
                 <span v-else>Status</span>
               </th>
+              <th>Runtime</th>
               <th>Actions</th>
             </template>
             <template #row="row">
@@ -86,6 +87,14 @@
               <td>
                 <span class="badge" :class="row.item.active ? 'bg-success' : 'bg-secondary'">
                   {{ row.item.active ? 'active' : 'inactive' }}
+                </span>
+              </td>
+              <td>
+                <span
+                  class="badge"
+                  :class="botPresence(row.item.id) === 'online' ? 'bg-success' : 'bg-secondary'"
+                >
+                  {{ botPresence(row.item.id) }}
                 </span>
               </td>
               <td>
@@ -252,10 +261,12 @@ import { useTableDeleteMutationModal } from '@/composables/useTableDeleteMutatio
 import { useConnectionStore, useTableStore } from '@hilos/sdk/stores'
 import { sendAction } from '@/services/websocketActions'
 import { BOT_CREATE, BOT_UPDATE, BOT_DELETE } from '@/constants'
+import { useChatStore } from '@/stores'
 import type { BotEntity } from '@/types/domain'
 
 const connectionStore = useConnectionStore()
 const tableStore = useTableStore()
+const chatStore = useChatStore()
 const websocket = useWebSocket()
 
 const tableKey = 'bots'
@@ -263,6 +274,13 @@ const tableState = computed(() => tableStore.tableData[tableKey])
 const displayRows = computed(() => getTableDisplayRows<BotEntity>(tableStore.tableData[tableKey]))
 const pendingChanges = computed(() => getTablePendingChanges(tableStore.tableData[tableKey]))
 const changeMarkers = computed(() => getTableChangeMarkers(tableStore.tableData[tableKey]))
+
+const botPresence = (botId: number | null) => {
+  if (botId === null) {
+    return 'offline'
+  }
+  return chatStore.botPresenceById[botId]?.presence ?? 'offline'
+}
 
 const handleApplyChanges = () => {
   tableStore.applyPendingMutations(tableKey)

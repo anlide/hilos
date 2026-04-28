@@ -326,8 +326,6 @@ final class ChatSignalRouter extends SignalRouter
                     ChatSignalConstants::MODERATION_FILE_RESULT => AgentType::CHAT,
                     ChatSignalConstants::MODERATE_BOT_REQUEST => AgentType::MODERATOR,
                     ChatSignalConstants::MODERATION_BOT_RESULT => AgentType::CHAT,
-                    ChatSignalConstants::BOT_JOINED => AgentType::CHAT,
-                    ChatSignalConstants::BOT_LEFT => AgentType::CHAT,
                 ],
             ],
             SignalSource::WEBSOCKET => [

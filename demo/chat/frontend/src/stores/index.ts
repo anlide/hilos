@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { ChatBot, Event, User } from '@/types'
 import type { Presence } from '@/types/domain/Presence'
-import type { UserConnectionStatsPayload, UserPresencePayload } from '@/entities/frontendStateParsers'
+import type { BotPresencePayload, UserConnectionStatsPayload, UserPresencePayload } from '@/entities/frontendStateParsers'
 
 /** Binary upload progress: seeded at 0/total by file_upload_ready, then throttled progress_update + main subscribe. */
 export type FileUploadProgressPayload = {
@@ -15,6 +15,10 @@ export type UserViewModel = User & {
   onlineSessionCount: number
 }
 
+export type BotViewModel = ChatBot & {
+  presence: Presence
+}
+
 /**
  * Chat-specific store — domain entities and user session state.
  * Connection, table, pageCatalog, and guardian state live in framework stores.
@@ -26,6 +30,7 @@ export const useChatStore = defineStore('chat', {
     userPresenceById: {} as Record<number, UserPresencePayload>,
     userConnectionStatsById: {} as Record<number, UserConnectionStatsPayload>,
     bots: [] as ChatBot[],
+    botPresenceById: {} as Record<number, BotPresencePayload>,
     currentUserId: null as number | null,
     currentUsername: null as string | null,
     currentUserModerationState: null as string | null,
@@ -52,6 +57,15 @@ export const useChatStore = defineStore('chat', {
     },
     onlineUsers(): UserViewModel[] {
       return this.userViewModels.filter((user) => user.presence === 'online')
+    },
+    botViewModels(): BotViewModel[] {
+      return this.bots.map((bot) => ({
+        ...bot,
+        presence: this.botPresenceById[bot.id]?.presence ?? 'offline',
+      }))
+    },
+    onlineBots(): BotViewModel[] {
+      return this.botViewModels.filter((bot) => bot.presence === 'online')
     },
     currentUser(): UserViewModel | null {
       if (this.currentUserId === null) {
@@ -199,6 +213,25 @@ export const useChatStore = defineStore('chat', {
     removeUserConnectionStats(userIds: number[]) {
       for (const id of userIds) {
         delete this.userConnectionStatsById[id]
+      }
+    },
+
+    upsertBotPresence(items: BotPresencePayload[], replace = false) {
+      if (replace) {
+        this.botPresenceById = {}
+      }
+      for (const item of items) {
+        this.botPresenceById[item.botId] = item
+      }
+    },
+
+    setBotPresence(botId: number, presence: Presence) {
+      this.botPresenceById[botId] = { botId, presence }
+    },
+
+    removeBotPresence(botIds: number[]) {
+      for (const id of botIds) {
+        delete this.botPresenceById[id]
       }
     },
 

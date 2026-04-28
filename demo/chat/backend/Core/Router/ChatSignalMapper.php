@@ -12,6 +12,7 @@ use Demo\Chat\Core\Router\DTO\UserPresenceEmitPayload;
 use Demo\Chat\Core\Router\DTO\UserPresenceSignalData;
 use Demo\Chat\Database\DbChatContext;
 use Demo\Chat\Database\View\Collection\Events;
+use Demo\Chat\Frontend\BotFrontendStateProjector;
 use Demo\Chat\Frontend\UserFrontendStateProjector;
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\State\Item\BotAgentStatus as StateBotAgentStatus;
@@ -217,7 +218,7 @@ final class ChatSignalMapper implements SignalMapperInterface
     /**
      * Builds page-scoped user presence fan-out from the daemon-side subscription registry.
      *
-     * @param EmitRtChangeSignalData $data Runtime emit payload from ChatAgent
+     * @param EmitRtChangeSignalData $data Runtime emit payload from BotAgent
      * @return list<EmitFanoutItem>
      */
     private function mapChatUserPresenceUpdated(EmitRtChangeSignalData $data): array
@@ -293,14 +294,14 @@ final class ChatSignalMapper implements SignalMapperInterface
             return [];
         }
 
-        $innerPayload = new SignalData();
         $botId = (int)$data->stateId;
+        $entities = new EntitiesChangesDTO();
         if ($botId > 0 && Hilos::$db !== null) {
             $bot = Hilos::$db->bots[$botId] ?? null;
             if ($bot !== null) {
-                $innerPayload = new ChatEventSignalDTO(new EntitiesChangesDTO(updates: [
+                $entities = new EntitiesChangesDTO(updates: [
                     DbChatContext::bots => [$bot->toArray(toFrontend: true)],
-                ]));
+                ]);
             }
         }
 
@@ -308,7 +309,10 @@ final class ChatSignalMapper implements SignalMapperInterface
             new EmitFanoutItem(
                 delivery: EmitFanoutDelivery::AllExcept,
                 wireSignalName: $wireSignalName,
-                innerPayload: $innerPayload,
+                innerPayload: new ChatEventSignalDTO(
+                    $entities,
+                    frontend: BotFrontendStateProjector::updatesForBotStatus($botId, $status),
+                ),
                 excludeAcceptKey: $data->excludeAcceptKey,
             ),
         ];

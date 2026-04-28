@@ -8,6 +8,7 @@ describe('ChatFrontendStateReceiver', () => {
       users: [] as Array<{ id: number; name: string; lastActivity?: string | null }>,
       presence: [] as Array<{ userId: number; presence: string }>,
       stats: [] as Array<{ userId: number; onlineSessionCount: number }>,
+      botPresence: [] as Array<{ botId: number; presence: string }>,
       upsertUsers(users: Array<{ id: number; name: string; lastActivity?: string | null }>) {
         this.users = users
       },
@@ -21,6 +22,10 @@ describe('ChatFrontendStateReceiver', () => {
         this.stats = items
       },
       removeUserConnectionStats() {},
+      upsertBotPresence(items: Array<{ botId: number; presence: string }>) {
+        this.botPresence = items
+      },
+      removeBotPresence() {},
     }
 
     receiver.apply({
@@ -29,6 +34,7 @@ describe('ChatFrontendStateReceiver', () => {
           users: [{ id: 7, name: 'Ada', lastActivity: null }],
           userPresence: [{ userId: 7, presence: 'online' }],
           userConnectionStats: [{ userId: 7, onlineSessionCount: 2 }],
+          botPresence: [{ botId: 9, presence: 'online' }],
         },
       },
     }, store)
@@ -36,6 +42,7 @@ describe('ChatFrontendStateReceiver', () => {
     expect(store.users).toEqual([{ id: 7, name: 'Ada', lastActivity: null }])
     expect(store.presence).toEqual([{ userId: 7, presence: 'online' }])
     expect(store.stats).toEqual([{ userId: 7, onlineSessionCount: 2 }])
+    expect(store.botPresence).toEqual([{ botId: 9, presence: 'online' }])
   })
 
   it('rejects invalid normalized user state payloads', () => {
@@ -44,6 +51,7 @@ describe('ChatFrontendStateReceiver', () => {
       usersCalled: false,
       presenceCalled: false,
       statsCalled: false,
+      botPresenceCalled: false,
       upsertUsers() {
         this.usersCalled = true
       },
@@ -57,6 +65,10 @@ describe('ChatFrontendStateReceiver', () => {
         this.statsCalled = true
       },
       removeUserConnectionStats() {},
+      upsertBotPresence() {
+        this.botPresenceCalled = true
+      },
+      removeBotPresence() {},
     }
 
     receiver.apply({
@@ -65,6 +77,7 @@ describe('ChatFrontendStateReceiver', () => {
           users: [{ id: 7, name: 'Ada', presence: 'online' }],
           userPresence: [{ userId: 7, presence: 'away' }],
           userConnectionStats: [{ userId: 7, onlineSessionCount: '2' }],
+          botPresence: [{ botId: 9, presence: 'away' }],
         },
       },
     }, store)
@@ -72,5 +85,6 @@ describe('ChatFrontendStateReceiver', () => {
     expect(store.usersCalled).toBe(false)
     expect(store.presenceCalled).toBe(false)
     expect(store.statsCalled).toBe(false)
+    expect(store.botPresenceCalled).toBe(false)
   })
 })

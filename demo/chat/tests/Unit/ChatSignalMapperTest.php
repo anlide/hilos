@@ -214,6 +214,10 @@ final class ChatSignalMapperTest extends TestCase
         $this->assertCount(1, $items);
         $this->assertSame(EmitFanoutDelivery::AllExcept, $items[0]->delivery);
         $this->assertSame(ChatSignalConstants::BOT_JOINED, $items[0]->wireSignalName);
+        $this->assertSame(
+            [['botId' => 9, 'presence' => 'online']],
+            $items[0]->innerPayload->toArray()['frontend']['updates']['botPresence'],
+        );
     }
 
     public function testMapGuardianAgentStatusUpdatedBuildsGuardianFanout(): void

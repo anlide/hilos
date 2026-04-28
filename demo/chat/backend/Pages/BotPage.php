@@ -11,6 +11,7 @@ use Demo\Chat\Core\Page\AbstractChatPage;
 use Demo\Chat\Core\Router\DTO\ChatEventSignalDTO;
 use Demo\Chat\Database\DbChatContext;
 use Demo\Chat\Database\View\Collection\Bots;
+use Demo\Chat\Frontend\BotFrontendStateProjector;
 use Demo\Chat\Hilos;
 use Demo\Chat\Pages\DTO\BotPageSubscribeParams;
 use Hilos\Core\Page\Exception\InvalidPageRouteParamException;
@@ -67,9 +68,12 @@ final class BotPage extends AbstractChatPage
         $this->getChatAgent()->sendToUser(
             ChatSignalConstants::SUBSCRIPTION_PAGE_BOT,
             $acceptKey,
-            new ChatEventSignalDTO(new EntitiesChangesDTO(
-                full: [DbChatContext::bots => Bots::fromSingleItem($bot)],
-            )),
+            new ChatEventSignalDTO(
+                new EntitiesChangesDTO(
+                    full: [DbChatContext::bots => Bots::fromSingleItem($bot)],
+                ),
+                frontend: BotFrontendStateProjector::fullForBots([$bot]),
+            ),
         );
     }
 }

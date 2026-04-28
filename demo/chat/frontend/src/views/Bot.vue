@@ -34,10 +34,16 @@
                 <dt class="col-sm-3">Topics</dt>
                 <dd class="col-sm-9">{{ bot.topics }}</dd>
               </template>
-              <dt class="col-sm-3">Status</dt>
+              <dt class="col-sm-3">Config</dt>
               <dd class="col-sm-9">
                 <span :class="bot.active ? 'text-success' : 'text-secondary'">
                   {{ bot.active ? 'Active' : 'Inactive' }}
+                </span>
+              </dd>
+              <dt class="col-sm-3">Runtime</dt>
+              <dd class="col-sm-9">
+                <span :class="bot.presence === 'online' ? 'text-success' : 'text-secondary'">
+                  {{ bot.presence }}
                 </span>
               </dd>
             </dl>
@@ -67,6 +73,6 @@ const bot = computed(() => {
   if (!Number.isFinite(botId.value) || botId.value <= 0) {
     return null
   }
-  return chatStore.bots.find((b) => b.id === botId.value) ?? null
+  return chatStore.botViewModels.find((b) => b.id === botId.value) ?? null
 })
 </script>
