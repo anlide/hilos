@@ -10,9 +10,13 @@ use Demo\Chat\Tables\Settings\Actions\SettingItemActions;
 use Demo\Chat\Tables\Settings\Actions\SettingsTableActions;
 use Hilos\Core\Table\Definition\TableDefinition;
 use Hilos\Core\Table\DTO\TableQueryDTO;
+use Hilos\Core\Table\DTO\TableRowMutationDTO;
+use Hilos\Core\Table\DTO\TableSourceEventDTO;
 use Hilos\Core\Table\DTO\TableSnapshotDTO;
 use Hilos\Core\Table\InMemoryTableFilter;
+use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\Core\Table\TableConstants;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Settings\SettingsCatalogConstants;
 use Hilos\Database\View\Item\Setting as ViewSetting;
 
@@ -24,6 +28,39 @@ use Hilos\Database\View\Item\Setting as ViewSetting;
  */
 final class SettingsTable extends TableDefinition
 {
+    /**
+     * Builds a settings table row mutation from a settings DB source event.
+     *
+     * @param TableSourceEventDTO $event Settings source event
+     * @return ?TableRowMutationDTO Settings row mutation, or null when the event does not affect this table
+     */
+    public function buildMutationForSourceEvent(TableSourceEventDTO $event): ?TableRowMutationDTO
+    {
+        if ($event->sourceKey !== HilosDbContext::settings) {
+            return null;
+        }
+
+        $key = (string)$event->sourceRowKey;
+        if ($key === '') {
+            return null;
+        }
+
+        if ($event->mutationType === TableMutationType::Delete) {
+            return $this->mutation(TableMutationType::Delete, $key);
+        }
+
+        $setting = Hilos::$db->settings->findByKey($key);
+        if ($setting === null) {
+            return null;
+        }
+
+        return $this->mutation(
+            $event->mutationType,
+            $key,
+            $this->rowFromSetting($setting),
+        );
+    }
+
     /**
      * Queries settings by merging catalog entries with DB rows.
      *

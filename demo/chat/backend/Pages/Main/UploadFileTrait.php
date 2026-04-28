@@ -8,7 +8,6 @@ use Demo\Chat\Agents\ChatAgent;
 use Demo\Chat\Constants\ChatEventType;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Core\Page\DTO\FileUploadInitActionDTO;
-use Demo\Chat\Core\Router\DTO\ChatEventSignalDTO;
 use Demo\Chat\Core\Router\DTO\FileModerationStateUpdateSignalData;
 use Demo\Chat\Core\Router\DTO\FileUploadAbortedSignalData;
 use Demo\Chat\Core\Router\DTO\FileUploadCompleteSignalData;
@@ -19,11 +18,12 @@ use Demo\Chat\Core\Router\DTO\FileUploadRejectedSignalData;
 use Demo\Chat\Core\Router\DTO\ModerationFileRequestSignalData;
 use Demo\Chat\Core\Router\DTO\ModerationFileResultSignalData;
 use Demo\Chat\Database\DbChatContext;
-use Demo\Chat\Database\View\Collection\Events;
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\View\Item\Connection as RuntimeConnection;
 use Demo\Chat\Utils\ChatSettingsHelper;
-use Hilos\Core\Router\DTO\EntitiesChangesDTO;
+use Hilos\Core\Router\DTO\EmitDbChangeSignalData;
+use Hilos\Core\Table\DTO\TableSourceEventDTO;
+use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\Fs\Exception\FileDeleteException;
 use Hilos\Fs\FsException;
 use Hilos\Fs\FsFile;
@@ -371,9 +371,13 @@ trait UploadFileTrait
             storedName: $storedName,
         );
 
-        $agent->sendToAllUsers(
-            ChatSignalConstants::NEW_EVENT,
-            new ChatEventSignalDTO(new EntitiesChangesDTO(full: [DbChatContext::events => Events::fromSingleItem($event)])),
+        $this->emitChangeDb(
+            ChatSignalConstants::EMIT_CHAT_EVENT_CREATED,
+            new EmitDbChangeSignalData(new TableSourceEventDTO(
+                sourceKey: DbChatContext::events,
+                sourceRowKey: $event->id,
+                mutationType: TableMutationType::Create,
+            )),
         );
     }
 

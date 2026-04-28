@@ -10,7 +10,6 @@ use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Page\AbstractChatPage;
 use Demo\Chat\Core\Router\DTO\ChatEventSignalDTO;
 use Demo\Chat\Database\DbChatContext;
-use Demo\Chat\Database\View\Collection\Events;
 use Demo\Chat\Frontend\UserFrontendStateProjector;
 use Demo\Chat\Hilos;
 use Demo\Chat\Tables\AdminUser\DTO\AdminUserUpdateActionDTO;
@@ -158,11 +157,13 @@ final class AdminUsersPage extends AbstractChatPage
             newName: $dto->name,
             adminUserId: Hilos::$rt->connections[$acceptKey]?->userId,
         );
-        $this->getChatAgent()->sendToAllUsers(
-            ChatSignalConstants::NEW_EVENT,
-            new ChatEventSignalDTO(new EntitiesChangesDTO(
-                full: [DbChatContext::events => Events::fromSingleItem($event)],
-            ), frontend: UserFrontendStateProjector::updatesForUser($dbUser, includePublicUser: true)),
+        $this->emitChangeDb(
+            ChatSignalConstants::EMIT_CHAT_EVENT_CREATED,
+            new EmitDbChangeSignalData(new TableSourceEventDTO(
+                sourceKey: DbChatContext::events,
+                sourceRowKey: $event->id,
+                mutationType: TableMutationType::Create,
+            )),
         );
     }
 

@@ -13,8 +13,6 @@ use Demo\Chat\Core\Router\DTO\ActionFailSignalData;
 use Demo\Chat\Core\Router\DTO\ActionSuccessSignalData;
 use Demo\Chat\Core\Router\DTO\ChatEventSignalDTO;
 use Demo\Chat\Database\DbChatContext;
-use Demo\Chat\Database\View\Collection\Events;
-use Demo\Chat\Frontend\UserFrontendStateProjector;
 use Demo\Chat\Hilos;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Exception\EmptyValueException;
@@ -143,11 +141,13 @@ final class ProfilePage extends AbstractChatPage
             oldName: $oldName,
             newName: $dto->newName,
         );
-        $this->getChatAgent()->sendToAllUsers(
-            ChatSignalConstants::NEW_EVENT,
-            new ChatEventSignalDTO(new EntitiesChangesDTO(
-                full: [DbChatContext::events => Events::fromSingleItem($event)],
-            ), frontend: UserFrontendStateProjector::updatesForUser($user, includePublicUser: true)),
+        $this->emitChangeDb(
+            ChatSignalConstants::EMIT_CHAT_EVENT_CREATED,
+            new EmitDbChangeSignalData(new TableSourceEventDTO(
+                sourceKey: DbChatContext::events,
+                sourceRowKey: $event->id,
+                mutationType: TableMutationType::Create,
+            )),
         );
 
         $sourceEvent = new TableSourceEventDTO(

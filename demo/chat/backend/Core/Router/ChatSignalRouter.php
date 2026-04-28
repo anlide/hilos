@@ -416,6 +416,15 @@ final class ChatSignalRouter extends SignalRouter
                 TableChatContext::adminUsers,
                 TableChatContext::hilosUsers,
             ],
+            ChatSignalConstants::EMIT_CHAT_BOT_ROW_CHANGED => [
+                TableChatContext::bots,
+            ],
+            ChatSignalConstants::EMIT_CHAT_MODERATOR_PROMPT_PIECE_ROW_CHANGED => [
+                TableChatContext::moderatorPromptPieces,
+            ],
+            ChatSignalConstants::EMIT_CHAT_SETTING_ROW_CHANGED => [
+                TableChatContext::settings,
+            ],
         ];
 
         $this->config = [

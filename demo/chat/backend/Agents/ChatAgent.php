@@ -9,14 +9,16 @@ use Demo\Chat\Constants\AgentType;
 use Demo\Chat\Constants\ChatCronConstants;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\HttpHeaders;
-use Demo\Chat\Core\Router\DTO\ChatEventSignalDTO;
+use Demo\Chat\Core\Router\DTO\BotAgentSignalData;
 use Demo\Chat\Core\Router\DTO\ModerationBotResultSignalData;
 use Demo\Chat\Core\Router\DTO\UserPresenceEmitPayload;
 use Demo\Chat\Database\DbChatContext;
 use Demo\Chat\Database\Pages\ChatPageCatalog;
 use Demo\Chat\Database\View\Collection\Events;
+use Demo\Chat\Database\View\Item\Event as DbEvent;
 use Demo\Chat\Frontend\UserFrontendStateProjector;
 use Demo\Chat\Hilos;
+use Demo\Chat\Runtime\State\Item\BotAgentStatus as StateBotAgentStatus;
 use Demo\Chat\Runtime\View\Context\RtChatContext;
 use Demo\Chat\Socket\WebSocket\DTO\HandshakeResponseSignalData;
 use Hilos\Core\Agent\AbstractAgent;
@@ -26,9 +28,11 @@ use Hilos\Core\CLI\Exception\CommandException;
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\AgentSignalData;
-use Hilos\Core\Router\DTO\EntitiesChangesDTO;
+use Hilos\Core\Router\DTO\EmitDbChangeSignalData;
 use Hilos\Core\Router\DTO\EmitRtChangeSignalData;
 use Hilos\Core\Router\SignalDataInterface;
+use Hilos\Core\Table\DTO\TableSourceEventDTO;
+use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\HilosException;
 use Hilos\Socket\WebSocket\DTO\WebSocketCloseSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
@@ -58,6 +62,7 @@ class ChatAgent extends AbstractAgent
         $this->registerDbTruthSource(DbChatContext::settings);
         $this->registerRtTruthSource(RtChatContext::connections);
         $this->registerRtTruthSource(RtChatContext::userStates);
+        $this->registerRtTruthSource(RtChatContext::botAgentStatuses);
 
         Hilos::$rt->userStates->actions->seedAllFromDb();
         Hilos::$db->events->actions->addChatStarted();
@@ -107,14 +112,9 @@ class ChatAgent extends AbstractAgent
         }
 
         if (count($newEvents) > 0) {
-            $this->sendToAllUsers(
-                ChatSignalConstants::NEW_EVENT,
-                new ChatEventSignalDTO(
-                    new EntitiesChangesDTO(full: [DbChatContext::events => $newEvents]),
-                    frontend: UserFrontendStateProjector::updatesForUser($user, includePublicUser: true),
-                ),
-                $data->acceptKey,
-            );
+            foreach ($newEvents as $event) {
+                $this->emitChatEventCreated($event, $data->acceptKey);
+            }
         }
 
         $this->broadcastUserPresence($user->id, $data->acceptKey);
@@ -195,6 +195,7 @@ class ChatAgent extends AbstractAgent
         Hilos::$db->events->actions->addChatStopped();
         Hilos::$rt->connections->actions->clear();
         Hilos::$rt->userStates->actions->clear();
+        Hilos::$rt->botAgentStatuses->actions->clear();
     }
 
     /**
@@ -216,15 +217,7 @@ class ChatAgent extends AbstractAgent
         Hilos::$db->events->actions->deleteAll();
         $event = Hilos::$db->events->actions->addChatCleared();
 
-        $this->sendToAllUsers(
-            ChatSignalConstants::NEW_EVENT,
-            new ChatEventSignalDTO(
-                new EntitiesChangesDTO(
-                    full: [DbChatContext::events => Events::fromSingleItem($event)],
-                    replaceFullKeys: [DbChatContext::events],
-                ),
-            ),
-        );
+        $this->emitChatEventsReplaced($event);
     }
 
     /**
@@ -252,7 +245,10 @@ class ChatAgent extends AbstractAgent
                 return;
             case ChatSignalConstants::BOT_JOINED:
             case ChatSignalConstants::BOT_LEFT:
-                $this->sendToAllUsers($name, $data->data);
+                if (!$data->data instanceof BotAgentSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, BotAgentSignalData::class, $data->data);
+                }
+                $this->handleBotAgentStatus($name, $data->data);
                 return;
             default:
                 throw new AgentUnknownSignalException($name);
@@ -274,9 +270,83 @@ class ChatAgent extends AbstractAgent
         }
 
         $event = Hilos::$db->events->actions->addMessage($result->message, botId: $result->botId);
-        $this->sendToAllUsers(
-            ChatSignalConstants::NEW_EVENT,
-            new ChatEventSignalDTO(new EntitiesChangesDTO(full: [DbChatContext::events => Events::fromSingleItem($event)])),
+        $this->emitChatEventCreated($event);
+    }
+
+    /**
+     * Emit a created chat event for daemon-side WebSocket fan-out.
+     *
+     * @param DbEvent $event Persisted chat event
+     * @param ?string $excludeAcceptKey Optional connection to skip during broadcast fan-out
+     */
+    private function emitChatEventCreated(DbEvent $event, ?string $excludeAcceptKey = null): void
+    {
+        if ($event->id === null) {
+            return;
+        }
+
+        $this->emitChangeDb(
+            ChatSignalConstants::EMIT_CHAT_EVENT_CREATED,
+            new EmitDbChangeSignalData(
+                sourceEvent: new TableSourceEventDTO(
+                    sourceKey: DbChatContext::events,
+                    sourceRowKey: $event->id,
+                    mutationType: TableMutationType::Create,
+                ),
+                excludeAcceptKey: $excludeAcceptKey,
+            ),
+        );
+    }
+
+    /**
+     * Emit a full replacement of the chat event stream after cleanup.
+     *
+     * @param DbEvent $event Persisted replacement marker event
+     */
+    private function emitChatEventsReplaced(DbEvent $event): void
+    {
+        if ($event->id === null) {
+            return;
+        }
+
+        $this->emitChangeDb(
+            ChatSignalConstants::EMIT_CHAT_EVENTS_REPLACED,
+            new EmitDbChangeSignalData(new TableSourceEventDTO(
+                sourceKey: DbChatContext::events,
+                sourceRowKey: $event->id,
+                mutationType: TableMutationType::Create,
+            )),
+        );
+    }
+
+    /**
+     * Update bot lifecycle runtime state and emit it for daemon-side fan-out.
+     *
+     * @param string $signalName Bot lifecycle agent signal name
+     * @param BotAgentSignalData $data Bot lifecycle payload
+     */
+    private function handleBotAgentStatus(string $signalName, BotAgentSignalData $data): void
+    {
+        $status = $signalName === ChatSignalConstants::BOT_JOINED
+            ? StateBotAgentStatus::STATUS_JOINED
+            : StateBotAgentStatus::STATUS_LEFT;
+
+        if ($status === StateBotAgentStatus::STATUS_JOINED) {
+            Hilos::$rt->botAgentStatuses->actions->markJoined($data->botId);
+        } else {
+            Hilos::$rt->botAgentStatuses->actions->markLeft($data->botId);
+        }
+
+        $this->emitChangeRt(
+            ChatSignalConstants::EMIT_CHAT_BOT_AGENT_STATUS_UPDATED,
+            new EmitRtChangeSignalData(
+                collectionKey: RtChatContext::botAgentStatuses,
+                stateId: (string)$data->botId,
+                payload: [
+                    StateBotAgentStatus::botId => $data->botId,
+                    StateBotAgentStatus::status => $status,
+                ],
+            ),
         );
     }
 }

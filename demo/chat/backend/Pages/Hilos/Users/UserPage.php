@@ -7,11 +7,9 @@ namespace Demo\Chat\Pages\Hilos\Users;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Core\Router\DTO\ActionFailSignalData;
 use Demo\Chat\Core\Router\DTO\ActionSuccessSignalData;
-use Demo\Chat\Core\Router\DTO\ChatEventSignalDTO;
 use Demo\Chat\Core\Router\DTO\HilosUserSubscriptionSignalData;
 use Demo\Chat\Database\Actions\Item\UserActions;
 use Demo\Chat\Database\DbChatContext;
-use Demo\Chat\Database\View\Collection\Events;
 use Demo\Chat\Frontend\UserFrontendStateProjector;
 use Demo\Chat\Hilos;
 use Demo\Chat\Tables\HilosUser\DTO\HilosUserUpdateActionDTO;
@@ -22,7 +20,6 @@ use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Page\Exception\PageResourceNotFoundException;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\EmitDbChangeSignalData;
-use Hilos\Core\Router\DTO\EntitiesChangesDTO;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
 use Hilos\Core\Table\DTO\TableSourceEventDTO;
 use Hilos\Core\Table\Mutation\TableMutationType;
@@ -168,11 +165,13 @@ final class UserPage extends AbstractHilosUserPage
             newName: $newName,
             adminUserId: Hilos::$rt->connections[$acceptKey]?->userId,
         );
-        $this->sendToAllUsers(
-            ChatSignalConstants::NEW_EVENT,
-            new ChatEventSignalDTO(new EntitiesChangesDTO(
-                full: [DbChatContext::events => Events::fromSingleItem($event)],
-            ), frontend: UserFrontendStateProjector::updatesForUser($dbUser, includePublicUser: true)),
+        $this->emitChangeDb(
+            ChatSignalConstants::EMIT_CHAT_EVENT_CREATED,
+            new EmitDbChangeSignalData(new TableSourceEventDTO(
+                sourceKey: DbChatContext::events,
+                sourceRowKey: $event->id,
+                mutationType: TableMutationType::Create,
+            )),
         );
 
         $this->sendToUser(

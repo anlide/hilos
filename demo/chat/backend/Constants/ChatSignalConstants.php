@@ -182,11 +182,32 @@ final class ChatSignalConstants
     public const string GUARDIAN_AGENT_RUN_STOP = 'guardian_agent_run_stop';
 
     // ── Emit events (worker → daemon → mapper → WebSocket) ───────────────
+    /** @var string DB chat event created; {@see ChatSignalMapper} fan-out rules */
+    public const string EMIT_CHAT_EVENT_CREATED = 'emit_chat_event_created';
+
+    /** @var string DB chat event stream replaced; {@see ChatSignalMapper} fan-out rules */
+    public const string EMIT_CHAT_EVENTS_REPLACED = 'emit_chat_events_replaced';
+
     /** @var string DB user row updated; {@see ChatSignalMapper} fan-out rules */
     public const string EMIT_CHAT_USER_ROW_UPDATED = 'emit_chat_user_row_updated';
 
+    /** @var string DB bot table row changed; {@see ChatSignalMapper} fan-out rules */
+    public const string EMIT_CHAT_BOT_ROW_CHANGED = 'emit_chat_bot_row_changed';
+
+    /** @var string DB bot frontend state changed; {@see ChatSignalMapper} fan-out rules */
+    public const string EMIT_CHAT_BOT_FRONTEND_UPDATED = 'emit_chat_bot_frontend_updated';
+
+    /** @var string DB moderator prompt piece row changed; {@see ChatSignalMapper} fan-out rules */
+    public const string EMIT_CHAT_MODERATOR_PROMPT_PIECE_ROW_CHANGED = 'emit_chat_moderator_prompt_piece_row_changed';
+
+    /** @var string DB settings row changed; {@see ChatSignalMapper} fan-out rules */
+    public const string EMIT_CHAT_SETTING_ROW_CHANGED = 'emit_chat_setting_row_changed';
+
     /** @var string RT user presence changed; {@see ChatSignalMapper} page-scoped fan-out rules */
     public const string EMIT_CHAT_USER_PRESENCE_UPDATED = 'emit_chat_user_presence_updated';
+
+    /** @var string RT bot agent lifecycle changed; {@see ChatSignalMapper} fan-out rules */
+    public const string EMIT_CHAT_BOT_AGENT_STATUS_UPDATED = 'emit_chat_bot_agent_status_updated';
 
     // ── Table signals (server → client) ──────────────────────────────────
     /** @var string Server responds with fresh table data */

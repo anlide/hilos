@@ -9,10 +9,12 @@ use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Router\ChatSignalMapper;
 use Demo\Chat\Core\Router\DTO\UserPresenceEmitPayload;
 use Demo\Chat\Database\DbChatContext;
+use Demo\Chat\Runtime\State\Item\BotAgentStatus as StateBotAgentStatus;
 use Demo\Chat\Runtime\View\Context\RtChatContext;
 use Demo\Chat\Tables\TableChatContext;
 use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosPageRouteParams;
+use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Router\DTO\EmitDbChangeSignalData;
 use Hilos\Core\Router\DTO\EmitRtChangeSignalData;
@@ -83,6 +85,31 @@ final class ChatSignalMapperTest extends TestCase
         );
 
         $this->assertSame([], (new ChatSignalMapper($this->makeRouter(), $this->makeTableContext()))->mapDbEmit($signal));
+    }
+
+    public function testMapConfiguredBotTableEventBuildsPendingMutation(): void
+    {
+        $signal = new SignalDTO(
+            new SignalSource(SignalSource::AGENT, 'chat', null),
+            new SignalType(SignalTypeConstants::EMIT_DB_CHANGE),
+            new SignalName(ChatSignalConstants::EMIT_CHAT_BOT_ROW_CHANGED),
+            new EmitDbChangeSignalData(
+                sourceEvent: new TableSourceEventDTO(
+                    sourceKey: DbChatContext::bots,
+                    sourceRowKey: 5,
+                    mutationType: TableMutationType::Update,
+                ),
+                excludeAcceptKey: 'admin-ak',
+            ),
+        );
+
+        $items = (new ChatSignalMapper($this->makeRouter(), $this->makeTableContext()))->mapDbEmit($signal);
+
+        $this->assertCount(1, $items);
+        $this->assertSame(EmitFanoutDelivery::AllExcept, $items[0]->delivery);
+        $this->assertSame(ChatSignalConstants::TABLE_MUTATION_PENDING, $items[0]->wireSignalName);
+        $this->assertSame('admin-ak', $items[0]->excludeAcceptKey);
+        $this->assertSame(TableChatContext::bots, $items[0]->innerPayload->tableKey);
     }
 
     public function testMapChatUserPresenceUpdatedBuildsPageScopedFanout(): void
@@ -166,6 +193,56 @@ final class ChatSignalMapperTest extends TestCase
         );
     }
 
+    public function testMapBotAgentStatusUpdatedBuildsLifecycleFanout(): void
+    {
+        $signal = new SignalDTO(
+            new SignalSource(SignalSource::AGENT, 'chat', null),
+            new SignalType(SignalTypeConstants::EMIT_RT_CHANGE),
+            new SignalName(ChatSignalConstants::EMIT_CHAT_BOT_AGENT_STATUS_UPDATED),
+            new EmitRtChangeSignalData(
+                collectionKey: RtChatContext::botAgentStatuses,
+                stateId: '9',
+                payload: [
+                    StateBotAgentStatus::botId => 9,
+                    StateBotAgentStatus::status => StateBotAgentStatus::STATUS_JOINED,
+                ],
+            ),
+        );
+
+        $items = (new ChatSignalMapper($this->makeRouter(), $this->makeTableContext()))->mapRtEmit($signal);
+
+        $this->assertCount(1, $items);
+        $this->assertSame(EmitFanoutDelivery::AllExcept, $items[0]->delivery);
+        $this->assertSame(ChatSignalConstants::BOT_JOINED, $items[0]->wireSignalName);
+    }
+
+    public function testMapGuardianAgentStatusUpdatedBuildsGuardianFanout(): void
+    {
+        $signal = new SignalDTO(
+            new SignalSource(SignalSource::AGENT, 'hilos_guardian', null),
+            new SignalType(SignalTypeConstants::EMIT_RT_CHANGE),
+            new SignalName(HilosSignalConstants::EMIT_HILOS_GUARDIAN_AGENT_STATUS_UPDATED),
+            new EmitRtChangeSignalData(
+                collectionKey: RtChatContext::guardianAgentStatuses,
+                stateId: 'code_quality',
+                payload: [
+                    'agentId' => 'code_quality',
+                    'status' => 'done',
+                ],
+            ),
+        );
+
+        $items = (new ChatSignalMapper($this->makeRouter(), $this->makeTableContext()))->mapRtEmit($signal);
+
+        $this->assertCount(1, $items);
+        $this->assertSame(EmitFanoutDelivery::AllExcept, $items[0]->delivery);
+        $this->assertSame(HilosSignalConstants::GUARDIAN_AGENT_STATUS_UPDATE, $items[0]->wireSignalName);
+        $this->assertSame(
+            ['agentId' => 'code_quality', 'status' => 'done'],
+            $items[0]->innerPayload->toArray(),
+        );
+    }
+
     private function makeRouter(): SignalRouter
     {
         return new class extends SignalRouter {
@@ -179,6 +256,9 @@ final class ChatSignalMapperTest extends TestCase
                             TableChatContext::adminUsers,
                             TableChatContext::hilosUsers,
                         ],
+                        ChatSignalConstants::EMIT_CHAT_BOT_ROW_CHANGED => [
+                            TableChatContext::bots,
+                        ],
                     ],
                 ];
             }
@@ -187,10 +267,15 @@ final class ChatSignalMapperTest extends TestCase
 
     private function makeTableContext(): TableContext
     {
-        $context = new class($this->makeTable('admin'), $this->makeTable('hilos')) extends TableContext {
+        $context = new class(
+            $this->makeTable('admin'),
+            $this->makeTable('hilos'),
+            $this->makeTable('bots', DbChatContext::bots),
+        ) extends TableContext {
             public function __construct(
                 private readonly TableDefinition $adminUsers,
                 private readonly TableDefinition $hilosUsers,
+                private readonly TableDefinition $bots,
             ) {
             }
 
@@ -198,6 +283,7 @@ final class ChatSignalMapperTest extends TestCase
             {
                 $this->register(TableChatContext::adminUsers, $this->adminUsers);
                 $this->register(TableChatContext::hilosUsers, $this->hilosUsers);
+                $this->register(TableChatContext::bots, $this->bots);
             }
         };
         $context->configure();
@@ -205,17 +291,19 @@ final class ChatSignalMapperTest extends TestCase
         return $context;
     }
 
-    private function makeTable(string $label): TableDefinition
+    private function makeTable(string $label, string $sourceKey = DbChatContext::users): TableDefinition
     {
-        return new class($label) extends TableDefinition {
-            public function __construct(private readonly string $label)
-            {
+        return new class($label, $sourceKey) extends TableDefinition {
+            public function __construct(
+                private readonly string $label,
+                private readonly string $sourceKey,
+            ) {
                 parent::__construct();
             }
 
             public function buildMutationForSourceEvent(TableSourceEventDTO $event): ?TableRowMutationDTO
             {
-                if ($event->sourceKey !== DbChatContext::users) {
+                if ($event->sourceKey !== $this->sourceKey) {
                     return null;
                 }
 

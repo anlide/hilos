@@ -5,10 +5,12 @@ declare(strict_types=1);
 namespace Demo\Chat\Agents\Hilos;
 
 use Demo\Chat\AI\Agent\ChatAiAgentFactory;
+use Demo\Chat\Hilos;
+use Demo\Chat\Runtime\View\Context\RtChatContext;
 use Hilos\AI\Agent\AiAgentInterface;
 use Hilos\AI\Agent\GuardianAiAgentId;
 use Hilos\Core\Agent\Hilos\AbstractHilosGuardianAgent;
-use Random\RandomException;
+use Hilos\Core\Agent\Hilos\GuardianRunStatus;
 
 /**
  * Chat demo guardian agent that wires project AI agents into the Hilos guardian page.
@@ -26,12 +28,14 @@ class DemoHilosGuardianAgent extends AbstractHilosGuardianAgent
     private array $guardianAiAgents = [];
 
     /**
-     * Instantiates chat project guardian AI agents and initializes in-memory run statuses.
+     * Instantiates chat project guardian AI agents and initializes runtime run statuses.
      */
     public function onStart(): void
     {
+        $this->registerRtTruthSource(RtChatContext::guardianAgentStatuses);
+
         $this->guardianAiAgents = ChatAiAgentFactory::createAll();
-        $this->getGuardianRunStatuses();
+        Hilos::$rt->guardianAgentStatuses->actions->syncStatuses($this->getGuardianRunStatuses());
     }
 
     /**
@@ -52,7 +56,29 @@ class DemoHilosGuardianAgent extends AbstractHilosGuardianAgent
     public function onStop(): void
     {
         $this->guardianAiAgents = [];
+        Hilos::$rt->guardianAgentStatuses->actions->clear();
         $this->resetGuardianRunStates();
+    }
+
+    /**
+     * Runtime collection used by the project signal mapper for guardian status fan-out.
+     *
+     * @return string Guardian status runtime collection key
+     */
+    protected function getGuardianRunStatusRtCollectionKey(): string
+    {
+        return RtChatContext::guardianAgentStatuses;
+    }
+
+    /**
+     * Mirror guardian status changes into runtime state before daemon fan-out.
+     *
+     * @param string $agentId Guardian agent identifier
+     * @param GuardianRunStatus $status Run status
+     */
+    protected function onGuardianRunStatusChanged(string $agentId, GuardianRunStatus $status): void
+    {
+        Hilos::$rt->guardianAgentStatuses->actions->setStatus($agentId, $status);
     }
 
     /**

@@ -6,7 +6,8 @@ namespace Hilos\Core\Agent\Hilos;
 
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
-use Hilos\Core\Router\SignalData;
+use Hilos\Core\Router\DTO\EmitRtChangeSignalData;
+use Random\RandomException;
 
 /**
  * AbstractHilosGuardianAgent - Abstract agent for Hilos guardian page (project validation robots).
@@ -32,13 +33,9 @@ abstract class AbstractHilosGuardianAgent extends AbstractHilosAgent
     {
         $this->initializeGuardianRunStates();
 
-        $statuses = [];
-
-        foreach ($this->guardianRunStates as $agentId => $state) {
-            $statuses[$agentId] = $state['status']->value;
-        }
-
-        return $statuses;
+        return array_map(function ($state) {
+            return $state['status']->value;
+        }, $this->guardianRunStates);
     }
 
     /**
@@ -110,6 +107,8 @@ abstract class AbstractHilosGuardianAgent extends AbstractHilosAgent
 
     /**
      * Finalize runs whose completion deadlines have expired.
+     *
+     * @throws RandomException
      */
     protected function processPendingGuardianRuns(): void
     {
@@ -171,19 +170,46 @@ abstract class AbstractHilosGuardianAgent extends AbstractHilosAgent
     }
 
     /**
-     * Broadcast one guardian run status change to all connected clients.
+     * Runtime collection key used for guardian status emit payloads.
+     *
+     * Projects with a runtime status collection should override this method.
+     *
+     * @return string Runtime collection key, or empty string when no collection is configured
+     */
+    protected function getGuardianRunStatusRtCollectionKey(): string
+    {
+        return '';
+    }
+
+    /**
+     * Hook for projects that mirror guardian run statuses into runtime state.
+     *
+     * @param string $agentId Guardian agent identifier
+     * @param GuardianRunStatus $status Run status
+     */
+    protected function onGuardianRunStatusChanged(string $agentId, GuardianRunStatus $status): void
+    {
+    }
+
+    /**
+     * Emit one guardian run status change for daemon-side fan-out.
      *
      * @param string $agentId Guardian agent identifier
      * @param GuardianRunStatus $status Run status
      */
     private function broadcastGuardianRunStatus(string $agentId, GuardianRunStatus $status): void
     {
-        $this->sendToAllUsers(
-            HilosSignalConstants::GUARDIAN_AGENT_STATUS_UPDATE,
-            new SignalData([
-                'agentId' => $agentId,
-                'status' => $status->value,
-            ]),
+        $this->onGuardianRunStatusChanged($agentId, $status);
+        $this->emitChangeRt(
+            HilosSignalConstants::EMIT_HILOS_GUARDIAN_AGENT_STATUS_UPDATED,
+            new EmitRtChangeSignalData(
+                collectionKey: $this->getGuardianRunStatusRtCollectionKey(),
+                stateId: $agentId,
+                payload: [
+                    'agentId' => $agentId,
+                    'status' => $status->value,
+                ],
+            ),
         );
     }
 }

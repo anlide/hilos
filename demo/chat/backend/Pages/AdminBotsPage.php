@@ -19,10 +19,13 @@ use Demo\Chat\Tables\TableChatContext;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
+use Hilos\Core\Router\DTO\EmitDbChangeSignalData;
 use Hilos\Core\Router\DTO\EntitiesChangesDTO;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
 use Hilos\Core\Table\DTO\TableActionErrorSignalData;
 use Hilos\Core\Table\DTO\TableMutationSignalData;
+use Hilos\Core\Table\DTO\TableRowMutationDTO;
+use Hilos\Core\Table\DTO\TableSourceEventDTO;
 use Hilos\Core\Table\Exception\TableActionException;
 use Hilos\HilosException;
 use Throwable;
@@ -139,7 +142,7 @@ final class AdminBotsPage extends AbstractChatPage
         $signal = new TableMutationSignalData(TableChatContext::bots, $mutation);
 
         $this->getChatAgent()->sendToUser(ChatSignalConstants::TABLE_MUTATION, $acceptKey, $signal);
-        $this->getChatAgent()->sendToAllUsers(ChatSignalConstants::TABLE_MUTATION_PENDING, $signal, $acceptKey);
+        $this->emitBotTableRowChanged($mutation, $acceptKey);
 
         if ((Hilos::$db->bots[$mutation->rowKey]->active ?? false) === true) {
             $this->getChatAgent()->sendToAgent(
@@ -175,7 +178,7 @@ final class AdminBotsPage extends AbstractChatPage
         $signal = new TableMutationSignalData(TableChatContext::bots, $mutation);
 
         $this->getChatAgent()->sendToUser(ChatSignalConstants::TABLE_MUTATION, $acceptKey, $signal);
-        $this->getChatAgent()->sendToAllUsers(ChatSignalConstants::TABLE_MUTATION_PENDING, $signal, $acceptKey);
+        $this->emitBotTableRowChanged($mutation, $acceptKey);
 
         if (!$oldActive && $newActive) {
             $this->getChatAgent()->sendToAgent(
@@ -186,11 +189,13 @@ final class AdminBotsPage extends AbstractChatPage
         // active true->false: BotAgent learns via DB_SYNC_UPDATED and calls selfStop()
 
         // Push updated bot to main chat store so bot names display correctly (for both active change and data-only edits)
-        $this->getChatAgent()->sendToAllUsers(
-            ChatSignalConstants::BOT_UPDATED,
-            new ChatEventSignalDTO(new EntitiesChangesDTO(updates: [
-                DbChatContext::bots => [Hilos::$db->bots[$dto->id]->toArray(toFrontend: true)],
-            ])),
+        $this->emitChangeDb(
+            ChatSignalConstants::EMIT_CHAT_BOT_FRONTEND_UPDATED,
+            new EmitDbChangeSignalData(new TableSourceEventDTO(
+                sourceKey: DbChatContext::bots,
+                sourceRowKey: $dto->id,
+                mutationType: $mutation->type,
+            )),
         );
     }
 
@@ -216,6 +221,28 @@ final class AdminBotsPage extends AbstractChatPage
         $signal = new TableMutationSignalData(TableChatContext::bots, $mutation);
 
         $this->getChatAgent()->sendToUser(ChatSignalConstants::TABLE_MUTATION, $acceptKey, $signal);
-        $this->getChatAgent()->sendToAllUsers(ChatSignalConstants::TABLE_MUTATION_PENDING, $signal, $acceptKey);
+        $this->emitBotTableRowChanged($mutation, $acceptKey);
+    }
+
+    /**
+     * Emits a bot table row change for pending mutation fan-out.
+     *
+     * @param TableRowMutationDTO $mutation Source table mutation returned by the table action
+     * @param string $acceptKey Initiating WebSocket connection key
+     */
+    private function emitBotTableRowChanged(TableRowMutationDTO $mutation, string $acceptKey): void
+    {
+        $this->emitChangeDb(
+            ChatSignalConstants::EMIT_CHAT_BOT_ROW_CHANGED,
+            new EmitDbChangeSignalData(
+                sourceEvent: new TableSourceEventDTO(
+                    sourceKey: DbChatContext::bots,
+                    sourceRowKey: $mutation->rowKey,
+                    mutationType: $mutation->type,
+                ),
+                excludeAcceptKey: $acceptKey,
+                actorUserId: Hilos::$rt->connections[$acceptKey]?->userId,
+            ),
+        );
     }
 }

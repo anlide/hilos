@@ -86,6 +86,9 @@ class HilosSignalConstants
     /** @var string Push signal for guardian agent status updates */
     public const string GUARDIAN_AGENT_STATUS_UPDATE = 'guardian_agent_status_update';
 
+    /** @var string RT guardian agent status changed; project mapper expands this to frontend updates */
+    public const string EMIT_HILOS_GUARDIAN_AGENT_STATUS_UPDATED = 'emit_hilos_guardian_agent_status_updated';
+
     /** @var string Subscription signal for Hilos analytics page */
     public const string SUBSCRIPTION_PAGE_HILOS_ANALYTICS = 'subscription_page_hilos_analytics';
 
