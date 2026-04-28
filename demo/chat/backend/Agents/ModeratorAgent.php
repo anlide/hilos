@@ -6,7 +6,6 @@ namespace Demo\Chat\Agents;
 
 use Demo\Chat\Constants\AgentType;
 use Demo\Chat\Constants\ChatSignalConstants;
-use Demo\Chat\Utils\ChatSettingsHelper;
 use Demo\Chat\Core\Router\DTO\ModerationBotRequestSignalData;
 use Demo\Chat\Core\Router\DTO\ModerationBotResultSignalData;
 use Demo\Chat\Core\Router\DTO\ModerationFileRequestSignalData;
@@ -16,36 +15,46 @@ use Demo\Chat\Core\Router\DTO\ModerationResultSignalData;
 use Demo\Chat\Database\DbChatContext;
 use Demo\Chat\Database\Object\Item\ModeratorPromptPiece as ObjectModeratorPromptPiece;
 use Demo\Chat\Hilos;
+use Demo\Chat\Utils\ChatSettingsHelper;
+use Hilos\Constants\LLMConstants;
+use Hilos\Core\Agent\AbstractAgent;
+use Hilos\Core\Router\AgentSignalData;
+use Hilos\HilosException;
 use Hilos\LLM\ClientFactory;
 use Hilos\LLM\Contract\AsyncChatLLMInterface;
 use Hilos\LLM\DTO\ChatGenerateOptions;
 use Hilos\LLM\DTO\Message;
-use Hilos\Constants\LLMConstants;
-use Hilos\Core\Agent\AbstractAgent;
-use Hilos\Core\Router\AgentSignalData;
 use Hilos\Utils\Helpers\JsonHelper;
 
 /**
- * ModeratorAgent - Regular agent for content moderation.
+ * Regular agent that queues user, bot, and file moderation requests and returns decisions.
  *
- * Runs in regular worker process. Manages content moderation and AI-based checks.
- * Uses framework LLM layer (local Ollama or external OpenAI) via settings with Env fallback.
+ * Uses async LLM moderation unless the matching moderation category is disabled.
  */
 class ModeratorAgent extends AbstractAgent
 {
     public const string AGENT_TYPE = AgentType::MODERATOR;
 
-    /** @var AsyncChatLLMInterface LLM chat client for moderation */
     private AsyncChatLLMInterface $chatClient;
 
-    /** @var list<array<string, mixed>> Queue of pending moderation requests (type, payload) */
+    /**
+     * @var list<array{
+     *     type: 'user'|'file'|'bot',
+     *     payload: ModerationRequestSignalData|ModerationFileRequestSignalData|ModerationBotRequestSignalData
+     * }>
+     */
     private array $pendingQueue = [];
 
-    /** @var array<string, mixed>|null Request currently in flight (type, payload) or null */
+    /**
+     * @var ?array{
+     *     type: 'user'|'file'|'bot',
+     *     payload: ModerationRequestSignalData|ModerationFileRequestSignalData|ModerationBotRequestSignalData
+     * }
+     */
     private ?array $currentPending = null;
 
     /**
-     * Creates moderator agent with LLM client from Env config.
+     * Creates a moderator with an LLM client from moderation settings.
      */
     public function __construct()
     {
@@ -54,32 +63,28 @@ class ModeratorAgent extends AbstractAgent
             : ClientFactory::createChatClientWithConfig(
                 url: ChatSettingsHelper::getModerationUrl(),
                 model: ChatSettingsHelper::getModerationModel(),
-                apiKey: null,
             );
     }
 
     /**
-     * Called when agent is started.
-     * Registers as truth source for moderator prompt pieces.
+     * Registers moderator prompt pieces as this agent's DB truth source.
      */
     public function onStart(): void
     {
-        // Register this agent as truth source for moderator prompt pieces collection (all keys)
         $this->registerDbTruthSource(DbChatContext::moderatorPromptPieces);
     }
 
     /**
-     * Called when agent is stopped.
-     *
-     * WorkerManager unregisters truth sources after this hook.
+     * Leaves in-memory moderation queue to be discarded with the worker.
      */
     public function onStop(): void
     {
     }
 
     /**
-     * Agent-specific tick implementation.
-     * Processes LLM results and sends moderation decisions to ChatAgent.
+     * Advances async moderation, sends completed decisions, and starts the next queued request.
+     *
+     * @throws HilosException When moderation rule lookup fails
      */
     public function onTick(): void
     {
@@ -164,11 +169,12 @@ class ModeratorAgent extends AbstractAgent
     }
 
     /**
-     * Handle agent-to-agent signals (moderation request from ChatAgent or BotAgent).
+     * Routes valid moderation request payloads into the queue and logs unsupported payloads.
      *
-     * @param AgentSignalData $data Incoming signal payload
-     * @param string          $source Source agent id
-     * @param string          $name Signal name (MODERATE_REQUEST or MODERATE_BOT_REQUEST)
+     * @param AgentSignalData $data Agent signal wrapper with the inner moderation payload
+     * @param string $source Framework signal source identifier (unused)
+     * @param string $name Moderation request signal name
+     * @throws HilosException When moderation rule lookup fails
      */
     public function onSignalAgent(AgentSignalData $data, string $source, string $name): void
     {
@@ -202,9 +208,10 @@ class ModeratorAgent extends AbstractAgent
     }
 
     /**
-     * Queue or bypass user message moderation request.
+     * Queues or bypasses a file moderation request.
      *
-     * @param ModerationFileRequestSignalData $payload User message moderation request
+     * @param ModerationFileRequestSignalData $payload File moderation request
+     * @throws HilosException When moderation rule lookup fails
      */
     private function handleModerateFileRequest(ModerationFileRequestSignalData $payload): void
     {
@@ -222,7 +229,9 @@ class ModeratorAgent extends AbstractAgent
     }
 
     /**
-     * Send allow result without LLM when user moderation is disabled (files).
+     * Sends an allow result without LLM when file moderation is disabled.
+     *
+     * @param ModerationFileRequestSignalData $payload File moderation request
      */
     private function bypassModerationFile(ModerationFileRequestSignalData $payload): void
     {
@@ -242,6 +251,12 @@ class ModeratorAgent extends AbstractAgent
         );
     }
 
+    /**
+     * Queues or bypasses a user message moderation request.
+     *
+     * @param ModerationRequestSignalData $payload User message moderation request
+     * @throws HilosException When moderation rule lookup fails
+     */
     private function handleModerateRequest(ModerationRequestSignalData $payload): void
     {
         if (!ChatSettingsHelper::getModerationUsers()) {
@@ -259,9 +274,10 @@ class ModeratorAgent extends AbstractAgent
     }
 
     /**
-     * Queue or bypass bot message moderation request.
+     * Queues or bypasses a bot message moderation request.
      *
      * @param ModerationBotRequestSignalData $payload Bot message moderation request
+     * @throws HilosException When moderation rule lookup fails
      */
     private function handleModerateBotRequest(ModerationBotRequestSignalData $payload): void
     {
@@ -280,7 +296,7 @@ class ModeratorAgent extends AbstractAgent
     }
 
     /**
-     * Send allow result without LLM when user moderation is disabled.
+     * Sends an allow result without LLM when user moderation is disabled.
      *
      * @param ModerationRequestSignalData $payload User message data to pass through
      */
@@ -300,7 +316,7 @@ class ModeratorAgent extends AbstractAgent
     }
 
     /**
-     * Send allow result without LLM when bot moderation is disabled.
+     * Sends an allow result without LLM when bot moderation is disabled.
      *
      * @param ModerationBotRequestSignalData $payload Bot message data to pass through
      */
@@ -319,9 +335,11 @@ class ModeratorAgent extends AbstractAgent
     }
 
     /**
-     * Starts next pending moderation request via LLM if not busy.
+     * Starts the next queued moderation request if the LLM client is idle.
      *
-     * Shifts one item from queue and calls LLM. Re-queues item if LLM is busy.
+     * Requeues the item when the LLM client rejects the start request.
+     *
+     * @throws HilosException When moderation rule lookup fails
      */
     private function startNextPending(): void
     {
@@ -355,12 +373,12 @@ class ModeratorAgent extends AbstractAgent
     }
 
     /**
-     * Parse JSON returned by moderation model.
+     * Parses JSON returned by the moderation model.
      *
      * Expected shape: {"allow": true|false, "reason": "short reason"}
      *
      * @param string $text Raw model output
-     * @return ?array<string, mixed> Parsed decision or null when invalid
+     * @return ?array{allow: bool, reason: string} Parsed decision or null when invalid
      */
     private static function parseModerationDecision(string $text): ?array
     {
@@ -381,12 +399,13 @@ class ModeratorAgent extends AbstractAgent
     }
 
     /**
-     * Build chat messages for moderation (system rules + author context + message).
+     * Builds moderation prompt messages from rules, author context, and message text.
      *
-     * @param string   $message Message text to moderate
-     * @param ?int     $userId User id when moderating user message
-     * @param ?int     $botId Bot id when moderating bot message
+     * @param string $message Message text to moderate
+     * @param ?int $userId User id when moderating a user or file request
+     * @param ?int $botId Bot id when moderating a bot message
      * @return list<Message> System and user messages for LLM
+     * @throws HilosException When moderation rule lookup fails
      */
     private function buildModerationMessages(string $message, ?int $userId = null, ?int $botId = null): array
     {
@@ -407,7 +426,7 @@ class ModeratorAgent extends AbstractAgent
     }
 
     /**
-     * Fetch message moderation rules from database.
+     * Fetches message moderation rules from moderator prompt pieces.
      *
      * @return list<string> Rules from moderator prompt pieces
      */

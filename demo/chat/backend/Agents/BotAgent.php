@@ -6,9 +6,9 @@ namespace Demo\Chat\Agents;
 
 use Demo\Chat\Constants\AgentType;
 use Demo\Chat\Constants\ChatContextAnalyzerConstants;
-use Demo\Chat\Constants\ChatTopicConstants;
 use Demo\Chat\Constants\ChatEventType;
 use Demo\Chat\Constants\ChatSignalConstants;
+use Demo\Chat\Constants\ChatTopicConstants;
 use Demo\Chat\Core\Router\DTO\BotAgentSignalData;
 use Demo\Chat\Core\Router\DTO\ModerationBotRequestSignalData;
 use Demo\Chat\Database\DbChatContext;
@@ -27,44 +27,37 @@ use Hilos\Core\Sync\DTO\DbSyncDeletedSignalData;
 use Hilos\Core\Sync\DTO\DbSyncUpdatedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncCreatedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
+use Hilos\HilosException;
 use Hilos\LLM\ClientFactory;
 use Hilos\LLM\Contract\AsyncChatLLMInterface;
 use Hilos\LLM\DTO\ChatGenerateOptions;
 use Hilos\LLM\DTO\Message;
-use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Random\RandomException;
 
 /**
- * BotAgent - Regular agent for bot management.
+ * Per-bot agent that schedules async LLM reactions and submits generated messages for moderation.
  *
- * Runs in regular worker process. One agent per bot (agentIndex = bot.id).
- * Manages bot interactions: reacts to chat context updates (RtSync from ChatContextAnalyzerAgent)
- * and generates messages via async LLM.
+ * One agent is keyed by bot id through agentIndex. It reacts to chat context syncs and its own bot row changes.
  */
 class BotAgent extends AbstractAgent
 {
     public const string AGENT_TYPE = AgentType::BOT;
 
-    /** @var int Maximum tokens for LLM response */
     private const int MAX_RESPONSE_TOKENS = 256;
 
-    /** @var AsyncChatLLMInterface LLM chat client */
     private AsyncChatLLMInterface $chatClient;
 
-    /** @var float Unix timestamp (seconds) when reaction is scheduled, or 0 if not scheduled */
     private float $scheduledReactAt = 0.0;
 
-    /** @var float Unix timestamp (seconds) when last message was sent, for cooldown */
     private float $lastMessageSentAt = 0.0;
 
-    /** @var bool Whether LLM generation is in flight (result will be sent to ModeratorAgent) */
     private bool $generationInFlight = false;
 
     /**
-     * Create BotAgent for the given bot ID.
+     * Creates a bot agent bound to a persisted bot id.
      *
-     * @param string $agentIndex Bot ID (must be non-empty)
-     * @throws AgentIndexRequiredException If agentIndex is empty
+     * @param string $agentIndex Bot id from the agent manager
+     * @throws AgentIndexRequiredException When agentIndex is empty
      */
     public function __construct(string $agentIndex)
     {
@@ -82,8 +75,9 @@ class BotAgent extends AbstractAgent
     }
 
     /**
-     * Called when agent is started. Announces bot join and schedules initial reaction.
+     * Announces bot join and schedules an initial reaction fallback.
      *
+     * @throws HilosException On bot lookup failure
      * @throws RandomException When scheduling the initial bot reaction delay fails
      */
     public function onStart(): void
@@ -97,7 +91,7 @@ class BotAgent extends AbstractAgent
     }
 
     /**
-     * Called when agent is stopped. Announces bot left.
+     * Announces bot leave to ChatAgent.
      */
     public function onStop(): void
     {
@@ -106,13 +100,11 @@ class BotAgent extends AbstractAgent
     }
 
     /**
-     * Handle DB sync updated signal for the bot.
+     * Stops this bot agent when its own bot row becomes inactive.
      *
-     * If the bot is marked as inactive, stop the agent.
-     *
-     * @param DbSyncUpdatedSignalData $data Sync data with updated row
-     * @param string $source Signal source
-     * @param string $name Signal name
+     * @param DbSyncUpdatedSignalData $data Updated bot row sync payload
+     * @param string $source Framework signal source identifier (unused)
+     * @param string $name Framework signal name (unused)
      */
     public function onSignalDbSyncUpdated(DbSyncUpdatedSignalData $data, string $source, string $name): void
     {
@@ -128,13 +120,11 @@ class BotAgent extends AbstractAgent
     }
 
     /**
-     * Handle DB sync deleted signal for the bot.
+     * Stops this bot agent when its own bot row is deleted.
      *
-     * Stops agent when its bot record is deleted.
-     *
-     * @param DbSyncDeletedSignalData $data Sync data with deleted row id
-     * @param string $source Signal source
-     * @param string $name Signal name
+     * @param DbSyncDeletedSignalData $data Deleted bot row sync payload
+     * @param string $source Framework signal source identifier (unused)
+     * @param string $name Framework signal name (unused)
      */
     public function onSignalDbSyncDeleted(DbSyncDeletedSignalData $data, string $source, string $name): void
     {
@@ -147,13 +137,12 @@ class BotAgent extends AbstractAgent
     }
 
     /**
-     * Handle DB sync created signal.
+     * Schedules a post-clear reaction when the chat event stream is reset.
      *
-     * When chat is cleared, topic is reset - leaders should propose a new topic.
-     *
-     * @param DbSyncCreatedSignalData $data Sync data with created row
-     * @param string $source Signal source
-     * @param string $name Signal name
+     * @param DbSyncCreatedSignalData $data Created event row sync payload
+     * @param string $source Framework signal source identifier (unused)
+     * @param string $name Framework signal name (unused)
+     * @throws HilosException On bot lookup during reaction scheduling
      * @throws RandomException When scheduling the post-clear reaction delay fails
      */
     public function onSignalDbSyncCreated(DbSyncCreatedSignalData $data, string $source, string $name): void
@@ -169,13 +158,12 @@ class BotAgent extends AbstractAgent
     }
 
     /**
-     * Handle RT sync created signal.
+     * Schedules a bot reaction when the main chat context is created.
      *
-     * ChatContext created (init) - can schedule reaction if context has content.
-     *
-     * @param RtSyncCreatedSignalData $data Sync data with created state
-     * @param string $source Signal source
-     * @param string $name Signal name
+     * @param RtSyncCreatedSignalData $data Created runtime context sync payload
+     * @param string $source Framework signal source identifier (unused)
+     * @param string $name Framework signal name (unused)
+     * @throws HilosException On bot lookup during reaction scheduling
      * @throws RandomException When scheduling the reaction delay after context creation fails
      */
     public function onSignalRtSyncCreated(RtSyncCreatedSignalData $data, string $source, string $name): void
@@ -186,13 +174,12 @@ class BotAgent extends AbstractAgent
     }
 
     /**
-     * Handle RT sync updated signal.
+     * Schedules a bot reaction when the main chat context is updated.
      *
-     * ChatContext updated (new messages summarized) - schedule reaction.
-     *
-     * @param RtSyncUpdatedSignalData $data Sync data with updated state
-     * @param string $source Signal source
-     * @param string $name Signal name
+     * @param RtSyncUpdatedSignalData $data Updated runtime context sync payload
+     * @param string $source Framework signal source identifier (unused)
+     * @param string $name Framework signal name (unused)
+     * @throws HilosException On bot lookup during reaction scheduling
      * @throws RandomException When scheduling the reaction delay after context update fails
      */
     public function onSignalRtSyncUpdated(RtSyncUpdatedSignalData $data, string $source, string $name): void
@@ -203,11 +190,10 @@ class BotAgent extends AbstractAgent
     }
 
     /**
-     * Agent-specific tick implementation.
-     * Processes async LLM results and triggers scheduled reactions.
+     * Advances async LLM work, sends completed messages to moderation, and starts due reactions.
      *
+     * @throws HilosException On bot or chat context lookup failure
      * @throws RandomException When bot reaction chance generation fails
-     * @throws RtActionsStateCollectionNullException When chat context runtime state is unavailable
      */
     public function onTick(): void
     {
@@ -245,10 +231,9 @@ class BotAgent extends AbstractAgent
     }
 
     /**
-     * Schedules next reaction based on bot delay settings.
+     * Schedules the next reaction from bot delay settings unless generation is active or bot is missing.
      *
-     * Uses bot reactionDelayMin/Max and applies random delay when different.
-     *
+     * @throws HilosException When bot lookup fails
      * @throws RandomException When generating a randomized reaction delay fails
      */
     private function scheduleReaction(): void
@@ -271,11 +256,11 @@ class BotAgent extends AbstractAgent
     }
 
     /**
-     * Check whether bot should react (chance, cooldown, topic match).
+     * Checks chance, cooldown, and topic restrictions for the current bot.
      *
      * @return bool True if bot should generate a message
+     * @throws HilosException When bot or chat context lookup fails
      * @throws RandomException When generating a random chance threshold fails
-     * @throws RtActionsStateCollectionNullException When chat context runtime state is unavailable
      */
     private function shouldReact(): bool
     {
@@ -310,11 +295,11 @@ class BotAgent extends AbstractAgent
     }
 
     /**
-     * Check if chat topic matches bot preferred topics.
+     * Checks configured bot topics against the current analyzer topic.
      *
      * @param ViewBot $bot Bot view with topics configuration
      * @return bool True if topic matches or bot has no topic restriction
-     * @throws RtActionsStateCollectionNullException When chat context runtime state collection is unavailable
+     * @throws HilosException When runtime context lookup fails
      */
     private function topicMatches(ViewBot $bot): bool
     {
@@ -335,7 +320,7 @@ class BotAgent extends AbstractAgent
     }
 
     /**
-     * Parse topics from JSON array or comma/semicolon-separated string.
+     * Parses topics from a JSON array or comma/semicolon-separated string.
      *
      * @param string $topics Topics as JSON or comma/semicolon-separated string
      * @return list<string> List of topic strings
@@ -365,11 +350,9 @@ class BotAgent extends AbstractAgent
     }
 
     /**
-     * Starts async LLM generation for bot message.
+     * Starts async LLM generation when a bot and prompt context are available.
      *
-     * Builds messages from bot config and chat context, then calls chatClient->startGenerate.
-     *
-     * @throws RtActionsStateCollectionNullException When chat context runtime state collection is unavailable
+     * @throws HilosException When bot or chat context lookup fails
      */
     private function startGenerate(): void
     {
@@ -398,11 +381,11 @@ class BotAgent extends AbstractAgent
     }
 
     /**
-     * Build LLM messages for generation (system + user context).
+     * Builds the system prompt and user context for bot message generation.
      *
      * @param ViewBot $bot Bot view with name, description, personality, etc.
      * @return list<Message> Messages for LLM (system + user)
-     * @throws RtActionsStateCollectionNullException When chat context runtime state collection is unavailable
+     * @throws HilosException When chat context or recent event lookup fails
      */
     private function buildGenerationMessages(ViewBot $bot): array
     {
@@ -471,10 +454,10 @@ class BotAgent extends AbstractAgent
     }
 
     /**
-     * Build short meta string for logging: what the bot is reacting to.
+     * Builds a short log label that describes what the bot is reacting to.
      *
      * @param string $recentContext Recent messages context text
-     * @return string Meta description (e.g. "5 message(s), last from User#1, Bot#2")
+     * @return string Meta description such as "5 message(s), last from User#1, Bot#2"
      */
     private function getRecentMessagesMeta(string $recentContext): string
     {
@@ -497,9 +480,9 @@ class BotAgent extends AbstractAgent
     }
 
     /**
-     * Build recent chat events as formatted string for LLM context.
+     * Builds recent chat events as formatted text for LLM context.
      *
-     * @return string Recent messages as "Author: message" lines
+     * @return string Recent message and clear-event lines for LLM context
      */
     private function buildRecentEventsContext(): string
     {
@@ -528,9 +511,9 @@ class BotAgent extends AbstractAgent
     }
 
     /**
-     * Get bot view by agent index (bot ID).
+     * Returns this agent's bot view, or null when the bot row is gone.
      *
-     * @return ?ViewBot Bot view or null if not found
+     * @return ?ViewBot Current bot view
      */
     private function getBot(): ?ViewBot
     {

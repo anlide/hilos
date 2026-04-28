@@ -6,7 +6,6 @@ namespace Demo\Chat\Agents;
 
 use Demo\Chat\Constants\AgentType;
 use Demo\Chat\Constants\ChatCronConstants;
-use Demo\Chat\Constants\ChatEventType;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\HttpHeaders;
 use Demo\Chat\Core\Router\DTO\ChatEventSignalDTO;
@@ -32,10 +31,9 @@ use Hilos\Socket\WebSocket\DTO\WebSocketCloseSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
 
 /**
- * Monopolistic chat worker: database entities (users, events, bots, settings), runtime connections and user state,
- * WebSocket handshake/close, truth source lifecycle, and bot-specific agent signals.
+ * Monopolistic chat worker for chat DB entities, runtime connections, WebSocket lifecycle, and bot-specific signals.
  *
- * Registers as truth source for {@see DbChatContext} tables and {@see RtChatContext} collections on {@see self::onStart()}.
+ * On start, registers chat database tables and runtime collections as truth sources.
  */
 class ChatAgent extends AbstractAgent
 {
@@ -44,44 +42,39 @@ class ChatAgent extends AbstractAgent
     private const string SESSION_TOKEN_PATTERN = '/\A[0-9a-f]{32}\z/';
 
     /**
-     * Register truth sources, seed runtime user states from DB, append {@see ChatEventType::CHAT_STARTED} to history.
+     * Registers chat truth sources, seeds runtime user states, and records chat startup.
      *
-     * @throws HilosException On database failure or truth source registration failure
+     * @throws HilosException On database or runtime startup failure
      */
     public function onStart(): void
     {
-        // Register this agent as truth source for database tables (all keys)
         $this->registerDbTruthSource(DbChatContext::events);
         $this->registerDbTruthSource(DbChatContext::users);
         $this->registerDbTruthSource(DbChatContext::bots);
         $this->registerDbTruthSource(DbChatContext::moderatorPromptPieces);
         $this->registerDbTruthSource(DbChatContext::settings);
-
-        // Register this agent as truth source for runtime collections (all keys)
         $this->registerRtTruthSource(RtChatContext::connections);
         $this->registerRtTruthSource(RtChatContext::userStates);
 
         Hilos::$rt->userStates->actions->seedAllFromDb();
-
-        // Add chat started event to history (system event with userId = null)
         Hilos::$db->events->actions->addChatStarted();
     }
 
     /**
-     * Authenticate session token, register the connection, emit user registration and presence updates, and send
-     * {@see ChatSignalConstants::HANDSHAKE_RESPONSE} with the current user frontend projection and page catalog.
+     * Authenticates the session token, registers the connection, emits registration and presence updates, and sends
+     * the handshake response with the current user frontend projection and page catalog.
      *
      * Runtime presence is emitted after every successful connection register so
      * pages that show online session counts update for additional tabs, not only
      * first online transitions. Moderation and file-upload session state are sent
      * on main page subscribe only.
      *
-     * @param WebSocketHandshakeSignalDTO $data Accept key and query params (expects {@see HttpHeaders::SESSION_TOKEN})
+     * @param WebSocketHandshakeSignalDTO $data Accept key and query params with a required session token
      * @param string $source Framework signal source identifier (unused)
      * @param string $name Framework signal name (unused)
      * @throws EmptyValueException When session token is missing or empty
-     * @throws InvalidFormatException When session token format does not match frontend-generated tokens
-     * @throws HilosException On database, runtime, or truth source failure
+     * @throws InvalidFormatException When session token is not a 32-character lowercase hex string
+     * @throws HilosException On database or runtime failure
      */
     public function onSignalHandshake(WebSocketHandshakeSignalDTO $data, string $source, string $name): void
     {
@@ -141,7 +134,7 @@ class ChatAgent extends AbstractAgent
      * The summary is emitted after every close so online session counters update
      * when a user still has other active tabs.
      *
-     * @param WebSocketCloseSignalDTO $data Closed connection {@see WebSocketCloseSignalDTO::$acceptKey}
+     * @param WebSocketCloseSignalDTO $data Closed WebSocket connection
      * @param string $source Framework signal source identifier (unused)
      * @param string $name Framework signal name (unused)
      * @throws HilosException When runtime unregister fails
@@ -190,29 +183,26 @@ class ChatAgent extends AbstractAgent
     }
 
     /**
-     * Append {@see ChatEventType::CHAT_STOPPED} and clear transient chat runtime state.
+     * Records chat shutdown and clears transient chat runtime state.
      *
      * @throws HilosException On database or runtime cleanup failure
      */
     public function onStop(): void
     {
-        // Add chat stopped event to history (system event with userId = null)
         Hilos::$db->events->actions->addChatStopped();
-
-        // Clear socket and per-user transient state before the worker unregisters truth sources.
         Hilos::$rt->connections->actions->clear();
         Hilos::$rt->userStates->actions->clear();
     }
 
     /**
-     * Run scheduled chat cleanup: delete chat events and broadcast the cleared event.
+     * Handles chat history cleanup cron by replacing the event stream with a cleared event.
      *
      * File storage cleanup for the same cron is routed to MainPage.
      *
      * @param SignalDataInterface $data Cron payload (unused)
      * @param string $source Framework signal source identifier (unused)
      * @param string $name Task name
-     * @throws HilosException On database or truth source failure
+     * @throws HilosException On history cleanup failure
      */
     public function onSignalCron(SignalDataInterface $data, string $source, string $name): void
     {
@@ -235,12 +225,12 @@ class ChatAgent extends AbstractAgent
     }
 
     /**
-     * Dispatch chat-owned inter-agent signals and deliberately ignore page-owned moderation results.
+     * Dispatches chat-owned inter-agent signals and deliberately ignores page-owned moderation results.
      *
-     * @param AgentSignalData $data Wrapped inner payload in {@see AgentSignalData::$data}
+     * @param AgentSignalData $data Agent signal wrapper with the inner payload to dispatch
      * @param string $source Framework signal source identifier (unused)
-     * @param string $name One of {@see ChatSignalConstants} agent signal names
-     * @throws HilosException On chat-owned signal dispatch or bot message publish failure
+     * @param string $name Agent signal name
+     * @throws HilosException On bot message publish failure
      * @throws CommandException If event id is null after sync
      */
     public function onSignalAgent(AgentSignalData $data, string $source, string $name): void
@@ -268,10 +258,10 @@ class ChatAgent extends AbstractAgent
     }
 
     /**
-     * Apply bot message moderation: on allow, append {@see ChatEventType::MESSAGE_SENT} with `botId` and broadcast.
+     * Publishes allowed moderated bot messages and logs blocked bot messages.
      *
      * @param ModerationBotResultSignalData $result Bot id, allow flag, message body, reason
-     * @throws HilosException On bot message persistence or broadcast failure
+     * @throws HilosException On bot message persistence failure
      * @throws CommandException If event id is null after sync
      */
     private function handleModerationBotResult(ModerationBotResultSignalData $result): void

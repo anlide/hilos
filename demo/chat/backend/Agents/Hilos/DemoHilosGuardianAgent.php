@@ -8,14 +8,16 @@ use Demo\Chat\AI\Agent\ChatAiAgentFactory;
 use Hilos\AI\Agent\AiAgentInterface;
 use Hilos\AI\Agent\GuardianAiAgentId;
 use Hilos\Core\Agent\Hilos\AbstractHilosGuardianAgent;
+use Random\RandomException;
 
 /**
- * DemoHilosGuardianAgent - Concrete Hilos guardian agent for chat demo.
+ * Chat demo guardian agent that wires project AI agents into the Hilos guardian page.
  *
- * Handles Hilos guardian page (project validation robots) in the demo project.
+ * Framework guardian agents come from the shared catalog; demo-only ids are appended for UI compatibility.
  */
 class DemoHilosGuardianAgent extends AbstractHilosGuardianAgent
 {
+    /** @var list<string> */
     private const array DEMO_ONLY_AGENT_IDS = [
         'oss_budget_distribution',
     ];
@@ -24,7 +26,7 @@ class DemoHilosGuardianAgent extends AbstractHilosGuardianAgent
     private array $guardianAiAgents = [];
 
     /**
-     * Create all registered guardian AI agents for the demo project.
+     * Instantiates chat project guardian AI agents and initializes in-memory run statuses.
      */
     public function onStart(): void
     {
@@ -33,7 +35,7 @@ class DemoHilosGuardianAgent extends AbstractHilosGuardianAgent
     }
 
     /**
-     * Run one tick for each instantiated guardian AI agent.
+     * Finalizes pending guardian runs and ticks each instantiated AI agent once.
      */
     public function onTick(): void
     {
@@ -45,7 +47,7 @@ class DemoHilosGuardianAgent extends AbstractHilosGuardianAgent
     }
 
     /**
-     * Release instantiated guardian AI agents.
+     * Releases AI agent instances and clears guardian run state.
      */
     public function onStop(): void
     {
@@ -54,7 +56,7 @@ class DemoHilosGuardianAgent extends AbstractHilosGuardianAgent
     }
 
     /**
-     * Get all guardian agent ids supported by the demo UI.
+     * Returns framework guardian ids plus demo-only guardian ids supported by the UI.
      *
      * @return list<string> Guardian agent identifiers
      */

@@ -6,50 +6,42 @@ namespace Demo\Chat\Agents;
 
 use Demo\Chat\Constants\AgentType;
 use Demo\Chat\Constants\ChatContextAnalyzerConstants;
-use Demo\Chat\Constants\ChatTopicConstants;
 use Demo\Chat\Constants\ChatEventType;
+use Demo\Chat\Constants\ChatLLMConstants;
+use Demo\Chat\Constants\ChatTopicConstants;
 use Demo\Chat\Database\DbChatContext;
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\State\Item\ChatContext as StateChatContext;
 use Demo\Chat\Runtime\View\DTO\ChatContextUpdateData;
 use Demo\Chat\Runtime\View\Context\RtChatContext;
-use Demo\Chat\Constants\ChatLLMConstants;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\LLMConstants;
 use Hilos\Core\Agent\AbstractAgent;
-use Hilos\Core\Exception\InvalidStateException;
-use Hilos\Runtime\Exception\Actions\RtActionsCallbackNotSetException;
-use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
-use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
-use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
-use Hilos\Utils\Env;
 use Hilos\Core\Sync\DTO\DbSyncCreatedSignalData;
 use Hilos\Core\Sync\DTO\DbSyncUpdatedSignalData;
+use Hilos\HilosException;
 use Hilos\LLM\ClientFactory;
 use Hilos\LLM\Contract\AsyncChatLLMInterface;
 use Hilos\LLM\DTO\ChatGenerateOptions;
 use Hilos\LLM\DTO\Message;
+use Hilos\Utils\Env;
 use Hilos\Utils\Helpers\JsonHelper;
 
 /**
- * ChatContextAnalyzerAgent - Monopolistic agent for chat context analysis.
+ * Monopolistic agent that derives shared chat topic and summary runtime context from chat events.
  *
- * Runs in monopolistic worker process. Single instance maintains shared chat context
- * for all bots. Listens to DbSync events to build and update context. Sends LLM requests to summarize/analyze chat state.
- * Writes results to Runtime (chatContext collection) for BotAgents to consume.
+ * It owns the chat context runtime collection and uses async LLM summarization when message events arrive.
  */
 class ChatContextAnalyzerAgent extends AbstractAgent
 {
     public const string AGENT_TYPE = AgentType::CHAT_CONTEXT_ANALYZER;
 
-    /** @var AsyncChatLLMInterface LLM chat client for context analysis */
     private AsyncChatLLMInterface $chatClient;
 
-    /** @var bool Whether summarize request is pending */
     private bool $pendingSummarize = false;
 
     /**
-     * Create ChatContextAnalyzerAgent with LLM client from Env config.
+     * Creates an analyzer with an LLM client from context-analyzer settings.
      */
     public function __construct()
     {
@@ -62,17 +54,13 @@ class ChatContextAnalyzerAgent extends AbstractAgent
                     LLMConstants::DEFAULT_LOCAL_URL,
                 ),
                 model: Env::getFilled(EnvConstants::CHAT_CONTEXT_ANALYZER_MODEL, ChatLLMConstants::MODEL_CONTEXT_ANALYZER),
-                apiKey: null,
             );
     }
 
     /**
-     * Called when agent starts. Registers truth source and initializes chat context if empty.
+     * Registers the chat context runtime truth source and initializes the main context when missing.
      *
-     * @throws RtActionsStateCollectionNullException When the chat context runtime state collection is unavailable
-     * @throws RtActionsCallbackNotSetException When runtime actions are missing their write callback
-     * @throws RtActionsCollectionNameNullException When runtime actions cannot resolve their collection name
-     * @throws RtTruthSourceWriteNotAllowedException When this agent cannot initialize the chat context
+     * @throws HilosException When runtime context lookup or initialization fails
      */
     public function onStart(): void
     {
@@ -85,21 +73,16 @@ class ChatContextAnalyzerAgent extends AbstractAgent
     }
 
     /**
-     * Called when agent stops.
-     *
-     * WorkerManager unregisters truth sources after this hook.
+     * Keeps shared chat context intact; the framework unregisters truth sources after this hook.
      */
     public function onStop(): void
     {
     }
 
     /**
-     * Periodic tick. Processes LLM results and handles sync signals.
+     * Advances async summarization and applies parsed analyzer results to chat context runtime state.
      *
-     * @throws InvalidStateException When analyzer output is applied before chat context initialization
-     * @throws RtActionsCallbackNotSetException When runtime actions are missing their write callback
-     * @throws RtActionsCollectionNameNullException When runtime actions cannot resolve their collection name
-     * @throws RtTruthSourceWriteNotAllowedException When this agent cannot update the chat context
+     * @throws HilosException When runtime context update or event lookup fails
      */
     public function onTick(): void
     {
@@ -144,15 +127,12 @@ class ChatContextAnalyzerAgent extends AbstractAgent
     }
 
     /**
-     * Handle DB sync created signal.
+     * Routes created chat event rows into analyzer scheduling.
      *
-     * @param DbSyncCreatedSignalData $data Sync data with created row
-     * @param string $source Signal source
-     * @param string $name Signal name
-     * @throws InvalidStateException When a reset is applied before chat context initialization
-     * @throws RtActionsCallbackNotSetException When runtime actions are missing their write callback
-     * @throws RtActionsCollectionNameNullException When runtime actions cannot resolve their collection name
-     * @throws RtTruthSourceWriteNotAllowedException When this agent cannot update the chat context
+     * @param DbSyncCreatedSignalData $data Created row sync payload
+     * @param string $source Framework signal source identifier (unused)
+     * @param string $name Framework signal name (unused)
+     * @throws HilosException When a chat-clear reset cannot update runtime context
      */
     public function onSignalDbSyncCreated(DbSyncCreatedSignalData $data, string $source, string $name): void
     {
@@ -160,15 +140,12 @@ class ChatContextAnalyzerAgent extends AbstractAgent
     }
 
     /**
-     * Handle DB sync updated signal.
+     * Routes updated chat event rows into analyzer scheduling.
      *
-     * @param DbSyncUpdatedSignalData $data Sync data with updated row
-     * @param string $source Signal source
-     * @param string $name Signal name
-     * @throws InvalidStateException When a reset is applied before chat context initialization
-     * @throws RtActionsCallbackNotSetException When runtime actions are missing their write callback
-     * @throws RtActionsCollectionNameNullException When runtime actions cannot resolve their collection name
-     * @throws RtTruthSourceWriteNotAllowedException When this agent cannot update the chat context
+     * @param DbSyncUpdatedSignalData $data Updated row sync payload
+     * @param string $source Framework signal source identifier (unused)
+     * @param string $name Framework signal name (unused)
+     * @throws HilosException When a chat-clear reset cannot update runtime context
      */
     public function onSignalDbSyncUpdated(DbSyncUpdatedSignalData $data, string $source, string $name): void
     {
@@ -176,14 +153,11 @@ class ChatContextAnalyzerAgent extends AbstractAgent
     }
 
     /**
-     * Process DB sync change (events).
+     * Resets context on chat clear or queues summarization after message events.
      *
-     * @param string $collectionKey Collection key (events)
-     * @param array<string, mixed> $row Row data
-     * @throws InvalidStateException When a reset is applied before chat context initialization
-     * @throws RtActionsCallbackNotSetException When runtime actions are missing their write callback
-     * @throws RtActionsCollectionNameNullException When runtime actions cannot resolve their collection name
-     * @throws RtTruthSourceWriteNotAllowedException When this agent cannot update the chat context
+     * @param string $collectionKey Sync collection key
+     * @param array<string, mixed> $row Synced row data
+     * @throws HilosException When a chat-clear reset cannot update runtime context
      */
     private function handleDbSyncChange(string $collectionKey, array $row): void
     {
@@ -199,9 +173,9 @@ class ChatContextAnalyzerAgent extends AbstractAgent
     }
 
     /**
-     * Starts LLM summarization request if not busy.
+     * Starts one async LLM summarization request from recent chat event context.
      *
-     * Builds recent events context, sends to LLM, and updates pending flag.
+     * @throws HilosException When recent event lookup fails
      */
     private function startSummarize(): void
     {
@@ -262,9 +236,9 @@ PROMPT;
     }
 
     /**
-     * Build recent chat events as formatted string for LLM context.
+     * Builds recent chat events as formatted text for LLM context.
      *
-     * @return string Recent messages as "Author: message" lines
+     * @return string Recent message and clear-event lines for LLM context
      */
     private function buildRecentEventsContext(): string
     {
@@ -293,7 +267,7 @@ PROMPT;
     }
 
     /**
-     * Parses LLM JSON output into structured topic, confidence and summary.
+     * Parses LLM JSON output into structured topic, confidence, and summary.
      *
      * @param string $text Raw LLM response text
      * @return ?ChatContextUpdateData Parsed context update data, or null on failure
@@ -310,7 +284,7 @@ PROMPT;
             return null;
         }
 
-        $topicRaw = isset($decoded['topic']) && $decoded['topic'] !== null && $decoded['topic'] !== ''
+        $topicRaw = isset($decoded['topic']) && $decoded['topic'] !== ''
             ? trim((string)$decoded['topic'])
             : null;
         $topic = $topicRaw !== null && $topicRaw !== '' && $this->isTopicAllowed($topicRaw) ? $topicRaw : null;
@@ -332,7 +306,7 @@ PROMPT;
     }
 
     /**
-     * Checks if topic is in the allowed list.
+     * Checks the topic against the configured allow-list.
      *
      * @param string $topic Topic to validate
      * @return bool True if allowed
