@@ -25,7 +25,6 @@ use Hilos\Core\Router\DTO\EntitiesChangesDTO;
 use Hilos\Core\Table\DTO\TableSourceEventDTO;
 use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\HilosException;
-use Hilos\Utils\Logger;
 use Throwable;
 
 /**
@@ -109,12 +108,12 @@ final class ProfilePage extends AbstractChatPage
     private function handleRename(string $acceptKey, RenameActionDTO $dto): void
     {
         if (!$dto->isValid()) {
-            Logger::logAgentError('ProfilePage', "Empty new name (acceptKey={$acceptKey})");
+            $this->logAgentError("Empty new name (acceptKey={$acceptKey})");
             throw new EmptyValueException('User name cannot be empty');
         }
 
         if (!isset(Hilos::$rt->connections[$acceptKey])) {
-            Logger::logAgentError('ProfilePage', "User not found for acceptKey={$acceptKey}");
+            $this->logAgentError("User not found for acceptKey={$acceptKey}");
             throw new ItemNotFoundForUpdateException('User session not found');
         }
 

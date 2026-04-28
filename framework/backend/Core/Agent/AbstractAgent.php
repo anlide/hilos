@@ -21,6 +21,7 @@ use Hilos\Core\Sync\DTO\DbSyncUpdatedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncCreatedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncDeletedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
+use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Hilos;
 use Hilos\Socket\WebSocket\DTO\WebSocketActionSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketCloseSignalDTO;
@@ -32,6 +33,8 @@ use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageUnsubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageUpdateSubscriptionSignalDTO;
+use Hilos\TruthSource\RtTruthSourceRegistry;
+use Hilos\Utils\Logger;
 
 /**
  * AbstractAgent - Abstract base class for agents running in worker processes.
@@ -101,6 +104,58 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface
             type: $this->getType(),
             index: $this->getIndex(),
         );
+    }
+
+    /**
+     * Register this agent as truth source for a database collection.
+     *
+     * @param string $collection Collection/table name
+     * @param list<string>|true $keys Specific writable keys or true for all keys
+     */
+    protected function registerDbTruthSource(string $collection, array|true $keys = true): void
+    {
+        TruthSourceRegistry::register($collection, $keys, $this->getId());
+    }
+
+    /**
+     * Register this agent as truth source for a runtime collection.
+     *
+     * @param string $collection Runtime collection name
+     * @param list<string>|true $keys Specific writable keys or true for all keys
+     */
+    protected function registerRtTruthSource(string $collection, array|true $keys = true): void
+    {
+        RtTruthSourceRegistry::register($collection, $keys, $this->getId());
+    }
+
+    /**
+     * Log an info message under this agent id.
+     *
+     * @param string $message Message to log
+     */
+    protected function logAgentInfo(string $message): void
+    {
+        Logger::logAgentInfo($this->getId(), $message);
+    }
+
+    /**
+     * Log an error message under this agent id.
+     *
+     * @param string $message Error message to log
+     */
+    protected function logAgentError(string $message): void
+    {
+        Logger::logAgentError($this->getId(), $message);
+    }
+
+    /**
+     * Log a debug message under this agent id when debug logging is enabled.
+     *
+     * @param string $message Debug message to log
+     */
+    protected function logAgentDebug(string $message): void
+    {
+        Logger::logAgentDebug($this->getId(), $message);
     }
 
     /**

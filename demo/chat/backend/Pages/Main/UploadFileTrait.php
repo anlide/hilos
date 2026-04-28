@@ -30,7 +30,6 @@ use Hilos\HilosException;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\Socket\WebSocket\DTO\WebSocketFrameBinarySignalDTO;
-use Hilos\Utils\Logger;
 use Hilos\Utils\Helpers\FileSystemHelper;
 use Random\RandomException;
 
@@ -65,8 +64,7 @@ trait UploadFileTrait
         if (Hilos::$rt->connections[$acceptKey]->fileSessionUploadId !== null) {
             Hilos::$fs->tmp[Hilos::$rt->connections[$acceptKey]->fileSessionQuarantineBasename]->unlink();
             Hilos::$rt->connections[$acceptKey]->actions->clearBinaryUploadSessionAndProgressUi();
-            Logger::logAgentInfo(
-                $agent->getId(),
+            $this->logAgentInfo(
                 "file upload aborted acceptKey={$acceptKey} reason=superseded_by_new_init",
             );
             $agent->sendToUser(
@@ -124,7 +122,7 @@ trait UploadFileTrait
         try {
             $tmpIndex = Hilos::$fs->tmp->create();
         } catch (FsException $e) {
-            Logger::logAgentError($agent->getId(), "Cannot create tmp file: {$e->getMessage()}");
+            $this->logAgentError("Cannot create tmp file: {$e->getMessage()}");
             $agent->sendToUser(
                 ChatSignalConstants::FILE_UPLOAD_REJECTED,
                 $acceptKey,
@@ -200,13 +198,12 @@ trait UploadFileTrait
         $agent = $this->getChatAgent();
         $acceptKey = $data->acceptKey;
         if (!isset(Hilos::$rt->connections[$acceptKey])) {
-            Logger::logAgentInfo($agent->getId(), 'frame_binary: unknown acceptKey, ignoring');
+            $this->logAgentInfo('frame_binary: unknown acceptKey, ignoring');
 
             return;
         }
         if (Hilos::$rt->connections[$acceptKey]->fileSessionUploadId === null) {
-            Logger::logAgentInfo(
-                $agent->getId(),
+            $this->logAgentInfo(
                 'frame_binary: no upload session acceptKey=' . $acceptKey
                 . ' userId=' . Hilos::$rt->connections[$acceptKey]->userId,
             );
@@ -223,8 +220,7 @@ trait UploadFileTrait
         $declared = Hilos::$rt->connections[$acceptKey]->fileSessionDeclaredSize;
         $received = Hilos::$rt->connections[$acceptKey]->fileSessionReceivedBytes;
         if ($received + $len > $declared) {
-            Logger::logAgentError(
-                $agent->getId(),
+            $this->logAgentError(
                 'frame_binary: overflow acceptKey=' . $acceptKey
                 . ' userId=' . Hilos::$rt->connections[$acceptKey]->userId,
             );
@@ -237,8 +233,7 @@ trait UploadFileTrait
         try {
             Hilos::$fs->tmp[$tmpIndex]->append($data->payload);
         } catch (FsException $e) {
-            Logger::logAgentError(
-                $agent->getId(),
+            $this->logAgentError(
                 'frame_binary: tmp append failed acceptKey=' . $acceptKey
                 . ' userId=' . Hilos::$rt->connections[$acceptKey]->userId
                 . ' error=' . $e->getMessage(),
@@ -307,7 +302,7 @@ trait UploadFileTrait
         if (!$result->allow) {
             $quarantineFile->unlink();
             $reason = $result->reason !== '' ? $result->reason : 'unknown';
-            Logger::logAgentError($agent->getId(), "File blocked by moderation (userId={$result->userId}; reason={$reason})");
+            $this->logAgentError("File blocked by moderation (userId={$result->userId}; reason={$reason})");
             if ($live) {
                 $connection = Hilos::$rt->connections[$acceptKey];
                 $connection->actions->markFileModerationRejected(
@@ -326,7 +321,7 @@ trait UploadFileTrait
         }
 
         if (!$quarantineFile->exists()) {
-            Logger::logAgentError($agent->getId(), "Moderation allow but quarantine file missing: {$storedName}");
+            $this->logAgentError("Moderation allow but quarantine file missing: {$storedName}");
             if ($live) {
                 Hilos::$rt->connections[$acceptKey]->actions->clearFileModerationBanner();
                 $agent->sendToUser(
@@ -342,7 +337,7 @@ trait UploadFileTrait
         try {
             $quarantineFile->move('published');
         } catch (FsException $e) {
-            Logger::logAgentError($agent->getId(), "Failed to move file to published: {$e->getMessage()}");
+            $this->logAgentError("Failed to move file to published: {$e->getMessage()}");
             $quarantineFile->unlink();
             if ($live) {
                 Hilos::$rt->connections[$acceptKey]->actions->clearFileModerationBanner();
@@ -410,7 +405,7 @@ trait UploadFileTrait
         try {
             Hilos::$fs->quarantine->createFromTmp($storedName, $tmpIndex);
         } catch (FsException $e) {
-            Logger::logAgentError($agent->getId(), "Cannot move tmp to quarantine: {$e->getMessage()}");
+            $this->logAgentError("Cannot move tmp to quarantine: {$e->getMessage()}");
             $this->failFileUploadSession($acceptKey, 'storage_error');
 
             return;
@@ -492,8 +487,7 @@ trait UploadFileTrait
     {
         $agent = $this->getChatAgent();
         if (!isset(Hilos::$rt->connections[$acceptKey])) {
-            Logger::logAgentInfo(
-                $agent->getId(),
+            $this->logAgentInfo(
                 "upload_progress: throttle acceptKey={$acceptKey} abort_no_state",
             );
 
@@ -501,8 +495,7 @@ trait UploadFileTrait
         }
         $progressName = Hilos::$rt->connections[$acceptKey]->fileProgressFilename;
         if ($progressName === null) {
-            Logger::logAgentInfo(
-                $agent->getId(),
+            $this->logAgentInfo(
                 "upload_progress: throttle acceptKey={$acceptKey} abort_no_progress_state",
             );
 

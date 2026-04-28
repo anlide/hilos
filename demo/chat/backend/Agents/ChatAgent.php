@@ -24,12 +24,9 @@ use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\EntitiesChangesDTO;
 use Hilos\Core\Router\DTO\EmitRtChangeSignalData;
 use Hilos\Core\Router\SignalDataInterface;
-use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\HilosException;
 use Hilos\Socket\WebSocket\DTO\WebSocketCloseSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
-use Hilos\TruthSource\RtTruthSourceRegistry;
-use Hilos\Utils\Logger;
 
 /**
  * Monopolistic chat worker: database entities (users, events, bots, settings), runtime connections and user state,
@@ -49,15 +46,15 @@ class ChatAgent extends AbstractAgent
     public function onStart(): void
     {
         // Register this agent as truth source for database tables (all keys)
-        TruthSourceRegistry::register(DbChatContext::events, true, $this->getId());
-        TruthSourceRegistry::register(DbChatContext::users, true, $this->getId());
-        TruthSourceRegistry::register(DbChatContext::bots, true, $this->getId());
-        TruthSourceRegistry::register(DbChatContext::moderatorPromptPieces, true, $this->getId());
-        TruthSourceRegistry::register(DbChatContext::settings, true, $this->getId());
+        $this->registerDbTruthSource(DbChatContext::events);
+        $this->registerDbTruthSource(DbChatContext::users);
+        $this->registerDbTruthSource(DbChatContext::bots);
+        $this->registerDbTruthSource(DbChatContext::moderatorPromptPieces);
+        $this->registerDbTruthSource(DbChatContext::settings);
 
         // Register this agent as truth source for runtime collections (all keys)
-        RtTruthSourceRegistry::register(RtChatContext::connections, true, $this->getId());
-        RtTruthSourceRegistry::register(RtChatContext::userStates, true, $this->getId());
+        $this->registerRtTruthSource(RtChatContext::connections);
+        $this->registerRtTruthSource(RtChatContext::userStates);
 
         Hilos::$rt->userStates->actions->seedAllFromDb();
 
@@ -83,7 +80,7 @@ class ChatAgent extends AbstractAgent
     {
         $sessionToken = $data->queryParams[HttpHeaders::SESSION_TOKEN] ?? null;
         if (!is_string($sessionToken) || $sessionToken === '') {
-            Logger::logAgentError($this->getId(), HttpHeaders::SESSION_TOKEN . " is required but not provided or empty");
+            $this->logAgentError(HttpHeaders::SESSION_TOKEN . " is required but not provided or empty");
             return;
         }
 
@@ -247,7 +244,7 @@ class ChatAgent extends AbstractAgent
                 if ($payload instanceof ModerationBotResultSignalData) {
                     $this->handleModerationBotResult($payload);
                 } else {
-                    $this->logInvalidAgentPayload($name, $payload);
+                    $this->logAgentError("Invalid payload type for {$name}: " . get_debug_type($payload));
                 }
                 return;
             case ChatSignalConstants::BOT_JOINED:
@@ -255,19 +252,8 @@ class ChatAgent extends AbstractAgent
                 $this->sendToAllUsers($name, $data->data);
                 return;
             default:
-                $this->logInvalidAgentPayload($name, $payload);
+                $this->logAgentError("Invalid payload type for {$name}: " . get_debug_type($payload));
         }
-    }
-
-    /**
-     * Log a type mismatch for an incoming agent signal (expected DTO not received).
-     *
-     * @param string $name Signal name that failed validation
-     * @param mixed $payload Value received in {@see AgentSignalData::$data}
-     */
-    private function logInvalidAgentPayload(string $name, mixed $payload): void
-    {
-        Logger::logAgentError($this->getId(), "Invalid payload type for {$name}: " . get_debug_type($payload));
     }
 
     /**
@@ -279,7 +265,7 @@ class ChatAgent extends AbstractAgent
     {
         if (!$result->allow) {
             $reason = $result->reason !== '' ? $result->reason : 'unknown';
-            Logger::logAgentError($this->getId(), "Bot message blocked by moderation (botId={$result->botId}; reason={$reason})");
+            $this->logAgentError("Bot message blocked by moderation (botId={$result->botId}; reason={$reason})");
             return;
         }
 

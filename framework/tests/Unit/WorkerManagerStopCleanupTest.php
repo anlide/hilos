@@ -96,8 +96,8 @@ final class WorkerManagerStopCleanupTestAgent extends AbstractAgent
 
     public function onStart(): void
     {
-        TruthSourceRegistry::register(self::DB_COLLECTION, true, $this->getId());
-        RtTruthSourceRegistry::register(self::RT_COLLECTION, true, $this->getId());
+        $this->registerDbTruthSource(self::DB_COLLECTION);
+        $this->registerRtTruthSource(self::RT_COLLECTION);
     }
 
     public function onStop(): void

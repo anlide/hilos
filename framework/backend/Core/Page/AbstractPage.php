@@ -19,6 +19,7 @@ use Hilos\Core\Table\Collection\TableMutationSignalCollection;
 use Hilos\Core\Table\DTO\TableSourceEventDTO;
 use Hilos\Hilos;
 use Hilos\Socket\WebSocket\DTO\WebSocketFrameBinarySignalDTO;
+use Hilos\Utils\Logger;
 use Throwable;
 
 /**
@@ -64,6 +65,69 @@ abstract class AbstractPage
     public function getAgent(): PageAgentInterface
     {
         return $this->agent;
+    }
+
+    /**
+     * Log an info message under this page's owning agent id.
+     *
+     * @param string $message Message to log
+     */
+    protected function logAgentInfo(string $message): void
+    {
+        Logger::logAgentInfo($this->agent->getId(), $message);
+    }
+
+    /**
+     * Log an error message under this page's owning agent id.
+     *
+     * @param string $message Error message to log
+     */
+    protected function logAgentError(string $message): void
+    {
+        Logger::logAgentError($this->agent->getId(), $message);
+    }
+
+    /**
+     * Log a debug message under this page's owning agent id when debug logging is enabled.
+     *
+     * @param string $message Debug message to log
+     */
+    protected function logAgentDebug(string $message): void
+    {
+        Logger::logAgentDebug($this->agent->getId(), $message);
+    }
+
+    /**
+     * Log an info message when a static page workflow only has an agent id.
+     *
+     * @param string $agentId Agent id to use as the log source
+     * @param string $message Message to log
+     */
+    protected static function logAgentInfoForId(string $agentId, string $message): void
+    {
+        Logger::logAgentInfo($agentId, $message);
+    }
+
+    /**
+     * Log an error message when a static page workflow only has an agent id.
+     *
+     * @param string $agentId Agent id to use as the log source
+     * @param string $message Error message to log
+     */
+    protected static function logAgentErrorForId(string $agentId, string $message): void
+    {
+        Logger::logAgentError($agentId, $message);
+    }
+
+    /**
+     * Log a debug message when a static page workflow only has an agent id.
+     *
+     * @param string $agentId Agent id to use as the log source
+     * @param string $message Debug message to log
+     */
+    protected static function logAgentDebugForId(string $agentId, string $message): void
+    {
+        Logger::logAgentDebug($agentId, $message);
     }
 
     /**

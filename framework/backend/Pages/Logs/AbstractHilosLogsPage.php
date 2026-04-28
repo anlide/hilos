@@ -23,7 +23,6 @@ use Hilos\Pages\Logs\DTO\HilosLogsOverviewSignalData;
 use Hilos\Utils\Env;
 use Hilos\Utils\Exception\MissingEnvironmentVariableException;
 use Hilos\Utils\Helpers\FileSystemHelper;
-use Hilos\Utils\Logger;
 use JsonException;
 use Hilos\Core\Page\PageRouteParams;
 
@@ -154,7 +153,7 @@ abstract class AbstractHilosLogsPage extends AbstractHilosPage
      */
     public function onSubscribe(string $acceptKey, PageRouteParams $params): void
     {
-        Logger::logAgentInfo(HilosAgentType::HILOS_LOGS, "hilos_logs onSubscribe acceptKey={$acceptKey}");
+        $this->logAgentInfo("hilos_logs onSubscribe acceptKey={$acceptKey}");
         self::$logsOverviewSubscribers[$acceptKey] = true;
         if (!self::$logsOverviewMetricsInitialized) {
             self::refreshOverviewFull();
@@ -178,14 +177,14 @@ abstract class AbstractHilosLogsPage extends AbstractHilosPage
      */
     public function onUnsubscribe(string $acceptKey): void
     {
-        Logger::logAgentInfo(HilosAgentType::HILOS_LOGS, "hilos_logs onUnsubscribe acceptKey={$acceptKey}");
+        $this->logAgentInfo("hilos_logs onUnsubscribe acceptKey={$acceptKey}");
         self::removeSubscriber($acceptKey);
     }
 
     /**
      * Full rescan of archive batches and live log directory; used on {@see self::onSubscribe()}.
      *
-     * Logs wall duration with 0.001s precision via {@see Logger::logAgentInfo()} (agent id {@see HilosAgentType::HILOS_LOGS}).
+     * Logs wall duration with 0.001s precision via {@see self::logAgentInfoForId()}.
      */
     private static function refreshOverviewFull(): void
     {
@@ -235,7 +234,7 @@ abstract class AbstractHilosLogsPage extends AbstractHilosPage
             self::computeKeyAggregates();
         } finally {
             $elapsed = microtime(true) - $t0;
-            Logger::logAgentInfo(
+            self::logAgentInfoForId(
                 HilosAgentType::HILOS_LOGS,
                 sprintf('hilos_logs refreshOverviewFull duration_s=%.3f', $elapsed),
             );
@@ -245,7 +244,7 @@ abstract class AbstractHilosLogsPage extends AbstractHilosPage
     /**
      * Incremental rescan: always refresh live files; add/remove archive batch entries when folders appear or disappear.
      *
-     * Logs wall duration with 0.001s precision via {@see Logger::logAgentInfo()} (agent id {@see HilosAgentType::HILOS_LOGS}).
+     * Logs wall duration with 0.001s precision via {@see self::logAgentInfoForId()}.
      */
     private static function refreshOverviewIncremental(): void
     {
@@ -311,7 +310,7 @@ abstract class AbstractHilosLogsPage extends AbstractHilosPage
             self::computeKeyAggregates();
         } finally {
             $elapsed = microtime(true) - $t0;
-            Logger::logAgentInfo(
+            self::logAgentInfoForId(
                 HilosAgentType::HILOS_LOGS,
                 sprintf('hilos_logs refreshOverviewIncremental duration_s=%.3f', $elapsed),
             );

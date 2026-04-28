@@ -31,7 +31,6 @@ use Hilos\LLM\ClientFactory;
 use Hilos\LLM\Contract\AsyncChatLLMInterface;
 use Hilos\LLM\DTO\ChatGenerateOptions;
 use Hilos\LLM\DTO\Message;
-use Hilos\Utils\Logger;
 
 /**
  * BotAgent - Regular agent for bot management.
@@ -160,7 +159,7 @@ class BotAgent extends AbstractAgent
         }
         $eventType = $data->row['type'] ?? '';
         if ($eventType === ChatEventType::CHAT_CLEARED->value) {
-            Logger::logAgentInfo($this->getId(), '[chat_cleared] Scheduling topic proposal');
+            $this->logAgentInfo('[chat_cleared] Scheduling topic proposal');
             $this->scheduleReaction();
         }
     }
@@ -222,9 +221,9 @@ class BotAgent extends AbstractAgent
                     new ModerationBotRequestSignalData(botId: $botId, message: $message),
                 );
                 $len = mb_strlen($message);
-                Logger::logAgentInfo($this->getId(), "[publish] Queued for moderation, {$len} chars");
+                $this->logAgentInfo("[publish] Queued for moderation, {$len} chars");
             } else {
-                Logger::logAgentInfo($this->getId(), "[publish] Skipped: LLM returned empty");
+                $this->logAgentInfo("[publish] Skipped: LLM returned empty");
             }
         }
 
@@ -257,7 +256,7 @@ class BotAgent extends AbstractAgent
         $delaySec = $delayMin === $delayMax ? $delayMin : random_int($delayMin, $delayMax);
         $this->scheduledReactAt = microtime(true) + (float) $delaySec;
 
-        Logger::logAgentInfo($this->getId(), "[schedule] Reaction in {$delaySec}s");
+        $this->logAgentInfo("[schedule] Reaction in {$delaySec}s");
     }
 
     /**
@@ -383,7 +382,7 @@ class BotAgent extends AbstractAgent
 
         if ($this->chatClient->startGenerate($messages, $options)) {
             $this->generationInFlight = true;
-            Logger::logAgentInfo($this->getId(), '[generate] Started');
+            $this->logAgentInfo('[generate] Started');
         }
     }
 
@@ -449,8 +448,7 @@ class BotAgent extends AbstractAgent
 
         $userContent = implode("\n\n", $userParts);
 
-        Logger::logAgentInfo(
-            $this->getId(),
+        $this->logAgentInfo(
             "[generate] Reacting to: {$recentMeta}"
         );
 

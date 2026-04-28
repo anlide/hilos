@@ -37,7 +37,6 @@ use Hilos\Core\Router\DTO\EntitiesChangesDTO;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\HilosException;
 use Hilos\Socket\WebSocket\DTO\WebSocketFrameBinarySignalDTO;
-use Hilos\Utils\Logger;
 use Random\RandomException;
 
 /**
@@ -170,7 +169,7 @@ final class MainPage extends AbstractChatPage
                 if ($payload instanceof ModerationResultSignalData) {
                     $this->handleTextModerationResult($payload);
                 } else {
-                    $this->logInvalidAgentPayload($name, $payload);
+                    $this->logAgentError("Invalid payload type for {$name}: " . get_debug_type($payload));
                 }
 
                 return;
@@ -179,13 +178,13 @@ final class MainPage extends AbstractChatPage
                 if ($payload instanceof ModerationFileResultSignalData) {
                     $this->handleModerationFileResult($payload);
                 } else {
-                    $this->logInvalidAgentPayload($name, $payload);
+                    $this->logAgentError("Invalid payload type for {$name}: " . get_debug_type($payload));
                 }
 
                 return;
 
             default:
-                $this->logInvalidAgentPayload($name, $payload);
+                $this->logAgentError("Invalid payload type for {$name}: " . get_debug_type($payload));
         }
     }
 
@@ -240,7 +239,7 @@ final class MainPage extends AbstractChatPage
         }
 
         $userId = Hilos::$rt->connections[$acceptKey]->userId;
-        if (!$this->canSendMessage($userId)) {
+        if (!Hilos::$rt->userStates->actions->canSendMessage($userId)) {
             throw new ValidationException('Message rate limit is active');
         }
 
@@ -279,8 +278,7 @@ final class MainPage extends AbstractChatPage
             if (isset(Hilos::$rt->userStates[$userId])) {
                 Hilos::$rt->userStates->actions->clearTextModerationMessage($userId);
             }
-            Logger::logAgentInfo(
-                $this->getChatAgent()->getId(),
+            $this->logAgentInfo(
                 "Moderation result ignored for stale connection (acceptKey={$acceptKey}; userId={$userId})",
             );
             return;
@@ -295,49 +293,15 @@ final class MainPage extends AbstractChatPage
 
         if (!$result->allow) {
             $reason = $result->reason !== '' ? $result->reason : 'unknown';
-            Logger::logAgentError($this->getChatAgent()->getId(), "Message blocked by moderation (userId={$userId}; reason={$reason})");
+            $this->logAgentError("Message blocked by moderation (userId={$userId}; reason={$reason})");
             return;
         }
 
-        $this->recordMessageSent($userId);
+        Hilos::$rt->userStates->actions->recordMessageSent($userId);
         $event = Hilos::$db->events->actions->addMessage($result->message, userId: $userId);
         $this->getChatAgent()->sendToAllUsers(
             ChatSignalConstants::NEW_EVENT,
             new ChatEventSignalDTO(new EntitiesChangesDTO(full: [DbChatContext::events => Events::fromSingleItem($event)])),
         );
-    }
-
-    /**
-     * Whether enough time has passed for this user to send another main-page message.
-     *
-     * @param int $userId Chat user id
-     * @return bool True if sending is allowed
-     * @throws HilosException When runtime state is unavailable
-     */
-    private function canSendMessage(int $userId): bool
-    {
-        return Hilos::$rt->userStates->actions->canSendMessage($userId);
-    }
-
-    /**
-     * Store the successful publish time for main-page message rate limiting.
-     *
-     * @param int $userId Chat user id
-     * @throws HilosException When runtime state cannot be updated
-     */
-    private function recordMessageSent(int $userId): void
-    {
-        Hilos::$rt->userStates->actions->recordMessageSent($userId);
-    }
-
-    /**
-     * Log a type mismatch for a routed main-page agent signal.
-     *
-     * @param string $name Signal name that failed validation
-     * @param mixed $payload Value received in {@see AgentSignalData::$data}
-     */
-    private function logInvalidAgentPayload(string $name, mixed $payload): void
-    {
-        Logger::logAgentError($this->getChatAgent()->getId(), "Invalid payload type for {$name}: " . get_debug_type($payload));
     }
 }

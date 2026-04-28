@@ -23,10 +23,7 @@ use Hilos\LLM\DTO\Message;
 use Hilos\Constants\LLMConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Router\AgentSignalData;
-use Hilos\Core\TruthSource\TruthSourceRegistry;
-use Hilos\Utils\Env;
 use Hilos\Utils\Helpers\JsonHelper;
-use Hilos\Utils\Logger;
 
 /**
  * ModeratorAgent - Regular agent for content moderation.
@@ -68,7 +65,7 @@ class ModeratorAgent extends AbstractAgent
     public function onStart(): void
     {
         // Register this agent as truth source for moderator prompt pieces collection (all keys)
-        TruthSourceRegistry::register(DbChatContext::moderatorPromptPieces, true, $this->getId());
+        $this->registerDbTruthSource(DbChatContext::moderatorPromptPieces);
     }
 
     /**
@@ -116,8 +113,7 @@ class ModeratorAgent extends AbstractAgent
             'file' => 'file userId=' . ($pending['payload']->userId ?? '?'),
             default => 'botId=' . ($pending['payload']->botId ?? '?'),
         };
-        Logger::logAgentInfo(
-            'ModeratorAgent',
+        $this->logAgentInfo(
             "Moderation request finished [{$authorContext}; decision=" . ($allow ? 'allow' : 'block') . "; reason={$reason}]"
         );
 
@@ -183,25 +179,25 @@ class ModeratorAgent extends AbstractAgent
                 if ($payload instanceof ModerationRequestSignalData) {
                     $this->handleModerateRequest($payload);
                 } else {
-                    $this->logInvalidPayload($name, $payload);
+                    $this->logAgentError("Invalid payload type for {$name}: " . get_debug_type($payload));
                 }
                 return;
             case ChatSignalConstants::MODERATE_BOT_REQUEST:
                 if ($payload instanceof ModerationBotRequestSignalData) {
                     $this->handleModerateBotRequest($payload);
                 } else {
-                    $this->logInvalidPayload($name, $payload);
+                    $this->logAgentError("Invalid payload type for {$name}: " . get_debug_type($payload));
                 }
                 return;
             case ChatSignalConstants::MODERATE_FILE_REQUEST:
                 if ($payload instanceof ModerationFileRequestSignalData) {
                     $this->handleModerateFileRequest($payload);
                 } else {
-                    $this->logInvalidPayload($name, $payload);
+                    $this->logAgentError("Invalid payload type for {$name}: " . get_debug_type($payload));
                 }
                 return;
             default:
-                $this->logInvalidPayload($name, $payload);
+                $this->logAgentError("Invalid payload type for {$name}: " . get_debug_type($payload));
         }
     }
 
@@ -217,8 +213,7 @@ class ModeratorAgent extends AbstractAgent
             return;
         }
 
-        Logger::logAgentInfo(
-            'ModeratorAgent',
+        $this->logAgentInfo(
             "Moderation file request queued [userId={$payload->userId}; file={$payload->originalFilename}]"
         );
 
@@ -231,7 +226,7 @@ class ModeratorAgent extends AbstractAgent
      */
     private function bypassModerationFile(ModerationFileRequestSignalData $payload): void
     {
-        Logger::logAgentInfo('ModeratorAgent', "File moderation bypassed [userId={$payload->userId}] (disabled)");
+        $this->logAgentInfo("File moderation bypassed [userId={$payload->userId}] (disabled)");
         $this->sendToAgent(
             ChatSignalConstants::MODERATION_FILE_RESULT,
             new ModerationFileResultSignalData(
@@ -255,8 +250,7 @@ class ModeratorAgent extends AbstractAgent
         }
 
         $messageLength = mb_strlen($payload->message);
-        Logger::logAgentInfo(
-            'ModeratorAgent',
+        $this->logAgentInfo(
             "Moderation request queued [userId={$payload->userId}; messageLen={$messageLength}]"
         );
 
@@ -277,8 +271,7 @@ class ModeratorAgent extends AbstractAgent
         }
 
         $messageLength = mb_strlen($payload->message);
-        Logger::logAgentInfo(
-            'ModeratorAgent',
+        $this->logAgentInfo(
             "Moderation bot request queued [botId={$payload->botId}; messageLen={$messageLength}]"
         );
 
@@ -293,7 +286,7 @@ class ModeratorAgent extends AbstractAgent
      */
     private function bypassModerationUser(ModerationRequestSignalData $payload): void
     {
-        Logger::logAgentInfo('ModeratorAgent', "Moderation bypassed for user [userId={$payload->userId}] (disabled)");
+        $this->logAgentInfo("Moderation bypassed for user [userId={$payload->userId}] (disabled)");
         $this->sendToAgent(
             ChatSignalConstants::MODERATION_RESULT,
             new ModerationResultSignalData(
@@ -313,7 +306,7 @@ class ModeratorAgent extends AbstractAgent
      */
     private function bypassModerationBot(ModerationBotRequestSignalData $payload): void
     {
-        Logger::logAgentInfo('ModeratorAgent', "Moderation bypassed for bot [botId={$payload->botId}] (disabled)");
+        $this->logAgentInfo("Moderation bypassed for bot [botId={$payload->botId}] (disabled)");
         $this->sendToAgent(
             ChatSignalConstants::MODERATION_BOT_RESULT,
             new ModerationBotResultSignalData(
@@ -359,17 +352,6 @@ class ModeratorAgent extends AbstractAgent
             $this->currentPending = null;
             array_unshift($this->pendingQueue, $item);
         }
-    }
-
-    /**
-     * Log invalid signal payload and its type.
-     *
-     * @param string $name Signal name
-     * @param mixed  $payload Payload instance (wrong type)
-     */
-    private function logInvalidPayload(string $name, mixed $payload): void
-    {
-        Logger::logAgentError('ModeratorAgent', "Invalid payload type for {$name}: " . get_class($payload));
     }
 
     /**

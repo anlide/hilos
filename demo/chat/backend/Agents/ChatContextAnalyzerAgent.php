@@ -24,9 +24,7 @@ use Hilos\LLM\ClientFactory;
 use Hilos\LLM\Contract\AsyncChatLLMInterface;
 use Hilos\LLM\DTO\ChatGenerateOptions;
 use Hilos\LLM\DTO\Message;
-use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Utils\Helpers\JsonHelper;
-use Hilos\Utils\Logger;
 
 /**
  * ChatContextAnalyzerAgent - Monopolistic agent for chat context analysis.
@@ -68,7 +66,7 @@ class ChatContextAnalyzerAgent extends AbstractAgent
      */
     public function onStart(): void
     {
-        RtTruthSourceRegistry::register(RtChatContext::chatContexts, true, $this->getId());
+        $this->registerRtTruthSource(RtChatContext::chatContexts);
 
         $existing = Hilos::$rt->chatContexts->getStateCollection()->get(StateChatContext::ID_MAIN);
         if ($existing === null) {
@@ -103,7 +101,7 @@ class ChatContextAnalyzerAgent extends AbstractAgent
         $this->pendingSummarize = false;
 
         if ($text === null) {
-            Logger::logAgentInfo($this->getType(), '[llm_done] Summarize request finished (no response)');
+            $this->logAgentInfo('[llm_done] Summarize request finished (no response)');
             return;
         }
 
@@ -116,14 +114,13 @@ class ChatContextAnalyzerAgent extends AbstractAgent
             Hilos::$rt->chatContexts->actions->update($parsed);
 
             $topicStatus = $topic === null ? 'null' : 'valid';
-            Logger::logAgentInfo(
-                $this->getType(),
+            $this->logAgentInfo(
                 '[llm_done] topic=' . json_encode($topic ?? 'null', JSON_UNESCAPED_UNICODE) . ' (' . $topicStatus . ')'
                 . ', confidence=' . round($confidence, 2)
                 . ', summary=' . json_encode(mb_substr($summary, 0, 300), JSON_UNESCAPED_UNICODE)
             );
         } else {
-            Logger::logAgentInfo($this->getType(), '[llm_done] Parse failed, raw=' . json_encode(mb_substr($text, 0, 200), JSON_UNESCAPED_UNICODE));
+            $this->logAgentInfo('[llm_done] Parse failed, raw=' . json_encode(mb_substr($text, 0, 200), JSON_UNESCAPED_UNICODE));
         }
 
         if ($this->pendingSummarize && !$this->chatClient->isBusy()) {
@@ -228,8 +225,7 @@ PROMPT;
                 : ['format' => 'json'],
         );
 
-        Logger::logAgentInfo(
-            $this->getType(),
+        $this->logAgentInfo(
             '[llm_start] Sending summarize request, events=' . $eventCount . ', contextLen=' . strlen($eventsText)
         );
 
@@ -292,8 +288,7 @@ PROMPT;
             : null;
         $topic = $topicRaw !== null && $topicRaw !== '' && $this->isTopicAllowed($topicRaw) ? $topicRaw : null;
         if ($topicRaw !== null && $topicRaw !== '' && $topic === null) {
-            Logger::logAgentInfo(
-                $this->getType(),
+            $this->logAgentInfo(
                 '[llm_done] topic rejected (not in allowed list): ' . json_encode($topicRaw, JSON_UNESCAPED_UNICODE)
             );
         }
