@@ -20,6 +20,7 @@ use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\EmitDbChangeSignalData;
 use Hilos\Core\Router\DTO\EntitiesChangesDTO;
+use Hilos\Core\Router\Exception\InvalidActionPayloadException;
 use Hilos\Core\Table\DTO\TableActionErrorSignalData;
 use Hilos\Core\Table\DTO\TableSourceEventDTO;
 use Hilos\Core\Table\Exception\TableActionException;
@@ -74,15 +75,17 @@ final class AdminUsersPage extends AbstractChatPage
      * @param string $action Action name (for error reporting)
      * @param ActionPayloadDTO $dto Action payload
      * @throws AgentUnknownActionException When action is not supported by this page
+     * @throws InvalidActionPayloadException When action payload does not match the action name
      * @throws HilosException On table mutation or signal failure
      */
     public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): void
     {
         switch ($action) {
             case ChatSignalConstants::USER_UPDATE:
-                if ($dto instanceof AdminUserUpdateActionDTO) {
-                    $this->handleUserUpdate($acceptKey, $dto);
+                if (!$dto instanceof AdminUserUpdateActionDTO) {
+                    throw new InvalidActionPayloadException($action, AdminUserUpdateActionDTO::class, $dto);
                 }
+                $this->handleUserUpdate($acceptKey, $dto);
 
                 break;
 

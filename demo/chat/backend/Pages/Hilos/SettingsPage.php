@@ -17,6 +17,7 @@ use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\EntitiesChangesDTO;
+use Hilos\Core\Router\Exception\InvalidActionPayloadException;
 use Hilos\Core\Table\DTO\TableActionErrorSignalData;
 use Hilos\Core\Table\DTO\TableMutationSignalData;
 use Hilos\Core\Table\Exception\TableActionException;
@@ -60,29 +61,33 @@ final class SettingsPage extends AbstractHilosSettingsPage
      * @param string $action Action name (for error reporting)
      * @param ActionPayloadDTO $dto Action payload (SettingAddActionDTO|SettingUpdateActionDTO|SettingDeleteActionDTO)
      * @throws AgentUnknownActionException When action is not supported by this page
+     * @throws InvalidActionPayloadException When action payload does not match the action name
      * @throws HilosException On table mutation or signal failure
      */
     public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): void
     {
         switch ($action) {
             case ChatSignalConstants::SETTING_ADD:
-                if ($dto instanceof SettingAddActionDTO) {
-                    $this->handleAdd($acceptKey, $dto);
+                if (!$dto instanceof SettingAddActionDTO) {
+                    throw new InvalidActionPayloadException($action, SettingAddActionDTO::class, $dto);
                 }
+                $this->handleAdd($acceptKey, $dto);
 
                 break;
 
             case ChatSignalConstants::SETTING_UPDATE:
-                if ($dto instanceof SettingUpdateActionDTO) {
-                    $this->handleUpdate($acceptKey, $dto);
+                if (!$dto instanceof SettingUpdateActionDTO) {
+                    throw new InvalidActionPayloadException($action, SettingUpdateActionDTO::class, $dto);
                 }
+                $this->handleUpdate($acceptKey, $dto);
 
                 break;
 
             case ChatSignalConstants::SETTING_DELETE:
-                if ($dto instanceof SettingDeleteActionDTO) {
-                    $this->handleDelete($acceptKey, $dto);
+                if (!$dto instanceof SettingDeleteActionDTO) {
+                    throw new InvalidActionPayloadException($action, SettingDeleteActionDTO::class, $dto);
                 }
+                $this->handleDelete($acceptKey, $dto);
 
                 break;
 

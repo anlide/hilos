@@ -9,6 +9,7 @@ use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Constants\WorkerConstants;
 use Hilos\Core\Agent\AgentInterface;
+use Hilos\Core\Agent\Exception\AgentException;
 use Hilos\Database\DbSyncApplicator;
 use Hilos\Runtime\RtSyncApplicator;
 use Hilos\Core\Agent\AgentManager;
@@ -734,8 +735,16 @@ abstract class WorkerManager extends BaseManager
                         Hilos::$ac?->logApiAgentAction($apiRequestId, $agent->getType(), $agent->getIndex(), $name, $signalData->toArray());
                     }
                     $this->onAgentSignalHandled($name, $signalData);
-                    $agent->onSignalAgent($signalData, $source, $name);
-                    $this->getPageSignalRouter($agentId, $agent)->dispatchAgentSignal($signalData, $source, $name);
+                    try {
+                        $agent->onSignalAgent($signalData, $source, $name);
+                    } catch (AgentException $e) {
+                        Logger::logAgentError($agent->getId(), "Agent signal handler failed: {$e->getMessage()}");
+                    }
+                    try {
+                        $this->getPageSignalRouter($agentId, $agent)->dispatchAgentSignal($signalData, $source, $name);
+                    } catch (AgentException $e) {
+                        Logger::logAgentError($agent->getId(), "Page signal handler failed: {$e->getMessage()}");
+                    }
                 } else {
                     Logger::error("onSignalAgent - invalid signal data type: " . get_class($signalData));
                 }

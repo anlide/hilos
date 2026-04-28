@@ -18,6 +18,8 @@ use Demo\Chat\Hilos;
 use Demo\Chat\Utils\ChatSettingsHelper;
 use Hilos\Constants\LLMConstants;
 use Hilos\Core\Agent\AbstractAgent;
+use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
+use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\HilosException;
 use Hilos\LLM\ClientFactory;
@@ -169,11 +171,13 @@ class ModeratorAgent extends AbstractAgent
     }
 
     /**
-     * Routes valid moderation request payloads into the queue and logs unsupported payloads.
+     * Routes valid moderation request payloads into the queue.
      *
      * @param AgentSignalData $data Agent signal wrapper with the inner moderation payload
      * @param string $source Framework signal source identifier (unused)
      * @param string $name Moderation request signal name
+     * @throws AgentUnknownSignalException When signal name is not supported by this agent
+     * @throws InvalidAgentSignalPayloadException When signal payload does not match the signal name
      * @throws HilosException When moderation rule lookup fails
      */
     public function onSignalAgent(AgentSignalData $data, string $source, string $name): void
@@ -182,28 +186,25 @@ class ModeratorAgent extends AbstractAgent
 
         switch ($name) {
             case ChatSignalConstants::MODERATE_REQUEST:
-                if ($payload instanceof ModerationRequestSignalData) {
-                    $this->handleModerateRequest($payload);
-                } else {
-                    $this->logAgentError("Invalid payload type for {$name}: " . get_debug_type($payload));
+                if (!$payload instanceof ModerationRequestSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, ModerationRequestSignalData::class, $payload);
                 }
+                $this->handleModerateRequest($payload);
                 return;
             case ChatSignalConstants::MODERATE_BOT_REQUEST:
-                if ($payload instanceof ModerationBotRequestSignalData) {
-                    $this->handleModerateBotRequest($payload);
-                } else {
-                    $this->logAgentError("Invalid payload type for {$name}: " . get_debug_type($payload));
+                if (!$payload instanceof ModerationBotRequestSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, ModerationBotRequestSignalData::class, $payload);
                 }
+                $this->handleModerateBotRequest($payload);
                 return;
             case ChatSignalConstants::MODERATE_FILE_REQUEST:
-                if ($payload instanceof ModerationFileRequestSignalData) {
-                    $this->handleModerateFileRequest($payload);
-                } else {
-                    $this->logAgentError("Invalid payload type for {$name}: " . get_debug_type($payload));
+                if (!$payload instanceof ModerationFileRequestSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, ModerationFileRequestSignalData::class, $payload);
                 }
+                $this->handleModerateFileRequest($payload);
                 return;
             default:
-                $this->logAgentError("Invalid payload type for {$name}: " . get_debug_type($payload));
+                throw new AgentUnknownSignalException($name);
         }
     }
 

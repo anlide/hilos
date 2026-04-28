@@ -23,6 +23,7 @@ use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\EmitDbChangeSignalData;
 use Hilos\Core\Router\DTO\EntitiesChangesDTO;
+use Hilos\Core\Router\Exception\InvalidActionPayloadException;
 use Hilos\Core\Table\DTO\TableSourceEventDTO;
 use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\HilosException;
@@ -71,15 +72,17 @@ final class ProfilePage extends AbstractChatPage
      * @param string $action Action name
      * @param ActionPayloadDTO $dto Action payload DTO
      * @throws AgentUnknownActionException When action is not supported by this page
+     * @throws InvalidActionPayloadException When action payload does not match the action name
      * @throws HilosException On error during action handling
      */
     public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): void
     {
         switch ($action) {
             case ChatSignalConstants::RENAME:
-                if ($dto instanceof RenameActionDTO) {
-                    $this->handleRename($acceptKey, $dto);
+                if (!$dto instanceof RenameActionDTO) {
+                    throw new InvalidActionPayloadException($action, RenameActionDTO::class, $dto);
                 }
+                $this->handleRename($acceptKey, $dto);
 
                 break;
 

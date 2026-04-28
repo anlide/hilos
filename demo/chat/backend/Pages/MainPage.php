@@ -24,6 +24,8 @@ use Demo\Chat\Frontend\UserFrontendStateProjector;
 use Demo\Chat\Hilos;
 use Demo\Chat\Pages\Main\UploadFileTrait;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
+use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
+use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Core\Exception\ValidationException;
@@ -34,6 +36,7 @@ use Hilos\Core\Page\PageAgentInterface;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\EntitiesChangesDTO;
+use Hilos\Core\Router\Exception\InvalidActionPayloadException;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\HilosException;
 use Hilos\Socket\WebSocket\DTO\WebSocketFrameBinarySignalDTO;
@@ -120,6 +123,7 @@ final class MainPage extends AbstractChatPage
      * @param string $action Action name
      * @param ActionPayloadDTO $dto Action payload DTO
      * @throws AgentUnknownActionException When action is not supported by this page
+     * @throws InvalidActionPayloadException When action payload does not match the action name
      * @throws HilosException On database, runtime, truth source, or signal failure
      * @throws RandomException When file upload id generation fails
      */
@@ -127,23 +131,26 @@ final class MainPage extends AbstractChatPage
     {
         switch ($action) {
             case ChatSignalConstants::MESSAGE:
-                if ($dto instanceof MessageActionDTO) {
-                    $this->handleMessage($acceptKey, $dto);
+                if (!$dto instanceof MessageActionDTO) {
+                    throw new InvalidActionPayloadException($action, MessageActionDTO::class, $dto);
                 }
+                $this->handleMessage($acceptKey, $dto);
 
                 break;
 
             case ChatSignalConstants::FILE_UPLOAD_INIT:
-                if ($dto instanceof FileUploadInitActionDTO) {
-                    $this->handleFileUploadInit($acceptKey, $dto);
+                if (!$dto instanceof FileUploadInitActionDTO) {
+                    throw new InvalidActionPayloadException($action, FileUploadInitActionDTO::class, $dto);
                 }
+                $this->handleFileUploadInit($acceptKey, $dto);
 
                 break;
 
             case ChatSignalConstants::FILE_MODERATION_DISMISS:
-                if ($dto instanceof FileModerationDismissActionDTO) {
-                    $this->handleFileModerationDismiss($acceptKey);
+                if (!$dto instanceof FileModerationDismissActionDTO) {
+                    throw new InvalidActionPayloadException($action, FileModerationDismissActionDTO::class, $dto);
                 }
+                $this->handleFileModerationDismiss($acceptKey);
 
                 break;
 
@@ -158,6 +165,8 @@ final class MainPage extends AbstractChatPage
      * @param AgentSignalData $data Wrapped moderation result payload
      * @param string $source Framework signal source identifier (unused)
      * @param string $name Moderation result signal name
+     * @throws AgentUnknownSignalException When signal name is not supported by this page
+     * @throws InvalidAgentSignalPayloadException When signal payload does not match the signal name
      * @throws HilosException On database, runtime, truth source, or signal failure
      */
     public function onSignalAgent(AgentSignalData $data, string $source, string $name): void
@@ -166,25 +175,23 @@ final class MainPage extends AbstractChatPage
 
         switch ($name) {
             case ChatSignalConstants::MODERATION_RESULT:
-                if ($payload instanceof ModerationResultSignalData) {
-                    $this->handleTextModerationResult($payload);
-                } else {
-                    $this->logAgentError("Invalid payload type for {$name}: " . get_debug_type($payload));
+                if (!$payload instanceof ModerationResultSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, ModerationResultSignalData::class, $payload);
                 }
+                $this->handleTextModerationResult($payload);
 
                 return;
 
             case ChatSignalConstants::MODERATION_FILE_RESULT:
-                if ($payload instanceof ModerationFileResultSignalData) {
-                    $this->handleModerationFileResult($payload);
-                } else {
-                    $this->logAgentError("Invalid payload type for {$name}: " . get_debug_type($payload));
+                if (!$payload instanceof ModerationFileResultSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, ModerationFileResultSignalData::class, $payload);
                 }
+                $this->handleModerationFileResult($payload);
 
                 return;
 
             default:
-                $this->logAgentError("Invalid payload type for {$name}: " . get_debug_type($payload));
+                throw new AgentUnknownSignalException($name);
         }
     }
 

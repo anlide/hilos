@@ -39,11 +39,32 @@ final class ModerationRequestSignalData extends BaseDTO implements SignalDataInt
 ```php
 public function onSignalAgent(AgentSignalData $data, string $source, string $name): void {
     // $data->data is the inner payload
-    if ($data->data instanceof ModerationRequestSignalData) {
-        $this->handleModerationRequest($data->data);
+    $payload = $data->data;
+
+    switch ($name) {
+        case ChatSignalConstants::MODERATE_REQUEST:
+            if (!$payload instanceof ModerationRequestSignalData) {
+                throw new InvalidAgentSignalPayloadException(
+                    $name,
+                    ModerationRequestSignalData::class,
+                    $payload,
+                );
+            }
+
+            $this->handleModerationRequest($payload);
+            return;
+
+        default:
+            throw new AgentUnknownSignalException($name);
     }
 }
 ```
+
+Known signal names must validate their exact payload class. A mismatched inner
+payload is a contract error: throw `InvalidAgentSignalPayloadException`, do not
+log and return. Unknown agent signal names throw `AgentUnknownSignalException`.
+`WorkerManager` catches `AgentException` around agent and page signal dispatch
+and logs the failure once under the owning agent.
 
 ## declare(strict_types=1) required
 

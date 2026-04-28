@@ -18,6 +18,7 @@ use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\EntitiesChangesDTO;
+use Hilos\Core\Router\Exception\InvalidActionPayloadException;
 use Hilos\Core\Table\DTO\TableActionErrorSignalData;
 use Hilos\Core\Table\DTO\TableMutationSignalData;
 use Hilos\Core\Table\Exception\TableActionException;
@@ -70,29 +71,33 @@ final class AdminModeratorPage extends AbstractChatPage
      * @param string $action Action name (for error reporting)
      * @param ActionPayloadDTO $dto Action payload (ModeratorPieceCreateActionDTO|ModeratorPieceUpdateActionDTO|ModeratorPieceDeleteActionDTO)
      * @throws AgentUnknownActionException When action is not supported by this page
+     * @throws InvalidActionPayloadException When action payload does not match the action name
      * @throws HilosException On table mutation or signal failure
      */
     public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): void
     {
         switch ($action) {
             case ChatSignalConstants::MODERATOR_PIECE_CREATE:
-                if ($dto instanceof ModeratorPieceCreateActionDTO) {
-                    $this->handleCreate($acceptKey, $dto);
+                if (!$dto instanceof ModeratorPieceCreateActionDTO) {
+                    throw new InvalidActionPayloadException($action, ModeratorPieceCreateActionDTO::class, $dto);
                 }
+                $this->handleCreate($acceptKey, $dto);
 
                 break;
 
             case ChatSignalConstants::MODERATOR_PIECE_UPDATE:
-                if ($dto instanceof ModeratorPieceUpdateActionDTO) {
-                    $this->handleUpdate($acceptKey, $dto);
+                if (!$dto instanceof ModeratorPieceUpdateActionDTO) {
+                    throw new InvalidActionPayloadException($action, ModeratorPieceUpdateActionDTO::class, $dto);
                 }
+                $this->handleUpdate($acceptKey, $dto);
 
                 break;
 
             case ChatSignalConstants::MODERATOR_PIECE_DELETE:
-                if ($dto instanceof ModeratorPieceDeleteActionDTO) {
-                    $this->handleDelete($acceptKey, $dto);
+                if (!$dto instanceof ModeratorPieceDeleteActionDTO) {
+                    throw new InvalidActionPayloadException($action, ModeratorPieceDeleteActionDTO::class, $dto);
                 }
+                $this->handleDelete($acceptKey, $dto);
 
                 break;
 

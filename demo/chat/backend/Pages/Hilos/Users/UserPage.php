@@ -23,6 +23,7 @@ use Hilos\Core\Page\Exception\PageResourceNotFoundException;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\EmitDbChangeSignalData;
 use Hilos\Core\Router\DTO\EntitiesChangesDTO;
+use Hilos\Core\Router\Exception\InvalidActionPayloadException;
 use Hilos\Core\Table\DTO\TableSourceEventDTO;
 use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\Database\Exception\View\CollectionNotManualException;
@@ -78,15 +79,17 @@ final class UserPage extends AbstractHilosUserPage
      * @param string $action Action name from the WebSocket envelope
      * @param ActionPayloadDTO $dto Parsed action payload
      * @throws AgentUnknownActionException When action is not supported by this page
+     * @throws InvalidActionPayloadException When action payload does not match the action name
      * @throws HilosException On update or signal failure
      */
     public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): void
     {
         switch ($action) {
             case ChatSignalConstants::HILOS_USER_UPDATE:
-                if ($dto instanceof HilosUserUpdateActionDTO) {
-                    $this->handleHilosUserUpdate($acceptKey, $dto);
+                if (!$dto instanceof HilosUserUpdateActionDTO) {
+                    throw new InvalidActionPayloadException($action, HilosUserUpdateActionDTO::class, $dto);
                 }
+                $this->handleHilosUserUpdate($acceptKey, $dto);
 
                 break;
 

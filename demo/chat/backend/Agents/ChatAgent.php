@@ -19,6 +19,8 @@ use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\View\Context\RtChatContext;
 use Demo\Chat\Socket\WebSocket\DTO\HandshakeResponseSignalData;
 use Hilos\Core\Agent\AbstractAgent;
+use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
+use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
 use Hilos\Core\CLI\Exception\CommandException;
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\InvalidFormatException;
@@ -230,6 +232,8 @@ class ChatAgent extends AbstractAgent
      * @param AgentSignalData $data Agent signal wrapper with the inner payload to dispatch
      * @param string $source Framework signal source identifier (unused)
      * @param string $name Agent signal name
+     * @throws AgentUnknownSignalException When signal name is not supported by this agent
+     * @throws InvalidAgentSignalPayloadException When signal payload does not match the signal name
      * @throws HilosException On bot message publish failure
      * @throws CommandException If event id is null after sync
      */
@@ -242,18 +246,17 @@ class ChatAgent extends AbstractAgent
             case ChatSignalConstants::MODERATION_FILE_RESULT:
                 return;
             case ChatSignalConstants::MODERATION_BOT_RESULT:
-                if ($payload instanceof ModerationBotResultSignalData) {
-                    $this->handleModerationBotResult($payload);
-                } else {
-                    $this->logAgentError("Invalid payload type for {$name}: " . get_debug_type($payload));
+                if (!$payload instanceof ModerationBotResultSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, ModerationBotResultSignalData::class, $payload);
                 }
+                $this->handleModerationBotResult($payload);
                 return;
             case ChatSignalConstants::BOT_JOINED:
             case ChatSignalConstants::BOT_LEFT:
                 $this->sendToAllUsers($name, $data->data);
                 return;
             default:
-                $this->logAgentError("Invalid payload type for {$name}: " . get_debug_type($payload));
+                throw new AgentUnknownSignalException($name);
         }
     }
 

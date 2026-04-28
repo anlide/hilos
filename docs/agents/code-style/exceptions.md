@@ -47,12 +47,28 @@ handlers and let the framework action dispatcher call
 the page has a specific user-facing fail/error contract; otherwise the default
 `action_error` signal is sent to the initiator.
 
+If `onAction()` receives a DTO that does not match the routed action name,
+throw `InvalidActionPayloadException`. Do not log and return: a mismatched DTO
+is a broken internal routing/parser contract, and the page action dispatcher is
+responsible for converting the exception into the page's fail/error contract.
+
 Use `TableActionException` for table-specific action validation where the
 frontend expects `TABLE_ACTION_ERROR`.
 
 Use concrete validation exceptions for non-table action flows when there is a
 clear existing class. Example: profile rename should throw `EmptyValueException`
 for an empty name.
+
+## Agent signals
+
+For `onSignalAgent()` in agents or pages, route by signal name with a `switch`.
+Known signal names must validate the wrapped inner payload type:
+
+- Throw `InvalidAgentSignalPayloadException` when the payload object does not
+  match the signal contract.
+- Throw `AgentUnknownSignalException` in the `default` branch.
+- Do not call `logAgentError()` for these contract failures. `WorkerManager`
+  catches `AgentException` around agent/page signal dispatch and logs it once.
 
 ## PHPDoc
 

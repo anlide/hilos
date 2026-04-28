@@ -8,8 +8,10 @@ especially `onAction()`.
 1. `onAction()` routes by action name. Always use `switch ($action)` with
    explicit `case SomeConstants::ACTION_NAME:` branches, even when the page
    currently has only one action.
-2. Each `case` uses a positive DTO guard and delegates inside that block:
-   `if ($dto instanceof SomeActionDTO) { $this->handleSomeAction(...); }`.
+2. Each `case` validates the expected DTO type before delegating. Prefer an
+   inverted guard that throws `InvalidActionPayloadException` when the DTO does
+   not match the action name, then call the private handler with the narrowed
+   DTO. Never silently ignore an action because its DTO is unexpected.
    The switch is routing; the private handler is behavior.
 3. Do not route by `match (true)` or by a single top-level
    `if ($dto instanceof ...)`. Those shapes hide the action name and make the
@@ -29,7 +31,10 @@ especially `onAction()`.
    Do not duplicate raw action names as strings in handlers.
 8. The `default` branch must throw `AgentUnknownActionException`; do not log and
    return on unknown actions.
-9. Do not invent hidden fail signals. If an action has a user-facing pending
+9. Do not call `logAgentError()` for invalid action DTOs. Throw and let
+   `PageSignalRouter` call `onActionException()`, which either sends the page's
+   specific fail contract or the default framework `action_error` signal.
+10. Do not invent hidden fail signals. If an action has a user-facing pending
    state or fail UI, add a real signal contract or override
    `onActionException()` before trying to surface it in the frontend. Otherwise
    rely on the framework `action_error` signal.
@@ -41,9 +46,15 @@ public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dt
 {
     switch ($action) {
         case ChatSignalConstants::USER_UPDATE:
-            if ($dto instanceof UserUpdateActionDTO) {
-                $this->handleUserUpdate($acceptKey, $dto);
+            if (!$dto instanceof UserUpdateActionDTO) {
+                throw new InvalidActionPayloadException(
+                    $action,
+                    UserUpdateActionDTO::class,
+                    $dto,
+                );
             }
+
+            $this->handleUserUpdate($acceptKey, $dto);
 
             break;
 

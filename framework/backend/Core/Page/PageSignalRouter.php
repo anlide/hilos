@@ -6,6 +6,7 @@ namespace Hilos\Core\Page;
 
 use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
+use Hilos\Core\Agent\Exception\AgentException;
 use Hilos\Core\Page\DTO\PageSubscriptionErrorSignalData;
 use Hilos\Core\Page\Exception\PageNotFoundException;
 use Hilos\Core\Page\Exception\PageSubscriptionException;
@@ -204,6 +205,7 @@ class PageSignalRouter
      * @param AgentSignalData $data Wrapped agent signal payload
      * @param string $source Signal source
      * @param string $name Signal name
+     * @throws AgentException
      */
     public function dispatchAgentSignal(AgentSignalData $data, string $source, string $name): void
     {

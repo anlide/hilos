@@ -10,6 +10,7 @@ use Demo\Chat\Core\Page\DTO\GuardianAgentRunStopActionDTO;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
+use Hilos\Core\Router\Exception\InvalidActionPayloadException;
 use Hilos\Core\Router\SignalData;
 use Hilos\Pages\AbstractHilosGuardianAgentPage;
 use Throwable;
@@ -26,21 +27,24 @@ final class GuardianAgentPage extends AbstractHilosGuardianAgentPage
      * @param string $action Action name
      * @param ActionPayloadDTO $dto Action payload
      * @throws AgentUnknownActionException When action is not supported by this page
+     * @throws InvalidActionPayloadException When action payload does not match the action name
      */
     public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): void
     {
         switch ($action) {
             case ChatSignalConstants::GUARDIAN_AGENT_RUN_START:
-                if ($dto instanceof GuardianAgentRunStartActionDTO) {
-                    $this->handleStart($dto);
+                if (!$dto instanceof GuardianAgentRunStartActionDTO) {
+                    throw new InvalidActionPayloadException($action, GuardianAgentRunStartActionDTO::class, $dto);
                 }
+                $this->handleStart($dto);
 
                 break;
 
             case ChatSignalConstants::GUARDIAN_AGENT_RUN_STOP:
-                if ($dto instanceof GuardianAgentRunStopActionDTO) {
-                    $this->handleStop($dto);
+                if (!$dto instanceof GuardianAgentRunStopActionDTO) {
+                    throw new InvalidActionPayloadException($action, GuardianAgentRunStopActionDTO::class, $dto);
                 }
+                $this->handleStop($dto);
 
                 break;
 

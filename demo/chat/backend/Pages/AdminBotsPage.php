@@ -20,6 +20,7 @@ use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\EntitiesChangesDTO;
+use Hilos\Core\Router\Exception\InvalidActionPayloadException;
 use Hilos\Core\Table\DTO\TableActionErrorSignalData;
 use Hilos\Core\Table\DTO\TableMutationSignalData;
 use Hilos\Core\Table\Exception\TableActionException;
@@ -72,29 +73,33 @@ final class AdminBotsPage extends AbstractChatPage
      * @param string $action Action name (for error reporting)
      * @param ActionPayloadDTO $dto Action payload (BotCreateActionDTO|BotUpdateActionDTO|BotDeleteActionDTO)
      * @throws AgentUnknownActionException When action is not supported by this page
+     * @throws InvalidActionPayloadException When action payload does not match the action name
      * @throws HilosException On table mutation or signal failure
      */
     public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): void
     {
         switch ($action) {
             case ChatSignalConstants::BOT_CREATE:
-                if ($dto instanceof BotCreateActionDTO) {
-                    $this->handleCreate($acceptKey, $dto);
+                if (!$dto instanceof BotCreateActionDTO) {
+                    throw new InvalidActionPayloadException($action, BotCreateActionDTO::class, $dto);
                 }
+                $this->handleCreate($acceptKey, $dto);
 
                 break;
 
             case ChatSignalConstants::BOT_UPDATE:
-                if ($dto instanceof BotUpdateActionDTO) {
-                    $this->handleUpdate($acceptKey, $dto);
+                if (!$dto instanceof BotUpdateActionDTO) {
+                    throw new InvalidActionPayloadException($action, BotUpdateActionDTO::class, $dto);
                 }
+                $this->handleUpdate($acceptKey, $dto);
 
                 break;
 
             case ChatSignalConstants::BOT_DELETE:
-                if ($dto instanceof BotDeleteActionDTO) {
-                    $this->handleDelete($acceptKey, $dto);
+                if (!$dto instanceof BotDeleteActionDTO) {
+                    throw new InvalidActionPayloadException($action, BotDeleteActionDTO::class, $dto);
                 }
+                $this->handleDelete($acceptKey, $dto);
 
                 break;
 
