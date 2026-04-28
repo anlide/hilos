@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Agents;
 
+use Demo\Chat\Agents\Exception\BotMessageModerationRejectedException;
 use Demo\Chat\Constants\AgentType;
 use Demo\Chat\Constants\ChatCronConstants;
 use Demo\Chat\Constants\ChatSignalConstants;
@@ -239,17 +240,15 @@ class ChatAgent extends AbstractAgent
      */
     public function onSignalAgent(AgentSignalData $data, string $source, string $name): void
     {
-        $payload = $data->data;
-
         switch ($name) {
             case ChatSignalConstants::MODERATION_RESULT:
             case ChatSignalConstants::MODERATION_FILE_RESULT:
                 return;
             case ChatSignalConstants::MODERATION_BOT_RESULT:
-                if (!$payload instanceof ModerationBotResultSignalData) {
-                    throw new InvalidAgentSignalPayloadException($name, ModerationBotResultSignalData::class, $payload);
+                if (!$data->data instanceof ModerationBotResultSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, ModerationBotResultSignalData::class, $data->data);
                 }
-                $this->handleModerationBotResult($payload);
+                $this->handleModerationBotResult($data->data);
                 return;
             case ChatSignalConstants::BOT_JOINED:
             case ChatSignalConstants::BOT_LEFT:
@@ -261,18 +260,17 @@ class ChatAgent extends AbstractAgent
     }
 
     /**
-     * Publishes allowed moderated bot messages and logs blocked bot messages.
+     * Publishes allowed moderated bot messages and rejects blocked bot messages.
      *
      * @param ModerationBotResultSignalData $result Bot id, allow flag, message body, reason
+     * @throws BotMessageModerationRejectedException When moderation rejects the bot message
      * @throws HilosException On bot message persistence failure
      * @throws CommandException If event id is null after sync
      */
     private function handleModerationBotResult(ModerationBotResultSignalData $result): void
     {
         if (!$result->allow) {
-            $reason = $result->reason !== '' ? $result->reason : 'unknown';
-            $this->logAgentError("Bot message blocked by moderation (botId={$result->botId}; reason={$reason})");
-            return;
+            throw new BotMessageModerationRejectedException($result->botId, $result->reason !== '' ? $result->reason : 'unknown');
         }
 
         $event = Hilos::$db->events->actions->addMessage($result->message, botId: $result->botId);
