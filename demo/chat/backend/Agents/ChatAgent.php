@@ -14,8 +14,6 @@ use Demo\Chat\Core\Router\DTO\ModerationBotResultSignalData;
 use Demo\Chat\Core\Router\DTO\UserPresenceEmitPayload;
 use Demo\Chat\Database\DbChatContext;
 use Demo\Chat\Database\Pages\ChatPageCatalog;
-use Demo\Chat\Database\View\Collection\Events;
-use Demo\Chat\Database\View\Item\Event as DbEvent;
 use Demo\Chat\Frontend\UserFrontendStateProjector;
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\State\Item\BotAgentStatus as StateBotAgentStatus;
@@ -100,32 +98,49 @@ class ChatAgent extends AbstractAgent
             $user = Hilos::$db->users->actions->register($sessionToken);
             $wasRegisteredNow = true;
         }
+        $userId = (int)$user->id;
 
-        Hilos::$ac?->setBrowserSessionIdentity($sessionToken, 'user_id', (string)$user->id);
+        Hilos::$ac?->setBrowserSessionIdentity($sessionToken, 'user_id', (string)$userId);
 
-        Hilos::$rt->connections->actions->register($data->acceptKey, $user->id);
+        Hilos::$rt->connections->actions->register($data->acceptKey, $userId);
+        Hilos::$rt->userStates->actions->ensure($userId);
 
-        $userFrontend = UserFrontendStateProjector::fullForUser($user);
-        $newEvents = Events::initEmpty();
         if ($wasRegisteredNow) {
-            $newEvents->add(Hilos::$db->events->actions->addUserRegistered($user->id));
-        }
-
-        if (count($newEvents) > 0) {
-            foreach ($newEvents as $event) {
-                $this->emitChatEventCreated($event, $data->acceptKey);
+            $event = Hilos::$db->events->actions->addUserRegistered($userId);
+            if ($event->id !== null) {
+                $this->emitChangeDb(
+                    ChatSignalConstants::EMIT_CHAT_EVENT_CREATED,
+                    new EmitDbChangeSignalData(
+                        sourceEvent: new TableSourceEventDTO(
+                            sourceKey: DbChatContext::events,
+                            sourceRowKey: $event->id,
+                            mutationType: TableMutationType::Create,
+                        ),
+                        excludeAcceptKey: $data->acceptKey,
+                    ),
+                );
             }
         }
 
-        $this->broadcastUserPresence($user->id, $data->acceptKey);
-
-        Hilos::$rt->userStates->actions->ensure($user->id);
+        $this->emitChangeRt(
+            ChatSignalConstants::EMIT_CHAT_USER_PRESENCE_UPDATED,
+            new EmitRtChangeSignalData(
+                collectionKey: RtChatContext::connections,
+                stateId: (string)$userId,
+                payload: UserPresenceEmitPayload::fromFrontendChanges(
+                    $userId,
+                    UserFrontendStateProjector::updatesForUser($user),
+                    UserFrontendStateProjector::updatesForUser($user, includeConnectionStats: true),
+                )->toArray(),
+                excludeAcceptKey: $data->acceptKey,
+            ),
+        );
 
         $this->sendToUser(
             ChatSignalConstants::HANDSHAKE_RESPONSE,
             $data->acceptKey,
             new HandshakeResponseSignalData(
-                frontend: $userFrontend,
+                frontend: UserFrontendStateProjector::fullForUser($user),
                 pageCatalog: ChatPageCatalog::getCatalog(),
             ),
         );
@@ -149,23 +164,8 @@ class ChatAgent extends AbstractAgent
         }
 
         $userId = Hilos::$rt->connections[$data->acceptKey]->userId;
-        Hilos::$rt->connections->actions->unregister($data->acceptKey);
-        $this->broadcastUserPresence($userId);
-    }
-
-    /**
-     * Queue a runtime presence emit for daemon-side page fan-out.
-     *
-     * The worker owns the runtime collection mutation, while the daemon-side
-     * mapper owns current page subscription lookup and targeted WebSocket
-     * delivery.
-     *
-     * @param int $userId User whose active connection summary changed
-     * @param ?string $excludeAcceptKey Optional connection to skip during fan-out
-     */
-    private function broadcastUserPresence(int $userId, ?string $excludeAcceptKey = null): void
-    {
         $user = Hilos::$db->users[$userId] ?? null;
+        Hilos::$rt->connections->actions->unregister($data->acceptKey);
         if ($user === null) {
             return;
         }
@@ -174,13 +174,12 @@ class ChatAgent extends AbstractAgent
             ChatSignalConstants::EMIT_CHAT_USER_PRESENCE_UPDATED,
             new EmitRtChangeSignalData(
                 collectionKey: RtChatContext::connections,
-                stateId: (string) $userId,
+                stateId: (string)$userId,
                 payload: UserPresenceEmitPayload::fromFrontendChanges(
                     $userId,
                     UserFrontendStateProjector::updatesForUser($user),
                     UserFrontendStateProjector::updatesForUser($user, includeConnectionStats: true),
                 )->toArray(),
-                excludeAcceptKey: $excludeAcceptKey,
             ),
         );
     }
@@ -216,8 +215,18 @@ class ChatAgent extends AbstractAgent
 
         Hilos::$db->events->actions->deleteAll();
         $event = Hilos::$db->events->actions->addChatCleared();
+        if ($event->id === null) {
+            return;
+        }
 
-        $this->emitChatEventsReplaced($event);
+        $this->emitChangeDb(
+            ChatSignalConstants::EMIT_CHAT_EVENTS_REPLACED,
+            new EmitDbChangeSignalData(new TableSourceEventDTO(
+                sourceKey: DbChatContext::events,
+                sourceRowKey: $event->id,
+                mutationType: TableMutationType::Create,
+            )),
+        );
     }
 
     /**
@@ -270,17 +279,6 @@ class ChatAgent extends AbstractAgent
         }
 
         $event = Hilos::$db->events->actions->addMessage($result->message, botId: $result->botId);
-        $this->emitChatEventCreated($event);
-    }
-
-    /**
-     * Emit a created chat event for daemon-side WebSocket fan-out.
-     *
-     * @param DbEvent $event Persisted chat event
-     * @param ?string $excludeAcceptKey Optional connection to skip during broadcast fan-out
-     */
-    private function emitChatEventCreated(DbEvent $event, ?string $excludeAcceptKey = null): void
-    {
         if ($event->id === null) {
             return;
         }
@@ -293,29 +291,7 @@ class ChatAgent extends AbstractAgent
                     sourceRowKey: $event->id,
                     mutationType: TableMutationType::Create,
                 ),
-                excludeAcceptKey: $excludeAcceptKey,
             ),
-        );
-    }
-
-    /**
-     * Emit a full replacement of the chat event stream after cleanup.
-     *
-     * @param DbEvent $event Persisted replacement marker event
-     */
-    private function emitChatEventsReplaced(DbEvent $event): void
-    {
-        if ($event->id === null) {
-            return;
-        }
-
-        $this->emitChangeDb(
-            ChatSignalConstants::EMIT_CHAT_EVENTS_REPLACED,
-            new EmitDbChangeSignalData(new TableSourceEventDTO(
-                sourceKey: DbChatContext::events,
-                sourceRowKey: $event->id,
-                mutationType: TableMutationType::Create,
-            )),
         );
     }
 
