@@ -5,7 +5,7 @@ After all bytes received, the file goes through AI moderation before being publi
 ## Flow
 
 ```
-ChatAgent receives FILE_UPLOAD_COMPLETE
+UploadFileTrait sends FILE_UPLOAD_COMPLETE
         │
 Generate synthetic description of file (filename, MIME, size)
         │
@@ -27,7 +27,7 @@ ModeratorAgent::sendToAgent(MODERATION_FILE_RESULT, ModerationFileResultSignalDa
 })
         │
         ▼
-ChatAgent::onSignalAgent() handles MODERATION_FILE_RESULT
+PageSignalRouter routes MODERATION_FILE_RESULT to MainPage::onSignalAgent() → UploadFileTrait
 ```
 
 ## Approved

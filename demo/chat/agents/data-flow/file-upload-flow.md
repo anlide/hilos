@@ -28,7 +28,7 @@ Handled by `MainPage::onAction()` → `UploadFileTrait::handleFileUploadInit()`:
 
 Client sends raw binary WS frames (no JSON wrapper).
 
-`ChatAgent::onSignalFrameBinary()`:
+`PageSignalRouter` routes `frame_binary` to `MainPage::onSignalFrameBinary()` → `UploadFileTrait`:
 1. Validate `fileSessionUploadId` matches frame header (first 36 bytes = uploadId)
 2. Append bytes to quarantine file
 3. Update `fileSessionReceivedBytes` on Connection

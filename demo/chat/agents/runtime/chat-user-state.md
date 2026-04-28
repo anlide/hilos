@@ -2,7 +2,7 @@
 
 **Collection:** `RtChatContext::userStates` | **Key:** `(string) userId`
 
-Per-user runtime state. Tracks text message moderation state for each registered user.
+Per-user runtime state. Tracks text message moderation state and send rate limits for each registered user.
 
 ## Fields
 
@@ -11,11 +11,12 @@ Per-user runtime state. Tracks text message moderation state for each registered
 | `userId` | `int` | DB user ID (also numeric value of collection key) |
 | `moderationMessage` | `string` | Message text currently under LLM moderation (empty = none pending) |
 | `moderationUpdatedAt` | `int` | Unix time of last moderation field change |
+| `lastMessageSentAt` | `float` | Microtime of the last approved published text message |
 
 ## Lifecycle
 
 - **Created**: `UserStatesActions::ensure(userId)` on WS handshake, or `seedAllFromDb()` on agent start
-- **Updated**: when message submitted for moderation (`moderationMessage` set), cleared on result
+- **Updated**: when message submitted for moderation (`moderationMessage` set), cleared on result, or approved message is recorded for rate limiting
 - **Never deleted** during a session — persists as long as user exists in DB
 
 ## Truth source

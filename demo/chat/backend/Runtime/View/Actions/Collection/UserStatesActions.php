@@ -15,6 +15,7 @@ use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\Runtime\State\Item\RtState;
 use Hilos\Runtime\View\Actions\Collection\RtActions;
+use LogicException;
 use OutOfBoundsException;
 
 /**
@@ -27,6 +28,11 @@ use OutOfBoundsException;
  */
 final class UserStatesActions extends RtActions
 {
+    /**
+     * Minimum interval in seconds between chat messages from the same user.
+     */
+    private const int MESSAGE_RATE_LIMIT_SECONDS = 10;
+
     /**
      * Ensure a {@see StateChatUserState} row exists for the user (creates an empty template if missing).
      *
@@ -60,7 +66,7 @@ final class UserStatesActions extends RtActions
     {
         $item = parent::createRtItemFromState($state);
         if (!$item instanceof ViewChatUserState) {
-            throw new \LogicException('UserStates item factory must return ' . ViewChatUserState::class);
+            throw new LogicException('UserStates item factory must return ' . ViewChatUserState::class);
         }
 
         return $item;
@@ -105,6 +111,44 @@ final class UserStatesActions extends RtActions
     public function clear(): void
     {
         $this->clearAllStates();
+    }
+
+    /**
+     * Whether the user is outside the message rate-limit window.
+     *
+     * Uses {@see self::MESSAGE_RATE_LIMIT_SECONDS} minus one second effective window to reduce
+     * false blocks from client timer drift.
+     *
+     * @param int $userId Database user id
+     * @return bool True when the user may submit another text message
+     * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
+     */
+    public function canSendMessage(int $userId): bool
+    {
+        $state = $this->stateCollection->get((string)$userId);
+        $lastMessageSentAt = $state?->lastMessageSentAt ?? 0.0;
+
+        return (microtime(true) - $lastMessageSentAt) >= self::MESSAGE_RATE_LIMIT_SECONDS - 1;
+    }
+
+    /**
+     * Record a successful moderated text message publish for rate limiting.
+     *
+     * @param int $userId Database user id
+     *
+     * @throws RtActionsCallbackNotSetException
+     * @throws RtActionsCollectionNameNullException
+     * @throws RtActionsStateCollectionNullException
+     * @throws RtTruthSourceWriteNotAllowedException
+     */
+    public function recordMessageSent(int $userId): void
+    {
+        $this->ensure($userId);
+
+        $this->stateCollection[$userId]->lastMessageSentAt = microtime(true);
+        $this->stateCollection[$userId]->sync();
+
+        $this->clearCollectionCache();
     }
 
     /**

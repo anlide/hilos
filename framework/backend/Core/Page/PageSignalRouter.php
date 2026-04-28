@@ -9,11 +9,14 @@ use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Page\DTO\PageSubscriptionErrorSignalData;
 use Hilos\Core\Page\Exception\PageNotFoundException;
 use Hilos\Core\Page\Exception\PageSubscriptionException;
+use Hilos\Core\Router\AgentSignalData;
+use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalType;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Hilos;
 use Hilos\Socket\WebSocket\DTO\WebSocketActionSignalDTO;
+use Hilos\Socket\WebSocket\DTO\WebSocketFrameBinarySignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageUnsubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageUpdateSubscriptionSignalDTO;
@@ -32,10 +35,12 @@ class PageSignalRouter
      *
      * @param AbstractPageFactory $pageFactory Page factory for resolving pages
      * @param ActionRouteConfig $actionRoutes Action-to-page route config
+     * @param array<string, string|array<string, string>> $signalRoutes Optional signal-to-page route config
      */
     public function __construct(
         private AbstractPageFactory $pageFactory,
         private ActionRouteConfig $actionRoutes,
+        private array $signalRoutes = [],
     ) {
     }
 
@@ -177,6 +182,57 @@ class PageSignalRouter
     }
 
     /**
+     * Dispatch binary frame signal to its configured page handler.
+     *
+     * @param WebSocketFrameBinarySignalDTO $data Binary frame payload
+     * @param string $source Signal source
+     * @param string $name Signal name
+     */
+    public function dispatchFrameBinary(WebSocketFrameBinarySignalDTO $data, string $source, string $name): void
+    {
+        $pageInstance = $this->resolveSignalPage(SignalTypeConstants::FRAME_BINARY, $name);
+        if ($pageInstance === null) {
+            return;
+        }
+
+        $pageInstance->onSignalFrameBinary($data, $source, $name);
+    }
+
+    /**
+     * Dispatch agent-to-agent signal to its configured page handler.
+     *
+     * @param AgentSignalData $data Wrapped agent signal payload
+     * @param string $source Signal source
+     * @param string $name Signal name
+     */
+    public function dispatchAgentSignal(AgentSignalData $data, string $source, string $name): void
+    {
+        $pageInstance = $this->resolveSignalPage(SignalTypeConstants::AGENT_SIGNAL, $name);
+        if ($pageInstance === null) {
+            return;
+        }
+
+        $pageInstance->onSignalAgent($data, $source, $name);
+    }
+
+    /**
+     * Dispatch cron signal to its configured page handler.
+     *
+     * @param SignalDataInterface $data Cron payload
+     * @param string $source Signal source
+     * @param string $name Cron job name
+     */
+    public function dispatchCron(SignalDataInterface $data, string $source, string $name): void
+    {
+        $pageInstance = $this->resolveSignalPage(SignalTypeConstants::CRON, $name);
+        if ($pageInstance === null) {
+            return;
+        }
+
+        $pageInstance->onSignalCron($data, $source, $name);
+    }
+
+    /**
      * Resolve page instance by name
      *
      * @param string $page Page name
@@ -195,5 +251,45 @@ class PageSignalRouter
             Logger::error("Page not found: {$page}");
             return null;
         }
+    }
+
+    /**
+     * Resolve page instance for a signal route.
+     *
+     * @param string $signalType Signal type constant
+     * @param string $name Signal name
+     * @return ?AbstractPage Routed page instance or null when no route/page exists
+     */
+    private function resolveSignalPage(string $signalType, string $name): ?AbstractPage
+    {
+        $page = $this->getPageForSignal($signalType, $name);
+        if ($page === null) {
+            return null;
+        }
+
+        return $this->resolvePage($page);
+    }
+
+    /**
+     * Resolve page name from signal route config.
+     *
+     * @param string $signalType Signal type constant
+     * @param string $name Signal name
+     * @return ?string Page name or null if no route exists
+     */
+    private function getPageForSignal(string $signalType, string $name): ?string
+    {
+        $route = $this->signalRoutes[$signalType] ?? null;
+
+        if (is_string($route)) {
+            return $route !== '' ? $route : null;
+        }
+
+        if (is_array($route)) {
+            $page = $route[$name] ?? null;
+            return is_string($page) && $page !== '' ? $page : null;
+        }
+
+        return null;
     }
 }

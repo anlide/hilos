@@ -19,6 +19,7 @@ use Hilos\Runtime\View\Item\RtItem;
  * @property-read int $userId User ID
  * @property-read string $moderationMessage Pending text moderation (empty if none)
  * @property-read int $moderationUpdatedAt Last text moderation update unix time
+ * @property-read float $lastMessageSentAt Last approved text message send microtime
  * @property-read ?User $user User row or null if not found in DB view
  */
 final class ChatUserState extends RtItem
@@ -36,7 +37,7 @@ final class ChatUserState extends RtItem
      *
      * @throws RtItemPropertyNotFoundException When $name is not a declared virtual property
      */
-    public function __get(string $name): int|string|User|null
+    public function __get(string $name): int|float|string|User|null
     {
         /** @var StateChatUserState $state */
         $state = $this->_state;
@@ -45,6 +46,7 @@ final class ChatUserState extends RtItem
             StateChatUserState::userId => $state->userId,
             StateChatUserState::moderationMessage => $state->moderationMessage,
             StateChatUserState::moderationUpdatedAt => $state->moderationUpdatedAt,
+            StateChatUserState::lastMessageSentAt => $state->lastMessageSentAt,
             DbChatContext::user => Hilos::$db->users[$state->userId] ?? null,
             default => parent::__get($name),
         };

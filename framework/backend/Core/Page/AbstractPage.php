@@ -8,8 +8,9 @@ use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Page\DTO\PageActionErrorSignalData;
-use Hilos\Core\Router\DTO\EmitDbChangeSignalData;
+use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
+use Hilos\Core\Router\DTO\EmitDbChangeSignalData;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalType;
@@ -17,6 +18,7 @@ use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Table\Collection\TableMutationSignalCollection;
 use Hilos\Core\Table\DTO\TableSourceEventDTO;
 use Hilos\Hilos;
+use Hilos\Socket\WebSocket\DTO\WebSocketFrameBinarySignalDTO;
 use Throwable;
 
 /**
@@ -141,6 +143,47 @@ abstract class AbstractPage
             $acceptKey,
             new PageActionErrorSignalData($action, $e->getMessage()),
         );
+    }
+
+    /**
+     * Handle a routed binary frame signal.
+     *
+     * Default is a no-op. Override when the page owns binary frame handling
+     * for its agent.
+     *
+     * @param WebSocketFrameBinarySignalDTO $data Binary frame payload
+     * @param string $source Signal source
+     * @param string $name Signal name
+     */
+    public function onSignalFrameBinary(WebSocketFrameBinarySignalDTO $data, string $source, string $name): void
+    {
+    }
+
+    /**
+     * Handle a routed agent-to-agent signal.
+     *
+     * Default is a no-op. Override when the page owns a specific agent signal
+     * workflow while the agent remains the process/truth-source boundary.
+     *
+     * @param AgentSignalData $data Wrapped signal payload
+     * @param string $source Signal source
+     * @param string $name Signal name
+     */
+    public function onSignalAgent(AgentSignalData $data, string $source, string $name): void
+    {
+    }
+
+    /**
+     * Handle a routed cron signal.
+     *
+     * Default is a no-op. Override when a page owns the scheduled workflow.
+     *
+     * @param SignalDataInterface $data Cron payload
+     * @param string $source Signal source
+     * @param string $name Cron job name
+     */
+    public function onSignalCron(SignalDataInterface $data, string $source, string $name): void
+    {
     }
 
     /**

@@ -4,18 +4,19 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Core\Daemon;
 
-use Demo\Chat\Agents\ChatAgent;
+use Demo\Chat\Constants\ChatCronConstants;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Agent\ChatAgentManager;
 use Demo\Chat\Core\Page\ChatPageFactory;
 use Demo\Chat\Core\Router\ChatSignalRouter;
+use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\AgentInterface;
 use Hilos\Core\Agent\AgentManager;
-use Hilos\Core\Agent\Hilos\AbstractHilosAgent;
 use Hilos\Core\Daemon\WorkerManager;
 use Hilos\Core\Page\ActionRouteConfig;
 use Hilos\Core\Page\Exception\PageSignalRouterNotFoundException;
+use Hilos\Core\Page\PageAgentInterface;
 use Hilos\Core\Page\PageSignalRouter;
 use Hilos\Core\Router\SignalRouter;
 
@@ -50,13 +51,13 @@ final class ChatWorkerManager extends WorkerManager
     /**
      * Create page signal router for the given agent.
      *
-     * @param AgentInterface $agent Agent to create router for (ChatAgent or AbstractHilosAgent)
+     * @param AgentInterface $agent Agent to create router for
      * @return PageSignalRouter Page signal router with action routes
      * @throws PageSignalRouterNotFoundException If agent type is not supported
      */
     protected function createPageSignalRouter(AgentInterface $agent): PageSignalRouter
     {
-        if (!$agent instanceof ChatAgent && !$agent instanceof AbstractHilosAgent) {
+        if (!$agent instanceof PageAgentInterface) {
             throw new PageSignalRouterNotFoundException($agent::class);
         }
 
@@ -85,6 +86,17 @@ final class ChatWorkerManager extends WorkerManager
             ChatSignalConstants::GUARDIAN_AGENT_RUN_STOP => PageConstants::HILOS_GUARDIAN_AGENT,
         ]);
 
-        return new PageSignalRouter($pageFactory, $actionRoutes);
+        $signalRoutes = [
+            SignalTypeConstants::FRAME_BINARY => PageConstants::MAIN,
+            SignalTypeConstants::AGENT_SIGNAL => [
+                ChatSignalConstants::MODERATION_RESULT => PageConstants::MAIN,
+                ChatSignalConstants::MODERATION_FILE_RESULT => PageConstants::MAIN,
+            ],
+            SignalTypeConstants::CRON => [
+                ChatCronConstants::CLEANUP_HISTORY => PageConstants::MAIN,
+            ],
+        ];
+
+        return new PageSignalRouter($pageFactory, $actionRoutes, $signalRoutes);
     }
 }

@@ -9,7 +9,7 @@ use Demo\Chat\Runtime\View\Actions\Collection\UserStatesActions;
 use Hilos\Runtime\State\Item\RtState;
 
 /**
- * Per-user chat runtime row: pending text moderation only.
+ * Per-user chat runtime row: pending text moderation and message rate-limit state.
  *
  * State id is `(string) userId`. Created at chat WebSocket handshake via
  * {@see UserStatesActions::ensure()}, or by {@see UserStatesActions::seedAllFromDb()} at demo startup.
@@ -20,6 +20,7 @@ final class ChatUserState extends RtState
     public const string userId = 'userId';
     public const string moderationMessage = 'moderationMessage';
     public const string moderationUpdatedAt = 'moderationUpdatedAt';
+    public const string lastMessageSentAt = 'lastMessageSentAt';
 
     /** User ID (equals collection key as integer). */
     public private(set) int $userId = 0;
@@ -29,6 +30,9 @@ final class ChatUserState extends RtState
 
     /** Unix time of last moderation field update. */
     public int $moderationUpdatedAt = 0;
+
+    /** Microtime of the last approved published text message. */
+    public float $lastMessageSentAt = 0.0;
 
     /**
      * @param int $userId Database user id
@@ -40,13 +44,14 @@ final class ChatUserState extends RtState
         $instance->userId = $userId;
         $instance->moderationMessage = '';
         $instance->moderationUpdatedAt = 0;
+        $instance->lastMessageSentAt = 0.0;
         $instance->markRtSyncBaseline();
 
         return $instance;
     }
 
     /**
-     * @param array<string, mixed> $row Serialized runtime row (string keys: userId, moderationMessage, moderationUpdatedAt)
+     * @param array<string, mixed> $row Serialized runtime row
      */
     public static function fromRow(array $row): static
     {
@@ -54,6 +59,7 @@ final class ChatUserState extends RtState
         $instance->userId = (int)($row[self::userId] ?? 0);
         $instance->moderationMessage = (string)($row[self::moderationMessage] ?? '');
         $instance->moderationUpdatedAt = (int)($row[self::moderationUpdatedAt] ?? 0);
+        $instance->lastMessageSentAt = (float)($row[self::lastMessageSentAt] ?? 0.0);
         $instance->markRtSyncBaseline();
 
         return $instance;
@@ -75,6 +81,9 @@ final class ChatUserState extends RtState
         if (isset($diff[self::moderationUpdatedAt])) {
             $this->moderationUpdatedAt = (int)$diff[self::moderationUpdatedAt];
         }
+        if (isset($diff[self::lastMessageSentAt])) {
+            $this->lastMessageSentAt = (float)$diff[self::lastMessageSentAt];
+        }
     }
 
     /**
@@ -94,6 +103,7 @@ final class ChatUserState extends RtState
             self::userId => $this->userId,
             self::moderationMessage => $this->moderationMessage,
             self::moderationUpdatedAt => $this->moderationUpdatedAt,
+            self::lastMessageSentAt => $this->lastMessageSentAt,
         ];
     }
 }

@@ -9,11 +9,11 @@ User types message, hits send
         │
 Frontend: ws.send('message', { text: '...' })
         │
-WS Server → WS_ACTION signal → ChatAgent::onSignalAction()
+WS Server → WS_ACTION signal → PageSignalRouter
         │
 MainPage::onAction('message', MessageActionDTO)
         │
-canSendMessage() check → rate limit (10s per user)
+UserStatesActions::canSendMessage() check → rate limit (10s per user)
         │
 Hilos::$rt->userStates->actions->setPendingModeration(userId, text)
         │
@@ -27,7 +27,7 @@ LLM call (async, non-blocking)
 ModeratorAgent::sendToAgent(MODERATION_RESULT, ModerationResultSignalData { allowed: true })
         │
         ▼
-ChatAgent::onSignalAgent() handles MODERATION_RESULT
+PageSignalRouter routes MODERATION_RESULT to MainPage::onSignalAgent()
         │
 Hilos::$db->events->actions->add(MESSAGE, userId, text)  → DB_SYNC_CREATED broadcast
         │
@@ -38,12 +38,12 @@ All connected clients receive new message
 
 ## Rejected path
 
-LLM returns `allowed: false` → `ChatAgent` clears `userStates` moderation field, no event saved.
+LLM returns `allowed: false` → `MainPage` clears `userStates` moderation field, no event saved.
 Optionally sends moderation state update to originating user.
 
 ## Rate limiting
 
-`$lastMessageTimestampByUser[userId]` — tracks last approved message time.
+`RtChatContext::userStates.lastMessageSentAt` — tracks last approved message time.
 If `time - last < 10s` → message rejected immediately (no LLM call).
 User sees no visual feedback (silent rate limit).
 

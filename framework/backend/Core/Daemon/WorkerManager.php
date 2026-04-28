@@ -611,7 +611,9 @@ abstract class WorkerManager extends BaseManager
                     if ($apiRequestId !== null) {
                         Hilos::$ac?->logApiAgentAction($apiRequestId, $agent->getType(), $agent->getIndex(), $name, $signalData->toArray());
                     }
+                    $this->onCronHandled($name, $signalData);
                     $agent->onSignalCron($signalData, $source, $name);
+                    $this->getPageSignalRouter($agentId, $agent)->dispatchCron($signalData, $source, $name);
                 } else {
                     Logger::error("onSignalCron - invalid signal data type: " . get_class($signalData));
                 }
@@ -650,7 +652,9 @@ abstract class WorkerManager extends BaseManager
 
             case SignalTypeConstants::FRAME_BINARY:
                 if ($signalData instanceof WebSocketFrameBinarySignalDTO) {
+                    $this->onFrameBinaryHandled($signalData, $source, $name);
                     $agent->onSignalFrameBinary($signalData, $source, $name);
+                    $this->getPageSignalRouter($agentId, $agent)->dispatchFrameBinary($signalData, $source, $name);
                 } else {
                     Logger::error("handleFrameBinarySignal - invalid signal data type: " . get_class($signalData));
                 }
@@ -724,7 +728,9 @@ abstract class WorkerManager extends BaseManager
                     if ($apiRequestId !== null) {
                         Hilos::$ac?->logApiAgentAction($apiRequestId, $agent->getType(), $agent->getIndex(), $name, $signalData->toArray());
                     }
+                    $this->onAgentSignalHandled($name, $signalData);
                     $agent->onSignalAgent($signalData, $source, $name);
+                    $this->getPageSignalRouter($agentId, $agent)->dispatchAgentSignal($signalData, $source, $name);
                 } else {
                     Logger::error("onSignalAgent - invalid signal data type: " . get_class($signalData));
                 }
@@ -863,6 +869,40 @@ abstract class WorkerManager extends BaseManager
      * @param WebSocketActionSignalDTO $signalData Action signal (acceptKey, payload)
      */
     protected function onActionHandled(string $action, WebSocketActionSignalDTO $signalData): void
+    {
+        // Default: no-op
+    }
+
+    /**
+     * Hook: cron signal handled on worker before agent and page handlers.
+     *
+     * @param string $cron Cron job name
+     * @param CronSignalDTO $signalData Cron signal payload
+     */
+    protected function onCronHandled(string $cron, CronSignalDTO $signalData): void
+    {
+        // Default: no-op
+    }
+
+    /**
+     * Hook: binary frame signal handled on worker before agent and page handlers.
+     *
+     * @param WebSocketFrameBinarySignalDTO $signalData Binary frame payload
+     * @param string $source Signal source identifier
+     * @param string $name Signal name
+     */
+    protected function onFrameBinaryHandled(WebSocketFrameBinarySignalDTO $signalData, string $source, string $name): void
+    {
+        // Default: no-op
+    }
+
+    /**
+     * Hook: agent-to-agent signal handled on worker before agent and page handlers.
+     *
+     * @param string $name Signal name
+     * @param AgentSignalData $signalData Wrapped agent signal payload
+     */
+    protected function onAgentSignalHandled(string $name, AgentSignalData $signalData): void
     {
         // Default: no-op
     }
