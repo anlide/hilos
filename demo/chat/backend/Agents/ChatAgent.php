@@ -20,6 +20,7 @@ use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\View\Context\RtChatContext;
 use Demo\Chat\Socket\WebSocket\DTO\HandshakeResponseSignalData;
 use Hilos\Core\Agent\AbstractAgent;
+use Hilos\Core\CLI\Exception\CommandException;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\EntitiesChangesDTO;
 use Hilos\Core\Router\DTO\EmitRtChangeSignalData;
@@ -231,6 +232,8 @@ class ChatAgent extends AbstractAgent
      * @param AgentSignalData $data Wrapped inner payload in {@see AgentSignalData::$data}
      * @param string $source Framework signal source identifier (unused)
      * @param string $name One of {@see ChatSignalConstants} agent signal names
+     * @throws HilosException On chat-owned signal dispatch or bot message publish failure
+     * @throws CommandException If event id is null after sync
      */
     public function onSignalAgent(AgentSignalData $data, string $source, string $name): void
     {
@@ -260,6 +263,8 @@ class ChatAgent extends AbstractAgent
      * Apply bot message moderation: on allow, append {@see ChatEventType::MESSAGE_SENT} with `botId` and broadcast.
      *
      * @param ModerationBotResultSignalData $result Bot id, allow flag, message body, reason
+     * @throws HilosException On bot message persistence or broadcast failure
+     * @throws CommandException If event id is null after sync
      */
     private function handleModerationBotResult(ModerationBotResultSignalData $result): void
     {

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Pages;
 
+use Demo\Chat\Agents\ChatAgent;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Page\AbstractChatPage;
@@ -35,6 +36,18 @@ use Throwable;
 final class ProfilePage extends AbstractChatPage
 {
     public const string PAGE = PageConstants::PROFILE;
+
+    /**
+     * Narrows the page agent to the chat worker used for profile actions.
+     *
+     * @return ChatAgent Chat worker bound to this profile page
+     */
+    protected function getChatAgent(): ChatAgent
+    {
+        assert($this->agent instanceof ChatAgent);
+
+        return $this->agent;
+    }
 
     /**
      * Handle page-specific subscription logic.

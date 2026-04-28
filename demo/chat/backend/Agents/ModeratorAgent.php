@@ -204,7 +204,7 @@ class ModeratorAgent extends AbstractAgent
     /**
      * Queue or bypass user message moderation request.
      *
-     * @param ModerationRequestSignalData $payload User message moderation request
+     * @param ModerationFileRequestSignalData $payload User message moderation request
      */
     private function handleModerateFileRequest(ModerationFileRequestSignalData $payload): void
     {

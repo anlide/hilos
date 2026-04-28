@@ -16,7 +16,7 @@ use Hilos\Core\Agent\Hilos\AbstractHilosGuardianAgent;
  */
 class DemoHilosGuardianAgent extends AbstractHilosGuardianAgent
 {
-    private const DEMO_ONLY_AGENT_IDS = [
+    private const array DEMO_ONLY_AGENT_IDS = [
         'oss_budget_distribution',
     ];
 

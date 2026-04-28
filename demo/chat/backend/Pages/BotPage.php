@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Pages;
 
+use Demo\Chat\Agents\BotAgent;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Page\AbstractChatPage;
@@ -30,6 +31,18 @@ use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 final class BotPage extends AbstractChatPage
 {
     public const string PAGE = PageConstants::BOT;
+
+    /**
+     * Narrows the page agent to the bot worker that serves this bot detail page.
+     *
+     * @return BotAgent Bot worker bound to this bot detail page
+     */
+    protected function getChatAgent(): BotAgent
+    {
+        assert($this->agent instanceof BotAgent);
+
+        return $this->agent;
+    }
 
     /**
      * Sends the requested bot profile on subscribe.

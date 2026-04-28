@@ -24,6 +24,7 @@ use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\View\Item\Connection as RuntimeConnection;
 use Demo\Chat\Utils\ChatSettingsHelper;
 use Hilos\Core\Router\DTO\EntitiesChangesDTO;
+use Hilos\Fs\Exception\FileDeleteException;
 use Hilos\Fs\FsException;
 use Hilos\Fs\FsFile;
 use Hilos\HilosException;
@@ -43,8 +44,6 @@ trait UploadFileTrait
      */
     private const float FILE_UPLOAD_PROGRESS_MIN_INTERVAL_SEC = 0.3;
 
-    abstract protected function getChatAgent(): ChatAgent;
-
     /**
      * Handle {@see ChatSignalConstants::FILE_UPLOAD_INIT}: validate limits and filename, create tmp file,
      * start session, send {@see ChatSignalConstants::FILE_UPLOAD_READY}. Replaces an in-flight upload on the same socket.
@@ -53,6 +52,7 @@ trait UploadFileTrait
      * @throws RandomException If {@see random_bytes()} fails
      * @throws RtActionsCollectionNameNullException When the connections actions collection name is null
      * @throws RtTruthSourceWriteNotAllowedException When the truth source rejects a runtime write
+     * @throws FileDeleteException When replacing an in-flight upload cannot delete its tmp file
      */
     protected function handleFileUploadInit(string $acceptKey, FileUploadInitActionDTO $dto): void
     {
@@ -165,7 +165,7 @@ trait UploadFileTrait
      * No-op if the connection is unknown or moderation phase is not `rejected`.
      *
      * @param string $acceptKey WebSocket connection id
-     * @throws RtActionsCollectionNameNullException
+     * @throws RtActionsCollectionNameNullException When the connections actions collection name is null
      */
     protected function handleFileModerationDismiss(string $acceptKey): void
     {
@@ -192,6 +192,7 @@ trait UploadFileTrait
      *
      * @param WebSocketFrameBinarySignalDTO $data Binary frame payload and connection id
      * @throws RtActionsCollectionNameNullException When the connections actions collection name is null
+     * @throws FileDeleteException When an invalid upload cannot delete its tmp file
      */
     protected function handleFileUploadBinaryFrame(WebSocketFrameBinarySignalDTO $data): void
     {
@@ -383,6 +384,7 @@ trait UploadFileTrait
      *
      * @param string $acceptKey WebSocket connection id
      * @throws RtActionsCollectionNameNullException When the connections actions collection name is null
+     * @throws FileDeleteException When failed upload cleanup cannot delete its tmp file
      */
     private function completeFileUpload(string $acceptKey): void
     {
@@ -459,6 +461,7 @@ trait UploadFileTrait
      * @param string $acceptKey WebSocket connection id
      * @param string $reason Short code forwarded in {@see FileUploadInvalidSignalData}
      * @throws RtActionsCollectionNameNullException When the connections actions collection name is null
+     * @throws FileDeleteException When failed upload cleanup cannot delete its tmp file
      */
     private function failFileUploadSession(string $acceptKey, string $reason): void
     {

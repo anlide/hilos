@@ -57,7 +57,7 @@ final class MainPage extends AbstractChatPage
      * {@see AbstractPage::$agent} is typed as {@see PageAgentInterface}; the assert narrows it for
      * static analysis and for dev when `zend.assertions=1`.
      *
-     * @return ChatAgent
+     * @return ChatAgent Chat worker bound to the main chat page
      */
     protected function getChatAgent(): ChatAgent
     {
@@ -207,7 +207,6 @@ final class MainPage extends AbstractChatPage
      * @param SignalDataInterface $data Cron payload (unused)
      * @param string $source Framework signal source identifier (unused)
      * @param string $name Task name
-     * @throws HilosException On runtime or signal failure
      */
     public function onSignalCron(SignalDataInterface $data, string $source, string $name): void
     {

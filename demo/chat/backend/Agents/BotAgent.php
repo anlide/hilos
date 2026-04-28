@@ -17,9 +17,9 @@ use Demo\Chat\Database\View\Item\Bot as ViewBot;
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\State\Item\ChatContext as StateChatContext;
 use Demo\Chat\Runtime\View\Context\RtChatContext;
-use Demo\Chat\Constants\ChatLLMConstants;
 use Demo\Chat\Utils\ChatLLMHelper;
 use Demo\Chat\Utils\ChatSettingsHelper;
+use Hilos\Constants\LLMConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\Exception\AgentIndexRequiredException;
 use Hilos\Core\Sync\DTO\DbSyncCreatedSignalData;
@@ -31,6 +31,8 @@ use Hilos\LLM\ClientFactory;
 use Hilos\LLM\Contract\AsyncChatLLMInterface;
 use Hilos\LLM\DTO\ChatGenerateOptions;
 use Hilos\LLM\DTO\Message;
+use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
+use Random\RandomException;
 
 /**
  * BotAgent - Regular agent for bot management.
@@ -76,12 +78,13 @@ class BotAgent extends AbstractAgent
             : ClientFactory::createChatClientWithConfig(
                 url: ChatSettingsHelper::getBotUrl(),
                 model: ChatSettingsHelper::getBotModel(),
-                apiKey: null,
             );
     }
 
     /**
      * Called when agent is started. Announces bot join and schedules initial reaction.
+     *
+     * @throws RandomException When scheduling the initial bot reaction delay fails
      */
     public function onStart(): void
     {
@@ -151,6 +154,7 @@ class BotAgent extends AbstractAgent
      * @param DbSyncCreatedSignalData $data Sync data with created row
      * @param string $source Signal source
      * @param string $name Signal name
+     * @throws RandomException When scheduling the post-clear reaction delay fails
      */
     public function onSignalDbSyncCreated(DbSyncCreatedSignalData $data, string $source, string $name): void
     {
@@ -172,6 +176,7 @@ class BotAgent extends AbstractAgent
      * @param RtSyncCreatedSignalData $data Sync data with created state
      * @param string $source Signal source
      * @param string $name Signal name
+     * @throws RandomException When scheduling the reaction delay after context creation fails
      */
     public function onSignalRtSyncCreated(RtSyncCreatedSignalData $data, string $source, string $name): void
     {
@@ -188,6 +193,7 @@ class BotAgent extends AbstractAgent
      * @param RtSyncUpdatedSignalData $data Sync data with updated state
      * @param string $source Signal source
      * @param string $name Signal name
+     * @throws RandomException When scheduling the reaction delay after context update fails
      */
     public function onSignalRtSyncUpdated(RtSyncUpdatedSignalData $data, string $source, string $name): void
     {
@@ -199,6 +205,9 @@ class BotAgent extends AbstractAgent
     /**
      * Agent-specific tick implementation.
      * Processes async LLM results and triggers scheduled reactions.
+     *
+     * @throws RandomException When bot reaction chance generation fails
+     * @throws RtActionsStateCollectionNullException When chat context runtime state is unavailable
      */
     public function onTick(): void
     {
@@ -239,6 +248,8 @@ class BotAgent extends AbstractAgent
      * Schedules next reaction based on bot delay settings.
      *
      * Uses bot reactionDelayMin/Max and applies random delay when different.
+     *
+     * @throws RandomException When generating a randomized reaction delay fails
      */
     private function scheduleReaction(): void
     {
@@ -251,8 +262,8 @@ class BotAgent extends AbstractAgent
             return;
         }
 
-        $delayMin = max(0, (int) ($bot->reactionDelayMin ?? 0));
-        $delayMax = max($delayMin, (int) ($bot->reactionDelayMax ?? 1));
+        $delayMin = max(0, $bot->reactionDelayMin ?? 0);
+        $delayMax = max($delayMin, $bot->reactionDelayMax ?? 1);
         $delaySec = $delayMin === $delayMax ? $delayMin : random_int($delayMin, $delayMax);
         $this->scheduledReactAt = microtime(true) + (float) $delaySec;
 
@@ -263,6 +274,8 @@ class BotAgent extends AbstractAgent
      * Check whether bot should react (chance, cooldown, topic match).
      *
      * @return bool True if bot should generate a message
+     * @throws RandomException When generating a random chance threshold fails
+     * @throws RtActionsStateCollectionNullException When chat context runtime state is unavailable
      */
     private function shouldReact(): bool
     {
@@ -271,7 +284,7 @@ class BotAgent extends AbstractAgent
             return false;
         }
 
-        $reactionChance = (int) ($bot->reactionChance ?? 100);
+        $reactionChance = $bot->reactionChance ?? 100;
         if ($reactionChance <= 0) {
             return false;
         }
@@ -279,7 +292,7 @@ class BotAgent extends AbstractAgent
             return false;
         }
 
-        $cooldownSec = (int) ($bot->cooldownAfterMessage ?? 0);
+        $cooldownSec = $bot->cooldownAfterMessage ?? 0;
         if ($cooldownSec > 0 && $this->lastMessageSentAt > 0) {
             $elapsed = microtime(true) - $this->lastMessageSentAt;
             if ($elapsed < $cooldownSec) {
@@ -287,7 +300,7 @@ class BotAgent extends AbstractAgent
             }
         }
 
-        if ((bool) ($bot->topicMatchRequired ?? false)) {
+        if ($bot->topicMatchRequired ?? false) {
             if (!$this->topicMatches($bot)) {
                 return false;
             }
@@ -301,10 +314,11 @@ class BotAgent extends AbstractAgent
      *
      * @param ViewBot $bot Bot view with topics configuration
      * @return bool True if topic matches or bot has no topic restriction
+     * @throws RtActionsStateCollectionNullException When chat context runtime state collection is unavailable
      */
     private function topicMatches(ViewBot $bot): bool
     {
-        $botTopics = $this->parseTopics((string) ($bot->topics ?? ''));
+        $botTopics = $this->parseTopics($bot->topics ?? '');
         if ($botTopics === []) {
             return true;
         }
@@ -316,13 +330,8 @@ class BotAgent extends AbstractAgent
         }
 
         $contextLower = mb_strtolower($contextTopic);
-        foreach ($botTopics as $topic) {
-            if ($topic !== '' && str_contains($contextLower, mb_strtolower($topic))) {
-                return true;
-            }
-        }
 
-        return false;
+        return array_any($botTopics, fn($topic) => $topic !== '' && str_contains($contextLower, mb_strtolower($topic)));
     }
 
     /**
@@ -359,6 +368,8 @@ class BotAgent extends AbstractAgent
      * Starts async LLM generation for bot message.
      *
      * Builds messages from bot config and chat context, then calls chatClient->startGenerate.
+     *
+     * @throws RtActionsStateCollectionNullException When chat context runtime state collection is unavailable
      */
     private function startGenerate(): void
     {
@@ -376,7 +387,7 @@ class BotAgent extends AbstractAgent
         $options = new ChatGenerateOptions(
             model: ChatSettingsHelper::getBotModel(),
             temperature: 0.7,
-            timeoutSec: $timeoutSec > 0 ? $timeoutSec : \Hilos\Constants\LLMConstants::DEFAULT_TIMEOUT_SEC,
+            timeoutSec: $timeoutSec > 0 ? $timeoutSec : LLMConstants::DEFAULT_TIMEOUT_SEC,
             maxTokens: self::MAX_RESPONSE_TOKENS,
         );
 
@@ -391,6 +402,7 @@ class BotAgent extends AbstractAgent
      *
      * @param ViewBot $bot Bot view with name, description, personality, etc.
      * @return list<Message> Messages for LLM (system + user)
+     * @throws RtActionsStateCollectionNullException When chat context runtime state collection is unavailable
      */
     private function buildGenerationMessages(ViewBot $bot): array
     {

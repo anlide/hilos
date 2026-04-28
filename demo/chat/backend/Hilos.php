@@ -63,7 +63,7 @@ final class Hilos extends \Hilos\Hilos
     /**
      * Creates and returns the filesystem context.
      *
-     * @return FsChatContext The filesystem context instance.
+     * @return ?FsChatContext The filesystem context instance.
      */
     protected static function createFs(): ?FsContext
     {

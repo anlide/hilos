@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Pages;
 
+use Demo\Chat\Agents\ChatAgent;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Page\AbstractChatPage;
@@ -31,6 +32,18 @@ use Throwable;
 final class AdminModeratorPage extends AbstractChatPage
 {
     public const string PAGE = PageConstants::ADMIN_MODERATOR;
+
+    /**
+     * Narrows the page agent to the chat worker used for moderator prompt table actions.
+     *
+     * @return ChatAgent Chat worker bound to this admin moderator page
+     */
+    protected function getChatAgent(): ChatAgent
+    {
+        assert($this->agent instanceof ChatAgent);
+
+        return $this->agent;
+    }
 
     /**
      * Sends the initial moderator prompt pieces table full snapshot to the user on page subscription.

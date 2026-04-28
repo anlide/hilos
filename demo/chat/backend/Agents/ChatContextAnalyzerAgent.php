@@ -17,6 +17,11 @@ use Demo\Chat\Constants\ChatLLMConstants;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\LLMConstants;
 use Hilos\Core\Agent\AbstractAgent;
+use Hilos\Core\Exception\InvalidStateException;
+use Hilos\Runtime\Exception\Actions\RtActionsCallbackNotSetException;
+use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
+use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
+use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\Utils\Env;
 use Hilos\Core\Sync\DTO\DbSyncCreatedSignalData;
 use Hilos\Core\Sync\DTO\DbSyncUpdatedSignalData;
@@ -63,6 +68,11 @@ class ChatContextAnalyzerAgent extends AbstractAgent
 
     /**
      * Called when agent starts. Registers truth source and initializes chat context if empty.
+     *
+     * @throws RtActionsStateCollectionNullException When the chat context runtime state collection is unavailable
+     * @throws RtActionsCallbackNotSetException When runtime actions are missing their write callback
+     * @throws RtActionsCollectionNameNullException When runtime actions cannot resolve their collection name
+     * @throws RtTruthSourceWriteNotAllowedException When this agent cannot initialize the chat context
      */
     public function onStart(): void
     {
@@ -85,6 +95,11 @@ class ChatContextAnalyzerAgent extends AbstractAgent
 
     /**
      * Periodic tick. Processes LLM results and handles sync signals.
+     *
+     * @throws InvalidStateException When analyzer output is applied before chat context initialization
+     * @throws RtActionsCallbackNotSetException When runtime actions are missing their write callback
+     * @throws RtActionsCollectionNameNullException When runtime actions cannot resolve their collection name
+     * @throws RtTruthSourceWriteNotAllowedException When this agent cannot update the chat context
      */
     public function onTick(): void
     {
@@ -134,6 +149,10 @@ class ChatContextAnalyzerAgent extends AbstractAgent
      * @param DbSyncCreatedSignalData $data Sync data with created row
      * @param string $source Signal source
      * @param string $name Signal name
+     * @throws InvalidStateException When a reset is applied before chat context initialization
+     * @throws RtActionsCallbackNotSetException When runtime actions are missing their write callback
+     * @throws RtActionsCollectionNameNullException When runtime actions cannot resolve their collection name
+     * @throws RtTruthSourceWriteNotAllowedException When this agent cannot update the chat context
      */
     public function onSignalDbSyncCreated(DbSyncCreatedSignalData $data, string $source, string $name): void
     {
@@ -146,6 +165,10 @@ class ChatContextAnalyzerAgent extends AbstractAgent
      * @param DbSyncUpdatedSignalData $data Sync data with updated row
      * @param string $source Signal source
      * @param string $name Signal name
+     * @throws InvalidStateException When a reset is applied before chat context initialization
+     * @throws RtActionsCallbackNotSetException When runtime actions are missing their write callback
+     * @throws RtActionsCollectionNameNullException When runtime actions cannot resolve their collection name
+     * @throws RtTruthSourceWriteNotAllowedException When this agent cannot update the chat context
      */
     public function onSignalDbSyncUpdated(DbSyncUpdatedSignalData $data, string $source, string $name): void
     {
@@ -157,6 +180,10 @@ class ChatContextAnalyzerAgent extends AbstractAgent
      *
      * @param string $collectionKey Collection key (events)
      * @param array<string, mixed> $row Row data
+     * @throws InvalidStateException When a reset is applied before chat context initialization
+     * @throws RtActionsCallbackNotSetException When runtime actions are missing their write callback
+     * @throws RtActionsCollectionNameNullException When runtime actions cannot resolve their collection name
+     * @throws RtTruthSourceWriteNotAllowedException When this agent cannot update the chat context
      */
     private function handleDbSyncChange(string $collectionKey, array $row): void
     {

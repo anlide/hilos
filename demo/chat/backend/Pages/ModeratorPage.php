@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Pages;
 
+use Demo\Chat\Agents\ModeratorAgent;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Page\AbstractChatPage;
@@ -19,6 +20,18 @@ use Hilos\Core\Page\PageRouteParams;
 final class ModeratorPage extends AbstractChatPage
 {
     public const string PAGE = PageConstants::MODERATOR;
+
+    /**
+     * Narrows the page agent to the moderator worker that serves moderation state.
+     *
+     * @return ModeratorAgent Moderator worker bound to this moderator page
+     */
+    protected function getChatAgent(): ModeratorAgent
+    {
+        assert($this->agent instanceof ModeratorAgent);
+
+        return $this->agent;
+    }
 
     /**
      * Handle page-specific subscription logic.
