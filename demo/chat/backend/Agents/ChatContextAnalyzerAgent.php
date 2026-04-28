@@ -77,11 +77,12 @@ class ChatContextAnalyzerAgent extends AbstractAgent
     }
 
     /**
-     * Called when agent stops. Unregisters truth source.
+     * Called when agent stops.
+     *
+     * WorkerManager unregisters truth sources after this hook.
      */
     public function onStop(): void
     {
-        RtTruthSourceRegistry::unregister(RtChatContext::chatContexts, $this->getId());
     }
 
     /**

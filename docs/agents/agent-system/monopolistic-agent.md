@@ -31,8 +31,7 @@ public function onStart(): void {
 }
 
 public function onStop(): void {
-    TruthSourceRegistry::unregister(DbChatContext::events, $this->getId());
-    RtTruthSourceRegistry::unregister(RtChatContext::connections, $this->getId());
+    // Cleanup owned state here. WorkerManager unregisters truth sources after this hook.
 }
 ```
 

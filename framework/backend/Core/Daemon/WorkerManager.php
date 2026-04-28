@@ -17,6 +17,7 @@ use Hilos\Core\Agent\Exception\AgentCreationFailedException;
 use Hilos\Core\Page\Exception\PageSignalRouterNotFoundException;
 use Hilos\Core\Page\PageSignalRouter;
 use Hilos\Core\Router\SignalRouter;
+use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Hilos;
 use Hilos\Socket\SocketException;
 use Hilos\Socket\WebSocket\DTO\WebSocketActionSignalDTO;
@@ -49,9 +50,11 @@ use Hilos\Socket\Worker\DTO\WorkerRtSyncDeletedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSyncUpdatedMessageDTO;
 use Hilos\Socket\Worker\WorkerDaemonClient;
 use Hilos\Socket\Worker\WorkerDTO;
+use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Utils\Exception\MissingEnvironmentVariableException;
 use Hilos\Utils\Helpers\ArgumentHelper;
 use Hilos\Utils\Logger;
+use Throwable;
 
 /**
  * WorkerManager - Base worker process manager.
@@ -192,7 +195,7 @@ abstract class WorkerManager extends BaseManager
 
                     // Check if agent requested stop
                     if ($agent->shouldStop()) {
-                        $agent->onStop();
+                        $this->runAgentStopHook($agent);
                         Logger::logAgentStop($agent->getId(), $agent->getType());
                         Hilos::$ac?->closeAgentSession($agent->getType(), $agent->getIndex());
                         $this->agentManager->removeAgent($agentId);
@@ -387,7 +390,7 @@ abstract class WorkerManager extends BaseManager
             return;
         }
 
-        $agent->onStop();
+        $this->runAgentStopHook($agent);
         Logger::logAgentStop($agent->getId(), $agent->getType());
         Hilos::$ac?->closeAgentSession($agent->getType(), $agent->getIndex());
         $this->agentManager->removeAgent($agentId);
@@ -1095,7 +1098,7 @@ abstract class WorkerManager extends BaseManager
     {
         // Stop all agents
         foreach ($this->agentManager->getAgents() as $agentId => $agent) {
-            $agent->onStop();
+            $this->runAgentStopHook($agent);
             Hilos::$ac?->closeAgentSession($agent->getType(), $agent->getIndex());
             Logger::info("Agent {$agentId} stopped during cleanup");
             Logger::logAgentInfo($agentId, "Agent stopped during worker cleanup [workerIndex={$this->workerIndex}]");
@@ -1117,6 +1120,25 @@ abstract class WorkerManager extends BaseManager
 
         Hilos::$ac?->closeWorkerSession();
         Hilos::$ac?->shutdown();
+    }
+
+    /**
+     * Run the agent stop hook while preserving truth-source write rights during cleanup.
+     *
+     * The agent may still write to owned DB/RT collections inside {@see AgentInterface::onStop()}.
+     * Truth-source registrations are removed immediately after the hook, even when it fails.
+     *
+     * @param AgentInterface $agent Agent being stopped
+     * @throws Throwable When the agent stop hook fails
+     */
+    private function runAgentStopHook(AgentInterface $agent): void
+    {
+        try {
+            $agent->onStop();
+        } finally {
+            TruthSourceRegistry::unregisterAgent($agent->getId());
+            RtTruthSourceRegistry::unregisterAgent($agent->getId());
+        }
     }
 
     /**

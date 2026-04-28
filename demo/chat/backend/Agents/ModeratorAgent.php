@@ -73,12 +73,11 @@ class ModeratorAgent extends AbstractAgent
 
     /**
      * Called when agent is stopped.
-     * Unregisters truth source for moderator prompt pieces.
+     *
+     * WorkerManager unregisters truth sources after this hook.
      */
     public function onStop(): void
     {
-        // Unregister as truth source
-        TruthSourceRegistry::unregister(DbChatContext::moderatorPromptPieces, $this->getId());
     }
 
     /**

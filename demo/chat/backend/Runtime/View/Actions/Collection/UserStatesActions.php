@@ -95,6 +95,19 @@ final class UserStatesActions extends RtActions
     }
 
     /**
+     * Remove every per-user runtime row from the current worker state.
+     *
+     * @throws RtActionsCallbackNotSetException
+     * @throws RtActionsCollectionNameNullException
+     * @throws RtActionsStateCollectionNullException
+     * @throws RtTruthSourceWriteNotAllowedException
+     */
+    public function clear(): void
+    {
+        $this->clearAllStates();
+    }
+
+    /**
      * Store pending message text for LLM moderation and bump {@see StateChatUserState::moderationUpdatedAt}.
      *
      * @param int $userId Database user id

@@ -19,7 +19,10 @@ Agent ID: `"type"` or `"type:index"` for multi-instance agents.
 |---|---|---|
 | `onStart()` | After agent created in worker | Register truth sources, seed runtime state |
 | `onTick()` | Every worker loop iteration | **Must complete in < 0.1s** |
-| `onStop()` | Before removal | Unregister truth sources, cleanup |
+| `onStop()` | Before removal | Cleanup while truth-source rights are still active |
+
+After `onStop()` returns or throws, `WorkerManager` unregisters the agent from
+both DB and RT truth-source registries in a `finally` block.
 
 ## Signal handler methods
 

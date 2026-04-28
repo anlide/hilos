@@ -25,9 +25,10 @@ Workers are forked by `WorkerServer` on demand. Two types exist: **regular** and
 ## Agent management in worker
 
 - `AgentManager::startAgent(type, index)` — creates agent, calls `onStart()`
-- `AgentManager::stopAgent(id)` — calls `onStop()`, removes from map
+- Agent stop messages call `onStop()`, unregister DB/RT truth sources in
+  `finally`, then remove the agent from the map
 - Each tick: iterate agents → call `agent->onTick()`
-- If `agent->shouldStop()` → call `onStop()`, remove
+- If `agent->shouldStop()` → same stop flow as an agent stop message
 
 ## Regular vs Monopolistic
 
@@ -38,4 +39,4 @@ Set via `$isMonopolistic` property in `WorkerManager` subclass.
 
 ## Graceful shutdown
 
-On SIGTERM: drain pending messages, call `onStop()` on all agents, disconnect from daemon.
+On SIGTERM: drain pending messages, run the same stop flow for all agents, disconnect from daemon.

@@ -84,5 +84,5 @@ $pages = [
 - [ ] `AGENT_TYPE` constant matches value in `AgentType`
 - [ ] Added to both worker factory AND daemon factory
 - [ ] Routing rules declared in `SignalRouter`
-- [ ] `onStop()` unregisters truth sources if any were registered in `onStart()`
+- [ ] `onStop()` cleans owned state; `WorkerManager` unregisters truth sources after the hook
 - [ ] `onTick()` completes in < 0.1s

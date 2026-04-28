@@ -21,8 +21,8 @@ use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
  *   TruthSourceRegistry::register(Hilos::users, true, $this->getId());
  *   TruthSourceRegistry::registerCreate(Hilos::bots, $this->getId());
  *
- *   // In Agent::onStop()
- *   TruthSourceRegistry::unregisterAgent($this->getId());
+ *   // After Agent::onStop() returns or throws, WorkerManager unregisters the agent.
+ *   TruthSourceRegistry::unregisterAgent($agent->getId());
  *
  *   // In DbActions (automatic check)
  *   TruthSourceRegistry::checkCanWrite($tableName);

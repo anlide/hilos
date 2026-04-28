@@ -216,21 +216,18 @@ class ChatAgent extends AbstractAgent
     }
 
     /**
-     * Append {@see ChatEventType::CHAT_STOPPED}, clear all runtime connections, unregister truth sources.
+     * Append {@see ChatEventType::CHAT_STOPPED} and clear transient chat runtime state.
      *
-     * @throws HilosException On database failure or truth source unregistration failure
+     * @throws HilosException On database or runtime cleanup failure
      */
     public function onStop(): void
     {
         // Add chat stopped event to history (system event with userId = null)
         Hilos::$db->events->actions->addChatStopped();
 
-        // Clear all connections before unregistering
+        // Clear socket and per-user transient state before the worker unregisters truth sources.
         Hilos::$rt->connections->actions->clear();
-
-        // Unregister from both database and runtime truth source registries
-        TruthSourceRegistry::unregisterAgent($this->getId());
-        RtTruthSourceRegistry::unregisterAgent($this->getId());
+        Hilos::$rt->userStates->actions->clear();
     }
 
     /**
@@ -325,6 +322,18 @@ class ChatAgent extends AbstractAgent
     {
         $acceptKey = $result->acceptKey;
         $userId = $result->userId;
+
+        $connection = Hilos::$rt->connections[$acceptKey] ?? null;
+        if ($connection === null || $connection->userId !== $userId) {
+            if (isset(Hilos::$rt->userStates[$userId])) {
+                Hilos::$rt->userStates->actions->clearTextModerationMessage($userId);
+            }
+            Logger::logAgentInfo(
+                $this->getId(),
+                "Moderation result ignored for stale connection (acceptKey={$acceptKey}; userId={$userId})",
+            );
+            return;
+        }
 
         Hilos::$rt->userStates->actions->clearTextModerationMessage($userId);
         $this->sendToUser(

@@ -15,7 +15,7 @@ namespace Hilos\Core\TruthSource;
  *
  * Usage pattern:
  *   - Agent registers as truth source on start: Registry::register($collection, true, $agentId).
- *   - Agent unregisters on stop: Registry::unregisterAgent($agentId).
+ *   - WorkerManager unregisters the agent after its onStop hook: Registry::unregisterAgent($agentId).
  *   - Actions check before write: Registry::checkCanWrite($collection).
  */
 abstract class AbstractTruthSourceRegistry

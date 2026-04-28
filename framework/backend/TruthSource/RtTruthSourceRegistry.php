@@ -15,8 +15,8 @@ use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
  *   // In Agent::onStart()
  *   RtTruthSourceRegistry::register('connections', true, $this->getId());
  *
- *   // In Agent::onStop()
- *   RtTruthSourceRegistry::unregisterAgent($this->getId());
+ *   // After Agent::onStop() returns or throws, WorkerManager unregisters the agent.
+ *   RtTruthSourceRegistry::unregisterAgent($agent->getId());
  *
  *   // In RtActions (automatic check)
  *   RtTruthSourceRegistry::checkCanWrite('connections');
