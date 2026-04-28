@@ -14,6 +14,7 @@ use Hilos\Runtime\RtSyncApplicator;
 use Hilos\Core\Agent\AgentManager;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Agent\Exception\AgentCreationFailedException;
+use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Page\Exception\PageSignalRouterNotFoundException;
 use Hilos\Core\Page\PageSignalRouter;
 use Hilos\Core\Router\SignalRouter;
@@ -621,7 +622,11 @@ abstract class WorkerManager extends BaseManager
 
             case SignalTypeConstants::HANDSHAKE:
                 if ($signalData instanceof WebSocketHandshakeSignalDTO) {
-                    $agent->onSignalHandshake($signalData, $source, $name);
+                    try {
+                        $agent->onSignalHandshake($signalData, $source, $name);
+                    } catch (ValidationException $e) {
+                        Logger::info("Handshake rejected: acceptKey={$signalData->acceptKey}, reason={$e->getMessage()}");
+                    }
                 } else {
                     Logger::error("onSignalHandshake - invalid signal data type: " . get_class($signalData));
                 }

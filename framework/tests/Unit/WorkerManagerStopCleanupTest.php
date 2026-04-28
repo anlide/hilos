@@ -8,10 +8,18 @@ use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\AgentInterface;
 use Hilos\Core\Agent\AgentManager;
 use Hilos\Core\Daemon\WorkerManager;
+use Hilos\Constants\SignalTypeConstants;
+use Hilos\Core\Exception\ValidationException;
+use Hilos\Core\Router\DTO\SignalDTO;
+use Hilos\Core\Router\SignalName;
+use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalRouter;
+use Hilos\Core\Router\SignalType;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
+use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
 use Hilos\Socket\Worker\DTO\AgentStartDTO;
 use Hilos\Socket\Worker\DTO\AgentStopDTO;
+use Hilos\Socket\Worker\DTO\DaemonAgentMessageDTO;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use PHPUnit\Framework\TestCase;
 use RuntimeException;
@@ -50,6 +58,32 @@ final class WorkerManagerStopCleanupTest extends TestCase
         $this->assertTrue($agent->sawRtTruthSourceOnStop);
         $this->assertFalse(TruthSourceRegistry::hasTruthSource(WorkerManagerStopCleanupTestAgent::DB_COLLECTION));
         $this->assertFalse(RtTruthSourceRegistry::hasTruthSource(WorkerManagerStopCleanupTestAgent::RT_COLLECTION));
+    }
+
+    public function testHandshakeValidationExceptionDoesNotEscapeWorkerMessage(): void
+    {
+        $agent = new WorkerManagerStopCleanupTestAgent();
+        $agent->handshakeException = new ValidationException('bad handshake');
+        $manager = new WorkerManagerStopCleanupTestManager($agent);
+
+        $manager->handleDaemonMessage(new AgentStartDTO(WorkerManagerStopCleanupTestAgent::AGENT_TYPE));
+        $manager->handleDaemonMessage(new DaemonAgentMessageDTO(
+            WorkerManagerStopCleanupTestAgent::AGENT_TYPE,
+            new SignalDTO(
+                new SignalSource(SignalSource::WEBSOCKET),
+                new SignalType(SignalTypeConstants::HANDSHAKE),
+                new SignalName(SignalTypeConstants::HANDSHAKE),
+                new WebSocketHandshakeSignalDTO(
+                    headers: [],
+                    acceptKey: 'unit-handshake-ak',
+                    cookies: [],
+                    clientIp: '127.0.0.1',
+                    queryParams: [],
+                ),
+            ),
+        ));
+
+        $this->assertSame(1, $agent->handshakeCallCount);
     }
 }
 
@@ -93,6 +127,8 @@ final class WorkerManagerStopCleanupTestAgent extends AbstractAgent
 
     public bool $sawDbTruthSourceOnStop = false;
     public bool $sawRtTruthSourceOnStop = false;
+    public int $handshakeCallCount = 0;
+    public ?ValidationException $handshakeException = null;
 
     public function onStart(): void
     {
@@ -106,5 +142,14 @@ final class WorkerManagerStopCleanupTestAgent extends AbstractAgent
         $this->sawRtTruthSourceOnStop = RtTruthSourceRegistry::hasTruthSource(self::RT_COLLECTION);
 
         throw new RuntimeException('stop hook failed');
+    }
+
+    public function onSignalHandshake(WebSocketHandshakeSignalDTO $data, string $source, string $name): void
+    {
+        $this->handshakeCallCount++;
+
+        if ($this->handshakeException !== null) {
+            throw $this->handshakeException;
+        }
     }
 }

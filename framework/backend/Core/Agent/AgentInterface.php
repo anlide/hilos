@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Agent;
 
+use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Socket\WebSocket\DTO\WebSocketActionSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketCloseSignalDTO;
@@ -82,6 +83,7 @@ interface AgentInterface
      * @param WebSocketHandshakeSignalDTO $data Signal data
      * @param string $source Signal source
      * @param string $name Signal name
+     * @throws ValidationException
      */
     public function onSignalHandshake(WebSocketHandshakeSignalDTO $data, string $source, string $name): void;
 

@@ -21,6 +21,8 @@ use Demo\Chat\Runtime\View\Context\RtChatContext;
 use Demo\Chat\Socket\WebSocket\DTO\HandshakeResponseSignalData;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\CLI\Exception\CommandException;
+use Hilos\Core\Exception\EmptyValueException;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\EntitiesChangesDTO;
 use Hilos\Core\Router\DTO\EmitRtChangeSignalData;
@@ -38,6 +40,8 @@ use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
 class ChatAgent extends AbstractAgent
 {
     public const string AGENT_TYPE = AgentType::CHAT;
+
+    private const string SESSION_TOKEN_PATTERN = '/\A[0-9a-f]{32}\z/';
 
     /**
      * Register truth sources, seed runtime user states from DB, append {@see ChatEventType::CHAT_STARTED} to history.
@@ -75,14 +79,18 @@ class ChatAgent extends AbstractAgent
      * @param WebSocketHandshakeSignalDTO $data Accept key and query params (expects {@see HttpHeaders::SESSION_TOKEN})
      * @param string $source Framework signal source identifier (unused)
      * @param string $name Framework signal name (unused)
+     * @throws EmptyValueException When session token is missing or empty
+     * @throws InvalidFormatException When session token format does not match frontend-generated tokens
      * @throws HilosException On database, runtime, or truth source failure
      */
     public function onSignalHandshake(WebSocketHandshakeSignalDTO $data, string $source, string $name): void
     {
         $sessionToken = $data->queryParams[HttpHeaders::SESSION_TOKEN] ?? null;
-        if (!is_string($sessionToken) || $sessionToken === '') {
-            $this->logAgentError(HttpHeaders::SESSION_TOKEN . " is required but not provided or empty");
-            return;
+        if ($sessionToken === null || $sessionToken === '') {
+            throw new EmptyValueException(HttpHeaders::SESSION_TOKEN . ' is required');
+        }
+        if (!is_string($sessionToken) || preg_match(self::SESSION_TOKEN_PATTERN, $sessionToken) !== 1) {
+            throw new InvalidFormatException(HttpHeaders::SESSION_TOKEN . ' must be a 32-character lowercase hex token');
         }
 
         $user = Hilos::$db->users->findBySession($sessionToken);
