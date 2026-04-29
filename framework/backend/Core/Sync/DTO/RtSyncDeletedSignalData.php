@@ -10,7 +10,7 @@ use Hilos\Core\Router\SignalDataInterface;
 /**
  * RtSyncDeletedSignalData - RT sync signal data for deleted state.
  *
- * Only state ID.
+ * Carries state ID plus optional previous runtime row data.
  */
 class RtSyncDeletedSignalData extends BaseDTO implements SignalDataInterface
 {
@@ -19,23 +19,26 @@ class RtSyncDeletedSignalData extends BaseDTO implements SignalDataInterface
      *
      * @param string $collectionKey Collection key
      * @param string $stateId State ID
+     * @param array<string, mixed> $row Previous runtime row, when available
      */
     public function __construct(
         public readonly string $collectionKey,
         public readonly string $stateId,
+        public readonly array $row = [],
     ) {
     }
 
     /**
      * Converts DTO to array for transport.
      *
-     * @return array<string, string> DTO data as array
+     * @return array<string, mixed> DTO data as array
      */
     public function toArray(): array
     {
         return [
             'collectionKey' => $this->collectionKey,
             'stateId' => $this->stateId,
+            'row' => $this->row,
         ];
     }
 
@@ -50,6 +53,7 @@ class RtSyncDeletedSignalData extends BaseDTO implements SignalDataInterface
         return new self(
             collectionKey: $data['collectionKey'] ?? '',
             stateId: $data['stateId'] ?? '',
+            row: isset($data['row']) && is_array($data['row']) ? $data['row'] : [],
         );
     }
 }

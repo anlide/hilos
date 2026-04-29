@@ -17,13 +17,9 @@ use Demo\Chat\Core\Router\DTO\FileUploadReadySignalData;
 use Demo\Chat\Core\Router\DTO\FileUploadRejectedSignalData;
 use Demo\Chat\Core\Router\DTO\ModerationFileRequestSignalData;
 use Demo\Chat\Core\Router\DTO\ModerationFileResultSignalData;
-use Demo\Chat\Database\DbChatContext;
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\View\Item\Connection as RuntimeConnection;
 use Demo\Chat\Utils\ChatSettingsHelper;
-use Hilos\Core\Router\DTO\EmitDbChangeSignalData;
-use Hilos\Core\Table\DTO\TableSourceEventDTO;
-use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\Fs\Exception\FileDeleteException;
 use Hilos\Fs\FsException;
 use Hilos\Fs\FsFile;
@@ -362,22 +358,13 @@ trait UploadFileTrait
         }
 
         $token = pathinfo($storedName, PATHINFO_FILENAME);
-        $event = Hilos::$db->events->actions->addFile(
+        Hilos::$db->events->actions->addFile(
             userId: $result->userId,
             originalFilename: $result->originalFilename,
             mimeType: $result->mimeType,
             size: $result->size,
             downloadToken: $token,
             storedName: $storedName,
-        );
-
-        $this->emitChangeDb(
-            ChatSignalConstants::EMIT_CHAT_EVENT_CREATED,
-            new EmitDbChangeSignalData(new TableSourceEventDTO(
-                sourceKey: DbChatContext::events,
-                sourceRowKey: $event->id,
-                mutationType: TableMutationType::Create,
-            )),
         );
     }
 

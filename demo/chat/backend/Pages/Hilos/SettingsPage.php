@@ -16,15 +16,10 @@ use Demo\Chat\Tables\TableChatContext;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
-use Hilos\Core\Router\DTO\EmitDbChangeSignalData;
 use Hilos\Core\Router\DTO\EntitiesChangesDTO;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
 use Hilos\Core\Table\DTO\TableActionErrorSignalData;
-use Hilos\Core\Table\DTO\TableMutationSignalData;
-use Hilos\Core\Table\DTO\TableRowMutationDTO;
-use Hilos\Core\Table\DTO\TableSourceEventDTO;
 use Hilos\Core\Table\Exception\TableActionException;
-use Hilos\Database\Context\HilosDbContext;
 use Hilos\HilosException;
 use Hilos\Pages\AbstractHilosSettingsPage;
 use Throwable;
@@ -131,11 +126,7 @@ final class SettingsPage extends AbstractHilosSettingsPage
             throw new TableActionException('Setting key is required');
         }
 
-        $mutation = Hilos::$table->settings->actions->add($dto->key, $dto->value);
-        $signal = new TableMutationSignalData(TableChatContext::settings, $mutation);
-
-        $this->sendToUser(ChatSignalConstants::TABLE_MUTATION, $acceptKey, $signal);
-        $this->emitSettingRowChanged($mutation, $acceptKey);
+        Hilos::$table->settings->actions->add($dto->key, $dto->value);
     }
 
     /**
@@ -155,11 +146,7 @@ final class SettingsPage extends AbstractHilosSettingsPage
             throw new TableActionException("Setting '{$dto->key}' not found");
         }
 
-        $mutation = Hilos::$table->settings[$dto->key]->actions->updateValue($dto->value);
-        $signal = new TableMutationSignalData(TableChatContext::settings, $mutation);
-
-        $this->sendToUser(ChatSignalConstants::TABLE_MUTATION, $acceptKey, $signal);
-        $this->emitSettingRowChanged($mutation, $acceptKey);
+        Hilos::$table->settings[$dto->key]->actions->updateValue($dto->value);
     }
 
     /**
@@ -179,32 +166,6 @@ final class SettingsPage extends AbstractHilosSettingsPage
             throw new TableActionException("Setting '{$dto->key}' not found");
         }
 
-        $mutation = Hilos::$table->settings[$dto->key]->actions->delete();
-        $signal = new TableMutationSignalData(TableChatContext::settings, $mutation);
-
-        $this->sendToUser(ChatSignalConstants::TABLE_MUTATION, $acceptKey, $signal);
-        $this->emitSettingRowChanged($mutation, $acceptKey);
-    }
-
-    /**
-     * Emits a settings table row change for pending mutation fan-out.
-     *
-     * @param TableRowMutationDTO $mutation Source table mutation returned by the table action
-     * @param string $acceptKey Initiating WebSocket connection key
-     */
-    private function emitSettingRowChanged(TableRowMutationDTO $mutation, string $acceptKey): void
-    {
-        $this->emitChangeDb(
-            ChatSignalConstants::EMIT_CHAT_SETTING_ROW_CHANGED,
-            new EmitDbChangeSignalData(
-                sourceEvent: new TableSourceEventDTO(
-                    sourceKey: HilosDbContext::settings,
-                    sourceRowKey: $mutation->rowKey,
-                    mutationType: $mutation->type,
-                ),
-                excludeAcceptKey: $acceptKey,
-                actorUserId: Hilos::$rt->connections[$acceptKey]?->userId,
-            ),
-        );
+        Hilos::$table->settings[$dto->key]->actions->delete();
     }
 }

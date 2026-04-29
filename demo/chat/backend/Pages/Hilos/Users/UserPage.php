@@ -9,7 +9,6 @@ use Demo\Chat\Core\Router\DTO\ActionFailSignalData;
 use Demo\Chat\Core\Router\DTO\ActionSuccessSignalData;
 use Demo\Chat\Core\Router\DTO\HilosUserSubscriptionSignalData;
 use Demo\Chat\Database\Actions\Item\UserActions;
-use Demo\Chat\Database\DbChatContext;
 use Demo\Chat\Frontend\UserFrontendStateProjector;
 use Demo\Chat\Hilos;
 use Demo\Chat\Tables\HilosUser\DTO\HilosUserUpdateActionDTO;
@@ -19,10 +18,7 @@ use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Page\Exception\PageResourceNotFoundException;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
-use Hilos\Core\Router\DTO\EmitDbChangeSignalData;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
-use Hilos\Core\Table\DTO\TableSourceEventDTO;
-use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\Database\Exception\View\CollectionNotManualException;
 use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 use Hilos\HilosException;
@@ -141,37 +137,12 @@ final class UserPage extends AbstractHilosUserPage
         $oldName = $dbUser->name;
         Hilos::$table->hilosUsers[$dto->id]->actions->update($dto);
         $newName = $dbUser->name;
-        $sourceEvent = new TableSourceEventDTO(
-            sourceKey: DbChatContext::users,
-            sourceRowKey: $dto->id,
-            mutationType: TableMutationType::Update,
-        );
 
-        foreach ($this->buildTableMutationSignalsForSourceEvent(ChatSignalConstants::EMIT_CHAT_USER_ROW_UPDATED, $sourceEvent) as $tableSignal) {
-            $this->sendToUser(ChatSignalConstants::TABLE_MUTATION, $acceptKey, $tableSignal);
-        }
-        $this->emitChangeDb(
-            ChatSignalConstants::EMIT_CHAT_USER_ROW_UPDATED,
-            new EmitDbChangeSignalData(
-                sourceEvent: $sourceEvent,
-                excludeAcceptKey: $acceptKey,
-                actorUserId: Hilos::$rt->connections[$acceptKey]?->userId,
-            ),
-        );
-
-        $event = Hilos::$db->events->actions->addUserRenamedByAdmin(
+        Hilos::$db->events->actions->addUserRenamedByAdmin(
             userId: $dto->id,
             oldName: $oldName,
             newName: $newName,
             adminUserId: Hilos::$rt->connections[$acceptKey]?->userId,
-        );
-        $this->emitChangeDb(
-            ChatSignalConstants::EMIT_CHAT_EVENT_CREATED,
-            new EmitDbChangeSignalData(new TableSourceEventDTO(
-                sourceKey: DbChatContext::events,
-                sourceRowKey: $event->id,
-                mutationType: TableMutationType::Create,
-            )),
         );
 
         $this->sendToUser(

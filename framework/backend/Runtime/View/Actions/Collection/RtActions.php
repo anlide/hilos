@@ -217,8 +217,10 @@ abstract class RtActions
     protected function removeStateFromCollection(string $id): void
     {
         $this->ensureCanWriteState($id);
+        $state = $this->getStateCollection()->get($id);
+        $row = $state?->toArray() ?? [];
         $this->getStateCollection()->remove($id);
-        $this->queueRtSyncDeleted($id);
+        $this->queueRtSyncDeleted($id, $row);
     }
 
     /**
@@ -231,7 +233,7 @@ abstract class RtActions
         $stateCollection = $this->getStateCollection();
         if ($collectionName !== null) {
             foreach ($stateCollection as $state) {
-                $this->queueRtSyncDeleted($state->getId());
+                $this->queueRtSyncDeleted($state->getId(), $state->toArray());
             }
         }
         $stateCollection->clear();
@@ -278,8 +280,9 @@ abstract class RtActions
      * Queues RT sync deleted signal for broadcasting.
      *
      * @param string $stateId State ID
+     * @param array<string, mixed> $row Previous runtime row data
      */
-    private function queueRtSyncDeleted(string $stateId): void
+    private function queueRtSyncDeleted(string $stateId, array $row): void
     {
         $collectionName = $this->getCollectionName();
         if ($collectionName === null) {
@@ -287,7 +290,7 @@ abstract class RtActions
         }
         Hilos::$sr?->queueRtSyncSignal(
             SignalConstants::RT_SYNC_DELETED,
-            new RtSyncDeletedSignalData($collectionName, $stateId),
+            new RtSyncDeletedSignalData($collectionName, $stateId, $row),
         );
     }
 }

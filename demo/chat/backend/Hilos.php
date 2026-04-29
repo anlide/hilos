@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace Demo\Chat;
 
 use Demo\Chat\Database\DbChatContext;
+use Demo\Chat\Frontend\ChatFrontendProjection;
 use Demo\Chat\Fs\FsChatContext;
 use Demo\Chat\Runtime\View\Context\RtChatContext;
 use Demo\Chat\Tables\TableChatContext;
+use Hilos\Core\Frontend\FrontendProjectionContext;
 use Hilos\Core\Table\Context\TableContext;
 use Hilos\Database\Context\DbContext;
 use Hilos\Fs\Context\FsContext;
@@ -68,5 +70,15 @@ final class Hilos extends \Hilos\Hilos
     protected static function createFs(): ?FsContext
     {
         return new FsChatContext();
+    }
+
+    /**
+     * Creates the worker-local frontend projection accumulator.
+     *
+     * @return ?ChatFrontendProjection Chat frontend projection context
+     */
+    protected static function createFrontendProjection(): ?FrontendProjectionContext
+    {
+        return new ChatFrontendProjection();
     }
 }

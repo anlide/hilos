@@ -16,6 +16,7 @@ use Hilos\Core\Agent\AgentManager;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Agent\Exception\AgentCreationFailedException;
 use Hilos\Core\Exception\ValidationException;
+use Hilos\Core\Frontend\SourceChange;
 use Hilos\Core\Page\Exception\PageSignalRouterNotFoundException;
 use Hilos\Core\Page\PageSignalRouter;
 use Hilos\Core\Router\SignalRouter;
@@ -427,7 +428,11 @@ abstract class WorkerManager extends BaseManager
     private function handleDbSyncCreatedMessage(WorkerDTO $data): void
     {
         if ($data instanceof WorkerDbSyncCreatedMessageDTO) {
-            DbSyncApplicator::applyCreated($data->signalData);
+            if ($this->consumeIncomingDbSyncSelfBroadcast($data->signalData)) {
+                return;
+            }
+            DbSyncApplicator::applyCreated($data->signalData, skipSelfBroadcastCheck: false);
+            $this->recordFrontendSourceChange(SignalTypeConstants::DB_SYNC_CREATED, $data->signalData);
             $this->dispatchDbSyncToAgents(SignalConstants::DB_SYNC_CREATED, $data->signalData);
         } else {
             Logger::error("handleDbSyncCreatedMessage - unexpected type: " . get_class($data));
@@ -442,7 +447,11 @@ abstract class WorkerManager extends BaseManager
     private function handleDbSyncUpdatedMessage(WorkerDTO $data): void
     {
         if ($data instanceof WorkerDbSyncUpdatedMessageDTO) {
-            DbSyncApplicator::applyUpdated($data->signalData);
+            if ($this->consumeIncomingDbSyncSelfBroadcast($data->signalData)) {
+                return;
+            }
+            DbSyncApplicator::applyUpdated($data->signalData, skipSelfBroadcastCheck: false);
+            $this->recordFrontendSourceChange(SignalTypeConstants::DB_SYNC_UPDATED, $data->signalData);
             $this->dispatchDbSyncToAgents(SignalConstants::DB_SYNC_UPDATED, $data->signalData);
         } else {
             Logger::error("handleDbSyncUpdatedMessage - unexpected type: " . get_class($data));
@@ -457,11 +466,35 @@ abstract class WorkerManager extends BaseManager
     private function handleDbSyncDeletedMessage(WorkerDTO $data): void
     {
         if ($data instanceof WorkerDbSyncDeletedMessageDTO) {
-            DbSyncApplicator::applyDeleted($data->signalData);
+            if ($this->consumeIncomingDbSyncSelfBroadcast($data->signalData)) {
+                return;
+            }
+            DbSyncApplicator::applyDeleted($data->signalData, skipSelfBroadcastCheck: false);
+            $this->recordFrontendSourceChange(SignalTypeConstants::DB_SYNC_DELETED, $data->signalData);
             $this->dispatchDbSyncToAgents(SignalConstants::DB_SYNC_DELETED, $data->signalData);
         } else {
             Logger::error("handleDbSyncDeletedMessage - unexpected type: " . get_class($data));
         }
+    }
+
+    /**
+     * Consume a DB sync self-broadcast marker before applying a daemon echo.
+     *
+     * The originating worker already recorded the local DB change for frontend
+     * projection when it sent the sync to the daemon. The echoed worker message
+     * must therefore neither re-apply nor re-project the same fact.
+     *
+     * @param array<string, mixed> $signalData DB sync payload
+     */
+    private function consumeIncomingDbSyncSelfBroadcast(array $signalData): bool
+    {
+        $collectionKey = (string)($signalData['collectionKey'] ?? '');
+        $idString = (string)($signalData['idString'] ?? '');
+        if ($collectionKey === '' || $idString === '') {
+            return false;
+        }
+
+        return Hilos::$sr?->shouldSkipDbSyncApply($collectionKey, $idString) ?? false;
     }
 
     /**
@@ -538,7 +571,11 @@ abstract class WorkerManager extends BaseManager
     private function handleRtSyncCreatedMessage(WorkerDTO $data): void
     {
         if ($data instanceof WorkerRtSyncCreatedMessageDTO) {
-            RtSyncApplicator::applyCreated($data->signalData);
+            if ($this->consumeIncomingRtSyncSelfBroadcast($data->signalData)) {
+                return;
+            }
+            RtSyncApplicator::applyCreated($data->signalData, skipSelfBroadcastCheck: false);
+            $this->recordFrontendSourceChange(SignalTypeConstants::RT_SYNC_CREATED, $data->signalData);
             $this->dispatchRtSyncToAgents(SignalConstants::RT_SYNC_CREATED, $data->signalData);
         } else {
             Logger::error("handleRtSyncCreatedMessage - unexpected type: " . get_class($data));
@@ -553,7 +590,11 @@ abstract class WorkerManager extends BaseManager
     private function handleRtSyncUpdatedMessage(WorkerDTO $data): void
     {
         if ($data instanceof WorkerRtSyncUpdatedMessageDTO) {
-            RtSyncApplicator::applyUpdated($data->signalData);
+            if ($this->consumeIncomingRtSyncSelfBroadcast($data->signalData)) {
+                return;
+            }
+            RtSyncApplicator::applyUpdated($data->signalData, skipSelfBroadcastCheck: false);
+            $this->recordFrontendSourceChange(SignalTypeConstants::RT_SYNC_UPDATED, $data->signalData);
             $this->dispatchRtSyncToAgents(SignalConstants::RT_SYNC_UPDATED, $data->signalData);
         } else {
             Logger::error("handleRtSyncUpdatedMessage - unexpected type: " . get_class($data));
@@ -568,11 +609,103 @@ abstract class WorkerManager extends BaseManager
     private function handleRtSyncDeletedMessage(WorkerDTO $data): void
     {
         if ($data instanceof WorkerRtSyncDeletedMessageDTO) {
-            RtSyncApplicator::applyDeleted($data->signalData);
+            if ($this->consumeIncomingRtSyncSelfBroadcast($data->signalData)) {
+                return;
+            }
+            RtSyncApplicator::applyDeleted($data->signalData, skipSelfBroadcastCheck: false);
+            $this->recordFrontendSourceChange(SignalTypeConstants::RT_SYNC_DELETED, $data->signalData);
             $this->dispatchRtSyncToAgents(SignalConstants::RT_SYNC_DELETED, $data->signalData);
         } else {
             Logger::error("handleRtSyncDeletedMessage - unexpected type: " . get_class($data));
         }
+    }
+
+    /**
+     * Consume an RT sync self-broadcast marker before applying a daemon echo.
+     *
+     * @param array<string, mixed> $signalData RT sync payload
+     */
+    private function consumeIncomingRtSyncSelfBroadcast(array $signalData): bool
+    {
+        $collectionKey = (string)($signalData['collectionKey'] ?? '');
+        $stateId = (string)($signalData['stateId'] ?? '');
+        if ($collectionKey === '' || $stateId === '') {
+            return false;
+        }
+
+        return Hilos::$sr?->shouldSkipRtSyncApply($collectionKey, $stateId) ?? false;
+    }
+
+    /**
+     * Record a DB/RT sync fact in the worker-local frontend projection.
+     *
+     * Local writes are recorded when the worker first drains its queued sync
+     * signal. Remote writes are recorded after the daemon sync message is
+     * accepted. Incoming self-broadcast echoes are consumed before this method,
+     * so one backend fact becomes one projection invalidation per worker.
+     *
+     * @param string $signalType DB/RT sync signal type
+     * @param array<string, mixed> $signalData Sync payload
+     */
+    private function recordFrontendSourceChange(string $signalType, array $signalData): void
+    {
+        if (Hilos::$frontend === null) {
+            return;
+        }
+
+        $change = match ($signalType) {
+            SignalTypeConstants::DB_SYNC_CREATED => (static function () use ($signalData): SourceChange {
+                $data = DbSyncCreatedSignalData::fromArray($signalData);
+                return SourceChange::dbCreated($data->collectionKey, $data->idString, $data->row);
+            })(),
+            SignalTypeConstants::DB_SYNC_UPDATED => (static function () use ($signalData): SourceChange {
+                $data = DbSyncUpdatedSignalData::fromArray($signalData);
+                return SourceChange::dbUpdated($data->collectionKey, $data->idString, $data->row);
+            })(),
+            SignalTypeConstants::DB_SYNC_DELETED => (static function () use ($signalData): SourceChange {
+                $data = DbSyncDeletedSignalData::fromArray($signalData);
+                return SourceChange::dbDeleted($data->collectionKey, $data->idString, $data->row);
+            })(),
+            SignalTypeConstants::RT_SYNC_CREATED => (static function () use ($signalData): SourceChange {
+                $data = RtSyncCreatedSignalData::fromArray($signalData);
+                return SourceChange::rtCreated($data->collectionKey, $data->stateId, $data->row);
+            })(),
+            SignalTypeConstants::RT_SYNC_UPDATED => (static function () use ($signalData): SourceChange {
+                $data = RtSyncUpdatedSignalData::fromArray($signalData);
+                return SourceChange::rtUpdated($data->collectionKey, $data->stateId, $data->row);
+            })(),
+            SignalTypeConstants::RT_SYNC_DELETED => (static function () use ($signalData): SourceChange {
+                $data = RtSyncDeletedSignalData::fromArray($signalData);
+                return SourceChange::rtDeleted($data->collectionKey, $data->stateId, $data->row);
+            })(),
+            default => null,
+        };
+
+        if ($change !== null) {
+            Hilos::$frontend->record($change);
+        }
+    }
+
+    /**
+     * Dispatch a locally-originated DB/RT sync fact to agents in this worker.
+     *
+     * The daemon echo is intentionally consumed as a self-broadcast, so local
+     * agents must see the sync when the worker first drains the queued signal.
+     *
+     * @param string $signalType DB/RT sync signal type
+     * @param array<string, mixed> $signalData Sync payload
+     */
+    private function dispatchSyncToLocalAgents(string $signalType, array $signalData): void
+    {
+        match ($signalType) {
+            SignalTypeConstants::DB_SYNC_CREATED,
+            SignalTypeConstants::DB_SYNC_UPDATED,
+            SignalTypeConstants::DB_SYNC_DELETED => $this->dispatchDbSyncToAgents($signalType, $signalData),
+            SignalTypeConstants::RT_SYNC_CREATED,
+            SignalTypeConstants::RT_SYNC_UPDATED,
+            SignalTypeConstants::RT_SYNC_DELETED => $this->dispatchRtSyncToAgents($signalType, $signalData),
+            default => null,
+        };
     }
 
     /**
@@ -649,6 +782,9 @@ abstract class WorkerManager extends BaseManager
             case SignalTypeConstants::CONNECTION_CLOSE:
                 if ($signalData instanceof WebSocketCloseSignalDTO) {
                     $this->dispatchPageUnsubscribeIfTrackedOnConnectionClose($agentId, $agent, $signalData, $source, $name);
+                    if ($signalData->acceptKey !== '') {
+                        Hilos::$sr?->unsubscribeFromAll($signalData->acceptKey);
+                    }
                     $agent->onSignalConnectionClose($signalData, $source, $name);
                 } else {
                     Logger::error("onSignalConnectionClose - invalid signal data type: " . get_class($signalData));
@@ -708,6 +844,8 @@ abstract class WorkerManager extends BaseManager
                     $agent->onSignalPageUnsubscribe($signalData, $source, $name);
                     $this->getPageSignalRouter($agentId, $agent)->dispatchPageUnsubscribe($signalData, $source, $name);
                     if ($signalData->acceptKey !== '') {
+                        $page = $this->pageSubscriptionByAcceptKey[$signalData->acceptKey]['page'] ?? $name;
+                        Hilos::$sr?->unsubscribeFromPage($page, $signalData);
                         unset($this->pageSubscriptionByAcceptKey[$signalData->acceptKey]);
                     }
                 } else {
@@ -719,6 +857,8 @@ abstract class WorkerManager extends BaseManager
                 if ($signalData instanceof WebSocketGroupSubscribeSignalDTO) {
                     $this->onGroupSubscribed($signalData, $source, $name);
                     $agent->onSignalGroupSubscribe($signalData, $source, $name);
+                    $group = $signalData->group !== '' ? $signalData->group : $name;
+                    Hilos::$sr?->subscribeToGroup($group, $signalData);
                 } else {
                     Logger::error("handleGroupSubscribeSignal - invalid signal data type: " . get_class($signalData));
                 }
@@ -728,6 +868,8 @@ abstract class WorkerManager extends BaseManager
                 if ($signalData instanceof WebSocketGroupUnsubscribeSignalDTO) {
                     $this->onGroupUnsubscribed($signalData, $source, $name);
                     $agent->onSignalGroupUnsubscribe($signalData, $source, $name);
+                    $group = $signalData->group !== '' ? $signalData->group : $name;
+                    Hilos::$sr?->unsubscribeFromGroup($group, $signalData);
                 } else {
                     Logger::error("handleGroupUnsubscribeSignal - invalid signal data type: " . get_class($signalData));
                 }
@@ -737,6 +879,12 @@ abstract class WorkerManager extends BaseManager
                 if ($signalData instanceof WebSocketGroupUpdateSubscriptionSignalDTO) {
                     $this->onGroupSubscriptionUpdated($signalData, $source, $name);
                     $agent->onSignalGroupUpdateSubscription($signalData, $source, $name);
+                    $group = $signalData->group !== '' ? $signalData->group : $name;
+                    try {
+                        Hilos::$sr?->updateGroupSubscription($group, $signalData);
+                    } catch (Throwable $e) {
+                        Logger::error("WorkerManager: cannot mirror group subscription update: acceptKey={$signalData->acceptKey} group={$group}, {$e->getMessage()}");
+                    }
                 } else {
                     Logger::error("handleGroupUpdateSubscriptionSignal - invalid signal data type: " . get_class($signalData));
                 }
@@ -1004,6 +1152,7 @@ abstract class WorkerManager extends BaseManager
             $router = $this->getPageSignalRouter($agentId, $agent);
             $unsubDto = new WebSocketPageUnsubscribeSignalDTO(acceptKey: $acceptKey);
             $router->dispatchPageUnsubscribe($unsubDto, $source, $prev['page']);
+            Hilos::$sr?->unsubscribeFromPage($prev['page'], $unsubDto);
         } catch (PageSignalRouterNotFoundException $e) {
             Logger::error(
                 'WorkerManager: cannot dispatch synthetic page_unsubscribe before new subscribe (no page router): '
@@ -1032,6 +1181,7 @@ abstract class WorkerManager extends BaseManager
             'page' => $page,
             'params' => $dto->params,
         ];
+        Hilos::$sr?->subscribeToPage($page, $dto);
     }
 
     /**
@@ -1053,6 +1203,12 @@ abstract class WorkerManager extends BaseManager
             $this->pageSubscriptionByAcceptKey[$acceptKey]['params'],
             $dto->params,
         );
+        $page = $dto->page !== '' ? $dto->page : $this->pageSubscriptionByAcceptKey[$acceptKey]['page'];
+        try {
+            Hilos::$sr?->updatePageSubscription($page, $dto);
+        } catch (Throwable $e) {
+            Logger::error("WorkerManager: cannot mirror page subscription update: acceptKey={$acceptKey} page={$page}, {$e->getMessage()}");
+        }
     }
 
     /**
@@ -1093,6 +1249,7 @@ abstract class WorkerManager extends BaseManager
         }
 
         unset($this->pageSubscriptionByAcceptKey[$acceptKey]);
+        Hilos::$sr?->unsubscribeFromAll($acceptKey);
     }
 
     /**
@@ -1229,8 +1386,30 @@ abstract class WorkerManager extends BaseManager
      * Logic:
      * - DB/RT sync: sent as WorkerDbSync*MessageDTO / WorkerRtSync*MessageDTO (worker-level broadcast)
      * - Agent signals: sent as WorkerAgentMessageDTO (agent-level routing)
+     * - Frontend projection: DB/RT sync facts are recorded first; projection flush
+     *   then queues addressed WS_USER signals, which are drained in the second pass
      */
     private function dispatchSignals(): void
+    {
+        if ($this->daemonClient === null || !$this->daemonClient->isConnected()) {
+            return;
+        }
+
+        // Phase 1 sends backend state changes and records them for this worker's
+        // frontend projection. Phase 2 sends the WS_USER signals produced by the
+        // projection flush in the same tick, instead of waiting for the next loop.
+        $this->dispatchQueuedSignalsToDaemon();
+        Hilos::$frontend?->flushToSignalRouter();
+        $this->dispatchQueuedSignalsToDaemon();
+    }
+
+    /**
+     * Drains the current worker signal queue and forwards its contents to the daemon.
+     *
+     * Called before and after frontend projection flush because flush itself
+     * queues ordinary worker signals into the same router queue.
+     */
+    private function dispatchQueuedSignalsToDaemon(): void
     {
         if ($this->daemonClient === null || !$this->daemonClient->isConnected()) {
             return;
@@ -1257,18 +1436,18 @@ abstract class WorkerManager extends BaseManager
             };
 
             if ($syncDto !== null) {
+                $this->recordFrontendSourceChange($signalType, $signalData);
+                $this->dispatchSyncToLocalAgents($signalType, $signalData);
                 $this->daemonClient->send($syncDto);
                 continue;
             }
 
-            // Agent signals: agent-level routing
+            // Worker projection signals may be already-addressed WebSocket deliveries.
+            // The daemon ignores agentId for WorkerAgentMessageDTO and routes the inner
+            // SignalDTO by its signal type and WebSocket target metadata.
             $agentType = $signal->signalSource->getType();
             $agentIndex = $signal->signalSource->getIndex();
-            $agentId = $this->agentManager->buildAgentId($agentType, $agentIndex);
-            if ($agentId === null) {
-                Logger::error("Cannot dispatch signal without agent ID: {$signalType}/{$signalName}");
-                continue;
-            }
+            $agentId = $this->agentManager->buildAgentId($agentType, $agentIndex) ?? '';
 
             $this->daemonClient->send(new WorkerAgentMessageDTO(
                 agentId: $agentId,

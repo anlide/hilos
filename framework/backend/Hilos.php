@@ -3,6 +3,7 @@
 namespace Hilos;
 
 use Hilos\Core\Analytics\AnalyticsCollector;
+use Hilos\Core\Frontend\FrontendProjectionContext;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Table\Context\TableContext;
 use Hilos\Database\Context\DbContext;
@@ -18,6 +19,7 @@ use Hilos\Runtime\View\Context\RtContext;
  * - Hilos::$table — table layer
  * - Hilos::$fs    — filesystem layer
  * - Hilos::$sr    — signal router
+ * - Hilos::$frontend — worker-local frontend projection accumulator
  */
 abstract class Hilos
 {
@@ -35,6 +37,9 @@ abstract class Hilos
 
     /** @var ?SignalRouter Signal router singleton */
     public static ?SignalRouter $sr = null;
+
+    /** @var ?FrontendProjectionContext Frontend projection accumulator */
+    public static ?FrontendProjectionContext $frontend = null;
 
     /** @var ?AnalyticsCollector Analytics collector singleton */
     public static ?AnalyticsCollector $ac = null;
@@ -62,6 +67,10 @@ abstract class Hilos
         if (static::$fs === null) {
             static::$fs = static::createFs();
             static::$fs?->configure();
+        }
+
+        if (static::$frontend === null) {
+            static::$frontend = static::createFrontendProjection();
         }
     }
 
@@ -122,6 +131,19 @@ abstract class Hilos
      * @return ?FsContext Filesystem context or null if not used
      */
     protected static function createFs(): ?FsContext
+    {
+        return null;
+    }
+
+    /**
+     * Create frontend projection accumulator.
+     *
+     * The default framework has no projection. Projects may return a worker-local
+     * projection context that consumes DB/RT sync facts and emits frontend updates.
+     *
+     * @return ?FrontendProjectionContext Frontend projection context or null if not used
+     */
+    protected static function createFrontendProjection(): ?FrontendProjectionContext
     {
         return null;
     }

@@ -22,7 +22,7 @@ final class DbSyncApplicator
      *
      * @param array<string, mixed> $signalData collectionKey, idString, row
      */
-    public static function applyCreated(array $signalData): void
+    public static function applyCreated(array $signalData, bool $skipSelfBroadcastCheck = true): void
     {
         $collectionKey = $signalData['collectionKey'] ?? '';
         $idString = $signalData['idString'] ?? '';
@@ -32,7 +32,7 @@ final class DbSyncApplicator
             return;
         }
 
-        if (Hilos::$sr !== null && Hilos::$sr->shouldSkipDbSyncApply($collectionKey, $idString)) {
+        if ($skipSelfBroadcastCheck && Hilos::$sr !== null && Hilos::$sr->shouldSkipDbSyncApply($collectionKey, $idString)) {
             return;
         }
 
@@ -67,7 +67,7 @@ final class DbSyncApplicator
      *
      * @param array<string, mixed> $signalData collectionKey, idString, row (diff)
      */
-    public static function applyUpdated(array $signalData): void
+    public static function applyUpdated(array $signalData, bool $skipSelfBroadcastCheck = true): void
     {
         $collectionKey = $signalData['collectionKey'] ?? '';
         $idString = $signalData['idString'] ?? '';
@@ -77,7 +77,7 @@ final class DbSyncApplicator
             return;
         }
 
-        if (Hilos::$sr !== null && Hilos::$sr->shouldSkipDbSyncApply($collectionKey, $idString)) {
+        if ($skipSelfBroadcastCheck && Hilos::$sr !== null && Hilos::$sr->shouldSkipDbSyncApply($collectionKey, $idString)) {
             return;
         }
 
@@ -99,7 +99,7 @@ final class DbSyncApplicator
      *
      * @param array<string, mixed> $signalData collectionKey, idString
      */
-    public static function applyDeleted(array $signalData): void
+    public static function applyDeleted(array $signalData, bool $skipSelfBroadcastCheck = true): void
     {
         $collectionKey = $signalData['collectionKey'] ?? '';
         $idString = $signalData['idString'] ?? '';
@@ -108,7 +108,7 @@ final class DbSyncApplicator
             return;
         }
 
-        if (Hilos::$sr !== null && Hilos::$sr->shouldSkipDbSyncApply($collectionKey, $idString)) {
+        if ($skipSelfBroadcastCheck && Hilos::$sr !== null && Hilos::$sr->shouldSkipDbSyncApply($collectionKey, $idString)) {
             return;
         }
 

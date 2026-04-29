@@ -5,8 +5,6 @@ declare(strict_types=1);
 namespace Hilos\Core\Agent\Hilos;
 
 use Hilos\Constants\HilosAgentType;
-use Hilos\Constants\HilosSignalConstants;
-use Hilos\Core\Router\DTO\EmitRtChangeSignalData;
 use Random\RandomException;
 
 /**
@@ -170,18 +168,6 @@ abstract class AbstractHilosGuardianAgent extends AbstractHilosAgent
     }
 
     /**
-     * Runtime collection key used for guardian status emit payloads.
-     *
-     * Projects with a runtime status collection should override this method.
-     *
-     * @return string Runtime collection key, or empty string when no collection is configured
-     */
-    protected function getGuardianRunStatusRtCollectionKey(): string
-    {
-        return '';
-    }
-
-    /**
      * Hook for projects that mirror guardian run statuses into runtime state.
      *
      * @param string $agentId Guardian agent identifier
@@ -200,16 +186,5 @@ abstract class AbstractHilosGuardianAgent extends AbstractHilosAgent
     private function broadcastGuardianRunStatus(string $agentId, GuardianRunStatus $status): void
     {
         $this->onGuardianRunStatusChanged($agentId, $status);
-        $this->emitChangeRt(
-            HilosSignalConstants::EMIT_HILOS_GUARDIAN_AGENT_STATUS_UPDATED,
-            new EmitRtChangeSignalData(
-                collectionKey: $this->getGuardianRunStatusRtCollectionKey(),
-                stateId: $agentId,
-                payload: [
-                    'agentId' => $agentId,
-                    'status' => $status->value,
-                ],
-            ),
-        );
     }
 }

@@ -12,18 +12,14 @@ use Demo\Chat\Core\Page\DTO\RenameActionDTO;
 use Demo\Chat\Core\Router\DTO\ActionFailSignalData;
 use Demo\Chat\Core\Router\DTO\ActionSuccessSignalData;
 use Demo\Chat\Core\Router\DTO\ChatEventSignalDTO;
-use Demo\Chat\Database\DbChatContext;
 use Demo\Chat\Hilos;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
-use Hilos\Core\Router\DTO\EmitDbChangeSignalData;
 use Hilos\Core\Router\DTO\EntitiesChangesDTO;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
-use Hilos\Core\Table\DTO\TableSourceEventDTO;
-use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\HilosException;
 use Throwable;
 
@@ -136,36 +132,10 @@ final class ProfilePage extends AbstractChatPage
         $oldName = $user->name;
         $user->actions->rename($dto->newName);
 
-        $event = Hilos::$db->events->actions->addUserRenamed(
+        Hilos::$db->events->actions->addUserRenamed(
             userId: $userId,
             oldName: $oldName,
             newName: $dto->newName,
-        );
-        $this->emitChangeDb(
-            ChatSignalConstants::EMIT_CHAT_EVENT_CREATED,
-            new EmitDbChangeSignalData(new TableSourceEventDTO(
-                sourceKey: DbChatContext::events,
-                sourceRowKey: $event->id,
-                mutationType: TableMutationType::Create,
-            )),
-        );
-
-        $sourceEvent = new TableSourceEventDTO(
-            sourceKey: DbChatContext::users,
-            sourceRowKey: $userId,
-            mutationType: TableMutationType::Update,
-        );
-
-        foreach ($this->buildTableMutationSignalsForSourceEvent(ChatSignalConstants::EMIT_CHAT_USER_ROW_UPDATED, $sourceEvent) as $tableSignal) {
-            $this->getChatAgent()->sendToUser(ChatSignalConstants::TABLE_MUTATION, $acceptKey, $tableSignal);
-        }
-        $this->emitChangeDb(
-            ChatSignalConstants::EMIT_CHAT_USER_ROW_UPDATED,
-            new EmitDbChangeSignalData(
-                sourceEvent: $sourceEvent,
-                excludeAcceptKey: $acceptKey,
-                actorUserId: $userId,
-            ),
         );
 
         // Dedicated ack to the initiator: closes the modal / clears UI loading state.

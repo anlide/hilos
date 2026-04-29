@@ -149,7 +149,10 @@ abstract class Object_
     }
 
     /**
-     * Delete entity from database.
+     * Delete entity from database and broadcast a delete sync with previous row data.
+     *
+     * Delete projections may need fields that disappear after the row is removed
+     * (for example a settings key or any derived frontend/table lookup key).
      *
      * @throws DatabaseException If database operation fails
      */
@@ -158,10 +161,14 @@ abstract class Object_
         $collectionKey = static::getCollectionKey();
         $idString = $collectionKey !== '' ? $this->getIdString() : '';
 
+        // Keep a tombstone row for DB_SYNC_DELETED consumers; it is no longer
+        // available from the object collection after the physical delete.
+        $row = $collectionKey !== '' && $idString !== '' ? $this->toArray() : [];
+
         $this->entity->delete();
 
         if ($collectionKey !== '' && $idString !== '') {
-            $this->queueDbSyncDeleted($collectionKey, $idString);
+            $this->queueDbSyncDeleted($collectionKey, $idString, $row);
         }
     }
 
@@ -282,12 +289,13 @@ abstract class Object_
      *
      * @param string $collectionKey Collection key for broadcast
      * @param string $idString Item ID as string
+     * @param array<string, mixed> $row Previous row data
      */
-    private function queueDbSyncDeleted(string $collectionKey, string $idString): void
+    private function queueDbSyncDeleted(string $collectionKey, string $idString, array $row): void
     {
         Hilos::$sr?->queueDbSyncSignal(
             SignalConstants::DB_SYNC_DELETED,
-            new DbSyncDeletedSignalData($collectionKey, $idString),
+            new DbSyncDeletedSignalData($collectionKey, $idString, $row),
         );
     }
 

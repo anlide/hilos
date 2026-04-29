@@ -111,13 +111,14 @@ a full snapshot.
 
 ## Table mutation delivery
 
-`table_mutation` is an immediate mutation. Backend sends it directly to the
-initiating connection, usually with `sendToUser()`, and the frontend applies it
-to the table rows immediately.
+`table_mutation` is an immediate server-authoritative mutation. Backend
+projection sends it to subscribed local accept keys after DB/RT sync facts are
+recorded in the worker-local frontend projection, and the frontend applies it to
+the table rows immediately.
 
-`table_mutation_pending` is an external mutation. Backend uses it for
-broadcast or group delivery, usually excluding the initiator, and the frontend
-adds it to the table pending queue until the user applies pending changes.
+`table_mutation_pending` is reserved for an explicit "review external changes"
+product policy. It is not the default way to propagate table changes from
+DB/RT sync.
 
 Routing metadata stays in backend routing wrappers only. Fields such as
 `acceptKey`, `targetAcceptKey`, `excludeAcceptKey`, and `targetGroup` must not

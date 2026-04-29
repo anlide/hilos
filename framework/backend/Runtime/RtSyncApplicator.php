@@ -21,7 +21,7 @@ final class RtSyncApplicator
      *
      * @param array<string, mixed> $signalData collectionKey, stateId, row
      */
-    public static function applyCreated(array $signalData): void
+    public static function applyCreated(array $signalData, bool $skipSelfBroadcastCheck = true): void
     {
         $collectionKey = $signalData['collectionKey'] ?? '';
         $stateId = $signalData['stateId'] ?? '';
@@ -31,7 +31,7 @@ final class RtSyncApplicator
             return;
         }
 
-        if (Hilos::$sr !== null && Hilos::$sr->shouldSkipRtSyncApply($collectionKey, $stateId)) {
+        if ($skipSelfBroadcastCheck && Hilos::$sr !== null && Hilos::$sr->shouldSkipRtSyncApply($collectionKey, $stateId)) {
             return;
         }
 
@@ -59,7 +59,7 @@ final class RtSyncApplicator
      *
      * @param array<string, mixed> $signalData collectionKey, stateId, row (diff)
      */
-    public static function applyUpdated(array $signalData): void
+    public static function applyUpdated(array $signalData, bool $skipSelfBroadcastCheck = true): void
     {
         $collectionKey = $signalData['collectionKey'] ?? '';
         $stateId = $signalData['stateId'] ?? '';
@@ -69,7 +69,7 @@ final class RtSyncApplicator
             return;
         }
 
-        if (Hilos::$sr !== null && Hilos::$sr->shouldSkipRtSyncApply($collectionKey, $stateId)) {
+        if ($skipSelfBroadcastCheck && Hilos::$sr !== null && Hilos::$sr->shouldSkipRtSyncApply($collectionKey, $stateId)) {
             return;
         }
 
@@ -92,7 +92,7 @@ final class RtSyncApplicator
      *
      * @param array<string, mixed> $signalData collectionKey, stateId
      */
-    public static function applyDeleted(array $signalData): void
+    public static function applyDeleted(array $signalData, bool $skipSelfBroadcastCheck = true): void
     {
         $collectionKey = $signalData['collectionKey'] ?? '';
         $stateId = $signalData['stateId'] ?? '';
@@ -101,7 +101,7 @@ final class RtSyncApplicator
             return;
         }
 
-        if (Hilos::$sr !== null && Hilos::$sr->shouldSkipRtSyncApply($collectionKey, $stateId)) {
+        if ($skipSelfBroadcastCheck && Hilos::$sr !== null && Hilos::$sr->shouldSkipRtSyncApply($collectionKey, $stateId)) {
             return;
         }
 

@@ -61,17 +61,7 @@ class DemoHilosGuardianAgent extends AbstractHilosGuardianAgent
     }
 
     /**
-     * Runtime collection used by the project signal mapper for guardian status fan-out.
-     *
-     * @return string Guardian status runtime collection key
-     */
-    protected function getGuardianRunStatusRtCollectionKey(): string
-    {
-        return RtChatContext::guardianAgentStatuses;
-    }
-
-    /**
-     * Mirror guardian status changes into runtime state before daemon fan-out.
+     * Mirror guardian status changes into runtime state for frontend projection.
      *
      * @param string $agentId Guardian agent identifier
      * @param GuardianRunStatus $status Run status

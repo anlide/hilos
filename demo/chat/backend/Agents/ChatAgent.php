@@ -10,7 +10,6 @@ use Demo\Chat\Constants\ChatCronConstants;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\HttpHeaders;
 use Demo\Chat\Core\Router\DTO\ModerationBotResultSignalData;
-use Demo\Chat\Core\Router\DTO\UserPresenceEmitPayload;
 use Demo\Chat\Database\DbChatContext;
 use Demo\Chat\Database\Pages\ChatPageCatalog;
 use Demo\Chat\Frontend\UserFrontendStateProjector;
@@ -24,11 +23,7 @@ use Hilos\Core\CLI\Exception\CommandException;
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\AgentSignalData;
-use Hilos\Core\Router\DTO\EmitDbChangeSignalData;
-use Hilos\Core\Router\DTO\EmitRtChangeSignalData;
 use Hilos\Core\Router\SignalDataInterface;
-use Hilos\Core\Table\DTO\TableSourceEventDTO;
-use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\HilosException;
 use Hilos\Socket\WebSocket\DTO\WebSocketCloseSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
@@ -103,35 +98,8 @@ class ChatAgent extends AbstractAgent
         Hilos::$rt->userStates->actions->ensure($userId);
 
         if ($wasRegisteredNow) {
-            $event = Hilos::$db->events->actions->addUserRegistered($userId);
-            if ($event->id !== null) {
-                $this->emitChangeDb(
-                    ChatSignalConstants::EMIT_CHAT_EVENT_CREATED,
-                    new EmitDbChangeSignalData(
-                        sourceEvent: new TableSourceEventDTO(
-                            sourceKey: DbChatContext::events,
-                            sourceRowKey: $event->id,
-                            mutationType: TableMutationType::Create,
-                        ),
-                        excludeAcceptKey: $data->acceptKey,
-                    ),
-                );
-            }
+            Hilos::$db->events->actions->addUserRegistered($userId);
         }
-
-        $this->emitChangeRt(
-            ChatSignalConstants::EMIT_CHAT_USER_PRESENCE_UPDATED,
-            new EmitRtChangeSignalData(
-                collectionKey: RtChatContext::connections,
-                stateId: (string)$userId,
-                payload: UserPresenceEmitPayload::fromFrontendChanges(
-                    $userId,
-                    UserFrontendStateProjector::updatesForUser($user),
-                    UserFrontendStateProjector::updatesForUser($user, includeConnectionStats: true),
-                )->toArray(),
-                excludeAcceptKey: $data->acceptKey,
-            ),
-        );
 
         $this->sendToUser(
             ChatSignalConstants::HANDSHAKE_RESPONSE,
@@ -160,25 +128,7 @@ class ChatAgent extends AbstractAgent
             return;
         }
 
-        $userId = Hilos::$rt->connections[$data->acceptKey]->userId;
-        $user = Hilos::$db->users[$userId] ?? null;
         Hilos::$rt->connections->actions->unregister($data->acceptKey);
-        if ($user === null) {
-            return;
-        }
-
-        $this->emitChangeRt(
-            ChatSignalConstants::EMIT_CHAT_USER_PRESENCE_UPDATED,
-            new EmitRtChangeSignalData(
-                collectionKey: RtChatContext::connections,
-                stateId: (string)$userId,
-                payload: UserPresenceEmitPayload::fromFrontendChanges(
-                    $userId,
-                    UserFrontendStateProjector::updatesForUser($user),
-                    UserFrontendStateProjector::updatesForUser($user, includeConnectionStats: true),
-                )->toArray(),
-            ),
-        );
     }
 
     /**
@@ -214,15 +164,6 @@ class ChatAgent extends AbstractAgent
         if ($event->id === null) {
             return;
         }
-
-        $this->emitChangeDb(
-            ChatSignalConstants::EMIT_CHAT_EVENTS_REPLACED,
-            new EmitDbChangeSignalData(new TableSourceEventDTO(
-                sourceKey: DbChatContext::events,
-                sourceRowKey: $event->id,
-                mutationType: TableMutationType::Create,
-            )),
-        );
     }
 
     /**
@@ -271,16 +212,5 @@ class ChatAgent extends AbstractAgent
         if ($event->id === null) {
             return;
         }
-
-        $this->emitChangeDb(
-            ChatSignalConstants::EMIT_CHAT_EVENT_CREATED,
-            new EmitDbChangeSignalData(
-                sourceEvent: new TableSourceEventDTO(
-                    sourceKey: DbChatContext::events,
-                    sourceRowKey: $event->id,
-                    mutationType: TableMutationType::Create,
-                ),
-            ),
-        );
     }
 }

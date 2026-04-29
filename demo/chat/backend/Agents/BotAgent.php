@@ -14,7 +14,6 @@ use Demo\Chat\Database\DbChatContext;
 use Demo\Chat\Database\Object\Item\Bot as ObjectBot;
 use Demo\Chat\Database\View\Item\Bot as ViewBot;
 use Demo\Chat\Hilos;
-use Demo\Chat\Runtime\State\Item\BotAgentStatus as StateBotAgentStatus;
 use Demo\Chat\Runtime\State\Item\ChatContext as StateChatContext;
 use Demo\Chat\Runtime\View\Context\RtChatContext;
 use Demo\Chat\Utils\ChatLLMHelper;
@@ -22,7 +21,6 @@ use Demo\Chat\Utils\ChatSettingsHelper;
 use Hilos\Constants\LLMConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\Exception\AgentIndexRequiredException;
-use Hilos\Core\Router\DTO\EmitRtChangeSignalData;
 use Hilos\Core\Sync\DTO\DbSyncCreatedSignalData;
 use Hilos\Core\Sync\DTO\DbSyncDeletedSignalData;
 use Hilos\Core\Sync\DTO\DbSyncUpdatedSignalData;
@@ -86,7 +84,6 @@ class BotAgent extends AbstractAgent
         $botId = (int) $this->agentIndex;
         $this->registerRtTruthSource(RtChatContext::botAgentStatuses, [(string) $botId]);
         Hilos::$rt->botAgentStatuses->actions->markJoined($botId);
-        $this->emitBotAgentStatus(StateBotAgentStatus::STATUS_JOINED);
 
         // Bots without topic restriction (leaders) should start conversation when chat is empty.
         // RtSync from init() may arrive before BotAgents exist, so schedule on join as fallback.
@@ -100,7 +97,6 @@ class BotAgent extends AbstractAgent
     {
         $botId = (int) $this->agentIndex;
         Hilos::$rt->botAgentStatuses->actions->markLeft($botId);
-        $this->emitBotAgentStatus(StateBotAgentStatus::STATUS_LEFT);
     }
 
     /**
@@ -257,27 +253,6 @@ class BotAgent extends AbstractAgent
         $this->scheduledReactAt = microtime(true) + (float) $delaySec;
 
         $this->logAgentInfo("[schedule] Reaction in {$delaySec}s");
-    }
-
-    /**
-     * Emits this bot's runtime lifecycle marker for frontend fan-out.
-     *
-     * @param string $status Runtime lifecycle status
-     */
-    private function emitBotAgentStatus(string $status): void
-    {
-        $botId = (int) $this->agentIndex;
-        $this->emitChangeRt(
-            ChatSignalConstants::EMIT_CHAT_BOT_AGENT_STATUS_UPDATED,
-            new EmitRtChangeSignalData(
-                collectionKey: RtChatContext::botAgentStatuses,
-                stateId: (string) $botId,
-                payload: [
-                    StateBotAgentStatus::botId => $botId,
-                    StateBotAgentStatus::status => $status,
-                ],
-            ),
-        );
     }
 
     /**

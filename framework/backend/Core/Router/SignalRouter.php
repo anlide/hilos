@@ -516,6 +516,22 @@ class SignalRouter
     }
 
     /**
+     * Accept keys known to this router's subscription registry.
+     *
+     * In a worker this is the worker-local mirror used by frontend projections;
+     * in the daemon this is the global routing registry used for broadcasts.
+     *
+     * @return list<string>
+     */
+    public function getSubscribedAcceptKeys(): array
+    {
+        return array_values(array_unique(array_merge(
+            array_keys($this->subscriptionPages),
+            array_keys($this->subscriptionGroups),
+        )));
+    }
+
+    /**
      * Get destinations for signal
      *
      * Resolves signal destinations from config. Override in child routers ONLY for

@@ -10,7 +10,7 @@ use Hilos\Core\Router\SignalDataInterface;
 /**
  * DbSyncDeletedSignalData - DB sync signal data for deleted row.
  *
- * Only idString (collection key).
+ * Carries idString plus optional previous row data.
  */
 class DbSyncDeletedSignalData extends BaseDTO implements SignalDataInterface
 {
@@ -19,23 +19,26 @@ class DbSyncDeletedSignalData extends BaseDTO implements SignalDataInterface
      *
      * @param string $collectionKey Collection key
      * @param string $idString Row ID from Object::getIdString()
+     * @param array<string, mixed> $row Previous row, when available
      */
     public function __construct(
         public readonly string $collectionKey,
         public readonly string $idString,
+        public readonly array $row = [],
     ) {
     }
 
     /**
      * Converts DTO to array for transport.
      *
-     * @return array<string, string> DTO data as array
+     * @return array<string, mixed> DTO data as array
      */
     public function toArray(): array
     {
         return [
             'collectionKey' => $this->collectionKey,
             'idString' => $this->idString,
+            'row' => $this->row,
         ];
     }
 
@@ -50,6 +53,7 @@ class DbSyncDeletedSignalData extends BaseDTO implements SignalDataInterface
         return new self(
             collectionKey: $data['collectionKey'] ?? '',
             idString: $data['idString'] ?? '',
+            row: isset($data['row']) && is_array($data['row']) ? $data['row'] : [],
         );
     }
 }
