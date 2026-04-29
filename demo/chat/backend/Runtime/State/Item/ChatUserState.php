@@ -11,8 +11,8 @@ use Hilos\Runtime\State\Item\RtState;
 /**
  * Per-user chat runtime row: pending text moderation and message rate-limit state.
  *
- * State id is `(string) userId`. Created at chat WebSocket handshake via
- * {@see UserStatesActions::ensure()}, or by {@see UserStatesActions::seedAllFromDb()} at demo startup.
+ * State id is `(string) userId`. Created lazily at chat WebSocket handshake via
+ * {@see UserStatesActions::ensure()}.
  * Mutations go through {@see UserStatesActions}; file uploads live on {@see Connection}.
  */
 final class ChatUserState extends RtState

@@ -40,7 +40,7 @@ class ChatAgent extends AbstractAgent
     private const string SESSION_TOKEN_PATTERN = '/\A[0-9a-f]{32}\z/';
 
     /**
-     * Registers chat truth sources, seeds runtime user states, and records chat startup.
+     * Registers chat truth sources and records chat startup.
      *
      * @throws HilosException On database or runtime startup failure
      */
@@ -54,7 +54,6 @@ class ChatAgent extends AbstractAgent
         $this->registerRtTruthSource(RtChatContext::connections);
         $this->registerRtTruthSource(RtChatContext::userStates);
 
-        Hilos::$rt->userStates->actions->seedAllFromDb();
         Hilos::$db->events->actions->addChatStarted();
     }
 

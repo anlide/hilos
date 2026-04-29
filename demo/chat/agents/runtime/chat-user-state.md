@@ -15,7 +15,7 @@ Per-user runtime state. Tracks text message moderation state and send rate limit
 
 ## Lifecycle
 
-- **Created**: `UserStatesActions::ensure(userId)` on WS handshake, or `seedAllFromDb()` on agent start
+- **Created**: `UserStatesActions::ensure(userId)` on WS handshake
 - **Updated**: when message submitted for moderation (`moderationMessage` set), cleared on result, or approved message is recorded for rate limiting
 - **Never deleted** during a session — persists as long as user exists in DB
 
@@ -24,9 +24,9 @@ Per-user runtime state. Tracks text message moderation state and send rate limit
 `ChatAgent` owns this collection (`RtTruthSourceRegistry::register(RtChatContext::userStates, ...)`).
 Only `ChatAgent` should write to it.
 
-## Seeding
+## Initialization
 
-On `ChatAgent::onStart()`: `Hilos::$rt->userStates->actions->seedAllFromDb()` — pre-populates all known users from DB so `ensure()` calls are instant.
+`ChatUserState` rows are created lazily during `ChatAgent::onSignalHandshake()`.
 
 ## Note
 

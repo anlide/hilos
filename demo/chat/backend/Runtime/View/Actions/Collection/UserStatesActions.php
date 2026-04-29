@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Runtime\View\Actions\Collection;
 
-use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\State\Collection\UserStates as StateUserStates;
 use Demo\Chat\Runtime\State\Item\ChatUserState as StateChatUserState;
 use Demo\Chat\Runtime\View\Collection\UserStates;
@@ -70,34 +69,6 @@ final class UserStatesActions extends RtActions
         }
 
         return $item;
-    }
-
-    /**
-     * Create an empty {@see StateChatUserState} for every user in the database (demo startup seed).
-     *
-     * Skips ids that already have a row in the runtime collection.
-     *
-     * @throws RtActionsCallbackNotSetException
-     * @throws RtActionsCollectionNameNullException
-     * @throws RtActionsStateCollectionNullException
-     * @throws RtTruthSourceWriteNotAllowedException
-     */
-    public function seedAllFromDb(): void
-    {
-        $this->ensureCanWrite();
-        $sc = $this->getStateCollection();
-        foreach (Hilos::$db->users as $user) {
-            if ($user->id === null) {
-                continue;
-            }
-            $id = (string)$user->id;
-            if ($sc->has($id)) {
-                continue;
-            }
-            $state = StateChatUserState::createEmpty((int)$user->id);
-            $this->addStateToCollection($state);
-        }
-        $this->clearCollectionCache();
     }
 
     /**
