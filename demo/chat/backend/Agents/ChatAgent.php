@@ -50,7 +50,6 @@ class ChatAgent extends AbstractAgent
         $this->registerDbTruthSource(DbChatContext::users);
         $this->registerDbTruthSource(DbChatContext::bots);
         $this->registerDbTruthSource(DbChatContext::moderatorPromptPieces);
-        $this->registerDbTruthSource(DbChatContext::settings);
         $this->registerRtTruthSource(RtChatContext::connections);
         $this->registerRtTruthSource(RtChatContext::userStates);
 
