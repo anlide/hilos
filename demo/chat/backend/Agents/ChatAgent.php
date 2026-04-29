@@ -158,10 +158,7 @@ class ChatAgent extends AbstractAgent
         }
 
         Hilos::$db->events->actions->deleteAll();
-        $event = Hilos::$db->events->actions->addChatCleared();
-        if ($event->id === null) {
-            return;
-        }
+        Hilos::$db->events->actions->addChatCleared();
     }
 
     /**
@@ -206,9 +203,6 @@ class ChatAgent extends AbstractAgent
             throw new BotMessageModerationRejectedException($result->botId, $result->reason !== '' ? $result->reason : 'unknown');
         }
 
-        $event = Hilos::$db->events->actions->addMessage($result->message, botId: $result->botId);
-        if ($event->id === null) {
-            return;
-        }
+        Hilos::$db->events->actions->addMessage($result->message, botId: $result->botId);
     }
 }
