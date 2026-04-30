@@ -2,38 +2,33 @@
 
 **Collection:** `RtChatContext::connections` | **Key:** `acceptKey`
 
-Runtime row for one active WebSocket connection. Holds transport metadata + all file upload/moderation session state for this socket.
+Runtime row for one active WebSocket connection. Holds transport metadata plus the active binary upload session and progress UI for this socket.
 
 ## Fields
 
 ### Transport
+
 | Field | Type | Meaning |
 |---|---|---|
 | `acceptKey` | `string` | WS accept key (immutable, collection ID) |
 | `userId` | `int` | DB user ID |
 | `connectedAt` | `int` | Unix timestamp of connection |
 
-### Upload session (active binary upload)
+### Upload Session
+
 | Field | Meaning |
 |---|---|
 | `fileSessionUploadId` | Active upload UUID (null = no upload) |
 | `fileSessionDeclaredSize` | Declared total bytes |
 | `fileSessionReceivedBytes` | Bytes received so far |
-| `fileSessionQuarantineBasename` | Quarantine file path |
+| `fileSessionQuarantineBasename` | Tmp file basename while upload is active |
 | `fileSessionOriginalFilename` | Client filename |
 | `fileSessionMimeType` | MIME type |
 | `fileSessionClientUploadId` | Client-side correlation ID |
-| `fileSessionNormalizedFilename` | Lowercase for dedup checks |
+| `fileSessionNormalizedFilename` | Normalized basename for duplicate checks |
 
-### File moderation UI
-| Field | Meaning |
-|---|---|
-| `fileModPhase` | `'moderating'`, `'rejected'`, or null |
-| `fileModFilename`, `fileModUploadedBytes`, `fileModTotalBytes` | Display values |
-| `fileModReason` | Rejection reason text |
-| `fileModUpdatedAt` | Last update unix time |
+### Upload Progress UI
 
-### Upload progress UI
 | Field | Meaning |
 |---|---|
 | `fileProgressFilename` | Filename shown in progress bar (null = hidden) |
@@ -42,14 +37,16 @@ Runtime row for one active WebSocket connection. Holds transport metadata + all 
 
 ## Lifecycle
 
-- **Created**: `ConnectionActions::create(acceptKey, userId)` in `ChatAgent::onSignalHandshake()`
-- **Updated**: upload fields set during binary frame processing
-- **Deleted**: `ConnectionActions::delete(acceptKey)` in `ChatAgent::onSignalConnectionClose()`
+- **Created**: `ConnectionActions::register(acceptKey, userId)` in `ChatAgent::onSignalHandshake()`.
+- **Updated**: upload fields set during binary upload init/frame processing.
+- **Deleted**: `ConnectionsActions::unregister(acceptKey)` in `ChatAgent::onSignalConnectionClose()`.
 
-## Truth source
+Completed uploads no longer live on `Connection`; they become `AttachmentDraft` rows keyed by draft id and owned by the same `acceptKey`.
+
+## Truth Source
 
 `ChatAgent` owns `RtChatContext::connections`.
 
-## Note on immutability
+## Note on Immutability
 
 `acceptKey` is immutable (`__set` throws `RtStateReadOnlyException` for it).

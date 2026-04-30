@@ -11,5 +11,7 @@ final class ChatCronConstants
 {
     /** @var string Cleanup history cron job name */
     public const string CLEANUP_HISTORY = 'cleanup_history';
-}
 
+    /** @var string Cleanup expired uploaded attachment drafts */
+    public const string CLEANUP_ATTACHMENT_DRAFTS = 'cleanup_attachment_drafts';
+}

@@ -63,11 +63,11 @@ declare module '@hilos/sdk/types/actionMap' {
       clientUploadId: string
     }
 
-    /** Dismiss the in-chat file moderation banner. */
-    file_moderation_dismiss: Record<string, never>
+    /** Delete one uploaded attachment draft. */
+    attachment_draft_delete: { draftId: string }
 
-    /** Send a chat message. */
-    message: { content: string }
+    /** Send a chat message with optional uploaded attachment drafts. */
+    message: { content: string; attachmentDraftIds: string[] }
   }
 }
 

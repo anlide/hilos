@@ -77,7 +77,7 @@ final class User extends DbItem
 
         if ($toFrontend) {
             unset($result[ObjectUser::sessionToken]);
-            // chatUserState is private - sent via handshake and MODERATION_STATE_UPDATE only
+            // chatUserState is private and sent through main-page session signals only.
         }
 
         return $result;

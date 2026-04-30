@@ -44,34 +44,26 @@
       v-if="fileBanner"
       class="chat-file-banner px-3 py-2 border-top border-secondary-subtle small d-flex align-items-center gap-2 flex-wrap"
     >
-      <template v-if="fileBanner.kind === 'uploading'">
-        <span class="text-muted chat-file-banner-label">Uploading {{ fileBanner.filename }}…</span>
-        <div class="progress flex-grow-1 chat-upload-progress-track" role="presentation">
-          <div
-            class="progress-bar chat-upload-progress-bar"
-            role="progressbar"
-            :aria-valuenow="fileBanner.pct"
-            aria-valuemin="0"
-            aria-valuemax="100"
-            :style="{ width: `${fileBanner.pct}%` }"
-          />
-        </div>
-      </template>
-      <template v-else-if="fileBanner.kind === 'moderating'">
-        <span class="spinner-border spinner-border-sm text-primary" aria-hidden="true" />
-        <span>Moderating file: {{ fileBanner.filename }}</span>
-      </template>
-      <template v-else-if="fileBanner.kind === 'rejected'">
-        <span class="text-danger">File rejected{{ fileBanner.reason ? `: ${fileBanner.reason}` : '' }}</span>
-        <button
-          type="button"
-          class="btn btn-sm btn-outline-secondary ms-auto"
-          aria-label="Dismiss"
-          @click="dismissFileRejection"
-        >
-          <i class="bi bi-x-lg" aria-hidden="true" />
-        </button>
-      </template>
+      <span class="text-muted chat-file-banner-label">Uploading {{ fileBanner.filename }}...</span>
+      <div class="progress flex-grow-1 chat-upload-progress-track" role="presentation">
+        <div
+          class="progress-bar chat-upload-progress-bar"
+          role="progressbar"
+          :aria-valuenow="fileBanner.pct"
+          aria-valuemin="0"
+          aria-valuemax="100"
+          :style="{ width: `${fileBanner.pct}%` }"
+        />
+      </div>
+    </div>
+
+    <div
+      v-if="moderationBanner"
+      class="px-3 py-2 border-top small d-flex align-items-center gap-2"
+      :class="moderationBanner.className"
+    >
+      <span v-if="moderationBanner.phase === 'checking'" class="spinner-border spinner-border-sm" aria-hidden="true" />
+      <span>{{ moderationBanner.text }}</span>
     </div>
 
     <div v-if="uploadClientError || chatStore.messageError" class="px-3 py-1 small text-danger border-top">
@@ -79,6 +71,24 @@
     </div>
 
     <div class="card-footer flex-shrink-0">
+      <div v-if="attachmentDrafts.length > 0" class="chat-attachment-drafts d-flex flex-wrap gap-2 mb-2">
+        <span
+          v-for="draft in attachmentDrafts"
+          :key="draft.draftId"
+          class="badge rounded-pill text-bg-secondary d-inline-flex align-items-center gap-1 chat-attachment-draft"
+          :title="draft.filename"
+        >
+          <i class="bi bi-paperclip" aria-hidden="true" />
+          <span class="text-truncate">{{ draft.filename }}</span>
+          <button
+            type="button"
+            class="btn-close btn-close-white chat-attachment-draft-remove"
+            :disabled="chatStore.isModeratingMessage"
+            aria-label="Remove attachment"
+            @click="deleteAttachmentDraft(draft.draftId)"
+          />
+        </span>
+      </div>
       <form @submit.prevent="handleSubmit" class="d-flex gap-2 align-items-center">
         <input
           ref="fileInputRef"
@@ -107,7 +117,6 @@
           data-id="chat-input"
           :readonly="chatStore.isModeratingMessage"
           :disabled="!connectionStore.isConnected || chatStore.isModeratingMessage"
-          required
           maxlength="500"
         />
         <span
@@ -120,7 +129,7 @@
           type="submit"
           variant="btn-primary"
           :loading="chatStore.isModeratingMessage"
-          :disabled="!connectionStore.isConnected || chatStore.isModeratingMessage || isRateLimited || !draftMessage.trim()"
+          :disabled="!canSubmit"
           :loading-delay="300"
           data-id="chat-send"
         >
@@ -136,7 +145,7 @@ import { computed, ref, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { useConnectionStore } from '@hilos/sdk/stores'
 import { useWebSocket } from '@hilos/sdk/plugins/websocket'
 import { useChatStore } from '@/stores'
-import { FILE_MODERATION_DISMISS, FILE_UPLOAD_INIT, MESSAGE_RATE_LIMIT_SECONDS } from '@/constants'
+import { ATTACHMENT_DRAFT_DELETE, FILE_UPLOAD_INIT, MESSAGE_RATE_LIMIT_SECONDS } from '@/constants'
 import MessageItem from './MessageItem.vue'
 import { LoadingButton } from '@hilos/sdk/components'
 import { sendAction } from '@/services/websocketActions'
@@ -157,45 +166,78 @@ let rateLimitInterval: ReturnType<typeof setInterval> | null = null
 const CHUNK_SIZE = 65536
 
 const emit = defineEmits<{
-  send: [message: string]
+  send: [payload: { content: string; attachmentDraftIds: string[] }]
 }>()
 
-const currentUserModerationState = computed(() => chatStore.currentUserModerationState ?? null)
+const attachmentDrafts = computed(() => chatStore.attachmentDrafts)
+const outboundModerationState = computed(() => chatStore.outboundModerationState)
 const displayMessage = computed(() => {
-  if (currentUserModerationState.value !== null) {
-    return currentUserModerationState.value
+  if (outboundModerationState.value?.phase === 'checking') {
+    return outboundModerationState.value.text
   }
   return draftMessage.value
 })
 const isRateLimited = computed(() => rateLimitSecondsLeft.value > 0)
+const hasDraftContent = computed(() => {
+  return draftMessage.value.trim().length > 0 || attachmentDrafts.value.length > 0
+})
+const canSubmit = computed(() => {
+  return connectionStore.isConnected
+    && !chatStore.isModeratingMessage
+    && !isRateLimited.value
+    && hasDraftContent.value
+})
 
-type FileBanner =
-  | { kind: 'uploading'; filename: string; pct: number }
-  | { kind: 'moderating'; filename: string }
-  | { kind: 'rejected'; reason: string }
+type FileBanner = { filename: string; pct: number }
 
 const fileBanner = computed((): FileBanner | null => {
   const prog = chatStore.fileUploadProgress
   if (prog !== null) {
     const tot = prog.totalBytes > 0 ? prog.totalBytes : 1
     const pct = Math.min(100, Math.round((prog.uploadedBytes / tot) * 100))
-    return { kind: 'uploading', filename: prog.filename, pct }
-  }
-  const s = chatStore.fileModerationState
-  if (!s || typeof s.phase !== 'string') {
-    return null
-  }
-  const phase = s.phase
-  const fn = typeof s.filename === 'string' ? s.filename : 'file'
-  if (phase === 'moderating') {
-    return { kind: 'moderating', filename: fn }
-  }
-  if (phase === 'rejected') {
-    const reason = typeof s.reason === 'string' ? s.reason : ''
-    return { kind: 'rejected', reason }
+    return { filename: prog.filename, pct }
   }
   return null
 })
+
+type ModerationBanner = {
+  phase: 'checking' | 'rejected' | 'unavailable'
+  text: string
+  className: string
+}
+
+const moderationBanner = computed((): ModerationBanner | null => {
+  const state = outboundModerationState.value
+  if (!state) {
+    return null
+  }
+  if (state.phase === 'checking') {
+    return {
+      phase: 'checking',
+      text: 'Moderating message...',
+      className: 'text-primary bg-primary bg-opacity-10',
+    }
+  }
+  if (state.phase === 'rejected') {
+    return {
+      phase: 'rejected',
+      text: state.reason ? `Message rejected: ${state.reason}` : 'Message rejected',
+      className: 'text-danger bg-danger bg-opacity-10',
+    }
+  }
+  if (state.phase === 'unavailable') {
+    return {
+      phase: 'unavailable',
+      text: state.reason ? `Moderation unavailable: ${state.reason}` : 'Moderation unavailable',
+      className: 'text-warning-emphasis bg-warning bg-opacity-10',
+    }
+  }
+  return null
+})
+
+if (outboundModerationState.value !== null && outboundModerationState.value.phase !== 'checking') {
+  draftMessage.value = outboundModerationState.value.text
+}
 
 const scrollToBottom = () => {
   nextTick(() => {
@@ -218,11 +260,11 @@ const startRateLimitCountdown = () => {
 }
 
 const handleSubmit = () => {
-  if (!draftMessage.value.trim() || !connectionStore.isConnected || chatStore.isModeratingMessage || isRateLimited.value) return
-  const text = draftMessage.value.trim()
-  draftMessage.value = ''
+  if (!canSubmit.value) return
+  const content = draftMessage.value.trim()
+  const attachmentDraftIds = attachmentDrafts.value.map((draft) => draft.draftId)
   chatStore.setMessageError(null)
-  emit('send', text)
+  emit('send', { content, attachmentDraftIds })
   startRateLimitCountdown()
 }
 
@@ -239,6 +281,18 @@ const handleInput = (event: Event) => {
 }
 
 watch(() => chatStore.events.length, scrollToBottom)
+watch(
+  () => chatStore.outboundModerationState,
+  (state, previous) => {
+    if (previous?.phase === 'checking' && state === null) {
+      draftMessage.value = ''
+      chatStore.clearAttachmentDrafts()
+    }
+    if (state !== null && state.phase !== 'checking' && draftMessage.value === '') {
+      draftMessage.value = state.text
+    }
+  },
+)
 onMounted(scrollToBottom)
 
 const openFilePicker = () => {
@@ -311,8 +365,11 @@ const onPaste = (ev: ClipboardEvent) => {
   }
 }
 
-const dismissFileRejection = () => {
-  sendAction(websocket, FILE_MODERATION_DISMISS, {})
+const deleteAttachmentDraft = (draftId: string) => {
+  if (chatStore.isModeratingMessage) {
+    return
+  }
+  sendAction(websocket, ATTACHMENT_DRAFT_DELETE, { draftId })
 }
 </script>
 
@@ -324,6 +381,20 @@ const dismissFileRejection = () => {
 .chat-upload-progress-track {
   min-width: 120px;
   height: 6px;
+}
+
+.chat-attachment-draft {
+  max-width: min(100%, 260px);
+}
+
+.chat-attachment-draft .text-truncate {
+  max-width: 210px;
+}
+
+.chat-attachment-draft-remove {
+  width: 0.65rem;
+  height: 0.65rem;
+  padding: 0;
 }
 
 @media (max-width: 575.98px) {

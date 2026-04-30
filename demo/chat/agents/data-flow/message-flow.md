@@ -1,53 +1,59 @@
 # Message Flow
 
-Path of a text chat message from user input to all connected clients.
+Path of an outbound chat message from user input to all connected clients. A message may contain text, attachment drafts, or both.
 
-## Happy path (approved)
+## Happy Path
 
 ```
-User types message, hits send
-        │
-Frontend: ws.send('message', { text: '...' })
-        │
-WS Server → WS_ACTION signal → PageSignalRouter
-        │
+User sends text and/or uploaded attachment drafts
+        |
+Frontend: ws.send('message', { content, attachmentDraftIds })
+        |
+WS Server -> WS_ACTION signal -> PageSignalRouter
+        |
 MainPage::onAction('message', MessageActionDTO)
-        │
-UserStatesActions::canSendMessage() check → rate limit (10s per user)
-        │
-Hilos::$rt->userStates->actions->setPendingModeration(userId, text)
-        │
+        |
+Validate connection, active moderation, 10s common submit limit, and draft ownership
+        |
+UserStatesActions::recordOutboundSubmitted()
+UserStatesActions::startOutboundModeration(requestId, content, attachmentDraftIds)
+        |
 ChatAgent::sendToAgent(MODERATE_REQUEST, ModerationRequestSignalData)
-        │
-        ▼
-ModeratorAgent::onSignalAgent() → queues request
-        │
+        |
+        v
+ModeratorAgent::onSignalAgent() -> queues request
+        |
 LLM call (async, non-blocking)
-        │
-ModeratorAgent::sendToAgent(MODERATION_RESULT, ModerationResultSignalData { allowed: true })
-        │
-        ▼
+        |
+ModeratorAgent::sendToAgent(MODERATION_RESULT, ModerationResultSignalData)
+        |
+        v
 PageSignalRouter routes MODERATION_RESULT to MainPage::onSignalAgent()
-        │
-Hilos::$db->events->actions->add(MESSAGE, userId, text)  → DB_SYNC_CREATED broadcast
-        │
-ChatAgent::sendToAllUsers(NEW_EVENT, ChatEventSignalDTO)
-        │
-All connected clients receive new message
+        |
+Move approved draft files from quarantine to published
+        |
+Hilos::$db->events->actions->addMessage(content, userId, attachments)
+        |
+ChatSignalMapper broadcasts NEW_EVENT
+        |
+All connected clients receive message_sent with data.attachments
 ```
 
-## Rejected path
+## Attachment-Only Messages
 
-LLM returns `allowed: false` → `MainPage` clears `userStates` moderation field, no event saved.
-Optionally sends moderation state update to originating user.
+The same `message_sent` event is used even when `content === ''`.
+Attachments are stored in `data.attachments`; standalone `file_shared` is legacy-only.
 
-## Rate limiting
+## Rejected or Unavailable
 
-`RtChatContext::userStates.lastMessageSentAt` — tracks last approved message time.
-If `time - last < 10s` → message rejected immediately (no LLM call).
-User sees no visual feedback (silent rate limit).
+`MainPage` keeps the outbound state instead of publishing an event:
 
-## DB_SYNC broadcast
+- `phase = rejected` for normal moderation denial.
+- `phase = unavailable` for service errors or missing draft files.
+- The frontend keeps the composer content and draft list so the user can retry after the common submit cooldown.
 
-When `events->actions->add()` writes to DB, it queues `DB_SYNC_CREATED` signal.
-Daemon broadcasts to all workers. All agents receive `onSignalDbSyncCreated()`.
+## Rate Limiting
+
+`RtChatContext::userStates.lastOutboundSubmittedAt` tracks the last accepted outbound submit.
+If `microtime(true) - last < 9s`, `MainPage` rejects the submit before moderation.
+The limit applies equally to text-only, attachment-only, and mixed messages.

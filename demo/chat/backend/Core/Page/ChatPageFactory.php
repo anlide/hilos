@@ -6,7 +6,7 @@ namespace Demo\Chat\Core\Page;
 
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\PageConstants;
-use Demo\Chat\Core\Page\DTO\FileModerationDismissActionDTO;
+use Demo\Chat\Core\Page\DTO\AttachmentDraftDeleteActionDTO;
 use Demo\Chat\Core\Page\DTO\FileUploadInitActionDTO;
 use Demo\Chat\Core\Page\DTO\GuardianAgentRunStartActionDTO;
 use Demo\Chat\Core\Page\DTO\GuardianAgentRunStopActionDTO;
@@ -230,7 +230,7 @@ final class ChatPageFactory extends HilosPageFactory
             ChatSignalConstants::MESSAGE => MessageActionDTO::fromArray($data),
             ChatSignalConstants::RENAME => RenameActionDTO::fromArray($data),
             ChatSignalConstants::FILE_UPLOAD_INIT => FileUploadInitActionDTO::fromArray($data),
-            ChatSignalConstants::FILE_MODERATION_DISMISS => FileModerationDismissActionDTO::fromArray($data),
+            ChatSignalConstants::ATTACHMENT_DRAFT_DELETE => AttachmentDraftDeleteActionDTO::fromArray($data),
             ChatSignalConstants::USER_UPDATE => AdminUserUpdateActionDTO::fromArray($data),
             ChatSignalConstants::HILOS_USER_UPDATE => HilosUserUpdateActionDTO::fromArray($data),
             ChatSignalConstants::BOT_CREATE => BotCreateActionDTO::fromArray($data),

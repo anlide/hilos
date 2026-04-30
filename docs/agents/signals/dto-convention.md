@@ -36,6 +36,9 @@ final class ModerationRequestSignalData extends BaseDTO implements SignalDataInt
 
 ## Receiving agent-to-agent signal
 
+Named signal handlers must route with `switch ($name)`; see
+`docs/agents/code-style/signal-handlers.md` for the full handler shape.
+
 ```php
 public function onSignalAgent(AgentSignalData $data, string $source, string $name): void {
     // $data->data is the inner payload

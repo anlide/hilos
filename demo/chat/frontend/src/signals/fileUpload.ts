@@ -1,4 +1,5 @@
 import { SignalDefinition, parseEmptyPayload } from '@hilos/sdk/services/signals'
+import type { AttachmentDraftPayload } from '@/stores'
 
 const isRecord = (value: unknown): value is Record<string, unknown> => {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -60,10 +61,26 @@ export const fileUploadInvalid = new SignalDefinition<'file_upload_invalid', und
 )
 
 /**
- * `file_upload_complete` — full file received. UI state transitions are
- * driven by subsequent file_moderation_state_update; this signal is a marker.
+ * `file_upload_complete` — full file received and converted to an attachment draft.
  */
-export const fileUploadComplete = new SignalDefinition<'file_upload_complete', undefined>(
+export interface FileUploadCompletePayload {
+  attachmentDraft: AttachmentDraftPayload
+}
+
+const parseAttachmentDraft = (raw: unknown): AttachmentDraftPayload | null => {
+  if (!isRecord(raw)) return null
+  const { draftId, filename, mimeType, size, uploadedAt } = raw
+  if (typeof draftId !== 'string') return null
+  if (typeof filename !== 'string' || typeof mimeType !== 'string') return null
+  if (typeof size !== 'number' || typeof uploadedAt !== 'number') return null
+  return { draftId, filename, mimeType, size, uploadedAt }
+}
+
+export const fileUploadComplete = new SignalDefinition<'file_upload_complete', FileUploadCompletePayload>(
   'file_upload_complete',
-  parseEmptyPayload,
+  (raw: unknown): FileUploadCompletePayload | null => {
+    if (!isRecord(raw)) return null
+    const attachmentDraft = parseAttachmentDraft(raw.attachmentDraft)
+    return attachmentDraft === null ? null : { attachmentDraft }
+  },
 )

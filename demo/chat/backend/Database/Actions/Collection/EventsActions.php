@@ -142,22 +142,31 @@ final class EventsActions extends DbActions
      * @param string $message Published message text
      * @param ?int $userId Authoring user id
      * @param ?int $botId Authoring bot id
+     * @param list<array<string, mixed>> $attachments Published attachment metadata
      * @return DbEvent Created event
      * @throws HilosException On database or truth-source failure
      * @throws CommandException If event id is null after sync
      */
-    public function addMessage(string $message, ?int $userId = null, ?int $botId = null): DbEvent
+    public function addMessage(
+        string $message,
+        ?int $userId = null,
+        ?int $botId = null,
+        array $attachments = [],
+    ): DbEvent
     {
         return $this->add(
             ChatEventType::MESSAGE_SENT->value,
             userId: $userId,
             botId: $botId,
-            data: ['message' => $message],
+            data: [
+                'message' => $message,
+                'attachments' => $attachments,
+            ],
         );
     }
 
     /**
-     * Appends the event emitted when a user shares a file in chat.
+     * Appends the legacy event emitted when a user shares a standalone file in chat.
      *
      * @param int $userId Uploading user id
      * @param string $originalFilename Original client filename

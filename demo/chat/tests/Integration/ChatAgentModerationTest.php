@@ -33,23 +33,31 @@ final class ChatAgentModerationTest extends IntegrationTestCase
         RtTruthSourceRegistry::register(RtChatContext::connections, true, self::TEST_AGENT_ID);
         Hilos::$rt->connections->actions->clear();
         Hilos::$rt->userStates->actions->clear();
+        Hilos::$rt->attachmentDrafts->actions->clear(deleteFiles: false);
         Hilos::$db->events->actions->deleteAll();
 
         try {
             $user = Hilos::$db->users->actions->register(bin2hex(random_bytes(16)));
             Hilos::$rt->connections->actions->register('stop-ak', $user->id);
             Hilos::$rt->userStates->actions->ensure($user->id);
-            Hilos::$rt->userStates->actions->setTextModerationMessage($user->id, 'pending moderation');
+            Hilos::$rt->userStates->actions->startOutboundModeration(
+                $user->id,
+                'request-stop',
+                'pending moderation',
+                [],
+            );
 
             $agent = new ChatAgent();
             $agent->onStop();
 
             $this->assertSame(0, count(Hilos::$rt->connections));
             $this->assertSame(0, count(Hilos::$rt->userStates));
+            $this->assertSame(0, count(Hilos::$rt->attachmentDrafts));
             $this->assertEventTypeExists(ChatEventType::CHAT_STOPPED);
         } finally {
             Hilos::$rt->connections->actions->clear();
             Hilos::$rt->userStates->actions->clear();
+            Hilos::$rt->attachmentDrafts->actions->clear(deleteFiles: false);
             Hilos::$db->events->actions->deleteAll();
         }
     }
@@ -64,12 +72,18 @@ final class ChatAgentModerationTest extends IntegrationTestCase
         try {
             $user = Hilos::$db->users->actions->register(bin2hex(random_bytes(16)));
             Hilos::$rt->userStates->actions->ensure($user->id);
-            Hilos::$rt->userStates->actions->setTextModerationMessage($user->id, 'pending moderation');
+            Hilos::$rt->userStates->actions->startOutboundModeration(
+                $user->id,
+                'request-closed',
+                'pending moderation',
+                [],
+            );
 
             Hilos::initSignalRouter(new ChatSignalRouter());
             $this->dispatchTextModerationSignalToMainPage(
                 new ChatAgent(),
                 new ModerationResultSignalData(
+                    requestId: 'request-closed',
                     acceptKey: 'closed-ak',
                     userId: $user->id,
                     message: 'message after disconnect',
@@ -78,7 +92,7 @@ final class ChatAgentModerationTest extends IntegrationTestCase
                 ),
             );
 
-            $this->assertSame('', Hilos::$rt->userStates[$user->id]?->moderationMessage);
+            $this->assertSame('', Hilos::$rt->userStates[$user->id]?->outboundModerationPhase);
             $this->assertNoMessageEvents();
         } finally {
             Hilos::$rt->connections->actions->clear();
@@ -87,7 +101,7 @@ final class ChatAgentModerationTest extends IntegrationTestCase
         }
     }
 
-    public function testApprovedTextModerationResultRecordsRuntimeRateLimit(): void
+    public function testApprovedTextModerationResultPublishesMessageAndClearsPendingState(): void
     {
         RtTruthSourceRegistry::register(RtChatContext::connections, true, self::TEST_AGENT_ID);
         Hilos::$rt->connections->actions->clear();
@@ -98,12 +112,18 @@ final class ChatAgentModerationTest extends IntegrationTestCase
             $user = Hilos::$db->users->actions->register(bin2hex(random_bytes(16)));
             Hilos::$rt->connections->actions->register('live-ak', $user->id);
             Hilos::$rt->userStates->actions->ensure($user->id);
-            Hilos::$rt->userStates->actions->setTextModerationMessage($user->id, 'pending moderation');
+            Hilos::$rt->userStates->actions->startOutboundModeration(
+                $user->id,
+                'request-live',
+                'pending moderation',
+                [],
+            );
 
             Hilos::initSignalRouter(new ChatSignalRouter());
             $this->dispatchTextModerationSignalToMainPage(
                 new ChatAgent(),
                 new ModerationResultSignalData(
+                    requestId: 'request-live',
                     acceptKey: 'live-ak',
                     userId: $user->id,
                     message: 'approved message',
@@ -112,8 +132,8 @@ final class ChatAgentModerationTest extends IntegrationTestCase
                 ),
             );
 
-            $this->assertGreaterThan(0.0, Hilos::$rt->userStates[$user->id]?->lastMessageSentAt);
-            $this->assertFalse(Hilos::$rt->userStates->actions->canSendMessage($user->id));
+            $this->assertSame('', Hilos::$rt->userStates[$user->id]?->outboundModerationPhase);
+            $this->assertMessageEventExists('approved message');
         } finally {
             Hilos::$rt->connections->actions->clear();
             Hilos::$rt->userStates->actions->clear();
@@ -131,7 +151,7 @@ final class ChatAgentModerationTest extends IntegrationTestCase
         try {
             $user = Hilos::$db->users->actions->register(bin2hex(random_bytes(16)));
             Hilos::$rt->connections->actions->register('rate-ak', $user->id);
-            Hilos::$rt->userStates->actions->recordMessageSent($user->id);
+            Hilos::$rt->userStates->actions->recordOutboundSubmitted($user->id);
 
             $this->expectException(ValidationException::class);
 
@@ -163,6 +183,22 @@ final class ChatAgentModerationTest extends IntegrationTestCase
         foreach (Hilos::$db->events as $event) {
             $this->assertNotSame(ChatEventType::MESSAGE_SENT->value, $event->type);
         }
+    }
+
+    private function assertMessageEventExists(string $message): void
+    {
+        foreach (Hilos::$db->events as $event) {
+            $data = is_string($event->data) ? json_decode($event->data, true) : null;
+            if (
+                $event->type === ChatEventType::MESSAGE_SENT->value
+                && is_array($data)
+                && ($data['message'] ?? null) === $message
+            ) {
+                return;
+            }
+        }
+
+        $this->fail("Expected message event '{$message}' to exist.");
     }
 
     private function dispatchTextModerationSignalToMainPage(ChatAgent $agent, ModerationResultSignalData $result): void

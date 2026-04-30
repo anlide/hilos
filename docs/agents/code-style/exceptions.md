@@ -62,7 +62,9 @@ for an empty name.
 ## Agent signals
 
 For `onSignalAgent()` in agents or pages, route by signal name with a `switch`.
-Known signal names must validate the wrapped inner payload type:
+See `docs/agents/code-style/signal-handlers.md` for the general rule that also
+applies to `onSignalCron()` and other named signal handlers. Known signal names
+must validate the wrapped inner payload type:
 
 - Throw `InvalidAgentSignalPayloadException` when the payload object does not
   match the signal contract.

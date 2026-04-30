@@ -322,8 +322,6 @@ final class ChatSignalRouter extends SignalRouter
                 SignalTypeConstants::AGENT_SIGNAL => [
                     ChatSignalConstants::MODERATE_REQUEST => AgentType::MODERATOR,
                     ChatSignalConstants::MODERATION_RESULT => AgentType::CHAT,
-                    ChatSignalConstants::MODERATE_FILE_REQUEST => AgentType::MODERATOR,
-                    ChatSignalConstants::MODERATION_FILE_RESULT => AgentType::CHAT,
                     ChatSignalConstants::MODERATE_BOT_REQUEST => AgentType::MODERATOR,
                     ChatSignalConstants::MODERATION_BOT_RESULT => AgentType::CHAT,
                 ],
@@ -392,7 +390,6 @@ final class ChatSignalRouter extends SignalRouter
         $actions = [
             ChatSignalConstants::MESSAGE => AgentType::CHAT,
             ChatSignalConstants::FILE_UPLOAD_INIT => AgentType::CHAT,
-            ChatSignalConstants::FILE_MODERATION_DISMISS => AgentType::CHAT,
             ChatSignalConstants::RENAME => AgentType::CHAT,
             ChatSignalConstants::USER_UPDATE => AgentType::CHAT,
             ChatSignalConstants::HILOS_USER_UPDATE => AgentType::CHAT,

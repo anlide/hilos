@@ -10,6 +10,23 @@ export type FileUploadProgressPayload = {
   totalBytes: number
 }
 
+export type AttachmentDraftPayload = {
+  draftId: string
+  filename: string
+  mimeType: string
+  size: number
+  uploadedAt: number
+}
+
+export type OutboundModerationStatePayload = {
+  requestId: string
+  phase: 'checking' | 'rejected' | 'unavailable'
+  text: string
+  attachments: AttachmentDraftPayload[]
+  reason: string | null
+  updatedAt: number
+}
+
 export type UserViewModel = User & {
   presence: Presence
   onlineSessionCount: number
@@ -33,10 +50,10 @@ export const useChatStore = defineStore('chat', {
     botPresenceById: {} as Record<number, BotPresencePayload>,
     currentUserId: null as number | null,
     currentUsername: null as string | null,
-    currentUserModerationState: null as string | null,
+    outboundModerationState: null as OutboundModerationStatePayload | null,
     messageError: null as string | null,
-    /** Server-driven file moderation UI: moderating | rejected (main subscribe + WS) */
-    fileModerationState: null as Record<string, unknown> | null,
+    /** Uploaded files waiting for message submit. */
+    attachmentDrafts: [] as AttachmentDraftPayload[],
     /** Binary upload bytes progress (separate from moderation; main subscribe + WS) */
     fileUploadProgress: null as FileUploadProgressPayload | null,
   }),
@@ -74,7 +91,7 @@ export const useChatStore = defineStore('chat', {
       return this.userViewModels.find((user) => user.id === this.currentUserId) ?? null
     },
     isModeratingMessage(): boolean {
-      return this.currentUserModerationState !== null
+      return this.outboundModerationState?.phase === 'checking'
     },
   },
 
@@ -84,16 +101,33 @@ export const useChatStore = defineStore('chat', {
       this.currentUsername = username
     },
 
-    setModerationState(value: string | null) {
-      this.currentUserModerationState = value
+    setOutboundModerationState(value: OutboundModerationStatePayload | null) {
+      this.outboundModerationState = value
     },
 
     setMessageError(value: string | null) {
       this.messageError = value
     },
 
-    setFileModerationState(value: Record<string, unknown> | null) {
-      this.fileModerationState = value
+    setAttachmentDrafts(value: AttachmentDraftPayload[]) {
+      this.attachmentDrafts = value
+    },
+
+    addAttachmentDraft(value: AttachmentDraftPayload) {
+      const index = this.attachmentDrafts.findIndex((draft) => draft.draftId === value.draftId)
+      if (index >= 0) {
+        this.attachmentDrafts[index] = value
+        return
+      }
+      this.attachmentDrafts.push(value)
+    },
+
+    removeAttachmentDraft(draftId: string) {
+      this.attachmentDrafts = this.attachmentDrafts.filter((draft) => draft.draftId !== draftId)
+    },
+
+    clearAttachmentDrafts() {
+      this.attachmentDrafts = []
     },
 
     setFileUploadProgress(value: FileUploadProgressPayload | null) {

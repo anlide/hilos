@@ -5,20 +5,17 @@ declare(strict_types=1);
 namespace Demo\Chat\Pages\Main;
 
 use Demo\Chat\Agents\ChatAgent;
-use Demo\Chat\Constants\ChatEventType;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Core\Page\DTO\FileUploadInitActionDTO;
-use Demo\Chat\Core\Router\DTO\FileModerationStateUpdateSignalData;
+use Demo\Chat\Core\Router\DTO\AttachmentDraftsUpdateSignalData;
 use Demo\Chat\Core\Router\DTO\FileUploadAbortedSignalData;
 use Demo\Chat\Core\Router\DTO\FileUploadCompleteSignalData;
 use Demo\Chat\Core\Router\DTO\FileUploadInvalidSignalData;
 use Demo\Chat\Core\Router\DTO\FileUploadProgressUpdateSignalData;
 use Demo\Chat\Core\Router\DTO\FileUploadReadySignalData;
 use Demo\Chat\Core\Router\DTO\FileUploadRejectedSignalData;
-use Demo\Chat\Core\Router\DTO\ModerationFileRequestSignalData;
-use Demo\Chat\Core\Router\DTO\ModerationFileResultSignalData;
 use Demo\Chat\Hilos;
-use Demo\Chat\Runtime\View\Item\Connection as RuntimeConnection;
+use Demo\Chat\Runtime\View\Collection\AttachmentDrafts;
 use Demo\Chat\Utils\ChatSettingsHelper;
 use Hilos\Fs\Exception\FileDeleteException;
 use Hilos\Fs\FsException;
@@ -31,7 +28,7 @@ use Hilos\Utils\Helpers\FileSystemHelper;
 use Random\RandomException;
 
 /**
- * Main-page file upload init and file-moderation dismiss actions; uses {@see ChatAgent} for user-targeted signals.
+ * Main-page binary upload flow; completed uploads become attachment drafts.
  */
 trait UploadFileTrait
 {
@@ -80,6 +77,8 @@ trait UploadFileTrait
             return;
         }
 
+        $this->deleteExpiredAttachmentDrafts();
+
         $maxFile = ChatSettingsHelper::getAttachmentMaxFileBytes();
         $maxTotal = ChatSettingsHelper::getAttachmentMaxTotalBytes();
         if ($dto->size > $maxFile) {
@@ -94,7 +93,8 @@ trait UploadFileTrait
 
         $publishedTotal = Hilos::$db->events->sumPublishedAttachmentBytes();
         $reserved = Hilos::$rt->connections->sumActiveUploadReservedBytes();
-        if ($publishedTotal + $reserved + $dto->size > $maxTotal) {
+        $draftTotal = Hilos::$rt->attachmentDrafts->sumDraftBytes();
+        if ($publishedTotal + $reserved + $draftTotal + $dto->size > $maxTotal) {
             $agent->sendToUser(
                 ChatSignalConstants::FILE_UPLOAD_REJECTED,
                 $acceptKey,
@@ -153,31 +153,6 @@ trait UploadFileTrait
         );
         // Same moment as client seeds progress UI from READY (0 / size); avoids an immediate redundant progress_update.
         Hilos::$rt->connections[$acceptKey]->actions->noteUploadProgressSentAt(microtime(true));
-    }
-
-    /**
-     * Handle {@see ChatSignalConstants::FILE_MODERATION_DISMISS}: clear rejected-phase banner when the user dismisses it.
-     *
-     * No-op if the connection is unknown or moderation phase is not `rejected`.
-     *
-     * @param string $acceptKey WebSocket connection id
-     * @throws RtActionsCollectionNameNullException When the connections actions collection name is null
-     */
-    protected function handleFileModerationDismiss(string $acceptKey): void
-    {
-        $agent = $this->getChatAgent();
-        if (!isset(Hilos::$rt->connections[$acceptKey])) {
-            return;
-        }
-        if (Hilos::$rt->connections[$acceptKey]->fileModPhase !== 'rejected') {
-            return;
-        }
-        Hilos::$rt->connections[$acceptKey]->actions->clearFileModerationBanner();
-        $agent->sendToUser(
-            ChatSignalConstants::FILE_MODERATION_STATE_UPDATE,
-            $acceptKey,
-            new FileModerationStateUpdateSignalData(null),
-        );
     }
 
     /**
@@ -253,7 +228,7 @@ trait UploadFileTrait
     /**
      * Delete all attachment files on disk, reset file-related runtime fields on every connection, notify clients.
      *
-     * Used from admin/cron cleanup so all tabs drop moderation and progress UI.
+     * Used from admin/cron cleanup so all tabs drop draft and progress UI.
      */
     protected function deleteAllAttachmentFilesFromDisk(): void
     {
@@ -261,117 +236,23 @@ trait UploadFileTrait
 
         Hilos::$fs->published->deleteAll();
         Hilos::$fs->quarantine->deleteAll();
+        Hilos::$rt->attachmentDrafts->actions->clear(deleteFiles: false);
         Hilos::$rt->connections->actions->clearAllFileRuntimeOnAllConnections();
 
         foreach (Hilos::$rt->connections as $connection) {
             $acceptKey = $connection->acceptKey;
             $agent->sendToUser(
-                ChatSignalConstants::FILE_MODERATION_STATE_UPDATE,
-                $acceptKey,
-                new FileModerationStateUpdateSignalData(null),
-            );
-            $agent->sendToUser(
                 ChatSignalConstants::FILE_UPLOAD_PROGRESS_UPDATE,
                 $acceptKey,
                 new FileUploadProgressUpdateSignalData(null),
             );
+            $this->sendAttachmentDraftsUpdate($acceptKey);
         }
-    }
-
-    /**
-     * Apply {@see ChatSignalConstants::MODERATION_FILE_RESULT}: delete quarantine on reject, or move to published and
-     * append a {@see ChatEventType::FILE_SHARED} event.
-     *
-     * Updates moderation UI on the uploader's socket only while {@see ModerationFileResultSignalData::$acceptKey} is
-     * still registered and {@see ModerationFileResultSignalData::$userId} matches that connection.
-     *
-     * @throws HilosException On database, runtime, or signal failure
-     */
-    protected function handleModerationFileResult(ModerationFileResultSignalData $result): void
-    {
-        $agent = $this->getChatAgent();
-        $storedName = $result->quarantineBasename;
-        $quarantineFile = Hilos::$fs->quarantine[$storedName];
-        $acceptKey = $result->acceptKey;
-        $live = isset(Hilos::$rt->connections[$acceptKey])
-            && Hilos::$rt->connections[$acceptKey]->userId === $result->userId;
-
-        if (!$result->allow) {
-            $quarantineFile->unlink();
-            $reason = $result->reason !== '' ? $result->reason : 'unknown';
-            $this->logAgentError("File blocked by moderation (userId={$result->userId}; reason={$reason})");
-            if ($live) {
-                $connection = Hilos::$rt->connections[$acceptKey];
-                $connection->actions->markFileModerationRejected(
-                    $result->originalFilename,
-                    $result->size,
-                    $reason,
-                );
-                $agent->sendToUser(
-                    ChatSignalConstants::FILE_MODERATION_STATE_UPDATE,
-                    $acceptKey,
-                    new FileModerationStateUpdateSignalData($this->buildFileModerationStatePayload($connection)),
-                );
-            }
-
-            return;
-        }
-
-        if (!$quarantineFile->exists()) {
-            $this->logAgentError("Moderation allow but quarantine file missing: {$storedName}");
-            if ($live) {
-                Hilos::$rt->connections[$acceptKey]->actions->clearFileModerationBanner();
-                $agent->sendToUser(
-                    ChatSignalConstants::FILE_MODERATION_STATE_UPDATE,
-                    $acceptKey,
-                    new FileModerationStateUpdateSignalData(null),
-                );
-            }
-
-            return;
-        }
-
-        try {
-            $quarantineFile->move('published');
-        } catch (FsException $e) {
-            $this->logAgentError("Failed to move file to published: {$e->getMessage()}");
-            $quarantineFile->unlink();
-            if ($live) {
-                Hilos::$rt->connections[$acceptKey]->actions->clearFileModerationBanner();
-                $agent->sendToUser(
-                    ChatSignalConstants::FILE_MODERATION_STATE_UPDATE,
-                    $acceptKey,
-                    new FileModerationStateUpdateSignalData(null),
-                );
-            }
-
-            return;
-        }
-
-        if ($live) {
-            Hilos::$rt->connections[$acceptKey]->actions->clearFileModerationBanner();
-            $agent->sendToUser(
-                ChatSignalConstants::FILE_MODERATION_STATE_UPDATE,
-                $acceptKey,
-                new FileModerationStateUpdateSignalData(null),
-            );
-        }
-
-        $token = pathinfo($storedName, PATHINFO_FILENAME);
-        Hilos::$db->events->actions->addFile(
-            userId: $result->userId,
-            originalFilename: $result->originalFilename,
-            mimeType: $result->mimeType,
-            size: $result->size,
-            downloadToken: $token,
-            storedName: $storedName,
-        );
     }
 
     /**
      * After the last binary chunk: move tmp to quarantine, clear upload session and progress UI,
-     * enter `moderating` phase, send {@see ChatSignalConstants::FILE_UPLOAD_COMPLETE},
-     * and dispatch {@see ChatSignalConstants::MODERATE_FILE_REQUEST} to the moderator agent.
+     * create an attachment draft, and send {@see ChatSignalConstants::FILE_UPLOAD_COMPLETE}.
      *
      * @param string $acceptKey WebSocket connection id
      * @throws RtActionsCollectionNameNullException When the connections actions collection name is null
@@ -392,7 +273,7 @@ trait UploadFileTrait
         $declaredSize = $connection->fileSessionDeclaredSize;
         $originalFilename = $connection->fileSessionOriginalFilename;
         $mimeType = $connection->fileSessionMimeType;
-        $userId = $connection->userId;
+        $normalizedFilename = $connection->fileSessionNormalizedFilename;
 
         $storedName = $uploadId . FsFile::extensionForMime($mimeType);
         try {
@@ -411,12 +292,18 @@ trait UploadFileTrait
             new FileUploadProgressUpdateSignalData(null),
         );
 
-        $connection->actions->enterFileModerationPending($originalFilename, $declaredSize);
-        $agent->sendToUser(
-            ChatSignalConstants::FILE_MODERATION_STATE_UPDATE,
-            $acceptKey,
-            new FileModerationStateUpdateSignalData($this->buildFileModerationStatePayload($connection)),
+        $draft = Hilos::$rt->attachmentDrafts->actions->create(
+            draftId: $uploadId,
+            acceptKey: $acceptKey,
+            userId: $connection->userId,
+            quarantineBasename: $storedName,
+            originalFilename: $originalFilename,
+            mimeType: $mimeType,
+            size: $declaredSize,
+            normalizedFilename: $normalizedFilename,
+            uploadedAt: time(),
         );
+        $draftPayload = AttachmentDrafts::toFrontendRow($draft);
 
         $agent->sendToUser(
             ChatSignalConstants::FILE_UPLOAD_COMPLETE,
@@ -424,26 +311,10 @@ trait UploadFileTrait
             new FileUploadCompleteSignalData(
                 uploadId: $uploadId,
                 filename: $originalFilename,
+                attachmentDraft: $draftPayload,
             ),
         );
-
-        $agent->sendToAgent(
-            ChatSignalConstants::MODERATE_FILE_REQUEST,
-            new ModerationFileRequestSignalData(
-                acceptKey: $acceptKey,
-                userId: $userId,
-                quarantineBasename: $storedName,
-                originalFilename: $originalFilename,
-                mimeType: $mimeType,
-                size: $declaredSize,
-                syntheticMessage: sprintf(
-                    'User uploads a file for chat: name=%s, mime=%s, size=%d bytes. Approve only if appropriate for a public chat.',
-                    $originalFilename,
-                    $mimeType,
-                    $declaredSize,
-                ),
-            ),
-        );
+        $this->sendAttachmentDraftsUpdate($acceptKey);
     }
 
     /**
@@ -471,7 +342,7 @@ trait UploadFileTrait
      * (`uploadedBytes` >= `totalBytes` > 0).
      *
      * Throttle clock is primed when {@see ChatSignalConstants::FILE_UPLOAD_READY} is sent (same baseline the client
-     * uses for 0 / total). Reads progress from {@see RuntimeConnection::$fileProgressFilename} and related fields.
+     * uses for 0 / total). Reads progress from the connection runtime fields.
      *
      * @param string $acceptKey WebSocket connection id
      * @param bool $force When true, send immediately (e.g. last chunk), bypassing the min-interval throttle
@@ -517,28 +388,33 @@ trait UploadFileTrait
     }
 
     /**
-     * Build the frontend file moderation payload from the current connection state.
-     *
-     * @return ?array{phase: string, filename: string, uploadedBytes: int, totalBytes: int, reason: ?string, updatedAt: int}
+     * Delete expired drafts and notify live connections whose draft list changed.
      */
-    private function buildFileModerationStatePayload(RuntimeConnection $connection): ?array
+    protected function deleteExpiredAttachmentDrafts(): void
     {
-        if ($connection->fileModPhase === null) {
-            return null;
+        foreach (Hilos::$rt->attachmentDrafts->actions->deleteExpired(time()) as $acceptKey) {
+            if (isset(Hilos::$rt->connections[$acceptKey])) {
+                $this->sendAttachmentDraftsUpdate($acceptKey);
+            }
         }
-
-        return [
-            'phase' => $connection->fileModPhase,
-            'filename' => $connection->fileModFilename,
-            'uploadedBytes' => $connection->fileModUploadedBytes,
-            'totalBytes' => $connection->fileModTotalBytes,
-            'reason' => $connection->fileModReason !== '' ? $connection->fileModReason : null,
-            'updatedAt' => $connection->fileModUpdatedAt,
-        ];
     }
 
     /**
-     * Whether another in-flight upload or an existing {@see ChatEventType::FILE_SHARED} event already uses this normalized name.
+     * Send the full draft list for a connection.
+     */
+    protected function sendAttachmentDraftsUpdate(string $acceptKey): void
+    {
+        $this->getChatAgent()->sendToUser(
+            ChatSignalConstants::ATTACHMENT_DRAFTS_UPDATE,
+            $acceptKey,
+            new AttachmentDraftsUpdateSignalData(
+                Hilos::$rt->attachmentDrafts->toFrontendListForAcceptKey($acceptKey),
+            ),
+        );
+    }
+
+    /**
+     * Whether another in-flight upload, draft, or published attachment already uses this normalized name.
      *
      * @param string $normalized Output of {@see FileSystemHelper::normalizeBasename()}
      * @return bool True if the name collides with an active session or published attachment metadata
@@ -546,6 +422,7 @@ trait UploadFileTrait
     private function isFilenameInUse(string $normalized): bool
     {
         return Hilos::$rt->connections->hasActiveUploadWithNormalizedFilename($normalized)
+            || Hilos::$rt->attachmentDrafts->hasDraftWithNormalizedFilename($normalized)
             || Hilos::$db->events->hasPublishedFileWithNormalizedFilename($normalized);
     }
 }

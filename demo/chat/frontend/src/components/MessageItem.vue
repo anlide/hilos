@@ -42,33 +42,7 @@
         </span>
         <small class="text-muted">{{ formatTime(event.timestamp) }}</small>
       </div>
-      <div v-if="props.event.type === 'file_shared'" :class="isOwnMessage ? 'mt-1' : 'ms-3 mt-1'">
-        <template v-if="isImageAttachment">
-          <a :href="attachmentDownloadUrl" target="_blank" rel="noopener noreferrer" class="d-inline-block">
-            <img
-              :src="attachmentDownloadUrl"
-              :alt="attachmentFilename"
-              :class="[
-                'img-fluid rounded border border-secondary-subtle d-block',
-                attachmentPreviewWideLayout ? 'chat-attachment-preview--lg' : 'chat-attachment-preview--sm',
-              ]"
-            />
-          </a>
-        </template>
-        <template v-else>
-          <a
-            :href="attachmentDownloadUrl"
-            target="_blank"
-            rel="noopener noreferrer"
-            class="d-inline-flex align-items-center gap-2 text-decoration-none"
-            :class="isOwnMessage ? 'link-light' : 'link-primary'"
-          >
-            <span class="fs-4" aria-hidden="true">{{ fileTypeIcon }}</span>
-            <span class="text-break">{{ attachmentFilename }}</span>
-          </a>
-        </template>
-      </div>
-      <div v-else-if="getMessageText()" :class="isOwnMessage ? 'mt-1' : 'ms-3 mt-1'">
+      <div v-if="getMessageText()" :class="isOwnMessage ? 'mt-1' : 'ms-3 mt-1'">
         <template v-for="(segment, i) in getLinkifiedSegments()" :key="i">
           <a
             v-if="segment.type === 'link'"
@@ -80,6 +54,38 @@
           >{{ segment.url }}</a>
           <template v-else>{{ segment.text }}</template>
         </template>
+      </div>
+      <div
+        v-if="attachments.length > 0"
+        class="d-flex flex-column gap-2"
+        :class="isOwnMessage ? 'mt-2' : 'ms-3 mt-2'"
+      >
+        <div v-for="attachment in attachments" :key="attachment.downloadToken">
+          <template v-if="isImageAttachment(attachment)">
+            <a :href="attachmentDownloadUrl(attachment)" target="_blank" rel="noopener noreferrer" class="d-inline-block">
+              <img
+                :src="attachmentDownloadUrl(attachment)"
+                :alt="attachment.originalFilename"
+                :class="[
+                  'img-fluid rounded border border-secondary-subtle d-block',
+                  attachmentPreviewWideLayout ? 'chat-attachment-preview--lg' : 'chat-attachment-preview--sm',
+                ]"
+              />
+            </a>
+          </template>
+          <template v-else>
+            <a
+              :href="attachmentDownloadUrl(attachment)"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="d-inline-flex align-items-center gap-2 text-decoration-none"
+              :class="isOwnMessage ? 'link-light' : 'link-primary'"
+            >
+              <span class="fs-4" aria-hidden="true">{{ fileTypeIcon(attachment) }}</span>
+              <span class="text-break">{{ attachment.originalFilename }}</span>
+            </a>
+          </template>
+        </div>
       </div>
       <div v-if="isOwnMessage" class="text-end">
         <small class="opacity-75">{{ formatTime(event.timestamp) }}</small>
@@ -100,6 +106,12 @@ interface Props {
   event: Event
 }
 
+type AttachmentView = {
+  originalFilename: string
+  mimeType: string
+  downloadToken: string
+}
+
 const props = defineProps<Props>()
 const chatStore = useChatStore()
 
@@ -115,39 +127,55 @@ const isOwnMessage = computed(() => {
   return props.event.type === 'message_sent' || props.event.type === 'file_shared'
 })
 
-const attachmentToken = computed(() => {
-  const t = props.event.data.downloadToken
-  return typeof t === 'string' ? t : ''
-})
-
-const attachmentFilename = computed(() => {
-  const n = props.event.data.originalFilename ?? props.event.data.filename
-  return typeof n === 'string' ? n : 'file'
-})
-
-const attachmentMime = computed(() => {
-  const m = props.event.data.mimeType
-  return typeof m === 'string' ? m : ''
-})
-
-const attachmentDownloadUrl = computed(() => {
-  const tok = attachmentToken.value
-  if (!tok) {
-    return '#'
+const parseAttachment = (raw: unknown): AttachmentView | null => {
+  if (raw === null || typeof raw !== 'object') {
+    return null
   }
+  const data = raw as Record<string, unknown>
+  const token = data.downloadToken
+  if (typeof token !== 'string' || token === '') {
+    return null
+  }
+  const name = data.originalFilename ?? data.filename
+  const mime = data.mimeType
+  return {
+    originalFilename: typeof name === 'string' && name !== '' ? name : 'file',
+    mimeType: typeof mime === 'string' ? mime : '',
+    downloadToken: token,
+  }
+}
+
+const attachments = computed((): AttachmentView[] => {
+  if (props.event.type === 'file_shared') {
+    const attachment = parseAttachment(props.event.data)
+    return attachment ? [attachment] : []
+  }
+
+  if (props.event.type !== 'message_sent' || !Array.isArray(props.event.data.attachments)) {
+    return []
+  }
+
+  return props.event.data.attachments
+    .map(parseAttachment)
+    .filter((attachment): attachment is AttachmentView => attachment !== null)
+})
+
+const attachmentDownloadUrl = (attachment: AttachmentView): string => {
   const session = localStorageService.getSessionWithInit()
   const base = `${config.httpStatusProtocol}://${config.httpStatusHost}:${config.httpStatusPort}`
   const q = new URLSearchParams({
-    token: tok,
+    token: attachment.downloadToken,
     'Hilos-Session-Token': session,
   })
   return `${base}/chat/attachment?${q.toString()}`
-})
+}
 
-const isImageAttachment = computed(() => attachmentMime.value.startsWith('image/'))
+const isImageAttachment = (attachment: AttachmentView): boolean => {
+  return attachment.mimeType.startsWith('image/')
+}
 
 /**
- * Bootstrap sm (576px) — toggles preview size classes below. Theme (light/dark) uses border utilities on the img.
+ * Bootstrap sm (576px) toggles preview size classes below. Theme (light/dark) uses border utilities on the img.
  */
 const attachmentPreviewWideLayout = ref(false)
 
@@ -163,8 +191,8 @@ onMounted(() => {
   })
 })
 
-const fileTypeIcon = computed(() => {
-  const m = attachmentMime.value
+const fileTypeIcon = (attachment: AttachmentView): string => {
+  const m = attachment.mimeType
   if (m === 'application/pdf') {
     return '\u{1F4C4}'
   }
@@ -172,14 +200,14 @@ const fileTypeIcon = computed(() => {
     return '\u{1F4C3}'
   }
   return '\u{1F4CE}'
-})
+}
 
 const formatTime = (timestamp: string): string => {
   const date = new Date(timestamp)
-  return date.toLocaleTimeString('en-US', { 
-    hour: '2-digit', 
+  return date.toLocaleTimeString('en-US', {
+    hour: '2-digit',
     minute: '2-digit',
-    second: '2-digit'
+    second: '2-digit',
   })
 }
 
@@ -266,12 +294,12 @@ const getServiceTitle = (): string => {
 }
 
 const getMessageText = (): string => {
-  // For regular messages, show the message content
+  // For regular messages, show the message content.
   if (props.event.type === 'message_sent') {
     return (props.event.data.message as string) || ''
   }
 
-  // For service messages, only show explicit message payloads
+  // For service messages, only show explicit message payloads.
   if (props.event.data.message) {
     return props.event.data.message as string
   }
@@ -296,7 +324,7 @@ const getLinkifiedSegments = (): MessageSegment[] => {
   for (let i = 0; i < parts.length; i++) {
     const part = parts[i]
     if (!part) continue
-    // Odd indices are URL matches (regex capture groups)
+    // Odd indices are URL matches (regex capture groups).
     if (i % 2 === 1 && part.startsWith('http')) {
       segments.push({ type: 'link', url: part })
     } else {

@@ -33,8 +33,13 @@ import { sendAction } from '@/services/websocketActions'
 
 const websocket = useWebSocket()
 
-const handleSendMessage = (message: string) => {
-  sendAction(websocket, 'message', { content: message })
+type SendMessagePayload = {
+  content: string
+  attachmentDraftIds: string[]
+}
+
+const handleSendMessage = (payload: SendMessagePayload) => {
+  sendAction(websocket, 'message', payload)
 }
 </script>
 

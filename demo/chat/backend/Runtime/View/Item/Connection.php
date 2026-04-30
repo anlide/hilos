@@ -34,12 +34,6 @@ use Hilos\Runtime\View\Item\RtItem;
  * @property-read string $fileSessionMimeType MIME type for current session
  * @property-read string $fileSessionClientUploadId Client upload correlation id
  * @property-read string $fileSessionNormalizedFilename Normalized basename for dedup
- * @property-read ?string $fileModPhase File moderation UI phase or null
- * @property-read string $fileModFilename Filename in file moderation UI
- * @property-read int $fileModUploadedBytes Bytes in moderation UI
- * @property-read int $fileModTotalBytes Total bytes in moderation UI
- * @property-read string $fileModReason Rejection reason in moderation UI
- * @property-read int $fileModUpdatedAt Last moderation UI update unix time
  * @property-read ?string $fileProgressFilename Progress bar filename or null
  * @property-read int $fileProgressUploadedBytes Progress uploaded bytes
  * @property-read int $fileProgressTotalBytes Progress total bytes
@@ -80,12 +74,6 @@ final class Connection extends RtItem
             StateConnection::fileSessionMimeType => $state->fileSessionMimeType,
             StateConnection::fileSessionClientUploadId => $state->fileSessionClientUploadId,
             StateConnection::fileSessionNormalizedFilename => $state->fileSessionNormalizedFilename,
-            StateConnection::fileModPhase => $state->fileModPhase,
-            StateConnection::fileModFilename => $state->fileModFilename,
-            StateConnection::fileModUploadedBytes => $state->fileModUploadedBytes,
-            StateConnection::fileModTotalBytes => $state->fileModTotalBytes,
-            StateConnection::fileModReason => $state->fileModReason,
-            StateConnection::fileModUpdatedAt => $state->fileModUpdatedAt,
             StateConnection::fileProgressFilename => $state->fileProgressFilename,
             StateConnection::fileProgressUploadedBytes => $state->fileProgressUploadedBytes,
             StateConnection::fileProgressTotalBytes => $state->fileProgressTotalBytes,

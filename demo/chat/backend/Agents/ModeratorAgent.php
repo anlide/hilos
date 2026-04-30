@@ -8,8 +8,6 @@ use Demo\Chat\Constants\AgentType;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Core\Router\DTO\ModerationBotRequestSignalData;
 use Demo\Chat\Core\Router\DTO\ModerationBotResultSignalData;
-use Demo\Chat\Core\Router\DTO\ModerationFileRequestSignalData;
-use Demo\Chat\Core\Router\DTO\ModerationFileResultSignalData;
 use Demo\Chat\Core\Router\DTO\ModerationRequestSignalData;
 use Demo\Chat\Core\Router\DTO\ModerationResultSignalData;
 use Demo\Chat\Database\DbChatContext;
@@ -29,7 +27,7 @@ use Hilos\LLM\DTO\Message;
 use Hilos\Utils\Helpers\JsonHelper;
 
 /**
- * Regular agent that queues user, bot, and file moderation requests and returns decisions.
+ * Regular agent that queues user and bot moderation requests and returns decisions.
  *
  * Uses async LLM moderation unless the matching moderation category is disabled.
  */
@@ -41,16 +39,16 @@ class ModeratorAgent extends AbstractAgent
 
     /**
      * @var list<array{
-     *     type: 'user'|'file'|'bot',
-     *     payload: ModerationRequestSignalData|ModerationFileRequestSignalData|ModerationBotRequestSignalData
+     *     type: 'user'|'bot',
+     *     payload: ModerationRequestSignalData|ModerationBotRequestSignalData
      * }>
      */
     private array $pendingQueue = [];
 
     /**
      * @var ?array{
-     *     type: 'user'|'file'|'bot',
-     *     payload: ModerationRequestSignalData|ModerationFileRequestSignalData|ModerationBotRequestSignalData
+     *     type: 'user'|'bot',
+     *     payload: ModerationRequestSignalData|ModerationBotRequestSignalData
      * }
      */
     private ?array $currentPending = null;
@@ -117,55 +115,13 @@ class ModeratorAgent extends AbstractAgent
 
         $authorContext = match ($pending['type']) {
             'user' => 'userId=' . ($pending['payload']->userId ?? '?'),
-            'file' => 'file userId=' . ($pending['payload']->userId ?? '?'),
             default => 'botId=' . ($pending['payload']->botId ?? '?'),
         };
         $this->logAgentInfo(
             "Moderation request finished [{$authorContext}; decision=" . ($allow ? 'allow' : 'block') . "; reason={$reason}]"
         );
 
-        if ($pending['type'] === 'user') {
-            /** @var ModerationRequestSignalData $payload */
-            $payload = $pending['payload'];
-            $this->sendToAgent(
-                ChatSignalConstants::MODERATION_RESULT,
-                new ModerationResultSignalData(
-                    acceptKey: $payload->acceptKey,
-                    userId: $payload->userId,
-                    message: $payload->message,
-                    allow: $allow,
-                    reason: $reason,
-                ),
-            );
-        } elseif ($pending['type'] === 'file') {
-            /** @var ModerationFileRequestSignalData $payload */
-            $payload = $pending['payload'];
-            $this->sendToAgent(
-                ChatSignalConstants::MODERATION_FILE_RESULT,
-                new ModerationFileResultSignalData(
-                    acceptKey: $payload->acceptKey,
-                    userId: $payload->userId,
-                    allow: $allow,
-                    reason: $reason,
-                    quarantineBasename: $payload->quarantineBasename,
-                    originalFilename: $payload->originalFilename,
-                    mimeType: $payload->mimeType,
-                    size: $payload->size,
-                ),
-            );
-        } else {
-            /** @var ModerationBotRequestSignalData $payload */
-            $payload = $pending['payload'];
-            $this->sendToAgent(
-                ChatSignalConstants::MODERATION_BOT_RESULT,
-                new ModerationBotResultSignalData(
-                    botId: $payload->botId,
-                    message: $payload->message,
-                    allow: $allow,
-                    reason: $reason,
-                ),
-            );
-        }
+        $this->sendModerationOutcome($pending, $allow, $reason);
 
         $this->startNextPending();
     }
@@ -197,59 +153,9 @@ class ModeratorAgent extends AbstractAgent
                 }
                 $this->handleModerateBotRequest($payload);
                 return;
-            case ChatSignalConstants::MODERATE_FILE_REQUEST:
-                if (!$payload instanceof ModerationFileRequestSignalData) {
-                    throw new InvalidAgentSignalPayloadException($name, ModerationFileRequestSignalData::class, $payload);
-                }
-                $this->handleModerateFileRequest($payload);
-                return;
             default:
                 throw new AgentUnknownSignalException($name);
         }
-    }
-
-    /**
-     * Queues or bypasses a file moderation request.
-     *
-     * @param ModerationFileRequestSignalData $payload File moderation request
-     * @throws HilosException When moderation rule lookup fails
-     */
-    private function handleModerateFileRequest(ModerationFileRequestSignalData $payload): void
-    {
-        if (!ChatSettingsHelper::getModerationUsers()) {
-            $this->bypassModerationFile($payload);
-            return;
-        }
-
-        $this->logAgentInfo(
-            "Moderation file request queued [userId={$payload->userId}; file={$payload->originalFilename}]"
-        );
-
-        $this->pendingQueue[] = ['type' => 'file', 'payload' => $payload];
-        $this->startNextPending();
-    }
-
-    /**
-     * Sends an allow result without LLM when file moderation is disabled.
-     *
-     * @param ModerationFileRequestSignalData $payload File moderation request
-     */
-    private function bypassModerationFile(ModerationFileRequestSignalData $payload): void
-    {
-        $this->logAgentInfo("File moderation bypassed [userId={$payload->userId}] (disabled)");
-        $this->sendToAgent(
-            ChatSignalConstants::MODERATION_FILE_RESULT,
-            new ModerationFileResultSignalData(
-                acceptKey: $payload->acceptKey,
-                userId: $payload->userId,
-                allow: true,
-                reason: 'disabled',
-                quarantineBasename: $payload->quarantineBasename,
-                originalFilename: $payload->originalFilename,
-                mimeType: $payload->mimeType,
-                size: $payload->size,
-            ),
-        );
     }
 
     /**
@@ -307,6 +213,7 @@ class ModeratorAgent extends AbstractAgent
         $this->sendToAgent(
             ChatSignalConstants::MODERATION_RESULT,
             new ModerationResultSignalData(
+                requestId: $payload->requestId,
                 acceptKey: $payload->acceptKey,
                 userId: $payload->userId,
                 message: $payload->message,
@@ -338,8 +245,6 @@ class ModeratorAgent extends AbstractAgent
     /**
      * Starts the next queued moderation request if the LLM client is idle.
      *
-     * Requeues the item when the LLM client rejects the start request.
-     *
      * @throws HilosException When moderation rule lookup fails
      */
     private function startNextPending(): void
@@ -352,10 +257,11 @@ class ModeratorAgent extends AbstractAgent
         $this->currentPending = $item;
 
         $payload = $item['payload'];
-        $message = $item['type'] === 'file'
-            ? $payload->syntheticMessage
-            : $payload->message;
-        $userId = $item['type'] === 'user' || $item['type'] === 'file' ? $payload->userId : null;
+        $message = match ($item['type']) {
+            'user' => $payload->contentForModeration !== '' ? $payload->contentForModeration : $payload->message,
+            default => $payload->message,
+        };
+        $userId = $item['type'] === 'user' ? $payload->userId : null;
         $botId = $item['type'] === 'bot' ? $payload->botId : null;
 
         $messages = $this->buildModerationMessages($message, $userId, $botId);
@@ -369,8 +275,52 @@ class ModeratorAgent extends AbstractAgent
 
         if (!$this->chatClient->startGenerate($messages, $options)) {
             $this->currentPending = null;
-            array_unshift($this->pendingQueue, $item);
+            $this->sendModerationOutcome($item, false, 'service_unavailable');
+            $this->startNextPending();
         }
+    }
+
+    /**
+     * Sends the typed moderation result for a completed or unavailable queued item.
+     *
+     * @param array{
+     *     type: 'user'|'bot',
+     *     payload: ModerationRequestSignalData|ModerationBotRequestSignalData
+     * } $pending Queue item
+     * @param bool $allow Whether moderation approved the item
+     * @param string $reason Moderation reason
+     */
+    private function sendModerationOutcome(array $pending, bool $allow, string $reason): void
+    {
+        if ($pending['type'] === 'user') {
+            /** @var ModerationRequestSignalData $payload */
+            $payload = $pending['payload'];
+            $this->sendToAgent(
+                ChatSignalConstants::MODERATION_RESULT,
+                new ModerationResultSignalData(
+                    requestId: $payload->requestId,
+                    acceptKey: $payload->acceptKey,
+                    userId: $payload->userId,
+                    message: $payload->message,
+                    allow: $allow,
+                    reason: $reason,
+                ),
+            );
+
+            return;
+        }
+
+        /** @var ModerationBotRequestSignalData $payload */
+        $payload = $pending['payload'];
+        $this->sendToAgent(
+            ChatSignalConstants::MODERATION_BOT_RESULT,
+            new ModerationBotResultSignalData(
+                botId: $payload->botId,
+                message: $payload->message,
+                allow: $allow,
+                reason: $reason,
+            ),
+        );
     }
 
     /**
@@ -403,7 +353,7 @@ class ModeratorAgent extends AbstractAgent
      * Builds moderation prompt messages from rules, author context, and message text.
      *
      * @param string $message Message text to moderate
-     * @param ?int $userId User id when moderating a user or file request
+     * @param ?int $userId User id when moderating a user request
      * @param ?int $botId Bot id when moderating a bot message
      * @return list<Message> System and user messages for LLM
      * @throws HilosException When moderation rule lookup fails

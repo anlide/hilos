@@ -42,6 +42,10 @@ onSignalCron()              ← cron tick
 onSignalSystem()            ← system signal
 ```
 
+Named signal handlers such as `onSignalAgent()` and `onSignalCron()` route by
+`switch ($name)` with explicit cases; see
+`docs/agents/code-style/signal-handlers.md`.
+
 ## Sending signals from agent
 
 ```php

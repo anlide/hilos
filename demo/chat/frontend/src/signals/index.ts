@@ -1,12 +1,12 @@
 export { handshakeResponse, type HandshakePayload } from './handshake'
 export {
   subscriptionPageMain,
-  moderationStateUpdate,
-  fileModerationStateUpdate,
+  outboundModerationStateUpdate,
+  attachmentDraftsUpdate,
   fileUploadProgressUpdate,
   type ChatSessionFields,
-  type ModerationStateUpdatePayload,
-  type FileModerationStateUpdatePayload,
+  type OutboundModerationStateUpdatePayload,
+  type AttachmentDraftsUpdatePayload,
   type FileUploadProgressUpdatePayload,
 } from './chatSession'
 export {

@@ -20,7 +20,7 @@ use LogicException;
 /**
  * Write API for the active WebSocket connections runtime collection.
  *
- * Per-socket file upload and moderation UI use {@see RuntimeConnection::$actions}.
+ * Per-socket file upload UI uses {@see RuntimeConnection::$actions}.
  *
  * @extends RtActions<RuntimeConnection, Connections, StateConnections>
  * @property-read StateConnections $stateCollection
@@ -97,7 +97,7 @@ final class ConnectionsActions extends RtActions
     }
 
     /**
-     * Clear file session, moderation UI, and upload progress on each connection (e.g. after disk wipe).
+     * Clear file session and upload progress on each connection (e.g. after disk wipe).
      *
      * @throws RtActionsCollectionNameNullException
      * @throws RtTruthSourceWriteNotAllowedException

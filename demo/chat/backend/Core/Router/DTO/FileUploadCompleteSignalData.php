@@ -9,9 +9,13 @@ use Hilos\Core\Router\SignalDataInterface;
 
 final class FileUploadCompleteSignalData extends BaseDTO implements SignalDataInterface
 {
+    /**
+     * @param array<string, mixed> $attachmentDraft Draft row created from uploaded file
+     */
     public function __construct(
         public readonly string $uploadId,
         public readonly string $filename,
+        public readonly array $attachmentDraft,
     ) {
     }
 
@@ -20,14 +24,18 @@ final class FileUploadCompleteSignalData extends BaseDTO implements SignalDataIn
         return [
             'uploadId' => $this->uploadId,
             'filename' => $this->filename,
+            'attachmentDraft' => $this->attachmentDraft,
         ];
     }
 
     public static function fromArray(array $data): static
     {
+        $attachmentDraft = $data['attachmentDraft'] ?? [];
+
         return new static(
             uploadId: (string)($data['uploadId'] ?? ''),
             filename: (string)($data['filename'] ?? ''),
+            attachmentDraft: is_array($attachmentDraft) ? $attachmentDraft : [],
         );
     }
 }

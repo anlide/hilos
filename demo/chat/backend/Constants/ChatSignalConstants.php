@@ -25,8 +25,8 @@ final class ChatSignalConstants
     /** @var string Client → server: start binary file upload (metadata only) */
     public const string FILE_UPLOAD_INIT = 'file_upload_init';
 
-    /** @var string Client → server: dismiss file moderation rejected UI */
-    public const string FILE_MODERATION_DISMISS = 'file_moderation_dismiss';
+    /** @var string Client → server: delete one completed attachment draft */
+    public const string ATTACHMENT_DRAFT_DELETE = 'attachment_draft_delete';
 
     /** @var string Server → client: upload session ready, client may send binary */
     public const string FILE_UPLOAD_READY = 'file_upload_ready';
@@ -37,23 +37,20 @@ final class ChatSignalConstants
     /** @var string Server → client: previous upload cancelled (new init while in progress) */
     public const string FILE_UPLOAD_ABORTED = 'file_upload_aborted';
 
-    /** @var string Server → client: all bytes received, moderation started */
+    /** @var string Server → client: all bytes received, attachment draft created */
     public const string FILE_UPLOAD_COMPLETE = 'file_upload_complete';
 
     /** @var string Server → client: binary protocol error, session cleared */
     public const string FILE_UPLOAD_INVALID = 'file_upload_invalid';
 
-    /** @var string Server → client: file attachment UI state (private to user); moderating/rejected only */
-    public const string FILE_MODERATION_STATE_UPDATE = 'file_moderation_state_update';
-
     /** @var string Server → client: binary upload progress (throttled); separate from moderation */
     public const string FILE_UPLOAD_PROGRESS_UPDATE = 'file_upload_progress_update';
 
-    /** @var string ChatAgent → ModeratorAgent: moderate uploaded file (synthetic description) */
-    public const string MODERATE_FILE_REQUEST = 'moderate_file_request';
+    /** @var string Server → client: full list of uploaded attachment drafts for this connection */
+    public const string ATTACHMENT_DRAFTS_UPDATE = 'attachment_drafts_update';
 
-    /** @var string ModeratorAgent → ChatAgent: file moderation result */
-    public const string MODERATION_FILE_RESULT = 'moderation_file_result';
+    /** @var string Server → client: current outbound moderation state for text + attachments */
+    public const string OUTBOUND_MODERATION_STATE_UPDATE = 'outbound_moderation_state_update';
 
     /** @var string Rename signal name */
     public const string RENAME = 'rename';
@@ -102,12 +99,6 @@ final class ChatSignalConstants
 
     /** @var string Subscription page Hilos settings signal name */
     public const string SUBSCRIPTION_PAGE_HILOS_SETTINGS = 'subscription_page_hilos_settings';
-
-    /** @var string Moderation state signal name */
-    public const string MODERATION_STATE = 'moderation_state';
-
-    /** @var string Server → client: private update of current user's moderation state (sent to user's connections only) */
-    public const string MODERATION_STATE_UPDATE = 'moderation_state_update';
 
     // ── Agent-to-agent signals ───────────────────────────────────────────
     /** @var string ChatAgent → ModeratorAgent: request message moderation */

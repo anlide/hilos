@@ -30,7 +30,7 @@ final class ChatDaemonManager extends DaemonManager
      * Initializes chat daemon manager.
      *
      * Sets shutdown timeout to 10 seconds.
-     * Registers cron rules for chat cleanup (every 30 minutes).
+     * Registers cron rules for chat cleanup and expired attachment drafts.
      */
     public function __construct()
     {
@@ -41,6 +41,7 @@ final class ChatDaemonManager extends DaemonManager
         // Register cron rule for chat history cleanup (every 30 minutes)
         // Cron expression: "*/30 * * * *" means every 30 minutes
         $this->addCronRule(ChatCronConstants::CLEANUP_HISTORY, '*/30 * * * *');
+        $this->addCronRule(ChatCronConstants::CLEANUP_ATTACHMENT_DRAFTS, '*/15 * * * *');
     }
 
     /**

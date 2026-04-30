@@ -17,7 +17,7 @@ use Hilos\Core\Table\DTO\TableSnapshotDTO;
  * Simple pass-through of entities to frontend.
  * Optional frontend payload carries explicit frontend state collection changes.
  * Optional tables payload for full snapshot responses (e.g. admin page with users table).
- * Optional user session fields for page subscribe (moderation text, file moderation UI, upload progress)
+ * Optional user session fields for page subscribe (outbound moderation, attachment drafts, upload progress)
  * when {@see self::$includeUserSessionFields} is true.
  */
 final class ChatEventSignalDTO extends SignalData implements SignalDataInterface
@@ -27,8 +27,8 @@ final class ChatEventSignalDTO extends SignalData implements SignalDataInterface
      *
      * @param EntitiesChangesDTO $entities Entity changes
      * @param array<string, TableSnapshotDTO> $tables Table key → full snapshot DTO
-     * @param ?string $moderationState Pending text moderation message or null
-     * @param ?array<string, mixed> $fileModerationState File moderation UI state or null
+     * @param ?array<string, mixed> $outboundModerationState Current outbound moderation UI state or null
+     * @param list<array<string, mixed>> $attachmentDrafts Uploaded attachment drafts for this connection
      * @param ?array<string, mixed> $fileUploadProgress In-flight binary upload progress or null
      * @param bool $includeUserSessionFields When true, merge session keys into the payload
      * @param ?FrontendChangesDTO $frontend Explicit frontend state collection changes
@@ -36,8 +36,8 @@ final class ChatEventSignalDTO extends SignalData implements SignalDataInterface
     public function __construct(
         public readonly EntitiesChangesDTO $entities,
         public readonly array $tables = [],
-        public readonly ?string $moderationState = null,
-        public readonly ?array $fileModerationState = null,
+        public readonly ?array $outboundModerationState = null,
+        public readonly array $attachmentDrafts = [],
         public readonly ?array $fileUploadProgress = null,
         public readonly bool $includeUserSessionFields = false,
         public readonly ?FrontendChangesDTO $frontend = null,
@@ -64,12 +64,8 @@ final class ChatEventSignalDTO extends SignalData implements SignalDataInterface
             $data['tables'] = $tablesArr;
         }
         if ($this->includeUserSessionFields) {
-            if ($this->moderationState !== null) {
-                $data['moderationState'] = $this->moderationState;
-            } else {
-                $data['moderationState'] = null;
-            }
-            $data['fileModerationState'] = $this->fileModerationState;
+            $data['outboundModerationState'] = $this->outboundModerationState;
+            $data['attachmentDrafts'] = $this->attachmentDrafts;
             $data['fileUploadProgress'] = $this->fileUploadProgress;
         }
         return $data;

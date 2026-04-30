@@ -1,58 +1,39 @@
-# File Moderation Flow
+# Attachment Moderation Flow
 
-After all bytes received, the file goes through AI moderation before being published.
+There is no separate file moderation signal path anymore. Uploaded files become per-connection attachment drafts, and moderation happens once for the outbound message that contains text and/or drafts.
 
 ## Flow
 
 ```
-UploadFileTrait sends FILE_UPLOAD_COMPLETE
-        │
-Generate synthetic description of file (filename, MIME, size)
-        │
-Update Connection: fileModPhase = 'moderating'
-Send FILE_MODERATION_STATE_UPDATE to user (shows "moderating" UI)
-        │
-sendToAgent(MODERATE_FILE_REQUEST, ModerationFileRequestSignalData {
-    filename, mimeType, size, uploadId, acceptKey, quarantinePath
-})
-        │
-        ▼
-ModeratorAgent::onSignalAgent()
-LLM call: "Is this file safe to share? filename: photo.jpg, type: image/jpeg, size: 200KB"
-        │
-ModeratorAgent::sendToAgent(MODERATION_FILE_RESULT, ModerationFileResultSignalData {
-    allowed: true/false,
-    reason: '...',
-    uploadId, acceptKey
-})
-        │
-        ▼
-PageSignalRouter routes MODERATION_FILE_RESULT to MainPage::onSignalAgent() → UploadFileTrait
+Upload completes
+        |
+UploadFileTrait creates AttachmentDraft in quarantine
+        |
+Frontend shows draft in composer
+        |
+User sends message with attachmentDraftIds
+        |
+MainPage validates draft ownership and starts outbound moderation
+        |
+ModeratorAgent receives MODERATE_REQUEST with contentForModeration
+        |
+MainPage receives MODERATION_RESULT
 ```
+
+`contentForModeration` includes message text plus attachment metadata such as filename, MIME type, and size. The file bytes themselves are not inspected by this flow.
 
 ## Approved
 
-1. Move file from quarantine to final storage path
-2. Add file event to `DbChatContext::events`
-3. Broadcast `NEW_EVENT` to all users
-4. Clear `fileModPhase` on Connection
-5. Clear `fileModerationState` on `ChatUserState`
+1. Move each draft file from quarantine to published storage.
+2. Remove draft rows from `RtChatContext::attachmentDrafts`.
+3. Add one `message_sent` event with `data.message` and `data.attachments`.
+4. Broadcast `new_event`.
+5. Clear `outboundModerationState` for the originating connection.
 
-## Rejected
+## Rejected or Unavailable
 
-1. Delete quarantine file
-2. Update Connection: `fileModPhase = 'rejected'`, `fileModReason`
-3. Send `FILE_MODERATION_STATE_UPDATE` to user (shows rejection reason)
-4. User can dismiss via `FILE_MODERATION_DISMISS` action
+1. Keep draft rows in quarantine so the user can retry.
+2. Set `outboundModerationState.phase` to `rejected` or `unavailable`.
+3. Send `outbound_moderation_state_update` to the originating connection.
 
-## Client signals
-
-| Signal | Direction | Meaning |
-|---|---|---|
-| `file_moderation_state_update` | Server → user | Moderating / rejected (private) |
-| `file_moderation_dismiss` | Client → server | User dismisses rejection UI |
-
-## Notes
-
-- File moderation state is **per-connection** (not per-user) — tracks the current upload only
-- If user disconnects during moderation, result is lost (Connection RT state gone)
+Drafts are still subject to the one-hour TTL and disconnect cleanup.

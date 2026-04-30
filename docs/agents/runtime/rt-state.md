@@ -111,6 +111,16 @@ without falling back to `?RtState`.
 
 ## Reading from state
 
+Application code normally reads through the view item or collection:
+
+```php
+$userState = Hilos::$rt->userStates[$userId] ?? null;
+$isChecking = $userState?->hasActiveOutboundModeration() === true;
+```
+
+Direct backing-state reads are for runtime internals, tests, or code that is
+already inside the RT layer:
+
 ```php
 $state = Hilos::$rt->userStates->getStateCollection()->get($userId);
 if ($state !== null) {

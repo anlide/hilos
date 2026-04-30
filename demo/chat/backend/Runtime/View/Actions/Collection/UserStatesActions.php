@@ -18,9 +18,10 @@ use LogicException;
 use OutOfBoundsException;
 
 /**
- * Write API for per-user chat runtime state (text moderation only).
+ * Write API for per-user chat runtime state.
  *
- * File upload and file moderation UI live on the connection runtime state.
+ * Binary upload sessions live on connections; uploaded files waiting for send
+ * live in attachment drafts.
  *
  * @extends RtActions<ViewChatUserState, UserStates, StateUserStates>
  * @property-read StateUserStates $stateCollection
@@ -28,12 +29,7 @@ use OutOfBoundsException;
 final class UserStatesActions extends RtActions
 {
     /**
-     * Minimum interval in seconds between chat messages from the same user.
-     */
-    private const int MESSAGE_RATE_LIMIT_SECONDS = 10;
-
-    /**
-     * Ensure a {@see StateChatUserState} row exists for the user (creates an empty template if missing).
+     * Ensure a row exists for the user.
      *
      * @param int $userId Database user id
      * @return ViewChatUserState Read wrapper around the ensured state
@@ -47,8 +43,8 @@ final class UserStatesActions extends RtActions
     {
         $this->ensureCanWrite();
         $id = (string)$userId;
-        $sc = $this->getStateCollection();
-        $existing = $sc->get($id);
+        $stateCollection = $this->getStateCollection();
+        $existing = $stateCollection->get($id);
         if ($existing instanceof StateChatUserState) {
             return $this->createRtItemFromState($existing);
         }
@@ -59,7 +55,7 @@ final class UserStatesActions extends RtActions
     }
 
     /**
-     * Narrows parent return type to this collection's RtItem ({@see ViewChatUserState}).
+     * Narrows parent return type to this collection's RtItem.
      */
     protected function createRtItemFromState(RtState &$state): ViewChatUserState
     {
@@ -85,25 +81,7 @@ final class UserStatesActions extends RtActions
     }
 
     /**
-     * Whether the user is outside the message rate-limit window.
-     *
-     * Uses {@see self::MESSAGE_RATE_LIMIT_SECONDS} minus one second effective window to reduce
-     * false blocks from client timer drift.
-     *
-     * @param int $userId Database user id
-     * @return bool True when the user may submit another text message
-     * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
-     */
-    public function canSendMessage(int $userId): bool
-    {
-        $state = $this->stateCollection->get((string)$userId);
-        $lastMessageSentAt = $state?->lastMessageSentAt ?? 0.0;
-
-        return (microtime(true) - $lastMessageSentAt) >= self::MESSAGE_RATE_LIMIT_SECONDS - 1;
-    }
-
-    /**
-     * Record a successful moderated text message publish for rate limiting.
+     * Record an accepted outbound submit for rate limiting.
      *
      * @param int $userId Database user id
      *
@@ -112,21 +90,23 @@ final class UserStatesActions extends RtActions
      * @throws RtActionsStateCollectionNullException
      * @throws RtTruthSourceWriteNotAllowedException
      */
-    public function recordMessageSent(int $userId): void
+    public function recordOutboundSubmitted(int $userId): void
     {
         $this->ensure($userId);
 
-        $this->stateCollection[$userId]->lastMessageSentAt = microtime(true);
+        $this->stateCollection[$userId]->lastOutboundSubmittedAt = microtime(true);
         $this->stateCollection[$userId]->sync();
 
         $this->clearCollectionCache();
     }
 
     /**
-     * Store pending message text for LLM moderation and bump {@see StateChatUserState::moderationUpdatedAt}.
+     * Start a user-visible outbound moderation state.
      *
      * @param int $userId Database user id
-     * @param string $message Raw message text from the client
+     * @param string $requestId Moderation request id
+     * @param string $message Submitted message text
+     * @param list<string> $attachmentDraftIds Submitted attachment draft ids
      *
      * @throws RtActionsCallbackNotSetException
      * @throws RtActionsCollectionNameNullException
@@ -134,21 +114,33 @@ final class UserStatesActions extends RtActions
      * @throws RtTruthSourceWriteNotAllowedException
      * @throws OutOfBoundsException When user runtime state is not initialized
      */
-    public function setTextModerationMessage(int $userId, string $message): void
-    {
+    public function startOutboundModeration(
+        int $userId,
+        string $requestId,
+        string $message,
+        array $attachmentDraftIds,
+    ): void {
         $this->ensureCanWrite();
 
-        $this->stateCollection[$userId]->moderationMessage = $message;
-        $this->stateCollection[$userId]->moderationUpdatedAt = time();
+        $this->stateCollection[$userId]->outboundModerationRequestId = $requestId;
+        $this->stateCollection[$userId]->outboundModerationPhase = 'checking';
+        $this->stateCollection[$userId]->outboundModerationMessage = $message;
+        $this->stateCollection[$userId]->outboundModerationAttachmentDraftIdsJson = json_encode(array_values($attachmentDraftIds)) ?: '[]';
+        $this->stateCollection[$userId]->outboundModerationReason = '';
+        $this->stateCollection[$userId]->outboundModerationUpdatedAt = time();
         $this->stateCollection[$userId]->sync();
 
         $this->clearCollectionCache();
     }
 
     /**
-     * Clear pending text moderation for the user.
+     * Mark the current outbound moderation as failed for user-visible retry.
      *
      * @param int $userId Database user id
+     * @param string $requestId Moderation request id to match
+     * @param string $phase Failure phase: rejected or unavailable
+     * @param string $reason User-visible reason
+     * @return bool True when the state matched and was updated
      *
      * @throws RtActionsCallbackNotSetException
      * @throws RtActionsCollectionNameNullException
@@ -156,14 +148,55 @@ final class UserStatesActions extends RtActions
      * @throws RtTruthSourceWriteNotAllowedException
      * @throws OutOfBoundsException When user runtime state is not initialized
      */
-    public function clearTextModerationMessage(int $userId): void
+    public function failOutboundModeration(int $userId, string $requestId, string $phase, string $reason): bool
     {
         $this->ensureCanWrite();
 
-        $this->stateCollection[$userId]->moderationMessage = '';
-        $this->stateCollection[$userId]->moderationUpdatedAt = time();
+        if ($this->stateCollection[$userId]->outboundModerationRequestId !== $requestId) {
+            return false;
+        }
+
+        $this->stateCollection[$userId]->outboundModerationPhase = $phase;
+        $this->stateCollection[$userId]->outboundModerationReason = $reason;
+        $this->stateCollection[$userId]->outboundModerationUpdatedAt = time();
         $this->stateCollection[$userId]->sync();
 
         $this->clearCollectionCache();
+
+        return true;
+    }
+
+    /**
+     * Clear current outbound moderation state after approval.
+     *
+     * @param int $userId Database user id
+     * @param string $requestId Moderation request id to match
+     * @return bool True when the state matched and was cleared
+     *
+     * @throws RtActionsCallbackNotSetException
+     * @throws RtActionsCollectionNameNullException
+     * @throws RtActionsStateCollectionNullException
+     * @throws RtTruthSourceWriteNotAllowedException
+     * @throws OutOfBoundsException When user runtime state is not initialized
+     */
+    public function clearOutboundModeration(int $userId, string $requestId): bool
+    {
+        $this->ensureCanWrite();
+
+        if ($this->stateCollection[$userId]->outboundModerationRequestId !== $requestId) {
+            return false;
+        }
+
+        $this->stateCollection[$userId]->outboundModerationRequestId = '';
+        $this->stateCollection[$userId]->outboundModerationPhase = '';
+        $this->stateCollection[$userId]->outboundModerationMessage = '';
+        $this->stateCollection[$userId]->outboundModerationAttachmentDraftIdsJson = '[]';
+        $this->stateCollection[$userId]->outboundModerationReason = '';
+        $this->stateCollection[$userId]->outboundModerationUpdatedAt = time();
+        $this->stateCollection[$userId]->sync();
+
+        $this->clearCollectionCache();
+
+        return true;
     }
 }

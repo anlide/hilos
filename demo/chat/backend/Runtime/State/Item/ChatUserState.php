@@ -9,30 +9,46 @@ use Demo\Chat\Runtime\View\Actions\Collection\UserStatesActions;
 use Hilos\Runtime\State\Item\RtState;
 
 /**
- * Per-user chat runtime row: pending text moderation and message rate-limit state.
+ * Per-user chat runtime row: outbound moderation and message rate-limit state.
  *
  * State id is `(string) userId`. Created lazily at chat WebSocket handshake via
  * {@see UserStatesActions::ensure()}.
- * Mutations go through {@see UserStatesActions}; file uploads live on {@see Connection}.
+ * Mutations go through {@see UserStatesActions}; binary upload sessions live on {@see Connection}.
  */
 final class ChatUserState extends RtState
 {
     public const string userId = 'userId';
-    public const string moderationMessage = 'moderationMessage';
-    public const string moderationUpdatedAt = 'moderationUpdatedAt';
-    public const string lastMessageSentAt = 'lastMessageSentAt';
+    public const string outboundModerationRequestId = 'outboundModerationRequestId';
+    public const string outboundModerationPhase = 'outboundModerationPhase';
+    public const string outboundModerationMessage = 'outboundModerationMessage';
+    public const string outboundModerationAttachmentDraftIdsJson = 'outboundModerationAttachmentDraftIdsJson';
+    public const string outboundModerationReason = 'outboundModerationReason';
+    public const string outboundModerationUpdatedAt = 'outboundModerationUpdatedAt';
+    public const string lastOutboundSubmittedAt = 'lastOutboundSubmittedAt';
 
     /** User ID (equals collection key as integer). */
     public private(set) int $userId = 0;
 
-    /** Pending message text for LLM moderation. */
-    public string $moderationMessage = '';
+    /** Current moderation request id, or empty string when no visible moderation state exists. */
+    public string $outboundModerationRequestId = '';
 
-    /** Unix time of last moderation field update. */
-    public int $moderationUpdatedAt = 0;
+    /** Moderation phase: checking, rejected, unavailable, or empty when clear. */
+    public string $outboundModerationPhase = '';
 
-    /** Microtime of the last approved published text message. */
-    public float $lastMessageSentAt = 0.0;
+    /** Submitted message text associated with the moderation state. */
+    public string $outboundModerationMessage = '';
+
+    /** JSON encoded list of submitted attachment draft ids. */
+    public string $outboundModerationAttachmentDraftIdsJson = '[]';
+
+    /** Moderation rejection or unavailable reason. */
+    public string $outboundModerationReason = '';
+
+    /** Unix time of last moderation state update. */
+    public int $outboundModerationUpdatedAt = 0;
+
+    /** Microtime of the last accepted outbound submit. */
+    public float $lastOutboundSubmittedAt = 0.0;
 
     /**
      * @param int $userId Database user id
@@ -42,9 +58,13 @@ final class ChatUserState extends RtState
     {
         $instance = new static();
         $instance->userId = $userId;
-        $instance->moderationMessage = '';
-        $instance->moderationUpdatedAt = 0;
-        $instance->lastMessageSentAt = 0.0;
+        $instance->outboundModerationRequestId = '';
+        $instance->outboundModerationPhase = '';
+        $instance->outboundModerationMessage = '';
+        $instance->outboundModerationAttachmentDraftIdsJson = '[]';
+        $instance->outboundModerationReason = '';
+        $instance->outboundModerationUpdatedAt = 0;
+        $instance->lastOutboundSubmittedAt = 0.0;
         $instance->markRtSyncBaseline();
 
         return $instance;
@@ -57,9 +77,13 @@ final class ChatUserState extends RtState
     {
         $instance = new static();
         $instance->userId = (int)($row[self::userId] ?? 0);
-        $instance->moderationMessage = (string)($row[self::moderationMessage] ?? '');
-        $instance->moderationUpdatedAt = (int)($row[self::moderationUpdatedAt] ?? 0);
-        $instance->lastMessageSentAt = (float)($row[self::lastMessageSentAt] ?? 0.0);
+        $instance->outboundModerationRequestId = (string)($row[self::outboundModerationRequestId] ?? '');
+        $instance->outboundModerationPhase = (string)($row[self::outboundModerationPhase] ?? '');
+        $instance->outboundModerationMessage = (string)($row[self::outboundModerationMessage] ?? '');
+        $instance->outboundModerationAttachmentDraftIdsJson = (string)($row[self::outboundModerationAttachmentDraftIdsJson] ?? '[]');
+        $instance->outboundModerationReason = (string)($row[self::outboundModerationReason] ?? '');
+        $instance->outboundModerationUpdatedAt = (int)($row[self::outboundModerationUpdatedAt] ?? 0);
+        $instance->lastOutboundSubmittedAt = (float)($row[self::lastOutboundSubmittedAt] ?? 0.0);
         $instance->markRtSyncBaseline();
 
         return $instance;
@@ -75,14 +99,26 @@ final class ChatUserState extends RtState
      */
     public function applyDiff(array $diff): void
     {
-        if (isset($diff[self::moderationMessage])) {
-            $this->moderationMessage = (string)$diff[self::moderationMessage];
+        if (isset($diff[self::outboundModerationRequestId])) {
+            $this->outboundModerationRequestId = (string)$diff[self::outboundModerationRequestId];
         }
-        if (isset($diff[self::moderationUpdatedAt])) {
-            $this->moderationUpdatedAt = (int)$diff[self::moderationUpdatedAt];
+        if (isset($diff[self::outboundModerationPhase])) {
+            $this->outboundModerationPhase = (string)$diff[self::outboundModerationPhase];
         }
-        if (isset($diff[self::lastMessageSentAt])) {
-            $this->lastMessageSentAt = (float)$diff[self::lastMessageSentAt];
+        if (isset($diff[self::outboundModerationMessage])) {
+            $this->outboundModerationMessage = (string)$diff[self::outboundModerationMessage];
+        }
+        if (isset($diff[self::outboundModerationAttachmentDraftIdsJson])) {
+            $this->outboundModerationAttachmentDraftIdsJson = (string)$diff[self::outboundModerationAttachmentDraftIdsJson];
+        }
+        if (isset($diff[self::outboundModerationReason])) {
+            $this->outboundModerationReason = (string)$diff[self::outboundModerationReason];
+        }
+        if (isset($diff[self::outboundModerationUpdatedAt])) {
+            $this->outboundModerationUpdatedAt = (int)$diff[self::outboundModerationUpdatedAt];
+        }
+        if (isset($diff[self::lastOutboundSubmittedAt])) {
+            $this->lastOutboundSubmittedAt = (float)$diff[self::lastOutboundSubmittedAt];
         }
     }
 
@@ -101,9 +137,13 @@ final class ChatUserState extends RtState
     {
         return [
             self::userId => $this->userId,
-            self::moderationMessage => $this->moderationMessage,
-            self::moderationUpdatedAt => $this->moderationUpdatedAt,
-            self::lastMessageSentAt => $this->lastMessageSentAt,
+            self::outboundModerationRequestId => $this->outboundModerationRequestId,
+            self::outboundModerationPhase => $this->outboundModerationPhase,
+            self::outboundModerationMessage => $this->outboundModerationMessage,
+            self::outboundModerationAttachmentDraftIdsJson => $this->outboundModerationAttachmentDraftIdsJson,
+            self::outboundModerationReason => $this->outboundModerationReason,
+            self::outboundModerationUpdatedAt => $this->outboundModerationUpdatedAt,
+            self::lastOutboundSubmittedAt => $this->lastOutboundSubmittedAt,
         ];
     }
 }

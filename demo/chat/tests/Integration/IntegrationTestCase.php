@@ -38,6 +38,7 @@ abstract class IntegrationTestCase extends TestCase
         TruthSourceRegistry::register(DbChatContext::bots, true, self::TEST_AGENT_ID);
         TruthSourceRegistry::register(DbChatContext::moderatorPromptPieces, true, self::TEST_AGENT_ID);
         RtTruthSourceRegistry::register(RtChatContext::userStates, true, self::TEST_AGENT_ID);
+        RtTruthSourceRegistry::register(RtChatContext::attachmentDrafts, true, self::TEST_AGENT_ID);
     }
 
     /**

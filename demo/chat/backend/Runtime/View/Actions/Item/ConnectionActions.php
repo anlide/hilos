@@ -72,20 +72,7 @@ final class ConnectionActions extends RtActions
     }
 
     /**
-     * Clear file-moderation banner state on this socket.
-     * @throws RtActionsCollectionNameNullException
-     */
-    public function clearFileModerationBanner(): void
-    {
-        $this->ensureCanWrite();
-
-        $this->resetFileModerationUiFields();
-
-        $this->sync();
-    }
-
-    /**
-     * Clear all file-runtime fields on this socket (session, progress UI, moderation banner).
+     * Clear all file-runtime fields on this socket (session and progress UI).
      * @throws RtActionsCollectionNameNullException
      */
     public function clearAllFileRuntimeOnSocket(): void
@@ -94,7 +81,6 @@ final class ConnectionActions extends RtActions
 
         $this->resetBinaryUploadSessionFields();
         $this->resetUploadProgressUiFields();
-        $this->resetFileModerationUiFields();
 
         $this->sync();
     }
@@ -109,45 +95,6 @@ final class ConnectionActions extends RtActions
 
         $this->state->fileSessionReceivedBytes = $newReceivedBytes;
         $this->state->fileProgressUploadedBytes = $newReceivedBytes;
-
-        $this->sync();
-    }
-
-    /**
-     * Enter "moderating" file banner while ModeratorAgent runs.
-     * @throws RtActionsCollectionNameNullException
-     */
-    public function enterFileModerationPending(string $originalFilename, int $sizeBytes): void
-    {
-        $this->ensureCanWrite();
-
-        $this->state->fileModPhase = 'moderating';
-        $this->state->fileModFilename = $originalFilename;
-        $this->state->fileModUploadedBytes = $sizeBytes;
-        $this->state->fileModTotalBytes = $sizeBytes;
-        $this->state->fileModReason = '';
-        $this->state->fileModUpdatedAt = time();
-
-        $this->sync();
-    }
-
-    /**
-     * Show rejected-file banner after moderator denial.
-     * @throws RtActionsCollectionNameNullException
-     */
-    public function markFileModerationRejected(
-        string $originalFilename,
-        int $sizeBytes,
-        string $reason,
-    ): void {
-        $this->ensureCanWrite();
-
-        $this->state->fileModPhase = 'rejected';
-        $this->state->fileModFilename = $originalFilename;
-        $this->state->fileModUploadedBytes = $sizeBytes;
-        $this->state->fileModTotalBytes = $sizeBytes;
-        $this->state->fileModReason = $reason;
-        $this->state->fileModUpdatedAt = time();
 
         $this->sync();
     }
@@ -187,13 +134,4 @@ final class ConnectionActions extends RtActions
         $this->state->uploadProgressLastSentAt = 0.0;
     }
 
-    private function resetFileModerationUiFields(): void
-    {
-        $this->state->fileModPhase = null;
-        $this->state->fileModFilename = '';
-        $this->state->fileModUploadedBytes = 0;
-        $this->state->fileModTotalBytes = 0;
-        $this->state->fileModReason = '';
-        $this->state->fileModUpdatedAt = 0;
-    }
 }

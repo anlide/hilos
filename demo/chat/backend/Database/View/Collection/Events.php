@@ -28,7 +28,7 @@ final class Events extends DbCollection
     public const string OBJECT_COLLECTION_CLASS = ObjectEvents::class;
 
     /**
-     * Total size in bytes of all {@see ChatEventType::FILE_SHARED} events (published attachments quota).
+     * Total size in bytes of all published attachments.
      *
      * @return int Total bytes from each event's JSON `size` field, skipping malformed rows.
      */
@@ -36,18 +36,9 @@ final class Events extends DbCollection
     {
         $sum = 0;
         foreach ($this as $event) {
-            if ($event->type !== ChatEventType::FILE_SHARED->value) {
-                continue;
+            foreach ($this->getPublishedAttachments($event) as $attachment) {
+                $sum += (int)($attachment['size'] ?? 0);
             }
-            $raw = $event->data;
-            if (!is_string($raw) || $raw === '') {
-                continue;
-            }
-            $decoded = json_decode($raw, true);
-            if (!is_array($decoded) || !isset($decoded['size'])) {
-                continue;
-            }
-            $sum += (int)$decoded['size'];
         }
 
         return $sum;
@@ -62,23 +53,14 @@ final class Events extends DbCollection
     public function hasPublishedFileWithNormalizedFilename(string $normalized): bool
     {
         foreach ($this as $event) {
-            if ($event->type !== ChatEventType::FILE_SHARED->value) {
-                continue;
-            }
-            $raw = $event->data;
-            if (!is_string($raw) || $raw === '') {
-                continue;
-            }
-            $decoded = json_decode($raw, true);
-            if (!is_array($decoded)) {
-                continue;
-            }
-            $filename = $decoded['originalFilename'] ?? $decoded['filename'] ?? '';
-            if (!is_string($filename)) {
-                continue;
-            }
-            if (FileSystemHelper::normalizeBasename($filename) === $normalized) {
-                return true;
+            foreach ($this->getPublishedAttachments($event) as $attachment) {
+                $filename = $attachment['originalFilename'] ?? $attachment['filename'] ?? '';
+                if (!is_string($filename)) {
+                    continue;
+                }
+                if (FileSystemHelper::normalizeBasename($filename) === $normalized) {
+                    return true;
+                }
             }
         }
 
@@ -94,35 +76,64 @@ final class Events extends DbCollection
     public function findPublishedFileMetaByToken(string $token): ?array
     {
         foreach ($this as $event) {
-            if ($event->type !== ChatEventType::FILE_SHARED->value) {
-                continue;
-            }
-            $raw = $event->data;
-            if (!is_string($raw) || $raw === '') {
-                continue;
-            }
-            $decoded = json_decode($raw, true);
-            if (!is_array($decoded)) {
-                continue;
-            }
-            $downloadToken = $decoded['downloadToken'] ?? '';
-            if (!is_string($downloadToken) || $downloadToken !== $token) {
-                continue;
-            }
-            $storedName = $decoded['storedName'] ?? '';
-            if (!is_string($storedName) || $storedName === '') {
-                continue;
-            }
-            $originalFilename = $decoded['originalFilename'] ?? $decoded['filename'] ?? 'file';
-            $mimeType = $decoded['mimeType'] ?? 'application/octet-stream';
+            foreach ($this->getPublishedAttachments($event) as $attachment) {
+                $downloadToken = $attachment['downloadToken'] ?? '';
+                if (!is_string($downloadToken) || $downloadToken !== $token) {
+                    continue;
+                }
+                $storedName = $attachment['storedName'] ?? '';
+                if (!is_string($storedName) || $storedName === '') {
+                    continue;
+                }
+                $originalFilename = $attachment['originalFilename'] ?? $attachment['filename'] ?? 'file';
+                $mimeType = $attachment['mimeType'] ?? 'application/octet-stream';
 
-            return [
-                'storedName' => basename($storedName),
-                'originalFilename' => is_string($originalFilename) ? $originalFilename : 'file',
-                'mimeType' => is_string($mimeType) ? $mimeType : 'application/octet-stream',
-            ];
+                return [
+                    'storedName' => basename($storedName),
+                    'originalFilename' => is_string($originalFilename) ? $originalFilename : 'file',
+                    'mimeType' => is_string($mimeType) ? $mimeType : 'application/octet-stream',
+                ];
+            }
         }
 
         return null;
+    }
+
+    /**
+     * Extract published attachment rows from current and legacy event shapes.
+     *
+     * @param Event $event Event row
+     * @return list<array<string, mixed>> Attachment metadata rows
+     */
+    private function getPublishedAttachments(Event $event): array
+    {
+        $raw = $event->data;
+        if (!is_string($raw) || $raw === '') {
+            return [];
+        }
+        $decoded = json_decode($raw, true);
+        if (!is_array($decoded)) {
+            return [];
+        }
+        if ($event->type === ChatEventType::FILE_SHARED->value) {
+            return [$decoded];
+        }
+        if ($event->type !== ChatEventType::MESSAGE_SENT->value) {
+            return [];
+        }
+
+        $attachments = $decoded['attachments'] ?? [];
+        if (!is_array($attachments)) {
+            return [];
+        }
+
+        $rows = [];
+        foreach ($attachments as $attachment) {
+            if (is_array($attachment)) {
+                $rows[] = $attachment;
+            }
+        }
+
+        return $rows;
     }
 }

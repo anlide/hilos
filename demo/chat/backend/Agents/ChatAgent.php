@@ -52,6 +52,7 @@ class ChatAgent extends AbstractAgent
         $this->registerDbTruthSource(DbChatContext::moderatorPromptPieces);
         $this->registerRtTruthSource(RtChatContext::connections);
         $this->registerRtTruthSource(RtChatContext::userStates);
+        $this->registerRtTruthSource(RtChatContext::attachmentDrafts);
 
         Hilos::$db->events->actions->addChatStarted();
     }
@@ -62,8 +63,8 @@ class ChatAgent extends AbstractAgent
      *
      * Runtime presence is emitted after every successful connection register so
      * pages that show online session counts update for additional tabs, not only
-     * first online transitions. Moderation and file-upload session state are sent
-     * on main page subscribe only.
+     * first online transitions. Outbound moderation, draft, and file-upload session
+     * state are sent on main page subscribe only.
      *
      * @param WebSocketHandshakeSignalDTO $data Accept key and query params with a required session token
      * @param string $source Framework signal source identifier (unused)
@@ -126,6 +127,7 @@ class ChatAgent extends AbstractAgent
             return;
         }
 
+        Hilos::$rt->attachmentDrafts->actions->deleteForAcceptKey($data->acceptKey, deleteFiles: true);
         Hilos::$rt->connections->actions->unregister($data->acceptKey);
     }
 
@@ -137,14 +139,15 @@ class ChatAgent extends AbstractAgent
     public function onStop(): void
     {
         Hilos::$db->events->actions->addChatStopped();
+        Hilos::$rt->attachmentDrafts->actions->clear(deleteFiles: true);
         Hilos::$rt->connections->actions->clear();
         Hilos::$rt->userStates->actions->clear();
     }
 
     /**
-     * Handles chat history cleanup cron by replacing the event stream with a cleared event.
+     * Handles chat-owned cron names by replacing the event stream with a cleared event.
      *
-     * File storage cleanup for the same cron is routed to MainPage.
+     * Cron routing is shared with MainPage; page-only cron names are deliberately ignored here.
      *
      * @param SignalDataInterface $data Cron payload (unused)
      * @param string $source Framework signal source identifier (unused)
@@ -153,12 +156,16 @@ class ChatAgent extends AbstractAgent
      */
     public function onSignalCron(SignalDataInterface $data, string $source, string $name): void
     {
-        if ($name !== ChatCronConstants::CLEANUP_HISTORY) {
-            return;
-        }
+        switch ($name) {
+            case ChatCronConstants::CLEANUP_HISTORY:
+                Hilos::$db->events->actions->deleteAll();
+                Hilos::$db->events->actions->addChatCleared();
 
-        Hilos::$db->events->actions->deleteAll();
-        Hilos::$db->events->actions->addChatCleared();
+                return;
+
+            default:
+                return;
+        }
     }
 
     /**
@@ -176,7 +183,6 @@ class ChatAgent extends AbstractAgent
     {
         switch ($name) {
             case ChatSignalConstants::MODERATION_RESULT:
-            case ChatSignalConstants::MODERATION_FILE_RESULT:
                 return;
             case ChatSignalConstants::MODERATION_BOT_RESULT:
                 if (!$data->data instanceof ModerationBotResultSignalData) {

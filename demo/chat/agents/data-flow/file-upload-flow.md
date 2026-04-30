@@ -1,6 +1,6 @@
 # File Upload Flow
 
-Binary file upload via WebSocket, split into init + binary stream phases.
+Binary file upload via WebSocket, split into init + binary stream phases. Upload completion creates an attachment draft; moderation happens later when the user sends a message containing that draft.
 
 ## Phase 1: Init (JSON)
 
@@ -13,42 +13,41 @@ Client: ws.send('file_upload_init', {
 })
 ```
 
-Handled by `MainPage::onAction()` → `UploadFileTrait::handleFileUploadInit()`:
+Handled by `MainPage::onAction()` -> `UploadFileTrait::handleFileUploadInit()`:
 
-1. Validate: size ≤ `ChatAttachmentDefaults::MAX_SIZE`, MIME type in allowed list
-2. Check: no duplicate normalized filename in existing attachments
-3. If previous upload session active → send `FILE_UPLOAD_ABORTED` to client
-4. Create upload session on `Connection` RT state:
-   - `fileSessionUploadId` = new UUID
-   - `fileSessionDeclaredSize`, `fileSessionOriginalFilename`, `fileSessionMimeType`
-   - `fileSessionQuarantineBasename` = quarantine path
-5. Send `FILE_UPLOAD_READY { uploadId }` to client
+1. Validate size, MIME type, and payload shape.
+2. Delete expired completed drafts.
+3. Check total storage limit across published attachments, active uploads, and attachment drafts.
+4. Check duplicate normalized filename across active uploads, attachment drafts, and published attachments.
+5. If previous upload session is active on this connection, abort it and start the new session.
+6. Create upload session on `Connection` RT state.
+7. Send `FILE_UPLOAD_READY` to the client and seed upload progress.
 
-## Phase 2: Binary stream
+## Phase 2: Binary Stream
 
-Client sends raw binary WS frames (no JSON wrapper).
+Client sends raw binary WS frames. The server associates frames with the active upload session for that `acceptKey`.
 
-`PageSignalRouter` routes `frame_binary` to `MainPage::onSignalFrameBinary()` → `UploadFileTrait`:
-1. Validate `fileSessionUploadId` matches frame header (first 36 bytes = uploadId)
-2. Append bytes to quarantine file
-3. Update `fileSessionReceivedBytes` on Connection
-4. Send throttled `FILE_UPLOAD_PROGRESS_UPDATE` (min interval: `0.3s`)
-5. When `receivedBytes == declaredSize` → send `FILE_UPLOAD_COMPLETE`
-6. Queue `MODERATE_FILE_REQUEST` → `ModeratorAgent`
+`PageSignalRouter` routes `frame_binary` to `MainPage::onSignalFrameBinary()` -> `UploadFileTrait`:
 
-## Error cases
+1. Validate that the connection has an active upload session.
+2. Append bytes to tmp storage.
+3. Update `fileSessionReceivedBytes` and upload progress on `Connection`.
+4. Send throttled `FILE_UPLOAD_PROGRESS_UPDATE` (min interval: `0.3s`).
+5. When `receivedBytes == declaredSize`, move tmp to quarantine and create an attachment draft.
+6. Send `FILE_UPLOAD_COMPLETE` with the draft row and then `ATTACHMENT_DRAFTS_UPDATE`.
 
-- Frame with wrong/missing uploadId → `FILE_UPLOAD_INVALID`, clear session
-- Bytes exceed declared size → `FILE_UPLOAD_INVALID`
-- New `file_upload_init` during active session → abort old session, start new
+## Draft Lifecycle
 
-## Quarantine
+- Uploading files have no TTL.
+- Completed drafts expire one hour after upload completion (`AttachmentDraftsActions::DRAFT_TTL_SECONDS`).
+- Drafts are per connection, not synchronized across tabs.
+- Users can delete a completed draft explicitly via `attachment_draft_delete`.
+- On disconnect, that connection's drafts and active tmp upload are deleted.
+- On approval, draft files move from quarantine to published and the draft rows are removed.
 
-Files land in quarantine directory before moderation.
-Path: configured via env/settings (see `FsContext`).
-After moderation: if approved → moved to final location; if rejected → deleted.
+## Error Cases
 
-## Connection state for uploads
-
-All upload session data lives on `Connection` RT item (keyed by `acceptKey`).
-If connection closes mid-upload → session abandoned, quarantine file left (cleanup needed).
+- Invalid metadata -> `FILE_UPLOAD_REJECTED`.
+- Bytes exceed declared size -> `FILE_UPLOAD_INVALID`.
+- New `file_upload_init` during active session -> old session is aborted.
+- Missing draft at send/approval time -> outbound moderation becomes `unavailable`.

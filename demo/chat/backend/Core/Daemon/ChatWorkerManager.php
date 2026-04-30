@@ -66,7 +66,7 @@ final class ChatWorkerManager extends WorkerManager
             ChatSignalConstants::MESSAGE => PageConstants::MAIN,
             ChatSignalConstants::RENAME => PageConstants::PROFILE,
             ChatSignalConstants::FILE_UPLOAD_INIT => PageConstants::MAIN,
-            ChatSignalConstants::FILE_MODERATION_DISMISS => PageConstants::MAIN,
+            ChatSignalConstants::ATTACHMENT_DRAFT_DELETE => PageConstants::MAIN,
 
             ChatSignalConstants::USER_UPDATE => PageConstants::ADMIN_USERS,
             ChatSignalConstants::HILOS_USER_UPDATE => PageConstants::HILOS_USER,
@@ -90,10 +90,10 @@ final class ChatWorkerManager extends WorkerManager
             SignalTypeConstants::FRAME_BINARY => PageConstants::MAIN,
             SignalTypeConstants::AGENT_SIGNAL => [
                 ChatSignalConstants::MODERATION_RESULT => PageConstants::MAIN,
-                ChatSignalConstants::MODERATION_FILE_RESULT => PageConstants::MAIN,
             ],
             SignalTypeConstants::CRON => [
                 ChatCronConstants::CLEANUP_HISTORY => PageConstants::MAIN,
+                ChatCronConstants::CLEANUP_ATTACHMENT_DRAFTS => PageConstants::MAIN,
             ],
         ];
 

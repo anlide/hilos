@@ -17,7 +17,8 @@ export const TABLE_DATA = 'table_data'
 export const TABLE_MUTATION = 'table_mutation'
 export const TABLE_MUTATION_PENDING = 'table_mutation_pending'
 export const TABLE_ACTION_ERROR = 'table_action_error'
-export const MODERATION_STATE_UPDATE = 'moderation_state_update'
+export const OUTBOUND_MODERATION_STATE_UPDATE = 'outbound_moderation_state_update'
+export const ATTACHMENT_DRAFTS_UPDATE = 'attachment_drafts_update'
 export const USER_PRESENCE_UPDATE = 'user_presence_update'
 export const BOT_JOINED = 'bot_joined'
 export const BOT_LEFT = 'bot_left'
@@ -44,7 +45,7 @@ export const SETTING_DELETE = 'setting_delete'
 export const GUARDIAN_AGENT_RUN_START = 'guardian_agent_run_start'
 export const GUARDIAN_AGENT_RUN_STOP = 'guardian_agent_run_stop'
 export const FILE_UPLOAD_INIT = 'file_upload_init'
-export const FILE_MODERATION_DISMISS = 'file_moderation_dismiss'
+export const ATTACHMENT_DRAFT_DELETE = 'attachment_draft_delete'
 
 /** Message rate limit in seconds (displayed to user, backend allows 1 sec earlier). */
 export const MESSAGE_RATE_LIMIT_SECONDS = 10

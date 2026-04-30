@@ -1,18 +1,45 @@
 import { SignalDefinition } from '@hilos/sdk/services/signals'
-import type { FileUploadProgressPayload } from '@/stores'
+import type { AttachmentDraftPayload, FileUploadProgressPayload, OutboundModerationStatePayload } from '@/stores'
 
 const isRecord = (value: unknown): value is Record<string, unknown> => {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-const parseNullableString = (value: unknown): string | null => {
-  if (value === null || value === undefined) return null
-  return typeof value === 'string' ? value : null
+const parseAttachmentDraft = (raw: unknown): AttachmentDraftPayload | null => {
+  if (!isRecord(raw)) return null
+  const { draftId, filename, mimeType, size, uploadedAt } = raw
+  if (typeof draftId !== 'string') return null
+  if (typeof filename !== 'string' || typeof mimeType !== 'string') return null
+  if (typeof size !== 'number' || typeof uploadedAt !== 'number') return null
+  return { draftId, filename, mimeType, size, uploadedAt }
 }
 
-const parseNullableRecord = (value: unknown): Record<string, unknown> | null => {
-  if (value === null || value === undefined) return null
-  return isRecord(value) ? value : null
+const parseAttachmentDrafts = (raw: unknown): AttachmentDraftPayload[] | null => {
+  if (!Array.isArray(raw)) return null
+  const drafts = raw.map(parseAttachmentDraft)
+  if (drafts.some((draft) => draft === null)) return null
+  return drafts as AttachmentDraftPayload[]
+}
+
+const parseOutboundModerationState = (raw: unknown): OutboundModerationStatePayload | null => {
+  if (raw === null || raw === undefined) return null
+  if (!isRecord(raw)) return null
+  const { requestId, phase, text, attachments, reason, updatedAt } = raw
+  if (typeof requestId !== 'string') return null
+  if (phase !== 'checking' && phase !== 'rejected' && phase !== 'unavailable') return null
+  if (typeof text !== 'string') return null
+  const parsedAttachments = parseAttachmentDrafts(attachments)
+  if (parsedAttachments === null) return null
+  if (reason !== null && reason !== undefined && typeof reason !== 'string') return null
+  if (typeof updatedAt !== 'number') return null
+  return {
+    requestId,
+    phase,
+    text,
+    attachments: parsedAttachments,
+    reason: typeof reason === 'string' ? reason : null,
+    updatedAt,
+  }
 }
 
 const parseFileUploadProgress = (raw: unknown): FileUploadProgressPayload | null => {
@@ -29,8 +56,8 @@ const parseFileUploadProgress = (raw: unknown): FileUploadProgressPayload | null
  * or explicitly `null` (present but empty).
  */
 export interface ChatSessionFields {
-  moderationState?: string | null
-  fileModerationState?: Record<string, unknown> | null
+  outboundModerationState?: OutboundModerationStatePayload | null
+  attachmentDrafts?: AttachmentDraftPayload[]
   fileUploadProgress?: FileUploadProgressPayload | null
   /** Retain the raw payload for forwarding to the legacy prefix/table handlers. */
   raw: Record<string, unknown>
@@ -39,11 +66,11 @@ export interface ChatSessionFields {
 const parseChatSessionFields = (raw: unknown): ChatSessionFields | null => {
   if (!isRecord(raw)) return null
   const result: ChatSessionFields = { raw }
-  if ('moderationState' in raw) {
-    result.moderationState = parseNullableString(raw.moderationState)
+  if ('outboundModerationState' in raw) {
+    result.outboundModerationState = parseOutboundModerationState(raw.outboundModerationState)
   }
-  if ('fileModerationState' in raw) {
-    result.fileModerationState = parseNullableRecord(raw.fileModerationState)
+  if ('attachmentDrafts' in raw) {
+    result.attachmentDrafts = parseAttachmentDrafts(raw.attachmentDrafts) ?? []
   }
   if ('fileUploadProgress' in raw) {
     const v = raw.fileUploadProgress
@@ -54,7 +81,7 @@ const parseChatSessionFields = (raw: unknown): ChatSessionFields | null => {
 
 /**
  * `subscription_page_main` delivers the user's own chat page state,
- * including moderation flags and ongoing binary upload progress.
+ * including outbound moderation, draft attachments, and ongoing binary upload progress.
  */
 export const subscriptionPageMain = new SignalDefinition<
   'subscription_page_main',
@@ -62,33 +89,34 @@ export const subscriptionPageMain = new SignalDefinition<
 >('subscription_page_main', parseChatSessionFields)
 
 /**
- * `moderation_state_update` — broadcast change of pending-moderation text.
+ * `outbound_moderation_state_update` — current outbound moderation state.
  */
-export interface ModerationStateUpdatePayload {
-  moderationState: string | null
+export interface OutboundModerationStateUpdatePayload {
+  outboundModerationState: OutboundModerationStatePayload | null
 }
 
-export const moderationStateUpdate = new SignalDefinition<
-  'moderation_state_update',
-  ModerationStateUpdatePayload
->('moderation_state_update', (raw: unknown): ModerationStateUpdatePayload | null => {
-  if (!isRecord(raw) || !('moderationState' in raw)) return null
-  return { moderationState: parseNullableString(raw.moderationState) }
+export const outboundModerationStateUpdate = new SignalDefinition<
+  'outbound_moderation_state_update',
+  OutboundModerationStateUpdatePayload
+>('outbound_moderation_state_update', (raw: unknown): OutboundModerationStateUpdatePayload | null => {
+  if (!isRecord(raw) || !('outboundModerationState' in raw)) return null
+  return { outboundModerationState: parseOutboundModerationState(raw.outboundModerationState) }
 })
 
 /**
- * `file_moderation_state_update` — change of in-chat file moderation UI state.
+ * `attachment_drafts_update` — full uploaded attachment draft list for this connection.
  */
-export interface FileModerationStateUpdatePayload {
-  fileModerationState: Record<string, unknown> | null
+export interface AttachmentDraftsUpdatePayload {
+  attachmentDrafts: AttachmentDraftPayload[]
 }
 
-export const fileModerationStateUpdate = new SignalDefinition<
-  'file_moderation_state_update',
-  FileModerationStateUpdatePayload
->('file_moderation_state_update', (raw: unknown): FileModerationStateUpdatePayload | null => {
-  if (!isRecord(raw) || !('fileModerationState' in raw)) return null
-  return { fileModerationState: parseNullableRecord(raw.fileModerationState) }
+export const attachmentDraftsUpdate = new SignalDefinition<
+  'attachment_drafts_update',
+  AttachmentDraftsUpdatePayload
+>('attachment_drafts_update', (raw: unknown): AttachmentDraftsUpdatePayload | null => {
+  if (!isRecord(raw) || !('attachmentDrafts' in raw)) return null
+  const attachmentDrafts = parseAttachmentDrafts(raw.attachmentDrafts)
+  return attachmentDrafts === null ? null : { attachmentDrafts }
 })
 
 /**

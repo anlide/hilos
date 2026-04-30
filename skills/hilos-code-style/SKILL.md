@@ -16,6 +16,8 @@ Use this skill for style-sensitive Hilos edits and reviews. Start with `agents.m
   method, or substantially changing what a documented method does.
 - Exception taxonomy and `@throws`: `docs/agents/code-style/exceptions.md`
 - `Page::onAction()` and action handler routing: `docs/agents/code-style/page-action-handlers.md`
+- Named signal handler routing (`onSignalAgent()`, `onSignalCron()`):
+  `docs/agents/code-style/signal-handlers.md`
 - Internal backend API contracts: `docs/agents/code-style/internal-backend-api.md`
 - Temporary/local variable rules: `docs/agents/code-style/local-variables.md`
 - Broader style guide: `docs/code-style.md`
@@ -36,23 +38,25 @@ Use this skill for style-sensitive Hilos edits and reviews. Start with `agents.m
    returns, throws, or deliberately ignores.
 6. Use PHPDoc only where the project rule asks for it or where it clarifies a contract.
 7. Keep action routing and handler code aligned with the page action handler guide.
-8. Use typed parameters, DTOs, value objects, or typed collections for internal
+8. Keep named signal routing aligned with the signal handler guide.
+9. Use typed parameters, DTOs, value objects, or typed collections for internal
    backend API; keep unstructured arrays at boundaries.
-9. Avoid one-use locals unless they improve clarity under the local variable rule.
-10. Keep comments concise and in English.
-11. For `Page::onAction()`, do not add a local `try/catch` around the routing
+10. Avoid one-use locals unless they improve clarity under the local variable rule.
+11. Keep comments concise and in English.
+12. For `Page::onAction()`, do not add a local `try/catch` around the routing
    `switch`; the framework catches action exceptions and calls
    `onActionException()`.
-12. Override `onActionException()` only when the page has a specific fail/error
+13. For named signal handlers, use `switch ($name)` with explicit cases.
+14. Override `onActionException()` only when the page has a specific fail/error
    contract; otherwise let the default framework `action_error` signal notify
    the initiator.
-13. Use `AgentUnknownActionException` in `onAction()` default branches.
-14. In PHPDoc, import exception classes with `use` and reference short names;
+15. Use `AgentUnknownActionException` in `onAction()` default branches.
+16. In PHPDoc, import exception classes with `use` and reference short names;
    do not write leading-backslash fully qualified exceptions such as
    `@throws \OutOfBoundsException`.
-15. Use `ValidationException` and its children for user/business validation;
+17. Use `ValidationException` and its children for user/business validation;
    read `docs/agents/code-style/exceptions.md` before changing exception types.
-16. Before finishing a PHP method change, re-check the affected docblock against
+18. Before finishing a PHP method change, re-check the affected docblock against
    `docs/agents/code-style/phpdoc.md`.
 
 ## Hard Rules

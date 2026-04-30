@@ -18,8 +18,8 @@ import {
 import {
   handshakeResponse,
   subscriptionPageMain,
-  moderationStateUpdate,
-  fileModerationStateUpdate,
+  outboundModerationStateUpdate,
+  attachmentDraftsUpdate,
   fileUploadProgressUpdate,
   fileUploadReady,
   fileUploadRejected,
@@ -118,21 +118,21 @@ function buildSignalRouter() {
     useChatStore().handleSubscriptionResponse(self.id, self.name)
   })
 
-  signalRouter.on(subscriptionPageMain, ({ moderationState, fileModerationState, fileUploadProgress }) => {
+  signalRouter.on(subscriptionPageMain, ({ outboundModerationState, attachmentDrafts, fileUploadProgress }) => {
     const chatStore = useChatStore()
-    if (moderationState !== undefined) {
-      chatStore.setModerationState(moderationState)
+    if (outboundModerationState !== undefined) {
+      chatStore.setOutboundModerationState(outboundModerationState)
     }
-    if (fileModerationState !== undefined) {
-      chatStore.setFileModerationState(fileModerationState)
+    if (attachmentDrafts !== undefined) {
+      chatStore.setAttachmentDrafts(attachmentDrafts)
     }
     if (fileUploadProgress !== undefined) {
       chatStore.setFileUploadProgress(fileUploadProgress)
     }
   })
 
-  signalRouter.on(moderationStateUpdate, ({ moderationState }) => {
-    useChatStore().setModerationState(moderationState)
+  signalRouter.on(outboundModerationStateUpdate, ({ outboundModerationState }) => {
+    useChatStore().setOutboundModerationState(outboundModerationState)
   })
 
   signalRouter.on(actionError, ({ action, reason }) => {
@@ -151,8 +151,8 @@ function buildSignalRouter() {
     }
   })
 
-  signalRouter.on(fileModerationStateUpdate, ({ fileModerationState }) => {
-    useChatStore().setFileModerationState(fileModerationState)
+  signalRouter.on(attachmentDraftsUpdate, ({ attachmentDrafts }) => {
+    useChatStore().setAttachmentDrafts(attachmentDrafts)
   })
 
   signalRouter.on(fileUploadProgressUpdate, ({ fileUploadProgress }) => {
@@ -183,8 +183,9 @@ function buildSignalRouter() {
     useChatStore().setFileUploadProgress(null)
   })
 
-  signalRouter.on(fileUploadComplete, () => {
-    // UI state comes from file_moderation_state_update (moderating)
+  signalRouter.on(fileUploadComplete, ({ attachmentDraft }) => {
+    useChatStore().addAttachmentDraft(attachmentDraft)
+    useChatStore().setFileUploadProgress(null)
   })
 
   signalRouter.on(subscriptionPageHilosLogs, (snapshot) => {
@@ -257,6 +258,7 @@ export function createChatWebSocketPlugin() {
     onClose: () => {
       rejectFileUploadPending('disconnected')
       useChatStore().setFileUploadProgress(null)
+      useChatStore().clearAttachmentDrafts()
       const connectionStore = useConnectionStore()
       connectionStore.setConnected(false)
       connectionStore.setConnecting(false)

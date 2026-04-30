@@ -87,6 +87,7 @@ Quick navigation for AI agents. Read the relevant file before starting work.
 | [code-style/README.md](docs/agents/code-style/README.md) | choosing which small style rule applies to a code change |
 | [code-style/phpdoc.md](docs/agents/code-style/phpdoc.md) | writing PHPDoc, overriding inherited methods, adding `@see` links |
 | [code-style/page-action-handlers.md](docs/agents/code-style/page-action-handlers.md) | editing `Page::onAction()`, action DTO routing, page action acks/errors |
+| [code-style/signal-handlers.md](docs/agents/code-style/signal-handlers.md) | editing named signal handlers such as `onSignalAgent()` or `onSignalCron()` |
 | [code-style/import-aliases-and-helper-names.md](docs/agents/code-style/import-aliases-and-helper-names.md) | adding or changing PHP import aliases or helper method names |
 | [code-style/local-variables.md](docs/agents/code-style/local-variables.md) | introducing temporary variables or reviewing one-use locals |
 | [code-style/frontend-vue.md](docs/agents/code-style/frontend-vue.md) | editing Vue SFC templates, global components, or frontend line endings |
@@ -112,6 +113,7 @@ Quick navigation for AI agents. Read the relevant file before starting work.
 6. **Frontend edits go through `Modal` only** — inline edit forms on pages are forbidden (see [frontend-sdk/edit-in-modal.md](docs/agents/frontend-sdk/edit-in-modal.md))
 7. For code style, use the matching small rule from [code-style/README.md](docs/agents/code-style/README.md)
 8. Internal backend API uses typed parameters, DTOs, value objects, or typed collections — unstructured arrays need a boundary or explicit reason
+9. Runtime `actions` are write APIs; put read-only helpers on `RtCollection` or `RtItem`
 
 ## Project docs (existing)
 

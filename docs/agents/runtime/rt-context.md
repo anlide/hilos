@@ -120,8 +120,19 @@ $user = Hilos::$db->users[$userId] ?? null;
 $onlineConnections = Hilos::$rt->connections->forUser($userId);
 ```
 
-Put reusable runtime lookups on the collection layer instead of rebuilding the
-same filter in pages or tables.
+Put reusable runtime lookups on the collection layer and reusable row-level
+read helpers on the view item:
+
+```php
+$userState = Hilos::$rt->userStates[$userId] ?? null;
+if ($userState?->hasActiveOutboundModeration() === true) {
+    // ...
+}
+```
+
+Do not put read-only helpers under `->actions`. Runtime actions are the write
+API; using them for reads hides ownership boundaries and makes call sites look
+like they mutate state.
 
 ## Collection Actions
 
@@ -159,8 +170,9 @@ an item action should own it.
 | New runtime collection | `RtContext` plus `RtStates` and `RtCollection` |
 | New runtime row field | `RtState` typed field, `toArray()`, `fromRow()`, and `applyDiff()` |
 | Runtime lookup helper | State collection plus View collection wrapper |
-| Caller-facing read transformation | View item or View collection |
-| Create/register/clear operation | Collection actions |
+| Caller-facing row read helper | View item |
+| Caller-facing collection read helper | View collection |
+| Create/register/clear or mutating state transition | Collection actions |
 | Update one runtime item | Item actions |
 | Durable business data | DB layer, not runtime |
 | Page response assembly | Page handler, using existing RT/DB APIs only |
@@ -202,3 +214,13 @@ Do not add runtime arrays, duplicated connection maps, or transient mutation
 logic to page/table layers just because a screen needs the value. Page/table
 code should orchestrate existing typed runtime APIs; the runtime layer should
 own shared in-memory behavior.
+
+Do not add read-only methods to runtime actions:
+
+```php
+// Wrong: actions are for writes.
+Hilos::$rt->userStates->actions->hasActiveOutboundModeration($userId);
+
+// Correct: row-level read belongs to the view item.
+Hilos::$rt->userStates[$userId]?->hasActiveOutboundModeration();
+```

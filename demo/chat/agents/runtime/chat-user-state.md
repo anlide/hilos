@@ -2,33 +2,34 @@
 
 **Collection:** `RtChatContext::userStates` | **Key:** `(string) userId`
 
-Per-user runtime state. Tracks text message moderation state and send rate limits for each registered user.
+Per-user runtime state. Tracks the current outbound moderation request and the common send rate limit for text-only, attachment-only, and mixed messages.
 
 ## Fields
 
 | Field | Type | Meaning |
 |---|---|---|
 | `userId` | `int` | DB user ID (also numeric value of collection key) |
-| `moderationMessage` | `string` | Message text currently under LLM moderation (empty = none pending) |
-| `moderationUpdatedAt` | `int` | Unix time of last moderation field change |
-| `lastMessageSentAt` | `float` | Microtime of the last approved published text message |
+| `outboundModerationRequestId` | `string` | Current moderation request id, empty when idle |
+| `outboundModerationPhase` | `string` | `checking`, `rejected`, `unavailable`, or empty when idle |
+| `outboundModerationMessage` | `string` | Submitted message text |
+| `outboundModerationAttachmentDraftIdsJson` | `string` | JSON list of attachment draft ids included in the submit |
+| `outboundModerationReason` | `string` | Rejection/unavailable reason, empty when none |
+| `outboundModerationUpdatedAt` | `int` | Unix time of last outbound moderation field change |
+| `lastOutboundSubmittedAt` | `float` | Microtime of the last accepted outbound submit |
 
 ## Lifecycle
 
-- **Created**: `UserStatesActions::ensure(userId)` on WS handshake
-- **Updated**: when message submitted for moderation (`moderationMessage` set), cleared on result, or approved message is recorded for rate limiting
-- **Never deleted** during a session — persists as long as user exists in DB
+- **Created**: `UserStatesActions::ensure(userId)` on WS handshake or first submit.
+- **Updated**: when a message submit starts moderation, when moderation returns rejected/unavailable, and when approval clears the moderation fields.
+- **Rate limited**: `recordOutboundSubmitted(userId)` runs when a submit is accepted for moderation, before the LLM result.
+- **Deleted**: cleared on chat agent stop.
 
 ## Truth source
 
 `ChatAgent` owns this collection (`RtTruthSourceRegistry::register(RtChatContext::userStates, ...)`).
 Only `ChatAgent` should write to it.
 
-## Initialization
+## Related State
 
-`ChatUserState` rows are created lazily during `ChatAgent::onSignalHandshake()`.
-
-## Note
-
-File upload state is **not** here — it lives on `Connection` (per-connection, not per-user).
-This was intentional: one user can have multiple connections, each with its own upload session.
+- Active binary upload state lives on `Connection` (per connection).
+- Completed uploaded files waiting to be sent live in `RtChatContext::attachmentDrafts` (per connection).

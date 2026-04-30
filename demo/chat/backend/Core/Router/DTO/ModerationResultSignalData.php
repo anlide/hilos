@@ -17,6 +17,7 @@ final class ModerationResultSignalData extends BaseDTO implements SignalDataInte
     /**
      * Creates moderation result signal data.
      *
+     * @param string $requestId Moderation request id
      * @param string $acceptKey WebSocket accept key
      * @param int $userId User ID
      * @param string $message Message text
@@ -24,6 +25,7 @@ final class ModerationResultSignalData extends BaseDTO implements SignalDataInte
      * @param string $reason Moderation reason
      */
     public function __construct(
+        public readonly string $requestId,
         public readonly string $acceptKey,
         public readonly int $userId,
         public readonly string $message,
@@ -40,6 +42,7 @@ final class ModerationResultSignalData extends BaseDTO implements SignalDataInte
     public function toArray(): array
     {
         return [
+            'requestId' => $this->requestId,
             'acceptKey' => $this->acceptKey,
             'userId' => $this->userId,
             'message' => $this->message,
@@ -57,11 +60,12 @@ final class ModerationResultSignalData extends BaseDTO implements SignalDataInte
     public static function fromArray(array $data): static
     {
         return new self(
-            acceptKey: $data['acceptKey'] ?? '',
+            requestId: (string)($data['requestId'] ?? ''),
+            acceptKey: (string)($data['acceptKey'] ?? ''),
             userId: (int)($data['userId'] ?? 0),
-            message: $data['message'] ?? '',
+            message: (string)($data['message'] ?? ''),
             allow: (bool)($data['allow'] ?? false),
-            reason: $data['reason'] ?? '',
+            reason: (string)($data['reason'] ?? ''),
         );
     }
 }

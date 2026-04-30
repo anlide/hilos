@@ -11,7 +11,7 @@ use Hilos\Runtime\State\Item\RtState;
 /**
  * Runtime row for one WebSocket connection (`acceptKey` is the collection id).
  *
- * Holds transport metadata plus in-memory file upload session, progress UI, and file-moderation UI for this socket only.
+ * Holds transport metadata plus in-memory file upload session and progress UI for this socket only.
  * Inbound RT updates use {@see applyDiff()}; local writes from item actions use typed properties + {@see sync()}.
  * Public string constants name row keys.
  */
@@ -29,13 +29,6 @@ final class Connection extends RtState
     public const string fileSessionMimeType = 'fileSessionMimeType';
     public const string fileSessionClientUploadId = 'fileSessionClientUploadId';
     public const string fileSessionNormalizedFilename = 'fileSessionNormalizedFilename';
-
-    public const string fileModPhase = 'fileModPhase';
-    public const string fileModFilename = 'fileModFilename';
-    public const string fileModUploadedBytes = 'fileModUploadedBytes';
-    public const string fileModTotalBytes = 'fileModTotalBytes';
-    public const string fileModReason = 'fileModReason';
-    public const string fileModUpdatedAt = 'fileModUpdatedAt';
 
     public const string fileProgressFilename = 'fileProgressFilename';
     public const string fileProgressUploadedBytes = 'fileProgressUploadedBytes';
@@ -76,24 +69,6 @@ final class Connection extends RtState
     /** Normalized basename for duplicate-name checks. */
     public string $fileSessionNormalizedFilename = '';
 
-    /** File moderation banner phase or null. */
-    public ?string $fileModPhase = null;
-
-    /** Filename shown in file moderation UI. */
-    public string $fileModFilename = '';
-
-    /** Uploaded bytes shown in moderation UI. */
-    public int $fileModUploadedBytes = 0;
-
-    /** Total bytes shown in moderation UI. */
-    public int $fileModTotalBytes = 0;
-
-    /** Rejection reason text. */
-    public string $fileModReason = '';
-
-    /** Last moderation UI update unix time. */
-    public int $fileModUpdatedAt = 0;
-
     /** Progress bar filename or null. */
     public ?string $fileProgressFilename = null;
 
@@ -124,12 +99,6 @@ final class Connection extends RtState
         $instance->fileSessionMimeType = '';
         $instance->fileSessionClientUploadId = '';
         $instance->fileSessionNormalizedFilename = '';
-        $instance->fileModPhase = null;
-        $instance->fileModFilename = '';
-        $instance->fileModUploadedBytes = 0;
-        $instance->fileModTotalBytes = 0;
-        $instance->fileModReason = '';
-        $instance->fileModUpdatedAt = 0;
         $instance->fileProgressFilename = null;
         $instance->fileProgressUploadedBytes = 0;
         $instance->fileProgressTotalBytes = 0;
@@ -157,13 +126,6 @@ final class Connection extends RtState
         $instance->fileSessionMimeType = (string)($row[self::fileSessionMimeType] ?? '');
         $instance->fileSessionClientUploadId = (string)($row[self::fileSessionClientUploadId] ?? '');
         $instance->fileSessionNormalizedFilename = (string)($row[self::fileSessionNormalizedFilename] ?? '');
-        $phase = $row[self::fileModPhase] ?? null;
-        $instance->fileModPhase = is_string($phase) && $phase !== '' ? $phase : null;
-        $instance->fileModFilename = (string)($row[self::fileModFilename] ?? '');
-        $instance->fileModUploadedBytes = (int)($row[self::fileModUploadedBytes] ?? 0);
-        $instance->fileModTotalBytes = (int)($row[self::fileModTotalBytes] ?? 0);
-        $instance->fileModReason = (string)($row[self::fileModReason] ?? '');
-        $instance->fileModUpdatedAt = (int)($row[self::fileModUpdatedAt] ?? 0);
         $pfn = $row[self::fileProgressFilename] ?? null;
         $instance->fileProgressFilename = is_string($pfn) && $pfn !== '' ? $pfn : null;
         $instance->fileProgressUploadedBytes = (int)($row[self::fileProgressUploadedBytes] ?? 0);
@@ -215,25 +177,6 @@ final class Connection extends RtState
         if (isset($diff[self::fileSessionNormalizedFilename])) {
             $this->fileSessionNormalizedFilename = (string)$diff[self::fileSessionNormalizedFilename];
         }
-        if (array_key_exists(self::fileModPhase, $diff)) {
-            $p = $diff[self::fileModPhase];
-            $this->fileModPhase = is_string($p) && $p !== '' ? $p : null;
-        }
-        if (isset($diff[self::fileModFilename])) {
-            $this->fileModFilename = (string)$diff[self::fileModFilename];
-        }
-        if (isset($diff[self::fileModUploadedBytes])) {
-            $this->fileModUploadedBytes = (int)$diff[self::fileModUploadedBytes];
-        }
-        if (isset($diff[self::fileModTotalBytes])) {
-            $this->fileModTotalBytes = (int)$diff[self::fileModTotalBytes];
-        }
-        if (isset($diff[self::fileModReason])) {
-            $this->fileModReason = (string)$diff[self::fileModReason];
-        }
-        if (isset($diff[self::fileModUpdatedAt])) {
-            $this->fileModUpdatedAt = (int)$diff[self::fileModUpdatedAt];
-        }
         if (array_key_exists(self::fileProgressFilename, $diff)) {
             $f = $diff[self::fileProgressFilename];
             $this->fileProgressFilename = is_string($f) && $f !== '' ? $f : null;
@@ -274,12 +217,6 @@ final class Connection extends RtState
             self::fileSessionMimeType => $this->fileSessionMimeType,
             self::fileSessionClientUploadId => $this->fileSessionClientUploadId,
             self::fileSessionNormalizedFilename => $this->fileSessionNormalizedFilename,
-            self::fileModPhase => $this->fileModPhase,
-            self::fileModFilename => $this->fileModFilename,
-            self::fileModUploadedBytes => $this->fileModUploadedBytes,
-            self::fileModTotalBytes => $this->fileModTotalBytes,
-            self::fileModReason => $this->fileModReason,
-            self::fileModUpdatedAt => $this->fileModUpdatedAt,
             self::fileProgressFilename => $this->fileProgressFilename,
             self::fileProgressUploadedBytes => $this->fileProgressUploadedBytes,
             self::fileProgressTotalBytes => $this->fileProgressTotalBytes,
