@@ -147,6 +147,43 @@ final class ChatAgentPresenceTest extends IntegrationTestCase
         }
     }
 
+    public function testCloseDeletesAttachmentDraftsWhenConnectionAlreadyMissing(): void
+    {
+        Hilos::$rt->attachmentDrafts->actions->clear(deleteFiles: false);
+
+        try {
+            Hilos::$rt->attachmentDrafts->actions->create(
+                'closed-draft',
+                'closed-ak',
+                1,
+                '',
+                'closed.txt',
+                'text/plain',
+                1,
+                'closed.txt',
+                time(),
+            );
+            Hilos::$rt->attachmentDrafts->actions->create(
+                'other-draft',
+                'other-ak',
+                1,
+                '',
+                'other.txt',
+                'text/plain',
+                1,
+                'other.txt',
+                time(),
+            );
+
+            (new ChatAgent())->onSignalConnectionClose(new WebSocketCloseSignalDTO('closed-ak'), '', '');
+
+            $this->assertSame(0, count(Hilos::$rt->attachmentDrafts->forAcceptKey('closed-ak')));
+            $this->assertSame(1, count(Hilos::$rt->attachmentDrafts->forAcceptKey('other-ak')));
+        } finally {
+            Hilos::$rt->attachmentDrafts->actions->clear(deleteFiles: false);
+        }
+    }
+
     /**
      * @return list<string>
      */

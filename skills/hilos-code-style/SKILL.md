@@ -41,7 +41,8 @@ Use this skill for style-sensitive Hilos edits and reviews. Start with `agents.m
 8. Keep named signal routing aligned with the signal handler guide.
 9. Use typed parameters, DTOs, value objects, or typed collections for internal
    backend API; keep unstructured arrays at boundaries.
-10. Avoid one-use locals unless they improve clarity under the local variable rule.
+10. Avoid one-use locals and prefer inline nullsafe access for one immediate
+   nullable member call under the local variable rule.
 11. Keep comments concise and in English.
 12. For `Page::onAction()`, do not add a local `try/catch` around the routing
    `switch`; the framework catches action exceptions and calls

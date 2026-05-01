@@ -136,9 +136,8 @@ Read runtime state through `Hilos::$rt` without storing durable business truth
 there:
 
 ```php
-$connection = Hilos::$rt->connections[$acceptKey] ?? null;
 $connections = Hilos::$rt->connections->forUser($userId);
-$connection?->actions->unregister();
+Hilos::$rt->connections[$acceptKey]?->actions->unregister();
 ```
 
 Keep table projection thin:

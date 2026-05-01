@@ -112,7 +112,7 @@ class ChatAgent extends AbstractAgent
     }
 
     /**
-     * Unregister the WebSocket connection and emit the new runtime presence summary.
+     * Delete connection-owned attachment drafts and unregister the WebSocket connection.
      *
      * The summary is emitted after every close so online session counters update
      * when a user still has other active tabs.
@@ -124,13 +124,8 @@ class ChatAgent extends AbstractAgent
      */
     public function onSignalConnectionClose(WebSocketCloseSignalDTO $data, string $source, string $name): void
     {
-        $connection = Hilos::$rt->connections[$data->acceptKey] ?? null;
-        if ($connection === null) {
-            return;
-        }
-
         Hilos::$rt->attachmentDrafts->actions->deleteForAcceptKey($data->acceptKey, deleteFiles: true);
-        $connection->actions->unregister();
+        Hilos::$rt->connections[$data->acceptKey]?->actions->unregister();
     }
 
     /**
