@@ -51,12 +51,15 @@ Use this skill for style-sensitive Hilos edits and reviews. Start with `agents.m
    contract; otherwise let the default framework `action_error` signal notify
    the initiator.
 15. Use `AgentUnknownActionException` in `onAction()` default branches.
-16. In PHPDoc, import exception classes with `use` and reference short names;
+16. Do not add empty `default` branches. If a handler intentionally ignores
+   shared broadcast names and the branch would only `return` or `break`, omit
+   it and document the ignore contract in PHPDoc.
+17. In PHPDoc, import exception classes with `use` and reference short names;
    do not write leading-backslash fully qualified exceptions such as
    `@throws \OutOfBoundsException`.
-17. Use `ValidationException` and its children for user/business validation;
+18. Use `ValidationException` and its children for user/business validation;
    read `docs/agents/code-style/exceptions.md` before changing exception types.
-18. Before finishing a PHP method change, re-check the affected docblock against
+19. Before finishing a PHP method change, re-check the affected docblock against
    `docs/agents/code-style/phpdoc.md`.
 
 ## Hard Rules

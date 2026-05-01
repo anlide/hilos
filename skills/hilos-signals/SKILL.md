@@ -21,10 +21,12 @@ Use this skill for every change that affects signal shape, route, subscription, 
 1. Identify the signal source and destination: WS, agent, DB sync, RT sync, cron, or system.
 2. Add or update declarative routing in `SignalRouter`.
 3. Route named signal handlers with `switch ($name)` and explicit cases.
-4. Define or update payload DTOs for new wire contracts.
-5. Keep serialization roundtrips explicit with `toArray()` and `fromArray()` where applicable.
-6. If the signal crosses worker-to-daemon IPC, add backend roundtrip coverage.
-7. If the signal reaches frontend code, add or update the TypeScript parser tests.
+4. Omit empty `default` branches in partial shared-broadcast handlers; document
+   the ignore contract in PHPDoc instead.
+5. Define or update payload DTOs for new wire contracts.
+6. Keep serialization roundtrips explicit with `toArray()` and `fromArray()` where applicable.
+7. If the signal crosses worker-to-daemon IPC, add backend roundtrip coverage.
+8. If the signal reaches frontend code, add or update the TypeScript parser tests.
 
 ## Hard Rules
 

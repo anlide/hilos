@@ -68,7 +68,10 @@ must validate the wrapped inner payload type:
 
 - Throw `InvalidAgentSignalPayloadException` when the payload object does not
   match the signal contract.
-- Throw `AgentUnknownSignalException` in the `default` branch.
+- For exhaustive named-signal handlers, throw `AgentUnknownSignalException` in
+  the `default` branch.
+- For shared broadcast handlers that intentionally own only some names, omit an
+  empty `default` branch and document the ignore contract in PHPDoc.
 - Do not call `logAgentError()` for these contract failures. `WorkerManager`
   catches `AgentException` around agent/page signal dispatch and logs it once.
 

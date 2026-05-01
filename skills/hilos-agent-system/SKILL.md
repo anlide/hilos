@@ -22,8 +22,10 @@ Use this skill for agent business logic and registration work. Start by reading 
 2. For a new agent, add the `AgentType` constant, Agent class, AgentDaemon class, worker factory registration, daemon factory registration, and `SignalRouter` rules.
 3. Keep `onStart()` for registration/initialization, `onTick()` for tiny incremental work, and `onStop()` for cleanup.
 4. Move long or blocking work out of `onTick()` and signal handlers.
-5. Register and unregister truth sources in matching lifecycle hooks.
-6. Add focused tests through composer scripts when behavior changes.
+5. In named signal handlers, omit empty `default` branches for intentionally
+   ignored shared-broadcast names and document the ignore contract in PHPDoc.
+6. Register and unregister truth sources in matching lifecycle hooks.
+7. Add focused tests through composer scripts when behavior changes.
 
 ## Hard Rules
 

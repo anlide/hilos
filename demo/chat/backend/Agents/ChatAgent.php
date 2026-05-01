@@ -164,9 +164,6 @@ class ChatAgent extends AbstractAgent
                 Hilos::$db->events->actions->addChatCleared();
 
                 return;
-
-            default:
-                return;
         }
     }
 

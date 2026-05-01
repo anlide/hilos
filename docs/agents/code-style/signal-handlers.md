@@ -17,10 +17,14 @@ especially `onSignalAgent()` or `onSignalCron()`.
    of the routing branch when it is large enough to deserve a named method.
 5. For exhaustive agent-to-agent or page-routed handlers, the `default` branch
    throws `AgentUnknownSignalException`.
-6. A handler may use `default: return;` only when the framework deliberately
-   broadcasts a shared signal type to the agent and this handler owns just a
-   subset of names. Document that intent in the method PHPDoc.
-7. Do not wrap signal routing in a local `try/catch`. Let the worker/page signal
+6. If the framework deliberately broadcasts a shared signal type to the agent
+   and this handler owns just a subset of names, omit the `default` branch when
+   it would only `return` or `break`. Document that ignore contract in the
+   method PHPDoc.
+7. Do not add empty `default` branches. A `default` branch must perform real
+   fallback behavior, delegate to a parent handler, or throw the correct
+   unknown-name exception.
+8. Do not wrap signal routing in a local `try/catch`. Let the worker/page signal
    dispatcher own contract-error logging and failure handling.
 
 ## Shape
@@ -32,9 +36,6 @@ public function onSignalCron(SignalDataInterface $data, string $source, string $
         case ChatCronConstants::CLEANUP_HISTORY:
             $this->handleHistoryCleanup();
 
-            return;
-
-        default:
             return;
     }
 }

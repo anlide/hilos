@@ -44,7 +44,9 @@ onSignalSystem()            ← system signal
 
 Named signal handlers such as `onSignalAgent()` and `onSignalCron()` route by
 `switch ($name)` with explicit cases; see
-`docs/agents/code-style/signal-handlers.md`.
+`docs/agents/code-style/signal-handlers.md`. Do not add an empty `default`
+branch just to return from ignored shared-broadcast names; document the ignore
+contract and let the method fall through.
 
 ## Sending signals from agent
 
