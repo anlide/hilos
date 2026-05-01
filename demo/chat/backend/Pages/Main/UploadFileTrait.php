@@ -91,7 +91,7 @@ trait UploadFileTrait
             return;
         }
 
-        $publishedTotal = Hilos::$db->events->sumPublishedAttachmentBytes();
+        $publishedTotal = Hilos::$db->eventAttachments->sumPublishedAttachmentBytes();
         $reserved = Hilos::$rt->connections->sumActiveUploadReservedBytes();
         $draftTotal = Hilos::$rt->attachmentDrafts->sumDraftBytes();
         if ($publishedTotal + $reserved + $draftTotal + $dto->size > $maxTotal) {
@@ -423,6 +423,6 @@ trait UploadFileTrait
     {
         return Hilos::$rt->connections->hasActiveUploadWithNormalizedFilename($normalized)
             || Hilos::$rt->attachmentDrafts->hasDraftWithNormalizedFilename($normalized)
-            || Hilos::$db->events->hasPublishedFileWithNormalizedFilename($normalized);
+            || Hilos::$db->eventAttachments->hasPublishedFileWithNormalizedFilename($normalized);
     }
 }

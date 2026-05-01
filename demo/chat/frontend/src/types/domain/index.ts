@@ -4,7 +4,7 @@
  */
 
 export { ChatBot } from './ChatBot'
-export { Event } from './Event'
+export { Event, type EventAttachment } from './Event'
 export { User } from './User'
 export type { Presence } from './Presence'
 export { PRESENCE_VALUES, isPresence } from './Presence'

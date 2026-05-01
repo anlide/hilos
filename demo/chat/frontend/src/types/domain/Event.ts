@@ -1,5 +1,12 @@
 import { DomainObject } from '@hilos/sdk/types'
 
+export type EventAttachment = {
+  id: number
+  eventId: number
+  filename: string
+  mimeType: string
+}
+
 /**
  * Event - matches Event structure from database
  *
@@ -12,6 +19,7 @@ import { DomainObject } from '@hilos/sdk/types'
  *
  * Additional field for UI:
  * - data: Record<string, unknown> - additional event data (message, oldName, newName, etc.)
+ * - attachments: EventAttachment[] - published files linked to this event
  */
 export class Event extends DomainObject {
   id: number | null
@@ -20,6 +28,7 @@ export class Event extends DomainObject {
   type: string
   timestamp: string
   data: Record<string, unknown>
+  attachments: EventAttachment[]
 
   constructor(
     id: number | null,
@@ -27,7 +36,8 @@ export class Event extends DomainObject {
     botId: number | null,
     type: string,
     timestamp: string,
-    data: Record<string, unknown> = {}
+    data: Record<string, unknown> = {},
+    attachments: EventAttachment[] = []
   ) {
     super()
     this.id = id
@@ -36,6 +46,7 @@ export class Event extends DomainObject {
     this.type = type
     this.timestamp = timestamp
     this.data = data
+    this.attachments = attachments
   }
 
   /**
@@ -48,6 +59,7 @@ export class Event extends DomainObject {
     type: string
     timestamp: string
     data?: Record<string, unknown>
+    attachments?: EventAttachment[]
   }): Event {
     return new Event(
       data.id ?? null,
@@ -55,7 +67,8 @@ export class Event extends DomainObject {
       data.botId ?? null,
       data.type,
       data.timestamp,
-      data.data ?? {}
+      data.data ?? {},
+      data.attachments ?? []
     )
   }
 }

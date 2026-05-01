@@ -8,7 +8,7 @@
       class="d-flex flex-column p-2 rounded"
       :class="[
         getBubbleClass(),
-        { 'w-75': props.event.type === 'message_sent' || props.event.type === 'file_shared' }
+        { 'w-75': props.event.type === 'message_sent' }
       ]"
     >
       <div v-if="!isOwnMessage" class="d-flex align-items-baseline gap-2">
@@ -60,12 +60,12 @@
         class="d-flex flex-column gap-2"
         :class="isOwnMessage ? 'mt-2' : 'ms-3 mt-2'"
       >
-        <div v-for="attachment in attachments" :key="attachment.downloadToken">
+        <div v-for="attachment in attachments" :key="attachment.id">
           <template v-if="isImageAttachment(attachment)">
             <a :href="attachmentDownloadUrl(attachment)" target="_blank" rel="noopener noreferrer" class="d-inline-block">
               <img
                 :src="attachmentDownloadUrl(attachment)"
-                :alt="attachment.originalFilename"
+                :alt="attachment.filename"
                 :class="[
                   'img-fluid rounded border border-secondary-subtle d-block',
                   attachmentPreviewWideLayout ? 'chat-attachment-preview--lg' : 'chat-attachment-preview--sm',
@@ -82,7 +82,7 @@
               :class="isOwnMessage ? 'link-light' : 'link-primary'"
             >
               <span class="fs-4" aria-hidden="true">{{ fileTypeIcon(attachment) }}</span>
-              <span class="text-break">{{ attachment.originalFilename }}</span>
+              <span class="text-break">{{ attachment.filename }}</span>
             </a>
           </template>
         </div>
@@ -97,7 +97,7 @@
 <script setup lang="ts">
 import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { RouterLink } from 'vue-router'
-import { Event } from '@/types'
+import { Event, type EventAttachment } from '@/types'
 import { useChatStore } from '@/stores'
 import { config } from '@/config'
 import { localStorageService } from '@/services/LocalStorageService'
@@ -106,17 +106,11 @@ interface Props {
   event: Event
 }
 
-type AttachmentView = {
-  originalFilename: string
-  mimeType: string
-  downloadToken: string
-}
-
 const props = defineProps<Props>()
 const chatStore = useChatStore()
 
 const isServiceMessage = computed(() => {
-  return props.event.type !== 'message_sent' && props.event.type !== 'file_shared'
+  return props.event.type !== 'message_sent'
 })
 
 /** True if this is a message_sent from the current user (own message, show on right) */
@@ -124,53 +118,28 @@ const isOwnMessage = computed(() => {
   if (props.event.userId === null || props.event.userId !== chatStore.currentUserId) {
     return false
   }
-  return props.event.type === 'message_sent' || props.event.type === 'file_shared'
+  return props.event.type === 'message_sent'
 })
 
-const parseAttachment = (raw: unknown): AttachmentView | null => {
-  if (raw === null || typeof raw !== 'object') {
-    return null
-  }
-  const data = raw as Record<string, unknown>
-  const token = data.downloadToken
-  if (typeof token !== 'string' || token === '') {
-    return null
-  }
-  const name = data.originalFilename ?? data.filename
-  const mime = data.mimeType
-  return {
-    originalFilename: typeof name === 'string' && name !== '' ? name : 'file',
-    mimeType: typeof mime === 'string' ? mime : '',
-    downloadToken: token,
-  }
-}
-
-const attachments = computed((): AttachmentView[] => {
-  if (props.event.type === 'file_shared') {
-    const attachment = parseAttachment(props.event.data)
-    return attachment ? [attachment] : []
-  }
-
-  if (props.event.type !== 'message_sent' || !Array.isArray(props.event.data.attachments)) {
+const attachments = computed((): EventAttachment[] => {
+  if (props.event.type !== 'message_sent') {
     return []
   }
 
-  return props.event.data.attachments
-    .map(parseAttachment)
-    .filter((attachment): attachment is AttachmentView => attachment !== null)
+  return props.event.attachments
 })
 
-const attachmentDownloadUrl = (attachment: AttachmentView): string => {
+const attachmentDownloadUrl = (attachment: EventAttachment): string => {
   const session = localStorageService.getSessionWithInit()
   const base = `${config.httpStatusProtocol}://${config.httpStatusHost}:${config.httpStatusPort}`
   const q = new URLSearchParams({
-    token: attachment.downloadToken,
+    id: String(attachment.id),
     'Hilos-Session-Token': session,
   })
   return `${base}/chat/attachment?${q.toString()}`
 }
 
-const isImageAttachment = (attachment: AttachmentView): boolean => {
+const isImageAttachment = (attachment: EventAttachment): boolean => {
   return attachment.mimeType.startsWith('image/')
 }
 
@@ -191,7 +160,7 @@ onMounted(() => {
   })
 })
 
-const fileTypeIcon = (attachment: AttachmentView): string => {
+const fileTypeIcon = (attachment: EventAttachment): string => {
   const m = attachment.mimeType
   if (m === 'application/pdf') {
     return '\u{1F4C4}'
@@ -360,7 +329,7 @@ const getBubbleClass = (): string => {
   if (isOwnMessage.value) {
     return 'bg-primary text-white'
   }
-  if (props.event.type === 'message_sent' || props.event.type === 'file_shared') {
+  if (props.event.type === 'message_sent') {
     return 'bg-body-secondary text-body border border-secondary-subtle'
   }
   return getServiceMessageClass()

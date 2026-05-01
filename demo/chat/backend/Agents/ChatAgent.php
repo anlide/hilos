@@ -47,6 +47,7 @@ class ChatAgent extends AbstractAgent
     public function onStart(): void
     {
         $this->registerDbTruthSource(DbChatContext::events);
+        $this->registerDbTruthSource(DbChatContext::eventAttachments);
         $this->registerDbTruthSource(DbChatContext::users);
         $this->registerDbTruthSource(DbChatContext::bots);
         $this->registerDbTruthSource(DbChatContext::moderatorPromptPieces);

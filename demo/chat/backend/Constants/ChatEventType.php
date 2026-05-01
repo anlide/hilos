@@ -31,8 +31,4 @@ enum ChatEventType: string
 
     /** User sent a message */
     case MESSAGE_SENT = 'message_sent';
-
-    /** User shared a file */
-    case FILE_SHARED = 'file_shared';
-
 }

@@ -1,8 +1,11 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Demo\Chat\Database;
 
 use Demo\Chat\Database\Actions\Collection\BotsActions;
+use Demo\Chat\Database\Actions\Collection\EventAttachmentsActions;
 use Demo\Chat\Database\Actions\Collection\EventsActions;
 use Demo\Chat\Database\Actions\Collection\ModeratorPromptPiecesActions;
 use Demo\Chat\Database\Actions\Collection\UsersActions;
@@ -10,10 +13,12 @@ use Demo\Chat\Database\Actions\Item\BotActions;
 use Demo\Chat\Database\Actions\Item\ModeratorPromptPieceActions;
 use Demo\Chat\Database\Actions\Item\UserActions;
 use Demo\Chat\Database\Object\Collection\Bots as ObjectBots;
+use Demo\Chat\Database\Object\Collection\EventAttachments as ObjectEventAttachments;
 use Demo\Chat\Database\Object\Collection\Events as ObjectEvents;
 use Demo\Chat\Database\Object\Collection\ModeratorPromptPieces as ObjectModeratorPromptPieces;
 use Demo\Chat\Database\Object\Collection\Users as ObjectUsers;
 use Demo\Chat\Database\View\Collection\Bots;
+use Demo\Chat\Database\View\Collection\EventAttachments;
 use Demo\Chat\Database\View\Collection\Events;
 use Demo\Chat\Database\View\Collection\ModeratorPromptPieces;
 use Demo\Chat\Database\View\Collection\Users;
@@ -28,6 +33,7 @@ use Hilos\Database\Object\Objects;
  * @extends HilosDbContext
  * @property-read Users $users
  * @property-read Events $events
+ * @property-read EventAttachments $eventAttachments
  * @property-read Bots $bots
  * @property-read ModeratorPromptPieces $moderatorPromptPieces
  */
@@ -35,11 +41,13 @@ final class DbChatContext extends HilosDbContext
 {
     public const string users = 'users';
     public const string events = 'events';
+    public const string eventAttachments = 'eventAttachments';
     public const string bots = 'bots';
     public const string moderatorPromptPieces = 'moderatorPromptPieces';
 
     public const string user = 'user';
     public const string event = 'event';
+    public const string eventAttachment = 'eventAttachment';
     public const string bot = 'bot';
     public const string moderatorPromptPiece = 'moderatorPromptPiece';
 
@@ -55,11 +63,13 @@ final class DbChatContext extends HilosDbContext
 
         $this->_objectCollections[self::users] = ObjectUsers::initDB(Objects::LAZY_STRATEGY_KEY);
         $this->_objectCollections[self::events] = ObjectEvents::initDB(Objects::LAZY_STRATEGY_NONE);
+        $this->_objectCollections[self::eventAttachments] = ObjectEventAttachments::initDB(Objects::LAZY_STRATEGY_KEY);
         $this->_objectCollections[self::bots] = ObjectBots::initDB(Objects::LAZY_STRATEGY_NONE);
         $this->_objectCollections[self::moderatorPromptPieces] = ObjectModeratorPromptPieces::initDB(Objects::LAZY_STRATEGY_NONE);
 
         $this->setRepresent(self::users, Users::class, UsersActions::class, UserActions::class);
         $this->setRepresent(self::events, Events::class, EventsActions::class);
+        $this->setRepresent(self::eventAttachments, EventAttachments::class, EventAttachmentsActions::class);
         $this->setRepresent(self::bots, Bots::class, BotsActions::class, BotActions::class);
         $this->setRepresent(self::moderatorPromptPieces, ModeratorPromptPieces::class, ModeratorPromptPiecesActions::class, ModeratorPromptPieceActions::class);
     }

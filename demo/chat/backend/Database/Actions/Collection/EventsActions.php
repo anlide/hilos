@@ -5,11 +5,13 @@ declare(strict_types=1);
 namespace Demo\Chat\Database\Actions\Collection;
 
 use Demo\Chat\Constants\ChatEventType;
+use Demo\Chat\Database\DTO\PublishedAttachmentInputs;
 use Demo\Chat\Database\Entity\Item\Event;
 use Demo\Chat\Database\Object\Collection\Events as ObjectEvents;
 use Demo\Chat\Database\Object\Item\Event as ObjectEvent;
 use Demo\Chat\Database\View\Collection\Events as DbCollectionEvents;
 use Demo\Chat\Database\View\Item\Event as DbEvent;
+use Demo\Chat\Hilos;
 use Hilos\Core\CLI\Exception\CommandException;
 use Hilos\Database\Actions\Collection\DbActions;
 use Hilos\HilosException;
@@ -142,7 +144,7 @@ final class EventsActions extends DbActions
      * @param string $message Published message text
      * @param ?int $userId Authoring user id
      * @param ?int $botId Authoring bot id
-     * @param list<array<string, mixed>> $attachments Published attachment metadata
+     * @param ?PublishedAttachmentInputs $attachments Published attachment metadata
      * @return DbEvent Created event
      * @throws HilosException On database or truth-source failure
      * @throws CommandException If event id is null after sync
@@ -151,53 +153,28 @@ final class EventsActions extends DbActions
         string $message,
         ?int $userId = null,
         ?int $botId = null,
-        array $attachments = [],
+        ?PublishedAttachmentInputs $attachments = null,
     ): DbEvent
     {
-        return $this->add(
+        $event = $this->add(
             ChatEventType::MESSAGE_SENT->value,
             userId: $userId,
             botId: $botId,
-            data: [
-                'message' => $message,
-                'attachments' => $attachments,
-            ],
+            data: ['message' => $message],
         );
-    }
 
-    /**
-     * Appends the legacy event emitted when a user shares a standalone file in chat.
-     *
-     * @param int $userId Uploading user id
-     * @param string $originalFilename Original client filename
-     * @param string $mimeType Published MIME type
-     * @param int $size File size in bytes
-     * @param string $downloadToken Public download token
-     * @param string $storedName Internal stored filename
-     * @return DbEvent Created event
-     * @throws HilosException On database or truth-source failure
-     * @throws CommandException If event id is null after sync
-     */
-    public function addFile(
-        int $userId,
-        string $originalFilename,
-        string $mimeType,
-        int $size,
-        string $downloadToken,
-        string $storedName,
-    ): DbEvent
-    {
-        return $this->add(
-            ChatEventType::FILE_SHARED->value,
-            userId: $userId,
-            data: [
-                'originalFilename' => $originalFilename,
-                'mimeType' => $mimeType,
-                'size' => $size,
-                'downloadToken' => $downloadToken,
-                'storedName' => $storedName,
-            ],
-        );
+        if ($attachments !== null) {
+            foreach ($attachments as $attachment) {
+                Hilos::$db->eventAttachments->actions->create(
+                    (int)$event->id,
+                    $attachment->filename,
+                    $attachment->mimeType,
+                    $attachment->storedName,
+                );
+            }
+        }
+
+        return $event;
     }
 
     /**
@@ -240,6 +217,7 @@ final class EventsActions extends DbActions
     {
         $this->ensureCanWrite();
 
+        Hilos::$db->eventAttachments->actions->deleteAll();
         $this->objectCollection->deleteAll();
 
         $this->clearCollectionCache();

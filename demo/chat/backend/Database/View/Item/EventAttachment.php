@@ -1,0 +1,76 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Demo\Chat\Database\View\Item;
+
+use Demo\Chat\Database\DbChatContext;
+use Demo\Chat\Database\Object\Item\EventAttachment as ObjectEventAttachment;
+use Demo\Chat\Hilos;
+use Hilos\Database\View\Item\DbItem;
+use Hilos\Fs\FsFile;
+
+/**
+ * EventAttachment - Db item for published chat attachment metadata.
+ *
+ * @extends DbItem<ObjectEventAttachment>
+ * @method __construct(ObjectEventAttachment &$objectEventAttachment)
+ *
+ * @property-read ?int $id
+ * @property-read int $eventId
+ * @property-read string $filename
+ * @property-read string $mimeType
+ * @property-read string $storedName
+ * @property-read ?Event $event Parent chat event
+ * @property-read FsFile $file Published file handle
+ */
+final class EventAttachment extends DbItem
+{
+    public const string file = 'file';
+
+    /**
+     * Property getter (read-only access).
+     *
+     * @param string $name Property name
+     * @return mixed Property value, parent event, or published file handle
+     */
+    public function __get(string $name): mixed
+    {
+        return match ($name) {
+            ObjectEventAttachment::id => $this->_object->id,
+            ObjectEventAttachment::eventId => $this->_object->eventId,
+            ObjectEventAttachment::filename => $this->_object->filename,
+            ObjectEventAttachment::mimeType => $this->_object->mimeType,
+            ObjectEventAttachment::storedName => $this->_object->storedName,
+            DbChatContext::event => Hilos::$db->events[$this->_object->eventId] ?? null,
+            self::file => Hilos::$fs->published[$this->_object->storedName],
+            default => parent::__get($name),
+        };
+    }
+
+    /**
+     * Converts the attachment to a caller-facing array.
+     *
+     * @param bool $withId Include ID fields
+     * @param bool $idAsIndex Use ID as array index
+     * @param bool $withBridges Include bridge data
+     * @param bool $withCalculation Include calculated fields
+     * @param bool $toFrontend Prepare a frontend-safe payload
+     * @return array<string, mixed> Attachment payload
+     */
+    public function toArray(
+        bool $withId = true,
+        bool $idAsIndex = true,
+        bool $withBridges = false,
+        bool $withCalculation = false,
+        bool $toFrontend = false,
+    ): array {
+        $result = parent::toArray($withId, $idAsIndex, $withBridges, $withCalculation, $toFrontend);
+
+        if ($toFrontend) {
+            unset($result[ObjectEventAttachment::storedName]);
+        }
+
+        return $result;
+    }
+}

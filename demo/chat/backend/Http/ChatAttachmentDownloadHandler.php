@@ -21,8 +21,8 @@ final class ChatAttachmentDownloadHandler
     {
         $request = $args['request'];
         $queryParams = is_array($request['queryParams'] ?? null) ? $request['queryParams'] : [];
-        $token = isset($queryParams['token']) ? (string)$queryParams['token'] : '';
-        if ($token === '' || strlen($token) > 64) {
+        $attachmentId = isset($queryParams['id']) ? (int)$queryParams['id'] : 0;
+        if ($attachmentId <= 0) {
             return self::notFound();
         }
 
@@ -36,12 +36,12 @@ final class ChatAttachmentDownloadHandler
             return self::unauthorized();
         }
 
-        $match = Hilos::$db->events->findPublishedFileMetaByToken($token);
-        if ($match === null) {
+        $attachment = Hilos::$db->eventAttachments[$attachmentId] ?? null;
+        if ($attachment === null) {
             return self::notFound();
         }
 
-        $publishedFile = Hilos::$fs->published[$match['storedName']];
+        $publishedFile = $attachment->file;
         if (!$publishedFile->exists()) {
             return self::notFound();
         }
@@ -52,8 +52,8 @@ final class ChatAttachmentDownloadHandler
             return self::notFound();
         }
 
-        $mime = $match['mimeType'] !== '' ? $match['mimeType'] : 'application/octet-stream';
-        $disp = self::contentDispositionFilename($match['originalFilename']);
+        $mime = $attachment->mimeType !== '' ? $attachment->mimeType : 'application/octet-stream';
+        $disp = self::contentDispositionFilename($attachment->filename);
         // Browsers often refuse to render <img src="..."> when Content-Disposition is "attachment".
         $dispositionType = str_starts_with(strtolower($mime), 'image/') ? 'inline' : 'attachment';
 

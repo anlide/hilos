@@ -46,18 +46,20 @@ final class ChatFrontendProjection extends FrontendProjectionContext
      */
     protected function buildDeliveries(SourceChangeSet $changes): iterable
     {
+        $deliveredEventIds = $this->eventIdsDeliveredByChanges($changes);
         foreach ($changes->all() as $change) {
-            yield from $this->buildDeliveriesForChange($change);
+            yield from $this->buildDeliveriesForChange($change, $deliveredEventIds);
         }
     }
 
     /**
+     * @param array<int, true> $deliveredEventIds Events already projected by direct event changes
      * @return iterable<FrontendDelivery>
      */
-    private function buildDeliveriesForChange(SourceChange $change): iterable
+    private function buildDeliveriesForChange(SourceChange $change, array $deliveredEventIds): iterable
     {
         if ($change->kind === SourceChange::KIND_DB) {
-            yield from $this->buildDbDeliveries($change);
+            yield from $this->buildDbDeliveries($change, $deliveredEventIds);
             return;
         }
 
@@ -67,12 +69,18 @@ final class ChatFrontendProjection extends FrontendProjectionContext
     }
 
     /**
+     * @param array<int, true> $deliveredEventIds Events already projected by direct event changes
      * @return iterable<FrontendDelivery>
      */
-    private function buildDbDeliveries(SourceChange $change): iterable
+    private function buildDbDeliveries(SourceChange $change, array $deliveredEventIds): iterable
     {
         if ($change->sourceKey === DbChatContext::events) {
             yield from $this->buildEventDeliveries($change);
+            return;
+        }
+
+        if ($change->sourceKey === DbChatContext::eventAttachments) {
+            yield from $this->buildEventAttachmentDeliveries($change, $deliveredEventIds);
             return;
         }
 
@@ -125,12 +133,37 @@ final class ChatFrontendProjection extends FrontendProjectionContext
      */
     private function buildEventDeliveries(SourceChange $change): iterable
     {
-        if ($change->mutationType !== TableMutationType::Create || Hilos::$db === null) {
+        if ($change->mutationType !== TableMutationType::Create) {
             return;
         }
 
-        $eventId = (int)$change->sourceId;
-        if ($eventId <= 0) {
+        yield from $this->buildEventDeliveryById((int)$change->sourceId);
+    }
+
+    /**
+     * @param array<int, true> $deliveredEventIds Events already projected by direct event changes
+     * @return iterable<FrontendDelivery>
+     */
+    private function buildEventAttachmentDeliveries(SourceChange $change, array $deliveredEventIds): iterable
+    {
+        if ($change->mutationType === TableMutationType::Delete) {
+            return;
+        }
+
+        $eventId = $this->eventIdFromAttachmentChange($change);
+        if ($eventId <= 0 || isset($deliveredEventIds[$eventId])) {
+            return;
+        }
+
+        yield from $this->buildEventDeliveryById($eventId);
+    }
+
+    /**
+     * @return iterable<FrontendDelivery>
+     */
+    private function buildEventDeliveryById(int $eventId): iterable
+    {
+        if ($eventId <= 0 || Hilos::$db === null) {
             return;
         }
 
@@ -139,11 +172,10 @@ final class ChatFrontendProjection extends FrontendProjectionContext
             return;
         }
 
-        $replaceEvents = $event->type === ChatEventType::CHAT_CLEARED->value;
         $payload = new ChatEventSignalDTO(
             new EntitiesChangesDTO(
                 full: [DbChatContext::events => Events::fromSingleItem($event)],
-                replaceFullKeys: $replaceEvents ? [DbChatContext::events] : [],
+                replaceFullKeys: $event->type === ChatEventType::CHAT_CLEARED->value ? [DbChatContext::events] : [],
             ),
             frontend: $this->frontendUpdatesForEventUser($event->type, $event->userId),
         );
@@ -153,6 +185,25 @@ final class ChatFrontendProjection extends FrontendProjectionContext
             ChatSignalConstants::NEW_EVENT,
             $payload,
         );
+    }
+
+    /**
+     * @return array<int, true>
+     */
+    private function eventIdsDeliveredByChanges(SourceChangeSet $changes): array
+    {
+        $eventIds = [];
+        foreach ($changes->all() as $change) {
+            if (
+                $change->kind === SourceChange::KIND_DB
+                && $change->sourceKey === DbChatContext::events
+                && $change->mutationType === TableMutationType::Create
+            ) {
+                $eventIds[(int)$change->sourceId] = true;
+            }
+        }
+
+        return $eventIds;
     }
 
     /**
@@ -467,6 +518,20 @@ final class ChatFrontendProjection extends FrontendProjectionContext
         $setting = Hilos::$db->settings[(int)$change->sourceId] ?? null;
 
         return $setting !== null ? (string)$setting->key : '';
+    }
+
+    private function eventIdFromAttachmentChange(SourceChange $change): int
+    {
+        $eventId = (int)($change->row['event_id'] ?? $change->row['eventId'] ?? 0);
+        if ($eventId > 0) {
+            return $eventId;
+        }
+
+        if (Hilos::$db === null) {
+            return 0;
+        }
+
+        return (int)(Hilos::$db->eventAttachments[(int)$change->sourceId]?->eventId ?? 0);
     }
 
     private function frontendUpdatesForEventUser(string $eventType, ?int $userId): ?FrontendChangesDTO

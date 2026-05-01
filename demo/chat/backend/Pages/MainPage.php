@@ -17,6 +17,8 @@ use Demo\Chat\Core\Router\DTO\ModerationResultSignalData;
 use Demo\Chat\Core\Router\DTO\ModerationRequestSignalData;
 use Demo\Chat\Core\Router\DTO\OutboundModerationStateUpdateSignalData;
 use Demo\Chat\Database\DbChatContext;
+use Demo\Chat\Database\DTO\PublishedAttachmentInput;
+use Demo\Chat\Database\DTO\PublishedAttachmentInputs;
 use Demo\Chat\Database\View\Collection\Bots;
 use Demo\Chat\Frontend\BotFrontendStateProjector;
 use Demo\Chat\Frontend\UserFrontendStateProjector;
@@ -409,13 +411,11 @@ final class MainPage extends AbstractChatPage
                 $this->sendOutboundModerationStateUpdate($acceptKey, $userId);
                 return;
             }
-            $attachments[] = [
-                'originalFilename' => $draft->originalFilename,
-                'mimeType' => $draft->mimeType,
-                'size' => $draft->size,
-                'downloadToken' => pathinfo($draft->quarantineBasename, PATHINFO_FILENAME),
-                'storedName' => $draft->quarantineBasename,
-            ];
+            $attachments[] = new PublishedAttachmentInput(
+                filename: $draft->originalFilename,
+                mimeType: $draft->mimeType,
+                storedName: $draft->quarantineBasename,
+            );
         }
 
         if (!Hilos::$rt->userStates->actions->clearOutboundModeration($userId, $result->requestId)) {
@@ -428,7 +428,11 @@ final class MainPage extends AbstractChatPage
         Hilos::$rt->attachmentDrafts->actions->deleteByIds($draftIds, deleteFiles: false);
         $this->sendOutboundModerationStateUpdate($acceptKey, $userId);
         $this->sendAttachmentDraftsUpdate($acceptKey);
-        Hilos::$db->events->actions->addMessage($result->message, userId: $userId, attachments: $attachments);
+        Hilos::$db->events->actions->addMessage(
+            $result->message,
+            userId: $userId,
+            attachments: new PublishedAttachmentInputs(...$attachments),
+        );
     }
 
     /**

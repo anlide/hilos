@@ -38,6 +38,14 @@ export type EventPayload = {
   type: string
   timestamp: number | string
   data: Record<string, unknown> | string | null
+  attachments?: EventAttachmentPayload[]
+}
+
+export type EventAttachmentPayload = {
+  id: number
+  eventId: number
+  filename: string
+  mimeType: string
 }
 
 export const isRecord = (value: unknown): value is JsonRecord =>
@@ -80,7 +88,31 @@ export const isEventPayload = (value: unknown): value is EventPayload => {
   if (!isRecord(value) || typeof value.id !== 'number' || typeof value.type !== 'string') {
     return false
   }
-  return !(value.timestamp !== undefined && typeof value.timestamp !== 'number' && typeof value.timestamp !== 'string');
+  if ('attachments' in value && parseEventAttachmentPayloads(value.attachments) === null) {
+    return false
+  }
+  return !(value.timestamp !== undefined && typeof value.timestamp !== 'number' && typeof value.timestamp !== 'string')
+}
+
+export function parseEventAttachmentPayloads(value: unknown): EventAttachmentPayload[] | null {
+  if (value === undefined) {
+    return []
+  }
+  if (!Array.isArray(value)) {
+    return null
+  }
+  if (!value.every((item) => (
+    isRecord(item)
+    && typeof item.id === 'number'
+    && typeof item.eventId === 'number'
+    && typeof item.filename === 'string'
+    && typeof item.mimeType === 'string'
+    && !('storedName' in item)
+  ))) {
+    return null
+  }
+
+  return value as EventAttachmentPayload[]
 }
 
 export function parseEventPayloads(value: unknown): EventPayload[] | null {
@@ -119,5 +151,6 @@ export function eventPayloadToEvent(p: EventPayload): InstanceType<typeof Event>
     type: p.type,
     timestamp: timestampString,
     data: eventData,
+    attachments: p.attachments ?? [],
   })
 }
