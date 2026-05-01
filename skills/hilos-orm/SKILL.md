@@ -34,8 +34,11 @@ document that matches the change.
 - `DbItem` is the read-only item facade returned from a `DbCollection`.
 - Entity classes mirror raw DB rows; Object classes hold enriched or transformed
   view data; View collection/item classes expose the app-facing DB API.
-- Collection actions handle collection-wide writes such as add/register.
-- Item actions handle writes for one loaded item such as update/delete.
+- Collection actions handle create/register/add and true collection-wide or
+  bulk writes.
+- Item actions handle update/delete writes for one loaded item.
+- Read helpers belong on `DbCollection`, `DbItem`, Object helpers, or typed
+  projection APIs, not on `actions`.
 
 ## Workflow
 
@@ -54,10 +57,13 @@ document that matches the change.
    the collection does not document matching array access.
 6. Put new DB writes in collection actions or item actions, not in page/table
    handlers.
-7. Put read helpers and lookup methods on the existing collection/item layer
+7. When updating or deleting one DB item and the collection key is known, load
+   the item and call `$item->actions->...`; do not add collection actions that
+   accept the item key for that one-item write.
+8. Put read helpers and lookup methods on the existing collection/item layer
    before introducing new API surface.
-8. Add migrations for schema changes and update Entities to match schema.
-9. Run schema/test validation through composer scripts, never direct host
+9. Add migrations for schema changes and update Entities to match schema.
+10. Run schema/test validation through composer scripts, never direct host
    phpunit.
 
 ## Examples
@@ -67,7 +73,7 @@ $user = Hilos::$db->users->findBySession($acceptKey);
 $user = Hilos::$db->users->actions->register($sessionToken);
 $settings = Hilos::$db->settings;
 $setting = $settings->findByKey($key);
-$setting?->actions->update(['value' => $value]);
+$setting?->actions->updateValue($value);
 ```
 
 When a collection supports array-style access, prefer the collection API instead
@@ -95,5 +101,8 @@ $setting = Hilos::$db->settings->findByKey($key);
   value.
 - Never replace a named finder with `[$key]` unless the collection documents
   that offset as the same key.
+- Never use `actions` for read-only helpers; actions are write APIs.
+- Never update or delete one known DB item through collection actions that
+  accept that item's key; use the loaded `DbItem` actions.
 - Never put business logic or DB queries inside Entity classes.
 - Only the truth source agent writes to its owned DB/RT collection.

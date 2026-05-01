@@ -39,9 +39,7 @@ final class ChatAgentModerationTest extends IntegrationTestCase
         try {
             $user = Hilos::$db->users->actions->register(bin2hex(random_bytes(16)));
             Hilos::$rt->connections->actions->register('stop-ak', $user->id);
-            Hilos::$rt->userStates->actions->ensure($user->id);
-            Hilos::$rt->userStates->actions->startOutboundModeration(
-                $user->id,
+            Hilos::$rt->userStates->actions->ensure($user->id)->actions->startOutboundModeration(
                 'request-stop',
                 'pending moderation',
                 [],
@@ -71,9 +69,7 @@ final class ChatAgentModerationTest extends IntegrationTestCase
 
         try {
             $user = Hilos::$db->users->actions->register(bin2hex(random_bytes(16)));
-            Hilos::$rt->userStates->actions->ensure($user->id);
-            Hilos::$rt->userStates->actions->startOutboundModeration(
-                $user->id,
+            Hilos::$rt->userStates->actions->ensure($user->id)->actions->startOutboundModeration(
                 'request-closed',
                 'pending moderation',
                 [],
@@ -111,9 +107,7 @@ final class ChatAgentModerationTest extends IntegrationTestCase
         try {
             $user = Hilos::$db->users->actions->register(bin2hex(random_bytes(16)));
             Hilos::$rt->connections->actions->register('live-ak', $user->id);
-            Hilos::$rt->userStates->actions->ensure($user->id);
-            Hilos::$rt->userStates->actions->startOutboundModeration(
-                $user->id,
+            Hilos::$rt->userStates->actions->ensure($user->id)->actions->startOutboundModeration(
                 'request-live',
                 'pending moderation',
                 [],
@@ -151,7 +145,7 @@ final class ChatAgentModerationTest extends IntegrationTestCase
         try {
             $user = Hilos::$db->users->actions->register(bin2hex(random_bytes(16)));
             Hilos::$rt->connections->actions->register('rate-ak', $user->id);
-            Hilos::$rt->userStates->actions->recordOutboundSubmitted($user->id);
+            Hilos::$rt->userStates->actions->ensure($user->id)->actions->recordOutboundSubmitted();
 
             $this->expectException(ValidationException::class);
 

@@ -22,7 +22,7 @@ $setting = Hilos::$db->settings->findByKey('moderation_url');
 ## Editing settings
 
 - Admin UI: `/hilos/settings` or admin panel settings table
-- Direct: `Hilos::$db->settings->actions->update($key, $value)`
+- Direct: `Hilos::$db->settings->findByKey($key)?->actions->updateValue($value)`
 
 ## Key settings (seed 003 defaults)
 

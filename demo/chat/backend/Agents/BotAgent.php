@@ -14,6 +14,7 @@ use Demo\Chat\Database\DbChatContext;
 use Demo\Chat\Database\Object\Item\Bot as ObjectBot;
 use Demo\Chat\Database\View\Item\Bot as ViewBot;
 use Demo\Chat\Hilos;
+use Demo\Chat\Runtime\State\Item\BotAgentStatus as StateBotAgentStatus;
 use Demo\Chat\Runtime\State\Item\ChatContext as StateChatContext;
 use Demo\Chat\Runtime\View\Context\RtChatContext;
 use Demo\Chat\Utils\ChatLLMHelper;
@@ -83,7 +84,11 @@ class BotAgent extends AbstractAgent
     {
         $botId = (int) $this->agentIndex;
         $this->registerRtTruthSource(RtChatContext::botAgentStatuses, [(string) $botId]);
-        Hilos::$rt->botAgentStatuses->actions->markJoined($botId);
+        $status = Hilos::$rt->botAgentStatuses[$botId]
+            ?? Hilos::$rt->botAgentStatuses->actions->create($botId, StateBotAgentStatus::STATUS_JOINED);
+        if ($status->status !== StateBotAgentStatus::STATUS_JOINED) {
+            $status->actions->markJoined();
+        }
 
         // Bots without topic restriction (leaders) should start conversation when chat is empty.
         // RtSync from init() may arrive before BotAgents exist, so schedule on join as fallback.
@@ -96,7 +101,11 @@ class BotAgent extends AbstractAgent
     public function onStop(): void
     {
         $botId = (int) $this->agentIndex;
-        Hilos::$rt->botAgentStatuses->actions->markLeft($botId);
+        $status = Hilos::$rt->botAgentStatuses[$botId]
+            ?? Hilos::$rt->botAgentStatuses->actions->create($botId, StateBotAgentStatus::STATUS_LEFT);
+        if ($status->status !== StateBotAgentStatus::STATUS_LEFT) {
+            $status->actions->markLeft();
+        }
     }
 
     /**

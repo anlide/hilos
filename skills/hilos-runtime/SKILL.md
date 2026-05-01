@@ -26,10 +26,10 @@ Start with `agents.md`, then read the matching runtime guide.
   state rows.
 - Collection and item read helpers belong on `RtCollection`/`RtItem`, not on
   `actions`.
-- Collection actions handle collection-wide writes such as registering or
-  clearing runtime rows.
-- Item actions handle writes for one loaded `RtItem`, such as per-connection
-  upload progress or UI state.
+- Collection actions handle create/register/ensure and true collection-wide or
+  bulk writes, such as clearing runtime rows.
+- Item actions handle writes for one loaded `RtItem`, such as update/delete,
+  per-connection upload progress, or UI state.
 - Runtime state is for live, transient state: active sockets, upload sessions,
   moderation UI state, pending per-user text, and other data that can be
   rebuilt or safely lost on process restart.
@@ -57,18 +57,21 @@ Start with `agents.md`, then read the matching runtime guide.
 11. Put read-only helpers on the view collection or view item. Do not add
    `actions->has*()`, `actions->can*()`, `actions->get*()`, or similar read
    APIs.
-12. In collection RT actions, use `$this->stateCollection[$id]` for backing
-   state rows instead of private lookup helpers when the collection key is known.
-13. Add a concrete `@property-read StateFooCollection $stateCollection` PHPDoc
+12. When updating or deleting one runtime item and the collection key is known,
+   load the item and call `$item->actions->...`; do not add collection actions
+   that accept the item key for that one-item write.
+13. In collection RT actions, use `$this->stateCollection[$id]` only for
+   create/ensure, clear, or real bulk logic owned by the collection.
+14. Add a concrete `@property-read StateFooCollection $stateCollection` PHPDoc
    on each collection actions class; the base generic documents the contract,
    but PhpStorm often needs the local property annotation.
-14. Prefer real PHP 8.4 typed properties on `RtState` classes over magic-only
+15. Prefer real PHP 8.4 typed properties on `RtState` classes over magic-only
     `@property` fields; use `public private(set)` for immutable ids and property
     hooks only when a field needs normalization or invariant logic.
-15. Do not implement `__get()` / `__set()` in concrete `RtState` classes for
+16. Do not implement `__get()` / `__set()` in concrete `RtState` classes for
     declared row fields; action code should read/write the declared properties
     directly, then call `sync()`.
-16. In concrete `RtStates` collections, override `get()` as nullable
+17. In concrete `RtStates` collections, override `get()` as nullable
     `?StateFoo` and `offsetGet()` as non-null `StateFoo`; use `get()` for
     optional lookups and `[]` only when the row must already exist.
 
@@ -78,6 +81,7 @@ Start with `agents.md`, then read the matching runtime guide.
 $connection = Hilos::$rt->connections[$acceptKey] ?? null;
 $connections = Hilos::$rt->connections->forUser($userId);
 Hilos::$rt->connections->actions->register($acceptKey, $userId);
+$connection?->actions->unregister();
 $connection?->actions->clearFileModerationBanner();
 ```
 
@@ -101,5 +105,7 @@ of duplicating runtime mutation logic in the page/table layer.
 - Do not expose application-level `applyDiff*()` write APIs on RT actions.
 - Do not put read-only helpers on runtime `actions`; use `RtCollection` or
   `RtItem` instead.
+- Do not update or delete one known runtime item through collection actions that
+  accept that item's key; use the loaded `RtItem` actions.
 - Do not move runtime mutation logic into page/table layers without an explicit
   boundary reason.

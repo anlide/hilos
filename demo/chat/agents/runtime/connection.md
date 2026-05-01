@@ -37,9 +37,9 @@ Runtime row for one active WebSocket connection. Holds transport metadata plus t
 
 ## Lifecycle
 
-- **Created**: `ConnectionActions::register(acceptKey, userId)` in `ChatAgent::onSignalHandshake()`.
+- **Created**: `ConnectionsActions::register(acceptKey, userId)` in `ChatAgent::onSignalHandshake()`.
 - **Updated**: upload fields set during binary upload init/frame processing.
-- **Deleted**: `ConnectionsActions::unregister(acceptKey)` in `ChatAgent::onSignalConnectionClose()`.
+- **Deleted**: `Hilos::$rt->connections[$acceptKey]->actions->unregister()` in `ChatAgent::onSignalConnectionClose()`.
 
 Completed uploads no longer live on `Connection`; they become `AttachmentDraft` rows keyed by draft id and owned by the same `acceptKey`.
 

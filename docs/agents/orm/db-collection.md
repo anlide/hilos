@@ -84,14 +84,18 @@ Put reusable lookups on the collection layer instead of rebuilding the same
 filter in pages or tables. Example: `Users::findBySession()` delegates to the
 Object collection and returns the matching `DbItem`.
 
+Do not put read-only helpers under `->actions`. Actions are write APIs; using
+them for reads hides ownership boundaries and makes call sites look like they
+mutate state.
+
 For choosing between `[]`, magic/item properties, result accessors, and
 `findBy*()` methods, read `docs/agents/orm/accessor-contracts.md`.
 
 ## Collection Actions
 
-Collection actions are for writes that create or mutate collection-level state:
-register a user, add an event, delete all rows, import a batch, or perform a
-collection-owned business transition.
+Collection actions are for writes that create rows or affect the collection as
+a whole: register a user, add an event, delete all rows, import a batch, or
+perform a real bulk transition.
 
 ```php
 $user = Hilos::$db->users->actions->register($sessionToken);
@@ -102,9 +106,21 @@ A collection action receives the `DbCollection`, can use its `objectCollection`
 shortcut, should call `ensureCanCreate()` or `ensureCanWrite()` when mutating,
 and should keep the in-memory object collection synchronized after DB changes.
 
+Do not put update/delete operations for one known collection item behind a
+collection action that accepts the item's key:
+
+```php
+// Wrong: key identifies one settings item.
+Hilos::$db->settings->actions->update($key, $value);
+
+// Correct: load the item by key, then mutate that item.
+Hilos::$db->settings->findByKey($key)?->actions->updateValue($value);
+```
+
 ## Item Actions
 
-Item actions are for writes on a single loaded `DbItem`:
+Item actions are for writes on a single loaded `DbItem`, including update and
+delete operations when the caller already has the collection key:
 
 ```php
 $setting = Hilos::$db->settings->findByKey($key);
@@ -150,7 +166,8 @@ relying on an unstructured array convention.
 | DB-backed lookup or query helper | Object collection plus View collection wrapper |
 | Caller-facing read transformation | View item or View collection |
 | Create/register/add operation | Collection actions |
-| Update/delete one item | Item actions |
+| Delete all rows, import a batch, or mutate a batch | Collection actions |
+| Update/delete one item when its key is known | Item actions |
 | Page response assembly | Page handler, using existing DB APIs only |
 | Table query/result shaping | Table layer, delegating DB behavior to collections/actions |
 
@@ -178,3 +195,6 @@ Hilos::$db->events->actions->add($type);
 Do not add raw SQL, entity mutation, or duplicate filtering logic to page/table
 layers just because it is local to one screen. Page/table code should orchestrate
 existing typed DB APIs; the DB layer should own persistent data behavior.
+
+Do not add read-only methods to actions. Put reads on `DbCollection`, `DbItem`,
+Object collection/item helpers, or typed projection APIs.

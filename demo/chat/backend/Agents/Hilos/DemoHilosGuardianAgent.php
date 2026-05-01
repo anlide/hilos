@@ -68,7 +68,11 @@ class DemoHilosGuardianAgent extends AbstractHilosGuardianAgent
      */
     protected function onGuardianRunStatusChanged(string $agentId, GuardianRunStatus $status): void
     {
-        Hilos::$rt->guardianAgentStatuses->actions->setStatus($agentId, $status);
+        $statusItem = Hilos::$rt->guardianAgentStatuses[$agentId]
+            ?? Hilos::$rt->guardianAgentStatuses->actions->create($agentId, $status);
+        if ($statusItem->status !== $status->value) {
+            $statusItem->actions->setStatus($status);
+        }
     }
 
     /**

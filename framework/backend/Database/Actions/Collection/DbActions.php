@@ -20,9 +20,9 @@ use Hilos\Database\View\Collection\DbCollection;
 use Hilos\Database\View\Item\DbItem;
 
 /**
- * Base class for Db Actions (write operations for Db collections).
- * Actions are used to perform write operations on collections.
- * Each DbCollection can have its own Actions class with collection-specific methods.
+ * Base class for Db collection actions.
+ * Collection actions are for create, bulk, and collection-wide writes.
+ * One-item update/delete operations belong to the loaded DbItem actions.
  *
  * Usage:
  *   $user = Hilos::$db->users->actions->register($sessionToken);

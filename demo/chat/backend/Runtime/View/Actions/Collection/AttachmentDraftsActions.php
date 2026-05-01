@@ -90,27 +90,6 @@ final class AttachmentDraftsActions extends RtActions
     }
 
     /**
-     * Delete one draft only if it belongs to the given connection.
-     *
-     * @param string $acceptKey WebSocket connection id
-     * @param string $draftId Draft id
-     * @param bool $deleteFiles When true, delete quarantine file as well
-     * @return bool True when the draft was removed
-     * @throws FileDeleteException When a quarantine file cannot be deleted
-     * @throws RtActionsCollectionNameNullException
-     * @throws RtTruthSourceWriteNotAllowedException
-     */
-    public function deleteForAcceptKeyById(string $acceptKey, string $draftId, bool $deleteFiles): bool
-    {
-        $draft = $this->stateCollection->get($draftId);
-        if ($draft === null || $draft->acceptKey !== $acceptKey) {
-            return false;
-        }
-
-        return $this->deleteByIds([$draftId], $deleteFiles);
-    }
-
-    /**
      * Delete requested drafts.
      *
      * @param list<string> $draftIds Draft ids

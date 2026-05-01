@@ -74,10 +74,10 @@ $connection->status = $newStatus;
 $connection->sync();        // broadcasts RT_SYNC_UPDATED to all workers
 ```
 
-Or use an **Actions** class (recommended pattern):
+Or use an item **Actions** class when the caller has the collection key:
 
 ```php
-Hilos::$rt->connections->actions->setUserId($acceptKey, $newUserId);
+Hilos::$rt->connections[$acceptKey]?->actions->setUserId($newUserId);
 ```
 
 Custom RT actions must mutate typed state fields and call `sync()`. Do not call
@@ -85,10 +85,15 @@ Custom RT actions must mutate typed state fields and call `sync()`. Do not call
 application code; `applyDiff()` is for inbound RT synchronization after another
 worker already made the write.
 
-Collection actions expose `$this->stateCollection` as a typed magic property
-for the backing `RtStates` collection. Repeat the concrete `@property-read`
-annotation on every collection actions class; the base generic documents the
-contract, but PhpStorm often needs the local annotation:
+Collection actions may create rows or operate on the whole collection. Do not
+add a collection action that accepts a runtime row id to update or delete that
+one row. Load the item by key and put the write on that item's actions.
+
+Collection actions expose `$this->stateCollection` as a typed magic property for
+create, ensure, clear, and bulk logic that legitimately owns the collection.
+Repeat the concrete `@property-read` annotation on every collection actions
+class; the base generic documents the contract, but PhpStorm often needs the
+local annotation:
 
 ```php
 /**
@@ -130,9 +135,9 @@ if ($state !== null) {
 
 ## Lifecycle
 
-- Created: `RtStates::actions->create(...)` or `ensure(...)`
-- Updated: via actions or direct field set + `sync()`
-- Deleted: `RtStates::actions->delete($id)`
+- Created: collection actions such as `create(...)`, `register(...)`, or `ensure(...)`
+- Updated: item actions when the item key is known, or direct field set + `sync()` inside RT internals
+- Deleted: item actions when one item key is known; collection actions only for clear/bulk cleanup
 - On worker sync: `applyDiff()` called with changed fields only
 
 ## markRtSyncBaseline()

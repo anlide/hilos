@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Demo\Chat\Runtime\View\Item;
 
 use Demo\Chat\Runtime\State\Item\AttachmentDraft as StateAttachmentDraft;
+use Demo\Chat\Runtime\View\Actions\Item\AttachmentDraftActions;
+use Hilos\Runtime\Exception\Item\RtItemActionsClassException;
 use Hilos\Runtime\Exception\Item\RtItemPropertyNotFoundException;
 use Hilos\Runtime\View\Item\RtItem;
 
@@ -22,6 +24,7 @@ use Hilos\Runtime\View\Item\RtItem;
  * @property-read int $size File size in bytes
  * @property-read string $normalizedFilename Normalized filename
  * @property-read int $uploadedAt Upload completion unix timestamp
+ * @property-read AttachmentDraftActions $actions Write operations for this draft
  */
 final class AttachmentDraft extends RtItem
 {
@@ -36,9 +39,10 @@ final class AttachmentDraft extends RtItem
     /**
      * Delegates known keys to the backing state.
      *
+     * @throws RtItemActionsClassException When item actions class is missing or invalid
      * @throws RtItemPropertyNotFoundException When $name is not a declared property
      */
-    public function __get(string $name): string|int
+    public function __get(string $name): string|int|AttachmentDraftActions
     {
         /** @var StateAttachmentDraft $state */
         $state = $this->_state;
@@ -53,6 +57,7 @@ final class AttachmentDraft extends RtItem
             StateAttachmentDraft::size => $state->size,
             StateAttachmentDraft::normalizedFilename => $state->normalizedFilename,
             StateAttachmentDraft::uploadedAt => $state->uploadedAt,
+            RtItem::actions => $this->getItemActions(),
             default => parent::__get($name),
         };
     }

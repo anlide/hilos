@@ -4,9 +4,14 @@ declare(strict_types=1);
 
 namespace Hilos\Runtime\View\Actions\Item;
 
+use Hilos\Constants\SignalConstants;
+use Hilos\Core\Sync\DTO\RtSyncDeletedSignalData;
+use Hilos\Hilos;
 use Hilos\Database\Actions\Item\DbActions;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
+use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Runtime\Exception\Item\RtItemParentCollectionNullException;
+use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\Runtime\State\Item\RtState;
 use Hilos\Runtime\View\Collection\RtCollection;
 use Hilos\Runtime\View\Item\RtItem;
@@ -83,6 +88,37 @@ abstract class RtActions
     {
         $this->state->sync();
         $this->getRtCollection()->clearCache();
+    }
+
+    /**
+     * Delete the current runtime item and broadcast the previous row.
+     *
+     * @throws RtActionsCollectionNameNullException When collection name is null.
+     * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable.
+     * @throws RtItemParentCollectionNullException When item is not attached to a collection.
+     * @throws RtTruthSourceWriteNotAllowedException When truth source does not allow write.
+     */
+    protected function remove(): void
+    {
+        $this->ensureCanWrite();
+
+        $collection = $this->getRtCollection();
+        $collectionName = $collection->getCollectionName();
+        if ($collectionName === null) {
+            throw new RtActionsCollectionNameNullException(
+                'Cannot remove runtime item: collection name is null'
+            );
+        }
+
+        $stateId = $this->state->getId();
+        $row = $this->state->toArray();
+        $collection->getStateCollection()->remove($stateId);
+        $collection->clearCache();
+
+        Hilos::$sr?->queueRtSyncSignal(
+            SignalConstants::RT_SYNC_DELETED,
+            new RtSyncDeletedSignalData($collectionName, $stateId, $row),
+        );
     }
 
     /**

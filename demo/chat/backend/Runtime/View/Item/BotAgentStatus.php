@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Demo\Chat\Runtime\View\Item;
 
 use Demo\Chat\Runtime\State\Item\BotAgentStatus as StateBotAgentStatus;
+use Demo\Chat\Runtime\View\Actions\Item\BotAgentStatusActions;
+use Hilos\Runtime\Exception\Item\RtItemActionsClassException;
 use Hilos\Runtime\Exception\Item\RtItemPropertyNotFoundException;
 use Hilos\Runtime\View\Item\RtItem;
 
@@ -16,6 +18,7 @@ use Hilos\Runtime\View\Item\RtItem;
  * @property-read int $botId Bot database id
  * @property-read string $status Lifecycle marker
  * @property-read int $updatedAt Last update unix time
+ * @property-read BotAgentStatusActions $actions Write operations for this bot status
  */
 final class BotAgentStatus extends RtItem
 {
@@ -28,9 +31,10 @@ final class BotAgentStatus extends RtItem
     }
 
     /**
+     * @throws RtItemActionsClassException When item actions class is missing or invalid
      * @throws RtItemPropertyNotFoundException When $name is not a declared property
      */
-    public function __get(string $name): int|string
+    public function __get(string $name): int|string|BotAgentStatusActions
     {
         /** @var StateBotAgentStatus $state */
         $state = $this->_state;
@@ -39,6 +43,7 @@ final class BotAgentStatus extends RtItem
             StateBotAgentStatus::botId => $state->botId,
             StateBotAgentStatus::status => $state->status,
             StateBotAgentStatus::updatedAt => $state->updatedAt,
+            RtItem::actions => $this->getItemActions(),
             default => parent::__get($name),
         };
     }

@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Runtime\View\Actions\Collection;
 
-use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\State\Collection\Connections as StateConnections;
 use Demo\Chat\Runtime\State\Item\Connection as StateConnection;
 use Demo\Chat\Runtime\View\Collection\Connections;
@@ -63,24 +62,6 @@ final class ConnectionsActions extends RtActions
         }
 
         return $item;
-    }
-
-    /**
-     * Remove a connection by accept key (deletes an active quarantine `.part` file if present).
-     *
-     * @param string $acceptKey WebSocket accept key
-     *
-     * @throws RtActionsCollectionNameNullException
-     * @throws RtTruthSourceWriteNotAllowedException
-     */
-    public function unregister(string $acceptKey): void
-    {
-        $this->ensureCanWrite();
-        $conn = Hilos::$rt->connections[$acceptKey] ?? null;
-        if ($conn !== null && $conn->fileSessionUploadId !== null) {
-            Hilos::$fs->tmp[$conn->fileSessionQuarantineBasename]->unlink();
-        }
-        $this->removeStateFromCollection($acceptKey);
     }
 
     /**

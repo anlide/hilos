@@ -37,36 +37,29 @@ final class GuardianAgentStatusesActions extends RtActions
     public function syncStatuses(array $statuses): void
     {
         foreach ($statuses as $agentId => $status) {
-            $this->setStatus($agentId, GuardianRunStatus::tryFrom($status) ?? GuardianRunStatus::NOT_STARTED);
+            $runStatus = GuardianRunStatus::tryFrom($status) ?? GuardianRunStatus::NOT_STARTED;
+            $item = $this->collection[$agentId] ?? $this->create($agentId, $runStatus);
+            if ($item->status !== $runStatus->value) {
+                $item->actions->setStatus($runStatus);
+            }
         }
     }
 
     /**
-     * Set one guardian run status.
+     * Create one guardian run status row.
      *
      * @param string $agentId Guardian agent identifier
-     * @param GuardianRunStatus $status Guardian run status
-     * @return ViewGuardianAgentStatus Updated status row
+     * @param GuardianRunStatus $status Initial guardian run status
+     * @return ViewGuardianAgentStatus Created status row
      * @throws RtActionsCallbackNotSetException
      * @throws RtActionsCollectionNameNullException
      * @throws RtActionsStateCollectionNullException
      * @throws RtTruthSourceWriteNotAllowedException
      */
-    public function setStatus(string $agentId, GuardianRunStatus $status): ViewGuardianAgentStatus
+    public function create(string $agentId, GuardianRunStatus $status): ViewGuardianAgentStatus
     {
-        $this->ensureCanWrite();
-        $state = $this->stateCollection->get($agentId);
-        if (!$state instanceof StateGuardianAgentStatus) {
-            $state = StateGuardianAgentStatus::create($agentId, $status);
-            $this->addStateToCollection($state);
-
-            return $this->createRtItemFromState($state);
-        }
-
-        $state->status = $status->value;
-        $state->updatedAt = time();
-        $state->sync();
-        $this->clearCollectionCache();
+        $state = StateGuardianAgentStatus::create($agentId, $status);
+        $this->addStateToCollection($state);
 
         return $this->createRtItemFromState($state);
     }

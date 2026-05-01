@@ -124,12 +124,13 @@ class ChatAgent extends AbstractAgent
      */
     public function onSignalConnectionClose(WebSocketCloseSignalDTO $data, string $source, string $name): void
     {
-        if (!isset(Hilos::$rt->connections[$data->acceptKey])) {
+        $connection = Hilos::$rt->connections[$data->acceptKey] ?? null;
+        if ($connection === null) {
             return;
         }
 
         Hilos::$rt->attachmentDrafts->actions->deleteForAcceptKey($data->acceptKey, deleteFiles: true);
-        Hilos::$rt->connections->actions->unregister($data->acceptKey);
+        $connection->actions->unregister();
     }
 
     /**

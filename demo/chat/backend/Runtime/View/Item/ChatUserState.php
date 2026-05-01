@@ -8,6 +8,8 @@ use Demo\Chat\Database\DbChatContext;
 use Demo\Chat\Database\View\Item\User;
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\State\Item\ChatUserState as StateChatUserState;
+use Demo\Chat\Runtime\View\Actions\Item\ChatUserStateActions;
+use Hilos\Runtime\Exception\Item\RtItemActionsClassException;
 use Hilos\Runtime\Exception\Item\RtItemPropertyNotFoundException;
 use Hilos\Runtime\View\Item\RtItem;
 
@@ -25,6 +27,7 @@ use Hilos\Runtime\View\Item\RtItem;
  * @property-read int $outboundModerationUpdatedAt Last moderation update unix time
  * @property-read float $lastOutboundSubmittedAt Last accepted outbound submit microtime
  * @property-read ?User $user User row or null if not found in DB view
+ * @property-read ChatUserStateActions $actions Write operations for this user runtime state
  */
 final class ChatUserState extends RtItem
 {
@@ -44,9 +47,10 @@ final class ChatUserState extends RtItem
     /**
      * Delegates known keys to the backing state; virtual `user` loads from the DB users collection.
      *
+     * @throws RtItemActionsClassException When item actions class is missing or invalid
      * @throws RtItemPropertyNotFoundException When $name is not a declared virtual property
      */
-    public function __get(string $name): int|float|string|User|null
+    public function __get(string $name): int|float|string|User|null|ChatUserStateActions
     {
         /** @var StateChatUserState $state */
         $state = $this->_state;
@@ -61,6 +65,7 @@ final class ChatUserState extends RtItem
             StateChatUserState::outboundModerationUpdatedAt => $state->outboundModerationUpdatedAt,
             StateChatUserState::lastOutboundSubmittedAt => $state->lastOutboundSubmittedAt,
             DbChatContext::user => Hilos::$db->users[$state->userId] ?? null,
+            RtItem::actions => $this->getItemActions(),
             default => parent::__get($name),
         };
     }

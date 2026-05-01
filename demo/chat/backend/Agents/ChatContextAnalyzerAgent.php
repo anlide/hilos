@@ -14,6 +14,7 @@ use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\State\Item\ChatContext as StateChatContext;
 use Demo\Chat\Runtime\View\DTO\ChatContextUpdateData;
 use Demo\Chat\Runtime\View\Context\RtChatContext;
+use Demo\Chat\Runtime\View\Item\ChatContext as RuntimeChatContext;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\LLMConstants;
 use Hilos\Core\Agent\AbstractAgent;
@@ -109,7 +110,7 @@ class ChatContextAnalyzerAgent extends AbstractAgent
             $confidence = $parsed->topicConfidence;
             $summary = $parsed->summary;
 
-            Hilos::$rt->chatContexts->actions->update($parsed);
+            $this->getMainChatContext()->actions->update($parsed);
 
             $topicStatus = $topic === null ? 'null' : 'valid';
             $this->logAgentInfo(
@@ -165,11 +166,22 @@ class ChatContextAnalyzerAgent extends AbstractAgent
             $eventType = $row['type'] ?? '';
             if ($eventType === ChatEventType::CHAT_CLEARED->value) {
                 $this->pendingSummarize = false;
-                Hilos::$rt->chatContexts->actions->update(new ChatContextUpdateData(null, 0.0, ''));
+                $this->getMainChatContext()->actions->update(new ChatContextUpdateData(null, 0.0, ''));
             } elseif ($eventType === ChatEventType::MESSAGE_SENT->value) {
                 $this->pendingSummarize = true;
             }
         }
+    }
+
+    /**
+     * Load the singleton chat context, creating it when runtime was not initialized yet.
+     *
+     * @throws HilosException When runtime context initialization fails
+     */
+    private function getMainChatContext(): RuntimeChatContext
+    {
+        return Hilos::$rt->chatContexts[StateChatContext::ID_MAIN]
+            ?? Hilos::$rt->chatContexts->actions->init();
     }
 
     /**

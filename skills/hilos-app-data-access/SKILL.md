@@ -41,8 +41,11 @@ switch to the focused data-layer skill first.
 - Collection access is for loading and querying groups of items.
 - Item access is for reading one loaded model and its item-level calculated
   properties.
-- Collection actions are for collection-wide writes such as create/register.
-- Item actions are for changing one loaded item.
+- Collection actions are for create/register/ensure and true collection-wide or
+  bulk writes.
+- Item actions are for changing or deleting one loaded item.
+- Actions are write APIs. Read-only helpers belong on collections, items,
+  objects, or typed projections.
 - Tables and pages assemble responses by calling model APIs. They should not
   duplicate filters, ad hoc joins, or mutation logic that belongs to DB/RT
   collections, items, or actions.
@@ -61,16 +64,18 @@ switch to the focused data-layer skill first.
    not obvious.
 5. For reads, call the collection or item directly and keep local projection
    minimal.
-6. For writes, call a collection action or item action. Do not write raw DB/RT
-   state from page, table, or signal-delivery code.
-7. If a reusable lookup is missing, add it to the owning collection/item layer
+6. For writes, call a collection action or item action. When a DB/RT item key is
+   known and the write changes or deletes that one item, load the item and call
+   `$item->actions->...` instead of a collection action that accepts the key.
+7. Do not write raw DB/RT state from page, table, or signal-delivery code.
+8. If a reusable lookup is missing, add it to the owning collection/item layer
    through `$hilos-data-extension`; do not hide it as a private caller helper.
-8. If the value is a model-level frontend field, put it on the Object/View item,
+9. If the value is a model-level frontend field, put it on the Object/View item,
    typed DTO, or signal payload; keep table/page code as assembly.
-9. Keep signal delivery separate from business writes: perform the write through
+10. Keep signal delivery separate from business writes: perform the write through
    the owning action, then let the established subscription/signal contract emit
    or route the result.
-10. Validate through the narrow composer script selected by
+11. Validate through the narrow composer script selected by
     `$hilos-testing-cli`.
 
 ## Choosing The API
@@ -84,7 +89,8 @@ switch to the focused data-layer skill first.
 | Update one DB item | `$item->actions->update(...)` |
 | Read runtime item | `Hilos::$rt->collection[$id]` when supported |
 | Read runtime rows for one DB item | Existing RT collection helper such as `forUser(...)` |
-| Mutate runtime state | RT collection/item action owned by the truth source |
+| Create/register/ensure runtime state | RT collection action owned by the truth source |
+| Update/delete one runtime item | Loaded `RtItem` action owned by the truth source |
 | Add a missing reusable lookup | Collection/item layer, not page/table private helper |
 | Build frontend row data | Table projection from model API or View item serialization |
 
@@ -116,7 +122,7 @@ Use actions for writes:
 
 ```php
 $setting = Hilos::$db->settings->findByKey($dto->key);
-$setting?->actions->update(['value' => $dto->value]);
+$setting?->actions->updateValue($dto->value);
 ```
 
 Do not add a helper when a result or item accessor already exposes the value:
@@ -132,6 +138,7 @@ there:
 ```php
 $connection = Hilos::$rt->connections[$acceptKey] ?? null;
 $connections = Hilos::$rt->connections->forUser($userId);
+$connection?->actions->unregister();
 ```
 
 Keep table projection thin:
@@ -190,6 +197,9 @@ then call that API from the table/page.
 - Do not store durable business state in `Hilos::$rt`.
 - Do not write DB/RT state directly from pages, tables, or signal handlers when
   a collection/item action owns the mutation.
+- Do not update or delete one known DB/RT item through collection actions that
+  accept that item's key; use the loaded item actions.
+- Do not put read-only helpers on `actions`.
 - Do not introduce Repository or Service wrappers over DB or RT collections.
 - Keep internal backend APIs typed with DTOs, value objects, typed collections,
   or explicit model APIs.

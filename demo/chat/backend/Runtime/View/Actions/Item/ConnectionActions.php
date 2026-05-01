@@ -5,9 +5,12 @@ declare(strict_types=1);
 namespace Demo\Chat\Runtime\View\Actions\Item;
 
 use Demo\Chat\Constants\ChatSignalConstants;
+use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\State\Item\Connection as StateConnection;
 use Demo\Chat\Runtime\View\Item\Connection as RuntimeConnection;
+use Hilos\Fs\Exception\FileDeleteException;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
+use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\Runtime\View\Actions\Item\RtActions;
 
@@ -19,6 +22,23 @@ use Hilos\Runtime\View\Actions\Item\RtActions;
  */
 final class ConnectionActions extends RtActions
 {
+    /**
+     * Remove this connection and its active quarantine `.part` file when present.
+     *
+     * @throws FileDeleteException When an active quarantine file cannot be deleted.
+     * @throws RtActionsCollectionNameNullException When collection name is null.
+     * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable.
+     * @throws RtTruthSourceWriteNotAllowedException When truth source does not allow write.
+     */
+    public function unregister(): void
+    {
+        if ($this->state->fileSessionUploadId !== null) {
+            Hilos::$fs->tmp[$this->state->fileSessionQuarantineBasename]->unlink();
+        }
+
+        $this->remove();
+    }
+
     /**
      * After successful FILE_UPLOAD_INIT: open session row + progress bar fields on this socket.
      *

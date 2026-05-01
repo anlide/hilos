@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Demo\Chat\Runtime\View\Item;
 
 use Demo\Chat\Runtime\State\Item\GuardianAgentStatus as StateGuardianAgentStatus;
+use Demo\Chat\Runtime\View\Actions\Item\GuardianAgentStatusActions;
+use Hilos\Runtime\Exception\Item\RtItemActionsClassException;
 use Hilos\Runtime\Exception\Item\RtItemPropertyNotFoundException;
 use Hilos\Runtime\View\Item\RtItem;
 
@@ -16,6 +18,7 @@ use Hilos\Runtime\View\Item\RtItem;
  * @property-read string $agentId Guardian agent identifier
  * @property-read string $status Guardian run status value
  * @property-read int $updatedAt Last update unix time
+ * @property-read GuardianAgentStatusActions $actions Write operations for this guardian status
  */
 final class GuardianAgentStatus extends RtItem
 {
@@ -28,9 +31,10 @@ final class GuardianAgentStatus extends RtItem
     }
 
     /**
+     * @throws RtItemActionsClassException When item actions class is missing or invalid
      * @throws RtItemPropertyNotFoundException When $name is not a declared property
      */
-    public function __get(string $name): int|string
+    public function __get(string $name): int|string|GuardianAgentStatusActions
     {
         /** @var StateGuardianAgentStatus $state */
         $state = $this->_state;
@@ -39,6 +43,7 @@ final class GuardianAgentStatus extends RtItem
             StateGuardianAgentStatus::agentId => $state->agentId,
             StateGuardianAgentStatus::status => $state->status,
             StateGuardianAgentStatus::updatedAt => $state->updatedAt,
+            RtItem::actions => $this->getItemActions(),
             default => parent::__get($name),
         };
     }

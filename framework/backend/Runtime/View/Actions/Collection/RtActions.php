@@ -20,10 +20,10 @@ use Hilos\Runtime\View\Item\RtItem;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 
 /**
- * RtActions - write operations for runtime collection.
+ * RtActions - create, bulk, and collection-wide write operations for runtime collections.
  *
  * Write operations require truth source registration via RtTruthSourceRegistry.
- * All modifications to runtime data must go through this class.
+ * One-item update/delete operations belong to the loaded RtItem actions.
  *
  * @template T of RtItem
  * @template TCollection of RtCollection = RtCollection

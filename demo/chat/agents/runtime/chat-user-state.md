@@ -20,8 +20,8 @@ Per-user runtime state. Tracks the current outbound moderation request and the c
 ## Lifecycle
 
 - **Created**: `UserStatesActions::ensure(userId)` on WS handshake or first submit.
-- **Updated**: when a message submit starts moderation, when moderation returns rejected/unavailable, and when approval clears the moderation fields.
-- **Rate limited**: `recordOutboundSubmitted(userId)` runs when a submit is accepted for moderation, before the LLM result.
+- **Updated**: item actions on `Hilos::$rt->userStates[$userId]` start, fail, or clear outbound moderation.
+- **Rate limited**: `recordOutboundSubmitted()` runs on the loaded user state when a submit is accepted for moderation, before the LLM result.
 - **Deleted**: cleared on chat agent stop.
 
 ## Truth source

@@ -130,31 +130,44 @@ if ($userState?->hasActiveOutboundModeration() === true) {
 }
 ```
 
-Do not put read-only helpers under `->actions`. Runtime actions are the write
-API; using them for reads hides ownership boundaries and makes call sites look
-like they mutate state.
+Do not put read-only helpers under `->actions`. Actions are write APIs; using
+them for reads hides ownership boundaries and makes call sites look like they
+mutate state.
 
 ## Collection Actions
 
-Collection actions are for writes that create or mutate collection-level runtime
-state: register a connection, unregister a socket, clear all runtime rows, or
-perform a collection-owned transient state transition.
+Collection actions are for writes that create runtime rows or affect the
+collection as a whole: register/create/ensure rows, clear all runtime rows,
+delete expired rows, or perform a real bulk transition.
 
 ```php
 $connection = Hilos::$rt->connections->actions->register($acceptKey, $userId);
-Hilos::$rt->connections->actions->unregister($acceptKey);
+Hilos::$rt->connections->actions->clear();
 ```
 
 A collection action receives the `RtCollection`, checks truth source write
 permission, mutates the backing `RtStates` collection, and keeps the view
 collection cache synchronized.
 
+Do not put update/delete operations for one known collection item behind a
+collection action that accepts the item's key:
+
+```php
+// Wrong: acceptKey is the connections collection key.
+Hilos::$rt->connections->actions->unregister($acceptKey);
+
+// Correct: load the item by key, then mutate that item.
+Hilos::$rt->connections[$acceptKey]?->actions->unregister();
+```
+
 ## Item Actions
 
-Item actions are for writes on a single loaded `RtItem`:
+Item actions are for writes on a single loaded `RtItem`, including update and
+delete operations when the caller already has the collection key:
 
 ```php
 $connection = Hilos::$rt->connections[$acceptKey] ?? null;
+$connection?->actions->unregister();
 $connection?->actions->clearFileModerationBanner();
 $connection?->actions->applyStoredBinaryChunkProgress($receivedBytes);
 ```
@@ -172,8 +185,9 @@ an item action should own it.
 | Runtime lookup helper | State collection plus View collection wrapper |
 | Caller-facing row read helper | View item |
 | Caller-facing collection read helper | View collection |
-| Create/register/clear or mutating state transition | Collection actions |
-| Update one runtime item | Item actions |
+| Create/register/ensure a runtime row | Collection actions |
+| Clear all rows, delete expired rows, or mutate a batch | Collection actions |
+| Update/delete one runtime item when its key is known | Item actions |
 | Durable business data | DB layer, not runtime |
 | Page response assembly | Page handler, using existing RT/DB APIs only |
 | Table query/result shaping | Table layer, delegating runtime behavior to collections/actions |
@@ -215,7 +229,7 @@ logic to page/table layers just because a screen needs the value. Page/table
 code should orchestrate existing typed runtime APIs; the runtime layer should
 own shared in-memory behavior.
 
-Do not add read-only methods to runtime actions:
+Do not add read-only methods to actions:
 
 ```php
 // Wrong: actions are for writes.

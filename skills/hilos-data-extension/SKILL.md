@@ -63,13 +63,13 @@ restart is acceptable and a truth source can own writes.
 | Raw DB row mapping | Entity item/collection |
 | DB-backed derived value | Object item or View item |
 | Reusable DB lookup | Object collection plus View collection wrapper |
-| DB create/register/import | Collection actions |
+| DB create/register/import/bulk operation | Collection actions |
 | DB update/delete for one loaded item | Item actions |
 | New runtime collection | `RtContext`, `RtStates`, `RtCollection`, and actions |
 | New runtime row field | `RtState` typed property, `toArray()`, `fromRow()`, `applyDiff()` |
 | Runtime lookup | State collection plus View collection wrapper |
-| Runtime create/register/clear | Collection actions with `sync()` behavior |
-| Runtime update for one item | Item actions that mutate typed state and call `sync()` |
+| Runtime create/register/ensure/clear/bulk cleanup | Collection actions with `sync()` behavior |
+| Runtime update/delete for one loaded item | Item actions that mutate typed state and call `sync()` or remove |
 | Page/table behavior | Orchestration through existing DB/RT APIs only |
 
 ## Workflow
@@ -79,8 +79,8 @@ For DB changes:
 1. Add or update the migration first when schema changes.
 2. Update Entity fields to match the schema.
 3. Put transformed or frontend-facing state in Object/View classes.
-4. Put collection-wide writes in collection actions and per-item writes in item
-   actions.
+4. Put create/register/import/bulk writes in collection actions and per-item
+   update/delete writes in item actions.
 5. Call APIs directly from callers, for example
    `Hilos::$db->users->actions->register(...)` or
    `$user->actions->update(...)`.
@@ -92,7 +92,10 @@ For RT changes:
 3. Keep serialization and sync methods explicit:
    `toArray()`, `fromRow()`, `applyDiff()`, and `sync()`.
 4. Put writes behind runtime collection/item actions.
-5. Verify the truth source agent owns writes before mutating shared RT state.
+5. If updating or deleting one runtime item and the key is known, load the item
+   and call `$item->actions->...`; do not add a collection action that accepts
+   the item key for that one-item write.
+6. Verify the truth source agent owns writes before mutating shared RT state.
 
 ## Hard Rules
 
@@ -103,6 +106,9 @@ For RT changes:
 - Only the truth source agent writes to its owned DB/RT collection.
 - Do not store durable business state only in `Hilos::$rt`.
 - Do not duplicate DB or RT lookup/filter logic in pages.
+- Do not use `actions` for read-only helpers; actions are write APIs.
+- Do not update or delete one known DB/RT item through collection actions that
+  accept that item's key; use the loaded item actions.
 - Do not expose arbitrary runtime `applyDiff*()` application APIs; those are sync
   internals.
 - Keep internal backend APIs typed. Use DTOs, value objects, or typed

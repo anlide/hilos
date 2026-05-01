@@ -16,7 +16,12 @@ use Demo\Chat\Runtime\View\Actions\Collection\ChatContextsActions;
 use Demo\Chat\Runtime\View\Actions\Collection\ConnectionsActions;
 use Demo\Chat\Runtime\View\Actions\Collection\GuardianAgentStatusesActions;
 use Demo\Chat\Runtime\View\Actions\Collection\UserStatesActions;
+use Demo\Chat\Runtime\View\Actions\Item\AttachmentDraftActions;
+use Demo\Chat\Runtime\View\Actions\Item\BotAgentStatusActions;
+use Demo\Chat\Runtime\View\Actions\Item\ChatContextActions;
+use Demo\Chat\Runtime\View\Actions\Item\ChatUserStateActions;
 use Demo\Chat\Runtime\View\Actions\Item\ConnectionActions;
+use Demo\Chat\Runtime\View\Actions\Item\GuardianAgentStatusActions;
 use Demo\Chat\Runtime\View\Collection\AttachmentDrafts;
 use Demo\Chat\Runtime\View\Collection\BotAgentStatuses;
 use Demo\Chat\Runtime\View\Collection\ChatContexts;
@@ -40,7 +45,7 @@ use Hilos\Runtime\View\Context\RtContext;
  * Usage:
  *   Hilos::$rt->connections[$acceptKey];
  *   Hilos::$rt->connections->actions->register($acceptKey, $userId);
- *   Hilos::$rt->connections[$acceptKey]->actions->… (per-connection writes, e.g. file upload)
+ *   Hilos::$rt->connections[$acceptKey]->actions->… (per-connection writes and deletes)
  *   Hilos::$rt->userStates[$userId]; // key is string user id; offsetGet casts int to string
  *   Hilos::$rt->attachmentDrafts->forAcceptKey($acceptKey);
  *   Hilos::$rt->chatContexts[ChatContext::ID_MAIN];
@@ -79,11 +84,41 @@ final class RtChatContext extends RtContext
         $this->_stateCollections[self::chatContexts] = StateChatContexts::init();
         $this->_stateCollections[self::botAgentStatuses] = StateBotAgentStatuses::init();
         $this->_stateCollections[self::guardianAgentStatuses] = StateGuardianAgentStatuses::init();
-        $this->setRepresent(self::connections, Connections::class, ConnectionsActions::class, ConnectionActions::class);
-        $this->setRepresent(self::userStates, UserStates::class, UserStatesActions::class);
-        $this->setRepresent(self::attachmentDrafts, AttachmentDrafts::class, AttachmentDraftsActions::class);
-        $this->setRepresent(self::chatContexts, ChatContexts::class, ChatContextsActions::class);
-        $this->setRepresent(self::botAgentStatuses, BotAgentStatuses::class, BotAgentStatusesActions::class);
-        $this->setRepresent(self::guardianAgentStatuses, GuardianAgentStatuses::class, GuardianAgentStatusesActions::class);
+        $this->setRepresent(
+            self::connections,
+            Connections::class,
+            ConnectionsActions::class,
+            ConnectionActions::class,
+        );
+        $this->setRepresent(
+            self::userStates,
+            UserStates::class,
+            UserStatesActions::class,
+            ChatUserStateActions::class,
+        );
+        $this->setRepresent(
+            self::attachmentDrafts,
+            AttachmentDrafts::class,
+            AttachmentDraftsActions::class,
+            AttachmentDraftActions::class,
+        );
+        $this->setRepresent(
+            self::chatContexts,
+            ChatContexts::class,
+            ChatContextsActions::class,
+            ChatContextActions::class,
+        );
+        $this->setRepresent(
+            self::botAgentStatuses,
+            BotAgentStatuses::class,
+            BotAgentStatusesActions::class,
+            BotAgentStatusActions::class,
+        );
+        $this->setRepresent(
+            self::guardianAgentStatuses,
+            GuardianAgentStatuses::class,
+            GuardianAgentStatusesActions::class,
+            GuardianAgentStatusActions::class,
+        );
     }
 }

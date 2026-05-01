@@ -98,7 +98,6 @@ Quick navigation for AI agents. Read the relevant file before starting work.
 |---|---|
 | [ai-tools.md](docs/agents/ai-tools.md) | applying these rules in Codex, Claude, and Cursor |
 | [skills/](skills) | Codex-format Hilos skill wrappers |
-| [CLAUDE.md](CLAUDE.md) | Claude project instructions |
 | [.cursor/rules/hilos-framework.mdc](.cursor/rules/hilos-framework.mdc) | Cursor project rule |
 
 ---
@@ -113,7 +112,8 @@ Quick navigation for AI agents. Read the relevant file before starting work.
 6. **Frontend edits go through `Modal` only** — inline edit forms on pages are forbidden (see [frontend-sdk/edit-in-modal.md](docs/agents/frontend-sdk/edit-in-modal.md))
 7. For code style, use the matching small rule from [code-style/README.md](docs/agents/code-style/README.md)
 8. Internal backend API uses typed parameters, DTOs, value objects, or typed collections — unstructured arrays need a boundary or explicit reason
-9. Runtime `actions` are write APIs; put read-only helpers on `RtCollection` or `RtItem`
+9. DB/RT `actions` are write APIs; put read-only helpers on collections, items, objects, or typed projections
+10. If a DB/RT item key is known, update/delete that one item through `Hilos::$db/$rt->collection[$key]->actions`, not through collection actions that accept the key
 
 ## Project docs (existing)
 

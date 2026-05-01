@@ -25,33 +25,22 @@ use LogicException;
 final class BotAgentStatusesActions extends RtActions
 {
     /**
-     * Mark one bot agent as joined.
+     * Create one bot agent status row.
      *
      * @param int $botId Bot database id
-     * @return ViewBotAgentStatus Updated status row
+     * @param string $status Initial lifecycle marker
+     * @return ViewBotAgentStatus Created status row
      * @throws RtActionsCallbackNotSetException
      * @throws RtActionsCollectionNameNullException
      * @throws RtActionsStateCollectionNullException
      * @throws RtTruthSourceWriteNotAllowedException
      */
-    public function markJoined(int $botId): ViewBotAgentStatus
+    public function create(int $botId, string $status): ViewBotAgentStatus
     {
-        return $this->setStatus($botId, StateBotAgentStatus::STATUS_JOINED);
-    }
+        $state = StateBotAgentStatus::create($botId, $status);
+        $this->addStateToCollection($state);
 
-    /**
-     * Mark one bot agent as left.
-     *
-     * @param int $botId Bot database id
-     * @return ViewBotAgentStatus Updated status row
-     * @throws RtActionsCallbackNotSetException
-     * @throws RtActionsCollectionNameNullException
-     * @throws RtActionsStateCollectionNullException
-     * @throws RtTruthSourceWriteNotAllowedException
-     */
-    public function markLeft(int $botId): ViewBotAgentStatus
-    {
-        return $this->setStatus($botId, StateBotAgentStatus::STATUS_LEFT);
+        return $this->createRtItemFromState($state);
     }
 
     /**
@@ -80,32 +69,4 @@ final class BotAgentStatusesActions extends RtActions
         return $item;
     }
 
-    /**
-     * @param int $botId Bot database id
-     * @param string $status Lifecycle marker
-     * @return ViewBotAgentStatus Updated status row
-     * @throws RtActionsCallbackNotSetException
-     * @throws RtActionsCollectionNameNullException
-     * @throws RtActionsStateCollectionNullException
-     * @throws RtTruthSourceWriteNotAllowedException
-     */
-    private function setStatus(int $botId, string $status): ViewBotAgentStatus
-    {
-        $id = (string)$botId;
-        $this->ensureCanWriteState($id);
-        $state = $this->stateCollection->get($id);
-        if (!$state instanceof StateBotAgentStatus) {
-            $state = StateBotAgentStatus::create($botId, $status);
-            $this->addStateToCollection($state);
-
-            return $this->createRtItemFromState($state);
-        }
-
-        $state->status = $status;
-        $state->updatedAt = time();
-        $state->sync();
-        $this->clearCollectionCache();
-
-        return $this->createRtItemFromState($state);
-    }
 }

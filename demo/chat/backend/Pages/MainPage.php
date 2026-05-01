@@ -265,9 +265,8 @@ final class MainPage extends AbstractChatPage
         }
 
         $requestId = bin2hex(random_bytes(16));
-        Hilos::$rt->userStates->actions->recordOutboundSubmitted($userId);
-        Hilos::$rt->userStates->actions->startOutboundModeration(
-            $userId,
+        $userState->actions->recordOutboundSubmitted();
+        $userState->actions->startOutboundModeration(
             $requestId,
             $dto->content,
             $dto->attachmentDraftIds,
@@ -311,11 +310,12 @@ final class MainPage extends AbstractChatPage
             throw new ValidationException('Cannot delete attachment while message is being moderated');
         }
 
-        $deleted = Hilos::$rt->attachmentDrafts->actions->deleteForAcceptKeyById(
-            $acceptKey,
-            $dto->draftId,
-            deleteFiles: true,
-        );
+        $draft = Hilos::$rt->attachmentDrafts[$dto->draftId] ?? null;
+        $deleted = false;
+        if ($draft !== null && $draft->acceptKey === $acceptKey) {
+            $draft->actions->delete(deleteFiles: true);
+            $deleted = true;
+        }
         $this->sendAttachmentDraftsUpdate($acceptKey);
 
         if ($deleted && (Hilos::$rt->userStates[$userId]?->outboundModerationPhase ?? '') !== '') {
@@ -338,9 +338,7 @@ final class MainPage extends AbstractChatPage
 
         $connection = Hilos::$rt->connections[$acceptKey] ?? null;
         if ($connection === null || $connection->userId !== $userId) {
-            if (isset(Hilos::$rt->userStates[$userId])) {
-                Hilos::$rt->userStates->actions->clearOutboundModeration($userId, $result->requestId);
-            }
+            Hilos::$rt->userStates[$userId]?->actions->clearOutboundModeration($result->requestId);
             $this->logAgentInfo(
                 "Moderation result ignored for stale connection (acceptKey={$acceptKey}; userId={$userId})",
             );
@@ -358,7 +356,7 @@ final class MainPage extends AbstractChatPage
         if (!$result->allow) {
             $reason = $result->reason !== '' ? $result->reason : 'unknown';
             $phase = in_array($reason, ['service_unavailable', 'unknown'], true) ? 'unavailable' : 'rejected';
-            if (!Hilos::$rt->userStates->actions->failOutboundModeration($userId, $result->requestId, $phase, $reason)) {
+            if (!$userState->actions->failOutboundModeration($result->requestId, $phase, $reason)) {
                 $this->logAgentInfo(
                     "Moderation result ignored for stale request (acceptKey={$acceptKey}; userId={$userId}; requestId={$result->requestId})",
                 );
@@ -372,8 +370,7 @@ final class MainPage extends AbstractChatPage
         $draftIds = $userState->getOutboundModerationAttachmentDraftIds();
         $drafts = Hilos::$rt->attachmentDrafts->findAllByIdsForAcceptKey($acceptKey, $draftIds);
         if (count($drafts) !== count($draftIds)) {
-            Hilos::$rt->userStates->actions->failOutboundModeration(
-                $userId,
+            $userState->actions->failOutboundModeration(
                 $result->requestId,
                 'unavailable',
                 'attachment_missing',
@@ -387,13 +384,12 @@ final class MainPage extends AbstractChatPage
         foreach ($drafts as $draft) {
             $quarantineFile = Hilos::$fs->quarantine[$draft->quarantineBasename];
             if (!$quarantineFile->exists()) {
-                Hilos::$rt->userStates->actions->failOutboundModeration(
-                    $userId,
+                $userState->actions->failOutboundModeration(
                     $result->requestId,
                     'unavailable',
                     'attachment_missing',
                 );
-                Hilos::$rt->attachmentDrafts->actions->deleteByIds([$draft->draftId], deleteFiles: false);
+                $draft->actions->delete(deleteFiles: false);
                 $this->sendOutboundModerationStateUpdate($acceptKey, $userId);
                 $this->sendAttachmentDraftsUpdate($acceptKey);
                 return;
@@ -402,8 +398,7 @@ final class MainPage extends AbstractChatPage
                 $quarantineFile->move('published');
             } catch (FsException $e) {
                 $this->logAgentError("Failed to publish attachment draft {$draft->draftId}: {$e->getMessage()}");
-                Hilos::$rt->userStates->actions->failOutboundModeration(
-                    $userId,
+                $userState->actions->failOutboundModeration(
                     $result->requestId,
                     'unavailable',
                     'attachment_publish_failed',
@@ -418,7 +413,7 @@ final class MainPage extends AbstractChatPage
             );
         }
 
-        if (!Hilos::$rt->userStates->actions->clearOutboundModeration($userId, $result->requestId)) {
+        if (!$userState->actions->clearOutboundModeration($result->requestId)) {
             $this->logAgentInfo(
                 "Moderation approval ignored for stale request (acceptKey={$acceptKey}; userId={$userId}; requestId={$result->requestId})",
             );

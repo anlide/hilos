@@ -16,7 +16,7 @@ use Hilos\Runtime\View\Collection\RtCollection;
 /**
  * RtItem - read-only wrapper around runtime state.
  *
- * All write operations must go through RtActions.
+ * One-item write operations must go through this item's RtActions.
  *
  * @template TState of RtState
  * @property-read RtState $_state Reference to RtState instance

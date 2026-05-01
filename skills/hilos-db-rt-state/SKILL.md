@@ -66,7 +66,8 @@ table or page.
 | Computed display value for one DB item | DB Object/View item or typed DTO |
 | Table rows from DB items | Table querying `Hilos::$db` collection |
 | Page response assembly | Page using existing DB/RT APIs |
-| RT mutation | RT collection/item actions owned by truth source |
+| RT create/register/ensure or bulk mutation | RT collection actions owned by truth source |
+| RT update/delete for one loaded item | RT item actions owned by truth source |
 
 Use table/page code only when the value is truly screen-specific assembly. If
 the same value describes a user, event, room, file, or other model item, move it
@@ -135,5 +136,7 @@ live overlay.
 - Do not bypass `Hilos::$db` or `Hilos::$rt` with ad hoc arrays or duplicated
   filters in pages.
 - Only the truth source agent writes shared runtime state.
+- Do not update or delete one known runtime item through collection actions that
+  accept that item's key; use the loaded item actions.
 - Do not create Repository or Service wrappers over DB or RT collections.
 - Run validation through composer scripts selected by `$hilos-testing-cli`.
