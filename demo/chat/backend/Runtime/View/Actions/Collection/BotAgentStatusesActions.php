@@ -25,6 +25,31 @@ use LogicException;
 final class BotAgentStatusesActions extends RtActions
 {
     /**
+     * Ensure a lifecycle status row exists for the bot.
+     *
+     * @param int $botId Bot database id
+     * @return ViewBotAgentStatus Read wrapper around the ensured state
+     * @throws RtActionsCallbackNotSetException
+     * @throws RtActionsCollectionNameNullException
+     * @throws RtActionsStateCollectionNullException
+     * @throws RtTruthSourceWriteNotAllowedException
+     */
+    public function ensure(int $botId): ViewBotAgentStatus
+    {
+        $this->ensureCanWriteState((string)$botId);
+
+        $existing = $this->stateCollection->get((string)$botId);
+        if ($existing instanceof StateBotAgentStatus) {
+            return $this->createRtItemFromState($existing);
+        }
+
+        $state = StateBotAgentStatus::create($botId, StateBotAgentStatus::STATUS_LEFT);
+        $this->addStateToCollection($state);
+
+        return $this->createRtItemFromState($state);
+    }
+
+    /**
      * Create one bot agent status row.
      *
      * @param int $botId Bot database id

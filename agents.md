@@ -114,6 +114,7 @@ Quick navigation for AI agents. Read the relevant file before starting work.
 8. Internal backend API uses typed parameters, DTOs, value objects, or typed collections — unstructured arrays need a boundary or explicit reason
 9. DB/RT `actions` are write APIs; put read-only helpers on collections, items, objects, or typed projections
 10. If a DB/RT item key is known, update/delete that one item through `Hilos::$db/$rt->collection[$key]->actions`, not through collection actions that accept the key
+11. `getStateCollection()`, `RtContext::getStateCollection()`, and `$this->stateCollection` are allowed only inside `Database/` or `Runtime/` files; all other code must use typed collection/item APIs
 
 ## Project docs (existing)
 

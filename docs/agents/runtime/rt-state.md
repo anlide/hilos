@@ -66,12 +66,11 @@ Those hide the actual row shape from the IDE and make action code depend on
 runtime magic. Keep magic access only as a framework fallback for unknown
 dynamic access.
 
-After writing, call `sync()`:
+Inside `Runtime/` item actions, write typed state fields and call `sync()`:
 
 ```php
-$connection = Hilos::$rt->connections->getStateCollection()->get($acceptKey);
-$connection->status = $newStatus;
-$connection->sync();        // broadcasts RT_SYNC_UPDATED to all workers
+$this->state->status = $newStatus;
+$this->sync();        // broadcasts RT_SYNC_UPDATED to all workers
 ```
 
 Or use an item **Actions** class when the caller has the collection key:
@@ -123,13 +122,18 @@ $userState = Hilos::$rt->userStates[$userId] ?? null;
 $isChecking = $userState?->hasActiveOutboundModeration() === true;
 ```
 
-Direct backing-state reads are for runtime internals, tests, or code that is
-already inside the RT layer:
+Direct backing-state reads (`getStateCollection()`, `$this->stateCollection`,
+or `RtContext::getStateCollection()`) are allowed only in files under
+`Database/` or `Runtime/`. Agents, pages, tables, signal handlers, tests, and
+other application orchestration code must use caller-facing collection/item
+APIs. If that API is missing, add it to the owning `Runtime/` or `Database/`
+layer first:
 
 ```php
-$state = Hilos::$rt->userStates->getStateCollection()->get($userId);
-if ($state !== null) {
-    $msg = $state->moderationMessage;
+// Runtime/View/Collection/UserStates.php
+public function moderationMessageForUser(int $userId): string
+{
+    return $this->getStateCollection()->get((string)$userId)?->moderationMessage ?? '';
 }
 ```
 

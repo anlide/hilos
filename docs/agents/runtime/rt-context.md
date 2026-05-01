@@ -67,6 +67,19 @@ final class RtChatContext extends RtContext
 `Hilos::$rt->connections` calls the context magic getter and returns the
 registered `RtCollection` wrapper.
 
+## Backing-State Boundary
+
+Direct backing-state access is a low-level data-layer tool. Calls to
+`getStateCollection()`, `RtContext::getStateCollection()`, and direct
+`$this->stateCollection` access are allowed only inside files under
+`Database/` or `Runtime/`.
+
+Agents, pages, tables, signal handlers, tests, and other orchestration code
+must not use backing-state access. They must call caller-facing APIs on
+`Hilos::$rt` collections, items, or actions. When a needed read is missing, add
+a typed read helper to the owning `Runtime/View/Collection` or
+`Runtime/View/Item` class, then call that helper from the agent/page/table.
+
 The layers are:
 
 | Layer | Role | Example |
@@ -93,7 +106,7 @@ Before writing runtime-backed code:
    item actions.
 3. Inspect the View collection for existing lookup methods such as `forUser()`.
 4. Inspect the State collection for typed `get()`, `offsetGet()`, and lookup
-   helpers.
+   helpers from inside `Database/` or `Runtime/` only.
 5. Inspect collection actions for create/register/clear operations.
 6. Inspect item actions for updates on one loaded runtime item.
 7. Find the truth source registration in the owning agent's `onStart()` and
@@ -128,6 +141,17 @@ $userState = Hilos::$rt->userStates[$userId] ?? null;
 if ($userState?->hasActiveOutboundModeration() === true) {
     // ...
 }
+```
+
+Do not call `getStateCollection()` from agents, pages, tables, signal handlers,
+or tests:
+
+```php
+// Wrong outside Database/Runtime.
+$state = Hilos::$rt->chatContexts->getStateCollection()->get('main');
+
+// Correct: add/use a Runtime collection API.
+$context = Hilos::$rt->chatContexts->main();
 ```
 
 Do not put read-only helpers under `->actions`. Actions are write APIs; using

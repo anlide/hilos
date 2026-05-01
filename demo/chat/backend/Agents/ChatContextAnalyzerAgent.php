@@ -10,8 +10,8 @@ use Demo\Chat\Constants\ChatEventType;
 use Demo\Chat\Constants\ChatLLMConstants;
 use Demo\Chat\Constants\ChatTopicConstants;
 use Demo\Chat\Database\DbChatContext;
+use Demo\Chat\Database\Object\Item\Event as ObjectEvent;
 use Demo\Chat\Hilos;
-use Demo\Chat\Runtime\State\Item\ChatContext as StateChatContext;
 use Demo\Chat\Runtime\View\DTO\ChatContextUpdateData;
 use Demo\Chat\Runtime\View\Context\RtChatContext;
 use Demo\Chat\Runtime\View\Item\ChatContext as RuntimeChatContext;
@@ -66,11 +66,7 @@ class ChatContextAnalyzerAgent extends AbstractAgent
     public function onStart(): void
     {
         $this->registerRtTruthSource(RtChatContext::chatContexts);
-
-        $existing = Hilos::$rt->chatContexts->getStateCollection()->get(StateChatContext::ID_MAIN);
-        if ($existing === null) {
-            Hilos::$rt->chatContexts->actions->init();
-        }
+        $this->getMainChatContext();
     }
 
     /**
@@ -163,7 +159,7 @@ class ChatContextAnalyzerAgent extends AbstractAgent
     private function handleDbSyncChange(string $collectionKey, array $row): void
     {
         if ($collectionKey === DbChatContext::events) {
-            $eventType = $row['type'] ?? '';
+            $eventType = $row[ObjectEvent::type] ?? '';
             if ($eventType === ChatEventType::CHAT_CLEARED->value) {
                 $this->pendingSummarize = false;
                 $this->getMainChatContext()->actions->update(new ChatContextUpdateData(null, 0.0, ''));
@@ -180,7 +176,7 @@ class ChatContextAnalyzerAgent extends AbstractAgent
      */
     private function getMainChatContext(): RuntimeChatContext
     {
-        return Hilos::$rt->chatContexts[StateChatContext::ID_MAIN]
+        return Hilos::$rt->chatContexts->main()
             ?? Hilos::$rt->chatContexts->actions->init();
     }
 

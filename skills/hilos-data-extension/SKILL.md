@@ -96,6 +96,10 @@ For RT changes:
    and call `$item->actions->...`; do not add a collection action that accepts
    the item key for that one-item write.
 6. Verify the truth source agent owns writes before mutating shared RT state.
+7. Keep direct backing-state access (`getStateCollection()`,
+   `RtContext::getStateCollection()`, `$this->stateCollection`) inside
+   `Database/` or `Runtime/` files only; callers need typed collection/item
+   APIs.
 
 ## Hard Rules
 
@@ -111,5 +115,7 @@ For RT changes:
   accept that item's key; use the loaded item actions.
 - Do not expose arbitrary runtime `applyDiff*()` application APIs; those are sync
   internals.
+- Do not use runtime backing-state APIs outside files under `Database/` or
+  `Runtime/`; add a typed owning-layer API instead.
 - Keep internal backend APIs typed. Use DTOs, value objects, or typed
   collections instead of unstructured arrays unless there is a clear boundary.

@@ -25,6 +25,14 @@ use Hilos\Runtime\View\Collection\RtCollection;
 final class ChatContexts extends RtCollection
 {
     /**
+     * Returns the singleton main chat context.
+     */
+    public function main(): ?ChatContext
+    {
+        return $this[ChatContext::ID_MAIN] ?? null;
+    }
+
+    /**
      * Get underlying state collection.
      *
      * @return StateChatContexts State collection

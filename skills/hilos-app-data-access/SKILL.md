@@ -64,18 +64,22 @@ switch to the focused data-layer skill first.
    not obvious.
 5. For reads, call the collection or item directly and keep local projection
    minimal.
-6. For writes, call a collection action or item action. When a DB/RT item key is
+6. Never call `getStateCollection()`, `RtContext::getStateCollection()`, or
+   `$this->stateCollection` from agents, pages, tables, signal handlers, tests,
+   or other orchestration code. If the read API is missing, add it to the
+   owning `Database/` or `Runtime/` layer first.
+7. For writes, call a collection action or item action. When a DB/RT item key is
    known and the write changes or deletes that one item, load the item and call
    `$item->actions->...` instead of a collection action that accepts the key.
-7. Do not write raw DB/RT state from page, table, or signal-delivery code.
-8. If a reusable lookup is missing, add it to the owning collection/item layer
+8. Do not write raw DB/RT state from page, table, or signal-delivery code.
+9. If a reusable lookup is missing, add it to the owning collection/item layer
    through `$hilos-data-extension`; do not hide it as a private caller helper.
-9. If the value is a model-level frontend field, put it on the Object/View item,
+10. If the value is a model-level frontend field, put it on the Object/View item,
    typed DTO, or signal payload; keep table/page code as assembly.
-10. Keep signal delivery separate from business writes: perform the write through
+11. Keep signal delivery separate from business writes: perform the write through
    the owning action, then let the established subscription/signal contract emit
    or route the result.
-11. Validate through the narrow composer script selected by
+12. Validate through the narrow composer script selected by
     `$hilos-testing-cli`.
 
 ## Choosing The API
@@ -191,6 +195,8 @@ then call that API from the table/page.
 - Search existing magic/accessor results before adding a new finder or helper.
 - Do not use `[$key]` blindly; verify that the collection documents the offset
   key you plan to use.
+- Do not call `getStateCollection()`, `RtContext::getStateCollection()`, or
+  `$this->stateCollection` outside files under `Database/` or `Runtime/`.
 - Do not bypass `Hilos::$db` or `Hilos::$rt` with raw arrays, raw SQL, or
   duplicated filters in page/table/agent code.
 - Do not store durable business state in `Hilos::$rt`.
