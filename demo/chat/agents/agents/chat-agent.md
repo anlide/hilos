@@ -2,7 +2,7 @@
 
 **Type:** `AgentType::CHAT` (`'chat'`) | **Worker:** Monopolistic
 
-The central agent owns shared DB/RT state and handles chat-wide lifecycle signals.
+The central agent owns chat DB/RT state and handles chat-wide lifecycle signals.
 Main-page message and upload workflows are routed to `MainPage` / `UploadFileTrait` through `PageSignalRouter`.
 
 ## Responsibilities
@@ -11,8 +11,8 @@ Main-page message and upload workflows are routed to `MainPage` / `UploadFileTra
 - **Message routing**: main-page message actions and outbound moderation results are routed to `MainPage`.
 - **File upload routing**: binary WS frames are routed to `UploadFileTrait`; completed uploads become attachment drafts.
 - **Moderation results**: bot results stay in `ChatAgent`; user outbound results are page-routed.
-- **Bot lifecycle**: start/stop `BotAgent` instances, relay bot messages to frontend.
-- **Truth source**: owns `DbChatContext::events`, `users`, `bots`, `moderatorPromptPieces`, `settings`, and `RtChatContext::connections`, `userStates`, `attachmentDrafts`.
+- **Bot lifecycle**: handles moderated bot messages and chat-visible bot events.
+- **Truth source**: owns `DbChatContext::events`, `eventAttachments`, `users`, and `RtChatContext::connections`, `userStates`, `attachmentDrafts`.
 
 ## Key Signal Handlers
 

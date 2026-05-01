@@ -11,6 +11,7 @@ use Demo\Chat\Agents\Hilos\DemoHilosAgent;
 use Demo\Chat\Agents\Hilos\DemoHilosAnalyticsAgent;
 use Demo\Chat\Agents\Hilos\DemoHilosGuardianAgent;
 use Demo\Chat\Agents\Hilos\DemoHilosLogsAgent;
+use Demo\Chat\Agents\LibraryAgent;
 use Demo\Chat\Agents\ModeratorAgent;
 use Demo\Chat\Constants\AgentType;
 use Hilos\Core\Agent\AgentInterface;
@@ -39,6 +40,7 @@ final class ChatAgentWorkerFactory extends HilosAgentWorkerFactory
     {
         return match ($agentType) {
             AgentType::CHAT => new ChatAgent(),
+            AgentType::LIBRARY => new LibraryAgent(),
             AgentType::CHAT_CONTEXT_ANALYZER => new ChatContextAnalyzerAgent(),
             AgentType::BOT => new BotAgent(
                 $agentIndex ?? throw new AgentIndexRequiredException('BotAgent requires agentIndex (bot id)'),

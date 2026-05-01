@@ -29,7 +29,7 @@ use Hilos\Socket\WebSocket\DTO\WebSocketCloseSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
 
 /**
- * Monopolistic chat worker for chat DB entities, runtime connections, WebSocket lifecycle, and bot-specific signals.
+ * Monopolistic chat worker for chat events, users, runtime connections, WebSocket lifecycle, and bot-specific signals.
  *
  * On start, registers chat database tables and runtime collections as truth sources.
  */
@@ -49,8 +49,6 @@ class ChatAgent extends AbstractAgent
         $this->registerDbTruthSource(DbChatContext::events);
         $this->registerDbTruthSource(DbChatContext::eventAttachments);
         $this->registerDbTruthSource(DbChatContext::users);
-        $this->registerDbTruthSource(DbChatContext::bots);
-        $this->registerDbTruthSource(DbChatContext::moderatorPromptPieces);
         $this->registerRtTruthSource(RtChatContext::connections);
         $this->registerRtTruthSource(RtChatContext::userStates);
         $this->registerRtTruthSource(RtChatContext::attachmentDrafts);

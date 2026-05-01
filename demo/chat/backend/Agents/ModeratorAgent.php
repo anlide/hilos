@@ -10,7 +10,6 @@ use Demo\Chat\Core\Router\DTO\ModerationBotRequestSignalData;
 use Demo\Chat\Core\Router\DTO\ModerationBotResultSignalData;
 use Demo\Chat\Core\Router\DTO\ModerationRequestSignalData;
 use Demo\Chat\Core\Router\DTO\ModerationResultSignalData;
-use Demo\Chat\Database\DbChatContext;
 use Demo\Chat\Database\Object\Item\ModeratorPromptPiece as ObjectModeratorPromptPiece;
 use Demo\Chat\Hilos;
 use Demo\Chat\Utils\ChatSettingsHelper;
@@ -64,14 +63,6 @@ class ModeratorAgent extends AbstractAgent
                 url: ChatSettingsHelper::getModerationUrl(),
                 model: ChatSettingsHelper::getModerationModel(),
             );
-    }
-
-    /**
-     * Registers moderator prompt pieces as this agent's DB truth source.
-     */
-    public function onStart(): void
-    {
-        $this->registerDbTruthSource(DbChatContext::moderatorPromptPieces);
     }
 
     /**

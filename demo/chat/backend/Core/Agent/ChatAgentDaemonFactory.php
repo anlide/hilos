@@ -12,6 +12,7 @@ use Demo\Chat\Core\Agent\Daemon\Hilos\DemoHilosAgentDaemon;
 use Demo\Chat\Core\Agent\Daemon\Hilos\DemoHilosAnalyticsAgentDaemon;
 use Demo\Chat\Core\Agent\Daemon\Hilos\DemoHilosGuardianAgentDaemon;
 use Demo\Chat\Core\Agent\Daemon\Hilos\DemoHilosLogsAgentDaemon;
+use Demo\Chat\Core\Agent\Daemon\LibraryAgentDaemon;
 use Demo\Chat\Core\Agent\Daemon\ModeratorAgentDaemon;
 use Hilos\Core\Agent\Daemon\AgentDaemonInterface;
 use Hilos\Core\Agent\Daemon\HilosAgentDaemonFactory;
@@ -39,6 +40,7 @@ final class ChatAgentDaemonFactory extends HilosAgentDaemonFactory
     {
         return match ($agentType) {
             AgentType::CHAT => new ChatAgentDaemon(),
+            AgentType::LIBRARY => new LibraryAgentDaemon(),
             AgentType::CHAT_CONTEXT_ANALYZER => new ChatContextAnalyzerAgentDaemon(),
             AgentType::BOT => new BotAgentDaemon(
                 $agentIndex ?? throw new AgentIndexRequiredException('BotAgentDaemon requires agentIndex (bot id)'),

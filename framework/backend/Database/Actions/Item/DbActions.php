@@ -78,7 +78,11 @@ abstract class DbActions
         switch ($objectCollection->getLazyStrategy()) {
             case Objects::LAZY_STRATEGY_NONE:
                 $collectionKey = $objectCollection->getCollectionKey();
-                TruthSourceRegistry::checkCanWrite($collectionKey);
+                if ($this->object->isRelated()) {
+                    TruthSourceRegistry::checkCanWriteItem($collectionKey, $this->object->getIdString());
+                } else {
+                    TruthSourceRegistry::checkCanWrite($collectionKey);
+                }
                 if (!$objectCollection->isAllLoaded()) {
                     $objectCollection->loadAllFromDB();
                 }

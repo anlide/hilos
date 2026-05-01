@@ -8,7 +8,8 @@ Chat demo navigation for AI agents. Read framework index first: [/agents.md](../
 
 | File | Read when... |
 |---|---|
-| [agents/chat-agent.md](agents/agents/chat-agent.md) | working with ChatAgent: handshake, messages, files, admin actions, truth source |
+| [agents/chat-agent.md](agents/agents/chat-agent.md) | working with ChatAgent: handshake, messages, files, user admin, truth source |
+| [agents/library-agent.md](agents/agents/library-agent.md) | working with LibraryAgent: admin CRUD for bots and moderator prompt pieces |
 | [agents/bot-agent.md](agents/agents/bot-agent.md) | working with BotAgent: bot lifecycle, LLM messages, per-bot indexing |
 | [agents/moderator-agent.md](agents/agents/moderator-agent.md) | working with ModeratorAgent: LLM moderation, queue, provider config |
 | [agents/context-analyzer-agent.md](agents/agents/context-analyzer-agent.md) | working with ChatContextAnalyzerAgent: chat summary, context for bots |
@@ -55,11 +56,12 @@ Chat demo navigation for AI agents. Read framework index first: [/agents.md](../
 
 ## Key rules for this project
 
-1. `ChatAgent` is the **only** truth source for: `events`, `users`, `bots`, `settings`, `moderatorPromptPieces`, `connections`, `userStates`
-2. `ChatContextAnalyzerAgent` is the only truth source for `chatContexts`
-3. File upload state lives on `Connection` (per-connection), text moderation on `ChatUserState` (per-user)
-4. All LLM calls are **async** — never block in `onTick()`
-5. Moderation always goes through `ModeratorAgent` — `ChatAgent` never calls LLM directly
+1. `ChatAgent` is the **only** truth source for: `events`, `eventAttachments`, `users`, `connections`, `userStates`, `attachmentDrafts`
+2. `LibraryAgent` is the **only** truth source for admin library DB collections: `bots`, `moderatorPromptPieces`
+3. `ChatContextAnalyzerAgent` is the only truth source for `chatContexts`
+4. File upload state lives on `Connection` (per-connection), text moderation on `ChatUserState` (per-user)
+5. All LLM calls are **async** — never block in `onTick()`
+6. Moderation always goes through `ModeratorAgent` — `ChatAgent` never calls LLM directly
 
 ## Signal flow summary
 

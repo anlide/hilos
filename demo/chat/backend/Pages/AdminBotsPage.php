@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Pages;
 
-use Demo\Chat\Agents\ChatAgent;
+use Demo\Chat\Agents\LibraryAgent;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Page\AbstractChatPage;
@@ -36,13 +36,13 @@ final class AdminBotsPage extends AbstractChatPage
     public const string PAGE = PageConstants::ADMIN_BOTS;
 
     /**
-     * Narrows the page agent to the chat worker used for admin bot table actions.
+     * Narrows the page agent to the library worker used for admin bot table actions.
      *
-     * @return ChatAgent Chat worker bound to this admin bots page
+     * @return LibraryAgent Library worker bound to this admin bots page
      */
-    protected function getChatAgent(): ChatAgent
+    protected function getLibraryAgent(): LibraryAgent
     {
-        assert($this->agent instanceof ChatAgent);
+        assert($this->agent instanceof LibraryAgent);
 
         return $this->agent;
     }
@@ -55,7 +55,7 @@ final class AdminBotsPage extends AbstractChatPage
      */
     public function onSubscribe(string $acceptKey, PageRouteParams $params): void
     {
-        $this->getChatAgent()->sendToUser(
+        $this->getLibraryAgent()->sendToUser(
             ChatSignalConstants::SUBSCRIPTION_PAGE_ADMIN_BOTS,
             $acceptKey,
             new ChatEventSignalDTO(
@@ -118,7 +118,7 @@ final class AdminBotsPage extends AbstractChatPage
      */
     public function onActionException(string $acceptKey, string $action, ActionPayloadDTO $dto, Throwable $e): void
     {
-        $this->getChatAgent()->sendToUser(
+        $this->getLibraryAgent()->sendToUser(
             ChatSignalConstants::TABLE_ACTION_ERROR,
             $acceptKey,
             new TableActionErrorSignalData(TableChatContext::bots, $action, $e->getMessage()),
@@ -138,7 +138,7 @@ final class AdminBotsPage extends AbstractChatPage
         $mutation = Hilos::$table->bots->actions->create($dto);
 
         if ((Hilos::$db->bots[$mutation->rowKey]->active ?? false) === true) {
-            $this->getChatAgent()->sendToAgent(
+            $this->getLibraryAgent()->sendToAgent(
                 ChatSignalConstants::BOT_AGENT_START,
                 new BotAgentSignalData(botId: (int) $mutation->rowKey),
             );
@@ -169,7 +169,7 @@ final class AdminBotsPage extends AbstractChatPage
         $newActive = Hilos::$db->bots[$dto->id]->active === true;
 
         if (!$oldActive && $newActive) {
-            $this->getChatAgent()->sendToAgent(
+            $this->getLibraryAgent()->sendToAgent(
                 ChatSignalConstants::BOT_AGENT_START,
                 new BotAgentSignalData(botId: $dto->id),
             );

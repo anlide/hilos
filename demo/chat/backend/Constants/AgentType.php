@@ -17,6 +17,9 @@ final class AgentType
     /** @var string Chat agent type (monopolistic) */
     public const string CHAT = 'chat';
 
+    /** @var string Library agent type (monopolistic) */
+    public const string LIBRARY = 'library';
+
     /** @var string User agent type (regular) */
     public const string SESSION = 'session';
 

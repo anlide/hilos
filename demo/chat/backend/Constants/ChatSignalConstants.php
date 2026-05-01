@@ -108,7 +108,7 @@ final class ChatSignalConstants
     public const string MODERATION_RESULT = 'moderation_result';
 
     // ── Bot agent lifecycle ─────────────────────────────────────────────
-    /** @var string ChatAgent → BotAgent: start (sending to agent triggers framework start if not running) */
+    /** @var string LibraryAgent → BotAgent: start (sending to agent triggers framework start if not running) */
     public const string BOT_AGENT_START = 'bot_agent_start';
 
     /** @var string BotAgent → ModeratorAgent: moderate bot message before publishing */

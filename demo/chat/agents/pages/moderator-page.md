@@ -8,7 +8,7 @@ Moderation console page. Shows pending moderation items, allows manual override.
 
 `onSubscribe`: sends current moderation queue state.
 
-Actions: ban user, allow/reject moderation, manage moderator prompt pieces.
+Actions: ban user and allow/reject moderation.
 
 ---
 
@@ -32,14 +32,14 @@ View another user's profile (admin usage).
 
 ## Admin pages
 
-All routed to `ChatAgent`:
+Admin pages are split by ownership:
 
-| Page constant | Route | Content |
-|---|---|---|
-| `ADMIN` | `/admin` | Admin dashboard |
-| `ADMIN_USERS` | `/admin/users` | User management table |
-| `ADMIN_MODERATOR` | `/admin/moderator` | Moderator prompt pieces table |
-| `ADMIN_BOTS` | `/admin/bots` | Bot management table |
+| Page constant | Agent | Route | Content |
+|---|---|---|---|
+| `ADMIN` | `ChatAgent` | `/admin` | Admin dashboard |
+| `ADMIN_USERS` | `ChatAgent` | `/admin/users` | User management table |
+| `ADMIN_MODERATOR` | `LibraryAgent` | `/admin/moderator` | Moderator prompt pieces table |
+| `ADMIN_BOTS` | `LibraryAgent` | `/admin/bots` | Bot management table |
 
 Each admin page `onSubscribe` sends the relevant `Table` data.
 

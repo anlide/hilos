@@ -113,6 +113,17 @@ abstract class WorkerManager extends BaseManager
     }
 
     /**
+     * Set DB and RT truth-source context for the currently executing agent callback.
+     *
+     * @param ?string $agentId Current agent id, or null outside an agent callback
+     */
+    private function setCurrentAgentId(?string $agentId): void
+    {
+        TruthSourceRegistry::setCurrentAgentId($agentId);
+        RtTruthSourceRegistry::setCurrentAgentId($agentId);
+    }
+
+    /**
      * Create signal router instance.
      *
      * Must be implemented in child classes to create specific signal router.
@@ -190,12 +201,12 @@ abstract class WorkerManager extends BaseManager
                 }
 
                 // Call tick method (only when connected)
-                RtTruthSourceRegistry::setCurrentAgentId(null);
+                $this->setCurrentAgentId(null);
                 $this->onTick();
 
                 // Tick all agents
                 foreach ($this->agentManager->getAgents() as $agentId => $agent) {
-                    RtTruthSourceRegistry::setCurrentAgentId($agent->getId());
+                    $this->setCurrentAgentId($agent->getId());
                     $agent->onTick();
 
                     // Check if agent requested stop
@@ -211,7 +222,7 @@ abstract class WorkerManager extends BaseManager
                 }
 
                 // Dispatch accumulated signals (send to daemon)
-                RtTruthSourceRegistry::setCurrentAgentId(null);
+                $this->setCurrentAgentId(null);
                 $this->dispatchSignals();
                 Hilos::$ac?->tick();
             }
@@ -258,7 +269,7 @@ abstract class WorkerManager extends BaseManager
      */
     public function handleDaemonMessage(WorkerDTO $data): void
     {
-        RtTruthSourceRegistry::setCurrentAgentId(null);
+        $this->setCurrentAgentId(null);
         $type = $data->getType();
         Logger::debug("Received message from daemon: type={$type}, data=" . json_encode($data->toArray()));
 
@@ -321,7 +332,7 @@ abstract class WorkerManager extends BaseManager
      */
     private function handleWorkerRegistered(WorkerDTO $data): void
     {
-        RtTruthSourceRegistry::setCurrentAgentId(null);
+        $this->setCurrentAgentId(null);
         // Connection confirmed by daemon
         Logger::info("Connected to daemon");
         Hilos::$ac?->logWorkerSystemSignal('worker_registered', [
@@ -362,8 +373,12 @@ abstract class WorkerManager extends BaseManager
         $agent = $this->agentManager->createAndAddAgent($agentType, $agentIndex);
 
         Logger::logAgentStart($agent->getId(), $agent->getType());
-        RtTruthSourceRegistry::setCurrentAgentId($agent->getId());
-        $agent->onStart();
+        $this->setCurrentAgentId($agent->getId());
+        try {
+            $agent->onStart();
+        } finally {
+            $this->setCurrentAgentId(null);
+        }
         Hilos::$ac?->openAgentSession($agentType, $agentIndex);
         Logger::info("Agent '{$agentId}' started");
         // Additional agent log from worker side
@@ -518,7 +533,7 @@ abstract class WorkerManager extends BaseManager
             if (!$agent instanceof AgentInterface) {
                 continue;
             }
-            RtTruthSourceRegistry::setCurrentAgentId($agent->getId());
+            $this->setCurrentAgentId($agent->getId());
             match ($signalName) {
                 SignalConstants::DB_SYNC_CREATED => $agent->onSignalDbSyncCreated($data, $source, $signalName),
                 SignalConstants::DB_SYNC_UPDATED => $agent->onSignalDbSyncUpdated($data, $source, $signalName),
@@ -527,7 +542,7 @@ abstract class WorkerManager extends BaseManager
             };
         }
 
-        RtTruthSourceRegistry::setCurrentAgentId(null);
+        $this->setCurrentAgentId(null);
     }
 
     /**
@@ -551,7 +566,7 @@ abstract class WorkerManager extends BaseManager
             if (!$agent instanceof AgentInterface) {
                 continue;
             }
-            RtTruthSourceRegistry::setCurrentAgentId($agent->getId());
+            $this->setCurrentAgentId($agent->getId());
             match ($signalName) {
                 SignalConstants::RT_SYNC_CREATED => $agent->onSignalRtSyncCreated($data, $source, $signalName),
                 SignalConstants::RT_SYNC_UPDATED => $agent->onSignalRtSyncUpdated($data, $source, $signalName),
@@ -560,7 +575,7 @@ abstract class WorkerManager extends BaseManager
             };
         }
 
-        RtTruthSourceRegistry::setCurrentAgentId(null);
+        $this->setCurrentAgentId(null);
     }
 
     /**
@@ -738,7 +753,7 @@ abstract class WorkerManager extends BaseManager
         $apiRequestId = Hilos::$ac?->getSignalMetaInt($data->signal, AnalyticsCollector::META_API_REQUEST_ID);
         $userActionId = Hilos::$ac?->getSignalMetaInt($data->signal, AnalyticsCollector::META_USER_ACTION_ID);
 
-        RtTruthSourceRegistry::setCurrentAgentId($agent->getId());
+        $this->setCurrentAgentId($agent->getId());
         // Route to appropriate handler in agent based on signal type
         switch ($signalType) {
             case SignalTypeConstants::SYSTEM:
@@ -1357,7 +1372,7 @@ abstract class WorkerManager extends BaseManager
      */
     private function runAgentStopHook(AgentInterface $agent): void
     {
-        RtTruthSourceRegistry::setCurrentAgentId($agent->getId());
+        $this->setCurrentAgentId($agent->getId());
         try {
             $agent->onStop();
         } finally {

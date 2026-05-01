@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Pages;
 
-use Demo\Chat\Agents\ChatAgent;
+use Demo\Chat\Agents\LibraryAgent;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Page\AbstractChatPage;
@@ -34,13 +34,13 @@ final class AdminModeratorPage extends AbstractChatPage
     public const string PAGE = PageConstants::ADMIN_MODERATOR;
 
     /**
-     * Narrows the page agent to the chat worker used for moderator prompt table actions.
+     * Narrows the page agent to the library worker used for moderator prompt table actions.
      *
-     * @return ChatAgent Chat worker bound to this admin moderator page
+     * @return LibraryAgent Library worker bound to this admin moderator page
      */
-    protected function getChatAgent(): ChatAgent
+    protected function getLibraryAgent(): LibraryAgent
     {
-        assert($this->agent instanceof ChatAgent);
+        assert($this->agent instanceof LibraryAgent);
 
         return $this->agent;
     }
@@ -53,7 +53,7 @@ final class AdminModeratorPage extends AbstractChatPage
      */
     public function onSubscribe(string $acceptKey, PageRouteParams $params): void
     {
-        $this->getChatAgent()->sendToUser(
+        $this->getLibraryAgent()->sendToUser(
             ChatSignalConstants::SUBSCRIPTION_PAGE_ADMIN_MODERATOR,
             $acceptKey,
             new ChatEventSignalDTO(
@@ -115,7 +115,7 @@ final class AdminModeratorPage extends AbstractChatPage
      */
     public function onActionException(string $acceptKey, string $action, ActionPayloadDTO $dto, Throwable $e): void
     {
-        $this->getChatAgent()->sendToUser(
+        $this->getLibraryAgent()->sendToUser(
             ChatSignalConstants::TABLE_ACTION_ERROR,
             $acceptKey,
             new TableActionErrorSignalData(TableChatContext::moderatorPromptPieces, $action, $e->getMessage()),

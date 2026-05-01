@@ -39,4 +39,5 @@ ChatAgent <--MODERATION_RESULT---- ModeratorAgent
 ## Settings
 
 Model and URL are read from DB settings (via `ChatSettingsHelper`) on each new LLM client creation.
+Moderator prompt pieces are read from `DbChatContext::moderatorPromptPieces`; CRUD ownership belongs to `LibraryAgent`.
 Settings change: restart moderator agent or reinitialize client.
