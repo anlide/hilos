@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Core\Agent\Hilos;
 
 use Hilos\Constants\HilosAgentType;
-use Random\RandomException;
+use Hilos\Utils\Helpers\RandomHelper;
 
 /**
  * AbstractHilosGuardianAgent - Abstract agent for Hilos guardian page (project validation robots).
@@ -105,8 +105,6 @@ abstract class AbstractHilosGuardianAgent extends AbstractHilosAgent
 
     /**
      * Finalize runs whose completion deadlines have expired.
-     *
-     * @throws RandomException
      */
     protected function processPendingGuardianRuns(): void
     {
@@ -125,7 +123,7 @@ abstract class AbstractHilosGuardianAgent extends AbstractHilosAgent
                 continue;
             }
 
-            $nextStatus = random_int(0, 1) === 0 ? GuardianRunStatus::DONE : GuardianRunStatus::FAILED;
+            $nextStatus = RandomHelper::integer(0, 1) === 0 ? GuardianRunStatus::DONE : GuardianRunStatus::FAILED;
             $state['status'] = $nextStatus;
             $state['completeAt'] = null;
             $this->guardianRunStates[$agentId] = $state;

@@ -8,11 +8,11 @@ use Demo\Chat\Database\Object\Collection\Users as ObjectUsers;
 use Demo\Chat\Database\Object\Item\User as ObjectUser;
 use Demo\Chat\Database\View\Collection\Users as DbCollectionUsers;
 use Demo\Chat\Database\View\Item\User;
-use Demo\Chat\Hilos;
 use Hilos\Core\Exception\DuplicateValueException;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Database\Actions\Collection\DbActions;
 use Hilos\HilosException;
+use Hilos\Utils\Helpers\RandomHelper;
 use Hilos\Utils\Helpers\TimeHelper;
 
 /**
@@ -46,7 +46,7 @@ final class UsersActions extends DbActions
         }
 
         $user = ObjectUser::create();
-        $user->name = 'User' . mt_rand(1000, 9999);
+        $user->name = 'User' . RandomHelper::integer(1000, 9999);
         $user->sessionToken = $sessionToken;
         $user->lastActivity = TimeHelper::getSqlDateTime();
         $user->sync();

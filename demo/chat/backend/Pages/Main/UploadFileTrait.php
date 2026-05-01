@@ -25,7 +25,6 @@ use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\Socket\WebSocket\DTO\WebSocketFrameBinarySignalDTO;
 use Hilos\Utils\Helpers\FileSystemHelper;
-use Random\RandomException;
 
 /**
  * Main-page binary upload flow; completed uploads become attachment drafts.
@@ -42,7 +41,6 @@ trait UploadFileTrait
      * start session, send {@see ChatSignalConstants::FILE_UPLOAD_READY}. Replaces an in-flight upload on the same socket.
      *
      * @param string $acceptKey WebSocket connection id
-     * @throws RandomException If {@see random_bytes()} fails
      * @throws RtActionsCollectionNameNullException When the connections actions collection name is null
      * @throws RtTruthSourceWriteNotAllowedException When the truth source rejects a runtime write
      * @throws FileDeleteException When replacing an in-flight upload cannot delete its tmp file

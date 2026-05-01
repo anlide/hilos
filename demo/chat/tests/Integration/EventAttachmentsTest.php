@@ -11,6 +11,7 @@ use Demo\Chat\Hilos;
 use Demo\Chat\Http\ChatAttachmentDownloadHandler;
 use Hilos\Constants\HilosHttpHeaders;
 use Hilos\Constants\HttpConstants;
+use Hilos\Utils\Helpers\RandomHelper;
 
 /**
  * Integration coverage for published event attachment persistence and projection.
@@ -26,7 +27,7 @@ final class EventAttachmentsTest extends IntegrationTestCase
         try {
             Hilos::$fs->published->create('event-attachment-one.txt')->append('alpha');
             Hilos::$fs->published->create('event-attachment-two.txt')->append('bravo!');
-            $sessionToken = bin2hex(random_bytes(16));
+            $sessionToken = RandomHelper::hex(16);
             $user = Hilos::$db->users->actions->register($sessionToken);
 
             $event = Hilos::$db->events->actions->addMessage(

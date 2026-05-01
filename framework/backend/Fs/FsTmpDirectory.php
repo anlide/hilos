@@ -7,8 +7,8 @@ namespace Hilos\Fs;
 use ArrayAccess;
 use Hilos\Fs\Exception\DirectoryCreateException;
 use Hilos\Fs\Exception\FileWriteException;
+use Hilos\Utils\Helpers\RandomHelper;
 use LogicException;
-use Random\RandomException;
 
 /**
  * Temporary-file directory with auto-generated hex-based filenames.
@@ -28,14 +28,13 @@ final class FsTmpDirectory implements ArrayAccess
      * Create an empty tmp file with a random hex name.
      *
      * @return string Generated index (hex filename) that can be used with ArrayAccess
-     * @throws RandomException If random_bytes() fails
      * @throws FileWriteException If the file cannot be created
      * @throws DirectoryCreateException If the tmp directory cannot be created
      */
     public function create(): string
     {
         $this->ensureDirectory();
-        $index = bin2hex(random_bytes(16));
+        $index = RandomHelper::hex(16);
         $path = $this->path . DIRECTORY_SEPARATOR . $index;
         if (file_put_contents($path, '') === false) {
             throw new FileWriteException("Cannot create tmp file: {$index}");

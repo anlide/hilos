@@ -45,7 +45,7 @@ use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Fs\FsException;
 use Hilos\HilosException;
 use Hilos\Socket\WebSocket\DTO\WebSocketFrameBinarySignalDTO;
-use Random\RandomException;
+use Hilos\Utils\Helpers\RandomHelper;
 
 /**
  * MainPage - Main chat page handler.
@@ -125,7 +125,6 @@ final class MainPage extends AbstractChatPage
      * @throws AgentUnknownActionException When action is not supported by this page
      * @throws InvalidActionPayloadException When action payload does not match the action name
      * @throws HilosException On database, runtime, truth source, or signal failure
-     * @throws RandomException When file upload id generation fails
      */
     public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): void
     {
@@ -235,7 +234,6 @@ final class MainPage extends AbstractChatPage
      * @throws ItemNotFoundForUpdateException When the WebSocket session or user runtime state is missing
      * @throws ValidationException When the user is rate-limited, already moderating, or references invalid drafts
      * @throws HilosException On database, runtime, or truth source failure
-     * @throws RandomException When moderation request id generation fails
      */
     private function handleMessage(string $acceptKey, MessageActionDTO $dto): void
     {
@@ -264,7 +262,7 @@ final class MainPage extends AbstractChatPage
             throw new ValidationException('Attachment draft is no longer available');
         }
 
-        $requestId = bin2hex(random_bytes(16));
+        $requestId = RandomHelper::hex(16);
         $userState->actions->recordOutboundSubmitted();
         $userState->actions->startOutboundModeration(
             $requestId,

@@ -10,6 +10,7 @@ use Demo\Chat\Tables\Bot\BotTableRow;
 use Demo\Chat\Tables\Bot\DTO\BotCreateActionDTO;
 use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\Core\Table\TableConstants;
+use Hilos\Utils\Helpers\RandomHelper;
 
 /**
  * Integration tests for table-local row builders.
@@ -19,7 +20,7 @@ final class TableRowBuildersTest extends IntegrationTestCase
     public function testBotTableBuilderProjectsDbBackedRows(): void
     {
         $mutation = Hilos::$table->bots->actions->create(new BotCreateActionDTO(
-            name: 'Builder Bot ' . bin2hex(random_bytes(4)),
+            name: 'Builder Bot ' . RandomHelper::hex(4),
             description: 'DB-backed row builder test',
             style: 'concise',
             topics: 'tables',

@@ -25,6 +25,7 @@ use Hilos\Socket\WebSocket\DTO\WebSocketCloseSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\TruthSource\RtTruthSourceRegistry;
+use Hilos\Utils\Helpers\RandomHelper;
 
 /**
  * Integration tests for ChatAgent runtime presence handling.
@@ -39,7 +40,7 @@ final class ChatAgentPresenceTest extends IntegrationTestCase
         Hilos::$rt->connections->actions->clear();
         Hilos::$db->events->actions->deleteAll();
 
-        $sessionToken = bin2hex(random_bytes(16));
+        $sessionToken = RandomHelper::hex(16);
         $user = Hilos::$db->users->actions->register($sessionToken);
         $agent = new ChatAgent();
 
@@ -97,7 +98,7 @@ final class ChatAgentPresenceTest extends IntegrationTestCase
         Hilos::$rt->connections->actions->clear();
         Hilos::$db->events->actions->deleteAll();
 
-        $sessionToken = bin2hex(random_bytes(16));
+        $sessionToken = RandomHelper::hex(16);
         $user = Hilos::$db->users->actions->register($sessionToken);
         $agent = new ChatAgent();
 

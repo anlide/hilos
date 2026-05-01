@@ -16,6 +16,7 @@ use Demo\Chat\Tables\HilosUser\HilosUserTableRow;
 use Hilos\Core\Router\DTO\EntitiesChangesDTO;
 use Hilos\Core\Table\TableConstants;
 use Hilos\TruthSource\RtTruthSourceRegistry;
+use Hilos\Utils\Helpers\RandomHelper;
 
 /**
  * Integration tests for user frontend representation.
@@ -29,7 +30,7 @@ final class UserFrontendRepresentationTest extends IntegrationTestCase
         RtTruthSourceRegistry::register(RtChatContext::connections, true, self::TEST_AGENT_ID);
         Hilos::$rt->connections->actions->clear();
 
-        $user = Hilos::$db->users->actions->register(bin2hex(random_bytes(16)));
+        $user = Hilos::$db->users->actions->register(RandomHelper::hex(16));
 
         try {
             $offlinePayload = $user->toArray(toFrontend: true);
@@ -60,7 +61,7 @@ final class UserFrontendRepresentationTest extends IntegrationTestCase
         RtTruthSourceRegistry::register(RtChatContext::connections, true, self::TEST_AGENT_ID);
         Hilos::$rt->connections->actions->clear();
 
-        $user = Hilos::$db->users->actions->register(bin2hex(random_bytes(16)));
+        $user = Hilos::$db->users->actions->register(RandomHelper::hex(16));
 
         try {
             Hilos::$rt->connections->actions->register('test-accept-key-1', $user->id);
@@ -88,7 +89,7 @@ final class UserFrontendRepresentationTest extends IntegrationTestCase
         RtTruthSourceRegistry::register(RtChatContext::connections, true, self::TEST_AGENT_ID);
         Hilos::$rt->connections->actions->clear();
 
-        $user = Hilos::$db->users->actions->register(bin2hex(random_bytes(16)));
+        $user = Hilos::$db->users->actions->register(RandomHelper::hex(16));
 
         try {
             Hilos::$rt->connections->actions->register('test-accept-key-1', $user->id);

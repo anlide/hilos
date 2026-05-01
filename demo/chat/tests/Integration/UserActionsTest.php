@@ -8,7 +8,7 @@ use Demo\Chat\Hilos;
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\ValueTooLongException;
 use Hilos\HilosException;
-use Random\RandomException;
+use Hilos\Utils\Helpers\RandomHelper;
 
 /**
  * Integration tests for UserActions (item-level).
@@ -19,12 +19,11 @@ final class UserActionsTest extends IntegrationTestCase
     /**
      * Rename with valid name updates user in database.
      *
-     * @throws RandomException On random bytes generation error
      * @throws HilosException On database error
      */
     public function testRenameSucceeds(): void
     {
-        $token = bin2hex(random_bytes(16));
+        $token = RandomHelper::hex(16);
         $user = Hilos::$db->users->actions->register($token);
         $userId = $user->id;
         $this->assertNotNull($userId);
@@ -39,12 +38,11 @@ final class UserActionsTest extends IntegrationTestCase
     /**
      * Rename with empty/whitespace-only name throws EmptyValueException.
      *
-     * @throws RandomException On random bytes generation error
      * @throws HilosException On database error
      */
     public function testRenameEmptyThrows(): void
     {
-        $token = bin2hex(random_bytes(16));
+        $token = RandomHelper::hex(16);
         $user = Hilos::$db->users->actions->register($token);
         $dbUser = Hilos::$db->users[$user->id];
 
@@ -57,12 +55,11 @@ final class UserActionsTest extends IntegrationTestCase
     /**
      * Rename with name exceeding max length throws ValueTooLongException.
      *
-     * @throws RandomException On random bytes generation error
      * @throws HilosException On database error
      */
     public function testRenameTooLongThrows(): void
     {
-        $token = bin2hex(random_bytes(16));
+        $token = RandomHelper::hex(16);
         $user = Hilos::$db->users->actions->register($token);
         $dbUser = Hilos::$db->users[$user->id];
 
@@ -75,12 +72,11 @@ final class UserActionsTest extends IntegrationTestCase
     /**
      * Rename with same name performs no-op (no DB update).
      *
-     * @throws RandomException On random bytes generation error
      * @throws HilosException On database error
      */
     public function testRenameSameNameNoOp(): void
     {
-        $token = bin2hex(random_bytes(16));
+        $token = RandomHelper::hex(16);
         $user = Hilos::$db->users->actions->register($token);
         $originalName = $user->name;
         $dbUser = Hilos::$db->users[$user->id];

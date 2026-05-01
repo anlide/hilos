@@ -32,7 +32,7 @@ use Hilos\LLM\ClientFactory;
 use Hilos\LLM\Contract\AsyncChatLLMInterface;
 use Hilos\LLM\DTO\ChatGenerateOptions;
 use Hilos\LLM\DTO\Message;
-use Random\RandomException;
+use Hilos\Utils\Helpers\RandomHelper;
 
 /**
  * Per-bot agent that schedules async LLM reactions and submits generated messages for moderation.
@@ -88,7 +88,6 @@ class BotAgent extends AbstractAgent
      * Marks this bot online and schedules an initial reaction fallback.
      *
      * @throws HilosException On bot lookup failure
-     * @throws RandomException When scheduling the initial bot reaction delay fails
      */
     public function onStart(): void
     {
@@ -148,7 +147,6 @@ class BotAgent extends AbstractAgent
      * @param string $source Framework signal source identifier (unused)
      * @param string $name Framework signal name (unused)
      * @throws HilosException On bot lookup during reaction scheduling
-     * @throws RandomException When scheduling the post-clear reaction delay fails
      */
     public function onSignalDbSyncCreated(DbSyncCreatedSignalData $data, string $source, string $name): void
     {
@@ -168,7 +166,6 @@ class BotAgent extends AbstractAgent
      * @param string $source Framework signal source identifier (unused)
      * @param string $name Framework signal name (unused)
      * @throws HilosException On bot lookup during reaction scheduling
-     * @throws RandomException When scheduling the reaction delay after context creation fails
      */
     public function onSignalRtSyncCreated(RtSyncCreatedSignalData $data, string $source, string $name): void
     {
@@ -184,7 +181,6 @@ class BotAgent extends AbstractAgent
      * @param string $source Framework signal source identifier (unused)
      * @param string $name Framework signal name (unused)
      * @throws HilosException On bot lookup during reaction scheduling
-     * @throws RandomException When scheduling the reaction delay after context update fails
      */
     public function onSignalRtSyncUpdated(RtSyncUpdatedSignalData $data, string $source, string $name): void
     {
@@ -197,7 +193,6 @@ class BotAgent extends AbstractAgent
      * Advances async LLM work, sends completed messages to moderation, and starts due reactions.
      *
      * @throws HilosException On bot or chat context lookup failure
-     * @throws RandomException When bot reaction chance generation fails
      */
     public function onTick(): void
     {
@@ -234,7 +229,6 @@ class BotAgent extends AbstractAgent
      * Schedules the next reaction from bot delay settings unless generation is active or bot is missing.
      *
      * @throws HilosException When bot lookup fails
-     * @throws RandomException When generating a randomized reaction delay fails
      */
     private function scheduleReaction(): void
     {
@@ -249,7 +243,7 @@ class BotAgent extends AbstractAgent
 
         $delayMin = max(0, $bot->reactionDelayMin);
         $delayMax = max($delayMin, $bot->reactionDelayMax);
-        $delaySec = $delayMin === $delayMax ? $delayMin : random_int($delayMin, $delayMax);
+        $delaySec = $delayMin === $delayMax ? $delayMin : RandomHelper::integer($delayMin, $delayMax);
         $this->scheduledReactAt = microtime(true) + (float) $delaySec;
     }
 
@@ -258,7 +252,6 @@ class BotAgent extends AbstractAgent
      *
      * @return bool True if bot should generate a message
      * @throws HilosException When bot or chat context lookup fails
-     * @throws RandomException When generating a random chance threshold fails
      */
     private function shouldReact(): bool
     {
@@ -271,7 +264,7 @@ class BotAgent extends AbstractAgent
         if ($reactionChance <= 0) {
             return false;
         }
-        if ($reactionChance < 100 && random_int(1, 100) > $reactionChance) {
+        if ($reactionChance < 100 && RandomHelper::integer(1, 100) > $reactionChance) {
             return false;
         }
 

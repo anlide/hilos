@@ -8,7 +8,7 @@ use Demo\Chat\Hilos;
 use Hilos\Core\Exception\DuplicateValueException;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\HilosException;
-use Random\RandomException;
+use Hilos\Utils\Helpers\RandomHelper;
 
 /**
  * Integration tests for UsersActions.
@@ -19,12 +19,11 @@ final class UsersActionsTest extends IntegrationTestCase
     /**
      * Register with valid token creates user with auto-generated name.
      *
-     * @throws RandomException On random bytes generation error
      * @throws HilosException On database error
      */
     public function testRegisterCreatesUser(): void
     {
-        $token = bin2hex(random_bytes(16));
+        $token = RandomHelper::hex(16);
         $user = Hilos::$db->users->actions->register($token);
 
         $this->assertNotNull($user->id);
@@ -48,12 +47,11 @@ final class UsersActionsTest extends IntegrationTestCase
     /**
      * Register with existing token throws DuplicateValueException.
      *
-     * @throws RandomException On random bytes generation error
      * @throws HilosException On database error
      */
     public function testRegisterDuplicateTokenThrows(): void
     {
-        $token = bin2hex(random_bytes(16));
+        $token = RandomHelper::hex(16);
         Hilos::$db->users->actions->register($token);
 
         $this->expectException(DuplicateValueException::class);

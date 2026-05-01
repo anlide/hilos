@@ -20,6 +20,7 @@ use Hilos\Core\Page\ActionRouteConfig;
 use Hilos\Core\Page\PageSignalRouter;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\TruthSource\RtTruthSourceRegistry;
+use Hilos\Utils\Helpers\RandomHelper;
 
 /**
  * Integration tests for ChatAgent shutdown and moderation result cleanup.
@@ -37,7 +38,7 @@ final class ChatAgentModerationTest extends IntegrationTestCase
         Hilos::$db->events->actions->deleteAll();
 
         try {
-            $user = Hilos::$db->users->actions->register(bin2hex(random_bytes(16)));
+            $user = Hilos::$db->users->actions->register(RandomHelper::hex(16));
             Hilos::$rt->connections->actions->register('stop-ak', $user->id);
             Hilos::$rt->userStates->actions->ensure($user->id)->actions->startOutboundModeration(
                 'request-stop',
@@ -68,7 +69,7 @@ final class ChatAgentModerationTest extends IntegrationTestCase
         Hilos::$db->events->actions->deleteAll();
 
         try {
-            $user = Hilos::$db->users->actions->register(bin2hex(random_bytes(16)));
+            $user = Hilos::$db->users->actions->register(RandomHelper::hex(16));
             Hilos::$rt->userStates->actions->ensure($user->id)->actions->startOutboundModeration(
                 'request-closed',
                 'pending moderation',
@@ -105,7 +106,7 @@ final class ChatAgentModerationTest extends IntegrationTestCase
         Hilos::$db->events->actions->deleteAll();
 
         try {
-            $user = Hilos::$db->users->actions->register(bin2hex(random_bytes(16)));
+            $user = Hilos::$db->users->actions->register(RandomHelper::hex(16));
             Hilos::$rt->connections->actions->register('live-ak', $user->id);
             Hilos::$rt->userStates->actions->ensure($user->id)->actions->startOutboundModeration(
                 'request-live',
@@ -143,7 +144,7 @@ final class ChatAgentModerationTest extends IntegrationTestCase
         Hilos::$db->events->actions->deleteAll();
 
         try {
-            $user = Hilos::$db->users->actions->register(bin2hex(random_bytes(16)));
+            $user = Hilos::$db->users->actions->register(RandomHelper::hex(16));
             Hilos::$rt->connections->actions->register('rate-ak', $user->id);
             Hilos::$rt->userStates->actions->ensure($user->id)->actions->recordOutboundSubmitted();
 
