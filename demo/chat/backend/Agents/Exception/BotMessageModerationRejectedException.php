@@ -19,6 +19,8 @@ final class BotMessageModerationRejectedException extends AgentException
      */
     public function __construct(int $botId, string $reason)
     {
-        parent::__construct("Bot message blocked by moderation (botId={$botId}; reason={$reason})");
+        $messageReason = $reason !== '' ? $reason : 'unknown';
+
+        parent::__construct("Bot message blocked by moderation (botId={$botId}; reason={$messageReason})");
     }
 }

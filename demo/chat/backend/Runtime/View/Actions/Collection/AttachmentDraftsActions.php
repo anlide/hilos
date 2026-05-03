@@ -74,8 +74,8 @@ final class AttachmentDraftsActions extends RtActions
      * @param bool $deleteFiles When true, delete quarantine files as well
      * @return bool True when at least one draft was removed
      * @throws FileDeleteException When a quarantine file cannot be deleted
-     * @throws RtActionsCollectionNameNullException
-     * @throws RtTruthSourceWriteNotAllowedException
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      */
     public function deleteForAcceptKey(string $acceptKey, bool $deleteFiles): bool
     {
@@ -87,6 +87,20 @@ final class AttachmentDraftsActions extends RtActions
         }
 
         return $this->deleteByIds($draftIds, $deleteFiles);
+    }
+
+    /**
+     * Delete every draft owned by a connection and remove its quarantine files.
+     *
+     * @param string $acceptKey WebSocket connection id
+     * @return bool True when at least one draft was removed
+     * @throws FileDeleteException When a quarantine file cannot be deleted
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     */
+    public function deleteForAcceptKeyWithFiles(string $acceptKey): bool
+    {
+        return $this->deleteForAcceptKey($acceptKey, deleteFiles: true);
     }
 
     /**
@@ -162,6 +176,18 @@ final class AttachmentDraftsActions extends RtActions
             $draftIds[] = $draft->draftId;
         }
         $this->deleteByIds($draftIds, $deleteFiles);
+    }
+
+    /**
+     * Remove every draft and delete all corresponding quarantine files.
+     *
+     * @throws FileDeleteException When a quarantine file cannot be deleted
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     */
+    public function clearWithFiles(): void
+    {
+        $this->clear(deleteFiles: true);
     }
 
     /**

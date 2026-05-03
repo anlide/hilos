@@ -118,11 +118,11 @@ class ChatAgent extends AbstractAgent
      * @param WebSocketCloseSignalDTO $data Closed WebSocket connection
      * @param string $source Framework signal source identifier (unused)
      * @param string $name Framework signal name (unused)
-     * @throws HilosException When runtime unregister fails
+     * @throws HilosException On runtime cleanup failure
      */
     public function onSignalConnectionClose(WebSocketCloseSignalDTO $data, string $source, string $name): void
     {
-        Hilos::$rt->attachmentDrafts->actions->deleteForAcceptKey($data->acceptKey, deleteFiles: true);
+        Hilos::$rt->attachmentDrafts->actions->deleteForAcceptKeyWithFiles($data->acceptKey);
         Hilos::$rt->connections[$data->acceptKey]?->actions->unregister();
     }
 
@@ -134,7 +134,7 @@ class ChatAgent extends AbstractAgent
     public function onStop(): void
     {
         Hilos::$db->events->actions->addChatStopped();
-        Hilos::$rt->attachmentDrafts->actions->clear(deleteFiles: true);
+        Hilos::$rt->attachmentDrafts->actions->clearWithFiles();
         Hilos::$rt->connections->actions->clear();
         Hilos::$rt->userStates->actions->clear();
     }
@@ -198,7 +198,7 @@ class ChatAgent extends AbstractAgent
     private function handleModerationBotResult(ModerationBotResultSignalData $result): void
     {
         if (!$result->allow) {
-            throw new BotMessageModerationRejectedException($result->botId, $result->reason !== '' ? $result->reason : 'unknown');
+            throw new BotMessageModerationRejectedException($result->botId, $result->reason);
         }
 
         Hilos::$db->events->actions->addMessage($result->message, botId: $result->botId);
