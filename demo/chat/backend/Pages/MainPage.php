@@ -23,7 +23,7 @@ use Demo\Chat\Frontend\UserFrontendStateProjector;
 use Demo\Chat\Hilos;
 use Demo\Chat\Pages\Main\UploadFileTrait;
 use Demo\Chat\Runtime\View\Collection\AttachmentDrafts;
-use Demo\Chat\Runtime\View\Item\AttachmentDraft;
+use Demo\Chat\Runtime\View\Item\ChatUserState;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
@@ -226,51 +226,60 @@ final class MainPage extends AbstractPage
      *
      * @param string $acceptKey WebSocket accept key for the submitting client
      * @param MessageActionDTO $dto Parsed message action payload
-     * @throws EmptyValueException When message has no text and no attachments
+     * @throws EmptyValueException When message has no non-empty text and no attachments
      * @throws ItemNotFoundForUpdateException When the WebSocket session or user runtime state is missing
      * @throws ValidationException When the user is rate-limited, already moderating, or references invalid drafts
      * @throws HilosException On database, runtime, or truth source failure
      */
     private function handleMessage(string $acceptKey, MessageActionDTO $dto): void
     {
-        if (!$dto->isValid()) {
+        if ($dto->content === '' && $dto->attachmentDraftIds === []) {
             throw new EmptyValueException('Message cannot be empty');
         }
-
-        $connection = Hilos::$rt->connections[$acceptKey]
-            ?? throw new ItemNotFoundForUpdateException('User session not found');
-        $userId = $connection->userId;
-        $userState = Hilos::$rt->userStates[$userId]
-            ?? throw new ItemNotFoundForUpdateException('User runtime state not found');
-        if ($userState->hasActiveOutboundModeration()) {
+        if (trim($dto->content) === '' && $dto->attachmentDraftIds === []) {
+            throw new EmptyValueException('Message cannot be trim-empty');
+        }
+        if (!isset(Hilos::$rt->connections[$acceptKey])) {
+            throw new ItemNotFoundForUpdateException('User session not found');
+        }
+        if (!isset(Hilos::$rt->userStates[Hilos::$rt->connections[$acceptKey]->userId])) {
+            throw new ItemNotFoundForUpdateException('User runtime state not found');
+        }
+        if (
+            Hilos::$rt->userStates[Hilos::$rt->connections[$acceptKey]->userId]->outboundModerationPhase
+            === ChatUserState::OUTBOUND_MODERATION_PHASE_CHECKING
+        ) {
             throw new ValidationException('Another message is already being moderated');
         }
-        if (!$userState->canStartOutboundSubmission()) {
+        if (
+            microtime(true) - Hilos::$rt->userStates[Hilos::$rt->connections[$acceptKey]->userId]->lastOutboundSubmittedAt
+            < ChatUserState::MESSAGE_RATE_LIMIT_SECONDS - ChatUserState::MESSAGE_RATE_LIMIT_TOLERANCE_SECONDS
+        ) {
             throw new ValidationException('Message rate limit is active');
         }
 
         $this->deleteExpiredAttachmentDrafts();
-        $drafts = Hilos::$rt->attachmentDrafts->findAllByIdsForAcceptKey($acceptKey, $dto->attachmentDraftIds);
+        $drafts = Hilos::$rt->attachmentDrafts->forAcceptKey($acceptKey)->forDraftIds($dto->attachmentDraftIds);
         if (count($drafts) !== count($dto->attachmentDraftIds)) {
             $this->sendAttachmentDraftsUpdate($acceptKey);
             throw new ValidationException('Attachment draft is no longer available');
         }
 
         $requestId = RandomHelper::hex(16);
-        $userState->actions->recordOutboundSubmitted();
-        $userState->actions->startOutboundModeration(
+        Hilos::$rt->userStates[Hilos::$rt->connections[$acceptKey]->userId]->actions->recordOutboundSubmitted();
+        Hilos::$rt->userStates[Hilos::$rt->connections[$acceptKey]->userId]->actions->startOutboundModeration(
             $requestId,
             $dto->content,
             $dto->attachmentDraftIds,
         );
-        $this->sendOutboundModerationStateUpdate($acceptKey, $userId);
+        $this->sendOutboundModerationStateUpdate($acceptKey, Hilos::$rt->connections[$acceptKey]->userId);
 
         $this->agent->sendToAgent(
             ChatSignalConstants::MODERATE_REQUEST,
             new ModerationRequestSignalData(
                 requestId: $requestId,
                 acceptKey: $acceptKey,
-                userId: $userId,
+                userId: Hilos::$rt->connections[$acceptKey]->userId,
                 message: $dto->content,
                 contentForModeration: $this->buildContentForModeration($dto->content, $drafts),
             ),
@@ -289,29 +298,39 @@ final class MainPage extends AbstractPage
      */
     private function handleAttachmentDraftDelete(string $acceptKey, AttachmentDraftDeleteActionDTO $dto): void
     {
-        if (!$dto->isValid()) {
+        if ($dto->draftId === '') {
             throw new EmptyValueException('Attachment draft id cannot be empty');
         }
-
-        $connection = Hilos::$rt->connections[$acceptKey]
-            ?? throw new ItemNotFoundForUpdateException('User session not found');
-        $userId = $connection->userId;
-        $userState = Hilos::$rt->userStates[$userId]
-            ?? throw new ItemNotFoundForUpdateException('User runtime state not found');
-        if ($userState->hasActiveOutboundModeration()) {
+        if (trim($dto->draftId) === '') {
+            throw new EmptyValueException('Attachment draft id cannot be trim-empty');
+        }
+        if (!isset(Hilos::$rt->connections[$acceptKey])) {
+            throw new ItemNotFoundForUpdateException('User session not found');
+        }
+        if (!isset(Hilos::$rt->userStates[Hilos::$rt->connections[$acceptKey]->userId])) {
+            throw new ItemNotFoundForUpdateException('User runtime state not found');
+        }
+        if (
+            Hilos::$rt->userStates[Hilos::$rt->connections[$acceptKey]->userId]->outboundModerationPhase
+            === ChatUserState::OUTBOUND_MODERATION_PHASE_CHECKING
+        ) {
             throw new ValidationException('Cannot delete attachment while message is being moderated');
         }
 
-        $draft = Hilos::$rt->attachmentDrafts[$dto->draftId] ?? null;
-        $deleted = false;
-        if ($draft !== null && $draft->acceptKey === $acceptKey) {
-            $draft->actions->delete(deleteFiles: true);
-            $deleted = true;
+        if (!isset(Hilos::$rt->attachmentDrafts->forAcceptKey($acceptKey)[$dto->draftId])) {
+            $this->sendAttachmentDraftsUpdate($acceptKey);
+
+            return;
         }
+
+        Hilos::$rt->attachmentDrafts[$dto->draftId]->actions->delete(deleteFiles: true);
         $this->sendAttachmentDraftsUpdate($acceptKey);
 
-        if ($deleted && (Hilos::$rt->userStates[$userId]?->outboundModerationPhase ?? '') !== '') {
-            $this->sendOutboundModerationStateUpdate($acceptKey, $userId);
+        if (
+            Hilos::$rt->userStates[Hilos::$rt->connections[$acceptKey]->userId]->outboundModerationPhase
+            !== ChatUserState::OUTBOUND_MODERATION_PHASE_NONE
+        ) {
+            $this->sendOutboundModerationStateUpdate($acceptKey, Hilos::$rt->connections[$acceptKey]->userId);
         }
     }
 
@@ -325,50 +344,56 @@ final class MainPage extends AbstractPage
      */
     private function handleTextModerationResult(ModerationResultSignalData $result): void
     {
-        $acceptKey = $result->acceptKey;
-        $userId = $result->userId;
-
-        $connection = Hilos::$rt->connections[$acceptKey] ?? null;
-        if ($connection === null || $connection->userId !== $userId) {
-            Hilos::$rt->userStates[$userId]?->actions->clearOutboundModeration($result->requestId);
+        if (
+            !isset(Hilos::$rt->connections[$result->acceptKey])
+            || Hilos::$rt->connections[$result->acceptKey]->userId !== $result->userId
+        ) {
+            Hilos::$rt->userStates[$result->userId]?->actions->clearOutboundModeration($result->requestId);
             $this->logAgentInfo(
-                "Moderation result ignored for stale connection (acceptKey={$acceptKey}; userId={$userId})",
+                "Moderation result ignored for stale connection (acceptKey={$result->acceptKey}; userId={$result->userId})",
             );
             return;
         }
 
-        $userState = Hilos::$rt->userStates[$userId] ?? null;
-        if ($userState === null) {
+        if (!isset(Hilos::$rt->userStates[$result->userId])) {
             $this->logAgentInfo(
-                "Moderation result ignored for missing runtime user state (acceptKey={$acceptKey}; userId={$userId}; requestId={$result->requestId})",
+                "Moderation result ignored for missing runtime user state (acceptKey={$result->acceptKey}; userId={$result->userId}; requestId={$result->requestId})",
             );
             return;
         }
 
         if (!$result->allow) {
             $reason = $result->reason !== '' ? $result->reason : 'unknown';
-            $phase = in_array($reason, ['service_unavailable', 'unknown'], true) ? 'unavailable' : 'rejected';
-            if (!$userState->actions->failOutboundModeration($result->requestId, $phase, $reason)) {
+            $phase = in_array($reason, ['service_unavailable', 'unknown'], true)
+                ? ChatUserState::OUTBOUND_MODERATION_PHASE_UNAVAILABLE
+                : ChatUserState::OUTBOUND_MODERATION_PHASE_REJECTED;
+            if (
+                !Hilos::$rt->userStates[$result->userId]->actions->failOutboundModeration(
+                    $result->requestId,
+                    $phase,
+                    $reason,
+                )
+            ) {
                 $this->logAgentInfo(
-                    "Moderation result ignored for stale request (acceptKey={$acceptKey}; userId={$userId}; requestId={$result->requestId})",
+                    "Moderation result ignored for stale request (acceptKey={$result->acceptKey}; userId={$result->userId}; requestId={$result->requestId})",
                 );
                 return;
             }
-            $this->sendOutboundModerationStateUpdate($acceptKey, $userId);
-            $this->logAgentError("Message blocked by moderation (userId={$userId}; reason={$reason})");
+            $this->sendOutboundModerationStateUpdate($result->acceptKey, $result->userId);
+            $this->logAgentError("Message blocked by moderation (userId={$result->userId}; reason={$reason})");
             return;
         }
 
-        $draftIds = $userState->getOutboundModerationAttachmentDraftIds();
-        $drafts = Hilos::$rt->attachmentDrafts->findAllByIdsForAcceptKey($acceptKey, $draftIds);
+        $draftIds = Hilos::$rt->userStates[$result->userId]->getOutboundModerationAttachmentDraftIds();
+        $drafts = Hilos::$rt->attachmentDrafts->forAcceptKey($result->acceptKey)->forDraftIds($draftIds);
         if (count($drafts) !== count($draftIds)) {
-            $userState->actions->failOutboundModeration(
+            Hilos::$rt->userStates[$result->userId]->actions->failOutboundModeration(
                 $result->requestId,
-                'unavailable',
+                ChatUserState::OUTBOUND_MODERATION_PHASE_UNAVAILABLE,
                 'attachment_missing',
             );
-            $this->sendOutboundModerationStateUpdate($acceptKey, $userId);
-            $this->sendAttachmentDraftsUpdate($acceptKey);
+            $this->sendOutboundModerationStateUpdate($result->acceptKey, $result->userId);
+            $this->sendAttachmentDraftsUpdate($result->acceptKey);
             return;
         }
 
@@ -376,26 +401,26 @@ final class MainPage extends AbstractPage
         foreach ($drafts as $draft) {
             $quarantineFile = Hilos::$fs->quarantine[$draft->quarantineBasename];
             if (!$quarantineFile->exists()) {
-                $userState->actions->failOutboundModeration(
+                Hilos::$rt->userStates[$result->userId]->actions->failOutboundModeration(
                     $result->requestId,
-                    'unavailable',
+                    ChatUserState::OUTBOUND_MODERATION_PHASE_UNAVAILABLE,
                     'attachment_missing',
                 );
-                $draft->actions->delete(deleteFiles: false);
-                $this->sendOutboundModerationStateUpdate($acceptKey, $userId);
-                $this->sendAttachmentDraftsUpdate($acceptKey);
+                Hilos::$rt->attachmentDrafts[$draft->draftId]->actions->delete(deleteFiles: false);
+                $this->sendOutboundModerationStateUpdate($result->acceptKey, $result->userId);
+                $this->sendAttachmentDraftsUpdate($result->acceptKey);
                 return;
             }
             try {
                 $quarantineFile->move('published');
             } catch (FsException $e) {
                 $this->logAgentError("Failed to publish attachment draft {$draft->draftId}: {$e->getMessage()}");
-                $userState->actions->failOutboundModeration(
+                Hilos::$rt->userStates[$result->userId]->actions->failOutboundModeration(
                     $result->requestId,
-                    'unavailable',
+                    ChatUserState::OUTBOUND_MODERATION_PHASE_UNAVAILABLE,
                     'attachment_publish_failed',
                 );
-                $this->sendOutboundModerationStateUpdate($acceptKey, $userId);
+                $this->sendOutboundModerationStateUpdate($result->acceptKey, $result->userId);
                 return;
             }
             $attachments[] = new PublishedAttachmentInput(
@@ -405,19 +430,19 @@ final class MainPage extends AbstractPage
             );
         }
 
-        if (!$userState->actions->clearOutboundModeration($result->requestId)) {
+        if (!Hilos::$rt->userStates[$result->userId]->actions->clearOutboundModeration($result->requestId)) {
             $this->logAgentInfo(
-                "Moderation approval ignored for stale request (acceptKey={$acceptKey}; userId={$userId}; requestId={$result->requestId})",
+                "Moderation approval ignored for stale request (acceptKey={$result->acceptKey}; userId={$result->userId}; requestId={$result->requestId})",
             );
             return;
         }
 
         Hilos::$rt->attachmentDrafts->actions->deleteByIds($draftIds, deleteFiles: false);
-        $this->sendOutboundModerationStateUpdate($acceptKey, $userId);
-        $this->sendAttachmentDraftsUpdate($acceptKey);
+        $this->sendOutboundModerationStateUpdate($result->acceptKey, $result->userId);
+        $this->sendAttachmentDraftsUpdate($result->acceptKey);
         Hilos::$db->events->actions->addMessage(
             $result->message,
-            userId: $userId,
+            userId: $result->userId,
             attachments: new PublishedAttachmentInputs(...$attachments),
         );
     }
@@ -431,17 +456,18 @@ final class MainPage extends AbstractPage
     private function buildOutboundModerationStatePayload(int $userId): ?array
     {
         $state = Hilos::$rt->userStates[$userId] ?? null;
-        if ($state === null || $state->outboundModerationPhase === '') {
+        if (
+            $state === null
+            || $state->outboundModerationPhase === ChatUserState::OUTBOUND_MODERATION_PHASE_NONE
+        ) {
             return null;
         }
 
-        $draftIds = $state->getOutboundModerationAttachmentDraftIds();
         $attachments = [];
-        foreach ($draftIds as $draftId) {
-            $draft = Hilos::$rt->attachmentDrafts[$draftId] ?? null;
-            if ($draft !== null) {
-                $attachments[] = AttachmentDrafts::toFrontendRow($draft);
-            }
+        foreach (
+            Hilos::$rt->attachmentDrafts->forDraftIds($state->getOutboundModerationAttachmentDraftIds()) as $draft
+        ) {
+            $attachments[] = AttachmentDrafts::toFrontendRow($draft);
         }
 
         return [
@@ -473,9 +499,9 @@ final class MainPage extends AbstractPage
     /**
      * Builds moderation prompt content from message text and attachment metadata.
      *
-     * @param list<AttachmentDraft> $drafts Attachment drafts
+     * @param AttachmentDrafts $drafts Attachment drafts
      */
-    private function buildContentForModeration(string $message, array $drafts): string
+    private function buildContentForModeration(string $message, AttachmentDrafts $drafts): string
     {
         $parts = [];
         if ($message !== '') {

@@ -23,6 +23,14 @@ reviewing noisy code.
    `$mutationSignal`, `$dbUser`).
 6. Do not inline expressions if doing so hides failure handling or makes a
    nested call hard to read. The goal is less noise, not denser code.
+7. Do not create local aliases for properties of an already addressed DB/RT
+   item when the alias is only a shorter path to the same value. For example,
+   avoid `$userId = Hilos::$rt->connections[$acceptKey]->userId` when the
+   connection item remains the source of truth. Inline the property access, or
+   add a typed collection/item accessor if the repeated expression is genuinely
+   too complex. A local alias is allowed when it intentionally snapshots a
+   value before mutation, crosses a boundary, or carries a distinct domain name
+   not present in the source expression.
 
 ## Example
 

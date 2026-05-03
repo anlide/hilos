@@ -186,6 +186,60 @@ final class ChatAgentPresenceTest extends IntegrationTestCase
         }
     }
 
+    public function testAttachmentDraftFiltersCanChainAcceptKeyAndDraftIds(): void
+    {
+        Hilos::$rt->attachmentDrafts->actions->clear(deleteFiles: false);
+
+        try {
+            Hilos::$rt->attachmentDrafts->actions->create(
+                'draft-a',
+                'owner-ak',
+                1,
+                '',
+                'a.txt',
+                'text/plain',
+                1,
+                'a.txt',
+                time(),
+            );
+            Hilos::$rt->attachmentDrafts->actions->create(
+                'draft-b',
+                'owner-ak',
+                1,
+                '',
+                'b.txt',
+                'text/plain',
+                1,
+                'b.txt',
+                time(),
+            );
+            Hilos::$rt->attachmentDrafts->actions->create(
+                'draft-c',
+                'other-ak',
+                1,
+                '',
+                'c.txt',
+                'text/plain',
+                1,
+                'c.txt',
+                time(),
+            );
+
+            $draftIds = [];
+            foreach (
+                Hilos::$rt->attachmentDrafts->forAcceptKey('owner-ak')->forDraftIds(
+                    ['draft-b', 'draft-c', 'draft-a'],
+                ) as $draft
+            ) {
+                $draftIds[] = $draft->draftId;
+            }
+
+            $this->assertSame(['draft-b', 'draft-a'], $draftIds);
+        } finally {
+            Hilos::$rt->attachmentDrafts->actions->clear(deleteFiles: false);
+        }
+    }
+
     /**
      * @return list<string>
      */

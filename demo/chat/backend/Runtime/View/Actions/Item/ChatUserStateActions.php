@@ -48,7 +48,7 @@ final class ChatUserStateActions extends RtActions
         $this->ensureCanWrite();
 
         $this->state->outboundModerationRequestId = $requestId;
-        $this->state->outboundModerationPhase = 'checking';
+        $this->state->outboundModerationPhase = ViewChatUserState::OUTBOUND_MODERATION_PHASE_CHECKING;
         $this->state->outboundModerationMessage = $message;
         $this->state->outboundModerationAttachmentDraftIdsJson = json_encode(array_values($attachmentDraftIds)) ?: '[]';
         $this->state->outboundModerationReason = '';
@@ -103,7 +103,7 @@ final class ChatUserStateActions extends RtActions
         }
 
         $this->state->outboundModerationRequestId = '';
-        $this->state->outboundModerationPhase = '';
+        $this->state->outboundModerationPhase = ViewChatUserState::OUTBOUND_MODERATION_PHASE_NONE;
         $this->state->outboundModerationMessage = '';
         $this->state->outboundModerationAttachmentDraftIdsJson = '[]';
         $this->state->outboundModerationReason = '';

@@ -8,6 +8,7 @@ use Demo\Chat\Core\Page\DTO\AttachmentDraftDeleteActionDTO;
 use Demo\Chat\Core\Router\DTO\AttachmentDraftsUpdateSignalData;
 use Demo\Chat\Core\Router\DTO\FileUploadCompleteSignalData;
 use Demo\Chat\Core\Router\DTO\OutboundModerationStateUpdateSignalData;
+use Demo\Chat\Runtime\View\Item\ChatUserState;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -57,7 +58,7 @@ final class AttachmentDraftSignalDataTest extends TestCase
     {
         $state = [
             'requestId' => 'request-1',
-            'phase' => 'checking',
+            'phase' => ChatUserState::OUTBOUND_MODERATION_PHASE_CHECKING,
             'text' => 'hello',
             'attachments' => [],
             'reason' => null,

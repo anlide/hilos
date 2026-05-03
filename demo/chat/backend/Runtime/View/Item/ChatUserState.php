@@ -34,7 +34,32 @@ final class ChatUserState extends RtItem
     /**
      * Minimum interval in seconds between accepted outbound submissions.
      */
-    private const int MESSAGE_RATE_LIMIT_SECONDS = 10;
+    public const int MESSAGE_RATE_LIMIT_SECONDS = 10;
+
+    /**
+     * Allowed client-side timer drift before the visible rate-limit window ends.
+     */
+    public const int MESSAGE_RATE_LIMIT_TOLERANCE_SECONDS = 1;
+
+    /**
+     * No visible moderation state.
+     */
+    public const string OUTBOUND_MODERATION_PHASE_NONE = '';
+
+    /**
+     * Moderation phase while an outbound user message is being checked.
+     */
+    public const string OUTBOUND_MODERATION_PHASE_CHECKING = 'checking';
+
+    /**
+     * Moderation phase for a user-retryable rejected message.
+     */
+    public const string OUTBOUND_MODERATION_PHASE_REJECTED = 'rejected';
+
+    /**
+     * Moderation phase for unavailable moderation or missing attachment state.
+     */
+    public const string OUTBOUND_MODERATION_PHASE_UNAVAILABLE = 'unavailable';
 
     /**
      * @param StateChatUserState $state Backing state (by reference, same as parent contract)
@@ -91,7 +116,8 @@ final class ChatUserState extends RtItem
         /** @var StateChatUserState $state */
         $state = $this->_state;
 
-        return (microtime(true) - $state->lastOutboundSubmittedAt) >= self::MESSAGE_RATE_LIMIT_SECONDS - 1;
+        return (microtime(true) - $state->lastOutboundSubmittedAt)
+            >= self::MESSAGE_RATE_LIMIT_SECONDS - self::MESSAGE_RATE_LIMIT_TOLERANCE_SECONDS;
     }
 
     /**
@@ -102,7 +128,7 @@ final class ChatUserState extends RtItem
         /** @var StateChatUserState $state */
         $state = $this->_state;
 
-        return $state->outboundModerationPhase === 'checking';
+        return $state->outboundModerationPhase === self::OUTBOUND_MODERATION_PHASE_CHECKING;
     }
 
     /**

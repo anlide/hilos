@@ -45,33 +45,40 @@ final class AttachmentDrafts extends RtCollection
             $filteredState->add($stateDraft);
         }
 
+        return $this->fromFilteredState($filteredState);
+    }
+
+    /**
+     * Drafts matching requested ids, preserving requested order.
+     *
+     * @param list<string> $draftIds Requested draft ids
+     * @return self Filtered collection
+     * @throws RtActionsStateCollectionNullException When runtime state is unavailable
+     */
+    public function forDraftIds(array $draftIds): self
+    {
+        $filteredState = StateAttachmentDrafts::init();
+        $stateCollection = $this->getStateCollection();
+        foreach ($draftIds as $draftId) {
+            $stateDraft = $stateCollection->get($draftId);
+            if ($stateDraft === null) {
+                continue;
+            }
+            $filteredState->add($stateDraft);
+        }
+
+        return $this->fromFilteredState($filteredState);
+    }
+
+    /**
+     * Creates a read-only filtered view over selected draft states.
+     */
+    private function fromFilteredState(StateAttachmentDrafts $filteredState): self
+    {
         $collection = self::init();
         $collection->setStateCollection($filteredState);
 
         return $collection;
-    }
-
-    /**
-     * Resolve a list of draft ids owned by the connection, preserving requested order.
-     *
-     * @param string $acceptKey WebSocket connection id
-     * @param list<string> $draftIds Requested draft ids
-     * @return list<AttachmentDraft> Matching drafts
-     * @throws RtActionsStateCollectionNullException When runtime state is unavailable
-     */
-    public function findAllByIdsForAcceptKey(string $acceptKey, array $draftIds): array
-    {
-        $drafts = [];
-        $stateCollection = $this->getStateCollection();
-        foreach ($draftIds as $draftId) {
-            $stateDraft = $stateCollection->get($draftId);
-            if ($stateDraft === null || $stateDraft->acceptKey !== $acceptKey) {
-                continue;
-            }
-            $drafts[] = $this->createRtItem($stateDraft);
-        }
-
-        return $drafts;
     }
 
     /**

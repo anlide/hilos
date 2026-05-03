@@ -43,24 +43,29 @@ Use this skill for style-sensitive Hilos edits and reviews. Start with `agents.m
    backend API; keep unstructured arrays at boundaries.
 10. Avoid one-use locals and prefer inline nullsafe access for one immediate
    nullable member call under the local variable rule.
-11. Keep comments concise and in English.
-12. For `Page::onAction()`, do not add a local `try/catch` around the routing
+11. Avoid local aliases for already addressed DB/RT item properties, such as
+   `$userId = Hilos::$rt->connections[$acceptKey]->userId`, unless the alias
+   intentionally snapshots a value, crosses a boundary, or carries a distinct
+   domain name. Add a typed collection/item accessor if inline access becomes
+   too complex.
+12. Keep comments concise and in English.
+13. For `Page::onAction()`, do not add a local `try/catch` around the routing
    `switch`; the framework catches action exceptions and calls
    `onActionException()`.
-13. For named signal handlers, use `switch ($name)` with explicit cases.
-14. Override `onActionException()` only when the page has a specific fail/error
+14. For named signal handlers, use `switch ($name)` with explicit cases.
+15. Override `onActionException()` only when the page has a specific fail/error
    contract; otherwise let the default framework `action_error` signal notify
    the initiator.
-15. Use `AgentUnknownActionException` in `onAction()` default branches.
-16. Do not add empty `default` branches. If a handler intentionally ignores
+16. Use `AgentUnknownActionException` in `onAction()` default branches.
+17. Do not add empty `default` branches. If a handler intentionally ignores
    shared broadcast names and the branch would only `return` or `break`, omit
    it and document the ignore contract in PHPDoc.
-17. In PHPDoc, import exception classes with `use` and reference short names;
+18. In PHPDoc, import exception classes with `use` and reference short names;
    do not write leading-backslash fully qualified exceptions such as
    `@throws \OutOfBoundsException`.
-18. Use `ValidationException` and its children for user/business validation;
+19. Use `ValidationException` and its children for user/business validation;
    read `docs/agents/code-style/exceptions.md` before changing exception types.
-19. Before finishing a PHP method change, re-check the affected docblock against
+20. Before finishing a PHP method change, re-check the affected docblock against
    `docs/agents/code-style/phpdoc.md`.
 
 ## Hard Rules
