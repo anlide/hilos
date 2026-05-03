@@ -20,6 +20,7 @@ use Demo\Chat\Hilos;
 use Demo\Chat\Pages\Main\UploadFileTrait;
 use Demo\Chat\Runtime\View\Item\AttachmentDraft;
 use Demo\Chat\Runtime\View\Item\ChatUserState;
+use Demo\Chat\Runtime\View\Item\Connection;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
@@ -207,8 +208,8 @@ final class MainPage extends AbstractPage
             throw new ItemNotFoundForUpdateException('User runtime state not found');
         }
         if (
-            Hilos::$rt->connections[$acceptKey]->userState->outboundModerationPhase
-            === ChatUserState::OUTBOUND_MODERATION_PHASE_CHECKING
+            Hilos::$rt->connections[$acceptKey]->outboundModerationPhase
+            === Connection::OUTBOUND_MODERATION_PHASE_CHECKING
         ) {
             throw new ValidationException('Another message is already being moderated');
         }
@@ -240,8 +241,8 @@ final class MainPage extends AbstractPage
         }
 
         $requestId = RandomHelper::hex(16);
-        Hilos::$rt->connections[$acceptKey]->userState->actions->startOutboundModeration(
-            $acceptKey,
+        Hilos::$rt->connections[$acceptKey]->userState->actions->recordOutboundSubmission();
+        Hilos::$rt->connections[$acceptKey]->actions->startOutboundModeration(
             $requestId,
             $dto->content,
             $dto->attachmentDraftIds,
@@ -284,8 +285,8 @@ final class MainPage extends AbstractPage
             throw new ItemNotFoundForUpdateException('User runtime state not found');
         }
         if (
-            Hilos::$rt->connections[$acceptKey]->userState->outboundModerationPhase
-            === ChatUserState::OUTBOUND_MODERATION_PHASE_CHECKING
+            Hilos::$rt->connections[$acceptKey]->outboundModerationPhase
+            === Connection::OUTBOUND_MODERATION_PHASE_CHECKING
         ) {
             throw new ValidationException('Cannot delete attachment while message is being moderated');
         }
@@ -313,16 +314,15 @@ final class MainPage extends AbstractPage
             !isset(Hilos::$rt->connections[$result->acceptKey])
             || Hilos::$rt->connections[$result->acceptKey]->userId !== $result->userId
         ) {
-            Hilos::$rt->userStates[$result->userId]?->actions->clearOutboundModeration($result->requestId);
             $this->logAgentInfo(
                 "Moderation result ignored for stale connection (acceptKey={$result->acceptKey}; userId={$result->userId})",
             );
             return;
         }
 
-        if (!isset(Hilos::$rt->userStates[$result->userId])) {
+        if (Hilos::$rt->connections[$result->acceptKey]->outboundModerationRequestId !== $result->requestId) {
             $this->logAgentInfo(
-                "Moderation result ignored for missing runtime user state (acceptKey={$result->acceptKey}; userId={$result->userId}; requestId={$result->requestId})",
+                "Moderation result ignored for stale request (acceptKey={$result->acceptKey}; userId={$result->userId}; requestId={$result->requestId})",
             );
             return;
         }
@@ -330,10 +330,10 @@ final class MainPage extends AbstractPage
         if (!$result->allow) {
             $reason = $result->reason !== '' ? $result->reason : 'unknown';
             $phase = in_array($reason, ['service_unavailable', 'unknown'], true)
-                ? ChatUserState::OUTBOUND_MODERATION_PHASE_UNAVAILABLE
-                : ChatUserState::OUTBOUND_MODERATION_PHASE_REJECTED;
+                ? Connection::OUTBOUND_MODERATION_PHASE_UNAVAILABLE
+                : Connection::OUTBOUND_MODERATION_PHASE_REJECTED;
             if (
-                !Hilos::$rt->userStates[$result->userId]->actions->failOutboundModeration(
+                !Hilos::$rt->connections[$result->acceptKey]->actions->failOutboundModeration(
                     $result->requestId,
                     $phase,
                     $reason,
@@ -348,7 +348,7 @@ final class MainPage extends AbstractPage
             return;
         }
 
-        $draftIds = Hilos::$rt->userStates[$result->userId]->getOutboundModerationAttachmentDraftIds();
+        $draftIds = Hilos::$rt->connections[$result->acceptKey]->outboundModerationAttachmentDraftIds;
         $drafts = [];
         foreach ($draftIds as $draftId) {
             $draftFound = false;
@@ -363,9 +363,9 @@ final class MainPage extends AbstractPage
             }
 
             if (!$draftFound) {
-                Hilos::$rt->userStates[$result->userId]->actions->failOutboundModeration(
+                Hilos::$rt->connections[$result->acceptKey]->actions->failOutboundModeration(
                     $result->requestId,
-                    ChatUserState::OUTBOUND_MODERATION_PHASE_UNAVAILABLE,
+                    Connection::OUTBOUND_MODERATION_PHASE_UNAVAILABLE,
                     'attachment_missing',
                 );
                 // TODO: Reconcile stale draft references through a projection-backed no-op action.
@@ -377,9 +377,9 @@ final class MainPage extends AbstractPage
         foreach ($drafts as $draft) {
             $quarantineFile = Hilos::$fs->quarantine[$draft->quarantineBasename];
             if (!$quarantineFile->exists()) {
-                Hilos::$rt->userStates[$result->userId]->actions->failOutboundModeration(
+                Hilos::$rt->connections[$result->acceptKey]->actions->failOutboundModeration(
                     $result->requestId,
-                    ChatUserState::OUTBOUND_MODERATION_PHASE_UNAVAILABLE,
+                    Connection::OUTBOUND_MODERATION_PHASE_UNAVAILABLE,
                     'attachment_missing',
                 );
                 Hilos::$rt->attachmentDrafts[$draft->draftId]->actions->delete(deleteFiles: false);
@@ -389,9 +389,9 @@ final class MainPage extends AbstractPage
                 $quarantineFile->move('published');
             } catch (FsException $e) {
                 $this->logAgentError("Failed to publish attachment draft {$draft->draftId}: {$e->getMessage()}");
-                Hilos::$rt->userStates[$result->userId]->actions->failOutboundModeration(
+                Hilos::$rt->connections[$result->acceptKey]->actions->failOutboundModeration(
                     $result->requestId,
-                    ChatUserState::OUTBOUND_MODERATION_PHASE_UNAVAILABLE,
+                    Connection::OUTBOUND_MODERATION_PHASE_UNAVAILABLE,
                     'attachment_publish_failed',
                 );
                 return;
@@ -403,7 +403,7 @@ final class MainPage extends AbstractPage
             );
         }
 
-        if (!Hilos::$rt->userStates[$result->userId]->actions->clearOutboundModeration($result->requestId)) {
+        if (!Hilos::$rt->connections[$result->acceptKey]->actions->clearOutboundModeration($result->requestId)) {
             $this->logAgentInfo(
                 "Moderation approval ignored for stale request (acceptKey={$result->acceptKey}; userId={$result->userId}; requestId={$result->requestId})",
             );

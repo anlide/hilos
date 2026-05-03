@@ -19,92 +19,17 @@ use Hilos\Runtime\View\Actions\Item\RtActions;
 final class ChatUserStateActions extends RtActions
 {
     /**
-     * Record an accepted submit and start a connection-targeted outbound moderation state.
-     *
-     * @param string $acceptKey WebSocket accept key that owns this submit UI
-     * @param string $requestId Moderation request id
-     * @param string $message Submitted message text
-     * @param list<string> $attachmentDraftIds Submitted attachment draft ids
+     * Record the shared per-user outbound submit timer.
      *
      * @throws RtActionsCollectionNameNullException When collection name is null.
      * @throws RtTruthSourceWriteNotAllowedException When truth source does not allow write.
      */
-    public function startOutboundModeration(
-        string $acceptKey,
-        string $requestId,
-        string $message,
-        array $attachmentDraftIds,
-    ): void {
+    public function recordOutboundSubmission(): void
+    {
         $this->ensureCanWrite();
 
         $this->state->lastOutboundSubmittedAt = microtime(true);
-        $this->state->outboundModerationAcceptKey = $acceptKey;
-        $this->state->outboundModerationRequestId = $requestId;
-        $this->state->outboundModerationPhase = ViewChatUserState::OUTBOUND_MODERATION_PHASE_CHECKING;
-        $this->state->outboundModerationMessage = $message;
-        $this->state->outboundModerationAttachmentDraftIdsJson = json_encode(array_values($attachmentDraftIds)) ?: '[]';
-        $this->state->outboundModerationReason = '';
-        $this->state->outboundModerationUpdatedAt = time();
 
         $this->sync();
-    }
-
-    /**
-     * Mark the current outbound moderation as failed for user-visible retry.
-     *
-     * @param string $requestId Moderation request id to match
-     * @param string $phase Failure phase: rejected or unavailable
-     * @param string $reason User-visible reason
-     * @return bool True when the state matched and was updated
-     *
-     * @throws RtActionsCollectionNameNullException When collection name is null.
-     * @throws RtTruthSourceWriteNotAllowedException When truth source does not allow write.
-     */
-    public function failOutboundModeration(string $requestId, string $phase, string $reason): bool
-    {
-        $this->ensureCanWrite();
-
-        if ($this->state->outboundModerationRequestId !== $requestId) {
-            return false;
-        }
-
-        $this->state->outboundModerationPhase = $phase;
-        $this->state->outboundModerationReason = $reason;
-        $this->state->outboundModerationUpdatedAt = time();
-
-        $this->sync();
-
-        return true;
-    }
-
-    /**
-     * Clear current outbound moderation state after approval.
-     *
-     * The target accept key is retained so frontend projection can deliver the cleared state.
-     *
-     * @param string $requestId Moderation request id to match
-     * @return bool True when the state matched and was cleared
-     *
-     * @throws RtActionsCollectionNameNullException When collection name is null.
-     * @throws RtTruthSourceWriteNotAllowedException When truth source does not allow write.
-     */
-    public function clearOutboundModeration(string $requestId): bool
-    {
-        $this->ensureCanWrite();
-
-        if ($this->state->outboundModerationRequestId !== $requestId) {
-            return false;
-        }
-
-        $this->state->outboundModerationRequestId = '';
-        $this->state->outboundModerationPhase = ViewChatUserState::OUTBOUND_MODERATION_PHASE_NONE;
-        $this->state->outboundModerationMessage = '';
-        $this->state->outboundModerationAttachmentDraftIdsJson = '[]';
-        $this->state->outboundModerationReason = '';
-        $this->state->outboundModerationUpdatedAt = time();
-
-        $this->sync();
-
-        return true;
     }
 }

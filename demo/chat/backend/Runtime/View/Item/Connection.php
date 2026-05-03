@@ -27,6 +27,12 @@ use Hilos\Runtime\View\Item\RtItem;
  * @property-read string $acceptKey WebSocket accept key
  * @property-read int $userId User ID for this connection
  * @property-read int $connectedAt Unix timestamp when connected
+ * @property-read string $outboundModerationRequestId Current moderation request id
+ * @property-read string $outboundModerationPhase Current moderation phase
+ * @property-read string $outboundModerationMessage Submitted message text
+ * @property-read list<string> $outboundModerationAttachmentDraftIds Submitted attachment draft ids
+ * @property-read string $outboundModerationReason Rejection or unavailable reason
+ * @property-read int $outboundModerationUpdatedAt Last moderation update unix time
  * @property-read ?string $fileSessionUploadId Active binary upload id or null
  * @property-read int $fileSessionDeclaredSize Declared total bytes for current upload session
  * @property-read int $fileSessionReceivedBytes Bytes received for current upload session
@@ -50,6 +56,26 @@ final class Connection extends RtItem
     public const string attachmentDrafts = 'attachmentDrafts';
 
     /**
+     * No visible moderation state.
+     */
+    public const string OUTBOUND_MODERATION_PHASE_NONE = '';
+
+    /**
+     * Moderation phase while an outbound user message is being checked.
+     */
+    public const string OUTBOUND_MODERATION_PHASE_CHECKING = 'checking';
+
+    /**
+     * Moderation phase for a user-retryable rejected message.
+     */
+    public const string OUTBOUND_MODERATION_PHASE_REJECTED = 'rejected';
+
+    /**
+     * Moderation phase for unavailable moderation or missing attachment state.
+     */
+    public const string OUTBOUND_MODERATION_PHASE_UNAVAILABLE = 'unavailable';
+
+    /**
      * @param StateConnection $state Backing state (by reference, same as parent contract)
      */
     public function __construct(StateConnection &$state)
@@ -63,7 +89,7 @@ final class Connection extends RtItem
      * @throws RtItemActionsClassException
      * @throws RtItemPropertyNotFoundException When $name is not a declared property
      */
-    public function __get(string $name): string|int|float|User|ChatUserState|AttachmentDrafts|null|ConnectionActions
+    public function __get(string $name): array|string|int|float|User|ChatUserState|AttachmentDrafts|null|ConnectionActions
     {
         /** @var StateConnection $state */
         $state = $this->_state;
@@ -72,6 +98,12 @@ final class Connection extends RtItem
             StateConnection::acceptKey => $state->acceptKey,
             StateConnection::userId => $state->userId,
             StateConnection::connectedAt => $state->connectedAt,
+            StateConnection::outboundModerationRequestId => $state->outboundModerationRequestId,
+            StateConnection::outboundModerationPhase => $state->outboundModerationPhase,
+            StateConnection::outboundModerationMessage => $state->outboundModerationMessage,
+            StateConnection::outboundModerationAttachmentDraftIds => $state->outboundModerationAttachmentDraftIds,
+            StateConnection::outboundModerationReason => $state->outboundModerationReason,
+            StateConnection::outboundModerationUpdatedAt => $state->outboundModerationUpdatedAt,
             StateConnection::fileSessionUploadId => $state->fileSessionUploadId,
             StateConnection::fileSessionDeclaredSize => $state->fileSessionDeclaredSize,
             StateConnection::fileSessionReceivedBytes => $state->fileSessionReceivedBytes,

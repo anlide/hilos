@@ -46,11 +46,8 @@ final class ChatSignalConstants
     /** @var string Server → client: binary upload progress (throttled); separate from moderation */
     public const string FILE_UPLOAD_PROGRESS_UPDATE = 'file_upload_progress_update';
 
-    /** @var string Server → client: full list of uploaded attachment drafts for this connection */
-    public const string ATTACHMENT_DRAFTS_UPDATE = 'attachment_drafts_update';
-
-    /** @var string Server → client: current outbound moderation state for text + attachments */
-    public const string OUTBOUND_MODERATION_STATE_UPDATE = 'outbound_moderation_state_update';
+    /** @var string Server → client: full current connection-local chat session state */
+    public const string SELF_CONNECTION_UPDATE = 'self_connection_update';
 
     /** @var string Rename signal name */
     public const string RENAME = 'rename';

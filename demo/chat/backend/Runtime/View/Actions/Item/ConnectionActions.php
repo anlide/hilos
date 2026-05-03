@@ -40,6 +40,87 @@ final class ConnectionActions extends RtActions
     }
 
     /**
+     * Start a connection-local outbound moderation state.
+     *
+     * @param string $requestId Moderation request id
+     * @param string $message Submitted message text
+     * @param list<string> $attachmentDraftIds Submitted attachment draft ids
+     *
+     * @throws RtActionsCollectionNameNullException When collection name is null.
+     * @throws RtTruthSourceWriteNotAllowedException When truth source does not allow write.
+     */
+    public function startOutboundModeration(string $requestId, string $message, array $attachmentDraftIds): void
+    {
+        $this->ensureCanWrite();
+
+        $this->state->outboundModerationRequestId = $requestId;
+        $this->state->outboundModerationPhase = RuntimeConnection::OUTBOUND_MODERATION_PHASE_CHECKING;
+        $this->state->outboundModerationMessage = $message;
+        $this->state->outboundModerationAttachmentDraftIds = array_values($attachmentDraftIds);
+        $this->state->outboundModerationReason = '';
+        $this->state->outboundModerationUpdatedAt = time();
+
+        $this->sync();
+    }
+
+    /**
+     * Mark the current connection-local moderation as failed for user-visible retry.
+     *
+     * @param string $requestId Moderation request id to match
+     * @param string $phase Failure phase: rejected or unavailable
+     * @param string $reason User-visible reason
+     * @return bool True when the state matched and was updated
+     *
+     * @throws RtActionsCollectionNameNullException When collection name is null.
+     * @throws RtTruthSourceWriteNotAllowedException When truth source does not allow write.
+     */
+    public function failOutboundModeration(string $requestId, string $phase, string $reason): bool
+    {
+        $this->ensureCanWrite();
+
+        if ($this->state->outboundModerationRequestId !== $requestId) {
+            return false;
+        }
+
+        $this->state->outboundModerationPhase = $phase;
+        $this->state->outboundModerationReason = $reason;
+        $this->state->outboundModerationUpdatedAt = time();
+
+        $this->sync();
+
+        return true;
+    }
+
+    /**
+     * Clear current connection-local moderation state after approval.
+     *
+     * @param string $requestId Moderation request id to match
+     * @return bool True when the state matched and was cleared
+     *
+     * @throws RtActionsCollectionNameNullException When collection name is null.
+     * @throws RtTruthSourceWriteNotAllowedException When truth source does not allow write.
+     */
+    public function clearOutboundModeration(string $requestId): bool
+    {
+        $this->ensureCanWrite();
+
+        if ($this->state->outboundModerationRequestId !== $requestId) {
+            return false;
+        }
+
+        $this->state->outboundModerationRequestId = '';
+        $this->state->outboundModerationPhase = RuntimeConnection::OUTBOUND_MODERATION_PHASE_NONE;
+        $this->state->outboundModerationMessage = '';
+        $this->state->outboundModerationAttachmentDraftIds = [];
+        $this->state->outboundModerationReason = '';
+        $this->state->outboundModerationUpdatedAt = time();
+
+        $this->sync();
+
+        return true;
+    }
+
+    /**
      * After successful FILE_UPLOAD_INIT: open session row + progress bar fields on this socket.
      *
      * Caller should send {@see ChatSignalConstants::FILE_UPLOAD_READY} and then record the
@@ -153,5 +234,4 @@ final class ConnectionActions extends RtActions
         $this->state->fileProgressTotalBytes = 0;
         $this->state->uploadProgressLastSentAt = 0.0;
     }
-
 }

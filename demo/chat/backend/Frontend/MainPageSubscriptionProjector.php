@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Frontend;
 
-use Demo\Chat\Core\Router\DTO\AttachmentDraftSignalData;
 use Demo\Chat\Core\Router\DTO\ChatEventSignalDTO;
 use Demo\Chat\Database\DbChatContext;
 use Demo\Chat\Hilos;
@@ -30,36 +29,17 @@ final class MainPageSubscriptionProjector
                 full: [
                     DbChatContext::bots => Hilos::$db->bots->activeOnly,
                     DbChatContext::events => Hilos::$db->events,
+                    DbChatContext::users => Hilos::$rt->connections->relevantUsers,
                 ],
             ),
-            outboundModerationState: OutboundModerationStateProjector::forConnection(
-                Hilos::$rt->connections[$acceptKey],
-            ),
-            attachmentDrafts: AttachmentDraftSignalData::listFromDrafts(
-                Hilos::$rt->connections[$acceptKey]->attachmentDrafts,
-            ),
-            fileUploadProgress: self::fileUploadProgressForAcceptKey($acceptKey),
-            includeUserSessionFields: true,
+            selfConnection: SelfConnectionProjector::forConnection(Hilos::$rt->connections[$acceptKey]),
             frontend: BotFrontendStateProjector::appendFullForBots(
-                UserFrontendStateProjector::fullForUsers(Hilos::$rt->connections->relevantUsers),
+                UserFrontendStateProjector::fullForUsers(
+                    Hilos::$rt->connections->relevantUsers,
+                    includePublicUsers: false,
+                ),
                 Hilos::$db->bots->activeOnly,
             ),
         );
-    }
-
-    /**
-     * @return ?array{filename: string, uploadedBytes: int, totalBytes: int}
-     */
-    private static function fileUploadProgressForAcceptKey(string $acceptKey): ?array
-    {
-        if (Hilos::$rt->connections[$acceptKey]->fileProgressFilename === null) {
-            return null;
-        }
-
-        return [
-            'filename' => Hilos::$rt->connections[$acceptKey]->fileProgressFilename,
-            'uploadedBytes' => Hilos::$rt->connections[$acceptKey]->fileProgressUploadedBytes,
-            'totalBytes' => Hilos::$rt->connections[$acceptKey]->fileProgressTotalBytes,
-        ];
     }
 }

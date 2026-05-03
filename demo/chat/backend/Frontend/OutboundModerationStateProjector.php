@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Demo\Chat\Frontend;
 
 use Demo\Chat\Core\Router\DTO\AttachmentDraftSignalData;
-use Demo\Chat\Runtime\View\Item\ChatUserState;
 use Demo\Chat\Runtime\View\Item\Connection;
 
 /**
@@ -20,33 +19,15 @@ final class OutboundModerationStateProjector
      */
     public static function forConnection(Connection $connection): ?array
     {
-        $userState = $connection->userState;
         if (
-            $userState === null
-            || $userState->outboundModerationAcceptKey !== $connection->acceptKey
-        ) {
-            return null;
-        }
-
-        return self::forUserState($userState, $connection);
-    }
-
-    /**
-     * Builds the moderation payload for the state target connection.
-     *
-     * @return ?array<string, mixed> Moderation UI payload or null
-     */
-    private static function forUserState(ChatUserState $state, Connection $connection): ?array
-    {
-        if (
-            $state->outboundModerationAcceptKey === ''
-            || $state->outboundModerationPhase === ChatUserState::OUTBOUND_MODERATION_PHASE_NONE
+            $connection->outboundModerationRequestId === ''
+            || $connection->outboundModerationPhase === Connection::OUTBOUND_MODERATION_PHASE_NONE
         ) {
             return null;
         }
 
         $drafts = [];
-        foreach ($state->getOutboundModerationAttachmentDraftIds() as $draftId) {
+        foreach ($connection->outboundModerationAttachmentDraftIds as $draftId) {
             foreach ($connection->attachmentDrafts as $draft) {
                 if ($draft->draftId !== $draftId) {
                     continue;
@@ -58,12 +39,12 @@ final class OutboundModerationStateProjector
         }
 
         return [
-            'requestId' => $state->outboundModerationRequestId,
-            'phase' => $state->outboundModerationPhase,
-            'text' => $state->outboundModerationMessage,
+            'requestId' => $connection->outboundModerationRequestId,
+            'phase' => $connection->outboundModerationPhase,
+            'text' => $connection->outboundModerationMessage,
             'attachments' => AttachmentDraftSignalData::listFromDraftItems(...$drafts),
-            'reason' => $state->outboundModerationReason !== '' ? $state->outboundModerationReason : null,
-            'updatedAt' => $state->outboundModerationUpdatedAt,
+            'reason' => $connection->outboundModerationReason !== '' ? $connection->outboundModerationReason : null,
+            'updatedAt' => $connection->outboundModerationUpdatedAt,
         ];
     }
 }

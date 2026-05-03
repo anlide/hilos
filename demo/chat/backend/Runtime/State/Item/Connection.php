@@ -11,7 +11,7 @@ use Hilos\Runtime\State\Item\RtState;
 /**
  * Runtime row for one WebSocket connection (`acceptKey` is the collection id).
  *
- * Holds transport metadata plus in-memory file upload session and progress UI for this socket only.
+ * Holds transport metadata plus in-memory moderation, file upload session, and progress UI for this socket only.
  * Inbound RT updates use {@see applyDiff()}; local writes from item actions use typed properties + {@see sync()}.
  * Public string constants name row keys.
  */
@@ -20,6 +20,13 @@ final class Connection extends RtState
     public const string acceptKey = 'acceptKey';
     public const string userId = 'userId';
     public const string connectedAt = 'connectedAt';
+
+    public const string outboundModerationRequestId = 'outboundModerationRequestId';
+    public const string outboundModerationPhase = 'outboundModerationPhase';
+    public const string outboundModerationMessage = 'outboundModerationMessage';
+    public const string outboundModerationAttachmentDraftIds = 'outboundModerationAttachmentDraftIds';
+    public const string outboundModerationReason = 'outboundModerationReason';
+    public const string outboundModerationUpdatedAt = 'outboundModerationUpdatedAt';
 
     public const string fileSessionUploadId = 'fileSessionUploadId';
     public const string fileSessionDeclaredSize = 'fileSessionDeclaredSize';
@@ -44,6 +51,28 @@ final class Connection extends RtState
 
     /** Unix time when the socket was registered. */
     public private(set) int $connectedAt = 0;
+
+    /** Current moderation request id, or empty string when no visible moderation state exists. */
+    public string $outboundModerationRequestId = '';
+
+    /** Moderation phase: checking, rejected, unavailable, or empty when clear. */
+    public string $outboundModerationPhase = '';
+
+    /** Submitted message text associated with the moderation state. */
+    public string $outboundModerationMessage = '';
+
+    /**
+     * Submitted attachment draft ids.
+     *
+     * @var list<string>
+     */
+    public array $outboundModerationAttachmentDraftIds = [];
+
+    /** Moderation rejection or unavailable reason. */
+    public string $outboundModerationReason = '';
+
+    /** Unix time of last moderation state update. */
+    public int $outboundModerationUpdatedAt = 0;
 
     /** Active upload id or null. */
     public ?string $fileSessionUploadId = null;
@@ -91,6 +120,12 @@ final class Connection extends RtState
         $instance->acceptKey = $acceptKey;
         $instance->userId = $userId;
         $instance->connectedAt = time();
+        $instance->outboundModerationRequestId = '';
+        $instance->outboundModerationPhase = '';
+        $instance->outboundModerationMessage = '';
+        $instance->outboundModerationAttachmentDraftIds = [];
+        $instance->outboundModerationReason = '';
+        $instance->outboundModerationUpdatedAt = 0;
         $instance->fileSessionUploadId = null;
         $instance->fileSessionDeclaredSize = 0;
         $instance->fileSessionReceivedBytes = 0;
@@ -117,6 +152,20 @@ final class Connection extends RtState
         $instance->acceptKey = (string)($row[self::acceptKey] ?? '');
         $instance->userId = (int)($row[self::userId] ?? 0);
         $instance->connectedAt = (int)($row[self::connectedAt] ?? time());
+        $instance->outboundModerationRequestId = (string)($row[self::outboundModerationRequestId] ?? '');
+        $instance->outboundModerationPhase = (string)($row[self::outboundModerationPhase] ?? '');
+        $instance->outboundModerationMessage = (string)($row[self::outboundModerationMessage] ?? '');
+        $draftIds = $row[self::outboundModerationAttachmentDraftIds] ?? [];
+        $instance->outboundModerationAttachmentDraftIds = [];
+        if (is_array($draftIds)) {
+            foreach ($draftIds as $draftId) {
+                if (is_string($draftId) && $draftId !== '') {
+                    $instance->outboundModerationAttachmentDraftIds[] = $draftId;
+                }
+            }
+        }
+        $instance->outboundModerationReason = (string)($row[self::outboundModerationReason] ?? '');
+        $instance->outboundModerationUpdatedAt = (int)($row[self::outboundModerationUpdatedAt] ?? 0);
         $uid = $row[self::fileSessionUploadId] ?? null;
         $instance->fileSessionUploadId = is_string($uid) && $uid !== '' ? $uid : null;
         $instance->fileSessionDeclaredSize = (int)($row[self::fileSessionDeclaredSize] ?? 0);
@@ -151,6 +200,31 @@ final class Connection extends RtState
         }
         if (isset($diff[self::connectedAt])) {
             $this->connectedAt = (int)$diff[self::connectedAt];
+        }
+        if (isset($diff[self::outboundModerationRequestId])) {
+            $this->outboundModerationRequestId = (string)$diff[self::outboundModerationRequestId];
+        }
+        if (isset($diff[self::outboundModerationPhase])) {
+            $this->outboundModerationPhase = (string)$diff[self::outboundModerationPhase];
+        }
+        if (isset($diff[self::outboundModerationMessage])) {
+            $this->outboundModerationMessage = (string)$diff[self::outboundModerationMessage];
+        }
+        if (array_key_exists(self::outboundModerationAttachmentDraftIds, $diff)) {
+            $this->outboundModerationAttachmentDraftIds = [];
+            if (is_array($diff[self::outboundModerationAttachmentDraftIds])) {
+                foreach ($diff[self::outboundModerationAttachmentDraftIds] as $draftId) {
+                    if (is_string($draftId) && $draftId !== '') {
+                        $this->outboundModerationAttachmentDraftIds[] = $draftId;
+                    }
+                }
+            }
+        }
+        if (isset($diff[self::outboundModerationReason])) {
+            $this->outboundModerationReason = (string)$diff[self::outboundModerationReason];
+        }
+        if (isset($diff[self::outboundModerationUpdatedAt])) {
+            $this->outboundModerationUpdatedAt = (int)$diff[self::outboundModerationUpdatedAt];
         }
         if (array_key_exists(self::fileSessionUploadId, $diff)) {
             $v = $diff[self::fileSessionUploadId];
@@ -209,6 +283,12 @@ final class Connection extends RtState
             self::acceptKey => $this->acceptKey,
             self::userId => $this->userId,
             self::connectedAt => $this->connectedAt,
+            self::outboundModerationRequestId => $this->outboundModerationRequestId,
+            self::outboundModerationPhase => $this->outboundModerationPhase,
+            self::outboundModerationMessage => $this->outboundModerationMessage,
+            self::outboundModerationAttachmentDraftIds => $this->outboundModerationAttachmentDraftIds,
+            self::outboundModerationReason => $this->outboundModerationReason,
+            self::outboundModerationUpdatedAt => $this->outboundModerationUpdatedAt,
             self::fileSessionUploadId => $this->fileSessionUploadId,
             self::fileSessionDeclaredSize => $this->fileSessionDeclaredSize,
             self::fileSessionReceivedBytes => $this->fileSessionReceivedBytes,

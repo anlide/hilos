@@ -14,6 +14,7 @@ use Demo\Chat\Core\Router\DTO\ModerationResultSignalData;
 use Demo\Chat\Hilos;
 use Demo\Chat\Pages\MainPage;
 use Demo\Chat\Runtime\View\Context\RtChatContext;
+use Demo\Chat\Runtime\View\Item\Connection;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Page\ActionRouteConfig;
@@ -40,8 +41,8 @@ final class ChatAgentModerationTest extends IntegrationTestCase
         try {
             $user = Hilos::$db->users->actions->register(RandomHelper::hex(16));
             Hilos::$rt->connections->actions->register('stop-ak', $user->id);
-            Hilos::$rt->userStates->actions->ensure($user->id)->actions->startOutboundModeration(
-                'stop-ak',
+            Hilos::$rt->userStates->actions->ensure($user->id)->actions->recordOutboundSubmission();
+            Hilos::$rt->connections['stop-ak']?->actions->startOutboundModeration(
                 'request-stop',
                 'pending moderation',
                 [],
@@ -62,7 +63,7 @@ final class ChatAgentModerationTest extends IntegrationTestCase
         }
     }
 
-    public function testStaleTextModerationResultClearsPendingStateWithoutPublishingMessage(): void
+    public function testStaleTextModerationResultDoesNotPublishMessage(): void
     {
         RtTruthSourceRegistry::register(RtChatContext::connections, true, self::TEST_AGENT_ID);
         Hilos::$rt->connections->actions->clear();
@@ -71,12 +72,7 @@ final class ChatAgentModerationTest extends IntegrationTestCase
 
         try {
             $user = Hilos::$db->users->actions->register(RandomHelper::hex(16));
-            Hilos::$rt->userStates->actions->ensure($user->id)->actions->startOutboundModeration(
-                'closed-ak',
-                'request-closed',
-                'pending moderation',
-                [],
-            );
+            Hilos::$rt->userStates->actions->ensure($user->id);
 
             Hilos::initSignalRouter(new ChatSignalRouter());
             $this->dispatchTextModerationSignalToMainPage(
@@ -91,7 +87,6 @@ final class ChatAgentModerationTest extends IntegrationTestCase
                 ),
             );
 
-            $this->assertSame('', Hilos::$rt->userStates[$user->id]?->outboundModerationPhase);
             $this->assertNoMessageEvents();
         } finally {
             Hilos::$rt->connections->actions->clear();
@@ -110,8 +105,8 @@ final class ChatAgentModerationTest extends IntegrationTestCase
         try {
             $user = Hilos::$db->users->actions->register(RandomHelper::hex(16));
             Hilos::$rt->connections->actions->register('live-ak', $user->id);
-            Hilos::$rt->userStates->actions->ensure($user->id)->actions->startOutboundModeration(
-                'live-ak',
+            Hilos::$rt->userStates->actions->ensure($user->id)->actions->recordOutboundSubmission();
+            Hilos::$rt->connections['live-ak']?->actions->startOutboundModeration(
                 'request-live',
                 'pending moderation',
                 [],
@@ -130,7 +125,10 @@ final class ChatAgentModerationTest extends IntegrationTestCase
                 ),
             );
 
-            $this->assertSame('', Hilos::$rt->userStates[$user->id]?->outboundModerationPhase);
+            $this->assertSame(
+                Connection::OUTBOUND_MODERATION_PHASE_NONE,
+                Hilos::$rt->connections['live-ak']?->outboundModerationPhase,
+            );
             $this->assertMessageEventExists('approved message');
         } finally {
             Hilos::$rt->connections->actions->clear();
@@ -149,13 +147,7 @@ final class ChatAgentModerationTest extends IntegrationTestCase
         try {
             $user = Hilos::$db->users->actions->register(RandomHelper::hex(16));
             Hilos::$rt->connections->actions->register('rate-ak', $user->id);
-            Hilos::$rt->userStates->actions->ensure($user->id)->actions->startOutboundModeration(
-                'rate-ak',
-                'request-rate',
-                'previous message',
-                [],
-            );
-            Hilos::$rt->userStates[$user->id]?->actions->clearOutboundModeration('request-rate');
+            Hilos::$rt->userStates->actions->ensure($user->id)->actions->recordOutboundSubmission();
 
             $this->expectException(ValidationException::class);
 
@@ -184,9 +176,14 @@ final class ChatAgentModerationTest extends IntegrationTestCase
 
     private function assertNoMessageEvents(): void
     {
+        $messageEvents = 0;
         foreach (Hilos::$db->events as $event) {
-            $this->assertNotSame(ChatEventType::MESSAGE_SENT->value, $event->type);
+            if ($event->type === ChatEventType::MESSAGE_SENT->value) {
+                $messageEvents++;
+            }
         }
+
+        $this->assertSame(0, $messageEvents);
     }
 
     private function assertMessageEventExists(string $message): void

@@ -1,13 +1,10 @@
 export { handshakeResponse, type HandshakePayload } from './handshake'
 export {
   subscriptionPageMain,
-  outboundModerationStateUpdate,
-  attachmentDraftsUpdate,
+  selfConnectionUpdate,
   fileUploadProgressUpdate,
   type ChatSessionFields,
-  type OutboundModerationStateUpdatePayload,
-  type AttachmentDraftsUpdatePayload,
-  type FileUploadProgressUpdatePayload,
+  type SelfConnectionUpdatePayload,
 } from './chatSession'
 export {
   fileUploadReady,

@@ -157,7 +157,7 @@ const websocket = useWebSocket()
 const messagesContainer = ref<HTMLElement | null>(null)
 const fileInputRef = ref<HTMLInputElement | null>(null)
 const draftMessage = ref('')
-const rateLimitSecondsLeft = ref(0)
+const rateLimitSecondsLeft = ref(chatStore.messageRateLimitSecondsRemaining)
 const dragDepth = ref(0)
 const isBinaryUploading = ref(false)
 const uploadClientError = ref<string | null>(null)
@@ -247,11 +247,11 @@ const scrollToBottom = () => {
   })
 }
 
-const startRateLimitCountdown = () => {
-  rateLimitSecondsLeft.value = MESSAGE_RATE_LIMIT_SECONDS
+const startRateLimitCountdown = (seconds = MESSAGE_RATE_LIMIT_SECONDS) => {
+  rateLimitSecondsLeft.value = seconds
   if (rateLimitInterval) clearInterval(rateLimitInterval)
   rateLimitInterval = setInterval(() => {
-    rateLimitSecondsLeft.value--
+    rateLimitSecondsLeft.value = Math.max(0, rateLimitSecondsLeft.value - 1)
     if (rateLimitSecondsLeft.value <= 0 && rateLimitInterval) {
       clearInterval(rateLimitInterval)
       rateLimitInterval = null
@@ -281,6 +281,15 @@ const handleInput = (event: Event) => {
 }
 
 watch(() => chatStore.events.length, scrollToBottom)
+watch(
+  () => chatStore.messageRateLimitSecondsRemaining,
+  (seconds) => {
+    if (seconds > rateLimitSecondsLeft.value) {
+      startRateLimitCountdown(seconds)
+    }
+  },
+  { immediate: true },
+)
 watch(
   () => chatStore.outboundModerationState,
   (state, previous) => {

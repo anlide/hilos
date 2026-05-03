@@ -22,12 +22,21 @@ final class UserFrontendStateProjector
      *
      * @param DbUsers $users Users to project
      * @param bool $includeConnectionStats Include runtime session counters
+     * @param bool $includePublicUsers Include public user records
      * @return FrontendChangesDTO Full frontend state snapshot
      */
-    public static function fullForUsers(DbUsers $users, bool $includeConnectionStats = false): FrontendChangesDTO
+    public static function fullForUsers(
+        DbUsers $users,
+        bool $includeConnectionStats = false,
+        bool $includePublicUsers = true,
+    ): FrontendChangesDTO
     {
         return new FrontendChangesDTO(
-            full: self::collectionsForUsers($users, includePublicUsers: true, includeConnectionStats: $includeConnectionStats),
+            full: self::collectionsForUsers(
+                $users,
+                includePublicUsers: $includePublicUsers,
+                includeConnectionStats: $includeConnectionStats,
+            ),
         );
     }
 
@@ -41,7 +50,11 @@ final class UserFrontendStateProjector
     public static function fullForUser(DbUser $user, bool $includeConnectionStats = false): FrontendChangesDTO
     {
         return new FrontendChangesDTO(
-            full: self::collectionsForUsers([$user], includePublicUsers: true, includeConnectionStats: $includeConnectionStats),
+            full: self::collectionsForUsers(
+                [$user],
+                includePublicUsers: true,
+                includeConnectionStats: $includeConnectionStats,
+            ),
         );
     }
 

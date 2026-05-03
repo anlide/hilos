@@ -6,10 +6,9 @@ namespace Demo\Chat\Tests\Unit;
 
 use Demo\Chat\Core\Page\DTO\AttachmentDraftDeleteActionDTO;
 use Demo\Chat\Core\Router\DTO\AttachmentDraftSignalData;
-use Demo\Chat\Core\Router\DTO\AttachmentDraftsUpdateSignalData;
 use Demo\Chat\Core\Router\DTO\FileUploadCompleteSignalData;
-use Demo\Chat\Core\Router\DTO\OutboundModerationStateUpdateSignalData;
-use Demo\Chat\Runtime\View\Item\ChatUserState;
+use Demo\Chat\Core\Router\DTO\SelfConnectionSignalData;
+use Demo\Chat\Runtime\View\Item\Connection;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -32,9 +31,9 @@ final class AttachmentDraftSignalDataTest extends TestCase
     }
 
     /**
-     * Attachment draft updates preserve the full draft list through IPC roundtrip.
+     * Self connection updates preserve session-local state through IPC roundtrip.
      */
-    public function testAttachmentDraftsUpdateRoundtrip(): void
+    public function testSelfConnectionUpdateRoundtrip(): void
     {
         $drafts = [[
             'draftId' => 'draft-1',
@@ -43,13 +42,32 @@ final class AttachmentDraftSignalDataTest extends TestCase
             'size' => 1234,
             'uploadedAt' => 1710000000,
         ]];
+        $selfConnection = [
+            'userId' => 7,
+            'connectedAt' => 1710000000,
+            'messageRateLimitSecondsRemaining' => 6,
+            'outboundModerationState' => [
+                'requestId' => 'request-1',
+                'phase' => Connection::OUTBOUND_MODERATION_PHASE_CHECKING,
+                'text' => 'hello',
+                'attachments' => $drafts,
+                'reason' => null,
+                'updatedAt' => 1710000001,
+            ],
+            'attachmentDrafts' => $drafts,
+            'fileUploadProgress' => [
+                'filename' => 'photo.jpg',
+                'uploadedBytes' => 512,
+                'totalBytes' => 1024,
+            ],
+        ];
 
-        $restored = AttachmentDraftsUpdateSignalData::fromArray(
-            (new AttachmentDraftsUpdateSignalData($drafts))->toArray(),
+        $restored = SelfConnectionSignalData::fromArray(
+            (new SelfConnectionSignalData($selfConnection))->toArray(),
         );
 
-        $this->assertSame($drafts, $restored->attachmentDrafts);
-        $this->assertSame(['attachmentDrafts' => $drafts], $restored->toArray());
+        $this->assertSame($selfConnection, $restored->selfConnection);
+        $this->assertSame(['selfConnection' => $selfConnection], $restored->toArray());
     }
 
     /**
@@ -76,37 +94,6 @@ final class AttachmentDraftSignalDataTest extends TestCase
         );
 
         $this->assertSame($draft, $restored->toArray());
-    }
-
-    /**
-     * Outbound moderation state updates preserve null and non-null states.
-     */
-    public function testOutboundModerationStateUpdateRoundtrip(): void
-    {
-        $state = [
-            'requestId' => 'request-1',
-            'phase' => ChatUserState::OUTBOUND_MODERATION_PHASE_CHECKING,
-            'text' => 'hello',
-            'attachments' => [],
-            'reason' => null,
-            'updatedAt' => 1710000000,
-        ];
-
-        $restored = OutboundModerationStateUpdateSignalData::fromArray(
-            (new OutboundModerationStateUpdateSignalData($state))->toArray(),
-        );
-
-        $this->assertSame($state, $restored->state);
-        $this->assertSame(
-            ['outboundModerationState' => $state],
-            $restored->toArray(),
-        );
-
-        $cleared = OutboundModerationStateUpdateSignalData::fromArray(
-            (new OutboundModerationStateUpdateSignalData(null))->toArray(),
-        );
-        $this->assertNull($cleared->state);
-        $this->assertSame(['outboundModerationState' => null], $cleared->toArray());
     }
 
     /**

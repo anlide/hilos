@@ -10,9 +10,10 @@ use Demo\Chat\Core\Router\DTO\AttachmentDraftSignalData;
 use Demo\Chat\Core\Router\DTO\FileUploadAbortedSignalData;
 use Demo\Chat\Core\Router\DTO\FileUploadCompleteSignalData;
 use Demo\Chat\Core\Router\DTO\FileUploadInvalidSignalData;
-use Demo\Chat\Core\Router\DTO\FileUploadProgressUpdateSignalData;
 use Demo\Chat\Core\Router\DTO\FileUploadReadySignalData;
 use Demo\Chat\Core\Router\DTO\FileUploadRejectedSignalData;
+use Demo\Chat\Core\Router\DTO\SelfConnectionSignalData;
+use Demo\Chat\Frontend\SelfConnectionProjector;
 use Demo\Chat\Hilos;
 use Demo\Chat\Utils\ChatSettingsHelper;
 use Hilos\Fs\Exception\FileDeleteException;
@@ -237,7 +238,7 @@ trait UploadFileTrait
             $this->sendToUser(
                 ChatSignalConstants::FILE_UPLOAD_PROGRESS_UPDATE,
                 $acceptKey,
-                new FileUploadProgressUpdateSignalData(null),
+                new SelfConnectionSignalData(SelfConnectionProjector::forConnection($connection)),
             );
         }
     }
@@ -277,12 +278,6 @@ trait UploadFileTrait
         }
 
         $connection->actions->clearBinaryUploadSessionAndProgressUi();
-        $this->sendToUser(
-            ChatSignalConstants::FILE_UPLOAD_PROGRESS_UPDATE,
-            $acceptKey,
-            new FileUploadProgressUpdateSignalData(null),
-        );
-
         $draft = Hilos::$rt->attachmentDrafts->actions->create(
             draftId: $uploadId,
             acceptKey: $acceptKey,
@@ -296,6 +291,11 @@ trait UploadFileTrait
         );
         $draftPayload = AttachmentDraftSignalData::fromDraft($draft)->toArray();
 
+        $this->sendToUser(
+            ChatSignalConstants::FILE_UPLOAD_PROGRESS_UPDATE,
+            $acceptKey,
+            new SelfConnectionSignalData(SelfConnectionProjector::forConnection($connection)),
+        );
         $this->sendToUser(
             ChatSignalConstants::FILE_UPLOAD_COMPLETE,
             $acceptKey,
@@ -374,11 +374,7 @@ trait UploadFileTrait
         $this->sendToUser(
             ChatSignalConstants::FILE_UPLOAD_PROGRESS_UPDATE,
             $acceptKey,
-            new FileUploadProgressUpdateSignalData([
-                'filename' => $progressName,
-                'uploadedBytes' => $uploaded,
-                'totalBytes' => $total,
-            ]),
+            new SelfConnectionSignalData(SelfConnectionProjector::forConnection($connection)),
         );
     }
 

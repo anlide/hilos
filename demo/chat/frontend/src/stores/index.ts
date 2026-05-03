@@ -27,6 +27,15 @@ export type OutboundModerationStatePayload = {
   updatedAt: number
 }
 
+export type SelfConnectionPayload = {
+  userId: number
+  connectedAt: number
+  messageRateLimitSecondsRemaining: number
+  outboundModerationState: OutboundModerationStatePayload | null
+  attachmentDrafts: AttachmentDraftPayload[]
+  fileUploadProgress: FileUploadProgressPayload | null
+}
+
 export type UserViewModel = User & {
   presence: Presence
   onlineSessionCount: number
@@ -50,12 +59,8 @@ export const useChatStore = defineStore('chat', {
     botPresenceById: {} as Record<number, BotPresencePayload>,
     currentUserId: null as number | null,
     currentUsername: null as string | null,
-    outboundModerationState: null as OutboundModerationStatePayload | null,
+    selfConnection: null as SelfConnectionPayload | null,
     messageError: null as string | null,
-    /** Uploaded files waiting for message submit. */
-    attachmentDrafts: [] as AttachmentDraftPayload[],
-    /** Binary upload bytes progress (separate from moderation; main subscribe + WS) */
-    fileUploadProgress: null as FileUploadProgressPayload | null,
   }),
 
   getters: {
@@ -90,6 +95,18 @@ export const useChatStore = defineStore('chat', {
       }
       return this.userViewModels.find((user) => user.id === this.currentUserId) ?? null
     },
+    outboundModerationState(): OutboundModerationStatePayload | null {
+      return this.selfConnection?.outboundModerationState ?? null
+    },
+    attachmentDrafts(): AttachmentDraftPayload[] {
+      return this.selfConnection?.attachmentDrafts ?? []
+    },
+    fileUploadProgress(): FileUploadProgressPayload | null {
+      return this.selfConnection?.fileUploadProgress ?? null
+    },
+    messageRateLimitSecondsRemaining(): number {
+      return this.selfConnection?.messageRateLimitSecondsRemaining ?? 0
+    },
     isModeratingMessage(): boolean {
       return this.outboundModerationState?.phase === 'checking'
     },
@@ -101,8 +118,18 @@ export const useChatStore = defineStore('chat', {
       this.currentUsername = username
     },
 
+    setSelfConnection(value: SelfConnectionPayload) {
+      this.selfConnection = value
+    },
+
+    clearSelfConnection() {
+      this.selfConnection = null
+    },
+
     setOutboundModerationState(value: OutboundModerationStatePayload | null) {
-      this.outboundModerationState = value
+      if (this.selfConnection !== null) {
+        this.selfConnection.outboundModerationState = value
+      }
     },
 
     setMessageError(value: string | null) {
@@ -110,28 +137,39 @@ export const useChatStore = defineStore('chat', {
     },
 
     setAttachmentDrafts(value: AttachmentDraftPayload[]) {
-      this.attachmentDrafts = value
+      if (this.selfConnection !== null) {
+        this.selfConnection.attachmentDrafts = value
+      }
     },
 
     addAttachmentDraft(value: AttachmentDraftPayload) {
-      const index = this.attachmentDrafts.findIndex((draft) => draft.draftId === value.draftId)
-      if (index >= 0) {
-        this.attachmentDrafts[index] = value
+      if (this.selfConnection === null) {
         return
       }
-      this.attachmentDrafts.push(value)
+      const index = this.attachmentDrafts.findIndex((draft) => draft.draftId === value.draftId)
+      if (index >= 0) {
+        this.selfConnection.attachmentDrafts[index] = value
+        return
+      }
+      this.selfConnection.attachmentDrafts.push(value)
     },
 
     removeAttachmentDraft(draftId: string) {
-      this.attachmentDrafts = this.attachmentDrafts.filter((draft) => draft.draftId !== draftId)
+      if (this.selfConnection !== null) {
+        this.selfConnection.attachmentDrafts = this.attachmentDrafts.filter((draft) => draft.draftId !== draftId)
+      }
     },
 
     clearAttachmentDrafts() {
-      this.attachmentDrafts = []
+      if (this.selfConnection !== null) {
+        this.selfConnection.attachmentDrafts = []
+      }
     },
 
     setFileUploadProgress(value: FileUploadProgressPayload | null) {
-      this.fileUploadProgress = value
+      if (this.selfConnection !== null) {
+        this.selfConnection.fileUploadProgress = value
+      }
     },
 
     addEvent(event: Event) {

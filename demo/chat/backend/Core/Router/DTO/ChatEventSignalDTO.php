@@ -17,8 +17,7 @@ use Hilos\Core\Table\DTO\TableSnapshotDTO;
  * Simple pass-through of entities to frontend.
  * Optional frontend payload carries explicit frontend state collection changes.
  * Optional tables payload for full snapshot responses (e.g. admin page with users table).
- * Optional user session fields for page subscribe (outbound moderation, attachment drafts, upload progress)
- * when {@see self::$includeUserSessionFields} is true.
+ * Optional selfConnection payload for page subscribe carries browser-safe session state.
  */
 final class ChatEventSignalDTO extends SignalData implements SignalDataInterface
 {
@@ -27,19 +26,13 @@ final class ChatEventSignalDTO extends SignalData implements SignalDataInterface
      *
      * @param EntitiesChangesDTO $entities Entity changes
      * @param array<string, TableSnapshotDTO> $tables Table key → full snapshot DTO
-     * @param ?array<string, mixed> $outboundModerationState Current outbound moderation UI state or null
-     * @param list<array<string, mixed>> $attachmentDrafts Uploaded attachment drafts for this connection
-     * @param ?array<string, mixed> $fileUploadProgress In-flight binary upload progress or null
-     * @param bool $includeUserSessionFields When true, merge session keys into the payload
+     * @param ?array<string, mixed> $selfConnection Browser-safe current connection summary
      * @param ?FrontendChangesDTO $frontend Explicit frontend state collection changes
      */
     public function __construct(
         public readonly EntitiesChangesDTO $entities,
         public readonly array $tables = [],
-        public readonly ?array $outboundModerationState = null,
-        public readonly array $attachmentDrafts = [],
-        public readonly ?array $fileUploadProgress = null,
-        public readonly bool $includeUserSessionFields = false,
+        public readonly ?array $selfConnection = null,
         public readonly ?FrontendChangesDTO $frontend = null,
     ) {
         parent::__construct($this->toArray());
@@ -63,10 +56,8 @@ final class ChatEventSignalDTO extends SignalData implements SignalDataInterface
             }, $this->tables);
             $data['tables'] = $tablesArr;
         }
-        if ($this->includeUserSessionFields) {
-            $data['outboundModerationState'] = $this->outboundModerationState;
-            $data['attachmentDrafts'] = $this->attachmentDrafts;
-            $data['fileUploadProgress'] = $this->fileUploadProgress;
+        if ($this->selfConnection !== null) {
+            $data[SelfConnectionSignalData::selfConnection] = $this->selfConnection;
         }
         return $data;
     }

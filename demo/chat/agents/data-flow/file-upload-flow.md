@@ -32,9 +32,9 @@ Client sends raw binary WS frames. The server associates frames with the active 
 1. Validate that the connection has an active upload session.
 2. Append bytes to tmp storage.
 3. Update `fileSessionReceivedBytes` and upload progress on `Connection`.
-4. Send throttled `FILE_UPLOAD_PROGRESS_UPDATE` (min interval: `0.3s`).
+4. Send throttled `FILE_UPLOAD_PROGRESS_UPDATE` with full `selfConnection` payload (min interval: `0.3s`).
 5. When `receivedBytes == declaredSize`, move tmp to quarantine and create an attachment draft.
-6. Send `FILE_UPLOAD_COMPLETE` with the draft row and then `ATTACHMENT_DRAFTS_UPDATE`.
+6. Send `FILE_UPLOAD_PROGRESS_UPDATE` with cleared progress and then `FILE_UPLOAD_COMPLETE` with the draft row.
 
 ## Draft Lifecycle
 

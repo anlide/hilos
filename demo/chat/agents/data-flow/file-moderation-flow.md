@@ -25,15 +25,15 @@ MainPage receives MODERATION_RESULT
 ## Approved
 
 1. Move each draft file from quarantine to published storage.
-2. Remove draft rows from `RtChatContext::attachmentDrafts`.
-3. Add one `message_sent` event with `data.message` and `data.attachments`.
-4. Broadcast `new_event`.
-5. Clear `outboundModerationState` for the originating connection.
+2. Clear outbound moderation fields on the originating `Connection`.
+3. Remove draft rows from `RtChatContext::attachmentDrafts`.
+4. Add one `message_sent` event with `data.message` and `data.attachments`.
+5. Broadcast `new_event`.
 
 ## Rejected or Unavailable
 
 1. Keep draft rows in quarantine so the user can retry.
-2. Set `outboundModerationState.phase` to `rejected` or `unavailable`.
-3. Runtime projection sends `outbound_moderation_state_update` to the originating connection.
+2. Set `outboundModerationPhase` to `rejected` or `unavailable` on the originating `Connection`.
+3. Runtime projection sends `self_connection_update` to the originating connection.
 
 Drafts are still subject to the one-hour TTL and disconnect cleanup.

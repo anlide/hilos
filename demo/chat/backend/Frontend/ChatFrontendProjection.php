@@ -7,10 +7,8 @@ namespace Demo\Chat\Frontend;
 use Demo\Chat\Constants\ChatEventType;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\PageConstants;
-use Demo\Chat\Core\Router\DTO\AttachmentDraftSignalData;
-use Demo\Chat\Core\Router\DTO\AttachmentDraftsUpdateSignalData;
 use Demo\Chat\Core\Router\DTO\ChatEventSignalDTO;
-use Demo\Chat\Core\Router\DTO\OutboundModerationStateUpdateSignalData;
+use Demo\Chat\Core\Router\DTO\SelfConnectionSignalData;
 use Demo\Chat\Core\Router\DTO\UserPresenceSignalData;
 use Demo\Chat\Database\DbChatContext;
 use Demo\Chat\Database\View\Collection\Events;
@@ -21,7 +19,6 @@ use Demo\Chat\Runtime\State\Item\ChatUserState as StateChatUserState;
 use Demo\Chat\Runtime\State\Item\Connection as StateConnection;
 use Demo\Chat\Runtime\State\Item\GuardianAgentStatus as StateGuardianAgentStatus;
 use Demo\Chat\Runtime\View\Context\RtChatContext;
-use Demo\Chat\Runtime\View\Item\ChatUserState;
 use Demo\Chat\Tables\TableChatContext;
 use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosPageRouteParams;
@@ -241,36 +238,39 @@ final class ChatFrontendProjection extends FrontendProjectionContext
     }
 
     /**
-     * User state changes drive the connection-local outbound moderation composer state.
+     * User state changes drive the shared rate-limit timer inside each visible selfConnection.
      *
      * @return iterable<FrontendDelivery>
      */
     private function buildUserStateDeliveries(SourceChange $change): iterable
     {
-        if (!$this->isOutboundModerationChange($change) || Hilos::$rt === null) {
+        if (
+            !array_key_exists(StateChatUserState::lastOutboundSubmittedAt, $change->row)
+            || Hilos::$rt === null
+        ) {
             return;
         }
 
-        $acceptKey = $this->outboundModerationAcceptKeyForChange($change);
-        if (!$this->isAcceptKeyOnPage($acceptKey, PageConstants::MAIN)) {
+        $userId = (int)($change->row[StateChatUserState::userId] ?? $change->sourceId);
+        if ($userId <= 0) {
             return;
         }
 
-        if (!isset(Hilos::$rt->connections[$acceptKey])) {
-            return;
-        }
+        foreach (Hilos::$rt->connections->forUser($userId) as $connection) {
+            if (!$this->isAcceptKeyOnPage($connection->acceptKey, PageConstants::MAIN)) {
+                continue;
+            }
 
-        yield new FrontendDelivery(
-            ChatSignalConstants::OUTBOUND_MODERATION_STATE_UPDATE,
-            new OutboundModerationStateUpdateSignalData(
-                OutboundModerationStateProjector::forConnection(Hilos::$rt->connections[$acceptKey]),
-            ),
-            $acceptKey,
-        );
+            yield new FrontendDelivery(
+                ChatSignalConstants::SELF_CONNECTION_UPDATE,
+                new SelfConnectionSignalData(SelfConnectionProjector::forConnection($connection)),
+                $connection->acceptKey,
+            );
+        }
     }
 
     /**
-     * Attachment draft changes update the connection-local draft list and any visible retry state.
+     * Attachment draft changes update the connection-local selfConnection payload.
      *
      * @return iterable<FrontendDelivery>
      */
@@ -290,29 +290,10 @@ final class ChatFrontendProjection extends FrontendProjectionContext
         }
 
         yield new FrontendDelivery(
-            ChatSignalConstants::ATTACHMENT_DRAFTS_UPDATE,
-            new AttachmentDraftsUpdateSignalData(
-                AttachmentDraftSignalData::listFromDrafts(
-                    Hilos::$rt->connections[$acceptKey]->attachmentDrafts,
-                ),
-            ),
+            ChatSignalConstants::SELF_CONNECTION_UPDATE,
+            new SelfConnectionSignalData(SelfConnectionProjector::forConnection(Hilos::$rt->connections[$acceptKey])),
             $acceptKey,
         );
-
-        if (
-            Hilos::$rt->connections[$acceptKey]->userState instanceof ChatUserState
-            && Hilos::$rt->connections[$acceptKey]->userState->outboundModerationPhase
-                !== ChatUserState::OUTBOUND_MODERATION_PHASE_NONE
-            && Hilos::$rt->connections[$acceptKey]->userState->outboundModerationAcceptKey === $acceptKey
-        ) {
-            yield new FrontendDelivery(
-                ChatSignalConstants::OUTBOUND_MODERATION_STATE_UPDATE,
-                new OutboundModerationStateUpdateSignalData(
-                    OutboundModerationStateProjector::forConnection(Hilos::$rt->connections[$acceptKey]),
-                ),
-                $acceptKey,
-            );
-        }
     }
 
     /**
@@ -381,12 +362,42 @@ final class ChatFrontendProjection extends FrontendProjectionContext
     }
 
     /**
-     * Connection source changes affect both user frontend state and user-backed table rows.
+     * Connection source changes affect selfConnection payloads, user frontend state, and user-backed table rows.
      *
      * @return iterable<FrontendDelivery>
      */
     private function buildConnectionDeliveries(SourceChange $change): iterable
     {
+        $connectionModerationChanged = false;
+        foreach ([
+            StateConnection::outboundModerationRequestId,
+            StateConnection::outboundModerationPhase,
+            StateConnection::outboundModerationMessage,
+            StateConnection::outboundModerationAttachmentDraftIds,
+            StateConnection::outboundModerationReason,
+            StateConnection::outboundModerationUpdatedAt,
+        ] as $field) {
+            if (array_key_exists($field, $change->row)) {
+                $connectionModerationChanged = true;
+                break;
+            }
+        }
+
+        if (
+            $connectionModerationChanged
+            && Hilos::$rt !== null
+            && isset(Hilos::$rt->connections[$change->sourceId])
+            && $this->isAcceptKeyOnPage($change->sourceId, PageConstants::MAIN)
+        ) {
+            yield new FrontendDelivery(
+                ChatSignalConstants::SELF_CONNECTION_UPDATE,
+                new SelfConnectionSignalData(
+                    SelfConnectionProjector::forConnection(Hilos::$rt->connections[$change->sourceId]),
+                ),
+                $change->sourceId,
+            );
+        }
+
         if (
             $change->mutationType === TableMutationType::Update
             && !array_key_exists(StateConnection::userId, $change->row)
@@ -579,39 +590,6 @@ final class ChatFrontendProjection extends FrontendProjectionContext
     private function allLocalAcceptKeys(): array
     {
         return Hilos::$sr?->getSubscribedAcceptKeys() ?? [];
-    }
-
-    private function isOutboundModerationChange(SourceChange $change): bool
-    {
-        foreach ([
-            StateChatUserState::outboundModerationAcceptKey,
-            StateChatUserState::outboundModerationRequestId,
-            StateChatUserState::outboundModerationPhase,
-            StateChatUserState::outboundModerationMessage,
-            StateChatUserState::outboundModerationAttachmentDraftIdsJson,
-            StateChatUserState::outboundModerationReason,
-            StateChatUserState::outboundModerationUpdatedAt,
-        ] as $field) {
-            if (array_key_exists($field, $change->row)) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    private function outboundModerationAcceptKeyForChange(SourceChange $change): string
-    {
-        $acceptKey = (string)($change->row[StateChatUserState::outboundModerationAcceptKey] ?? '');
-        if ($acceptKey !== '') {
-            return $acceptKey;
-        }
-
-        if (Hilos::$rt === null) {
-            return '';
-        }
-
-        return Hilos::$rt->userStates[$change->sourceId]?->outboundModerationAcceptKey ?? '';
     }
 
     private function attachmentDraftAcceptKeyForChange(SourceChange $change): string

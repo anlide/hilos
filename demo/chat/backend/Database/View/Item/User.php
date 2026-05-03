@@ -29,7 +29,7 @@ use Hilos\Database\View\Item\DbItem;
  * @property-read ?string $lastActivity Last activity timestamp
  * @property-read Connections $connections Connections for this user (online check)
  * @property-read int $onlineSessionCount Number of active online sessions for this user
- * @property-read ?RuntimeChatUserState $chatUserState Per-user chat runtime state (moderation, files)
+ * @property-read ?RuntimeChatUserState $chatUserState Per-user chat runtime state
  * @property-read UserActions $actions Actions for write operations on this user
  */
 final class User extends DbItem
@@ -61,8 +61,8 @@ final class User extends DbItem
     /**
      * Serializes the user item for backend or frontend payloads.
      *
-     * Frontend payloads omit the session token.
-     * Runtime-only fields belong to explicit frontend state projections or table rows.
+     * Frontend entity payloads include only the compact public user identity.
+     * Extended user fields belong to explicit frontend state projections or table rows.
      *
      * @param bool $withId Include the user ID
      * @param bool $idAsIndex Use the ID as array index when supported by the parent serializer
@@ -77,7 +77,7 @@ final class User extends DbItem
 
         if ($toFrontend) {
             unset($result[ObjectUser::sessionToken]);
-            // chatUserState is private and sent through main-page session signals only.
+            unset($result[ObjectUser::lastActivity]);
         }
 
         return $result;

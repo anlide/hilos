@@ -18,8 +18,7 @@ import {
 import {
   handshakeResponse,
   subscriptionPageMain,
-  outboundModerationStateUpdate,
-  attachmentDraftsUpdate,
+  selfConnectionUpdate,
   fileUploadProgressUpdate,
   fileUploadReady,
   fileUploadRejected,
@@ -118,21 +117,15 @@ function buildSignalRouter() {
     useChatStore().handleSubscriptionResponse(self.id, self.name)
   })
 
-  signalRouter.on(subscriptionPageMain, ({ outboundModerationState, attachmentDrafts, fileUploadProgress }) => {
+  signalRouter.on(subscriptionPageMain, ({ selfConnection }) => {
     const chatStore = useChatStore()
-    if (outboundModerationState !== undefined) {
-      chatStore.setOutboundModerationState(outboundModerationState)
-    }
-    if (attachmentDrafts !== undefined) {
-      chatStore.setAttachmentDrafts(attachmentDrafts)
-    }
-    if (fileUploadProgress !== undefined) {
-      chatStore.setFileUploadProgress(fileUploadProgress)
+    if (selfConnection !== undefined) {
+      chatStore.setSelfConnection(selfConnection)
     }
   })
 
-  signalRouter.on(outboundModerationStateUpdate, ({ outboundModerationState }) => {
-    useChatStore().setOutboundModerationState(outboundModerationState)
+  signalRouter.on(selfConnectionUpdate, ({ selfConnection }) => {
+    useChatStore().setSelfConnection(selfConnection)
   })
 
   signalRouter.on(actionError, ({ action, reason }) => {
@@ -151,12 +144,8 @@ function buildSignalRouter() {
     }
   })
 
-  signalRouter.on(attachmentDraftsUpdate, ({ attachmentDrafts }) => {
-    useChatStore().setAttachmentDrafts(attachmentDrafts)
-  })
-
-  signalRouter.on(fileUploadProgressUpdate, ({ fileUploadProgress }) => {
-    useChatStore().setFileUploadProgress(fileUploadProgress)
+  signalRouter.on(fileUploadProgressUpdate, ({ selfConnection }) => {
+    useChatStore().setSelfConnection(selfConnection)
   })
 
   signalRouter.on(fileUploadReady, ({ filename, size }) => {
@@ -257,8 +246,7 @@ export function createChatWebSocketPlugin() {
     },
     onClose: () => {
       rejectFileUploadPending('disconnected')
-      useChatStore().setFileUploadProgress(null)
-      useChatStore().clearAttachmentDrafts()
+      useChatStore().clearSelfConnection()
       const connectionStore = useConnectionStore()
       connectionStore.setConnected(false)
       connectionStore.setConnecting(false)

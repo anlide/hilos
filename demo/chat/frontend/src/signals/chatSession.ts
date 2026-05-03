@@ -1,5 +1,10 @@
 import { SignalDefinition } from '@hilos/sdk/services/signals'
-import type { AttachmentDraftPayload, FileUploadProgressPayload, OutboundModerationStatePayload } from '@/stores'
+import type {
+  AttachmentDraftPayload,
+  FileUploadProgressPayload,
+  OutboundModerationStatePayload,
+  SelfConnectionPayload,
+} from '@/stores'
 
 const isRecord = (value: unknown): value is Record<string, unknown> => {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -50,15 +55,50 @@ const parseFileUploadProgress = (raw: unknown): FileUploadProgressPayload | null
   return { filename, uploadedBytes, totalBytes }
 }
 
+const parseSelfConnection = (raw: unknown): SelfConnectionPayload | null => {
+  if (!isRecord(raw)) return null
+  const {
+    userId,
+    connectedAt,
+    messageRateLimitSecondsRemaining,
+    outboundModerationState,
+    attachmentDrafts,
+    fileUploadProgress,
+  } = raw
+  if (typeof userId !== 'number' || typeof connectedAt !== 'number') return null
+  if (typeof messageRateLimitSecondsRemaining !== 'number') return null
+  const parsedDrafts = parseAttachmentDrafts(attachmentDrafts)
+  if (parsedDrafts === null) return null
+  const parsedModeration =
+    outboundModerationState === null || outboundModerationState === undefined
+      ? null
+      : parseOutboundModerationState(outboundModerationState)
+  if (
+    outboundModerationState !== null
+    && outboundModerationState !== undefined
+    && parsedModeration === null
+  ) return null
+  const parsedProgress =
+    fileUploadProgress === null || fileUploadProgress === undefined
+      ? null
+      : parseFileUploadProgress(fileUploadProgress)
+  if (fileUploadProgress !== null && fileUploadProgress !== undefined && parsedProgress === null) return null
+  return {
+    userId,
+    connectedAt,
+    messageRateLimitSecondsRemaining,
+    outboundModerationState: parsedModeration,
+    attachmentDrafts: parsedDrafts,
+    fileUploadProgress: parsedProgress,
+  }
+}
+
 /**
  * Chat session fields merged by ChatEventSignalDTO when
- * `includeUserSessionFields` is true. Keys may be absent (field not present)
- * or explicitly `null` (present but empty).
+ * the main page includes a connection-local session summary.
  */
 export interface ChatSessionFields {
-  outboundModerationState?: OutboundModerationStatePayload | null
-  attachmentDrafts?: AttachmentDraftPayload[]
-  fileUploadProgress?: FileUploadProgressPayload | null
+  selfConnection?: SelfConnectionPayload
   /** Retain the raw payload for forwarding to the legacy prefix/table handlers. */
   raw: Record<string, unknown>
 }
@@ -66,15 +106,10 @@ export interface ChatSessionFields {
 const parseChatSessionFields = (raw: unknown): ChatSessionFields | null => {
   if (!isRecord(raw)) return null
   const result: ChatSessionFields = { raw }
-  if ('outboundModerationState' in raw) {
-    result.outboundModerationState = parseOutboundModerationState(raw.outboundModerationState)
-  }
-  if ('attachmentDrafts' in raw) {
-    result.attachmentDrafts = parseAttachmentDrafts(raw.attachmentDrafts) ?? []
-  }
-  if ('fileUploadProgress' in raw) {
-    const v = raw.fileUploadProgress
-    result.fileUploadProgress = v === null || v === undefined ? null : parseFileUploadProgress(v)
+  if ('selfConnection' in raw) {
+    const selfConnection = parseSelfConnection(raw.selfConnection)
+    if (selfConnection === null) return null
+    result.selfConnection = selfConnection
   }
   return result
 }
@@ -89,51 +124,29 @@ export const subscriptionPageMain = new SignalDefinition<
 >('subscription_page_main', parseChatSessionFields)
 
 /**
- * `outbound_moderation_state_update` — current outbound moderation state.
+ * `self_connection_update` — current connection-local chat session state.
  */
-export interface OutboundModerationStateUpdatePayload {
-  outboundModerationState: OutboundModerationStatePayload | null
+export interface SelfConnectionUpdatePayload {
+  selfConnection: SelfConnectionPayload
 }
 
-export const outboundModerationStateUpdate = new SignalDefinition<
-  'outbound_moderation_state_update',
-  OutboundModerationStateUpdatePayload
->('outbound_moderation_state_update', (raw: unknown): OutboundModerationStateUpdatePayload | null => {
-  if (!isRecord(raw) || !('outboundModerationState' in raw)) return null
-  return { outboundModerationState: parseOutboundModerationState(raw.outboundModerationState) }
+export const selfConnectionUpdate = new SignalDefinition<
+  'self_connection_update',
+  SelfConnectionUpdatePayload
+>('self_connection_update', (raw: unknown): SelfConnectionUpdatePayload | null => {
+  if (!isRecord(raw) || !('selfConnection' in raw)) return null
+  const selfConnection = parseSelfConnection(raw.selfConnection)
+  return selfConnection === null ? null : { selfConnection }
 })
 
 /**
- * `attachment_drafts_update` — full uploaded attachment draft list for this connection.
+ * `file_upload_progress_update` — periodic connection summary for an in-flight upload.
  */
-export interface AttachmentDraftsUpdatePayload {
-  attachmentDrafts: AttachmentDraftPayload[]
-}
-
-export const attachmentDraftsUpdate = new SignalDefinition<
-  'attachment_drafts_update',
-  AttachmentDraftsUpdatePayload
->('attachment_drafts_update', (raw: unknown): AttachmentDraftsUpdatePayload | null => {
-  if (!isRecord(raw) || !('attachmentDrafts' in raw)) return null
-  const attachmentDrafts = parseAttachmentDrafts(raw.attachmentDrafts)
-  return attachmentDrafts === null ? null : { attachmentDrafts }
-})
-
-/**
- * `file_upload_progress_update` — periodic progress tick for an in-flight upload.
- */
-export interface FileUploadProgressUpdatePayload {
-  fileUploadProgress: FileUploadProgressPayload | null
-}
-
 export const fileUploadProgressUpdate = new SignalDefinition<
   'file_upload_progress_update',
-  FileUploadProgressUpdatePayload
->('file_upload_progress_update', (raw: unknown): FileUploadProgressUpdatePayload | null => {
-  if (!isRecord(raw) || !('fileUploadProgress' in raw)) return null
-  const v = raw.fileUploadProgress
-  if (v === null || v === undefined) {
-    return { fileUploadProgress: null }
-  }
-  return { fileUploadProgress: parseFileUploadProgress(v) }
+  SelfConnectionUpdatePayload
+>('file_upload_progress_update', (raw: unknown): SelfConnectionUpdatePayload | null => {
+  if (!isRecord(raw) || !('selfConnection' in raw)) return null
+  const selfConnection = parseSelfConnection(raw.selfConnection)
+  return selfConnection === null ? null : { selfConnection }
 })

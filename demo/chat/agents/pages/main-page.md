@@ -9,11 +9,9 @@ The primary chat page. Handles subscription, message submit, binary upload init,
 1. Invariant: `acceptKey` must exist in `Hilos::$rt->connections`, otherwise `PageInternalErrorException`.
 2. Delegates payload assembly to `Frontend\MainPageSubscriptionProjector`.
 3. Sends `SUBSCRIPTION_PAGE_MAIN` with:
-   - Full entities snapshot: active `bots`, `events` history
+   - Full entities snapshot: active `bots`, `events` history, compact relevant `users`
    - Frontend state snapshot for visible users and bots
-   - `outboundModerationState`
-   - `attachmentDrafts`
-   - `fileUploadProgress`
+   - `selfConnection` with current connection-local moderation, drafts, upload progress, and rate-limit summary
 
 ## Actions Handled
 
@@ -30,7 +28,8 @@ File upload init and binary frame logic lives in `Pages/Main/UploadFileTrait`:
 - Validates file size, MIME type, total storage, and filename uniqueness.
 - Keeps in-flight upload state on `Connection`.
 - Converts completed uploads into `RtChatContext::attachmentDrafts`.
-- Sends `FILE_UPLOAD_READY`, `FILE_UPLOAD_REJECTED`, `FILE_UPLOAD_PROGRESS_UPDATE`, `FILE_UPLOAD_COMPLETE`, and `ATTACHMENT_DRAFTS_UPDATE`.
+- Sends `FILE_UPLOAD_READY`, `FILE_UPLOAD_REJECTED`, `FILE_UPLOAD_PROGRESS_UPDATE`, and `FILE_UPLOAD_COMPLETE`.
+- `FILE_UPLOAD_PROGRESS_UPDATE` carries a full `selfConnection` payload.
 
 ## Incremental Signals
 
@@ -38,6 +37,5 @@ Frontend receives initial state through `subscription_page_main`.
 Subsequent updates arrive through:
 
 - `new_event`
-- `outbound_moderation_state_update`
-- `attachment_drafts_update`
+- `self_connection_update`
 - `file_upload_progress_update`
