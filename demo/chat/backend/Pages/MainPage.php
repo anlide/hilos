@@ -23,7 +23,7 @@ use Demo\Chat\Frontend\OutboundModerationStateProjector;
 use Demo\Chat\Frontend\UserFrontendStateProjector;
 use Demo\Chat\Hilos;
 use Demo\Chat\Pages\Main\UploadFileTrait;
-use Demo\Chat\Runtime\View\Collection\AttachmentDrafts;
+use Demo\Chat\Runtime\View\Item\AttachmentDraft;
 use Demo\Chat\Runtime\View\Item\ChatUserState;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
@@ -262,10 +262,23 @@ final class MainPage extends AbstractPage
         }
 
         $this->deleteExpiredAttachmentDrafts();
-        $drafts = Hilos::$rt->attachmentDrafts->forAcceptKey($acceptKey)->forDraftIds($dto->attachmentDraftIds);
-        if (count($drafts) !== count($dto->attachmentDraftIds)) {
-            // TODO: Reconcile stale draft references through a projection-backed no-op action.
-            throw new ValidationException('Attachment draft is no longer available');
+        $drafts = [];
+        foreach ($dto->attachmentDraftIds as $draftId) {
+            $draftFound = false;
+            foreach (Hilos::$rt->connections[$acceptKey]->attachmentDrafts as $draft) {
+                if ($draft->draftId !== $draftId) {
+                    continue;
+                }
+
+                $drafts[] = $draft;
+                $draftFound = true;
+                break;
+            }
+
+            if (!$draftFound) {
+                // TODO: Reconcile stale draft references through a projection-backed no-op action.
+                throw new ValidationException('Attachment draft is no longer available');
+            }
         }
 
         $requestId = RandomHelper::hex(16);
@@ -283,7 +296,7 @@ final class MainPage extends AbstractPage
                 acceptKey: $acceptKey,
                 userId: Hilos::$rt->connections[$acceptKey]->userId,
                 message: $dto->content,
-                contentForModeration: $this->buildContentForModeration($dto->content, $drafts),
+                contentForModeration: $this->buildContentForModeration($dto->content, ...$drafts),
             ),
         );
     }
@@ -319,7 +332,7 @@ final class MainPage extends AbstractPage
             throw new ValidationException('Cannot delete attachment while message is being moderated');
         }
 
-        if (!isset(Hilos::$rt->attachmentDrafts->forAcceptKey($acceptKey)[$dto->draftId])) {
+        if (!isset(Hilos::$rt->connections[$acceptKey]->attachmentDrafts[$dto->draftId])) {
             // TODO: Reconcile stale draft delete requests through a projection-backed no-op action.
 
             return;
@@ -378,15 +391,28 @@ final class MainPage extends AbstractPage
         }
 
         $draftIds = Hilos::$rt->userStates[$result->userId]->getOutboundModerationAttachmentDraftIds();
-        $drafts = Hilos::$rt->attachmentDrafts->forAcceptKey($result->acceptKey)->forDraftIds($draftIds);
-        if (count($drafts) !== count($draftIds)) {
-            Hilos::$rt->userStates[$result->userId]->actions->failOutboundModeration(
-                $result->requestId,
-                ChatUserState::OUTBOUND_MODERATION_PHASE_UNAVAILABLE,
-                'attachment_missing',
-            );
-            // TODO: Reconcile stale draft references through a projection-backed no-op action.
-            return;
+        $drafts = [];
+        foreach ($draftIds as $draftId) {
+            $draftFound = false;
+            foreach (Hilos::$rt->connections[$result->acceptKey]->attachmentDrafts as $draft) {
+                if ($draft->draftId !== $draftId) {
+                    continue;
+                }
+
+                $drafts[] = $draft;
+                $draftFound = true;
+                break;
+            }
+
+            if (!$draftFound) {
+                Hilos::$rt->userStates[$result->userId]->actions->failOutboundModeration(
+                    $result->requestId,
+                    ChatUserState::OUTBOUND_MODERATION_PHASE_UNAVAILABLE,
+                    'attachment_missing',
+                );
+                // TODO: Reconcile stale draft references through a projection-backed no-op action.
+                return;
+            }
         }
 
         $attachments = [];
@@ -437,9 +463,9 @@ final class MainPage extends AbstractPage
     /**
      * Builds moderation prompt content from message text and attachment metadata.
      *
-     * @param AttachmentDrafts $drafts Attachment drafts
+     * @param AttachmentDraft ...$drafts Attachment drafts
      */
-    private function buildContentForModeration(string $message, AttachmentDrafts $drafts): string
+    private function buildContentForModeration(string $message, AttachmentDraft ...$drafts): string
     {
         $parts = [];
         if ($message !== '') {

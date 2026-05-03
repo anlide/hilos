@@ -47,6 +47,17 @@ final class AttachmentDraftSignalData extends BaseDTO
      */
     public static function listFromDrafts(AttachmentDrafts $drafts): array
     {
+        return self::listFromDraftItems(...$drafts);
+    }
+
+    /**
+     * Builds wire payload rows for selected runtime draft items.
+     *
+     * @param AttachmentDraft ...$drafts Runtime draft items
+     * @return list<array{draftId: string, filename: string, mimeType: string, size: int, uploadedAt: int}>
+     */
+    public static function listFromDraftItems(AttachmentDraft ...$drafts): array
+    {
         $rows = [];
         foreach ($drafts as $draft) {
             $rows[] = self::fromDraft($draft)->toArray();

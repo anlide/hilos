@@ -256,15 +256,14 @@ final class ChatFrontendProjection extends FrontendProjectionContext
             return;
         }
 
-        $connection = Hilos::$rt->connections[$acceptKey] ?? null;
-        if ($connection === null) {
+        if (!isset(Hilos::$rt->connections[$acceptKey])) {
             return;
         }
 
         yield new FrontendDelivery(
             ChatSignalConstants::OUTBOUND_MODERATION_STATE_UPDATE,
             new OutboundModerationStateUpdateSignalData(
-                OutboundModerationStateProjector::forConnection($connection),
+                OutboundModerationStateProjector::forConnection(Hilos::$rt->connections[$acceptKey]),
             ),
             $acceptKey,
         );
@@ -286,27 +285,30 @@ final class ChatFrontendProjection extends FrontendProjectionContext
             return;
         }
 
+        if (!isset(Hilos::$rt->connections[$acceptKey])) {
+            return;
+        }
+
         yield new FrontendDelivery(
             ChatSignalConstants::ATTACHMENT_DRAFTS_UPDATE,
             new AttachmentDraftsUpdateSignalData(
                 AttachmentDraftSignalData::listFromDrafts(
-                    Hilos::$rt->attachmentDrafts->forAcceptKey($acceptKey),
+                    Hilos::$rt->connections[$acceptKey]->attachmentDrafts,
                 ),
             ),
             $acceptKey,
         );
 
-        $connection = Hilos::$rt->connections[$acceptKey] ?? null;
-        $userState = $connection?->userState;
         if (
-            $userState instanceof ChatUserState
-            && $userState->outboundModerationPhase !== ChatUserState::OUTBOUND_MODERATION_PHASE_NONE
-            && $userState->outboundModerationAcceptKey === $acceptKey
+            Hilos::$rt->connections[$acceptKey]->userState instanceof ChatUserState
+            && Hilos::$rt->connections[$acceptKey]->userState->outboundModerationPhase
+                !== ChatUserState::OUTBOUND_MODERATION_PHASE_NONE
+            && Hilos::$rt->connections[$acceptKey]->userState->outboundModerationAcceptKey === $acceptKey
         ) {
             yield new FrontendDelivery(
                 ChatSignalConstants::OUTBOUND_MODERATION_STATE_UPDATE,
                 new OutboundModerationStateUpdateSignalData(
-                    OutboundModerationStateProjector::forConnection($connection),
+                    OutboundModerationStateProjector::forConnection(Hilos::$rt->connections[$acceptKey]),
                 ),
                 $acceptKey,
             );

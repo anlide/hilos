@@ -49,28 +49,6 @@ final class AttachmentDrafts extends RtCollection
     }
 
     /**
-     * Drafts matching requested ids, preserving requested order.
-     *
-     * @param list<string> $draftIds Requested draft ids
-     * @return self Filtered collection
-     * @throws RtActionsStateCollectionNullException When runtime state is unavailable
-     */
-    public function forDraftIds(array $draftIds): self
-    {
-        $filteredState = StateAttachmentDrafts::init();
-        $stateCollection = $this->getStateCollection();
-        foreach ($draftIds as $draftId) {
-            $stateDraft = $stateCollection->get($draftId);
-            if ($stateDraft === null) {
-                continue;
-            }
-            $filteredState->add($stateDraft);
-        }
-
-        return $this->fromFilteredState($filteredState);
-    }
-
-    /**
      * Creates a read-only filtered view over selected draft states.
      */
     private function fromFilteredState(StateAttachmentDrafts $filteredState): self

@@ -47,7 +47,7 @@ use Hilos\Runtime\View\Context\RtContext;
  *   Hilos::$rt->connections->actions->register($acceptKey, $userId);
  *   Hilos::$rt->connections[$acceptKey]->actions->… (per-connection writes and deletes)
  *   Hilos::$rt->userStates[$userId]; // key is string user id; offsetGet casts int to string
- *   Hilos::$rt->attachmentDrafts->forAcceptKey($acceptKey);
+ *   Hilos::$rt->connections[$acceptKey]->attachmentDrafts;
  *   Hilos::$rt->chatContexts[ChatContext::ID_MAIN];
  *
  * @property-read Connections $connections Active connections collection

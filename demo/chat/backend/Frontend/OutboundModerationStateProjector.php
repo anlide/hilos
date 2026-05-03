@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Demo\Chat\Frontend;
 
 use Demo\Chat\Core\Router\DTO\AttachmentDraftSignalData;
-use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\View\Item\ChatUserState;
 use Demo\Chat\Runtime\View\Item\Connection;
 
@@ -29,7 +28,7 @@ final class OutboundModerationStateProjector
             return null;
         }
 
-        return self::forUserState($userState);
+        return self::forUserState($userState, $connection);
     }
 
     /**
@@ -37,7 +36,7 @@ final class OutboundModerationStateProjector
      *
      * @return ?array<string, mixed> Moderation UI payload or null
      */
-    public static function forUserState(ChatUserState $state): ?array
+    private static function forUserState(ChatUserState $state, Connection $connection): ?array
     {
         if (
             $state->outboundModerationAcceptKey === ''
@@ -46,15 +45,23 @@ final class OutboundModerationStateProjector
             return null;
         }
 
+        $drafts = [];
+        foreach ($state->getOutboundModerationAttachmentDraftIds() as $draftId) {
+            foreach ($connection->attachmentDrafts as $draft) {
+                if ($draft->draftId !== $draftId) {
+                    continue;
+                }
+
+                $drafts[] = $draft;
+                break;
+            }
+        }
+
         return [
             'requestId' => $state->outboundModerationRequestId,
             'phase' => $state->outboundModerationPhase,
             'text' => $state->outboundModerationMessage,
-            'attachments' => AttachmentDraftSignalData::listFromDrafts(
-                Hilos::$rt->attachmentDrafts
-                    ->forAcceptKey($state->outboundModerationAcceptKey)
-                    ->forDraftIds($state->getOutboundModerationAttachmentDraftIds()),
-            ),
+            'attachments' => AttachmentDraftSignalData::listFromDraftItems(...$drafts),
             'reason' => $state->outboundModerationReason !== '' ? $state->outboundModerationReason : null,
             'updatedAt' => $state->outboundModerationUpdatedAt,
         ];
