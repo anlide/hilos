@@ -23,14 +23,34 @@ reviewing noisy code.
    `$mutationSignal`, `$dbUser`).
 6. Do not inline expressions if doing so hides failure handling or makes a
    nested call hard to read. The goal is less noise, not denser code.
-7. Do not create local aliases for properties of an already addressed DB/RT
-   item when the alias is only a shorter path to the same value. For example,
-   avoid `$userId = Hilos::$rt->connections[$acceptKey]->userId` when the
-   connection item remains the source of truth. Inline the property access, or
+7. Do not create local aliases for already addressed DB/RT items when the
+   alias only shortens the accessor chain. Multi-use does not automatically
+   justify a local variable. If a DB/RT item is addressed by a known key, keep
+   the source collection and key visible at the call site:
+
+   ```php
+   Hilos::$rt->connections[$acceptKey]->userState->actions->startOutboundModeration(...);
+   ```
+
+   Do not hide that source behind a pass-through alias:
+
+   ```php
+   $connection = Hilos::$rt->connections[$acceptKey];
+
+   $connection->userState->actions->startOutboundModeration(...);
+   ```
+
+   The same applies to aliases for properties of an already addressed DB/RT
+   item, such as `$userId = Hilos::$rt->connections[$acceptKey]->userId`, when
+   the item remains the source of truth. Inline the item or property access, or
    add a typed collection/item accessor if the repeated expression is genuinely
-   too complex. A local alias is allowed when it intentionally snapshots a
-   value before mutation, crosses a boundary, or carries a distinct domain name
-   not present in the source expression.
+   too complex.
+
+   A local variable is allowed when it is not just an alias: it comes from
+   iteration or filtering, snapshots a value before mutation or a side-effect
+   boundary, carries a distinct domain meaning not present in the source
+   expression, stores expensive computed work, or is required for type
+   narrowing that cannot be expressed through the accessor.
 
 ## Example
 

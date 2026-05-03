@@ -43,11 +43,9 @@ Use this skill for style-sensitive Hilos edits and reviews. Start with `agents.m
    backend API; keep unstructured arrays at boundaries.
 10. Avoid one-use locals and prefer inline nullsafe access for one immediate
    nullable member call under the local variable rule.
-11. Avoid local aliases for already addressed DB/RT item properties, such as
-   `$userId = Hilos::$rt->connections[$acceptKey]->userId`, unless the alias
-   intentionally snapshots a value, crosses a boundary, or carries a distinct
-   domain name. Add a typed collection/item accessor if inline access becomes
-   too complex.
+11. Avoid pass-through locals and DB/RT item aliases; keep known-key
+   `Hilos::$db/$rt->collection[$key]` access visible unless the local variable
+   adds domain meaning, snapshots state, or narrows type.
 12. Keep comments concise and in English.
 13. For `Page::onAction()`, do not add a local `try/catch` around the routing
    `switch`; the framework catches action exceptions and calls
