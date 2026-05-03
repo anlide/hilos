@@ -34,6 +34,6 @@ MainPage receives MODERATION_RESULT
 
 1. Keep draft rows in quarantine so the user can retry.
 2. Set `outboundModerationState.phase` to `rejected` or `unavailable`.
-3. Send `outbound_moderation_state_update` to the originating connection.
+3. Runtime projection sends `outbound_moderation_state_update` to the originating connection.
 
 Drafts are still subject to the one-hour TTL and disconnect cleanup.

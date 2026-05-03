@@ -6,7 +6,6 @@ namespace Demo\Chat\Pages\Main;
 
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Core\Page\DTO\FileUploadInitActionDTO;
-use Demo\Chat\Core\Router\DTO\AttachmentDraftsUpdateSignalData;
 use Demo\Chat\Core\Router\DTO\FileUploadAbortedSignalData;
 use Demo\Chat\Core\Router\DTO\FileUploadCompleteSignalData;
 use Demo\Chat\Core\Router\DTO\FileUploadInvalidSignalData;
@@ -240,7 +239,6 @@ trait UploadFileTrait
                 $acceptKey,
                 new FileUploadProgressUpdateSignalData(null),
             );
-            $this->sendAttachmentDraftsUpdate($acceptKey);
         }
     }
 
@@ -307,7 +305,6 @@ trait UploadFileTrait
                 attachmentDraft: $draftPayload,
             ),
         );
-        $this->sendAttachmentDraftsUpdate($acceptKey);
     }
 
     /**
@@ -386,29 +383,11 @@ trait UploadFileTrait
     }
 
     /**
-     * Delete expired drafts and notify live connections whose draft list changed.
+     * Delete expired drafts; runtime projection sends changed draft lists.
      */
     protected function deleteExpiredAttachmentDrafts(): void
     {
-        foreach (Hilos::$rt->attachmentDrafts->actions->deleteExpired(time()) as $acceptKey) {
-            if (isset(Hilos::$rt->connections[$acceptKey])) {
-                $this->sendAttachmentDraftsUpdate($acceptKey);
-            }
-        }
-    }
-
-    /**
-     * Send the full draft list for a connection.
-     */
-    protected function sendAttachmentDraftsUpdate(string $acceptKey): void
-    {
-        $this->sendToUser(
-            ChatSignalConstants::ATTACHMENT_DRAFTS_UPDATE,
-            $acceptKey,
-            new AttachmentDraftsUpdateSignalData(
-                Hilos::$rt->attachmentDrafts->toFrontendListForAcceptKey($acceptKey),
-            ),
-        );
+        Hilos::$rt->attachmentDrafts->actions->deleteExpired(time());
     }
 
     /**

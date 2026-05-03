@@ -18,6 +18,7 @@ use Hilos\Runtime\State\Item\RtState;
 final class ChatUserState extends RtState
 {
     public const string userId = 'userId';
+    public const string outboundModerationAcceptKey = 'outboundModerationAcceptKey';
     public const string outboundModerationRequestId = 'outboundModerationRequestId';
     public const string outboundModerationPhase = 'outboundModerationPhase';
     public const string outboundModerationMessage = 'outboundModerationMessage';
@@ -28,6 +29,9 @@ final class ChatUserState extends RtState
 
     /** User ID (equals collection key as integer). */
     public private(set) int $userId = 0;
+
+    /** Target WebSocket accept key for current or last moderation state delivery. */
+    public string $outboundModerationAcceptKey = '';
 
     /** Current moderation request id, or empty string when no visible moderation state exists. */
     public string $outboundModerationRequestId = '';
@@ -58,6 +62,7 @@ final class ChatUserState extends RtState
     {
         $instance = new static();
         $instance->userId = $userId;
+        $instance->outboundModerationAcceptKey = '';
         $instance->outboundModerationRequestId = '';
         $instance->outboundModerationPhase = '';
         $instance->outboundModerationMessage = '';
@@ -77,6 +82,7 @@ final class ChatUserState extends RtState
     {
         $instance = new static();
         $instance->userId = (int)($row[self::userId] ?? 0);
+        $instance->outboundModerationAcceptKey = (string)($row[self::outboundModerationAcceptKey] ?? '');
         $instance->outboundModerationRequestId = (string)($row[self::outboundModerationRequestId] ?? '');
         $instance->outboundModerationPhase = (string)($row[self::outboundModerationPhase] ?? '');
         $instance->outboundModerationMessage = (string)($row[self::outboundModerationMessage] ?? '');
@@ -99,6 +105,9 @@ final class ChatUserState extends RtState
      */
     public function applyDiff(array $diff): void
     {
+        if (isset($diff[self::outboundModerationAcceptKey])) {
+            $this->outboundModerationAcceptKey = (string)$diff[self::outboundModerationAcceptKey];
+        }
         if (isset($diff[self::outboundModerationRequestId])) {
             $this->outboundModerationRequestId = (string)$diff[self::outboundModerationRequestId];
         }
@@ -137,6 +146,7 @@ final class ChatUserState extends RtState
     {
         return [
             self::userId => $this->userId,
+            self::outboundModerationAcceptKey => $this->outboundModerationAcceptKey,
             self::outboundModerationRequestId => $this->outboundModerationRequestId,
             self::outboundModerationPhase => $this->outboundModerationPhase,
             self::outboundModerationMessage => $this->outboundModerationMessage,

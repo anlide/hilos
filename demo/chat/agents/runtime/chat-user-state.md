@@ -9,6 +9,7 @@ Per-user runtime state. Tracks the current outbound moderation request and the c
 | Field | Type | Meaning |
 |---|---|---|
 | `userId` | `int` | DB user ID (also numeric value of collection key) |
+| `outboundModerationAcceptKey` | `string` | Target connection accept key for current/last moderation UI delivery |
 | `outboundModerationRequestId` | `string` | Current moderation request id, empty when idle |
 | `outboundModerationPhase` | `string` | `checking`, `rejected`, `unavailable`, or empty when idle |
 | `outboundModerationMessage` | `string` | Submitted message text |
@@ -21,7 +22,7 @@ Per-user runtime state. Tracks the current outbound moderation request and the c
 
 - **Created**: `UserStatesActions::ensure(userId)` on WS handshake or first submit.
 - **Updated**: item actions on `Hilos::$rt->userStates[$userId]` start, fail, or clear outbound moderation.
-- **Rate limited**: `recordOutboundSubmitted()` runs on the loaded user state when a submit is accepted for moderation, before the LLM result.
+- **Rate limited**: `startOutboundModeration()` records `lastOutboundSubmittedAt` when a submit is accepted for moderation, before the LLM result.
 - **Deleted**: cleared on chat agent stop.
 
 ## Truth source

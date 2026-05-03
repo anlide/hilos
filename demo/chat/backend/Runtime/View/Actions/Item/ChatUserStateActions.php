@@ -19,23 +19,9 @@ use Hilos\Runtime\View\Actions\Item\RtActions;
 final class ChatUserStateActions extends RtActions
 {
     /**
-     * Record an accepted outbound submit for rate limiting.
+     * Record an accepted submit and start a connection-targeted outbound moderation state.
      *
-     * @throws RtActionsCollectionNameNullException When collection name is null.
-     * @throws RtTruthSourceWriteNotAllowedException When truth source does not allow write.
-     */
-    public function recordOutboundSubmitted(): void
-    {
-        $this->ensureCanWrite();
-
-        $this->state->lastOutboundSubmittedAt = microtime(true);
-
-        $this->sync();
-    }
-
-    /**
-     * Start a user-visible outbound moderation state.
-     *
+     * @param string $acceptKey WebSocket accept key that owns this submit UI
      * @param string $requestId Moderation request id
      * @param string $message Submitted message text
      * @param list<string> $attachmentDraftIds Submitted attachment draft ids
@@ -43,10 +29,16 @@ final class ChatUserStateActions extends RtActions
      * @throws RtActionsCollectionNameNullException When collection name is null.
      * @throws RtTruthSourceWriteNotAllowedException When truth source does not allow write.
      */
-    public function startOutboundModeration(string $requestId, string $message, array $attachmentDraftIds): void
-    {
+    public function startOutboundModeration(
+        string $acceptKey,
+        string $requestId,
+        string $message,
+        array $attachmentDraftIds,
+    ): void {
         $this->ensureCanWrite();
 
+        $this->state->lastOutboundSubmittedAt = microtime(true);
+        $this->state->outboundModerationAcceptKey = $acceptKey;
         $this->state->outboundModerationRequestId = $requestId;
         $this->state->outboundModerationPhase = ViewChatUserState::OUTBOUND_MODERATION_PHASE_CHECKING;
         $this->state->outboundModerationMessage = $message;
@@ -87,6 +79,8 @@ final class ChatUserStateActions extends RtActions
 
     /**
      * Clear current outbound moderation state after approval.
+     *
+     * The target accept key is retained so frontend projection can deliver the cleared state.
      *
      * @param string $requestId Moderation request id to match
      * @return bool True when the state matched and was cleared

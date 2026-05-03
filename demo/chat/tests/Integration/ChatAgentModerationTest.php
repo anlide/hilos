@@ -41,6 +41,7 @@ final class ChatAgentModerationTest extends IntegrationTestCase
             $user = Hilos::$db->users->actions->register(RandomHelper::hex(16));
             Hilos::$rt->connections->actions->register('stop-ak', $user->id);
             Hilos::$rt->userStates->actions->ensure($user->id)->actions->startOutboundModeration(
+                'stop-ak',
                 'request-stop',
                 'pending moderation',
                 [],
@@ -71,6 +72,7 @@ final class ChatAgentModerationTest extends IntegrationTestCase
         try {
             $user = Hilos::$db->users->actions->register(RandomHelper::hex(16));
             Hilos::$rt->userStates->actions->ensure($user->id)->actions->startOutboundModeration(
+                'closed-ak',
                 'request-closed',
                 'pending moderation',
                 [],
@@ -109,6 +111,7 @@ final class ChatAgentModerationTest extends IntegrationTestCase
             $user = Hilos::$db->users->actions->register(RandomHelper::hex(16));
             Hilos::$rt->connections->actions->register('live-ak', $user->id);
             Hilos::$rt->userStates->actions->ensure($user->id)->actions->startOutboundModeration(
+                'live-ak',
                 'request-live',
                 'pending moderation',
                 [],
@@ -146,7 +149,13 @@ final class ChatAgentModerationTest extends IntegrationTestCase
         try {
             $user = Hilos::$db->users->actions->register(RandomHelper::hex(16));
             Hilos::$rt->connections->actions->register('rate-ak', $user->id);
-            Hilos::$rt->userStates->actions->ensure($user->id)->actions->recordOutboundSubmitted();
+            Hilos::$rt->userStates->actions->ensure($user->id)->actions->startOutboundModeration(
+                'rate-ak',
+                'request-rate',
+                'previous message',
+                [],
+            );
+            Hilos::$rt->userStates[$user->id]?->actions->clearOutboundModeration('request-rate');
 
             $this->expectException(ValidationException::class);
 

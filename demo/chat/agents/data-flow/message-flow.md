@@ -15,8 +15,7 @@ MainPage::onAction('message', MessageActionDTO)
         |
 Validate connection, active moderation, 10s common submit limit, and draft ownership
         |
-UserStatesActions::recordOutboundSubmitted()
-UserStatesActions::startOutboundModeration(requestId, content, attachmentDraftIds)
+UserStatesActions::startOutboundModeration(acceptKey, requestId, content, attachmentDraftIds)
         |
 ChatAgent::sendToAgent(MODERATE_REQUEST, ModerationRequestSignalData)
         |

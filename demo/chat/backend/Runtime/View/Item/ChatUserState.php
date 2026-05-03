@@ -19,6 +19,7 @@ use Hilos\Runtime\View\Item\RtItem;
  * @extends RtItem<StateChatUserState>
  *
  * @property-read int $userId User ID
+ * @property-read string $outboundModerationAcceptKey Target connection accept key
  * @property-read string $outboundModerationRequestId Current moderation request id
  * @property-read string $outboundModerationPhase Current moderation phase
  * @property-read string $outboundModerationMessage Submitted message text
@@ -82,6 +83,7 @@ final class ChatUserState extends RtItem
 
         return match ($name) {
             StateChatUserState::userId => $state->userId,
+            StateChatUserState::outboundModerationAcceptKey => $state->outboundModerationAcceptKey,
             StateChatUserState::outboundModerationRequestId => $state->outboundModerationRequestId,
             StateChatUserState::outboundModerationPhase => $state->outboundModerationPhase,
             StateChatUserState::outboundModerationMessage => $state->outboundModerationMessage,
