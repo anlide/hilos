@@ -225,8 +225,3 @@ For detailed instructions on:
 - Backend setup: see framework documentation
 - Docker configuration: see `docker/` directory
 - Test environment: see [Testing](#testing) above
-
-## Refactor Notes
-
-- TODO(hilos-refactor): rename legacy CLI commands `db:idea:*` to `db:hilos:*`.
-- TODO(hilos-refactor): update bootstrap/CLI parameter naming from `initIdea` to `initHilos` after command migration.

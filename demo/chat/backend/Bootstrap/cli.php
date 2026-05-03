@@ -41,11 +41,9 @@ try {
     Seed::setSeedPath(__DIR__ . '/../Database/Migration/Seed');
 
     // Determine which command is being executed.
-    // TODO(hilos-refactor): rename legacy CLI commands db:idea:* to db:hilos:* and remove this compatibility branch.
-    // Some legacy commands (like db:idea:fix) need to work with potentially broken context files,
-    // so we skip Hilos initialization for them.
+    // Some DB bootstrap commands need to work before the Hilos context is initialized.
     $command = $argv[1] ?? '';
-    $commandsWithoutHilosInit = ['db:idea:fix', 'db:wait', 'db:test:reset'];
+    $commandsWithoutHilosInit = ['db:wait', 'db:test:reset'];
     $initHilos = !in_array($command, $commandsWithoutHilosInit);
 
     // Initialize database connection and schema

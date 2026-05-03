@@ -830,7 +830,7 @@ class Database
     /**
      * Check if connection is alive by attempting a simple query.
      *
-     * Note: mysqli_ping() is deprecated, using SELECT 1 instead.
+     * Uses SELECT 1 instead of mysqli_ping() for current PHP compatibility.
      *
      * @return bool True if connection is alive, false otherwise
      */

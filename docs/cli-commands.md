@@ -34,7 +34,6 @@ php cli.php db:schema:status [options]  # Show schema status (tables, columns, i
 php cli.php db:entity:diff [options]    # Compare Entity files with database schema
 php cli.php db:entity:fix [options]     # Fix Entity files to match schema
 php cli.php db:object:fix [options]     # Fix Object files to match Entity files
-php cli.php db:idea:fix [options]       # Legacy: fix Idea files to match Object files
 ```
 
 ### db:schema:status options
@@ -71,19 +70,6 @@ php cli.php db:idea:fix [options]       # Legacy: fix Idea files to match Object
 | `--dry-run` | Show what would be changed without modifying files |
 | `--force-repair` | Attempt to repair broken Object/ObjectCollection files |
 
-### db:idea:fix options (legacy)
-
-| Option | Description |
-|--------|-------------|
-| `--idea-dir=<path>` | Legacy Idea files directory (default: auto-detect) |
-| `--idea-collection-dir=<path>` | Legacy IdeaCollection files directory (default: auto-detect) |
-| `--object-dir=<path>` | Object files directory (default: auto-detect) |
-| `--table=<name>` | Fix specific table only |
-| `--dry-run` | Show what would be changed without modifying files |
-| `--force-repair` | Attempt to repair broken Idea files |
-
-> TODO(hilos-refactor): rename `db:idea:fix` command family to `db:hilos:fix` and align option names (`--db-dir`, `--db-collection-dir`).
-
 ## Project-level Composer Scripts (demo example)
 
 Demo projects (e.g. `chat`) define Composer scripts that run commands inside Docker. Run them from the demo project root:
@@ -117,8 +103,6 @@ composer run db:entity:fix
 composer run db:entity:fix-dry-run
 composer run db:object:fix
 composer run db:object:fix-dry-run
-composer run db:idea:fix
-composer run db:idea:fix-dry-run
 
 # phpMyAdmin (optional)
 composer run pma                 # Start phpMyAdmin at http://localhost:8080

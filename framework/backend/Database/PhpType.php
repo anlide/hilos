@@ -30,6 +30,6 @@ enum PhpType: string
     // Database-specific numeric type (handled as float in PHP)
     case DECIMAL = 'decimal';  // MySQL DECIMAL type, handled as float in PHP
     
-    // Alias for FLOAT (deprecated in PHP 8.5, but may be used in legacy code)
+    // ORM metadata alias for FLOAT; this is not a PHP `(double)` cast.
     case DOUBLE = 'double';  // Alias for float, handled as float in PHP
 }

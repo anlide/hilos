@@ -34,8 +34,7 @@ final class Database extends BaseDatabase
      * - DB_DATABASE: Database name (default: hilos_demo)
      *
      * @param bool $initHilos If true, initialize Hilos with storage.
-     *                       Set to false when migrations must run first (e.g. Docker bootstrap) or for legacy
-     *                       commands that need to work with broken context files (e.g., db:idea:fix).
+     *                       Set to false when migrations or DB bootstrap commands must run before Hilos is ready.
      *                       Call Hilos::init() manually after migrations when using false.
      * @param bool $retryConnection If true, retry connection on temporary errors (useful for Docker startup)
      * @throws DatabaseException If connection or configuration fails
@@ -85,4 +84,3 @@ final class Database extends BaseDatabase
         // self::sql("SET NAMES utf8mb4 COLLATE utf8mb4_0900_ai_ci");
     }
 }
-

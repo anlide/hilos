@@ -19,10 +19,6 @@ Run via: `php Backend/Bootstrap/cli.php <command> [options]`
 | `db:entity:diff` | Diff Entity class fields vs actual DB columns |
 | `db:entity:fix` | Generate/fix Entity class from DB schema |
 | `db:object:fix` | Generate/fix Object class from Entity |
-| `db:item:fix` | Fix a specific item class |
-
-> **Note:** `db:idea:*` commands are legacy aliases for `db:entity:*` / `db:item:*`.
-> Pending rename: `TODO(hilos-refactor)` in `Bootstrap/cli.php`.
 
 ## Seed commands
 

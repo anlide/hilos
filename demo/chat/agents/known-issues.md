@@ -1,10 +1,5 @@
 # Known Issues and Technical Debt
 
-## Pending renames (TODO from code)
-
-- `TODO(hilos-refactor)` in `Bootstrap/cli.php`: Legacy CLI commands `db:idea:*` are aliases for `db:hilos:*` / `db:entity:*`. Need to remove the compatibility branch after renaming.
-- `TODO(hilos-refactor)` in `README.md`: Bootstrap/CLI parameter naming uses `initIdea` - should be renamed to `initHilos`.
-
 ## Framework-Level TODO
 
 - `TODO` in `DaemonManager::sendToGroup()`: Group subscription tracking is not properly implemented. Currently sends to all clients instead of group members only.

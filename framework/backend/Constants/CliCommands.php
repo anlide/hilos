@@ -48,9 +48,6 @@ class CliCommands
     /** @var string Command: Fix Object files to match Entity files */
     public const string DB_OBJECT_FIX = 'db:object:fix';
 
-    /** @var string Command: Fix Item/DbItem files to match Object files */
-    public const string DB_ITEM_FIX = 'db:item:fix';
-
     /** @var string Command: Wait for MySQL to become ready */
     public const string DB_WAIT = 'db:wait';
 

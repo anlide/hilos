@@ -119,18 +119,6 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
     }
 
     /**
-     * Initialize collection with all objects from database
-     *
-     * @return static Collection instance
-     * @throws DatabaseException If configuration fails
-     * @deprecated Use initDB(LAZY_STRATEGY_NONE) instead
-     */
-    public static function initFullDB(): static
-    {
-        return static::initDB(self::LAZY_STRATEGY_NONE);
-    }
-
-    /**
      * Initialize empty collection.
      *
      * @return static Empty collection instance
@@ -279,7 +267,7 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
     }
 
     /**
-     * Prevents direct instantiation. Use initEmpty(), initDB() or initFullDB() instead.
+     * Prevents direct instantiation. Use initEmpty() or initDB() instead.
      */
     protected function __construct()
     {
