@@ -115,6 +115,7 @@ Quick navigation for AI agents. Read the relevant file before starting work.
 9. DB/RT `actions` are write APIs; put read-only helpers on collections, items, objects, or typed projections
 10. If a DB/RT item key is known, update/delete that one item through `Hilos::$db/$rt->collection[$key]->actions`, not through collection actions that accept the key
 11. `getStateCollection()`, `RtContext::getStateCollection()`, and `$this->stateCollection` are allowed only inside `Database/` or `Runtime/` files; all other code must use typed collection/item APIs
+12. During refactors, do not add new convenience read helpers or predicates such as `has*()`, `is*()`, `can*()`, or `get*()` on DB/RT View items, collections, objects, actions, or typed projections unless the user explicitly approved that exact method in the plan. Prefer explicit field access at the call site when the goal is to keep the data structure transparent.
 
 ## Project docs (existing)
 

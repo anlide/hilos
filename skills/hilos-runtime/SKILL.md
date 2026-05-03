@@ -54,9 +54,9 @@ Start with `agents.md`, then read the matching runtime guide.
    `$hilos-signals`.
 10. In custom RT action methods, write typed state fields and call `sync()`;
    reserve `applyDiff()` / `applyDiffToState()` for RT synchronization internals.
-11. Put read-only helpers on the view collection or view item. Do not add
-   `actions->has*()`, `actions->can*()`, `actions->get*()`, or similar read
-   APIs.
+11. Put established read-only helpers on the view collection or view item. Do
+   not add `actions->has*()`, `actions->can*()`, `actions->get*()`, or similar
+   read APIs.
 12. Use `getStateCollection()`, `RtContext::getStateCollection()`, and
     `$this->stateCollection` only inside files under `Database/` or `Runtime/`.
     Agents, pages, tables, signal handlers, and tests must call typed
@@ -78,6 +78,12 @@ Start with `agents.md`, then read the matching runtime guide.
 18. In concrete `RtStates` collections, override `get()` as nullable
     `?StateFoo` and `offsetGet()` as non-null `StateFoo`; use `get()` for
     optional lookups and `[]` only when the row must already exist.
+19. During refactors, do not invent convenience read helpers or predicates on
+    `RtItem`, `RtCollection`, actions, projections, or adjacent view objects to
+    hide a field check or shorten a caller. Examples: `hasActive*()`, `is*()`,
+    `can*()`, and `get*()` wrappers around one or two state fields. Keep field
+    access explicit unless the user approved that exact method in the plan or
+    the method centralizes a non-trivial reused invariant.
 
 ## Examples
 
@@ -111,6 +117,8 @@ of duplicating runtime mutation logic in the page/table layer.
 - Do not expose application-level `applyDiff*()` write APIs on RT actions.
 - Do not put read-only helpers on runtime `actions`; use `RtCollection` or
   `RtItem` instead.
+- Do not add new runtime convenience read helpers or predicates during a
+  refactor unless the user explicitly approved the exact method in the plan.
 - Do not update or delete one known runtime item through collection actions that
   accept that item's key; use the loaded `RtItem` actions.
 - Do not move runtime mutation logic into page/table layers without an explicit
