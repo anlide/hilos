@@ -11,16 +11,11 @@ use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Page\DTO\AttachmentDraftDeleteActionDTO;
 use Demo\Chat\Core\Page\DTO\FileUploadInitActionDTO;
 use Demo\Chat\Core\Page\DTO\MessageActionDTO;
-use Demo\Chat\Core\Router\DTO\AttachmentDraftSignalData;
-use Demo\Chat\Core\Router\DTO\ChatEventSignalDTO;
 use Demo\Chat\Core\Router\DTO\ModerationResultSignalData;
 use Demo\Chat\Core\Router\DTO\ModerationRequestSignalData;
-use Demo\Chat\Database\DbChatContext;
 use Demo\Chat\Database\DTO\PublishedAttachmentInput;
 use Demo\Chat\Database\DTO\PublishedAttachmentInputs;
-use Demo\Chat\Frontend\BotFrontendStateProjector;
-use Demo\Chat\Frontend\OutboundModerationStateProjector;
-use Demo\Chat\Frontend\UserFrontendStateProjector;
+use Demo\Chat\Frontend\MainPageSubscriptionProjector;
 use Demo\Chat\Hilos;
 use Demo\Chat\Pages\Main\UploadFileTrait;
 use Demo\Chat\Runtime\View\Item\AttachmentDraft;
@@ -36,7 +31,6 @@ use Hilos\Core\Page\Exception\PageInternalErrorException;
 use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
-use Hilos\Core\Router\DTO\EntitiesChangesDTO;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Fs\FsException;
@@ -72,43 +66,7 @@ final class MainPage extends AbstractPage
         $this->sendToUser(
             ChatSignalConstants::SUBSCRIPTION_PAGE_MAIN,
             $acceptKey,
-            $this->buildMainSubscriptionSignal($acceptKey),
-        );
-    }
-
-    /**
-     * Builds the main-page subscription payload from shared chat state and connection-local fields.
-     *
-     * @param string $acceptKey WebSocket accept key whose attachment drafts are included
-     * @throws HilosException On database, runtime, or truth source failure
-     */
-    private function buildMainSubscriptionSignal(string $acceptKey): ChatEventSignalDTO
-    {
-        return new ChatEventSignalDTO(
-            new EntitiesChangesDTO(
-                full: [
-                    DbChatContext::bots => Hilos::$db->bots->activeOnly,
-                    DbChatContext::events => Hilos::$db->events,
-                ],
-            ),
-            outboundModerationState: OutboundModerationStateProjector::forConnection(
-                Hilos::$rt->connections[$acceptKey],
-            ),
-            attachmentDrafts: AttachmentDraftSignalData::listFromDrafts(
-                Hilos::$rt->connections[$acceptKey]->attachmentDrafts,
-            ),
-            fileUploadProgress: Hilos::$rt->connections[$acceptKey]->fileProgressFilename === null
-                ? null
-                : [
-                    'filename' => Hilos::$rt->connections[$acceptKey]->fileProgressFilename,
-                    'uploadedBytes' => Hilos::$rt->connections[$acceptKey]->fileProgressUploadedBytes,
-                    'totalBytes' => Hilos::$rt->connections[$acceptKey]->fileProgressTotalBytes,
-                ],
-            includeUserSessionFields: true,
-            frontend: BotFrontendStateProjector::appendFullForBots(
-                UserFrontendStateProjector::fullForUsers(Hilos::$rt->connections->relevantUsers),
-                Hilos::$db->bots->activeOnly,
-            ),
+            MainPageSubscriptionProjector::forAcceptKey($acceptKey),
         );
     }
 

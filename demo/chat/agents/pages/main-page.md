@@ -7,9 +7,8 @@ The primary chat page. Handles subscription, message submit, binary upload init,
 ## onSubscribe
 
 1. Invariant: `acceptKey` must exist in `Hilos::$rt->connections`, otherwise `PageInternalErrorException`.
-2. Reads current outbound moderation state from `userStates`.
-3. Reads completed attachment drafts and binary upload progress for this connection.
-4. Sends `SUBSCRIPTION_PAGE_MAIN` with:
+2. Delegates payload assembly to `Frontend\MainPageSubscriptionProjector`.
+3. Sends `SUBSCRIPTION_PAGE_MAIN` with:
    - Full entities snapshot: active `bots`, `events` history
    - Frontend state snapshot for visible users and bots
    - `outboundModerationState`
