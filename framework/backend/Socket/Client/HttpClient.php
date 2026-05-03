@@ -7,6 +7,7 @@ namespace Hilos\Socket\Client;
 use Hilos\API\Router\HttpRouter;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HttpConstants;
+use Hilos\Core\Http\RequestQueryParams;
 use Hilos\Socket\Client\Interface\HttpClientInterface;
 use Hilos\Utils\Env;
 use Hilos\Utils\Exception\MissingEnvironmentVariableException;
@@ -152,7 +153,7 @@ class HttpClient extends AbstractClient implements HttpClientInterface
      * Parse HTTP request.
      *
      * @param string $rawRequest Raw HTTP request
-     * @return array{method: string, path: string, version: string, headers: array<string, string>, body: string, query: string, queryParams: array<string, string>}
+     * @return array{method: string, path: string, version: string, headers: array<string, string>, body: string, query: string, queryParams: RequestQueryParams}
      */
     private function parseRequest(string $rawRequest): array
     {
@@ -170,8 +171,6 @@ class HttpClient extends AbstractClient implements HttpClientInterface
             $queryString = substr($rawPath, $queryPos + 1);
         }
 
-        parse_str($queryString, $queryParams);
-
         return [
             'method' => $parts[0] ?? 'GET',
             'path' => $path,
@@ -179,7 +178,7 @@ class HttpClient extends AbstractClient implements HttpClientInterface
             'headers' => $this->parseHeaders($lines),
             'body' => '',
             'query' => $queryString,
-            'queryParams' => is_array($queryParams) ? $queryParams : [],
+            'queryParams' => RequestQueryParams::fromQueryString($queryString),
         ];
     }
 

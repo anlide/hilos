@@ -16,6 +16,7 @@ use Demo\Chat\Runtime\View\Context\RtChatContext;
 use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Frontend\SourceChange;
+use Hilos\Core\Http\RequestQueryParams;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Sync\DTO\RtSyncCreatedSignalData;
@@ -61,7 +62,7 @@ final class ChatAgentPresenceTest extends IntegrationTestCase
                     acceptKey: 'presence-ak-1',
                     cookies: [],
                     clientIp: '127.0.0.1',
-                    queryParams: [HttpHeaders::SESSION_TOKEN => $sessionToken],
+                    queryParams: new RequestQueryParams([HttpHeaders::SESSION_TOKEN => $sessionToken]),
                 ),
                 '',
                 '',
@@ -117,7 +118,7 @@ final class ChatAgentPresenceTest extends IntegrationTestCase
                     acceptKey: 'presence-ak-1',
                     cookies: [],
                     clientIp: '127.0.0.1',
-                    queryParams: [HttpHeaders::SESSION_TOKEN => $sessionToken],
+                    queryParams: new RequestQueryParams([HttpHeaders::SESSION_TOKEN => $sessionToken]),
                 ),
                 '',
                 '',
@@ -130,7 +131,7 @@ final class ChatAgentPresenceTest extends IntegrationTestCase
                     acceptKey: 'presence-ak-2',
                     cookies: [],
                     clientIp: '127.0.0.1',
-                    queryParams: [HttpHeaders::SESSION_TOKEN => $sessionToken],
+                    queryParams: new RequestQueryParams([HttpHeaders::SESSION_TOKEN => $sessionToken]),
                 ),
                 '',
                 '',

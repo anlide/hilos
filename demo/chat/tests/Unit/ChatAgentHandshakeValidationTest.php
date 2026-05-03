@@ -8,6 +8,8 @@ use Demo\Chat\Agents\ChatAgent;
 use Demo\Chat\Constants\HttpHeaders;
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Core\Http\Exception\MissingRequestQueryParamException;
+use Hilos\Core\Http\RequestQueryParams;
 use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
 use PHPUnit\Framework\TestCase;
 
@@ -18,7 +20,7 @@ final class ChatAgentHandshakeValidationTest extends TestCase
 {
     public function testHandshakeWithoutSessionTokenThrows(): void
     {
-        $this->expectException(EmptyValueException::class);
+        $this->expectException(MissingRequestQueryParamException::class);
         $this->expectExceptionMessage(HttpHeaders::SESSION_TOKEN . ' is required');
 
         (new ChatAgent())->onSignalHandshake(
@@ -27,7 +29,25 @@ final class ChatAgentHandshakeValidationTest extends TestCase
                 acceptKey: 'unit-ak',
                 cookies: [],
                 clientIp: '127.0.0.1',
-                queryParams: [],
+                queryParams: RequestQueryParams::empty(),
+            ),
+            '',
+            '',
+        );
+    }
+
+    public function testHandshakeWithEmptySessionTokenThrows(): void
+    {
+        $this->expectException(EmptyValueException::class);
+        $this->expectExceptionMessage(HttpHeaders::SESSION_TOKEN . ' cannot be empty');
+
+        (new ChatAgent())->onSignalHandshake(
+            new WebSocketHandshakeSignalDTO(
+                headers: [],
+                acceptKey: 'unit-ak',
+                cookies: [],
+                clientIp: '127.0.0.1',
+                queryParams: new RequestQueryParams([HttpHeaders::SESSION_TOKEN => '']),
             ),
             '',
             '',
@@ -45,7 +65,7 @@ final class ChatAgentHandshakeValidationTest extends TestCase
                 acceptKey: 'unit-ak',
                 cookies: [],
                 clientIp: '127.0.0.1',
-                queryParams: [HttpHeaders::SESSION_TOKEN => 'short'],
+                queryParams: new RequestQueryParams([HttpHeaders::SESSION_TOKEN => 'short']),
             ),
             '',
             '',

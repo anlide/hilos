@@ -6,7 +6,7 @@ namespace Demo\Chat\Core\Socket\Client;
 
 use Demo\Chat\Constants\ChatSignalConstants;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
-use Hilos\Constants\SignalPayloadConstants;
+use Hilos\Core\Http\RequestQueryParams;
 use Hilos\Socket\Client\WebSocketClient;
 
 /**
@@ -54,14 +54,14 @@ final class ChatWebSocketClient extends WebSocketClient
      * @param string $acceptKey Sec-WebSocket-Accept value (can be used as connection identifier)
      * @param array<string, string> $cookies Parsed cookies
      * @param string $clientIp Client IP address
-     * @param array<string, mixed> $queryParams Query parameters from request URL
+     * @param RequestQueryParams $queryParams Query parameters from request URL
      */
     protected function onHandshake(
         array $headers,
         string $acceptKey,
         array $cookies,
         string $clientIp,
-        array $queryParams,
+        RequestQueryParams $queryParams,
     ): void {
         // No additional handshake handling needed for chat demo
     }

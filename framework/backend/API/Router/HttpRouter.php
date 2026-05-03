@@ -6,6 +6,7 @@ namespace Hilos\API\Router;
 
 use Hilos\Constants\HttpConstants;
 use Hilos\Constants\HilosHttpHeaders;
+use Hilos\Core\Http\RequestQueryParams;
 use Hilos\Hilos;
 
 /**
@@ -54,9 +55,10 @@ class HttpRouter
         $method = $request['method'] ?? 'GET';
         $path = $request['path'] ?? '/';
         $headers = is_array($request['headers'] ?? null) ? $request['headers'] : [];
-        $queryParams = is_array($request['queryParams'] ?? null) ? $request['queryParams'] : [];
+        $queryParams = $this->queryParamsFromRequest($request);
+        $request['queryParams'] = $queryParams;
         $sessionToken = $headers[HilosHttpHeaders::HILOS_SESSION_TOKEN]
-            ?? ($queryParams[HilosHttpHeaders::HILOS_SESSION_TOKEN] ?? null);
+            ?? $queryParams->getString(HilosHttpHeaders::HILOS_SESSION_TOKEN);
         $userAgent = $headers['User-Agent'] ?? null;
         $acceptLanguage = $headers['Accept-Language'] ?? null;
 
@@ -110,5 +112,22 @@ class HttpRouter
     public function getRegistry(): RouteRegistry
     {
         return $this->registry;
+    }
+
+    /**
+     * Returns typed query params from a request payload.
+     *
+     * @param array<string, mixed> $request Request data
+     */
+    private function queryParamsFromRequest(array $request): RequestQueryParams
+    {
+        $queryParams = $request['queryParams'] ?? null;
+        if ($queryParams instanceof RequestQueryParams) {
+            return $queryParams;
+        }
+
+        return is_array($queryParams)
+            ? RequestQueryParams::fromStringMap($queryParams)
+            : RequestQueryParams::empty();
     }
 }

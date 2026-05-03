@@ -11,6 +11,7 @@ use Demo\Chat\Hilos;
 use Demo\Chat\Http\ChatAttachmentDownloadHandler;
 use Hilos\Constants\HilosHttpHeaders;
 use Hilos\Constants\HttpConstants;
+use Hilos\Core\Http\RequestQueryParams;
 use Hilos\Utils\Helpers\RandomHelper;
 
 /**
@@ -52,10 +53,10 @@ final class EventAttachmentsTest extends IntegrationTestCase
             $this->assertSame('alpha', $firstAttachment->file->read());
             $download = ChatAttachmentDownloadHandler::handle([
                 'request' => [
-                    'queryParams' => [
+                    'queryParams' => new RequestQueryParams([
                         'id' => (string)$firstAttachment->id,
                         HilosHttpHeaders::HILOS_SESSION_TOKEN => $sessionToken,
-                    ],
+                    ]),
                 ],
                 'params' => [],
             ]);

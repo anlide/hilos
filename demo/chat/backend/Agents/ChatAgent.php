@@ -22,6 +22,7 @@ use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
 use Hilos\Core\CLI\Exception\CommandException;
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Core\Http\Exception\MissingRequestQueryParamException;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\HilosException;
@@ -68,19 +69,18 @@ class ChatAgent extends AbstractAgent
      * @param WebSocketHandshakeSignalDTO $data Accept key and query params with a required session token
      * @param string $source Framework signal source identifier (unused)
      * @param string $name Framework signal name (unused)
-     * @throws EmptyValueException When session token is missing or empty
+     * @throws MissingRequestQueryParamException When session token is missing
+     * @throws EmptyValueException When session token is empty
      * @throws InvalidFormatException When session token is not a 32-character lowercase hex string
      * @throws HilosException On database or runtime failure
      */
     public function onSignalHandshake(WebSocketHandshakeSignalDTO $data, string $source, string $name): void
     {
-        $sessionToken = $data->queryParams[HttpHeaders::SESSION_TOKEN] ?? null;
-        if ($sessionToken === null || $sessionToken === '') {
-            throw new EmptyValueException(HttpHeaders::SESSION_TOKEN . ' is required');
-        }
-        if (!is_string($sessionToken) || preg_match(self::SESSION_TOKEN_PATTERN, $sessionToken) !== 1) {
-            throw new InvalidFormatException(HttpHeaders::SESSION_TOKEN . ' must be a 32-character lowercase hex token');
-        }
+        $sessionToken = $data->queryParams->requireStringMatching(
+            HttpHeaders::SESSION_TOKEN,
+            self::SESSION_TOKEN_PATTERN,
+            HttpHeaders::SESSION_TOKEN . ' must be a 32-character lowercase hex token',
+        );
 
         $user = Hilos::$db->users->findBySession($sessionToken);
         $wasRegisteredNow = false;

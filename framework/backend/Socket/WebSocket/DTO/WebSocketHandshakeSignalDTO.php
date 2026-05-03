@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Hilos\Socket\WebSocket\DTO;
 
 use Hilos\BaseDTO;
+use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Core\Http\RequestQueryParams;
 use Hilos\Core\Router\DTO\SignalDataDTO;
 use Hilos\Core\Router\SignalDataInterface;
 
@@ -29,14 +31,14 @@ class WebSocketHandshakeSignalDTO extends BaseDTO implements SignalDataDTO, Sign
      * @param string $acceptKey WebSocket accept key
      * @param array<string, string> $cookies Cookies
      * @param string $clientIp Client IP address
-     * @param array<string, string> $queryParams Query string params
+     * @param RequestQueryParams $queryParams Query string params
      */
     public function __construct(
         public readonly array $headers,
         public readonly string $acceptKey,
         public readonly array $cookies,
         public readonly string $clientIp,
-        public readonly array $queryParams = [],
+        public readonly RequestQueryParams $queryParams = new RequestQueryParams(),
     ) {
     }
 
@@ -52,7 +54,7 @@ class WebSocketHandshakeSignalDTO extends BaseDTO implements SignalDataDTO, Sign
             self::ACCEPT_KEY => $this->acceptKey,
             self::COOKIES => $this->cookies,
             self::CLIENT_IP => $this->clientIp,
-            self::QUERY_PARAMS => $this->queryParams,
+            self::QUERY_PARAMS => $this->queryParams->toArray(),
         ];
     }
 
@@ -61,6 +63,7 @@ class WebSocketHandshakeSignalDTO extends BaseDTO implements SignalDataDTO, Sign
      *
      * @param array<string, mixed> $data Source data
      * @return static DTO instance
+     * @throws InvalidFormatException When query params are not a string map
      */
     public static function fromArray(array $data): static
     {
@@ -69,7 +72,9 @@ class WebSocketHandshakeSignalDTO extends BaseDTO implements SignalDataDTO, Sign
             acceptKey: $data[self::ACCEPT_KEY] ?? '',
             cookies: $data[self::COOKIES] ?? [],
             clientIp: $data[self::CLIENT_IP] ?? '',
-            queryParams: $data[self::QUERY_PARAMS] ?? [],
+            queryParams: RequestQueryParams::fromStringMap(
+                is_array($data[self::QUERY_PARAMS] ?? null) ? $data[self::QUERY_PARAMS] : [],
+            ),
         );
     }
 }

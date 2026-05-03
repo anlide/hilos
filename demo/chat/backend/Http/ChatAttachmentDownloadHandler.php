@@ -7,6 +7,7 @@ namespace Demo\Chat\Http;
 use Demo\Chat\Hilos;
 use Hilos\Constants\HttpConstants;
 use Hilos\Constants\HilosHttpHeaders;
+use Hilos\Core\Http\RequestQueryParams;
 
 /**
  * HTTP GET /chat/attachment — stream published attachment after session check.
@@ -20,14 +21,14 @@ final class ChatAttachmentDownloadHandler
     public static function handle(array $args): array
     {
         $request = $args['request'];
-        $queryParams = is_array($request['queryParams'] ?? null) ? $request['queryParams'] : [];
-        $attachmentId = isset($queryParams['id']) ? (int)$queryParams['id'] : 0;
+        $queryParams = self::queryParamsFromRequest($request);
+        $attachmentId = (int)($queryParams->getString('id') ?? '0');
         if ($attachmentId <= 0) {
             return self::notFound();
         }
 
-        $sessionToken = $queryParams[HilosHttpHeaders::HILOS_SESSION_TOKEN] ?? '';
-        if (!is_string($sessionToken) || $sessionToken === '') {
+        $sessionToken = $queryParams->getString(HilosHttpHeaders::HILOS_SESSION_TOKEN);
+        if ($sessionToken === null || $sessionToken === '') {
             return self::unauthorized();
         }
 
@@ -75,6 +76,21 @@ final class ChatAttachmentDownloadHandler
         }
 
         return addcslashes($base, '"\\');
+    }
+
+    /**
+     * @param array<string, mixed> $request Request data
+     */
+    private static function queryParamsFromRequest(array $request): RequestQueryParams
+    {
+        $queryParams = $request['queryParams'] ?? null;
+        if ($queryParams instanceof RequestQueryParams) {
+            return $queryParams;
+        }
+
+        return is_array($queryParams)
+            ? RequestQueryParams::fromStringMap($queryParams)
+            : RequestQueryParams::empty();
     }
 
     /**

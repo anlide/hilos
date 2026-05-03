@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Demo\Chat\Socket\WebSocket\DTO;
 
 use Demo\Chat\Core\Router\DTO\ChatMessageDTOInterface;
+use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Core\Http\RequestQueryParams;
 use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO as FrameworkWebSocketHandshakeSignalDTO;
 
 /**
@@ -20,6 +22,7 @@ final class WebSocketHandshakeSignalDTO extends FrameworkWebSocketHandshakeSigna
      *
      * @param array<string, mixed> $data Source data (headers, acceptKey, cookies, clientIp, queryParams)
      * @return static DTO instance
+     * @throws InvalidFormatException When query params are not a string map
      */
     public static function fromArray(array $data): static
     {
@@ -28,7 +31,9 @@ final class WebSocketHandshakeSignalDTO extends FrameworkWebSocketHandshakeSigna
             acceptKey: $data[self::ACCEPT_KEY] ?? '',
             cookies: $data[self::COOKIES] ?? [],
             clientIp: $data[self::CLIENT_IP] ?? '',
-            queryParams: $data[self::QUERY_PARAMS] ?? [],
+            queryParams: RequestQueryParams::fromStringMap(
+                is_array($data[self::QUERY_PARAMS] ?? null) ? $data[self::QUERY_PARAMS] : [],
+            ),
         );
     }
 }

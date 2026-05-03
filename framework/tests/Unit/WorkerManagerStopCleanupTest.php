@@ -10,6 +10,7 @@ use Hilos\Core\Agent\AgentManager;
 use Hilos\Core\Daemon\WorkerManager;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Exception\ValidationException;
+use Hilos\Core\Http\RequestQueryParams;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalSource;
@@ -78,7 +79,7 @@ final class WorkerManagerStopCleanupTest extends TestCase
                     acceptKey: 'unit-handshake-ak',
                     cookies: [],
                     clientIp: '127.0.0.1',
-                    queryParams: [],
+                    queryParams: RequestQueryParams::empty(),
                 ),
             ),
         ));

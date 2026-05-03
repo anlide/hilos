@@ -8,6 +8,7 @@ use Hilos\Constants\HttpConstants;
 use Hilos\Constants\HilosHttpHeaders;
 use Hilos\Constants\SignalPayloadConstants;
 use Hilos\Constants\SignalTypeConstants;
+use Hilos\Core\Http\RequestQueryParams;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
@@ -337,19 +338,11 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
      * Parse query parameters from path.
      *
      * @param string $path Path with optional query string (e.g. /path?key=value)
-     * @return array<string, mixed> Query parameters as key-value pairs
+     * @return RequestQueryParams Query parameters from request URL
      */
-    private function parseQueryParams(string $path): array
+    private function parseQueryParams(string $path): RequestQueryParams
     {
-        $queryParams = [];
-        $queryPos = strpos($path, '?');
-
-        if ($queryPos !== false) {
-            $queryString = substr($path, $queryPos + 1);
-            parse_str($queryString, $queryParams);
-        }
-
-        return $queryParams;
+        return RequestQueryParams::fromPath($path);
     }
 
     /**
@@ -835,20 +828,20 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
      * @param string $acceptKey Sec-WebSocket-Accept value (connection identifier)
      * @param array<string, string> $cookies Parsed cookies from Cookie header
      * @param string $clientIp Client IP (IPv4 or IPv6, empty if unavailable)
-     * @param array<string, string|array> $queryParams Query parameters from request URL
+     * @param RequestQueryParams $queryParams Query parameters from request URL
      */
     final protected function handleHandshakeInternal(
         array $headers,
         string $acceptKey,
         array $cookies,
         string $clientIp,
-        array $queryParams,
+        RequestQueryParams $queryParams,
     ): void {
         $this->acceptKey = $acceptKey;
         $this->onHandshake($headers, $acceptKey, $cookies, $clientIp, $queryParams);
 
         $sessionToken = $headers[HilosHttpHeaders::HILOS_SESSION_TOKEN]
-            ?? $queryParams[HilosHttpHeaders::HILOS_SESSION_TOKEN]
+            ?? $queryParams->getString(HilosHttpHeaders::HILOS_SESSION_TOKEN)
             ?? null;
         $userAgent = $headers['User-Agent'] ?? null;
         $acceptLanguage = $headers['Accept-Language'] ?? null;
@@ -889,14 +882,14 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
      * @param string $acceptKey Sec-WebSocket-Accept value (connection identifier)
      * @param array<string, string> $cookies Parsed cookies from Cookie header
      * @param string $clientIp Client IP (IPv4 or IPv6, empty if unavailable)
-     * @param array<string, string|array> $queryParams Query parameters from request URL
+     * @param RequestQueryParams $queryParams Query parameters from request URL
      */
     abstract protected function onHandshake(
         array $headers,
         string $acceptKey,
         array $cookies,
         string $clientIp,
-        array $queryParams,
+        RequestQueryParams $queryParams,
     ): void;
 
     /**
