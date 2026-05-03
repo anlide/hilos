@@ -481,11 +481,10 @@ final class ChatSignalRouter extends SignalRouter
             return 0;
         }
 
-        $payload = $data->data;
-        if (!$payload instanceof BotAgentSignalData) {
+        if (!$data->data instanceof BotAgentSignalData) {
             return 0;
         }
 
-        return $payload->botId;
+        return $data->data->botId;
     }
 }

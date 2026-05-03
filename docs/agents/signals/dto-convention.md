@@ -41,20 +41,18 @@ Named signal handlers must route with `switch ($name)`; see
 
 ```php
 public function onSignalAgent(AgentSignalData $data, string $source, string $name): void {
-    // $data->data is the inner payload
-    $payload = $data->data;
-
     switch ($name) {
         case ChatSignalConstants::MODERATE_REQUEST:
-            if (!$payload instanceof ModerationRequestSignalData) {
+            $moderationRequest = $data->data;
+            if (!$moderationRequest instanceof ModerationRequestSignalData) {
                 throw new InvalidAgentSignalPayloadException(
                     $name,
                     ModerationRequestSignalData::class,
-                    $payload,
+                    $moderationRequest,
                 );
             }
 
-            $this->handleModerationRequest($payload);
+            $this->handleModerationRequest($moderationRequest);
             return;
 
         default:

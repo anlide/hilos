@@ -39,7 +39,7 @@ class ModeratorAgent extends AbstractAgent
     /**
      * @var list<array{
      *     type: 'user'|'bot',
-     *     payload: ModerationRequestSignalData|ModerationBotRequestSignalData
+     *     request: ModerationRequestSignalData|ModerationBotRequestSignalData
      * }>
      */
     private array $pendingQueue = [];
@@ -47,7 +47,7 @@ class ModeratorAgent extends AbstractAgent
     /**
      * @var ?array{
      *     type: 'user'|'bot',
-     *     payload: ModerationRequestSignalData|ModerationBotRequestSignalData
+     *     request: ModerationRequestSignalData|ModerationBotRequestSignalData
      * }
      */
     private ?array $currentPending = null;
@@ -105,8 +105,8 @@ class ModeratorAgent extends AbstractAgent
         }
 
         $authorContext = match ($pending['type']) {
-            'user' => 'userId=' . ($pending['payload']->userId ?? '?'),
-            default => 'botId=' . ($pending['payload']->botId ?? '?'),
+            'user' => 'userId=' . ($pending['request']->userId ?? '?'),
+            default => 'botId=' . ($pending['request']->botId ?? '?'),
         };
         $this->logAgentInfo(
             "Moderation request finished [{$authorContext}; decision=" . ($allow ? 'allow' : 'block') . "; reason={$reason}]"
@@ -129,20 +129,28 @@ class ModeratorAgent extends AbstractAgent
      */
     public function onSignalAgent(AgentSignalData $data, string $source, string $name): void
     {
-        $payload = $data->data;
-
         switch ($name) {
             case ChatSignalConstants::MODERATE_REQUEST:
-                if (!$payload instanceof ModerationRequestSignalData) {
-                    throw new InvalidAgentSignalPayloadException($name, ModerationRequestSignalData::class, $payload);
+                $moderationRequest = $data->data;
+                if (!$moderationRequest instanceof ModerationRequestSignalData) {
+                    throw new InvalidAgentSignalPayloadException(
+                        $name,
+                        ModerationRequestSignalData::class,
+                        $moderationRequest,
+                    );
                 }
-                $this->handleModerateRequest($payload);
+                $this->handleModerateRequest($moderationRequest);
                 return;
             case ChatSignalConstants::MODERATE_BOT_REQUEST:
-                if (!$payload instanceof ModerationBotRequestSignalData) {
-                    throw new InvalidAgentSignalPayloadException($name, ModerationBotRequestSignalData::class, $payload);
+                $moderationBotRequest = $data->data;
+                if (!$moderationBotRequest instanceof ModerationBotRequestSignalData) {
+                    throw new InvalidAgentSignalPayloadException(
+                        $name,
+                        ModerationBotRequestSignalData::class,
+                        $moderationBotRequest,
+                    );
                 }
-                $this->handleModerateBotRequest($payload);
+                $this->handleModerateBotRequest($moderationBotRequest);
                 return;
             default:
                 throw new AgentUnknownSignalException($name);
@@ -152,62 +160,62 @@ class ModeratorAgent extends AbstractAgent
     /**
      * Queues or bypasses a user message moderation request.
      *
-     * @param ModerationRequestSignalData $payload User message moderation request
+     * @param ModerationRequestSignalData $moderationRequest User message moderation request
      * @throws HilosException When moderation rule lookup fails
      */
-    private function handleModerateRequest(ModerationRequestSignalData $payload): void
+    private function handleModerateRequest(ModerationRequestSignalData $moderationRequest): void
     {
         if (!ChatSettingsHelper::getModerationUsers()) {
-            $this->bypassModerationUser($payload);
+            $this->bypassModerationUser($moderationRequest);
             return;
         }
 
-        $messageLength = mb_strlen($payload->message);
+        $messageLength = mb_strlen($moderationRequest->message);
         $this->logAgentInfo(
-            "Moderation request queued [userId={$payload->userId}; messageLen={$messageLength}]"
+            "Moderation request queued [userId={$moderationRequest->userId}; messageLen={$messageLength}]"
         );
 
-        $this->pendingQueue[] = ['type' => 'user', 'payload' => $payload];
+        $this->pendingQueue[] = ['type' => 'user', 'request' => $moderationRequest];
         $this->startNextPending();
     }
 
     /**
      * Queues or bypasses a bot message moderation request.
      *
-     * @param ModerationBotRequestSignalData $payload Bot message moderation request
+     * @param ModerationBotRequestSignalData $moderationBotRequest Bot message moderation request
      * @throws HilosException When moderation rule lookup fails
      */
-    private function handleModerateBotRequest(ModerationBotRequestSignalData $payload): void
+    private function handleModerateBotRequest(ModerationBotRequestSignalData $moderationBotRequest): void
     {
         if (!ChatSettingsHelper::getModerationBots()) {
-            $this->bypassModerationBot($payload);
+            $this->bypassModerationBot($moderationBotRequest);
             return;
         }
 
-        $messageLength = mb_strlen($payload->message);
+        $messageLength = mb_strlen($moderationBotRequest->message);
         $this->logAgentInfo(
-            "Moderation bot request queued [botId={$payload->botId}; messageLen={$messageLength}]"
+            "Moderation bot request queued [botId={$moderationBotRequest->botId}; messageLen={$messageLength}]"
         );
 
-        $this->pendingQueue[] = ['type' => 'bot', 'payload' => $payload];
+        $this->pendingQueue[] = ['type' => 'bot', 'request' => $moderationBotRequest];
         $this->startNextPending();
     }
 
     /**
      * Sends an allow result without LLM when user moderation is disabled.
      *
-     * @param ModerationRequestSignalData $payload User message data to pass through
+     * @param ModerationRequestSignalData $moderationRequest User message data to pass through
      */
-    private function bypassModerationUser(ModerationRequestSignalData $payload): void
+    private function bypassModerationUser(ModerationRequestSignalData $moderationRequest): void
     {
-        $this->logAgentInfo("Moderation bypassed for user [userId={$payload->userId}] (disabled)");
+        $this->logAgentInfo("Moderation bypassed for user [userId={$moderationRequest->userId}] (disabled)");
         $this->sendToAgent(
             ChatSignalConstants::MODERATION_RESULT,
             new ModerationResultSignalData(
-                requestId: $payload->requestId,
-                acceptKey: $payload->acceptKey,
-                userId: $payload->userId,
-                message: $payload->message,
+                requestId: $moderationRequest->requestId,
+                acceptKey: $moderationRequest->acceptKey,
+                userId: $moderationRequest->userId,
+                message: $moderationRequest->message,
                 allow: true,
                 reason: 'disabled',
             ),
@@ -217,16 +225,16 @@ class ModeratorAgent extends AbstractAgent
     /**
      * Sends an allow result without LLM when bot moderation is disabled.
      *
-     * @param ModerationBotRequestSignalData $payload Bot message data to pass through
+     * @param ModerationBotRequestSignalData $moderationBotRequest Bot message data to pass through
      */
-    private function bypassModerationBot(ModerationBotRequestSignalData $payload): void
+    private function bypassModerationBot(ModerationBotRequestSignalData $moderationBotRequest): void
     {
-        $this->logAgentInfo("Moderation bypassed for bot [botId={$payload->botId}] (disabled)");
+        $this->logAgentInfo("Moderation bypassed for bot [botId={$moderationBotRequest->botId}] (disabled)");
         $this->sendToAgent(
             ChatSignalConstants::MODERATION_BOT_RESULT,
             new ModerationBotResultSignalData(
-                botId: $payload->botId,
-                message: $payload->message,
+                botId: $moderationBotRequest->botId,
+                message: $moderationBotRequest->message,
                 allow: true,
                 reason: 'disabled',
             ),
@@ -247,13 +255,16 @@ class ModeratorAgent extends AbstractAgent
         $item = array_shift($this->pendingQueue);
         $this->currentPending = $item;
 
-        $payload = $item['payload'];
-        $message = match ($item['type']) {
-            'user' => $payload->contentForModeration !== '' ? $payload->contentForModeration : $payload->message,
-            default => $payload->message,
-        };
-        $userId = $item['type'] === 'user' ? $payload->userId : null;
-        $botId = $item['type'] === 'bot' ? $payload->botId : null;
+        $queuedRequest = $item['request'];
+        $message = $queuedRequest->message;
+        if (
+            $queuedRequest instanceof ModerationRequestSignalData
+            && $queuedRequest->contentForModeration !== ''
+        ) {
+            $message = $queuedRequest->contentForModeration;
+        }
+        $userId = $queuedRequest instanceof ModerationRequestSignalData ? $queuedRequest->userId : null;
+        $botId = $queuedRequest instanceof ModerationBotRequestSignalData ? $queuedRequest->botId : null;
 
         $messages = $this->buildModerationMessages($message, $userId, $botId);
         $timeoutSec = ChatSettingsHelper::getModerationTimeoutSec();
@@ -276,7 +287,7 @@ class ModeratorAgent extends AbstractAgent
      *
      * @param array{
      *     type: 'user'|'bot',
-     *     payload: ModerationRequestSignalData|ModerationBotRequestSignalData
+     *     request: ModerationRequestSignalData|ModerationBotRequestSignalData
      * } $pending Queue item
      * @param bool $allow Whether moderation approved the item
      * @param string $reason Moderation reason
@@ -284,15 +295,15 @@ class ModeratorAgent extends AbstractAgent
     private function sendModerationOutcome(array $pending, bool $allow, string $reason): void
     {
         if ($pending['type'] === 'user') {
-            /** @var ModerationRequestSignalData $payload */
-            $payload = $pending['payload'];
+            /** @var ModerationRequestSignalData $moderationRequest */
+            $moderationRequest = $pending['request'];
             $this->sendToAgent(
                 ChatSignalConstants::MODERATION_RESULT,
                 new ModerationResultSignalData(
-                    requestId: $payload->requestId,
-                    acceptKey: $payload->acceptKey,
-                    userId: $payload->userId,
-                    message: $payload->message,
+                    requestId: $moderationRequest->requestId,
+                    acceptKey: $moderationRequest->acceptKey,
+                    userId: $moderationRequest->userId,
+                    message: $moderationRequest->message,
                     allow: $allow,
                     reason: $reason,
                 ),
@@ -301,13 +312,13 @@ class ModeratorAgent extends AbstractAgent
             return;
         }
 
-        /** @var ModerationBotRequestSignalData $payload */
-        $payload = $pending['payload'];
+        /** @var ModerationBotRequestSignalData $moderationBotRequest */
+        $moderationBotRequest = $pending['request'];
         $this->sendToAgent(
             ChatSignalConstants::MODERATION_BOT_RESULT,
             new ModerationBotResultSignalData(
-                botId: $payload->botId,
-                message: $payload->message,
+                botId: $moderationBotRequest->botId,
+                message: $moderationBotRequest->message,
                 allow: $allow,
                 reason: $reason,
             ),

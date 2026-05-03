@@ -18,14 +18,12 @@ use Demo\Chat\Core\Router\DTO\OutboundModerationStateUpdateSignalData;
 use Demo\Chat\Database\DbChatContext;
 use Demo\Chat\Database\DTO\PublishedAttachmentInput;
 use Demo\Chat\Database\DTO\PublishedAttachmentInputs;
-use Demo\Chat\Database\View\Collection\Bots;
 use Demo\Chat\Frontend\BotFrontendStateProjector;
 use Demo\Chat\Frontend\UserFrontendStateProjector;
 use Demo\Chat\Hilos;
 use Demo\Chat\Pages\Main\UploadFileTrait;
 use Demo\Chat\Runtime\View\Collection\AttachmentDrafts;
 use Demo\Chat\Runtime\View\Item\AttachmentDraft;
-use Demo\Chat\Runtime\View\Item\Connection;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
@@ -66,13 +64,14 @@ final class MainPage extends AbstractPage
      */
     public function onSubscribe(string $acceptKey, PageRouteParams $params): void
     {
-        $connection = Hilos::$rt->connections[$acceptKey]
-            ?? throw new PageInternalErrorException('No RT connection for this subscribe acceptKey');
+        if (!isset(Hilos::$rt->connections[$acceptKey])) {
+            throw new PageInternalErrorException('No RT connection for this subscribe acceptKey');
+        }
 
         $this->sendToUser(
             ChatSignalConstants::SUBSCRIPTION_PAGE_MAIN,
             $acceptKey,
-            $this->buildMainSubscriptionSignal($acceptKey, $connection),
+            $this->buildMainSubscriptionSignal($acceptKey),
         );
     }
 
@@ -80,48 +79,34 @@ final class MainPage extends AbstractPage
      * Builds the main-page subscription payload from shared chat state and connection-local fields.
      *
      * @param string $acceptKey WebSocket accept key whose attachment drafts are included
-     * @param Connection $connection Runtime connection row for the subscribing client
      * @throws HilosException On database, runtime, or truth source failure
      */
-    private function buildMainSubscriptionSignal(string $acceptKey, Connection $connection): ChatEventSignalDTO
+    private function buildMainSubscriptionSignal(string $acceptKey): ChatEventSignalDTO
     {
-        $activeBots = Bots::fromActiveOnly();
-
         return new ChatEventSignalDTO(
             new EntitiesChangesDTO(
                 full: [
-                    DbChatContext::bots => $activeBots,
+                    DbChatContext::bots => Hilos::$db->bots->activeOnly,
                     DbChatContext::events => Hilos::$db->events,
                 ],
             ),
-            outboundModerationState: $this->buildOutboundModerationStatePayload($connection->userId),
+            outboundModerationState: $this->buildOutboundModerationStatePayload(
+                Hilos::$rt->connections[$acceptKey]->userId,
+            ),
             attachmentDrafts: Hilos::$rt->attachmentDrafts->toFrontendListForAcceptKey($acceptKey),
-            fileUploadProgress: $this->buildFileUploadProgressPayload($connection),
+            fileUploadProgress: Hilos::$rt->connections[$acceptKey]->fileProgressFilename === null
+                ? null
+                : [
+                    'filename' => Hilos::$rt->connections[$acceptKey]->fileProgressFilename,
+                    'uploadedBytes' => Hilos::$rt->connections[$acceptKey]->fileProgressUploadedBytes,
+                    'totalBytes' => Hilos::$rt->connections[$acceptKey]->fileProgressTotalBytes,
+                ],
             includeUserSessionFields: true,
             frontend: BotFrontendStateProjector::appendFullForBots(
                 UserFrontendStateProjector::fullForUsers(Hilos::$rt->connections->relevantUsers),
-                $activeBots,
+                Hilos::$db->bots->activeOnly,
             ),
         );
-    }
-
-    /**
-     * Builds the current in-flight upload progress payload for this connection.
-     *
-     * @param Connection $connection Runtime connection row with upload counters
-     * @return ?array{filename: string, uploadedBytes: int, totalBytes: int}
-     */
-    private function buildFileUploadProgressPayload(Connection $connection): ?array
-    {
-        if ($connection->fileProgressFilename === null) {
-            return null;
-        }
-
-        return [
-            'filename' => $connection->fileProgressFilename,
-            'uploadedBytes' => $connection->fileProgressUploadedBytes,
-            'totalBytes' => $connection->fileProgressTotalBytes,
-        ];
     }
 
     /**
@@ -178,14 +163,17 @@ final class MainPage extends AbstractPage
      */
     public function onSignalAgent(AgentSignalData $data, string $source, string $name): void
     {
-        $payload = $data->data;
-
         switch ($name) {
             case ChatSignalConstants::MODERATION_RESULT:
-                if (!$payload instanceof ModerationResultSignalData) {
-                    throw new InvalidAgentSignalPayloadException($name, ModerationResultSignalData::class, $payload);
+                $moderationResult = $data->data;
+                if (!$moderationResult instanceof ModerationResultSignalData) {
+                    throw new InvalidAgentSignalPayloadException(
+                        $name,
+                        ModerationResultSignalData::class,
+                        $moderationResult,
+                    );
                 }
-                $this->handleTextModerationResult($payload);
+                $this->handleTextModerationResult($moderationResult);
 
                 return;
 

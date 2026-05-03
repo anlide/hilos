@@ -44,19 +44,18 @@ public function onSignalCron(SignalDataInterface $data, string $source, string $
 ```php
 public function onSignalAgent(AgentSignalData $data, string $source, string $name): void
 {
-    $payload = $data->data;
-
     switch ($name) {
         case ChatSignalConstants::MODERATION_RESULT:
-            if (!$payload instanceof ModerationResultSignalData) {
+            $moderationResult = $data->data;
+            if (!$moderationResult instanceof ModerationResultSignalData) {
                 throw new InvalidAgentSignalPayloadException(
                     $name,
                     ModerationResultSignalData::class,
-                    $payload,
+                    $moderationResult,
                 );
             }
 
-            $this->handleModerationResult($payload);
+            $this->handleModerationResult($moderationResult);
 
             return;
 
