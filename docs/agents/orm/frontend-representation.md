@@ -1,18 +1,18 @@
 # ORM: Frontend Representation
 
 Use `DbItem::toArray(..., toFrontend: true)` and `DbCollection::toArray(...)`
-for frontend-safe model representation. Computed item fields that describe one
-DB-backed model should live on the View item or a typed payload. Runtime-only
+for generic frontend-safe DB item representation. Page-specific frontend state
+should use typed DTO/projection payloads with stable key constants. Runtime-only
 telemetry that is needed by one table, detail view, or diagnostic surface should
 live in that table row or runtime summary payload.
 
 ## Rule
 
 Frontend representation is part of the model contract. Add fields such as
-`presence`, display labels, or other item-level derived values where the item is
+display labels or other durable item-level derived values where the item is
 serialized for callers. Table/page code should consume that representation unless
-the row is truly screen-specific. Do not add table-only runtime counters such as
-`onlineSessionCount` to a generic entity payload.
+the row is truly screen-specific. Do not add table-only or page-specific runtime
+fields such as `presence` or `onlineSessionCount` to a generic entity payload.
 
 ## Serialization Pipeline
 
@@ -27,8 +27,7 @@ $collection->toArray(idAsIndex: false, toFrontend: true);
 items may refine the payload:
 
 ```php
-use Demo\Chat\Frontend\DTO\FrontendUserPresenceProjection;
-use Demo\Chat\Runtime\View\DTO\UserConnectionSummary;
+use Demo\Chat\Database\Object\Item\User as ObjectUser;
 
 public function toArray(
     bool $withId = true,
@@ -41,9 +40,6 @@ public function toArray(
 
     if ($toFrontend) {
         unset($result[ObjectUser::sessionToken]);
-        $result[FrontendUserPresenceProjection::presence] = $this->_object->id !== null && count($this->connections) > 0
-            ? UserConnectionSummary::PRESENCE_ONLINE
-            : UserConnectionSummary::PRESENCE_OFFLINE;
     }
 
     return $result;
@@ -65,7 +61,27 @@ Use `$toFrontend` when the payload crosses the frontend boundary:
 
 When `$toFrontend` is true, remove private or backend-only fields such as
 session tokens, internal state, or moderation details that have a different
-signal contract. Add frontend-safe computed fields that are expected by the UI.
+signal contract. Add only generic DB item fields here. Use typed frontend state
+DTOs for page-specific runtime overlays.
+
+## Frontend State Payloads
+
+Use typed DTO/projection payloads when the browser state is not the generic DB
+entity shape:
+
+```php
+use Demo\Chat\Frontend\DTO\FrontendUserConnectionStatsProjection;
+use Demo\Chat\Frontend\FrontendStateCollectionKey;
+
+$collections[FrontendStateCollectionKey::USER_CONNECTION_STATS][] = (new FrontendUserConnectionStatsProjection(
+    userId: (int) $user->id,
+    onlineSessionCount: count($user->connections),
+))->toArray();
+```
+
+The DTO owns payload key constants and should have a matching TypeScript parser
+or store shape on the frontend side. Do not copy those keys into generic entity
+arrays.
 
 ## `$withCalculation`
 
@@ -128,10 +144,11 @@ code just because a table is the first frontend consumer.
 | Need | Put it in |
 |---|---|
 | Hide backend-only field from browser | View item `toArray(..., toFrontend: true)` |
-| Add frontend field for one model item | View item `toArray()` or typed DTO |
+| Add generic frontend field for one model item | View item `toArray()` |
+| Add page-specific runtime frontend state | Typed DTO/projection payload |
 | Optional richer serialization | `withCalculation` branch in item `toArray()` |
 | Runtime overlay for one DB item | View item bridge plus RT collection lookup |
-| Direct DB collection table rows | `queryDbCollection()` / collection `toArray(toFrontend: true)` |
+| Direct DB collection table rows | Table row factory or protected table helper |
 | Runtime-enriched table/detail rows | Concrete row DTO or runtime summary payload |
 | Screen-specific joined row | Concrete table `query()` and typed row class |
 
@@ -168,15 +185,17 @@ frontend filtering. Do not add frontend-only shaping to Entity classes.
    fields.
 4. Inspect runtime collection helpers when the value depends on `Hilos::$rt`.
 5. Add a View item computed property for item-level frontend fields.
-6. Use `toFrontend: true` when serializing data for browser payloads.
-7. Use `withCalculation` only for optional richer calculations.
-8. Keep table/page code as orchestration unless the shape is table-specific.
+6. Use typed DTO/projection payloads for page-specific frontend state.
+7. Use `toFrontend: true` when serializing generic DB item payloads for the browser.
+8. Use `withCalculation` only for optional richer calculations.
+9. Keep table/page code as orchestration unless the shape is table-specific.
 
 ## Hard Rules
 
 - Do not compute model-level frontend fields in table/page code when a View item
   or typed payload should own them.
 - Do not expose backend-only fields by bypassing `toFrontend: true`.
+- Do not put page-specific runtime overlays into generic entity payloads.
 - Do not put frontend representation logic in Entity classes.
 - Do not duplicate DB/RT aggregation in tables when an item property can expose
   the same value.

@@ -75,7 +75,7 @@ if (!isset(Hilos::$db->settings[$dto->key])) {
     return;
 }
 
-Hilos::$db->settings[$dto->key]->getEffectiveValue($catalog);
+Hilos::$db->settings[$dto->key]->value;
 ```
 
 If the value describes one model item, prefer an item property, item method,

@@ -159,7 +159,7 @@ if (!isset(Hilos::$db->settings[$key])) {
     return;
 }
 
-Hilos::$db->settings[$key]->getEffectiveValue($catalog);
+Hilos::$db->settings[$key]->value;
 ```
 
 If a collection explicitly supports array-style, magic, or result access, use

@@ -105,7 +105,9 @@ The table should query the DB collection and let item serialization or typed row
 construction consume the model API:
 
 ```php
-return $this->queryDbCollection(Hilos::$db->users, $query);
+foreach (Hilos::$db->users as $user) {
+    $rows[] = $this->rowFromUser($user)->toArray();
+}
 ```
 
 ## Anti-Patterns

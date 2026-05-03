@@ -89,7 +89,7 @@ if (!isset(Hilos::$db->settings[$dto->key])) {
     return;
 }
 
-Hilos::$db->settings[$dto->key]->getEffectiveValue($catalog);
+Hilos::$db->settings[$dto->key]->value;
 ```
 
 ## Exceptions

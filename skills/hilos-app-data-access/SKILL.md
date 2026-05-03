@@ -148,7 +148,7 @@ if (!isset(Hilos::$db->settings[$dto->key])) {
     return;
 }
 
-Hilos::$db->settings[$dto->key]->getEffectiveValue($catalog);
+Hilos::$db->settings[$dto->key]->value;
 ```
 
 Read runtime state through `Hilos::$rt` without storing durable business truth
@@ -165,7 +165,9 @@ Hilos::$rt->connections[$acceptKey]?->actions->unregister();
 Keep table projection thin:
 
 ```php
-return $this->queryDbCollection(Hilos::$db->users, $query);
+foreach (Hilos::$db->users as $user) {
+    $rows[] = $this->rowFromUser($user)->toArray();
+}
 ```
 
 Use an item-level bridge when the frontend row needs DB plus RT state:
@@ -185,10 +187,9 @@ $result[AdminUserTableRow::onlineSessionCount] = count(Hilos::$db->users[$userId
 Do not mix business write, projection, and manual signal routing in one handler:
 
 ```php
-// Wrong: page code owns the write, row projection, and delivery details.
-$payload = $this->buildManualPayload($id, $value);
-$this->manualSave($payload);
-$this->sendToUser($userId, $payload);
+$payload = $this->buildManualPayload($id, $value); // WRONG
+$this->manualSave($payload); // WRONG
+$this->sendToUser($userId, $payload); // WRONG
 ```
 
 Call the owning action and use the existing page/table/signal contract instead:
@@ -201,16 +202,15 @@ Do not build ad hoc arrays from DB and RT collections when a collection/item API
 should expose the relationship:
 
 ```php
-// Wrong: hides a reusable model property inside table code.
-use Demo\Chat\Tables\AdminUser\AdminUserTableRow;
+use Demo\Chat\Tables\AdminUser\AdminUserTableRow; // WRONG
 
-$rows = [];
-foreach (Hilos::$db->users as $user) {
-    $rows[] = [
-        AdminUserTableRow::id => $user->id,
-        AdminUserTableRow::onlineSessionCount => count(Hilos::$rt->connections->forUser($user->id)),
-    ];
-}
+$rows = []; // WRONG
+foreach (Hilos::$db->users as $user) { // WRONG
+    $rows[] = [ // WRONG
+        AdminUserTableRow::id => $user->id, // WRONG
+        AdminUserTableRow::onlineSessionCount => count(Hilos::$rt->connections->forUser($user->id)), // WRONG
+    ]; // WRONG
+} // WRONG
 ```
 
 Move reusable relationships to the DB item, RT collection, or typed projection,
