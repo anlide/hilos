@@ -16,6 +16,8 @@ final class AnalyticsCollector
     public const string META_API_REQUEST_ID = 'apiRequestId';
     public const string META_USER_ACTION_ID = 'userActionId';
 
+    private const string IDENTITY_TYPE_USER_ID = 'user_id';
+
     private const int BUFFER_SIZE = 100;
     private const int FLUSH_INTERVAL_MS = 5000;
 
@@ -171,6 +173,17 @@ final class AnalyticsCollector
                 [$type, $value, $this->nowTs(), $browserSessionId],
             );
         });
+    }
+
+    /**
+     * Associates a browser session with an authenticated application user.
+     *
+     * @param string $sessionToken Browser session token
+     * @param int $userId Application user id
+     */
+    public function identifyBrowserSessionUser(string $sessionToken, int $userId): void
+    {
+        $this->setBrowserSessionIdentity($sessionToken, self::IDENTITY_TYPE_USER_ID, (string)$userId);
     }
 
     public function openWsConnection(string $acceptKey, ?string $sessionToken, string $clientIp): ?int

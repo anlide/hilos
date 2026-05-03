@@ -90,7 +90,7 @@ class ChatAgent extends AbstractAgent
         }
         $userId = (int)$user->id;
 
-        Hilos::$ac?->setBrowserSessionIdentity($sessionToken, 'user_id', (string)$userId);
+        Hilos::$ac?->identifyBrowserSessionUser($sessionToken, $userId);
 
         Hilos::$rt->connections->actions->register($data->acceptKey, $userId);
         Hilos::$rt->userStates->actions->ensure($userId);
