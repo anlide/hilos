@@ -80,7 +80,7 @@ Start with `agents.md`, then read the matching runtime guide.
     optional lookups and `[]` only when the row must already exist.
 19. During refactors, do not invent convenience read helpers or predicates on
     `RtItem`, `RtCollection`, actions, projections, or adjacent view objects to
-    hide a field check or shorten a caller. Examples: `hasActive*()`, `is*()`,
+    hide a field check or shorten a caller. Examples: `has*()`, `is*()`,
     `can*()`, and `get*()` wrappers around one or two state fields. Keep field
     access explicit unless the user approved that exact method in the plan or
     the method centralizes a non-trivial reused invariant.
@@ -88,18 +88,38 @@ Start with `agents.md`, then read the matching runtime guide.
 ## Examples
 
 ```php
-$connection = Hilos::$rt->connections[$acceptKey] ?? null;
-$connections = Hilos::$rt->connections->forUser($userId);
 Hilos::$rt->connections->actions->register($acceptKey, $userId);
-$connection?->actions->unregister();
-$connection?->actions->clearFileModerationBanner();
+
+// Required connection row: guard first, then use the addressed item directly.
+if (!isset(Hilos::$rt->connections[$acceptKey])) {
+    return;
+}
+
+Hilos::$rt->connections[$acceptKey]->actions->unregister();
+
+// Existing collection lookup: iterate the returned collection directly.
+foreach (Hilos::$rt->connections->forUser($userId) as $userConnection) {
+    // Use the iterated connection item directly.
+}
+
+// Optional one-shot when a missing row is an acceptable no-op.
+Hilos::$rt->connections[$acceptKey]?->actions->unregister();
 ```
 
-Use runtime state to complement DB-backed frontend state, not replace it:
+Runtime state may add transient overlays to DB entities, such as presence,
+connection counts, upload progress, and socket-local UI state. It must not
+replace the DB entity as the source of durable business data. Keep persistent
+identity, history, settings, and catalog state in `Hilos::$db`, and project
+DB + RT together only at the view/frontend boundary:
 
 ```php
-$user = Hilos::$db->users[$userId] ?? null;
-$onlineConnections = Hilos::$rt->connections->forUser($userId);
+foreach (Hilos::$db->users as $user) {
+    $rows[] = [
+        'id' => $user->id,
+        'name' => $user->name,
+        'onlineSessionCount' => count(Hilos::$rt->connections->forUser($user->id)),
+    ];
+}
 ```
 
 Keep page/table code as orchestration only. If a page needs to change runtime

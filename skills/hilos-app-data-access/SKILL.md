@@ -67,7 +67,9 @@ switch to the focused data-layer skill first.
 6. Never call `getStateCollection()`, `RtContext::getStateCollection()`, or
    `$this->stateCollection` from agents, pages, tables, signal handlers, tests,
    or other orchestration code. If the read API is missing, add it to the
-   owning `Database/` or `Runtime/` layer first.
+   owning `Database/` or `Runtime/` layer first. During transparent data-shape
+   refactors, keep simple field checks explicit unless a new method was
+   approved by name.
 7. For writes, call a collection action or item action. When a DB/RT item key is
    known and the write changes or deletes that one item, load the item and call
    `$item->actions->...` instead of a collection action that accepts the key.
@@ -109,7 +111,11 @@ Read settings through the collection contract instead of rebuilding a lookup in
 the page. If the key-based collection documents array access, use that contract:
 
 ```php
-$setting = Hilos::$db->settings[$dto->key] ?? null;
+if (!isset(Hilos::$db->settings[$dto->key])) {
+    return;
+}
+
+Hilos::$db->settings[$dto->key]; // Setting item by documented key-based offset
 ```
 
 If the collection exposes a named accessor instead, use it directly:
@@ -140,7 +146,10 @@ Read runtime state through `Hilos::$rt` without storing durable business truth
 there:
 
 ```php
-$connections = Hilos::$rt->connections->forUser($userId);
+foreach (Hilos::$rt->connections->forUser($userId) as $userConnection) {
+    // Use the iterated connection item directly.
+}
+
 Hilos::$rt->connections[$acceptKey]?->actions->unregister();
 ```
 

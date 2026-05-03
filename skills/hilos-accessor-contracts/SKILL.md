@@ -46,15 +46,28 @@ result, or collection value. Start with `agents.md`, then read
 Prefer collection key access when the key is the documented offset:
 
 ```php
-$user = Hilos::$db->users[$userId] ?? null;
-$connection = Hilos::$rt->connections[$acceptKey] ?? null;
+if (!isset(Hilos::$db->users[$userId])) {
+    return;
+}
+
+Hilos::$db->users[$userId]; // DB item by documented collection key
+
+if (!isset(Hilos::$rt->connections[$acceptKey])) {
+    return;
+}
+
+Hilos::$rt->connections[$acceptKey]->actions->unregister();
 ```
 
 Prefer key-based settings access only if the settings collection documents the
 setting key as its offset:
 
 ```php
-$setting = Hilos::$db->settings[$dto->key] ?? null;
+if (!isset(Hilos::$db->settings[$dto->key])) {
+    return;
+}
+
+Hilos::$db->settings[$dto->key]; // Setting item by documented key-based offset
 ```
 
 Use the named finder when the collection still exposes settings by primary key

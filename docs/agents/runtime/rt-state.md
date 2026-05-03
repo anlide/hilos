@@ -118,24 +118,21 @@ without falling back to `?RtState`.
 Application code normally reads through the view item or collection:
 
 ```php
-$userState = Hilos::$rt->userStates[$userId] ?? null;
-$isChecking = $userState?->hasActiveOutboundModeration() === true;
+if (
+    isset(Hilos::$rt->userStates[$userId])
+    && Hilos::$rt->userStates[$userId]->lastOutboundSubmittedAt > 0.0
+) {
+    // ...
+}
 ```
 
 Direct backing-state reads (`getStateCollection()`, `$this->stateCollection`,
 or `RtContext::getStateCollection()`) are allowed only in files under
 `Database/` or `Runtime/`. Agents, pages, tables, signal handlers, tests, and
 other application orchestration code must use caller-facing collection/item
-APIs. If that API is missing, add it to the owning `Runtime/` or `Database/`
-layer first:
-
-```php
-// Runtime/View/Collection/UserStates.php
-public function moderationMessageForUser(int $userId): string
-{
-    return $this->getStateCollection()->get((string)$userId)?->moderationMessage ?? '';
-}
-```
+APIs. If an approved reusable lookup is missing, add it to the owning
+`Runtime/` or `Database/` layer first; during transparent data-shape refactors,
+prefer explicit field access unless the new method was approved by name.
 
 ## Lifecycle
 

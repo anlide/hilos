@@ -61,7 +61,8 @@ document that matches the change.
    the item and call `$item->actions->...`; do not add collection actions that
    accept the item key for that one-item write.
 8. Put read helpers and lookup methods on the existing collection/item layer
-   before introducing new API surface.
+   before introducing new API surface. During transparent data-shape refactors,
+   keep simple field checks explicit unless a new method was approved by name.
 9. Add migrations for schema changes and update Entities to match schema.
 10. Run schema/test validation through composer scripts, never direct host
    phpunit.
@@ -69,19 +70,26 @@ document that matches the change.
 ## Examples
 
 ```php
-$user = Hilos::$db->users->findBySession($acceptKey);
-$user = Hilos::$db->users->actions->register($sessionToken);
-$settings = Hilos::$db->settings;
-$setting = $settings->findByKey($key);
-$setting?->actions->updateValue($value);
+Hilos::$db->users->findBySession($acceptKey);
+Hilos::$db->users->actions->register($sessionToken);
+Hilos::$db->settings->findByKey($key)?->actions->updateValue($value);
 ```
 
 When a collection supports array-style access, prefer the collection API instead
 of rebuilding queries in a page:
 
 ```php
-$user = Hilos::$db->users[$userId] ?? null;
-$setting = $settings[$key] ?? null; // If the collection supports key access.
+if (!isset(Hilos::$db->users[$userId])) {
+    return;
+}
+
+Hilos::$db->users[$userId]; // DB item by documented collection key
+
+if (!isset(Hilos::$db->settings[$key])) {
+    return;
+}
+
+Hilos::$db->settings[$key]; // If the collection supports key access
 ```
 
 Use the named finder when the offset contract does not match the business key:

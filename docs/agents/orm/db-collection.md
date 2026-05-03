@@ -71,9 +71,14 @@ Before writing DB-backed code:
 Use `Hilos::$db->{collection}` from agents, pages, and handlers:
 
 ```php
-$user = Hilos::$db->users->findBySession($acceptKey);
-$setting = Hilos::$db->settings->findByKey($key);
-$user = Hilos::$db->users[$userId] ?? null;
+Hilos::$db->users->findBySession($acceptKey);
+Hilos::$db->settings->findByKey($key);
+
+if (!isset(Hilos::$db->users[$userId])) {
+    return;
+}
+
+Hilos::$db->users[$userId]; // DB item by documented collection key
 
 foreach (Hilos::$db->events as $event) {
     // $event is a DbItem wrapper.
@@ -98,8 +103,8 @@ a whole: register a user, add an event, delete all rows, import a batch, or
 perform a real bulk transition.
 
 ```php
-$user = Hilos::$db->users->actions->register($sessionToken);
-$event = Hilos::$db->events->actions->add($type, $userId, $payload);
+Hilos::$db->users->actions->register($sessionToken);
+Hilos::$db->events->actions->add($type, $userId, $payload);
 ```
 
 A collection action receives the `DbCollection`, can use its `objectCollection`
@@ -123,9 +128,9 @@ Item actions are for writes on a single loaded `DbItem`, including update and
 delete operations when the caller already has the collection key:
 
 ```php
-$setting = Hilos::$db->settings->findByKey($key);
-$setting?->actions->update(['value' => $value]);
-$setting?->actions->delete();
+Hilos::$db->settings->findByKey($key)?->actions->update(['value' => $value]);
+// or:
+Hilos::$db->settings->findByKey($key)?->actions->delete();
 ```
 
 Use item actions when the operation naturally belongs to an existing item and
@@ -137,17 +142,24 @@ when an item action should own it.
 The settings collection is available through `Hilos::$db->settings`.
 
 ```php
-$setting = Hilos::$db->settings->findByKey($key);
-$value = $setting?->getEffectiveValue($catalog);
+Hilos::$db->settings->findByKey($key)?->getEffectiveValue($catalog);
 ```
 
 If a collection explicitly supports array-style, magic, or result access, use
 that collection API rather than duplicating lookup logic:
 
 ```php
-$settings = Hilos::$db->settings;
-$user = Hilos::$db->users[$userId] ?? null;
-$setting = $settings[$key] ?? null; // If settings support key-based access.
+if (!isset(Hilos::$db->users[$userId])) {
+    return;
+}
+
+Hilos::$db->users[$userId]; // DB item by documented collection key
+
+if (!isset(Hilos::$db->settings[$key])) {
+    return;
+}
+
+Hilos::$db->settings[$key]; // If settings support key-based access
 ```
 
 Array-style access is collection-specific. Prefer `$settings[$key]` over

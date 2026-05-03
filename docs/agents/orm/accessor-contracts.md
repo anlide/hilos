@@ -28,9 +28,9 @@ lookup API only on the owning layer when no contract exists.
 
 | Caller has | Prefer |
 |---|---|
-| Documented DB collection key | `Hilos::$db->collection[$id] ?? null` |
-| Documented RT collection key | `Hilos::$rt->collection[$id] ?? null` |
-| Documented key-based setting offset | `Hilos::$db->settings[$key] ?? null` |
+| Documented DB collection key | `Hilos::$db->collection[$id]` with an `isset()` guard when optional |
+| Documented RT collection key | `Hilos::$rt->collection[$id]` with an `isset()` guard when optional |
+| Documented key-based setting offset | `Hilos::$db->settings[$key]` with an `isset()` guard when optional |
 | Business key without array-offset contract | Existing named method such as `findByKey($key)` |
 | Runtime rows for one DB item | Existing RT collection method such as `forUser($userId)` |
 | Item-level derived value | Existing item property or result accessor |
@@ -42,7 +42,11 @@ Prefer key-based array access only when the settings collection explicitly
 documents the setting key as its offset:
 
 ```php
-$setting = Hilos::$db->settings[$dto->key] ?? null;
+if (!isset(Hilos::$db->settings[$dto->key])) {
+    return;
+}
+
+Hilos::$db->settings[$dto->key]; // Setting item by documented key-based offset
 ```
 
 If `[]` is documented as primary-key access, or the key-based offset contract is
@@ -91,14 +95,18 @@ $user = Hilos::$db->users->findById($userId);
 Use the collection contract:
 
 ```php
-$user = Hilos::$db->users[$userId] ?? null;
+if (!isset(Hilos::$db->users[$userId])) {
+    return;
+}
+
+Hilos::$db->users[$userId]; // User item by documented collection key
 ```
 
 Do not replace a finder with array access unless the offset contract matches:
 
 ```php
 // Wrong if settings[] is primary-key access.
-$setting = Hilos::$db->settings[$dto->key] ?? null;
+Hilos::$db->settings[$dto->key];
 ```
 
 Do not hide reusable lookup logic inside a page or table:

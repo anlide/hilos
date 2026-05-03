@@ -79,6 +79,9 @@ must not use backing-state access. They must call caller-facing APIs on
 `Hilos::$rt` collections, items, or actions. When a needed read is missing, add
 a typed read helper to the owning `Runtime/View/Collection` or
 `Runtime/View/Item` class, then call that helper from the agent/page/table.
+During refactors whose goal is transparent data shape, keep field checks
+explicit and add no new convenience helper unless the exact method was approved
+in the plan.
 
 The layers are:
 
@@ -111,34 +114,54 @@ Before writing runtime-backed code:
 6. Inspect item actions for updates on one loaded runtime item.
 7. Find the truth source registration in the owning agent's `onStart()` and
    `onStop()`.
-8. Only then add the smallest missing method to the owning layer.
+8. Only then add the smallest missing method to the owning layer. In transparent
+   data-shape refactors, prefer explicit field access unless a new method was
+   explicitly approved.
 
 ## Reads
 
 Use `Hilos::$rt->{collection}` from agents, pages, and handlers:
 
 ```php
-$connection = Hilos::$rt->connections[$acceptKey] ?? null;
-$connections = Hilos::$rt->connections->forUser($userId);
+// Required connection row: guard first, then use the addressed item directly.
+if (!isset(Hilos::$rt->connections[$acceptKey])) {
+    return;
+}
 
-if ($connection !== null) {
-    $userId = $connection->userId;
+// Existing collection lookup: iterate the returned collection directly.
+foreach (Hilos::$rt->connections->forUser(Hilos::$rt->connections[$acceptKey]->userId) as $userConnection) {
+    // Use the iterated connection item directly.
+}
+
+// Optional one-shot when a missing row is an acceptable no-op.
+Hilos::$rt->connections[$acceptKey]?->actions->unregister();
+```
+
+Runtime state may add transient overlays to DB entities, such as presence,
+connection counts, upload progress, and socket-local UI state. It must not
+replace the DB entity as the source of durable business data. Keep persistent
+identity, history, settings, and catalog state in `Hilos::$db`, and project
+DB + RT together only at the view/frontend boundary:
+
+```php
+foreach (Hilos::$db->users as $user) {
+    $rows[] = [
+        'id' => $user->id,
+        'name' => $user->name,
+        'onlineSessionCount' => count(Hilos::$rt->connections->forUser($user->id)),
+    ];
 }
 ```
 
-Runtime state can complement DB-backed frontend state:
-
-```php
-$user = Hilos::$db->users[$userId] ?? null;
-$onlineConnections = Hilos::$rt->connections->forUser($userId);
-```
-
 Put reusable runtime lookups on the collection layer and reusable row-level
-read helpers on the view item:
+read helpers on the view item only when they are established model contracts.
+During refactors, keep simple field checks visible at the caller:
 
 ```php
-$userState = Hilos::$rt->userStates[$userId] ?? null;
-if ($userState?->hasActiveOutboundModeration() === true) {
+if (
+    isset(Hilos::$rt->userStates[$userId])
+    && Hilos::$rt->userStates[$userId]->lastOutboundSubmittedAt > 0.0
+) {
     // ...
 }
 ```
@@ -165,7 +188,7 @@ collection as a whole: register/create/ensure rows, clear all runtime rows,
 delete expired rows, or perform a real bulk transition.
 
 ```php
-$connection = Hilos::$rt->connections->actions->register($acceptKey, $userId);
+Hilos::$rt->connections->actions->register($acceptKey, $userId);
 Hilos::$rt->connections->actions->clear();
 ```
 
@@ -190,10 +213,9 @@ Item actions are for writes on a single loaded `RtItem`, including update and
 delete operations when the caller already has the collection key:
 
 ```php
-$connection = Hilos::$rt->connections[$acceptKey] ?? null;
-$connection?->actions->unregister();
-$connection?->actions->clearFileModerationBanner();
-$connection?->actions->applyStoredBinaryChunkProgress($receivedBytes);
+Hilos::$rt->connections[$acceptKey]?->actions->unregister();
+Hilos::$rt->connections[$acceptKey]?->actions->clearBinaryUploadSessionAndProgressUi();
+Hilos::$rt->connections[$acceptKey]?->actions->applyStoredBinaryChunkProgress($receivedBytes);
 ```
 
 Use item actions when the operation naturally belongs to an existing runtime
@@ -245,7 +267,7 @@ Persist durable facts through `Hilos::$db` and keep `Hilos::$rt` for live state:
 
 ```php
 Hilos::$db->events->actions->add($type, $userId, $payload);
-Hilos::$rt->connections[$acceptKey]?->actions->clearFileModerationBanner();
+Hilos::$rt->connections[$acceptKey]?->actions->clearBinaryUploadSessionAndProgressUi();
 ```
 
 Do not add runtime arrays, duplicated connection maps, or transient mutation
@@ -257,8 +279,8 @@ Do not add read-only methods to actions:
 
 ```php
 // Wrong: actions are for writes.
-Hilos::$rt->userStates->actions->hasActiveOutboundModeration($userId);
+Hilos::$rt->connections->actions->activeUploadCountForUser($userId);
 
-// Correct: row-level read belongs to the view item.
-Hilos::$rt->userStates[$userId]?->hasActiveOutboundModeration();
+// Correct: read through collection/item state, keeping simple checks visible.
+count(Hilos::$rt->connections->forUser($userId));
 ```
