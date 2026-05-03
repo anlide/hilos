@@ -45,12 +45,12 @@ Or stop the entire local compose project: `composer run daemon-stop`
 
 | Script | Role |
 |--------|------|
-| `composer run test:e2e-full` | Build frontend, start E2E stack, DB wait/reset, run Playwright in docker, tear down. |
+| `composer run test:e2e-full` | Build frontend, start MySQL, reset DB, start daemon/Nginx, run Playwright in docker, tear down. |
 | `composer run test:e2e-build` | Build `frontend/dist` for nginx in the test stack. |
-| `composer run test:e2e-up` | Start MySQL + daemon + **test** Nginx. |
+| `composer run test:e2e-up` | Build/recreate and start MySQL + daemon + **test** Nginx. |
 | `composer run test:e2e` | `npm ci` + `npx playwright test` inside `chat-e2e-runner`. Requires the stack to be up. |
 | `composer run test:e2e-realtime` | Run only specs tagged `@realtime` inside `chat-e2e-runner`. Requires the stack to be up. |
-| `composer run test:e2e-realtime-full` | Build frontend, start E2E stack, DB wait/reset, run only `@realtime`, tear down. |
+| `composer run test:e2e-realtime-full` | Build frontend, start MySQL, reset DB, start daemon/Nginx, run only `@realtime`, tear down. |
 | `composer run test:e2e-down` | Stop the test stack. |
 
 There is **no** host-side `test:e2e-install` — everything runs inside

@@ -66,12 +66,12 @@ Composer scripts are in `demo/chat/composer.json`:
 | Script | What it does |
 |---|---|
 | `composer run test:e2e-build` | Build frontend assets for the test container. |
-| `composer run test:e2e-up` | Bring up mysql-test + chat-test + chat-nginx-test. |
+| `composer run test:e2e-up` | Build/recreate and bring up mysql-test + chat-test + chat-nginx-test. |
 | `composer run test:e2e` | `npm ci` + `npx playwright test` inside `chat-e2e-runner`. |
 | `composer run test:e2e-realtime` | Run only Playwright specs tagged `@realtime`. Requires the stack to be up. |
-| `composer run test:e2e-realtime-full` | Build → up → DB wait/reset → run only `@realtime` specs → down. |
+| `composer run test:e2e-realtime-full` | Build frontend → mysql up → DB wait/reset → app/nginx up → run only `@realtime` specs → down. |
 | `composer run test:e2e-down` | Tear everything down. |
-| `composer run test:e2e-full` | End-to-end: build → up → db-wait → db-reset → run → down. |
+| `composer run test:e2e-full` | End-to-end: build frontend → mysql up → DB wait/reset → app/nginx up → run → down. |
 
 The Playwright image tag (`v1.X.Y-noble` in `docker-compose.test.yml`)
 **must** match the `@playwright/test` version pinned in

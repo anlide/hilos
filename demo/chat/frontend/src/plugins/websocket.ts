@@ -235,7 +235,7 @@ function buildSignalRouter() {
  * Entity changes (full/updates/deleted) are applied via framework EntitiesReceiver.
  */
 export function createChatWebSocketPlugin() {
-  const websocketUrl = `${config.websocketProtocol}://${config.websocketHost}:${config.websocketPort}`
+  const websocketUrl = `${config.websocketProtocol}://${config.websocketHost}:${config.websocketPort}${config.websocketPath}`
   const sessionToken = localStorageService.getSessionWithInit()
   const signalRouter = buildSignalRouter()
   signalRouterInstance = signalRouter
