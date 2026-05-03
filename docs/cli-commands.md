@@ -32,8 +32,6 @@ php cli.php migration:retry <version> [options] # Retry failed migration
 ```bash
 php cli.php db:schema:status [options]  # Show schema status (tables, columns, indexes)
 php cli.php db:entity:diff [options]    # Compare Entity files with database schema
-php cli.php db:entity:fix [options]     # Fix Entity files to match schema
-php cli.php db:object:fix [options]     # Fix Object files to match Entity files
 ```
 
 ### db:schema:status options
@@ -50,25 +48,6 @@ php cli.php db:object:fix [options]     # Fix Object files to match Entity files
 | `--entity-dir=<path>` | Entity files directory (default: auto-detect) |
 | `--entity-ns=<ns>` | Entity namespace prefix (default: auto-detect) |
 | `--table=<name>` | Show diff for specific table only |
-
-### db:entity:fix options
-
-| Option | Description |
-|--------|-------------|
-| `--entity-dir=<path>` | Entity files directory (default: auto-detect) |
-| `--entity-ns=<ns>` | Entity namespace prefix (default: auto-detect) |
-| `--table=<name>` | Fix specific table only |
-| `--dry-run` | Show what would be changed without modifying files |
-
-### db:object:fix options
-
-| Option | Description |
-|--------|-------------|
-| `--object-dir=<path>` | Object files directory (default: auto-detect) |
-| `--entity-dir=<path>` | Entity files directory (default: auto-detect) |
-| `--table=<name>` | Fix specific table only |
-| `--dry-run` | Show what would be changed without modifying files |
-| `--force-repair` | Attempt to repair broken Object/ObjectCollection files |
 
 ## Project-level Composer Scripts (demo example)
 
@@ -99,10 +78,6 @@ composer run migration:retry
 # Database schema & ORM
 composer run db:schema:status
 composer run db:entity:diff
-composer run db:entity:fix
-composer run db:entity:fix-dry-run
-composer run db:object:fix
-composer run db:object:fix-dry-run
 
 # phpMyAdmin (optional)
 composer run pma                 # Start phpMyAdmin at http://localhost:8080

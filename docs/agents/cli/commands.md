@@ -17,8 +17,6 @@ Run via: `php Backend/Bootstrap/cli.php <command> [options]`
 |---|---|
 | `db:schema:status` | Check DB schema vs expected structure |
 | `db:entity:diff` | Diff Entity class fields vs actual DB columns |
-| `db:entity:fix` | Generate/fix Entity class from DB schema |
-| `db:object:fix` | Generate/fix Object class from Entity |
 
 ## Seed commands
 
@@ -46,7 +44,6 @@ Run via: `php Backend/Bootstrap/cli.php <command> [options]`
 ```bash
 # After changing DB schema (add column, new table):
 php cli.php db:migration:up
-php cli.php db:entity:fix MyEntity
 
 # Check what's different between Entity and DB:
 php cli.php db:entity:diff
