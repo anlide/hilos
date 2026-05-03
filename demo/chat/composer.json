@@ -78,6 +78,8 @@
         "test:e2e-up": "docker compose -f docker/docker-compose.test.yml up -d mysql-test chat-test chat-nginx-test",
         "test:e2e-down": "docker compose -f docker/docker-compose.test.yml down",
         "test:e2e": "docker compose -f docker/docker-compose.test.yml --profile e2e run --rm chat-e2e-runner sh -c \"npm ci && npx playwright test\"",
+        "test:e2e-realtime": "docker compose -f docker/docker-compose.test.yml --profile e2e run --rm chat-e2e-runner sh -c \"npm ci && npx playwright test --grep @realtime\"",
+        "test:e2e-realtime-full": "composer run test:e2e-build && composer run test:e2e-up && composer run test:db-wait && composer run test:db-reset && composer run test:e2e-realtime && composer run test:e2e-down",
         "test:e2e-full": "composer run test:e2e-build && composer run test:e2e-up && composer run test:db-wait && composer run test:db-reset && composer run test:e2e && composer run test:e2e-down"
     }
 }

@@ -68,6 +68,8 @@ Composer scripts are in `demo/chat/composer.json`:
 | `composer run test:e2e-build` | Build frontend assets for the test container. |
 | `composer run test:e2e-up` | Bring up mysql-test + chat-test + chat-nginx-test. |
 | `composer run test:e2e` | `npm ci` + `npx playwright test` inside `chat-e2e-runner`. |
+| `composer run test:e2e-realtime` | Run only Playwright specs tagged `@realtime`. Requires the stack to be up. |
+| `composer run test:e2e-realtime-full` | Build → up → DB wait/reset → run only `@realtime` specs → down. |
 | `composer run test:e2e-down` | Tear everything down. |
 | `composer run test:e2e-full` | End-to-end: build → up → db-wait → db-reset → run → down. |
 
@@ -75,6 +77,14 @@ The Playwright image tag (`v1.X.Y-noble` in `docker-compose.test.yml`)
 **must** match the `@playwright/test` version pinned in
 `tests/e2e/package.json` — otherwise Playwright cannot locate its
 browser executables at `/ms-playwright`. Bump them together.
+
+Realtime specs (`tests/e2e/tests/realtime/*`, tagged `@realtime`) are the
+multi-actor layer: cross-tab sync, cross-user propagation, admin-to-user fan-out,
+table mutation fan-out, and concurrent edit/conflict flows. Run the realtime
+subset when changing WebSocket/page subscription routing, frontend stores,
+table mutation handling, DB/RT projections, admin actions, or Hilos pages. The
+regular `test:e2e-full` includes realtime specs because it runs the whole
+Playwright suite.
 
 ---
 

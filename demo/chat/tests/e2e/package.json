@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "test": "playwright test",
+    "test:realtime": "playwright test --grep @realtime",
+    "test:non-realtime": "playwright test --grep-invert @realtime",
     "test:ui": "playwright test --ui"
   },
   "devDependencies": {

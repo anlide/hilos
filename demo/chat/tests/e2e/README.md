@@ -49,6 +49,8 @@ Or stop the entire local compose project: `composer run daemon-stop`
 | `composer run test:e2e-build` | Build `frontend/dist` for nginx in the test stack. |
 | `composer run test:e2e-up` | Start MySQL + daemon + **test** Nginx. |
 | `composer run test:e2e` | `npm ci` + `npx playwright test` inside `chat-e2e-runner`. Requires the stack to be up. |
+| `composer run test:e2e-realtime` | Run only specs tagged `@realtime` inside `chat-e2e-runner`. Requires the stack to be up. |
+| `composer run test:e2e-realtime-full` | Build frontend, start E2E stack, DB wait/reset, run only `@realtime`, tear down. |
 | `composer run test:e2e-down` | Stop the test stack. |
 
 There is **no** host-side `test:e2e-install` — everything runs inside
@@ -63,3 +65,43 @@ docker compose -f docker/docker-compose.test.yml --profile e2e run --rm \
 
 Framework-level note for the same port-conflict pattern: see
 `framework/README.md` in the Hilos repository.
+
+## Suite taxonomy
+
+- `chat-*` specs cover the demo chat user-facing app: messages, uploads,
+  profile, participants, and moderation-visible UX.
+- `admin-*` specs cover demo-specific admin pages under `/hilos/admin_*`.
+- `tests/realtime/*` specs cover multi-actor behavior: cross-tab sync,
+  cross-user updates, admin-to-user propagation, table mutation fan-out, and
+  concurrent edit/conflict scenarios. These specs are tagged `@realtime`.
+- `hilos-chat` is the concrete Hilos suite for this demo. It validates
+  framework Hilos frontend routes through the demo's real route overrides,
+  page factory, agents, DB seeds, and Docker stack. Framework-only Hilos E2E is
+  intentionally not attempted here because framework Hilos pages are abstract
+  until a project implements them.
+
+New scenario plans should be added as `test.fixme(...)` first when the
+fixture or deterministic seed is not ready yet. Convert each case to `test(...)`
+only when it can run reliably in `composer run test:e2e-full`.
+
+## Realtime E2E
+
+Realtime specs are intentionally separated because they are slower and more
+stateful than single-page smoke or CRUD checks. They open multiple browser
+contexts/tabs, rely on WebSocket propagation, and often need deterministic DB
+seeds for the exact user, bot, prompt piece, or Hilos row under test.
+
+Run realtime-only checks when changing:
+
+- WebSocket connection, reconnect, page subscription, or signal routing.
+- Frontend stores, table mutation handling, optimistic/pending row behavior, or
+  conflict UI.
+- DB/RT projection code that fans updates from one page to another.
+- Admin actions that should be visible to users or other admins without reload.
+- Hilos dashboard/user/log pages where demo pages implement framework contracts.
+
+Use `composer run test:e2e-realtime` after the E2E stack is already up. Use
+`composer run test:e2e-realtime-full` for a self-contained realtime pass. The
+regular full pass, `composer run test:e2e-full`, runs all Playwright specs and
+therefore includes `@realtime`; do not exclude realtime specs from the full
+pre-PR run once they are converted from `test.fixme(...)` to executable tests.
