@@ -14,9 +14,8 @@ result, or collection value. Start with `agents.md`, then read
 - Accessor shape is part of the collection or item contract.
 - `Hilos::$db->collection[$id]` and `Hilos::$rt->collection[$id]` are preferred
   for known collection keys when the collection documents that key.
-- Key-based array access such as `$settings[$key]` is preferred over
-  `findByKey($key)` only when the collection explicitly supports that business
-  key as its offset.
+- Key-based array access such as `Hilos::$db->settings[$key]` is preferred when
+  the collection explicitly supports that business key as its offset.
 - Existing item properties, `__get()` bridges, typed DTO fields, and result
   accessors should be used before adding a new finder or helper.
 - A named `findBy*()` method is still correct for complex queries, ambiguous
@@ -70,18 +69,27 @@ if (!isset(Hilos::$db->settings[$dto->key])) {
 Hilos::$db->settings[$dto->key]; // Setting item by documented key-based offset
 ```
 
-Use the named finder when the collection still exposes settings by primary key
-through `[]`, or when the business-key lookup is the documented API:
+Use a named finder when the lookup is not the collection key and the collection
+does not document a matching offset contract:
 
 ```php
-$setting = Hilos::$db->settings->findByKey($dto->key);
+Hilos::$db->users->findBySession($sessionToken);
 ```
 
 Use result or item accessors before adding a new finder:
 
 ```php
-$onlineSessionCount = count($user->connections);
-$value = $setting->getEffectiveValue($catalog);
+if (!isset(Hilos::$db->users[$userId])) {
+    return;
+}
+
+count(Hilos::$db->users[$userId]->connections);
+
+if (!isset(Hilos::$db->settings[$dto->key])) {
+    return;
+}
+
+Hilos::$db->settings[$dto->key]->getEffectiveValue($catalog);
 ```
 
 ## Exceptions
@@ -99,7 +107,7 @@ Use or add a named method instead of magic/array access when:
 
 - Do not add `findById()` or a page-local helper when `[$id]`, `get($id)`, or a
   typed item accessor already expresses the contract.
-- Do not replace `findByKey()` with `[$key]` unless the collection documents
+- Do not replace a named finder with `[$key]` unless the collection documents
   that offset as the same business key.
 - Do not duplicate collection lookup logic in pages, tables, agents, or signal
   handlers.

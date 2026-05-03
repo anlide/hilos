@@ -67,13 +67,15 @@ public function __get(string $name): mixed
 Expose a frontend-safe computed property from the item representation:
 
 ```php
+use Demo\Chat\Frontend\DTO\FrontendUserConnectionStatsProjection;
+
 public function toArray(bool $withId = true, bool $idAsIndex = true, bool $withBridges = false, bool $withCalculation = false, bool $toFrontend = false): array
 {
     $result = parent::toArray($withId, $idAsIndex, $withBridges, $withCalculation, $toFrontend);
 
     if ($toFrontend) {
         unset($result[ObjectUser::sessionToken]);
-        $result['onlineSessionCount'] = count($this->connections);
+        $result[FrontendUserConnectionStatsProjection::onlineSessionCount] = count($this->connections);
     }
 
     return $result;
@@ -98,10 +100,12 @@ Do not compute a model-level frontend field in a table loop:
 
 ```php
 // Wrong: duplicates runtime lookup and hides a User field in table code.
+use Demo\Chat\Tables\AdminUser\AdminUserTableRow;
+
 foreach (Hilos::$db->users as $user) {
     $rows[] = [
-        'id' => $user->id,
-        'onlineSessionCount' => count(Hilos::$rt->connections->forUser($user->id)),
+        AdminUserTableRow::id => $user->id,
+        AdminUserTableRow::onlineSessionCount => count(Hilos::$rt->connections->forUser($user->id)),
     ];
 }
 ```
@@ -109,7 +113,9 @@ foreach (Hilos::$db->users as $user) {
 Use the item representation instead:
 
 ```php
-$result['onlineSessionCount'] = count($this->connections);
+use Demo\Chat\Frontend\DTO\FrontendUserConnectionStatsProjection;
+
+$result[FrontendUserConnectionStatsProjection::onlineSessionCount] = count($this->connections);
 ```
 
 Do not send raw Entity/Object arrays to the browser when View item

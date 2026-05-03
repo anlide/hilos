@@ -10,16 +10,21 @@ Entity is the **database row** representation. It maps directly to a DB table.
 
 ```php
 class MyEntity extends Entity {
+    public const string id = 'id';
+    public const string name = 'name';
+    public const string createdAt = 'createdAt';
+    public const string _table = 'my_table';
+
     // DB column fields (typed)
     public int $id = 0;
     public string $name = '';
     public int $createdAt = 0;
 
     // Table name
-    public static function getTableName(): string { return 'my_table'; }
+    public static function getTableName(): string { return self::_table; }
 
     // Primary key column
-    public static function getPkColumn(): string { return 'id'; }
+    public static function getPkColumn(): string { return self::id; }
 }
 ```
 

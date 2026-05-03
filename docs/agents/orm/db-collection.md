@@ -60,7 +60,7 @@ Before writing DB-backed code:
 2. Check `setRepresent()` to locate the View collection, collection actions, and
    item actions.
 3. Inspect the View collection for existing array/magic access contracts and
-   lookup methods such as `offsetGet()`, `findBySession()`, or `findByKey()`.
+   lookup methods such as `offsetGet()` or `findBySession()`.
 4. Inspect the Object collection for DB-loading/query helpers.
 5. Inspect collection actions for create/register/add operations.
 6. Inspect item actions for update/delete operations on one loaded item.
@@ -71,8 +71,13 @@ Before writing DB-backed code:
 Use `Hilos::$db->{collection}` from agents, pages, and handlers:
 
 ```php
-Hilos::$db->users->findBySession($acceptKey);
-Hilos::$db->settings->findByKey($key);
+Hilos::$db->users->findBySession($sessionToken);
+
+if (!isset(Hilos::$db->settings[$key])) {
+    return;
+}
+
+Hilos::$db->settings[$key];
 
 if (!isset(Hilos::$db->users[$userId])) {
     return;
@@ -119,7 +124,11 @@ collection action that accepts the item's key:
 Hilos::$db->settings->actions->update($key, $value);
 
 // Correct: load the item by key, then mutate that item.
-Hilos::$db->settings->findByKey($key)?->actions->updateValue($value);
+if (!isset(Hilos::$db->settings[$key])) {
+    return;
+}
+
+Hilos::$db->settings[$key]->actions->updateValue($value);
 ```
 
 ## Item Actions
@@ -128,9 +137,13 @@ Item actions are for writes on a single loaded `DbItem`, including update and
 delete operations when the caller already has the collection key:
 
 ```php
-Hilos::$db->settings->findByKey($key)?->actions->update(['value' => $value]);
+if (!isset(Hilos::$db->settings[$key])) {
+    return;
+}
+
+Hilos::$db->settings[$key]->actions->updateValue($value);
 // or:
-Hilos::$db->settings->findByKey($key)?->actions->delete();
+Hilos::$db->settings[$key]->actions->delete();
 ```
 
 Use item actions when the operation naturally belongs to an existing item and
@@ -142,7 +155,11 @@ when an item action should own it.
 The settings collection is available through `Hilos::$db->settings`.
 
 ```php
-Hilos::$db->settings->findByKey($key)?->getEffectiveValue($catalog);
+if (!isset(Hilos::$db->settings[$key])) {
+    return;
+}
+
+Hilos::$db->settings[$key]->getEffectiveValue($catalog);
 ```
 
 If a collection explicitly supports array-style, magic, or result access, use
@@ -162,11 +179,11 @@ if (!isset(Hilos::$db->settings[$key])) {
 Hilos::$db->settings[$key]; // If settings support key-based access
 ```
 
-Array-style access is collection-specific. Prefer `$settings[$key]` over
-`$settings->findByKey($key)` only when the settings collection documents the
-setting key as its offset. If the target collection does not support that key,
-use the existing named accessor or add a typed collection method instead of
-relying on an unstructured array convention.
+Array-style access is collection-specific. Prefer `Hilos::$db->settings[$key]`
+when the settings collection documents the setting key as its offset. If the
+target collection does not support that key, use the existing named accessor or
+add a typed collection method instead of relying on an unstructured array
+convention.
 
 ## Choosing Where New Logic Belongs
 

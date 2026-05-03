@@ -91,8 +91,14 @@ public function __get(string $name): mixed
 Then compute frontend fields from that bridge:
 
 ```php
-$result['onlineSessionCount'] = count($this->connections);
-$result['presence'] = count($this->connections) > 0 ? 'online' : 'offline';
+use Demo\Chat\Frontend\DTO\FrontendUserConnectionStatsProjection;
+use Demo\Chat\Frontend\DTO\FrontendUserPresenceProjection;
+use Demo\Chat\Runtime\View\DTO\UserConnectionSummary;
+
+$result[FrontendUserConnectionStatsProjection::onlineSessionCount] = count($this->connections);
+$result[FrontendUserPresenceProjection::presence] = count($this->connections) > 0
+    ? UserConnectionSummary::PRESENCE_ONLINE
+    : UserConnectionSummary::PRESENCE_OFFLINE;
 ```
 
 The table should query the DB collection and let item serialization or typed row

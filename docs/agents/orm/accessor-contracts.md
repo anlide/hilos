@@ -31,7 +31,7 @@ lookup API only on the owning layer when no contract exists.
 | Documented DB collection key | `Hilos::$db->collection[$id]` with an `isset()` guard when optional |
 | Documented RT collection key | `Hilos::$rt->collection[$id]` with an `isset()` guard when optional |
 | Documented key-based setting offset | `Hilos::$db->settings[$key]` with an `isset()` guard when optional |
-| Business key without array-offset contract | Existing named method such as `findByKey($key)` |
+| Business key without array-offset contract | Existing named method such as `findBySession($sessionToken)` |
 | Runtime rows for one DB item | Existing RT collection method such as `forUser($userId)` |
 | Item-level derived value | Existing item property or result accessor |
 | Complex query or multiple criteria | Named collection method on the owning collection |
@@ -53,7 +53,7 @@ If `[]` is documented as primary-key access, or the key-based offset contract is
 absent, use the named accessor or add a typed contract before changing callers:
 
 ```php
-$setting = Hilos::$db->settings->findByKey($dto->key);
+Hilos::$db->users->findBySession($sessionToken);
 ```
 
 This rule is about using the existing model clearly. It does not require magic
@@ -65,8 +65,17 @@ Before adding a finder or table/page helper, check whether the value is already
 available from the loaded result or item:
 
 ```php
-$onlineSessionCount = count($user->connections);
-$value = $setting->getEffectiveValue($catalog);
+if (!isset(Hilos::$db->users[$userId])) {
+    return;
+}
+
+count(Hilos::$db->users[$userId]->connections);
+
+if (!isset(Hilos::$db->settings[$dto->key])) {
+    return;
+}
+
+Hilos::$db->settings[$dto->key]->getEffectiveValue($catalog);
 ```
 
 If the value describes one model item, prefer an item property, item method,
@@ -113,7 +122,7 @@ Do not hide reusable lookup logic inside a page or table:
 
 ```php
 // Wrong: caller-local lookup duplicates collection behavior.
-$setting = $this->findSettingByKey($dto->key);
+$this->loadSettingInsidePage($dto->key);
 ```
 
 Put the missing reusable lookup on the owning collection or item instead.

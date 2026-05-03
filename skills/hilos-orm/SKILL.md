@@ -70,9 +70,14 @@ document that matches the change.
 ## Examples
 
 ```php
-Hilos::$db->users->findBySession($acceptKey);
+Hilos::$db->users->findBySession($sessionToken);
 Hilos::$db->users->actions->register($sessionToken);
-Hilos::$db->settings->findByKey($key)?->actions->updateValue($value);
+
+if (!isset(Hilos::$db->settings[$key])) {
+    return;
+}
+
+Hilos::$db->settings[$key]->actions->updateValue($value);
 ```
 
 When a collection supports array-style access, prefer the collection API instead
@@ -95,7 +100,7 @@ Hilos::$db->settings[$key]; // If the collection supports key access
 Use the named finder when the offset contract does not match the business key:
 
 ```php
-$setting = Hilos::$db->settings->findByKey($key);
+Hilos::$db->users->findBySession($sessionToken);
 ```
 
 ## Hard Rules

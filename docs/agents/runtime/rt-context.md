@@ -144,14 +144,20 @@ identity, history, settings, and catalog state in `Hilos::$db`, and project
 DB + RT together only at the view/frontend boundary:
 
 ```php
+use Demo\Chat\Tables\AdminUser\AdminUserTableRow;
+
 foreach (Hilos::$db->users as $user) {
     $rows[] = [
-        'id' => $user->id,
-        'name' => $user->name,
-        'onlineSessionCount' => count(Hilos::$rt->connections->forUser($user->id)),
+        AdminUserTableRow::id => $user->id,
+        AdminUserTableRow::name => $user->name,
+        AdminUserTableRow::onlineSessionCount => count(Hilos::$rt->connections->forUser($user->id)),
     ];
 }
 ```
+
+Boundary arrays must use key constants from the owning DTO, projection, table
+row, entity, object, or context. Add the missing constant before adding another
+string key.
 
 Put reusable runtime lookups on the collection layer and reusable row-level
 read helpers on the view item only when they are established model contracts.

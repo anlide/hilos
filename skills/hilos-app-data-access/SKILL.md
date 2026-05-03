@@ -89,7 +89,7 @@ switch to the focused data-layer skill first.
 | Need | Prefer |
 |---|---|
 | Load a known DB item | `Hilos::$db->collection[$id]` when supported |
-| Load by business key | Array access only when documented; otherwise an existing accessor such as `findByKey()` |
+| Load by business key | Array access only when documented; otherwise an existing accessor such as `findBySession()` |
 | Read key-based settings | `Hilos::$db->settings[$dto->key]` only when settings documents key-based offsets |
 | Create a DB item | `Hilos::$db->collection->actions->create(...)` |
 | Update one DB item | `$item->actions->update(...)` |
@@ -102,8 +102,9 @@ switch to the focused data-layer skill first.
 
 If both array access and a finder exist, use the contract that best matches the
 collection semantics. For settings and other key-based collections, array access
-by key is often the clearer API when the collection documents it; otherwise use
-the named finder or add a typed collection contract first.
+by key is the clearer API when the collection documents it; otherwise use the
+named finder that matches the actual lookup or add a typed collection contract
+first.
 
 ## Examples
 
@@ -118,28 +119,36 @@ if (!isset(Hilos::$db->settings[$dto->key])) {
 Hilos::$db->settings[$dto->key]; // Setting item by documented key-based offset
 ```
 
-If the collection exposes a named accessor instead, use it directly:
+Use a named accessor only when the lookup is not a documented collection offset:
 
 ```php
-$setting = Hilos::$db->settings->findByKey($dto->key);
-
-if ($setting === null) {
-    // Return the page/action-level validation response expected by this caller.
-}
+Hilos::$db->users->findBySession($sessionToken);
 ```
 
 Use actions for writes:
 
 ```php
-$setting = Hilos::$db->settings->findByKey($dto->key);
-$setting?->actions->updateValue($dto->value);
+if (!isset(Hilos::$db->settings[$dto->key])) {
+    return;
+}
+
+Hilos::$db->settings[$dto->key]->actions->updateValue($dto->value);
 ```
 
 Do not add a helper when a result or item accessor already exposes the value:
 
 ```php
-$onlineSessionCount = count($user->connections);
-$value = $setting->getEffectiveValue($catalog);
+if (!isset(Hilos::$db->users[$userId])) {
+    return;
+}
+
+count(Hilos::$db->users[$userId]->connections);
+
+if (!isset(Hilos::$db->settings[$dto->key])) {
+    return;
+}
+
+Hilos::$db->settings[$dto->key]->getEffectiveValue($catalog);
 ```
 
 Read runtime state through `Hilos::$rt` without storing durable business truth
@@ -162,7 +171,13 @@ return $this->queryDbCollection(Hilos::$db->users, $query);
 Use an item-level bridge when the frontend row needs DB plus RT state:
 
 ```php
-$result['onlineSessionCount'] = count($user->connections);
+use Demo\Chat\Tables\AdminUser\AdminUserTableRow;
+
+if (!isset(Hilos::$db->users[$userId])) {
+    return;
+}
+
+$result[AdminUserTableRow::onlineSessionCount] = count(Hilos::$db->users[$userId]->connections);
 ```
 
 ## Anti-Patterns
@@ -171,15 +186,15 @@ Do not mix business write, projection, and manual signal routing in one handler:
 
 ```php
 // Wrong: page code owns the write, row projection, and delivery details.
-$row = ['id' => $id, 'value' => $value];
-$this->manualSave($row);
-$this->sendToUser($userId, $row);
+$payload = $this->buildManualPayload($id, $value);
+$this->manualSave($payload);
+$this->sendToUser($userId, $payload);
 ```
 
 Call the owning action and use the existing page/table/signal contract instead:
 
 ```php
-$item->actions->update(['value' => $dto->value]);
+$item->actions->updateValue($dto->value);
 ```
 
 Do not build ad hoc arrays from DB and RT collections when a collection/item API
@@ -187,11 +202,13 @@ should expose the relationship:
 
 ```php
 // Wrong: hides a reusable model property inside table code.
+use Demo\Chat\Tables\AdminUser\AdminUserTableRow;
+
 $rows = [];
 foreach (Hilos::$db->users as $user) {
     $rows[] = [
-        'id' => $user->id,
-        'onlineSessionCount' => count(Hilos::$rt->connections->forUser($user->id)),
+        AdminUserTableRow::id => $user->id,
+        AdminUserTableRow::onlineSessionCount => count(Hilos::$rt->connections->forUser($user->id)),
     ];
 }
 ```

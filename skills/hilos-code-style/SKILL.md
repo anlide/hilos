@@ -46,29 +46,34 @@ Use this skill for style-sensitive Hilos edits and reviews. Start with `agents.m
 11. Avoid pass-through locals and DB/RT item aliases; keep known-key
    `Hilos::$db/$rt->collection[$key]` access visible unless the local variable
    adds domain meaning, snapshots state, or narrows type.
-12. During refactors, do not add new convenience read helpers or predicates
+12. Use named constants for action names, signal names, route params, model
+   fields, DTO payload keys, table row keys, and boundary array keys whenever
+   a constant exists. If a repeated payload key has no owner constant, add one
+   to the owning DTO, projection, table row, entity, object, or context before
+   using that key in examples or code.
+13. During refactors, do not add new convenience read helpers or predicates
    such as `has*()`, `is*()`, `can*()`, or `get*()` on DB/RT View items,
    collections, objects, actions, or projections unless the user explicitly
    approved that exact method in the plan. Prefer explicit field access when
    preserving transparent data shape is the goal.
-13. Keep comments concise and in English.
-14. For `Page::onAction()`, do not add a local `try/catch` around the routing
+14. Keep comments concise and in English.
+15. For `Page::onAction()`, do not add a local `try/catch` around the routing
    `switch`; the framework catches action exceptions and calls
    `onActionException()`.
-15. For named signal handlers, use `switch ($name)` with explicit cases.
-16. Override `onActionException()` only when the page has a specific fail/error
+16. For named signal handlers, use `switch ($name)` with explicit cases.
+17. Override `onActionException()` only when the page has a specific fail/error
    contract; otherwise let the default framework `action_error` signal notify
    the initiator.
-17. Use `AgentUnknownActionException` in `onAction()` default branches.
-18. Do not add empty `default` branches. If a handler intentionally ignores
+18. Use `AgentUnknownActionException` in `onAction()` default branches.
+19. Do not add empty `default` branches. If a handler intentionally ignores
    shared broadcast names and the branch would only `return` or `break`, omit
    it and document the ignore contract in PHPDoc.
-19. In PHPDoc, import exception classes with `use` and reference short names;
+20. In PHPDoc, import exception classes with `use` and reference short names;
    do not write leading-backslash fully qualified exceptions such as
    `@throws \OutOfBoundsException`.
-20. Use `ValidationException` and its children for user/business validation;
+21. Use `ValidationException` and its children for user/business validation;
    read `docs/agents/code-style/exceptions.md` before changing exception types.
-21. Before finishing a PHP method change, re-check the affected docblock against
+22. Before finishing a PHP method change, re-check the affected docblock against
    `docs/agents/code-style/phpdoc.md`.
 
 ## Hard Rules
@@ -77,3 +82,5 @@ Use this skill for style-sensitive Hilos edits and reviews. Start with `agents.m
 - Use `?type` for nullable PHP types in code and regular PHPDoc, unless a documented exception applies.
 - Do not add unrelated refactors while applying style cleanup.
 - Do not add unapproved convenience helpers or predicates during refactors.
+- Do not write repeated payload/model/table keys as magic strings when an owner
+  constant exists or should exist.
