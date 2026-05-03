@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Demo\Chat\Tests\Unit;
 
 use Demo\Chat\Core\Page\DTO\AttachmentDraftDeleteActionDTO;
+use Demo\Chat\Core\Router\DTO\AttachmentDraftSignalData;
 use Demo\Chat\Core\Router\DTO\AttachmentDraftsUpdateSignalData;
 use Demo\Chat\Core\Router\DTO\FileUploadCompleteSignalData;
 use Demo\Chat\Core\Router\DTO\OutboundModerationStateUpdateSignalData;
@@ -49,6 +50,32 @@ final class AttachmentDraftSignalDataTest extends TestCase
 
         $this->assertSame($drafts, $restored->attachmentDrafts);
         $this->assertSame(['attachmentDrafts' => $drafts], $restored->toArray());
+    }
+
+    /**
+     * Single draft payload preserves the browser-facing field names.
+     */
+    public function testAttachmentDraftSignalDataRoundtrip(): void
+    {
+        $draft = [
+            'draftId' => 'draft-1',
+            'filename' => 'report.pdf',
+            'mimeType' => 'application/pdf',
+            'size' => 1234,
+            'uploadedAt' => 1710000000,
+        ];
+
+        $restored = AttachmentDraftSignalData::fromArray(
+            (new AttachmentDraftSignalData(
+                draftId: 'draft-1',
+                filename: 'report.pdf',
+                mimeType: 'application/pdf',
+                size: 1234,
+                uploadedAt: 1710000000,
+            ))->toArray(),
+        );
+
+        $this->assertSame($draft, $restored->toArray());
     }
 
     /**

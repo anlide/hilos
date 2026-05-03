@@ -188,9 +188,13 @@ final class ChatAgentPresenceTest extends IntegrationTestCase
 
     public function testAttachmentDraftFiltersCanChainAcceptKeyAndDraftIds(): void
     {
+        RtTruthSourceRegistry::register(RtChatContext::connections, true, self::TEST_AGENT_ID);
+        Hilos::$rt->connections->actions->clear();
         Hilos::$rt->attachmentDrafts->actions->clear(deleteFiles: false);
 
         try {
+            Hilos::$rt->connections->actions->register('owner-ak', 1);
+            Hilos::$rt->connections->actions->register('other-ak', 1);
             Hilos::$rt->attachmentDrafts->actions->create(
                 'draft-a',
                 'owner-ak',
@@ -225,6 +229,11 @@ final class ChatAgentPresenceTest extends IntegrationTestCase
                 time(),
             );
 
+            $connectionDraftIds = [];
+            foreach (Hilos::$rt->connections['owner-ak']->attachmentDrafts as $draft) {
+                $connectionDraftIds[] = $draft->draftId;
+            }
+
             $draftIds = [];
             foreach (
                 Hilos::$rt->attachmentDrafts->forAcceptKey('owner-ak')->forDraftIds(
@@ -234,8 +243,10 @@ final class ChatAgentPresenceTest extends IntegrationTestCase
                 $draftIds[] = $draft->draftId;
             }
 
+            $this->assertSame(['draft-a', 'draft-b'], $connectionDraftIds);
             $this->assertSame(['draft-b', 'draft-a'], $draftIds);
         } finally {
+            Hilos::$rt->connections->actions->clear();
             Hilos::$rt->attachmentDrafts->actions->clear(deleteFiles: false);
         }
     }

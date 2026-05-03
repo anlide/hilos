@@ -7,6 +7,7 @@ namespace Demo\Chat\Frontend;
 use Demo\Chat\Constants\ChatEventType;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\PageConstants;
+use Demo\Chat\Core\Router\DTO\AttachmentDraftSignalData;
 use Demo\Chat\Core\Router\DTO\AttachmentDraftsUpdateSignalData;
 use Demo\Chat\Core\Router\DTO\ChatEventSignalDTO;
 use Demo\Chat\Core\Router\DTO\OutboundModerationStateUpdateSignalData;
@@ -288,7 +289,9 @@ final class ChatFrontendProjection extends FrontendProjectionContext
         yield new FrontendDelivery(
             ChatSignalConstants::ATTACHMENT_DRAFTS_UPDATE,
             new AttachmentDraftsUpdateSignalData(
-                Hilos::$rt->attachmentDrafts->toFrontendListForAcceptKey($acceptKey),
+                AttachmentDraftSignalData::listFromDrafts(
+                    Hilos::$rt->attachmentDrafts->forAcceptKey($acceptKey),
+                ),
             ),
             $acceptKey,
         );

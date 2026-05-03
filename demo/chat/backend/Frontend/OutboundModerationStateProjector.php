@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Frontend;
 
+use Demo\Chat\Core\Router\DTO\AttachmentDraftSignalData;
 use Demo\Chat\Hilos;
-use Demo\Chat\Runtime\View\Collection\AttachmentDrafts;
 use Demo\Chat\Runtime\View\Item\ChatUserState;
 use Demo\Chat\Runtime\View\Item\Connection;
 
@@ -46,20 +46,15 @@ final class OutboundModerationStateProjector
             return null;
         }
 
-        $attachments = [];
-        foreach (
-            Hilos::$rt->attachmentDrafts
-                ->forAcceptKey($state->outboundModerationAcceptKey)
-                ->forDraftIds($state->getOutboundModerationAttachmentDraftIds()) as $draft
-        ) {
-            $attachments[] = AttachmentDrafts::toFrontendRow($draft);
-        }
-
         return [
             'requestId' => $state->outboundModerationRequestId,
             'phase' => $state->outboundModerationPhase,
             'text' => $state->outboundModerationMessage,
-            'attachments' => $attachments,
+            'attachments' => AttachmentDraftSignalData::listFromDrafts(
+                Hilos::$rt->attachmentDrafts
+                    ->forAcceptKey($state->outboundModerationAcceptKey)
+                    ->forDraftIds($state->getOutboundModerationAttachmentDraftIds()),
+            ),
             'reason' => $state->outboundModerationReason !== '' ? $state->outboundModerationReason : null,
             'updatedAt' => $state->outboundModerationUpdatedAt,
         ];

@@ -6,6 +6,7 @@ namespace Demo\Chat\Pages\Main;
 
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Core\Page\DTO\FileUploadInitActionDTO;
+use Demo\Chat\Core\Router\DTO\AttachmentDraftSignalData;
 use Demo\Chat\Core\Router\DTO\FileUploadAbortedSignalData;
 use Demo\Chat\Core\Router\DTO\FileUploadCompleteSignalData;
 use Demo\Chat\Core\Router\DTO\FileUploadInvalidSignalData;
@@ -13,7 +14,6 @@ use Demo\Chat\Core\Router\DTO\FileUploadProgressUpdateSignalData;
 use Demo\Chat\Core\Router\DTO\FileUploadReadySignalData;
 use Demo\Chat\Core\Router\DTO\FileUploadRejectedSignalData;
 use Demo\Chat\Hilos;
-use Demo\Chat\Runtime\View\Collection\AttachmentDrafts;
 use Demo\Chat\Utils\ChatSettingsHelper;
 use Hilos\Fs\Exception\FileDeleteException;
 use Hilos\Fs\FsException;
@@ -294,7 +294,7 @@ trait UploadFileTrait
             normalizedFilename: $normalizedFilename,
             uploadedAt: time(),
         );
-        $draftPayload = AttachmentDrafts::toFrontendRow($draft);
+        $draftPayload = AttachmentDraftSignalData::fromDraft($draft)->toArray();
 
         $this->sendToUser(
             ChatSignalConstants::FILE_UPLOAD_COMPLETE,

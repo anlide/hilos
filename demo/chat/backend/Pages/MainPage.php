@@ -11,6 +11,7 @@ use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Page\DTO\AttachmentDraftDeleteActionDTO;
 use Demo\Chat\Core\Page\DTO\FileUploadInitActionDTO;
 use Demo\Chat\Core\Page\DTO\MessageActionDTO;
+use Demo\Chat\Core\Router\DTO\AttachmentDraftSignalData;
 use Demo\Chat\Core\Router\DTO\ChatEventSignalDTO;
 use Demo\Chat\Core\Router\DTO\ModerationResultSignalData;
 use Demo\Chat\Core\Router\DTO\ModerationRequestSignalData;
@@ -93,7 +94,9 @@ final class MainPage extends AbstractPage
             outboundModerationState: OutboundModerationStateProjector::forConnection(
                 Hilos::$rt->connections[$acceptKey],
             ),
-            attachmentDrafts: Hilos::$rt->attachmentDrafts->toFrontendListForAcceptKey($acceptKey),
+            attachmentDrafts: AttachmentDraftSignalData::listFromDrafts(
+                Hilos::$rt->connections[$acceptKey]->attachmentDrafts,
+            ),
             fileUploadProgress: Hilos::$rt->connections[$acceptKey]->fileProgressFilename === null
                 ? null
                 : [

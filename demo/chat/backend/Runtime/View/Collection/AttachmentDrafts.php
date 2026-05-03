@@ -111,39 +111,6 @@ final class AttachmentDrafts extends RtCollection
     }
 
     /**
-     * Convert one connection's drafts to frontend payload rows.
-     *
-     * @param string $acceptKey WebSocket connection id
-     * @return list<array{draftId: string, filename: string, mimeType: string, size: int, uploadedAt: int}>
-     * @throws RtActionsStateCollectionNullException When runtime state is unavailable
-     */
-    public function toFrontendListForAcceptKey(string $acceptKey): array
-    {
-        $rows = [];
-        foreach ($this->forAcceptKey($acceptKey) as $draft) {
-            $rows[] = self::toFrontendRow($draft);
-        }
-
-        return $rows;
-    }
-
-    /**
-     * Convert a draft to a frontend payload row.
-     *
-     * @return array{draftId: string, filename: string, mimeType: string, size: int, uploadedAt: int}
-     */
-    public static function toFrontendRow(AttachmentDraft $draft): array
-    {
-        return [
-            'draftId' => $draft->draftId,
-            'filename' => $draft->originalFilename,
-            'mimeType' => $draft->mimeType,
-            'size' => $draft->size,
-            'uploadedAt' => $draft->uploadedAt,
-        ];
-    }
-
-    /**
      * @param RtState $state StateAttachmentDraft instance
      * @return AttachmentDraft View item for this draft
      */

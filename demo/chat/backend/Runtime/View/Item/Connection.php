@@ -10,6 +10,7 @@ use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\View\Actions\Collection\ConnectionsActions;
 use Demo\Chat\Runtime\State\Item\Connection as StateConnection;
 use Demo\Chat\Runtime\View\Actions\Item\ConnectionActions;
+use Demo\Chat\Runtime\View\Collection\AttachmentDrafts;
 use Hilos\Runtime\Exception\Item\RtItemActionsClassException;
 use Hilos\Runtime\Exception\Item\RtItemPropertyNotFoundException;
 use Hilos\Runtime\View\Item\RtItem;
@@ -40,11 +41,13 @@ use Hilos\Runtime\View\Item\RtItem;
  * @property-read float $uploadProgressLastSentAt Microtime of last upload-progress baseline (READY or progress_update)
  * @property-read ?User $user User row or null if not found in DB view
  * @property-read ?ChatUserState $userState Runtime user state row or null if not found
+ * @property-read AttachmentDrafts $attachmentDrafts Uploaded drafts owned by this connection
  * @property-read ConnectionActions $actions Write operations for this connection
  */
 final class Connection extends RtItem
 {
     public const string userState = 'userState';
+    public const string attachmentDrafts = 'attachmentDrafts';
 
     /**
      * @param StateConnection $state Backing state (by reference, same as parent contract)
@@ -55,12 +58,12 @@ final class Connection extends RtItem
     }
 
     /**
-     * Delegates known keys to the backing state; virtual links load DB user and runtime user state.
+     * Delegates known keys to the backing state; virtual links load DB user, runtime user state, and drafts.
      *
      * @throws RtItemActionsClassException
      * @throws RtItemPropertyNotFoundException When $name is not a declared property
      */
-    public function __get(string $name): string|int|float|User|ChatUserState|null|ConnectionActions
+    public function __get(string $name): string|int|float|User|ChatUserState|AttachmentDrafts|null|ConnectionActions
     {
         /** @var StateConnection $state */
         $state = $this->_state;
@@ -84,6 +87,7 @@ final class Connection extends RtItem
             RtItem::actions => $this->getItemActions(),
             DbChatContext::user => Hilos::$db->users[$state->userId] ?? null,
             self::userState => Hilos::$rt->userStates[$state->userId] ?? null,
+            self::attachmentDrafts => Hilos::$rt->attachmentDrafts->forAcceptKey($state->acceptKey),
             default => parent::__get($name),
         };
     }
