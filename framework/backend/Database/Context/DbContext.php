@@ -68,13 +68,10 @@ abstract class DbContext
      */
     public function setRepresent(string $name, string $dbItemCollectionClass, ?string $actionsClass = null, ?string $itemActionsClass = null): void
     {
-        if (!isset($this->_objectCollections[$name])) {
-            throw new ObjectCollectionNotFoundException(
+        $objectCollection = $this->_objectCollections[$name]
+            ?? throw new ObjectCollectionNotFoundException(
                 "Object collection [{$name}] not found in _objectCollections. Create it before calling setRepresent()."
             );
-        }
-
-        $objectCollection = $this->_objectCollections[$name];
 
         if (is_subclass_of($dbItemCollectionClass, DbCollection::class)) {
             $dbItemCollection = $dbItemCollectionClass::init();

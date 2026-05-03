@@ -31,10 +31,8 @@ final class SettingItemActions extends TableItemActions
      */
     public function updateValue(mixed $value): TableRowMutationDTO
     {
-        $dbSetting = Hilos::$db->settings->findByKey((string) $this->rowKey);
-        if ($dbSetting === null) {
-            throw new TableActionException("Setting '{$this->rowKey}' not found");
-        }
+        $dbSetting = Hilos::$db->settings->findByKey((string) $this->rowKey)
+            ?? throw new TableActionException("Setting '{$this->rowKey}' not found");
         $dbSetting->actions->updateValue($value);
 
         return $this->mutation(TableMutationType::Update, $this->definition->rowFromSetting($dbSetting));
@@ -49,10 +47,8 @@ final class SettingItemActions extends TableItemActions
      */
     public function delete(): TableRowMutationDTO
     {
-        $setting = Hilos::$db->settings->findByKey((string) $this->rowKey);
-        if ($setting === null) {
-            throw new TableActionException("Setting '{$this->rowKey}' not found");
-        }
+        $setting = Hilos::$db->settings->findByKey((string) $this->rowKey)
+            ?? throw new TableActionException("Setting '{$this->rowKey}' not found");
         $catalog = SettingsCatalog::getCatalog();
         if (!$setting->isOrphan($catalog)) {
             throw new TableActionException('Only orphan settings (not in catalog) can be deleted');

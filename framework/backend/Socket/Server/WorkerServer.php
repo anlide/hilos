@@ -755,10 +755,8 @@ abstract class WorkerServer extends AbstractServer
             $this->agentManager->createAndAddAgent($agentType, $agentIndex, 0, false);
         }
 
-        $agentDaemon = $this->agentManager->getAgent($agentId);
-        if ($agentDaemon === null) {
-            throw new AgentDaemonCreationFailedException("Failed to create agent daemon for {$agentId}");
-        }
+        $agentDaemon = $this->agentManager->getAgent($agentId)
+            ?? throw new AgentDaemonCreationFailedException("Failed to create agent daemon for {$agentId}");
 
         // Select appropriate worker
         $workerClient = $this->selectWorkerForAgent($agentDaemon->requiresMonopolisticProcess());
@@ -910,24 +908,18 @@ abstract class WorkerServer extends AbstractServer
             throw new AgentNotFoundException($agentId);
         }
 
-        $agentDaemon = $this->agentManager->getAgent($agentId);
-        if ($agentDaemon === null) {
-            throw new AgentNotFoundException($agentId);
-        }
+        $agentDaemon = $this->agentManager->getAgent($agentId)
+            ?? throw new AgentNotFoundException($agentId);
 
         // Get worker client from mapping
-        $workerInfo = $this->agentManager->getAgentWorkerInfo($agentId);
-        if ($workerInfo === null) {
-            throw new AgentNotLinkedToWorkerException($agentId);
-        }
+        $workerInfo = $this->agentManager->getAgentWorkerInfo($agentId)
+            ?? throw new AgentNotLinkedToWorkerException($agentId);
 
         // Ensure agent daemon has worker client set
         $workerClient = $agentDaemon->getWorkerClient();
         if ($workerClient === null) {
-            $workerClient = $this->findWorkerClientById($this->agentManager->getAgentWorkerId($agentId));
-            if ($workerClient === null) {
-                throw new WorkerClientNotFoundException($agentId, $workerInfo['workerIndex'], $workerInfo['isMonopolistic']);
-            }
+            $workerClient = $this->findWorkerClientById($this->agentManager->getAgentWorkerId($agentId))
+                ?? throw new WorkerClientNotFoundException($agentId, $workerInfo['workerIndex'], $workerInfo['isMonopolistic']);
 
             $agentDaemon->setWorkerClient($workerClient);
         }

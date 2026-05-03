@@ -8,7 +8,6 @@ use Demo\Chat\Agents\ChatAgent;
 use Demo\Chat\Constants\ChatCronConstants;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\PageConstants;
-use Demo\Chat\Core\Page\AbstractChatPage;
 use Demo\Chat\Core\Page\DTO\AttachmentDraftDeleteActionDTO;
 use Demo\Chat\Core\Page\DTO\FileUploadInitActionDTO;
 use Demo\Chat\Core\Page\DTO\MessageActionDTO;
@@ -26,7 +25,7 @@ use Demo\Chat\Hilos;
 use Demo\Chat\Pages\Main\UploadFileTrait;
 use Demo\Chat\Runtime\View\Collection\AttachmentDrafts;
 use Demo\Chat\Runtime\View\Item\AttachmentDraft;
-use Demo\Chat\Runtime\View\Item\ChatUserState;
+use Demo\Chat\Runtime\View\Item\Connection;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
@@ -36,7 +35,6 @@ use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Page\Exception\PageInternalErrorException;
 use Hilos\Core\Page\PageRouteParams;
-use Hilos\Core\Page\PageAgentInterface;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\EntitiesChangesDTO;
@@ -48,80 +46,90 @@ use Hilos\Socket\WebSocket\DTO\WebSocketFrameBinarySignalDTO;
 use Hilos\Utils\Helpers\RandomHelper;
 
 /**
- * MainPage - Main chat page handler.
+ * Handles main chat subscriptions, message submit actions, upload signals, and outbound moderation results.
  *
- * Handles subscription, unsubscription, and actions for the main chat page.
- * Used only with {@see ChatAgent} (MAIN subscriptions and chat actions are routed to the chat worker).
+ * @property ChatAgent $agent
  */
-final class MainPage extends AbstractChatPage
+final class MainPage extends AbstractPage
 {
     use UploadFileTrait;
 
     public const string PAGE = PageConstants::MAIN;
 
     /**
-     * Returns the {@see ChatAgent} bound to this page (same object as {@see AbstractPage::$agent}).
+     * Sends the initial main chat snapshot and connection-local session state.
      *
-     * {@see AbstractPage::$agent} is typed as {@see PageAgentInterface}; the assert narrows it for
-     * static analysis and for dev when `zend.assertions=1`.
-     *
-     * @return ChatAgent Chat worker bound to the main chat page
-     */
-    protected function getChatAgent(): ChatAgent
-    {
-        assert($this->agent instanceof ChatAgent);
-
-        return $this->agent;
-    }
-
-    /**
-     * Handle page-specific subscription logic.
-     *
-     * @param string $acceptKey Accept key
+     * @param string $acceptKey WebSocket accept key for the subscribing client
      * @param PageRouteParams $params Route params from page subscription (unused for main page)
-     * @throws PageInternalErrorException If `acceptKey` is missing from `Hilos::$rt->connections` (invariant; should not occur in normal operation)
+     * @throws PageInternalErrorException When the runtime connection row is missing for the subscribe accept key
      * @throws HilosException On database, runtime, or truth source failure
      */
     public function onSubscribe(string $acceptKey, PageRouteParams $params): void
     {
-        if (!isset(Hilos::$rt->connections[$acceptKey])) {
-            throw new PageInternalErrorException('No RT connection for this subscribe acceptKey');
-        }
-        $conn = Hilos::$rt->connections[$acceptKey];
-        $activeBots = Bots::fromActiveOnly();
-        $this->getChatAgent()->sendToUser(
+        $connection = Hilos::$rt->connections[$acceptKey]
+            ?? throw new PageInternalErrorException('No RT connection for this subscribe acceptKey');
+
+        $this->sendToUser(
             ChatSignalConstants::SUBSCRIPTION_PAGE_MAIN,
             $acceptKey,
-            new ChatEventSignalDTO(
-                new EntitiesChangesDTO(
-                    full: [
-                        DbChatContext::bots => $activeBots,
-                        DbChatContext::events => Hilos::$db->events,
-                    ],
-                ),
-                [],
-                outboundModerationState: $this->buildOutboundModerationStatePayload($conn->userId),
-                attachmentDrafts: Hilos::$rt->attachmentDrafts->toFrontendListForAcceptKey($acceptKey),
-                fileUploadProgress: $conn->fileProgressFilename === null ? null : [
-                    'filename' => $conn->fileProgressFilename,
-                    'uploadedBytes' => $conn->fileProgressUploadedBytes,
-                    'totalBytes' => $conn->fileProgressTotalBytes,
+            $this->buildMainSubscriptionSignal($acceptKey, $connection),
+        );
+    }
+
+    /**
+     * Builds the main-page subscription payload from shared chat state and connection-local fields.
+     *
+     * @param string $acceptKey WebSocket accept key whose attachment drafts are included
+     * @param Connection $connection Runtime connection row for the subscribing client
+     * @throws HilosException On database, runtime, or truth source failure
+     */
+    private function buildMainSubscriptionSignal(string $acceptKey, Connection $connection): ChatEventSignalDTO
+    {
+        $activeBots = Bots::fromActiveOnly();
+
+        return new ChatEventSignalDTO(
+            new EntitiesChangesDTO(
+                full: [
+                    DbChatContext::bots => $activeBots,
+                    DbChatContext::events => Hilos::$db->events,
                 ],
-                includeUserSessionFields: true,
-                frontend: BotFrontendStateProjector::appendFullForBots(
-                    UserFrontendStateProjector::fullForUsers(Hilos::$rt->connections->relevantUsers),
-                    $activeBots,
-                ),
+            ),
+            outboundModerationState: $this->buildOutboundModerationStatePayload($connection->userId),
+            attachmentDrafts: Hilos::$rt->attachmentDrafts->toFrontendListForAcceptKey($acceptKey),
+            fileUploadProgress: $this->buildFileUploadProgressPayload($connection),
+            includeUserSessionFields: true,
+            frontend: BotFrontendStateProjector::appendFullForBots(
+                UserFrontendStateProjector::fullForUsers(Hilos::$rt->connections->relevantUsers),
+                $activeBots,
             ),
         );
     }
 
     /**
-     * Handle page-specific action logic.
+     * Builds the current in-flight upload progress payload for this connection.
      *
-     * @param string $acceptKey Accept key
-     * @param string $action Action name
-     * @param ActionPayloadDTO $dto Action payload DTO
+     * @param Connection $connection Runtime connection row with upload counters
+     * @return ?array{filename: string, uploadedBytes: int, totalBytes: int}
+     */
+    private function buildFileUploadProgressPayload(Connection $connection): ?array
+    {
+        if ($connection->fileProgressFilename === null) {
+            return null;
+        }
+
+        return [
+            'filename' => $connection->fileProgressFilename,
+            'uploadedBytes' => $connection->fileProgressUploadedBytes,
+            'totalBytes' => $connection->fileProgressTotalBytes,
+        ];
+    }
+
+    /**
+     * Routes main-page actions to message, upload init, and attachment draft handlers.
+     *
+     * @param string $acceptKey WebSocket accept key for the client
+     * @param string $action Main-page action name from the WebSocket envelope
+     * @param ActionPayloadDTO $dto Parsed action payload
      * @throws AgentUnknownActionException When action is not supported by this page
      * @throws InvalidActionPayloadException When action payload does not match the action name
      * @throws HilosException On database, runtime, truth source, or signal failure
@@ -159,7 +167,7 @@ final class MainPage extends AbstractChatPage
     }
 
     /**
-     * Route main-page agent signals to outbound moderation handlers.
+     * Routes main-page agent signals to outbound moderation handlers.
      *
      * @param AgentSignalData $data Wrapped moderation result payload
      * @param string $source Framework signal source identifier (unused)
@@ -187,7 +195,7 @@ final class MainPage extends AbstractChatPage
     }
 
     /**
-     * Route binary upload frames to the main-page upload handler.
+     * Delegates binary upload frames to the main-page upload handler.
      *
      * @param WebSocketFrameBinarySignalDTO $data Frame payload and connection id
      * @param string $source Framework signal source identifier (unused)
@@ -200,7 +208,7 @@ final class MainPage extends AbstractChatPage
     }
 
     /**
-     * Route scheduled main-page cleanup cron names.
+     * Routes scheduled main-page cleanup cron names.
      *
      * @param SignalDataInterface $data Cron payload (unused)
      * @param string $source Framework signal source identifier (unused)
@@ -226,10 +234,10 @@ final class MainPage extends AbstractChatPage
     }
 
     /**
-     * Handle message action.
+     * Starts outbound moderation for a valid text or attachment-backed message submit.
      *
-     * @param string $acceptKey Accept key
-     * @param MessageActionDTO $dto Message DTO
+     * @param string $acceptKey WebSocket accept key for the submitting client
+     * @param MessageActionDTO $dto Parsed message action payload
      * @throws EmptyValueException When message has no text and no attachments
      * @throws ItemNotFoundForUpdateException When the WebSocket session or user runtime state is missing
      * @throws ValidationException When the user is rate-limited, already moderating, or references invalid drafts
@@ -241,13 +249,11 @@ final class MainPage extends AbstractChatPage
             throw new EmptyValueException('Message cannot be empty');
         }
 
-        if (!isset(Hilos::$rt->connections[$acceptKey])) {
-            throw new ItemNotFoundForUpdateException('User session not found');
-        }
-
-        $connection = Hilos::$rt->connections[$acceptKey];
+        $connection = Hilos::$rt->connections[$acceptKey]
+            ?? throw new ItemNotFoundForUpdateException('User session not found');
         $userId = $connection->userId;
-        $userState = $this->getUserState($userId);
+        $userState = Hilos::$rt->userStates[$userId]
+            ?? throw new ItemNotFoundForUpdateException('User runtime state not found');
         if ($userState->hasActiveOutboundModeration()) {
             throw new ValidationException('Another message is already being moderated');
         }
@@ -271,7 +277,7 @@ final class MainPage extends AbstractChatPage
         );
         $this->sendOutboundModerationStateUpdate($acceptKey, $userId);
 
-        $this->getChatAgent()->sendToAgent(
+        $this->agent->sendToAgent(
             ChatSignalConstants::MODERATE_REQUEST,
             new ModerationRequestSignalData(
                 requestId: $requestId,
@@ -284,10 +290,10 @@ final class MainPage extends AbstractChatPage
     }
 
     /**
-     * Delete one uploaded attachment draft owned by this WebSocket connection.
+     * Deletes one uploaded attachment draft owned by this WebSocket connection.
      *
-     * @param string $acceptKey Accept key
-     * @param AttachmentDraftDeleteActionDTO $dto Delete action payload
+     * @param string $acceptKey WebSocket accept key for the requesting client
+     * @param AttachmentDraftDeleteActionDTO $dto Parsed delete action payload
      * @throws EmptyValueException When draft id is empty
      * @throws ItemNotFoundForUpdateException When the WebSocket session or user runtime state is missing
      * @throws ValidationException When the current outbound submit is being moderated
@@ -299,12 +305,12 @@ final class MainPage extends AbstractChatPage
             throw new EmptyValueException('Attachment draft id cannot be empty');
         }
 
-        if (!isset(Hilos::$rt->connections[$acceptKey])) {
-            throw new ItemNotFoundForUpdateException('User session not found');
-        }
-
-        $userId = Hilos::$rt->connections[$acceptKey]->userId;
-        if ($this->getUserState($userId)->hasActiveOutboundModeration()) {
+        $connection = Hilos::$rt->connections[$acceptKey]
+            ?? throw new ItemNotFoundForUpdateException('User session not found');
+        $userId = $connection->userId;
+        $userState = Hilos::$rt->userStates[$userId]
+            ?? throw new ItemNotFoundForUpdateException('User runtime state not found');
+        if ($userState->hasActiveOutboundModeration()) {
             throw new ValidationException('Cannot delete attachment while message is being moderated');
         }
 
@@ -322,7 +328,7 @@ final class MainPage extends AbstractChatPage
     }
 
     /**
-     * Apply outbound moderation: publish approved text plus attachments or expose a retryable failure state.
+     * Applies outbound moderation: publish approved text plus attachments or expose a retryable failure state.
      *
      * Stale connection or request results never publish a message.
      *
@@ -429,8 +435,9 @@ final class MainPage extends AbstractChatPage
     }
 
     /**
-     * Build the frontend state for the current user outbound moderation.
+     * Builds the current user outbound moderation payload for the frontend.
      *
+     * @param int $userId Database user id
      * @return ?array<string, mixed> Moderation UI payload or null
      */
     private function buildOutboundModerationStatePayload(int $userId): ?array
@@ -460,11 +467,15 @@ final class MainPage extends AbstractChatPage
     }
 
     /**
-     * Send current outbound moderation state to a connection.
+     * Sends current outbound moderation state to a connection.
+     *
+     * @param string $acceptKey WebSocket accept key for the target client
+     * @param int $userId Database user id whose moderation state is sent
+     * @throws HilosException On runtime or signal failure
      */
     private function sendOutboundModerationStateUpdate(string $acceptKey, int $userId): void
     {
-        $this->getChatAgent()->sendToUser(
+        $this->sendToUser(
             ChatSignalConstants::OUTBOUND_MODERATION_STATE_UPDATE,
             $acceptKey,
             new OutboundModerationStateUpdateSignalData($this->buildOutboundModerationStatePayload($userId)),
@@ -472,19 +483,7 @@ final class MainPage extends AbstractChatPage
     }
 
     /**
-     * Load required per-user runtime state.
-     *
-     * @param int $userId Database user id
-     * @throws ItemNotFoundForUpdateException When user runtime state is missing
-     */
-    private function getUserState(int $userId): ChatUserState
-    {
-        return Hilos::$rt->userStates[$userId]
-            ?? throw new ItemNotFoundForUpdateException('User runtime state not found');
-    }
-
-    /**
-     * Build the moderation prompt content from message text and attachment metadata.
+     * Builds moderation prompt content from message text and attachment metadata.
      *
      * @param list<AttachmentDraft> $drafts Attachment drafts
      */

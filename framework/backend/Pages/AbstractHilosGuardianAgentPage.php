@@ -13,7 +13,6 @@ use Hilos\Core\Page\Exception\MissingPageRouteParamException;
 use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Router\SignalData;
 use Hilos\Pages\DTO\HilosGuardianAgentPageSubscribeParams;
-use LogicException;
 
 /**
  * AbstractHilosGuardianAgentPage - Abstract base for Hilos guardian AI agent page.
@@ -21,6 +20,8 @@ use LogicException;
  * Projects must implement concrete class (e.g. Demo\Chat\Pages\Hilos\Guardian\GuardianAgentPage).
  * Parses the `agentId` route param into {@see HilosGuardianAgentPageSubscribeParams}
  * before dispatching to {@see self::onHilosGuardianAgentSubscribe()}.
+ *
+ * @property AbstractHilosGuardianAgent $agent
  */
 abstract class AbstractHilosGuardianAgentPage extends AbstractHilosPage
 {
@@ -62,22 +63,8 @@ abstract class AbstractHilosGuardianAgentPage extends AbstractHilosPage
             $acceptKey,
             new SignalData([
                 'agentId' => $params->agentId,
-                'guardianAgentStatuses' => $this->getGuardianAgent()->getGuardianRunStatuses(),
+                'guardianAgentStatuses' => $this->agent->getGuardianRunStatuses(),
             ]),
         );
-    }
-
-    /**
-     * Get the guardian agent backing this page.
-     *
-     * @return AbstractHilosGuardianAgent Guardian agent instance
-     */
-    protected function getGuardianAgent(): AbstractHilosGuardianAgent
-    {
-        if (!$this->agent instanceof AbstractHilosGuardianAgent) {
-            throw new LogicException('Guardian agent page requires AbstractHilosGuardianAgent.');
-        }
-
-        return $this->agent;
     }
 }

@@ -52,10 +52,8 @@ abstract class WorkerDTO extends BaseDTO
     public static function factoryWorkerDTO(string $json): WorkerDTO
     {
         Logger::debug('Parsing worker DTO from JSON: ' . $json);
-        $data = json_decode($json, true);
-        if ($data === null) {
-            throw new InvalidArgumentException('Invalid JSON provided: ' . json_last_error_msg());
-        }
+        $data = json_decode($json, true)
+            ?? throw new InvalidArgumentException('Invalid JSON provided: ' . json_last_error_msg());
 
         $type = $data[self::TYPE] ?? '';
         if ($type === '') {

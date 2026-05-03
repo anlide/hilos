@@ -74,10 +74,8 @@ final class PageRouteParams
      */
     public function requireString(string $key): string
     {
-        $value = $this->getString($key);
-        if ($value === null) {
-            throw new MissingPageRouteParamException($key);
-        }
+        $value = $this->getString($key)
+            ?? throw new MissingPageRouteParamException($key);
 
         return $value;
     }

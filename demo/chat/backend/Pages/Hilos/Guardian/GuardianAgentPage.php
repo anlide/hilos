@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Pages\Hilos\Guardian;
 
+use Demo\Chat\Agents\Hilos\DemoHilosGuardianAgent;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Core\Page\DTO\GuardianAgentRunStartActionDTO;
 use Demo\Chat\Core\Page\DTO\GuardianAgentRunStopActionDTO;
@@ -17,6 +18,8 @@ use Throwable;
 
 /**
  * GuardianAgentPage - Guardian AI agent page implementation for demo.
+ *
+ * @property DemoHilosGuardianAgent $agent
  */
 final class GuardianAgentPage extends AbstractHilosGuardianAgentPage
 {
@@ -86,11 +89,11 @@ final class GuardianAgentPage extends AbstractHilosGuardianAgentPage
      */
     private function handleStart(GuardianAgentRunStartActionDTO $dto): void
     {
-        if (!$this->getGuardianAgent()->hasGuardianAgent($dto->agentId)) {
+        if (!$this->agent->hasGuardianAgent($dto->agentId)) {
             return;
         }
 
-        $this->getGuardianAgent()->startGuardianRun($dto->agentId);
+        $this->agent->startGuardianRun($dto->agentId);
     }
 
     /**
@@ -100,10 +103,10 @@ final class GuardianAgentPage extends AbstractHilosGuardianAgentPage
      */
     private function handleStop(GuardianAgentRunStopActionDTO $dto): void
     {
-        if (!$this->getGuardianAgent()->hasGuardianAgent($dto->agentId)) {
+        if (!$this->agent->hasGuardianAgent($dto->agentId)) {
             return;
         }
 
-        $this->getGuardianAgent()->stopGuardianRun($dto->agentId);
+        $this->agent->stopGuardianRun($dto->agentId);
     }
 }

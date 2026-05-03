@@ -967,17 +967,13 @@ trait ItemItemFixer
     protected function rebuildIdeaItemGetter(string $content, array $objectProperties, ReflectionClass $objectReflection): string
     {
         // Extract Object class alias from use statements
-        $objectClassAlias = $this->extractObjectClassAlias($content, $objectReflection);
-        if ($objectClassAlias === null) {
-            throw new FixerObjectClassExtractException("Could not extract object class alias for {$objectReflection->getName()} in dbItem file");
-        }
+        $objectClassAlias = $this->extractObjectClassAlias($content, $objectReflection)
+            ?? throw new FixerObjectClassExtractException("Could not extract object class alias for {$objectReflection->getName()} in dbItem file");
 
         // Extract object property name (e.g., $objectUser or $_object)
         // Returns array with 'name' and 'type' ('property' or 'variable')
-        $objectPropertyInfo = $this->extractObjectPropertyInfo($content);
-        if ($objectPropertyInfo === null) {
-            throw new FixerObjectPropertyExtractException("Could not extract object property info for {$objectReflection->getName()}. Expected either \$this->_object usage (generic approach) or private property/variable pattern.");
-        }
+        $objectPropertyInfo = $this->extractObjectPropertyInfo($content)
+            ?? throw new FixerObjectPropertyExtractException("Could not extract object property info for {$objectReflection->getName()}. Expected either \$this->_object usage (generic approach) or private property/variable pattern.");
         $objectPropertyName = $objectPropertyInfo['name'];
         $objectPropertyType = $objectPropertyInfo['type']; // 'property' or 'variable'
         $objectGetterMethod = $objectPropertyInfo['getter_method'] ?? null; // Method name if type is 'variable'
@@ -1733,4 +1729,3 @@ trait ItemItemFixer
         return $deleted;
     }
 }
-

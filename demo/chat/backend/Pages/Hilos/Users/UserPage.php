@@ -50,10 +50,8 @@ final class UserPage extends AbstractHilosUserPage
      */
     protected function onHilosUserSubscribe(string $acceptKey, HilosUserPageSubscribeParams $params): void
     {
-        $dbUser = Hilos::$db->users[$params->userId];
-        if ($dbUser === null) {
-            throw new PageResourceNotFoundException("User #{$params->userId} not found");
-        }
+        $dbUser = Hilos::$db->users[$params->userId]
+            ?? throw new PageResourceNotFoundException("User #{$params->userId} not found");
 
         $this->sendToUser(
             HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_USER,
@@ -129,10 +127,8 @@ final class UserPage extends AbstractHilosUserPage
      */
     private function handleHilosUserUpdate(string $acceptKey, HilosUserUpdateActionDTO $dto): void
     {
-        $dbUser = Hilos::$db->users[$dto->id];
-        if ($dbUser === null) {
-            throw new ItemNotFoundForUpdateException("User #{$dto->id} not found");
-        }
+        $dbUser = Hilos::$db->users[$dto->id]
+            ?? throw new ItemNotFoundForUpdateException("User #{$dto->id} not found");
 
         $oldName = $dbUser->name;
         Hilos::$table->hilosUsers[$dto->id]->actions->update($dto);

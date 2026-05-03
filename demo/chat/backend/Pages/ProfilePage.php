@@ -7,7 +7,6 @@ namespace Demo\Chat\Pages;
 use Demo\Chat\Agents\ChatAgent;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\PageConstants;
-use Demo\Chat\Core\Page\AbstractChatPage;
 use Demo\Chat\Core\Page\DTO\RenameActionDTO;
 use Demo\Chat\Core\Router\DTO\ActionFailSignalData;
 use Demo\Chat\Core\Router\DTO\ActionSuccessSignalData;
@@ -16,6 +15,7 @@ use Demo\Chat\Hilos;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
+use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\EntitiesChangesDTO;
@@ -27,22 +27,12 @@ use Throwable;
  * ProfilePage - User profile page handler.
  *
  * Handles subscription, unsubscription, and actions for the user profile page.
+ *
+ * @property ChatAgent $agent
  */
-final class ProfilePage extends AbstractChatPage
+final class ProfilePage extends AbstractPage
 {
     public const string PAGE = PageConstants::PROFILE;
-
-    /**
-     * Narrows the page agent to the chat worker used for profile actions.
-     *
-     * @return ChatAgent Chat worker bound to this profile page
-     */
-    protected function getChatAgent(): ChatAgent
-    {
-        assert($this->agent instanceof ChatAgent);
-
-        return $this->agent;
-    }
 
     /**
      * Handle page-specific subscription logic.
@@ -52,7 +42,7 @@ final class ProfilePage extends AbstractChatPage
      */
     public function onSubscribe(string $acceptKey, PageRouteParams $params): void
     {
-        $this->getChatAgent()->sendToUser(
+        $this->sendToUser(
             ChatSignalConstants::SUBSCRIPTION_PAGE_PROFILE,
             $acceptKey,
             new ChatEventSignalDTO(new EntitiesChangesDTO()),
@@ -96,7 +86,7 @@ final class ProfilePage extends AbstractChatPage
     public function onActionException(string $acceptKey, string $action, ActionPayloadDTO $dto, Throwable $e): void
     {
         if ($action === ChatSignalConstants::RENAME) {
-            $this->getChatAgent()->sendToUser(
+            $this->sendToUser(
                 ChatSignalConstants::RENAME_FAIL,
                 $acceptKey,
                 new ActionFailSignalData($e->getMessage()),
@@ -139,7 +129,7 @@ final class ProfilePage extends AbstractChatPage
         );
 
         // Dedicated ack to the initiator: closes the modal / clears UI loading state.
-        $this->getChatAgent()->sendToUser(
+        $this->sendToUser(
             ChatSignalConstants::RENAME_SUCCESS,
             $acceptKey,
             new ActionSuccessSignalData(),

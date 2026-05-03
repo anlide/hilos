@@ -7,7 +7,6 @@ namespace Demo\Chat\Pages;
 use Demo\Chat\Agents\LibraryAgent;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\PageConstants;
-use Demo\Chat\Core\Page\AbstractChatPage;
 use Demo\Chat\Core\Router\DTO\ChatEventSignalDTO;
 use Demo\Chat\Hilos;
 use Demo\Chat\Tables\ModeratorPiece\DTO\ModeratorPieceCreateActionDTO;
@@ -15,6 +14,7 @@ use Demo\Chat\Tables\ModeratorPiece\DTO\ModeratorPieceDeleteActionDTO;
 use Demo\Chat\Tables\ModeratorPiece\DTO\ModeratorPieceUpdateActionDTO;
 use Demo\Chat\Tables\TableChatContext;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
+use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\EntitiesChangesDTO;
@@ -28,22 +28,12 @@ use Throwable;
  * AdminModeratorPage - Admin moderator prompt pieces page handler.
  *
  * Handles initial data load on subscribe and piece create/update/delete actions.
+ *
+ * @property LibraryAgent $agent
  */
-final class AdminModeratorPage extends AbstractChatPage
+final class AdminModeratorPage extends AbstractPage
 {
     public const string PAGE = PageConstants::ADMIN_MODERATOR;
-
-    /**
-     * Narrows the page agent to the library worker used for moderator prompt table actions.
-     *
-     * @return LibraryAgent Library worker bound to this admin moderator page
-     */
-    protected function getLibraryAgent(): LibraryAgent
-    {
-        assert($this->agent instanceof LibraryAgent);
-
-        return $this->agent;
-    }
 
     /**
      * Sends the initial moderator prompt pieces table full snapshot to the user on page subscription.
@@ -53,7 +43,7 @@ final class AdminModeratorPage extends AbstractChatPage
      */
     public function onSubscribe(string $acceptKey, PageRouteParams $params): void
     {
-        $this->getLibraryAgent()->sendToUser(
+        $this->sendToUser(
             ChatSignalConstants::SUBSCRIPTION_PAGE_ADMIN_MODERATOR,
             $acceptKey,
             new ChatEventSignalDTO(
@@ -115,7 +105,7 @@ final class AdminModeratorPage extends AbstractChatPage
      */
     public function onActionException(string $acceptKey, string $action, ActionPayloadDTO $dto, Throwable $e): void
     {
-        $this->getLibraryAgent()->sendToUser(
+        $this->sendToUser(
             ChatSignalConstants::TABLE_ACTION_ERROR,
             $acceptKey,
             new TableActionErrorSignalData(TableChatContext::moderatorPromptPieces, $action, $e->getMessage()),

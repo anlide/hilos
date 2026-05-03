@@ -103,10 +103,8 @@ final class BotActions extends DbActions
             throw new ItemNotFoundForDeleteException('Bot not found for delete (id is null)');
         }
 
-        $objectCollection = $this->getObjectCollection();
-        if ($objectCollection === null) {
-            throw new ObjectCollectionNullException('Object collection is null');
-        }
+        $objectCollection = $this->getObjectCollection()
+            ?? throw new ObjectCollectionNullException('Object collection is null');
 
         $idString = $this->object->getIdString();
         $this->object->delete();

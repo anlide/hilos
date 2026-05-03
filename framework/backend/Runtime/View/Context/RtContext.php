@@ -67,13 +67,10 @@ abstract class RtContext
         ?string $actionsClass = null,
         ?string $itemActionsClass = null,
     ): void {
-        if (!isset($this->_stateCollections[$name])) {
-            throw new StateCollectionNotFoundException(
+        $stateCollection = $this->_stateCollections[$name]
+            ?? throw new StateCollectionNotFoundException(
                 "State collection [{$name}] not found in _stateCollections. Create it before calling setRepresent()."
             );
-        }
-
-        $stateCollection = $this->_stateCollections[$name];
 
         if (is_subclass_of($rtCollectionClass, RtCollection::class)) {
             $rtCollection = $rtCollectionClass::init();

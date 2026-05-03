@@ -7,13 +7,13 @@ namespace Demo\Chat\Pages;
 use Demo\Chat\Agents\ChatAgent;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\PageConstants;
-use Demo\Chat\Core\Page\AbstractChatPage;
 use Demo\Chat\Core\Router\DTO\ChatEventSignalDTO;
 use Demo\Chat\Frontend\UserFrontendStateProjector;
 use Demo\Chat\Hilos;
 use Demo\Chat\Tables\AdminUser\DTO\AdminUserUpdateActionDTO;
 use Demo\Chat\Tables\TableChatContext;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
+use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\EntitiesChangesDTO;
@@ -27,22 +27,12 @@ use Throwable;
  * AdminUsersPage - Admin users table page handler.
  *
  * Handles initial data load on subscribe and user_update actions.
+ *
+ * @property ChatAgent $agent
  */
-final class AdminUsersPage extends AbstractChatPage
+final class AdminUsersPage extends AbstractPage
 {
     public const string PAGE = PageConstants::ADMIN_USERS;
-
-    /**
-     * Narrows the page agent to the chat worker used for admin user table actions.
-     *
-     * @return ChatAgent Chat worker bound to this admin users page
-     */
-    protected function getChatAgent(): ChatAgent
-    {
-        assert($this->agent instanceof ChatAgent);
-
-        return $this->agent;
-    }
 
     /**
      * Sends the initial users table full snapshot to the user on page subscription.
@@ -52,7 +42,7 @@ final class AdminUsersPage extends AbstractChatPage
      */
     public function onSubscribe(string $acceptKey, PageRouteParams $params): void
     {
-        $this->getChatAgent()->sendToUser(
+        $this->sendToUser(
             ChatSignalConstants::SUBSCRIPTION_PAGE_ADMIN_USERS,
             $acceptKey,
             new ChatEventSignalDTO(
@@ -99,7 +89,7 @@ final class AdminUsersPage extends AbstractChatPage
      */
     public function onActionException(string $acceptKey, string $action, ActionPayloadDTO $dto, Throwable $e): void
     {
-        $this->getChatAgent()->sendToUser(
+        $this->sendToUser(
             ChatSignalConstants::TABLE_ACTION_ERROR,
             $acceptKey,
             new TableActionErrorSignalData(TableChatContext::adminUsers, $action, $e->getMessage()),
@@ -121,11 +111,8 @@ final class AdminUsersPage extends AbstractChatPage
             throw new TableActionException('Invalid user ID');
         }
 
-        if (!isset(Hilos::$db->users[$dto->id])) {
-            throw new TableActionException("User #{$dto->id} not found");
-        }
-
-        $dbUser = Hilos::$db->users[$dto->id];
+        $dbUser = Hilos::$db->users[$dto->id]
+            ?? throw new TableActionException("User #{$dto->id} not found");
         $oldName = $dbUser->name;
 
         Hilos::$table->adminUsers[$dto->id]->actions->update($dto);

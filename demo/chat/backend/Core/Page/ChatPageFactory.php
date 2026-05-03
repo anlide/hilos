@@ -98,7 +98,6 @@ use Hilos\Constants\HilosPageConstants;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Page\Exception\PageNotFoundException;
 use Hilos\Core\Page\HilosPageFactory;
-use Hilos\Core\Page\PageAgentInterface;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 
 /**
@@ -106,8 +105,6 @@ use Hilos\Core\Router\DTO\ActionPayloadDTO;
  *
  * Creates and manages chat page instances.
  * Extends HilosPageFactory to inherit framework-level Hilos admin pages.
- *
- * @extends HilosPageFactory<PageAgentInterface>
  */
 final class ChatPageFactory extends HilosPageFactory
 {

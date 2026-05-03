@@ -499,11 +499,8 @@ class Migration
     public static function retryFailed(int $index): void
     {
         Database::sql('SELECT `failed` FROM `migration` WHERE `index` = ?', [$index]);
-        $row = Database::row();
-
-        if ($row === null) {
-            throw new DatabaseException("Migration {$index} not found in database");
-        }
+        $row = Database::row()
+            ?? throw new DatabaseException("Migration {$index} not found in database");
 
         if ((int)$row['failed'] === 0) {
             throw new DatabaseException("Migration {$index} is not failed");
@@ -516,4 +513,3 @@ class Migration
         self::applyMigrationUp($index);
     }
 }
-

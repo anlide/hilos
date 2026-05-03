@@ -4,11 +4,15 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Page;
 
+use Hilos\Core\Agent\Hilos\AbstractHilosAgent;
+
 /**
  * AbstractHilosPage - Abstract base class for Hilos admin page handlers.
  *
  * Base class for all framework-level Hilos admin pages.
  * Projects can extend these pages via inheritance.
+ *
+ * @property AbstractHilosAgent $agent
  */
 abstract class AbstractHilosPage extends AbstractPage
 {

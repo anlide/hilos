@@ -182,11 +182,8 @@ class Database
     {
         $index = $index ?? self::$currentIndex;
 
-        if (!isset(self::$configurations[$index])) {
-            throw new DatabaseConnectionException("Connection {$index} is not configured");
-        }
-
-        $config = self::$configurations[$index];
+        $config = self::$configurations[$index]
+            ?? throw new DatabaseConnectionException("Connection {$index} is not configured");
         
         // Determine retry parameters
         $retries = $maxRetries ?? ($retryOnConnectionError ? 30 : 1);
@@ -695,11 +692,8 @@ class Database
 
             // Replace ? with parameter value
             if ($char === '?' && !$inString) {
-                if (!isset($params[$paramIndex])) {
-                    throw new DatabaseParamsException("Not enough parameters provided for query");
-                }
-
-                $param = $params[$paramIndex];
+                $param = $params[$paramIndex]
+                    ?? throw new DatabaseParamsException("Not enough parameters provided for query");
                 $value = $param->value;
 
                 // Escape value
@@ -855,4 +849,3 @@ class Database
         }
     }
 }
-

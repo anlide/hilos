@@ -14,12 +14,10 @@ use Hilos\Core\Router\DTO\UnknownActionPayloadDTO;
  * Provides base implementation for page factories.
  * Child classes must implement createPage() to create specific page instances.
  * Signal router is available globally via Hilos::$sr.
- *
- * @template TAgent of PageAgentInterface
  */
 abstract class AbstractPageFactory
 {
-    /** @var TAgent Agent instance for pages */
+    /** @var PageAgentInterface Agent instance for pages */
     protected PageAgentInterface $agent;
 
     /** @var array<string, AbstractPage> Cached page instances */

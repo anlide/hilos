@@ -103,12 +103,10 @@ abstract class RtItem
     protected function getItemActions(): RtItemActions
     {
         if ($this->_itemActions === null) {
-            $class = $this->_itemActionsClass;
-            if ($class === null) {
-                throw new RtItemActionsClassException(
+            $class = $this->_itemActionsClass
+                ?? throw new RtItemActionsClassException(
                     'Item actions class is not set for ' . static::class
                 );
-            }
             if (!is_subclass_of($class, RtItemActions::class)) {
                 throw new RtItemActionsClassException(
                     "Item actions class [{$class}] must extend " . RtItemActions::class

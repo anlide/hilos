@@ -71,12 +71,10 @@ abstract class RtActions
      */
     protected function ensureCanWrite(): void
     {
-        $collectionName = $this->getRtCollection()->getCollectionName();
-        if ($collectionName === null) {
-            throw new RtActionsCollectionNameNullException(
+        $collectionName = $this->getRtCollection()->getCollectionName()
+            ?? throw new RtActionsCollectionNameNullException(
                 'Cannot ensure write: collection name is null'
             );
-        }
         RtTruthSourceRegistry::checkCanWriteState($collectionName, $this->state->getId());
     }
 
@@ -103,12 +101,10 @@ abstract class RtActions
         $this->ensureCanWrite();
 
         $collection = $this->getRtCollection();
-        $collectionName = $collection->getCollectionName();
-        if ($collectionName === null) {
-            throw new RtActionsCollectionNameNullException(
+        $collectionName = $collection->getCollectionName()
+            ?? throw new RtActionsCollectionNameNullException(
                 'Cannot remove runtime item: collection name is null'
             );
-        }
 
         $stateId = $this->state->getId();
         $row = $this->state->toArray();

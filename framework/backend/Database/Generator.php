@@ -530,11 +530,8 @@ class Generator
     public static function generateMigrationFromTable(string $tableName): string
     {
         Database::sql("SHOW CREATE TABLE `{$tableName}`");
-        $row = Database::row();
-
-        if ($row === null) {
-            throw new DatabaseException("Table {$tableName} not found");
-        }
+        $row = Database::row()
+            ?? throw new DatabaseException("Table {$tableName} not found");
 
         $createStatement = $row['Create Table'];
 

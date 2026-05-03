@@ -53,10 +53,8 @@ final class SettingActions extends DbActions
             throw new ItemNotFoundForDeleteException('Setting not found for delete (id is null)');
         }
 
-        $objectCollection = $this->getObjectCollection();
-        if ($objectCollection === null) {
-            throw new \Hilos\Database\Actions\Exception\ObjectCollectionNullException('Object collection is null');
-        }
+        $objectCollection = $this->getObjectCollection()
+            ?? throw new \Hilos\Database\Actions\Exception\ObjectCollectionNullException('Object collection is null');
 
         $idString = $this->object->getIdString();
         $this->object->delete();

@@ -7,8 +7,8 @@ namespace Demo\Chat\Pages;
 use Demo\Chat\Agents\ChatAgent;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\PageConstants;
-use Demo\Chat\Core\Page\AbstractChatPage;
 use Demo\Chat\Core\Router\DTO\ChatEventSignalDTO;
+use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Router\DTO\EntitiesChangesDTO;
 use Hilos\Core\Page\PageRouteParams;
 
@@ -16,22 +16,12 @@ use Hilos\Core\Page\PageRouteParams;
  * UserPage - User page handler.
  *
  * Handles subscription, unsubscription, and actions for the user page.
+ *
+ * @property ChatAgent $agent
  */
-final class UserPage extends AbstractChatPage
+final class UserPage extends AbstractPage
 {
     public const string PAGE = PageConstants::USER;
-
-    /**
-     * Narrows the page agent to the chat worker used for user profile snapshots.
-     *
-     * @return ChatAgent Chat worker bound to this user profile page
-     */
-    protected function getChatAgent(): ChatAgent
-    {
-        assert($this->agent instanceof ChatAgent);
-
-        return $this->agent;
-    }
 
     /**
      * Handle page-specific subscription logic.
@@ -41,7 +31,7 @@ final class UserPage extends AbstractChatPage
      */
     public function onSubscribe(string $acceptKey, PageRouteParams $params): void
     {
-        $this->getChatAgent()->sendToUser(
+        $this->sendToUser(
             ChatSignalConstants::SUBSCRIPTION_PAGE_USER,
             $acceptKey,
             new ChatEventSignalDTO(new EntitiesChangesDTO()),

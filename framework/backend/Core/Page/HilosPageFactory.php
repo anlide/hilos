@@ -13,8 +13,6 @@ use Hilos\Core\Page\Exception\PageNotFoundException;
  * Hilos pages are abstract; projects must implement concrete classes.
  * For HILOS_* page names, createPage() throws - child factory (e.g. ChatPageFactory)
  * must handle these and return concrete implementations.
- *
- * @extends AbstractPageFactory<PageAgentInterface>
  */
 class HilosPageFactory extends AbstractPageFactory
 {

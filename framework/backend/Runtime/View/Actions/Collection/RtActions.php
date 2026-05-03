@@ -148,12 +148,10 @@ abstract class RtActions
      */
     protected function ensureCanWrite(): void
     {
-        $collectionName = $this->getCollectionName();
-        if ($collectionName === null) {
-            throw new RtActionsCollectionNameNullException(
+        $collectionName = $this->getCollectionName()
+            ?? throw new RtActionsCollectionNameNullException(
                 "Cannot ensure write: collection name is null"
             );
-        }
         RtTruthSourceRegistry::checkCanWrite($collectionName);
     }
 
@@ -167,12 +165,10 @@ abstract class RtActions
      */
     protected function ensureCanWriteState(string $stateId): void
     {
-        $collectionName = $this->getCollectionName();
-        if ($collectionName === null) {
-            throw new RtActionsCollectionNameNullException(
+        $collectionName = $this->getCollectionName()
+            ?? throw new RtActionsCollectionNameNullException(
                 "Cannot ensure write: collection name is null"
             );
-        }
         RtTruthSourceRegistry::checkCanWriteState($collectionName, $stateId);
     }
 

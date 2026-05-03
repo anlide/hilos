@@ -142,10 +142,8 @@ abstract class DbItem
     protected function getActions(): DbActions
     {
         if ($this->_actions === null) {
-            $class = $this->_actionsClass;
-            if ($class === null) {
-                throw new ActionsClassException("Item actions class is not set for " . static::class);
-            }
+            $class = $this->_actionsClass
+                ?? throw new ActionsClassException("Item actions class is not set for " . static::class);
             if (!is_subclass_of($class, DbActions::class)) {
                 throw new ActionsClassException("Item actions class [{$class}] must extend " . DbActions::class);
             }

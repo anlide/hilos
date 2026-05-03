@@ -52,10 +52,8 @@ abstract class BaseDTO
      */
     public static function fromJson(string $json): static
     {
-        $data = json_decode($json, true);
-        if ($data === null) {
-            throw new HilosException('Invalid JSON provided');
-        }
+        $data = json_decode($json, true)
+            ?? throw new HilosException('Invalid JSON provided');
         return static::fromArray($data);
     }
 }

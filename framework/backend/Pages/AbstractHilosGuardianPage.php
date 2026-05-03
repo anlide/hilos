@@ -9,13 +9,14 @@ use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Agent\Hilos\AbstractHilosGuardianAgent;
 use Hilos\Core\Page\AbstractHilosPage;
 use Hilos\Core\Router\SignalData;
-use LogicException;
 use Hilos\Core\Page\PageRouteParams;
 
 /**
  * AbstractHilosGuardianPage - Abstract base for Hilos guardian page.
  *
  * Projects must implement concrete class (e.g. Demo\Chat\Pages\Hilos\GuardianPage).
+ *
+ * @property AbstractHilosGuardianAgent $agent
  */
 abstract class AbstractHilosGuardianPage extends AbstractHilosPage
 {
@@ -33,22 +34,8 @@ abstract class AbstractHilosGuardianPage extends AbstractHilosPage
             HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_GUARDIAN,
             $acceptKey,
             new SignalData([
-                'guardianAgentStatuses' => $this->getGuardianAgent()->getGuardianRunStatuses(),
+                'guardianAgentStatuses' => $this->agent->getGuardianRunStatuses(),
             ]),
         );
-    }
-
-    /**
-     * Get the guardian agent backing this page.
-     *
-     * @return AbstractHilosGuardianAgent Guardian agent instance
-     */
-    protected function getGuardianAgent(): AbstractHilosGuardianAgent
-    {
-        if (!$this->agent instanceof AbstractHilosGuardianAgent) {
-            throw new LogicException('Guardian page requires AbstractHilosGuardianAgent.');
-        }
-
-        return $this->agent;
     }
 }

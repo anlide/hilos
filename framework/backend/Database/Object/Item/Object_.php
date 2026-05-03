@@ -345,10 +345,8 @@ abstract class Object_
         $primaryKeys = $this->getPrimaryKeyArrayKeys();
         $parts = [];
         foreach ($primaryKeys as $column) {
-            $value = $this->entity->$column;
-            if ($value === null) {
-                throw new ObjectGetIdStringNotImplementedException("Cannot get ID string: " . static::class . " primary key is null");
-            }
+            $value = $this->entity->$column
+                ?? throw new ObjectGetIdStringNotImplementedException("Cannot get ID string: " . static::class . " primary key is null");
             $parts[] = (string)$value;
         }
         return implode(':', $parts);

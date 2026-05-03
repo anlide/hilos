@@ -61,10 +61,8 @@ final class ModeratorPromptPieceActions extends DbActions
             throw new ItemNotFoundForDeleteException('Moderator prompt piece not found for delete (id is null)');
         }
 
-        $objectCollection = $this->getObjectCollection();
-        if ($objectCollection === null) {
-            throw new ObjectCollectionNullException('Object collection is null');
-        }
+        $objectCollection = $this->getObjectCollection()
+            ?? throw new ObjectCollectionNullException('Object collection is null');
 
         $idString = $this->object->getIdString();
         $this->object->delete();

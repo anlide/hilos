@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Pages\Main;
 
-use Demo\Chat\Agents\ChatAgent;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Core\Page\DTO\FileUploadInitActionDTO;
 use Demo\Chat\Core\Router\DTO\AttachmentDraftsUpdateSignalData;
@@ -20,7 +19,6 @@ use Demo\Chat\Utils\ChatSettingsHelper;
 use Hilos\Fs\Exception\FileDeleteException;
 use Hilos\Fs\FsException;
 use Hilos\Fs\FsFile;
-use Hilos\HilosException;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\Socket\WebSocket\DTO\WebSocketFrameBinarySignalDTO;
@@ -47,18 +45,18 @@ trait UploadFileTrait
      */
     protected function handleFileUploadInit(string $acceptKey, FileUploadInitActionDTO $dto): void
     {
-        $agent = $this->getChatAgent();
-        if (!isset(Hilos::$rt->connections[$acceptKey])) {
+        $connection = Hilos::$rt->connections[$acceptKey] ?? null;
+        if ($connection === null) {
             return;
         }
 
-        if (Hilos::$rt->connections[$acceptKey]->fileSessionUploadId !== null) {
-            Hilos::$fs->tmp[Hilos::$rt->connections[$acceptKey]->fileSessionQuarantineBasename]->unlink();
-            Hilos::$rt->connections[$acceptKey]->actions->clearBinaryUploadSessionAndProgressUi();
+        if ($connection->fileSessionUploadId !== null) {
+            Hilos::$fs->tmp[$connection->fileSessionQuarantineBasename]->unlink();
+            $connection->actions->clearBinaryUploadSessionAndProgressUi();
             $this->logAgentInfo(
                 "file upload aborted acceptKey={$acceptKey} reason=superseded_by_new_init",
             );
-            $agent->sendToUser(
+            $this->sendToUser(
                 ChatSignalConstants::FILE_UPLOAD_ABORTED,
                 $acceptKey,
                 new FileUploadAbortedSignalData('superseded_by_new_init'),
@@ -66,7 +64,7 @@ trait UploadFileTrait
         }
 
         if (!$dto->isValid()) {
-            $agent->sendToUser(
+            $this->sendToUser(
                 ChatSignalConstants::FILE_UPLOAD_REJECTED,
                 $acceptKey,
                 new FileUploadRejectedSignalData('invalid_payload', 'Invalid file metadata'),
@@ -80,7 +78,7 @@ trait UploadFileTrait
         $maxFile = ChatSettingsHelper::getAttachmentMaxFileBytes();
         $maxTotal = ChatSettingsHelper::getAttachmentMaxTotalBytes();
         if ($dto->size > $maxFile) {
-            $agent->sendToUser(
+            $this->sendToUser(
                 ChatSignalConstants::FILE_UPLOAD_REJECTED,
                 $acceptKey,
                 new FileUploadRejectedSignalData('size_limit', 'File exceeds maximum allowed size'),
@@ -93,7 +91,7 @@ trait UploadFileTrait
         $reserved = Hilos::$rt->connections->sumActiveUploadReservedBytes();
         $draftTotal = Hilos::$rt->attachmentDrafts->sumDraftBytes();
         if ($publishedTotal + $reserved + $draftTotal + $dto->size > $maxTotal) {
-            $agent->sendToUser(
+            $this->sendToUser(
                 ChatSignalConstants::FILE_UPLOAD_REJECTED,
                 $acceptKey,
                 new FileUploadRejectedSignalData('total_limit', 'Total attachment storage limit would be exceeded'),
@@ -104,7 +102,7 @@ trait UploadFileTrait
 
         $norm = FileSystemHelper::normalizeBasename($dto->filename);
         if ($this->isFilenameInUse($norm)) {
-            $agent->sendToUser(
+            $this->sendToUser(
                 ChatSignalConstants::FILE_UPLOAD_REJECTED,
                 $acceptKey,
                 new FileUploadRejectedSignalData('duplicate_filename', 'A file with this name already exists'),
@@ -117,7 +115,7 @@ trait UploadFileTrait
             $tmpIndex = Hilos::$fs->tmp->create();
         } catch (FsException $e) {
             $this->logAgentError("Cannot create tmp file: {$e->getMessage()}");
-            $agent->sendToUser(
+            $this->sendToUser(
                 ChatSignalConstants::FILE_UPLOAD_REJECTED,
                 $acceptKey,
                 new FileUploadRejectedSignalData('storage_error', 'Cannot start upload'),
@@ -126,7 +124,7 @@ trait UploadFileTrait
             return;
         }
 
-        Hilos::$rt->connections[$acceptKey]->actions->beginBinaryFileUpload(
+        $connection->actions->beginBinaryFileUpload(
             $tmpIndex,
             $dto->size,
             $tmpIndex,
@@ -138,7 +136,7 @@ trait UploadFileTrait
             $dto->size,
         );
 
-        $agent->sendToUser(
+        $this->sendToUser(
             ChatSignalConstants::FILE_UPLOAD_READY,
             $acceptKey,
             new FileUploadReadySignalData(
@@ -150,7 +148,7 @@ trait UploadFileTrait
             ),
         );
         // Same moment as client seeds progress UI from READY (0 / size); avoids an immediate redundant progress_update.
-        Hilos::$rt->connections[$acceptKey]->actions->noteUploadProgressSentAt(microtime(true));
+        $connection->actions->noteUploadProgressSentAt(microtime(true));
     }
 
     /**
@@ -165,19 +163,19 @@ trait UploadFileTrait
      */
     protected function handleFileUploadBinaryFrame(WebSocketFrameBinarySignalDTO $data): void
     {
-        $agent = $this->getChatAgent();
         $acceptKey = $data->acceptKey;
-        if (!isset(Hilos::$rt->connections[$acceptKey])) {
+        $connection = Hilos::$rt->connections[$acceptKey] ?? null;
+        if ($connection === null) {
             $this->logAgentInfo('frame_binary: unknown acceptKey, ignoring');
 
             return;
         }
-        if (Hilos::$rt->connections[$acceptKey]->fileSessionUploadId === null) {
+        if ($connection->fileSessionUploadId === null) {
             $this->logAgentInfo(
                 'frame_binary: no upload session acceptKey=' . $acceptKey
-                . ' userId=' . Hilos::$rt->connections[$acceptKey]->userId,
+                . ' userId=' . $connection->userId,
             );
-            $agent->sendToUser(
+            $this->sendToUser(
                 ChatSignalConstants::FILE_UPLOAD_INVALID,
                 $acceptKey,
                 new FileUploadInvalidSignalData('no_active_upload'),
@@ -187,25 +185,25 @@ trait UploadFileTrait
         }
 
         $len = strlen($data->payload);
-        $declared = Hilos::$rt->connections[$acceptKey]->fileSessionDeclaredSize;
-        $received = Hilos::$rt->connections[$acceptKey]->fileSessionReceivedBytes;
+        $declared = $connection->fileSessionDeclaredSize;
+        $received = $connection->fileSessionReceivedBytes;
         if ($received + $len > $declared) {
             $this->logAgentError(
                 'frame_binary: overflow acceptKey=' . $acceptKey
-                . ' userId=' . Hilos::$rt->connections[$acceptKey]->userId,
+                . ' userId=' . $connection->userId,
             );
             $this->failFileUploadSession($acceptKey, 'size_overflow');
 
             return;
         }
 
-        $tmpIndex = Hilos::$rt->connections[$acceptKey]->fileSessionQuarantineBasename;
+        $tmpIndex = $connection->fileSessionQuarantineBasename;
         try {
             Hilos::$fs->tmp[$tmpIndex]->append($data->payload);
         } catch (FsException $e) {
             $this->logAgentError(
                 'frame_binary: tmp append failed acceptKey=' . $acceptKey
-                . ' userId=' . Hilos::$rt->connections[$acceptKey]->userId
+                . ' userId=' . $connection->userId
                 . ' error=' . $e->getMessage(),
             );
             $this->failFileUploadSession($acceptKey, 'write_error');
@@ -214,7 +212,7 @@ trait UploadFileTrait
         }
 
         $newReceived = $received + $len;
-        Hilos::$rt->connections[$acceptKey]->actions->applyStoredBinaryChunkProgress($newReceived);
+        $connection->actions->applyStoredBinaryChunkProgress($newReceived);
 
         $this->sendFileUploadProgressUpdateThrottled($acceptKey, $newReceived === $declared);
 
@@ -230,8 +228,6 @@ trait UploadFileTrait
      */
     protected function deleteAllAttachmentFilesFromDisk(): void
     {
-        $agent = $this->getChatAgent();
-
         Hilos::$fs->published->deleteAll();
         Hilos::$fs->quarantine->deleteAll();
         Hilos::$rt->attachmentDrafts->actions->clear(deleteFiles: false);
@@ -239,7 +235,7 @@ trait UploadFileTrait
 
         foreach (Hilos::$rt->connections as $connection) {
             $acceptKey = $connection->acceptKey;
-            $agent->sendToUser(
+            $this->sendToUser(
                 ChatSignalConstants::FILE_UPLOAD_PROGRESS_UPDATE,
                 $acceptKey,
                 new FileUploadProgressUpdateSignalData(null),
@@ -258,14 +254,13 @@ trait UploadFileTrait
      */
     private function completeFileUpload(string $acceptKey): void
     {
-        if (!isset(Hilos::$rt->connections[$acceptKey])) {
+        $connection = Hilos::$rt->connections[$acceptKey] ?? null;
+        if ($connection === null) {
             return;
         }
-        $connection = Hilos::$rt->connections[$acceptKey];
         if ($connection->fileSessionUploadId === null) {
             return;
         }
-        $agent = $this->getChatAgent();
         $uploadId = $connection->fileSessionUploadId;
         $tmpIndex = $connection->fileSessionQuarantineBasename;
         $declaredSize = $connection->fileSessionDeclaredSize;
@@ -284,7 +279,7 @@ trait UploadFileTrait
         }
 
         $connection->actions->clearBinaryUploadSessionAndProgressUi();
-        $agent->sendToUser(
+        $this->sendToUser(
             ChatSignalConstants::FILE_UPLOAD_PROGRESS_UPDATE,
             $acceptKey,
             new FileUploadProgressUpdateSignalData(null),
@@ -303,7 +298,7 @@ trait UploadFileTrait
         );
         $draftPayload = AttachmentDrafts::toFrontendRow($draft);
 
-        $agent->sendToUser(
+        $this->sendToUser(
             ChatSignalConstants::FILE_UPLOAD_COMPLETE,
             $acceptKey,
             new FileUploadCompleteSignalData(
@@ -325,9 +320,14 @@ trait UploadFileTrait
      */
     private function failFileUploadSession(string $acceptKey, string $reason): void
     {
-        Hilos::$fs->tmp[Hilos::$rt->connections[$acceptKey]->fileSessionQuarantineBasename]->unlink();
-        Hilos::$rt->connections[$acceptKey]->actions->clearBinaryUploadSessionAndProgressUi();
-        $this->getChatAgent()->sendToUser(
+        $connection = Hilos::$rt->connections[$acceptKey] ?? null;
+        if ($connection === null) {
+            return;
+        }
+
+        Hilos::$fs->tmp[$connection->fileSessionQuarantineBasename]->unlink();
+        $connection->actions->clearBinaryUploadSessionAndProgressUi();
+        $this->sendToUser(
             ChatSignalConstants::FILE_UPLOAD_INVALID,
             $acceptKey,
             new FileUploadInvalidSignalData($reason),
@@ -348,15 +348,15 @@ trait UploadFileTrait
      */
     private function sendFileUploadProgressUpdateThrottled(string $acceptKey, bool $force): void
     {
-        $agent = $this->getChatAgent();
-        if (!isset(Hilos::$rt->connections[$acceptKey])) {
+        $connection = Hilos::$rt->connections[$acceptKey] ?? null;
+        if ($connection === null) {
             $this->logAgentInfo(
                 "upload_progress: throttle acceptKey={$acceptKey} abort_no_state",
             );
 
             return;
         }
-        $progressName = Hilos::$rt->connections[$acceptKey]->fileProgressFilename;
+        $progressName = $connection->fileProgressFilename;
         if ($progressName === null) {
             $this->logAgentInfo(
                 "upload_progress: throttle acceptKey={$acceptKey} abort_no_progress_state",
@@ -364,17 +364,17 @@ trait UploadFileTrait
 
             return;
         }
-        $uploaded = Hilos::$rt->connections[$acceptKey]->fileProgressUploadedBytes;
-        $total = Hilos::$rt->connections[$acceptKey]->fileProgressTotalBytes;
+        $uploaded = $connection->fileProgressUploadedBytes;
+        $total = $connection->fileProgressTotalBytes;
         $isComplete = $total > 0 && $uploaded >= $total;
-        $last = Hilos::$rt->connections[$acceptKey]->uploadProgressLastSentAt;
+        $last = $connection->uploadProgressLastSentAt;
         $elapsed = $last > 0.0 ? (microtime(true) - $last) : null;
         if (!$force && !$isComplete && $elapsed !== null && $elapsed < self::FILE_UPLOAD_PROGRESS_MIN_INTERVAL_SEC) {
             return;
         }
 
-        Hilos::$rt->connections[$acceptKey]->actions->noteUploadProgressSentAt(microtime(true));
-        $agent->sendToUser(
+        $connection->actions->noteUploadProgressSentAt(microtime(true));
+        $this->sendToUser(
             ChatSignalConstants::FILE_UPLOAD_PROGRESS_UPDATE,
             $acceptKey,
             new FileUploadProgressUpdateSignalData([
@@ -402,7 +402,7 @@ trait UploadFileTrait
      */
     protected function sendAttachmentDraftsUpdate(string $acceptKey): void
     {
-        $this->getChatAgent()->sendToUser(
+        $this->sendToUser(
             ChatSignalConstants::ATTACHMENT_DRAFTS_UPDATE,
             $acceptKey,
             new AttachmentDraftsUpdateSignalData(

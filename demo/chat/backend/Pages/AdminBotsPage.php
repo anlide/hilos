@@ -7,7 +7,6 @@ namespace Demo\Chat\Pages;
 use Demo\Chat\Agents\LibraryAgent;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\PageConstants;
-use Demo\Chat\Core\Page\AbstractChatPage;
 use Demo\Chat\Core\Router\DTO\BotAgentSignalData;
 use Demo\Chat\Core\Router\DTO\ChatEventSignalDTO;
 use Demo\Chat\Frontend\BotFrontendStateProjector;
@@ -17,6 +16,7 @@ use Demo\Chat\Tables\Bot\DTO\BotDeleteActionDTO;
 use Demo\Chat\Tables\Bot\DTO\BotUpdateActionDTO;
 use Demo\Chat\Tables\TableChatContext;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
+use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\EntitiesChangesDTO;
@@ -30,22 +30,12 @@ use Throwable;
  * AdminBotsPage - Admin bots table page handler.
  *
  * Handles initial data load on subscribe and bot create/update/delete actions.
+ *
+ * @property LibraryAgent $agent
  */
-final class AdminBotsPage extends AbstractChatPage
+final class AdminBotsPage extends AbstractPage
 {
     public const string PAGE = PageConstants::ADMIN_BOTS;
-
-    /**
-     * Narrows the page agent to the library worker used for admin bot table actions.
-     *
-     * @return LibraryAgent Library worker bound to this admin bots page
-     */
-    protected function getLibraryAgent(): LibraryAgent
-    {
-        assert($this->agent instanceof LibraryAgent);
-
-        return $this->agent;
-    }
 
     /**
      * Sends the initial bots table full snapshot to the user on page subscription.
@@ -55,7 +45,7 @@ final class AdminBotsPage extends AbstractChatPage
      */
     public function onSubscribe(string $acceptKey, PageRouteParams $params): void
     {
-        $this->getLibraryAgent()->sendToUser(
+        $this->sendToUser(
             ChatSignalConstants::SUBSCRIPTION_PAGE_ADMIN_BOTS,
             $acceptKey,
             new ChatEventSignalDTO(
@@ -118,7 +108,7 @@ final class AdminBotsPage extends AbstractChatPage
      */
     public function onActionException(string $acceptKey, string $action, ActionPayloadDTO $dto, Throwable $e): void
     {
-        $this->getLibraryAgent()->sendToUser(
+        $this->sendToUser(
             ChatSignalConstants::TABLE_ACTION_ERROR,
             $acceptKey,
             new TableActionErrorSignalData(TableChatContext::bots, $action, $e->getMessage()),
@@ -138,7 +128,7 @@ final class AdminBotsPage extends AbstractChatPage
         $mutation = Hilos::$table->bots->actions->create($dto);
 
         if ((Hilos::$db->bots[$mutation->rowKey]->active ?? false) === true) {
-            $this->getLibraryAgent()->sendToAgent(
+            $this->agent->sendToAgent(
                 ChatSignalConstants::BOT_AGENT_START,
                 new BotAgentSignalData(botId: (int) $mutation->rowKey),
             );
@@ -160,16 +150,14 @@ final class AdminBotsPage extends AbstractChatPage
             throw new TableActionException('Invalid bot ID');
         }
 
-        if (!isset(Hilos::$db->bots[$dto->id])) {
-            throw new TableActionException("Bot #{$dto->id} not found");
-        }
-
-        $oldActive = Hilos::$db->bots[$dto->id]->active;
+        $dbBot = Hilos::$db->bots[$dto->id]
+            ?? throw new TableActionException("Bot #{$dto->id} not found");
+        $oldActive = $dbBot->active;
         Hilos::$table->bots[$dto->id]->actions->update($dto);
         $newActive = Hilos::$db->bots[$dto->id]->active === true;
 
         if (!$oldActive && $newActive) {
-            $this->getLibraryAgent()->sendToAgent(
+            $this->agent->sendToAgent(
                 ChatSignalConstants::BOT_AGENT_START,
                 new BotAgentSignalData(botId: $dto->id),
             );

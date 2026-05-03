@@ -82,10 +82,8 @@ class TableItem
     private function getActions(): TableItemActions
     {
         if ($this->_actions === null) {
-            $class = $this->definition->getItemActionsClass();
-            if ($class === null) {
-                throw new TableActionsNotConfiguredException();
-            }
+            $class = $this->definition->getItemActionsClass()
+                ?? throw new TableActionsNotConfiguredException();
             $this->_actions = new $class($this->definition, $this->id);
         }
         return $this->_actions;

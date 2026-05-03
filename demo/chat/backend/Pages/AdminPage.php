@@ -7,8 +7,8 @@ namespace Demo\Chat\Pages;
 use Demo\Chat\Agents\ChatAgent;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\PageConstants;
-use Demo\Chat\Core\Page\AbstractChatPage;
 use Demo\Chat\Core\Router\DTO\ChatEventSignalDTO;
+use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Router\DTO\EntitiesChangesDTO;
 use Hilos\Core\Page\PageRouteParams;
 
@@ -16,22 +16,12 @@ use Hilos\Core\Page\PageRouteParams;
  * AdminPage - Admin page handler.
  *
  * Handles subscription, unsubscription, and actions for the admin page.
+ *
+ * @property ChatAgent $agent
  */
-final class AdminPage extends AbstractChatPage
+final class AdminPage extends AbstractPage
 {
     public const string PAGE = PageConstants::ADMIN;
-
-    /**
-     * Narrows the page agent to the chat worker used for admin dashboard signals.
-     *
-     * @return ChatAgent Chat worker bound to this admin page
-     */
-    protected function getChatAgent(): ChatAgent
-    {
-        assert($this->agent instanceof ChatAgent);
-
-        return $this->agent;
-    }
 
     /**
      * Handle page-specific subscription logic.
@@ -41,7 +31,7 @@ final class AdminPage extends AbstractChatPage
      */
     public function onSubscribe(string $acceptKey, PageRouteParams $params): void
     {
-        $this->getChatAgent()->sendToUser(
+        $this->sendToUser(
             ChatSignalConstants::SUBSCRIPTION_PAGE_ADMIN,
             $acceptKey,
             new ChatEventSignalDTO(new EntitiesChangesDTO()),
