@@ -7,15 +7,15 @@ Path of an outbound chat message from user input to all connected clients. A mes
 ```
 User sends text and/or uploaded attachment drafts
         |
-Frontend: ws.send('message', { content, attachmentDraftIds })
+Frontend: ws.send('message', { content })
         |
 WS Server -> WS_ACTION signal -> PageSignalRouter
         |
 MainPage::onAction('message', MessageActionDTO)
         |
-Validate connection, active moderation, 10s common submit limit, and draft ownership
+Validate connection, active moderation, 10s common submit limit, and runtime draft state
         |
-UserStatesActions::startOutboundModeration(acceptKey, requestId, content, attachmentDraftIds)
+ConnectionActions::startOutboundModeration(requestId, content)
         |
 ChatAgent::sendToAgent(MODERATE_REQUEST, ModerationRequestSignalData)
         |

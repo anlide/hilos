@@ -9,6 +9,7 @@ use Demo\Chat\Core\Router\DTO\AttachmentDraftSignalData;
 use Demo\Chat\Core\Router\DTO\FileUploadCompleteSignalData;
 use Demo\Chat\Core\Router\DTO\SelfConnectionSignalData;
 use Demo\Chat\Runtime\View\Item\Connection;
+use Hilos\Core\Router\DTO\FrontendChangesDTO;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -35,13 +36,6 @@ final class AttachmentDraftSignalDataTest extends TestCase
      */
     public function testSelfConnectionUpdateRoundtrip(): void
     {
-        $drafts = [[
-            'draftId' => 'draft-1',
-            'filename' => 'report.pdf',
-            'mimeType' => 'application/pdf',
-            'size' => 1234,
-            'uploadedAt' => 1710000000,
-        ]];
         $selfConnection = [
             'userId' => 7,
             'connectedAt' => 1710000000,
@@ -50,11 +44,9 @@ final class AttachmentDraftSignalDataTest extends TestCase
                 'requestId' => 'request-1',
                 'phase' => Connection::OUTBOUND_MODERATION_PHASE_CHECKING,
                 'text' => 'hello',
-                'attachments' => $drafts,
                 'reason' => null,
                 'updatedAt' => 1710000001,
             ],
-            'attachmentDrafts' => $drafts,
             'fileUploadProgress' => [
                 'filename' => 'photo.jpg',
                 'uploadedBytes' => 512,
@@ -68,6 +60,29 @@ final class AttachmentDraftSignalDataTest extends TestCase
 
         $this->assertSame($selfConnection, $restored->selfConnection);
         $this->assertSame(['selfConnection' => $selfConnection], $restored->toArray());
+    }
+
+    /**
+     * Self connection updates can carry framework frontend state changes without a selfConnection payload.
+     */
+    public function testSelfConnectionUpdateCarriesFrontendChanges(): void
+    {
+        $frontend = new FrontendChangesDTO(
+            full: ['attachmentDrafts' => [[
+                'draftId' => 'draft-1',
+                'filename' => 'report.pdf',
+                'mimeType' => 'application/pdf',
+                'size' => 1234,
+                'uploadedAt' => 1710000000,
+            ]]],
+            replaceFullKeys: ['attachmentDrafts'],
+        );
+
+        $restored = SelfConnectionSignalData::fromArray(
+            SelfConnectionSignalData::fromFrontendChanges($frontend)->toArray(),
+        );
+
+        $this->assertSame($frontend->toArray(), $restored->toArray()['frontend'] ?? null);
     }
 
     /**

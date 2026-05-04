@@ -44,19 +44,16 @@ final class ConnectionActions extends RtActions
      *
      * @param string $requestId Moderation request id
      * @param string $message Submitted message text
-     * @param list<string> $attachmentDraftIds Submitted attachment draft ids
-     *
      * @throws RtActionsCollectionNameNullException When collection name is null.
      * @throws RtTruthSourceWriteNotAllowedException When truth source does not allow write.
      */
-    public function startOutboundModeration(string $requestId, string $message, array $attachmentDraftIds): void
+    public function startOutboundModeration(string $requestId, string $message): void
     {
         $this->ensureCanWrite();
 
         $this->state->outboundModerationRequestId = $requestId;
         $this->state->outboundModerationPhase = RuntimeConnection::OUTBOUND_MODERATION_PHASE_CHECKING;
         $this->state->outboundModerationMessage = $message;
-        $this->state->outboundModerationAttachmentDraftIds = array_values($attachmentDraftIds);
         $this->state->outboundModerationReason = '';
         $this->state->outboundModerationUpdatedAt = time();
 
@@ -111,7 +108,6 @@ final class ConnectionActions extends RtActions
         $this->state->outboundModerationRequestId = '';
         $this->state->outboundModerationPhase = RuntimeConnection::OUTBOUND_MODERATION_PHASE_NONE;
         $this->state->outboundModerationMessage = '';
-        $this->state->outboundModerationAttachmentDraftIds = [];
         $this->state->outboundModerationReason = '';
         $this->state->outboundModerationUpdatedAt = time();
 

@@ -291,7 +291,9 @@ final class ChatFrontendProjection extends FrontendProjectionContext
 
         yield new FrontendDelivery(
             ChatSignalConstants::SELF_CONNECTION_UPDATE,
-            new SelfConnectionSignalData(SelfConnectionProjector::forConnection(Hilos::$rt->connections[$acceptKey])),
+            SelfConnectionSignalData::fromFrontendChanges(
+                AttachmentDraftFrontendStateProjector::fullForConnection(Hilos::$rt->connections[$acceptKey]),
+            ),
             $acceptKey,
         );
     }
@@ -373,7 +375,6 @@ final class ChatFrontendProjection extends FrontendProjectionContext
             StateConnection::outboundModerationRequestId,
             StateConnection::outboundModerationPhase,
             StateConnection::outboundModerationMessage,
-            StateConnection::outboundModerationAttachmentDraftIds,
             StateConnection::outboundModerationReason,
             StateConnection::outboundModerationUpdatedAt,
         ] as $field) {

@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Frontend;
 
-use Demo\Chat\Core\Router\DTO\AttachmentDraftSignalData;
 use Demo\Chat\Core\Router\DTO\SelfConnectionSignalData;
 use Demo\Chat\Runtime\View\Item\ChatUserState;
 use Demo\Chat\Runtime\View\Item\Connection;
@@ -47,8 +46,6 @@ final class SelfConnectionProjector
             SelfConnectionSignalData::messageRateLimitSecondsRemaining => $messageRateLimitSecondsRemaining,
             SelfConnectionSignalData::outboundModerationState =>
                 OutboundModerationStateProjector::forConnection($connection),
-            SelfConnectionSignalData::attachmentDrafts =>
-                AttachmentDraftSignalData::listFromDrafts($connection->attachmentDrafts),
             SelfConnectionSignalData::fileUploadProgress => $fileUploadProgress,
         ];
     }

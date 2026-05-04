@@ -33,12 +33,15 @@ final class MainPageSubscriptionProjector
                 ],
             ),
             selfConnection: SelfConnectionProjector::forConnection(Hilos::$rt->connections[$acceptKey]),
-            frontend: BotFrontendStateProjector::appendFullForBots(
-                UserFrontendStateProjector::fullForUsers(
-                    Hilos::$rt->connections->relevantUsers,
-                    includePublicUsers: false,
+            frontend: AttachmentDraftFrontendStateProjector::appendFullForConnection(
+                BotFrontendStateProjector::appendFullForBots(
+                    UserFrontendStateProjector::fullForUsers(
+                        Hilos::$rt->connections->relevantUsers,
+                        includePublicUsers: false,
+                    ),
+                    Hilos::$db->bots->activeOnly,
                 ),
-                Hilos::$db->bots->activeOnly,
+                Hilos::$rt->connections[$acceptKey],
             ),
         );
     }

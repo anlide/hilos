@@ -9,17 +9,9 @@ const selfConnectionPayload = {
     requestId: 'request-1',
     phase: 'checking',
     text: 'hello',
-    attachments: [],
     reason: null,
     updatedAt: 1710000001,
   },
-  attachmentDrafts: [{
-    draftId: 'draft-1',
-    filename: 'report.pdf',
-    mimeType: 'application/pdf',
-    size: 1234,
-    uploadedAt: 1710000002,
-  }],
   fileUploadProgress: {
     filename: 'photo.jpg',
     uploadedBytes: 512,
@@ -38,6 +30,23 @@ describe('chat session signal parsers', () => {
     expect(selfConnectionUpdate.parse({
       selfConnection: selfConnectionPayload,
     })).toEqual({ selfConnection: selfConnectionPayload })
+  })
+
+  it('parses frontend-only selfConnection update payloads', () => {
+    expect(selfConnectionUpdate.parse({
+      frontend: {
+        full: {
+          attachmentDrafts: [{
+            draftId: 'draft-1',
+            filename: 'report.pdf',
+            mimeType: 'application/pdf',
+            size: 1234,
+            uploadedAt: 1710000002,
+          }],
+        },
+        replaceFull: ['attachmentDrafts'],
+      },
+    })).toEqual({})
   })
 
   it('parses file upload progress updates as selfConnection payloads', () => {

@@ -1,5 +1,5 @@
 import { SignalDefinition, parseEmptyPayload } from '@hilos/sdk/services/signals'
-import type { AttachmentDraftPayload } from '@/stores'
+import type { AttachmentDraftPayload } from '@/entities/frontendStateParsers'
 
 const isRecord = (value: unknown): value is Record<string, unknown> => {
   return typeof value === 'object' && value !== null && !Array.isArray(value)

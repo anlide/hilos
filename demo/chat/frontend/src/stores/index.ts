@@ -1,7 +1,12 @@
 import { defineStore } from 'pinia'
 import { ChatBot, Event, User } from '@/types'
 import type { Presence } from '@/types/domain/Presence'
-import type { BotPresencePayload, UserConnectionStatsPayload, UserPresencePayload } from '@/entities/frontendStateParsers'
+import type {
+  AttachmentDraftPayload,
+  BotPresencePayload,
+  UserConnectionStatsPayload,
+  UserPresencePayload,
+} from '@/entities/frontendStateParsers'
 
 /** Binary upload progress: seeded at 0/total by file_upload_ready, then throttled progress_update + main subscribe. */
 export type FileUploadProgressPayload = {
@@ -10,19 +15,10 @@ export type FileUploadProgressPayload = {
   totalBytes: number
 }
 
-export type AttachmentDraftPayload = {
-  draftId: string
-  filename: string
-  mimeType: string
-  size: number
-  uploadedAt: number
-}
-
 export type OutboundModerationStatePayload = {
   requestId: string
   phase: 'checking' | 'rejected' | 'unavailable'
   text: string
-  attachments: AttachmentDraftPayload[]
   reason: string | null
   updatedAt: number
 }
@@ -32,7 +28,6 @@ export type SelfConnectionPayload = {
   connectedAt: number
   messageRateLimitSecondsRemaining: number
   outboundModerationState: OutboundModerationStatePayload | null
-  attachmentDrafts: AttachmentDraftPayload[]
   fileUploadProgress: FileUploadProgressPayload | null
 }
 
@@ -57,6 +52,7 @@ export const useChatStore = defineStore('chat', {
     userConnectionStatsById: {} as Record<number, UserConnectionStatsPayload>,
     bots: [] as ChatBot[],
     botPresenceById: {} as Record<number, BotPresencePayload>,
+    attachmentDraftRows: [] as AttachmentDraftPayload[],
     currentUserId: null as number | null,
     currentUsername: null as string | null,
     selfConnection: null as SelfConnectionPayload | null,
@@ -99,7 +95,7 @@ export const useChatStore = defineStore('chat', {
       return this.selfConnection?.outboundModerationState ?? null
     },
     attachmentDrafts(): AttachmentDraftPayload[] {
-      return this.selfConnection?.attachmentDrafts ?? []
+      return this.attachmentDraftRows
     },
     fileUploadProgress(): FileUploadProgressPayload | null {
       return this.selfConnection?.fileUploadProgress ?? null
@@ -124,6 +120,7 @@ export const useChatStore = defineStore('chat', {
 
     clearSelfConnection() {
       this.selfConnection = null
+      this.attachmentDraftRows = []
     },
 
     setOutboundModerationState(value: OutboundModerationStatePayload | null) {
@@ -137,33 +134,29 @@ export const useChatStore = defineStore('chat', {
     },
 
     setAttachmentDrafts(value: AttachmentDraftPayload[]) {
-      if (this.selfConnection !== null) {
-        this.selfConnection.attachmentDrafts = value
-      }
+      this.attachmentDraftRows = value
     },
 
-    addAttachmentDraft(value: AttachmentDraftPayload) {
-      if (this.selfConnection === null) {
-        return
+    upsertAttachmentDrafts(value: AttachmentDraftPayload[], replace = false) {
+      if (replace) {
+        this.attachmentDraftRows = []
       }
-      const index = this.attachmentDrafts.findIndex((draft) => draft.draftId === value.draftId)
-      if (index >= 0) {
-        this.selfConnection.attachmentDrafts[index] = value
-        return
+      for (const draft of value) {
+        const index = this.attachmentDraftRows.findIndex((existing) => existing.draftId === draft.draftId)
+        if (index >= 0) {
+          this.attachmentDraftRows[index] = draft
+        } else {
+          this.attachmentDraftRows.push(draft)
+        }
       }
-      this.selfConnection.attachmentDrafts.push(value)
     },
 
     removeAttachmentDraft(draftId: string) {
-      if (this.selfConnection !== null) {
-        this.selfConnection.attachmentDrafts = this.attachmentDrafts.filter((draft) => draft.draftId !== draftId)
-      }
+      this.attachmentDraftRows = this.attachmentDraftRows.filter((draft) => draft.draftId !== draftId)
     },
 
     clearAttachmentDrafts() {
-      if (this.selfConnection !== null) {
-        this.selfConnection.attachmentDrafts = []
-      }
+      this.attachmentDraftRows = []
     },
 
     setFileUploadProgress(value: FileUploadProgressPayload | null) {

@@ -2,9 +2,11 @@ import { FrontendStateReceiver } from '@hilos/sdk/entities'
 import { parseUserPayloads } from './parsers'
 import { parsePartialUserPayloads } from './partialUserPayload'
 import {
+  parseAttachmentDraftPayloads,
   parseBotPresencePayloads,
   parseUserConnectionStatsPayloads,
   parseUserPresencePayloads,
+  type AttachmentDraftPayload,
   type BotPresencePayload,
   type UserConnectionStatsPayload,
   type UserPresencePayload,
@@ -20,6 +22,8 @@ interface ChatStoreForFrontendState {
   removeUserConnectionStats(ids: number[]): void
   upsertBotPresence(items: BotPresencePayload[], replace?: boolean): void
   removeBotPresence(ids: number[]): void
+  upsertAttachmentDrafts(items: AttachmentDraftPayload[], replace?: boolean): void
+  removeAttachmentDraft(draftId: string): void
 }
 
 export class ChatFrontendStateReceiver extends FrontendStateReceiver {
@@ -60,6 +64,14 @@ export class ChatFrontendStateReceiver extends FrontendStateReceiver {
       const presence = parseBotPresencePayloads(rawItems)
       if (presence !== null) {
         store.upsertBotPresence(presence, replace)
+      }
+      return
+    }
+
+    if (collectionKey === 'attachmentDrafts') {
+      const drafts = parseAttachmentDraftPayloads(rawItems)
+      if (drafts !== null) {
+        store.upsertAttachmentDrafts(drafts, replace)
       }
     }
   }
@@ -102,6 +114,14 @@ export class ChatFrontendStateReceiver extends FrontendStateReceiver {
       if (presence !== null) {
         store.upsertBotPresence(presence)
       }
+      return
+    }
+
+    if (collectionKey === 'attachmentDrafts') {
+      const drafts = parseAttachmentDraftPayloads(rawItems)
+      if (drafts !== null) {
+        store.upsertAttachmentDrafts(drafts)
+      }
     }
   }
 
@@ -117,6 +137,10 @@ export class ChatFrontendStateReceiver extends FrontendStateReceiver {
       store.removeUserConnectionStats(ids)
     } else if (collectionKey === 'botPresence') {
       store.removeBotPresence(ids)
+    } else if (collectionKey === 'attachmentDrafts') {
+      for (const id of ids) {
+        store.removeAttachmentDraft(String(id))
+      }
     }
   }
 }

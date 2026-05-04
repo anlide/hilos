@@ -8,17 +8,17 @@ use Demo\Chat\Agents\ChatAgent;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Core\Page\DTO\MessageActionDTO;
 use Demo\Chat\Pages\MainPage;
-use Hilos\Core\Exception\EmptyValueException;
+use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Unit tests for main-page message validation before runtime access.
+ * Unit tests for main-page message validation before runtime-backed draft checks.
  */
 final class MainPageMessageValidationTest extends TestCase
 {
-    public function testRejectsEmptyMessageWithoutAttachments(): void
+    public function testRejectsEmptyMessageWhenSessionIsMissing(): void
     {
-        $this->expectException(EmptyValueException::class);
+        $this->expectException(ItemNotFoundForUpdateException::class);
 
         (new MainPage(new ChatAgent()))->onAction(
             'missing-ak',
@@ -27,9 +27,9 @@ final class MainPageMessageValidationTest extends TestCase
         );
     }
 
-    public function testRejectsWhitespaceOnlyMessageWithoutAttachments(): void
+    public function testRejectsWhitespaceOnlyMessageWhenSessionIsMissing(): void
     {
-        $this->expectException(EmptyValueException::class);
+        $this->expectException(ItemNotFoundForUpdateException::class);
 
         (new MainPage(new ChatAgent()))->onAction(
             'missing-ak',

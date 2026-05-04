@@ -17,6 +17,14 @@ export type BotPresencePayload = {
   presence: Presence
 }
 
+export type AttachmentDraftPayload = {
+  draftId: string
+  filename: string
+  mimeType: string
+  size: number
+  uploadedAt: number
+}
+
 function isRecord(value: unknown): value is JsonRecord {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
@@ -52,4 +60,20 @@ export function parseBotPresencePayloads(value: unknown): BotPresencePayload[] |
     return null
   }
   return value.every(isBotPresencePayload) ? value : null
+}
+
+export function isAttachmentDraftPayload(value: unknown): value is AttachmentDraftPayload {
+  return isRecord(value)
+    && typeof value.draftId === 'string'
+    && typeof value.filename === 'string'
+    && typeof value.mimeType === 'string'
+    && typeof value.size === 'number'
+    && typeof value.uploadedAt === 'number'
+}
+
+export function parseAttachmentDraftPayloads(value: unknown): AttachmentDraftPayload[] | null {
+  if (!Array.isArray(value)) {
+    return null
+  }
+  return value.every(isAttachmentDraftPayload) ? value : null
 }

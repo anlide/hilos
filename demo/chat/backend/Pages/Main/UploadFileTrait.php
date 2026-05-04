@@ -15,6 +15,7 @@ use Demo\Chat\Core\Router\DTO\FileUploadRejectedSignalData;
 use Demo\Chat\Core\Router\DTO\SelfConnectionSignalData;
 use Demo\Chat\Frontend\SelfConnectionProjector;
 use Demo\Chat\Hilos;
+use Demo\Chat\Runtime\View\Item\Connection;
 use Demo\Chat\Utils\ChatSettingsHelper;
 use Hilos\Fs\Exception\FileDeleteException;
 use Hilos\Fs\FsException;
@@ -47,6 +48,18 @@ trait UploadFileTrait
     {
         $connection = Hilos::$rt->connections[$acceptKey] ?? null;
         if ($connection === null) {
+            return;
+        }
+        if ($connection->outboundModerationPhase === Connection::OUTBOUND_MODERATION_PHASE_CHECKING) {
+            $this->sendToUser(
+                ChatSignalConstants::FILE_UPLOAD_REJECTED,
+                $acceptKey,
+                new FileUploadRejectedSignalData(
+                    'message_moderating',
+                    'Cannot upload attachments while message is being moderated',
+                ),
+            );
+
             return;
         }
 

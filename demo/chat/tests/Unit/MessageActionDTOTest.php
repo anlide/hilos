@@ -54,19 +54,6 @@ final class MessageActionDTOTest extends TestCase
     }
 
     /**
-     * fromArray keeps unique non-empty attachment draft ids.
-     */
-    public function testFromArrayParsesAttachmentDraftIds(): void
-    {
-        $dto = MessageActionDTO::fromArray([
-            'content' => '',
-            'attachmentDraftIds' => ['draft-a', '', 'draft-a', 42, 'draft-b'],
-        ]);
-
-        $this->assertSame(['draft-a', 'draft-b'], $dto->attachmentDraftIds);
-    }
-
-    /**
      * isValid is false for whitespace-only content without attachments.
      */
     public function testIsValidFalseWhenContentEmpty(): void
@@ -85,27 +72,13 @@ final class MessageActionDTOTest extends TestCase
     }
 
     /**
-     * isValid is true when content is empty but an attachment draft is present.
-     */
-    public function testIsValidTrueWhenAttachmentDraftPresent(): void
-    {
-        $dto = MessageActionDTO::fromArray([
-            'content' => '   ',
-            'attachmentDraftIds' => ['draft-a'],
-        ]);
-
-        $this->assertTrue($dto->isValid());
-    }
-
-    /**
-     * toArray exposes content and attachment draft ids for transport.
+     * toArray exposes content for transport.
      */
     public function testToArrayRoundTripShape(): void
     {
-        $dto = new MessageActionDTO('text', ['draft-a']);
+        $dto = new MessageActionDTO('text');
         $this->assertSame([
             'content' => 'text',
-            'attachmentDraftIds' => ['draft-a'],
         ], $dto->toArray());
     }
 }

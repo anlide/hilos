@@ -45,7 +45,6 @@ final class ChatAgentModerationTest extends IntegrationTestCase
             Hilos::$rt->connections['stop-ak']?->actions->startOutboundModeration(
                 'request-stop',
                 'pending moderation',
-                [],
             );
 
             $agent = new ChatAgent();
@@ -109,7 +108,6 @@ final class ChatAgentModerationTest extends IntegrationTestCase
             Hilos::$rt->connections['live-ak']?->actions->startOutboundModeration(
                 'request-live',
                 'pending moderation',
-                [],
             );
 
             Hilos::initSignalRouter(new ChatSignalRouter());

@@ -30,7 +30,6 @@ use Hilos\Runtime\View\Item\RtItem;
  * @property-read string $outboundModerationRequestId Current moderation request id
  * @property-read string $outboundModerationPhase Current moderation phase
  * @property-read string $outboundModerationMessage Submitted message text
- * @property-read list<string> $outboundModerationAttachmentDraftIds Submitted attachment draft ids
  * @property-read string $outboundModerationReason Rejection or unavailable reason
  * @property-read int $outboundModerationUpdatedAt Last moderation update unix time
  * @property-read ?string $fileSessionUploadId Active binary upload id or null
@@ -101,7 +100,6 @@ final class Connection extends RtItem
             StateConnection::outboundModerationRequestId => $state->outboundModerationRequestId,
             StateConnection::outboundModerationPhase => $state->outboundModerationPhase,
             StateConnection::outboundModerationMessage => $state->outboundModerationMessage,
-            StateConnection::outboundModerationAttachmentDraftIds => $state->outboundModerationAttachmentDraftIds,
             StateConnection::outboundModerationReason => $state->outboundModerationReason,
             StateConnection::outboundModerationUpdatedAt => $state->outboundModerationUpdatedAt,
             StateConnection::fileSessionUploadId => $state->fileSessionUploadId,

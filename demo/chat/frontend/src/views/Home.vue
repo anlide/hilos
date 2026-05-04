@@ -35,7 +35,6 @@ const websocket = useWebSocket()
 
 type SendMessagePayload = {
   content: string
-  attachmentDraftIds: string[]
 }
 
 const handleSendMessage = (payload: SendMessagePayload) => {

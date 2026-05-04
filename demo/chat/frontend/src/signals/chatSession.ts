@@ -1,6 +1,5 @@
 import { SignalDefinition } from '@hilos/sdk/services/signals'
 import type {
-  AttachmentDraftPayload,
   FileUploadProgressPayload,
   OutboundModerationStatePayload,
   SelfConnectionPayload,
@@ -10,38 +9,19 @@ const isRecord = (value: unknown): value is Record<string, unknown> => {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-const parseAttachmentDraft = (raw: unknown): AttachmentDraftPayload | null => {
-  if (!isRecord(raw)) return null
-  const { draftId, filename, mimeType, size, uploadedAt } = raw
-  if (typeof draftId !== 'string') return null
-  if (typeof filename !== 'string' || typeof mimeType !== 'string') return null
-  if (typeof size !== 'number' || typeof uploadedAt !== 'number') return null
-  return { draftId, filename, mimeType, size, uploadedAt }
-}
-
-const parseAttachmentDrafts = (raw: unknown): AttachmentDraftPayload[] | null => {
-  if (!Array.isArray(raw)) return null
-  const drafts = raw.map(parseAttachmentDraft)
-  if (drafts.some((draft) => draft === null)) return null
-  return drafts as AttachmentDraftPayload[]
-}
-
 const parseOutboundModerationState = (raw: unknown): OutboundModerationStatePayload | null => {
   if (raw === null || raw === undefined) return null
   if (!isRecord(raw)) return null
-  const { requestId, phase, text, attachments, reason, updatedAt } = raw
+  const { requestId, phase, text, reason, updatedAt } = raw
   if (typeof requestId !== 'string') return null
   if (phase !== 'checking' && phase !== 'rejected' && phase !== 'unavailable') return null
   if (typeof text !== 'string') return null
-  const parsedAttachments = parseAttachmentDrafts(attachments)
-  if (parsedAttachments === null) return null
   if (reason !== null && reason !== undefined && typeof reason !== 'string') return null
   if (typeof updatedAt !== 'number') return null
   return {
     requestId,
     phase,
     text,
-    attachments: parsedAttachments,
     reason: typeof reason === 'string' ? reason : null,
     updatedAt,
   }
@@ -62,13 +42,10 @@ const parseSelfConnection = (raw: unknown): SelfConnectionPayload | null => {
     connectedAt,
     messageRateLimitSecondsRemaining,
     outboundModerationState,
-    attachmentDrafts,
     fileUploadProgress,
   } = raw
   if (typeof userId !== 'number' || typeof connectedAt !== 'number') return null
   if (typeof messageRateLimitSecondsRemaining !== 'number') return null
-  const parsedDrafts = parseAttachmentDrafts(attachmentDrafts)
-  if (parsedDrafts === null) return null
   const parsedModeration =
     outboundModerationState === null || outboundModerationState === undefined
       ? null
@@ -88,7 +65,6 @@ const parseSelfConnection = (raw: unknown): SelfConnectionPayload | null => {
     connectedAt,
     messageRateLimitSecondsRemaining,
     outboundModerationState: parsedModeration,
-    attachmentDrafts: parsedDrafts,
     fileUploadProgress: parsedProgress,
   }
 }
@@ -127,14 +103,15 @@ export const subscriptionPageMain = new SignalDefinition<
  * `self_connection_update` — current connection-local chat session state.
  */
 export interface SelfConnectionUpdatePayload {
-  selfConnection: SelfConnectionPayload
+  selfConnection?: SelfConnectionPayload
 }
 
 export const selfConnectionUpdate = new SignalDefinition<
   'self_connection_update',
   SelfConnectionUpdatePayload
 >('self_connection_update', (raw: unknown): SelfConnectionUpdatePayload | null => {
-  if (!isRecord(raw) || !('selfConnection' in raw)) return null
+  if (!isRecord(raw)) return null
+  if (!('selfConnection' in raw)) return {}
   const selfConnection = parseSelfConnection(raw.selfConnection)
   return selfConnection === null ? null : { selfConnection }
 })

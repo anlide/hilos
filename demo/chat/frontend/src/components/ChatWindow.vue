@@ -166,7 +166,7 @@ let rateLimitInterval: ReturnType<typeof setInterval> | null = null
 const CHUNK_SIZE = 65536
 
 const emit = defineEmits<{
-  send: [payload: { content: string; attachmentDraftIds: string[] }]
+  send: [payload: { content: string }]
 }>()
 
 const attachmentDrafts = computed(() => chatStore.attachmentDrafts)
@@ -262,9 +262,8 @@ const startRateLimitCountdown = (seconds = MESSAGE_RATE_LIMIT_SECONDS) => {
 const handleSubmit = () => {
   if (!canSubmit.value) return
   const content = draftMessage.value.trim()
-  const attachmentDraftIds = attachmentDrafts.value.map((draft) => draft.draftId)
   chatStore.setMessageError(null)
-  emit('send', { content, attachmentDraftIds })
+  emit('send', { content })
   startRateLimitCountdown()
 }
 
@@ -295,7 +294,6 @@ watch(
   (state, previous) => {
     if (previous?.phase === 'checking' && state === null) {
       draftMessage.value = ''
-      chatStore.clearAttachmentDrafts()
     }
     if (state !== null && state.phase !== 'checking' && draftMessage.value === '') {
       draftMessage.value = state.text

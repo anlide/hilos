@@ -56,7 +56,6 @@ final class ChatFrontendProjectionTest extends IntegrationTestCase
             Hilos::$rt->connections['moderation-ak']?->actions->startOutboundModeration(
                 'request-projection',
                 'pending text',
-                [],
             );
 
             $signals = $this->drainProjectedSignals(ChatSignalConstants::SELF_CONNECTION_UPDATE);
@@ -118,7 +117,12 @@ final class ChatFrontendProjectionTest extends IntegrationTestCase
             $this->assertSame('draft-ak', $webSocketData->targetAcceptKey);
             $payload = $webSocketData->data;
             $this->assertInstanceOf(SelfConnectionSignalData::class, $payload);
-            $this->assertSame('draft-projection', $payload->selfConnection['attachmentDrafts'][0]['draftId'] ?? null);
+            $payloadData = $payload->toArray();
+            $this->assertSame(
+                'draft-projection',
+                $payloadData['frontend']['full']['attachmentDrafts'][0]['draftId'] ?? null,
+            );
+            $this->assertSame(['attachmentDrafts'], $payloadData['frontend']['replaceFull'] ?? null);
         } finally {
             Hilos::$rt->connections->actions->clear();
             Hilos::$rt->attachmentDrafts->actions->clear(deleteFiles: false);

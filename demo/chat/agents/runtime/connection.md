@@ -21,7 +21,6 @@ Runtime row for one active WebSocket connection. Holds transport metadata plus c
 | `outboundModerationRequestId` | Current moderation request id, empty when no visible moderation state exists |
 | `outboundModerationPhase` | `checking`, `rejected`, `unavailable`, or empty when clear |
 | `outboundModerationMessage` | Submitted message text |
-| `outboundModerationAttachmentDraftIds` | Submitted attachment draft ids |
 | `outboundModerationReason` | Rejection/unavailable reason, empty when none |
 | `outboundModerationUpdatedAt` | Unix time of last moderation field change |
 

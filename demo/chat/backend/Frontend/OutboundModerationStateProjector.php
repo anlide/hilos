@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Frontend;
 
-use Demo\Chat\Core\Router\DTO\AttachmentDraftSignalData;
 use Demo\Chat\Runtime\View\Item\Connection;
 
 /**
@@ -26,23 +25,10 @@ final class OutboundModerationStateProjector
             return null;
         }
 
-        $drafts = [];
-        foreach ($connection->outboundModerationAttachmentDraftIds as $draftId) {
-            foreach ($connection->attachmentDrafts as $draft) {
-                if ($draft->draftId !== $draftId) {
-                    continue;
-                }
-
-                $drafts[] = $draft;
-                break;
-            }
-        }
-
         return [
             'requestId' => $connection->outboundModerationRequestId,
             'phase' => $connection->outboundModerationPhase,
             'text' => $connection->outboundModerationMessage,
-            'attachments' => AttachmentDraftSignalData::listFromDraftItems(...$drafts),
             'reason' => $connection->outboundModerationReason !== '' ? $connection->outboundModerationReason : null,
             'updatedAt' => $connection->outboundModerationUpdatedAt,
         ];

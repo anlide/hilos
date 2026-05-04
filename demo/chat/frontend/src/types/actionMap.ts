@@ -66,8 +66,8 @@ declare module '@hilos/sdk/types/actionMap' {
     /** Delete one uploaded attachment draft. */
     attachment_draft_delete: { draftId: string }
 
-    /** Send a chat message with optional uploaded attachment drafts. */
-    message: { content: string; attachmentDraftIds: string[] }
+    /** Send a chat message. Uploaded attachment drafts are read from runtime state. */
+    message: { content: string }
   }
 }
 

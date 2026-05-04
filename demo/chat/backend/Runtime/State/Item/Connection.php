@@ -24,7 +24,6 @@ final class Connection extends RtState
     public const string outboundModerationRequestId = 'outboundModerationRequestId';
     public const string outboundModerationPhase = 'outboundModerationPhase';
     public const string outboundModerationMessage = 'outboundModerationMessage';
-    public const string outboundModerationAttachmentDraftIds = 'outboundModerationAttachmentDraftIds';
     public const string outboundModerationReason = 'outboundModerationReason';
     public const string outboundModerationUpdatedAt = 'outboundModerationUpdatedAt';
 
@@ -60,13 +59,6 @@ final class Connection extends RtState
 
     /** Submitted message text associated with the moderation state. */
     public string $outboundModerationMessage = '';
-
-    /**
-     * Submitted attachment draft ids.
-     *
-     * @var list<string>
-     */
-    public array $outboundModerationAttachmentDraftIds = [];
 
     /** Moderation rejection or unavailable reason. */
     public string $outboundModerationReason = '';
@@ -123,7 +115,6 @@ final class Connection extends RtState
         $instance->outboundModerationRequestId = '';
         $instance->outboundModerationPhase = '';
         $instance->outboundModerationMessage = '';
-        $instance->outboundModerationAttachmentDraftIds = [];
         $instance->outboundModerationReason = '';
         $instance->outboundModerationUpdatedAt = 0;
         $instance->fileSessionUploadId = null;
@@ -155,15 +146,6 @@ final class Connection extends RtState
         $instance->outboundModerationRequestId = (string)($row[self::outboundModerationRequestId] ?? '');
         $instance->outboundModerationPhase = (string)($row[self::outboundModerationPhase] ?? '');
         $instance->outboundModerationMessage = (string)($row[self::outboundModerationMessage] ?? '');
-        $draftIds = $row[self::outboundModerationAttachmentDraftIds] ?? [];
-        $instance->outboundModerationAttachmentDraftIds = [];
-        if (is_array($draftIds)) {
-            foreach ($draftIds as $draftId) {
-                if (is_string($draftId) && $draftId !== '') {
-                    $instance->outboundModerationAttachmentDraftIds[] = $draftId;
-                }
-            }
-        }
         $instance->outboundModerationReason = (string)($row[self::outboundModerationReason] ?? '');
         $instance->outboundModerationUpdatedAt = (int)($row[self::outboundModerationUpdatedAt] ?? 0);
         $uid = $row[self::fileSessionUploadId] ?? null;
@@ -209,16 +191,6 @@ final class Connection extends RtState
         }
         if (isset($diff[self::outboundModerationMessage])) {
             $this->outboundModerationMessage = (string)$diff[self::outboundModerationMessage];
-        }
-        if (array_key_exists(self::outboundModerationAttachmentDraftIds, $diff)) {
-            $this->outboundModerationAttachmentDraftIds = [];
-            if (is_array($diff[self::outboundModerationAttachmentDraftIds])) {
-                foreach ($diff[self::outboundModerationAttachmentDraftIds] as $draftId) {
-                    if (is_string($draftId) && $draftId !== '') {
-                        $this->outboundModerationAttachmentDraftIds[] = $draftId;
-                    }
-                }
-            }
         }
         if (isset($diff[self::outboundModerationReason])) {
             $this->outboundModerationReason = (string)$diff[self::outboundModerationReason];
@@ -286,7 +258,6 @@ final class Connection extends RtState
             self::outboundModerationRequestId => $this->outboundModerationRequestId,
             self::outboundModerationPhase => $this->outboundModerationPhase,
             self::outboundModerationMessage => $this->outboundModerationMessage,
-            self::outboundModerationAttachmentDraftIds => $this->outboundModerationAttachmentDraftIds,
             self::outboundModerationReason => $this->outboundModerationReason,
             self::outboundModerationUpdatedAt => $this->outboundModerationUpdatedAt,
             self::fileSessionUploadId => $this->fileSessionUploadId,

@@ -12,6 +12,7 @@ use Demo\Chat\Core\Router\DTO\ModerationRequestSignalData;
 use Demo\Chat\Core\Router\DTO\ModerationResultSignalData;
 use Demo\Chat\Database\Object\Item\ModeratorPromptPiece as ObjectModeratorPromptPiece;
 use Demo\Chat\Hilos;
+use Demo\Chat\Runtime\View\Item\AttachmentDraft;
 use Demo\Chat\Utils\ChatSettingsHelper;
 use Hilos\Constants\LLMConstants;
 use Hilos\Core\Agent\AbstractAgent;
@@ -257,11 +258,8 @@ class ModeratorAgent extends AbstractAgent
 
         $queuedRequest = $item['request'];
         $message = $queuedRequest->message;
-        if (
-            $queuedRequest instanceof ModerationRequestSignalData
-            && $queuedRequest->contentForModeration !== ''
-        ) {
-            $message = $queuedRequest->contentForModeration;
+        if ($queuedRequest instanceof ModerationRequestSignalData) {
+            $message = $this->buildUserContentForModeration($queuedRequest);
         }
         $userId = $queuedRequest instanceof ModerationRequestSignalData ? $queuedRequest->userId : null;
         $botId = $queuedRequest instanceof ModerationBotRequestSignalData ? $queuedRequest->botId : null;
@@ -323,6 +321,46 @@ class ModeratorAgent extends AbstractAgent
                 reason: $reason,
             ),
         );
+    }
+
+    /**
+     * Builds user moderation content from submitted text and current connection-local drafts.
+     *
+     * @param ModerationRequestSignalData $moderationRequest User request to moderate
+     */
+    private function buildUserContentForModeration(ModerationRequestSignalData $moderationRequest): string
+    {
+        if (!isset(Hilos::$rt->connections[$moderationRequest->acceptKey])) {
+            return $moderationRequest->message;
+        }
+
+        return $this->buildContentForModeration(
+            $moderationRequest->message,
+            ...Hilos::$rt->connections[$moderationRequest->acceptKey]->attachmentDrafts,
+        );
+    }
+
+    /**
+     * Builds moderation prompt content from message text and attachment metadata.
+     *
+     * @param AttachmentDraft ...$drafts Attachment drafts
+     */
+    private function buildContentForModeration(string $message, AttachmentDraft ...$drafts): string
+    {
+        $parts = [];
+        if ($message !== '') {
+            $parts[] = "Message:\n{$message}";
+        }
+        foreach ($drafts as $draft) {
+            $parts[] = sprintf(
+                'Attachment: name=%s, mime=%s, size=%d bytes.',
+                $draft->originalFilename,
+                $draft->mimeType,
+                $draft->size,
+            );
+        }
+
+        return implode("\n\n", $parts);
     }
 
     /**

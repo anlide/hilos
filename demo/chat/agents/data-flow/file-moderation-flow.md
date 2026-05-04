@@ -11,16 +11,16 @@ UploadFileTrait creates AttachmentDraft in quarantine
         |
 Frontend shows draft in composer
         |
-User sends message with attachmentDraftIds
+User sends message; backend reads current drafts from `Hilos::$rt->connections[$acceptKey]->attachmentDrafts`
         |
-MainPage validates draft ownership and starts outbound moderation
+MainPage starts outbound moderation for the current connection
         |
-ModeratorAgent receives MODERATE_REQUEST with contentForModeration
+ModeratorAgent receives MODERATE_REQUEST and builds moderation content from runtime drafts
         |
 MainPage receives MODERATION_RESULT
 ```
 
-`contentForModeration` includes message text plus attachment metadata such as filename, MIME type, and size. The file bytes themselves are not inspected by this flow.
+Moderation content includes message text plus attachment metadata such as filename, MIME type, and size. The file bytes themselves are not inspected by this flow.
 
 ## Approved
 

@@ -18,7 +18,6 @@ use Demo\Chat\Database\DTO\PublishedAttachmentInputs;
 use Demo\Chat\Frontend\MainPageSubscriptionProjector;
 use Demo\Chat\Hilos;
 use Demo\Chat\Pages\Main\UploadFileTrait;
-use Demo\Chat\Runtime\View\Item\AttachmentDraft;
 use Demo\Chat\Runtime\View\Item\ChatUserState;
 use Demo\Chat\Runtime\View\Item\Connection;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
@@ -190,17 +189,11 @@ final class MainPage extends AbstractPage
      * @param MessageActionDTO $dto Parsed message action payload
      * @throws EmptyValueException When message has no non-empty text and no attachments
      * @throws ItemNotFoundForUpdateException When the WebSocket session or user runtime state is missing
-     * @throws ValidationException When the user is rate-limited, already moderating, or references invalid drafts
+     * @throws ValidationException When the user is rate-limited or already moderating
      * @throws HilosException On database, runtime, or truth source failure
      */
     private function handleMessage(string $acceptKey, MessageActionDTO $dto): void
     {
-        if ($dto->content === '' && $dto->attachmentDraftIds === []) {
-            throw new EmptyValueException('Message cannot be empty');
-        }
-        if (trim($dto->content) === '' && $dto->attachmentDraftIds === []) {
-            throw new EmptyValueException('Message cannot be trim-empty');
-        }
         if (!isset(Hilos::$rt->connections[$acceptKey])) {
             throw new ItemNotFoundForUpdateException('User session not found');
         }
@@ -221,23 +214,11 @@ final class MainPage extends AbstractPage
         }
 
         $this->deleteExpiredAttachmentDrafts();
-        $drafts = [];
-        foreach ($dto->attachmentDraftIds as $draftId) {
-            $draftFound = false;
-            foreach (Hilos::$rt->connections[$acceptKey]->attachmentDrafts as $draft) {
-                if ($draft->draftId !== $draftId) {
-                    continue;
-                }
-
-                $drafts[] = $draft;
-                $draftFound = true;
-                break;
-            }
-
-            if (!$draftFound) {
-                // TODO: Reconcile stale draft references through a projection-backed no-op action.
-                throw new ValidationException('Attachment draft is no longer available');
-            }
+        if ($dto->content === '' && count(Hilos::$rt->connections[$acceptKey]->attachmentDrafts) === 0) {
+            throw new EmptyValueException('Message cannot be empty');
+        }
+        if (trim($dto->content) === '' && count(Hilos::$rt->connections[$acceptKey]->attachmentDrafts) === 0) {
+            throw new EmptyValueException('Message cannot be trim-empty');
         }
 
         $requestId = RandomHelper::hex(16);
@@ -245,7 +226,6 @@ final class MainPage extends AbstractPage
         Hilos::$rt->connections[$acceptKey]->actions->startOutboundModeration(
             $requestId,
             $dto->content,
-            $dto->attachmentDraftIds,
         );
 
         $this->agent->sendToAgent(
@@ -255,7 +235,6 @@ final class MainPage extends AbstractPage
                 acceptKey: $acceptKey,
                 userId: Hilos::$rt->connections[$acceptKey]->userId,
                 message: $dto->content,
-                contentForModeration: $this->buildContentForModeration($dto->content, ...$drafts),
             ),
         );
     }
@@ -348,29 +327,19 @@ final class MainPage extends AbstractPage
             return;
         }
 
-        $draftIds = Hilos::$rt->connections[$result->acceptKey]->outboundModerationAttachmentDraftIds;
         $drafts = [];
-        foreach ($draftIds as $draftId) {
-            $draftFound = false;
-            foreach (Hilos::$rt->connections[$result->acceptKey]->attachmentDrafts as $draft) {
-                if ($draft->draftId !== $draftId) {
-                    continue;
-                }
-
-                $drafts[] = $draft;
-                $draftFound = true;
-                break;
-            }
-
-            if (!$draftFound) {
-                Hilos::$rt->connections[$result->acceptKey]->actions->failOutboundModeration(
-                    $result->requestId,
-                    Connection::OUTBOUND_MODERATION_PHASE_UNAVAILABLE,
-                    'attachment_missing',
-                );
-                // TODO: Reconcile stale draft references through a projection-backed no-op action.
-                return;
-            }
+        $draftIds = [];
+        foreach (Hilos::$rt->connections[$result->acceptKey]->attachmentDrafts as $draft) {
+            $drafts[] = $draft;
+            $draftIds[] = $draft->draftId;
+        }
+        if ($result->message === '' && $drafts === []) {
+            Hilos::$rt->connections[$result->acceptKey]->actions->failOutboundModeration(
+                $result->requestId,
+                Connection::OUTBOUND_MODERATION_PHASE_UNAVAILABLE,
+                'attachment_missing',
+            );
+            return;
         }
 
         $attachments = [];
@@ -416,28 +385,5 @@ final class MainPage extends AbstractPage
             userId: $result->userId,
             attachments: new PublishedAttachmentInputs(...$attachments),
         );
-    }
-
-    /**
-     * Builds moderation prompt content from message text and attachment metadata.
-     *
-     * @param AttachmentDraft ...$drafts Attachment drafts
-     */
-    private function buildContentForModeration(string $message, AttachmentDraft ...$drafts): string
-    {
-        $parts = [];
-        if ($message !== '') {
-            $parts[] = "Message:\n{$message}";
-        }
-        foreach ($drafts as $draft) {
-            $parts[] = sprintf(
-                'Attachment: name=%s, mime=%s, size=%d bytes.',
-                $draft->originalFilename,
-                $draft->mimeType,
-                $draft->size,
-            );
-        }
-
-        return implode("\n\n", $parts);
     }
 }
