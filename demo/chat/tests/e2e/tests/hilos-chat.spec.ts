@@ -46,16 +46,6 @@ test.describe('hilos-chat', () => {
     await expect(page).toHaveURL(/\/hilos\/users\/\d+/)
   })
 
-  test.fixme('edits a Hilos user through the detail page modal', async ({ page }) => {
-    await page.goto('/hilos/users/1')
-
-    await page.getByRole('button', { name: 'Edit' }).click()
-    await page.locator('#hilos-user-name').fill('Hilos Edited User')
-    await page.getByRole('button', { name: 'Save' }).click()
-
-    await expect(page.getByText('Hilos Edited User')).toBeVisible()
-  })
-
   test.fixme('loads logs overview and log viewer pages with deterministic stub data', async ({ page }) => {
     await page.goto('/hilos/logs')
 

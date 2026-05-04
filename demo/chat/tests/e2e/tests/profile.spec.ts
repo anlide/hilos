@@ -68,10 +68,14 @@ const rejectNextRename = async (page: Page, reason: string) => {
   )
 }
 
+const uniqueProfileName = () => {
+  return `PW-${Date.now().toString(36).slice(-5)}-${Math.random().toString(36).slice(2, 5)}`
+}
+
 test.describe('Profile', () => {
   test('renames the current user from the profile modal', async ({ page }) => {
     const modal = await openProfileModal(page)
-    const newName = 'Playwright User'
+    const newName = uniqueProfileName()
 
     await usernameInput(page).fill(newName)
     await modal.getByRole('button', { name: 'Save' }).click()
