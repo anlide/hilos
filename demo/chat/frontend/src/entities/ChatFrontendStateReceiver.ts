@@ -4,15 +4,18 @@ import { parsePartialUserPayloads } from './partialUserPayload'
 import {
   parseAttachmentDraftPayloads,
   parseBotPresencePayloads,
+  parseSelfConnectionPayloads,
   parseUserConnectionStatsPayloads,
   parseUserPresencePayloads,
   type AttachmentDraftPayload,
   type BotPresencePayload,
+  type SelfConnectionPayload,
   type UserConnectionStatsPayload,
   type UserPresencePayload,
 } from './frontendStateParsers'
 
 interface ChatStoreForFrontendState {
+  setSelfConnection(value: SelfConnectionPayload): void
   upsertUsers(users: Array<{ id: number; name: string; lastActivity?: string | null }>, replace?: boolean): void
   patchUsers(partials: Array<{ id: number; name?: string; lastActivity?: string | null }>): void
   removeUsers(ids: number[]): void
@@ -35,6 +38,14 @@ export class ChatFrontendStateReceiver extends FrontendStateReceiver {
   ): void {
     const store = context as ChatStoreForFrontendState | undefined
     if (!store) return
+
+    if (collectionKey === 'selfConnection') {
+      const selfConnections = parseSelfConnectionPayloads(rawItems)
+      if (selfConnections !== null && selfConnections[0] !== undefined) {
+        store.setSelfConnection(selfConnections[0])
+      }
+      return
+    }
 
     if (collectionKey === 'users') {
       const users = parseUserPayloads(rawItems)
@@ -79,6 +90,14 @@ export class ChatFrontendStateReceiver extends FrontendStateReceiver {
   protected override applyUpdates(collectionKey: string, rawItems: unknown[], context?: unknown): void {
     const store = context as ChatStoreForFrontendState | undefined
     if (!store) return
+
+    if (collectionKey === 'selfConnection') {
+      const selfConnections = parseSelfConnectionPayloads(rawItems)
+      if (selfConnections !== null && selfConnections[0] !== undefined) {
+        store.setSelfConnection(selfConnections[0])
+      }
+      return
+    }
 
     if (collectionKey === 'users') {
       const users = parseUserPayloads(rawItems)

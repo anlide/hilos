@@ -263,14 +263,16 @@ final class ChatFrontendProjection extends FrontendProjectionContext
 
             yield new FrontendDelivery(
                 ChatSignalConstants::SELF_CONNECTION_UPDATE,
-                new SelfConnectionSignalData(SelfConnectionProjector::forConnection($connection)),
+                SelfConnectionSignalData::fromFrontendChanges(
+                    SelfConnectionFrontendStateProjector::fullForConnection($connection),
+                ),
                 $connection->acceptKey,
             );
         }
     }
 
     /**
-     * Attachment draft changes update the connection-local selfConnection payload.
+     * Attachment draft changes update the connection-local frontend draft list.
      *
      * @return iterable<FrontendDelivery>
      */
@@ -392,8 +394,10 @@ final class ChatFrontendProjection extends FrontendProjectionContext
         ) {
             yield new FrontendDelivery(
                 ChatSignalConstants::SELF_CONNECTION_UPDATE,
-                new SelfConnectionSignalData(
-                    SelfConnectionProjector::forConnection(Hilos::$rt->connections[$change->sourceId]),
+                SelfConnectionSignalData::fromFrontendChanges(
+                    SelfConnectionFrontendStateProjector::fullForConnection(
+                        Hilos::$rt->connections[$change->sourceId],
+                    ),
                 ),
                 $change->sourceId,
             );

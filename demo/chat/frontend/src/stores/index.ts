@@ -4,32 +4,12 @@ import type { Presence } from '@/types/domain/Presence'
 import type {
   AttachmentDraftPayload,
   BotPresencePayload,
+  FileUploadProgressPayload,
+  OutboundModerationStatePayload,
+  SelfConnectionPayload,
   UserConnectionStatsPayload,
   UserPresencePayload,
 } from '@/entities/frontendStateParsers'
-
-/** Binary upload progress: seeded at 0/total by file_upload_ready, then throttled progress_update + main subscribe. */
-export type FileUploadProgressPayload = {
-  filename: string
-  uploadedBytes: number
-  totalBytes: number
-}
-
-export type OutboundModerationStatePayload = {
-  requestId: string
-  phase: 'checking' | 'rejected' | 'unavailable'
-  text: string
-  reason: string | null
-  updatedAt: number
-}
-
-export type SelfConnectionPayload = {
-  userId: number
-  connectedAt: number
-  messageRateLimitSecondsRemaining: number
-  outboundModerationState: OutboundModerationStatePayload | null
-  fileUploadProgress: FileUploadProgressPayload | null
-}
 
 export type UserViewModel = User & {
   presence: Presence

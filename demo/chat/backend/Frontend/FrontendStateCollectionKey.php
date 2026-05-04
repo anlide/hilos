@@ -14,4 +14,5 @@ final class FrontendStateCollectionKey
     public const string USER_CONNECTION_STATS = 'userConnectionStats';
     public const string BOT_PRESENCE = 'botPresence';
     public const string ATTACHMENT_DRAFTS = 'attachmentDrafts';
+    public const string SELF_CONNECTION = 'selfConnection';
 }

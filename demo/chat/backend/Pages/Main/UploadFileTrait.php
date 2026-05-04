@@ -13,7 +13,7 @@ use Demo\Chat\Core\Router\DTO\FileUploadInvalidSignalData;
 use Demo\Chat\Core\Router\DTO\FileUploadReadySignalData;
 use Demo\Chat\Core\Router\DTO\FileUploadRejectedSignalData;
 use Demo\Chat\Core\Router\DTO\SelfConnectionSignalData;
-use Demo\Chat\Frontend\SelfConnectionProjector;
+use Demo\Chat\Frontend\SelfConnectionFrontendStateProjector;
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\View\Item\Connection;
 use Demo\Chat\Utils\ChatSettingsHelper;
@@ -249,7 +249,9 @@ trait UploadFileTrait
             $this->sendToUser(
                 ChatSignalConstants::FILE_UPLOAD_PROGRESS_UPDATE,
                 $acceptKey,
-                new SelfConnectionSignalData(SelfConnectionProjector::forConnection($connection)),
+                SelfConnectionSignalData::fromFrontendChanges(
+                    SelfConnectionFrontendStateProjector::fullForConnection($connection),
+                ),
             );
         }
     }
@@ -304,7 +306,9 @@ trait UploadFileTrait
         $this->sendToUser(
             ChatSignalConstants::FILE_UPLOAD_PROGRESS_UPDATE,
             $acceptKey,
-            new SelfConnectionSignalData(SelfConnectionProjector::forConnection(Hilos::$rt->selfConnection)),
+            SelfConnectionSignalData::fromFrontendChanges(
+                SelfConnectionFrontendStateProjector::fullForConnection(Hilos::$rt->selfConnection),
+            ),
         );
         $this->sendToUser(
             ChatSignalConstants::FILE_UPLOAD_COMPLETE,
@@ -381,7 +385,9 @@ trait UploadFileTrait
         $this->sendToUser(
             ChatSignalConstants::FILE_UPLOAD_PROGRESS_UPDATE,
             $acceptKey,
-            new SelfConnectionSignalData(SelfConnectionProjector::forConnection(Hilos::$rt->selfConnection)),
+            SelfConnectionSignalData::fromFrontendChanges(
+                SelfConnectionFrontendStateProjector::fullForConnection(Hilos::$rt->selfConnection),
+            ),
         );
     }
 

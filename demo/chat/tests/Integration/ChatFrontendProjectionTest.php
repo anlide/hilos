@@ -9,6 +9,8 @@ use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Router\ChatSignalRouter;
 use Demo\Chat\Core\Router\DTO\SelfConnectionSignalData;
 use Demo\Chat\Frontend\ChatFrontendProjection;
+use Demo\Chat\Frontend\FrontendStateCollectionKey;
+use Demo\Chat\Frontend\SelfConnectionFrontendStateProjector;
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\View\Context\RtChatContext;
 use Hilos\Constants\SignalTypeConstants;
@@ -66,13 +68,20 @@ final class ChatFrontendProjectionTest extends IntegrationTestCase
             $this->assertSame('moderation-ak', $webSocketData->targetAcceptKey);
             $payload = $webSocketData->data;
             $this->assertInstanceOf(SelfConnectionSignalData::class, $payload);
+            $payloadData = $payload->toArray();
+            $selfConnection = $payloadData['frontend']['full'][FrontendStateCollectionKey::SELF_CONNECTION][0] ?? [];
+            $this->assertSame(SelfConnectionFrontendStateProjector::ID_SELF, $selfConnection['id'] ?? null);
             $this->assertSame(
                 'request-projection',
-                $payload->selfConnection['outboundModerationState']['requestId'] ?? null,
+                $selfConnection['outboundModerationState']['requestId'] ?? null,
             );
             $this->assertSame(
                 'pending text',
-                $payload->selfConnection['outboundModerationState']['text'] ?? null,
+                $selfConnection['outboundModerationState']['text'] ?? null,
+            );
+            $this->assertSame(
+                [FrontendStateCollectionKey::SELF_CONNECTION],
+                $payloadData['frontend']['replaceFull'] ?? null,
             );
         } finally {
             Hilos::$rt->connections->actions->clear();
@@ -120,9 +129,12 @@ final class ChatFrontendProjectionTest extends IntegrationTestCase
             $payloadData = $payload->toArray();
             $this->assertSame(
                 'draft-projection',
-                $payloadData['frontend']['full']['attachmentDrafts'][0]['draftId'] ?? null,
+                $payloadData['frontend']['full'][FrontendStateCollectionKey::ATTACHMENT_DRAFTS][0]['draftId'] ?? null,
             );
-            $this->assertSame(['attachmentDrafts'], $payloadData['frontend']['replaceFull'] ?? null);
+            $this->assertSame(
+                [FrontendStateCollectionKey::ATTACHMENT_DRAFTS],
+                $payloadData['frontend']['replaceFull'] ?? null,
+            );
         } finally {
             Hilos::$rt->connections->actions->clear();
             Hilos::$rt->attachmentDrafts->actions->clear(deleteFiles: false);

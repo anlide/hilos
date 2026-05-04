@@ -1,14 +1,27 @@
 import { describe, expect, it } from 'vitest'
 import { ChatFrontendStateReceiver } from '@/entities/ChatFrontendStateReceiver'
 
+const selfConnectionPayload = {
+  id: 'self',
+  userId: 7,
+  connectedAt: 1710000000,
+  messageRateLimitSecondsRemaining: 5,
+  outboundModerationState: null,
+  fileUploadProgress: null,
+}
+
 describe('ChatFrontendStateReceiver', () => {
   it('applies normalized user state collections', () => {
     const receiver = new ChatFrontendStateReceiver()
     const store = {
+      selfConnection: null as null | Omit<typeof selfConnectionPayload, 'id'>,
       users: [] as Array<{ id: number; name: string; lastActivity?: string | null }>,
       presence: [] as Array<{ userId: number; presence: string }>,
       stats: [] as Array<{ userId: number; onlineSessionCount: number }>,
       botPresence: [] as Array<{ botId: number; presence: string }>,
+      setSelfConnection(selfConnection: Omit<typeof selfConnectionPayload, 'id'>) {
+        this.selfConnection = selfConnection
+      },
       upsertUsers(users: Array<{ id: number; name: string; lastActivity?: string | null }>) {
         this.users = users
       },
@@ -31,6 +44,7 @@ describe('ChatFrontendStateReceiver', () => {
     receiver.apply({
       frontend: {
         full: {
+          selfConnection: [selfConnectionPayload],
           users: [{ id: 7, name: 'Ada', lastActivity: null }],
           userPresence: [{ userId: 7, presence: 'online' }],
           userConnectionStats: [{ userId: 7, onlineSessionCount: 2 }],
@@ -39,6 +53,13 @@ describe('ChatFrontendStateReceiver', () => {
       },
     }, store)
 
+    expect(store.selfConnection).toEqual({
+      userId: 7,
+      connectedAt: 1710000000,
+      messageRateLimitSecondsRemaining: 5,
+      outboundModerationState: null,
+      fileUploadProgress: null,
+    })
     expect(store.users).toEqual([{ id: 7, name: 'Ada', lastActivity: null }])
     expect(store.presence).toEqual([{ userId: 7, presence: 'online' }])
     expect(store.stats).toEqual([{ userId: 7, onlineSessionCount: 2 }])
@@ -52,6 +73,10 @@ describe('ChatFrontendStateReceiver', () => {
       presenceCalled: false,
       statsCalled: false,
       botPresenceCalled: false,
+      selfConnectionCalled: false,
+      setSelfConnection() {
+        this.selfConnectionCalled = true
+      },
       upsertUsers() {
         this.usersCalled = true
       },
@@ -74,6 +99,7 @@ describe('ChatFrontendStateReceiver', () => {
     receiver.apply({
       frontend: {
         full: {
+          selfConnection: [{ id: 'self', userId: 7 }],
           users: [{ id: 7, name: 'Ada', presence: 'online' }],
           userPresence: [{ userId: 7, presence: 'away' }],
           userConnectionStats: [{ userId: 7, onlineSessionCount: '2' }],
@@ -82,6 +108,7 @@ describe('ChatFrontendStateReceiver', () => {
       },
     }, store)
 
+    expect(store.selfConnectionCalled).toBe(false)
     expect(store.usersCalled).toBe(false)
     expect(store.presenceCalled).toBe(false)
     expect(store.statsCalled).toBe(false)

@@ -147,7 +147,9 @@ function buildSignalRouter() {
   })
 
   signalRouter.on(fileUploadProgressUpdate, ({ selfConnection }) => {
-    useChatStore().setSelfConnection(selfConnection)
+    if (selfConnection !== undefined) {
+      useChatStore().setSelfConnection(selfConnection)
+    }
   })
 
   signalRouter.on(fileUploadReady, ({ filename, size }) => {

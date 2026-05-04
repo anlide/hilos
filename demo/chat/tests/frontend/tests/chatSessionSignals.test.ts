@@ -49,6 +49,20 @@ describe('chat session signal parsers', () => {
     })).toEqual({})
   })
 
+  it('parses frontend-only upload progress payloads', () => {
+    expect(fileUploadProgressUpdate.parse({
+      frontend: {
+        full: {
+          selfConnection: [{
+            id: 'self',
+            ...selfConnectionPayload,
+          }],
+        },
+        replaceFull: ['selfConnection'],
+      },
+    })).toEqual({})
+  })
+
   it('parses file upload progress updates as selfConnection payloads', () => {
     expect(fileUploadProgressUpdate.parse({
       selfConnection: {

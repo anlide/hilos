@@ -45,14 +45,16 @@ final class MainPageSubscriptionProjector
                     DbChatContext::users => Hilos::$rt->connections->relevantUsers,
                 ],
             ),
-            selfConnection: SelfConnectionProjector::forConnection($connection),
-            frontend: AttachmentDraftFrontendStateProjector::appendFullForConnection(
-                BotFrontendStateProjector::appendFullForBots(
-                    UserFrontendStateProjector::fullForUsers(
-                        Hilos::$rt->connections->relevantUsers,
-                        includePublicUsers: false,
+            frontend: SelfConnectionFrontendStateProjector::appendFullForConnection(
+                AttachmentDraftFrontendStateProjector::appendFullForConnection(
+                    BotFrontendStateProjector::appendFullForBots(
+                        UserFrontendStateProjector::fullForUsers(
+                            Hilos::$rt->connections->relevantUsers,
+                            includePublicUsers: false,
+                        ),
+                        Hilos::$db->bots->activeOnly,
                     ),
-                    Hilos::$db->bots->activeOnly,
+                    $connection,
                 ),
                 $connection,
             ),

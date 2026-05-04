@@ -2,6 +2,28 @@ import { type Presence, isPresence } from '@/types/domain/Presence'
 
 type JsonRecord = Record<string, unknown>
 
+export type FileUploadProgressPayload = {
+  filename: string
+  uploadedBytes: number
+  totalBytes: number
+}
+
+export type OutboundModerationStatePayload = {
+  requestId: string
+  phase: 'checking' | 'rejected' | 'unavailable'
+  text: string
+  reason: string | null
+  updatedAt: number
+}
+
+export type SelfConnectionPayload = {
+  userId: number
+  connectedAt: number
+  messageRateLimitSecondsRemaining: number
+  outboundModerationState: OutboundModerationStatePayload | null
+  fileUploadProgress: FileUploadProgressPayload | null
+}
+
 export type UserPresencePayload = {
   userId: number
   presence: Presence
@@ -27,6 +49,75 @@ export type AttachmentDraftPayload = {
 
 function isRecord(value: unknown): value is JsonRecord {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+const parseOutboundModerationState = (raw: unknown): OutboundModerationStatePayload | null => {
+  if (raw === null || raw === undefined) return null
+  if (!isRecord(raw)) return null
+  const { requestId, phase, text, reason, updatedAt } = raw
+  if (typeof requestId !== 'string') return null
+  if (phase !== 'checking' && phase !== 'rejected' && phase !== 'unavailable') return null
+  if (typeof text !== 'string') return null
+  if (reason !== null && reason !== undefined && typeof reason !== 'string') return null
+  if (typeof updatedAt !== 'number') return null
+  return {
+    requestId,
+    phase,
+    text,
+    reason: typeof reason === 'string' ? reason : null,
+    updatedAt,
+  }
+}
+
+const parseFileUploadProgress = (raw: unknown): FileUploadProgressPayload | null => {
+  if (!isRecord(raw)) return null
+  const { filename, uploadedBytes, totalBytes } = raw
+  if (typeof filename !== 'string') return null
+  if (typeof uploadedBytes !== 'number' || typeof totalBytes !== 'number') return null
+  return { filename, uploadedBytes, totalBytes }
+}
+
+export const parseSelfConnection = (raw: unknown): SelfConnectionPayload | null => {
+  if (!isRecord(raw)) return null
+  const {
+    userId,
+    connectedAt,
+    messageRateLimitSecondsRemaining,
+    outboundModerationState,
+    fileUploadProgress,
+  } = raw
+  if (typeof userId !== 'number' || typeof connectedAt !== 'number') return null
+  if (typeof messageRateLimitSecondsRemaining !== 'number') return null
+  const parsedModeration =
+    outboundModerationState === null || outboundModerationState === undefined
+      ? null
+      : parseOutboundModerationState(outboundModerationState)
+  if (
+    outboundModerationState !== null
+    && outboundModerationState !== undefined
+    && parsedModeration === null
+  ) return null
+  const parsedProgress =
+    fileUploadProgress === null || fileUploadProgress === undefined
+      ? null
+      : parseFileUploadProgress(fileUploadProgress)
+  if (fileUploadProgress !== null && fileUploadProgress !== undefined && parsedProgress === null) return null
+  return {
+    userId,
+    connectedAt,
+    messageRateLimitSecondsRemaining,
+    outboundModerationState: parsedModeration,
+    fileUploadProgress: parsedProgress,
+  }
+}
+
+export function parseSelfConnectionPayloads(value: unknown): SelfConnectionPayload[] | null {
+  if (!Array.isArray(value)) {
+    return null
+  }
+
+  const parsed = value.map(parseSelfConnection)
+  return parsed.every((item): item is SelfConnectionPayload => item !== null) ? parsed : null
 }
 
 export function isUserPresencePayload(value: unknown): value is UserPresencePayload {
