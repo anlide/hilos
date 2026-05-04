@@ -13,7 +13,7 @@ use Hilos\Core\Router\SignalDataInterface;
  *
  * Represents a group subscription signal sent from WebSocket client.
  */
-class WebSocketGroupSubscribeSignalDTO extends BaseDTO implements SignalDataDTO, SignalDataInterface
+class WebSocketGroupSubscribeSignalDTO extends BaseDTO implements SignalDataDTO, SignalDataInterface, WebSocketAcceptKeySignalDTO
 {
     // Field name constants
     public const string ACCEPT_KEY = 'acceptKey';
@@ -32,6 +32,11 @@ class WebSocketGroupSubscribeSignalDTO extends BaseDTO implements SignalDataDTO,
         public readonly string $group = '',
         public readonly array $params = [],
     ) {
+    }
+
+    public function getAcceptKey(): string
+    {
+        return $this->acceptKey;
     }
 
     /**

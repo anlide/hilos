@@ -112,12 +112,12 @@ final class ProfilePage extends AbstractPage
             throw new EmptyValueException('User name cannot be empty');
         }
 
-        if (!isset(Hilos::$rt->connections[$acceptKey])) {
+        if (Hilos::$rt->selfConnection === null) {
             $this->logAgentError("User not found for acceptKey={$acceptKey}");
             throw new ItemNotFoundForUpdateException('User session not found');
         }
 
-        $userId = Hilos::$rt->connections[$acceptKey]->userId;
+        $userId = Hilos::$rt->selfConnection->userId;
         $user = Hilos::$db->users[$userId];
         $oldName = $user->name;
         $user->actions->rename($dto->newName);

@@ -13,7 +13,7 @@ use Hilos\Core\Router\SignalDataInterface;
  *
  * Represents a WebSocket close signal sent from WebSocket client.
  */
-class WebSocketCloseSignalDTO extends BaseDTO implements SignalDataDTO, SignalDataInterface
+class WebSocketCloseSignalDTO extends BaseDTO implements SignalDataDTO, SignalDataInterface, WebSocketAcceptKeySignalDTO
 {
     // Field name constants
     public const string ACCEPT_KEY = 'acceptKey';
@@ -26,6 +26,11 @@ class WebSocketCloseSignalDTO extends BaseDTO implements SignalDataDTO, SignalDa
     public function __construct(
         public readonly string $acceptKey,
     ) {
+    }
+
+    public function getAcceptKey(): string
+    {
+        return $this->acceptKey;
     }
 
     /**

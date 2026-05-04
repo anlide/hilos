@@ -47,7 +47,8 @@ restart is acceptable and a truth source can own writes.
 2. Find the owner before writing: existing truth source agent, DB collection, RT
    collection, or page subscription boundary.
 3. Search existing contexts before adding names: `extends HilosDbContext`,
-   `extends RtContext`, collection constants, and `setRepresent()` calls.
+   `extends RtContext`, collection constants, `setRepresent()` calls, and
+   `setRepresentItem()` item aliases.
 4. Inspect the existing View collection/item, Object or State collection/item,
    and collection/item Actions classes.
 5. Add the smallest missing API to the owning layer.
@@ -66,6 +67,7 @@ restart is acceptable and a truth source can own writes.
 | DB create/register/import/bulk operation | Collection actions |
 | DB update/delete for one loaded item | Item actions |
 | New runtime collection | `RtContext`, `RtStates`, `RtCollection`, and actions |
+| App-level single runtime item alias | Existing runtime collection plus `_stateItems` resolver and `RtContext::setRepresentItem()` |
 | New runtime row field | `RtState` typed property, `toArray()`, `fromRow()`, `applyDiff()` |
 | Runtime lookup | State collection plus View collection wrapper |
 | Runtime create/register/ensure/clear/bulk cleanup | Collection actions with `sync()` behavior |
@@ -88,6 +90,12 @@ For DB changes:
 For RT changes:
 
 1. Register the runtime collection in the project `RtContext`.
+   If the app needs a typed single-item shortcut such as `selfConnection`,
+   register `_stateItems[$alias]` with a resolver that returns an `RtState` row
+   or `null`, then call `setRepresentItem()` and document it with
+   `@property-read` on the context. For collection-backed aliases that expose
+   normal item actions, call the owning collection's `setRepresent()` first so
+   `RtContext` can attach the parent collection automatically.
 2. Define `RtState` fields as real typed properties.
 3. Keep serialization and sync methods explicit:
    `toArray()`, `fromRow()`, `applyDiff()`, and `sync()`.

@@ -36,8 +36,9 @@ anything that must survive process restart belongs in `Hilos::$db`.
 ## Layer Model
 
 `RtContext` owns the app-level runtime context. It registers backing state
-collections in `_stateCollections`, then maps each one to a view collection with
-`setRepresent()`.
+collections in `_stateCollections`, maps each one to a view collection with
+`setRepresent()`, and may expose named single-item aliases with
+`setRepresentItem()` when the application needs a typed shortcut to one item.
 
 ```php
 final class RtChatContext extends RtContext
@@ -66,6 +67,71 @@ final class RtChatContext extends RtContext
 
 `Hilos::$rt->connections` calls the context magic getter and returns the
 registered `RtCollection` wrapper.
+
+## Single-Item Aliases
+
+A runtime "one object" is still stored as a row in a normal `RtStates`
+collection. Do not create a parallel singleton map or a page-local cache for it.
+Expose it as a named item alias on the project `RtContext` when the item is a
+stable application-level access path.
+
+For collection-backed aliases, call `setRepresent()` for the owning collection
+before `setRepresentItem()` so the item can be attached to its parent
+collection:
+
+```php
+use Demo\Chat\Runtime\State\Item\Connection as StateConnection;
+use Demo\Chat\Runtime\View\Item\Connection;
+use Hilos\Core\Execution\ExecutionContext;
+
+/**
+ * @property-read Connections $connections Active connections collection
+ * @property-read ?Connection $selfConnection Current inbound WebSocket connection
+ */
+final class RtChatContext extends RtContext
+{
+    public const string connections = 'connections';
+    public const string selfConnection = 'selfConnection';
+
+    public function configure(): void
+    {
+        $this->_stateCollections[self::connections] = StateConnections::init();
+        $this->_stateItems[self::selfConnection] = function (): ?StateConnection {
+            $acceptKey = ExecutionContext::currentAcceptKey();
+
+            return $acceptKey !== null ? $this->_stateCollections[self::connections][$acceptKey] ?? null : null;
+        };
+
+        $this->setRepresent(
+            self::connections,
+            Connections::class,
+            ConnectionsActions::class,
+            ConnectionActions::class,
+        );
+        $this->setRepresentItem(
+            self::selfConnection,
+            Connection::class,
+            ConnectionActions::class,
+        );
+    }
+}
+```
+
+The concrete context PHPDoc is part of the contract: add an explicit
+`@property-read ?Foo $alias` for each single-item alias. Register the backing
+state item or resolver in `_stateItems` first; the resolver must return an
+`RtState` row or `null`, not a raw array or view item. `setRepresentItem()`
+then maps that state alias to the caller-facing `RtItem` class and optional
+item actions. When the resolved state row belongs to a represented runtime
+collection, `RtContext` attaches that collection automatically so item actions
+can use truth-source, sync, remove, and cache behavior. Standalone single-item
+aliases simply have no parent collection. The magic getter returns the resolved
+`RtItem` or `null` when the current context has no such item.
+
+Use item aliases for application-level concepts such as "current WebSocket
+connection" or a documented singleton runtime row. Do not use them to hide
+arbitrary lookups, filters, or convenience predicates; those belong on the
+owning `RtCollection` or `RtItem` only when they are reusable model contracts.
 
 ## Backing-State Boundary
 
@@ -107,14 +173,16 @@ Before writing runtime-backed code:
    constant in `RtChatContext`.
 2. Check `setRepresent()` to locate the View collection, collection actions, and
    item actions.
-3. Inspect the View collection for existing lookup methods such as `forUser()`.
-4. Inspect the State collection for typed `get()`, `offsetGet()`, and lookup
+3. Check `setRepresentItem()` for existing single-item aliases such as
+   `selfConnection`.
+4. Inspect the View collection for existing lookup methods such as `forUser()`.
+5. Inspect the State collection for typed `get()`, `offsetGet()`, and lookup
    helpers from inside `Database/` or `Runtime/` only.
-5. Inspect collection actions for create/register/clear operations.
-6. Inspect item actions for updates on one loaded runtime item.
-7. Find the truth source registration in the owning agent's `onStart()` and
+6. Inspect collection actions for create/register/clear operations.
+7. Inspect item actions for updates on one loaded runtime item.
+8. Find the truth source registration in the owning agent's `onStart()` and
    `onStop()`.
-8. Only then add the smallest missing method to the owning layer. In transparent
+9. Only then add the smallest missing method to the owning layer. In transparent
    data-shape refactors, prefer explicit field access unless a new method was
    explicitly approved.
 
@@ -233,6 +301,7 @@ an item action should own it.
 | Need | Put it in |
 |---|---|
 | New runtime collection | `RtContext` plus `RtStates` and `RtCollection` |
+| App-level single runtime item | Existing `RtStates` collection plus `RtContext::setRepresentItem()` |
 | New runtime row field | `RtState` typed field, `toArray()`, `fromRow()`, and `applyDiff()` |
 | Runtime lookup helper | State collection plus View collection wrapper |
 | Caller-facing row read helper | View item |

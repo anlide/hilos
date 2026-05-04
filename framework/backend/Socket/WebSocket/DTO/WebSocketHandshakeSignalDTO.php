@@ -15,7 +15,7 @@ use Hilos\Core\Router\SignalDataInterface;
  *
  * Represents a WebSocket handshake signal sent from WebSocket client.
  */
-class WebSocketHandshakeSignalDTO extends BaseDTO implements SignalDataDTO, SignalDataInterface
+class WebSocketHandshakeSignalDTO extends BaseDTO implements SignalDataDTO, SignalDataInterface, WebSocketAcceptKeySignalDTO
 {
     // Field name constants
     public const string HEADERS = 'headers';
@@ -40,6 +40,11 @@ class WebSocketHandshakeSignalDTO extends BaseDTO implements SignalDataDTO, Sign
         public readonly string $clientIp,
         public readonly RequestQueryParams $queryParams = new RequestQueryParams(),
     ) {
+    }
+
+    public function getAcceptKey(): string
+    {
+        return $this->acceptKey;
     }
 
     /**

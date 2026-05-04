@@ -46,6 +46,14 @@ reviewing noisy code.
    add a typed collection/item accessor if the repeated expression is genuinely
    too complex.
 
+   Context item aliases such as `Hilos::$rt->selfConnection` count as addressed
+   RT items. Do not assign `$connection = Hilos::$rt->selfConnection` merely to
+   shorten repeated access. Guard the contextual item explicitly, then keep
+   `Hilos::$rt->selfConnection` visible at read and action call sites. If the
+   repeated access becomes too noisy, move the behavior to an approved
+   collection/item API or projection boundary instead of hiding it behind a
+   local alias.
+
    A local variable is allowed when it is not just an alias: it comes from
    iteration or filtering, snapshots a value before mutation or a side-effect
    boundary, carries a distinct domain meaning not present in the source

@@ -7,6 +7,7 @@ namespace Demo\Chat\Frontend;
 use Demo\Chat\Core\Router\DTO\ChatEventSignalDTO;
 use Demo\Chat\Database\DbChatContext;
 use Demo\Chat\Hilos;
+use Demo\Chat\Runtime\View\Item\Connection;
 use Hilos\Core\Router\DTO\EntitiesChangesDTO;
 use Hilos\HilosException;
 
@@ -24,6 +25,18 @@ final class MainPageSubscriptionProjector
      */
     public static function forAcceptKey(string $acceptKey): ChatEventSignalDTO
     {
+        return self::forConnection(Hilos::$rt->connections[$acceptKey]);
+    }
+
+    /**
+     * Builds the initial main-page wire payload for one loaded WebSocket connection.
+     *
+     * @param Connection $connection Runtime connection whose session-local fields are included
+     * @return ChatEventSignalDTO Main-page subscription signal data
+     * @throws HilosException On database, runtime, or truth source failure
+     */
+    public static function forConnection(Connection $connection): ChatEventSignalDTO
+    {
         return new ChatEventSignalDTO(
             new EntitiesChangesDTO(
                 full: [
@@ -32,7 +45,7 @@ final class MainPageSubscriptionProjector
                     DbChatContext::users => Hilos::$rt->connections->relevantUsers,
                 ],
             ),
-            selfConnection: SelfConnectionProjector::forConnection(Hilos::$rt->connections[$acceptKey]),
+            selfConnection: SelfConnectionProjector::forConnection($connection),
             frontend: AttachmentDraftFrontendStateProjector::appendFullForConnection(
                 BotFrontendStateProjector::appendFullForBots(
                     UserFrontendStateProjector::fullForUsers(
@@ -41,7 +54,7 @@ final class MainPageSubscriptionProjector
                     ),
                     Hilos::$db->bots->activeOnly,
                 ),
-                Hilos::$rt->connections[$acceptKey],
+                $connection,
             ),
         );
     }

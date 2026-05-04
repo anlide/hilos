@@ -120,7 +120,7 @@ final class AdminUsersPage extends AbstractPage
             userId: $dto->id,
             oldName: $oldName,
             newName: $dto->name,
-            adminUserId: Hilos::$rt->connections[$acceptKey]?->userId,
+            adminUserId: Hilos::$rt->selfConnection?->userId,
         );
     }
 

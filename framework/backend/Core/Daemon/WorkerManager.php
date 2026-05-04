@@ -16,6 +16,7 @@ use Hilos\Core\Agent\AgentManager;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Agent\Exception\AgentCreationFailedException;
 use Hilos\Core\Exception\ValidationException;
+use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Frontend\SourceChange;
 use Hilos\Core\Page\Exception\PageSignalRouterNotFoundException;
 use Hilos\Core\Page\PageSignalRouter;
@@ -23,6 +24,7 @@ use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Hilos;
 use Hilos\Socket\SocketException;
+use Hilos\Socket\WebSocket\DTO\WebSocketAcceptKeySignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketActionSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketCloseSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketFrameBinarySignalDTO;
@@ -48,6 +50,7 @@ use Hilos\Socket\Worker\DTO\WorkerAgentMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncCreatedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncDeletedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncUpdatedMessageDTO;
+use Hilos\Socket\Worker\DTO\WorkerRegisteredDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSyncCreatedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSyncDeletedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSyncUpdatedMessageDTO;
@@ -119,8 +122,7 @@ abstract class WorkerManager extends BaseManager
      */
     private function setCurrentAgentId(?string $agentId): void
     {
-        TruthSourceRegistry::setCurrentAgentId($agentId);
-        RtTruthSourceRegistry::setCurrentAgentId($agentId);
+        ExecutionContext::setCurrentAgentId($agentId);
     }
 
     /**
@@ -197,6 +199,8 @@ abstract class WorkerManager extends BaseManager
                         $this->logError("Failed to handle daemon message: " . $e->getMessage());
                     } catch (PageSignalRouterNotFoundException $e) {
                         $this->logError("Failed to route signal: " . $e->getMessage());
+                    } finally {
+                        ExecutionContext::clear();
                     }
                 }
 
@@ -275,46 +279,88 @@ abstract class WorkerManager extends BaseManager
 
         switch ($type) {
             case WorkerConstants::MESSAGE_WORKER_REGISTERED:
+                if (!$data instanceof WorkerRegisteredDTO) {
+                    Logger::error("handleWorkerRegistered - unexpected type: " . get_class($data));
+                    break;
+                }
                 $this->handleWorkerRegistered($data);
                 break;
 
             case WorkerConstants::MESSAGE_AGENT_START:
+                if (!$data instanceof AgentStartDTO) {
+                    Logger::error("handleAgentStart - unexpected type: " . get_class($data));
+                    break;
+                }
+                $this->setCurrentAgentId($data->agentId);
                 $this->handleAgentStart($data);
                 break;
 
             case WorkerConstants::MESSAGE_AGENT_STOP:
+                if (!$data instanceof AgentStopDTO) {
+                    Logger::error("handleAgentStop - unexpected type: " . get_class($data));
+                    break;
+                }
+                $this->setCurrentAgentId($data->agentId);
                 $this->handleAgentStop($data);
                 break;
 
             case WorkerConstants::MESSAGE_DAEMON_AGENT_MESSAGE:
-                if ($data instanceof DaemonAgentMessageDTO) {
-                    $this->handleAgentMessage($data);
-                } else {
+                if (!$data instanceof DaemonAgentMessageDTO) {
                     Logger::error("handleAgentMessage - unexpected type: " . get_class($data));
+                    break;
                 }
+                $this->setCurrentAgentId($data->agentId);
+                if ($data->signal->data instanceof WebSocketAcceptKeySignalDTO) {
+                    ExecutionContext::setCurrentAcceptKey($data->signal->data->getAcceptKey());
+                }
+                $this->handleAgentMessage($data);
                 break;
 
             case WorkerConstants::MESSAGE_DB_SYNC_CREATED:
+                if (!$data instanceof WorkerDbSyncCreatedMessageDTO) {
+                    Logger::error("handleDbSyncCreatedMessage - unexpected type: " . get_class($data));
+                    break;
+                }
                 $this->handleDbSyncCreatedMessage($data);
                 break;
 
             case WorkerConstants::MESSAGE_DB_SYNC_UPDATED:
+                if (!$data instanceof WorkerDbSyncUpdatedMessageDTO) {
+                    Logger::error("handleDbSyncUpdatedMessage - unexpected type: " . get_class($data));
+                    break;
+                }
                 $this->handleDbSyncUpdatedMessage($data);
                 break;
 
             case WorkerConstants::MESSAGE_DB_SYNC_DELETED:
+                if (!$data instanceof WorkerDbSyncDeletedMessageDTO) {
+                    Logger::error("handleDbSyncDeletedMessage - unexpected type: " . get_class($data));
+                    break;
+                }
                 $this->handleDbSyncDeletedMessage($data);
                 break;
 
             case WorkerConstants::MESSAGE_RT_SYNC_CREATED:
+                if (!$data instanceof WorkerRtSyncCreatedMessageDTO) {
+                    Logger::error("handleRtSyncCreatedMessage - unexpected type: " . get_class($data));
+                    break;
+                }
                 $this->handleRtSyncCreatedMessage($data);
                 break;
 
             case WorkerConstants::MESSAGE_RT_SYNC_UPDATED:
+                if (!$data instanceof WorkerRtSyncUpdatedMessageDTO) {
+                    Logger::error("handleRtSyncUpdatedMessage - unexpected type: " . get_class($data));
+                    break;
+                }
                 $this->handleRtSyncUpdatedMessage($data);
                 break;
 
             case WorkerConstants::MESSAGE_RT_SYNC_DELETED:
+                if (!$data instanceof WorkerRtSyncDeletedMessageDTO) {
+                    Logger::error("handleRtSyncDeletedMessage - unexpected type: " . get_class($data));
+                    break;
+                }
                 $this->handleRtSyncDeletedMessage($data);
                 break;
 
@@ -328,11 +374,10 @@ abstract class WorkerManager extends BaseManager
     /**
      * Handle worker registered message
      *
-     * @param WorkerDTO $data Message data
+     * @param WorkerRegisteredDTO $data Message data
      */
-    private function handleWorkerRegistered(WorkerDTO $data): void
+    private function handleWorkerRegistered(WorkerRegisteredDTO $data): void
     {
-        $this->setCurrentAgentId(null);
         // Connection confirmed by daemon
         Logger::info("Connected to daemon");
         Hilos::$ac?->logWorkerSystemSignal('worker_registered', [
@@ -344,15 +389,11 @@ abstract class WorkerManager extends BaseManager
     /**
      * Handle agent start message
      *
-     * @param WorkerDTO $data Message data
+     * @param AgentStartDTO $data Message data
      * @throws AgentCreationFailedException If agent creation fails
      */
-    private function handleAgentStart(WorkerDTO $data): void
+    private function handleAgentStart(AgentStartDTO $data): void
     {
-        if (!($data instanceof AgentStartDTO)) {
-            return;
-        }
-
         $agentId = $data->agentId;
 
         if ($agentId === '') {
@@ -373,12 +414,7 @@ abstract class WorkerManager extends BaseManager
         $agent = $this->agentManager->createAndAddAgent($agentType, $agentIndex);
 
         Logger::logAgentStart($agent->getId(), $agent->getType());
-        $this->setCurrentAgentId($agent->getId());
-        try {
-            $agent->onStart();
-        } finally {
-            $this->setCurrentAgentId(null);
-        }
+        $agent->onStart();
         Hilos::$ac?->openAgentSession($agentType, $agentIndex);
         Logger::info("Agent '{$agentId}' started");
         // Additional agent log from worker side
@@ -391,14 +427,10 @@ abstract class WorkerManager extends BaseManager
     /**
      * Handle agent stop message
      *
-     * @param WorkerDTO $data Message data
+     * @param AgentStopDTO $data Message data
      */
-    private function handleAgentStop(WorkerDTO $data): void
+    private function handleAgentStop(AgentStopDTO $data): void
     {
-        if (!($data instanceof AgentStopDTO)) {
-            return;
-        }
-
         $agentId = $data->agentId;
 
         if ($agentId === '') {
@@ -438,58 +470,46 @@ abstract class WorkerManager extends BaseManager
     /**
      * Handle DB sync created message from daemon.
      *
-     * @param WorkerDTO $data Message data
+     * @param WorkerDbSyncCreatedMessageDTO $data Message data
      */
-    private function handleDbSyncCreatedMessage(WorkerDTO $data): void
+    private function handleDbSyncCreatedMessage(WorkerDbSyncCreatedMessageDTO $data): void
     {
-        if ($data instanceof WorkerDbSyncCreatedMessageDTO) {
-            if ($this->consumeIncomingDbSyncSelfBroadcast($data->signalData)) {
-                return;
-            }
-            DbSyncApplicator::applyCreated($data->signalData, skipSelfBroadcastCheck: false);
-            $this->recordFrontendSourceChange(SignalTypeConstants::DB_SYNC_CREATED, $data->signalData);
-            $this->dispatchDbSyncToAgents(SignalConstants::DB_SYNC_CREATED, $data->signalData);
-        } else {
-            Logger::error("handleDbSyncCreatedMessage - unexpected type: " . get_class($data));
+        if ($this->consumeIncomingDbSyncSelfBroadcast($data->signalData)) {
+            return;
         }
+        DbSyncApplicator::applyCreated($data->signalData, skipSelfBroadcastCheck: false);
+        $this->recordFrontendSourceChange(SignalTypeConstants::DB_SYNC_CREATED, $data->signalData);
+        $this->dispatchDbSyncToAgents(SignalConstants::DB_SYNC_CREATED, $data->signalData);
     }
 
     /**
      * Handle DB sync updated message from daemon.
      *
-     * @param WorkerDTO $data Message data
+     * @param WorkerDbSyncUpdatedMessageDTO $data Message data
      */
-    private function handleDbSyncUpdatedMessage(WorkerDTO $data): void
+    private function handleDbSyncUpdatedMessage(WorkerDbSyncUpdatedMessageDTO $data): void
     {
-        if ($data instanceof WorkerDbSyncUpdatedMessageDTO) {
-            if ($this->consumeIncomingDbSyncSelfBroadcast($data->signalData)) {
-                return;
-            }
-            DbSyncApplicator::applyUpdated($data->signalData, skipSelfBroadcastCheck: false);
-            $this->recordFrontendSourceChange(SignalTypeConstants::DB_SYNC_UPDATED, $data->signalData);
-            $this->dispatchDbSyncToAgents(SignalConstants::DB_SYNC_UPDATED, $data->signalData);
-        } else {
-            Logger::error("handleDbSyncUpdatedMessage - unexpected type: " . get_class($data));
+        if ($this->consumeIncomingDbSyncSelfBroadcast($data->signalData)) {
+            return;
         }
+        DbSyncApplicator::applyUpdated($data->signalData, skipSelfBroadcastCheck: false);
+        $this->recordFrontendSourceChange(SignalTypeConstants::DB_SYNC_UPDATED, $data->signalData);
+        $this->dispatchDbSyncToAgents(SignalConstants::DB_SYNC_UPDATED, $data->signalData);
     }
 
     /**
      * Handle DB sync deleted message from daemon.
      *
-     * @param WorkerDTO $data Message data
+     * @param WorkerDbSyncDeletedMessageDTO $data Message data
      */
-    private function handleDbSyncDeletedMessage(WorkerDTO $data): void
+    private function handleDbSyncDeletedMessage(WorkerDbSyncDeletedMessageDTO $data): void
     {
-        if ($data instanceof WorkerDbSyncDeletedMessageDTO) {
-            if ($this->consumeIncomingDbSyncSelfBroadcast($data->signalData)) {
-                return;
-            }
-            DbSyncApplicator::applyDeleted($data->signalData, skipSelfBroadcastCheck: false);
-            $this->recordFrontendSourceChange(SignalTypeConstants::DB_SYNC_DELETED, $data->signalData);
-            $this->dispatchDbSyncToAgents(SignalConstants::DB_SYNC_DELETED, $data->signalData);
-        } else {
-            Logger::error("handleDbSyncDeletedMessage - unexpected type: " . get_class($data));
+        if ($this->consumeIncomingDbSyncSelfBroadcast($data->signalData)) {
+            return;
         }
+        DbSyncApplicator::applyDeleted($data->signalData, skipSelfBroadcastCheck: false);
+        $this->recordFrontendSourceChange(SignalTypeConstants::DB_SYNC_DELETED, $data->signalData);
+        $this->dispatchDbSyncToAgents(SignalConstants::DB_SYNC_DELETED, $data->signalData);
     }
 
     /**
@@ -581,58 +601,46 @@ abstract class WorkerManager extends BaseManager
     /**
      * Handle RT sync created message from daemon.
      *
-     * @param WorkerDTO $data Message data
+     * @param WorkerRtSyncCreatedMessageDTO $data Message data
      */
-    private function handleRtSyncCreatedMessage(WorkerDTO $data): void
+    private function handleRtSyncCreatedMessage(WorkerRtSyncCreatedMessageDTO $data): void
     {
-        if ($data instanceof WorkerRtSyncCreatedMessageDTO) {
-            if ($this->consumeIncomingRtSyncSelfBroadcast($data->signalData)) {
-                return;
-            }
-            RtSyncApplicator::applyCreated($data->signalData, skipSelfBroadcastCheck: false);
-            $this->recordFrontendSourceChange(SignalTypeConstants::RT_SYNC_CREATED, $data->signalData);
-            $this->dispatchRtSyncToAgents(SignalConstants::RT_SYNC_CREATED, $data->signalData);
-        } else {
-            Logger::error("handleRtSyncCreatedMessage - unexpected type: " . get_class($data));
+        if ($this->consumeIncomingRtSyncSelfBroadcast($data->signalData)) {
+            return;
         }
+        RtSyncApplicator::applyCreated($data->signalData, skipSelfBroadcastCheck: false);
+        $this->recordFrontendSourceChange(SignalTypeConstants::RT_SYNC_CREATED, $data->signalData);
+        $this->dispatchRtSyncToAgents(SignalConstants::RT_SYNC_CREATED, $data->signalData);
     }
 
     /**
      * Handle RT sync updated message from daemon.
      *
-     * @param WorkerDTO $data Message data
+     * @param WorkerRtSyncUpdatedMessageDTO $data Message data
      */
-    private function handleRtSyncUpdatedMessage(WorkerDTO $data): void
+    private function handleRtSyncUpdatedMessage(WorkerRtSyncUpdatedMessageDTO $data): void
     {
-        if ($data instanceof WorkerRtSyncUpdatedMessageDTO) {
-            if ($this->consumeIncomingRtSyncSelfBroadcast($data->signalData)) {
-                return;
-            }
-            RtSyncApplicator::applyUpdated($data->signalData, skipSelfBroadcastCheck: false);
-            $this->recordFrontendSourceChange(SignalTypeConstants::RT_SYNC_UPDATED, $data->signalData);
-            $this->dispatchRtSyncToAgents(SignalConstants::RT_SYNC_UPDATED, $data->signalData);
-        } else {
-            Logger::error("handleRtSyncUpdatedMessage - unexpected type: " . get_class($data));
+        if ($this->consumeIncomingRtSyncSelfBroadcast($data->signalData)) {
+            return;
         }
+        RtSyncApplicator::applyUpdated($data->signalData, skipSelfBroadcastCheck: false);
+        $this->recordFrontendSourceChange(SignalTypeConstants::RT_SYNC_UPDATED, $data->signalData);
+        $this->dispatchRtSyncToAgents(SignalConstants::RT_SYNC_UPDATED, $data->signalData);
     }
 
     /**
      * Handle RT sync deleted message from daemon.
      *
-     * @param WorkerDTO $data Message data
+     * @param WorkerRtSyncDeletedMessageDTO $data Message data
      */
-    private function handleRtSyncDeletedMessage(WorkerDTO $data): void
+    private function handleRtSyncDeletedMessage(WorkerRtSyncDeletedMessageDTO $data): void
     {
-        if ($data instanceof WorkerRtSyncDeletedMessageDTO) {
-            if ($this->consumeIncomingRtSyncSelfBroadcast($data->signalData)) {
-                return;
-            }
-            RtSyncApplicator::applyDeleted($data->signalData, skipSelfBroadcastCheck: false);
-            $this->recordFrontendSourceChange(SignalTypeConstants::RT_SYNC_DELETED, $data->signalData);
-            $this->dispatchRtSyncToAgents(SignalConstants::RT_SYNC_DELETED, $data->signalData);
-        } else {
-            Logger::error("handleRtSyncDeletedMessage - unexpected type: " . get_class($data));
+        if ($this->consumeIncomingRtSyncSelfBroadcast($data->signalData)) {
+            return;
         }
+        RtSyncApplicator::applyDeleted($data->signalData, skipSelfBroadcastCheck: false);
+        $this->recordFrontendSourceChange(SignalTypeConstants::RT_SYNC_DELETED, $data->signalData);
+        $this->dispatchRtSyncToAgents(SignalConstants::RT_SYNC_DELETED, $data->signalData);
     }
 
     /**
@@ -753,7 +761,6 @@ abstract class WorkerManager extends BaseManager
         $apiRequestId = Hilos::$ac?->getSignalMetaInt($data->signal, AnalyticsCollector::META_API_REQUEST_ID);
         $userActionId = Hilos::$ac?->getSignalMetaInt($data->signal, AnalyticsCollector::META_USER_ACTION_ID);
 
-        $this->setCurrentAgentId($agent->getId());
         // Route to appropriate handler in agent based on signal type
         switch ($signalType) {
             case SignalTypeConstants::SYSTEM:

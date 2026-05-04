@@ -21,6 +21,10 @@ Start with `agents.md`, then read the matching runtime guide.
   current app.
 - A project `RtContext` registers backing `RtStates` collections, then exposes
   typed `RtCollection` wrappers such as `Hilos::$rt->connections`.
+- A project `RtContext` may expose a documented single-item alias such as
+  `Hilos::$rt->selfConnection` by registering `_stateItems[$alias]` and then
+  calling `setRepresentItem()`; collection-backed aliases auto-attach to their
+  represented parent collection when one exists.
 - `RtStates` stores runtime-only `RtState` rows in memory.
 - `RtCollection` and `RtItem` expose read-oriented app APIs around the backing
   state rows.
@@ -40,8 +44,8 @@ Start with `agents.md`, then read the matching runtime guide.
 
 1. Decide whether the data is durable DB state or runtime-only RT state.
 2. Use DB/ORM for durable state and `$hilos-orm` for schema-backed work.
-3. Find the existing `RtContext` collection constant and `setRepresent()` entry
-   before adding new runtime logic.
+3. Find the existing `RtContext` collection constant, `setRepresent()` entry,
+   and any `setRepresentItem()` aliases before adding new runtime logic.
 4. Inspect the matching View collection/item, State collection/item, and Actions
    classes.
 5. Find the owning truth source agent before writing shared runtime state.
@@ -67,8 +71,8 @@ Start with `agents.md`, then read the matching runtime guide.
 14. In collection RT actions, use `$this->stateCollection[$id]` only for
    create/ensure, clear, or real bulk logic owned by the collection.
 15. Add a concrete `@property-read StateFooCollection $stateCollection` PHPDoc
-   on each collection actions class; the base generic documents the contract,
-   but PhpStorm often needs the local property annotation.
+   on each collection actions class; the local annotation documents the
+   concrete state collection contract.
 16. Prefer real PHP 8.4 typed properties on `RtState` classes over magic-only
     `@property` fields; use `public private(set)` for immutable ids and property
     hooks only when a field needs normalization or invariant logic.
@@ -84,6 +88,10 @@ Start with `agents.md`, then read the matching runtime guide.
     `can*()`, and `get*()` wrappers around one or two state fields. Keep field
     access explicit unless the user approved that exact method in the plan or
     the method centralizes a non-trivial reused invariant.
+20. When the app needs a typed "one runtime object" access path, keep the row in
+    an existing `RtStates` collection when it is collection-backed, register
+    `_stateItems[$alias]`, expose it with `RtContext::setRepresentItem()`, and add a concrete
+    `@property-read ?Foo $alias` PHPDoc to the project context.
 
 ## Examples
 
@@ -104,6 +112,35 @@ foreach (Hilos::$rt->connections->forUser($userId) as $userConnection) {
 
 // Optional one-shot when a missing row is an acceptable no-op.
 Hilos::$rt->connections[$acceptKey]?->actions->unregister();
+```
+
+For a context-dependent single item, register an item alias in the project
+`RtContext` after the owning collection representation:
+
+```php
+/**
+ * @property-read ?Connection $selfConnection Current inbound WebSocket connection
+ */
+final class RtChatContext extends RtContext
+{
+    public const string selfConnection = 'selfConnection';
+
+    public function configure(): void
+    {
+        $this->_stateItems[self::selfConnection] = function (): ?StateConnection {
+            $acceptKey = ExecutionContext::currentAcceptKey();
+
+            return $acceptKey !== null ? $this->_stateCollections[self::connections][$acceptKey] ?? null : null;
+        };
+
+        $this->setRepresent(self::connections, Connections::class, ConnectionsActions::class, ConnectionActions::class);
+        $this->setRepresentItem(
+            self::selfConnection,
+            Connection::class,
+            ConnectionActions::class,
+        );
+    }
+}
 ```
 
 Runtime state may add transient overlays to DB entities, such as presence,
@@ -145,6 +182,8 @@ of duplicating runtime mutation logic in the page/table layer.
   `RtItem` instead.
 - Do not add new runtime convenience read helpers or predicates during a
   refactor unless the user explicitly approved the exact method in the plan.
+- Do not add ad hoc computed properties to `RtContext`; use `setRepresentItem()`
+  for documented single-item aliases.
 - Do not update or delete one known runtime item through collection actions that
   accept that item's key; use the loaded `RtItem` actions.
 - Do not move runtime mutation logic into page/table layers without an explicit

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Core\TruthSource;
 
+use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 
@@ -36,8 +37,6 @@ class TruthSourceRegistry extends AbstractTruthSourceRegistry
     /** @var array<string, array<string, true>> [collection => [agentId => true]] Create permission registry */
     private static array $createSources = [];
 
-    private static ?string $currentAgentId = null;
-
     /**
      * Get sources storage reference.
      *
@@ -69,7 +68,7 @@ class TruthSourceRegistry extends AbstractTruthSourceRegistry
      */
     public static function setCurrentAgentId(?string $agentId): void
     {
-        self::$currentAgentId = $agentId;
+        ExecutionContext::setCurrentAgentId($agentId);
     }
 
     /**
@@ -79,7 +78,7 @@ class TruthSourceRegistry extends AbstractTruthSourceRegistry
      */
     public static function getCurrentAgentId(): ?string
     {
-        return self::$currentAgentId;
+        return ExecutionContext::currentAgentId();
     }
 
     /**
@@ -130,11 +129,11 @@ class TruthSourceRegistry extends AbstractTruthSourceRegistry
             );
         }
 
-        if (self::$currentAgentId === null) {
+        if (self::getCurrentAgentId() === null) {
             return;
         }
 
-        if (isset(self::$createSources[$collection][self::$currentAgentId])) {
+        if (isset(self::$createSources[$collection][self::getCurrentAgentId()])) {
             return;
         }
 
@@ -143,7 +142,7 @@ class TruthSourceRegistry extends AbstractTruthSourceRegistry
         }
 
         throw new CreateNotAllowedException(
-            "Create operation not allowed: agent '" . self::$currentAgentId . "' is not allowed to create in " .
+            "Create operation not allowed: agent '" . self::getCurrentAgentId() . "' is not allowed to create in " .
             "table '{$collection}'."
         );
     }
@@ -166,9 +165,7 @@ class TruthSourceRegistry extends AbstractTruthSourceRegistry
             }
         }
 
-        if (self::$currentAgentId === $agentId) {
-            self::$currentAgentId = null;
-        }
+        ExecutionContext::clearCurrentAgentIdIf($agentId);
     }
 
     /**
@@ -186,7 +183,7 @@ class TruthSourceRegistry extends AbstractTruthSourceRegistry
             );
         }
 
-        if (self::$currentAgentId === null) {
+        if (self::getCurrentAgentId() === null) {
             if (self::getTruthSourceKeys($collection) === true) {
                 return;
             }
@@ -201,7 +198,7 @@ class TruthSourceRegistry extends AbstractTruthSourceRegistry
         }
 
         throw new WriteNotAllowedException(
-            "Write operation not allowed: agent '" . self::$currentAgentId . "' is not a collection-wide " .
+            "Write operation not allowed: agent '" . self::getCurrentAgentId() . "' is not a collection-wide " .
             "truth source for table '{$collection}'."
         );
     }
@@ -222,7 +219,7 @@ class TruthSourceRegistry extends AbstractTruthSourceRegistry
             );
         }
 
-        if (self::$currentAgentId === null) {
+        if (self::getCurrentAgentId() === null) {
             if (self::isTruthSource($collection, [$idString])) {
                 return;
             }
@@ -238,7 +235,7 @@ class TruthSourceRegistry extends AbstractTruthSourceRegistry
         }
 
         throw new WriteNotAllowedException(
-            "Write operation not allowed: agent '" . self::$currentAgentId . "' is not a truth source for " .
+            "Write operation not allowed: agent '" . self::getCurrentAgentId() . "' is not a truth source for " .
             "table '{$collection}' item '{$idString}'."
         );
     }
@@ -251,12 +248,12 @@ class TruthSourceRegistry extends AbstractTruthSourceRegistry
      */
     private static function getCurrentAgentKeys(string $collection): array|true|null
     {
-        if (self::$currentAgentId === null) {
+        if (self::getCurrentAgentId() === null) {
             return null;
         }
 
         $sources = &self::getSources();
 
-        return $sources[$collection][self::$currentAgentId] ?? null;
+        return $sources[$collection][self::getCurrentAgentId()] ?? null;
     }
 }

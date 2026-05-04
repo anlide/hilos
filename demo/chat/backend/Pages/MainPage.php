@@ -59,14 +59,14 @@ final class MainPage extends AbstractPage
      */
     public function onSubscribe(string $acceptKey, PageRouteParams $params): void
     {
-        if (!isset(Hilos::$rt->connections[$acceptKey])) {
+        if (Hilos::$rt->selfConnection === null) {
             throw new PageInternalErrorException('No RT connection for this subscribe acceptKey');
         }
 
         $this->sendToUser(
             ChatSignalConstants::SUBSCRIPTION_PAGE_MAIN,
             $acceptKey,
-            MainPageSubscriptionProjector::forAcceptKey($acceptKey),
+            MainPageSubscriptionProjector::forConnection(Hilos::$rt->selfConnection),
         );
     }
 
@@ -194,36 +194,36 @@ final class MainPage extends AbstractPage
      */
     private function handleMessage(string $acceptKey, MessageActionDTO $dto): void
     {
-        if (!isset(Hilos::$rt->connections[$acceptKey])) {
+        if (Hilos::$rt->selfConnection === null) {
             throw new ItemNotFoundForUpdateException('User session not found');
         }
-        if (Hilos::$rt->connections[$acceptKey]->userState === null) {
+        if (Hilos::$rt->selfConnection->userState === null) {
             throw new ItemNotFoundForUpdateException('User runtime state not found');
         }
         if (
-            Hilos::$rt->connections[$acceptKey]->outboundModerationPhase
+            Hilos::$rt->selfConnection->outboundModerationPhase
             === Connection::OUTBOUND_MODERATION_PHASE_CHECKING
         ) {
             throw new ValidationException('Another message is already being moderated');
         }
         if (
-            microtime(true) - Hilos::$rt->connections[$acceptKey]->userState->lastOutboundSubmittedAt
+            microtime(true) - Hilos::$rt->selfConnection->userState->lastOutboundSubmittedAt
             < ChatUserState::MESSAGE_RATE_LIMIT_SECONDS - ChatUserState::MESSAGE_RATE_LIMIT_TOLERANCE_SECONDS
         ) {
             throw new ValidationException('Message rate limit is active');
         }
 
         $this->deleteExpiredAttachmentDrafts();
-        if ($dto->content === '' && count(Hilos::$rt->connections[$acceptKey]->attachmentDrafts) === 0) {
+        if ($dto->content === '' && count(Hilos::$rt->selfConnection->attachmentDrafts) === 0) {
             throw new EmptyValueException('Message cannot be empty');
         }
-        if (trim($dto->content) === '' && count(Hilos::$rt->connections[$acceptKey]->attachmentDrafts) === 0) {
+        if (trim($dto->content) === '' && count(Hilos::$rt->selfConnection->attachmentDrafts) === 0) {
             throw new EmptyValueException('Message cannot be trim-empty');
         }
 
         $requestId = RandomHelper::hex(16);
-        Hilos::$rt->connections[$acceptKey]->userState->actions->recordOutboundSubmission();
-        Hilos::$rt->connections[$acceptKey]->actions->startOutboundModeration(
+        Hilos::$rt->selfConnection->userState->actions->recordOutboundSubmission();
+        Hilos::$rt->selfConnection->actions->startOutboundModeration(
             $requestId,
             $dto->content,
         );
@@ -233,7 +233,7 @@ final class MainPage extends AbstractPage
             new ModerationRequestSignalData(
                 requestId: $requestId,
                 acceptKey: $acceptKey,
-                userId: Hilos::$rt->connections[$acceptKey]->userId,
+                userId: Hilos::$rt->selfConnection->userId,
                 message: $dto->content,
             ),
         );
@@ -257,20 +257,20 @@ final class MainPage extends AbstractPage
         if (trim($dto->draftId) === '') {
             throw new EmptyValueException('Attachment draft id cannot be trim-empty');
         }
-        if (!isset(Hilos::$rt->connections[$acceptKey])) {
+        if (Hilos::$rt->selfConnection === null) {
             throw new ItemNotFoundForUpdateException('User session not found');
         }
-        if (Hilos::$rt->connections[$acceptKey]->userState === null) {
+        if (Hilos::$rt->selfConnection->userState === null) {
             throw new ItemNotFoundForUpdateException('User runtime state not found');
         }
         if (
-            Hilos::$rt->connections[$acceptKey]->outboundModerationPhase
+            Hilos::$rt->selfConnection->outboundModerationPhase
             === Connection::OUTBOUND_MODERATION_PHASE_CHECKING
         ) {
             throw new ValidationException('Cannot delete attachment while message is being moderated');
         }
 
-        if (!isset(Hilos::$rt->connections[$acceptKey]->attachmentDrafts[$dto->draftId])) {
+        if (!isset(Hilos::$rt->selfConnection->attachmentDrafts[$dto->draftId])) {
             // TODO: Reconcile stale draft delete requests through a projection-backed no-op action.
 
             return;

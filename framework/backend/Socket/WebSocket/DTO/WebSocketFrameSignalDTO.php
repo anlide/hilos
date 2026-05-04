@@ -13,7 +13,7 @@ use Hilos\Core\Router\SignalDataInterface;
  *
  * Represents a WebSocket text frame signal sent from WebSocket client.
  */
-class WebSocketFrameSignalDTO extends BaseDTO implements SignalDataDTO, SignalDataInterface
+class WebSocketFrameSignalDTO extends BaseDTO implements SignalDataDTO, SignalDataInterface, WebSocketAcceptKeySignalDTO
 {
     // Field name constants
     public const string ACCEPT_KEY = 'acceptKey';
@@ -29,6 +29,11 @@ class WebSocketFrameSignalDTO extends BaseDTO implements SignalDataDTO, SignalDa
         public readonly string $acceptKey,
         public readonly string $payload,
     ) {
+    }
+
+    public function getAcceptKey(): string
+    {
+        return $this->acceptKey;
     }
 
     /**

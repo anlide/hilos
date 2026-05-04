@@ -16,6 +16,8 @@ use Demo\Chat\Pages\MainPage;
 use Demo\Chat\Runtime\View\Context\RtChatContext;
 use Demo\Chat\Runtime\View\Item\Connection;
 use Hilos\Constants\SignalTypeConstants;
+use Hilos\Core\Execution\ExecutionContext;
+use Hilos\Core\Execution\ExecutionFrame;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Page\ActionRouteConfig;
 use Hilos\Core\Page\PageSignalRouter;
@@ -149,10 +151,13 @@ final class ChatAgentModerationTest extends IntegrationTestCase
 
             $this->expectException(ValidationException::class);
 
-            (new MainPage(new ChatAgent()))->onAction(
-                'rate-ak',
-                ChatSignalConstants::MESSAGE,
-                new MessageActionDTO('too soon'),
+            ExecutionContext::run(
+                new ExecutionFrame(acceptKey: 'rate-ak'),
+                static fn() => (new MainPage(new ChatAgent()))->onAction(
+                    'rate-ak',
+                    ChatSignalConstants::MESSAGE,
+                    new MessageActionDTO('too soon'),
+                ),
             );
         } finally {
             Hilos::$rt->connections->actions->clear();

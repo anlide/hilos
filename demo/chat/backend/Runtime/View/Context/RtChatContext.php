@@ -10,6 +10,7 @@ use Demo\Chat\Runtime\State\Collection\ChatContexts as StateChatContexts;
 use Demo\Chat\Runtime\State\Collection\Connections as StateConnections;
 use Demo\Chat\Runtime\State\Collection\GuardianAgentStatuses as StateGuardianAgentStatuses;
 use Demo\Chat\Runtime\State\Collection\UserStates as StateUserStates;
+use Demo\Chat\Runtime\State\Item\Connection as StateConnection;
 use Demo\Chat\Runtime\View\Actions\Collection\AttachmentDraftsActions;
 use Demo\Chat\Runtime\View\Actions\Collection\BotAgentStatusesActions;
 use Demo\Chat\Runtime\View\Actions\Collection\ChatContextsActions;
@@ -28,7 +29,10 @@ use Demo\Chat\Runtime\View\Collection\ChatContexts;
 use Demo\Chat\Runtime\View\Collection\Connections;
 use Demo\Chat\Runtime\View\Collection\GuardianAgentStatuses;
 use Demo\Chat\Runtime\View\Collection\UserStates;
+use Demo\Chat\Runtime\View\Item\Connection;
+use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Runtime\Exception\Rt\StateCollectionNotFoundException;
+use Hilos\Runtime\Exception\Rt\StateItemNotFoundException;
 use Hilos\Runtime\View\Context\RtContext;
 
 /**
@@ -51,6 +55,7 @@ use Hilos\Runtime\View\Context\RtContext;
  *   Hilos::$rt->chatContexts[ChatContext::ID_MAIN];
  *
  * @property-read Connections $connections Active connections collection
+ * @property-read ?Connection $selfConnection Current inbound WebSocket connection, or null outside a WS context
  * @property-read UserStates $userStates Per-user chat runtime state
  * @property-read AttachmentDrafts $attachmentDrafts Uploaded attachment drafts
  * @property-read ChatContexts $chatContexts Chat context collection (singleton key "main")
@@ -72,9 +77,11 @@ final class RtChatContext extends RtContext
     public const string chatContext = 'chatContext';
     public const string botAgentStatus = 'botAgentStatus';
     public const string guardianAgentStatus = 'guardianAgentStatus';
+    public const string selfConnection = 'selfConnection';
 
     /**
      * @throws StateCollectionNotFoundException
+     * @throws StateItemNotFoundException
      */
     public function configure(): void
     {
@@ -84,6 +91,12 @@ final class RtChatContext extends RtContext
         $this->_stateCollections[self::chatContexts] = StateChatContexts::init();
         $this->_stateCollections[self::botAgentStatuses] = StateBotAgentStatuses::init();
         $this->_stateCollections[self::guardianAgentStatuses] = StateGuardianAgentStatuses::init();
+        $this->_stateItems[self::selfConnection] = function (): ?StateConnection {
+            $acceptKey = ExecutionContext::currentAcceptKey();
+
+            return $acceptKey !== null ? $this->_stateCollections[self::connections][$acceptKey] ?? null : null;
+        };
+
         $this->setRepresent(
             self::connections,
             Connections::class,
@@ -119,6 +132,11 @@ final class RtChatContext extends RtContext
             GuardianAgentStatuses::class,
             GuardianAgentStatusesActions::class,
             GuardianAgentStatusActions::class,
+        );
+        $this->setRepresentItem(
+            self::selfConnection,
+            Connection::class,
+            ConnectionActions::class,
         );
     }
 }

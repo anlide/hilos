@@ -138,7 +138,7 @@ final class UserPage extends AbstractHilosUserPage
             userId: $dto->id,
             oldName: $oldName,
             newName: $newName,
-            adminUserId: Hilos::$rt->connections[$acceptKey]?->userId,
+            adminUserId: Hilos::$rt->selfConnection?->userId,
         );
 
         $this->sendToUser(

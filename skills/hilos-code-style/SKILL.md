@@ -44,8 +44,10 @@ Use this skill for style-sensitive Hilos edits and reviews. Start with `agents.m
 10. Avoid one-use locals and prefer inline nullsafe access for one immediate
    nullable member call under the local variable rule.
 11. Avoid pass-through locals and DB/RT item aliases; keep known-key
-   `Hilos::$db/$rt->collection[$key]` access visible unless the local variable
-   adds domain meaning, snapshots state, or narrows type.
+   `Hilos::$db/$rt->collection[$key]` access and context item aliases such as
+   `Hilos::$rt->selfConnection` visible unless the local variable adds domain
+   meaning, snapshots state, or performs type narrowing that cannot be expressed
+   by a guard.
 12. Use named constants for action names, signal names, route params, model
    fields, DTO payload keys, table row keys, and boundary array keys whenever
    a constant exists. If a repeated payload key has no owner constant, add one
