@@ -17,7 +17,6 @@ use Demo\Chat\Runtime\View\Context\RtChatContext;
 use Demo\Chat\Runtime\View\Item\Connection;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Execution\ExecutionContext;
-use Hilos\Core\Execution\ExecutionFrame;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Page\ActionRouteConfig;
 use Hilos\Core\Page\PageSignalRouter;
@@ -64,7 +63,7 @@ final class ChatAgentModerationTest extends IntegrationTestCase
         }
     }
 
-    public function testStaleTextModerationResultDoesNotPublishMessage(): void
+    public function testStaleTextModerationResultThrowsValidationAndDoesNotPublishMessage(): void
     {
         RtTruthSourceRegistry::register(RtChatContext::connections, true, self::TEST_AGENT_ID);
         Hilos::$rt->connections->actions->clear();
@@ -76,19 +75,70 @@ final class ChatAgentModerationTest extends IntegrationTestCase
             Hilos::$rt->userStates->actions->ensure($user->id);
 
             Hilos::initSignalRouter(new ChatSignalRouter());
-            $this->dispatchTextModerationSignalToMainPage(
-                new ChatAgent(),
-                new ModerationResultSignalData(
-                    requestId: 'request-closed',
-                    acceptKey: 'closed-ak',
-                    userId: $user->id,
-                    message: 'message after disconnect',
-                    allow: true,
-                    reason: 'ok',
-                ),
-            );
+            try {
+                $this->dispatchTextModerationSignalToMainPage(
+                    new ChatAgent(),
+                    new ModerationResultSignalData(
+                        requestId: 'request-closed',
+                        acceptKey: 'closed-ak',
+                        userId: $user->id,
+                        message: 'message after disconnect',
+                        allow: true,
+                        reason: 'ok',
+                    ),
+                );
+                $this->fail('Expected stale moderation result to throw validation exception.');
+            } catch (ValidationException $e) {
+                $this->assertSame('Moderation result connection is stale', $e->getMessage());
+            }
 
             $this->assertNoMessageEvents();
+        } finally {
+            Hilos::$rt->connections->actions->clear();
+            Hilos::$rt->userStates->actions->clear();
+            Hilos::$db->events->actions->deleteAll();
+        }
+    }
+
+    public function testStaleTextModerationRequestThrowsValidationAndDoesNotPublishMessage(): void
+    {
+        RtTruthSourceRegistry::register(RtChatContext::connections, true, self::TEST_AGENT_ID);
+        Hilos::$rt->connections->actions->clear();
+        Hilos::$rt->userStates->actions->clear();
+        Hilos::$db->events->actions->deleteAll();
+
+        try {
+            $user = Hilos::$db->users->actions->register(RandomHelper::hex(16));
+            Hilos::$rt->connections->actions->register('request-ak', $user->id);
+            Hilos::$rt->userStates->actions->ensure($user->id)->actions->recordOutboundSubmission();
+            Hilos::$rt->connections['request-ak']?->actions->startOutboundModeration(
+                'request-current',
+                'pending moderation',
+            );
+
+            Hilos::initSignalRouter(new ChatSignalRouter());
+            try {
+                $this->dispatchTextModerationSignalToMainPage(
+                    new ChatAgent(),
+                    new ModerationResultSignalData(
+                        requestId: 'request-stale',
+                        acceptKey: 'request-ak',
+                        userId: $user->id,
+                        message: 'message after newer submit',
+                        allow: true,
+                        reason: 'ok',
+                    ),
+                );
+                $this->fail('Expected stale moderation request to throw validation exception.');
+            } catch (ValidationException $e) {
+                $this->assertSame('Moderation result request is stale', $e->getMessage());
+            }
+
+            $this->assertNoMessageEvents();
+            $this->assertSame(
+                Connection::OUTBOUND_MODERATION_PHASE_CHECKING,
+                Hilos::$rt->connections['request-ak']?->outboundModerationPhase,
+            );
         } finally {
             Hilos::$rt->connections->actions->clear();
             Hilos::$rt->userStates->actions->clear();
@@ -151,15 +201,14 @@ final class ChatAgentModerationTest extends IntegrationTestCase
 
             $this->expectException(ValidationException::class);
 
-            ExecutionContext::run(
-                new ExecutionFrame(acceptKey: 'rate-ak'),
-                static fn() => (new MainPage(new ChatAgent()))->onAction(
-                    'rate-ak',
-                    ChatSignalConstants::MESSAGE,
-                    new MessageActionDTO('too soon'),
-                ),
+            ExecutionContext::setCurrentAcceptKey('rate-ak');
+            (new MainPage(new ChatAgent()))->onAction(
+                'rate-ak',
+                ChatSignalConstants::MESSAGE,
+                new MessageActionDTO('too soon'),
             );
         } finally {
+            ExecutionContext::setCurrentAcceptKey(null);
             Hilos::$rt->connections->actions->clear();
             Hilos::$rt->userStates->actions->clear();
             Hilos::$db->events->actions->deleteAll();
@@ -217,10 +266,16 @@ final class ChatAgentModerationTest extends IntegrationTestCase
             ],
         );
 
-        $router->dispatchAgentSignal(
-            new AgentSignalData($result),
-            '',
-            ChatSignalConstants::MODERATION_RESULT,
-        );
+        $agentSignalData = new AgentSignalData($result);
+        ExecutionContext::setCurrentAcceptKey($agentSignalData->getAcceptKey());
+        try {
+            $router->dispatchAgentSignal(
+                $agentSignalData,
+                '',
+                ChatSignalConstants::MODERATION_RESULT,
+            );
+        } finally {
+            ExecutionContext::setCurrentAcceptKey(null);
+        }
     }
 }

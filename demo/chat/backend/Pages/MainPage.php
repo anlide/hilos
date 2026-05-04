@@ -24,6 +24,7 @@ use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
 use Hilos\Core\Exception\EmptyValueException;
+use Hilos\Core\Exception\ItemNotFoundForDeleteException;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Page\AbstractPage;
@@ -120,6 +121,7 @@ final class MainPage extends AbstractPage
      * @param string $name Moderation result signal name
      * @throws AgentUnknownSignalException When signal name is not supported by this page
      * @throws InvalidAgentSignalPayloadException When signal payload does not match the signal name
+     * @throws ValidationException When moderation result does not match active connection/request state
      * @throws HilosException On database, runtime, truth source, or signal failure
      */
     public function onSignalAgent(AgentSignalData $data, string $source, string $name): void
@@ -245,6 +247,7 @@ final class MainPage extends AbstractPage
      * @param string $acceptKey WebSocket accept key for the requesting client
      * @param AttachmentDraftDeleteActionDTO $dto Parsed delete action payload
      * @throws EmptyValueException When draft id is empty
+     * @throws ItemNotFoundForDeleteException When the requested draft does not belong to this session
      * @throws ItemNotFoundForUpdateException When the WebSocket session or user runtime state is missing
      * @throws ValidationException When the current outbound submit is being moderated
      * @throws HilosException On runtime, filesystem, or signal failure
@@ -271,9 +274,7 @@ final class MainPage extends AbstractPage
         }
 
         if (!isset(Hilos::$rt->selfConnection->attachmentDrafts[$dto->draftId])) {
-            // TODO: Reconcile stale draft delete requests through a projection-backed no-op action.
-
-            return;
+            throw new ItemNotFoundForDeleteException('Attachment draft not found for delete');
         }
 
         Hilos::$rt->attachmentDrafts[$dto->draftId]->actions->delete(deleteFiles: true);
@@ -282,28 +283,27 @@ final class MainPage extends AbstractPage
     /**
      * Applies outbound moderation: publish approved text plus attachments or expose a retryable failure state.
      *
-     * Stale connection or request results never publish a message.
+     * Stale connection or request results fail validation and never publish a message.
      *
      * @param ModerationResultSignalData $result Uploader connection key, request id, allow flag, message body, reason
+     * @throws ValidationException When result does not match active connection/request state
      * @throws HilosException On database, runtime, or signal failure
      */
     private function handleTextModerationResult(ModerationResultSignalData $result): void
     {
         if (
-            !isset(Hilos::$rt->connections[$result->acceptKey])
-            || Hilos::$rt->connections[$result->acceptKey]->userId !== $result->userId
+            Hilos::$rt->selfConnection === null
+            || Hilos::$rt->selfConnection->acceptKey !== $result->acceptKey
         ) {
-            $this->logAgentInfo(
-                "Moderation result ignored for stale connection (acceptKey={$result->acceptKey}; userId={$result->userId})",
-            );
-            return;
+            throw new ValidationException('Moderation result connection is stale');
         }
 
-        if (Hilos::$rt->connections[$result->acceptKey]->outboundModerationRequestId !== $result->requestId) {
-            $this->logAgentInfo(
-                "Moderation result ignored for stale request (acceptKey={$result->acceptKey}; userId={$result->userId}; requestId={$result->requestId})",
-            );
-            return;
+        if (Hilos::$rt->selfConnection->userId !== $result->userId) {
+            throw new ValidationException('Moderation result user does not match connection');
+        }
+
+        if (Hilos::$rt->selfConnection->outboundModerationRequestId !== $result->requestId) {
+            throw new ValidationException('Moderation result request is stale');
         }
 
         if (!$result->allow) {
@@ -312,16 +312,13 @@ final class MainPage extends AbstractPage
                 ? Connection::OUTBOUND_MODERATION_PHASE_UNAVAILABLE
                 : Connection::OUTBOUND_MODERATION_PHASE_REJECTED;
             if (
-                !Hilos::$rt->connections[$result->acceptKey]->actions->failOutboundModeration(
+                !Hilos::$rt->selfConnection->actions->failOutboundModeration(
                     $result->requestId,
                     $phase,
                     $reason,
                 )
             ) {
-                $this->logAgentInfo(
-                    "Moderation result ignored for stale request (acceptKey={$result->acceptKey}; userId={$result->userId}; requestId={$result->requestId})",
-                );
-                return;
+                throw new ValidationException('Moderation result request is stale');
             }
             $this->logAgentError("Message blocked by moderation (userId={$result->userId}; reason={$reason})");
             return;
@@ -329,12 +326,12 @@ final class MainPage extends AbstractPage
 
         $drafts = [];
         $draftIds = [];
-        foreach (Hilos::$rt->connections[$result->acceptKey]->attachmentDrafts as $draft) {
+        foreach (Hilos::$rt->selfConnection->attachmentDrafts as $draft) {
             $drafts[] = $draft;
             $draftIds[] = $draft->draftId;
         }
         if ($result->message === '' && $drafts === []) {
-            Hilos::$rt->connections[$result->acceptKey]->actions->failOutboundModeration(
+            Hilos::$rt->selfConnection->actions->failOutboundModeration(
                 $result->requestId,
                 Connection::OUTBOUND_MODERATION_PHASE_UNAVAILABLE,
                 'attachment_missing',
@@ -346,7 +343,7 @@ final class MainPage extends AbstractPage
         foreach ($drafts as $draft) {
             $quarantineFile = Hilos::$fs->quarantine[$draft->quarantineBasename];
             if (!$quarantineFile->exists()) {
-                Hilos::$rt->connections[$result->acceptKey]->actions->failOutboundModeration(
+                Hilos::$rt->selfConnection->actions->failOutboundModeration(
                     $result->requestId,
                     Connection::OUTBOUND_MODERATION_PHASE_UNAVAILABLE,
                     'attachment_missing',
@@ -358,7 +355,7 @@ final class MainPage extends AbstractPage
                 $quarantineFile->move('published');
             } catch (FsException $e) {
                 $this->logAgentError("Failed to publish attachment draft {$draft->draftId}: {$e->getMessage()}");
-                Hilos::$rt->connections[$result->acceptKey]->actions->failOutboundModeration(
+                Hilos::$rt->selfConnection->actions->failOutboundModeration(
                     $result->requestId,
                     Connection::OUTBOUND_MODERATION_PHASE_UNAVAILABLE,
                     'attachment_publish_failed',
@@ -372,11 +369,8 @@ final class MainPage extends AbstractPage
             );
         }
 
-        if (!Hilos::$rt->connections[$result->acceptKey]->actions->clearOutboundModeration($result->requestId)) {
-            $this->logAgentInfo(
-                "Moderation approval ignored for stale request (acceptKey={$result->acceptKey}; userId={$result->userId}; requestId={$result->requestId})",
-            );
-            return;
+        if (!Hilos::$rt->selfConnection->actions->clearOutboundModeration($result->requestId)) {
+            throw new ValidationException('Moderation result request is stale');
         }
 
         Hilos::$rt->attachmentDrafts->actions->deleteByIds($draftIds, deleteFiles: false);

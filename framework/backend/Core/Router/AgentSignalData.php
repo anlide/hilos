@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Core\Router;
 
 use Hilos\BaseDTO;
+use Hilos\Socket\WebSocket\DTO\WebSocketAcceptKeySignalDTO;
 
 /**
  * AgentSignalData - Signal data container for agent-to-agent signals.
@@ -12,7 +13,7 @@ use Hilos\BaseDTO;
  * Wraps the actual payload (e.g. ModerationRequestSignalData) for delivery to target agent.
  * Similar to WebSocketSignalData for WebSocket signals.
  */
-class AgentSignalData extends BaseDTO implements SignalDataInterface
+class AgentSignalData extends BaseDTO implements SignalDataInterface, WebSocketAcceptKeySignalDTO
 {
     /**
      * Creates agent signal data with inner payload.
@@ -22,6 +23,11 @@ class AgentSignalData extends BaseDTO implements SignalDataInterface
     public function __construct(
         public readonly SignalDataInterface $data,
     ) {
+    }
+
+    public function getAcceptKey(): string
+    {
+        return $this->data instanceof WebSocketAcceptKeySignalDTO ? $this->data->getAcceptKey() : '';
     }
 
     /**

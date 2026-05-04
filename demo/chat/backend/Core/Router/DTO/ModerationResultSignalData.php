@@ -6,13 +6,14 @@ namespace Demo\Chat\Core\Router\DTO;
 
 use Hilos\BaseDTO;
 use Hilos\Core\Router\SignalDataInterface;
+use Hilos\Socket\WebSocket\DTO\WebSocketAcceptKeySignalDTO;
 
 /**
  * ModerationResultSignalData - DTO for moderation result signal (ModeratorAgent → ChatAgent).
  *
  * Routing is configured by signal name in ChatSignalRouter (moderation_result → chat).
  */
-final class ModerationResultSignalData extends BaseDTO implements SignalDataInterface
+final class ModerationResultSignalData extends BaseDTO implements SignalDataInterface, WebSocketAcceptKeySignalDTO
 {
     /**
      * Creates moderation result signal data.
@@ -32,6 +33,11 @@ final class ModerationResultSignalData extends BaseDTO implements SignalDataInte
         public readonly bool $allow,
         public readonly string $reason,
     ) {
+    }
+
+    public function getAcceptKey(): string
+    {
+        return $this->acceptKey;
     }
 
     /**

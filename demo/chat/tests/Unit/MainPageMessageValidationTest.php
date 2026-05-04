@@ -6,12 +6,15 @@ namespace Demo\Chat\Tests\Unit;
 
 use Demo\Chat\Agents\ChatAgent;
 use Demo\Chat\Constants\ChatSignalConstants;
+use Demo\Chat\Core\Page\DTO\AttachmentDraftDeleteActionDTO;
 use Demo\Chat\Core\Page\DTO\MessageActionDTO;
 use Demo\Chat\Hilos;
 use Demo\Chat\Pages\MainPage;
 use Demo\Chat\Runtime\View\Context\RtChatContext;
+use Hilos\Core\Exception\ItemNotFoundForDeleteException;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Core\Execution\ExecutionContext;
+use Hilos\TruthSource\RtTruthSourceRegistry;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -19,6 +22,8 @@ use PHPUnit\Framework\TestCase;
  */
 final class MainPageMessageValidationTest extends TestCase
 {
+    private const string TEST_AGENT_ID = 'test-agent';
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -29,6 +34,7 @@ final class MainPageMessageValidationTest extends TestCase
 
     protected function tearDown(): void
     {
+        RtTruthSourceRegistry::unregisterAgent(self::TEST_AGENT_ID);
         ExecutionContext::clear();
         Hilos::$rt = null;
 
@@ -54,6 +60,25 @@ final class MainPageMessageValidationTest extends TestCase
             'missing-ak',
             ChatSignalConstants::MESSAGE,
             new MessageActionDTO('   '),
+        );
+    }
+
+    public function testRejectsDeletingMissingAttachmentDraft(): void
+    {
+        RtTruthSourceRegistry::register(RtChatContext::connections, true, self::TEST_AGENT_ID);
+        RtTruthSourceRegistry::register(RtChatContext::userStates, true, self::TEST_AGENT_ID);
+
+        ExecutionContext::setCurrentAgentId(self::TEST_AGENT_ID);
+        ExecutionContext::setCurrentAcceptKey('draft-ak');
+        Hilos::$rt->connections->actions->register('draft-ak', 1);
+        Hilos::$rt->userStates->actions->ensure(1);
+
+        $this->expectException(ItemNotFoundForDeleteException::class);
+
+        (new MainPage(new ChatAgent()))->onAction(
+            'draft-ak',
+            ChatSignalConstants::ATTACHMENT_DRAFT_DELETE,
+            new AttachmentDraftDeleteActionDTO('missing-draft'),
         );
     }
 }
