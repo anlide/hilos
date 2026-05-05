@@ -17,7 +17,6 @@ final class ModerationResultSignalDataTest extends TestCase
     public function testAcceptKeyIsExposedForWorkerExecutionContext(): void
     {
         $data = new ModerationResultSignalData(
-            requestId: 'request-1',
             acceptKey: 'moderation-ak',
             userId: 42,
             message: 'approved',
@@ -31,7 +30,6 @@ final class ModerationResultSignalDataTest extends TestCase
     public function testRoundtripPreservesAcceptKey(): void
     {
         $data = new ModerationResultSignalData(
-            requestId: 'request-1',
             acceptKey: 'moderation-ak',
             userId: 42,
             message: 'approved',
@@ -47,7 +45,6 @@ final class ModerationResultSignalDataTest extends TestCase
     public function testExposesMessageActionErrorContext(): void
     {
         $data = new ModerationResultSignalData(
-            requestId: 'request-1',
             acceptKey: 'moderation-ak',
             userId: 42,
             message: 'blocked text',

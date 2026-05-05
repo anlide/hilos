@@ -27,7 +27,6 @@ use Hilos\Runtime\View\Item\RtItem;
  * @property-read string $acceptKey WebSocket accept key
  * @property-read int $userId User ID for this connection
  * @property-read int $connectedAt Unix timestamp when connected
- * @property-read string $outboundModerationRequestId Current moderation request id
  * @property-read string $outboundModerationPhase Current moderation phase
  * @property-read string $outboundModerationMessage Submitted message text
  * @property-read string $outboundModerationReason Rejection or unavailable reason
@@ -97,7 +96,6 @@ final class Connection extends RtItem
             StateConnection::acceptKey => $state->acceptKey,
             StateConnection::userId => $state->userId,
             StateConnection::connectedAt => $state->connectedAt,
-            StateConnection::outboundModerationRequestId => $state->outboundModerationRequestId,
             StateConnection::outboundModerationPhase => $state->outboundModerationPhase,
             StateConnection::outboundModerationMessage => $state->outboundModerationMessage,
             StateConnection::outboundModerationReason => $state->outboundModerationReason,

@@ -41,7 +41,6 @@ final class AttachmentDraftSignalDataTest extends TestCase
             'connectedAt' => 1710000000,
             'messageRateLimitSecondsRemaining' => 6,
             'outboundModerationState' => [
-                'requestId' => 'request-1',
                 'phase' => Connection::OUTBOUND_MODERATION_PHASE_CHECKING,
                 'text' => 'hello',
                 'reason' => null,

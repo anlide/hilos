@@ -42,16 +42,14 @@ final class ConnectionActions extends RtActions
     /**
      * Start a connection-local outbound moderation state.
      *
-     * @param string $requestId Moderation request id
      * @param string $message Submitted message text
      * @throws RtActionsCollectionNameNullException When collection name is null.
      * @throws RtTruthSourceWriteNotAllowedException When truth source does not allow write.
      */
-    public function startOutboundModeration(string $requestId, string $message): void
+    public function startOutboundModeration(string $message): void
     {
         $this->ensureCanWrite();
 
-        $this->state->outboundModerationRequestId = $requestId;
         $this->state->outboundModerationPhase = RuntimeConnection::OUTBOUND_MODERATION_PHASE_CHECKING;
         $this->state->outboundModerationMessage = $message;
         $this->state->outboundModerationReason = '';
@@ -63,57 +61,39 @@ final class ConnectionActions extends RtActions
     /**
      * Mark the current connection-local moderation as failed for user-visible retry.
      *
-     * @param string $requestId Moderation request id to match
      * @param string $phase Failure phase: rejected or unavailable
      * @param string $reason User-visible reason
-     * @return bool True when the state matched and was updated
      *
      * @throws RtActionsCollectionNameNullException When collection name is null.
      * @throws RtTruthSourceWriteNotAllowedException When truth source does not allow write.
      */
-    public function failOutboundModeration(string $requestId, string $phase, string $reason): bool
+    public function failOutboundModeration(string $phase, string $reason): void
     {
         $this->ensureCanWrite();
-
-        if ($this->state->outboundModerationRequestId !== $requestId) {
-            return false;
-        }
 
         $this->state->outboundModerationPhase = $phase;
         $this->state->outboundModerationReason = $reason;
         $this->state->outboundModerationUpdatedAt = time();
 
         $this->sync();
-
-        return true;
     }
 
     /**
      * Clear current connection-local moderation state after approval.
      *
-     * @param string $requestId Moderation request id to match
-     * @return bool True when the state matched and was cleared
-     *
      * @throws RtActionsCollectionNameNullException When collection name is null.
      * @throws RtTruthSourceWriteNotAllowedException When truth source does not allow write.
      */
-    public function clearOutboundModeration(string $requestId): bool
+    public function clearOutboundModeration(): void
     {
         $this->ensureCanWrite();
 
-        if ($this->state->outboundModerationRequestId !== $requestId) {
-            return false;
-        }
-
-        $this->state->outboundModerationRequestId = '';
         $this->state->outboundModerationPhase = RuntimeConnection::OUTBOUND_MODERATION_PHASE_NONE;
         $this->state->outboundModerationMessage = '';
         $this->state->outboundModerationReason = '';
         $this->state->outboundModerationUpdatedAt = time();
 
         $this->sync();
-
-        return true;
     }
 
     /**

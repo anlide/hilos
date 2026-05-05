@@ -6,7 +6,6 @@ const selfConnectionPayload = {
   connectedAt: 1710000000,
   messageRateLimitSecondsRemaining: 5,
   outboundModerationState: {
-    requestId: 'request-1',
     phase: 'checking',
     text: 'hello',
     reason: null,

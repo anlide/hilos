@@ -51,7 +51,7 @@ class ModeratorAgent extends AbstractAgent
     /**
      * @var array<string, true>
      */
-    private array $observedUserRequestIds = [];
+    private array $observedUserModerationKeys = [];
 
     /**
      * Creates a moderator with an LLM client from moderation settings.
@@ -150,31 +150,36 @@ class ModeratorAgent extends AbstractAgent
      */
     private function queuePendingUserModerationRequests(): void
     {
-        $activeUserRequestIds = [];
+        $activeUserModerationKeys = [];
 
         foreach (Hilos::$rt->connections as $connection) {
             if ($connection->outboundModerationPhase !== Connection::OUTBOUND_MODERATION_PHASE_CHECKING) {
                 continue;
             }
-            if ($connection->outboundModerationRequestId === '') {
+
+            $moderationKey = self::userModerationKey(
+                $connection->acceptKey,
+                $connection->outboundModerationUpdatedAt,
+                $connection->outboundModerationMessage,
+            );
+            $activeUserModerationKeys[$moderationKey] = true;
+            if (isset($this->observedUserModerationKeys[$moderationKey])) {
                 continue;
             }
 
-            $activeUserRequestIds[$connection->outboundModerationRequestId] = true;
-            if (isset($this->observedUserRequestIds[$connection->outboundModerationRequestId])) {
-                continue;
-            }
-
-            $this->observedUserRequestIds[$connection->outboundModerationRequestId] = true;
+            $this->observedUserModerationKeys[$moderationKey] = true;
             $this->queueUserModerationRequest(new UserModerationRequest(
-                requestId: $connection->outboundModerationRequestId,
                 acceptKey: $connection->acceptKey,
                 userId: $connection->userId,
                 message: $connection->outboundModerationMessage,
+                updatedAt: $connection->outboundModerationUpdatedAt,
             ));
         }
 
-        $this->observedUserRequestIds = array_intersect_key($this->observedUserRequestIds, $activeUserRequestIds);
+        $this->observedUserModerationKeys = array_intersect_key(
+            $this->observedUserModerationKeys,
+            $activeUserModerationKeys,
+        );
     }
 
     /**
@@ -231,7 +236,6 @@ class ModeratorAgent extends AbstractAgent
         $this->sendToAgent(
             ChatSignalConstants::MODERATION_RESULT,
             new ModerationResultSignalData(
-                requestId: $moderationRequest->requestId,
                 acceptKey: $moderationRequest->acceptKey,
                 userId: $moderationRequest->userId,
                 message: $moderationRequest->message,
@@ -278,7 +282,9 @@ class ModeratorAgent extends AbstractAgent
         while ($this->pendingQueue !== []) {
             $item = array_shift($this->pendingQueue);
             if ($item instanceof UserModerationRequest && !$this->isUserModerationRequestCurrent($item)) {
-                unset($this->observedUserRequestIds[$item->requestId]);
+                unset($this->observedUserModerationKeys[
+                    self::userModerationKey($item->acceptKey, $item->updatedAt, $item->message)
+                ]);
                 continue;
             }
 
@@ -325,7 +331,6 @@ class ModeratorAgent extends AbstractAgent
             $this->sendToAgent(
                 ChatSignalConstants::MODERATION_RESULT,
                 new ModerationResultSignalData(
-                    requestId: $pending->requestId,
                     acceptKey: $pending->acceptKey,
                     userId: $pending->userId,
                     message: $pending->message,
@@ -376,10 +381,17 @@ class ModeratorAgent extends AbstractAgent
             return false;
         }
 
-        return Hilos::$rt->connections[$moderationRequest->acceptKey]->outboundModerationRequestId
-            === $moderationRequest->requestId
-            && Hilos::$rt->connections[$moderationRequest->acceptKey]->outboundModerationPhase
-            === Connection::OUTBOUND_MODERATION_PHASE_CHECKING;
+        return Hilos::$rt->connections[$moderationRequest->acceptKey]->outboundModerationPhase
+            === Connection::OUTBOUND_MODERATION_PHASE_CHECKING
+            && Hilos::$rt->connections[$moderationRequest->acceptKey]->outboundModerationUpdatedAt
+            === $moderationRequest->updatedAt
+            && Hilos::$rt->connections[$moderationRequest->acceptKey]->outboundModerationMessage
+            === $moderationRequest->message;
+    }
+
+    private static function userModerationKey(string $acceptKey, int $updatedAt, string $message): string
+    {
+        return "{$acceptKey}\0{$updatedAt}\0{$message}";
     }
 
     /**

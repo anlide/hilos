@@ -18,15 +18,11 @@ final class OutboundModerationStateProjector
      */
     public static function forConnection(Connection $connection): ?array
     {
-        if (
-            $connection->outboundModerationRequestId === ''
-            || $connection->outboundModerationPhase === Connection::OUTBOUND_MODERATION_PHASE_NONE
-        ) {
+        if ($connection->outboundModerationPhase === Connection::OUTBOUND_MODERATION_PHASE_NONE) {
             return null;
         }
 
         return [
-            'requestId' => $connection->outboundModerationRequestId,
             'phase' => $connection->outboundModerationPhase,
             'text' => $connection->outboundModerationMessage,
             'reason' => $connection->outboundModerationReason !== '' ? $connection->outboundModerationReason : null,

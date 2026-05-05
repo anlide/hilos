@@ -18,7 +18,6 @@ final class ModerationResultSignalData extends BaseDTO implements ActionErrorSig
     /**
      * Creates moderation result signal data.
      *
-     * @param string $requestId Moderation request id
      * @param string $acceptKey WebSocket accept key
      * @param int $userId User ID
      * @param string $message Message text
@@ -26,7 +25,6 @@ final class ModerationResultSignalData extends BaseDTO implements ActionErrorSig
      * @param string $reason Moderation reason
      */
     public function __construct(
-        public readonly string $requestId,
         public readonly string $acceptKey,
         public readonly int $userId,
         public readonly string $message,
@@ -63,7 +61,6 @@ final class ModerationResultSignalData extends BaseDTO implements ActionErrorSig
     public function toArray(): array
     {
         return [
-            'requestId' => $this->requestId,
             'acceptKey' => $this->acceptKey,
             'userId' => $this->userId,
             'message' => $this->message,
@@ -81,7 +78,6 @@ final class ModerationResultSignalData extends BaseDTO implements ActionErrorSig
     public static function fromArray(array $data): static
     {
         return new self(
-            requestId: (string)($data['requestId'] ?? ''),
             acceptKey: (string)($data['acceptKey'] ?? ''),
             userId: (int)($data['userId'] ?? 0),
             message: (string)($data['message'] ?? ''),

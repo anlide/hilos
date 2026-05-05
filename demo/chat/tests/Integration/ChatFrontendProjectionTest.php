@@ -56,7 +56,6 @@ final class ChatFrontendProjectionTest extends IntegrationTestCase
             ));
 
             Hilos::$rt->connections['moderation-ak']?->actions->startOutboundModeration(
-                'request-projection',
                 'pending text',
             );
 
@@ -72,8 +71,8 @@ final class ChatFrontendProjectionTest extends IntegrationTestCase
             $selfConnection = $payloadData['frontend']['full'][FrontendStateCollectionKey::SELF_CONNECTION][0] ?? [];
             $this->assertSame(SelfConnectionFrontendStateProjector::ID_SELF, $selfConnection['id'] ?? null);
             $this->assertSame(
-                'request-projection',
-                $selfConnection['outboundModerationState']['requestId'] ?? null,
+                'checking',
+                $selfConnection['outboundModerationState']['phase'] ?? null,
             );
             $this->assertSame(
                 'pending text',

@@ -48,7 +48,6 @@ final class ChatAgentModerationTest extends IntegrationTestCase
             Hilos::$rt->connections->actions->register('stop-ak', $user->id);
             Hilos::$rt->userStates->actions->ensure($user->id)->actions->recordOutboundSubmission();
             Hilos::$rt->connections['stop-ak']?->actions->startOutboundModeration(
-                'request-stop',
                 'pending moderation',
             );
 
@@ -83,7 +82,6 @@ final class ChatAgentModerationTest extends IntegrationTestCase
                 $this->dispatchTextModerationSignalToMainPage(
                     new ChatAgent(),
                     new ModerationResultSignalData(
-                        requestId: 'request-closed',
                         acceptKey: 'closed-ak',
                         userId: $user->id,
                         message: 'message after disconnect',
@@ -104,52 +102,6 @@ final class ChatAgentModerationTest extends IntegrationTestCase
         }
     }
 
-    public function testStaleTextModerationRequestThrowsAgentExceptionAndDoesNotPublishMessage(): void
-    {
-        RtTruthSourceRegistry::register(RtChatContext::connections, true, self::TEST_AGENT_ID);
-        Hilos::$rt->connections->actions->clear();
-        Hilos::$rt->userStates->actions->clear();
-        Hilos::$db->events->actions->deleteAll();
-
-        try {
-            $user = Hilos::$db->users->actions->register(RandomHelper::hex(16));
-            Hilos::$rt->connections->actions->register('request-ak', $user->id);
-            Hilos::$rt->userStates->actions->ensure($user->id)->actions->recordOutboundSubmission();
-            Hilos::$rt->connections['request-ak']?->actions->startOutboundModeration(
-                'request-current',
-                'pending moderation',
-            );
-
-            Hilos::initSignalRouter(new ChatSignalRouter());
-            try {
-                $this->dispatchTextModerationSignalToMainPage(
-                    new ChatAgent(),
-                    new ModerationResultSignalData(
-                        requestId: 'request-stale',
-                        acceptKey: 'request-ak',
-                        userId: $user->id,
-                        message: 'message after newer submit',
-                        allow: true,
-                        reason: 'ok',
-                    ),
-                );
-                $this->fail('Expected stale moderation request to throw agent exception.');
-            } catch (AgentException $e) {
-                $this->assertSame('Moderation result request is stale', $e->getMessage());
-            }
-
-            $this->assertNoMessageEvents();
-            $this->assertSame(
-                Connection::OUTBOUND_MODERATION_PHASE_CHECKING,
-                Hilos::$rt->connections['request-ak']?->outboundModerationPhase,
-            );
-        } finally {
-            Hilos::$rt->connections->actions->clear();
-            Hilos::$rt->userStates->actions->clear();
-            Hilos::$db->events->actions->deleteAll();
-        }
-    }
-
     public function testApprovedTextModerationResultPublishesMessageAndClearsPendingState(): void
     {
         RtTruthSourceRegistry::register(RtChatContext::connections, true, self::TEST_AGENT_ID);
@@ -162,7 +114,6 @@ final class ChatAgentModerationTest extends IntegrationTestCase
             Hilos::$rt->connections->actions->register('live-ak', $user->id);
             Hilos::$rt->userStates->actions->ensure($user->id)->actions->recordOutboundSubmission();
             Hilos::$rt->connections['live-ak']?->actions->startOutboundModeration(
-                'request-live',
                 'pending moderation',
             );
 
@@ -170,7 +121,6 @@ final class ChatAgentModerationTest extends IntegrationTestCase
             $this->dispatchTextModerationSignalToMainPage(
                 new ChatAgent(),
                 new ModerationResultSignalData(
-                    requestId: 'request-live',
                     acceptKey: 'live-ak',
                     userId: $user->id,
                     message: 'approved message',
@@ -203,7 +153,6 @@ final class ChatAgentModerationTest extends IntegrationTestCase
             Hilos::$rt->connections->actions->register('reject-ak', $user->id);
             Hilos::$rt->userStates->actions->ensure($user->id)->actions->recordOutboundSubmission();
             Hilos::$rt->connections['reject-ak']?->actions->startOutboundModeration(
-                'request-reject',
                 'blocked message',
             );
 
@@ -211,7 +160,6 @@ final class ChatAgentModerationTest extends IntegrationTestCase
             $this->dispatchTextModerationSignalToMainPage(
                 new ChatAgent(),
                 new ModerationResultSignalData(
-                    requestId: 'request-reject',
                     acceptKey: 'reject-ak',
                     userId: $user->id,
                     message: 'blocked message',

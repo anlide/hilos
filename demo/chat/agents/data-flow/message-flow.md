@@ -15,7 +15,7 @@ MainPage::onAction('message', MessageActionDTO)
         |
 Validate connection, active moderation, 10s common submit limit, and runtime draft state
         |
-ConnectionActions::startOutboundModeration(requestId, content)
+ConnectionActions::startOutboundModeration(content)
         |
 ChatAgent::sendToAgent(MODERATE_REQUEST, ModerationRequestSignalData)
         |

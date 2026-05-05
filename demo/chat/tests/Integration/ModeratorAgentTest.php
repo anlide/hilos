@@ -35,7 +35,6 @@ final class ModeratorAgentTest extends IntegrationTestCase
             Hilos::$rt->connections->actions->register('moderator-tick-ak', $user->id);
             Hilos::$rt->userStates->actions->ensure($user->id);
             Hilos::$rt->connections['moderator-tick-ak']?->actions->startOutboundModeration(
-                'request-from-rt',
                 'moderate me from runtime',
             );
 
@@ -49,7 +48,6 @@ final class ModeratorAgentTest extends IntegrationTestCase
             $this->assertSame(1, $chatClient->startGenerateCalls);
             $result = $this->takeQueuedModerationResult();
             $this->assertNotNull($result);
-            $this->assertSame('request-from-rt', $result->requestId);
             $this->assertSame('moderator-tick-ak', $result->acceptKey);
             $this->assertSame($user->id, $result->userId);
             $this->assertSame('moderate me from runtime', $result->message);

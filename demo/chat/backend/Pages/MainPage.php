@@ -37,7 +37,6 @@ use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Fs\FsException;
 use Hilos\HilosException;
 use Hilos\Socket\WebSocket\DTO\WebSocketFrameBinarySignalDTO;
-use Hilos\Utils\Helpers\RandomHelper;
 
 /**
  * Handles main chat subscriptions, message submit actions, upload signals, and outbound moderation results.
@@ -122,7 +121,7 @@ final class MainPage extends AbstractPage
      * @throws AgentUnknownSignalException When signal name is not supported by this page
      * @throws InvalidAgentSignalPayloadException When signal payload does not match the signal name
      * @throws ValidationException When moderation rejects the message or is unavailable
-     * @throws AgentException When moderation result does not match active connection/request state
+     * @throws AgentException When moderation result does not match an active connection
      * @throws HilosException On database, runtime, truth source, or signal failure
      */
     public function onSignalAgent(AgentSignalData $data, string $source, string $name): void
@@ -220,9 +219,8 @@ final class MainPage extends AbstractPage
             throw new EmptyValueException('Message cannot be empty');
         }
 
-        $requestId = RandomHelper::hex(16);
         Hilos::$rt->selfConnection->userState->actions->recordOutboundSubmission();
-        Hilos::$rt->selfConnection->actions->startOutboundModeration($requestId, $dto->content);
+        Hilos::$rt->selfConnection->actions->startOutboundModeration($dto->content);
     }
 
     /**
@@ -266,11 +264,11 @@ final class MainPage extends AbstractPage
     /**
      * Applies outbound moderation: publish approved text plus attachments or expose a retryable failure state.
      *
-     * Stale connection or request results fail the agent-signal contract and never publish a message.
+     * Stale connection results fail the agent-signal contract and never publish a message.
      *
-     * @param ModerationResultSignalData $result Uploader connection key, request id, allow flag, message body, reason
+     * @param ModerationResultSignalData $result Uploader connection key, allow flag, message body, reason
      * @throws ValidationException When moderation rejects the message or is unavailable
-     * @throws AgentException When result does not match active connection/request state
+     * @throws AgentException When result does not match an active connection
      * @throws HilosException On database, runtime, or signal failure
      */
     private function handleTextModerationResult(ModerationResultSignalData $result): void
@@ -279,17 +277,12 @@ final class MainPage extends AbstractPage
             throw new AgentException('Moderation result connection is stale');
         }
 
-        if (Hilos::$rt->selfConnection->outboundModerationRequestId !== $result->requestId) {
-            throw new AgentException('Moderation result request is stale');
-        }
-
         if (!$result->allow) {
             $reason = $result->reason !== '' ? $result->reason : 'unknown';
             $phase = in_array($reason, ['service_unavailable', 'unknown'], true)
                 ? Connection::OUTBOUND_MODERATION_PHASE_UNAVAILABLE
                 : Connection::OUTBOUND_MODERATION_PHASE_REJECTED;
             Hilos::$rt->selfConnection->actions->failOutboundModeration(
-                $result->requestId,
                 $phase,
                 $reason,
             );
@@ -302,7 +295,6 @@ final class MainPage extends AbstractPage
             $quarantineFile = Hilos::$fs->quarantine[$draft->quarantineBasename];
             if (!$quarantineFile->exists()) {
                 Hilos::$rt->selfConnection->actions->failOutboundModeration(
-                    $result->requestId,
                     Connection::OUTBOUND_MODERATION_PHASE_UNAVAILABLE,
                     'attachment_missing',
                 );
@@ -314,7 +306,6 @@ final class MainPage extends AbstractPage
             } catch (FsException $e) {
                 $this->logAgentError("Failed to publish attachment draft {$draft->draftId}: {$e->getMessage()}");
                 Hilos::$rt->selfConnection->actions->failOutboundModeration(
-                    $result->requestId,
                     Connection::OUTBOUND_MODERATION_PHASE_UNAVAILABLE,
                     'attachment_publish_failed',
                 );
@@ -327,10 +318,7 @@ final class MainPage extends AbstractPage
             );
         }
 
-        if (!Hilos::$rt->selfConnection->actions->clearOutboundModeration($result->requestId)) {
-            throw new AgentException('Moderation result request is stale');
-        }
-
+        Hilos::$rt->selfConnection->actions->clearOutboundModeration();
         Hilos::$rt->selfConnection->attachmentDrafts->actions->deleteAll(deleteFiles: false);
         Hilos::$db->events->actions->addMessage(
             $result->message,

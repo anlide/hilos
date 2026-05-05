@@ -9,7 +9,6 @@ export type FileUploadProgressPayload = {
 }
 
 export type OutboundModerationStatePayload = {
-  requestId: string
   phase: 'checking' | 'rejected' | 'unavailable'
   text: string
   reason: string | null
@@ -54,14 +53,12 @@ function isRecord(value: unknown): value is JsonRecord {
 const parseOutboundModerationState = (raw: unknown): OutboundModerationStatePayload | null => {
   if (raw === null || raw === undefined) return null
   if (!isRecord(raw)) return null
-  const { requestId, phase, text, reason, updatedAt } = raw
-  if (typeof requestId !== 'string') return null
+  const { phase, text, reason, updatedAt } = raw
   if (phase !== 'checking' && phase !== 'rejected' && phase !== 'unavailable') return null
   if (typeof text !== 'string') return null
   if (reason !== null && reason !== undefined && typeof reason !== 'string') return null
   if (typeof updatedAt !== 'number') return null
   return {
-    requestId,
     phase,
     text,
     reason: typeof reason === 'string' ? reason : null,

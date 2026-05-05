@@ -374,7 +374,6 @@ final class ChatFrontendProjection extends FrontendProjectionContext
     {
         $connectionModerationChanged = false;
         foreach ([
-            StateConnection::outboundModerationRequestId,
             StateConnection::outboundModerationPhase,
             StateConnection::outboundModerationMessage,
             StateConnection::outboundModerationReason,

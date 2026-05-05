@@ -21,7 +21,6 @@ final class Connection extends RtState
     public const string userId = 'userId';
     public const string connectedAt = 'connectedAt';
 
-    public const string outboundModerationRequestId = 'outboundModerationRequestId';
     public const string outboundModerationPhase = 'outboundModerationPhase';
     public const string outboundModerationMessage = 'outboundModerationMessage';
     public const string outboundModerationReason = 'outboundModerationReason';
@@ -50,9 +49,6 @@ final class Connection extends RtState
 
     /** Unix time when the socket was registered. */
     public private(set) int $connectedAt = 0;
-
-    /** Current moderation request id, or empty string when no visible moderation state exists. */
-    public string $outboundModerationRequestId = '';
 
     /** Moderation phase: checking, rejected, unavailable, or empty when clear. */
     public string $outboundModerationPhase = '';
@@ -112,7 +108,6 @@ final class Connection extends RtState
         $instance->acceptKey = $acceptKey;
         $instance->userId = $userId;
         $instance->connectedAt = time();
-        $instance->outboundModerationRequestId = '';
         $instance->outboundModerationPhase = '';
         $instance->outboundModerationMessage = '';
         $instance->outboundModerationReason = '';
@@ -143,7 +138,6 @@ final class Connection extends RtState
         $instance->acceptKey = (string)($row[self::acceptKey] ?? '');
         $instance->userId = (int)($row[self::userId] ?? 0);
         $instance->connectedAt = (int)($row[self::connectedAt] ?? time());
-        $instance->outboundModerationRequestId = (string)($row[self::outboundModerationRequestId] ?? '');
         $instance->outboundModerationPhase = (string)($row[self::outboundModerationPhase] ?? '');
         $instance->outboundModerationMessage = (string)($row[self::outboundModerationMessage] ?? '');
         $instance->outboundModerationReason = (string)($row[self::outboundModerationReason] ?? '');
@@ -182,9 +176,6 @@ final class Connection extends RtState
         }
         if (isset($diff[self::connectedAt])) {
             $this->connectedAt = (int)$diff[self::connectedAt];
-        }
-        if (isset($diff[self::outboundModerationRequestId])) {
-            $this->outboundModerationRequestId = (string)$diff[self::outboundModerationRequestId];
         }
         if (isset($diff[self::outboundModerationPhase])) {
             $this->outboundModerationPhase = (string)$diff[self::outboundModerationPhase];
@@ -255,7 +246,6 @@ final class Connection extends RtState
             self::acceptKey => $this->acceptKey,
             self::userId => $this->userId,
             self::connectedAt => $this->connectedAt,
-            self::outboundModerationRequestId => $this->outboundModerationRequestId,
             self::outboundModerationPhase => $this->outboundModerationPhase,
             self::outboundModerationMessage => $this->outboundModerationMessage,
             self::outboundModerationReason => $this->outboundModerationReason,
