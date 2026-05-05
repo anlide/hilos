@@ -74,6 +74,10 @@ must validate the wrapped inner payload type:
   empty `default` branch and document the ignore contract in PHPDoc.
 - Do not call `logAgentError()` for these contract failures. `WorkerManager`
   catches `AgentException` around agent/page signal dispatch and logs it once.
+- Page-routed agent signals may throw `ValidationException` for user-facing
+  business failures only when their inner payload implements
+  `ActionErrorSignalDataInterface`; `PageSignalRouter` converts those failures
+  through the page's `onActionException()` hook.
 
 ## PHPDoc
 

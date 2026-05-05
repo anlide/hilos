@@ -925,6 +925,8 @@ abstract class WorkerManager extends BaseManager
                     }
                     try {
                         $this->getPageSignalRouter($agentId, $agent)->dispatchAgentSignal($signalData, $source, $name);
+                    } catch (ValidationException $e) {
+                        Logger::logAgentError($agent->getId(), "Page signal validation failed: {$e->getMessage()}");
                     } catch (AgentException $e) {
                         Logger::logAgentError($agent->getId(), "Page signal handler failed: {$e->getMessage()}");
                     }

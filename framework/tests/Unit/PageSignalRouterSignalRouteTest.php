@@ -5,19 +5,24 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit;
 
 use Hilos\Constants\SignalTypeConstants;
+use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Page\AbstractPageFactory;
 use Hilos\Core\Page\ActionRouteConfig;
 use Hilos\Core\Page\Exception\PageNotFoundException;
 use Hilos\Core\Page\PageAgentInterface;
 use Hilos\Core\Page\PageSignalRouter;
+use Hilos\Core\Router\ActionErrorSignalDataInterface;
 use Hilos\Core\Router\AgentSignalData;
+use Hilos\Core\Router\DTO\ActionPayloadDTO;
+use Hilos\Core\Router\DTO\UnknownActionPayloadDTO;
 use Hilos\Core\Router\SignalData;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalSourceInterface;
 use Hilos\Socket\WebSocket\DTO\WebSocketFrameBinarySignalDTO;
 use PHPUnit\Framework\TestCase;
+use Throwable;
 
 /**
  * Unit tests for non-action signal routing to pages.
@@ -103,6 +108,61 @@ final class PageSignalRouterSignalRouteTest extends TestCase
 
         $this->assertSame(0, $factory->createPageCount);
     }
+
+    public function testValidationExceptionFromAgentSignalUsesPageActionExceptionHook(): void
+    {
+        $factory = new PageSignalRouterTestPageFactory(new PageSignalRouterTestAgent());
+        $router = new PageSignalRouter(
+            $factory,
+            new ActionRouteConfig(),
+            [
+                SignalTypeConstants::AGENT_SIGNAL => [
+                    'validation_error' => PageSignalRouterTestPage::PAGE,
+                ],
+            ],
+        );
+
+        $router->dispatchAgentSignal(
+            new AgentSignalData(new PageSignalRouterActionErrorSignalData(
+                acceptKey: 'accept-key',
+                action: 'message',
+                payload: ['content' => 'blocked'],
+            )),
+            'agent',
+            'validation_error',
+        );
+
+        $page = $factory->getPage(PageSignalRouterTestPage::PAGE);
+        $this->assertInstanceOf(PageSignalRouterTestPage::class, $page);
+        $this->assertSame('accept-key', $page->actionExceptionAcceptKey);
+        $this->assertSame('message', $page->actionExceptionAction);
+        $this->assertInstanceOf(UnknownActionPayloadDTO::class, $page->actionExceptionDto);
+        $this->assertSame(['content' => 'blocked'], $page->actionExceptionDto->getData());
+        $this->assertSame('Blocked by validation', $page->actionException?->getMessage());
+    }
+
+    public function testValidationExceptionFromAgentSignalWithoutActionContextBubbles(): void
+    {
+        $factory = new PageSignalRouterTestPageFactory(new PageSignalRouterTestAgent());
+        $router = new PageSignalRouter(
+            $factory,
+            new ActionRouteConfig(),
+            [
+                SignalTypeConstants::AGENT_SIGNAL => [
+                    'validation_error' => PageSignalRouterTestPage::PAGE,
+                ],
+            ],
+        );
+
+        $this->expectException(ValidationException::class);
+        $this->expectExceptionMessage('Blocked by validation');
+
+        $router->dispatchAgentSignal(
+            new AgentSignalData(new SignalData()),
+            'agent',
+            'validation_error',
+        );
+    }
 }
 
 final class PageSignalRouterTestPage extends AbstractPage
@@ -114,6 +174,10 @@ final class PageSignalRouterTestPage extends AbstractPage
     public ?WebSocketFrameBinarySignalDTO $binarySignalData = null;
     public ?SignalData $cronSignalData = null;
     public ?string $cronSignalName = null;
+    public ?string $actionExceptionAcceptKey = null;
+    public ?string $actionExceptionAction = null;
+    public ?ActionPayloadDTO $actionExceptionDto = null;
+    public ?Throwable $actionException = null;
 
     /**
      * Store the routed agent signal so the test can assert the dispatch target.
@@ -124,8 +188,28 @@ final class PageSignalRouterTestPage extends AbstractPage
      */
     public function onSignalAgent(AgentSignalData $data, string $source, string $name): void
     {
+        if ($name === 'validation_error') {
+            throw new ValidationException('Blocked by validation');
+        }
+
         $this->agentSignalData = $data;
         $this->agentSignalName = $name;
+    }
+
+    /**
+     * Store action exception calls produced from async signal validation failures.
+     *
+     * @param string $acceptKey WebSocket accept key for the client
+     * @param string $action Action name that failed
+     * @param ActionPayloadDTO $dto Recreated action payload
+     * @param Throwable $e Action failure
+     */
+    public function onActionException(string $acceptKey, string $action, ActionPayloadDTO $dto, Throwable $e): void
+    {
+        $this->actionExceptionAcceptKey = $acceptKey;
+        $this->actionExceptionAction = $action;
+        $this->actionExceptionDto = $dto;
+        $this->actionException = $e;
     }
 
     /**
@@ -215,5 +299,39 @@ final class PageSignalRouterTestAgent implements PageAgentInterface
     public function getAgentSignalSource(): SignalSourceInterface
     {
         return new SignalSource(SignalSource::AGENT, 'test');
+    }
+}
+
+final class PageSignalRouterActionErrorSignalData extends SignalData implements ActionErrorSignalDataInterface
+{
+    /**
+     * @param string $acceptKey WebSocket accept key for the client
+     * @param string $action Action name that should receive the validation error
+     * @param array<string, mixed> $payload Action payload data
+     */
+    public function __construct(
+        private readonly string $acceptKey,
+        private readonly string $action,
+        private readonly array $payload,
+    ) {
+        parent::__construct();
+    }
+
+    public function getAcceptKey(): string
+    {
+        return $this->acceptKey;
+    }
+
+    public function getActionErrorName(): string
+    {
+        return $this->action;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function getActionErrorPayload(): array
+    {
+        return $this->payload;
     }
 }

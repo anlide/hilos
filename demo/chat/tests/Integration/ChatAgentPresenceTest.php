@@ -15,6 +15,8 @@ use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\View\Context\RtChatContext;
 use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
+use Hilos\Core\Execution\ExecutionContext;
+use Hilos\Core\Execution\ExecutionFrame;
 use Hilos\Core\Frontend\SourceChange;
 use Hilos\Core\Http\RequestQueryParams;
 use Hilos\Core\Router\DTO\SignalDTO;
@@ -82,7 +84,7 @@ final class ChatAgentPresenceTest extends IntegrationTestCase
                 [],
             ));
 
-            $agent->onSignalConnectionClose(new WebSocketCloseSignalDTO('presence-ak-1'), '', '');
+            $this->closeConnection($agent, 'presence-ak-1');
 
             $this->assertSame($eventCountBeforeClose, count(Hilos::$db->events));
             $this->assertSame(0, count(Hilos::$rt->connections->forUser($user->id)));
@@ -138,10 +140,10 @@ final class ChatAgentPresenceTest extends IntegrationTestCase
             );
             $this->assertSinglePresenceEmitStatsCount($user->id, 2);
 
-            $agent->onSignalConnectionClose(new WebSocketCloseSignalDTO('presence-ak-2'), '', '');
+            $this->closeConnection($agent, 'presence-ak-2');
             $this->assertSinglePresenceEmitStatsCount($user->id, 1);
 
-            $agent->onSignalConnectionClose(new WebSocketCloseSignalDTO('presence-ak-1'), '', '');
+            $this->closeConnection($agent, 'presence-ak-1');
             $this->assertSinglePresenceEmitStatsCount($user->id, 0);
             $this->assertNoPresenceEventsInHistory();
         } finally {
@@ -149,11 +151,14 @@ final class ChatAgentPresenceTest extends IntegrationTestCase
         }
     }
 
-    public function testCloseDeletesAttachmentDraftsWhenConnectionAlreadyMissing(): void
+    public function testCloseDeletesSelfConnectionAttachmentDrafts(): void
     {
+        RtTruthSourceRegistry::register(RtChatContext::connections, true, self::TEST_AGENT_ID);
+        Hilos::$rt->connections->actions->clear();
         Hilos::$rt->attachmentDrafts->actions->clear(deleteFiles: false);
 
         try {
+            Hilos::$rt->connections->actions->register('closed-ak', 1);
             Hilos::$rt->attachmentDrafts->actions->create(
                 'closed-draft',
                 'closed-ak',
@@ -177,11 +182,13 @@ final class ChatAgentPresenceTest extends IntegrationTestCase
                 time(),
             );
 
-            (new ChatAgent())->onSignalConnectionClose(new WebSocketCloseSignalDTO('closed-ak'), '', '');
+            $this->closeConnection(new ChatAgent(), 'closed-ak');
 
+            $this->assertNull(Hilos::$rt->connections['closed-ak']);
             $this->assertSame(0, count(Hilos::$rt->attachmentDrafts->forAcceptKey('closed-ak')));
             $this->assertSame(1, count(Hilos::$rt->attachmentDrafts->forAcceptKey('other-ak')));
         } finally {
+            Hilos::$rt->connections->actions->clear();
             Hilos::$rt->attachmentDrafts->actions->clear(deleteFiles: false);
         }
     }
@@ -252,6 +259,16 @@ final class ChatAgentPresenceTest extends IntegrationTestCase
         }
 
         return $names;
+    }
+
+    private function closeConnection(ChatAgent $agent, string $acceptKey): void
+    {
+        ExecutionContext::run(
+            new ExecutionFrame(acceptKey: $acceptKey),
+            static function () use ($agent, $acceptKey): void {
+                $agent->onSignalConnectionClose(new WebSocketCloseSignalDTO($acceptKey), '', '');
+            },
+        );
     }
 
     /**

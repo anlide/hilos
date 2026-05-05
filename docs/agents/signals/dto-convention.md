@@ -67,6 +67,15 @@ log and return. Unknown agent signal names throw `AgentUnknownSignalException`.
 `WorkerManager` catches `AgentException` around agent and page signal dispatch
 and logs the failure once under the owning agent.
 
+When a page-routed agent signal is an async continuation of a user action and
+its business validation failure should reuse the page action error contract,
+make the inner payload implement `ActionErrorSignalDataInterface`. Then a
+`ValidationException` from the page `onSignalAgent()` handler is converted by
+`PageSignalRouter` into that page's `onActionException()` hook with the
+payload-provided accept key, action name, and action DTO data. Keep contract or
+stale-signal failures under `AgentException`; those are logged, not sent to the
+client.
+
 ## declare(strict_types=1) required
 
 All DTO files must have `declare(strict_types=1)` at the top.

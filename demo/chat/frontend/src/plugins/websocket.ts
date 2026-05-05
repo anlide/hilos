@@ -134,6 +134,12 @@ function buildSignalRouter() {
     const chatStore = useChatStore()
     switch (action) {
       case 'message':
+        if (
+          chatStore.outboundModerationState?.phase === 'rejected'
+          || chatStore.outboundModerationState?.phase === 'unavailable'
+        ) {
+          break
+        }
         chatStore.setMessageError(reason)
         break
 

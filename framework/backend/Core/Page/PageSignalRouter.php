@@ -7,9 +7,11 @@ namespace Hilos\Core\Page;
 use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\Exception\AgentException;
+use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Page\DTO\PageSubscriptionErrorSignalData;
 use Hilos\Core\Page\Exception\PageNotFoundException;
 use Hilos\Core\Page\Exception\PageSubscriptionException;
+use Hilos\Core\Router\ActionErrorSignalDataInterface;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\SignalName;
@@ -206,6 +208,7 @@ class PageSignalRouter
      * @param string $source Signal source
      * @param string $name Signal name
      * @throws AgentException
+     * @throws ValidationException When a validation failure cannot be mapped to an action error
      */
     public function dispatchAgentSignal(AgentSignalData $data, string $source, string $name): void
     {
@@ -214,7 +217,11 @@ class PageSignalRouter
             return;
         }
 
-        $pageInstance->onSignalAgent($data, $source, $name);
+        try {
+            $pageInstance->onSignalAgent($data, $source, $name);
+        } catch (ValidationException $e) {
+            $this->dispatchAgentSignalActionException($pageInstance, $data, $e);
+        }
     }
 
     /**
@@ -293,5 +300,40 @@ class PageSignalRouter
         }
 
         return null;
+    }
+
+    /**
+     * Routes a user-facing validation failure from an async agent signal through the page action error hook.
+     *
+     * @param AbstractPage $pageInstance Page that handled the routed signal
+     * @param AgentSignalData $data Wrapped agent signal payload
+     * @param ValidationException $e Validation failure to surface to the originating client
+     * @throws ValidationException When the signal payload does not expose action error context
+     */
+    private function dispatchAgentSignalActionException(
+        AbstractPage $pageInstance,
+        AgentSignalData $data,
+        ValidationException $e,
+    ): void {
+        $actionErrorData = $data->data;
+        if (!$actionErrorData instanceof ActionErrorSignalDataInterface) {
+            throw $e;
+        }
+
+        $acceptKey = $actionErrorData->getAcceptKey();
+        if ($acceptKey === '') {
+            throw $e;
+        }
+
+        $action = $actionErrorData->getActionErrorName();
+        $pageInstance->onActionException(
+            $acceptKey,
+            $action,
+            $this->pageFactory->createActionPayloadDTO(
+                $action,
+                $actionErrorData->getActionErrorPayload(),
+            ),
+            $e,
+        );
     }
 }

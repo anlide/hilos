@@ -20,6 +20,7 @@ use Demo\Chat\Hilos;
 use Demo\Chat\Pages\Main\UploadFileTrait;
 use Demo\Chat\Runtime\View\Item\ChatUserState;
 use Demo\Chat\Runtime\View\Item\Connection;
+use Hilos\Core\Agent\Exception\AgentException;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
@@ -121,7 +122,8 @@ final class MainPage extends AbstractPage
      * @param string $name Moderation result signal name
      * @throws AgentUnknownSignalException When signal name is not supported by this page
      * @throws InvalidAgentSignalPayloadException When signal payload does not match the signal name
-     * @throws ValidationException When moderation result does not match active connection/request state
+     * @throws ValidationException When moderation rejects the message or is unavailable
+     * @throws AgentException When moderation result does not match active connection/request state
      * @throws HilosException On database, runtime, truth source, or signal failure
      */
     public function onSignalAgent(AgentSignalData $data, string $source, string $name): void
@@ -283,27 +285,21 @@ final class MainPage extends AbstractPage
     /**
      * Applies outbound moderation: publish approved text plus attachments or expose a retryable failure state.
      *
-     * Stale connection or request results fail validation and never publish a message.
+     * Stale connection or request results fail the agent-signal contract and never publish a message.
      *
      * @param ModerationResultSignalData $result Uploader connection key, request id, allow flag, message body, reason
-     * @throws ValidationException When result does not match active connection/request state
+     * @throws ValidationException When moderation rejects the message or is unavailable
+     * @throws AgentException When result does not match active connection/request state
      * @throws HilosException On database, runtime, or signal failure
      */
     private function handleTextModerationResult(ModerationResultSignalData $result): void
     {
-        if (
-            Hilos::$rt->selfConnection === null
-            || Hilos::$rt->selfConnection->acceptKey !== $result->acceptKey
-        ) {
-            throw new ValidationException('Moderation result connection is stale');
-        }
-
-        if (Hilos::$rt->selfConnection->userId !== $result->userId) {
-            throw new ValidationException('Moderation result user does not match connection');
+        if (Hilos::$rt->selfConnection === null) {
+            throw new AgentException('Moderation result connection is stale');
         }
 
         if (Hilos::$rt->selfConnection->outboundModerationRequestId !== $result->requestId) {
-            throw new ValidationException('Moderation result request is stale');
+            throw new AgentException('Moderation result request is stale');
         }
 
         if (!$result->allow) {
@@ -311,17 +307,13 @@ final class MainPage extends AbstractPage
             $phase = in_array($reason, ['service_unavailable', 'unknown'], true)
                 ? Connection::OUTBOUND_MODERATION_PHASE_UNAVAILABLE
                 : Connection::OUTBOUND_MODERATION_PHASE_REJECTED;
-            if (
-                !Hilos::$rt->selfConnection->actions->failOutboundModeration(
-                    $result->requestId,
-                    $phase,
-                    $reason,
-                )
-            ) {
-                throw new ValidationException('Moderation result request is stale');
-            }
-            $this->logAgentError("Message blocked by moderation (userId={$result->userId}; reason={$reason})");
-            return;
+            Hilos::$rt->selfConnection->actions->failOutboundModeration(
+                $result->requestId,
+                $phase,
+                $reason,
+            );
+
+            throw new ValidationException($reason);
         }
 
         $drafts = [];
@@ -330,15 +322,6 @@ final class MainPage extends AbstractPage
             $drafts[] = $draft;
             $draftIds[] = $draft->draftId;
         }
-        if ($result->message === '' && $drafts === []) {
-            Hilos::$rt->selfConnection->actions->failOutboundModeration(
-                $result->requestId,
-                Connection::OUTBOUND_MODERATION_PHASE_UNAVAILABLE,
-                'attachment_missing',
-            );
-            return;
-        }
-
         $attachments = [];
         foreach ($drafts as $draft) {
             $quarantineFile = Hilos::$fs->quarantine[$draft->quarantineBasename];
@@ -370,13 +353,13 @@ final class MainPage extends AbstractPage
         }
 
         if (!Hilos::$rt->selfConnection->actions->clearOutboundModeration($result->requestId)) {
-            throw new ValidationException('Moderation result request is stale');
+            throw new AgentException('Moderation result request is stale');
         }
 
         Hilos::$rt->attachmentDrafts->actions->deleteByIds($draftIds, deleteFiles: false);
         Hilos::$db->events->actions->addMessage(
             $result->message,
-            userId: $result->userId,
+            userId: Hilos::$rt->selfConnection->userId,
             attachments: new PublishedAttachmentInputs(...$attachments),
         );
     }

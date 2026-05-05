@@ -104,6 +104,38 @@ final class AttachmentDraftsActions extends RtActions
     }
 
     /**
+     * Delete every draft in this collection.
+     *
+     * @param bool $deleteFiles When true, delete quarantine files as well
+     * @return bool True when at least one draft was removed
+     * @throws FileDeleteException When a quarantine file cannot be deleted
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     */
+    public function deleteAll(bool $deleteFiles): bool
+    {
+        $draftIds = [];
+        foreach ($this->collection as $draft) {
+            $draftIds[] = $draft->draftId;
+        }
+
+        return Hilos::$rt->attachmentDrafts->actions->deleteByIds($draftIds, $deleteFiles);
+    }
+
+    /**
+     * Delete every draft in this collection and remove its quarantine files.
+     *
+     * @return bool True when at least one draft was removed
+     * @throws FileDeleteException When a quarantine file cannot be deleted
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     */
+    public function deleteAllWithFiles(): bool
+    {
+        return $this->deleteAll(deleteFiles: true);
+    }
+
+    /**
      * Delete requested drafts.
      *
      * @param list<string> $draftIds Draft ids

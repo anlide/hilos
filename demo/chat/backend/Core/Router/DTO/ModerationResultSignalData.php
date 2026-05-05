@@ -4,16 +4,16 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Core\Router\DTO;
 
+use Demo\Chat\Constants\ChatSignalConstants;
 use Hilos\BaseDTO;
-use Hilos\Core\Router\SignalDataInterface;
-use Hilos\Socket\WebSocket\DTO\WebSocketAcceptKeySignalDTO;
+use Hilos\Core\Router\ActionErrorSignalDataInterface;
 
 /**
  * ModerationResultSignalData - DTO for moderation result signal (ModeratorAgent → ChatAgent).
  *
  * Routing is configured by signal name in ChatSignalRouter (moderation_result → chat).
  */
-final class ModerationResultSignalData extends BaseDTO implements SignalDataInterface, WebSocketAcceptKeySignalDTO
+final class ModerationResultSignalData extends BaseDTO implements ActionErrorSignalDataInterface
 {
     /**
      * Creates moderation result signal data.
@@ -38,6 +38,21 @@ final class ModerationResultSignalData extends BaseDTO implements SignalDataInte
     public function getAcceptKey(): string
     {
         return $this->acceptKey;
+    }
+
+    public function getActionErrorName(): string
+    {
+        return ChatSignalConstants::MESSAGE;
+    }
+
+    /**
+     * @return array{content: string}
+     */
+    public function getActionErrorPayload(): array
+    {
+        return [
+            'content' => $this->message,
+        ];
     }
 
     /**

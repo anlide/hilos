@@ -15,12 +15,16 @@ use Demo\Chat\Hilos;
 use Demo\Chat\Pages\MainPage;
 use Demo\Chat\Runtime\View\Context\RtChatContext;
 use Demo\Chat\Runtime\View\Item\Connection;
+use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
+use Hilos\Core\Agent\Exception\AgentException;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Exception\ValidationException;
+use Hilos\Core\Page\DTO\PageActionErrorSignalData;
 use Hilos\Core\Page\ActionRouteConfig;
 use Hilos\Core\Page\PageSignalRouter;
 use Hilos\Core\Router\AgentSignalData;
+use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Utils\Helpers\RandomHelper;
 
@@ -63,7 +67,7 @@ final class ChatAgentModerationTest extends IntegrationTestCase
         }
     }
 
-    public function testStaleTextModerationResultThrowsValidationAndDoesNotPublishMessage(): void
+    public function testStaleTextModerationResultThrowsAgentExceptionAndDoesNotPublishMessage(): void
     {
         RtTruthSourceRegistry::register(RtChatContext::connections, true, self::TEST_AGENT_ID);
         Hilos::$rt->connections->actions->clear();
@@ -87,8 +91,8 @@ final class ChatAgentModerationTest extends IntegrationTestCase
                         reason: 'ok',
                     ),
                 );
-                $this->fail('Expected stale moderation result to throw validation exception.');
-            } catch (ValidationException $e) {
+                $this->fail('Expected stale moderation result to throw agent exception.');
+            } catch (AgentException $e) {
                 $this->assertSame('Moderation result connection is stale', $e->getMessage());
             }
 
@@ -100,7 +104,7 @@ final class ChatAgentModerationTest extends IntegrationTestCase
         }
     }
 
-    public function testStaleTextModerationRequestThrowsValidationAndDoesNotPublishMessage(): void
+    public function testStaleTextModerationRequestThrowsAgentExceptionAndDoesNotPublishMessage(): void
     {
         RtTruthSourceRegistry::register(RtChatContext::connections, true, self::TEST_AGENT_ID);
         Hilos::$rt->connections->actions->clear();
@@ -129,8 +133,8 @@ final class ChatAgentModerationTest extends IntegrationTestCase
                         reason: 'ok',
                     ),
                 );
-                $this->fail('Expected stale moderation request to throw validation exception.');
-            } catch (ValidationException $e) {
+                $this->fail('Expected stale moderation request to throw agent exception.');
+            } catch (AgentException $e) {
                 $this->assertSame('Moderation result request is stale', $e->getMessage());
             }
 
@@ -180,6 +184,54 @@ final class ChatAgentModerationTest extends IntegrationTestCase
                 Hilos::$rt->connections['live-ak']?->outboundModerationPhase,
             );
             $this->assertMessageEventExists('approved message');
+        } finally {
+            Hilos::$rt->connections->actions->clear();
+            Hilos::$rt->userStates->actions->clear();
+            Hilos::$db->events->actions->deleteAll();
+        }
+    }
+
+    public function testRejectedTextModerationResultUsesActionExceptionAndPreservesRetryState(): void
+    {
+        RtTruthSourceRegistry::register(RtChatContext::connections, true, self::TEST_AGENT_ID);
+        Hilos::$rt->connections->actions->clear();
+        Hilos::$rt->userStates->actions->clear();
+        Hilos::$db->events->actions->deleteAll();
+
+        try {
+            $user = Hilos::$db->users->actions->register(RandomHelper::hex(16));
+            Hilos::$rt->connections->actions->register('reject-ak', $user->id);
+            Hilos::$rt->userStates->actions->ensure($user->id)->actions->recordOutboundSubmission();
+            Hilos::$rt->connections['reject-ak']?->actions->startOutboundModeration(
+                'request-reject',
+                'blocked message',
+            );
+
+            Hilos::initSignalRouter(new ChatSignalRouter());
+            $this->dispatchTextModerationSignalToMainPage(
+                new ChatAgent(),
+                new ModerationResultSignalData(
+                    requestId: 'request-reject',
+                    acceptKey: 'reject-ak',
+                    userId: $user->id,
+                    message: 'blocked message',
+                    allow: false,
+                    reason: 'policy',
+                ),
+            );
+
+            $this->assertSame(
+                Connection::OUTBOUND_MODERATION_PHASE_REJECTED,
+                Hilos::$rt->connections['reject-ak']?->outboundModerationPhase,
+            );
+            $this->assertSame('policy', Hilos::$rt->connections['reject-ak']?->outboundModerationReason);
+
+            $actionErrorSignal = $this->takeQueuedActionErrorSignal();
+            $this->assertNotNull($actionErrorSignal);
+            $this->assertSame('reject-ak', $actionErrorSignal->targetAcceptKey);
+            $this->assertInstanceOf(PageActionErrorSignalData::class, $actionErrorSignal->data);
+            $this->assertSame(ChatSignalConstants::MESSAGE, $actionErrorSignal->data->action);
+            $this->assertSame('policy', $actionErrorSignal->data->reason);
         } finally {
             Hilos::$rt->connections->actions->clear();
             Hilos::$rt->userStates->actions->clear();
@@ -252,6 +304,21 @@ final class ChatAgentModerationTest extends IntegrationTestCase
         }
 
         $this->fail("Expected message event '{$message}' to exist.");
+    }
+
+    private function takeQueuedActionErrorSignal(): ?WebSocketSignalData
+    {
+        while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
+            if ($signal->signalName->getName() !== SignalConstants::ACTION_ERROR) {
+                continue;
+            }
+
+            $this->assertInstanceOf(WebSocketSignalData::class, $signal->data);
+
+            return $signal->data;
+        }
+
+        return null;
     }
 
     private function dispatchTextModerationSignalToMainPage(ChatAgent $agent, ModerationResultSignalData $result): void

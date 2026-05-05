@@ -7,6 +7,7 @@ namespace Demo\Chat\Runtime\View\Collection;
 use Demo\Chat\Runtime\State\Collection\AttachmentDrafts as StateAttachmentDrafts;
 use Demo\Chat\Runtime\State\Item\AttachmentDraft as StateAttachmentDraft;
 use Demo\Chat\Runtime\View\Actions\Collection\AttachmentDraftsActions;
+use Demo\Chat\Runtime\View\Actions\Item\AttachmentDraftActions;
 use Demo\Chat\Runtime\View\Item\AttachmentDraft;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Runtime\Exception\Collection\RtCollectionActionsClassException;
@@ -48,13 +49,16 @@ final class AttachmentDrafts extends RtCollection
         return $this->fromFilteredState($filteredState);
     }
 
-    /**
-     * Creates a read-only filtered view over selected draft states.
-     */
     private function fromFilteredState(StateAttachmentDrafts $filteredState): self
     {
         $collection = self::init();
         $collection->setStateCollection($filteredState);
+        $collectionName = $this->getCollectionName();
+        if ($collectionName !== null) {
+            $collection->setCollectionName($collectionName);
+        }
+        $collection->setActionsClass(AttachmentDraftsActions::class);
+        $collection->setItemActionsClass(AttachmentDraftActions::class);
 
         return $collection;
     }

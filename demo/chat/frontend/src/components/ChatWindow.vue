@@ -295,6 +295,9 @@ watch(
     if (previous?.phase === 'checking' && state === null) {
       draftMessage.value = ''
     }
+    if (state !== null && state.phase !== 'checking') {
+      chatStore.setMessageError(null)
+    }
     if (state !== null && state.phase !== 'checking' && draftMessage.value === '') {
       draftMessage.value = state.text
     }
