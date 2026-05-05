@@ -12,7 +12,6 @@ use Demo\Chat\Core\Page\DTO\AttachmentDraftDeleteActionDTO;
 use Demo\Chat\Core\Page\DTO\FileUploadInitActionDTO;
 use Demo\Chat\Core\Page\DTO\MessageActionDTO;
 use Demo\Chat\Core\Router\DTO\ModerationResultSignalData;
-use Demo\Chat\Core\Router\DTO\ModerationRequestSignalData;
 use Demo\Chat\Database\DTO\PublishedAttachmentInput;
 use Demo\Chat\Database\DTO\PublishedAttachmentInputs;
 use Demo\Chat\Frontend\MainPageSubscriptionProjector;
@@ -217,29 +216,13 @@ final class MainPage extends AbstractPage
         }
 
         $this->deleteExpiredAttachmentDrafts();
-        if ($dto->content === '' && count(Hilos::$rt->selfConnection->attachmentDrafts) === 0) {
-            throw new EmptyValueException('Message cannot be empty');
-        }
         if (trim($dto->content) === '' && count(Hilos::$rt->selfConnection->attachmentDrafts) === 0) {
-            throw new EmptyValueException('Message cannot be trim-empty');
+            throw new EmptyValueException('Message cannot be empty');
         }
 
         $requestId = RandomHelper::hex(16);
         Hilos::$rt->selfConnection->userState->actions->recordOutboundSubmission();
-        Hilos::$rt->selfConnection->actions->startOutboundModeration(
-            $requestId,
-            $dto->content,
-        );
-
-        $this->agent->sendToAgent(
-            ChatSignalConstants::MODERATE_REQUEST,
-            new ModerationRequestSignalData(
-                requestId: $requestId,
-                acceptKey: Hilos::$rt->selfConnection->acceptKey,
-                userId: Hilos::$rt->selfConnection->userId,
-                message: $dto->content,
-            ),
-        );
+        Hilos::$rt->selfConnection->actions->startOutboundModeration($requestId, $dto->content);
     }
 
     /**

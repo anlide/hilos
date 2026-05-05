@@ -19,7 +19,7 @@ $this->config = [
         ],
         SignalSource::AGENT => [
             SignalTypeConstants::AGENT_SIGNAL => [
-                'moderate_request'  => AgentType::MODERATOR,
+                'moderate_bot_request' => AgentType::MODERATOR,
                 'moderation_result' => AgentType::CHAT,
             ],
         ],
@@ -47,7 +47,7 @@ WS frame arrives → server parses → queues signal in `Hilos::$sr` with source
 ## Agent → agent
 
 ```php
-$this->sendToAgent('moderate_request', $data);
+$this->sendToAgent('moderate_bot_request', $data);
 // → AGENT_SIGNAL type → router config → target agent
 ```
 

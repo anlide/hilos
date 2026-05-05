@@ -15,15 +15,14 @@ Every signal carries a payload object implementing `SignalDataInterface`.
 
 ```php
 // Implement SignalDataInterface (or extend BaseDTO for toArray/fromArray)
-final class ModerationRequestSignalData extends BaseDTO implements SignalDataInterface {
+final class ModerationBotRequestSignalData extends BaseDTO implements SignalDataInterface {
     public function __construct(
         public readonly string $message,
-        public readonly int $userId,
-        public readonly string $acceptKey,
+        public readonly int $botId,
     ) {}
 
     public function toArray(): array {
-        return ['message' => $this->message, 'userId' => $this->userId, 'acceptKey' => $this->acceptKey];
+        return ['message' => $this->message, 'botId' => $this->botId];
     }
 }
 ```
@@ -42,12 +41,12 @@ Named signal handlers must route with `switch ($name)`; see
 ```php
 public function onSignalAgent(AgentSignalData $data, string $source, string $name): void {
     switch ($name) {
-        case ChatSignalConstants::MODERATE_REQUEST:
+        case ChatSignalConstants::MODERATE_BOT_REQUEST:
             $moderationRequest = $data->data;
-            if (!$moderationRequest instanceof ModerationRequestSignalData) {
+            if (!$moderationRequest instanceof ModerationBotRequestSignalData) {
                 throw new InvalidAgentSignalPayloadException(
                     $name,
-                    ModerationRequestSignalData::class,
+                    ModerationBotRequestSignalData::class,
                     $moderationRequest,
                 );
             }

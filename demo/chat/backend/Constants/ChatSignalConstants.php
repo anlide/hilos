@@ -98,9 +98,6 @@ final class ChatSignalConstants
     public const string SUBSCRIPTION_PAGE_HILOS_SETTINGS = 'subscription_page_hilos_settings';
 
     // ── Agent-to-agent signals ───────────────────────────────────────────
-    /** @var string ChatAgent → ModeratorAgent: request message moderation */
-    public const string MODERATE_REQUEST = 'moderate_request';
-
     /** @var string ModeratorAgent → ChatAgent: moderation result */
     public const string MODERATION_RESULT = 'moderation_result';
 
