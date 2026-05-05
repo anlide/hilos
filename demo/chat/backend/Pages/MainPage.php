@@ -89,7 +89,7 @@ final class MainPage extends AbstractPage
                 if (!$dto instanceof MessageActionDTO) {
                     throw new InvalidActionPayloadException($action, MessageActionDTO::class, $dto);
                 }
-                $this->handleMessage($acceptKey, $dto);
+                $this->handleMessage($dto);
 
                 break;
 
@@ -97,7 +97,7 @@ final class MainPage extends AbstractPage
                 if (!$dto instanceof FileUploadInitActionDTO) {
                     throw new InvalidActionPayloadException($action, FileUploadInitActionDTO::class, $dto);
                 }
-                $this->handleFileUploadInit($acceptKey, $dto);
+                $this->handleFileUploadInit($dto);
 
                 break;
 
@@ -105,7 +105,7 @@ final class MainPage extends AbstractPage
                 if (!$dto instanceof AttachmentDraftDeleteActionDTO) {
                     throw new InvalidActionPayloadException($action, AttachmentDraftDeleteActionDTO::class, $dto);
                 }
-                $this->handleAttachmentDraftDelete($acceptKey, $dto);
+                $this->handleAttachmentDraftDelete($dto);
 
                 break;
 
@@ -189,14 +189,13 @@ final class MainPage extends AbstractPage
     /**
      * Starts outbound moderation for a valid text or attachment-backed message submit.
      *
-     * @param string $acceptKey WebSocket accept key for the submitting client
      * @param MessageActionDTO $dto Parsed message action payload
      * @throws EmptyValueException When message has no non-empty text and no attachments
      * @throws ItemNotFoundForUpdateException When the WebSocket session or user runtime state is missing
      * @throws ValidationException When the user is rate-limited or already moderating
      * @throws HilosException On database, runtime, or truth source failure
      */
-    private function handleMessage(string $acceptKey, MessageActionDTO $dto): void
+    private function handleMessage(MessageActionDTO $dto): void
     {
         if (Hilos::$rt->selfConnection === null) {
             throw new ItemNotFoundForUpdateException('User session not found');
@@ -236,7 +235,7 @@ final class MainPage extends AbstractPage
             ChatSignalConstants::MODERATE_REQUEST,
             new ModerationRequestSignalData(
                 requestId: $requestId,
-                acceptKey: $acceptKey,
+                acceptKey: Hilos::$rt->selfConnection->acceptKey,
                 userId: Hilos::$rt->selfConnection->userId,
                 message: $dto->content,
             ),
@@ -246,7 +245,6 @@ final class MainPage extends AbstractPage
     /**
      * Deletes one uploaded attachment draft owned by this WebSocket connection.
      *
-     * @param string $acceptKey WebSocket accept key for the requesting client
      * @param AttachmentDraftDeleteActionDTO $dto Parsed delete action payload
      * @throws EmptyValueException When draft id is empty
      * @throws ItemNotFoundForDeleteException When the requested draft does not belong to this session
@@ -254,7 +252,7 @@ final class MainPage extends AbstractPage
      * @throws ValidationException When the current outbound submit is being moderated
      * @throws HilosException On runtime, filesystem, or signal failure
      */
-    private function handleAttachmentDraftDelete(string $acceptKey, AttachmentDraftDeleteActionDTO $dto): void
+    private function handleAttachmentDraftDelete(AttachmentDraftDeleteActionDTO $dto): void
     {
         if ($dto->draftId === '') {
             throw new EmptyValueException('Attachment draft id cannot be empty');
@@ -316,14 +314,8 @@ final class MainPage extends AbstractPage
             throw new ValidationException($reason);
         }
 
-        $drafts = [];
-        $draftIds = [];
-        foreach (Hilos::$rt->selfConnection->attachmentDrafts as $draft) {
-            $drafts[] = $draft;
-            $draftIds[] = $draft->draftId;
-        }
         $attachments = [];
-        foreach ($drafts as $draft) {
+        foreach (Hilos::$rt->selfConnection->attachmentDrafts as $draft) {
             $quarantineFile = Hilos::$fs->quarantine[$draft->quarantineBasename];
             if (!$quarantineFile->exists()) {
                 Hilos::$rt->selfConnection->actions->failOutboundModeration(
@@ -356,7 +348,7 @@ final class MainPage extends AbstractPage
             throw new AgentException('Moderation result request is stale');
         }
 
-        Hilos::$rt->attachmentDrafts->actions->deleteByIds($draftIds, deleteFiles: false);
+        Hilos::$rt->selfConnection->attachmentDrafts->actions->deleteAll(deleteFiles: false);
         Hilos::$db->events->actions->addMessage(
             $result->message,
             userId: Hilos::$rt->selfConnection->userId,
