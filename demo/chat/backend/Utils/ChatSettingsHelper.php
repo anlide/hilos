@@ -155,20 +155,6 @@ final class ChatSettingsHelper
     }
 
     /**
-     * Enable moderation for user messages.
-     *
-     * @return bool True if enabled
-     */
-    public static function getModerationUsers(): bool
-    {
-        $val = self::getString(ChatSettingsConstants::CHAT_MODERATION_USERS);
-        if ($val !== '') {
-            return filter_var($val, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE) ?? true;
-        }
-        return true;
-    }
-
-    /**
      * Max size in bytes for a single chat attachment.
      */
     public static function getAttachmentMaxFileBytes(): int

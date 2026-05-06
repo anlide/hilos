@@ -24,7 +24,6 @@ final class ChatSettingsConstants
     public const string CHAT_MODERATION_URL = 'chat_moderation_url';
     public const string CHAT_MODERATION_PROVIDER = 'chat_moderation_provider';
     public const string CHAT_MODERATION_TIMEOUT_SEC = 'chat_moderation_timeout_sec';
-    public const string CHAT_MODERATION_USERS = 'chat_moderation_users';
 
     /** Max single attachment size in bytes */
     public const string CHAT_ATTACHMENT_MAX_FILE_BYTES = 'chat_attachment_max_file_bytes';

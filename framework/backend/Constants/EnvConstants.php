@@ -155,9 +155,6 @@ enum EnvConstants
     /** @var string Moderation provider: local | external */
     case CHAT_MODERATION_PROVIDER;
 
-    /** @var string Enable moderation for user messages: 1|0, true|false (default: true) */
-    case CHAT_MODERATION_USERS;
-
     /** @var string Enable moderation for bot messages: 1|0, true|false (default: false) */
     case CHAT_MODERATION_BOTS;
 

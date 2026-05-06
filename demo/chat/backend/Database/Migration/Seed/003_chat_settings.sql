@@ -13,6 +13,5 @@ INSERT INTO `hilos_setting` (`key`, `type`, `value`) VALUES
 ('chat_moderation_url', 'string', ''),
 ('chat_moderation_provider', 'string', 'local'),
 ('chat_moderation_timeout_sec', 'integer', '90'),
-('chat_moderation_users', 'boolean', '1'),
 ('orphan_test_demo', 'string', 'leftover_from_migration')
 ON DUPLICATE KEY UPDATE `type` = VALUES(`type`), `value` = VALUES(`value`);

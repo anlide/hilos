@@ -14,6 +14,7 @@ use Demo\Chat\Runtime\View\Item\Connection;
 use Demo\Chat\Utils\ChatSettingsHelper;
 use Hilos\Constants\LLMConstants;
 use Hilos\Core\Agent\AbstractAgent;
+use Hilos\Core\Agent\Exception\AgentException;
 use Hilos\HilosException;
 use Hilos\LLM\ClientFactory;
 use Hilos\LLM\Contract\AsyncChatLLMInterface;
@@ -23,13 +24,12 @@ use Hilos\LLM\DTO\Message;
 /**
  * Regular agent that discovers runtime user moderation requests and returns decisions.
  *
- * Uses async LLM moderation unless user moderation is disabled.
+ * Uses async LLM moderation for outbound user messages.
  */
 class ModeratorAgent extends AbstractAgent
 {
     public const string AGENT_TYPE = AgentType::MODERATOR;
 
-    private const string REASON_DISABLED = 'disabled';
     private const string REASON_NONE = 'none';
     private const string REASON_SERVICE_UNAVAILABLE = 'service_unavailable';
     private const string REASON_UNKNOWN = 'unknown';
@@ -75,15 +75,37 @@ class ModeratorAgent extends AbstractAgent
         $this->chatClient->tick(microtime(true) * 1000);
 
         if ($this->chatClient->hasResult()) {
-            if ($this->currentAcceptKey === null) {
-                $this->chatClient->getResult();
-                $this->logAgentError('Moderation client returned a result without an active request');
-            } else {
+            try {
                 $this->handleModerationClientResult($this->chatClient->getResult());
+            } catch (AgentException $e) {
+                $this->logAgentError($e->getMessage());
+                $this->currentAcceptKey = null;
+                $this->currentModerationUpdatedAt = 0;
+                $this->currentModerationResultQueued = false;
             }
         }
 
-        $this->clearQueuedModerationResultIfApplied();
+        if ($this->currentAcceptKey !== null && $this->currentModerationResultQueued) {
+            if (!isset(Hilos::$rt->connections[$this->currentAcceptKey])) {
+                $this->currentAcceptKey = null;
+                $this->currentModerationUpdatedAt = 0;
+                $this->currentModerationResultQueued = false;
+            } elseif (
+                Hilos::$rt->connections[$this->currentAcceptKey]->outboundModerationPhase
+                !== Connection::OUTBOUND_MODERATION_PHASE_CHECKING
+            ) {
+                $this->currentAcceptKey = null;
+                $this->currentModerationUpdatedAt = 0;
+                $this->currentModerationResultQueued = false;
+            } elseif (
+                Hilos::$rt->connections[$this->currentAcceptKey]->outboundModerationUpdatedAt
+                !== $this->currentModerationUpdatedAt
+            ) {
+                $this->currentAcceptKey = null;
+                $this->currentModerationUpdatedAt = 0;
+                $this->currentModerationResultQueued = false;
+            }
+        }
 
         if ($this->currentAcceptKey !== null || $this->chatClient->isBusy()) {
             return;
@@ -97,11 +119,6 @@ class ModeratorAgent extends AbstractAgent
             $this->currentAcceptKey = $connection->acceptKey;
             $this->currentModerationUpdatedAt = $connection->outboundModerationUpdatedAt;
 
-            if (!ChatSettingsHelper::getModerationUsers()) {
-                $this->sendCurrentUserModerationOutcome(true, self::REASON_DISABLED);
-                return;
-            }
-
             $timeoutSec = ChatSettingsHelper::getModerationTimeoutSec();
             $options = new ChatGenerateOptions(
                 model: ChatSettingsHelper::getModerationModel(),
@@ -110,15 +127,26 @@ class ModeratorAgent extends AbstractAgent
                 maxTokens: 32,
             );
 
-            if (!$this->chatClient->startGenerate(
-                $this->buildModerationMessages(
-                    $this->buildUserContentForModeration($connection),
-                    $connection->userId,
-                ),
-                $options,
-            )) {
+            try {
+                $messages = $this->buildModerationMessages();
+            } catch (AgentException $e) {
+                $this->logAgentError($e->getMessage());
+                $this->currentAcceptKey = null;
+                $this->currentModerationUpdatedAt = 0;
+                $this->currentModerationResultQueued = false;
+                return;
+            }
+
+            if (!$this->chatClient->startGenerate($messages, $options)) {
                 $this->logAgentError('Moderation request could not be started');
-                $this->sendCurrentUserModerationOutcome(false, self::REASON_SERVICE_UNAVAILABLE);
+                try {
+                    $this->sendCurrentUserModerationOutcome(false, self::REASON_SERVICE_UNAVAILABLE);
+                } catch (AgentException $e) {
+                    $this->logAgentError($e->getMessage());
+                    $this->currentAcceptKey = null;
+                    $this->currentModerationUpdatedAt = 0;
+                    $this->currentModerationResultQueued = false;
+                }
             }
 
             return;
@@ -128,30 +156,41 @@ class ModeratorAgent extends AbstractAgent
     /**
      * Parses a completed LLM response and queues the active user moderation result.
      *
-     * Orphan client results are consumed by onTick() before this method is called.
+     * Orphan client results are logged and ignored.
      *
      * @param ?string $text Completed LLM output, or null when the async client failed
+     * @throws AgentException When the result cannot be sent because request state is stale
      */
     private function handleModerationClientResult(?string $text): void
     {
-        $allow = false;
-        $reason = $text === null ? self::REASON_SERVICE_UNAVAILABLE : self::REASON_UNKNOWN;
-
-        if ($text === null) {
-            $this->logAgentError('Moderation request failed without a model response');
-        } else {
-            $decision = ModerationDecision::fromModelOutput($text);
-            if ($decision !== null) {
-                $allow = $decision->allow;
-                $reason = $decision->reason !== '' ? $decision->reason : self::REASON_NONE;
-            } else {
-                $this->logAgentError('Moderation response did not contain a valid decision');
+        try {
+            if ($this->currentAcceptKey === null) {
+                throw new AgentException('Moderation client returned a result without an active request');
             }
+            if ($text === null) {
+                throw new AgentException('Moderation request failed without a model response');
+            }
+
+            $decision = ModerationDecision::fromModelOutput($text);
+            if ($decision === null) {
+                throw new AgentException('Moderation response did not contain a valid decision');
+            }
+        } catch (AgentException $e) {
+            $this->logAgentError($e->getMessage());
+            if ($this->currentAcceptKey === null) {
+                return;
+            }
+            $this->sendCurrentUserModerationOutcome(
+                false,
+                $text === null ? self::REASON_SERVICE_UNAVAILABLE : self::REASON_UNKNOWN,
+            );
+            return;
         }
 
-        if (!$this->sendCurrentUserModerationOutcome($allow, $reason)) {
-            $this->clearCurrentModerationRequest();
-        }
+        $this->sendCurrentUserModerationOutcome(
+            $decision->allow,
+            $decision->reason !== '' ? $decision->reason : self::REASON_NONE,
+        );
     }
 
     /**
@@ -159,127 +198,75 @@ class ModeratorAgent extends AbstractAgent
      *
      * @param bool $allow Whether the submitted message may be published
      * @param string $reason Short moderation reason code
-     * @return bool Whether the result was queued
+     * @throws AgentException When active request state is missing or stale
      */
-    private function sendCurrentUserModerationOutcome(bool $allow, string $reason): bool
+    private function sendCurrentUserModerationOutcome(bool $allow, string $reason): void
     {
         if ($this->currentAcceptKey === null) {
-            return false;
+            throw new AgentException('Cannot send moderation outcome without an active request');
         }
-        if (!isset(Hilos::$rt->connections[$this->currentAcceptKey])) {
-            return false;
+
+        $acceptKey = $this->currentAcceptKey;
+        if (!isset(Hilos::$rt->connections[$acceptKey])) {
+            throw new AgentException('Cannot send moderation outcome for a stale connection');
         }
         if (
-            Hilos::$rt->connections[$this->currentAcceptKey]->outboundModerationPhase
+            Hilos::$rt->connections[$acceptKey]->outboundModerationPhase
             !== Connection::OUTBOUND_MODERATION_PHASE_CHECKING
         ) {
-            return false;
+            throw new AgentException('Cannot send moderation outcome for a non-checking connection');
         }
         if (
-            Hilos::$rt->connections[$this->currentAcceptKey]->outboundModerationUpdatedAt
+            Hilos::$rt->connections[$acceptKey]->outboundModerationUpdatedAt
             !== $this->currentModerationUpdatedAt
         ) {
-            return false;
+            throw new AgentException('Cannot send moderation outcome for an outdated request');
         }
 
         $this->sendToAgent(
             ChatSignalConstants::MODERATION_RESULT,
             new ModerationResultSignalData(
-                acceptKey: $this->currentAcceptKey,
-                userId: Hilos::$rt->connections[$this->currentAcceptKey]->userId,
-                message: Hilos::$rt->connections[$this->currentAcceptKey]->outboundModerationMessage,
+                acceptKey: $acceptKey,
+                userId: Hilos::$rt->connections[$acceptKey]->userId,
+                message: Hilos::$rt->connections[$acceptKey]->outboundModerationMessage,
                 allow: $allow,
                 reason: $reason,
             ),
         );
 
         $this->currentModerationResultQueued = true;
-
-        return true;
     }
 
     /**
-     * Clears the local request snapshot after the queued result mutates its runtime request.
-     */
-    private function clearQueuedModerationResultIfApplied(): void
-    {
-        if ($this->currentAcceptKey === null) {
-            return;
-        }
-        if (!$this->currentModerationResultQueued) {
-            return;
-        }
-
-        if (!isset(Hilos::$rt->connections[$this->currentAcceptKey])) {
-            $this->clearCurrentModerationRequest();
-            return;
-        }
-        if (
-            Hilos::$rt->connections[$this->currentAcceptKey]->outboundModerationPhase
-            !== Connection::OUTBOUND_MODERATION_PHASE_CHECKING
-        ) {
-            $this->clearCurrentModerationRequest();
-            return;
-        }
-        if (
-            Hilos::$rt->connections[$this->currentAcceptKey]->outboundModerationUpdatedAt
-            !== $this->currentModerationUpdatedAt
-        ) {
-            $this->clearCurrentModerationRequest();
-        }
-    }
-
-    /**
-     * Clears the active accept key and runtime update timestamp snapshot.
-     */
-    private function clearCurrentModerationRequest(): void
-    {
-        $this->currentAcceptKey = null;
-        $this->currentModerationUpdatedAt = 0;
-        $this->currentModerationResultQueued = false;
-    }
-
-    /**
-     * Builds user moderation content from submitted text and current connection-local drafts.
+     * Builds moderation prompt messages from rules and the active runtime request.
      *
-     * @param Connection $connection Runtime connection to moderate
-     */
-    private function buildUserContentForModeration(Connection $connection): string
-    {
-        $parts = [];
-        if ($connection->outboundModerationMessage !== '') {
-            $parts[] = "Message:\n{$connection->outboundModerationMessage}";
-        }
-        foreach ($connection->attachmentDrafts as $draft) {
-            $parts[] = sprintf(
-                'Attachment: name=%s, mime=%s, size=%d bytes.',
-                $draft->originalFilename,
-                $draft->mimeType,
-                $draft->size,
-            );
-        }
-
-        return implode("\n\n", $parts);
-    }
-
-    /**
-     * Builds moderation prompt messages from rules, author context, and message text.
-     *
-     * @param string $message Message text to moderate
-     * @param int $userId User id for the current outbound request
      * @return list<Message> System and user messages for LLM
+     * @throws AgentException When there is no active runtime request
      * @throws HilosException When moderation rule lookup fails
      */
-    private function buildModerationMessages(string $message, int $userId): array
+    private function buildModerationMessages(): array
     {
+        if ($this->currentAcceptKey === null) {
+            throw new AgentException('Cannot build moderation messages without an active request');
+        }
+
+        $acceptKey = $this->currentAcceptKey;
+        if (!isset(Hilos::$rt->connections[$acceptKey])) {
+            throw new AgentException('Cannot build moderation messages for a stale connection');
+        }
+
         $ruleLines = [];
         foreach (Hilos::$db->moderatorPromptPieces as $piece) {
-            if (
-                $piece->section === ObjectModeratorPromptPiece::SECTION_MESSAGE_RULE
-                && $piece->promptPiece !== ''
-            ) {
-                $ruleLines[] = "- {$piece->promptPiece}";
+            if ($piece->section !== ObjectModeratorPromptPiece::SECTION_MESSAGE_RULE) {
+                continue;
             }
+
+            $promptPiece = trim($piece->promptPiece);
+            if ($promptPiece === '') {
+                continue;
+            }
+
+            $ruleLines[] = "- {$promptPiece}";
         }
 
         $rulesBlock = $ruleLines === []
@@ -297,11 +284,25 @@ class ModeratorAgent extends AbstractAgent
             $rulesBlock,
         );
 
-        $userContent = "User ID: {$userId}\nMessage:\n{$message}";
+        $userContentParts = [
+            'User ID: ' . Hilos::$rt->connections[$acceptKey]->userId,
+        ];
+        if (Hilos::$rt->connections[$acceptKey]->outboundModerationMessage !== '') {
+            $userContentParts[] = "Message:\n"
+                . Hilos::$rt->connections[$acceptKey]->outboundModerationMessage;
+        }
+        foreach (Hilos::$rt->connections[$acceptKey]->attachmentDrafts as $draft) {
+            $userContentParts[] = sprintf(
+                'Attachment: name=%s, mime=%s, size=%d bytes.',
+                $draft->originalFilename,
+                $draft->mimeType,
+                $draft->size,
+            );
+        }
 
         return [
             new Message(Message::ROLE_SYSTEM, $systemContent),
-            new Message(Message::ROLE_USER, $userContent),
+            new Message(Message::ROLE_USER, implode("\n\n", $userContentParts)),
         ];
     }
 }
