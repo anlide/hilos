@@ -41,6 +41,9 @@ class ModeratorAgent extends AbstractAgent
     /** Runtime moderation update timestamp observed when the LLM request started. */
     private int $currentModerationUpdatedAt = 0;
 
+    /** Whether the current result is queued and waiting for the page handler to mutate runtime state. */
+    private bool $currentModerationResultQueued = false;
+
     /**
      * Creates a moderator with an LLM client from moderation settings.
      */
@@ -60,7 +63,6 @@ class ModeratorAgent extends AbstractAgent
     public function onStop(): void
     {
         $this->chatClient->reset();
-        $this->clearCurrentModerationRequest();
     }
 
     /**
@@ -81,65 +83,45 @@ class ModeratorAgent extends AbstractAgent
             }
         }
 
-        $this->clearCurrentModerationRequestIfApplied();
+        $this->clearQueuedModerationResultIfApplied();
 
         if ($this->currentAcceptKey !== null || $this->chatClient->isBusy()) {
             return;
         }
 
-        $this->startNextConnectionModeration();
-    }
-
-    /**
-     * Starts moderation for the first runtime connection currently waiting for a user decision.
-     *
-     * @throws HilosException When moderation rule lookup fails
-     */
-    private function startNextConnectionModeration(): void
-    {
         foreach (Hilos::$rt->connections as $connection) {
             if ($connection->outboundModerationPhase !== Connection::OUTBOUND_MODERATION_PHASE_CHECKING) {
                 continue;
             }
 
-            $this->startConnectionModeration($connection);
+            $this->currentAcceptKey = $connection->acceptKey;
+            $this->currentModerationUpdatedAt = $connection->outboundModerationUpdatedAt;
+
+            if (!ChatSettingsHelper::getModerationUsers()) {
+                $this->sendCurrentUserModerationOutcome(true, self::REASON_DISABLED);
+                return;
+            }
+
+            $timeoutSec = ChatSettingsHelper::getModerationTimeoutSec();
+            $options = new ChatGenerateOptions(
+                model: ChatSettingsHelper::getModerationModel(),
+                temperature: 0.0,
+                timeoutSec: $timeoutSec > 0 ? $timeoutSec : LLMConstants::DEFAULT_TIMEOUT_SEC,
+                maxTokens: 32,
+            );
+
+            if (!$this->chatClient->startGenerate(
+                $this->buildModerationMessages(
+                    $this->buildUserContentForModeration($connection),
+                    $connection->userId,
+                ),
+                $options,
+            )) {
+                $this->logAgentError('Moderation request could not be started');
+                $this->sendCurrentUserModerationOutcome(false, self::REASON_SERVICE_UNAVAILABLE);
+            }
+
             return;
-        }
-    }
-
-    /**
-     * Starts or bypasses moderation for one runtime connection.
-     *
-     * @param Connection $connection Runtime connection with an active outbound moderation state
-     * @throws HilosException When moderation rule lookup fails
-     */
-    private function startConnectionModeration(Connection $connection): void
-    {
-        $this->currentAcceptKey = $connection->acceptKey;
-        $this->currentModerationUpdatedAt = $connection->outboundModerationUpdatedAt;
-
-        if (!ChatSettingsHelper::getModerationUsers()) {
-            $this->sendCurrentUserModerationOutcome(true, self::REASON_DISABLED);
-            return;
-        }
-
-        $timeoutSec = ChatSettingsHelper::getModerationTimeoutSec();
-        $options = new ChatGenerateOptions(
-            model: ChatSettingsHelper::getModerationModel(),
-            temperature: 0.0,
-            timeoutSec: $timeoutSec > 0 ? $timeoutSec : LLMConstants::DEFAULT_TIMEOUT_SEC,
-            maxTokens: 32,
-        );
-
-        if (!$this->chatClient->startGenerate(
-            $this->buildModerationMessages(
-                $this->buildUserContentForModeration($connection),
-                $connection->userId,
-            ),
-            $options,
-        )) {
-            $this->logAgentError('Moderation request could not be started');
-            $this->sendCurrentUserModerationOutcome(false, self::REASON_SERVICE_UNAVAILABLE);
         }
     }
 
@@ -167,64 +149,81 @@ class ModeratorAgent extends AbstractAgent
             }
         }
 
-        $this->sendCurrentUserModerationOutcome($allow, $reason);
+        if (!$this->sendCurrentUserModerationOutcome($allow, $reason)) {
+            $this->clearCurrentModerationRequest();
+        }
     }
 
     /**
-     * Sends the current user moderation decision if runtime state still matches the active request snapshot.
+     * Queues the current user moderation decision if runtime state still matches the active request snapshot.
      *
      * @param bool $allow Whether the submitted message may be published
      * @param string $reason Short moderation reason code
+     * @return bool Whether the result was queued
      */
-    private function sendCurrentUserModerationOutcome(bool $allow, string $reason): void
+    private function sendCurrentUserModerationOutcome(bool $allow, string $reason): bool
     {
-        $acceptKey = $this->currentAcceptKey;
+        if ($this->currentAcceptKey === null) {
+            return false;
+        }
+        if (!isset(Hilos::$rt->connections[$this->currentAcceptKey])) {
+            return false;
+        }
         if (
-            $acceptKey === null
-            || !isset(Hilos::$rt->connections[$acceptKey])
-            || Hilos::$rt->connections[$acceptKey]->outboundModerationPhase
-                !== Connection::OUTBOUND_MODERATION_PHASE_CHECKING
-            || Hilos::$rt->connections[$acceptKey]->outboundModerationUpdatedAt
-                !== $this->currentModerationUpdatedAt
+            Hilos::$rt->connections[$this->currentAcceptKey]->outboundModerationPhase
+            !== Connection::OUTBOUND_MODERATION_PHASE_CHECKING
         ) {
-            $this->clearCurrentModerationRequest();
-            return;
+            return false;
+        }
+        if (
+            Hilos::$rt->connections[$this->currentAcceptKey]->outboundModerationUpdatedAt
+            !== $this->currentModerationUpdatedAt
+        ) {
+            return false;
         }
 
         $this->sendToAgent(
             ChatSignalConstants::MODERATION_RESULT,
             new ModerationResultSignalData(
-                acceptKey: $acceptKey,
-                userId: Hilos::$rt->connections[$acceptKey]->userId,
-                message: Hilos::$rt->connections[$acceptKey]->outboundModerationMessage,
+                acceptKey: $this->currentAcceptKey,
+                userId: Hilos::$rt->connections[$this->currentAcceptKey]->userId,
+                message: Hilos::$rt->connections[$this->currentAcceptKey]->outboundModerationMessage,
                 allow: $allow,
                 reason: $reason,
             ),
         );
+
+        $this->currentModerationResultQueued = true;
+
+        return true;
     }
 
     /**
-     * Clears the local request snapshot after ChatAgent changes the moderated connection state.
-     *
-     * An idle client with the same runtime snapshot means the queued result has not been applied yet.
+     * Clears the local request snapshot after the queued result mutates its runtime request.
      */
-    private function clearCurrentModerationRequestIfApplied(): void
+    private function clearQueuedModerationResultIfApplied(): void
     {
-        $acceptKey = $this->currentAcceptKey;
-        if (
-            $acceptKey === null
-            || $this->chatClient->isBusy()
-            || $this->chatClient->hasResult()
-        ) {
+        if ($this->currentAcceptKey === null) {
+            return;
+        }
+        if (!$this->currentModerationResultQueued) {
             return;
         }
 
+        if (!isset(Hilos::$rt->connections[$this->currentAcceptKey])) {
+            $this->clearCurrentModerationRequest();
+            return;
+        }
         if (
-            !isset(Hilos::$rt->connections[$acceptKey])
-            || Hilos::$rt->connections[$acceptKey]->outboundModerationPhase
-                !== Connection::OUTBOUND_MODERATION_PHASE_CHECKING
-            || Hilos::$rt->connections[$acceptKey]->outboundModerationUpdatedAt
-                !== $this->currentModerationUpdatedAt
+            Hilos::$rt->connections[$this->currentAcceptKey]->outboundModerationPhase
+            !== Connection::OUTBOUND_MODERATION_PHASE_CHECKING
+        ) {
+            $this->clearCurrentModerationRequest();
+            return;
+        }
+        if (
+            Hilos::$rt->connections[$this->currentAcceptKey]->outboundModerationUpdatedAt
+            !== $this->currentModerationUpdatedAt
         ) {
             $this->clearCurrentModerationRequest();
         }
@@ -237,6 +236,7 @@ class ModeratorAgent extends AbstractAgent
     {
         $this->currentAcceptKey = null;
         $this->currentModerationUpdatedAt = 0;
+        $this->currentModerationResultQueued = false;
     }
 
     /**
