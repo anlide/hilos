@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Agents\DTO;
 
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Utils\Helpers\JsonHelper;
 use JsonException;
 use stdClass;
@@ -23,42 +24,50 @@ final readonly class ModerationDecision
     }
 
     /**
-     * Parses a moderation model output object into a typed decision.
+     * Parses a moderation model output object with bool allow and non-empty string reason.
      *
      * @param string $text Raw model output
+     * @throws InvalidArgumentException When output does not contain a valid moderation decision
      */
-    public static function fromModelOutput(string $text): ?self
+    public static function fromModelOutput(string $text): self
     {
         $json = JsonHelper::extractJsonObject($text);
         if ($json === null) {
-            return null;
+            throw new InvalidArgumentException('Moderation response did not contain a JSON object');
         }
 
         try {
             $decoded = json_decode($json, flags: JSON_THROW_ON_ERROR);
-        } catch (JsonException) {
-            return null;
+        } catch (JsonException $e) {
+            throw new InvalidArgumentException('Moderation response JSON is invalid', previous: $e);
         }
 
-        if (!$decoded instanceof stdClass || !property_exists($decoded, self::KEY_ALLOW)) {
-            return null;
+        if (!$decoded instanceof stdClass) {
+            throw new InvalidArgumentException('Moderation response JSON must be an object');
+        }
+
+        if (!property_exists($decoded, self::KEY_ALLOW)) {
+            throw new InvalidArgumentException('Moderation response is missing allow decision');
         }
 
         $allow = $decoded->{self::KEY_ALLOW};
         if (!is_bool($allow)) {
-            return null;
+            throw new InvalidArgumentException('Moderation response allow decision must be boolean');
         }
 
         $reason = property_exists($decoded, self::KEY_REASON)
             ? $decoded->{self::KEY_REASON}
-            : '';
+            : throw new InvalidArgumentException('Moderation response reason must exist');
         if (!is_string($reason)) {
-            return null;
+            throw new InvalidArgumentException('Moderation response reason must be a string');
+        }
+        if (trim($reason) === '') {
+            throw new InvalidArgumentException('Moderation response reason must be a non-empty string');
         }
 
         return new self(
             allow: $allow,
-            reason: $reason,
+            reason: trim($reason),
         );
     }
 }

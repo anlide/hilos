@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Demo\Chat\Tests\Unit;
 
 use Demo\Chat\Agents\DTO\ModerationDecision;
+use Hilos\Core\Exception\InvalidArgumentException;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -18,24 +19,34 @@ final class ModerationDecisionTest extends TestCase
             'Model says: {"allow": false, "reason": "spam"}',
         );
 
-        $this->assertNotNull($decision);
         $this->assertFalse($decision->allow);
         $this->assertSame('spam', $decision->reason);
     }
 
-    public function testFromModelOutputAllowsMissingReason(): void
+    /**
+     * @param string $text Raw invalid model output
+     *
+     * @dataProvider invalidDecisionOutputProvider
+     */
+    public function testFromModelOutputRejectsInvalidDecisionShape(string $text): void
     {
-        $decision = ModerationDecision::fromModelOutput('{"allow": true}');
+        $this->expectException(InvalidArgumentException::class);
 
-        $this->assertNotNull($decision);
-        $this->assertTrue($decision->allow);
-        $this->assertSame('', $decision->reason);
+        ModerationDecision::fromModelOutput($text);
     }
 
-    public function testFromModelOutputRejectsInvalidDecisionShape(): void
+    /**
+     * @return list<array{0: string}>
+     */
+    public static function invalidDecisionOutputProvider(): array
     {
-        $this->assertNull(ModerationDecision::fromModelOutput('{"allow": "yes", "reason": "spam"}'));
-        $this->assertNull(ModerationDecision::fromModelOutput('{"reason": "spam"}'));
-        $this->assertNull(ModerationDecision::fromModelOutput('not json'));
+        return [
+            ['{"allow": "yes", "reason": "spam"}'],
+            ['{"allow": true}'],
+            ['{"allow": true, "reason": ""}'],
+            ['{"allow": true, "reason": "   "}'],
+            ['{"reason": "spam"}'],
+            ['not json'],
+        ];
     }
 }
