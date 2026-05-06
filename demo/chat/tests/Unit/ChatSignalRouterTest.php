@@ -8,8 +8,10 @@ use Demo\Chat\Constants\AgentType;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Router\ChatSignalRouter;
+use Demo\Chat\Core\Router\DTO\BotMessageSignalData;
 use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
+use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalSource;
@@ -79,5 +81,19 @@ final class ChatSignalRouterTest extends TestCase
         $agentTypes = array_map(static fn (array $destination): ?string => $destination['agentType'] ?? null, $destinations);
 
         $this->assertContains(AgentType::LIBRARY, $agentTypes);
+    }
+
+    public function testBotMessageRoutesToChatAgent(): void
+    {
+        $destinations = (new ChatSignalRouter())->getDestinations(new SignalDTO(
+            new SignalSource(SignalSource::AGENT),
+            new SignalType(SignalTypeConstants::AGENT_SIGNAL),
+            new SignalName(ChatSignalConstants::BOT_MESSAGE),
+            new AgentSignalData(new BotMessageSignalData(botId: 7, message: 'hello')),
+        ));
+
+        $this->assertSame([
+            ['type' => 'agent', 'agentType' => AgentType::CHAT, 'agentIndex' => null],
+        ], $destinations);
     }
 }

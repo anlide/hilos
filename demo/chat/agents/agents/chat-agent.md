@@ -10,8 +10,8 @@ Main-page message and upload workflows are routed to `MainPage` / `UploadFileTra
 - **Handshake**: authenticate session token, create `Connection` RT state, send `HANDSHAKE_RESPONSE`, broadcast runtime presence changes.
 - **Message routing**: main-page message actions and outbound moderation results are routed to `MainPage`.
 - **File upload routing**: binary WS frames are routed to `UploadFileTrait`; completed uploads become attachment drafts.
-- **Moderation results**: bot results stay in `ChatAgent`; user outbound results are page-routed.
-- **Bot lifecycle**: handles moderated bot messages and chat-visible bot events.
+- **Moderation results**: user outbound results are page-routed.
+- **Bot lifecycle**: handles generated bot messages and chat-visible bot events.
 - **Truth source**: owns `DbChatContext::events`, `eventAttachments`, `users`, and `RtChatContext::connections`, `userStates`, `attachmentDrafts`.
 
 ## Key Signal Handlers
@@ -25,7 +25,7 @@ Main-page message and upload workflows are routed to `MainPage` / `UploadFileTra
 | `WS_ACTION(file_upload_init)` | `MainPage::onAction()` - init binary upload session |
 | `WS_FRAME_BINARY` | `MainPage::onSignalFrameBinary()` -> `UploadFileTrait` |
 | `AGENT_SIGNAL(moderation_result)` | `MainPage::onSignalAgent()` -> outbound moderation result |
-| `AGENT_SIGNAL(moderation_bot_result)` | Handle bot message moderation result |
+| `AGENT_SIGNAL(bot_message)` | Publish generated bot message |
 | `DB_SYNC_*` | `onSignalDbSync*()` - keep local cache in sync |
 
 ## Rate Limiting

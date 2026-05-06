@@ -9,7 +9,7 @@ use Demo\Chat\Constants\ChatContextAnalyzerConstants;
 use Demo\Chat\Constants\ChatEventType;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\ChatTopicConstants;
-use Demo\Chat\Core\Router\DTO\ModerationBotRequestSignalData;
+use Demo\Chat\Core\Router\DTO\BotMessageSignalData;
 use Demo\Chat\Database\DbChatContext;
 use Demo\Chat\Database\Object\Item\Bot as ObjectBot;
 use Demo\Chat\Database\Object\Item\Event as ObjectEvent;
@@ -35,7 +35,7 @@ use Hilos\LLM\DTO\Message;
 use Hilos\Utils\Helpers\RandomHelper;
 
 /**
- * Per-bot agent that schedules async LLM reactions and submits generated messages for moderation.
+ * Per-bot agent that schedules async LLM reactions and publishes generated messages through ChatAgent.
  *
  * One agent is keyed by bot id through agentIndex. It reacts to chat context syncs and its own bot row changes.
  */
@@ -190,7 +190,7 @@ class BotAgent extends AbstractAgent
     }
 
     /**
-     * Advances async LLM work, sends completed messages to moderation, and starts due reactions.
+     * Advances async LLM work, sends completed messages to ChatAgent, and starts due reactions.
      *
      * @throws HilosException On bot or chat context lookup failure
      */
@@ -211,8 +211,8 @@ class BotAgent extends AbstractAgent
             if ($message !== null && $message !== '') {
                 $this->lastMessageSentAt = $nowSec;
                 $this->sendToAgent(
-                    ChatSignalConstants::MODERATE_BOT_REQUEST,
-                    new ModerationBotRequestSignalData(botId: $this->botId, message: $message),
+                    ChatSignalConstants::BOT_MESSAGE,
+                    new BotMessageSignalData(botId: $this->botId, message: $message),
                 );
             }
         }

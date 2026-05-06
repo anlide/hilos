@@ -105,11 +105,8 @@ final class ChatSignalConstants
     /** @var string LibraryAgent → BotAgent: start (sending to agent triggers framework start if not running) */
     public const string BOT_AGENT_START = 'bot_agent_start';
 
-    /** @var string BotAgent → ModeratorAgent: moderate bot message before publishing */
-    public const string MODERATE_BOT_REQUEST = 'moderate_bot_request';
-
-    /** @var string ModeratorAgent → ChatAgent: bot message moderation result */
-    public const string MODERATION_BOT_RESULT = 'moderation_bot_result';
+    /** @var string BotAgent → ChatAgent: publish generated bot message */
+    public const string BOT_MESSAGE = 'bot_message';
 
     /** @var string BotAgent → ChatAgent → frontend: bot joined the chat */
     public const string BOT_JOINED = 'bot_joined';

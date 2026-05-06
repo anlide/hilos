@@ -7,7 +7,7 @@ Each active bot gets its own `BotAgent` instance, started on boot or by `Library
 ## Responsibilities
 
 - Periodically generate bot messages using LLM
-- Send messages through `ModeratorAgent` before posting
+- Send generated messages to `ChatAgent` for publication
 - Announce bot join/leave to frontend via runtime status sync
 
 ## Lifecycle
@@ -16,8 +16,8 @@ Each active bot gets its own `BotAgent` instance, started on boot or by `Library
 2. Signal routing targets `BotAgent:botId` → framework starts if not running
 3. `BotAgent::onStart()` — registers runtime status truth source, reads bot config from DB
 4. `BotAgent::onTick()` — polls LLM client, checks timing for next message
-5. When message ready: `sendToAgent(MODERATE_BOT_REQUEST, data)` → `ModeratorAgent`
-6. `ModeratorAgent` responds with `MODERATION_BOT_RESULT` → `ChatAgent` broadcasts if approved
+5. When message ready: `sendToAgent(BOT_MESSAGE, data)` → `ChatAgent`
+6. `ChatAgent` publishes the message to the event stream
 7. `selfStop()` when bot is disabled or deleted
 
 ## Agent index

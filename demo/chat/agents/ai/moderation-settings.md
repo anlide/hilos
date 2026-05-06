@@ -29,7 +29,7 @@ $setting = Hilos::$db->settings->findByKey('moderation_url');
 | Key | Default | Meaning |
 |---|---|---|
 | `moderation_url` | `http://host.docker.internal:11434` | LLM base URL |
-| `moderation_model` | `qwen2.5:0.5b` | Model for user/bot message moderation; user messages may include attachment metadata |
+| `moderation_model` | `qwen2.5:0.5b` | Model for user message moderation; messages may include attachment metadata |
 | `moderation_provider` | `local` | `local` or `external` |
 
 ## Context analyzer

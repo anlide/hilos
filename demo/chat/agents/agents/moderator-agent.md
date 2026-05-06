@@ -2,12 +2,11 @@
 
 **Type:** `AgentType::MODERATOR` (`'moderator'`) | **Worker:** Regular
 
-Handles LLM-based content moderation. Runs in a regular worker and communicates via agent-to-agent signals.
+Handles LLM-based user content moderation. Runs in a regular worker and communicates via agent-to-agent signals.
 
 ## Responsibilities
 
-- Moderate user outbound messages (`content` plus attachment metadata) -> `MODERATE_REQUEST` -> sends `MODERATION_RESULT`.
-- Moderate bot messages -> `MODERATE_BOT_REQUEST` -> sends `MODERATION_BOT_RESULT`.
+- Discover user outbound messages from runtime connection state and send `MODERATION_RESULT`.
 
 Uploaded files are not moderated through a separate signal. They are attachment drafts included in a normal outbound message moderation request.
 
@@ -20,20 +19,24 @@ Uses async `AsyncChatLLMInterface`. Provider selected at startup:
 
 Polled in `onTick()` via `$this->chatClient->tick()`.
 
-## Queue
+## In-flight state
 
-Requests are queued in `$pendingQueue`. Only one request is in flight at a time (`$currentPending`).
-New requests append to queue; when current finishes, next is dequeued.
+Requests are not queued inside the agent. `MainPage::handleMessage()` writes
+connection-local runtime state, and `ModeratorAgent::onTick()` starts the first
+connection whose outbound moderation phase is `checking`.
 
-If the LLM client cannot start a request, `ModeratorAgent` returns a `service_unavailable` result for that request and advances the queue.
+Only one request is in flight at a time, tracked by accept key and moderation
+timestamp. After a result signal is sent, the marker is kept until ChatAgent
+applies the result back to runtime state, which prevents duplicate moderation
+starts for the same connection.
 
 ## Signal Flow
 
 ```
-ChatAgent --MODERATE_REQUEST--> ModeratorAgent
-                                    | LLM call
-                                    v
-ChatAgent <--MODERATION_RESULT---- ModeratorAgent
+MainPage runtime state -> ModeratorAgent
+                         | LLM call
+                         v
+MainPage <--MODERATION_RESULT---- ModeratorAgent
 ```
 
 ## Settings

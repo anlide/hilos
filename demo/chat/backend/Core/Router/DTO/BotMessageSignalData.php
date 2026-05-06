@@ -8,15 +8,15 @@ use Hilos\BaseDTO;
 use Hilos\Core\Router\SignalDataInterface;
 
 /**
- * ModerationBotRequestSignalData - DTO for bot message moderation request (BotAgent → ModeratorAgent).
+ * Bot message payload sent from BotAgent to ChatAgent for publication.
  */
-final class ModerationBotRequestSignalData extends BaseDTO implements SignalDataInterface
+final class BotMessageSignalData extends BaseDTO implements SignalDataInterface
 {
     /**
-     * Creates bot moderation request signal data.
+     * Creates a bot message signal payload.
      *
      * @param int $botId Bot ID
-     * @param string $message Message text to moderate
+     * @param string $message Generated message text
      */
     public function __construct(
         public readonly int $botId,
@@ -38,7 +38,7 @@ final class ModerationBotRequestSignalData extends BaseDTO implements SignalData
     }
 
     /**
-     * Create DTO from array (for deserialization).
+     * Create DTO from array.
      *
      * @param array<string, mixed> $data Source data
      * @return static DTO instance
@@ -47,7 +47,7 @@ final class ModerationBotRequestSignalData extends BaseDTO implements SignalData
     {
         return new self(
             botId: (int)($data['botId'] ?? 0),
-            message: $data['message'] ?? '',
+            message: (string)($data['message'] ?? ''),
         );
     }
 }

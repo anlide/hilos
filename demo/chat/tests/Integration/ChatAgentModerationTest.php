@@ -10,6 +10,7 @@ use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Core\Page\ChatPageFactory;
 use Demo\Chat\Core\Page\DTO\MessageActionDTO;
 use Demo\Chat\Core\Router\ChatSignalRouter;
+use Demo\Chat\Core\Router\DTO\BotMessageSignalData;
 use Demo\Chat\Core\Router\DTO\ModerationResultSignalData;
 use Demo\Chat\Hilos;
 use Demo\Chat\Pages\MainPage;
@@ -215,6 +216,25 @@ final class ChatAgentModerationTest extends IntegrationTestCase
         }
     }
 
+    public function testBotMessageSignalPublishesMessage(): void
+    {
+        Hilos::$db->events->actions->deleteAll();
+
+        try {
+            $bot = Hilos::$db->bots->actions->create('Signal Bot', active: true);
+
+            (new ChatAgent())->onSignalAgent(
+                new AgentSignalData(new BotMessageSignalData(botId: (int) $bot->id, message: 'bot says hi')),
+                '',
+                ChatSignalConstants::BOT_MESSAGE,
+            );
+
+            $this->assertBotMessageEventExists((int) $bot->id, 'bot says hi');
+        } finally {
+            Hilos::$db->events->actions->deleteAll();
+        }
+    }
+
     private function assertEventTypeExists(ChatEventType $type): void
     {
         foreach (Hilos::$db->events as $event) {
@@ -252,6 +272,25 @@ final class ChatAgentModerationTest extends IntegrationTestCase
         }
 
         $this->fail("Expected message event '{$message}' to exist.");
+    }
+
+    private function assertBotMessageEventExists(int $botId, string $message): void
+    {
+        foreach (Hilos::$db->events as $event) {
+            $data = is_string($event->data) ? json_decode($event->data, true) : null;
+            if (
+                $event->type === ChatEventType::MESSAGE_SENT->value
+                && $event->botId === $botId
+                && is_array($data)
+                && ($data['message'] ?? null) === $message
+            ) {
+                $this->assertSame($botId, $event->botId);
+                $this->assertSame($message, $data['message']);
+                return;
+            }
+        }
+
+        $this->fail("Expected bot message event '{$message}' to exist.");
     }
 
     private function takeQueuedActionErrorSignal(): ?WebSocketSignalData

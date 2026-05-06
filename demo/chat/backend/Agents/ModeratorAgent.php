@@ -4,11 +4,8 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Agents;
 
-use Demo\Chat\Agents\DTO\UserModerationRequest;
 use Demo\Chat\Constants\AgentType;
 use Demo\Chat\Constants\ChatSignalConstants;
-use Demo\Chat\Core\Router\DTO\ModerationBotRequestSignalData;
-use Demo\Chat\Core\Router\DTO\ModerationBotResultSignalData;
 use Demo\Chat\Core\Router\DTO\ModerationResultSignalData;
 use Demo\Chat\Database\Object\Item\ModeratorPromptPiece as ObjectModeratorPromptPiece;
 use Demo\Chat\Hilos;
@@ -17,9 +14,6 @@ use Demo\Chat\Runtime\View\Item\Connection;
 use Demo\Chat\Utils\ChatSettingsHelper;
 use Hilos\Constants\LLMConstants;
 use Hilos\Core\Agent\AbstractAgent;
-use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
-use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
-use Hilos\Core\Router\AgentSignalData;
 use Hilos\HilosException;
 use Hilos\LLM\ClientFactory;
 use Hilos\LLM\Contract\AsyncChatLLMInterface;
@@ -28,9 +22,9 @@ use Hilos\LLM\DTO\Message;
 use Hilos\Utils\Helpers\JsonHelper;
 
 /**
- * Regular agent that discovers user moderation requests, queues bot requests, and returns decisions.
+ * Regular agent that discovers runtime user moderation requests and returns decisions.
  *
- * Uses async LLM moderation unless the matching moderation category is disabled.
+ * Uses async LLM moderation unless user moderation is disabled.
  */
 class ModeratorAgent extends AbstractAgent
 {
@@ -38,20 +32,11 @@ class ModeratorAgent extends AbstractAgent
 
     private AsyncChatLLMInterface $chatClient;
 
-    /**
-     * @var list<UserModerationRequest|ModerationBotRequestSignalData>
-     */
-    private array $pendingQueue = [];
+    private ?string $currentAcceptKey = null;
 
-    /**
-     * @var UserModerationRequest|ModerationBotRequestSignalData|null
-     */
-    private UserModerationRequest|ModerationBotRequestSignalData|null $currentPending = null;
+    private int $currentUpdatedAt = 0;
 
-    /**
-     * @var array<string, true>
-     */
-    private array $observedUserModerationKeys = [];
+    private bool $currentResultSent = false;
 
     /**
      * Creates a moderator with an LLM client from moderation settings.
@@ -67,14 +52,14 @@ class ModeratorAgent extends AbstractAgent
     }
 
     /**
-     * Leaves in-memory moderation queue to be discarded with the worker.
+     * Discards any in-flight moderation marker with the worker.
      */
     public function onStop(): void
     {
     }
 
     /**
-     * Advances async moderation, discovers runtime user requests, and starts the next queued request.
+     * Advances async user moderation and starts one pending runtime connection when idle.
      *
      * @throws HilosException When moderation rule lookup fails
      */
@@ -83,315 +68,181 @@ class ModeratorAgent extends AbstractAgent
         $this->chatClient->tick(microtime(true) * 1000);
 
         if ($this->chatClient->hasResult()) {
-            $text = $this->chatClient->getResult();
-            $pending = $this->currentPending;
-            $this->currentPending = null;
-
-            if ($pending !== null) {
-                $allow = false;
-                $reason = $text === null ? 'service_unavailable' : 'unknown';
-
-                if ($text !== null) {
-                    $decision = self::parseModerationDecision($text);
-                    if ($decision !== null) {
-                        $allow = $decision['allow'];
-                        $reason = $decision['reason'] !== '' ? $decision['reason'] : 'none';
-                    }
-                }
-
-                $authorContext = $pending instanceof UserModerationRequest
-                    ? "userId={$pending->userId}"
-                    : "botId={$pending->botId}";
-                $this->logAgentInfo(
-                    "Moderation request finished [{$authorContext}; decision=" . ($allow ? 'allow' : 'block') . "; reason={$reason}]"
-                );
-
-                $this->sendModerationOutcome($pending, $allow, $reason);
-            }
+            $this->handleModerationClientResult($this->chatClient->getResult());
         }
 
-        $this->queuePendingUserModerationRequests();
-        $this->startNextPending();
+        if ($this->currentResultSent) {
+            $this->clearCurrentModerationAfterDelivery();
+        }
+
+        if ($this->currentAcceptKey !== null || $this->chatClient->isBusy() || $this->chatClient->hasResult()) {
+            return;
+        }
+
+        $this->startNextConnectionModeration();
     }
 
     /**
-     * Routes valid bot moderation request payloads into the queue.
-     *
-     * @param AgentSignalData $data Agent signal wrapper with the inner bot moderation payload
-     * @param string $source Framework signal source identifier (unused)
-     * @param string $name Bot moderation request signal name
-     * @throws AgentUnknownSignalException When signal name is not supported by this agent
-     * @throws InvalidAgentSignalPayloadException When signal payload does not match the signal name
-     * @throws HilosException When moderation rule lookup fails
-     */
-    public function onSignalAgent(AgentSignalData $data, string $source, string $name): void
-    {
-        switch ($name) {
-            case ChatSignalConstants::MODERATE_BOT_REQUEST:
-                $moderationBotRequest = $data->data;
-                if (!$moderationBotRequest instanceof ModerationBotRequestSignalData) {
-                    throw new InvalidAgentSignalPayloadException(
-                        $name,
-                        ModerationBotRequestSignalData::class,
-                        $moderationBotRequest,
-                    );
-                }
-                $this->handleModerateBotRequest($moderationBotRequest);
-                return;
-            default:
-                throw new AgentUnknownSignalException($name);
-        }
-    }
-
-    /**
-     * Queues runtime outbound moderation states that were not observed before.
+     * Starts moderation for the first runtime connection currently waiting for a user decision.
      *
      * @throws HilosException When moderation rule lookup fails
      */
-    private function queuePendingUserModerationRequests(): void
+    private function startNextConnectionModeration(): void
     {
-        $activeUserModerationKeys = [];
-
         foreach (Hilos::$rt->connections as $connection) {
             if ($connection->outboundModerationPhase !== Connection::OUTBOUND_MODERATION_PHASE_CHECKING) {
                 continue;
             }
 
-            $moderationKey = self::userModerationKey(
-                $connection->acceptKey,
-                $connection->outboundModerationUpdatedAt,
-                $connection->outboundModerationMessage,
-            );
-            $activeUserModerationKeys[$moderationKey] = true;
-            if (isset($this->observedUserModerationKeys[$moderationKey])) {
-                continue;
-            }
-
-            $this->observedUserModerationKeys[$moderationKey] = true;
-            $this->queueUserModerationRequest(new UserModerationRequest(
-                acceptKey: $connection->acceptKey,
-                userId: $connection->userId,
-                message: $connection->outboundModerationMessage,
-                updatedAt: $connection->outboundModerationUpdatedAt,
-            ));
+            $this->startConnectionModeration($connection);
+            return;
         }
-
-        $this->observedUserModerationKeys = array_intersect_key(
-            $this->observedUserModerationKeys,
-            $activeUserModerationKeys,
-        );
     }
 
     /**
-     * Queues or bypasses a user message moderation request.
+     * Starts or bypasses moderation for one runtime connection.
      *
-     * @param UserModerationRequest $moderationRequest User message moderation request
+     * @param Connection $connection Runtime connection with an active outbound moderation state
      * @throws HilosException When moderation rule lookup fails
      */
-    private function queueUserModerationRequest(UserModerationRequest $moderationRequest): void
+    private function startConnectionModeration(Connection $connection): void
     {
+        $this->currentAcceptKey = $connection->acceptKey;
+        $this->currentUpdatedAt = $connection->outboundModerationUpdatedAt;
+        $this->currentResultSent = false;
+
         if (!ChatSettingsHelper::getModerationUsers()) {
-            $this->bypassModerationUser($moderationRequest);
+            $this->logAgentInfo("Moderation bypassed for user [userId={$connection->userId}] (disabled)");
+            $this->currentResultSent = $this->sendCurrentUserModerationOutcome(true, 'disabled');
             return;
         }
 
-        $messageLength = mb_strlen($moderationRequest->message);
+        $messageLength = mb_strlen($connection->outboundModerationMessage);
         $this->logAgentInfo(
-            "Moderation request queued [userId={$moderationRequest->userId}; messageLen={$messageLength}]"
+            "Moderation request started [userId={$connection->userId}; messageLen={$messageLength}]"
         );
 
-        $this->pendingQueue[] = $moderationRequest;
+        $timeoutSec = ChatSettingsHelper::getModerationTimeoutSec();
+        $options = new ChatGenerateOptions(
+            model: ChatSettingsHelper::getModerationModel(),
+            temperature: 0.0,
+            timeoutSec: $timeoutSec > 0 ? $timeoutSec : LLMConstants::DEFAULT_TIMEOUT_SEC,
+            maxTokens: 32,
+        );
+
+        if (!$this->chatClient->startGenerate(
+            $this->buildModerationMessages(
+                $this->buildUserContentForModeration($connection),
+                $connection->userId,
+            ),
+            $options,
+        )) {
+            $this->currentResultSent = $this->sendCurrentUserModerationOutcome(false, 'service_unavailable');
+        }
     }
 
     /**
-     * Queues or bypasses a bot message moderation request.
-     *
-     * @param ModerationBotRequestSignalData $moderationBotRequest Bot message moderation request
-     * @throws HilosException When moderation rule lookup fails
+     * Converts the completed async LLM response into the current user moderation result signal.
      */
-    private function handleModerateBotRequest(ModerationBotRequestSignalData $moderationBotRequest): void
+    private function handleModerationClientResult(?string $text): void
     {
-        if (!ChatSettingsHelper::getModerationBots()) {
-            $this->bypassModerationBot($moderationBotRequest);
+        if ($this->currentAcceptKey === null) {
             return;
         }
 
-        $messageLength = mb_strlen($moderationBotRequest->message);
+        $allow = false;
+        $reason = $text === null ? 'service_unavailable' : 'unknown';
+
+        if ($text !== null) {
+            $decision = self::parseModerationDecision($text);
+            if ($decision !== null) {
+                $allow = $decision['allow'];
+                $reason = $decision['reason'] !== '' ? $decision['reason'] : 'none';
+            }
+        }
+
+        if (!isset(Hilos::$rt->connections[$this->currentAcceptKey])) {
+            $this->clearCurrentModeration();
+            return;
+        }
+
         $this->logAgentInfo(
-            "Moderation bot request queued [botId={$moderationBotRequest->botId}; messageLen={$messageLength}]"
+            "Moderation request finished [userId="
+            . Hilos::$rt->connections[$this->currentAcceptKey]->userId
+            . '; decision='
+            . ($allow ? 'allow' : 'block')
+            . "; reason={$reason}]"
         );
 
-        $this->pendingQueue[] = $moderationBotRequest;
-        $this->startNextPending();
+        $this->currentResultSent = $this->sendCurrentUserModerationOutcome($allow, $reason);
     }
 
     /**
-     * Sends an allow result without LLM when user moderation is disabled.
-     *
-     * @param UserModerationRequest $moderationRequest User message data to pass through
+     * Sends the current user moderation decision when the runtime state still matches the in-flight request.
      */
-    private function bypassModerationUser(UserModerationRequest $moderationRequest): void
+    private function sendCurrentUserModerationOutcome(bool $allow, string $reason): bool
     {
-        $this->logAgentInfo("Moderation bypassed for user [userId={$moderationRequest->userId}] (disabled)");
+        if (
+            $this->currentAcceptKey === null
+            || !isset(Hilos::$rt->connections[$this->currentAcceptKey])
+            || Hilos::$rt->connections[$this->currentAcceptKey]->outboundModerationPhase
+                !== Connection::OUTBOUND_MODERATION_PHASE_CHECKING
+            || Hilos::$rt->connections[$this->currentAcceptKey]->outboundModerationUpdatedAt
+                !== $this->currentUpdatedAt
+        ) {
+            $this->clearCurrentModeration();
+            return false;
+        }
+
         $this->sendToAgent(
             ChatSignalConstants::MODERATION_RESULT,
             new ModerationResultSignalData(
-                acceptKey: $moderationRequest->acceptKey,
-                userId: $moderationRequest->userId,
-                message: $moderationRequest->message,
-                allow: true,
-                reason: 'disabled',
-            ),
-        );
-    }
-
-    /**
-     * Sends an allow result without LLM when bot moderation is disabled.
-     *
-     * @param ModerationBotRequestSignalData $moderationBotRequest Bot message data to pass through
-     */
-    private function bypassModerationBot(ModerationBotRequestSignalData $moderationBotRequest): void
-    {
-        $this->logAgentInfo("Moderation bypassed for bot [botId={$moderationBotRequest->botId}] (disabled)");
-        $this->sendToAgent(
-            ChatSignalConstants::MODERATION_BOT_RESULT,
-            new ModerationBotResultSignalData(
-                botId: $moderationBotRequest->botId,
-                message: $moderationBotRequest->message,
-                allow: true,
-                reason: 'disabled',
-            ),
-        );
-    }
-
-    /**
-     * Starts the next queued moderation request if the LLM client is idle.
-     *
-     * @throws HilosException When moderation rule lookup fails
-     */
-    private function startNextPending(): void
-    {
-        if (
-            $this->chatClient->isBusy()
-            || $this->chatClient->hasResult()
-            || $this->pendingQueue === []
-        ) {
-            return;
-        }
-
-        while ($this->pendingQueue !== []) {
-            $item = array_shift($this->pendingQueue);
-            if ($item instanceof UserModerationRequest && !$this->isUserModerationRequestCurrent($item)) {
-                unset($this->observedUserModerationKeys[
-                    self::userModerationKey($item->acceptKey, $item->updatedAt, $item->message)
-                ]);
-                continue;
-            }
-
-            $this->currentPending = $item;
-
-            $message = $item instanceof UserModerationRequest
-                ? $this->buildUserContentForModeration($item)
-                : $item->message;
-            $userId = $item instanceof UserModerationRequest ? $item->userId : null;
-            $botId = $item instanceof ModerationBotRequestSignalData ? $item->botId : null;
-
-            $messages = $this->buildModerationMessages($message, $userId, $botId);
-            $timeoutSec = ChatSettingsHelper::getModerationTimeoutSec();
-            $options = new ChatGenerateOptions(
-                model: ChatSettingsHelper::getModerationModel(),
-                temperature: 0.0,
-                timeoutSec: $timeoutSec > 0 ? $timeoutSec : LLMConstants::DEFAULT_TIMEOUT_SEC,
-                maxTokens: 32,
-            );
-
-            if (!$this->chatClient->startGenerate($messages, $options)) {
-                $this->currentPending = null;
-                $this->sendModerationOutcome($item, false, 'service_unavailable');
-            }
-
-            return;
-        }
-    }
-
-    /**
-     * Sends the typed moderation result for a completed or unavailable queued item.
-     *
-     * @param UserModerationRequest|ModerationBotRequestSignalData $pending Queue item
-     * @param bool $allow Whether moderation approved the item
-     * @param string $reason Moderation reason
-     */
-    private function sendModerationOutcome(
-        UserModerationRequest|ModerationBotRequestSignalData $pending,
-        bool $allow,
-        string $reason,
-    ): void
-    {
-        if ($pending instanceof UserModerationRequest) {
-            $this->sendToAgent(
-                ChatSignalConstants::MODERATION_RESULT,
-                new ModerationResultSignalData(
-                    acceptKey: $pending->acceptKey,
-                    userId: $pending->userId,
-                    message: $pending->message,
-                    allow: $allow,
-                    reason: $reason,
-                ),
-            );
-
-            return;
-        }
-
-        $this->sendToAgent(
-            ChatSignalConstants::MODERATION_BOT_RESULT,
-            new ModerationBotResultSignalData(
-                botId: $pending->botId,
-                message: $pending->message,
+                acceptKey: $this->currentAcceptKey,
+                userId: Hilos::$rt->connections[$this->currentAcceptKey]->userId,
+                message: Hilos::$rt->connections[$this->currentAcceptKey]->outboundModerationMessage,
                 allow: $allow,
                 reason: $reason,
             ),
         );
+
+        return true;
+    }
+
+    /**
+     * Clears the in-flight marker after ChatAgent applies the result to runtime state.
+     */
+    private function clearCurrentModerationAfterDelivery(): void
+    {
+        if (
+            $this->currentAcceptKey === null
+            || !isset(Hilos::$rt->connections[$this->currentAcceptKey])
+            || Hilos::$rt->connections[$this->currentAcceptKey]->outboundModerationPhase
+                !== Connection::OUTBOUND_MODERATION_PHASE_CHECKING
+            || Hilos::$rt->connections[$this->currentAcceptKey]->outboundModerationUpdatedAt
+                !== $this->currentUpdatedAt
+        ) {
+            $this->clearCurrentModeration();
+        }
+    }
+
+    private function clearCurrentModeration(): void
+    {
+        $this->currentAcceptKey = null;
+        $this->currentUpdatedAt = 0;
+        $this->currentResultSent = false;
     }
 
     /**
      * Builds user moderation content from submitted text and current connection-local drafts.
      *
-     * @param UserModerationRequest $moderationRequest User request to moderate
+     * @param Connection $connection Runtime connection to moderate
      */
-    private function buildUserContentForModeration(UserModerationRequest $moderationRequest): string
+    private function buildUserContentForModeration(Connection $connection): string
     {
-        if (!isset(Hilos::$rt->connections[$moderationRequest->acceptKey])) {
-            return $moderationRequest->message;
-        }
-
         return $this->buildContentForModeration(
-            $moderationRequest->message,
-            ...Hilos::$rt->connections[$moderationRequest->acceptKey]->attachmentDrafts,
+            $connection->outboundModerationMessage,
+            ...$connection->attachmentDrafts,
         );
-    }
-
-    /**
-     * Checks that a queued user request still matches the current connection moderation state.
-     *
-     * @param UserModerationRequest $moderationRequest User request to verify
-     */
-    private function isUserModerationRequestCurrent(UserModerationRequest $moderationRequest): bool
-    {
-        if (!isset(Hilos::$rt->connections[$moderationRequest->acceptKey])) {
-            return false;
-        }
-
-        return Hilos::$rt->connections[$moderationRequest->acceptKey]->outboundModerationPhase
-            === Connection::OUTBOUND_MODERATION_PHASE_CHECKING
-            && Hilos::$rt->connections[$moderationRequest->acceptKey]->outboundModerationUpdatedAt
-            === $moderationRequest->updatedAt
-            && Hilos::$rt->connections[$moderationRequest->acceptKey]->outboundModerationMessage
-            === $moderationRequest->message;
-    }
-
-    private static function userModerationKey(string $acceptKey, int $updatedAt, string $message): string
-    {
-        return "{$acceptKey}\0{$updatedAt}\0{$message}";
     }
 
     /**
@@ -447,12 +298,11 @@ class ModeratorAgent extends AbstractAgent
      * Builds moderation prompt messages from rules, author context, and message text.
      *
      * @param string $message Message text to moderate
-     * @param ?int $userId User id when moderating a user request
-     * @param ?int $botId Bot id when moderating a bot message
+     * @param int $userId User id for the current outbound request
      * @return list<Message> System and user messages for LLM
      * @throws HilosException When moderation rule lookup fails
      */
-    private function buildModerationMessages(string $message, ?int $userId = null, ?int $botId = null): array
+    private function buildModerationMessages(string $message, int $userId): array
     {
         $rules = $this->getMessageModerationRules();
         $rulesBlock = $rules === []
@@ -461,8 +311,7 @@ class ModeratorAgent extends AbstractAgent
 
         $systemContent = "Moderation. JSON only. Output: {\"allow\":true|false,\"reason\":\"ok|insult|threat|hate_speech|sexual|spam\"}\nRules:\n{$rulesBlock}";
 
-        $authorLabel = $userId !== null ? "User ID: {$userId}" : "Bot ID: {$botId}";
-        $userContent = "{$authorLabel}\nMessage:\n{$message}";
+        $userContent = "User ID: {$userId}\nMessage:\n{$message}";
 
         return [
             new Message(Message::ROLE_SYSTEM, $systemContent),

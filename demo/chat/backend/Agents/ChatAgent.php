@@ -4,12 +4,11 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Agents;
 
-use Demo\Chat\Agents\Exception\BotMessageModerationRejectedException;
 use Demo\Chat\Constants\AgentType;
 use Demo\Chat\Constants\ChatCronConstants;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\HttpHeaders;
-use Demo\Chat\Core\Router\DTO\ModerationBotResultSignalData;
+use Demo\Chat\Core\Router\DTO\BotMessageSignalData;
 use Demo\Chat\Database\DbChatContext;
 use Demo\Chat\Database\Pages\ChatPageCatalog;
 use Demo\Chat\Frontend\UserFrontendStateProjector;
@@ -30,7 +29,7 @@ use Hilos\Socket\WebSocket\DTO\WebSocketCloseSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
 
 /**
- * Monopolistic chat worker for chat events, users, runtime connections, WebSocket lifecycle, and bot-specific signals.
+ * Monopolistic chat worker for chat events, users, runtime connections, WebSocket lifecycle, and bot messages.
  *
  * On start, registers chat database tables and runtime collections as truth sources.
  */
@@ -176,11 +175,15 @@ class ChatAgent extends AbstractAgent
         switch ($name) {
             case ChatSignalConstants::MODERATION_RESULT:
                 return;
-            case ChatSignalConstants::MODERATION_BOT_RESULT:
-                if (!$data->data instanceof ModerationBotResultSignalData) {
-                    throw new InvalidAgentSignalPayloadException($name, ModerationBotResultSignalData::class, $data->data);
+            case ChatSignalConstants::BOT_MESSAGE:
+                if (!$data->data instanceof BotMessageSignalData) {
+                    throw new InvalidAgentSignalPayloadException(
+                        $name,
+                        BotMessageSignalData::class,
+                        $data->data,
+                    );
                 }
-                $this->handleModerationBotResult($data->data);
+                $this->handleBotMessage($data->data);
                 return;
             default:
                 throw new AgentUnknownSignalException($name);
@@ -188,19 +191,14 @@ class ChatAgent extends AbstractAgent
     }
 
     /**
-     * Publishes allowed moderated bot messages and rejects blocked bot messages.
+     * Publishes a generated bot message to the chat event stream.
      *
-     * @param ModerationBotResultSignalData $result Bot id, allow flag, message body, reason
-     * @throws BotMessageModerationRejectedException When moderation rejects the bot message
+     * @param BotMessageSignalData $message Bot id and generated message body
      * @throws HilosException On bot message persistence failure
      * @throws CommandException If event id is null after sync
      */
-    private function handleModerationBotResult(ModerationBotResultSignalData $result): void
+    private function handleBotMessage(BotMessageSignalData $message): void
     {
-        if (!$result->allow) {
-            throw new BotMessageModerationRejectedException($result->botId, $result->reason);
-        }
-
-        Hilos::$db->events->actions->addMessage($result->message, botId: $result->botId);
+        Hilos::$db->events->actions->addMessage($message->message, botId: $message->botId);
     }
 }

@@ -169,20 +169,6 @@ final class ChatSettingsHelper
     }
 
     /**
-     * Enable moderation for bot messages.
-     *
-     * @return bool True if enabled
-     */
-    public static function getModerationBots(): bool
-    {
-        $val = self::getString(ChatSettingsConstants::CHAT_MODERATION_BOTS);
-        if ($val !== '') {
-            return filter_var($val, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE) ?? false;
-        }
-        return false;
-    }
-
-    /**
      * Max size in bytes for a single chat attachment.
      */
     public static function getAttachmentMaxFileBytes(): int
