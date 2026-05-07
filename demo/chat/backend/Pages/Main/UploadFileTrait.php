@@ -6,14 +6,11 @@ namespace Demo\Chat\Pages\Main;
 
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Core\Page\DTO\FileUploadInitActionDTO;
-use Demo\Chat\Core\Router\DTO\AttachmentDraftSignalData;
 use Demo\Chat\Core\Router\DTO\FileUploadAbortedSignalData;
 use Demo\Chat\Core\Router\DTO\FileUploadCompleteSignalData;
 use Demo\Chat\Core\Router\DTO\FileUploadInvalidSignalData;
 use Demo\Chat\Core\Router\DTO\FileUploadReadySignalData;
 use Demo\Chat\Core\Router\DTO\FileUploadRejectedSignalData;
-use Demo\Chat\Core\Router\DTO\SelfConnectionSignalData;
-use Demo\Chat\Frontend\SelfConnectionFrontendStateProjector;
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\View\Item\Connection;
 use Demo\Chat\Utils\ChatSettingsHelper;
@@ -33,7 +30,7 @@ use Hilos\Utils\Helpers\FileSystemHelper;
 trait UploadFileTrait
 {
     /**
-     * Minimum wall-clock interval between {@see ChatSignalConstants::FILE_UPLOAD_PROGRESS_UPDATE} sends when not forced.
+     * Minimum wall-clock interval between projected upload-progress notifications when not forced.
      */
     private const float FILE_UPLOAD_PROGRESS_MIN_INTERVAL_SEC = 0.3;
 
@@ -150,14 +147,14 @@ trait UploadFileTrait
                 clientUploadId: $dto->clientUploadId,
             ),
         );
-        // Same moment as client seeds progress UI from READY (0 / size); avoids an immediate redundant progress_update.
+        // READY is protocol permission; this marker lets frontend projection publish the 0 / size progress baseline.
         Hilos::$rt->selfConnection->actions->noteUploadProgressSentAt(microtime(true));
     }
 
     /**
      * Handle a websocket binary frame for an active main-page upload session.
      *
-     * Appends the chunk to tmp storage, updates runtime progress, sends throttled progress updates,
+     * Appends the chunk to tmp storage, updates runtime progress, records throttled projection markers,
      * and completes the upload when received bytes reach the declared size.
      *
      * @param WebSocketFrameBinarySignalDTO $data Binary frame payload and connection id
@@ -209,7 +206,7 @@ trait UploadFileTrait
         $newReceived = $received + $len;
         Hilos::$rt->selfConnection->actions->applyStoredBinaryChunkProgress($newReceived);
 
-        $this->sendFileUploadProgressUpdateThrottled($newReceived === $declared);
+        $this->noteFileUploadProgressProjectionThrottled($newReceived === $declared);
 
         if ($newReceived === $declared) {
             $this->completeFileUpload();
@@ -217,9 +214,9 @@ trait UploadFileTrait
     }
 
     /**
-     * Delete all attachment files on disk, reset file-related runtime fields on every connection, notify clients.
+     * Delete all attachment files on disk and reset file-related runtime fields on every connection.
      *
-     * Used from admin/cron cleanup so all tabs drop draft and progress UI.
+     * Runtime sync projection updates subscribed tabs so they drop draft and progress UI.
      */
     protected function deleteAllAttachmentFilesFromDisk(): void
     {
@@ -227,22 +224,11 @@ trait UploadFileTrait
         Hilos::$fs->quarantine->deleteAll();
         Hilos::$rt->attachmentDrafts->actions->clear(deleteFiles: false);
         Hilos::$rt->connections->actions->clearAllFileRuntimeOnAllConnections();
-
-        foreach (Hilos::$rt->connections as $connection) {
-            $acceptKey = $connection->acceptKey;
-            $this->sendToUser(
-                ChatSignalConstants::FILE_UPLOAD_PROGRESS_UPDATE,
-                $acceptKey,
-                SelfConnectionSignalData::fromFrontendChanges(
-                    SelfConnectionFrontendStateProjector::fullForConnection($connection),
-                ),
-            );
-        }
     }
 
     /**
      * After the last binary chunk: move tmp to quarantine, clear upload session and progress UI,
-     * create an attachment draft, and send {@see ChatSignalConstants::FILE_UPLOAD_COMPLETE}.
+     * create an attachment draft, and send a payloadless {@see ChatSignalConstants::FILE_UPLOAD_COMPLETE} marker.
      *
      * @throws RtActionsCollectionNameNullException When the connections actions collection name is null
      * @throws FileDeleteException When failed upload cleanup cannot delete its tmp file
@@ -273,7 +259,7 @@ trait UploadFileTrait
         }
 
         Hilos::$rt->selfConnection->actions->clearBinaryUploadSessionAndProgressUi();
-        $draft = Hilos::$rt->attachmentDrafts->actions->create(
+        Hilos::$rt->attachmentDrafts->actions->create(
             draftId: $uploadId,
             acceptKey: Hilos::$rt->selfConnection->acceptKey,
             userId: Hilos::$rt->selfConnection->userId,
@@ -284,23 +270,10 @@ trait UploadFileTrait
             normalizedFilename: $normalizedFilename,
             uploadedAt: time(),
         );
-        $draftPayload = AttachmentDraftSignalData::fromDraft($draft)->toArray();
-
-        $this->sendToUser(
-            ChatSignalConstants::FILE_UPLOAD_PROGRESS_UPDATE,
-            Hilos::$rt->selfConnection->acceptKey,
-            SelfConnectionSignalData::fromFrontendChanges(
-                SelfConnectionFrontendStateProjector::fullForConnection(Hilos::$rt->selfConnection),
-            ),
-        );
         $this->sendToUser(
             ChatSignalConstants::FILE_UPLOAD_COMPLETE,
             Hilos::$rt->selfConnection->acceptKey,
-            new FileUploadCompleteSignalData(
-                uploadId: $uploadId,
-                filename: $originalFilename,
-                attachmentDraft: $draftPayload,
-            ),
+            new FileUploadCompleteSignalData(),
         );
     }
 
@@ -327,17 +300,15 @@ trait UploadFileTrait
     }
 
     /**
-     * Send {@see ChatSignalConstants::FILE_UPLOAD_PROGRESS_UPDATE} to this WebSocket connection at most every
-     * {@see self::FILE_UPLOAD_PROGRESS_MIN_INTERVAL_SEC} unless `$force` is true or the upload is complete
-     * (`uploadedBytes` >= `totalBytes` > 0).
+     * Record a projected upload-progress notification at most every
+     * {@see self::FILE_UPLOAD_PROGRESS_MIN_INTERVAL_SEC} unless `$force` is true.
      *
-     * Throttle clock is primed when {@see ChatSignalConstants::FILE_UPLOAD_READY} is sent (same baseline the client
-     * uses for 0 / total). Reads progress from the connection runtime fields.
+     * The frontend projection sends the current `selfConnection` snapshot when this marker changes.
      *
-     * @param bool $force When true, send immediately (e.g. last chunk), bypassing the min-interval throttle
+     * @param bool $force When true, notify immediately (e.g. last chunk), bypassing the min-interval throttle
      * @throws RtActionsCollectionNameNullException When collection name is null for connection actions
      */
-    private function sendFileUploadProgressUpdateThrottled(bool $force): void
+    private function noteFileUploadProgressProjectionThrottled(bool $force): void
     {
         if (Hilos::$rt->selfConnection === null) {
             return;
@@ -355,13 +326,6 @@ trait UploadFileTrait
         }
 
         Hilos::$rt->selfConnection->actions->noteUploadProgressSentAt(microtime(true));
-        $this->sendToUser(
-            ChatSignalConstants::FILE_UPLOAD_PROGRESS_UPDATE,
-            Hilos::$rt->selfConnection->acceptKey,
-            SelfConnectionSignalData::fromFrontendChanges(
-                SelfConnectionFrontendStateProjector::fullForConnection(Hilos::$rt->selfConnection),
-            ),
-        );
     }
 
     /**

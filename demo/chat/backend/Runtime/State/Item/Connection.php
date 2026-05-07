@@ -112,7 +112,7 @@ final class Connection extends RtState
     /** Total for upload progress UI. */
     public int $fileProgressTotalBytes = 0;
 
-    /** Last FILE_UPLOAD_READY or FILE_UPLOAD_PROGRESS_UPDATE for throttle (microtime). */
+    /** Last upload-progress projection notify time for throttle (microtime). */
     public float $uploadProgressLastSentAt = 0.0;
 
     /**

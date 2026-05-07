@@ -372,21 +372,22 @@ final class ChatFrontendProjection extends FrontendProjectionContext
      */
     private function buildConnectionDeliveries(SourceChange $change): iterable
     {
-        $connectionModerationChanged = false;
+        $frontendSelfConnectionChanged = false;
         foreach ([
             StateConnection::outboundModerationPhase,
             StateConnection::outboundModerationMessage,
             StateConnection::outboundModerationReason,
             StateConnection::outboundModerationUpdatedAt,
+            StateConnection::uploadProgressLastSentAt,
         ] as $field) {
             if (array_key_exists($field, $change->row)) {
-                $connectionModerationChanged = true;
+                $frontendSelfConnectionChanged = true;
                 break;
             }
         }
 
         if (
-            $connectionModerationChanged
+            $frontendSelfConnectionChanged
             && Hilos::$rt !== null
             && isset(Hilos::$rt->connections[$change->sourceId])
             && $this->isAcceptKeyOnPage($change->sourceId, PageConstants::MAIN)

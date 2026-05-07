@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { fileUploadProgressUpdate, selfConnectionUpdate, subscriptionPageMain } from '@/signals'
+import { selfConnectionUpdate, subscriptionPageMain } from '@/signals'
 
 const selfConnectionPayload = {
   userId: 7,
@@ -48,29 +48,6 @@ describe('chat session signal parsers', () => {
     })).toEqual({})
   })
 
-  it('parses frontend-only upload progress payloads', () => {
-    expect(fileUploadProgressUpdate.parse({
-      frontend: {
-        full: {
-          selfConnection: [{
-            id: 'self',
-            ...selfConnectionPayload,
-          }],
-        },
-        replaceFull: ['selfConnection'],
-      },
-    })).toEqual({})
-  })
-
-  it('parses file upload progress updates as selfConnection payloads', () => {
-    expect(fileUploadProgressUpdate.parse({
-      selfConnection: {
-        ...selfConnectionPayload,
-        fileUploadProgress: null,
-      },
-    })?.selfConnection.fileUploadProgress).toBeNull()
-  })
-
   it('rejects invalid selfConnection payloads', () => {
     expect(selfConnectionUpdate.parse({ selfConnection: { userId: 7 } })).toBeNull()
     expect(selfConnectionUpdate.parse({
@@ -79,6 +56,5 @@ describe('chat session signal parsers', () => {
         outboundModerationState: { phase: 'checking' },
       },
     })).toBeNull()
-    expect(fileUploadProgressUpdate.parse({ fileUploadProgress: null })).toBeNull()
   })
 })

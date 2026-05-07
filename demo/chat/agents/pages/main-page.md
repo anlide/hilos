@@ -28,8 +28,8 @@ File upload init and binary frame logic lives in `Pages/Main/UploadFileTrait`:
 - Validates file size, MIME type, total storage, and filename uniqueness.
 - Keeps in-flight upload state on `Connection`.
 - Converts completed uploads into `RtChatContext::attachmentDrafts`.
-- Sends `FILE_UPLOAD_READY`, `FILE_UPLOAD_REJECTED`, `FILE_UPLOAD_PROGRESS_UPDATE`, and `FILE_UPLOAD_COMPLETE`.
-- `FILE_UPLOAD_PROGRESS_UPDATE` carries a full `selfConnection` payload.
+- Sends protocol signals: `FILE_UPLOAD_READY`, `FILE_UPLOAD_REJECTED`, `FILE_UPLOAD_INVALID`, `FILE_UPLOAD_ABORTED`, and payloadless `FILE_UPLOAD_COMPLETE`.
+- Upload progress and attachment drafts arrive through runtime-backed frontend projection.
 
 ## Incremental Signals
 
@@ -38,4 +38,3 @@ Subsequent updates arrive through:
 
 - `new_event`
 - `self_connection_update`
-- `file_upload_progress_update`

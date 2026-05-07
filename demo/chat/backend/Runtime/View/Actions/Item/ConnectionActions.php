@@ -157,8 +157,8 @@ final class ConnectionActions extends RtActions
      * After successful FILE_UPLOAD_INIT: open session row + progress bar fields on this socket.
      *
      * Caller should send {@see ChatSignalConstants::FILE_UPLOAD_READY} and then record the
-     * upload-progress throttle time ({@see self::noteUploadProgressSentAt()}) so the first binary chunk does not
-     * duplicate that baseline.
+     * upload-progress projection marker ({@see self::noteUploadProgressSentAt()}) so subscribers receive the
+     * 0 / total baseline through frontend state.
      *
      * @throws RtActionsCollectionNameNullException When collection name is null.
      * @throws RtTruthSourceWriteNotAllowedException When truth source does not allow write.
@@ -234,8 +234,7 @@ final class ConnectionActions extends RtActions
     }
 
     /**
-     * Record last upload-progress notify time (throttle): {@see ChatSignalConstants::FILE_UPLOAD_READY}
-     * or {@see ChatSignalConstants::FILE_UPLOAD_PROGRESS_UPDATE}.
+     * Record last upload-progress projection notify time (throttle).
      *
      * @throws RtActionsCollectionNameNullException
      */

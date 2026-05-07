@@ -37,13 +37,13 @@ final class ChatSignalConstants
     /** @var string Server → client: previous upload cancelled (new init while in progress) */
     public const string FILE_UPLOAD_ABORTED = 'file_upload_aborted';
 
-    /** @var string Server → client: all bytes received, attachment draft created */
+    /** @var string Server → client: all bytes received; draft state arrives through frontend projection */
     public const string FILE_UPLOAD_COMPLETE = 'file_upload_complete';
 
     /** @var string Server → client: binary protocol error, session cleared */
     public const string FILE_UPLOAD_INVALID = 'file_upload_invalid';
 
-    /** @var string Server → client: binary upload progress (throttled); separate from moderation */
+    /** @var string Reserved legacy upload-progress signal; projection sends selfConnection updates */
     public const string FILE_UPLOAD_PROGRESS_UPDATE = 'file_upload_progress_update';
 
     /** @var string Server → client: full current connection-local chat session state */

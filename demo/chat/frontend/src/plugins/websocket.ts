@@ -19,7 +19,6 @@ import {
   handshakeResponse,
   subscriptionPageMain,
   selfConnectionUpdate,
-  fileUploadProgressUpdate,
   fileUploadReady,
   fileUploadRejected,
   fileUploadAborted,
@@ -152,19 +151,7 @@ function buildSignalRouter() {
     }
   })
 
-  signalRouter.on(fileUploadProgressUpdate, ({ selfConnection }) => {
-    if (selfConnection !== undefined) {
-      useChatStore().setSelfConnection(selfConnection)
-    }
-  })
-
-  signalRouter.on(fileUploadReady, ({ filename, size }) => {
-    // Baseline progress bar (0 / size); server throttles file_upload_progress_update from the first binary chunks.
-    useChatStore().setFileUploadProgress({
-      filename,
-      uploadedBytes: 0,
-      totalBytes: size,
-    })
+  signalRouter.on(fileUploadReady, () => {
     resolveFileUploadOutcome({ ok: true })
   })
 
@@ -174,17 +161,13 @@ function buildSignalRouter() {
 
   signalRouter.on(fileUploadAborted, () => {
     rejectFileUploadPending('aborted')
-    useChatStore().setFileUploadProgress(null)
   })
 
   signalRouter.on(fileUploadInvalid, () => {
     rejectFileUploadPending('invalid')
-    useChatStore().setFileUploadProgress(null)
   })
 
-  signalRouter.on(fileUploadComplete, () => {
-    useChatStore().setFileUploadProgress(null)
-  })
+  signalRouter.on(fileUploadComplete, () => {})
 
   signalRouter.on(subscriptionPageHilosLogs, (snapshot) => {
     useHilosLogsStore().setHilosLogsOverview(snapshot)

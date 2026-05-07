@@ -21,7 +21,7 @@ Handled by `MainPage::onAction()` -> `UploadFileTrait::handleFileUploadInit()`:
 4. Check duplicate normalized filename across active uploads, attachment drafts, and published attachments.
 5. If previous upload session is active on this connection, abort it and start the new session.
 6. Create upload session on `Connection` RT state.
-7. Send `FILE_UPLOAD_READY` to the client and seed upload progress.
+7. Send `FILE_UPLOAD_READY` to the client and record a runtime projection marker for the 0 / size baseline.
 
 ## Phase 2: Binary Stream
 
@@ -32,9 +32,9 @@ Client sends raw binary WS frames. The server associates frames with the active 
 1. Validate that the connection has an active upload session.
 2. Append bytes to tmp storage.
 3. Update `fileSessionReceivedBytes` and upload progress on `Connection`.
-4. Send throttled `FILE_UPLOAD_PROGRESS_UPDATE` with full `selfConnection` payload (min interval: `0.3s`).
+4. Record throttled runtime projection markers for upload progress (min interval: `0.3s`).
 5. When `receivedBytes == declaredSize`, move tmp to quarantine and create an attachment draft.
-6. Send `FILE_UPLOAD_PROGRESS_UPDATE` with cleared progress and then `FILE_UPLOAD_COMPLETE` with the draft row.
+6. Clear upload progress runtime state and send payloadless `FILE_UPLOAD_COMPLETE`; draft and progress UI arrive through frontend projection.
 
 ## Draft Lifecycle
 

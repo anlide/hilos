@@ -2,7 +2,6 @@ export { handshakeResponse, type HandshakePayload } from './handshake'
 export {
   subscriptionPageMain,
   selfConnectionUpdate,
-  fileUploadProgressUpdate,
   type ChatSessionFields,
   type SelfConnectionUpdatePayload,
 } from './chatSession'

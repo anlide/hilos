@@ -111,32 +111,14 @@ final class AttachmentDraftSignalDataTest extends TestCase
     }
 
     /**
-     * File upload completion carries the created attachment draft row.
+     * File upload completion is a payloadless protocol marker.
      */
-    public function testFileUploadCompleteRoundtripPreservesAttachmentDraft(): void
+    public function testFileUploadCompleteRoundtripIsPayloadlessMarker(): void
     {
-        $draft = [
-            'draftId' => 'upload-1',
-            'filename' => 'photo.jpg',
-            'mimeType' => 'image/jpeg',
-            'size' => 2048,
-            'uploadedAt' => 1710000000,
-        ];
-
         $restored = FileUploadCompleteSignalData::fromArray(
-            (new FileUploadCompleteSignalData('upload-1', 'photo.jpg', $draft))->toArray(),
+            (new FileUploadCompleteSignalData())->toArray(),
         );
 
-        $this->assertSame('upload-1', $restored->uploadId);
-        $this->assertSame('photo.jpg', $restored->filename);
-        $this->assertSame($draft, $restored->attachmentDraft);
-        $this->assertSame(
-            [
-                'uploadId' => 'upload-1',
-                'filename' => 'photo.jpg',
-                'attachmentDraft' => $draft,
-            ],
-            $restored->toArray(),
-        );
+        $this->assertSame([], $restored->toArray());
     }
 }

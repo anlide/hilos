@@ -140,6 +140,71 @@ final class ChatFrontendProjectionTest extends IntegrationTestCase
         }
     }
 
+    public function testUploadProgressProjectionUsesThrottleMarker(): void
+    {
+        RtTruthSourceRegistry::register(RtChatContext::connections, true, self::TEST_AGENT_ID);
+        Hilos::$rt->connections->actions->clear();
+
+        try {
+            $user = Hilos::$db->users->actions->register(RandomHelper::hex(16));
+            Hilos::$rt->connections->actions->register('upload-ak', $user->id);
+
+            $this->resetProjectionRouter();
+            Hilos::$sr->subscribeToPage(PageConstants::MAIN, new WebSocketPageSubscribeSignalDTO(
+                'upload-ak',
+                PageConstants::MAIN,
+                [],
+            ));
+
+            Hilos::$rt->connections['upload-ak']?->actions->beginBinaryFileUpload(
+                'upload-projection',
+                1024,
+                'tmp-upload-projection',
+                'projection.txt',
+                'text/plain',
+                'client-upload-projection',
+                'projection.txt',
+                'projection.txt',
+                1024,
+            );
+            $this->assertSame([], $this->drainProjectedSignals(ChatSignalConstants::SELF_CONNECTION_UPDATE));
+
+            Hilos::$rt->connections['upload-ak']?->actions->noteUploadProgressSentAt(1000.0);
+            $signals = $this->drainProjectedSignals(ChatSignalConstants::SELF_CONNECTION_UPDATE);
+
+            $this->assertCount(1, $signals);
+            $payload = $signals[0]->data;
+            $this->assertInstanceOf(WebSocketSignalData::class, $payload);
+            $selfConnection = $payload->data->toArray()['frontend']['full'][FrontendStateCollectionKey::SELF_CONNECTION][0] ?? [];
+            $this->assertSame(
+                [
+                    SelfConnectionSignalData::filename => 'projection.txt',
+                    SelfConnectionSignalData::uploadedBytes => 0,
+                    SelfConnectionSignalData::totalBytes => 1024,
+                ],
+                $selfConnection[SelfConnectionSignalData::fileUploadProgress] ?? null,
+            );
+
+            Hilos::$rt->connections['upload-ak']?->actions->applyStoredBinaryChunkProgress(512);
+            $this->assertSame([], $this->drainProjectedSignals(ChatSignalConstants::SELF_CONNECTION_UPDATE));
+
+            Hilos::$rt->connections['upload-ak']?->actions->noteUploadProgressSentAt(1001.0);
+            $signals = $this->drainProjectedSignals(ChatSignalConstants::SELF_CONNECTION_UPDATE);
+
+            $this->assertCount(1, $signals);
+            $payload = $signals[0]->data;
+            $this->assertInstanceOf(WebSocketSignalData::class, $payload);
+            $selfConnection = $payload->data->toArray()['frontend']['full'][FrontendStateCollectionKey::SELF_CONNECTION][0] ?? [];
+            $this->assertSame(
+                512,
+                $selfConnection[SelfConnectionSignalData::fileUploadProgress][SelfConnectionSignalData::uploadedBytes]
+                    ?? null,
+            );
+        } finally {
+            Hilos::$rt->connections->actions->clear();
+        }
+    }
+
     private function resetProjectionRouter(): void
     {
         Hilos::initSignalRouter(new ChatSignalRouter());

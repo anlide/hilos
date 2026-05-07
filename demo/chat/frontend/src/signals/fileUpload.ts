@@ -1,5 +1,4 @@
 import { SignalDefinition, parseEmptyPayload } from '@hilos/sdk/services/signals'
-import type { AttachmentDraftPayload } from '@/entities/frontendStateParsers'
 
 const isRecord = (value: unknown): value is Record<string, unknown> => {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -61,26 +60,9 @@ export const fileUploadInvalid = new SignalDefinition<'file_upload_invalid', und
 )
 
 /**
- * `file_upload_complete` — full file received and converted to an attachment draft.
+ * `file_upload_complete` — protocol marker; the draft row arrives through frontend state.
  */
-export interface FileUploadCompletePayload {
-  attachmentDraft: AttachmentDraftPayload
-}
-
-const parseAttachmentDraft = (raw: unknown): AttachmentDraftPayload | null => {
-  if (!isRecord(raw)) return null
-  const { draftId, filename, mimeType, size, uploadedAt } = raw
-  if (typeof draftId !== 'string') return null
-  if (typeof filename !== 'string' || typeof mimeType !== 'string') return null
-  if (typeof size !== 'number' || typeof uploadedAt !== 'number') return null
-  return { draftId, filename, mimeType, size, uploadedAt }
-}
-
-export const fileUploadComplete = new SignalDefinition<'file_upload_complete', FileUploadCompletePayload>(
+export const fileUploadComplete = new SignalDefinition<'file_upload_complete', undefined>(
   'file_upload_complete',
-  (raw: unknown): FileUploadCompletePayload | null => {
-    if (!isRecord(raw)) return null
-    const attachmentDraft = parseAttachmentDraft(raw.attachmentDraft)
-    return attachmentDraft === null ? null : { attachmentDraft }
-  },
+  parseEmptyPayload,
 )

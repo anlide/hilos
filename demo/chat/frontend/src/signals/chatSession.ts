@@ -51,16 +51,3 @@ export const selfConnectionUpdate = new SignalDefinition<
   const selfConnection = parseSelfConnection(raw.selfConnection)
   return selfConnection === null ? null : { selfConnection }
 })
-
-/**
- * `file_upload_progress_update` — periodic connection summary for an in-flight upload.
- */
-export const fileUploadProgressUpdate = new SignalDefinition<
-  'file_upload_progress_update',
-  SelfConnectionUpdatePayload
->('file_upload_progress_update', (raw: unknown): SelfConnectionUpdatePayload | null => {
-  if (!isRecord(raw)) return null
-  if (!('selfConnection' in raw)) return 'frontend' in raw ? {} : null
-  const selfConnection = parseSelfConnection(raw.selfConnection)
-  return selfConnection === null ? null : { selfConnection }
-})

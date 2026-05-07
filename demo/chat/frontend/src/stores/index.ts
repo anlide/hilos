@@ -139,12 +139,6 @@ export const useChatStore = defineStore('chat', {
       this.attachmentDraftRows = []
     },
 
-    setFileUploadProgress(value: FileUploadProgressPayload | null) {
-      if (this.selfConnection !== null) {
-        this.selfConnection.fileUploadProgress = value
-      }
-    },
-
     addEvent(event: Event) {
       this.events.push(event)
       if (this.events.length > 1000) {
