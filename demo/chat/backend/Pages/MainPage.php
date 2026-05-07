@@ -165,6 +165,7 @@ final class MainPage extends AbstractPage
      * @param string $source Framework signal source identifier (unused)
      * @param string $name Task name
      * @throws AgentUnknownSignalException When cron name is not supported by this page
+     * @throws HilosException On runtime or filesystem cleanup failure
      */
     public function onSignalCron(SignalDataInterface $data, string $source, string $name): void
     {
@@ -175,7 +176,7 @@ final class MainPage extends AbstractPage
                 return;
 
             case ChatCronConstants::CLEANUP_ATTACHMENT_DRAFTS:
-                $this->deleteExpiredAttachmentDrafts();
+                Hilos::$rt->attachmentDrafts->actions->deleteExpired();
 
                 return;
 
@@ -214,7 +215,7 @@ final class MainPage extends AbstractPage
             throw new ValidationException('Message rate limit is active');
         }
 
-        $this->deleteExpiredAttachmentDrafts();
+        Hilos::$rt->attachmentDrafts->actions->deleteExpired();
         if (trim($dto->content) === '' && count(Hilos::$rt->selfConnection->attachmentDrafts) === 0) {
             throw new EmptyValueException('Message cannot be empty');
         }

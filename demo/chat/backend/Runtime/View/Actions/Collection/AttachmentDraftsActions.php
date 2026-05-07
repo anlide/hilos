@@ -171,16 +171,16 @@ final class AttachmentDraftsActions extends RtActions
     /**
      * Remove drafts older than the configured TTL.
      *
-     * @param int $now Current unix timestamp
      * @return list<string> Connection ids whose draft list changed
      * @throws FileDeleteException When a quarantine file cannot be deleted
      * @throws RtActionsCollectionNameNullException
      * @throws RtTruthSourceWriteNotAllowedException
      */
-    public function deleteExpired(int $now): array
+    public function deleteExpired(): array
     {
         $draftIds = [];
         $affectedAcceptKeys = [];
+        $now = time();
         foreach ($this->collection as $draft) {
             if ($draft->uploadedAt + self::DRAFT_TTL_SECONDS > $now) {
                 continue;

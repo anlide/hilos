@@ -17,6 +17,8 @@ use Demo\Chat\Frontend\SelfConnectionFrontendStateProjector;
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\View\Item\Connection;
 use Demo\Chat\Utils\ChatSettingsHelper;
+use Hilos\Core\Exception\ItemNotFoundForUpdateException;
+use Hilos\Core\Exception\ValidationException;
 use Hilos\Fs\Exception\FileDeleteException;
 use Hilos\Fs\FsException;
 use Hilos\Fs\FsFile;
@@ -39,26 +41,19 @@ trait UploadFileTrait
      * Handle {@see ChatSignalConstants::FILE_UPLOAD_INIT}: validate limits and filename, create tmp file,
      * start session, send {@see ChatSignalConstants::FILE_UPLOAD_READY}. Replaces an in-flight upload on the same socket.
      *
+     * @throws ItemNotFoundForUpdateException When the WebSocket session is missing
+     * @throws ValidationException When the current outbound submit is being moderated
      * @throws RtActionsCollectionNameNullException When the connections actions collection name is null
      * @throws RtTruthSourceWriteNotAllowedException When the truth source rejects a runtime write
-     * @throws FileDeleteException When replacing an in-flight upload cannot delete its tmp file
+     * @throws FileDeleteException When upload cleanup cannot delete tmp or quarantine files
      */
     protected function handleFileUploadInit(FileUploadInitActionDTO $dto): void
     {
         if (Hilos::$rt->selfConnection === null) {
-            return;
+            throw new ItemNotFoundForUpdateException('User session not found');
         }
         if (Hilos::$rt->selfConnection->outboundModerationPhase === Connection::OUTBOUND_MODERATION_PHASE_CHECKING) {
-            $this->sendToUser(
-                ChatSignalConstants::FILE_UPLOAD_REJECTED,
-                Hilos::$rt->selfConnection->acceptKey,
-                new FileUploadRejectedSignalData(
-                    'message_moderating',
-                    'Cannot upload attachments while message is being moderated',
-                ),
-            );
-
-            return;
+            throw new ValidationException('Cannot upload attachments while message is being moderated');
         }
 
         if (Hilos::$rt->selfConnection->fileSessionUploadId !== null) {
@@ -81,7 +76,7 @@ trait UploadFileTrait
             return;
         }
 
-        $this->deleteExpiredAttachmentDrafts();
+        Hilos::$rt->attachmentDrafts->actions->deleteExpired();
 
         $maxFile = ChatSettingsHelper::getAttachmentMaxFileBytes();
         $maxTotal = ChatSettingsHelper::getAttachmentMaxTotalBytes();
@@ -367,14 +362,6 @@ trait UploadFileTrait
                 SelfConnectionFrontendStateProjector::fullForConnection(Hilos::$rt->selfConnection),
             ),
         );
-    }
-
-    /**
-     * Delete expired drafts; runtime projection sends changed draft lists.
-     */
-    protected function deleteExpiredAttachmentDrafts(): void
-    {
-        Hilos::$rt->attachmentDrafts->actions->deleteExpired(time());
     }
 
     /**
