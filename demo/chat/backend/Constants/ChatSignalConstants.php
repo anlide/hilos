@@ -98,8 +98,11 @@ final class ChatSignalConstants
     public const string SUBSCRIPTION_PAGE_HILOS_SETTINGS = 'subscription_page_hilos_settings';
 
     // ── Agent-to-agent signals ───────────────────────────────────────────
-    /** @var string ModeratorAgent → ChatAgent: moderation result */
+    /** @var string ModeratorAgent → ChatAgent: message moderation result */
     public const string MODERATION_RESULT = 'moderation_result';
+
+    /** @var string ModeratorAgent → ChatAgent: user-initiated rename moderation result */
+    public const string RENAME_MODERATION_RESULT = 'rename_moderation_result';
 
     // ── Bot agent lifecycle ─────────────────────────────────────────────
     /** @var string LibraryAgent → BotAgent: start (sending to agent triggers framework start if not running) */

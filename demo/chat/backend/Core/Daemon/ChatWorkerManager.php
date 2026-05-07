@@ -90,6 +90,7 @@ final class ChatWorkerManager extends WorkerManager
             SignalTypeConstants::FRAME_BINARY => PageConstants::MAIN,
             SignalTypeConstants::AGENT_SIGNAL => [
                 ChatSignalConstants::MODERATION_RESULT => PageConstants::MAIN,
+                ChatSignalConstants::RENAME_MODERATION_RESULT => PageConstants::PROFILE,
             ],
             SignalTypeConstants::CRON => [
                 ChatCronConstants::CLEANUP_HISTORY => PageConstants::MAIN,

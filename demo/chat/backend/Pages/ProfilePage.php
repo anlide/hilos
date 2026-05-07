@@ -11,12 +11,19 @@ use Demo\Chat\Core\Page\DTO\RenameActionDTO;
 use Demo\Chat\Core\Router\DTO\ActionFailSignalData;
 use Demo\Chat\Core\Router\DTO\ActionSuccessSignalData;
 use Demo\Chat\Core\Router\DTO\ChatEventSignalDTO;
+use Demo\Chat\Core\Router\DTO\RenameModerationResultSignalData;
 use Demo\Chat\Hilos;
+use Demo\Chat\Runtime\View\Item\Connection;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
+use Hilos\Core\Agent\Exception\AgentException;
+use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
+use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
+use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Page\PageRouteParams;
+use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\EntitiesChangesDTO;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
@@ -76,6 +83,39 @@ final class ProfilePage extends AbstractPage
     }
 
     /**
+     * Routes profile-page agent signals to rename moderation handling.
+     *
+     * @param AgentSignalData $data Wrapped rename moderation result payload
+     * @param string $source Framework signal source identifier (unused)
+     * @param string $name Agent signal name
+     * @throws AgentUnknownSignalException When signal name is not supported by this page
+     * @throws InvalidAgentSignalPayloadException When signal payload does not match the signal name
+     * @throws ValidationException When moderation rejects the requested display name
+     * @throws AgentException When moderation result does not match an active rename request
+     * @throws HilosException On database, runtime, truth-source, or signal failure
+     */
+    public function onSignalAgent(AgentSignalData $data, string $source, string $name): void
+    {
+        switch ($name) {
+            case ChatSignalConstants::RENAME_MODERATION_RESULT:
+                $moderationResult = $data->data;
+                if (!$moderationResult instanceof RenameModerationResultSignalData) {
+                    throw new InvalidAgentSignalPayloadException(
+                        $name,
+                        RenameModerationResultSignalData::class,
+                        $moderationResult,
+                    );
+                }
+                $this->handleRenameModerationResult($moderationResult);
+
+                return;
+
+            default:
+                throw new AgentUnknownSignalException($name);
+        }
+    }
+
+    /**
      * Sends rename failures through the profile modal ack contract.
      *
      * @param string $acceptKey WebSocket accept key for the client
@@ -99,11 +139,14 @@ final class ProfilePage extends AbstractPage
     }
 
     /**
-     * Handle rename action.
+     * Starts moderation for a user-initiated rename action.
      *
      * @param string $acceptKey Accept key
      * @param RenameActionDTO $dto Rename DTO
-     * @throws HilosException On error during rename operation
+     * @throws EmptyValueException When name is empty
+     * @throws ItemNotFoundForUpdateException When user session is missing
+     * @throws ValidationException When another rename is already being moderated
+     * @throws HilosException On runtime update failure
      */
     private function handleRename(string $acceptKey, RenameActionDTO $dto): void
     {
@@ -117,21 +160,78 @@ final class ProfilePage extends AbstractPage
             throw new ItemNotFoundForUpdateException('User session not found');
         }
 
-        $userId = Hilos::$rt->selfConnection->userId;
-        $user = Hilos::$db->users[$userId];
+        if (
+            Hilos::$rt->selfConnection->renameModerationPhase
+            === Connection::RENAME_MODERATION_PHASE_CHECKING
+        ) {
+            throw new ValidationException('Another rename is already being moderated');
+        }
+
+        Hilos::$rt->selfConnection->actions->startRenameModeration($dto->newName);
+    }
+
+    /**
+     * Applies an approved rename moderation result or exposes a retryable failure.
+     *
+     * Stale connection results fail the agent-signal contract and never rename a user.
+     *
+     * @param RenameModerationResultSignalData $result Moderation result for a requested display name
+     * @throws ValidationException When moderation rejects the display name or is unavailable
+     * @throws AgentException When result does not match an active connection rename request
+     * @throws HilosException On database, runtime, truth-source, or signal failure
+     */
+    private function handleRenameModerationResult(RenameModerationResultSignalData $result): void
+    {
+        if (Hilos::$rt->selfConnection === null) {
+            throw new AgentException('Rename moderation result connection is stale');
+        }
+
+        if (
+            Hilos::$rt->selfConnection->acceptKey !== $result->acceptKey
+            || Hilos::$rt->selfConnection->userId !== $result->userId
+            || Hilos::$rt->selfConnection->renameModerationPhase
+            !== Connection::RENAME_MODERATION_PHASE_CHECKING
+            || Hilos::$rt->selfConnection->renameModerationName !== $result->newName
+        ) {
+            throw new AgentException('Rename moderation result does not match active request');
+        }
+
+        if (!$result->allow) {
+            $reason = $result->reason !== '' ? $result->reason : 'unknown';
+            $phase = in_array($reason, ['service_unavailable', 'unknown'], true)
+                ? Connection::RENAME_MODERATION_PHASE_UNAVAILABLE
+                : Connection::RENAME_MODERATION_PHASE_REJECTED;
+            Hilos::$rt->selfConnection->actions->failRenameModeration(
+                $phase,
+                $reason,
+            );
+
+            throw new ValidationException($reason);
+        }
+
+        $user = Hilos::$db->users[$result->userId] ?? null;
+        if ($user === null) {
+            Hilos::$rt->selfConnection->actions->failRenameModeration(
+                Connection::RENAME_MODERATION_PHASE_UNAVAILABLE,
+                'user_not_found',
+            );
+            throw new ItemNotFoundForUpdateException('User not found for rename');
+        }
+
         $oldName = $user->name;
-        $user->actions->rename($dto->newName);
+        Hilos::$rt->selfConnection->actions->clearRenameModeration();
+        $user->actions->rename($result->newName);
 
         Hilos::$db->events->actions->addUserRenamed(
-            userId: $userId,
+            userId: $result->userId,
             oldName: $oldName,
-            newName: $dto->newName,
+            newName: $result->newName,
         );
 
         // Dedicated ack to the initiator: closes the modal / clears UI loading state.
         $this->sendToUser(
             ChatSignalConstants::RENAME_SUCCESS,
-            $acceptKey,
+            $result->acceptKey,
             new ActionSuccessSignalData(),
         );
     }

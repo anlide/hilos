@@ -102,6 +102,26 @@ Quick navigation for AI agents. Read the relevant file before starting work.
 
 ---
 
+## Contract approval gate (hard stop)
+
+Before implementing any change in the following contract surfaces, stop and ask
+the user for explicit confirmation:
+
+- RT item state shape: adding, removing, renaming, or changing fields on
+  concrete `Runtime/State/Item/*` rows, including their `create()`, `fromRow()`,
+  `applyDiff()`, or `toArray()` field contract. This does not apply to RT
+  collection-only changes.
+- DB entity shape: adding, removing, renaming, or changing entity-level persisted
+  fields, table mapping, schema/migration shape, or `Database/Entity/Item/*`
+  row contracts.
+- Signals and routes: adding, removing, renaming, or changing signal constants,
+  signal DTO payload shape, or declarative routing in `SignalRouter`,
+  `PageSignalRouter`, or worker/page route config.
+
+The confirmation request must list the exact RT item fields, DB entity fields,
+signals, DTOs, and routes that would change. If implementation discovers an
+additional change in one of these surfaces, stop and ask again before editing it.
+
 ## Key rules (always apply)
 
 1. **Never** use Repository or Service on top of DbCollection — call `Hilos::$db->collection->actions->...` directly

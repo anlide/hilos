@@ -97,6 +97,63 @@ final class ConnectionActions extends RtActions
     }
 
     /**
+     * Start connection-local moderation for a requested display name.
+     *
+     * @param string $newName Requested display name
+     * @throws RtActionsCollectionNameNullException When collection name is null.
+     * @throws RtTruthSourceWriteNotAllowedException When truth source does not allow write.
+     */
+    public function startRenameModeration(string $newName): void
+    {
+        $this->ensureCanWrite();
+
+        $this->state->renameModerationPhase = RuntimeConnection::RENAME_MODERATION_PHASE_CHECKING;
+        $this->state->renameModerationName = $newName;
+        $this->state->renameModerationReason = '';
+        $this->state->renameModerationUpdatedAt = time();
+
+        $this->sync();
+    }
+
+    /**
+     * Mark the current rename moderation as failed for user-visible retry.
+     *
+     * @param string $phase Failure phase: rejected or unavailable
+     * @param string $reason User-visible reason
+     *
+     * @throws RtActionsCollectionNameNullException When collection name is null.
+     * @throws RtTruthSourceWriteNotAllowedException When truth source does not allow write.
+     */
+    public function failRenameModeration(string $phase, string $reason): void
+    {
+        $this->ensureCanWrite();
+
+        $this->state->renameModerationPhase = $phase;
+        $this->state->renameModerationReason = $reason;
+        $this->state->renameModerationUpdatedAt = time();
+
+        $this->sync();
+    }
+
+    /**
+     * Clear current connection-local rename moderation state after approval.
+     *
+     * @throws RtActionsCollectionNameNullException When collection name is null.
+     * @throws RtTruthSourceWriteNotAllowedException When truth source does not allow write.
+     */
+    public function clearRenameModeration(): void
+    {
+        $this->ensureCanWrite();
+
+        $this->state->renameModerationPhase = RuntimeConnection::RENAME_MODERATION_PHASE_NONE;
+        $this->state->renameModerationName = '';
+        $this->state->renameModerationReason = '';
+        $this->state->renameModerationUpdatedAt = time();
+
+        $this->sync();
+    }
+
+    /**
      * After successful FILE_UPLOAD_INIT: open session row + progress bar fields on this socket.
      *
      * Caller should send {@see ChatSignalConstants::FILE_UPLOAD_READY} and then record the

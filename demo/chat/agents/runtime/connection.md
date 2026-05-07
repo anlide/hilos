@@ -23,6 +23,15 @@ Runtime row for one active WebSocket connection. Holds transport metadata plus c
 | `outboundModerationReason` | Rejection/unavailable reason, empty when none |
 | `outboundModerationUpdatedAt` | Unix time of last moderation field change |
 
+### Rename Moderation
+
+| Field | Meaning |
+|---|---|
+| `renameModerationPhase` | `checking`, `rejected`, `unavailable`, or empty when clear |
+| `renameModerationName` | Requested display name |
+| `renameModerationReason` | Rejection/unavailable reason, empty when none |
+| `renameModerationUpdatedAt` | Unix time of last rename moderation field change |
+
 ### Upload Session
 
 | Field | Meaning |
@@ -47,7 +56,7 @@ Runtime row for one active WebSocket connection. Holds transport metadata plus c
 ## Lifecycle
 
 - **Created**: `ConnectionsActions::register(acceptKey, userId)` in `ChatAgent::onSignalHandshake()`.
-- **Updated**: moderation fields set during message submit/result handling; upload fields set during binary upload init/frame processing.
+- **Updated**: moderation fields set during message submit/result handling; rename moderation fields set during profile rename submit/result handling; upload fields set during binary upload init/frame processing.
 - **Deleted**: `Hilos::$rt->connections[$acceptKey]->actions->unregister()` in `ChatAgent::onSignalConnectionClose()`.
 
 Completed uploads no longer live on `Connection`; they become `AttachmentDraft` rows keyed by draft id and owned by the same `acceptKey`.

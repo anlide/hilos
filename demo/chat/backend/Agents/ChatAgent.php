@@ -174,6 +174,7 @@ class ChatAgent extends AbstractAgent
     {
         switch ($name) {
             case ChatSignalConstants::MODERATION_RESULT:
+            case ChatSignalConstants::RENAME_MODERATION_RESULT:
                 return;
             case ChatSignalConstants::BOT_MESSAGE:
                 if (!$data->data instanceof BotMessageSignalData) {

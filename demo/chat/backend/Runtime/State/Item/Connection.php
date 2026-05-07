@@ -26,6 +26,11 @@ final class Connection extends RtState
     public const string outboundModerationReason = 'outboundModerationReason';
     public const string outboundModerationUpdatedAt = 'outboundModerationUpdatedAt';
 
+    public const string renameModerationPhase = 'renameModerationPhase';
+    public const string renameModerationName = 'renameModerationName';
+    public const string renameModerationReason = 'renameModerationReason';
+    public const string renameModerationUpdatedAt = 'renameModerationUpdatedAt';
+
     public const string fileSessionUploadId = 'fileSessionUploadId';
     public const string fileSessionDeclaredSize = 'fileSessionDeclaredSize';
     public const string fileSessionReceivedBytes = 'fileSessionReceivedBytes';
@@ -61,6 +66,18 @@ final class Connection extends RtState
 
     /** Unix time of last moderation state update. */
     public int $outboundModerationUpdatedAt = 0;
+
+    /** Rename moderation phase: checking, rejected, unavailable, or empty when clear. */
+    public string $renameModerationPhase = '';
+
+    /** Requested display name associated with rename moderation. */
+    public string $renameModerationName = '';
+
+    /** Rename moderation rejection or unavailable reason. */
+    public string $renameModerationReason = '';
+
+    /** Unix time of last rename moderation state update. */
+    public int $renameModerationUpdatedAt = 0;
 
     /** Active upload id or null. */
     public ?string $fileSessionUploadId = null;
@@ -112,6 +129,10 @@ final class Connection extends RtState
         $instance->outboundModerationMessage = '';
         $instance->outboundModerationReason = '';
         $instance->outboundModerationUpdatedAt = 0;
+        $instance->renameModerationPhase = '';
+        $instance->renameModerationName = '';
+        $instance->renameModerationReason = '';
+        $instance->renameModerationUpdatedAt = 0;
         $instance->fileSessionUploadId = null;
         $instance->fileSessionDeclaredSize = 0;
         $instance->fileSessionReceivedBytes = 0;
@@ -142,6 +163,10 @@ final class Connection extends RtState
         $instance->outboundModerationMessage = (string)($row[self::outboundModerationMessage] ?? '');
         $instance->outboundModerationReason = (string)($row[self::outboundModerationReason] ?? '');
         $instance->outboundModerationUpdatedAt = (int)($row[self::outboundModerationUpdatedAt] ?? 0);
+        $instance->renameModerationPhase = (string)($row[self::renameModerationPhase] ?? '');
+        $instance->renameModerationName = (string)($row[self::renameModerationName] ?? '');
+        $instance->renameModerationReason = (string)($row[self::renameModerationReason] ?? '');
+        $instance->renameModerationUpdatedAt = (int)($row[self::renameModerationUpdatedAt] ?? 0);
         $uid = $row[self::fileSessionUploadId] ?? null;
         $instance->fileSessionUploadId = is_string($uid) && $uid !== '' ? $uid : null;
         $instance->fileSessionDeclaredSize = (int)($row[self::fileSessionDeclaredSize] ?? 0);
@@ -188,6 +213,18 @@ final class Connection extends RtState
         }
         if (isset($diff[self::outboundModerationUpdatedAt])) {
             $this->outboundModerationUpdatedAt = (int)$diff[self::outboundModerationUpdatedAt];
+        }
+        if (isset($diff[self::renameModerationPhase])) {
+            $this->renameModerationPhase = (string)$diff[self::renameModerationPhase];
+        }
+        if (isset($diff[self::renameModerationName])) {
+            $this->renameModerationName = (string)$diff[self::renameModerationName];
+        }
+        if (isset($diff[self::renameModerationReason])) {
+            $this->renameModerationReason = (string)$diff[self::renameModerationReason];
+        }
+        if (isset($diff[self::renameModerationUpdatedAt])) {
+            $this->renameModerationUpdatedAt = (int)$diff[self::renameModerationUpdatedAt];
         }
         if (array_key_exists(self::fileSessionUploadId, $diff)) {
             $v = $diff[self::fileSessionUploadId];
@@ -250,6 +287,10 @@ final class Connection extends RtState
             self::outboundModerationMessage => $this->outboundModerationMessage,
             self::outboundModerationReason => $this->outboundModerationReason,
             self::outboundModerationUpdatedAt => $this->outboundModerationUpdatedAt,
+            self::renameModerationPhase => $this->renameModerationPhase,
+            self::renameModerationName => $this->renameModerationName,
+            self::renameModerationReason => $this->renameModerationReason,
+            self::renameModerationUpdatedAt => $this->renameModerationUpdatedAt,
             self::fileSessionUploadId => $this->fileSessionUploadId,
             self::fileSessionDeclaredSize => $this->fileSessionDeclaredSize,
             self::fileSessionReceivedBytes => $this->fileSessionReceivedBytes,

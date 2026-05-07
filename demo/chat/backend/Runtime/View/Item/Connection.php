@@ -31,6 +31,10 @@ use Hilos\Runtime\View\Item\RtItem;
  * @property-read string $outboundModerationMessage Submitted message text
  * @property-read string $outboundModerationReason Rejection or unavailable reason
  * @property-read int $outboundModerationUpdatedAt Last moderation update unix time
+ * @property-read string $renameModerationPhase Current rename moderation phase
+ * @property-read string $renameModerationName Requested display name
+ * @property-read string $renameModerationReason Rename rejection or unavailable reason
+ * @property-read int $renameModerationUpdatedAt Last rename moderation update unix time
  * @property-read ?string $fileSessionUploadId Active binary upload id or null
  * @property-read int $fileSessionDeclaredSize Declared total bytes for current upload session
  * @property-read int $fileSessionReceivedBytes Bytes received for current upload session
@@ -74,6 +78,26 @@ final class Connection extends RtItem
     public const string OUTBOUND_MODERATION_PHASE_UNAVAILABLE = 'unavailable';
 
     /**
+     * No visible rename moderation state.
+     */
+    public const string RENAME_MODERATION_PHASE_NONE = '';
+
+    /**
+     * Moderation phase while a user-initiated rename is being checked.
+     */
+    public const string RENAME_MODERATION_PHASE_CHECKING = 'checking';
+
+    /**
+     * Moderation phase for a rejected display name.
+     */
+    public const string RENAME_MODERATION_PHASE_REJECTED = 'rejected';
+
+    /**
+     * Moderation phase for unavailable rename moderation.
+     */
+    public const string RENAME_MODERATION_PHASE_UNAVAILABLE = 'unavailable';
+
+    /**
      * @param StateConnection $state Backing state (by reference, same as parent contract)
      */
     public function __construct(StateConnection &$state)
@@ -100,6 +124,10 @@ final class Connection extends RtItem
             StateConnection::outboundModerationMessage => $state->outboundModerationMessage,
             StateConnection::outboundModerationReason => $state->outboundModerationReason,
             StateConnection::outboundModerationUpdatedAt => $state->outboundModerationUpdatedAt,
+            StateConnection::renameModerationPhase => $state->renameModerationPhase,
+            StateConnection::renameModerationName => $state->renameModerationName,
+            StateConnection::renameModerationReason => $state->renameModerationReason,
+            StateConnection::renameModerationUpdatedAt => $state->renameModerationUpdatedAt,
             StateConnection::fileSessionUploadId => $state->fileSessionUploadId,
             StateConnection::fileSessionDeclaredSize => $state->fileSessionDeclaredSize,
             StateConnection::fileSessionReceivedBytes => $state->fileSessionReceivedBytes,
