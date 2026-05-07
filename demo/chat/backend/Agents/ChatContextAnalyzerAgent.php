@@ -14,7 +14,6 @@ use Demo\Chat\Database\Object\Item\Event as ObjectEvent;
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\View\DTO\ChatContextUpdateData;
 use Demo\Chat\Runtime\View\Context\RtChatContext;
-use Demo\Chat\Runtime\View\Item\ChatContext as RuntimeChatContext;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\LLMConstants;
 use Hilos\Core\Agent\AbstractAgent;
@@ -65,8 +64,7 @@ class ChatContextAnalyzerAgent extends AbstractAgent
      */
     public function onStart(): void
     {
-        $this->registerRtTruthSource(RtChatContext::chatContexts);
-        $this->getMainChatContext();
+        $this->registerRtTruthSource(RtChatContext::chatContext);
     }
 
     /**
@@ -93,29 +91,18 @@ class ChatContextAnalyzerAgent extends AbstractAgent
         }
 
         $text = $this->chatClient->getResult();
-        $this->pendingSummarize = false;
 
         if ($text === null) {
-            $this->logAgentInfo('[llm_done] Summarize request finished (no response)');
+            if ($this->pendingSummarize && !$this->chatClient->isBusy()) {
+                $this->startSummarize();
+            }
+
             return;
         }
 
         $parsed = $this->parseAnalyzerOutput($text);
         if ($parsed !== null) {
-            $topic = $parsed->topic;
-            $confidence = $parsed->topicConfidence;
-            $summary = $parsed->summary;
-
-            $this->getMainChatContext()->actions->update($parsed);
-
-            $topicStatus = $topic === null ? 'null' : 'valid';
-            $this->logAgentInfo(
-                '[llm_done] topic=' . json_encode($topic ?? 'null', JSON_UNESCAPED_UNICODE) . ' (' . $topicStatus . ')'
-                . ', confidence=' . round($confidence, 2)
-                . ', summary=' . json_encode(mb_substr($summary, 0, 300), JSON_UNESCAPED_UNICODE)
-            );
-        } else {
-            $this->logAgentInfo('[llm_done] Parse failed, raw=' . json_encode(mb_substr($text, 0, 200), JSON_UNESCAPED_UNICODE));
+            Hilos::$rt->chatContext->actions->update($parsed);
         }
 
         if ($this->pendingSummarize && !$this->chatClient->isBusy()) {
@@ -162,22 +149,12 @@ class ChatContextAnalyzerAgent extends AbstractAgent
             $eventType = $row[ObjectEvent::type] ?? '';
             if ($eventType === ChatEventType::CHAT_CLEARED->value) {
                 $this->pendingSummarize = false;
-                $this->getMainChatContext()->actions->update(new ChatContextUpdateData(null, 0.0, ''));
+                $this->chatClient->reset();
+                Hilos::$rt->chatContext->actions->update(new ChatContextUpdateData(null, 0.0, ''));
             } elseif ($eventType === ChatEventType::MESSAGE_SENT->value) {
                 $this->pendingSummarize = true;
             }
         }
-    }
-
-    /**
-     * Load the singleton chat context, creating it when runtime was not initialized yet.
-     *
-     * @throws HilosException When runtime context initialization fails
-     */
-    private function getMainChatContext(): RuntimeChatContext
-    {
-        return Hilos::$rt->chatContexts->main()
-            ?? Hilos::$rt->chatContexts->actions->init();
     }
 
     /**
@@ -198,22 +175,24 @@ class ChatContextAnalyzerAgent extends AbstractAgent
             return;
         }
 
-        $eventCount = substr_count($eventsText, "\n") + (strlen($eventsText) > 0 ? 1 : 0);
         $topicsList = ChatTopicConstants::getTopicsForPrompt();
+        $topicKey = ChatContextUpdateData::topic;
+        $topicConfidenceKey = ChatContextUpdateData::topicConfidence;
+        $summaryKey = ChatContextUpdateData::summary;
         $systemPrompt = <<<PROMPT
 You analyze a chat transcript and extract structured insights.
 
 CRITICAL: Your response must be ONLY a single valid JSON object. No markdown, no code blocks, no explanation, no surrounding text. Just the raw JSON.
 
 Required JSON schema:
-{"topic": "exactly one from allowed list below OR null if unclear", "topicConfidence": 0.0-1.0, "summary": "detailed 3-5 sentence summary"}
+{"{$topicKey}": "exactly one from allowed list below OR null if unclear", "{$topicConfidenceKey}": 0.0-1.0, "{$summaryKey}": "detailed 3-5 sentence summary"}
 
 Allowed topics (copy exactly, character-for-character): {$topicsList}
 
 Rules:
-- topic: exactly one value from the allowed list above, or null if no match. No variations, no new topics.
-- topicConfidence: 0.0 to 1.0; use 0 when topic is null or unclear
-- summary: comprehensive but concise, capture context, decisions, sentiment
+- {$topicKey}: exactly one value from the allowed list above, or null if no match. No variations, no new topics.
+- {$topicConfidenceKey}: 0.0 to 1.0; use 0 when {$topicKey} is null or unclear
+- {$summaryKey}: comprehensive but concise, capture context, decisions, sentiment
 
 Output only the JSON object, nothing else.
 PROMPT;
@@ -230,12 +209,8 @@ PROMPT;
             timeoutSec: $timeoutSec > 0 ? $timeoutSec : LLMConstants::DEFAULT_TIMEOUT_SEC,
             maxTokens: ChatContextAnalyzerConstants::MAX_RESPONSE_TOKENS,
             responseFormat: Env::isExternalProvider(EnvConstants::CHAT_CONTEXT_ANALYZER_PROVIDER)
-                ? ['type' => 'json_object']
-                : ['format' => 'json'],
-        );
-
-        $this->logAgentInfo(
-            '[llm_start] Sending summarize request, events=' . $eventCount . ', contextLen=' . strlen($eventsText)
+                ? [ChatContextAnalyzerConstants::RESPONSE_FORMAT_TYPE => ChatContextAnalyzerConstants::RESPONSE_FORMAT_JSON_OBJECT]
+                : [ChatContextAnalyzerConstants::RESPONSE_FORMAT_FORMAT => ChatContextAnalyzerConstants::RESPONSE_FORMAT_JSON],
         );
 
         if (!$this->chatClient->startGenerate($messages, $options)) {
@@ -250,28 +225,24 @@ PROMPT;
      */
     private function buildRecentEventsContext(): string
     {
-        $events = [];
+        $linesByEventId = [];
         foreach (Hilos::$db->events as $event) {
             if ($event->type === ChatEventType::MESSAGE_SENT->value) {
                 $author = $event->userId !== null ? "User#{$event->userId}" : "Bot#{$event->botId}";
                 $data = $event->data !== null ? json_decode($event->data, true) : null;
-                $msg = is_array($data) && isset($data['message']) ? (string)$data['message'] : '(no text)';
-                $events[] = ['id' => $event->id, 'author' => $author, 'msg' => $msg];
+                $message = is_array($data) && isset($data[ObjectEvent::dataMessage])
+                    ? (string)$data[ObjectEvent::dataMessage]
+                    : '(no text)';
+                $linesByEventId[(int)($event->id ?? 0)] = $author . ': ' . $message;
             }
             if ($event->type === ChatEventType::CHAT_CLEARED->value) {
-                $events[] = ['id' => $event->id, 'author' => 'System', 'msg' => '[chat cleared]'];
+                $linesByEventId[(int)($event->id ?? 0)] = 'System: [chat cleared]';
             }
         }
 
-        usort($events, static fn (array $a, array $b): int => ($a['id'] ?? 0) <=> ($b['id'] ?? 0));
-        $recent = array_slice($events, -ChatContextAnalyzerConstants::MAX_RECENT_EVENTS);
+        ksort($linesByEventId);
 
-        $lines = [];
-        foreach ($recent as $e) {
-            $lines[] = $e['author'] . ': ' . $e['msg'];
-        }
-
-        return implode("\n", $lines);
+        return implode("\n", array_slice($linesByEventId, -ChatContextAnalyzerConstants::MAX_RECENT_EVENTS));
     }
 
     /**
@@ -292,35 +263,21 @@ PROMPT;
             return null;
         }
 
-        $topicRaw = isset($decoded['topic']) && $decoded['topic'] !== ''
-            ? trim((string)$decoded['topic'])
+        $topicRaw = isset($decoded[ChatContextUpdateData::topic]) && $decoded[ChatContextUpdateData::topic] !== ''
+            ? trim((string)$decoded[ChatContextUpdateData::topic])
             : null;
-        $topic = $topicRaw !== null && $topicRaw !== '' && $this->isTopicAllowed($topicRaw) ? $topicRaw : null;
-        if ($topicRaw !== null && $topicRaw !== '' && $topic === null) {
-            $this->logAgentInfo(
-                '[llm_done] topic rejected (not in allowed list): ' . json_encode($topicRaw, JSON_UNESCAPED_UNICODE)
-            );
-        }
-        $confidence = isset($decoded['topicConfidence'])
-            ? (float)$decoded['topicConfidence']
+        $topic = $topicRaw !== null && $topicRaw !== '' && in_array($topicRaw, ChatTopicConstants::TOPICS, true)
+            ? $topicRaw
+            : null;
+        $confidence = isset($decoded[ChatContextUpdateData::topicConfidence])
+            ? (float)$decoded[ChatContextUpdateData::topicConfidence]
             : 0.0;
-        $summary = isset($decoded['summary']) ? (string)$decoded['summary'] : '';
+        $summary = isset($decoded[ChatContextUpdateData::summary]) ? (string)$decoded[ChatContextUpdateData::summary] : '';
 
         return new ChatContextUpdateData(
             topic: $topic,
             topicConfidence: max(0, min(1, $confidence)),
             summary: $summary,
         );
-    }
-
-    /**
-     * Checks the topic against the configured allow-list.
-     *
-     * @param string $topic Topic to validate
-     * @return bool True if allowed
-     */
-    private function isTopicAllowed(string $topic): bool
-    {
-        return in_array($topic, ChatTopicConstants::TOPICS, true);
     }
 }

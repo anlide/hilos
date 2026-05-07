@@ -11,7 +11,7 @@ Use typed runtime collections through `Hilos::$rt`:
 ```php
 Hilos::$rt->connections    // RtCollection of Connection view items
 Hilos::$rt->userStates     // RtCollection of ChatUserState view items
-Hilos::$rt->chatContexts   // RtCollection of ChatContext view items
+Hilos::$rt->chatContext    // single ChatContext view item alias
 ```
 
 The available names are defined in the project's `RtContext` subclass, such as
@@ -37,21 +37,20 @@ anything that must survive process restart belongs in `Hilos::$db`.
 
 `RtContext` owns the app-level runtime context. It registers backing state
 collections in `_stateCollections`, maps each one to a view collection with
-`setRepresent()`, and may expose named single-item aliases with
-`setRepresentItem()` when the application needs a typed shortcut to one item.
+`setRepresent()` when callers need collection access, and exposes named
+single-item aliases with `setRepresentItem()` when the application needs a
+typed shortcut to one item.
 
 ```php
 final class RtChatContext extends RtContext
 {
     public const string connections = 'connections';
     public const string userStates  = 'userStates';
-    public const string chatContexts = 'chatContexts';
 
     public function configure(): void
     {
         $this->_stateCollections[self::connections] = StateConnections::init();
         $this->_stateCollections[self::userStates] = StateUserStates::init();
-        $this->_stateCollections[self::chatContexts] = StateChatContexts::init();
 
         $this->setRepresent(
             self::connections,
@@ -60,7 +59,6 @@ final class RtChatContext extends RtContext
             ConnectionActions::class,
         );
         $this->setRepresent(self::userStates, UserStates::class, UserStatesActions::class);
-        $this->setRepresent(self::chatContexts, ChatContexts::class, ChatContextsActions::class);
     }
 }
 ```
@@ -70,14 +68,13 @@ registered `RtCollection` wrapper.
 
 ## Single-Item Aliases
 
-A runtime "one object" is still stored as a row in a normal `RtStates`
-collection. Do not create a parallel singleton map or a page-local cache for it.
-Expose it as a named item alias on the project `RtContext` when the item is a
-stable application-level access path.
+An application-level runtime "one object" belongs in `_stateItems` and should
+be exposed as a named item alias on the project `RtContext`.
 
-For collection-backed aliases, call `setRepresent()` for the owning collection
-before `setRepresentItem()` so the item can be attached to its parent
-collection:
+For standalone singletons, assign the `RtState` directly to `_stateItems`.
+For context-dependent or collection-backed aliases, register a resolver in
+`_stateItems`; when the resolved row belongs to a represented collection,
+`RtContext` attaches that collection automatically:
 
 ```php
 use Demo\Chat\Runtime\State\Item\Connection as StateConnection;
@@ -118,15 +115,17 @@ final class RtChatContext extends RtContext
 ```
 
 The concrete context PHPDoc is part of the contract: add an explicit
-`@property-read ?Foo $alias` for each single-item alias. Register the backing
-state item or resolver in `_stateItems` first; the resolver must return an
-`RtState` row or `null`, not a raw array or view item. `setRepresentItem()`
+`@property-read Foo $alias` or `@property-read ?Foo $alias` for each
+single-item alias. Register the backing state item or resolver in `_stateItems`
+first; the resolver must return an `RtState` row or `null`, not a raw array or
+view item. `setRepresentItem()`
 then maps that state alias to the caller-facing `RtItem` class and optional
 item actions. When the resolved state row belongs to a represented runtime
 collection, `RtContext` attaches that collection automatically so item actions
-can use truth-source, sync, remove, and cache behavior. Standalone single-item
-aliases simply have no parent collection. The magic getter returns the resolved
-`RtItem` or `null` when the current context has no such item.
+can use collection cache behavior. Standalone item actions use the state class
+RT sync key from `RtState::getRtCollectionKey()` for truth-source checks and
+RT sync. The magic getter returns the resolved `RtItem` or `null` when the
+current context has no such item.
 
 Use item aliases for application-level concepts such as "current WebSocket
 connection" or a documented singleton runtime row. Do not use them to hide
@@ -136,9 +135,9 @@ owning `RtCollection` or `RtItem` only when they are reusable model contracts.
 ## Backing-State Boundary
 
 Direct backing-state access is a low-level data-layer tool. Calls to
-`getStateCollection()`, `RtContext::getStateCollection()`, and direct
-`$this->stateCollection` access are allowed only inside files under
-`Database/` or `Runtime/`.
+`getStateCollection()`, `getStateItem()`, `RtContext::getStateCollection()`,
+`RtContext::getStateItem()`, and direct `$this->stateCollection` access are
+allowed only inside files under `Database/` or `Runtime/`.
 
 Agents, pages, tables, signal handlers, tests, and other orchestration code
 must not use backing-state access. They must call caller-facing APIs on
@@ -171,7 +170,7 @@ Before writing runtime-backed code:
 
 1. Find the app context: search for `extends RtContext` or the collection
    constant in `RtChatContext`.
-2. Check `setRepresent()` to locate the View collection, collection actions, and
+2. Check `setRepresent()` to locate View collections, collection actions, and
    item actions.
 3. Check `setRepresentItem()` for existing single-item aliases such as
    `selfConnection`.
@@ -245,10 +244,10 @@ or tests:
 
 ```php
 // Wrong outside Database/Runtime.
-$state = Hilos::$rt->chatContexts->getStateCollection()->get('main');
+$state = Hilos::$rt->getStateItem(RtChatContext::chatContext);
 
-// Correct: add/use a Runtime collection API.
-$context = Hilos::$rt->chatContexts->main();
+// Correct: use the registered single-item alias.
+$context = Hilos::$rt->chatContext;
 ```
 
 Do not put read-only helpers under `->actions`. Actions are write APIs; using
@@ -301,7 +300,7 @@ an item action should own it.
 | Need | Put it in |
 |---|---|
 | New runtime collection | `RtContext` plus `RtStates` and `RtCollection` |
-| App-level single runtime item | Existing `RtStates` collection plus `RtContext::setRepresentItem()` |
+| App-level single runtime item | `RtState` in `_stateItems` plus `RtContext::setRepresentItem()` |
 | New runtime row field | `RtState` typed field, `toArray()`, `fromRow()`, and `applyDiff()` |
 | Runtime lookup helper | State collection plus View collection wrapper |
 | Caller-facing row read helper | View item |

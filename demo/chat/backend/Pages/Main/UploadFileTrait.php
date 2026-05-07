@@ -64,10 +64,6 @@ trait UploadFileTrait
         if (Hilos::$rt->selfConnection->fileSessionUploadId !== null) {
             Hilos::$fs->tmp[Hilos::$rt->selfConnection->fileSessionQuarantineBasename]->unlink();
             Hilos::$rt->selfConnection->actions->clearBinaryUploadSessionAndProgressUi();
-            $this->logAgentInfo(
-                'file upload aborted acceptKey=' . Hilos::$rt->selfConnection->acceptKey
-                . ' reason=superseded_by_new_init',
-            );
             $this->sendToUser(
                 ChatSignalConstants::FILE_UPLOAD_ABORTED,
                 Hilos::$rt->selfConnection->acceptKey,
@@ -176,15 +172,9 @@ trait UploadFileTrait
     protected function handleFileUploadBinaryFrame(WebSocketFrameBinarySignalDTO $data): void
     {
         if (Hilos::$rt->selfConnection === null) {
-            $this->logAgentInfo('frame_binary: unknown acceptKey, ignoring');
-
             return;
         }
         if (Hilos::$rt->selfConnection->fileSessionUploadId === null) {
-            $this->logAgentInfo(
-                'frame_binary: no upload session acceptKey=' . Hilos::$rt->selfConnection->acceptKey
-                . ' userId=' . Hilos::$rt->selfConnection->userId,
-            );
             $this->sendToUser(
                 ChatSignalConstants::FILE_UPLOAD_INVALID,
                 Hilos::$rt->selfConnection->acceptKey,
@@ -355,18 +345,9 @@ trait UploadFileTrait
     private function sendFileUploadProgressUpdateThrottled(bool $force): void
     {
         if (Hilos::$rt->selfConnection === null) {
-            $this->logAgentInfo(
-                'upload_progress: throttle abort_no_state',
-            );
-
             return;
         }
         if (Hilos::$rt->selfConnection->fileProgressFilename === null) {
-            $this->logAgentInfo(
-                'upload_progress: throttle acceptKey=' . Hilos::$rt->selfConnection->acceptKey
-                . ' abort_no_progress_state',
-            );
-
             return;
         }
         $uploaded = Hilos::$rt->selfConnection->fileProgressUploadedBytes;

@@ -169,7 +169,7 @@ class BotAgent extends AbstractAgent
      */
     public function onSignalRtSyncCreated(RtSyncCreatedSignalData $data, string $source, string $name): void
     {
-        if ($data->collectionKey === RtChatContext::chatContexts) {
+        if ($data->collectionKey === RtChatContext::chatContext) {
             $this->scheduleReaction();
         }
     }
@@ -184,7 +184,7 @@ class BotAgent extends AbstractAgent
      */
     public function onSignalRtSyncUpdated(RtSyncUpdatedSignalData $data, string $source, string $name): void
     {
-        if ($data->collectionKey === RtChatContext::chatContexts) {
+        if ($data->collectionKey === RtChatContext::chatContext) {
             $this->scheduleReaction();
         }
     }
@@ -296,7 +296,7 @@ class BotAgent extends AbstractAgent
             return true;
         }
 
-        $contextTopic = Hilos::$rt->chatContexts->main()?->topic;
+        $contextTopic = Hilos::$rt->chatContext->topic;
         if ($contextTopic === null || $contextTopic === '') {
             return false;
         }
@@ -404,14 +404,11 @@ class BotAgent extends AbstractAgent
         $systemParts[] = "Respond briefly. Stay in character. Do not repeat what others said.";
 
         $userParts = [];
-        $ctx = Hilos::$rt->chatContexts->main();
-        if ($ctx !== null) {
-            if ($ctx->topic !== null && $ctx->topic !== '') {
-                $userParts[] = "Current topic: {$ctx->topic}";
-            }
-            if ($ctx->summary !== '') {
-                $userParts[] = "Summary: {$ctx->summary}";
-            }
+        if (Hilos::$rt->chatContext->topic !== null && Hilos::$rt->chatContext->topic !== '') {
+            $userParts[] = "Current topic: " . Hilos::$rt->chatContext->topic;
+        }
+        if (Hilos::$rt->chatContext->summary !== '') {
+            $userParts[] = "Summary: " . Hilos::$rt->chatContext->summary;
         }
 
         $recentContext = $this->buildRecentEventsContext();
@@ -438,31 +435,25 @@ class BotAgent extends AbstractAgent
      */
     private function buildRecentEventsContext(): string
     {
-        $events = [];
+        $linesByEventId = [];
         foreach (Hilos::$db->events as $event) {
             if ($event->type === ChatEventType::MESSAGE_SENT->value) {
                 $eventData = $event->data !== null ? json_decode($event->data, true) : null;
-                $events[] = [
-                    'id' => $event->id,
-                    'author' => $event->userId !== null ? "User#{$event->userId}" : "Bot#{$event->botId}",
-                    'msg' => is_array($eventData) && isset($eventData['message'])
-                        ? (string)$eventData['message']
-                        : '(no text)',
-                ];
+                $message = is_array($eventData) && isset($eventData[ObjectEvent::dataMessage])
+                    ? (string)$eventData[ObjectEvent::dataMessage]
+                    : '(no text)';
+                $linesByEventId[(int)($event->id ?? 0)] = ($event->userId !== null ? "User#{$event->userId}" : "Bot#{$event->botId}")
+                    . ': '
+                    . $message;
             }
             if ($event->type === ChatEventType::CHAT_CLEARED->value) {
-                $events[] = ['id' => $event->id, 'author' => 'System', 'msg' => '[chat cleared]'];
+                $linesByEventId[(int)($event->id ?? 0)] = 'System: [chat cleared]';
             }
         }
 
-        usort($events, static fn (array $a, array $b): int => $a['id'] <=> $b['id']);
+        ksort($linesByEventId);
 
-        $lines = [];
-        foreach (array_slice($events, -ChatContextAnalyzerConstants::MAX_RECENT_EVENTS) as $recentEvent) {
-            $lines[] = $recentEvent['author'] . ': ' . $recentEvent['msg'];
-        }
-
-        return implode("\n", $lines);
+        return implode("\n", array_slice($linesByEventId, -ChatContextAnalyzerConstants::MAX_RECENT_EVENTS));
     }
 
     /**

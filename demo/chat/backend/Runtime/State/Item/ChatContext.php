@@ -62,7 +62,7 @@ final class ChatContext extends RtState
 
     public static function getRtCollectionKey(): string
     {
-        return RtChatContext::chatContexts;
+        return RtChatContext::chatContext;
     }
 
     /**

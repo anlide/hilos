@@ -197,7 +197,7 @@ abstract class RtContext
      * @param string $name Context item alias name
      * @return ?RtState Backing state row or null when unavailable
      */
-    private function getStateItem(string $name): ?RtState
+    public function getStateItem(string $name): ?RtState
     {
         $stateItem = $this->_stateItems[$name] ?? null;
 

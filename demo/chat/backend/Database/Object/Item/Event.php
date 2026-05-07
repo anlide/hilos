@@ -31,6 +31,7 @@ final class Event extends Object_
     public const string type = 'type';
     public const string timestamp = 'timestamp';
     public const string data = 'data';
+    public const string dataMessage = 'message';
 
     /**
      * Return collection key used for DbChatContext lookup.

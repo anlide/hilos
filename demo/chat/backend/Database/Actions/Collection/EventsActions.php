@@ -160,7 +160,7 @@ final class EventsActions extends DbActions
             ChatEventType::MESSAGE_SENT->value,
             userId: $userId,
             botId: $botId,
-            data: ['message' => $message],
+            data: [ObjectEvent::dataMessage => $message],
         );
 
         if ($attachments !== null) {

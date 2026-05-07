@@ -71,11 +71,26 @@ abstract class RtActions
      */
     protected function ensureCanWrite(): void
     {
-        $collectionName = $this->getRtCollection()->getCollectionName()
-            ?? throw new RtActionsCollectionNameNullException(
+        RtTruthSourceRegistry::checkCanWriteState($this->getRtCollectionKey(), $this->state->getId());
+    }
+
+    /**
+     * Collection key used for truth-source checks and RT sync.
+     *
+     * Attached collection items use the parent collection name. Standalone items use their state class sync key.
+     *
+     * @throws RtActionsCollectionNameNullException When neither source provides a key.
+     */
+    private function getRtCollectionKey(): string
+    {
+        $collectionName = $this->item->getCollection()?->getCollectionName()
+            ?? $this->state::getRtCollectionKey();
+
+        return $collectionName !== ''
+            ? $collectionName
+            : throw new RtActionsCollectionNameNullException(
                 'Cannot ensure write: collection name is null'
             );
-        RtTruthSourceRegistry::checkCanWriteState($collectionName, $this->state->getId());
     }
 
     /**
@@ -85,7 +100,7 @@ abstract class RtActions
     protected function sync(): void
     {
         $this->state->sync();
-        $this->getRtCollection()->clearCache();
+        $this->item->getCollection()?->clearCache();
     }
 
     /**

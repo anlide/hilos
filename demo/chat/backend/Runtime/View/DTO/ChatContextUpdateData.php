@@ -9,6 +9,10 @@ namespace Demo\Chat\Runtime\View\DTO;
  */
 final readonly class ChatContextUpdateData
 {
+    public const string topic = 'topic';
+    public const string topicConfidence = 'topicConfidence';
+    public const string summary = 'summary';
+
     /**
      * Creates a complete update payload for the main chat context.
      *

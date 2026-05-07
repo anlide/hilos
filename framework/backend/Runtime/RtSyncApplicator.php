@@ -37,6 +37,12 @@ final class RtSyncApplicator
 
         $stateCollection = Hilos::$rt?->getStateCollection($collectionKey);
         if ($stateCollection === null) {
+            $state = Hilos::$rt?->getStateItem($collectionKey);
+            if ($state !== null && $state->getId() === $stateId) {
+                $state->applyDiff($row);
+                $state->markRtSyncBaseline();
+            }
+
             return;
         }
 
@@ -75,6 +81,12 @@ final class RtSyncApplicator
 
         $stateCollection = Hilos::$rt?->getStateCollection($collectionKey);
         if ($stateCollection === null) {
+            $state = Hilos::$rt?->getStateItem($collectionKey);
+            if ($state !== null && $state->getId() === $stateId) {
+                $state->applyDiff($row);
+                $state->markRtSyncBaseline();
+            }
+
             return;
         }
 
