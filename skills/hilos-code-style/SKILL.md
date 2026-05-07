@@ -77,6 +77,10 @@ Use this skill for style-sensitive Hilos edits and reviews. Start with `agents.m
    read `docs/agents/code-style/exceptions.md` before changing exception types.
 22. Before finishing a PHP method change, re-check the affected docblock against
    `docs/agents/code-style/phpdoc.md`.
+23. Before finalizing PHPDoc, audit every added or changed `@throws`. Remove
+   any `@throws` based only on assumed framework, DB, or signal failure rather
+   than a direct throw, documented callee contract, or deliberate local
+   caller-facing contract.
 
 ## Hard Rules
 

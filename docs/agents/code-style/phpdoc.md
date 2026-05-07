@@ -47,6 +47,16 @@ documenting non-obvious error contracts.
 - Document exceptions that are meaningful to the caller or caller-facing error
   path. Do not list every incidental infrastructure exception if a broader local
   contract is clearer.
+- Do not add `@throws` from broad assumptions such as "DB access can fail",
+  "signal enqueue can fail", or "this calls framework code". Add `@throws` only
+  when the method throws that exception directly, calls another method whose
+  local PHPDoc or signature documents that exception, or deliberately exposes
+  that exception as a caller-facing contract.
+- For private helpers, prefer no `@throws` unless the helper has a meaningful
+  local contract that callers inside the class need to see. Do not propagate
+  incidental infrastructure risks through every private helper. Document broad
+  infrastructure failures at the nearest public/protected boundary where they
+  matter to the caller.
 - Prefer the narrowest useful exception when the caller can act on it
   (`EmptyValueException`, `ValueTooLongException`, `PageResourceNotFoundException`).
 - Use the relevant base exception when the caller only needs the category
@@ -55,6 +65,10 @@ documenting non-obvious error contracts.
   `@throws ValidationException When rename payload violates user validation rules`.
 - Keep `@throws` and `{@see ...}` imports consistent: import the class with
   `use` and reference the short class name in the docblock.
+
+Before finishing, review every added or changed `@throws` and verify where the
+exception originates, whether the callee documents it, whether the caller can
+act on it, and whether the method summary still describes the local behavior.
 
 ## Example
 

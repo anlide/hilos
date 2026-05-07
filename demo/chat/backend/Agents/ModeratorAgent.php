@@ -197,7 +197,7 @@ class ModeratorAgent extends AbstractAgent
      * @param string $requestType Active request kind
      * @param string $value Submitted message text or requested display name
      * @param int $updatedAt Runtime update timestamp observed at start
-     * @throws HilosException When moderation result signal enqueue fails
+     * @throws HilosException When moderation rule lookup fails
      */
     private function startModerationRequest(
         Connection $connection,
@@ -350,7 +350,6 @@ class ModeratorAgent extends AbstractAgent
      * @param string $section Moderator prompt-piece section
      * @param list<string> $fallbackLines Default prompt lines when no rules are configured
      * @return string Rule block for the system prompt
-     * @throws HilosException When moderation rule lookup fails
      */
     private function buildRuleBlock(string $section, array $fallbackLines): string
     {
@@ -374,7 +373,8 @@ class ModeratorAgent extends AbstractAgent
     /**
      * Sends the active request result using the matching signal contract.
      *
-     * @throws HilosException When result signal enqueue fails
+     * @param bool $allow Whether the moderated value is allowed
+     * @param string $reason Moderation reason
      */
     private function sendCurrentModerationResult(bool $allow, string $reason): void
     {
