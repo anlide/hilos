@@ -40,6 +40,11 @@ final class Connection extends RtState
     public const string fileSessionClientUploadId = 'fileSessionClientUploadId';
     public const string fileSessionNormalizedFilename = 'fileSessionNormalizedFilename';
 
+    public const string fileUploadPhase = 'fileUploadPhase';
+    public const string fileUploadClientUploadId = 'fileUploadClientUploadId';
+    public const string fileUploadErrorCode = 'fileUploadErrorCode';
+    public const string fileUploadErrorMessage = 'fileUploadErrorMessage';
+
     public const string fileProgressFilename = 'fileProgressFilename';
     public const string fileProgressUploadedBytes = 'fileProgressUploadedBytes';
     public const string fileProgressTotalBytes = 'fileProgressTotalBytes';
@@ -103,6 +108,18 @@ final class Connection extends RtState
     /** Normalized basename for duplicate-name checks. */
     public string $fileSessionNormalizedFilename = '';
 
+    /** Upload UI phase: ready, uploading, failed, or empty when idle. */
+    public string $fileUploadPhase = '';
+
+    /** Client-side upload correlation id for ready/failed upload state. */
+    public ?string $fileUploadClientUploadId = null;
+
+    /** Upload failure code shown through self-connection state. */
+    public ?string $fileUploadErrorCode = null;
+
+    /** Upload failure message shown through self-connection state. */
+    public ?string $fileUploadErrorMessage = null;
+
     /** Progress bar filename or null. */
     public ?string $fileProgressFilename = null;
 
@@ -141,6 +158,10 @@ final class Connection extends RtState
         $instance->fileSessionMimeType = '';
         $instance->fileSessionClientUploadId = '';
         $instance->fileSessionNormalizedFilename = '';
+        $instance->fileUploadPhase = '';
+        $instance->fileUploadClientUploadId = null;
+        $instance->fileUploadErrorCode = null;
+        $instance->fileUploadErrorMessage = null;
         $instance->fileProgressFilename = null;
         $instance->fileProgressUploadedBytes = 0;
         $instance->fileProgressTotalBytes = 0;
@@ -176,6 +197,17 @@ final class Connection extends RtState
         $instance->fileSessionMimeType = (string)($row[self::fileSessionMimeType] ?? '');
         $instance->fileSessionClientUploadId = (string)($row[self::fileSessionClientUploadId] ?? '');
         $instance->fileSessionNormalizedFilename = (string)($row[self::fileSessionNormalizedFilename] ?? '');
+        $instance->fileUploadPhase = (string)($row[self::fileUploadPhase] ?? '');
+        $uploadClientId = $row[self::fileUploadClientUploadId] ?? null;
+        $instance->fileUploadClientUploadId = is_string($uploadClientId) && $uploadClientId !== ''
+            ? $uploadClientId
+            : null;
+        $errorCode = $row[self::fileUploadErrorCode] ?? null;
+        $instance->fileUploadErrorCode = is_string($errorCode) && $errorCode !== '' ? $errorCode : null;
+        $errorMessage = $row[self::fileUploadErrorMessage] ?? null;
+        $instance->fileUploadErrorMessage = is_string($errorMessage) && $errorMessage !== ''
+            ? $errorMessage
+            : null;
         $pfn = $row[self::fileProgressFilename] ?? null;
         $instance->fileProgressFilename = is_string($pfn) && $pfn !== '' ? $pfn : null;
         $instance->fileProgressUploadedBytes = (int)($row[self::fileProgressUploadedBytes] ?? 0);
@@ -251,6 +283,21 @@ final class Connection extends RtState
         if (isset($diff[self::fileSessionNormalizedFilename])) {
             $this->fileSessionNormalizedFilename = (string)$diff[self::fileSessionNormalizedFilename];
         }
+        if (isset($diff[self::fileUploadPhase])) {
+            $this->fileUploadPhase = (string)$diff[self::fileUploadPhase];
+        }
+        if (array_key_exists(self::fileUploadClientUploadId, $diff)) {
+            $v = $diff[self::fileUploadClientUploadId];
+            $this->fileUploadClientUploadId = is_string($v) && $v !== '' ? $v : null;
+        }
+        if (array_key_exists(self::fileUploadErrorCode, $diff)) {
+            $v = $diff[self::fileUploadErrorCode];
+            $this->fileUploadErrorCode = is_string($v) && $v !== '' ? $v : null;
+        }
+        if (array_key_exists(self::fileUploadErrorMessage, $diff)) {
+            $v = $diff[self::fileUploadErrorMessage];
+            $this->fileUploadErrorMessage = is_string($v) && $v !== '' ? $v : null;
+        }
         if (array_key_exists(self::fileProgressFilename, $diff)) {
             $f = $diff[self::fileProgressFilename];
             $this->fileProgressFilename = is_string($f) && $f !== '' ? $f : null;
@@ -299,6 +346,10 @@ final class Connection extends RtState
             self::fileSessionMimeType => $this->fileSessionMimeType,
             self::fileSessionClientUploadId => $this->fileSessionClientUploadId,
             self::fileSessionNormalizedFilename => $this->fileSessionNormalizedFilename,
+            self::fileUploadPhase => $this->fileUploadPhase,
+            self::fileUploadClientUploadId => $this->fileUploadClientUploadId,
+            self::fileUploadErrorCode => $this->fileUploadErrorCode,
+            self::fileUploadErrorMessage => $this->fileUploadErrorMessage,
             self::fileProgressFilename => $this->fileProgressFilename,
             self::fileProgressUploadedBytes => $this->fileProgressUploadedBytes,
             self::fileProgressTotalBytes => $this->fileProgressTotalBytes,

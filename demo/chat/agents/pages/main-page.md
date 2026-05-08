@@ -11,7 +11,7 @@ The primary chat page. Handles subscription, message submit, binary upload init,
 3. Sends `SUBSCRIPTION_PAGE_MAIN` with:
    - Full entities snapshot: active `bots`, `events` history, compact relevant `users`
    - Frontend state snapshot for visible users and bots
-   - `selfConnection` with current connection-local moderation, drafts, upload progress, and rate-limit summary
+   - `selfConnection` with current connection-local moderation, drafts, upload state/progress, and rate-limit summary
 
 ## Actions Handled
 
@@ -28,8 +28,7 @@ File upload init and binary frame logic lives in `Pages/Main/UploadFileTrait`:
 - Validates file size, MIME type, total storage, and filename uniqueness.
 - Keeps in-flight upload state on `Connection`.
 - Converts completed uploads into `RtChatContext::attachmentDrafts`.
-- Sends protocol signals: `FILE_UPLOAD_READY`, `FILE_UPLOAD_REJECTED`, `FILE_UPLOAD_INVALID`, `FILE_UPLOAD_ABORTED`, and payloadless `FILE_UPLOAD_COMPLETE`.
-- Upload progress and attachment drafts arrive through runtime-backed frontend projection.
+- Publishes ready/failed upload state, progress, and attachment drafts through runtime-backed frontend projection.
 
 ## Incremental Signals
 

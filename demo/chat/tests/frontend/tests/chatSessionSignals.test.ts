@@ -11,6 +11,12 @@ const selfConnectionPayload = {
     reason: null,
     updatedAt: 1710000001,
   },
+  fileUploadState: {
+    phase: 'ready',
+    clientUploadId: 'client-upload-1',
+    errorCode: null,
+    errorMessage: null,
+  },
   fileUploadProgress: {
     filename: 'photo.jpg',
     uploadedBytes: 512,
@@ -54,6 +60,12 @@ describe('chat session signal parsers', () => {
       selfConnection: {
         ...selfConnectionPayload,
         outboundModerationState: { phase: 'checking' },
+      },
+    })).toBeNull()
+    expect(selfConnectionUpdate.parse({
+      selfConnection: {
+        ...selfConnectionPayload,
+        fileUploadState: { phase: 'waiting' },
       },
     })).toBeNull()
   })

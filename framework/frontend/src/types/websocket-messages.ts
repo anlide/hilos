@@ -33,7 +33,7 @@ export interface WebSocketIncoming<T extends string = string, D = unknown> {
 
 /**
  * Incoming signal with no payload body.
- * Used for events that carry only their type, e.g. `bot_joined`, `file_upload_complete`.
+ * Used for events that carry only their type, e.g. `bot_joined`.
  */
 export interface WebSocketIncomingEmpty<T extends string = string> {
   type: T

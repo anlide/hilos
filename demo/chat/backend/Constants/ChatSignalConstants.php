@@ -28,21 +28,6 @@ final class ChatSignalConstants
     /** @var string Client → server: delete one completed attachment draft */
     public const string ATTACHMENT_DRAFT_DELETE = 'attachment_draft_delete';
 
-    /** @var string Server → client: upload session ready, client may send binary */
-    public const string FILE_UPLOAD_READY = 'file_upload_ready';
-
-    /** @var string Server → client: init rejected (limits, duplicate name, etc.) */
-    public const string FILE_UPLOAD_REJECTED = 'file_upload_rejected';
-
-    /** @var string Server → client: previous upload cancelled (new init while in progress) */
-    public const string FILE_UPLOAD_ABORTED = 'file_upload_aborted';
-
-    /** @var string Server → client: all bytes received; draft state arrives through frontend projection */
-    public const string FILE_UPLOAD_COMPLETE = 'file_upload_complete';
-
-    /** @var string Server → client: binary protocol error, session cleared */
-    public const string FILE_UPLOAD_INVALID = 'file_upload_invalid';
-
     /** @var string Reserved legacy upload-progress signal; projection sends selfConnection updates */
     public const string FILE_UPLOAD_PROGRESS_UPDATE = 'file_upload_progress_update';
 

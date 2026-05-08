@@ -20,8 +20,8 @@ Handled by `MainPage::onAction()` -> `UploadFileTrait::handleFileUploadInit()`:
 3. Check total storage limit across published attachments, active uploads, and attachment drafts.
 4. Check duplicate normalized filename across active uploads, attachment drafts, and published attachments.
 5. If previous upload session is active on this connection, abort it and start the new session.
-6. Create upload session on `Connection` RT state.
-7. Send `FILE_UPLOAD_READY` to the client and record a runtime projection marker for the 0 / size baseline.
+6. Create upload session on `Connection` RT state with `fileUploadPhase=ready`.
+7. Frontend receives `selfConnection.fileUploadState` and starts binary streaming when `clientUploadId` matches.
 
 ## Phase 2: Binary Stream
 
@@ -34,7 +34,7 @@ Client sends raw binary WS frames. The server associates frames with the active 
 3. Update `fileSessionReceivedBytes` and upload progress on `Connection`.
 4. Record throttled runtime projection markers for upload progress (min interval: `0.3s`).
 5. When `receivedBytes == declaredSize`, move tmp to quarantine and create an attachment draft.
-6. Clear upload progress runtime state and send payloadless `FILE_UPLOAD_COMPLETE`; draft and progress UI arrive through frontend projection.
+6. Clear upload state/progress runtime fields; draft and progress UI arrive through frontend projection.
 
 ## Draft Lifecycle
 
@@ -47,7 +47,7 @@ Client sends raw binary WS frames. The server associates frames with the active 
 
 ## Error Cases
 
-- Invalid metadata -> `FILE_UPLOAD_REJECTED`.
-- Bytes exceed declared size -> `FILE_UPLOAD_INVALID`.
-- New `file_upload_init` during active session -> old session is aborted.
+- Invalid metadata -> `selfConnection.fileUploadState.phase=failed`.
+- Bytes exceed declared size -> `selfConnection.fileUploadState.phase=failed`.
+- New `file_upload_init` during active session -> old session is cleared and replaced by the new ready/failed state.
 - Missing draft at send/approval time -> outbound moderation becomes `unavailable`.

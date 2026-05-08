@@ -51,6 +51,9 @@ final class FileUploadInitActionDTO extends ChatActionPayloadDTO
 
     public function isValid(): bool
     {
-        return $this->filename !== '' && $this->size > 0 && $this->mimeType !== '';
+        return $this->filename !== ''
+            && $this->size > 0
+            && $this->mimeType !== ''
+            && $this->clientUploadId !== null;
     }
 }

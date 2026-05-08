@@ -153,10 +153,9 @@ final class ConnectionActions extends RtActions
     }
 
     /**
-     * After successful FILE_UPLOAD_INIT: open session row + progress bar fields on this socket.
+     * After successful FILE_UPLOAD_INIT: open session row, progress UI, and ready state on this socket.
      *
-     * Caller should send the upload-ready signal and then record the upload-progress projection marker
-     * so subscribers receive the 0 / total baseline through frontend state.
+     * Frontend projection sends the ready state and 0 / total baseline through selfConnection.
      *
      * @throws RtActionsCollectionNameNullException When collection name is null.
      * @throws RtTruthSourceWriteNotAllowedException When truth source does not allow write.
@@ -182,6 +181,10 @@ final class ConnectionActions extends RtActions
         $this->state->fileSessionMimeType = $mimeType;
         $this->state->fileSessionClientUploadId = $clientUploadId;
         $this->state->fileSessionNormalizedFilename = $normalizedFilename;
+        $this->state->fileUploadPhase = RuntimeConnection::FILE_UPLOAD_PHASE_READY;
+        $this->state->fileUploadClientUploadId = $clientUploadId;
+        $this->state->fileUploadErrorCode = null;
+        $this->state->fileUploadErrorMessage = null;
         $this->state->fileProgressFilename = $progressFilename;
         $this->state->fileProgressUploadedBytes = 0;
         $this->state->fileProgressTotalBytes = $progressTotalBytes;
@@ -199,6 +202,7 @@ final class ConnectionActions extends RtActions
 
         $this->resetBinaryUploadSessionFields();
         $this->resetUploadProgressUiFields();
+        $this->resetUploadStateFields();
 
         $this->sync();
     }
@@ -213,6 +217,29 @@ final class ConnectionActions extends RtActions
 
         $this->resetBinaryUploadSessionFields();
         $this->resetUploadProgressUiFields();
+        $this->resetUploadStateFields();
+
+        $this->sync();
+    }
+
+    /**
+     * Clear active upload runtime fields and expose a retryable upload failure.
+     *
+     * @param ?string $clientUploadId Client-side upload correlation id, if known
+     * @param string $code Short failure code for frontend behavior
+     * @param string $message User-facing failure message
+     * @throws RtActionsCollectionNameNullException When collection name is null.
+     */
+    public function failBinaryFileUpload(?string $clientUploadId, string $code, string $message): void
+    {
+        $this->ensureCanWrite();
+
+        $this->resetBinaryUploadSessionFields();
+        $this->resetUploadProgressUiFields();
+        $this->state->fileUploadPhase = RuntimeConnection::FILE_UPLOAD_PHASE_FAILED;
+        $this->state->fileUploadClientUploadId = $clientUploadId;
+        $this->state->fileUploadErrorCode = $code;
+        $this->state->fileUploadErrorMessage = $message;
 
         $this->sync();
     }
@@ -240,6 +267,9 @@ final class ConnectionActions extends RtActions
     {
         $this->ensureCanWrite();
 
+        if ($this->state->fileSessionUploadId !== null && $this->state->fileSessionReceivedBytes > 0) {
+            $this->state->fileUploadPhase = RuntimeConnection::FILE_UPLOAD_PHASE_UPLOADING;
+        }
         $this->state->uploadProgressLastSentAt = microtime(true);
 
         $this->sync();
@@ -255,6 +285,14 @@ final class ConnectionActions extends RtActions
         $this->state->fileSessionMimeType = '';
         $this->state->fileSessionClientUploadId = '';
         $this->state->fileSessionNormalizedFilename = '';
+    }
+
+    private function resetUploadStateFields(): void
+    {
+        $this->state->fileUploadPhase = RuntimeConnection::FILE_UPLOAD_PHASE_IDLE;
+        $this->state->fileUploadClientUploadId = null;
+        $this->state->fileUploadErrorCode = null;
+        $this->state->fileUploadErrorMessage = null;
     }
 
     private function resetUploadProgressUiFields(): void

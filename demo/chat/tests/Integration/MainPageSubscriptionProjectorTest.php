@@ -37,6 +37,7 @@ final class MainPageSubscriptionProjectorTest extends IntegrationTestCase
             $selfConnection = $payload['frontend']['full'][FrontendStateCollectionKey::SELF_CONNECTION][0] ?? [];
             $this->assertSame(SelfConnectionFrontendStateProjector::ID_SELF, $selfConnection['id'] ?? null);
             $this->assertSame($user->id, $selfConnection[SelfConnectionSignalData::userId] ?? null);
+            $this->assertNull($selfConnection[SelfConnectionSignalData::fileUploadState] ?? null);
             $this->assertContains(
                 FrontendStateCollectionKey::SELF_CONNECTION,
                 $payload['frontend']['replaceFull'] ?? [],

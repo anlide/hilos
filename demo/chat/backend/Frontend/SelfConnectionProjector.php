@@ -40,12 +40,23 @@ final class SelfConnectionProjector
             ];
         }
 
+        $fileUploadState = null;
+        if ($connection->fileUploadPhase !== Connection::FILE_UPLOAD_PHASE_IDLE) {
+            $fileUploadState = [
+                SelfConnectionSignalData::phase => $connection->fileUploadPhase,
+                SelfConnectionSignalData::clientUploadId => $connection->fileUploadClientUploadId,
+                SelfConnectionSignalData::errorCode => $connection->fileUploadErrorCode,
+                SelfConnectionSignalData::errorMessage => $connection->fileUploadErrorMessage,
+            ];
+        }
+
         return [
             SelfConnectionSignalData::userId => $connection->userId,
             SelfConnectionSignalData::connectedAt => $connection->connectedAt,
             SelfConnectionSignalData::messageRateLimitSecondsRemaining => $messageRateLimitSecondsRemaining,
             SelfConnectionSignalData::outboundModerationState =>
                 OutboundModerationStateProjector::forConnection($connection),
+            SelfConnectionSignalData::fileUploadState => $fileUploadState,
             SelfConnectionSignalData::fileUploadProgress => $fileUploadProgress,
         ];
     }

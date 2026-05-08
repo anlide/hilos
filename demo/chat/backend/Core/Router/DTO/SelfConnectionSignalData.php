@@ -18,6 +18,11 @@ final class SelfConnectionSignalData extends BaseDTO implements SignalDataInterf
     public const string connectedAt = 'connectedAt';
     public const string messageRateLimitSecondsRemaining = 'messageRateLimitSecondsRemaining';
     public const string outboundModerationState = 'outboundModerationState';
+    public const string fileUploadState = 'fileUploadState';
+    public const string phase = 'phase';
+    public const string clientUploadId = 'clientUploadId';
+    public const string errorCode = 'errorCode';
+    public const string errorMessage = 'errorMessage';
     public const string fileUploadProgress = 'fileUploadProgress';
     public const string filename = 'filename';
     public const string uploadedBytes = 'uploadedBytes';

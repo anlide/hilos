@@ -43,6 +43,10 @@ use Hilos\Runtime\View\Item\RtItem;
  * @property-read string $fileSessionMimeType MIME type for current session
  * @property-read string $fileSessionClientUploadId Client upload correlation id
  * @property-read string $fileSessionNormalizedFilename Normalized basename for dedup
+ * @property-read string $fileUploadPhase Upload UI phase, or empty when idle
+ * @property-read ?string $fileUploadClientUploadId Upload UI client correlation id
+ * @property-read ?string $fileUploadErrorCode Upload failure code
+ * @property-read ?string $fileUploadErrorMessage Upload failure message
  * @property-read ?string $fileProgressFilename Progress bar filename or null
  * @property-read int $fileProgressUploadedBytes Progress uploaded bytes
  * @property-read int $fileProgressTotalBytes Progress total bytes
@@ -98,6 +102,26 @@ final class Connection extends RtItem
     public const string RENAME_MODERATION_PHASE_UNAVAILABLE = 'unavailable';
 
     /**
+     * No upload state visible to the frontend.
+     */
+    public const string FILE_UPLOAD_PHASE_IDLE = '';
+
+    /**
+     * Backend accepted metadata and the client may stream binary frames.
+     */
+    public const string FILE_UPLOAD_PHASE_READY = 'ready';
+
+    /**
+     * The client is streaming binary frames for the active upload.
+     */
+    public const string FILE_UPLOAD_PHASE_UPLOADING = 'uploading';
+
+    /**
+     * Upload init or binary streaming failed; retry is allowed.
+     */
+    public const string FILE_UPLOAD_PHASE_FAILED = 'failed';
+
+    /**
      * @param StateConnection $state Backing state (by reference, same as parent contract)
      */
     public function __construct(StateConnection &$state)
@@ -136,6 +160,10 @@ final class Connection extends RtItem
             StateConnection::fileSessionMimeType => $state->fileSessionMimeType,
             StateConnection::fileSessionClientUploadId => $state->fileSessionClientUploadId,
             StateConnection::fileSessionNormalizedFilename => $state->fileSessionNormalizedFilename,
+            StateConnection::fileUploadPhase => $state->fileUploadPhase,
+            StateConnection::fileUploadClientUploadId => $state->fileUploadClientUploadId,
+            StateConnection::fileUploadErrorCode => $state->fileUploadErrorCode,
+            StateConnection::fileUploadErrorMessage => $state->fileUploadErrorMessage,
             StateConnection::fileProgressFilename => $state->fileProgressFilename,
             StateConnection::fileProgressUploadedBytes => $state->fileProgressUploadedBytes,
             StateConnection::fileProgressTotalBytes => $state->fileProgressTotalBytes,

@@ -45,6 +45,15 @@ Runtime row for one active WebSocket connection. Holds transport metadata plus c
 | `fileSessionClientUploadId` | Client-side correlation ID |
 | `fileSessionNormalizedFilename` | Normalized basename for duplicate checks |
 
+### Upload State
+
+| Field | Meaning |
+|---|---|
+| `fileUploadPhase` | `ready`, `uploading`, `failed`, or empty when idle |
+| `fileUploadClientUploadId` | Client-side correlation ID for ready/failed UI |
+| `fileUploadErrorCode` | Short failure code, null when not failed |
+| `fileUploadErrorMessage` | User-facing failure message, null when not failed |
+
 ### Upload Progress UI
 
 | Field | Meaning |

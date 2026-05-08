@@ -66,8 +66,8 @@
       <span>{{ moderationBanner.text }}</span>
     </div>
 
-    <div v-if="uploadClientError || chatStore.messageError" class="px-3 py-1 small text-danger border-top">
-      {{ uploadClientError || chatStore.messageError }}
+    <div v-if="uploadClientError || uploadStateError || chatStore.messageError" class="px-3 py-1 small text-danger border-top">
+      {{ uploadClientError || uploadStateError || chatStore.messageError }}
     </div>
 
     <div class="card-footer flex-shrink-0">
@@ -200,6 +200,14 @@ const fileBanner = computed((): FileBanner | null => {
   return null
 })
 
+const uploadStateError = computed((): string | null => {
+  const state = chatStore.selfConnection?.fileUploadState
+  if (state?.phase !== 'failed') {
+    return null
+  }
+  return state.errorMessage ?? state.errorCode ?? 'Upload failed'
+})
+
 type ModerationBanner = {
   phase: 'checking' | 'rejected' | 'unavailable'
   text: string
@@ -326,7 +334,7 @@ const uploadSingleFile = async (file: File) => {
   isBinaryUploading.value = true
   try {
     const clientUploadId = crypto.randomUUID()
-    const waitReady = registerFileUploadPending()
+    const waitReady = registerFileUploadPending(clientUploadId)
     sendAction(websocket, FILE_UPLOAD_INIT, {
       filename: file.name,
       mimeType: file.type || 'application/octet-stream',

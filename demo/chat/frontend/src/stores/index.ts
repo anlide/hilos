@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { ChatBot, Event, User } from '@/types'
+import { resolveFileUploadOutcomeFromState } from '@/services/chatFileUpload'
 import type { Presence } from '@/types/domain/Presence'
 import type {
   AttachmentDraftPayload,
@@ -96,6 +97,7 @@ export const useChatStore = defineStore('chat', {
 
     setSelfConnection(value: SelfConnectionPayload) {
       this.selfConnection = value
+      resolveFileUploadOutcomeFromState(value.fileUploadState)
     },
 
     clearSelfConnection() {

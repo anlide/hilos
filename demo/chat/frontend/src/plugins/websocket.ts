@@ -19,11 +19,6 @@ import {
   handshakeResponse,
   subscriptionPageMain,
   selfConnectionUpdate,
-  fileUploadReady,
-  fileUploadRejected,
-  fileUploadAborted,
-  fileUploadInvalid,
-  fileUploadComplete,
   botJoined,
   botLeft,
   botUpdated,
@@ -150,24 +145,6 @@ function buildSignalRouter() {
         console.error(`[Action error] ${action}: ${reason}`)
     }
   })
-
-  signalRouter.on(fileUploadReady, () => {
-    resolveFileUploadOutcome({ ok: true })
-  })
-
-  signalRouter.on(fileUploadRejected, ({ code, message }) => {
-    resolveFileUploadOutcome({ ok: false, code, message })
-  })
-
-  signalRouter.on(fileUploadAborted, () => {
-    rejectFileUploadPending('aborted')
-  })
-
-  signalRouter.on(fileUploadInvalid, () => {
-    rejectFileUploadPending('invalid')
-  })
-
-  signalRouter.on(fileUploadComplete, () => {})
 
   signalRouter.on(subscriptionPageHilosLogs, (snapshot) => {
     useHilosLogsStore().setHilosLogsOverview(snapshot)

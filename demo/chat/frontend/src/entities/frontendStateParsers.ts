@@ -8,6 +8,13 @@ export type FileUploadProgressPayload = {
   totalBytes: number
 }
 
+export type FileUploadStatePayload = {
+  phase: 'ready' | 'uploading' | 'failed'
+  clientUploadId: string | null
+  errorCode: string | null
+  errorMessage: string | null
+}
+
 export type OutboundModerationStatePayload = {
   phase: 'checking' | 'rejected' | 'unavailable'
   text: string
@@ -20,6 +27,7 @@ export type SelfConnectionPayload = {
   connectedAt: number
   messageRateLimitSecondsRemaining: number
   outboundModerationState: OutboundModerationStatePayload | null
+  fileUploadState: FileUploadStatePayload | null
   fileUploadProgress: FileUploadProgressPayload | null
 }
 
@@ -74,6 +82,21 @@ const parseFileUploadProgress = (raw: unknown): FileUploadProgressPayload | null
   return { filename, uploadedBytes, totalBytes }
 }
 
+const parseFileUploadState = (raw: unknown): FileUploadStatePayload | null => {
+  if (!isRecord(raw)) return null
+  const { phase, clientUploadId, errorCode, errorMessage } = raw
+  if (phase !== 'ready' && phase !== 'uploading' && phase !== 'failed') return null
+  if (clientUploadId !== null && clientUploadId !== undefined && typeof clientUploadId !== 'string') return null
+  if (errorCode !== null && errorCode !== undefined && typeof errorCode !== 'string') return null
+  if (errorMessage !== null && errorMessage !== undefined && typeof errorMessage !== 'string') return null
+  return {
+    phase,
+    clientUploadId: typeof clientUploadId === 'string' ? clientUploadId : null,
+    errorCode: typeof errorCode === 'string' ? errorCode : null,
+    errorMessage: typeof errorMessage === 'string' ? errorMessage : null,
+  }
+}
+
 export const parseSelfConnection = (raw: unknown): SelfConnectionPayload | null => {
   if (!isRecord(raw)) return null
   const {
@@ -81,6 +104,7 @@ export const parseSelfConnection = (raw: unknown): SelfConnectionPayload | null 
     connectedAt,
     messageRateLimitSecondsRemaining,
     outboundModerationState,
+    fileUploadState,
     fileUploadProgress,
   } = raw
   if (typeof userId !== 'number' || typeof connectedAt !== 'number') return null
@@ -94,6 +118,11 @@ export const parseSelfConnection = (raw: unknown): SelfConnectionPayload | null 
     && outboundModerationState !== undefined
     && parsedModeration === null
   ) return null
+  const parsedUploadState =
+    fileUploadState === null || fileUploadState === undefined
+      ? null
+      : parseFileUploadState(fileUploadState)
+  if (fileUploadState !== null && fileUploadState !== undefined && parsedUploadState === null) return null
   const parsedProgress =
     fileUploadProgress === null || fileUploadProgress === undefined
       ? null
@@ -104,6 +133,7 @@ export const parseSelfConnection = (raw: unknown): SelfConnectionPayload | null 
     connectedAt,
     messageRateLimitSecondsRemaining,
     outboundModerationState: parsedModeration,
+    fileUploadState: parsedUploadState,
     fileUploadProgress: parsedProgress,
   }
 }

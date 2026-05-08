@@ -127,5 +127,6 @@ reject such payloads.
 
 ## Binary messages (file upload)
 
-After `FILE_UPLOAD_READY` signal, frontend sends raw binary WS frames.
+After the upload init action publishes ready state in `selfConnection`,
+frontend sends raw binary WS frames.
 Server receives via `onSignalFrameBinary()` in agent.

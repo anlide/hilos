@@ -7,6 +7,7 @@ const selfConnectionPayload = {
   connectedAt: 1710000000,
   messageRateLimitSecondsRemaining: 5,
   outboundModerationState: null,
+  fileUploadState: null,
   fileUploadProgress: null,
 }
 
@@ -58,6 +59,7 @@ describe('ChatFrontendStateReceiver', () => {
       connectedAt: 1710000000,
       messageRateLimitSecondsRemaining: 5,
       outboundModerationState: null,
+      fileUploadState: null,
       fileUploadProgress: null,
     })
     expect(store.users).toEqual([{ id: 7, name: 'Ada', lastActivity: null }])

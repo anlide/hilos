@@ -378,6 +378,10 @@ final class ChatFrontendProjection extends FrontendProjectionContext
             StateConnection::outboundModerationMessage,
             StateConnection::outboundModerationReason,
             StateConnection::outboundModerationUpdatedAt,
+            StateConnection::fileUploadPhase,
+            StateConnection::fileUploadClientUploadId,
+            StateConnection::fileUploadErrorCode,
+            StateConnection::fileUploadErrorMessage,
             StateConnection::uploadProgressLastSentAt,
         ] as $field) {
             if (array_key_exists($field, $change->row)) {

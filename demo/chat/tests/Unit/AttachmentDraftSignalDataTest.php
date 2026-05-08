@@ -6,7 +6,6 @@ namespace Demo\Chat\Tests\Unit;
 
 use Demo\Chat\Core\Page\DTO\AttachmentDraftDeleteActionDTO;
 use Demo\Chat\Core\Router\DTO\AttachmentDraftSignalData;
-use Demo\Chat\Core\Router\DTO\FileUploadCompleteSignalData;
 use Demo\Chat\Core\Router\DTO\SelfConnectionSignalData;
 use Demo\Chat\Runtime\View\Item\Connection;
 use Hilos\Core\Router\DTO\FrontendChangesDTO;
@@ -45,6 +44,12 @@ final class AttachmentDraftSignalDataTest extends TestCase
                 'text' => 'hello',
                 'reason' => null,
                 'updatedAt' => 1710000001,
+            ],
+            'fileUploadState' => [
+                'phase' => Connection::FILE_UPLOAD_PHASE_READY,
+                'clientUploadId' => 'client-upload-1',
+                'errorCode' => null,
+                'errorMessage' => null,
             ],
             'fileUploadProgress' => [
                 'filename' => 'photo.jpg',
@@ -108,17 +113,5 @@ final class AttachmentDraftSignalDataTest extends TestCase
         );
 
         $this->assertSame($draft, $restored->toArray());
-    }
-
-    /**
-     * File upload completion is a payloadless protocol marker.
-     */
-    public function testFileUploadCompleteRoundtripIsPayloadlessMarker(): void
-    {
-        $restored = FileUploadCompleteSignalData::fromArray(
-            (new FileUploadCompleteSignalData())->toArray(),
-        );
-
-        $this->assertSame([], $restored->toArray());
     }
 }

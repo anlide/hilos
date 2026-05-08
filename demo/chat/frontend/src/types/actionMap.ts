@@ -55,7 +55,7 @@ declare module '@hilos/sdk/types/actionMap' {
     /** Delete a moderator-prompt piece by id. */
     moderator_piece_delete: { id: number }
 
-    /** Start binary file upload — server responds with file_upload_ready / file_upload_rejected. */
+    /** Start binary file upload; server publishes ready/failed state through selfConnection. */
     file_upload_init: {
       filename: string
       mimeType: string
