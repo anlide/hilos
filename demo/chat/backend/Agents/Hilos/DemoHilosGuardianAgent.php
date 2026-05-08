@@ -17,7 +17,7 @@ use Hilos\Core\Agent\Hilos\GuardianRunStatus;
  *
  * Framework guardian agents come from the shared catalog; demo-only ids are appended for UI compatibility.
  */
-class DemoHilosGuardianAgent extends AbstractHilosGuardianAgent
+final class DemoHilosGuardianAgent extends AbstractHilosGuardianAgent
 {
     /** @var list<string> */
     private const array DEMO_ONLY_AGENT_IDS = [

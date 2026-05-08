@@ -32,7 +32,7 @@ use Hilos\Utils\Helpers\JsonHelper;
  *
  * It owns the chat context runtime collection and uses async LLM summarization when message events arrive.
  */
-class ChatContextAnalyzerAgent extends AbstractAgent
+final class ChatContextAnalyzerAgent extends AbstractAgent
 {
     public const string AGENT_TYPE = AgentType::CHAT_CONTEXT_ANALYZER;
 

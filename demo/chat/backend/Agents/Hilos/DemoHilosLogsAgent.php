@@ -11,6 +11,6 @@ use Hilos\Core\Agent\Hilos\AbstractHilosLogsAgent;
  *
  * Handles Hilos logs overview page (rotation batch metrics) in the demo project.
  */
-class DemoHilosLogsAgent extends AbstractHilosLogsAgent
+final class DemoHilosLogsAgent extends AbstractHilosLogsAgent
 {
 }

@@ -13,7 +13,7 @@ use Hilos\Utils\Logger;
  *
  * Handles routing between WebSocket clients and DemoHilosGuardianAgent in worker.
  */
-class DemoHilosGuardianAgentDaemon extends AbstractAgentDaemon
+final class DemoHilosGuardianAgentDaemon extends AbstractAgentDaemon
 {
     public const string AGENT_TYPE = HilosAgentType::HILOS_GUARDIAN;
 

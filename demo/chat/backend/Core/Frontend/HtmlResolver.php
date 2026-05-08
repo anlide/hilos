@@ -7,7 +7,7 @@ namespace Demo\Chat\Core\Frontend;
 /**
  * HtmlResolver - Resolves request path and Accept-Language to HTML file path and HTTP status.
  */
-class HtmlResolver
+final class HtmlResolver
 {
     /** @var list<string> Supported locale codes */
     private const LOCALES = ['en', 'ru'];

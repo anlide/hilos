@@ -11,6 +11,6 @@ use Hilos\Core\Agent\Hilos\AbstractHilosIndexAgent;
  *
  * Handles Hilos dashboard, settings and i18n pages in the demo project.
  */
-class DemoHilosAgent extends AbstractHilosIndexAgent
+final class DemoHilosAgent extends AbstractHilosIndexAgent
 {
 }

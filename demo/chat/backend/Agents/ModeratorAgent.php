@@ -35,7 +35,7 @@ use Hilos\Utils\Env;
  *
  * Uses async LLM moderation for outbound user messages and user-initiated display names.
  */
-class ModeratorAgent extends AbstractAgent
+final class ModeratorAgent extends AbstractAgent
 {
     public const string AGENT_TYPE = AgentType::MODERATOR;
 

@@ -43,7 +43,7 @@ use Hilos\Utils\Helpers\RandomHelper;
  *
  * One agent is keyed by bot id through agentIndex. It reacts to chat context syncs and its own bot row changes.
  */
-class BotAgent extends AbstractAgent
+final class BotAgent extends AbstractAgent
 {
     public const string AGENT_TYPE = AgentType::BOT;
 

@@ -9,7 +9,7 @@ namespace Demo\Chat\Core\Frontend;
  *
  * Loads files from dist directory on first access.
  */
-class HtmlCache
+final class HtmlCache
 {
     /** @var string Default locale fallback */
     private const string DEFAULT_LOCALE = 'en';

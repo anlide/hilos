@@ -11,6 +11,6 @@ use Hilos\Core\Agent\Hilos\AbstractHilosAnalyticsAgent;
  *
  * Handles Hilos analytics page (visit statistics) in the demo project.
  */
-class DemoHilosAnalyticsAgent extends AbstractHilosAnalyticsAgent
+final class DemoHilosAnalyticsAgent extends AbstractHilosAnalyticsAgent
 {
 }

@@ -33,7 +33,7 @@ use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
  *
  * On start, registers chat database tables and runtime collections as truth sources.
  */
-class ChatAgent extends AbstractAgent
+final class ChatAgent extends AbstractAgent
 {
     public const string AGENT_TYPE = AgentType::CHAT;
 
