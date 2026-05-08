@@ -7,7 +7,7 @@ namespace Demo\Chat\Database\Settings;
 /**
  * ChatSettingsConstants - Setting keys for chat demo (Bot, Moderator LLM config).
  *
- * Used by SettingsCatalog and ChatSettingsHelper.
+ * Used by SettingsCatalog and setting accessors.
  * Keys not in catalog (e.g. orphan_test) are for testing orphan functionality.
  */
 final class ChatSettingsConstants

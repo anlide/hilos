@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Demo\Chat\Database\Settings;
 
 use Demo\Chat\Constants\ChatAttachmentDefaults;
-use Demo\Chat\Constants\ChatLLMConstants;
 use Hilos\Database\Settings\SettingsCatalogConstants;
 
 /**
@@ -19,6 +18,11 @@ use Hilos\Database\Settings\SettingsCatalogConstants;
  */
 final class SettingsCatalog
 {
+    // TODO: Support default values that reference another catalog setting key.
+    // These model defaults are duplicated here until catalog references exist.
+    private const string DEFAULT_BOT_MODEL = 'qwen2.5:3b';
+    private const string DEFAULT_MODERATION_MODEL = 'qwen2.5:0.5b';
+
     /**
      * Returns settings catalog for this project.
      *
@@ -42,7 +46,7 @@ final class SettingsCatalog
             // Chat Bot LLM settings
             ChatSettingsConstants::CHAT_BOT_MODEL => [
                 SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_STRING,
-                SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => ChatLLMConstants::MODEL_BOT,
+                SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => self::DEFAULT_BOT_MODEL,
             ],
             ChatSettingsConstants::CHAT_BOT_URL => [
                 SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_STRING,
@@ -53,8 +57,8 @@ final class SettingsCatalog
                 SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => 'local',
             ],
             ChatSettingsConstants::CHAT_BOT_TIMEOUT_SEC => [
-                SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_INTEGER,
-                SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => 90,
+                SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_FLOAT,
+                SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => 90.0,
             ],
             ChatSettingsConstants::CHAT_BOT_LANGUAGE => [
                 SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_STRING,
@@ -63,7 +67,7 @@ final class SettingsCatalog
             // Chat Moderation LLM settings
             ChatSettingsConstants::CHAT_MODERATION_MODEL => [
                 SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_STRING,
-                SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => ChatLLMConstants::MODEL_MODERATION,
+                SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => self::DEFAULT_MODERATION_MODEL,
             ],
             ChatSettingsConstants::CHAT_MODERATION_URL => [
                 SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_STRING,
@@ -74,8 +78,8 @@ final class SettingsCatalog
                 SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => 'local',
             ],
             ChatSettingsConstants::CHAT_MODERATION_TIMEOUT_SEC => [
-                SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_INTEGER,
-                SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => 90,
+                SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_FLOAT,
+                SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => 90.0,
             ],
             ChatSettingsConstants::CHAT_ATTACHMENT_MAX_FILE_BYTES => [
                 SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_INTEGER,

@@ -27,7 +27,7 @@ final class SettingsTableActions extends TableActions
      * @param string $key Setting key (must be in catalog)
      * @param mixed $value Value (null = use default_value from catalog)
      * @return TableRowMutationDTO Row mutation DTO for broadcast
-     * @throws HilosException On db or validation error
+     * @throws HilosException When settings catalog validation or DB persistence fails
      */
     public function add(string $key, mixed $value = null): TableRowMutationDTO
     {

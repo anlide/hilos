@@ -1,0 +1,4 @@
+interface:
+  display_name: "Hilos Framework Development"
+  short_description: "Framework API, facade, and extension rules"
+  default_prompt: "Use $hilos-framework-development before changing Hilos framework-level APIs."

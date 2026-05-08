@@ -19,6 +19,12 @@ Quick navigation for AI agents. Read the relevant file before starting work.
 | [architecture/event-loop.md](docs/agents/architecture/event-loop.md) | anything involving sockets, I/O, blocking operations |
 | [architecture/frontend-projection.md](docs/agents/architecture/frontend-projection.md) | DB/RT sync to frontend payload projection, worker-local subscription mirrors |
 
+## Framework Development
+
+| File | Read when... |
+|---|---|
+| [framework-development.md](docs/agents/framework-development.md) | changing framework-level APIs, facade globals, extension points, framework subsystem exceptions |
+
 ## Agent System
 
 | File | Read when... |

@@ -4,12 +4,16 @@ declare(strict_types=1);
 
 namespace Hilos\Database\Actions\Item;
 
+use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
+use Hilos\Database\Actions\Exception\ObjectCollectionNullException;
+use Hilos\Database\Actions\Exception\UnknownLazyStrategyException;
+use Hilos\Database\DatabaseException;
+use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 use Hilos\Database\Object\Item\Setting as ObjectSetting;
 use Hilos\Database\Settings\SettingsCatalogConstants;
 use Hilos\Database\View\Item\Setting;
 use Hilos\Core\Exception\ItemNotFoundForDeleteException;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
-use Hilos\Database\Actions\Item\DbActions;
 
 /**
  * Setting Actions - write operations for a single Setting item.
@@ -25,7 +29,11 @@ final class SettingActions extends DbActions
      * Updates setting value.
      *
      * @param mixed $value New value
-     * @throws ItemNotFoundForUpdateException If setting id is null
+     * @throws ItemNotFoundForUpdateException When setting object has no persisted id
+     * @throws DatabaseException When collection loading or setting persistence fails
+     * @throws ObjectCollectionNullException When the setting action is detached from its object collection
+     * @throws UnknownLazyStrategyException When the settings collection has an unsupported lazy strategy
+     * @throws WriteNotAllowedException When the truth source rejects the setting write
      */
     public function updateValue(mixed $value): void
     {
@@ -43,7 +51,12 @@ final class SettingActions extends DbActions
     /**
      * Deletes the setting (including orphans).
      *
-     * @throws ItemNotFoundForDeleteException If setting id is null
+     * @throws ItemNotFoundForDeleteException When setting object has no persisted id
+     * @throws ObjectCollectionNullException When the setting action is detached from its object collection
+     * @throws ObjectGetIdStringNotImplementedException When the setting object cannot expose its id string
+     * @throws DatabaseException When collection loading or setting deletion fails
+     * @throws UnknownLazyStrategyException When the settings collection has an unsupported lazy strategy
+     * @throws WriteNotAllowedException When the truth source rejects the setting delete
      */
     public function delete(): void
     {
@@ -54,7 +67,7 @@ final class SettingActions extends DbActions
         }
 
         $objectCollection = $this->getObjectCollection()
-            ?? throw new \Hilos\Database\Actions\Exception\ObjectCollectionNullException('Object collection is null');
+            ?? throw new ObjectCollectionNullException('Object collection is null');
 
         $idString = $this->object->getIdString();
         $this->object->delete();
@@ -65,13 +78,14 @@ final class SettingActions extends DbActions
      * Serializes value to string by type.
      *
      * @param mixed $value Value to serialize
-     * @param string $type Type from catalog (string, integer, boolean)
+     * @param string $type Type from catalog (string, integer, float, boolean)
      * @return ?string Serialized string or null
      */
     private function serializeValue(mixed $value, string $type): ?string
     {
         return match ($type) {
             SettingsCatalogConstants::TYPE_INTEGER => (string)(int)$value,
+            SettingsCatalogConstants::TYPE_FLOAT => (string)(float)$value,
             SettingsCatalogConstants::TYPE_BOOLEAN => (string)(int)(bool)$value,
             default => is_scalar($value) ? (string)$value : null,
         };

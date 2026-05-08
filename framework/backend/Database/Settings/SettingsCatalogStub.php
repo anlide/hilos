@@ -35,12 +35,12 @@ final class SettingsCatalogStub
                 SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => false,
             ],
             SettingsCatalogConstants::STUB_KEY_CHAT_BOT_TIMEOUT_SEC => [
-                SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_INTEGER,
-                SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => 90,
+                SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_FLOAT,
+                SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => 90.0,
             ],
             SettingsCatalogConstants::STUB_KEY_CHAT_MODERATION_TIMEOUT_SEC => [
-                SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_INTEGER,
-                SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => 90,
+                SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_FLOAT,
+                SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => 90.0,
             ],
         ];
     }

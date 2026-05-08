@@ -28,16 +28,16 @@ composer run ollama:pull-gpu-amd
 Moderation URL and model are stored in `DbChatContext::settings` (seed 003 populates defaults).
 Override at runtime via `/hilos/settings` or `/admin` → Settings table.
 
-`ChatSettingsHelper` reads these at runtime:
+`Hilos::$setting` reads these at runtime:
 ```php
-ChatSettingsHelper::getModerationUrl()              // LLM URL for ModeratorAgent
-ChatSettingsHelper::getModerationModel()            // model name
-ChatSettingsHelper::getModerationProviderIsExternal() // true = OpenAI-compatible API
+Hilos::$setting[ChatSettingsConstants::CHAT_MODERATION_URL]->string()
+Hilos::$setting[ChatSettingsConstants::CHAT_MODERATION_MODEL]->string()
+Hilos::$setting[ChatSettingsConstants::CHAT_MODERATION_PROVIDER]->string()
 ```
 
 ## External provider (OpenAI-compatible)
 
-Set `getModerationProviderIsExternal()` to `true` in settings.
+Set `chat_moderation_provider` to `external` in settings.
 `ClientFactory::createChatClient()` uses `OPENAI_API_KEY` env var and standard OpenAI endpoint.
 
 ## Model recommendation

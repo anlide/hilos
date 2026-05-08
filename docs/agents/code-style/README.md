@@ -3,6 +3,9 @@
 Use this catalog before editing project code. Pick the smallest rule file
 that matches the change; do not read every rule file by default.
 
+Before changing framework-level APIs, facade globals, extension points, or
+framework subsystem exceptions, read [framework-development.md](../framework-development.md).
+
 | File | Read when... |
 |---|---|
 | [phpdoc.md](phpdoc.md) | writing or changing PHPDoc, overriding inherited methods, adding `@see` links |

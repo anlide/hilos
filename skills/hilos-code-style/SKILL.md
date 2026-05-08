@@ -9,6 +9,9 @@ Use this skill for style-sensitive Hilos edits and reviews. Start with `agents.m
 
 ## Read First
 
+- Framework-level APIs: use `$hilos-framework-development` first before
+  changing Hilos facade globals, shared base classes, extension points,
+  framework subsystem exceptions, or other cross-project API contracts.
 - Style rule index: `docs/agents/code-style/README.md`
 - PHPDoc and inherited method docs: `docs/agents/code-style/phpdoc.md` -
   read when creating a PHP method, changing a method signature, changing

@@ -11,13 +11,14 @@ use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\ChatTopicConstants;
 use Demo\Chat\Core\Router\DTO\BotMessageSignalData;
 use Demo\Chat\Database\DbChatContext;
+use Demo\Chat\Database\Settings\ChatSettingsConstants;
 use Demo\Chat\Database\Object\Item\Bot as ObjectBot;
 use Demo\Chat\Database\Object\Item\Event as ObjectEvent;
 use Demo\Chat\Database\View\Item\Bot as ViewBot;
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\View\Context\RtChatContext;
 use Demo\Chat\Utils\ChatLLMHelper;
-use Demo\Chat\Utils\ChatSettingsHelper;
+use Hilos\Constants\EnvConstants;
 use Hilos\Constants\LLMConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\Exception\AgentIndexRequiredException;
@@ -27,11 +28,14 @@ use Hilos\Core\Sync\DTO\DbSyncDeletedSignalData;
 use Hilos\Core\Sync\DTO\DbSyncUpdatedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncCreatedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
+use Hilos\Database\DatabaseException;
+use Hilos\Database\Settings\Exception\SettingException;
 use Hilos\HilosException;
 use Hilos\LLM\ClientFactory;
 use Hilos\LLM\Contract\AsyncChatLLMInterface;
 use Hilos\LLM\DTO\ChatGenerateOptions;
 use Hilos\LLM\DTO\Message;
+use Hilos\Utils\Env;
 use Hilos\Utils\Helpers\RandomHelper;
 
 /**
@@ -61,6 +65,8 @@ class BotAgent extends AbstractAgent
      * @param string $agentIndex Bot id from the agent manager
      * @throws AgentIndexRequiredException When agentIndex is empty
      * @throws InvalidAgentIndexException When agentIndex is not a positive integer
+     * @throws DatabaseException When reading persisted bot LLM setting rows fails
+     * @throws SettingException When bot LLM catalog keys are missing, read through the wrong type, or resolve to invalid values
      */
     public function __construct(string $agentIndex)
     {
@@ -76,11 +82,13 @@ class BotAgent extends AbstractAgent
         $this->agentIndex = $agentIndex;
         $this->botId = $botId;
 
-        $this->chatClient = ChatSettingsHelper::getBotProviderIsExternal()
+        $this->chatClient = Hilos::$setting[ChatSettingsConstants::CHAT_BOT_PROVIDER]->string()
+            === LLMConstants::PROVIDER_EXTERNAL
             ? ClientFactory::createChatClient()
             : ClientFactory::createChatClientWithConfig(
-                url: ChatSettingsHelper::getBotUrl(),
-                model: ChatSettingsHelper::getBotModel(),
+                url: Hilos::$setting[ChatSettingsConstants::CHAT_BOT_URL]->string()
+                    ?: Env::getFilled(EnvConstants::LLM_LOCAL_URL, LLMConstants::DEFAULT_LOCAL_URL),
+                model: Hilos::$setting[ChatSettingsConstants::CHAT_BOT_MODEL]->string(),
             );
     }
 
@@ -354,9 +362,9 @@ class BotAgent extends AbstractAgent
             return;
         }
 
-        $timeoutSec = ChatSettingsHelper::getBotTimeoutSec();
+        $timeoutSec = Hilos::$setting[ChatSettingsConstants::CHAT_BOT_TIMEOUT_SEC]->float();
         $options = new ChatGenerateOptions(
-            model: ChatSettingsHelper::getBotModel(),
+            model: Hilos::$setting[ChatSettingsConstants::CHAT_BOT_MODEL]->string(),
             temperature: 0.7,
             timeoutSec: $timeoutSec > 0 ? $timeoutSec : LLMConstants::DEFAULT_TIMEOUT_SEC,
             maxTokens: self::MAX_RESPONSE_TOKENS,
@@ -392,7 +400,9 @@ class BotAgent extends AbstractAgent
         }
         $systemParts[] = "Your personality and style override generic politeness. Be bold in character.";
         $systemParts[] = "CRITICAL: "
-            . ChatLLMHelper::getLanguageInstruction(ChatSettingsHelper::getBotLanguage())
+            . ChatLLMHelper::getLanguageInstruction(
+                Hilos::$setting[ChatSettingsConstants::CHAT_BOT_LANGUAGE]->string(),
+            )
             . " All your output must be in this language.";
         $systemParts[] = "Never refer to yourself by name. Speak in first person (I, me, my). Do not start with your own name.";
         $systemParts[] = "Respond to what others said. Build on their ideas, challenge them, or agree — but always in character. Do not speak in a vacuum.";

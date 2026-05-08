@@ -10,13 +10,9 @@ Seed `003` populates default moderation settings on first run.
 ## Reading settings
 
 ```php
-// Via ChatSettingsHelper (recommended)
-$url   = ChatSettingsHelper::getModerationUrl();
-$model = ChatSettingsHelper::getModerationModel();
-$isExt = ChatSettingsHelper::getModerationProviderIsExternal();
-
-// Or directly
-$setting = Hilos::$db->settings->findByKey('moderation_url');
+$url = Hilos::$setting[ChatSettingsConstants::CHAT_MODERATION_URL]->string();
+$model = Hilos::$setting[ChatSettingsConstants::CHAT_MODERATION_MODEL]->string();
+$provider = Hilos::$setting[ChatSettingsConstants::CHAT_MODERATION_PROVIDER]->string();
 ```
 
 ## Editing settings
@@ -28,9 +24,9 @@ $setting = Hilos::$db->settings->findByKey('moderation_url');
 
 | Key | Default | Meaning |
 |---|---|---|
-| `moderation_url` | `http://host.docker.internal:11434` | LLM base URL |
-| `moderation_model` | `qwen2.5:0.5b` | Model for user message moderation; messages may include attachment metadata |
-| `moderation_provider` | `local` | `local` or `external` |
+| `chat_moderation_url` | empty, falls back to `LLM_LOCAL_URL` | LLM base URL |
+| `chat_moderation_model` | `qwen2.5:0.5b` | Model for user message moderation; messages may include attachment metadata |
+| `chat_moderation_provider` | `local` | `local` or `external` |
 
 ## Context analyzer
 

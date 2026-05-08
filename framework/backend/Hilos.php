@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Hilos;
 
 use Hilos\Core\Analytics\AnalyticsCollector;
@@ -7,6 +9,7 @@ use Hilos\Core\Frontend\FrontendProjectionContext;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Table\Context\TableContext;
 use Hilos\Database\Context\DbContext;
+use Hilos\Database\Settings\SettingsAccessor;
 use Hilos\Fs\Context\FsContext;
 use Hilos\Runtime\View\Context\RtContext;
 
@@ -15,6 +18,7 @@ use Hilos\Runtime\View\Context\RtContext;
  *
  * Application classes should extend this class and expose:
  * - Hilos::$db    — database layer
+ * - Hilos::$setting — catalog-backed setting values
  * - Hilos::$rt    — runtime layer
  * - Hilos::$table — table layer
  * - Hilos::$fs    — filesystem layer
@@ -25,6 +29,9 @@ abstract class Hilos
 {
     /** @var ?DbContext Database layer singleton */
     public static ?DbContext $db = null;
+
+    /** @var ?SettingsAccessor Catalog-backed settings accessor */
+    public static ?SettingsAccessor $setting = null;
 
     /** @var ?RtContext Runtime layer singleton */
     public static ?RtContext $rt = null;
@@ -45,10 +52,16 @@ abstract class Hilos
     public static ?AnalyticsCollector $ac = null;
 
     /**
-     * Initialize all layers (db, rt, table).
+     * Initialize all layers (setting, db, rt, table).
+     *
+     * @throws HilosException When a layer factory or configure step cannot initialize its singleton
      */
     public static function init(): void
     {
+        if (static::$setting === null) {
+            static::$setting = static::createSetting();
+        }
+
         if (static::$db === null) {
             static::$db = static::createDb();
             static::$db->configure();
@@ -104,6 +117,16 @@ abstract class Hilos
      * @return DbContext Database context instance
      */
     abstract protected static function createDb(): DbContext;
+
+    /**
+     * Create settings accessor.
+     *
+     * @return SettingsAccessor Settings accessor
+     */
+    protected static function createSetting(): SettingsAccessor
+    {
+        return new SettingsAccessor();
+    }
 
     /**
      * Create runtime instance.

@@ -11,11 +11,13 @@ use Demo\Chat\Core\Router\DTO\FileUploadCompleteSignalData;
 use Demo\Chat\Core\Router\DTO\FileUploadInvalidSignalData;
 use Demo\Chat\Core\Router\DTO\FileUploadReadySignalData;
 use Demo\Chat\Core\Router\DTO\FileUploadRejectedSignalData;
+use Demo\Chat\Database\Settings\ChatSettingsConstants;
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\View\Item\Connection;
-use Demo\Chat\Utils\ChatSettingsHelper;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Core\Exception\ValidationException;
+use Hilos\Database\DatabaseException;
+use Hilos\Database\Settings\Exception\SettingException;
 use Hilos\Fs\Exception\FileDeleteException;
 use Hilos\Fs\FsException;
 use Hilos\Fs\FsFile;
@@ -42,6 +44,8 @@ trait UploadFileTrait
      *
      * @throws ItemNotFoundForUpdateException When the WebSocket session is missing
      * @throws ValidationException When the current outbound submit is being moderated
+     * @throws DatabaseException When reading persisted attachment limit setting rows fails
+     * @throws SettingException When attachment limit catalog keys are missing, read through the wrong type, or resolve to invalid values
      * @throws RtActionsCollectionNameNullException When the connections actions collection name is null
      * @throws RtTruthSourceWriteNotAllowedException When the truth source rejects a runtime write
      * @throws FileDeleteException When upload cleanup cannot delete tmp or quarantine files
@@ -77,8 +81,8 @@ trait UploadFileTrait
 
         Hilos::$rt->attachmentDrafts->actions->deleteExpired();
 
-        $maxFile = ChatSettingsHelper::getAttachmentMaxFileBytes();
-        $maxTotal = ChatSettingsHelper::getAttachmentMaxTotalBytes();
+        $maxFile = Hilos::$setting[ChatSettingsConstants::CHAT_ATTACHMENT_MAX_FILE_BYTES]->int();
+        $maxTotal = Hilos::$setting[ChatSettingsConstants::CHAT_ATTACHMENT_MAX_TOTAL_BYTES]->int();
         if ($dto->size > $maxFile) {
             $this->sendToUser(
                 ChatSignalConstants::FILE_UPLOAD_REJECTED,

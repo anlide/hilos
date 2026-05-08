@@ -49,44 +49,7 @@
             <template #row="row">
               <td><code>{{ row.item.key }}</code></td>
               <td class="align-middle" style="max-width: 220px">
-                <template v-if="row.item.type === 'boolean'">
-                  <div class="form-check d-inline-flex align-items-center mb-0 user-select-none">
-                    <input
-                      type="checkbox"
-                      class="form-check-input mt-0"
-                      :checked="row.item.value === '1'"
-                      disabled
-                      tabindex="-1"
-                      :aria-label="row.item.value === '1' ? 'Enabled' : 'Disabled'"
-                    />
-                  </div>
-                </template>
-                <template v-else-if="row.item.type === 'integer'">
-                  <span
-                    class="fst-italic text-truncate d-inline-block w-100"
-                    :title="formatValue(row.item.value, row.item.type)"
-                  >
-                    {{ formatValue(row.item.value, row.item.type) }}
-                  </span>
-                </template>
-                <template v-else>
-                  <span
-                    v-if="isEmptyStringSetting(row.item.value, row.item.type)"
-                    class="badge rounded-pill d-inline-flex align-items-center justify-content-center px-2 py-1 bg-secondary-subtle text-secondary-emphasis border border-secondary-subtle"
-                    role="img"
-                    aria-label="Empty string"
-                    title="Empty string"
-                  >
-                    <i class="bi bi-file-earmark" aria-hidden="true"></i>
-                  </span>
-                  <span
-                    v-else
-                    class="text-truncate d-inline-block w-100"
-                    :title="String(row.item.value ?? '')"
-                  >
-                    {{ formatValue(row.item.value, row.item.type) }}
-                  </span>
-                </template>
+                <HilosSettingsValueCell :value="row.item.value" :type="row.item.type" />
               </td>
               <td>
                 <div class="d-flex gap-1">
@@ -167,6 +130,7 @@
             id="setting-value"
             v-model="formSetting.value"
             :type="valueInputType"
+            :step="valueInputStep"
             class="form-control"
             :required="!isCreating"
           />
@@ -246,6 +210,7 @@ import { useTableDeleteMutationModal } from '@/composables/useTableDeleteMutatio
 import { useConnectionStore, useTableStore } from '@hilos/sdk/stores'
 import { sendAction } from '@/services/websocketActions'
 import { SETTING_ADD, SETTING_UPDATE, SETTING_DELETE } from '@/constants'
+import HilosSettingsValueCell from './HilosSettingsValueCell.vue'
 
 interface SettingEntity {
   id: number | null
@@ -280,18 +245,6 @@ const handleApplyChanges = () => {
   tableStore.applyPendingMutations(tableKey)
 }
 
-const formatValue = (value: string | null | undefined, type: string): string => {
-  if (value === null || value === undefined) return '—'
-  if (type === 'boolean') return value === '1' ? 'true' : 'false'
-  return String(value)
-}
-
-/** Empty string (type string): show placeholder in table, not raw "". */
-const isEmptyStringSetting = (value: string | null | undefined, type: string): boolean => {
-  if (type !== 'string') return false
-  return value === '' || value === null || value === undefined
-}
-
 const showModal = ref(false)
 const isCreating = ref(false)
 const selectedSetting = ref<SettingEntity | null>(null)
@@ -308,9 +261,11 @@ const formSettingValueBool = computed({
 const valueInputType = computed(() => {
   const t = selectedSetting.value?.type ?? (isCreating.value ? 'string' : 'string')
   if (t === 'boolean') return 'checkbox'
-  if (t === 'integer') return 'number'
+  if (t === 'integer' || t === 'float') return 'number'
   return 'text'
 })
+
+const valueInputStep = computed(() => selectedSetting.value?.type === 'float' ? 'any' : undefined)
 
 const modalTitle = computed(() => {
   if (isCreating.value) return 'Add setting'

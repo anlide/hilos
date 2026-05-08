@@ -149,6 +149,7 @@ final class SettingsTable extends TableDefinition
     {
         return match ($type) {
             SettingsCatalogConstants::TYPE_INTEGER => (string)(int)$value,
+            SettingsCatalogConstants::TYPE_FLOAT => (string)(float)$value,
             SettingsCatalogConstants::TYPE_BOOLEAN => (string)(int)(bool)$value,
             default => is_scalar($value) ? (string)$value : null,
         };

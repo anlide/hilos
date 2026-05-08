@@ -27,7 +27,7 @@ final class SettingItemActions extends TableItemActions
      *
      * @param mixed $value New setting value
      * @return TableRowMutationDTO Row mutation DTO for broadcast
-     * @throws TableActionException If setting not found
+     * @throws TableActionException When the setting key is missing from persisted settings
      */
     public function updateValue(mixed $value): TableRowMutationDTO
     {
@@ -43,7 +43,7 @@ final class SettingItemActions extends TableItemActions
      * Only settings whose key is NOT in catalog can be deleted.
      *
      * @return TableRowMutationDTO Row mutation DTO for broadcast
-     * @throws TableActionException If setting is in catalog (not orphan) or not found
+     * @throws TableActionException When the setting is missing or still declared in the catalog
      */
     public function delete(): TableRowMutationDTO
     {

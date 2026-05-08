@@ -208,7 +208,6 @@ abstract class DbActions
      * Ensure create is allowed and data is loaded if needed
      * Checks TruthSourceRegistry::checkCanCreate for create permission
      *
-     * @throws ObjectCollectionNullException If ObjectCollection is null
      * @throws UnknownLazyStrategyException If unknown lazy loading strategy
      * @throws CreateNotAllowedException If create is not allowed
      * @throws DatabaseException On connection or load error
@@ -246,7 +245,6 @@ abstract class DbActions
      * Checks for duplicate IDs and throws exception if object already exists
      *
      * @param Object_ $object Object instance to add
-     * @throws ObjectCollectionNullException If ObjectCollection is null
      * @throws DuplicateIdException If object with same ID already exists
      * @throws DatabaseException On connection error
      * @throws TableNameUndeterminedException If table name cannot be determined
