@@ -5,15 +5,12 @@ declare(strict_types=1);
 namespace Demo\Chat\Pages;
 
 use Demo\Chat\Agents\ChatAgent;
-use Demo\Chat\Constants\ChatCronConstants;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Page\DTO\AttachmentDraftDeleteActionDTO;
 use Demo\Chat\Core\Page\DTO\FileUploadInitActionDTO;
 use Demo\Chat\Core\Page\DTO\MessageActionDTO;
 use Demo\Chat\Core\Router\DTO\ModerationResultSignalData;
-use Demo\Chat\Database\DTO\PublishedAttachmentInput;
-use Demo\Chat\Database\DTO\PublishedAttachmentInputs;
 use Demo\Chat\Frontend\MainPageSubscriptionProjector;
 use Demo\Chat\Hilos;
 use Demo\Chat\Pages\Main\UploadFileTrait;
@@ -33,7 +30,6 @@ use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
-use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Fs\FsException;
 use Hilos\HilosException;
 use Hilos\Socket\WebSocket\DTO\WebSocketFrameBinarySignalDTO;
@@ -159,33 +155,6 @@ final class MainPage extends AbstractPage
     }
 
     /**
-     * Routes scheduled main-page cleanup cron names.
-     *
-     * @param SignalDataInterface $data Cron payload (unused)
-     * @param string $source Framework signal source identifier (unused)
-     * @param string $name Task name
-     * @throws AgentUnknownSignalException When cron name is not supported by this page
-     * @throws HilosException On runtime or filesystem cleanup failure
-     */
-    public function onSignalCron(SignalDataInterface $data, string $source, string $name): void
-    {
-        switch ($name) {
-            case ChatCronConstants::CLEANUP_HISTORY:
-                $this->deleteAllAttachmentFilesFromDisk();
-
-                return;
-
-            case ChatCronConstants::CLEANUP_ATTACHMENT_DRAFTS:
-                Hilos::$rt->attachmentDrafts->actions->deleteExpired();
-
-                return;
-
-            default:
-                throw new AgentUnknownSignalException($name);
-        }
-    }
-
-    /**
      * Starts outbound moderation for a valid text or attachment-backed message submit.
      *
      * @param MessageActionDTO $dto Parsed message action payload
@@ -291,40 +260,31 @@ final class MainPage extends AbstractPage
             throw new ValidationException($reason);
         }
 
-        $attachments = [];
-        foreach (Hilos::$rt->selfConnection->attachmentDrafts as $draft) {
-            $quarantineFile = Hilos::$fs->quarantine[$draft->quarantineBasename];
-            if (!$quarantineFile->exists()) {
-                Hilos::$rt->selfConnection->actions->failOutboundModeration(
-                    Connection::OUTBOUND_MODERATION_PHASE_UNAVAILABLE,
-                    'attachment_missing',
-                );
-                Hilos::$rt->attachmentDrafts[$draft->draftId]->actions->delete(deleteFiles: false);
-                return;
-            }
-            try {
-                $quarantineFile->move('published');
-            } catch (FsException $e) {
-                $this->logAgentError("Failed to publish attachment draft {$draft->draftId}: {$e->getMessage()}");
-                Hilos::$rt->selfConnection->actions->failOutboundModeration(
-                    Connection::OUTBOUND_MODERATION_PHASE_UNAVAILABLE,
-                    'attachment_publish_failed',
-                );
-                return;
-            }
-            $attachments[] = new PublishedAttachmentInput(
-                filename: $draft->originalFilename,
-                mimeType: $draft->mimeType,
-                storedName: $draft->quarantineBasename,
+        try {
+            $attachments = Hilos::$rt->attachmentDrafts->actions->publishForConnection(Hilos::$rt->selfConnection);
+        } catch (FsException $e) {
+            $this->logAgentError("Failed to publish attachment drafts: {$e->getMessage()}");
+            Hilos::$rt->selfConnection->actions->failOutboundModeration(
+                Connection::OUTBOUND_MODERATION_PHASE_UNAVAILABLE,
+                'attachment_publish_failed',
             );
+            return;
+        }
+
+        if ($attachments === null) {
+            Hilos::$rt->selfConnection->actions->failOutboundModeration(
+                Connection::OUTBOUND_MODERATION_PHASE_UNAVAILABLE,
+                'attachment_missing',
+            );
+
+            return;
         }
 
         Hilos::$rt->selfConnection->actions->clearOutboundModeration();
-        Hilos::$rt->selfConnection->attachmentDrafts->actions->deleteAll(deleteFiles: false);
         Hilos::$db->events->actions->addMessage(
             $result->message,
             userId: Hilos::$rt->selfConnection->userId,
-            attachments: new PublishedAttachmentInputs(...$attachments),
+            attachments: $attachments,
         );
     }
 }

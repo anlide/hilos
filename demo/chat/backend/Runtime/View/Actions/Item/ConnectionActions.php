@@ -7,7 +7,10 @@ namespace Demo\Chat\Runtime\View\Actions\Item;
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\State\Item\Connection as StateConnection;
 use Demo\Chat\Runtime\View\Item\Connection as RuntimeConnection;
+use Hilos\Fs\FsException;
+use Hilos\Fs\FsFile;
 use Hilos\Fs\Exception\FileDeleteException;
+use Hilos\Runtime\Exception\Actions\RtActionsCallbackNotSetException;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
@@ -193,6 +196,21 @@ final class ConnectionActions extends RtActions
     }
 
     /**
+     * Delete any active upload tmp file and clear upload session/progress state.
+     *
+     * @throws FileDeleteException When the active tmp file cannot be deleted
+     * @throws RtActionsCollectionNameNullException When collection name is null.
+     */
+    public function discardActiveBinaryUploadSessionAndProgressUi(): void
+    {
+        if ($this->state->fileSessionUploadId !== null && $this->state->fileSessionQuarantineBasename !== '') {
+            Hilos::$fs->tmp[$this->state->fileSessionQuarantineBasename]->unlink();
+        }
+
+        $this->clearBinaryUploadSessionAndProgressUi();
+    }
+
+    /**
      * Clear binary upload session and upload-progress UI (e.g. after receive complete or abort).
      * @throws RtActionsCollectionNameNullException
      */
@@ -245,8 +263,31 @@ final class ConnectionActions extends RtActions
     }
 
     /**
+     * Delete the active tmp file, clear session fields, and expose a retryable upload failure.
+     *
+     * @param ?string $fallbackClientUploadId Client correlation id when the session field is already empty
+     * @param string $code Short failure code for frontend behavior
+     * @param string $message User-facing failure message
+     * @throws FileDeleteException When the active tmp file cannot be deleted
+     * @throws RtActionsCollectionNameNullException When collection name is null.
+     */
+    public function failActiveBinaryFileUpload(?string $fallbackClientUploadId, string $code, string $message): void
+    {
+        $clientUploadId = $this->state->fileSessionClientUploadId !== ''
+            ? $this->state->fileSessionClientUploadId
+            : $fallbackClientUploadId;
+
+        if ($this->state->fileSessionQuarantineBasename !== '') {
+            Hilos::$fs->tmp[$this->state->fileSessionQuarantineBasename]->unlink();
+        }
+
+        $this->failBinaryFileUpload($clientUploadId, $code, $message);
+    }
+
+    /**
      * Update stored received bytes and progress-bar uploaded bytes after a binary chunk.
-     * @throws RtActionsCollectionNameNullException
+     *
+     * @throws RtActionsCollectionNameNullException When collection name is null.
      */
     public function applyStoredBinaryChunkProgress(int $newReceivedBytes): void
     {
@@ -259,9 +300,89 @@ final class ConnectionActions extends RtActions
     }
 
     /**
-     * Record last upload-progress projection notify time (throttle).
+     * Store one binary upload payload, update progress, and report whether the upload completed.
      *
-     * @throws RtActionsCollectionNameNullException
+     * @param string $payload Raw websocket binary frame payload
+     * @param float $progressMinIntervalSec Minimum progress notification interval in seconds
+     * @return bool True when received bytes reached the declared upload size
+     * @throws FsException When the tmp file cannot be appended
+     * @throws RtActionsCollectionNameNullException When collection name is null.
+     */
+    public function storeBinaryFileUploadChunk(string $payload, float $progressMinIntervalSec): bool
+    {
+        $this->ensureCanWrite();
+
+        Hilos::$fs->tmp[$this->state->fileSessionQuarantineBasename]->append($payload);
+
+        $this->state->fileSessionReceivedBytes += strlen($payload);
+        $this->state->fileProgressUploadedBytes = $this->state->fileSessionReceivedBytes;
+
+        if (
+            $this->state->fileProgressFilename !== null
+            && (
+                $this->state->fileSessionReceivedBytes === $this->state->fileSessionDeclaredSize
+                || (
+                    $this->state->fileProgressTotalBytes > 0
+                    && $this->state->fileProgressUploadedBytes >= $this->state->fileProgressTotalBytes
+                )
+                || $this->state->uploadProgressLastSentAt <= 0.0
+                || microtime(true) - $this->state->uploadProgressLastSentAt >= $progressMinIntervalSec
+            )
+        ) {
+            if ($this->state->fileSessionUploadId !== null && $this->state->fileSessionReceivedBytes > 0) {
+                $this->state->fileUploadPhase = RuntimeConnection::FILE_UPLOAD_PHASE_UPLOADING;
+            }
+            $this->state->uploadProgressLastSentAt = microtime(true);
+        }
+
+        $this->sync();
+
+        return $this->state->fileSessionReceivedBytes === $this->state->fileSessionDeclaredSize;
+    }
+
+    /**
+     * Move the completed tmp upload to quarantine, create a draft row, and clear upload UI state.
+     *
+     * @throws FsException When the completed tmp file cannot be moved to quarantine
+     * @throws RtActionsCallbackNotSetException When attachment draft creation is not configured
+     * @throws RtActionsCollectionNameNullException When collection name is null.
+     * @throws RtActionsStateCollectionNullException When attachment draft runtime state is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When truth source does not allow write.
+     */
+    public function completeBinaryFileUpload(): void
+    {
+        $this->ensureCanWrite();
+
+        $quarantineBasename = $this->state->fileSessionUploadId
+            . FsFile::extensionForMime($this->state->fileSessionMimeType);
+        Hilos::$fs->quarantine->createFromTmp(
+            $quarantineBasename,
+            $this->state->fileSessionQuarantineBasename,
+        );
+
+        Hilos::$rt->attachmentDrafts->actions->create(
+            draftId: (string)$this->state->fileSessionUploadId,
+            acceptKey: $this->state->acceptKey,
+            userId: $this->state->userId,
+            quarantineBasename: $quarantineBasename,
+            originalFilename: $this->state->fileSessionOriginalFilename,
+            mimeType: $this->state->fileSessionMimeType,
+            size: $this->state->fileSessionDeclaredSize,
+            normalizedFilename: $this->state->fileSessionNormalizedFilename,
+            uploadedAt: time(),
+        );
+
+        $this->resetBinaryUploadSessionFields();
+        $this->resetUploadProgressUiFields();
+        $this->resetUploadStateFields();
+
+        $this->sync();
+    }
+
+    /**
+     * Record last upload-progress projection notify time.
+     *
+     * @throws RtActionsCollectionNameNullException When collection name is null.
      */
     public function noteUploadProgressSentAt(): void
     {

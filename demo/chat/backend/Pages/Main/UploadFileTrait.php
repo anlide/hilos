@@ -14,7 +14,6 @@ use Hilos\Database\DatabaseException;
 use Hilos\Database\Settings\Exception\SettingException;
 use Hilos\Fs\Exception\FileDeleteException;
 use Hilos\Fs\FsException;
-use Hilos\Fs\FsFile;
 use Hilos\Runtime\Exception\Actions\RtActionsCallbackNotSetException;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
@@ -62,8 +61,7 @@ trait UploadFileTrait
         }
 
         if (Hilos::$rt->selfConnection->fileSessionUploadId !== null) {
-            Hilos::$fs->tmp[Hilos::$rt->selfConnection->fileSessionQuarantineBasename]->unlink();
-            Hilos::$rt->selfConnection->actions->clearBinaryUploadSessionAndProgressUi();
+            Hilos::$rt->selfConnection->actions->discardActiveBinaryUploadSessionAndProgressUi();
         }
 
         if (!$dto->isValid()) {
@@ -183,14 +181,19 @@ trait UploadFileTrait
                 'frame_binary: overflow acceptKey=' . Hilos::$rt->selfConnection->acceptKey
                 . ' userId=' . Hilos::$rt->selfConnection->userId,
             );
-            $this->failFileUploadSession(self::FILE_UPLOAD_FAILURE_CODE_SIZE_OVERFLOW);
+            Hilos::$rt->selfConnection->actions->failActiveBinaryFileUpload(
+                Hilos::$rt->selfConnection->fileUploadClientUploadId,
+                self::FILE_UPLOAD_FAILURE_CODE_SIZE_OVERFLOW,
+                $this->fileUploadFailureMessage(self::FILE_UPLOAD_FAILURE_CODE_SIZE_OVERFLOW),
+            );
 
             return;
         }
 
         try {
-            Hilos::$fs->tmp[Hilos::$rt->selfConnection->fileSessionQuarantineBasename]->append(
+            $isUploadComplete = Hilos::$rt->selfConnection->actions->storeBinaryFileUploadChunk(
                 $data->payload,
+                self::FILE_UPLOAD_PROGRESS_MIN_INTERVAL_SEC,
             );
         } catch (FsException $e) {
             $this->logAgentError(
@@ -198,104 +201,29 @@ trait UploadFileTrait
                 . ' userId=' . Hilos::$rt->selfConnection->userId
                 . ' error=' . $e->getMessage(),
             );
-            $this->failFileUploadSession(self::FILE_UPLOAD_FAILURE_CODE_WRITE_ERROR);
+            Hilos::$rt->selfConnection->actions->failActiveBinaryFileUpload(
+                Hilos::$rt->selfConnection->fileUploadClientUploadId,
+                self::FILE_UPLOAD_FAILURE_CODE_WRITE_ERROR,
+                $this->fileUploadFailureMessage(self::FILE_UPLOAD_FAILURE_CODE_WRITE_ERROR),
+            );
 
             return;
         }
 
-        Hilos::$rt->selfConnection->actions->applyStoredBinaryChunkProgress(
-            Hilos::$rt->selfConnection->fileSessionReceivedBytes + strlen($data->payload),
-        );
-
-        if (
-            Hilos::$rt->selfConnection->fileProgressFilename !== null
-            && (
-                Hilos::$rt->selfConnection->fileSessionReceivedBytes
-                    === Hilos::$rt->selfConnection->fileSessionDeclaredSize
-                || (
-                    Hilos::$rt->selfConnection->fileProgressTotalBytes > 0
-                    && Hilos::$rt->selfConnection->fileProgressUploadedBytes
-                        >= Hilos::$rt->selfConnection->fileProgressTotalBytes
-                )
-                || Hilos::$rt->selfConnection->uploadProgressLastSentAt <= 0.0
-                || microtime(true) - Hilos::$rt->selfConnection->uploadProgressLastSentAt
-                    >= self::FILE_UPLOAD_PROGRESS_MIN_INTERVAL_SEC
-            )
-        ) {
-            Hilos::$rt->selfConnection->actions->noteUploadProgressSentAt();
-        }
-
-        if (
-            Hilos::$rt->selfConnection->fileSessionReceivedBytes
-            === Hilos::$rt->selfConnection->fileSessionDeclaredSize
-        ) {
+        if ($isUploadComplete) {
             try {
-                Hilos::$fs->quarantine->createFromTmp(
-                    Hilos::$rt->selfConnection->fileSessionUploadId
-                        . FsFile::extensionForMime(Hilos::$rt->selfConnection->fileSessionMimeType),
-                    Hilos::$rt->selfConnection->fileSessionQuarantineBasename,
-                );
+                Hilos::$rt->selfConnection->actions->completeBinaryFileUpload();
             } catch (FsException $e) {
                 $this->logAgentError("Cannot move tmp to quarantine: {$e->getMessage()}");
-                $this->failFileUploadSession(self::FILE_UPLOAD_FAILURE_CODE_STORAGE_ERROR);
+                Hilos::$rt->selfConnection->actions->failActiveBinaryFileUpload(
+                    Hilos::$rt->selfConnection->fileUploadClientUploadId,
+                    self::FILE_UPLOAD_FAILURE_CODE_STORAGE_ERROR,
+                    $this->fileUploadFailureMessage(self::FILE_UPLOAD_FAILURE_CODE_STORAGE_ERROR),
+                );
 
                 return;
             }
-
-            Hilos::$rt->attachmentDrafts->actions->create(
-                draftId: Hilos::$rt->selfConnection->fileSessionUploadId,
-                acceptKey: Hilos::$rt->selfConnection->acceptKey,
-                userId: Hilos::$rt->selfConnection->userId,
-                quarantineBasename: Hilos::$rt->selfConnection->fileSessionUploadId
-                    . FsFile::extensionForMime(Hilos::$rt->selfConnection->fileSessionMimeType),
-                originalFilename: Hilos::$rt->selfConnection->fileSessionOriginalFilename,
-                mimeType: Hilos::$rt->selfConnection->fileSessionMimeType,
-                size: Hilos::$rt->selfConnection->fileSessionDeclaredSize,
-                normalizedFilename: Hilos::$rt->selfConnection->fileSessionNormalizedFilename,
-                uploadedAt: time(),
-            );
-            Hilos::$rt->selfConnection->actions->clearBinaryUploadSessionAndProgressUi();
         }
-    }
-
-    /**
-     * Delete all attachment files on disk and reset file-related runtime fields on every connection.
-     *
-     * Runtime sync projection updates subscribed tabs so they drop draft and progress UI.
-     *
-     * @throws RtActionsCollectionNameNullException When runtime actions collection name is unavailable
-     * @throws RtTruthSourceWriteNotAllowedException When the truth source rejects a runtime write
-     * @throws FileDeleteException When deleting published or quarantine attachment files fails
-     */
-    protected function deleteAllAttachmentFilesFromDisk(): void
-    {
-        Hilos::$fs->published->deleteAll();
-        Hilos::$fs->quarantine->deleteAll();
-        Hilos::$rt->attachmentDrafts->actions->clear(deleteFiles: false);
-        Hilos::$rt->connections->actions->clearAllFileRuntimeOnAllConnections();
-    }
-
-    /**
-     * Abort the active upload: delete tmp file, clear session/progress runtime, and expose failure state.
-     *
-     * @param string $code One of self::FILE_UPLOAD_FAILURE_CODE_* constants
-     * @throws FileDeleteException When the tmp file cannot be deleted
-     * @throws RtActionsCollectionNameNullException When runtime actions collection name is unavailable
-     */
-    private function failFileUploadSession(string $code): void
-    {
-        if (Hilos::$rt->selfConnection === null) {
-            return;
-        }
-
-        Hilos::$fs->tmp[Hilos::$rt->selfConnection->fileSessionQuarantineBasename]->unlink();
-        Hilos::$rt->selfConnection->actions->failBinaryFileUpload(
-            Hilos::$rt->selfConnection->fileSessionClientUploadId !== ''
-                ? Hilos::$rt->selfConnection->fileSessionClientUploadId
-                : Hilos::$rt->selfConnection->fileUploadClientUploadId,
-            $code,
-            $this->fileUploadFailureMessage($code),
-        );
     }
 
     /**

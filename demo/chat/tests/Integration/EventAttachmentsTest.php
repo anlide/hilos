@@ -9,9 +9,11 @@ use Demo\Chat\Database\DTO\PublishedAttachmentInputs;
 use Demo\Chat\Database\Object\Item\EventAttachment as ObjectEventAttachment;
 use Demo\Chat\Hilos;
 use Demo\Chat\Http\ChatAttachmentDownloadHandler;
+use Demo\Chat\Runtime\View\Context\RtChatContext;
 use Hilos\Constants\HilosHttpHeaders;
 use Hilos\Constants\HttpConstants;
 use Hilos\Core\Http\RequestQueryParams;
+use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Utils\Helpers\RandomHelper;
 
 /**
@@ -19,6 +21,8 @@ use Hilos\Utils\Helpers\RandomHelper;
  */
 final class EventAttachmentsTest extends IntegrationTestCase
 {
+    private const string TEST_AGENT_ID = 'test-agent';
+
     public function testMessagePersistsMultipleAttachmentsOutsideEventData(): void
     {
         Hilos::$db->events->actions->deleteAll();
@@ -71,6 +75,88 @@ final class EventAttachmentsTest extends IntegrationTestCase
             Hilos::$db->events->actions->deleteAll();
             Hilos::$fs->published['event-attachment-one.txt']->unlink();
             Hilos::$fs->published['event-attachment-two.txt']->unlink();
+        }
+    }
+
+    public function testPublishConnectionDraftsMovesQuarantineFilesAndReturnsMetadata(): void
+    {
+        RtTruthSourceRegistry::register(RtChatContext::connections, true, self::TEST_AGENT_ID);
+        Hilos::$rt->connections->actions->clear();
+        Hilos::$rt->attachmentDrafts->actions->clear(deleteFiles: false);
+        Hilos::$fs->quarantine['draft-publish.txt']->unlink();
+        Hilos::$fs->published['draft-publish.txt']->unlink();
+
+        try {
+            Hilos::$rt->connections->actions->register('publish-ak', 1);
+            Hilos::$fs->quarantine->create('draft-publish.txt')->append('draft-body');
+            Hilos::$rt->attachmentDrafts->actions->create(
+                'draft-publish',
+                'publish-ak',
+                1,
+                'draft-publish.txt',
+                'Original.txt',
+                'text/plain',
+                10,
+                'original.txt',
+                time(),
+            );
+
+            $connection = Hilos::$rt->connections['publish-ak'];
+            $this->assertNotNull($connection);
+            $inputs = Hilos::$rt->attachmentDrafts->actions->publishForConnection($connection);
+
+            $this->assertNotNull($inputs);
+            $items = iterator_to_array($inputs);
+            $this->assertCount(1, $items);
+            $this->assertSame('Original.txt', $items[0]->filename);
+            $this->assertSame('text/plain', $items[0]->mimeType);
+            $this->assertSame('draft-publish.txt', $items[0]->storedName);
+            $this->assertFalse(Hilos::$fs->quarantine['draft-publish.txt']->exists());
+            $this->assertTrue(Hilos::$fs->published['draft-publish.txt']->exists());
+            $this->assertSame('draft-body', Hilos::$fs->published['draft-publish.txt']->read());
+            $this->assertSame(0, count(Hilos::$rt->attachmentDrafts->forAcceptKey('publish-ak')));
+        } finally {
+            Hilos::$rt->connections->actions->clear();
+            Hilos::$rt->attachmentDrafts->actions->clear(deleteFiles: false);
+            Hilos::$fs->quarantine['draft-publish.txt']->unlink();
+            Hilos::$fs->published['draft-publish.txt']->unlink();
+        }
+    }
+
+    public function testPublishConnectionDraftsReturnsNullWhenQuarantineFileIsMissing(): void
+    {
+        RtTruthSourceRegistry::register(RtChatContext::connections, true, self::TEST_AGENT_ID);
+        Hilos::$rt->connections->actions->clear();
+        Hilos::$rt->attachmentDrafts->actions->clear(deleteFiles: false);
+        Hilos::$fs->quarantine['draft-missing.txt']->unlink();
+        Hilos::$fs->published['draft-missing.txt']->unlink();
+
+        try {
+            Hilos::$rt->connections->actions->register('publish-missing-ak', 1);
+            Hilos::$rt->attachmentDrafts->actions->create(
+                'draft-missing',
+                'publish-missing-ak',
+                1,
+                'draft-missing.txt',
+                'Missing.txt',
+                'text/plain',
+                12,
+                'missing.txt',
+                time(),
+            );
+
+            $connection = Hilos::$rt->connections['publish-missing-ak'];
+            $this->assertNotNull($connection);
+            $inputs = Hilos::$rt->attachmentDrafts->actions->publishForConnection($connection);
+
+            $this->assertNull($inputs);
+            $this->assertSame(0, count(Hilos::$rt->attachmentDrafts->forAcceptKey('publish-missing-ak')));
+            $this->assertFalse(Hilos::$fs->published['draft-missing.txt']->exists());
+        } finally {
+            Hilos::$rt->connections->actions->clear();
+            Hilos::$rt->attachmentDrafts->actions->clear(deleteFiles: false);
+            Hilos::$fs->quarantine['draft-missing.txt']->unlink();
+            Hilos::$fs->published['draft-missing.txt']->unlink();
         }
     }
 }

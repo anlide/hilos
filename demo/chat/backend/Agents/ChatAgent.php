@@ -139,14 +139,13 @@ class ChatAgent extends AbstractAgent
     }
 
     /**
-     * Handles chat-owned cron names by replacing the event stream with a cleared event.
-     *
-     * Cron routing is shared with MainPage; page-only cron names are deliberately ignored here.
+     * Handles chat-owned cron cleanup for persisted history and transient attachment state.
      *
      * @param SignalDataInterface $data Cron payload (unused)
      * @param string $source Framework signal source identifier (unused)
      * @param string $name Task name
-     * @throws HilosException On history cleanup failure
+     * @throws AgentUnknownSignalException When cron name is not supported
+     * @throws HilosException On history, runtime, or filesystem cleanup failure
      */
     public function onSignalCron(SignalDataInterface $data, string $source, string $name): void
     {
@@ -154,8 +153,17 @@ class ChatAgent extends AbstractAgent
             case ChatCronConstants::CLEANUP_HISTORY:
                 Hilos::$db->events->actions->deleteAll();
                 Hilos::$db->events->actions->addChatCleared();
+                $this->deleteAllAttachmentFilesFromDisk();
 
                 return;
+
+            case ChatCronConstants::CLEANUP_ATTACHMENT_DRAFTS:
+                Hilos::$rt->attachmentDrafts->actions->deleteExpired();
+
+                return;
+
+            default:
+                throw new AgentUnknownSignalException($name);
         }
     }
 
@@ -201,5 +209,18 @@ class ChatAgent extends AbstractAgent
     private function handleBotMessage(BotMessageSignalData $message): void
     {
         Hilos::$db->events->actions->addMessage($message->message, botId: $message->botId);
+    }
+
+    /**
+     * Deletes all attachment files on disk and resets file-related runtime fields.
+     *
+     * @throws HilosException On runtime or filesystem cleanup failure
+     */
+    private function deleteAllAttachmentFilesFromDisk(): void
+    {
+        Hilos::$fs->published->deleteAll();
+        Hilos::$fs->quarantine->deleteAll();
+        Hilos::$rt->attachmentDrafts->actions->clear(deleteFiles: false);
+        Hilos::$rt->connections->actions->clearAllFileRuntimeOnAllConnections();
     }
 }

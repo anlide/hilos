@@ -4,11 +4,15 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Runtime\View\Actions\Collection;
 
+use Demo\Chat\Database\DTO\PublishedAttachmentInput;
+use Demo\Chat\Database\DTO\PublishedAttachmentInputs;
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\State\Collection\AttachmentDrafts as StateAttachmentDrafts;
 use Demo\Chat\Runtime\State\Item\AttachmentDraft as StateAttachmentDraft;
 use Demo\Chat\Runtime\View\Collection\AttachmentDrafts;
 use Demo\Chat\Runtime\View\Item\AttachmentDraft;
+use Demo\Chat\Runtime\View\Item\Connection;
+use Hilos\Fs\FsException;
 use Hilos\Fs\Exception\FileDeleteException;
 use Hilos\Runtime\Exception\Actions\RtActionsCallbackNotSetException;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
@@ -192,6 +196,48 @@ final class AttachmentDraftsActions extends RtActions
         $this->deleteByIds($draftIds, deleteFiles: true);
 
         return array_keys($affectedAcceptKeys);
+    }
+
+    /**
+     * Move a connection's completed drafts to published storage and clear their runtime rows.
+     *
+     * Returns null when a quarantine file disappeared before any publish move starts.
+     *
+     * @param Connection $connection Connection whose drafts should be published
+     * @return ?PublishedAttachmentInputs Published attachment metadata, or null on missing draft file
+     * @throws FsException When a quarantine file cannot be moved
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     * @throws RtActionsStateCollectionNullException
+     */
+    public function publishForConnection(Connection $connection): ?PublishedAttachmentInputs
+    {
+        $this->ensureCanWrite();
+
+        $draftIds = [];
+        $attachments = [];
+        foreach ($connection->attachmentDrafts as $draft) {
+            $quarantineFile = Hilos::$fs->quarantine[$draft->quarantineBasename];
+            if (!$quarantineFile->exists()) {
+                Hilos::$rt->attachmentDrafts[$draft->draftId]?->actions->delete(deleteFiles: false);
+                return null;
+            }
+
+            $draftIds[] = $draft->draftId;
+            $attachments[] = new PublishedAttachmentInput(
+                filename: $draft->originalFilename,
+                mimeType: $draft->mimeType,
+                storedName: $draft->quarantineBasename,
+            );
+        }
+
+        foreach ($connection->attachmentDrafts as $draft) {
+            Hilos::$fs->quarantine[$draft->quarantineBasename]->move('published');
+        }
+
+        $this->deleteByIds($draftIds, deleteFiles: false);
+
+        return new PublishedAttachmentInputs(...$attachments);
     }
 
     /**

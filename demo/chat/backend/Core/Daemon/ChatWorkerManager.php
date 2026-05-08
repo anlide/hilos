@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Core\Daemon;
 
-use Demo\Chat\Constants\ChatCronConstants;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Agent\ChatAgentManager;
@@ -91,10 +90,6 @@ final class ChatWorkerManager extends WorkerManager
             SignalTypeConstants::AGENT_SIGNAL => [
                 ChatSignalConstants::MODERATION_RESULT => PageConstants::MAIN,
                 ChatSignalConstants::RENAME_MODERATION_RESULT => PageConstants::PROFILE,
-            ],
-            SignalTypeConstants::CRON => [
-                ChatCronConstants::CLEANUP_HISTORY => PageConstants::MAIN,
-                ChatCronConstants::CLEANUP_ATTACHMENT_DRAFTS => PageConstants::MAIN,
             ],
         ];
 
