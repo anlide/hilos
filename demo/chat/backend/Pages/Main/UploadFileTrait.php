@@ -106,11 +106,11 @@ trait UploadFileTrait
             return;
         }
 
-        $norm = FileSystemHelper::normalizeBasename($dto->filename);
+        $normalizeBasename = FileSystemHelper::normalizeBasename($dto->filename);
         if (
-            Hilos::$rt->connections->hasActiveUploadWithNormalizedFilename($norm)
-            || Hilos::$rt->attachmentDrafts->hasDraftWithNormalizedFilename($norm)
-            || Hilos::$db->eventAttachments->hasPublishedFileWithNormalizedFilename($norm)
+            Hilos::$rt->connections->hasActiveUploadWithNormalizedFilename($normalizeBasename)
+            || Hilos::$rt->attachmentDrafts->hasDraftWithNormalizedFilename($normalizeBasename)
+            || Hilos::$db->eventAttachments->hasPublishedFileWithNormalizedFilename($normalizeBasename)
         ) {
             Hilos::$rt->selfConnection->actions->failBinaryFileUpload(
                 $dto->clientUploadId,
@@ -141,7 +141,7 @@ trait UploadFileTrait
             $dto->filename,
             $dto->mimeType,
             $dto->clientUploadId,
-            $norm,
+            $normalizeBasename,
             $dto->filename,
             $dto->size,
         );
@@ -175,10 +175,10 @@ trait UploadFileTrait
             return;
         }
 
-        $len = strlen($data->payload);
-        $declared = Hilos::$rt->selfConnection->fileSessionDeclaredSize;
-        $received = Hilos::$rt->selfConnection->fileSessionReceivedBytes;
-        if ($received + $len > $declared) {
+        if (
+            Hilos::$rt->selfConnection->fileSessionReceivedBytes + strlen($data->payload)
+            > Hilos::$rt->selfConnection->fileSessionDeclaredSize
+        ) {
             $this->logAgentError(
                 'frame_binary: overflow acceptKey=' . Hilos::$rt->selfConnection->acceptKey
                 . ' userId=' . Hilos::$rt->selfConnection->userId,
@@ -188,9 +188,10 @@ trait UploadFileTrait
             return;
         }
 
-        $tmpIndex = Hilos::$rt->selfConnection->fileSessionQuarantineBasename;
         try {
-            Hilos::$fs->tmp[$tmpIndex]->append($data->payload);
+            Hilos::$fs->tmp[Hilos::$rt->selfConnection->fileSessionQuarantineBasename]->append(
+                $data->payload,
+            );
         } catch (FsException $e) {
             $this->logAgentError(
                 'frame_binary: tmp append failed acceptKey=' . Hilos::$rt->selfConnection->acceptKey
@@ -202,13 +203,58 @@ trait UploadFileTrait
             return;
         }
 
-        $newReceived = $received + $len;
-        Hilos::$rt->selfConnection->actions->applyStoredBinaryChunkProgress($newReceived);
+        Hilos::$rt->selfConnection->actions->applyStoredBinaryChunkProgress(
+            Hilos::$rt->selfConnection->fileSessionReceivedBytes + strlen($data->payload),
+        );
 
-        $this->noteFileUploadProgressProjectionThrottled($newReceived === $declared);
+        if (
+            Hilos::$rt->selfConnection->fileProgressFilename !== null
+            && (
+                Hilos::$rt->selfConnection->fileSessionReceivedBytes
+                    === Hilos::$rt->selfConnection->fileSessionDeclaredSize
+                || (
+                    Hilos::$rt->selfConnection->fileProgressTotalBytes > 0
+                    && Hilos::$rt->selfConnection->fileProgressUploadedBytes
+                        >= Hilos::$rt->selfConnection->fileProgressTotalBytes
+                )
+                || Hilos::$rt->selfConnection->uploadProgressLastSentAt <= 0.0
+                || microtime(true) - Hilos::$rt->selfConnection->uploadProgressLastSentAt
+                    >= self::FILE_UPLOAD_PROGRESS_MIN_INTERVAL_SEC
+            )
+        ) {
+            Hilos::$rt->selfConnection->actions->noteUploadProgressSentAt();
+        }
 
-        if ($newReceived === $declared) {
-            $this->completeFileUpload();
+        if (
+            Hilos::$rt->selfConnection->fileSessionReceivedBytes
+            === Hilos::$rt->selfConnection->fileSessionDeclaredSize
+        ) {
+            try {
+                Hilos::$fs->quarantine->createFromTmp(
+                    Hilos::$rt->selfConnection->fileSessionUploadId
+                        . FsFile::extensionForMime(Hilos::$rt->selfConnection->fileSessionMimeType),
+                    Hilos::$rt->selfConnection->fileSessionQuarantineBasename,
+                );
+            } catch (FsException $e) {
+                $this->logAgentError("Cannot move tmp to quarantine: {$e->getMessage()}");
+                $this->failFileUploadSession(self::FILE_UPLOAD_FAILURE_CODE_STORAGE_ERROR);
+
+                return;
+            }
+
+            Hilos::$rt->attachmentDrafts->actions->create(
+                draftId: Hilos::$rt->selfConnection->fileSessionUploadId,
+                acceptKey: Hilos::$rt->selfConnection->acceptKey,
+                userId: Hilos::$rt->selfConnection->userId,
+                quarantineBasename: Hilos::$rt->selfConnection->fileSessionUploadId
+                    . FsFile::extensionForMime(Hilos::$rt->selfConnection->fileSessionMimeType),
+                originalFilename: Hilos::$rt->selfConnection->fileSessionOriginalFilename,
+                mimeType: Hilos::$rt->selfConnection->fileSessionMimeType,
+                size: Hilos::$rt->selfConnection->fileSessionDeclaredSize,
+                normalizedFilename: Hilos::$rt->selfConnection->fileSessionNormalizedFilename,
+                uploadedAt: time(),
+            );
+            Hilos::$rt->selfConnection->actions->clearBinaryUploadSessionAndProgressUi();
         }
     }
 
@@ -230,60 +276,11 @@ trait UploadFileTrait
     }
 
     /**
-     * After the last binary chunk: move tmp to quarantine, clear upload state, and create an attachment draft.
-     *
-     * @throws FileDeleteException When storage-error cleanup cannot delete the tmp file
-     * @throws RtActionsCallbackNotSetException When attachment draft runtime item creation is not configured
-     * @throws RtActionsCollectionNameNullException When runtime actions collection name is unavailable
-     * @throws RtActionsStateCollectionNullException When attachment draft runtime state is unavailable
-     * @throws RtTruthSourceWriteNotAllowedException When the truth source rejects a runtime write
-     */
-    private function completeFileUpload(): void
-    {
-        if (Hilos::$rt->selfConnection === null) {
-            return;
-        }
-        if (Hilos::$rt->selfConnection->fileSessionUploadId === null) {
-            return;
-        }
-        $uploadId = Hilos::$rt->selfConnection->fileSessionUploadId;
-        $tmpIndex = Hilos::$rt->selfConnection->fileSessionQuarantineBasename;
-        $declaredSize = Hilos::$rt->selfConnection->fileSessionDeclaredSize;
-        $originalFilename = Hilos::$rt->selfConnection->fileSessionOriginalFilename;
-        $mimeType = Hilos::$rt->selfConnection->fileSessionMimeType;
-        $normalizedFilename = Hilos::$rt->selfConnection->fileSessionNormalizedFilename;
-
-        $storedName = $uploadId . FsFile::extensionForMime($mimeType);
-        try {
-            Hilos::$fs->quarantine->createFromTmp($storedName, $tmpIndex);
-        } catch (FsException $e) {
-            $this->logAgentError("Cannot move tmp to quarantine: {$e->getMessage()}");
-            $this->failFileUploadSession(self::FILE_UPLOAD_FAILURE_CODE_STORAGE_ERROR);
-
-            return;
-        }
-
-        Hilos::$rt->selfConnection->actions->clearBinaryUploadSessionAndProgressUi();
-        Hilos::$rt->attachmentDrafts->actions->create(
-            draftId: $uploadId,
-            acceptKey: Hilos::$rt->selfConnection->acceptKey,
-            userId: Hilos::$rt->selfConnection->userId,
-            quarantineBasename: $storedName,
-            originalFilename: $originalFilename,
-            mimeType: $mimeType,
-            size: $declaredSize,
-            normalizedFilename: $normalizedFilename,
-            uploadedAt: time(),
-        );
-    }
-
-    /**
      * Abort the active upload: delete tmp file, clear session/progress runtime, and expose failure state.
      *
      * @param string $code One of self::FILE_UPLOAD_FAILURE_CODE_* constants
      * @throws FileDeleteException When the tmp file cannot be deleted
      * @throws RtActionsCollectionNameNullException When runtime actions collection name is unavailable
-     * @throws RtTruthSourceWriteNotAllowedException When the truth source rejects a runtime write
      */
     private function failFileUploadSession(string $code): void
     {
@@ -291,12 +288,11 @@ trait UploadFileTrait
             return;
         }
 
-        $clientUploadId = Hilos::$rt->selfConnection->fileSessionClientUploadId !== ''
-            ? Hilos::$rt->selfConnection->fileSessionClientUploadId
-            : Hilos::$rt->selfConnection->fileUploadClientUploadId;
         Hilos::$fs->tmp[Hilos::$rt->selfConnection->fileSessionQuarantineBasename]->unlink();
         Hilos::$rt->selfConnection->actions->failBinaryFileUpload(
-            $clientUploadId,
+            Hilos::$rt->selfConnection->fileSessionClientUploadId !== ''
+                ? Hilos::$rt->selfConnection->fileSessionClientUploadId
+                : Hilos::$rt->selfConnection->fileUploadClientUploadId,
             $code,
             $this->fileUploadFailureMessage($code),
         );
@@ -319,31 +315,4 @@ trait UploadFileTrait
         };
     }
 
-    /**
-     * Record a projected upload-progress notification at most once per configured interval unless forced.
-     *
-     * The frontend projection sends the current `selfConnection` snapshot when this marker changes.
-     *
-     * @param bool $force When true, notify immediately (e.g. last chunk), bypassing the min-interval throttle
-     * @throws RtActionsCollectionNameNullException When runtime actions collection name is unavailable
-     */
-    private function noteFileUploadProgressProjectionThrottled(bool $force): void
-    {
-        if (Hilos::$rt->selfConnection === null) {
-            return;
-        }
-        if (Hilos::$rt->selfConnection->fileProgressFilename === null) {
-            return;
-        }
-        $uploaded = Hilos::$rt->selfConnection->fileProgressUploadedBytes;
-        $total = Hilos::$rt->selfConnection->fileProgressTotalBytes;
-        $isComplete = $total > 0 && $uploaded >= $total;
-        $last = Hilos::$rt->selfConnection->uploadProgressLastSentAt;
-        $elapsed = $last > 0.0 ? (microtime(true) - $last) : null;
-        if (!$force && !$isComplete && $elapsed !== null && $elapsed < self::FILE_UPLOAD_PROGRESS_MIN_INTERVAL_SEC) {
-            return;
-        }
-
-        Hilos::$rt->selfConnection->actions->noteUploadProgressSentAt();
-    }
 }
