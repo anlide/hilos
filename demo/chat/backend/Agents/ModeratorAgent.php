@@ -28,6 +28,7 @@ use Hilos\LLM\ClientFactory;
 use Hilos\LLM\Contract\AsyncChatLLMInterface;
 use Hilos\LLM\DTO\ChatGenerateOptions;
 use Hilos\LLM\DTO\Message;
+use Hilos\LLM\Exception\LLMException;
 use Hilos\Utils\Env;
 
 /**
@@ -134,7 +135,17 @@ final class ModeratorAgent extends AbstractAgent
      */
     public function onTick(): void
     {
-        $this->chatClient->tick(microtime(true) * 1000);
+        try {
+            $this->chatClient->tick(microtime(true) * 1000);
+        } catch (LLMException $e) {
+            $this->logAgentError($e->getMessage());
+            if ($this->currentAcceptKey !== null) {
+                $this->sendCurrentModerationResult(false, self::REASON_SERVICE_UNAVAILABLE);
+            } else {
+                $this->resetCurrentModerationRequest();
+            }
+            return;
+        }
 
         if ($this->currentAcceptKey !== null) {
             if ($this->chatClient->isBusy()) {
@@ -142,22 +153,18 @@ final class ModeratorAgent extends AbstractAgent
             }
 
             if ($this->chatClient->hasResult()) {
-                $text = $this->chatClient->getResult();
                 $allow = false;
                 $reason = self::REASON_UNKNOWN;
 
                 try {
-                    if ($text === null) {
-                        throw new AgentException('Moderation request failed without a model response');
-                    }
-
+                    $text = $this->chatClient->consumeResult();
                     $decision = ModerationDecision::fromModelOutput($text);
 
                     $allow = $decision->allow;
                     $reason = $decision->reason;
                 } catch (InvalidArgumentException $e) {
                     $this->logAgentError($e->getMessage());
-                } catch (AgentException $e) {
+                } catch (AgentException|LLMException $e) {
                     $this->logAgentError($e->getMessage());
                     $reason = self::REASON_SERVICE_UNAVAILABLE;
                 } finally {
@@ -236,8 +243,10 @@ final class ModeratorAgent extends AbstractAgent
             return;
         }
 
-        if (!$this->chatClient->startGenerate($messages, $options)) {
-            $this->logAgentError('Moderation request could not be started');
+        try {
+            $this->chatClient->startGenerate($messages, $options);
+        } catch (LLMException $e) {
+            $this->logAgentError($e->getMessage());
             $this->sendCurrentModerationResult(false, self::REASON_SERVICE_UNAVAILABLE);
         }
     }

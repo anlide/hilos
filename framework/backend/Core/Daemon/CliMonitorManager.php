@@ -5,12 +5,13 @@ declare(strict_types=1);
 namespace Hilos\Core\Daemon;
 
 use Hilos\API\AsyncHttpClient;
+use Hilos\API\DTO\AsyncHttpResponse;
 use Hilos\Constants\ApiEndpoint;
 use Hilos\Constants\DaemonConstants;
 use Hilos\Constants\EnvConstants;
-use Hilos\Constants\HttpConstants;
 use Hilos\Core\CLI\DTO\DaemonStatusDTO;
 use Hilos\Core\Daemon\Master\DaemonStatus;
+use Hilos\HilosException;
 use Hilos\Utils\Env;
 use Hilos\Utils\Exception\MissingEnvironmentVariableException;
 use Hilos\Utils\Helpers\StringHelper;
@@ -84,20 +85,23 @@ class CliMonitorManager extends BaseManager
             $loopStartTime = microtime(true);
             $currentTimeMs = $loopStartTime * 1000;
 
-            // Start new HTTP request if client is ready and delay has passed
-            if (!$httpClient->isBusy()) {
-                $timeSinceLastRequest = $currentTimeMs - $lastHttpCompletion;
-                if ($timeSinceLastRequest >= $this->httpRequestDelay) {
-                    $httpClient->startNewRequest($currentTimeMs);
+            try {
+                if (!$httpClient->isBusy()) {
+                    $timeSinceLastRequest = $currentTimeMs - $lastHttpCompletion;
+                    if ($timeSinceLastRequest >= $this->httpRequestDelay) {
+                        $httpClient->startNewRequest($currentTimeMs);
+                    }
                 }
-            }
 
-            // Process async HTTP client state machine
-            $httpClient->tick($currentTimeMs);
+                $httpClient->tick($currentTimeMs);
 
-            // Check for HTTP results
-            if ($httpClient->hasResult()) {
-                $this->processHttpResult($httpClient->getResult());
+                if ($httpClient->hasResult()) {
+                    $this->processHttpResult($httpClient->consumeResult());
+                    $lastHttpCompletion = $currentTimeMs;
+                }
+            } catch (HilosException $e) {
+                $httpClient->reset();
+                $this->daemonStatus = null;
                 $lastHttpCompletion = $currentTimeMs;
             }
 
@@ -192,21 +196,14 @@ class CliMonitorManager extends BaseManager
     /**
      * Process HTTP result from async client.
      *
-     * @param array<string, mixed> $result Result array with HttpConstants::RESPONSE_KEY_SUCCESS and HttpConstants::RESPONSE_KEY_BODY keys
+     * @param AsyncHttpResponse $response Completed daemon status response
      */
-    private function processHttpResult(array $result): void
+    private function processHttpResult(AsyncHttpResponse $response): void
     {
-        if ($result[HttpConstants::RESPONSE_KEY_SUCCESS] && $result[HttpConstants::RESPONSE_KEY_BODY] !== null) {
-            // Parse JSON to DTO and convert to DaemonStatus
-            try {
-                $dto = DaemonStatusDTO::fromJson($result[HttpConstants::RESPONSE_KEY_BODY]);
-                $this->daemonStatus = DaemonStatus::fromDTO($dto);
-            } catch (\Throwable $e) {
-                // Failed to parse DTO
-                $this->daemonStatus = null;
-            }
-        } else {
-            // Request failed
+        try {
+            $dto = DaemonStatusDTO::fromJson($response->body);
+            $this->daemonStatus = DaemonStatus::fromDTO($dto);
+        } catch (\Throwable $e) {
             $this->daemonStatus = null;
         }
     }

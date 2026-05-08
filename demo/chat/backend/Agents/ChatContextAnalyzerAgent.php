@@ -24,6 +24,7 @@ use Hilos\LLM\ClientFactory;
 use Hilos\LLM\Contract\AsyncChatLLMInterface;
 use Hilos\LLM\DTO\ChatGenerateOptions;
 use Hilos\LLM\DTO\Message;
+use Hilos\LLM\Exception\LLMException;
 use Hilos\Utils\Env;
 use Hilos\Utils\Helpers\JsonHelper;
 
@@ -59,8 +60,6 @@ final class ChatContextAnalyzerAgent extends AbstractAgent
 
     /**
      * Registers the chat context runtime truth source and initializes the main context when missing.
-     *
-     * @throws HilosException When runtime context lookup or initialization fails
      */
     public function onStart(): void
     {
@@ -81,7 +80,16 @@ final class ChatContextAnalyzerAgent extends AbstractAgent
      */
     public function onTick(): void
     {
-        $this->chatClient->tick(microtime(true) * 1000);
+        try {
+            $this->chatClient->tick(microtime(true) * 1000);
+        } catch (LLMException $e) {
+            $this->logAgentError($e->getMessage());
+            $this->chatClient->reset();
+            if ($this->pendingSummarize && !$this->chatClient->isBusy()) {
+                $this->startSummarize();
+            }
+            return;
+        }
 
         if (!$this->chatClient->hasResult()) {
             if ($this->pendingSummarize && !$this->chatClient->isBusy()) {
@@ -90,13 +98,13 @@ final class ChatContextAnalyzerAgent extends AbstractAgent
             return;
         }
 
-        $text = $this->chatClient->getResult();
-
-        if ($text === null) {
+        try {
+            $text = $this->chatClient->consumeResult();
+        } catch (LLMException $e) {
+            $this->logAgentError($e->getMessage());
             if ($this->pendingSummarize && !$this->chatClient->isBusy()) {
                 $this->startSummarize();
             }
-
             return;
         }
 
@@ -213,7 +221,10 @@ PROMPT;
                 : [ChatContextAnalyzerConstants::RESPONSE_FORMAT_FORMAT => ChatContextAnalyzerConstants::RESPONSE_FORMAT_JSON],
         );
 
-        if (!$this->chatClient->startGenerate($messages, $options)) {
+        try {
+            $this->chatClient->startGenerate($messages, $options);
+        } catch (LLMException $e) {
+            $this->logAgentError($e->getMessage());
             $this->pendingSummarize = true;
         }
     }

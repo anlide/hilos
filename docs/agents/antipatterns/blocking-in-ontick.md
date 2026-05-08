@@ -30,13 +30,15 @@ Use `AsyncChatLLMInterface` — non-blocking, poll with `tick()`:
 private AsyncChatLLMInterface $client;
 
 public function onTick(): void {
-    $this->client->tick(); // poll for completion, calls callback when done
+    $this->client->tick(microtime(true) * 1000);
+    if ($this->client->hasResult()) {
+        $result = $this->client->consumeResult();
+        // handle completed result
+    }
 }
 
 private function startModeration(string $text): void {
-    $this->client->generate($messages, $options, function($result) {
-        $this->handleModerationResult($result);
-    });
+    $this->client->startGenerate($messages, $options);
 }
 ```
 

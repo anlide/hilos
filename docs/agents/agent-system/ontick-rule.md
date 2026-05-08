@@ -24,7 +24,7 @@ public function onTick(): void {
     }
 
     // ✅ Poll async LLM client for completed response
-    $this->chatClient->tick();
+    $this->chatClient->tick(microtime(true) * 1000);
 }
 ```
 
@@ -48,7 +48,7 @@ public function onTick(): void {
 
 ## Handling long operations
 
-**Option 1: Async LLM client** — use `AsyncChatLLMInterface`, call `tick()` in `onTick()`, handle result in callback.
+**Option 1: Async LLM client** — use `AsyncChatLLMInterface`, call `tick()` in `onTick()`, consume the result when `hasResult()` is true.
 
 **Option 2: Monopolistic agent** — run the heavy work in a dedicated monopolistic worker that has no time pressure from WS signals.
 

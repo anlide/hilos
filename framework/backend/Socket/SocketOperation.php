@@ -16,6 +16,7 @@ enum SocketOperation: string
     case CLOSE = 'close';
     case GETPEERNAME = 'getpeername';
     case CREATE = 'create';
+    case SELECT = 'select';
     case SET_OPTION = 'set_option';
     case SET_NONBLOCK = 'set_nonblock';
     case CONNECT = 'connect';

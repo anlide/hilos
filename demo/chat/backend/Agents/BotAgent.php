@@ -35,6 +35,7 @@ use Hilos\LLM\ClientFactory;
 use Hilos\LLM\Contract\AsyncChatLLMInterface;
 use Hilos\LLM\DTO\ChatGenerateOptions;
 use Hilos\LLM\DTO\Message;
+use Hilos\LLM\Exception\LLMException;
 use Hilos\Utils\Env;
 use Hilos\Utils\Helpers\RandomHelper;
 
@@ -206,17 +207,25 @@ final class BotAgent extends AbstractAgent
     {
         $nowSec = microtime(true);
 
-        $this->chatClient->tick(microtime(true) * 1000);
+        try {
+            $this->chatClient->tick(microtime(true) * 1000);
+        } catch (LLMException $e) {
+            $this->logAgentError($e->getMessage());
+            $this->chatClient->reset();
+            $this->generationInFlight = false;
+        }
 
         if ($this->chatClient->hasResult()) {
-            $message = $this->chatClient->getResult();
             $this->generationInFlight = false;
 
-            if ($message !== null) {
-                $message = trim($message);
+            try {
+                $message = trim($this->chatClient->consumeResult());
+            } catch (LLMException $e) {
+                $this->logAgentError($e->getMessage());
+                $message = '';
             }
 
-            if ($message !== null && $message !== '') {
+            if ($message !== '') {
                 $this->lastMessageSentAt = $nowSec;
                 $this->sendToAgent(
                     ChatSignalConstants::BOT_MESSAGE,
@@ -370,8 +379,12 @@ final class BotAgent extends AbstractAgent
             maxTokens: self::MAX_RESPONSE_TOKENS,
         );
 
-        if ($this->chatClient->startGenerate($messages, $options)) {
+        try {
+            $this->chatClient->startGenerate($messages, $options);
             $this->generationInFlight = true;
+        } catch (LLMException $e) {
+            $this->logAgentError($e->getMessage());
+            $this->generationInFlight = false;
         }
     }
 

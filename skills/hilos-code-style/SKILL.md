@@ -22,6 +22,8 @@ Use this skill for style-sensitive Hilos edits and reviews. Start with `agents.m
 - Named signal handler routing (`onSignalAgent()`, `onSignalCron()`):
   `docs/agents/code-style/signal-handlers.md`
 - Internal backend API contracts: `docs/agents/code-style/internal-backend-api.md`
+- Method command/predicate/result contracts:
+  `docs/agents/code-style/method-contracts.md`
 - Temporary/local variable rules: `docs/agents/code-style/local-variables.md`
 - Broader style guide: `docs/code-style.md`
 - Quality guide: `docs/quality.md`
@@ -44,43 +46,47 @@ Use this skill for style-sensitive Hilos edits and reviews. Start with `agents.m
 8. Keep named signal routing aligned with the signal handler guide.
 9. Use typed parameters, DTOs, value objects, or typed collections for internal
    backend API; keep unstructured arrays at boundaries.
-10. Avoid one-use locals and prefer inline nullsafe access for one immediate
+10. Do not return `bool` as a success flag from methods that perform work; use
+   `void` plus exceptions, or return the produced domain value.
+11. Keep `get*()` methods non-consuming. If retrieving a value clears it or
+   advances state, name the method for that mutation, such as `consumeResult()`.
+12. Avoid one-use locals and prefer inline nullsafe access for one immediate
    nullable member call under the local variable rule.
-11. Avoid pass-through locals and DB/RT item aliases; keep known-key
+13. Avoid pass-through locals and DB/RT item aliases; keep known-key
    `Hilos::$db/$rt->collection[$key]` access and context item aliases such as
    `Hilos::$rt->selfConnection` visible unless the local variable adds domain
    meaning, snapshots state, or performs type narrowing that cannot be expressed
    by a guard.
-12. Use named constants for action names, signal names, route params, model
+14. Use named constants for action names, signal names, route params, model
    fields, DTO payload keys, table row keys, and boundary array keys whenever
    a constant exists. If a repeated payload key has no owner constant, add one
    to the owning DTO, projection, table row, entity, object, or context before
    using that key in examples or code.
-13. During refactors, do not add new convenience read helpers or predicates
+15. During refactors, do not add new convenience read helpers or predicates
    such as `has*()`, `is*()`, `can*()`, or `get*()` on DB/RT View items,
    collections, objects, actions, or projections unless the user explicitly
    approved that exact method in the plan. Prefer explicit field access when
    preserving transparent data shape is the goal.
-14. Keep comments concise and in English.
-15. For `Page::onAction()`, do not add a local `try/catch` around the routing
+16. Keep comments concise and in English.
+17. For `Page::onAction()`, do not add a local `try/catch` around the routing
    `switch`; the framework catches action exceptions and calls
    `onActionException()`.
-16. For named signal handlers, use `switch ($name)` with explicit cases.
-17. Override `onActionException()` only when the page has a specific fail/error
+18. For named signal handlers, use `switch ($name)` with explicit cases.
+19. Override `onActionException()` only when the page has a specific fail/error
    contract; otherwise let the default framework `action_error` signal notify
    the initiator.
-18. Use `AgentUnknownActionException` in `onAction()` default branches.
-19. Do not add empty `default` branches. If a handler intentionally ignores
+20. Use `AgentUnknownActionException` in `onAction()` default branches.
+21. Do not add empty `default` branches. If a handler intentionally ignores
    shared broadcast names and the branch would only `return` or `break`, omit
    it and document the ignore contract in PHPDoc.
-20. In PHPDoc, import exception classes with `use` and reference short names;
+22. In PHPDoc, import exception classes with `use` and reference short names;
    do not write leading-backslash fully qualified exceptions such as
    `@throws \OutOfBoundsException`.
-21. Use `ValidationException` and its children for user/business validation;
+23. Use `ValidationException` and its children for user/business validation;
    read `docs/agents/code-style/exceptions.md` before changing exception types.
-22. Before finishing a PHP method change, re-check the affected docblock against
+24. Before finishing a PHP method change, re-check the affected docblock against
    `docs/agents/code-style/phpdoc.md`.
-23. Before finalizing PHPDoc, audit every added or changed `@throws`. Remove
+25. Before finalizing PHPDoc, audit every added or changed `@throws`. Remove
    any `@throws` based only on assumed framework, DB, or signal failure rather
    than a direct throw, documented callee contract, or deliberate local
    caller-facing contract.

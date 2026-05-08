@@ -11,10 +11,7 @@ namespace Hilos\Constants;
  */
 class HttpConstants
 {
-    /** @var string AsyncHttpClient response key for success flag */
-    public const string RESPONSE_KEY_SUCCESS = 'success';
-
-    /** @var string AsyncHttpClient response key for body */
+    /** @var string HTTP response key for body */
     public const string RESPONSE_KEY_BODY = 'body';
 
     /** @var string HttpRouter/HttpClient response key for status code */

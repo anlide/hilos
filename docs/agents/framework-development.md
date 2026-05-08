@@ -82,6 +82,10 @@ the failure is not covered by an existing family.
 
 - Public and protected framework methods must document meaningful local
   contracts.
+- Framework command methods should return `void` on success and throw
+  subsystem exceptions on failure. Do not return `bool` as a success flag.
+- `get*()` methods must not consume or clear state. Use names such as
+  `consumeResult()` when retrieval intentionally changes future reads.
 - Every `@throws` line needs a short reason.
 - Add `@throws` only for exceptions thrown directly, documented by a callee, or
   deliberately exposed as the local caller-facing contract.

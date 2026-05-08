@@ -38,9 +38,13 @@ that match the affected subsystem.
 7. When a framework subsystem needs caller-facing failures, add a subsystem base
    exception under `HilosException` and concrete children instead of throwing a
    generic unrelated exception.
-8. Update PHPDoc `@throws` with short caller-facing reasons for every exception
+8. Keep framework command methods as `void` plus exceptions, or return the
+   produced domain value. Do not return `bool` as a success flag.
+9. Keep `get*()` methods non-consuming; use names such as `consumeResult()` for
+   retrieval that clears buffers or advances state.
+10. Update PHPDoc `@throws` with short caller-facing reasons for every exception
    that the public/protected contract deliberately exposes.
-9. Validate through composer scripts selected by `$hilos-testing-cli`.
+11. Validate through composer scripts selected by `$hilos-testing-cli`.
 
 ## Hard Rules
 

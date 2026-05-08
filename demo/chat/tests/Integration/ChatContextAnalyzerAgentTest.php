@@ -17,6 +17,7 @@ use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Sync\DTO\DbSyncCreatedSignalData;
 use Hilos\LLM\Contract\AsyncChatLLMInterface;
 use Hilos\LLM\DTO\ChatGenerateOptions;
+use Hilos\LLM\Exception\LLMClientBusyException;
 use Hilos\Runtime\RtSyncApplicator;
 use Hilos\Runtime\Exception\Rt\RtCollectionNotFoundException;
 use Hilos\TruthSource\RtTruthSourceRegistry;
@@ -188,17 +189,15 @@ final class ControlledAnalyzerChatClient implements AsyncChatLLMInterface
 
     private ?string $result = null;
 
-    public function startGenerate(array $messages, ChatGenerateOptions $options): bool
+    public function startGenerate(array $messages, ChatGenerateOptions $options): void
     {
         $this->startGenerateCalls++;
 
         if ($this->busy) {
-            return false;
+            throw new LLMClientBusyException();
         }
 
         $this->busy = true;
-
-        return true;
     }
 
     public function tick(float $currentTimeMs): void
@@ -210,13 +209,13 @@ final class ControlledAnalyzerChatClient implements AsyncChatLLMInterface
         return $this->hasResult;
     }
 
-    public function getResult(): ?string
+    public function consumeResult(): string
     {
         $result = $this->result;
         $this->hasResult = false;
         $this->result = null;
 
-        return $result;
+        return $result ?? '';
     }
 
     public function isBusy(): bool

@@ -5,12 +5,20 @@ declare(strict_types=1);
 namespace Hilos\LLM\Local\Chat;
 
 use Hilos\API\AsyncHttpClient;
+use Hilos\API\Exception\AsyncHttpException;
 use Hilos\Constants\HttpConstants;
 use Hilos\LLM\Constants\LLMApiConstants;
 use Hilos\LLM\Contract\AsyncChatLLMInterface;
 use Hilos\LLM\DTO\ChatGenerateOptions;
 use Hilos\LLM\DTO\Message;
-use Hilos\Utils\Logger;
+use Hilos\LLM\Exception\LLMClientBusyException;
+use Hilos\LLM\Exception\LLMConfigurationException;
+use Hilos\LLM\Exception\LLMException;
+use Hilos\LLM\Exception\LLMPayloadEncodeException;
+use Hilos\LLM\Exception\LLMRequestException;
+use Hilos\LLM\Exception\LLMResponseException;
+use Hilos\LLM\Exception\LLMResultUnavailableException;
+use Hilos\Socket\SocketException;
 
 /**
  * AsyncOllamaChatProvider - Non-blocking local chat provider via Ollama API.
@@ -68,18 +76,17 @@ class AsyncOllamaChatProvider implements AsyncChatLLMInterface
      *
      * @param list<Message|array{role: string, content: string}> $messages Chat messages
      * @param ChatGenerateOptions $options Generation options (model, temperature, etc.)
-     * @return bool True if started, false if already busy or model missing
+     * @throws LLMException When request setup or start fails
      */
-    public function startGenerate(array $messages, ChatGenerateOptions $options): bool
+    public function startGenerate(array $messages, ChatGenerateOptions $options): void
     {
         if ($this->httpClient->isBusy()) {
-            return false;
+            throw new LLMClientBusyException();
         }
 
         $model = $options->model ?? $this->defaultModel;
         if ($model === null || $model === '') {
-            Logger::logAgentError(static::class, LLMApiConstants::LOG_MODEL_REQUIRED_OLLAMA);
-            return false;
+            throw new LLMConfigurationException(LLMApiConstants::LOG_MODEL_REQUIRED_OLLAMA);
         }
 
         $prompt = $this->messagesToPrompt($messages);
@@ -102,8 +109,9 @@ class AsyncOllamaChatProvider implements AsyncChatLLMInterface
 
         $body = json_encode($payload, JSON_UNESCAPED_UNICODE);
         if (!is_string($body)) {
-            Logger::logAgentError(static::class, LLMApiConstants::LOG_FAILED_ENCODE_PAYLOAD);
-            return false;
+            throw new LLMPayloadEncodeException(
+                LLMApiConstants::LOG_FAILED_ENCODE_PAYLOAD . ': ' . json_last_error_msg(),
+            );
         }
 
         $timeoutMs = (int) ceil($options->timeoutSec * 1000);
@@ -117,17 +125,26 @@ class AsyncOllamaChatProvider implements AsyncChatLLMInterface
 
         $currentTimeMs = microtime(true) * 1000;
 
-        return $this->httpClient->startNewRequest($currentTimeMs);
+        try {
+            $this->httpClient->startNewRequest($currentTimeMs);
+        } catch (AsyncHttpException|SocketException $e) {
+            throw new LLMRequestException('Failed to start Ollama generation request', $e);
+        }
     }
 
     /**
      * Advances async HTTP client state. Call in event loop.
      *
      * @param float $currentTimeMs Current time in milliseconds
+     * @throws LLMException When the active request fails
      */
     public function tick(float $currentTimeMs): void
     {
-        $this->httpClient->tick($currentTimeMs);
+        try {
+            $this->httpClient->tick($currentTimeMs);
+        } catch (AsyncHttpException|SocketException $e) {
+            throw new LLMRequestException('Ollama generation request failed', $e);
+        }
     }
 
     /**
@@ -141,27 +158,28 @@ class AsyncOllamaChatProvider implements AsyncChatLLMInterface
     }
 
     /**
-     * Returns generated text or null on error/invalid response.
+     * Consumes generated text.
      *
-     * @return ?string Response text or null
+     * @return string Response text
+     * @throws LLMException When no result is available or response is invalid
      */
-    public function getResult(): ?string
+    public function consumeResult(): string
     {
-        $result = $this->httpClient->getResult();
-        $success = $result[HttpConstants::RESPONSE_KEY_SUCCESS] ?? false;
-        $body = $result[HttpConstants::RESPONSE_KEY_BODY] ?? null;
+        try {
+            $body = $this->httpClient->consumeResult()->body;
+        } catch (AsyncHttpException $e) {
+            throw new LLMResultUnavailableException('No Ollama generation result is available', previous: $e);
+        }
 
-        if (!$success || $body === null || $body === '') {
-            return null;
+        if ($body === '') {
+            throw new LLMResponseException('Ollama response body is empty');
         }
 
         $decoded = json_decode($body, true);
         if (!is_array($decoded) || !is_string($decoded[LLMApiConstants::KEY_RESPONSE] ?? null)) {
-            Logger::logAgentError(
-                static::class,
-                LLMApiConstants::LOG_OLLAMA_RESPONSE_INVALID . $this->truncateForLog($body)
+            throw new LLMResponseException(
+                LLMApiConstants::LOG_OLLAMA_RESPONSE_INVALID . $this->truncateForLog($body),
             );
-            return null;
         }
 
         return trim($decoded[LLMApiConstants::KEY_RESPONSE]);

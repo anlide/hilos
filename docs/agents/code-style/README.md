@@ -13,6 +13,7 @@ framework subsystem exceptions, read [framework-development.md](../framework-dev
 | [page-action-handlers.md](page-action-handlers.md) | editing `Page::onAction()`, action DTO routing, action acks/errors |
 | [signal-handlers.md](signal-handlers.md) | editing named signal handlers such as `onSignalAgent()` or `onSignalCron()` |
 | [internal-backend-api.md](internal-backend-api.md) | changing backend contracts, DB actions, table actions, DTO/value object boundaries, or typed collections |
+| [method-contracts.md](method-contracts.md) | changing method return types, success/failure contracts, command methods, predicates, or result consumption APIs |
 | [import-aliases-and-helper-names.md](import-aliases-and-helper-names.md) | adding or changing PHP import aliases or helper method names |
 | [local-variables.md](local-variables.md) | introducing temporary/local variables or reviewing noisy one-use variables |
 | [frontend-vue.md](frontend-vue.md) | editing Vue SFC templates, global components, or frontend line endings |

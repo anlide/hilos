@@ -35,6 +35,7 @@ use Hilos\Socket\Exception\SocketCreateException;
 use Hilos\Socket\Exception\SocketGetPeerNameException;
 use Hilos\Socket\Exception\SocketListenException;
 use Hilos\Socket\Exception\SocketReadException;
+use Hilos\Socket\Exception\SocketSelectException;
 use Hilos\Socket\Exception\SocketSetNonBlockException;
 use Hilos\Socket\Exception\SocketSetOptionException;
 use Hilos\Socket\Exception\SocketWriteException;
@@ -296,6 +297,7 @@ abstract class AbstractSocket
                     SocketOperation::CLOSE => throw new SocketCloseException($errorCode, $errorMessage),
                     SocketOperation::GETPEERNAME => throw new SocketGetPeerNameException($errorCode, $errorMessage),
                     SocketOperation::CREATE => throw new SocketCreateException($errorCode, $errorMessage),
+                    SocketOperation::SELECT => throw new SocketSelectException($errorCode, $errorMessage),
                     SocketOperation::SET_OPTION => throw new SocketSetOptionException($errorCode, $errorMessage),
                     SocketOperation::SET_NONBLOCK => throw new SocketSetNonBlockException($errorCode, $errorMessage),
                     SocketOperation::CONNECT => throw new SocketConnectException($errorCode, $errorMessage),

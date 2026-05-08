@@ -5,12 +5,20 @@ declare(strict_types=1);
 namespace Hilos\LLM\External\Chat;
 
 use Hilos\API\AsyncHttpClient;
+use Hilos\API\Exception\AsyncHttpException;
 use Hilos\Constants\HttpConstants;
 use Hilos\LLM\Constants\LLMApiConstants;
 use Hilos\LLM\Contract\AsyncChatLLMInterface;
 use Hilos\LLM\DTO\ChatGenerateOptions;
 use Hilos\LLM\DTO\Message;
-use Hilos\Utils\Logger;
+use Hilos\LLM\Exception\LLMClientBusyException;
+use Hilos\LLM\Exception\LLMConfigurationException;
+use Hilos\LLM\Exception\LLMException;
+use Hilos\LLM\Exception\LLMPayloadEncodeException;
+use Hilos\LLM\Exception\LLMRequestException;
+use Hilos\LLM\Exception\LLMResponseException;
+use Hilos\LLM\Exception\LLMResultUnavailableException;
+use Hilos\Socket\SocketException;
 
 /**
  * AsyncOpenAIChatProvider - Non-blocking external chat provider via OpenAI-compatible API.
@@ -69,18 +77,17 @@ class AsyncOpenAIChatProvider implements AsyncChatLLMInterface
      *
      * @param list<Message|array{role: string, content: string}> $messages Chat messages
      * @param ChatGenerateOptions $options Generation options (model, temperature, etc.)
-     * @return bool True if started, false if already busy or model missing
+     * @throws LLMException When request setup or start fails
      */
-    public function startGenerate(array $messages, ChatGenerateOptions $options): bool
+    public function startGenerate(array $messages, ChatGenerateOptions $options): void
     {
         if ($this->httpClient->isBusy()) {
-            return false;
+            throw new LLMClientBusyException();
         }
 
         $model = $options->model ?? $this->defaultModel;
         if ($model === null || $model === '') {
-            Logger::logAgentError(static::class, LLMApiConstants::LOG_MODEL_REQUIRED_OPENAI);
-            return false;
+            throw new LLMConfigurationException(LLMApiConstants::LOG_MODEL_REQUIRED_OPENAI);
         }
 
         $apiMessages = [];
@@ -105,8 +112,9 @@ class AsyncOpenAIChatProvider implements AsyncChatLLMInterface
 
         $body = json_encode($payload, JSON_UNESCAPED_UNICODE);
         if (!is_string($body)) {
-            Logger::logAgentError(static::class, LLMApiConstants::LOG_FAILED_ENCODE_PAYLOAD);
-            return false;
+            throw new LLMPayloadEncodeException(
+                LLMApiConstants::LOG_FAILED_ENCODE_PAYLOAD . ': ' . json_last_error_msg(),
+            );
         }
 
         $timeoutMs = (int) ceil($options->timeoutSec * 1000);
@@ -123,23 +131,32 @@ class AsyncOpenAIChatProvider implements AsyncChatLLMInterface
 
         $currentTimeMs = microtime(true) * 1000;
 
-        return $this->httpClient->startNewRequest($currentTimeMs);
+        try {
+            $this->httpClient->startNewRequest($currentTimeMs);
+        } catch (AsyncHttpException|SocketException $e) {
+            throw new LLMRequestException('Failed to start OpenAI-compatible generation request', $e);
+        }
     }
 
     /**
      * Advances async client (call in event loop).
      *
      * @param float $currentTimeMs Current time in milliseconds
+     * @throws LLMException When the active request fails
      */
     public function tick(float $currentTimeMs): void
     {
-        $this->httpClient->tick($currentTimeMs);
+        try {
+            $this->httpClient->tick($currentTimeMs);
+        } catch (AsyncHttpException|SocketException $e) {
+            throw new LLMRequestException('OpenAI-compatible generation request failed', $e);
+        }
     }
 
     /**
      * Checks if generation result is ready.
      *
-     * @return bool True if getResult() will return content
+     * @return bool True if consumeResult() will return content
      */
     public function hasResult(): bool
     {
@@ -147,28 +164,29 @@ class AsyncOpenAIChatProvider implements AsyncChatLLMInterface
     }
 
     /**
-     * Returns generated content or null on error.
+     * Consumes generated content.
      *
-     * @return ?string Assistant message or null if failed/invalid response
+     * @return string Assistant message
+     * @throws LLMException When no result is available or response is invalid
      */
-    public function getResult(): ?string
+    public function consumeResult(): string
     {
-        $result = $this->httpClient->getResult();
-        $success = $result[HttpConstants::RESPONSE_KEY_SUCCESS] ?? false;
-        $body = $result[HttpConstants::RESPONSE_KEY_BODY] ?? null;
+        try {
+            $body = $this->httpClient->consumeResult()->body;
+        } catch (AsyncHttpException $e) {
+            throw new LLMResultUnavailableException('No OpenAI-compatible generation result is available', previous: $e);
+        }
 
-        if (!$success || $body === null || $body === '') {
-            return null;
+        if ($body === '') {
+            throw new LLMResponseException('OpenAI-compatible response body is empty');
         }
 
         $decoded = json_decode($body, true);
         $content = $decoded[LLMApiConstants::KEY_CHOICES][0][LLMApiConstants::KEY_MESSAGE][LLMApiConstants::KEY_CONTENT] ?? null;
         if (!is_string($content)) {
-            Logger::logAgentError(
-                static::class,
-                LLMApiConstants::LOG_OPENAI_RESPONSE_INVALID . $this->truncateForLog($body)
+            throw new LLMResponseException(
+                LLMApiConstants::LOG_OPENAI_RESPONSE_INVALID . $this->truncateForLog($body),
             );
-            return null;
         }
 
         return trim($content);

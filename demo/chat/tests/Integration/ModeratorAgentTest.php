@@ -16,6 +16,8 @@ use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
 use Hilos\LLM\Contract\AsyncChatLLMInterface;
 use Hilos\LLM\DTO\ChatGenerateOptions;
+use Hilos\LLM\Exception\LLMClientBusyException;
+use Hilos\LLM\Exception\LLMRequestException;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Utils\Helpers\RandomHelper;
 use ReflectionProperty;
@@ -250,11 +252,11 @@ final class UnavailableModerationChatClient implements AsyncChatLLMInterface
 {
     public int $startGenerateCalls = 0;
 
-    public function startGenerate(array $messages, ChatGenerateOptions $options): bool
+    public function startGenerate(array $messages, ChatGenerateOptions $options): void
     {
         $this->startGenerateCalls++;
 
-        return false;
+        throw new LLMRequestException('Moderation test client unavailable');
     }
 
     public function tick(float $currentTimeMs): void
@@ -266,9 +268,9 @@ final class UnavailableModerationChatClient implements AsyncChatLLMInterface
         return false;
     }
 
-    public function getResult(): ?string
+    public function consumeResult(): string
     {
-        return null;
+        return '';
     }
 
     public function isBusy(): bool
@@ -296,17 +298,15 @@ final class CompletedModerationChatClient implements AsyncChatLLMInterface
     ) {
     }
 
-    public function startGenerate(array $messages, ChatGenerateOptions $options): bool
+    public function startGenerate(array $messages, ChatGenerateOptions $options): void
     {
         $this->startGenerateCalls++;
 
         if ($this->busy) {
-            return false;
+            throw new LLMClientBusyException();
         }
 
         $this->busy = true;
-
-        return true;
     }
 
     public function tick(float $currentTimeMs): void
@@ -324,13 +324,13 @@ final class CompletedModerationChatClient implements AsyncChatLLMInterface
         return $this->hasResult;
     }
 
-    public function getResult(): ?string
+    public function consumeResult(): string
     {
         $result = $this->result;
         $this->hasResult = false;
         $this->result = null;
 
-        return $result;
+        return $result ?? '';
     }
 
     public function isBusy(): bool

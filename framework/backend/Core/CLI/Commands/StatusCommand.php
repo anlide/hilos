@@ -9,7 +9,6 @@ use Hilos\Constants\ApiEndpoint;
 use Hilos\Constants\DaemonConstants;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\ExitCode;
-use Hilos\Constants\HttpConstants;
 use Hilos\Core\CLI\DTO\DaemonStatusDTO;
 use Hilos\Core\Daemon\Master\DaemonStatus;
 use Hilos\Utils\Env;
@@ -112,49 +111,30 @@ HELP;
         $host = Env::get(EnvConstants::HILOS_DAEMON_HOST);
         $port = Env::getInt(EnvConstants::HTTP_STATUS_PORT);
 
-        // Create HTTP client with longer timeout for status command
-        $client = new AsyncHttpClient($host, $port, ApiEndpoint::STATUS);
-        $client->timeout = 800.0;  // 0.8 seconds timeout
+        try {
+            $client = new AsyncHttpClient($host, $port, ApiEndpoint::STATUS);
+            $client->timeout = 800.0;
 
-        $currentTimeMs = microtime(true) * 1000;
-
-        // Start request
-        $client->startNewRequest($currentTimeMs);
-
-        // Wait for result (synchronous polling)
-        $maxWaitTime = 400.0; // 0.4 seconds max wait
-        $startTime = $currentTimeMs;
-
-        while (!$client->hasResult()) {
             $currentTimeMs = microtime(true) * 1000;
+            $client->startNewRequest($currentTimeMs);
 
-            // Check for overall timeout
-            if (($currentTimeMs - $startTime) > $maxWaitTime) {
-                $this->daemonStatus = null;
-                return;
+            $maxWaitTime = 400.0;
+            $startTime = $currentTimeMs;
+
+            while (!$client->hasResult()) {
+                $currentTimeMs = microtime(true) * 1000;
+                if (($currentTimeMs - $startTime) > $maxWaitTime) {
+                    $this->daemonStatus = null;
+                    return;
+                }
+
+                $client->tick($currentTimeMs);
+                usleep(10000);
             }
 
-            // Process HTTP state machine
-            $client->tick($currentTimeMs);
-
-            // Small delay to avoid busy-wait
-            usleep(10000); // 10ms
-        }
-
-        // Get result
-        $result = $client->getResult();
-
-        if ($result[HttpConstants::RESPONSE_KEY_SUCCESS] && $result[HttpConstants::RESPONSE_KEY_BODY] !== null) {
-            // Parse JSON to DTO and convert to DaemonStatus
-            try {
-                $dto = DaemonStatusDTO::fromJson($result[HttpConstants::RESPONSE_KEY_BODY]);
-                $this->daemonStatus = DaemonStatus::fromDTO($dto);
-            } catch (\Throwable $e) {
-                // Failed to parse DTO
-                $this->daemonStatus = null;
-            }
-        } else {
-            // Request failed
+            $dto = DaemonStatusDTO::fromJson($client->consumeResult()->body);
+            $this->daemonStatus = DaemonStatus::fromDTO($dto);
+        } catch (\Throwable) {
             $this->daemonStatus = null;
         }
     }
