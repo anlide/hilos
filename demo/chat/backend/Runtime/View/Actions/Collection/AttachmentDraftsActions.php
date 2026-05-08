@@ -207,8 +207,8 @@ final class AttachmentDraftsActions extends RtActions
      * @return ?PublishedAttachmentInputs Published attachment metadata, or null on missing draft file
      * @throws FsException When a quarantine file cannot be moved
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtActionsStateCollectionNullException When attachment draft runtime state is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
-     * @throws RtActionsStateCollectionNullException
      */
     public function publishForConnection(Connection $connection): ?PublishedAttachmentInputs
     {
