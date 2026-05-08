@@ -18,7 +18,7 @@ final class SettingAddActionDTO extends ChatActionPayloadDTO
      * Creates setting add action DTO.
      *
      * @param string $key Setting key (must be in catalog)
-     * @param mixed $value Value (null = use default from catalog)
+     * @param mixed $value Value (null = use catalog default when reading)
      */
     public function __construct(
         public readonly string $key,

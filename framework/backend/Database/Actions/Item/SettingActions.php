@@ -28,7 +28,7 @@ final class SettingActions extends DbActions
     /**
      * Updates setting value.
      *
-     * @param mixed $value New value
+     * @param mixed $value New value (null = use catalog default when reading)
      * @throws ItemNotFoundForUpdateException When setting object has no persisted id
      * @throws DatabaseException When collection loading or setting persistence fails
      * @throws ObjectCollectionNullException When the setting action is detached from its object collection

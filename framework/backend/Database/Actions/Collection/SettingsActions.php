@@ -32,7 +32,7 @@ final class SettingsActions extends DbActions
      * Adds a new setting. Key must exist in catalog.
      *
      * @param string $key Setting key (must be in catalog)
-     * @param mixed $value Value (null = use default_value from catalog)
+     * @param mixed $value Value (null = use catalog default when reading)
      * @param array<string, array<string, mixed>> $catalog Catalog: key => [type, default_value]
      * @return Setting Created setting Db item
      * @throws SettingNotInCatalogException When key is not declared in the settings catalog
@@ -53,12 +53,11 @@ final class SettingsActions extends DbActions
 
         $entry = $catalog[$key];
         $type = $entry[SettingsCatalogConstants::CATALOG_ENTRY_TYPE] ?? SettingsCatalogConstants::TYPE_STRING;
-        $defaultValue = $entry[SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE] ?? null;
 
         $setting = ObjectSetting::create();
         $setting->key = $key;
         $setting->type = $type;
-        $setting->value = $value !== null ? $this->serializeValue($value, $type) : ($defaultValue !== null ? $this->serializeValue($defaultValue, $type) : null);
+        $setting->value = $value !== null ? $this->serializeValue($value, $type) : null;
         $setting->sync();
 
         $this->addObjectToCollection($setting);

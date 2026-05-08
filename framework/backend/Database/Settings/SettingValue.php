@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Hilos\Database\Settings;
 
-use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Settings\Exception\SettingAccessorUnavailableException;
 use Hilos\Database\Settings\Exception\SettingException;
@@ -31,6 +30,7 @@ final class SettingValue
      * Reads a string setting value.
      *
      * @return string Setting value resolved from DB or catalog default
+     * @throws DatabaseException When persisted setting lookup fails
      * @throws SettingException When catalog metadata is unavailable, the type is not string, or the resolved value is invalid
      */
     public function string(): string
@@ -52,6 +52,7 @@ final class SettingValue
      * Reads an integer setting value.
      *
      * @return int Setting value resolved from DB or catalog default
+     * @throws DatabaseException When persisted setting lookup fails
      * @throws SettingException When catalog metadata is unavailable, the type is not integer, or the resolved value is invalid
      */
     public function int(): int
@@ -73,6 +74,7 @@ final class SettingValue
      * Reads a float setting value.
      *
      * @return float Setting value resolved from DB or catalog default
+     * @throws DatabaseException When persisted setting lookup fails
      * @throws SettingException When catalog metadata is unavailable, the type is not float, or the resolved value is invalid
      */
     public function float(): float
@@ -94,6 +96,7 @@ final class SettingValue
      * Reads a boolean setting value.
      *
      * @return bool Setting value resolved from DB or catalog default
+     * @throws DatabaseException When persisted setting lookup fails
      * @throws SettingException When catalog metadata is unavailable, the type is not boolean, or the resolved value is invalid
      */
     public function bool(): bool
@@ -140,21 +143,13 @@ final class SettingValue
      * Resolves persisted setting value with catalog default fallback.
      *
      * @return mixed Persisted value or catalog default
+     * @throws DatabaseException When persisted setting lookup fails
      * @throws SettingAccessorUnavailableException When Hilos::$setting is not initialized
      * @throws SettingException When the catalog default cannot be resolved
      */
     private function resolveValue(): mixed
     {
-        if (!Hilos::$db instanceof HilosDbContext) {
-            return $this->settings()->defaultValueFor($this->key);
-        }
-
-        $value = Hilos::$db->settings[$this->key]?->value;
-        if ($value === null || $value === '') {
-            return $this->settings()->defaultValueFor($this->key);
-        }
-
-        return $value;
+        return $this->settings()->effectiveValueFor($this->key);
     }
 
     /**

@@ -16,6 +16,9 @@ result, or collection value. Start with `agents.md`, then read
   for known collection keys when the collection documents that key.
 - Key-based array access such as `Hilos::$db->settings[$key]` is preferred when
   the collection explicitly supports that business key as its offset.
+- Caller code with a settings key must use `Hilos::$db->settings[$key]`; if the
+  offset contract is missing, fix the collection contract instead of calling
+  `Hilos::$db->settings->findByKey($key)` as a shortcut.
 - Existing item properties, `__get()` bridges, typed DTO fields, and result
   accessors should be used before adding a new finder or helper.
 - A named `findBy*()` method is still correct for complex queries, ambiguous
@@ -59,7 +62,8 @@ Hilos::$rt->connections[$acceptKey]->actions->unregister();
 ```
 
 Prefer key-based settings access only if the settings collection documents the
-setting key as its offset:
+setting key as its offset. If that contract is absent, add and document it on
+the settings collection before changing caller code:
 
 ```php
 if (!isset(Hilos::$db->settings[$dto->key])) {
@@ -67,6 +71,13 @@ if (!isset(Hilos::$db->settings[$dto->key])) {
 }
 
 Hilos::$db->settings[$dto->key]; // Setting item by documented key-based offset
+```
+
+Do not call the settings collection finder from caller code:
+
+```php
+// Wrong outside the settings collection.
+Hilos::$db->settings->findByKey($dto->key);
 ```
 
 Use a named finder when the lookup is not the collection key and the collection
@@ -107,6 +118,9 @@ Use or add a named method instead of magic/array access when:
 
 - Do not add `findById()` or a page-local helper when `[$id]`, `get($id)`, or a
   typed item accessor already expresses the contract.
+- Do not call `Hilos::$db->settings->findByKey($key)` outside the settings
+  collection. Use `Hilos::$db->settings[$key]`; if needed, first add and
+  document the settings key offset contract.
 - Do not replace a named finder with `[$key]` unless the collection documents
   that offset as the same business key.
 - Do not duplicate collection lookup logic in pages, tables, agents, or signal

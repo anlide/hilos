@@ -142,7 +142,7 @@ final class SettingsPage extends AbstractHilosSettingsPage
             throw new TableActionException('Setting key is required');
         }
 
-        if (Hilos::$db->settings->findByKey($dto->key) === null) {
+        if (!isset(Hilos::$db->settings[$dto->key])) {
             throw new TableActionException("Setting '{$dto->key}' not found");
         }
 
@@ -162,7 +162,7 @@ final class SettingsPage extends AbstractHilosSettingsPage
             throw new TableActionException('Setting key is required');
         }
 
-        if (Hilos::$db->settings->findByKey($dto->key) === null) {
+        if (!isset(Hilos::$db->settings[$dto->key])) {
             throw new TableActionException("Setting '{$dto->key}' not found");
         }
 

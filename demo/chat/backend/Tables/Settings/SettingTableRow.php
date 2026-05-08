@@ -12,16 +12,29 @@ use Hilos\Core\Table\Row\AbstractTableRow;
  */
 final class SettingTableRow extends AbstractTableRow
 {
+    public const string VALUE_SOURCE_DEFAULT = 'default';
+    public const string VALUE_SOURCE_REFERENCE = 'reference';
+    public const string VALUE_SOURCE_OVERRIDE = 'override';
+    public const string VALUE_SOURCE_ORPHAN = 'orphan';
+
     public const string id = ObjectSetting::id;
     public const string key = ObjectSetting::key;
     public const string type = ObjectSetting::type;
     public const string value = ObjectSetting::value;
+    public const string overrideValue = 'override_value';
+    public const string defaultValue = 'default_value';
+    public const string defaultReferenceKey = 'default_reference_key';
+    public const string valueSource = 'value_source';
 
     public function __construct(
         public ?int $id,
         public string $key,
         public string $type,
         public ?string $value,
+        public ?string $overrideValue,
+        public ?string $defaultValue,
+        public ?string $defaultReferenceKey,
+        public string $valueSource,
     ) {
     }
 
@@ -38,7 +51,7 @@ final class SettingTableRow extends AbstractTableRow
     /**
      * Serializes the row to the settings table payload shape.
      *
-     * @return array{id: ?int, key: string, type: string, value: ?string}
+     * @return array<string, mixed>
      */
     public function toArray(): array
     {
@@ -47,6 +60,10 @@ final class SettingTableRow extends AbstractTableRow
             self::key => $this->key,
             self::type => $this->type,
             self::value => $this->value,
+            self::overrideValue => $this->overrideValue,
+            self::defaultValue => $this->defaultValue,
+            self::defaultReferenceKey => $this->defaultReferenceKey,
+            self::valueSource => $this->valueSource,
         ];
     }
 
@@ -62,6 +79,10 @@ final class SettingTableRow extends AbstractTableRow
             key: (string) ($data[self::key] ?? ''),
             type: (string) ($data[self::type] ?? ''),
             value: isset($data[self::value]) ? (string) $data[self::value] : null,
+            overrideValue: isset($data[self::overrideValue]) ? (string) $data[self::overrideValue] : null,
+            defaultValue: isset($data[self::defaultValue]) ? (string) $data[self::defaultValue] : null,
+            defaultReferenceKey: isset($data[self::defaultReferenceKey]) ? (string) $data[self::defaultReferenceKey] : null,
+            valueSource: (string) ($data[self::valueSource] ?? self::VALUE_SOURCE_ORPHAN),
         );
     }
 }

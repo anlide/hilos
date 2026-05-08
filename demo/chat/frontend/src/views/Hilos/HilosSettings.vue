@@ -14,7 +14,7 @@
             :placeholder-when-empty="!connectionStore.isConnected"
             :searchable="true"
             search-placeholder="Search settings..."
-            :search-fields="['key', 'value']"
+            :search-fields="['key', 'value', 'override_value', 'default_value', 'default_reference_key']"
             :sortable="true"
             :sortable-fields="['key']"
             :paginated="false"
@@ -49,7 +49,12 @@
             <template #row="row">
               <td><code>{{ row.item.key }}</code></td>
               <td class="align-middle" style="max-width: 220px">
-                <HilosSettingsValueCell :value="row.item.value" :type="row.item.type" />
+                <HilosSettingsValueCell
+                  :value="row.item.value"
+                  :type="row.item.type"
+                  :value-source="row.item.value_source"
+                  :default-reference-key="row.item.default_reference_key"
+                />
               </td>
               <td>
                 <div class="d-flex gap-1">
@@ -112,7 +117,25 @@
           </option>
         </select>
       </div>
-      <div class="mb-0">
+      <div v-if="selectedSetting && !isOrphan(selectedSetting)" class="mb-3">
+        <label class="form-label">Default</label>
+        <HilosSettingsValueCell
+          :value="selectedSetting.default_value"
+          :type="selectedSetting.type"
+          :value-source="defaultValueSource"
+          :default-reference-key="selectedSetting.default_reference_key"
+        />
+      </div>
+      <div v-if="!isCreating && selectedSetting && !isOrphan(selectedSetting)" class="form-check form-switch mb-3">
+        <input
+          id="setting-use-custom-value"
+          v-model="useCustomValue"
+          type="checkbox"
+          class="form-check-input"
+        />
+        <label class="form-check-label" for="setting-use-custom-value">Custom value</label>
+      </div>
+      <div v-if="useCustomValue || isCreating || selectedSetting == null || isOrphan(selectedSetting)" class="mb-0">
         <template v-if="valueInputType === 'checkbox'">
           <div class="form-check">
             <input
@@ -143,7 +166,7 @@
         type="button"
         variant="btn-primary"
         :loading="saveLoading"
-        :disabled="!isFormValid"
+        :disabled="!isFormValid || !isFormDirty"
         :loading-delay="300"
         @click="saveSetting"
       >
@@ -217,6 +240,10 @@ interface SettingEntity {
   key: string
   type: string
   value: string | null
+  override_value: string | null
+  default_value: string | null
+  default_reference_key: string | null
+  value_source: 'default' | 'reference' | 'override' | 'orphan'
 }
 
 const connectionStore = useConnectionStore()
@@ -250,6 +277,7 @@ const isCreating = ref(false)
 const selectedSetting = ref<SettingEntity | null>(null)
 const formSetting = ref<{ key: string; value: string | null }>({ key: '', value: null })
 const baselineSetting = ref<SettingEntity | null>(null)
+const useCustomValue = ref(false)
 
 /** Boolean binding for checkbox (value stored as '0'/'1' string). */
 const formSettingValueBool = computed({
@@ -267,6 +295,11 @@ const valueInputType = computed(() => {
 
 const valueInputStep = computed(() => selectedSetting.value?.type === 'float' ? 'any' : undefined)
 
+const defaultValueSource = computed(() => {
+  if (!selectedSetting.value) return 'default'
+  return selectedSetting.value.default_reference_key ? 'reference' : 'default'
+})
+
 const modalTitle = computed(() => {
   if (isCreating.value) return 'Add setting'
   const key = selectedSetting.value?.key
@@ -277,17 +310,21 @@ const modalTitle = computed(() => {
 const valueFieldLabel = computed(() => {
   const key = isCreating.value ? formSetting.value.key : selectedSetting.value?.key
   if (key && key.length > 0) return key
-  if (isCreating.value) return 'Value (optional, uses default if empty)'
+  if (isCreating.value) return 'Value'
   return 'Value'
 })
 
 const cloneSetting = (s: SettingEntity): SettingEntity => JSON.parse(JSON.stringify(s)) as SettingEntity
 
+const currentFormValue = () => valueInputType.value === 'checkbox'
+  ? (formSettingValueBool.value ? '1' : '0')
+  : (formSetting.value.value ?? '')
+
 const isFormDirty = computed(() => {
   if (isCreating.value) return formSetting.value.key.length > 0 || (formSetting.value.value ?? '').length > 0
   if (!baselineSetting.value) return false
-  const currentVal = valueInputType.value === 'checkbox' ? (formSettingValueBool.value ? '1' : '0') : (formSetting.value.value ?? '')
-  return currentVal !== (baselineSetting.value.value ?? '')
+  const currentOverrideValue = useCustomValue.value || isOrphan(baselineSetting.value) ? currentFormValue() : null
+  return currentOverrideValue !== baselineSetting.value.override_value
 })
 
 const isFormValid = computed(() => {
@@ -300,6 +337,7 @@ const handleAdd = () => {
   selectedSetting.value = null
   formSetting.value = { key: availableCatalogKeys.value[0] ?? '', value: null }
   baselineSetting.value = null
+  useCustomValue.value = true
   showModal.value = true
 }
 
@@ -308,8 +346,9 @@ const handleEdit = (item: unknown) => {
   const s = item as SettingEntity
   isCreating.value = false
   selectedSetting.value = s
-  formSetting.value = { key: s.key, value: s.value ?? null }
+  formSetting.value = { key: s.key, value: s.override_value ?? s.default_value ?? s.value ?? null }
   baselineSetting.value = cloneSetting(s)
+  useCustomValue.value = s.override_value !== null || isOrphan(s)
   showModal.value = true
 }
 
@@ -346,20 +385,23 @@ const saveSetting = () => {
   if (!isFormValid.value) return
   saveLoading.value = true
 
-  const value = valueInputType.value === 'checkbox'
-    ? (formSettingValueBool.value ? '1' : '0')
-    : (formSetting.value.value ?? '')
+  const value = useCustomValue.value ? currentFormValue() : null
 
   if (isCreating.value) {
     sendAction(websocket, SETTING_ADD, {
       key: formSetting.value.key,
-      ...(value !== '' ? { value } : {}),
+      ...(useCustomValue.value ? { value } : {}),
     })
   } else if (selectedSetting.value?.key) {
     if (selectedSetting.value.id == null) {
+      if (!useCustomValue.value) {
+        resetForm()
+        return
+      }
+
       sendAction(websocket, SETTING_ADD, {
         key: selectedSetting.value.key,
-        ...(value !== '' ? { value } : {}),
+        value,
       })
     } else {
       sendAction(websocket, SETTING_UPDATE, {
@@ -377,6 +419,7 @@ const resetForm = () => {
   isCreating.value = false
   selectedSetting.value = null
   baselineSetting.value = null
+  useCustomValue.value = false
   saveLoading.value = false
   formSetting.value = { key: '', value: null }
 }

@@ -25,7 +25,7 @@ final class SettingsTableActions extends TableActions
      * Adds a setting. Key must exist in catalog. Value defaults from catalog if null.
      *
      * @param string $key Setting key (must be in catalog)
-     * @param mixed $value Value (null = use default_value from catalog)
+     * @param mixed $value Value (null = use catalog default when reading)
      * @return TableRowMutationDTO Row mutation DTO for broadcast
      * @throws HilosException When settings catalog validation or DB persistence fails
      */

@@ -17,6 +17,8 @@ use Hilos\Core\Table\InMemoryTableFilter;
 use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\Core\Table\TableConstants;
 use Hilos\Database\Context\HilosDbContext;
+use Hilos\Database\DatabaseException;
+use Hilos\Database\Settings\Exception\SettingException;
 use Hilos\Database\Settings\SettingsCatalogConstants;
 use Hilos\Database\View\Item\Setting as ViewSetting;
 
@@ -49,7 +51,7 @@ final class SettingsTable extends TableDefinition
             return $this->mutation(TableMutationType::Delete, $key);
         }
 
-        $setting = Hilos::$db->settings->findByKey($key);
+        $setting = Hilos::$db->settings[$key];
         if ($setting === null) {
             return null;
         }
@@ -70,6 +72,8 @@ final class SettingsTable extends TableDefinition
      *
      * @param TableQueryDTO $query Table query parameters
      * @return TableSnapshotDTO Settings table snapshot
+     * @throws DatabaseException When settings rows or referenced defaults cannot be read
+     * @throws SettingException When catalog default metadata is invalid
      */
     protected function query(TableQueryDTO $query): TableSnapshotDTO
     {
@@ -123,29 +127,37 @@ final class SettingsTable extends TableDefinition
      * @param string $key Setting key from the catalog
      * @param array<string, mixed> $entry Catalog entry
      * @return SettingTableRow Placeholder settings table row
+     * @throws DatabaseException When a referenced persisted default cannot be read
+     * @throws SettingException When catalog default metadata is invalid
      */
     private function rowFromCatalogEntry(string $key, array $entry): SettingTableRow
     {
         $type = $entry[SettingsCatalogConstants::CATALOG_ENTRY_TYPE] ?? SettingsCatalogConstants::TYPE_STRING;
-        $default = $entry[SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE] ?? null;
-        $value = $this->serializeDefault($default, $type);
+        $defaultValue = $this->serializeValue(Hilos::$setting->defaultValueFor($key), $type);
+        $defaultReferenceKey = Hilos::$setting->defaultReferenceKeyFor($key);
 
         return new SettingTableRow(
             id: null,
             key: $key,
             type: $type,
-            value: $value,
+            value: $defaultValue,
+            overrideValue: null,
+            defaultValue: $defaultValue,
+            defaultReferenceKey: $defaultReferenceKey,
+            valueSource: $defaultReferenceKey !== null
+                ? SettingTableRow::VALUE_SOURCE_REFERENCE
+                : SettingTableRow::VALUE_SOURCE_DEFAULT,
         );
     }
 
     /**
-     * Serializes a catalog default value for display in the settings table.
+     * Serializes a value for display in the settings table.
      *
-     * @param mixed $value Catalog default value
-     * @param string $type Setting type from the catalog
+     * @param mixed $value Setting value
+     * @param string $type Setting type
      * @return ?string Serialized display value
      */
-    private function serializeDefault(mixed $value, string $type): ?string
+    private function serializeValue(mixed $value, string $type): ?string
     {
         return match ($type) {
             SettingsCatalogConstants::TYPE_INTEGER => (string)(int)$value,
@@ -160,14 +172,44 @@ final class SettingsTable extends TableDefinition
      *
      * @param ViewSetting $setting Persisted setting DB item
      * @return SettingTableRow Settings table row payload
+     * @throws DatabaseException When a referenced persisted default cannot be read
+     * @throws SettingException When catalog default metadata is invalid
      */
     public function rowFromSetting(ViewSetting $setting): SettingTableRow
     {
+        $catalog = SettingsCatalog::getCatalog();
+        if (!isset($catalog[$setting->key])) {
+            return new SettingTableRow(
+                id: $setting->id,
+                key: $setting->key,
+                type: $setting->type,
+                value: $setting->value,
+                overrideValue: $setting->value,
+                defaultValue: null,
+                defaultReferenceKey: null,
+                valueSource: SettingTableRow::VALUE_SOURCE_ORPHAN,
+            );
+        }
+
+        $type = $catalog[$setting->key][SettingsCatalogConstants::CATALOG_ENTRY_TYPE]
+            ?? SettingsCatalogConstants::TYPE_STRING;
+        $defaultValue = $this->serializeValue(Hilos::$setting->defaultValueFor($setting->key), $type);
+        $defaultReferenceKey = Hilos::$setting->defaultReferenceKeyFor($setting->key);
+        $overrideValue = $setting->value;
+
         return new SettingTableRow(
             id: $setting->id,
             key: $setting->key,
-            type: $setting->type,
-            value: $setting->value,
+            type: $type,
+            value: $overrideValue ?? $defaultValue,
+            overrideValue: $overrideValue,
+            defaultValue: $defaultValue,
+            defaultReferenceKey: $defaultReferenceKey,
+            valueSource: $overrideValue !== null
+                ? SettingTableRow::VALUE_SOURCE_OVERRIDE
+                : ($defaultReferenceKey !== null
+                    ? SettingTableRow::VALUE_SOURCE_REFERENCE
+                    : SettingTableRow::VALUE_SOURCE_DEFAULT),
         );
     }
 }

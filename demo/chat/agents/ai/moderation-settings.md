@@ -18,7 +18,7 @@ $provider = Hilos::$setting[ChatSettingsConstants::CHAT_MODERATION_PROVIDER]->st
 ## Editing settings
 
 - Admin UI: `/hilos/settings` or admin panel settings table
-- Direct: `Hilos::$db->settings->findByKey($key)?->actions->updateValue($value)`
+- Direct: `Hilos::$db->settings[$key]?->actions->updateValue($value)`
 
 ## Key settings (seed 003 defaults)
 

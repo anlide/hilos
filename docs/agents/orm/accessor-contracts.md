@@ -49,8 +49,16 @@ if (!isset(Hilos::$db->settings[$dto->key])) {
 Hilos::$db->settings[$dto->key]; // Setting item by documented key-based offset
 ```
 
-If `[]` is documented as primary-key access, or the key-based offset contract is
-absent, use the named accessor or add a typed contract before changing callers:
+If caller code has a settings key, use `Hilos::$db->settings[$key]`. If that
+offset contract is missing or not documented yet, add and document the
+key-based offset on the settings collection first. Do not call
+`Hilos::$db->settings->findByKey($key)` from pages, tables, agents, accessors,
+or tests as a shortcut; a `findByKey()` helper on the settings collection is an
+internal implementation detail of that collection.
+
+If `[]` is documented as primary-key access for another collection, or the
+business-key offset contract is absent, use the named accessor or add a typed
+contract before changing callers:
 
 ```php
 Hilos::$db->users->findBySession($sessionToken);
@@ -116,6 +124,13 @@ Do not replace a finder with array access unless the offset contract matches:
 ```php
 // Wrong if settings[] is primary-key access.
 Hilos::$db->settings[$dto->key];
+```
+
+Do not bypass the documented settings offset contract:
+
+```php
+// Wrong in caller code; use Hilos::$db->settings[$dto->key].
+Hilos::$db->settings->findByKey($dto->key);
 ```
 
 Do not hide reusable lookup logic inside a page or table:

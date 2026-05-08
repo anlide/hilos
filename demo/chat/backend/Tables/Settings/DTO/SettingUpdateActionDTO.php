@@ -18,7 +18,7 @@ final class SettingUpdateActionDTO extends ChatActionPayloadDTO
      * Creates setting update action DTO.
      *
      * @param string $key Setting key to update
-     * @param mixed $value New value
+     * @param mixed $value New value (null = use catalog default when reading)
      */
     public function __construct(
         public readonly string $key,

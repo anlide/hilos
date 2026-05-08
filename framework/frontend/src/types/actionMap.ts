@@ -20,10 +20,10 @@
  */
 export interface HilosActionMap {
   /** Add a new setting (Hilos settings admin page). */
-  setting_add: { key: string; value?: string }
+  setting_add: { key: string; value?: string | null }
 
   /** Update an existing setting. */
-  setting_update: { key: string; value: string }
+  setting_update: { key: string; value: string | null }
 
   /** Delete a setting by key. */
   setting_delete: { key: string }

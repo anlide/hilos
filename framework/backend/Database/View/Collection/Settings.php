@@ -14,9 +14,11 @@ use Hilos\Database\View\Collection\DbCollection;
 /**
  * Settings Db collection.
  *
+ * Settings support key-based array access: `$settings[$settingKey]`.
+ * Integer offsets are still treated as DB primary keys.
+ *
  * @extends DbCollection<Setting, ObjectSettings>
  * @property-read SettingsActions $actions
- * @property-read Setting|null offsetGet(mixed $offset)
  */
 final class Settings extends DbCollection
 {
@@ -24,13 +26,46 @@ final class Settings extends DbCollection
     public const string OBJECT_COLLECTION_CLASS = ObjectSettings::class;
 
     /**
-     * Find setting by key.
+     * Checks whether a setting exists by setting key or primary id.
+     *
+     * @param mixed $offset Setting key string or primary id integer
+     * @return bool True when the setting exists
+     * @throws DatabaseException On database error
+     */
+    public function offsetExists(mixed $offset): bool
+    {
+        return $this->offsetGet($offset) !== null;
+    }
+
+    /**
+     * Returns a setting by setting key or primary id.
+     *
+     * @param mixed $offset Setting key string or primary id integer
+     * @return ?Setting Setting Db item or null if not found
+     * @throws DatabaseException On database error
+     */
+    public function offsetGet(mixed $offset): ?Setting
+    {
+        if (is_string($offset)) {
+            return $this->findByKey($offset);
+        }
+        if (!is_int($offset)) {
+            return null;
+        }
+
+        /** @var ?Setting $setting */
+        $setting = parent::offsetGet($offset);
+        return $setting;
+    }
+
+    /**
+     * Finds a setting by key for the collection offset implementation.
      *
      * @param string $key Setting key
      * @return ?Setting Setting Db item or null if not found
      * @throws DatabaseException On database error
      */
-    public function findByKey(string $key): ?Setting
+    private function findByKey(string $key): ?Setting
     {
         $objectSetting = $this->objectCollection->findByKey($key);
 
@@ -38,7 +73,9 @@ final class Settings extends DbCollection
             return null;
         }
 
-        return $this->getItemForKey($objectSetting->id);
+        /** @var ?Setting $setting */
+        $setting = $this->getItemForKey($objectSetting->id);
+        return $setting;
     }
 
     /**

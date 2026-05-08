@@ -12,6 +12,12 @@ namespace Demo\Chat\Database\Settings;
  */
 final class ChatSettingsConstants
 {
+    // Shared bot defaults
+    public const string DEFAULT_BOT_MODEL = 'default_bot_model';
+    public const string DEFAULT_BOT_URL = 'default_bot_url';
+    public const string DEFAULT_BOT_PROVIDER = 'default_bot_provider';
+    public const string DEFAULT_BOT_TIMEOUT_SEC = 'default_bot_timeout_sec';
+
     // Bot agent
     public const string CHAT_BOT_MODEL = 'chat_bot_model';
     public const string CHAT_BOT_URL = 'chat_bot_url';
