@@ -19,7 +19,9 @@ use Hilos\Core\Exception\ValidationException;
 use Hilos\Fs\Exception\FileDeleteException;
 use Hilos\Fs\FsException;
 use Hilos\Fs\FsFile;
+use Hilos\Runtime\Exception\Actions\RtActionsCallbackNotSetException;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
+use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\Socket\WebSocket\DTO\WebSocketFrameBinarySignalDTO;
 use Hilos\Utils\Helpers\FileSystemHelper;
@@ -35,8 +37,8 @@ trait UploadFileTrait
     private const float FILE_UPLOAD_PROGRESS_MIN_INTERVAL_SEC = 0.3;
 
     /**
-     * Handle {@see ChatSignalConstants::FILE_UPLOAD_INIT}: validate limits and filename, create tmp file,
-     * start session, send {@see ChatSignalConstants::FILE_UPLOAD_READY}. Replaces an in-flight upload on the same socket.
+     * Handle file-upload init: validate limits and filename, create tmp file,
+     * start session, and replace an in-flight upload on the same socket.
      *
      * @throws ItemNotFoundForUpdateException When the WebSocket session is missing
      * @throws ValidationException When the current outbound submit is being moderated
@@ -87,10 +89,12 @@ trait UploadFileTrait
             return;
         }
 
-        $publishedTotal = Hilos::$db->eventAttachments->sumPublishedAttachmentBytes();
-        $reserved = Hilos::$rt->connections->sumActiveUploadReservedBytes();
-        $draftTotal = Hilos::$rt->attachmentDrafts->sumDraftBytes();
-        if ($publishedTotal + $reserved + $draftTotal + $dto->size > $maxTotal) {
+        if (
+            Hilos::$db->eventAttachments->sumPublishedAttachmentBytes()
+            + Hilos::$rt->connections->sumActiveUploadReservedBytes()
+            + Hilos::$rt->attachmentDrafts->sumDraftBytes()
+            + $dto->size > $maxTotal
+        ) {
             $this->sendToUser(
                 ChatSignalConstants::FILE_UPLOAD_REJECTED,
                 Hilos::$rt->selfConnection->acceptKey,
@@ -101,7 +105,11 @@ trait UploadFileTrait
         }
 
         $norm = FileSystemHelper::normalizeBasename($dto->filename);
-        if ($this->isFilenameInUse($norm)) {
+        if (
+            Hilos::$rt->connections->hasActiveUploadWithNormalizedFilename($norm)
+            || Hilos::$rt->attachmentDrafts->hasDraftWithNormalizedFilename($norm)
+            || Hilos::$db->eventAttachments->hasPublishedFileWithNormalizedFilename($norm)
+        ) {
             $this->sendToUser(
                 ChatSignalConstants::FILE_UPLOAD_REJECTED,
                 Hilos::$rt->selfConnection->acceptKey,
@@ -148,7 +156,7 @@ trait UploadFileTrait
             ),
         );
         // READY is protocol permission; this marker lets frontend projection publish the 0 / size progress baseline.
-        Hilos::$rt->selfConnection->actions->noteUploadProgressSentAt(microtime(true));
+        Hilos::$rt->selfConnection->actions->noteUploadProgressSentAt();
     }
 
     /**
@@ -158,8 +166,11 @@ trait UploadFileTrait
      * and completes the upload when received bytes reach the declared size.
      *
      * @param WebSocketFrameBinarySignalDTO $data Binary frame payload and connection id
+     * @throws FileDeleteException When upload cleanup cannot delete its tmp file
+     * @throws RtActionsCallbackNotSetException When attachment draft runtime item creation is not configured
      * @throws RtActionsCollectionNameNullException When the connections actions collection name is null
-     * @throws FileDeleteException When an invalid upload cannot delete its tmp file
+     * @throws RtActionsStateCollectionNullException When attachment draft runtime state is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When the truth source rejects a runtime write
      */
     protected function handleFileUploadBinaryFrame(WebSocketFrameBinarySignalDTO $data): void
     {
@@ -217,6 +228,9 @@ trait UploadFileTrait
      * Delete all attachment files on disk and reset file-related runtime fields on every connection.
      *
      * Runtime sync projection updates subscribed tabs so they drop draft and progress UI.
+     *
+     * @throws RtActionsCollectionNameNullException When runtime actions collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When the truth source rejects a runtime write
      */
     protected function deleteAllAttachmentFilesFromDisk(): void
     {
@@ -228,10 +242,13 @@ trait UploadFileTrait
 
     /**
      * After the last binary chunk: move tmp to quarantine, clear upload session and progress UI,
-     * create an attachment draft, and send a payloadless {@see ChatSignalConstants::FILE_UPLOAD_COMPLETE} marker.
+     * create an attachment draft, and send a payloadless completion marker.
      *
-     * @throws RtActionsCollectionNameNullException When the connections actions collection name is null
-     * @throws FileDeleteException When failed upload cleanup cannot delete its tmp file
+     * @throws FileDeleteException When storage-error cleanup cannot delete the tmp file
+     * @throws RtActionsCallbackNotSetException When attachment draft runtime item creation is not configured
+     * @throws RtActionsCollectionNameNullException When runtime actions collection name is unavailable
+     * @throws RtActionsStateCollectionNullException When attachment draft runtime state is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When the truth source rejects a runtime write
      */
     private function completeFileUpload(): void
     {
@@ -280,9 +297,9 @@ trait UploadFileTrait
     /**
      * Abort the active upload: delete tmp file, clear session/progress runtime, notify the client.
      *
-     * @param string $reason Short code forwarded in {@see FileUploadInvalidSignalData}
-     * @throws RtActionsCollectionNameNullException When the connections actions collection name is null
-     * @throws FileDeleteException When failed upload cleanup cannot delete its tmp file
+     * @param string $reason Short code sent with FileUploadInvalidSignalData
+     * @throws FileDeleteException When the tmp file cannot be deleted
+     * @throws RtActionsCollectionNameNullException When runtime actions collection name is unavailable
      */
     private function failFileUploadSession(string $reason): void
     {
@@ -300,13 +317,12 @@ trait UploadFileTrait
     }
 
     /**
-     * Record a projected upload-progress notification at most every
-     * {@see self::FILE_UPLOAD_PROGRESS_MIN_INTERVAL_SEC} unless `$force` is true.
+     * Record a projected upload-progress notification at most once per configured interval unless forced.
      *
      * The frontend projection sends the current `selfConnection` snapshot when this marker changes.
      *
      * @param bool $force When true, notify immediately (e.g. last chunk), bypassing the min-interval throttle
-     * @throws RtActionsCollectionNameNullException When collection name is null for connection actions
+     * @throws RtActionsCollectionNameNullException When runtime actions collection name is unavailable
      */
     private function noteFileUploadProgressProjectionThrottled(bool $force): void
     {
@@ -325,19 +341,6 @@ trait UploadFileTrait
             return;
         }
 
-        Hilos::$rt->selfConnection->actions->noteUploadProgressSentAt(microtime(true));
-    }
-
-    /**
-     * Whether another in-flight upload, draft, or published attachment already uses this normalized name.
-     *
-     * @param string $normalized Output of {@see FileSystemHelper::normalizeBasename()}
-     * @return bool True if the name collides with an active session or published attachment metadata
-     */
-    private function isFilenameInUse(string $normalized): bool
-    {
-        return Hilos::$rt->connections->hasActiveUploadWithNormalizedFilename($normalized)
-            || Hilos::$rt->attachmentDrafts->hasDraftWithNormalizedFilename($normalized)
-            || Hilos::$db->eventAttachments->hasPublishedFileWithNormalizedFilename($normalized);
+        Hilos::$rt->selfConnection->actions->noteUploadProgressSentAt();
     }
 }

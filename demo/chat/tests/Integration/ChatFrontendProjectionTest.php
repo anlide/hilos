@@ -169,9 +169,19 @@ final class ChatFrontendProjectionTest extends IntegrationTestCase
             );
             $this->assertSame([], $this->drainProjectedSignals(ChatSignalConstants::SELF_CONNECTION_UPDATE));
 
-            Hilos::$rt->connections['upload-ak']?->actions->noteUploadProgressSentAt(1000.0);
+            $beforeFirstProgressMarker = microtime(true);
+            Hilos::$rt->connections['upload-ak']?->actions->noteUploadProgressSentAt();
+            $afterFirstProgressMarker = microtime(true);
             $signals = $this->drainProjectedSignals(ChatSignalConstants::SELF_CONNECTION_UPDATE);
 
+            $this->assertGreaterThanOrEqual(
+                $beforeFirstProgressMarker,
+                Hilos::$rt->connections['upload-ak']?->uploadProgressLastSentAt,
+            );
+            $this->assertLessThanOrEqual(
+                $afterFirstProgressMarker,
+                Hilos::$rt->connections['upload-ak']?->uploadProgressLastSentAt,
+            );
             $this->assertCount(1, $signals);
             $payload = $signals[0]->data;
             $this->assertInstanceOf(WebSocketSignalData::class, $payload);
@@ -188,9 +198,14 @@ final class ChatFrontendProjectionTest extends IntegrationTestCase
             Hilos::$rt->connections['upload-ak']?->actions->applyStoredBinaryChunkProgress(512);
             $this->assertSame([], $this->drainProjectedSignals(ChatSignalConstants::SELF_CONNECTION_UPDATE));
 
-            Hilos::$rt->connections['upload-ak']?->actions->noteUploadProgressSentAt(1001.0);
+            $previousProgressMarker = Hilos::$rt->connections['upload-ak']?->uploadProgressLastSentAt;
+            Hilos::$rt->connections['upload-ak']?->actions->noteUploadProgressSentAt();
             $signals = $this->drainProjectedSignals(ChatSignalConstants::SELF_CONNECTION_UPDATE);
 
+            $this->assertGreaterThan(
+                $previousProgressMarker,
+                Hilos::$rt->connections['upload-ak']?->uploadProgressLastSentAt,
+            );
             $this->assertCount(1, $signals);
             $payload = $signals[0]->data;
             $this->assertInstanceOf(WebSocketSignalData::class, $payload);

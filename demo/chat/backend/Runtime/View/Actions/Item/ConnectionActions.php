@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Runtime\View\Actions\Item;
 
-use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\State\Item\Connection as StateConnection;
 use Demo\Chat\Runtime\View\Item\Connection as RuntimeConnection;
@@ -156,9 +155,8 @@ final class ConnectionActions extends RtActions
     /**
      * After successful FILE_UPLOAD_INIT: open session row + progress bar fields on this socket.
      *
-     * Caller should send {@see ChatSignalConstants::FILE_UPLOAD_READY} and then record the
-     * upload-progress projection marker ({@see self::noteUploadProgressSentAt()}) so subscribers receive the
-     * 0 / total baseline through frontend state.
+     * Caller should send the upload-ready signal and then record the upload-progress projection marker
+     * so subscribers receive the 0 / total baseline through frontend state.
      *
      * @throws RtActionsCollectionNameNullException When collection name is null.
      * @throws RtTruthSourceWriteNotAllowedException When truth source does not allow write.
@@ -238,11 +236,11 @@ final class ConnectionActions extends RtActions
      *
      * @throws RtActionsCollectionNameNullException
      */
-    public function noteUploadProgressSentAt(float $sentAtMicrotime): void
+    public function noteUploadProgressSentAt(): void
     {
         $this->ensureCanWrite();
 
-        $this->state->uploadProgressLastSentAt = $sentAtMicrotime;
+        $this->state->uploadProgressLastSentAt = microtime(true);
 
         $this->sync();
     }
