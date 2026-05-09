@@ -11,8 +11,8 @@ use Hilos\Constants\EnvConstants;
 use Hilos\Constants\ExitCode;
 use Hilos\Core\CLI\DTO\DaemonStatusDTO;
 use Hilos\Core\Daemon\Master\DaemonStatus;
-use Hilos\Utils\Env;
-use Hilos\Utils\Exception\MissingEnvironmentVariableException;
+use Hilos\Environment\Exception\EnvException;
+use Hilos\Hilos;
 use Hilos\Utils\Helpers\StringHelper;
 
 /**
@@ -86,7 +86,7 @@ HELP;
         // Fetch daemon status via HTTP
         try {
             $this->fetchDaemonStatus();
-        } catch (MissingEnvironmentVariableException $e) {
+        } catch (EnvException $e) {
             echo "Error: " . $e->getMessage() . "\n\n";
             return ExitCode::CONFIG_ERROR;
         }
@@ -104,12 +104,12 @@ HELP;
      *
      * Makes synchronous HTTP request to daemon status endpoint.
      *
-     * @throws MissingEnvironmentVariableException If required env vars not set
+     * @throws EnvException When daemon status env values are missing or invalid
      */
     private function fetchDaemonStatus(): void
     {
-        $host = Env::get(EnvConstants::HILOS_DAEMON_HOST);
-        $port = Env::getInt(EnvConstants::HTTP_STATUS_PORT);
+        $host = Hilos::$env[EnvConstants::HILOS_DAEMON_HOST];
+        $port = Hilos::$env->int(EnvConstants::HTTP_STATUS_PORT);
 
         try {
             $client = new AsyncHttpClient($host, $port, ApiEndpoint::STATUS);

@@ -6,6 +6,7 @@ require_once __DIR__ . '/../../vendor/autoload.php';
 
 use Demo\Chat\Database\Database;
 use Demo\Chat\Hilos;
+use Hilos\Constants\EnvConstants;
 use Hilos\Constants\ErrorConstants;
 use Hilos\Constants\ExitCode;
 use Hilos\Core\Daemon\DockerManager;
@@ -14,18 +15,17 @@ use Hilos\Core\Exception\Process\FailedToGetStatusException;
 use Hilos\Core\Exception\Process\FailedToSetNonBlockingException;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Migration;
-use Hilos\Utils\Env;
 use Hilos\Utils\Logger;
 
 // Project root (demo/chat): .env lives here, not under Bootstrap/
 $projectRoot = dirname(__DIR__, 2);
-Env::init($projectRoot);
+Hilos::initEnv($projectRoot);
 
 // Test Docker stack should prefer tests/.env over the default project .env.
-$appEnv = getenv('APP_ENV');
+$appEnv = Hilos::$env[EnvConstants::APP_ENV];
 $testEnvPath = $projectRoot . '/tests/.env';
 if ($appEnv === 'test' && file_exists($testEnvPath)) {
-    Env::load($testEnvPath);
+    Hilos::loadEnv($testEnvPath);
 }
 
 /**

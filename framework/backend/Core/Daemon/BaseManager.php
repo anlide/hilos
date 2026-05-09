@@ -6,7 +6,7 @@ namespace Hilos\Core\Daemon;
 
 use ErrorException;
 use Hilos\Constants\ErrorConstants;
-use Hilos\Utils\Env;
+use Hilos\Hilos;
 use Hilos\Utils\Logger;
 use Hilos\Core\Exception\MissingRequiredParameterException;
 use Throwable;
@@ -208,7 +208,7 @@ abstract class BaseManager
         Logger::info($this->getManagerName() . " received restart signal");
 
         // Reload environment configuration
-        Env::reload();
+        Hilos::reloadEnv();
 
         $this->shouldExit = true;
         $this->onRestartSignal();

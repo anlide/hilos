@@ -7,7 +7,7 @@ namespace Hilos\Tests\Integration;
 use Hilos\Constants\EnvConstants;
 use Hilos\Database\Database;
 use Hilos\Database\Exception\DatabaseConnectionException;
-use Hilos\Utils\Env;
+use Hilos\Hilos;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -29,11 +29,11 @@ abstract class FrameworkIntegrationTestCase extends TestCase
 
         Database::configure(
             index: 0,
-            host: Env::get(EnvConstants::DB_HOST, 'localhost'),
-            user: Env::get(EnvConstants::DB_USERNAME, 'root'),
-            password: Env::get(EnvConstants::DB_PASSWORD, ''),
-            database: Env::get(EnvConstants::DB_DATABASE, ''),
-            port: Env::getInt(EnvConstants::DB_PORT, 3306),
+            host: Hilos::$env[EnvConstants::DB_HOST],
+            user: Hilos::$env[EnvConstants::DB_USERNAME],
+            password: Hilos::$env[EnvConstants::DB_PASSWORD],
+            database: Hilos::$env[EnvConstants::DB_DATABASE],
+            port: Hilos::$env->int(EnvConstants::DB_PORT),
             charset: 'utf8mb4',
         );
 

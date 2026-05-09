@@ -8,8 +8,8 @@ use Demo\Chat\Hilos;
 use Demo\Chat\Core\Daemon\ChatWorkerManager;
 use Demo\Chat\Database\Database;
 use Hilos\Constants\ErrorConstants;
+use Hilos\Constants\EnvConstants;
 use Hilos\Constants\ExitCode;
-use Hilos\Utils\Env;
 use Hilos\Utils\Helpers\ArgumentHelper;
 use Hilos\Utils\Helpers\Exception\InvalidWorkerIdException;
 use Hilos\Utils\Logger;
@@ -23,13 +23,13 @@ use Hilos\Utils\Logger;
 
 // Project root (demo/chat): .env lives here, not under Bootstrap/
 $projectRoot = dirname(__DIR__, 2);
-Env::init($projectRoot);
+Hilos::initEnv($projectRoot);
 
 // Test Docker stack should prefer tests/.env over the default project .env.
-$appEnv = getenv('APP_ENV');
+$appEnv = Hilos::$env[EnvConstants::APP_ENV];
 $testEnvPath = $projectRoot . '/tests/.env';
 if ($appEnv === 'test' && file_exists($testEnvPath)) {
-    Env::load($testEnvPath);
+    Hilos::loadEnv($testEnvPath);
 }
 
 // Enable debug logging (optional - uncomment to enable)

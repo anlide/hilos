@@ -7,7 +7,7 @@ namespace Hilos\Tests\Integration;
 use Hilos\Constants\EnvConstants;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
-use Hilos\Utils\Env;
+use Hilos\Hilos;
 use PHPUnit\Framework\Attributes\Depends;
 
 /**
@@ -56,7 +56,7 @@ final class DatabaseWorkflowIntegrationTest extends FrameworkIntegrationTestCase
 
         $this->assertNotSame('', trim(Database::getServerInfo()));
 
-        $expectedDb = Env::get(EnvConstants::DB_DATABASE, '');
+        $expectedDb = Hilos::$env[EnvConstants::DB_DATABASE];
         Database::sql('SELECT DATABASE() AS db');
         $dbRow = Database::row();
         $this->assertNotNull($dbRow);

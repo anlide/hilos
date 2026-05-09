@@ -11,8 +11,8 @@ namespace Hilos\Constants;
  * Centralized environment variable name management prevents typos and ensures consistency.
  * Using Pure Enum where the name IS the value.
  *
- * Access the variable name using ->value() method:
- * Env::get(EnvConstants::HILOS_DAEMON_HOST->value())
+ * Read values through Hilos::$env:
+ * Hilos::$env[EnvConstants::HILOS_DAEMON_HOST]
  */
 enum EnvConstants
 {

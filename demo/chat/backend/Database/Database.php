@@ -9,8 +9,7 @@ use Hilos\Constants\EnvConstants;
 use Hilos\Database\Database as BaseDatabase;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Schema\Schema;
-use Hilos\Utils\Env;
-use Hilos\Utils\Exception\MissingEnvironmentVariableException;
+use Hilos\Environment\Exception\EnvException;
 
 /**
  * Database - Database connection configuration for WebSocket Test Demo.
@@ -38,18 +37,18 @@ final class Database extends BaseDatabase
      *                       Call Hilos::init() manually after migrations when using false.
      * @param bool $retryConnection If true, retry connection on temporary errors (useful for Docker startup)
      * @throws DatabaseException If connection or configuration fails
-     * @throws MissingEnvironmentVariableException If required env vars not set
+     * @throws EnvException If an environment value is missing or invalid
      */
     public static function initialize(bool $initHilos = true, bool $retryConnection = false): void
     {
         // Configure primary database connection (index 0)
         self::configure(
             index: 0,
-            host: Env::get(EnvConstants::DB_HOST, 'localhost'),
-            user: Env::get(EnvConstants::DB_USERNAME, 'root'),
-            password: Env::get(EnvConstants::DB_PASSWORD, ''),
-            database: Env::get(EnvConstants::DB_DATABASE, 'hilos_demo'),
-            port: Env::getInt(EnvConstants::DB_PORT, 3306),
+            host: Hilos::$env[EnvConstants::DB_HOST],
+            user: Hilos::$env[EnvConstants::DB_USERNAME],
+            password: Hilos::$env[EnvConstants::DB_PASSWORD],
+            database: Hilos::$env[EnvConstants::DB_DATABASE],
+            port: Hilos::$env->int(EnvConstants::DB_PORT),
             charset: 'utf8mb4',
         );
 
@@ -73,11 +72,11 @@ final class Database extends BaseDatabase
         // Example for secondary database:
         // self::configure(
         //     index: 1,
-        //     host: Env::get(EnvConstants::DB_SECONDARY_HOST, 'localhost'),
-        //     user: Env::get(EnvConstants::DB_SECONDARY_USERNAME, 'root'),
-        //     password: Env::get(EnvConstants::DB_SECONDARY_PASSWORD, ''),
-        //     database: Env::get(EnvConstants::DB_SECONDARY_DATABASE, 'hilos_demo_secondary'),
-        //     port: Env::getInt(EnvConstants::DB_SECONDARY_PORT, 3306),
+        //     host: Hilos::$env[EnvConstants::DB_SECONDARY_HOST],
+        //     user: Hilos::$env[EnvConstants::DB_SECONDARY_USERNAME],
+        //     password: Hilos::$env[EnvConstants::DB_SECONDARY_PASSWORD],
+        //     database: Hilos::$env[EnvConstants::DB_SECONDARY_DATABASE],
+        //     port: Hilos::$env->int(EnvConstants::DB_SECONDARY_PORT),
         //     charset: 'utf8mb4',
         // );
         // self::connect(1);

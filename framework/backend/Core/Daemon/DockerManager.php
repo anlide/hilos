@@ -15,9 +15,9 @@ use Hilos\Core\Exception\Process\FailedToSetNonBlockingException;
 use Hilos\Core\Exception\Process\FailedToSetStdErrException;
 use Hilos\Core\Exception\Process\FailedToTerminateProcessExceptionException;
 use Hilos\Core\Process;
-use Hilos\Utils\Env;
+use Hilos\Environment\Exception\EnvException;
+use Hilos\Hilos;
 use Hilos\Utils\Exception\LogRotationException;
-use Hilos\Utils\Exception\MissingEnvironmentVariableException;
 use Hilos\Utils\Logger;
 
 /**
@@ -58,7 +58,7 @@ class DockerManager extends BaseManager
      * @throws FailedToSetStdErrException If stderr data cannot be read
      * @throws FailedToTerminateProcessExceptionException If the process cannot be terminated
      * @throws FailedToClosePipeException If pipes cannot be closed
-     * @throws MissingEnvironmentVariableException If required env vars are missing
+     * @throws EnvException If required env values are missing or invalid
      * @throws LogRotationException If log rotation fails
      */
     public function runDockerWatchdog(string $daemonScript): void
@@ -105,7 +105,7 @@ class DockerManager extends BaseManager
      * Implements minimum restart interval for error-based restarts
      *
      * @return bool True if daemon should be started
-     * @throws MissingEnvironmentVariableException If required env vars are missing
+     * @throws EnvException If restart interval env value is missing or invalid
      */
     private function shouldStartDaemon(): bool
     {
@@ -120,7 +120,7 @@ class DockerManager extends BaseManager
 
         // For error-based restarts, check minimum interval
         if ($this->lastErrorRestartTime !== null) {
-            $minRestartInterval = Env::getInt(EnvConstants::DAEMON_MIN_RESTART_INTERVAL, 20);
+            $minRestartInterval = Hilos::$env->int(EnvConstants::DAEMON_MIN_RESTART_INTERVAL);
             $timeSinceLastRestart = microtime(true) - $this->lastErrorRestartTime;
 
             if ($timeSinceLastRestart < $minRestartInterval) {
@@ -154,7 +154,7 @@ class DockerManager extends BaseManager
      * @throws FailedToSetStdErrException If stderr data cannot be read
      * @throws FailedToTerminateProcessExceptionException If the process cannot be terminated
      * @throws FailedToClosePipeException If pipes cannot be closed
-     * @throws MissingEnvironmentVariableException If environment variable cannot be retrieved
+     * @throws EnvException If restart interval env value is missing or invalid
      */
     private function tickDaemon(): void
     {
@@ -194,7 +194,7 @@ class DockerManager extends BaseManager
         } elseif ($this->processStartTime !== null && $this->lastErrorRestartTime !== null) {
             // Process is running successfully - check if it worked long enough to reset restart protection
             $processUptime = microtime(true) - $this->processStartTime;
-            $minRestartInterval = Env::getInt(EnvConstants::DAEMON_MIN_RESTART_INTERVAL, 20);
+            $minRestartInterval = Hilos::$env->int(EnvConstants::DAEMON_MIN_RESTART_INTERVAL);
 
             if ($processUptime >= $minRestartInterval) {
                 // Process has been running successfully for minimum interval - reset restart protection
@@ -211,7 +211,7 @@ class DockerManager extends BaseManager
      * @throws CouldNotStartException If daemon process cannot be started
      * @throws FailedToSetNonBlockingException If non-blocking mode cannot be set
      * @throws LogRotationException If log directory cannot be created
-     * @throws MissingEnvironmentVariableException If required env vars are missing
+     * @throws EnvException If daemon log env values are missing or invalid
      */
     private function startDaemon(string $script): void
     {
@@ -219,7 +219,7 @@ class DockerManager extends BaseManager
         $startTime = microtime(true);
 
         // Create log directories if they don't exist
-        $logDir = dirname(Env::get(EnvConstants::DAEMON_LOG_FILE));
+        $logDir = dirname(Hilos::$env[EnvConstants::DAEMON_LOG_FILE]);
         if (!is_dir($logDir)) {
             if (!mkdir($logDir, 0700, true)) {
                 throw new LogRotationException("Cannot create log directory: $logDir");
@@ -232,8 +232,8 @@ class DockerManager extends BaseManager
             [$script],
             getcwd(),
             [Process::DESCRIPTOR_PIPE, Process::PIPE_READ], // stdin
-            [Process::DESCRIPTOR_FILE, Env::get(EnvConstants::DAEMON_LOG_FILE), Process::PIPE_APPEND], // stdout - to log file
-            [Process::DESCRIPTOR_FILE, Env::get(EnvConstants::DAEMON_ERROR_LOG_FILE), Process::PIPE_APPEND], // stderr - to error log file
+            [Process::DESCRIPTOR_FILE, Hilos::$env[EnvConstants::DAEMON_LOG_FILE], Process::PIPE_APPEND], // stdout - to log file
+            [Process::DESCRIPTOR_FILE, Hilos::$env[EnvConstants::DAEMON_ERROR_LOG_FILE], Process::PIPE_APPEND], // stderr - to error log file
         );
 
         // Log startup time
@@ -283,33 +283,33 @@ class DockerManager extends BaseManager
      * Log error message (file + system log).
      *
      * @param string $message Error message to log
-     * @throws MissingEnvironmentVariableException If log file path env var is missing
+     * @throws EnvException If daemon error log env value is missing or invalid
      */
     protected function logError(string $message): void
     {
-        Logger::errorLog($message, 3, Env::get(EnvConstants::DAEMON_ERROR_LOG_FILE));
+        Logger::errorLog($message, 3, Hilos::$env[EnvConstants::DAEMON_ERROR_LOG_FILE]);
     }
 
     /**
      * Log exception message (file + system log).
      *
      * @param string $message Exception message to log
-     * @throws MissingEnvironmentVariableException If log file path env var is missing
+     * @throws EnvException If daemon error log env value is missing or invalid
      */
     protected function logException(string $message): void
     {
-        Logger::errorLog($message, 3, Env::get(EnvConstants::DAEMON_ERROR_LOG_FILE));
+        Logger::errorLog($message, 3, Hilos::$env[EnvConstants::DAEMON_ERROR_LOG_FILE]);
     }
 
     /**
      * Log shutdown message (file + system log).
      *
      * @param string $message Shutdown message to log
-     * @throws MissingEnvironmentVariableException If log file path env var is missing
+     * @throws EnvException If daemon error log env value is missing or invalid
      */
     protected function logShutdown(string $message): void
     {
-        Logger::errorLog($message, 3, Env::get(EnvConstants::DAEMON_ERROR_LOG_FILE));
+        Logger::errorLog($message, 3, Hilos::$env[EnvConstants::DAEMON_ERROR_LOG_FILE]);
     }
 
     /**
@@ -367,7 +367,7 @@ class DockerManager extends BaseManager
     {
         // Determine log directory from daemon log file path
         // DAEMON_LOG_FILE must be set in environment configuration
-        $daemonLogFile = Env::get(EnvConstants::DAEMON_LOG_FILE);
+        $daemonLogFile = Hilos::$env[EnvConstants::DAEMON_LOG_FILE];
         $logDirectory = dirname($daemonLogFile);
 
         // If log directory doesn't exist, nothing to rotate

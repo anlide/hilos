@@ -10,6 +10,7 @@ use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Table\Context\TableContext;
 use Hilos\Database\Context\DbContext;
 use Hilos\Database\Settings\SettingsAccessor;
+use Hilos\Environment\EnvAccessor;
 use Hilos\Fs\Context\FsContext;
 use Hilos\Runtime\View\Context\RtContext;
 
@@ -18,6 +19,7 @@ use Hilos\Runtime\View\Context\RtContext;
  *
  * Application classes should extend this class and expose:
  * - Hilos::$db    — database layer
+ * - Hilos::$env   — catalog-backed environment variables
  * - Hilos::$setting — catalog-backed setting values
  * - Hilos::$rt    — runtime layer
  * - Hilos::$table — table layer
@@ -27,6 +29,9 @@ use Hilos\Runtime\View\Context\RtContext;
  */
 abstract class Hilos
 {
+    /** @var ?EnvAccessor Catalog-backed environment accessor */
+    public static ?EnvAccessor $env = null;
+
     /** @var ?DbContext Database layer singleton */
     public static ?DbContext $db = null;
 
@@ -52,12 +57,16 @@ abstract class Hilos
     public static ?AnalyticsCollector $ac = null;
 
     /**
-     * Initialize all layers (setting, db, rt, table).
+     * Initialize all layers (env, setting, db, rt, table).
      *
      * @throws HilosException When a layer factory or configure step cannot initialize its singleton
      */
     public static function init(): void
     {
+        if (static::$env === null) {
+            static::$env = static::createEnv();
+        }
+
         if (static::$setting === null) {
             static::$setting = static::createSetting();
         }
@@ -85,6 +94,47 @@ abstract class Hilos
         if (static::$frontend === null) {
             static::$frontend = static::createFrontendProjection();
         }
+    }
+
+    /**
+     * Initializes the environment accessor before storage and daemon layers.
+     *
+     * @param ?string $rootPath Directory that contains .env and .env.example
+     * @param bool $copyExample If true, copy .env.example to .env when .env is missing
+     */
+    public static function initEnv(?string $rootPath = null, bool $copyExample = true): void
+    {
+        if (static::$env === null) {
+            static::$env = static::createEnv();
+        }
+
+        static::$env->init($rootPath, $copyExample);
+    }
+
+    /**
+     * Loads an explicit env file into the active environment accessor.
+     *
+     * @param string $envFilePath Path to env file
+     */
+    public static function loadEnv(string $envFilePath): void
+    {
+        if (static::$env === null) {
+            static::$env = static::createEnv();
+        }
+
+        static::$env->load($envFilePath);
+    }
+
+    /**
+     * Reloads the active environment accessor from its current env path.
+     */
+    public static function reloadEnv(): void
+    {
+        if (static::$env === null) {
+            static::$env = static::createEnv();
+        }
+
+        static::$env->reload();
     }
 
     /**
@@ -117,6 +167,16 @@ abstract class Hilos
      * @return DbContext Database context instance
      */
     abstract protected static function createDb(): DbContext;
+
+    /**
+     * Create environment accessor.
+     *
+     * @return EnvAccessor Environment accessor
+     */
+    protected static function createEnv(): EnvAccessor
+    {
+        return new EnvAccessor();
+    }
 
     /**
      * Create settings accessor.

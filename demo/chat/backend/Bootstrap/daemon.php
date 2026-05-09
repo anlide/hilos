@@ -21,7 +21,6 @@ use Hilos\Constants\HttpConstants;
 use Hilos\Core\CLI\DTO\DaemonStatusDTO;
 use Hilos\Core\Daemon\Master\DaemonStatus;
 use Hilos\Socket\Server\HttpServer;
-use Hilos\Utils\Env;
 use Hilos\Utils\Logger;
 
 /**
@@ -34,13 +33,13 @@ use Hilos\Utils\Logger;
 
 // Project root (demo/chat): .env lives here, not under Bootstrap/
 $projectRoot = dirname(__DIR__, 2);
-Env::init($projectRoot);
+Hilos::initEnv($projectRoot);
 
 // Test Docker stack should prefer tests/.env over the default project .env.
-$appEnv = getenv('APP_ENV');
+$appEnv = Hilos::$env[EnvConstants::APP_ENV];
 $testEnvPath = $projectRoot . '/tests/.env';
 if ($appEnv === 'test' && file_exists($testEnvPath)) {
-    Env::load($testEnvPath);
+    Hilos::loadEnv($testEnvPath);
 }
 
 // Enable debug logging (optional - uncomment to enable)
@@ -56,18 +55,18 @@ try {
 
     // Create HTTP server
     $httpServer = new HttpServer(
-        Env::get(EnvConstants::HTTP_STATUS_HOST),
-        Env::getInt(EnvConstants::HTTP_STATUS_PORT),
+        Hilos::$env[EnvConstants::HTTP_STATUS_HOST],
+        Hilos::$env->int(EnvConstants::HTTP_STATUS_PORT),
     );
 
     // Set log file for daemon-side logging
-    Logger::setLogFile(Env::get(EnvConstants::DAEMON_LOG_FILE));
+    Logger::setLogFile(Hilos::$env[EnvConstants::DAEMON_LOG_FILE]);
 
     // Create Worker server
     $workerScript = __DIR__ . '/worker.php';
     $workerServer = new ChatWorkerServer(
-        Env::get(EnvConstants::WORKER_COMM_HOST),
-        Env::getInt(EnvConstants::WORKER_COMM_PORT),
+        Hilos::$env[EnvConstants::WORKER_COMM_HOST],
+        Hilos::$env->int(EnvConstants::WORKER_COMM_PORT),
         $workerScript,
         __DIR__,
         $daemon->getAgentManagerDaemon(),
@@ -75,8 +74,8 @@ try {
 
     // Create WebSocket server
     $webSocketServer = new ChatWebSocketServer(
-        Env::get(EnvConstants::WEBSOCKET_HOST),
-        Env::getInt(EnvConstants::WEBSOCKET_PORT),
+        Hilos::$env[EnvConstants::WEBSOCKET_HOST],
+        Hilos::$env->int(EnvConstants::WEBSOCKET_PORT),
     );
 
     // Create HTTP router
@@ -119,13 +118,16 @@ try {
     $daemon->registerServer($workerServer);
     $daemon->registerServer($webSocketServer);
 
-    $frontendDistPath = Env::get(EnvConstants::FRONTEND_DIST_PATH, __DIR__ . '/../../frontend/dist');
+    $frontendDistPath = Hilos::$env[EnvConstants::FRONTEND_DIST_PATH];
+    if ($frontendDistPath === '') {
+        $frontendDistPath = __DIR__ . '/../../frontend/dist';
+    }
     if (is_dir($frontendDistPath)) {
         $htmlResolver = new HtmlResolver();
         $htmlCache = new HtmlCache($frontendDistPath);
         $frontendHtmlServer = new FrontendHtmlServer(
-            Env::get(EnvConstants::FRONTEND_HTML_HOST, '0.0.0.0'),
-            Env::getInt(EnvConstants::FRONTEND_HTML_PORT, 8093),
+            Hilos::$env[EnvConstants::FRONTEND_HTML_HOST],
+            Hilos::$env->int(EnvConstants::FRONTEND_HTML_PORT),
             $htmlResolver,
             $htmlCache,
         );

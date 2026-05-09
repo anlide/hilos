@@ -5,11 +5,11 @@ declare(strict_types=1);
 namespace Hilos\Socket\Worker;
 
 use Hilos\Constants\EnvConstants;
+use Hilos\Environment\Exception\EnvException;
+use Hilos\Hilos;
 use Hilos\Socket\AbstractSocket;
 use Hilos\Socket\SocketException;
 use Hilos\Socket\SocketOperation;
-use Hilos\Utils\Env;
-use Hilos\Utils\Exception\MissingEnvironmentVariableException;
 
 /**
  * WorkerDaemonClient - Client for worker to connect to daemon.
@@ -44,7 +44,7 @@ class WorkerDaemonClient extends AbstractSocket
      * Connection is established when isConnected() returns true.
      *
      * @throws SocketException When socket operations fail
-     * @throws MissingEnvironmentVariableException When WORKER_COMM_HOST or WORKER_COMM_PORT not set
+     * @throws EnvException When WORKER_COMM_HOST or WORKER_COMM_PORT is missing or invalid
      */
     public function connect(): void
     {
@@ -52,8 +52,8 @@ class WorkerDaemonClient extends AbstractSocket
             return;
         }
 
-        $host = Env::get(EnvConstants::WORKER_COMM_HOST);
-        $port = Env::getInt(EnvConstants::WORKER_COMM_PORT);
+        $host = Hilos::$env[EnvConstants::WORKER_COMM_HOST];
+        $port = Hilos::$env->int(EnvConstants::WORKER_COMM_PORT);
 
         // Create socket
         $socket = socket_create(AF_INET, SOCK_STREAM, SOL_TCP);

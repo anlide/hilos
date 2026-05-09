@@ -12,7 +12,7 @@ use Hilos\LLM\External\Chat\AsyncOpenAIChatProvider;
 use Hilos\LLM\External\Image\OpenAIImageProvider;
 use Hilos\LLM\Local\Chat\AsyncOllamaChatProvider;
 use Hilos\LLM\Local\Image\PlaceholderLocalImageProvider;
-use Hilos\Utils\Env;
+use Hilos\Hilos;
 
 /**
  * ClientFactory - Creates LLM clients based on configuration.
@@ -31,7 +31,7 @@ class ClientFactory
      */
     public static function createChatClient(): AsyncChatLLMInterface
     {
-        $provider = Env::getFilled(EnvConstants::LLM_CHAT_PROVIDER, LLMConstants::PROVIDER_LOCAL);
+        $provider = Hilos::$env[EnvConstants::LLM_CHAT_PROVIDER];
 
         return $provider === LLMConstants::PROVIDER_EXTERNAL
             ? self::createExternalChatProvider()
@@ -45,7 +45,7 @@ class ClientFactory
      */
     public static function createImageClient(): ImageLLMInterface
     {
-        $provider = Env::getFilled(EnvConstants::LLM_IMAGE_PROVIDER, LLMConstants::PROVIDER_EXTERNAL);
+        $provider = Hilos::$env[EnvConstants::LLM_IMAGE_PROVIDER];
 
         return $provider === LLMConstants::PROVIDER_EXTERNAL
             ? self::createExternalImageProvider()
@@ -69,14 +69,14 @@ class ClientFactory
         ?string $apiKey = null,
     ): AsyncChatLLMInterface {
         if ($apiKey !== null && $apiKey !== '') {
-            $url = $url ?? Env::getFilled(EnvConstants::LLM_EXTERNAL_URL, LLMConstants::DEFAULT_EXTERNAL_URL);
-            $model = $model ?? Env::getFilled(EnvConstants::LLM_EXTERNAL_CHAT_MODEL, LLMConstants::DEFAULT_EXTERNAL_CHAT_MODEL);
+            $url = $url ?? Hilos::$env[EnvConstants::LLM_EXTERNAL_URL];
+            $model = $model ?? Hilos::$env[EnvConstants::LLM_EXTERNAL_CHAT_MODEL];
 
             return new AsyncOpenAIChatProvider($url, $apiKey, $model);
         }
 
-        $url = $url ?? Env::getFilled(EnvConstants::LLM_LOCAL_URL, LLMConstants::DEFAULT_LOCAL_URL);
-        $model = $model ?? Env::getFilled(EnvConstants::LLM_LOCAL_CHAT_MODEL, LLMConstants::DEFAULT_LOCAL_CHAT_MODEL);
+        $url = $url ?? Hilos::$env[EnvConstants::LLM_LOCAL_URL];
+        $model = $model ?? Hilos::$env[EnvConstants::LLM_LOCAL_CHAT_MODEL];
 
         return new AsyncOllamaChatProvider($url, $model);
     }
@@ -88,8 +88,8 @@ class ClientFactory
      */
     private static function createLocalChatProvider(): AsyncChatLLMInterface
     {
-        $url = Env::getFilled(EnvConstants::LLM_LOCAL_URL, LLMConstants::DEFAULT_LOCAL_URL);
-        $model = Env::getFilled(EnvConstants::LLM_LOCAL_CHAT_MODEL, LLMConstants::DEFAULT_LOCAL_CHAT_MODEL);
+        $url = Hilos::$env[EnvConstants::LLM_LOCAL_URL];
+        $model = Hilos::$env[EnvConstants::LLM_LOCAL_CHAT_MODEL];
 
         return new AsyncOllamaChatProvider($url, $model);
     }
@@ -101,8 +101,8 @@ class ClientFactory
      */
     private static function createLocalImageProvider(): ImageLLMInterface
     {
-        $url = Env::getFilled(EnvConstants::LLM_LOCAL_URL, LLMConstants::DEFAULT_LOCAL_URL);
-        $model = Env::getFilled(EnvConstants::LLM_LOCAL_IMAGE_MODEL, LLMConstants::DEFAULT_LOCAL_IMAGE_MODEL);
+        $url = Hilos::$env[EnvConstants::LLM_LOCAL_URL];
+        $model = Hilos::$env[EnvConstants::LLM_LOCAL_IMAGE_MODEL];
 
         return new PlaceholderLocalImageProvider($url, $model !== '' ? $model : null);
     }
@@ -114,9 +114,9 @@ class ClientFactory
      */
     private static function createExternalChatProvider(): AsyncChatLLMInterface
     {
-        $url = Env::getFilled(EnvConstants::LLM_EXTERNAL_URL, LLMConstants::DEFAULT_EXTERNAL_URL);
-        $apiKey = Env::getFilled(EnvConstants::LLM_EXTERNAL_API_KEY, '');
-        $model = Env::getFilled(EnvConstants::LLM_EXTERNAL_CHAT_MODEL, LLMConstants::DEFAULT_EXTERNAL_CHAT_MODEL);
+        $url = Hilos::$env[EnvConstants::LLM_EXTERNAL_URL];
+        $apiKey = Hilos::$env[EnvConstants::LLM_EXTERNAL_API_KEY];
+        $model = Hilos::$env[EnvConstants::LLM_EXTERNAL_CHAT_MODEL];
 
         return new AsyncOpenAIChatProvider($url, $apiKey, $model);
     }
@@ -128,9 +128,9 @@ class ClientFactory
      */
     private static function createExternalImageProvider(): ImageLLMInterface
     {
-        $url = Env::getFilled(EnvConstants::LLM_EXTERNAL_URL, LLMConstants::DEFAULT_EXTERNAL_URL);
-        $apiKey = Env::getFilled(EnvConstants::LLM_EXTERNAL_API_KEY, '');
-        $model = Env::getFilled(EnvConstants::LLM_EXTERNAL_IMAGE_MODEL, LLMConstants::DEFAULT_EXTERNAL_IMAGE_MODEL);
+        $url = Hilos::$env[EnvConstants::LLM_EXTERNAL_URL];
+        $apiKey = Hilos::$env[EnvConstants::LLM_EXTERNAL_API_KEY];
+        $model = Hilos::$env[EnvConstants::LLM_EXTERNAL_IMAGE_MODEL];
 
         return new OpenAIImageProvider($url, $apiKey, $model);
     }

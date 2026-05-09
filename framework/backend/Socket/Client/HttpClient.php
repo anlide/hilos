@@ -8,9 +8,8 @@ use Hilos\API\Router\HttpRouter;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HttpConstants;
 use Hilos\Core\Http\RequestQueryParams;
+use Hilos\Hilos;
 use Hilos\Socket\Client\Interface\HttpClientInterface;
-use Hilos\Utils\Env;
-use Hilos\Utils\Exception\MissingEnvironmentVariableException;
 
 /**
  * HttpClient - Represents a single HTTP client connection.
@@ -37,13 +36,7 @@ class HttpClient extends AbstractClient implements HttpClientInterface
     {
         parent::__construct($socket);
 
-        try {
-            $raw = Env::get(EnvConstants::HTTP_STATUS_KEEP_ALIVE, 'true');
-        } catch (MissingEnvironmentVariableException) {
-            $raw = 'true';
-        }
-        $parsed = filter_var($raw, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
-        $this->serverAllowsPersistentConnections = $parsed ?? true;
+        $this->serverAllowsPersistentConnections = Hilos::$env->bool(EnvConstants::HTTP_STATUS_KEEP_ALIVE);
     }
 
     /**

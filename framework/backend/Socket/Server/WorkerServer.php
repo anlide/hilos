@@ -23,16 +23,15 @@ use Hilos\Core\Exception\Process\FailedToTerminateProcessExceptionException;
 use Hilos\Core\Process;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalSource;
-use Hilos\Hilos;
 use Hilos\Core\Router\SignalType;
+use Hilos\Environment\Exception\EnvException;
+use Hilos\Hilos;
 use Hilos\Socket\Client\ClientInterface;
 use Hilos\Socket\Client\Interface\WorkerClientInterface;
 use Hilos\Socket\Client\WorkerClient;
 use Hilos\Socket\SocketException;
 use Hilos\Socket\Worker\DTO\DaemonAgentMessageDTO;
 use Hilos\Socket\Worker\DTO\SystemSignalDTO;
-use Hilos\Utils\Env;
-use Hilos\Utils\Exception\MissingEnvironmentVariableException;
 use Hilos\Utils\Helpers\ArgumentHelper;
 use Hilos\Utils\Logger;
 
@@ -89,7 +88,7 @@ abstract class WorkerServer extends AbstractServer
     /** @var ?float Last time worker processes were ticked (null = never) */
     private ?float $lastWorkerProcessesTick = null;
 
-    /** @var ?string Cached log directory path (to avoid repeated Env::get() calls) */
+    /** @var ?string Cached log directory path */
     private ?string $cachedLogDirectory = null;
 
     /**
@@ -100,7 +99,7 @@ abstract class WorkerServer extends AbstractServer
      * @param string $workerScript Path to worker bootstrap script
      * @param string $workingDirectory Working directory for worker processes
      * @param AgentManagerDaemon $agentManager Agent manager daemon instance
-     * @throws MissingEnvironmentVariableException If required env vars are missing
+     * @throws EnvException If worker or log env values are missing or invalid
      */
     public function __construct(string $host, int $port, string $workerScript, string $workingDirectory, AgentManagerDaemon $agentManager)
     {
@@ -111,9 +110,9 @@ abstract class WorkerServer extends AbstractServer
         $this->agentManager = $agentManager;
 
         // Get worker configuration from environment
-        $this->minRegular = Env::getInt(EnvConstants::WORKER_MIN_REGULAR, 3);
-        $this->minMonopolistic = Env::getInt(EnvConstants::WORKER_MIN_MONOPOLISTIC, 2);
-        $this->maxRegular = Env::getInt(EnvConstants::WORKER_MAX_REGULAR, 10);
+        $this->minRegular = Hilos::$env->int(EnvConstants::WORKER_MIN_REGULAR);
+        $this->minMonopolistic = Hilos::$env->int(EnvConstants::WORKER_MIN_MONOPOLISTIC);
+        $this->maxRegular = Hilos::$env->int(EnvConstants::WORKER_MAX_REGULAR);
 
         // Ensure log directory exists at startup to avoid repeated is_dir() checks
         $this->ensureLogDirectory();
@@ -461,7 +460,7 @@ abstract class WorkerServer extends AbstractServer
     /**
      * Get log directory path
      *
-     * Caches the result to avoid repeated Env::get() calls.
+     * Caches the result to avoid repeated env lookups.
      *
      * @return string Log directory path
      */
@@ -470,7 +469,7 @@ abstract class WorkerServer extends AbstractServer
         if ($this->cachedLogDirectory === null) {
             // Determine log directory from daemon log file path (same directory)
             // DAEMON_LOG_FILE must be set in environment configuration
-            $daemonLogFile = Env::get(EnvConstants::DAEMON_LOG_FILE);
+            $daemonLogFile = Hilos::$env[EnvConstants::DAEMON_LOG_FILE];
             $this->cachedLogDirectory = dirname($daemonLogFile);
         }
 

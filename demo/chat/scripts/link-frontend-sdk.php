@@ -13,9 +13,11 @@
 require_once __DIR__ . '/../vendor/autoload.php';
 
 use Hilos\Constants\EnvConstants;
+use Hilos\Hilos;
 
 // Detect if we're running in Docker container
-$isDocker = file_exists('/.dockerenv') || getenv(EnvConstants::DOCKER->name) === 'true';
+Hilos::initEnv(getcwd() ?: null, copyExample: false);
+$isDocker = file_exists('/.dockerenv') || Hilos::$env->bool(EnvConstants::DOCKER);
 
 // Find project root and current working directory
 $currentDir = getcwd();

@@ -18,10 +18,9 @@ use Hilos\Core\Page\PageAgentInterface;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalType;
 use Hilos\Core\Router\WebSocketSignalData;
+use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\Pages\Logs\DTO\HilosLogsOverviewSignalData;
-use Hilos\Utils\Env;
-use Hilos\Utils\Exception\MissingEnvironmentVariableException;
 use Hilos\Utils\Helpers\FileSystemHelper;
 use JsonException;
 use Hilos\Core\Page\PageRouteParams;
@@ -320,13 +319,13 @@ abstract class AbstractHilosLogsPage extends AbstractHilosPage
     /**
      * Resolve the daemon log directory from {@see EnvConstants::DAEMON_LOG_FILE}.
      *
-     * @return ?string Absolute log root path, or null if env is missing
+     * @return ?string Absolute log root path, or null if env is missing or invalid
      */
     private static function tryResolveLogRoot(): ?string
     {
         try {
-            $daemonLogFile = Env::get(EnvConstants::DAEMON_LOG_FILE);
-        } catch (MissingEnvironmentVariableException) {
+            $daemonLogFile = Hilos::$env[EnvConstants::DAEMON_LOG_FILE];
+        } catch (EnvException) {
             return null;
         }
 

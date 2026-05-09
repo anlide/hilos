@@ -6,7 +6,7 @@ namespace Hilos\Database;
 
 use Hilos\Constants\AppEnv;
 use Hilos\Constants\EnvConstants;
-use Hilos\Utils\Env;
+use Hilos\Hilos;
 
 /**
  * Database seed management system.
@@ -109,7 +109,7 @@ class Seed
      */
     public static function isProduction(): bool
     {
-        $env = Env::get(EnvConstants::APP_ENV, AppEnv::DEV->value);
+        $env = Hilos::$env[EnvConstants::APP_ENV];
         $appEnv = AppEnv::fromString($env);
 
         if ($appEnv === null) {

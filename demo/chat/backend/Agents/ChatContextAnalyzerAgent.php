@@ -7,7 +7,6 @@ namespace Demo\Chat\Agents;
 use Demo\Chat\Constants\AgentType;
 use Demo\Chat\Constants\ChatContextAnalyzerConstants;
 use Demo\Chat\Constants\ChatEventType;
-use Demo\Chat\Constants\ChatLLMConstants;
 use Demo\Chat\Constants\ChatTopicConstants;
 use Demo\Chat\Database\DbChatContext;
 use Demo\Chat\Database\Object\Item\Event as ObjectEvent;
@@ -25,7 +24,6 @@ use Hilos\LLM\Contract\AsyncChatLLMInterface;
 use Hilos\LLM\DTO\ChatGenerateOptions;
 use Hilos\LLM\DTO\Message;
 use Hilos\LLM\Exception\LLMException;
-use Hilos\Utils\Env;
 use Hilos\Utils\Helpers\JsonHelper;
 
 /**
@@ -46,15 +44,14 @@ final class ChatContextAnalyzerAgent extends AbstractAgent
      */
     public function __construct()
     {
-        $this->chatClient = Env::isExternalProvider(EnvConstants::CHAT_CONTEXT_ANALYZER_PROVIDER)
+        $this->chatClient = Hilos::$env[EnvConstants::CHAT_CONTEXT_ANALYZER_PROVIDER] === LLMConstants::PROVIDER_EXTERNAL
             ? ClientFactory::createChatClient()
             : ClientFactory::createChatClientWithConfig(
-                url: Env::getNormalizedLlmUrl(
+                url: Hilos::$env->normalizedLlmUrl(
                     EnvConstants::CHAT_CONTEXT_ANALYZER_URL,
                     EnvConstants::LLM_LOCAL_URL,
-                    LLMConstants::DEFAULT_LOCAL_URL,
                 ),
-                model: Env::getFilled(EnvConstants::CHAT_CONTEXT_ANALYZER_MODEL, ChatLLMConstants::MODEL_CONTEXT_ANALYZER),
+                model: Hilos::$env[EnvConstants::CHAT_CONTEXT_ANALYZER_MODEL],
             );
     }
 
@@ -210,13 +207,13 @@ PROMPT;
             new Message(Message::ROLE_USER, $eventsText),
         ];
 
-        $timeoutSec = Env::getFloat(EnvConstants::CHAT_CONTEXT_ANALYZER_TIMEOUT_SEC, LLMConstants::DEFAULT_TIMEOUT_SEC);
+        $timeoutSec = Hilos::$env->float(EnvConstants::CHAT_CONTEXT_ANALYZER_TIMEOUT_SEC);
         $options = new ChatGenerateOptions(
-            model: Env::getFilled(EnvConstants::CHAT_CONTEXT_ANALYZER_MODEL, ChatLLMConstants::MODEL_CONTEXT_ANALYZER),
+            model: Hilos::$env[EnvConstants::CHAT_CONTEXT_ANALYZER_MODEL],
             temperature: 0.0,
             timeoutSec: $timeoutSec > 0 ? $timeoutSec : LLMConstants::DEFAULT_TIMEOUT_SEC,
             maxTokens: ChatContextAnalyzerConstants::MAX_RESPONSE_TOKENS,
-            responseFormat: Env::isExternalProvider(EnvConstants::CHAT_CONTEXT_ANALYZER_PROVIDER)
+            responseFormat: Hilos::$env[EnvConstants::CHAT_CONTEXT_ANALYZER_PROVIDER] === LLMConstants::PROVIDER_EXTERNAL
                 ? [ChatContextAnalyzerConstants::RESPONSE_FORMAT_TYPE => ChatContextAnalyzerConstants::RESPONSE_FORMAT_JSON_OBJECT]
                 : [ChatContextAnalyzerConstants::RESPONSE_FORMAT_FORMAT => ChatContextAnalyzerConstants::RESPONSE_FORMAT_JSON],
         );
@@ -244,10 +241,10 @@ PROMPT;
                 $message = is_array($data) && isset($data[ObjectEvent::dataMessage])
                     ? (string)$data[ObjectEvent::dataMessage]
                     : '(no text)';
-                $linesByEventId[(int)($event->id ?? 0)] = $author . ': ' . $message;
+                $linesByEventId[($event->id ?? 0)] = $author . ': ' . $message;
             }
             if ($event->type === ChatEventType::CHAT_CLEARED->value) {
-                $linesByEventId[(int)($event->id ?? 0)] = 'System: [chat cleared]';
+                $linesByEventId[($event->id ?? 0)] = 'System: [chat cleared]';
             }
         }
 

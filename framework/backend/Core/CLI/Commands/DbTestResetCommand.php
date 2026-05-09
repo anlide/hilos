@@ -11,7 +11,7 @@ use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Migration;
 use Hilos\Database\Seed;
-use Hilos\Utils\Env;
+use Hilos\Hilos;
 
 /**
  * DB Test Reset Command.
@@ -22,6 +22,8 @@ use Hilos\Utils\Env;
  */
 class DbTestResetCommand implements CommandInterface
 {
+    private const string DEFAULT_TEST_DATABASE = 'hilos_demo_test';
+
     /**
      * Returns command name for CLI routing.
      *
@@ -75,11 +77,14 @@ HELP;
      */
     public function execute(array $options, array $args): int
     {
-        $host = Env::get(EnvConstants::DB_HOST, 'localhost');
-        $port = Env::getInt(EnvConstants::DB_PORT, 3306);
-        $user = Env::get(EnvConstants::DB_USERNAME, 'root');
-        $pass = Env::get(EnvConstants::DB_PASSWORD, '');
-        $database = Env::get(EnvConstants::DB_DATABASE, 'hilos_demo_test');
+        $host = Hilos::$env[EnvConstants::DB_HOST];
+        $port = Hilos::$env->int(EnvConstants::DB_PORT);
+        $user = Hilos::$env[EnvConstants::DB_USERNAME];
+        $pass = Hilos::$env[EnvConstants::DB_PASSWORD];
+        $database = Hilos::$env[EnvConstants::DB_DATABASE];
+        if ($database === '') {
+            $database = self::DEFAULT_TEST_DATABASE;
+        }
 
         echo "\n=== Test DB Reset ===\n\n";
 

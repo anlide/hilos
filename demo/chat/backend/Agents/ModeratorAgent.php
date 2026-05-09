@@ -29,7 +29,6 @@ use Hilos\LLM\Contract\AsyncChatLLMInterface;
 use Hilos\LLM\DTO\ChatGenerateOptions;
 use Hilos\LLM\DTO\Message;
 use Hilos\LLM\Exception\LLMException;
-use Hilos\Utils\Env;
 
 /**
  * Regular agent that discovers runtime user moderation requests and returns decisions.
@@ -71,7 +70,7 @@ final class ModeratorAgent extends AbstractAgent
             ? ClientFactory::createChatClient()
             : ClientFactory::createChatClientWithConfig(
                 url: Hilos::$setting[ChatSettingsConstants::CHAT_MODERATION_URL]->string()
-                    ?: Env::getFilled(EnvConstants::LLM_LOCAL_URL, LLMConstants::DEFAULT_LOCAL_URL),
+                    ?: Hilos::$env[EnvConstants::LLM_LOCAL_URL],
                 model: Hilos::$setting[ChatSettingsConstants::CHAT_MODERATION_MODEL]->string(),
             );
     }

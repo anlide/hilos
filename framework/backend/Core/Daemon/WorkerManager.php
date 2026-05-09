@@ -57,7 +57,7 @@ use Hilos\Socket\Worker\DTO\WorkerRtSyncUpdatedMessageDTO;
 use Hilos\Socket\Worker\WorkerDaemonClient;
 use Hilos\Socket\Worker\WorkerDTO;
 use Hilos\TruthSource\RtTruthSourceRegistry;
-use Hilos\Utils\Exception\MissingEnvironmentVariableException;
+use Hilos\Environment\Exception\EnvException;
 use Hilos\Utils\Helpers\ArgumentHelper;
 use Hilos\Utils\Logger;
 use Throwable;
@@ -249,7 +249,7 @@ abstract class WorkerManager extends BaseManager
      * Starts connection attempt. Connection will be checked asynchronously in run() loop.
      *
      * @throws SocketException If connection fails
-     * @throws MissingEnvironmentVariableException If required env variables are missing
+     * @throws EnvException If required daemon connection env values are missing or invalid
      */
     private function connectToDaemon(): void
     {

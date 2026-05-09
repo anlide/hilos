@@ -6,6 +6,7 @@ namespace Demo\Chat;
 
 use Demo\Chat\Database\DbChatContext;
 use Demo\Chat\Database\Settings\ChatSettingsAccessor;
+use Demo\Chat\Environment\ChatEnvAccessor;
 use Demo\Chat\Frontend\ChatFrontendProjection;
 use Demo\Chat\Fs\FsChatContext;
 use Demo\Chat\Runtime\View\Context\RtChatContext;
@@ -14,6 +15,7 @@ use Hilos\Core\Frontend\FrontendProjectionContext;
 use Hilos\Core\Table\Context\TableContext;
 use Hilos\Database\Context\DbContext;
 use Hilos\Database\Settings\SettingsAccessor;
+use Hilos\Environment\EnvAccessor;
 use Hilos\Fs\Context\FsContext;
 use Hilos\Runtime\View\Context\RtContext;
 
@@ -21,6 +23,7 @@ use Hilos\Runtime\View\Context\RtContext;
  * Hilos - Main app facade for data access.
  *
  * Usage:
+ * - Hilos::$env[EnvConstants::HTTP_STATUS_HOST]
  * - Hilos::$db->users
  * - Hilos::$setting[ChatSettingsConstants::CHAT_BOT_MODEL]->string()
  * - Hilos::$rt->connections
@@ -29,6 +32,7 @@ use Hilos\Runtime\View\Context\RtContext;
  * - Hilos::$fs->quarantine, Hilos::$fs->published, Hilos::$fs->tmp
  *
  * @property-read DbChatContext $db Database context (narrows parent's DbContext for IDE)
+ * @property-read EnvAccessor $env Environment accessor
  * @property-read SettingsAccessor $setting Settings accessor
  * @property-read RtChatContext $rt Runtime context (narrows parent's RtContext for IDE)
  * @property-read TableChatContext $table Table context (narrows parent's TableContext for IDE)
@@ -36,6 +40,16 @@ use Hilos\Runtime\View\Context\RtContext;
  */
 final class Hilos extends \Hilos\Hilos
 {
+    /**
+     * Creates the project environment accessor with the chat env catalog.
+     *
+     * @return EnvAccessor Environment accessor
+     */
+    protected static function createEnv(): EnvAccessor
+    {
+        return new ChatEnvAccessor();
+    }
+
     /**
      * Creates and returns a database context instance.
      *

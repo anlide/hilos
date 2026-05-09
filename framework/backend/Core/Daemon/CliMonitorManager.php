@@ -11,9 +11,9 @@ use Hilos\Constants\DaemonConstants;
 use Hilos\Constants\EnvConstants;
 use Hilos\Core\CLI\DTO\DaemonStatusDTO;
 use Hilos\Core\Daemon\Master\DaemonStatus;
+use Hilos\Environment\Exception\EnvException;
+use Hilos\Hilos;
 use Hilos\HilosException;
-use Hilos\Utils\Env;
-use Hilos\Utils\Exception\MissingEnvironmentVariableException;
 use Hilos\Utils\Helpers\StringHelper;
 use Hilos\Utils\Helpers\TimeHelper;
 use Hilos\Utils\Logger;
@@ -47,7 +47,7 @@ class CliMonitorManager extends BaseManager
      * UI updates every 1 second.
      * HTTP requests every 350ms after completion.
      *
-     * @throws MissingEnvironmentVariableException If required env vars are missing
+     * @throws EnvException When daemon status env values are missing or invalid
      */
     public function run(): void
     {
@@ -67,8 +67,8 @@ class CliMonitorManager extends BaseManager
         Logger::info("Press Ctrl+C to exit");
 
         // Initialize HTTP client
-        $host = Env::get(EnvConstants::HILOS_DAEMON_HOST);
-        $port = Env::getInt(EnvConstants::HTTP_STATUS_PORT);
+        $host = Hilos::$env[EnvConstants::HILOS_DAEMON_HOST];
+        $port = Hilos::$env->int(EnvConstants::HTTP_STATUS_PORT);
 
         $httpClient = new AsyncHttpClient($host, $port, ApiEndpoint::STATUS);
         $httpClient->timeout = 400.0;  // 0.4 seconds timeout
@@ -146,7 +146,7 @@ class CliMonitorManager extends BaseManager
         }
 
         // Check TERM variable
-        $term = Env::getFilled(EnvConstants::TERM, '');
+        $term = Hilos::$env[EnvConstants::TERM];
         if (!$term || $term === 'dumb') {
             Logger::info("WARNING: Terminal capabilities limited (TERM=$term).");
             Logger::info("Monitor may not display correctly.");
@@ -164,7 +164,7 @@ class CliMonitorManager extends BaseManager
     private function updateDisplay(): void
     {
         // Clear screen (cross-platform)
-        $term = Env::getFilled(EnvConstants::TERM, '');
+        $term = Hilos::$env[EnvConstants::TERM];
         if ($term !== '' && $term !== 'dumb') {
             system('clear');
         } else {

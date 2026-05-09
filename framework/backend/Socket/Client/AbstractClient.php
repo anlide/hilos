@@ -6,11 +6,10 @@ namespace Hilos\Socket\Client;
 
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HttpConstants;
+use Hilos\Hilos;
 use Hilos\Socket\AbstractSocket;
 use Hilos\Socket\SocketException;
 use Hilos\Socket\SocketOperation;
-use Hilos\Utils\Env;
-use Hilos\Utils\Exception\MissingEnvironmentVariableException;
 use Hilos\Utils\Logger;
 
 /**
@@ -47,11 +46,7 @@ abstract class AbstractClient extends AbstractSocket implements ClientInterface
     {
         $this->socket = $socket;
 
-        try {
-            $this->readBufferSize = Env::getInt(EnvConstants::SOCKET_READ_BUFFER_SIZE, 8192);
-        } catch (MissingEnvironmentVariableException) {
-            $this->readBufferSize = 8192;
-        }
+        $this->readBufferSize = Hilos::$env->int(EnvConstants::SOCKET_READ_BUFFER_SIZE);
     }
 
     /**
