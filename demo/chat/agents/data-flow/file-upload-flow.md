@@ -13,7 +13,7 @@ Client: ws.send('file_upload_init', {
 })
 ```
 
-Handled by `MainPage::onAction()` -> `UploadFileTrait::handleFileUploadInit()`:
+Handled by `MainPage::onAction()` -> `MainPage::handleFileUploadInit()`:
 
 1. Validate size, MIME type, and payload shape.
 2. Delete expired completed drafts.
@@ -27,7 +27,7 @@ Handled by `MainPage::onAction()` -> `UploadFileTrait::handleFileUploadInit()`:
 
 Client sends raw binary WS frames. The server associates frames with the active upload session for that `acceptKey`.
 
-`PageSignalRouter` routes `frame_binary` to `MainPage::onSignalFrameBinary()` -> `UploadFileTrait`:
+`PageSignalRouter` routes `frame_binary` to `MainPage::onSignalFrameBinary()` -> `MainPage::handleFileUploadBinaryFrame()`:
 
 1. Validate that the connection has an active upload session.
 2. Append bytes to tmp storage.

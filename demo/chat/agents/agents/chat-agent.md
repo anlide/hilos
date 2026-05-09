@@ -3,13 +3,13 @@
 **Type:** `AgentType::CHAT` (`'chat'`) | **Worker:** Monopolistic
 
 The central agent owns chat DB/RT state and handles chat-wide lifecycle signals.
-Main-page message and upload workflows are routed to `MainPage` / `UploadFileTrait` through `PageSignalRouter`.
+Main-page message and upload workflows are routed to `MainPage` through `PageSignalRouter`.
 
 ## Responsibilities
 
 - **Handshake**: authenticate session token, create `Connection` RT state, send `HANDSHAKE_RESPONSE`, broadcast runtime presence changes.
 - **Message routing**: main-page message actions and outbound moderation results are routed to `MainPage`.
-- **File upload routing**: binary WS frames are routed to `UploadFileTrait`; completed uploads become attachment drafts.
+- **File upload routing**: binary WS frames are routed to `MainPage`; completed uploads become attachment drafts.
 - **Moderation results**: user outbound results are page-routed.
 - **Bot lifecycle**: handles generated bot messages and chat-visible bot events.
 - **Truth source**: owns `DbChatContext::events`, `eventAttachments`, `users`, and `RtChatContext::connections`, `userStates`, `attachmentDrafts`.
@@ -23,7 +23,7 @@ Main-page message and upload workflows are routed to `MainPage` / `UploadFileTra
 | `PAGE_SUBSCRIBE(main)` | `MainPage::onSubscribe()` - send initial state |
 | `WS_ACTION(message)` | `MainPage::onAction()` - text and/or attachment drafts |
 | `WS_ACTION(file_upload_init)` | `MainPage::onAction()` - init binary upload session |
-| `WS_FRAME_BINARY` | `MainPage::onSignalFrameBinary()` -> `UploadFileTrait` |
+| `WS_FRAME_BINARY` | `MainPage::onSignalFrameBinary()` -> `MainPage::handleFileUploadBinaryFrame()` |
 | `AGENT_SIGNAL(moderation_result)` | `MainPage::onSignalAgent()` -> outbound moderation result |
 | `AGENT_SIGNAL(bot_message)` | Publish generated bot message |
 | `DB_SYNC_*` | `onSignalDbSync*()` - keep local cache in sync |

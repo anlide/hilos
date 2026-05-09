@@ -7,7 +7,7 @@ There is no separate file moderation signal path anymore. Uploaded files become 
 ```
 Upload completes
         |
-UploadFileTrait creates AttachmentDraft in quarantine
+MainPage creates AttachmentDraft in quarantine
         |
 Frontend shows draft in composer
         |

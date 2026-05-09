@@ -21,9 +21,9 @@ The primary chat page. Handles subscription, message submit, binary upload init,
 | `file_upload_init` | `FileUploadInitActionDTO` | Initialize per-connection binary upload session |
 | `attachment_draft_delete` | `AttachmentDraftDeleteActionDTO` | Delete one completed draft for this connection |
 
-## UploadFileTrait
+## File Upload
 
-File upload init and binary frame logic lives in `Pages/Main/UploadFileTrait`:
+File upload init and binary frame logic lives in `Pages/MainPage`:
 
 - Validates file size, MIME type, total storage, and filename uniqueness.
 - Keeps in-flight upload state on `Connection`.
