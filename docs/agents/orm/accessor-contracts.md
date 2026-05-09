@@ -33,6 +33,7 @@ lookup API only on the owning layer when no contract exists.
 | Documented key-based setting offset | `Hilos::$db->settings[$key]` with an `isset()` guard when optional |
 | Business key without array-offset contract | Existing named method such as `findBySession($sessionToken)` |
 | Runtime rows for one DB item | Existing RT collection method such as `forUser($userId)` |
+| Direct relation from a loaded DB item | Existing bridge property such as `$event->eventMessage` |
 | Item-level derived value | Existing item property or result accessor |
 | Complex query or multiple criteria | Named collection method on the owning collection |
 
@@ -88,6 +89,10 @@ Hilos::$db->settings[$dto->key]->value;
 
 If the value describes one model item, prefer an item property, item method,
 typed DTO field, or signal payload field over a caller-local array.
+
+For direct DB item relation properties, read `db-item-bridges.md`. Bridge
+properties are the preferred API for simple FK, one-to-one detail, and
+one-to-many child relations from a loaded View item.
 
 ## Exceptions
 

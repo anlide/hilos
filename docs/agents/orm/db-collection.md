@@ -98,8 +98,10 @@ Do not put read-only helpers under `->actions`. Actions are write APIs; using
 them for reads hides ownership boundaries and makes call sites look like they
 mutate state.
 
-For choosing between `[]`, magic/item properties, result accessors, and
-`findBy*()` methods, read `docs/agents/orm/accessor-contracts.md`.
+For direct relation properties on View items, read
+`docs/agents/orm/db-item-bridges.md`. For choosing between `[]`, magic/item
+properties, result accessors, and `findBy*()` methods, read
+`docs/agents/orm/accessor-contracts.md`.
 
 ## Collection Actions
 
@@ -193,6 +195,7 @@ convention.
 | Raw row mapping | Entity item/collection |
 | Derived display data or enriched state | Object item |
 | DB-backed lookup or query helper | Object collection plus View collection wrapper |
+| Direct relation from one loaded View item | View item bridge property |
 | Caller-facing read transformation | View item or View collection |
 | Create/register/add operation | Collection actions |
 | Delete all rows, import a batch, or mutate a batch | Collection actions |

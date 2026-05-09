@@ -33,14 +33,16 @@ result, or collection value. Start with `agents.md`, then read
    `get()`, `__get()`, item properties, `toArray()`, and existing `findBy*()`
    methods.
 3. Inspect the Object or State collection when the View layer delegates there.
-4. Prefer the smallest existing contract that matches the value exactly.
-5. Use array access only when the offset semantics are documented for that
+4. For direct DB item relations, read `docs/agents/orm/db-item-bridges.md` and
+   prefer an existing bridge property before adding a finder.
+5. Prefer the smallest existing contract that matches the value exactly.
+6. Use array access only when the offset semantics are documented for that
    collection. Do not guess that `[]` means a business key.
-6. Use a named finder when the lookup is not the collection key or when the
+7. Use a named finder when the lookup is not the collection key or when the
    method name carries important query semantics.
-7. Add a new reusable lookup only on the owning collection/item layer; do not
+8. Add a new reusable lookup only on the owning collection/item layer; do not
    hide it as a page, table, or agent helper.
-8. If adding a new accessor, document its key semantics in PHPDoc and keep null
+9. If adding a new accessor, document its key semantics in PHPDoc and keep null
    behavior explicit.
 
 ## Examples
@@ -95,6 +97,7 @@ if (!isset(Hilos::$db->users[$userId])) {
 }
 
 count(Hilos::$db->users[$userId]->connections);
+Hilos::$db->events[$eventId]?->eventMessage?->message;
 
 if (!isset(Hilos::$db->settings[$dto->key])) {
     return;
@@ -125,5 +128,7 @@ Use or add a named method instead of magic/array access when:
   that offset as the same business key.
 - Do not duplicate collection lookup logic in pages, tables, agents, or signal
   handlers.
+- Do not rebuild direct DB item relation lookups when a View item bridge
+  property should own the relation.
 - Keep new accessor APIs typed and discoverable on the owning collection or
   item layer.

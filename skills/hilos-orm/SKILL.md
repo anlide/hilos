@@ -6,13 +6,18 @@ description: Work with Hilos ORM entities, object layers, DbCollection queries, 
 # Hilos ORM
 
 Use this skill for database-backed Hilos work and for any code that reads or
-writes through `Hilos::$db`. Start with `agents.md`, then read the smallest ORM
-document that matches the change.
+writes through `Hilos::$db`. Start with `agents.md`, then read
+`docs/agents/orm/README.md` and follow its mandatory reading matrix for the
+touched ORM surfaces.
 
 ## Read First
 
+- ORM document index and mandatory follow-up matrix:
+  `docs/agents/orm/README.md`
 - `Hilos::$db`, `DbContext`, `DbCollection`, `DbItem`, actions, and examples:
   `docs/agents/orm/db-collection.md`
+- Direct relation bridge properties on `Database/View/Item/*` and their
+  collection contracts: `docs/agents/orm/db-item-bridges.md`
 - Magic, array, result, and finder selection:
   `docs/agents/orm/accessor-contracts.md` or `$hilos-accessor-contracts`
 - Frontend-safe DB item serialization and computed item fields:
@@ -42,29 +47,33 @@ document that matches the change.
 
 ## Workflow
 
-1. Find the existing `DbContext` collection constant and `setRepresent()` entry
+1. Read `docs/agents/orm/README.md` and every document required by the
+   touched-surface matrix.
+2. Find the existing `DbContext` collection constant and `setRepresent()` entry
    before adding new data logic.
-2. Inspect the matching View collection/item, Object collection/item, Entity, and
+3. Inspect the matching View collection/item, Object collection/item, Entity, and
    Actions classes.
-3. Decide whether the change belongs in an Entity, Object, View collection
+4. Decide whether the change belongs in an Entity, Object, View collection
    method, collection action, item action, migration, or caller code.
-4. Use existing `Hilos::$db` access paths and accessor contracts directly from
+5. Use existing `Hilos::$db` access paths and accessor contracts directly from
    callers:
    `Hilos::$db->users`, `Hilos::$db->users->actions->register(...)`,
    `$user->actions->update(...)`.
-5. Prefer documented array/magic/result accessors before adding or calling a
+6. Prefer documented array/magic/result accessors before adding or calling a
    redundant finder. Use named finders for business-key or complex queries when
    the collection does not document matching array access.
-6. Put new DB writes in collection actions or item actions, not in page/table
+7. Put direct relations from loaded DB items on View item bridge properties;
+   document collection offset semantics when a bridge uses `[]`.
+8. Put new DB writes in collection actions or item actions, not in page/table
    handlers.
-7. When updating or deleting one DB item and the collection key is known, load
+9. When updating or deleting one DB item and the collection key is known, load
    the item and call `$item->actions->...`; do not add collection actions that
    accept the item key for that one-item write.
-8. Put read helpers and lookup methods on the existing collection/item layer
+10. Put read helpers and lookup methods on the existing collection/item layer
    before introducing new API surface. During transparent data-shape refactors,
    keep simple field checks explicit unless a new method was approved by name.
-9. Add migrations for schema changes and update Entities to match schema.
-10. Run schema/test validation through composer scripts, never direct host
+11. Add migrations for schema changes and update Entities to match schema.
+12. Run schema/test validation through composer scripts, never direct host
    phpunit.
 
 ## Examples
@@ -115,6 +124,8 @@ Hilos::$db->users->findBySession($sessionToken);
 - Never replace a named finder with `[$key]` unless the collection documents
   that offset as the same key.
 - Never use `actions` for read-only helpers; actions are write APIs.
+- Never rebuild direct DB item relation lookups in pages, tables, agents, or
+  signal handlers when a View item bridge property should own the relation.
 - Never update or delete one known DB item through collection actions that
   accept that item's key; use the loaded `DbItem` actions.
 - Never put business logic or DB queries inside Entity classes.
