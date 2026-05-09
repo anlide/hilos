@@ -133,15 +133,16 @@ additional change in one of these surfaces, stop and ask again before editing it
 1. **Never** use Repository or Service on top of DbCollection — call `Hilos::$db->collection->actions->...` directly
 2. **Never** block in `onTick()` — must complete in < 0.1s
 3. **Only the truth source agent** writes to its DB/RT collection
-4. All PHP files: `declare(strict_types=1)` at top
-5. Signal routing is **declarative** in `SignalRouter` — do not add routing logic in agents
-6. **Frontend edits go through `Modal` only** — inline edit forms on pages are forbidden (see [frontend-sdk/edit-in-modal.md](docs/agents/frontend-sdk/edit-in-modal.md))
-7. For code style, use the matching small rule from [code-style/README.md](docs/agents/code-style/README.md)
-8. Internal backend API uses typed parameters, DTOs, value objects, or typed collections — unstructured arrays need a boundary or explicit reason
-9. DB/RT `actions` are write APIs; put read-only helpers on collections, items, objects, or typed projections
-10. If a DB/RT item key is known, update/delete that one item through `Hilos::$db/$rt->collection[$key]->actions`, not through collection actions that accept the key
-11. `getStateCollection()`, `RtContext::getStateCollection()`, and `$this->stateCollection` are allowed only inside `Database/` or `Runtime/` files; all other code must use typed collection/item APIs
-12. During refactors, do not add new convenience read helpers or predicates such as `has*()`, `is*()`, `can*()`, or `get*()` on DB/RT View items, collections, objects, actions, or typed projections unless the user explicitly approved that exact method in the plan. Prefer explicit field access at the call site when the goal is to keep the data structure transparent.
+4. **Contract approval gate is mandatory (confirmation wall)** — before changing RT item state shape, DB entity shape, or signals/routes, stop and ask the user for explicit confirmation with the exact contract surface list (fields, DTOs, and routes)
+5. All PHP files: `declare(strict_types=1)` at top
+6. Signal routing is **declarative** in `SignalRouter` — do not add routing logic in agents
+7. **Frontend edits go through `Modal` only** — inline edit forms on pages are forbidden (see [frontend-sdk/edit-in-modal.md](docs/agents/frontend-sdk/edit-in-modal.md))
+8. For code style, use the matching small rule from [code-style/README.md](docs/agents/code-style/README.md)
+9. Internal backend API uses typed parameters, DTOs, value objects, or typed collections — unstructured arrays need a boundary or explicit reason
+10. DB/RT `actions` are write APIs; put read-only helpers on collections, items, objects, or typed projections
+11. If a DB/RT item key is known, update/delete that one item through `Hilos::$db/$rt->collection[$key]->actions`, not through collection actions that accept the key
+12. `getStateCollection()`, `RtContext::getStateCollection()`, and `$this->stateCollection` are allowed only inside `Database/` or `Runtime/` files; all other code must use typed collection/item APIs
+13. During refactors, do not add new convenience read helpers or predicates such as `has*()`, `is*()`, `can*()`, or `get*()` on DB/RT View items, collections, objects, actions, or typed projections unless the user explicitly approved that exact method in the plan. Prefer explicit field access at the call site when the goal is to keep the data structure transparent.
 
 ## Project docs (existing)
 
