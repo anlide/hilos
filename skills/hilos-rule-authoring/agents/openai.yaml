@@ -1,0 +1,4 @@
+interface:
+  display_name: "Hilos Rule Authoring"
+  short_description: "Rule, docs, and skill-wrapper authoring"
+  default_prompt: "Use $hilos-rule-authoring to update Hilos agent rules, docs, and skill wrappers."

@@ -103,7 +103,9 @@ Quick navigation for AI agents. Read the relevant file before starting work.
 | File | Purpose |
 |---|---|
 | [ai-tools.md](docs/agents/ai-tools.md) | applying these rules in Codex, Claude, and Cursor |
+| [rule-authoring.md](docs/agents/rule-authoring.md) | creating, extracting, and maintaining agent rules and tool adapters |
 | [skills/](skills) | Codex-format Hilos skill wrappers |
+| [CLAUDE.md](CLAUDE.md) | Claude project adapter |
 | [.cursor/rules/hilos-framework.mdc](.cursor/rules/hilos-framework.mdc) | Cursor project rule |
 
 ---

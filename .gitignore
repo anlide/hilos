@@ -15,6 +15,11 @@ framework/agent-host/.tmp-data/
 .vscode/
 .idea/
 .cursor/
+!.cursor/
+.cursor/*
+!.cursor/rules/
+.cursor/rules/*
+!.cursor/rules/hilos-framework.mdc
 
 # OS
 .DS_Store

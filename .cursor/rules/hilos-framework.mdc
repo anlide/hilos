@@ -1,0 +1,21 @@
+---
+alwaysApply: true
+---
+
+# Hilos Framework
+
+Read `agents.md` before starting work in this repository. Use it as the rule
+index and follow the relevant `docs/agents/*` files before editing.
+
+Rules are layered:
+
+- `agents.md` contains repository-wide hard stops and navigation.
+- `docs/agents/*` contains the canonical task-specific rules.
+- `skills/hilos-*` contains Codex wrappers only; do not treat them as a separate
+  source of truth.
+
+When changing DB entity shape, RT item shape, signal DTO payloads, declarative
+routing, or page/worker routes, stop and ask the user for explicit confirmation
+as described in `agents.md`.
+
+Do not run `git commit` or `git push`.
