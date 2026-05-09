@@ -56,10 +56,10 @@
           placeholder="Enter your name"
           required
           minlength="2"
-          maxlength="20"
+          maxlength="64"
           data-autofocus
         />
-        <div class="form-text">Username must be between 2 and 20 characters</div>
+        <div class="form-text">Username must be between 2 and 64 characters</div>
       </div>
       <div v-if="renameErrorMessage" class="alert alert-danger mb-0" role="alert">
         {{ renameErrorMessage }}
@@ -123,7 +123,7 @@ const displayUsername = computed(() => {
 
 const isValidUsername = computed(() => {
   const trimmed = localUsername.value.trim()
-  return trimmed.length >= 2 && trimmed.length <= 20
+  return trimmed.length >= 2 && trimmed.length <= 64
 })
 
 // Initialize with current username from store when modal opens

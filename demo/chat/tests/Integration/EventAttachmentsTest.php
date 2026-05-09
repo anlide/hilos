@@ -44,15 +44,24 @@ final class EventAttachmentsTest extends IntegrationTestCase
                 ),
             );
 
-            $data = json_decode((string)$event->data, true);
-            $this->assertSame(['message' => 'with files'], $data);
+            $this->assertSame('with files', $event->message);
+            $this->assertSame($user->id, $event->authorUserId);
+            $this->assertNull($event->authorBotId);
             $this->assertSame(2, count($event->attachments));
             $this->assertSame(2, count(Hilos::$db->eventAttachments->forEventId((int)$event->id)));
             $this->assertSame(11, Hilos::$db->eventAttachments->sumPublishedAttachmentBytes());
             $this->assertTrue(Hilos::$db->eventAttachments->hasPublishedFileWithNormalizedFilename('one.txt'));
 
+            $messageDetail = $event->eventMessage;
+            $this->assertNotNull($messageDetail);
+            $this->assertSame($event->id, $messageDetail->event?->id);
+            $this->assertSame($user->id, $messageDetail->user?->id);
+            $this->assertNull($messageDetail->bot);
+            $this->assertSame(2, count($messageDetail->attachments));
+
             $firstAttachment = $event->attachments->first();
             $this->assertNotNull($firstAttachment);
+            $this->assertSame($event->id, $firstAttachment->eventMessage?->eventId);
             $this->assertSame($event->id, $firstAttachment->event?->id);
             $this->assertSame('alpha', $firstAttachment->file->read());
             $download = ChatAttachmentDownloadHandler::handle([

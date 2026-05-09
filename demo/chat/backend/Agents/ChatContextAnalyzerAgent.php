@@ -236,10 +236,9 @@ PROMPT;
         $linesByEventId = [];
         foreach (Hilos::$db->events as $event) {
             if ($event->type === ChatEventType::MESSAGE_SENT->value) {
-                $author = $event->userId !== null ? "User#{$event->userId}" : "Bot#{$event->botId}";
-                $data = $event->data !== null ? json_decode($event->data, true) : null;
-                $message = is_array($data) && isset($data[ObjectEvent::dataMessage])
-                    ? (string)$data[ObjectEvent::dataMessage]
+                $author = $event->authorUserId !== null ? "User#{$event->authorUserId}" : "Bot#{$event->authorBotId}";
+                $message = $event->message !== null && $event->message !== ''
+                    ? $event->message
                     : '(no text)';
                 $linesByEventId[($event->id ?? 0)] = $author . ': ' . $message;
             }

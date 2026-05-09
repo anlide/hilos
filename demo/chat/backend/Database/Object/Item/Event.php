@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Demo\Chat\Database\Object\Item;
 
 use Demo\Chat\Database\DbChatContext;
@@ -15,23 +17,16 @@ use Hilos\Database\Object\Item\Object_;
  * @extends Object_<EntityEvent>
  *
  * @property-read ?int $id
- * @property ?int $userId
- * @property ?int $botId
  * @property string $type
  * @property string $timestamp
- * @property ?string $data
  */
 final class Event extends Object_
 {
     public const string ENTITY_CLASS = EntityEvent::class;
 
     public const string id = 'id';
-    public const string userId = 'userId';
-    public const string botId = 'botId';
     public const string type = 'type';
     public const string timestamp = 'timestamp';
-    public const string data = 'data';
-    public const string dataMessage = 'message';
 
     /**
      * Return collection key used for DbChatContext lookup.
@@ -46,7 +41,7 @@ final class Event extends Object_
     /**
      * Returns the value of an event object property by name.
      *
-     * @param string $property Property name (id, userId, type, timestamp, data)
+     * @param string $property Property name (id, type, timestamp)
      * @return mixed Property value or parent method result
      * @throws DatabaseException If entity access or sync fails
      */
@@ -54,11 +49,8 @@ final class Event extends Object_
     {
         return match ($property) {
             self::id => $this->entity->id,
-            self::userId => $this->entity->user_id,
-            self::botId => $this->entity->bot_id,
             self::type => $this->entity->type,
             self::timestamp => $this->entity->timestamp,
-            self::data => $this->entity->data,
             default => parent::__get($property),
         };
     }
@@ -73,11 +65,8 @@ final class Event extends Object_
     public function __set(string $property, mixed $value): void
     {
         match ($property) {
-            self::userId => $this->entity->user_id = $value === null ? null : (int)$value,
-            self::botId => $this->entity->bot_id = $value === null ? null : (int)$value,
             self::type => $this->entity->type = (string)$value,
             self::timestamp => $this->entity->timestamp = (string)$value,
-            self::data => $this->entity->data = $value === null ? null : (string)$value,
             default => parent::__set($property, $value),
         };
     }
@@ -91,11 +80,8 @@ final class Event extends Object_
     {
         return [
             self::id => $this->entity->id,
-            self::userId => $this->entity->user_id,
-            self::botId => $this->entity->bot_id,
             self::type => $this->entity->type,
             self::timestamp => $this->entity->timestamp,
-            self::data => $this->entity->data,
         ];
     }
 }

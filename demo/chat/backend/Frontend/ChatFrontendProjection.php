@@ -190,7 +190,7 @@ final class ChatFrontendProjection extends FrontendProjectionContext
                 full: [DbChatContext::events => Events::fromSingleItem($event)],
                 replaceFullKeys: $event->type === ChatEventType::CHAT_CLEARED->value ? [DbChatContext::events] : [],
             ),
-            frontend: $this->frontendUpdatesForEventUser($event->type, $event->userId),
+            frontend: $this->frontendUpdatesForEventUser($event->type, $event->targetUserId),
         );
 
         yield from $this->deliverToAcceptKeys(

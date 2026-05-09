@@ -128,7 +128,7 @@
           class="form-control"
           required
           minlength="2"
-          maxlength="50"
+          maxlength="64"
           data-autofocus
         />
       </div>
@@ -227,7 +227,7 @@ const isFormDirty = computed(() => {
 
 const isFormValid = computed(() => {
   const name = formUser.value.name.trim()
-  return name.length >= 2 && name.length <= 50
+  return name.length >= 2 && name.length <= 64
 })
 
 const formatDate = (dateStr: string | null | undefined): string => {

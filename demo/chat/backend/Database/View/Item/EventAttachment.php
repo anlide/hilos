@@ -22,6 +22,7 @@ use Hilos\Fs\FsFile;
  * @property-read string $mimeType
  * @property-read string $storedName
  * @property-read ?Event $event Parent chat event
+ * @property-read ?EventMessage $eventMessage Message detail row for this attachment
  * @property-read FsFile $file Published file handle
  */
 final class EventAttachment extends DbItem
@@ -31,8 +32,8 @@ final class EventAttachment extends DbItem
     /**
      * Property getter (read-only access).
      *
-     * @param string $name Property name
-     * @return mixed Property value, parent event, or published file handle
+     * @param string $name Property or bridge name
+     * @return mixed Property value, related item, or published file handle
      */
     public function __get(string $name): mixed
     {
@@ -42,7 +43,8 @@ final class EventAttachment extends DbItem
             ObjectEventAttachment::filename => $this->_object->filename,
             ObjectEventAttachment::mimeType => $this->_object->mimeType,
             ObjectEventAttachment::storedName => $this->_object->storedName,
-            DbChatContext::event => Hilos::$db->events[$this->_object->eventId] ?? null,
+            DbChatContext::eventMessage => Hilos::$db->eventMessages[$this->_object->eventId] ?? null,
+            DbChatContext::event => $this->eventMessage?->event,
             self::file => Hilos::$fs->published[$this->_object->storedName],
             default => parent::__get($name),
         };

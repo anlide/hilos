@@ -22,7 +22,7 @@
         <div class="list-group list-group-flush">
           <div
             v-for="event in chatStore.events"
-            :key="event.id || `event-${event.timestamp}-${event.userId ?? event.botId ?? 'sys'}`"
+            :key="event.id || `event-${event.timestamp}-${event.authorUserId ?? event.authorBotId ?? event.targetUserId ?? 'sys'}`"
             class="list-group-item border-0 bg-transparent"
           >
             <MessageItem :event="event" />

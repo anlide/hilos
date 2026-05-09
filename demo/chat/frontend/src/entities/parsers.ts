@@ -33,11 +33,15 @@ export function parseBotPayloads(value: unknown): BotPayload[] | null {
 
 export type EventPayload = {
   id: number
-  userId: number | null
-  botId?: number | null
   type: string
   timestamp: number | string
-  data: Record<string, unknown> | string | null
+  message?: string | null
+  authorUserId?: number | null
+  authorBotId?: number | null
+  targetUserId?: number | null
+  actorUserId?: number | null
+  oldName?: string | null
+  newName?: string | null
   attachments?: EventAttachmentPayload[]
 }
 
@@ -64,6 +68,12 @@ export const isUserPayload = (value: unknown): value is UserPayload => {
   return true
 }
 
+const isNullableNumber = (value: unknown): value is number | null =>
+  value === null || typeof value === 'number'
+
+const isNullableString = (value: unknown): value is string | null =>
+  value === null || typeof value === 'string'
+
 export function parseUserPayloads(value: unknown): UserPayload[] | null {
   if (value === undefined) {
     return null
@@ -88,10 +98,37 @@ export const isEventPayload = (value: unknown): value is EventPayload => {
   if (!isRecord(value) || typeof value.id !== 'number' || typeof value.type !== 'string') {
     return false
   }
+  if ('data' in value || 'userId' in value || 'botId' in value) {
+    return false
+  }
+  if (typeof value.timestamp !== 'number' && typeof value.timestamp !== 'string') {
+    return false
+  }
+  if ('message' in value && !isNullableString(value.message)) {
+    return false
+  }
+  if ('authorUserId' in value && !isNullableNumber(value.authorUserId)) {
+    return false
+  }
+  if ('authorBotId' in value && !isNullableNumber(value.authorBotId)) {
+    return false
+  }
+  if ('targetUserId' in value && !isNullableNumber(value.targetUserId)) {
+    return false
+  }
+  if ('actorUserId' in value && !isNullableNumber(value.actorUserId)) {
+    return false
+  }
+  if ('oldName' in value && !isNullableString(value.oldName)) {
+    return false
+  }
+  if ('newName' in value && !isNullableString(value.newName)) {
+    return false
+  }
   if ('attachments' in value && parseEventAttachmentPayloads(value.attachments) === null) {
     return false
   }
-  return !(value.timestamp !== undefined && typeof value.timestamp !== 'number' && typeof value.timestamp !== 'string')
+  return true
 }
 
 export function parseEventAttachmentPayloads(value: unknown): EventAttachmentPayload[] | null {
@@ -129,16 +166,6 @@ export function parseEventPayloads(value: unknown): EventPayload[] | null {
  * Convert transport event payload to domain Event (for handlers that need Event instance).
  */
 export function eventPayloadToEvent(p: EventPayload): InstanceType<typeof Event> {
-  const eventData =
-    typeof p.data === 'string'
-      ? (() => {
-          try {
-            return JSON.parse(p.data) as Record<string, unknown>
-          } catch {
-            return {}
-          }
-        })()
-      : (p.data ?? {}) as Record<string, unknown>
   const timestampSeconds =
     typeof p.timestamp === 'string' ? Math.floor(Date.parse(p.timestamp) / 1000) : p.timestamp
   const timestampString = Number.isFinite(timestampSeconds)
@@ -146,11 +173,15 @@ export function eventPayloadToEvent(p: EventPayload): InstanceType<typeof Event>
     : ''
   return Event.fromObject({
     id: p.id,
-    userId: p.userId,
-    botId: p.botId ?? null,
     type: p.type,
     timestamp: timestampString,
-    data: eventData,
+    message: p.message ?? null,
+    authorUserId: p.authorUserId ?? null,
+    authorBotId: p.authorBotId ?? null,
+    targetUserId: p.targetUserId ?? null,
+    actorUserId: p.actorUserId ?? null,
+    oldName: p.oldName ?? null,
+    newName: p.newName ?? null,
     attachments: p.attachments ?? [],
   })
 }

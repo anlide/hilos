@@ -261,11 +261,9 @@ final class ChatAgentModerationTest extends IntegrationTestCase
     private function assertMessageEventExists(string $message): void
     {
         foreach (Hilos::$db->events as $event) {
-            $data = is_string($event->data) ? json_decode($event->data, true) : null;
             if (
                 $event->type === ChatEventType::MESSAGE_SENT->value
-                && is_array($data)
-                && ($data['message'] ?? null) === $message
+                && $event->message === $message
             ) {
                 return;
             }
@@ -277,15 +275,13 @@ final class ChatAgentModerationTest extends IntegrationTestCase
     private function assertBotMessageEventExists(int $botId, string $message): void
     {
         foreach (Hilos::$db->events as $event) {
-            $data = is_string($event->data) ? json_decode($event->data, true) : null;
             if (
                 $event->type === ChatEventType::MESSAGE_SENT->value
-                && $event->botId === $botId
-                && is_array($data)
-                && ($data['message'] ?? null) === $message
+                && $event->authorBotId === $botId
+                && $event->message === $message
             ) {
-                $this->assertSame($botId, $event->botId);
-                $this->assertSame($message, $data['message']);
+                $this->assertSame($botId, $event->authorBotId);
+                $this->assertSame($message, $event->message);
                 return;
             }
         }

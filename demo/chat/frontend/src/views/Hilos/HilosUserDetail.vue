@@ -73,7 +73,7 @@
               class="form-control"
               required
               minlength="2"
-              maxlength="50"
+              maxlength="64"
               autocomplete="off"
               data-autofocus
             />
@@ -158,7 +158,7 @@ const isFormDirty = computed(() => form.value.name.trim() !== baselineName.value
 
 const isFormValid = computed(() => {
   const name = form.value.name.trim()
-  return name.length >= 2 && name.length <= 50
+  return name.length >= 2 && name.length <= 64
 })
 
 const pageTitle = computed(() => {

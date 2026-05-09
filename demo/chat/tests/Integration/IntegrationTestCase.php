@@ -35,6 +35,9 @@ abstract class IntegrationTestCase extends TestCase
         }
         TruthSourceRegistry::register(DbChatContext::users, true, self::TEST_AGENT_ID);
         TruthSourceRegistry::register(DbChatContext::events, true, self::TEST_AGENT_ID);
+        TruthSourceRegistry::register(DbChatContext::eventMessages, true, self::TEST_AGENT_ID);
+        TruthSourceRegistry::register(DbChatContext::eventUserRegistrations, true, self::TEST_AGENT_ID);
+        TruthSourceRegistry::register(DbChatContext::eventUserRenames, true, self::TEST_AGENT_ID);
         TruthSourceRegistry::register(DbChatContext::eventAttachments, true, self::TEST_AGENT_ID);
         TruthSourceRegistry::register(DbChatContext::bots, true, self::TEST_AGENT_ID);
         TruthSourceRegistry::register(DbChatContext::moderatorPromptPieces, true, self::TEST_AGENT_ID);

@@ -19,17 +19,31 @@ use Hilos\Database\View\Item\DbItem;
  * @method __construct(ObjectEvent &$objectEvent)
  *
  * @property-read ?int $id
- * @property-read ?int $userId
- * @property-read ?int $botId
  * @property-read string $type
  * @property-read string $timestamp
- * @property-read ?string $data
- * @property-read ?User $user User for this event (null if userId is null or user not found)
- * @property-read ?Bot $bot Bot for this event (null if botId is null or bot not found)
+ * @property-read ?string $message Published message text for message events
+ * @property-read ?int $authorUserId Authoring user id for message events
+ * @property-read ?int $authorBotId Authoring bot id for message events
+ * @property-read ?int $targetUserId Subject user id for user lifecycle events
+ * @property-read ?int $actorUserId Initiating user id for rename events
+ * @property-read ?string $oldName Previous display name for rename events
+ * @property-read ?string $newName New display name for rename events
+ * @property-read ?EventMessage $eventMessage Message detail for message events
+ * @property-read ?EventUserRegistration $eventUserRegistration Registration detail for registration events
+ * @property-read ?EventUserRename $eventUserRename Rename detail for rename events
+ * @property-read ?User $user Subject user for this event (null if no target user or user not found)
+ * @property-read ?Bot $bot Authoring bot for this event (null if no bot author or bot not found)
  * @property-read EventAttachments $attachments Published files attached to this event
  */
 final class Event extends DbItem
 {
+    public const string message = 'message';
+    public const string authorUserId = 'authorUserId';
+    public const string authorBotId = 'authorBotId';
+    public const string targetUserId = 'targetUserId';
+    public const string actorUserId = 'actorUserId';
+    public const string oldName = 'oldName';
+    public const string newName = 'newName';
     public const string attachments = 'attachments';
 
     /**
@@ -42,18 +56,40 @@ final class Event extends DbItem
      */
     public function __get(string $name): mixed
     {
+        $eventId = $this->_object->id;
+
         return match ($name) {
             ObjectEvent::id => $this->_object->id,
-            ObjectEvent::userId => $this->_object->userId,
-            ObjectEvent::botId => $this->_object->botId,
             ObjectEvent::type => $this->_object->type,
             ObjectEvent::timestamp => $this->_object->timestamp,
-            ObjectEvent::data => $this->_object->data,
-            DbChatContext::user => $this->_object->userId !== null ? (Hilos::$db->users[$this->_object->userId] ?? null) : null,
-            DbChatContext::bot => $this->_object->botId !== null ? (Hilos::$db->bots[$this->_object->botId] ?? null) : null,
-            self::attachments => $this->_object->id !== null && Hilos::$db !== null
-                ? Hilos::$db->eventAttachments->forEventId($this->_object->id)
-                : EventAttachments::initEmpty(),
+            DbChatContext::eventMessage => $eventId === null
+                ? null
+                : (Hilos::$db->eventMessages[$eventId] ?? null),
+            DbChatContext::eventUserRegistration => $eventId === null
+                ? null
+                : (Hilos::$db->eventUserRegistrations[$eventId] ?? null),
+            DbChatContext::eventUserRename => $eventId === null
+                ? null
+                : (Hilos::$db->eventUserRenames[$eventId] ?? null),
+            self::message => $this->eventMessage?->message,
+            self::authorUserId => $this->eventMessage?->authorUserId,
+            self::authorBotId => $this->eventMessage?->authorBotId,
+            self::targetUserId => $this->eventUserRegistration?->targetUserId
+                ?? $this->eventUserRename?->targetUserId,
+            self::actorUserId => $this->eventUserRename?->actorUserId,
+            self::oldName => $this->eventUserRename?->oldName,
+            self::newName => $this->eventUserRename?->newName,
+            DbChatContext::user => match (true) {
+                $this->authorUserId !== null => Hilos::$db->users[$this->authorUserId] ?? null,
+                $this->targetUserId !== null => Hilos::$db->users[$this->targetUserId] ?? null,
+                default => null,
+            },
+            DbChatContext::bot => $this->authorBotId === null
+                ? null
+                : (Hilos::$db->bots[$this->authorBotId] ?? null),
+            self::attachments => $eventId === null
+                ? EventAttachments::initEmpty()
+                : Hilos::$db->eventAttachments->forEventId($eventId),
             default => parent::__get($name),
         };
     }
@@ -76,6 +112,13 @@ final class Event extends DbItem
         bool $toFrontend = false,
     ): array {
         $result = parent::toArray($withId, $idAsIndex, $withBridges, $withCalculation, $toFrontend);
+        $result[self::message] = $this->message;
+        $result[self::authorUserId] = $this->authorUserId;
+        $result[self::authorBotId] = $this->authorBotId;
+        $result[self::targetUserId] = $this->targetUserId;
+        $result[self::actorUserId] = $this->actorUserId;
+        $result[self::oldName] = $this->oldName;
+        $result[self::newName] = $this->newName;
         $result[self::attachments] = $this->attachments->toArray(
             idAsIndex: false,
             toFrontend: $toFrontend,

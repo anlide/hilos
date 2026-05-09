@@ -43,7 +43,7 @@ final class EventAttachment extends Entity
     ];
 
     public const array _foreign = [
-        self::event_id => Event::_table,
+        self::event_id => EventMessage::_table,
     ];
 
     public const array _indexes = [

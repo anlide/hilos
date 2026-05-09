@@ -7,6 +7,7 @@ namespace Demo\Chat\Tests\Integration;
 use Demo\Chat\Hilos;
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\ValueTooLongException;
+use Hilos\Core\Exception\ValueTooShortException;
 use Hilos\HilosException;
 use Hilos\Utils\Helpers\RandomHelper;
 
@@ -36,6 +37,24 @@ final class UserActionsTest extends IntegrationTestCase
     }
 
     /**
+     * Rename accepts the maximum configured display-name length.
+     *
+     * @throws HilosException On database error
+     */
+    public function testRenameAcceptsSixtyFourCharacters(): void
+    {
+        $token = RandomHelper::hex(16);
+        $user = Hilos::$db->users->actions->register($token);
+        $userId = $user->id;
+        $this->assertNotNull($userId);
+
+        $name = str_repeat('x', 64);
+        Hilos::$db->users[$userId]->actions->rename($name);
+
+        $this->assertSame($name, Hilos::$db->users[$userId]?->name);
+    }
+
+    /**
      * Rename with empty/whitespace-only name throws EmptyValueException.
      *
      * @throws HilosException On database error
@@ -50,6 +69,23 @@ final class UserActionsTest extends IntegrationTestCase
         $this->expectExceptionMessage('cannot be empty');
 
         $dbUser->actions->rename('   ');
+    }
+
+    /**
+     * Rename with a one-character name throws ValueTooShortException.
+     *
+     * @throws HilosException On database error
+     */
+    public function testRenameTooShortThrows(): void
+    {
+        $token = RandomHelper::hex(16);
+        $user = Hilos::$db->users->actions->register($token);
+        $dbUser = Hilos::$db->users[$user->id];
+
+        $this->expectException(ValueTooShortException::class);
+        $this->expectExceptionMessage('too short');
+
+        $dbUser->actions->rename('x');
     }
 
     /**

@@ -195,13 +195,11 @@ final class ProfileRenameModerationTest extends IntegrationTestCase
     private function assertUserRenamedEventExists(int $userId, string $oldName, string $newName): void
     {
         foreach (Hilos::$db->events as $event) {
-            $data = is_string($event->data) ? json_decode($event->data, true) : null;
             if (
                 $event->type === ChatEventType::USER_RENAMED->value
-                && $event->userId === $userId
-                && is_array($data)
-                && ($data['oldName'] ?? null) === $oldName
-                && ($data['newName'] ?? null) === $newName
+                && $event->targetUserId === $userId
+                && $event->oldName === $oldName
+                && $event->newName === $newName
             ) {
                 return;
             }

@@ -22,7 +22,7 @@ use Hilos\Utils\Helpers\TimeHelper;
  */
 final class UserActions extends DbActions
 {
-    private const int NAME_MIN_LENGTH = 1;
+    private const int NAME_MIN_LENGTH = 2;
     private const int NAME_MAX_LENGTH = 64;
 
     /**

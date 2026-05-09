@@ -20,7 +20,9 @@ const openAdminModeratorPage = async (page: Page) => {
   await expect(page).toHaveURL('/hilos/admin_moderator')
   await expect(page.getByRole('heading', { name: 'Moderator prompt pieces' })).toBeVisible({ timeout: 10000 })
   await expect(promptPieceSearch(page)).toBeVisible()
-  await expect(page.getByRole('row').filter({ hasText: 'Allow benign' })).toBeVisible({ timeout: 30000 })
+  await expect(
+    page.getByRole('row', { name: /message_rule Allow benign\./ }),
+  ).toBeVisible({ timeout: 30000 })
 }
 
 const applyPendingChangesIfVisible = async (page: Page) => {

@@ -32,8 +32,8 @@ final class EventAttachments extends DbCollection
     /**
      * Returns published attachments for one event.
      *
-     * @param int $eventId Parent event id
-     * @return self Attachments linked to the event
+     * @param int $eventId Parent message event id
+     * @return self Attachments linked to the message event
      * @throws CollectionNotManualException If manual collection add fails
      * @throws ObjectGetIdStringNotImplementedException If an attachment id is not available
      */

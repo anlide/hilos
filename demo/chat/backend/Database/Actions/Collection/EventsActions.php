@@ -7,9 +7,9 @@ namespace Demo\Chat\Database\Actions\Collection;
 use Demo\Chat\Constants\ChatEventType;
 use Demo\Chat\Database\DTO\PublishedAttachmentInputs;
 use Demo\Chat\Database\Entity\Item\Event;
+use Demo\Chat\Database\View\Collection\Events as DbCollectionEvents;
 use Demo\Chat\Database\Object\Collection\Events as ObjectEvents;
 use Demo\Chat\Database\Object\Item\Event as ObjectEvent;
-use Demo\Chat\Database\View\Collection\Events as DbCollectionEvents;
 use Demo\Chat\Database\View\Item\Event as DbEvent;
 use Demo\Chat\Hilos;
 use Hilos\Core\CLI\Exception\CommandException;
@@ -82,7 +82,10 @@ final class EventsActions extends DbActions
      */
     public function addUserRegistered(int $userId): DbEvent
     {
-        return $this->add(ChatEventType::USER_REGISTERED->value, userId: $userId);
+        $event = $this->add(ChatEventType::USER_REGISTERED->value);
+        Hilos::$db->eventUserRegistrations->actions->create((int)$event->id, $userId);
+
+        return $event;
     }
 
     /**
@@ -97,14 +100,16 @@ final class EventsActions extends DbActions
      */
     public function addUserRenamed(int $userId, string $oldName, string $newName): DbEvent
     {
-        return $this->add(
-            ChatEventType::USER_RENAMED->value,
-            userId: $userId,
-            data: [
-                'oldName' => $oldName,
-                'newName' => $newName,
-            ],
+        $event = $this->add(ChatEventType::USER_RENAMED->value);
+        Hilos::$db->eventUserRenames->actions->create(
+            eventId: (int)$event->id,
+            targetUserId: $userId,
+            actorUserId: $userId,
+            oldName: $oldName,
+            newName: $newName,
         );
+
+        return $event;
     }
 
     /**
@@ -125,15 +130,16 @@ final class EventsActions extends DbActions
         ?int $adminUserId = null,
     ): DbEvent
     {
-        return $this->add(
-            ChatEventType::USER_RENAMED_BY_ADMIN->value,
-            userId: $userId,
-            data: [
-                'oldName' => $oldName,
-                'newName' => $newName,
-                'adminUserId' => $adminUserId,
-            ],
+        $event = $this->add(ChatEventType::USER_RENAMED_BY_ADMIN->value);
+        Hilos::$db->eventUserRenames->actions->create(
+            eventId: (int)$event->id,
+            targetUserId: $userId,
+            actorUserId: $adminUserId,
+            oldName: $oldName,
+            newName: $newName,
         );
+
+        return $event;
     }
 
     /**
@@ -156,11 +162,12 @@ final class EventsActions extends DbActions
         ?PublishedAttachmentInputs $attachments = null,
     ): DbEvent
     {
-        $event = $this->add(
-            ChatEventType::MESSAGE_SENT->value,
-            userId: $userId,
-            botId: $botId,
-            data: [ObjectEvent::dataMessage => $message],
+        $event = $this->add(ChatEventType::MESSAGE_SENT->value);
+        Hilos::$db->eventMessages->actions->create(
+            eventId: (int)$event->id,
+            authorUserId: $userId,
+            authorBotId: $botId,
+            message: $message,
         );
 
         if ($attachments !== null) {
@@ -181,23 +188,17 @@ final class EventsActions extends DbActions
      * Adds a new event to the collection and persists it to the database.
      *
      * @param string $type Event type
-     * @param ?int $userId User ID for user-authored events
-     * @param ?int $botId Bot ID for bot-authored events
-     * @param ?array<string, mixed> $data Additional event payload
      * @return DbEvent Created event
      * @throws HilosException On database or truth-source failure
      * @throws CommandException If event id is null after sync
      */
-    private function add(string $type, ?int $userId = null, ?int $botId = null, ?array $data = null): DbEvent
+    private function add(string $type): DbEvent
     {
         $this->ensureCanWrite();
 
         $objectEvent = ObjectEvent::create();
-        $objectEvent->userId = $userId;
-        $objectEvent->botId = $botId;
         $objectEvent->type = $type;
         $objectEvent->timestamp = TimeHelper::getSqlDateTime();
-        $objectEvent->data = $data === null ? null : json_encode($data);
         $objectEvent->sync();
 
         if ($objectEvent->id === null) {
@@ -218,6 +219,9 @@ final class EventsActions extends DbActions
         $this->ensureCanWrite();
 
         Hilos::$db->eventAttachments->actions->deleteAll();
+        Hilos::$db->eventMessages->actions->deleteAll();
+        Hilos::$db->eventUserRegistrations->actions->deleteAll();
+        Hilos::$db->eventUserRenames->actions->deleteAll();
         $this->objectCollection->deleteAll();
 
         $this->clearCollectionCache();

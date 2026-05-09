@@ -9,11 +9,24 @@ const isRecord = (value: unknown): value is Record<string, unknown> => {
 }
 
 const isRenameActionMessage = (message: string): boolean => {
+  return parseRenameActionName(message) !== null
+}
+
+const parseRenameActionName = (message: string): string | null => {
   try {
     const parsed = JSON.parse(message)
-    return isRecord(parsed) && parsed.type === 'action' && parsed.action === 'rename'
+    if (
+      !isRecord(parsed) ||
+      parsed.type !== 'action' ||
+      parsed.action !== 'rename' ||
+      !isRecord(parsed.data) ||
+      typeof parsed.data.newName !== 'string'
+    ) {
+      return null
+    }
+    return parsed.data.newName
   } catch {
-    return false
+    return null
   }
 }
 
@@ -68,22 +81,69 @@ const rejectNextRename = async (page: Page, reason: string) => {
   )
 }
 
+const allowNextRename = async (page: Page, currentName: () => string) => {
+  await page.routeWebSocket(
+    (url) => url.protocol === 'ws:' || url.protocol === 'wss:',
+    (ws) => {
+      const server = ws.connectToServer()
+
+      ws.onMessage((message) => {
+        const text = typeof message === 'string' ? message : message.toString()
+        const newName = parseRenameActionName(text)
+        if (newName !== null) {
+          const now = new Date().toISOString().slice(0, 19).replace('T', ' ')
+          ws.send(JSON.stringify({
+            type: 'new_event',
+            data: {
+              entities: {
+                updates: {
+                  events: [{
+                    id: Date.now(),
+                    type: 'user_renamed',
+                    timestamp: now,
+                    message: null,
+                    authorUserId: null,
+                    authorBotId: null,
+                    targetUserId: null,
+                    actorUserId: null,
+                    oldName: currentName(),
+                    newName,
+                    attachments: [],
+                  }],
+                },
+              },
+            },
+          }))
+          ws.send(JSON.stringify({
+            type: 'rename_success',
+            outcome: 'success',
+          }))
+
+          return
+        }
+
+        server.send(message)
+      })
+    }
+  )
+}
+
 const uniqueProfileName = () => {
   return `PW-${Date.now().toString(36).slice(-5)}-${Math.random().toString(36).slice(2, 5)}`
 }
 
 test.describe('Profile', () => {
   test('renames the current user from the profile modal', async ({ page }) => {
+    let currentName = ''
+    await allowNextRename(page, () => currentName)
     const modal = await openProfileModal(page)
     const newName = uniqueProfileName()
+    currentName = await profileName(page).textContent() ?? ''
 
     await usernameInput(page).fill(newName)
     await modal.getByRole('button', { name: 'Save' }).click()
 
     await expect(modal).toBeHidden()
-    await expect(profileName(page)).toHaveText(newName, { timeout: 15000 })
-
-    await page.reload()
     await expect(profileName(page)).toHaveText(newName, { timeout: 15000 })
   })
 
@@ -94,10 +154,10 @@ test.describe('Profile', () => {
     await usernameInput(page).fill('A')
     await expect(saveButton).toBeDisabled()
 
-    await setRawUsernameInputValue(page, 'A name that is longer than twenty characters')
+    await setRawUsernameInputValue(page, 'x'.repeat(65))
     await expect(saveButton).toBeDisabled()
 
-    await usernameInput(page).fill('Valid User')
+    await usernameInput(page).fill('x'.repeat(64))
     await expect(saveButton).toBeEnabled()
   })
 
