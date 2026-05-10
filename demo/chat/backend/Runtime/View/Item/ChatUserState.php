@@ -51,13 +51,10 @@ final class ChatUserState extends RtItem
      */
     public function __get(string $name): int|float|string|User|null|ChatUserStateActions
     {
-        /** @var StateChatUserState $state */
-        $state = $this->_state;
-
         return match ($name) {
-            StateChatUserState::userId => $state->userId,
-            StateChatUserState::lastOutboundSubmittedAt => $state->lastOutboundSubmittedAt,
-            DbChatContext::user => Hilos::$db->users[$state->userId] ?? null,
+            StateChatUserState::userId => $this->_state->userId,
+            StateChatUserState::lastOutboundSubmittedAt => $this->_state->lastOutboundSubmittedAt,
+            DbChatContext::user => Hilos::$db->users[$this->_state->userId],
             RtItem::actions => $this->getItemActions(),
             default => parent::__get($name),
         };
@@ -68,9 +65,6 @@ final class ChatUserState extends RtItem
      */
     public function toArray(): array
     {
-        /** @var StateChatUserState $state */
-        $state = $this->_state;
-
-        return $state->toArray();
+        return $this->_state->toArray();
     }
 }

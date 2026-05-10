@@ -4,8 +4,12 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Runtime\View\Item;
 
+use Demo\Chat\Database\DbChatContext;
+use Demo\Chat\Database\View\Item\User;
+use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\State\Item\AttachmentDraft as StateAttachmentDraft;
 use Demo\Chat\Runtime\View\Actions\Item\AttachmentDraftActions;
+use Demo\Chat\Runtime\View\Context\RtChatContext;
 use Hilos\Runtime\Exception\Item\RtItemActionsClassException;
 use Hilos\Runtime\Exception\Item\RtItemPropertyNotFoundException;
 use Hilos\Runtime\View\Item\RtItem;
@@ -24,6 +28,8 @@ use Hilos\Runtime\View\Item\RtItem;
  * @property-read int $size File size in bytes
  * @property-read string $normalizedFilename Normalized filename
  * @property-read int $uploadedAt Upload completion unix timestamp
+ * @property-read ?User $user User row or null if not found in DB view
+ * @property-read ?Connection $connection Owning connection row or null if not found
  * @property-read AttachmentDraftActions $actions Write operations for this draft
  */
 final class AttachmentDraft extends RtItem
@@ -42,21 +48,20 @@ final class AttachmentDraft extends RtItem
      * @throws RtItemActionsClassException When item actions class is missing or invalid
      * @throws RtItemPropertyNotFoundException When $name is not a declared property
      */
-    public function __get(string $name): string|int|AttachmentDraftActions
+    public function __get(string $name): string|int|User|Connection|AttachmentDraftActions|null
     {
-        /** @var StateAttachmentDraft $state */
-        $state = $this->_state;
-
         return match ($name) {
-            StateAttachmentDraft::draftId => $state->draftId,
-            StateAttachmentDraft::acceptKey => $state->acceptKey,
-            StateAttachmentDraft::userId => $state->userId,
-            StateAttachmentDraft::quarantineBasename => $state->quarantineBasename,
-            StateAttachmentDraft::originalFilename => $state->originalFilename,
-            StateAttachmentDraft::mimeType => $state->mimeType,
-            StateAttachmentDraft::size => $state->size,
-            StateAttachmentDraft::normalizedFilename => $state->normalizedFilename,
-            StateAttachmentDraft::uploadedAt => $state->uploadedAt,
+            StateAttachmentDraft::draftId => $this->_state->draftId,
+            StateAttachmentDraft::acceptKey => $this->_state->acceptKey,
+            StateAttachmentDraft::userId => $this->_state->userId,
+            StateAttachmentDraft::quarantineBasename => $this->_state->quarantineBasename,
+            StateAttachmentDraft::originalFilename => $this->_state->originalFilename,
+            StateAttachmentDraft::mimeType => $this->_state->mimeType,
+            StateAttachmentDraft::size => $this->_state->size,
+            StateAttachmentDraft::normalizedFilename => $this->_state->normalizedFilename,
+            StateAttachmentDraft::uploadedAt => $this->_state->uploadedAt,
+            DbChatContext::user => Hilos::$db->users[$this->_state->userId],
+            RtChatContext::connection => Hilos::$rt->connections[$this->_state->acceptKey],
             RtItem::actions => $this->getItemActions(),
             default => parent::__get($name),
         };
@@ -67,9 +72,6 @@ final class AttachmentDraft extends RtItem
      */
     public function toArray(): array
     {
-        /** @var StateAttachmentDraft $state */
-        $state = $this->_state;
-
-        return $state->toArray();
+        return $this->_state->toArray();
     }
 }

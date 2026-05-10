@@ -68,6 +68,12 @@ touched ORM surfaces.
    properties. Do not add pass-through bridges through another bridge item.
    Document collection offset semantics when a bridge uses `[]`. Do not add
    caller-side guards only to protect DB collection access from nullable keys.
+   For direct one-to-one DB/RT overlays, add both View-item bridge directions
+   immediately. If the overlay/status model starts with the parent model name,
+   name the reverse bridge by the remaining semantic suffix, such as
+   `$bot->agentStatus` for `BotAgentStatus`.
+   Do not create temporary id or foreign-key aliases inside bridge `__get()`
+   methods when the alias only feeds relation lookups.
 8. Put new DB writes in collection actions or item actions, not in page/table
    handlers.
 9. When updating or deleting one DB item and the collection key is known, load
@@ -134,6 +140,13 @@ Hilos::$db->users->findBySession($sessionToken);
   item; callers must read those fields through the bridge item.
 - Never expose pass-through DB View bridges that only forward through another
   bridge item.
+- Never create pass-through id or foreign-key aliases inside bridge `__get()`
+  methods only to shorten relation lookups.
+- Never leave a direct one-to-one DB/RT overlay one-sided; expose both
+  View-item bridge directions even if one side is not currently used.
+- Never repeat the parent model name in a reverse overlay/status bridge when
+  the related model name is the parent plus a semantic suffix; use the suffix
+  in `lowerCamelCase`.
 - Never add reverse one-to-many View item bridges just because the schema can
   be traversed; require a direct key plus a caller-facing domain or payload
   contract.

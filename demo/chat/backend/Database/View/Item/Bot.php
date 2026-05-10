@@ -1,9 +1,13 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Demo\Chat\Database\View\Item;
 
 use Demo\Chat\Database\Actions\Item\BotActions;
 use Demo\Chat\Database\Object\Item\Bot as ObjectBot;
+use Demo\Chat\Hilos;
+use Demo\Chat\Runtime\View\Item\BotAgentStatus as RuntimeBotAgentStatus;
 use Hilos\Database\Exception\View\Collection\ActionsClassException;
 use Hilos\Database\Exception\View\Item\PropertyNotFoundException;
 use Hilos\Database\View\Item\DbItem;
@@ -27,19 +31,22 @@ use Hilos\Database\View\Item\DbItem;
  * @property-read bool $topicMatchRequired
  * @property-read int $cooldownAfterMessage
  * @property-read int $priority
+ * @property-read ?RuntimeBotAgentStatus $agentStatus Runtime lifecycle row for this bot
  * @property-read BotActions $actions Item-level write operations
  */
 final class Bot extends DbItem
 {
+    public const string agentStatus = 'agentStatus';
+
     /**
      * Property getter (read-only access).
      *
      * @param string $name Property name
-     * @return int|string|bool|BotActions|null Property value or actions
+     * @return int|string|bool|RuntimeBotAgentStatus|BotActions|null Property value, linked runtime status, or actions
      * @throws PropertyNotFoundException If property does not exist
      * @throws ActionsClassException If actions class is not defined for the collection
      */
-    public function __get(string $name): int|string|bool|BotActions|null
+    public function __get(string $name): int|string|bool|RuntimeBotAgentStatus|BotActions|null
     {
         return match ($name) {
             ObjectBot::id => $this->_object->id,
@@ -55,6 +62,7 @@ final class Bot extends DbItem
             ObjectBot::topicMatchRequired => $this->_object->topicMatchRequired,
             ObjectBot::cooldownAfterMessage => $this->_object->cooldownAfterMessage,
             ObjectBot::priority => $this->_object->priority,
+            self::agentStatus => Hilos::$rt->botAgentStatuses[$this->_object->id],
             default => parent::__get($name),
         };
     }

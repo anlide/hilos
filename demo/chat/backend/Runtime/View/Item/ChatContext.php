@@ -44,13 +44,10 @@ final class ChatContext extends RtItem
      */
     public function __get(string $name): mixed
     {
-        /** @var StateChatContext $state */
-        $state = $this->_state;
-
         return match ($name) {
-            StateChatContext::topic => $state->topic,
-            StateChatContext::topicConfidence => $state->topicConfidence,
-            StateChatContext::summary => $state->summary,
+            StateChatContext::topic => $this->_state->topic,
+            StateChatContext::topicConfidence => $this->_state->topicConfidence,
+            StateChatContext::summary => $this->_state->summary,
             RtItem::actions => $this->getItemActions(),
             default => parent::__get($name),
         };

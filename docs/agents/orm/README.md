@@ -39,4 +39,5 @@ Keep persistent rows scalar in Entity/Object layers. Expose caller-facing
 relations through typed View item bridge properties or documented View
 collection accessors. Serialization is a separate explicit contract: adding a
 bridge property does not automatically mean it belongs in `toArray()` or the
-frontend payload.
+frontend payload. Direct one-to-one DB/RT overlays should expose both direct
+View-item bridge directions by default.

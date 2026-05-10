@@ -80,18 +80,22 @@ Start with `agents.md`, then read the matching runtime guide.
 17. Do not implement `__get()` / `__set()` in concrete `RtState` classes for
     declared row fields; action code should read/write the declared properties
     directly, then call `sync()`.
-18. In concrete `RtStates` collections, override `get()` as nullable
+18. In concrete `Runtime/View/Item/*` classes, rely on
+    `@extends RtItem<StateFoo>` and read state fields as
+    `$this->_state->fieldName`. Do not create local `/** @var StateFoo $state */`
+    aliases only to recover the state type.
+19. In concrete `RtStates` collections, override `get()` as nullable
     `?StateFoo` that accepts nullable IDs and `offsetGet()` as non-null
     `StateFoo`; use `get()` for optional lookups and `[]` only when the row
     must already exist. Never cast a nullable state key to string before
     deciding whether it is absent.
-19. During refactors, do not invent convenience read helpers or predicates on
+20. During refactors, do not invent convenience read helpers or predicates on
     `RtItem`, `RtCollection`, actions, projections, or adjacent view objects to
     hide a field check or shorten a caller. Examples: `has*()`, `is*()`,
     `can*()`, and `get*()` wrappers around one or two state fields. Keep field
     access explicit unless the user approved that exact method in the plan or
     the method centralizes a non-trivial reused invariant.
-20. When the app needs a typed "one runtime object" access path, keep the row in
+21. When the app needs a typed "one runtime object" access path, keep the row in
     an existing `RtStates` collection when it is collection-backed, register
     `_stateItems[$alias]`, expose it with `RtContext::setRepresentItem()`, and add a concrete
     `@property-read ?Foo $alias` PHPDoc to the project context.
@@ -183,6 +187,9 @@ of duplicating runtime mutation logic in the page/table layer.
   `RtItem` instead.
 - Do not add new runtime convenience read helpers or predicates during a
   refactor unless the user explicitly approved the exact method in the plan.
+- Do not add local `/** @var StateFoo $state */` aliases in concrete
+  `Runtime/View/Item/*`; use the `RtItem<StateFoo>` template and
+  `$this->_state->...` directly.
 - Do not add ad hoc computed properties to `RtContext`; use `setRepresentItem()`
   for documented single-item aliases.
 - Do not update or delete one known runtime item through collection actions that

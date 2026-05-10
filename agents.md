@@ -48,6 +48,7 @@ Quick navigation for AI agents. Read the relevant file before starting work.
 | [orm/entity.md](docs/agents/orm/entity.md) | creating or modifying Entity classes, DB table mapping |
 | [orm/object.md](docs/agents/orm/object.md) | creating Object layer, transforming entity data for views |
 | [orm/db-collection.md](docs/agents/orm/db-collection.md) | querying data, writing actions, Hilos::$db usage |
+| [orm/db-item-bridges.md](docs/agents/orm/db-item-bridges.md) | DB View item relation bridges, reverse bridge naming, mandatory DB/RT overlay bridges |
 | [orm/accessor-contracts.md](docs/agents/orm/accessor-contracts.md) | choosing magic/array/result accessors vs `findBy*` helpers |
 | [orm/frontend-representation.md](docs/agents/orm/frontend-representation.md) | shaping `toFrontend`, `withCalculation`, and computed frontend item fields |
 | [orm/migrations.md](docs/agents/orm/migrations.md) | DB schema changes, migration files, seeds |
@@ -145,6 +146,7 @@ additional change in one of these surfaces, stop and ask again before editing it
 11. If a DB/RT item key is known, update/delete that one item through `Hilos::$db/$rt->collection[$key]->actions`, not through collection actions that accept the key
 12. `getStateCollection()`, `RtContext::getStateCollection()`, and `$this->stateCollection` are allowed only inside `Database/` or `Runtime/` files; all other code must use typed collection/item APIs
 13. During refactors, do not add new convenience read helpers or predicates such as `has*()`, `is*()`, `can*()`, or `get*()` on DB/RT View items, collections, objects, actions, or typed projections unless the user explicitly approved that exact method in the plan. Prefer explicit field access at the call site when the goal is to keep the data structure transparent.
+14. Direct DB/RT overlay relations are complete by default: expose both direct View-item bridge directions for 1:1 DB-RT overlays, and name reverse overlay/status bridges by the remaining semantic suffix when the related model starts with the parent model name.
 
 ## Project docs (existing)
 

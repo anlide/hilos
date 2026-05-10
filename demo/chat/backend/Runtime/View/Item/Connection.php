@@ -137,41 +137,38 @@ final class Connection extends RtItem
      */
     public function __get(string $name): array|string|int|float|User|ChatUserState|AttachmentDrafts|null|ConnectionActions
     {
-        /** @var StateConnection $state */
-        $state = $this->_state;
-
         return match ($name) {
-            StateConnection::acceptKey => $state->acceptKey,
-            StateConnection::userId => $state->userId,
-            StateConnection::connectedAt => $state->connectedAt,
-            StateConnection::outboundModerationPhase => $state->outboundModerationPhase,
-            StateConnection::outboundModerationMessage => $state->outboundModerationMessage,
-            StateConnection::outboundModerationReason => $state->outboundModerationReason,
-            StateConnection::outboundModerationUpdatedAt => $state->outboundModerationUpdatedAt,
-            StateConnection::renameModerationPhase => $state->renameModerationPhase,
-            StateConnection::renameModerationName => $state->renameModerationName,
-            StateConnection::renameModerationReason => $state->renameModerationReason,
-            StateConnection::renameModerationUpdatedAt => $state->renameModerationUpdatedAt,
-            StateConnection::fileSessionUploadId => $state->fileSessionUploadId,
-            StateConnection::fileSessionDeclaredSize => $state->fileSessionDeclaredSize,
-            StateConnection::fileSessionReceivedBytes => $state->fileSessionReceivedBytes,
-            StateConnection::fileSessionQuarantineBasename => $state->fileSessionQuarantineBasename,
-            StateConnection::fileSessionOriginalFilename => $state->fileSessionOriginalFilename,
-            StateConnection::fileSessionMimeType => $state->fileSessionMimeType,
-            StateConnection::fileSessionClientUploadId => $state->fileSessionClientUploadId,
-            StateConnection::fileSessionNormalizedFilename => $state->fileSessionNormalizedFilename,
-            StateConnection::fileUploadPhase => $state->fileUploadPhase,
-            StateConnection::fileUploadClientUploadId => $state->fileUploadClientUploadId,
-            StateConnection::fileUploadErrorCode => $state->fileUploadErrorCode,
-            StateConnection::fileUploadErrorMessage => $state->fileUploadErrorMessage,
-            StateConnection::fileProgressFilename => $state->fileProgressFilename,
-            StateConnection::fileProgressUploadedBytes => $state->fileProgressUploadedBytes,
-            StateConnection::fileProgressTotalBytes => $state->fileProgressTotalBytes,
-            StateConnection::uploadProgressLastSentAt => $state->uploadProgressLastSentAt,
+            StateConnection::acceptKey => $this->_state->acceptKey,
+            StateConnection::userId => $this->_state->userId,
+            StateConnection::connectedAt => $this->_state->connectedAt,
+            StateConnection::outboundModerationPhase => $this->_state->outboundModerationPhase,
+            StateConnection::outboundModerationMessage => $this->_state->outboundModerationMessage,
+            StateConnection::outboundModerationReason => $this->_state->outboundModerationReason,
+            StateConnection::outboundModerationUpdatedAt => $this->_state->outboundModerationUpdatedAt,
+            StateConnection::renameModerationPhase => $this->_state->renameModerationPhase,
+            StateConnection::renameModerationName => $this->_state->renameModerationName,
+            StateConnection::renameModerationReason => $this->_state->renameModerationReason,
+            StateConnection::renameModerationUpdatedAt => $this->_state->renameModerationUpdatedAt,
+            StateConnection::fileSessionUploadId => $this->_state->fileSessionUploadId,
+            StateConnection::fileSessionDeclaredSize => $this->_state->fileSessionDeclaredSize,
+            StateConnection::fileSessionReceivedBytes => $this->_state->fileSessionReceivedBytes,
+            StateConnection::fileSessionQuarantineBasename => $this->_state->fileSessionQuarantineBasename,
+            StateConnection::fileSessionOriginalFilename => $this->_state->fileSessionOriginalFilename,
+            StateConnection::fileSessionMimeType => $this->_state->fileSessionMimeType,
+            StateConnection::fileSessionClientUploadId => $this->_state->fileSessionClientUploadId,
+            StateConnection::fileSessionNormalizedFilename => $this->_state->fileSessionNormalizedFilename,
+            StateConnection::fileUploadPhase => $this->_state->fileUploadPhase,
+            StateConnection::fileUploadClientUploadId => $this->_state->fileUploadClientUploadId,
+            StateConnection::fileUploadErrorCode => $this->_state->fileUploadErrorCode,
+            StateConnection::fileUploadErrorMessage => $this->_state->fileUploadErrorMessage,
+            StateConnection::fileProgressFilename => $this->_state->fileProgressFilename,
+            StateConnection::fileProgressUploadedBytes => $this->_state->fileProgressUploadedBytes,
+            StateConnection::fileProgressTotalBytes => $this->_state->fileProgressTotalBytes,
+            StateConnection::uploadProgressLastSentAt => $this->_state->uploadProgressLastSentAt,
             RtItem::actions => $this->getItemActions(),
-            DbChatContext::user => Hilos::$db->users[$state->userId] ?? null,
-            self::userState => Hilos::$rt->userStates[$state->userId] ?? null,
-            self::attachmentDrafts => Hilos::$rt->attachmentDrafts->forAcceptKey($state->acceptKey),
+            DbChatContext::user => Hilos::$db->users[$this->_state->userId],
+            self::userState => Hilos::$rt->userStates[$this->_state->userId],
+            self::attachmentDrafts => Hilos::$rt->attachmentDrafts->forAcceptKey($this->_state->acceptKey),
             default => parent::__get($name),
         };
     }
@@ -181,9 +178,6 @@ final class Connection extends RtItem
      */
     public function toArray(): array
     {
-        /** @var StateConnection $state */
-        $state = $this->_state;
-
-        return $state->toArray();
+        return $this->_state->toArray();
     }
 }

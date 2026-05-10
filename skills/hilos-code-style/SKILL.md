@@ -57,6 +57,11 @@ Use this skill for style-sensitive Hilos edits and reviews. Start with `agents.m
    `Hilos::$rt->selfConnection` visible unless the local variable adds domain
    meaning, snapshots state, or performs type narrowing that cannot be expressed
    by a guard.
+   In concrete `Runtime/View/Item/*`, do not add local `/** @var StateFoo $state */`
+   aliases for `$this->_state`; rely on `@extends RtItem<StateFoo>` and read
+   `$this->_state->...` directly.
+   In bridge `__get()` methods, do not alias the current item's own id or
+   foreign key just to pass it into relation lookups.
 14. Use named constants for action names, signal names, route params, model
    fields, DTO payload keys, table row keys, and boundary array keys whenever
    a constant exists. If a repeated payload key has no owner constant, add one

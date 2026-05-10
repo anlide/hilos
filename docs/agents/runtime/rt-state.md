@@ -136,6 +136,12 @@ APIs. If an approved reusable lookup is missing, add it to the owning
 `Runtime/` or `Database/` layer first; during transparent data-shape refactors,
 prefer explicit field access unless the new method was approved by name.
 
+Concrete `Runtime/View/Item/*` classes must rely on their
+`@extends RtItem<StateFoo>` template when reading declared state fields. Read
+state fields directly through `$this->_state->fieldName`; do not introduce a
+local `/** @var StateFoo $state */ $state = $this->_state;` alias only to
+recover the type.
+
 ## Lifecycle
 
 - Created: collection actions such as `create(...)`, `register(...)`, or `ensure(...)`

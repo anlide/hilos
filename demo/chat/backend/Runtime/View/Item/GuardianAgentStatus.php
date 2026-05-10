@@ -36,13 +36,10 @@ final class GuardianAgentStatus extends RtItem
      */
     public function __get(string $name): int|string|GuardianAgentStatusActions
     {
-        /** @var StateGuardianAgentStatus $state */
-        $state = $this->_state;
-
         return match ($name) {
-            StateGuardianAgentStatus::agentId => $state->agentId,
-            StateGuardianAgentStatus::status => $state->status,
-            StateGuardianAgentStatus::updatedAt => $state->updatedAt,
+            StateGuardianAgentStatus::agentId => $this->_state->agentId,
+            StateGuardianAgentStatus::status => $this->_state->status,
+            StateGuardianAgentStatus::updatedAt => $this->_state->updatedAt,
             RtItem::actions => $this->getItemActions(),
             default => parent::__get($name),
         };
@@ -53,9 +50,6 @@ final class GuardianAgentStatus extends RtItem
      */
     public function toArray(): array
     {
-        /** @var StateGuardianAgentStatus $state */
-        $state = $this->_state;
-
-        return $state->toArray();
+        return $this->_state->toArray();
     }
 }

@@ -40,16 +40,14 @@ final class Event extends DbItem
      */
     public function __get(string $name): mixed
     {
-        $eventId = $this->_object->id;
-
         return match ($name) {
             ObjectEvent::id => $this->_object->id,
             ObjectEvent::type => $this->_object->type,
             ObjectEvent::timestamp => $this->_object->timestamp,
-            DbChatContext::eventMessage => Hilos::$db->eventMessages[$eventId],
-            DbChatContext::eventUserRegistration => Hilos::$db->eventUserRegistrations[$eventId],
-            DbChatContext::eventUserRename => Hilos::$db->eventUserRenames[$eventId],
-            self::attachments => Hilos::$db->eventAttachments->forEventId($eventId),
+            DbChatContext::eventMessage => Hilos::$db->eventMessages[$this->_object->id],
+            DbChatContext::eventUserRegistration => Hilos::$db->eventUserRegistrations[$this->_object->id],
+            DbChatContext::eventUserRename => Hilos::$db->eventUserRenames[$this->_object->id],
+            self::attachments => Hilos::$db->eventAttachments->forEventId($this->_object->id),
             default => parent::__get($name),
         };
     }

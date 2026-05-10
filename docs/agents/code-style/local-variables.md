@@ -59,6 +59,15 @@ reviewing noisy code.
    boundary, carries a distinct domain meaning not present in the source
    expression, stores expensive computed work, or is required for type
    narrowing that cannot be expressed through the accessor.
+8. Do not create local aliases in concrete `Runtime/View/Item/*` only to type
+   the backing state, such as `/** @var StateFoo $state */ $state =
+   $this->_state;`. The `@extends RtItem<StateFoo>` template must type
+   `$this->_state`, so read declared state fields through `$this->_state`
+   directly.
+9. Do not create temporary aliases for the current DB/RT item's own id or
+   foreign-key fields only to pass them into bridge lookups. In bridge
+   `__get()` branches, keep the source field visible, for example
+   `Hilos::$db->eventMessages[$this->_object->id]`.
 
 ## Example
 

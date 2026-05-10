@@ -19,13 +19,17 @@ use Hilos\Runtime\View\Collection\RtCollection;
  * One-item write operations must go through this item's RtActions.
  *
  * @template TState of RtState
- * @property-read RtState $_state Reference to RtState instance
+ * @property-read TState $_state Reference to typed runtime state instance
  */
 abstract class RtItem
 {
     public const string actions = 'actions';
 
-    /** @var RtState reference to runtime state instance */
+    /**
+     * Reference to runtime state instance.
+     *
+     * @var TState
+     */
     protected RtState $_state;
 
     /** @var ?RtCollection Parent collection (set by RtCollection when item is created) */
@@ -40,7 +44,7 @@ abstract class RtItem
     /**
      * Creates Rt item wrapper around state reference.
      *
-     * @param RtState $state State instance (passed by reference)
+     * @param TState $state State instance (passed by reference)
      */
     public function __construct(RtState &$state)
     {
@@ -50,7 +54,7 @@ abstract class RtItem
     /**
      * Returns the underlying state instance.
      *
-     * @return RtState State reference
+     * @return TState State reference
      */
     public function getState(): RtState
     {

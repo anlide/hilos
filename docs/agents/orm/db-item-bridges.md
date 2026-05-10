@@ -42,7 +42,11 @@ scalar field name has one: `authorUserId` becomes `authorUser`,
 `user` or `bot`.
 
 For one-to-one detail rows, name the parent bridge after the detail model:
-`eventMessage`, `eventUserRegistration`, `eventUserRename`. For one-to-many
+`eventMessage`, `eventUserRegistration`, `eventUserRename`. For direct
+overlay, status, or sidecar rows whose model name starts with the parent model
+name, name the parent bridge after the remaining semantic suffix in
+`lowerCamelCase`; do not repeat the parent name. For example, `Bot` to
+`BotAgentStatus` is `agentStatus`, not `botAgentStatus`. For one-to-many
 children whose model name is the parent model plus a plural detail suffix, name
 the parent bridge after the plural suffix: `Event` to `EventAttachments` is
 `attachments`.
@@ -58,6 +62,32 @@ and `EventMessage->attachments` may both use
 `Hilos::$db->eventAttachments->forEventId($eventId)`, while
 `EventAttachment->event` is still forbidden because it would be a pass-through
 through `eventMessage`.
+
+## Mandatory DB/RT Overlay Bridges
+
+Direct DB/RT overlay relations are complete by default. When an RT View item
+has a scalar key for one DB item, expose a nullable bridge from the RT item to
+that DB item immediately, even if no current caller uses it yet. When a DB View
+item has a direct one-to-one runtime overlay keyed by the DB item id or a
+native scalar field, expose the reverse nullable bridge from the DB item to the
+RT item immediately.
+
+This is access API only. Adding a DB/RT bridge does not add the related item to
+`toArray()`, `toFrontend`, sync payloads, table rows, or signal DTOs unless
+that serialization contract explicitly asks for the relation data.
+
+Use the normal naming rule for both directions:
+
+```php
+// Runtime/View/Item/BotAgentStatus.php
+DbChatContext::bot => Hilos::$db->bots[$this->_state->botId],
+
+// Database/View/Item/Bot.php
+self::agentStatus => Hilos::$rt->botAgentStatuses[$this->_object->id],
+```
+
+The reverse DB bridge is `agentStatus` because `BotAgentStatus` is `Bot` plus
+the semantic suffix `AgentStatus`.
 
 ## View Item Implementation
 
@@ -108,6 +138,26 @@ Do not add parent-level shortcut fields for those values.
 Do not hide simple bridge lookups in one-use private helpers such as
 `eventMessage()`. Inline the bridge branch in `__get()` unless the logic is
 genuinely complex or reused.
+
+Do not create temporary aliases for the current item's own id or foreign-key
+fields only to pass them into bridge lookups. Keep the source field visible in
+the branch:
+
+```php
+DbChatContext::eventMessage => Hilos::$db->eventMessages[$this->_object->id],
+self::attachments => Hilos::$db->eventAttachments->forEventId($this->_object->id),
+```
+
+Do not write:
+
+```php
+$eventId = $this->_object->id;
+
+return match ($name) {
+    DbChatContext::eventMessage => Hilos::$db->eventMessages[$eventId],
+    self::attachments => Hilos::$db->eventAttachments->forEventId($eventId),
+};
+```
 
 Non-DB resources derived from the current item's own scalar fields may be
 exposed as computed item properties. They are not relation bridges, but they
@@ -200,4 +250,5 @@ Do not:
 - collapse role-bearing FK bridges such as `authorUserId` or `targetUserId`
   into generic `user` bridges;
 - add one-use private helper methods for simple nullable relation access;
+- create pass-through id or foreign-key aliases in bridge `__get()` methods;
 - make a one-to-many bridge nullable instead of returning an empty collection.

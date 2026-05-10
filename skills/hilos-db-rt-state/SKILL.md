@@ -13,6 +13,8 @@ table or page.
 
 - DB item, object/view layers, and actions: use `$hilos-orm` and
   `docs/agents/orm/db-collection.md`.
+- Direct DB/RT bridge properties and reverse bridge naming:
+  `docs/agents/orm/db-item-bridges.md`.
 - Runtime collections, state items, sync, and truth sources: use
   `$hilos-runtime`, `docs/agents/runtime/rt-context.md`, and
   `docs/agents/runtime/rt-state.md`.
@@ -28,8 +30,8 @@ table or page.
 - `Hilos::$rt` owns live, rebuildable state such as active connections,
   socket-scoped state, uploads, moderation UI state, and transient per-user
   overlays.
-- A DB item may expose runtime-linked read properties when the live state is a
-  natural attribute of that item for callers.
+- A DB item exposes direct one-to-one runtime overlay read properties as part
+  of the relation API, even before a caller needs the reverse direction.
 - Computed frontend fields should live in the DB Object/View item or a typed
   DTO/signal representation when they describe one model item.
 - Runtime collection methods should own reusable live lookups such as
@@ -47,13 +49,16 @@ table or page.
 4. Search the RT View collection for an existing lookup helper before adding a
    new filter in caller code.
 5. Put a missing reusable RT lookup on the RT collection.
-6. Put an item-level runtime bridge on the DB View item when callers should read
+6. For direct DB/RT overlays, add both direct View-item bridge directions
+   immediately. Name reverse overlay/status bridges by the remaining semantic
+   suffix when the related model starts with the parent model name.
+7. Put an item-level runtime bridge on the DB View item when callers should read
    it as part of the model.
-7. Put frontend-safe calculated fields in the DB View item `toArray(...)`, a
+8. Put frontend-safe calculated fields in the DB View item `toArray(...)`, a
    DTO, or a signal payload according to the existing contract.
-8. Keep table/page code as query/subscription orchestration that calls the DB
+9. Keep table/page code as query/subscription orchestration that calls the DB
    collection or item API.
-9. Verify the truth source owns any RT writes; read-only calculated properties
+10. Verify the truth source owns any RT writes; read-only calculated properties
    may read synchronized runtime state.
 
 ## Placement Rules
@@ -110,6 +115,17 @@ foreach (Hilos::$db->users as $user) {
 }
 ```
 
+For a one-to-one bot runtime overlay, expose both directions and use the
+remaining semantic suffix on the DB item:
+
+```php
+// Runtime/View/Item/BotAgentStatus.php
+DbChatContext::bot => Hilos::$db->bots[$this->_state->botId],
+
+// Database/View/Item/Bot.php
+self::agentStatus => Hilos::$rt->botAgentStatuses[$this->_object->id],
+```
+
 ## Anti-Patterns
 
 Do not manually rebuild a model-level runtime overlay in a table:
@@ -140,6 +156,11 @@ live overlay.
 
 - Check DB item, RT state, and existing bridge properties before adding
   table/page aggregation.
+- Add both direct bridge directions for direct one-to-one DB/RT overlays, even
+  when one side has no current caller.
+- Name reverse DB/RT overlay/status bridges by the remaining semantic suffix
+  when the RT model starts with the DB model name, such as `Bot` to
+  `BotAgentStatus` becoming `$bot->agentStatus`.
 - Keep reusable DB/RT links typed and discoverable on item or collection APIs.
 - Do not bypass `Hilos::$db` or `Hilos::$rt` with ad hoc arrays or duplicated
   filters in pages.
