@@ -50,9 +50,11 @@ typed frontend state projections, table rows, or payloads that call
 7. Use typed DTO/projection payloads for page-specific frontend state.
 8. Use `$withCalculation` only for optional calculations that callers must
    explicitly request.
-9. Keep table/page code as orchestration that calls existing model APIs, typed
+9. Keep local View item property constants exactly aligned with property keys,
+   for example `onlineSessionCount = 'onlineSessionCount'`.
+10. Keep table/page code as orchestration that calls existing model APIs, typed
    DTO contracts, or row factories.
-10. Validate through the narrow composer script selected by `$hilos-testing-cli`.
+11. Validate through the narrow composer script selected by `$hilos-testing-cli`.
 
 ## Examples
 
@@ -139,3 +141,5 @@ Do not send raw Entity/Object arrays to the browser when View item
 - Do not put frontend representation logic in Entity classes.
 - Do not duplicate DB/RT aggregation in caller code when an item property can
   expose the value once.
+- Do not name View item property constants with suffixes such as `_KEY` when
+  the property key itself is the constant name.

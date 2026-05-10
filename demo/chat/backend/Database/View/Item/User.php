@@ -34,7 +34,7 @@ use Hilos\Database\View\Item\DbItem;
  */
 final class User extends DbItem
 {
-    private const string ONLINE_SESSION_COUNT_KEY = 'onlineSessionCount';
+    public const string onlineSessionCount = 'onlineSessionCount';
 
     /**
      * Property getter (read-only access). Supports lazy loading of related collections.
@@ -52,7 +52,7 @@ final class User extends DbItem
             ObjectUser::sessionToken => $this->_object->sessionToken,
             ObjectUser::lastActivity => $this->_object->lastActivity,
             RtChatContext::connections => Hilos::$rt->connections->forUser($this->id),
-            self::ONLINE_SESSION_COUNT_KEY => count($this->connections),
+            self::onlineSessionCount => count($this->connections),
             RtChatContext::chatUserState => Hilos::$rt->userStates[$this->_object->id] ?? null,
             default => parent::__get($name),
         };

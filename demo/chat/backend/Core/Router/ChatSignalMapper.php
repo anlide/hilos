@@ -141,7 +141,10 @@ final class ChatSignalMapper implements SignalMapperInterface
                         full: [DbChatContext::events => Events::fromSingleItem($event)],
                         replaceFullKeys: $replaceEvents ? [DbChatContext::events] : [],
                     ),
-                    frontend: $this->frontendUpdatesForEventUser($event->type, $event->targetUserId),
+                    frontend: $this->frontendUpdatesForEventUser(
+                        $event->type,
+                        $event->eventUserRegistration?->targetUserId ?? $event->eventUserRename?->targetUserId,
+                    ),
                 ),
                 excludeAcceptKey: $data->excludeAcceptKey,
             ),

@@ -30,10 +30,13 @@ final class EventAttachments extends DbCollection
     public const string OBJECT_COLLECTION_CLASS = ObjectEventAttachments::class;
 
     /**
-     * Returns published attachments for one event.
+     * Returns published attachments for one event id.
      *
-     * @param ?int $eventId Parent message event id, or null for no attachments
-     * @return self Attachments linked to the message event
+     * The key is shared by Event.id and EventMessage.eventId, so both parent
+     * items can expose this collection directly.
+     *
+     * @param ?int $eventId Parent event id, or null for no attachments
+     * @return self Attachments linked to the event id
      * @throws CollectionNotManualException If manual collection add fails
      * @throws ObjectGetIdStringNotImplementedException If an attachment id is not available
      */

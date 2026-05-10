@@ -22,12 +22,14 @@ use Hilos\Database\View\Item\DbItem;
  * @property-read ?int $authorBotId
  * @property-read string $message
  * @property-read ?Event $event Parent chat event
- * @property-read ?User $user Authoring user (null for bot-authored or deleted-user messages)
- * @property-read ?Bot $bot Authoring bot (null for user-authored or deleted-bot messages)
+ * @property-read ?User $authorUser Authoring user (null for bot-authored or deleted-user messages)
+ * @property-read ?Bot $authorBot Authoring bot (null for user-authored or deleted-bot messages)
  * @property-read EventAttachments $attachments Published files attached to this message event
  */
 final class EventMessage extends DbItem
 {
+    public const string authorUser = 'authorUser';
+    public const string authorBot = 'authorBot';
     public const string attachments = 'attachments';
 
     /**
@@ -44,9 +46,9 @@ final class EventMessage extends DbItem
             ObjectEventMessage::authorUserId => $this->_object->authorUserId,
             ObjectEventMessage::authorBotId => $this->_object->authorBotId,
             ObjectEventMessage::message => $this->_object->message,
-            DbChatContext::event => Hilos::$db->events[$this->_object->eventId] ?? null,
-            DbChatContext::user => Hilos::$db->users[$this->_object->authorUserId] ?? null,
-            DbChatContext::bot => Hilos::$db->bots[$this->_object->authorBotId] ?? null,
+            DbChatContext::event => Hilos::$db->events[$this->_object->eventId],
+            self::authorUser => Hilos::$db->users[$this->_object->authorUserId],
+            self::authorBot => Hilos::$db->bots[$this->_object->authorBotId],
             self::attachments => Hilos::$db->eventAttachments->forEventId($this->_object->eventId),
             default => parent::__get($name),
         };

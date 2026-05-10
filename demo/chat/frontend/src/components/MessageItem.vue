@@ -12,7 +12,13 @@
       ]"
     >
       <div v-if="!isOwnMessage" class="d-flex align-items-baseline gap-2">
-        <span v-if="getHeaderIcon()" class="opacity-75" :title="getBotName(props.event.authorBotId)">{{ getHeaderIcon() }}</span>
+        <span
+          v-if="getHeaderIcon()"
+          class="opacity-75"
+          :title="getBotName(getMessageAuthorBotId())"
+        >
+          {{ getHeaderIcon() }}
+        </span>
         <RouterLink
           v-if="getHeaderUserName() && getHeaderUserId() !== null"
           class="fw-bold text-decoration-none"
@@ -22,9 +28,9 @@
           {{ getHeaderUserName() }}
         </RouterLink>
         <RouterLink
-          v-else-if="getHeaderUserName() && props.event.authorBotId != null"
+          v-else-if="getHeaderUserName() && getMessageAuthorBotId() != null"
           class="fw-bold text-decoration-none text-primary"
-          :to="{ name: 'bot', params: { id: props.event.authorBotId } }"
+          :to="{ name: 'bot', params: { id: getMessageAuthorBotId() } }"
         >
           {{ getHeaderUserName() }}
         </RouterLink>
@@ -115,7 +121,8 @@ const isServiceMessage = computed(() => {
 
 /** True if this is a message_sent from the current user (own message, show on right) */
 const isOwnMessage = computed(() => {
-  if (props.event.authorUserId === null || props.event.authorUserId !== chatStore.currentUserId) {
+  const authorUserId = getMessageAuthorUserId()
+  if (authorUserId === null || authorUserId !== chatStore.currentUserId) {
     return false
   }
   return props.event.type === 'message_sent'
@@ -198,19 +205,30 @@ const getBotName = (botId: number | null | undefined): string => {
   return bot?.name ?? `Bot${botId}`
 }
 
+const getMessageAuthorUserId = (): number | null => props.event.eventMessage?.authorUserId ?? null
+
+const getMessageAuthorBotId = (): number | null => props.event.eventMessage?.authorBotId ?? null
+
+const getTargetUserId = (): number | null => {
+  return props.event.eventUserRegistration?.targetUserId
+    ?? props.event.eventUserRename?.targetUserId
+    ?? null
+}
+
 const getHeaderUserId = (): number | null => {
   if (props.event.type === 'user_renamed' || props.event.type === 'user_renamed_by_admin') {
     return null
   }
 
   return props.event.type === 'message_sent'
-    ? props.event.authorUserId
-    : props.event.targetUserId
+    ? getMessageAuthorUserId()
+    : getTargetUserId()
 }
 
 const getHeaderUserName = (): string => {
-  if (props.event.authorBotId != null) {
-    return getBotName(props.event.authorBotId)
+  const authorBotId = getMessageAuthorBotId()
+  if (authorBotId != null) {
+    return getBotName(authorBotId)
   }
   const userId = getHeaderUserId()
   if (userId === null) {
@@ -221,7 +239,7 @@ const getHeaderUserName = (): string => {
 }
 
 const getHeaderIcon = (): string => {
-  if (props.event.authorBotId != null) {
+  if (getMessageAuthorBotId() != null) {
     return BOT_ICON
   }
   return ''
@@ -236,16 +254,16 @@ const getServiceTitle = (): string => {
     case 'user_registered':
       return 'registered in chat'
     case 'user_renamed': {
-      const oldName = props.event.oldName
-      const newName = props.event.newName
+      const oldName = props.event.eventUserRename?.oldName
+      const newName = props.event.eventUserRename?.newName
       if (oldName && newName) {
         return `renamed from ${oldName} to ${newName}`
       }
       return 'renamed'
     }
     case 'user_renamed_by_admin': {
-      const oldName = props.event.oldName
-      const newName = props.event.newName
+      const oldName = props.event.eventUserRename?.oldName
+      const newName = props.event.eventUserRename?.newName
       if (oldName && newName) {
         return `renamed by admin from ${oldName} to ${newName}`
       }
@@ -265,11 +283,10 @@ const getServiceTitle = (): string => {
 const getMessageText = (): string => {
   // For regular messages, show the message content.
   if (props.event.type === 'message_sent') {
-    return props.event.message ?? ''
+    return props.event.eventMessage?.message ?? ''
   }
 
-  // For service messages, only show explicit message payloads.
-  return props.event.message ?? ''
+  return ''
 }
 
 /** URL regex: matches http(s):// followed by non-whitespace */

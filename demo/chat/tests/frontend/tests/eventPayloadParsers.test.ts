@@ -7,13 +7,14 @@ describe('event entity payload parsers', () => {
       id: 9,
       type: 'message_sent',
       timestamp: '2026-05-01 10:00:00',
-      message: 'with file',
-      authorUserId: 7,
-      authorBotId: null,
-      targetUserId: null,
-      actorUserId: null,
-      oldName: null,
-      newName: null,
+      eventMessage: {
+        eventId: 9,
+        message: 'with file',
+        authorUserId: 7,
+        authorBotId: null,
+      },
+      eventUserRegistration: null,
+      eventUserRename: null,
       attachments: [{
         id: 11,
         eventId: 9,
@@ -25,8 +26,8 @@ describe('event entity payload parsers', () => {
     expect(payloads).not.toBeNull()
     const event = eventPayloadToEvent(payloads![0])
 
-    expect(event.message).toBe('with file')
-    expect(event.authorUserId).toBe(7)
+    expect(event.eventMessage?.message).toBe('with file')
+    expect(event.eventMessage?.authorUserId).toBe(7)
     expect(event.attachments).toEqual([{
       id: 11,
       eventId: 9,
@@ -40,8 +41,12 @@ describe('event entity payload parsers', () => {
       id: 9,
       type: 'message_sent',
       timestamp: '2026-05-01 10:00:00',
-      message: 'with file',
-      authorUserId: 7,
+      eventMessage: {
+        eventId: 9,
+        message: 'with file',
+        authorUserId: 7,
+        authorBotId: null,
+      },
       attachments: [{
         id: 11,
         eventId: 9,
@@ -59,6 +64,16 @@ describe('event entity payload parsers', () => {
       type: 'message_sent',
       timestamp: '2026-05-01 10:00:00',
       data: { message: 'with file' },
+    }])).toBeNull()
+  })
+
+  it('rejects flattened detail fields on events', () => {
+    expect(parseEventPayloads([{
+      id: 9,
+      type: 'message_sent',
+      timestamp: '2026-05-01 10:00:00',
+      message: 'with file',
+      authorUserId: 7,
     }])).toBeNull()
   })
 })

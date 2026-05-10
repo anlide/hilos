@@ -221,14 +221,20 @@ final class Connections extends RtCollection
             $userIds[$connection->userId] = true;
         }
         foreach (Hilos::$db->events as $event) {
-            if ($event->authorUserId !== null) {
-                $userIds[$event->authorUserId] = true;
+            $eventMessage = $event->eventMessage;
+            if ($eventMessage?->authorUserId !== null) {
+                $userIds[$eventMessage->authorUserId] = true;
             }
-            if ($event->targetUserId !== null) {
-                $userIds[$event->targetUserId] = true;
+            $eventUserRegistration = $event->eventUserRegistration;
+            if ($eventUserRegistration?->targetUserId !== null) {
+                $userIds[$eventUserRegistration->targetUserId] = true;
             }
-            if ($event->actorUserId !== null) {
-                $userIds[$event->actorUserId] = true;
+            $eventUserRename = $event->eventUserRename;
+            if ($eventUserRename?->targetUserId !== null) {
+                $userIds[$eventUserRename->targetUserId] = true;
+            }
+            if ($eventUserRename?->actorUserId !== null) {
+                $userIds[$eventUserRename->actorUserId] = true;
             }
         }
 

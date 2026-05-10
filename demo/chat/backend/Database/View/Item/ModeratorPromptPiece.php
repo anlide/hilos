@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Demo\Chat\Database\View\Item;
 
 use Demo\Chat\Database\Actions\Item\ModeratorPromptPieceActions;
@@ -16,7 +18,7 @@ use Hilos\Database\View\Item\DbItem;
  * @property-read ?int $id
  * @property-read string $section
  * @property-read string $promptPiece
- * @property-read \Demo\Chat\Database\Actions\Item\ModeratorPromptPieceActions $actions Item-level write operations
+ * @property-read ModeratorPromptPieceActions $actions Item-level write operations
  */
 final class ModeratorPromptPiece extends DbItem
 {

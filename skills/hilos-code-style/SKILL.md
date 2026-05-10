@@ -79,9 +79,10 @@ Use this skill for style-sensitive Hilos edits and reviews. Start with `agents.m
 21. Do not add empty `default` branches. If a handler intentionally ignores
    shared broadcast names and the branch would only `return` or `break`, omit
    it and document the ignore contract in PHPDoc.
-22. In PHPDoc, import exception classes with `use` and reference short names;
-   do not write leading-backslash fully qualified exceptions such as
-   `@throws \OutOfBoundsException`.
+22. In PHPDoc, import referenced classes with `use` and reference short names;
+   do not write leading-backslash fully qualified types such as
+   `@throws \OutOfBoundsException` or
+   `@property-read \Demo\Chat\Database\Actions\Item\UserActions $actions`.
 23. Use `ValidationException` and its children for user/business validation;
    read `docs/agents/code-style/exceptions.md` before changing exception types.
 24. Before finishing a PHP method change, re-check the affected docblock against

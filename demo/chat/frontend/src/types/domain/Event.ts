@@ -7,6 +7,26 @@ export type EventAttachment = {
   mimeType: string
 }
 
+export type EventMessage = {
+  eventId: number
+  authorUserId: number | null
+  authorBotId: number | null
+  message: string
+}
+
+export type EventUserRegistration = {
+  eventId: number
+  targetUserId: number
+}
+
+export type EventUserRename = {
+  eventId: number
+  targetUserId: number
+  actorUserId: number | null
+  oldName: string
+  newName: string
+}
+
 /**
  * Event - matches Event structure from database
  *
@@ -14,52 +34,36 @@ export type EventAttachment = {
  * - id: ?int (in TypeScript: number | null)
  * - type: string
  * - timestamp: string
- * - message: ?string - message text for message events
- * - authorUserId: ?int - authoring user for message events
- * - authorBotId: ?int - authoring bot for message events
- * - targetUserId: ?int - subject user for registration/rename events
- * - actorUserId: ?int - initiating user for rename events
- * - oldName: ?string - previous display name for rename events
- * - newName: ?string - new display name for rename events
+ * - eventMessage: message event detail bridge
+ * - eventUserRegistration: registration event detail bridge
+ * - eventUserRename: rename event detail bridge
  * - attachments: EventAttachment[] - published files linked to this event
  */
 export class Event extends DomainObject {
   id: number | null
   type: string
   timestamp: string
-  message: string | null
-  authorUserId: number | null
-  authorBotId: number | null
-  targetUserId: number | null
-  actorUserId: number | null
-  oldName: string | null
-  newName: string | null
+  eventMessage: EventMessage | null
+  eventUserRegistration: EventUserRegistration | null
+  eventUserRename: EventUserRename | null
   attachments: EventAttachment[]
 
   constructor(
     id: number | null,
     type: string,
     timestamp: string,
-    message: string | null = null,
-    authorUserId: number | null = null,
-    authorBotId: number | null = null,
-    targetUserId: number | null = null,
-    actorUserId: number | null = null,
-    oldName: string | null = null,
-    newName: string | null = null,
+    eventMessage: EventMessage | null = null,
+    eventUserRegistration: EventUserRegistration | null = null,
+    eventUserRename: EventUserRename | null = null,
     attachments: EventAttachment[] = []
   ) {
     super()
     this.id = id
     this.type = type
     this.timestamp = timestamp
-    this.message = message
-    this.authorUserId = authorUserId
-    this.authorBotId = authorBotId
-    this.targetUserId = targetUserId
-    this.actorUserId = actorUserId
-    this.oldName = oldName
-    this.newName = newName
+    this.eventMessage = eventMessage
+    this.eventUserRegistration = eventUserRegistration
+    this.eventUserRename = eventUserRename
     this.attachments = attachments
   }
 
@@ -70,26 +74,18 @@ export class Event extends DomainObject {
     id?: number | null
     type: string
     timestamp: string
-    message?: string | null
-    authorUserId?: number | null
-    authorBotId?: number | null
-    targetUserId?: number | null
-    actorUserId?: number | null
-    oldName?: string | null
-    newName?: string | null
+    eventMessage?: EventMessage | null
+    eventUserRegistration?: EventUserRegistration | null
+    eventUserRename?: EventUserRename | null
     attachments?: EventAttachment[]
   }): Event {
     return new Event(
       data.id ?? null,
       data.type,
       data.timestamp,
-      data.message ?? null,
-      data.authorUserId ?? null,
-      data.authorBotId ?? null,
-      data.targetUserId ?? null,
-      data.actorUserId ?? null,
-      data.oldName ?? null,
-      data.newName ?? null,
+      data.eventMessage ?? null,
+      data.eventUserRegistration ?? null,
+      data.eventUserRename ?? null,
       data.attachments ?? []
     )
   }

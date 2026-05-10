@@ -64,7 +64,9 @@ touched ORM surfaces.
    redundant finder. Use named finders for business-key or complex queries when
    the collection does not document matching array access.
 7. Put direct relations from loaded DB items on View item bridge properties;
-   document collection offset semantics when a bridge uses `[]`. Do not add
+   keep parent View items limited to their own scalar fields plus bridge
+   properties. Do not add pass-through bridges through another bridge item.
+   Document collection offset semantics when a bridge uses `[]`. Do not add
    caller-side guards only to protect DB collection access from nullable keys.
 8. Put new DB writes in collection actions or item actions, not in page/table
    handlers.
@@ -128,6 +130,13 @@ Hilos::$db->users->findBySession($sessionToken);
 - Never use `actions` for read-only helpers; actions are write APIs.
 - Never rebuild direct DB item relation lookups in pages, tables, agents, or
   signal handlers when a View item bridge property should own the relation.
+- Never flatten scalar fields from related detail rows onto a parent DB View
+  item; callers must read those fields through the bridge item.
+- Never expose pass-through DB View bridges that only forward through another
+  bridge item.
+- Never add reverse one-to-many View item bridges just because the schema can
+  be traversed; require a direct key plus a caller-facing domain or payload
+  contract.
 - Never update or delete one known DB item through collection actions that
   accept that item's key; use the loaded `DbItem` actions.
 - Never put business logic or DB queries inside Entity classes.

@@ -29,19 +29,15 @@ final class EventBridgePropertiesTest extends IntegrationTestCase
             $userMessage = $userEvent->eventMessage;
             $this->assertNotNull($userMessage);
             $this->assertSame($userEvent->id, $userMessage->event?->id);
-            $this->assertSame($user->id, $userMessage->user?->id);
-            $this->assertSame($user->id, $userEvent->user?->id);
-            $this->assertNull($userMessage->bot);
-            $this->assertNull($userEvent->bot);
+            $this->assertSame($user->id, $userMessage->authorUser?->id);
+            $this->assertNull($userMessage->authorBot);
             $this->assertSame(0, count($userMessage->attachments));
 
             $botMessage = $botEvent->eventMessage;
             $this->assertNotNull($botMessage);
             $this->assertSame($botEvent->id, $botMessage->event?->id);
-            $this->assertSame($bot->id, $botMessage->bot?->id);
-            $this->assertSame($bot->id, $botEvent->bot?->id);
-            $this->assertNull($botMessage->user);
-            $this->assertNull($botEvent->user);
+            $this->assertSame($bot->id, $botMessage->authorBot?->id);
+            $this->assertNull($botMessage->authorUser);
         } finally {
             Hilos::$db->events->actions->deleteAll();
 
@@ -63,8 +59,7 @@ final class EventBridgePropertiesTest extends IntegrationTestCase
             $registration = $event->eventUserRegistration;
             $this->assertNotNull($registration);
             $this->assertSame($event->id, $registration->event?->id);
-            $this->assertSame($user->id, $registration->user?->id);
-            $this->assertSame($user->id, $event->user?->id);
+            $this->assertSame($user->id, $registration->targetUser?->id);
             $this->assertNull($event->eventMessage);
             $this->assertNull($event->eventUserRename);
         } finally {
@@ -91,8 +86,7 @@ final class EventBridgePropertiesTest extends IntegrationTestCase
             $rename = $event->eventUserRename;
             $this->assertNotNull($rename);
             $this->assertSame($event->id, $rename->event?->id);
-            $this->assertSame($targetUser->id, $rename->user?->id);
-            $this->assertSame($targetUser->id, $event->user?->id);
+            $this->assertSame($targetUser->id, $rename->targetUser?->id);
             $this->assertSame($actorUser->id, $rename->actorUser?->id);
             $this->assertNull($event->eventMessage);
             $this->assertNull($event->eventUserRegistration);

@@ -6,7 +6,9 @@ namespace Demo\Chat\Tests\Integration;
 
 use Demo\Chat\Database\DTO\PublishedAttachmentInput;
 use Demo\Chat\Database\DTO\PublishedAttachmentInputs;
+use Demo\Chat\Database\DbChatContext;
 use Demo\Chat\Database\Object\Item\EventAttachment as ObjectEventAttachment;
+use Demo\Chat\Database\Object\Item\EventMessage as ObjectEventMessage;
 use Demo\Chat\Hilos;
 use Demo\Chat\Http\ChatAttachmentDownloadHandler;
 use Demo\Chat\Runtime\View\Context\RtChatContext;
@@ -44,9 +46,9 @@ final class EventAttachmentsTest extends IntegrationTestCase
                 ),
             );
 
-            $this->assertSame('with files', $event->message);
-            $this->assertSame($user->id, $event->authorUserId);
-            $this->assertNull($event->authorBotId);
+            $this->assertSame('with files', $event->eventMessage?->message);
+            $this->assertSame($user->id, $event->eventMessage?->authorUserId);
+            $this->assertNull($event->eventMessage?->authorBotId);
             $this->assertSame(2, count($event->attachments));
             $this->assertSame(2, count(Hilos::$db->eventAttachments->forEventId((int)$event->id)));
             $this->assertSame(11, Hilos::$db->eventAttachments->sumPublishedAttachmentBytes());
@@ -55,14 +57,13 @@ final class EventAttachmentsTest extends IntegrationTestCase
             $messageDetail = $event->eventMessage;
             $this->assertNotNull($messageDetail);
             $this->assertSame($event->id, $messageDetail->event?->id);
-            $this->assertSame($user->id, $messageDetail->user?->id);
-            $this->assertNull($messageDetail->bot);
+            $this->assertSame($user->id, $messageDetail->authorUser?->id);
+            $this->assertNull($messageDetail->authorBot);
             $this->assertSame(2, count($messageDetail->attachments));
 
             $firstAttachment = $event->attachments->first();
             $this->assertNotNull($firstAttachment);
             $this->assertSame($event->id, $firstAttachment->eventMessage?->eventId);
-            $this->assertSame($event->id, $firstAttachment->event?->id);
             $this->assertSame('alpha', $firstAttachment->file->read());
             $download = ChatAttachmentDownloadHandler::handle([
                 'request' => [
@@ -77,6 +78,8 @@ final class EventAttachmentsTest extends IntegrationTestCase
             $this->assertSame('alpha', $download[HttpConstants::RESPONSE_KEY_BODY]);
 
             $frontendPayload = $event->toArray(toFrontend: true);
+            $this->assertSame('with files', $frontendPayload[DbChatContext::eventMessage][ObjectEventMessage::message]);
+            $this->assertSame($user->id, $frontendPayload[DbChatContext::eventMessage][ObjectEventMessage::authorUserId]);
             $this->assertCount(2, $frontendPayload['attachments']);
             $this->assertSame('One.txt', $frontendPayload['attachments'][0][ObjectEventAttachment::filename]);
             $this->assertArrayNotHasKey(ObjectEventAttachment::storedName, $frontendPayload['attachments'][0]);

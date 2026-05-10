@@ -19,10 +19,12 @@ use Hilos\Database\View\Item\DbItem;
  * @property-read int $eventId
  * @property-read int $targetUserId
  * @property-read ?Event $event Parent chat event
- * @property-read ?User $user Registered user
+ * @property-read ?User $targetUser Registered user
  */
 final class EventUserRegistration extends DbItem
 {
+    public const string targetUser = 'targetUser';
+
     /**
      * Property getter (read-only access).
      *
@@ -35,8 +37,8 @@ final class EventUserRegistration extends DbItem
         return match ($name) {
             ObjectEventUserRegistration::eventId => $this->_object->eventId,
             ObjectEventUserRegistration::targetUserId => $this->_object->targetUserId,
-            DbChatContext::event => Hilos::$db->events[$this->_object->eventId] ?? null,
-            DbChatContext::user => Hilos::$db->users[$this->_object->targetUserId] ?? null,
+            DbChatContext::event => Hilos::$db->events[$this->_object->eventId],
+            self::targetUser => Hilos::$db->users[$this->_object->targetUserId],
             default => parent::__get($name),
         };
     }

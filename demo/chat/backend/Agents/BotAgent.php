@@ -460,10 +460,14 @@ final class BotAgent extends AbstractAgent
         $linesByEventId = [];
         foreach (Hilos::$db->events as $event) {
             if ($event->type === ChatEventType::MESSAGE_SENT->value) {
-                $message = $event->message !== null && $event->message !== ''
-                    ? $event->message
+                $eventMessage = $event->eventMessage;
+                $message = $eventMessage?->message !== null && $eventMessage->message !== ''
+                    ? $eventMessage->message
                     : '(no text)';
-                $linesByEventId[(int)($event->id ?? 0)] = ($event->authorUserId !== null ? "User#{$event->authorUserId}" : "Bot#{$event->authorBotId}")
+                $author = $eventMessage?->authorUserId !== null
+                    ? "User#{$eventMessage->authorUserId}"
+                    : "Bot#{$eventMessage?->authorBotId}";
+                $linesByEventId[(int)($event->id ?? 0)] = $author
                     . ': '
                     . $message;
             }

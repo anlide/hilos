@@ -22,7 +22,7 @@
         <div class="list-group list-group-flush">
           <div
             v-for="event in chatStore.events"
-            :key="event.id || `event-${event.timestamp}-${event.authorUserId ?? event.authorBotId ?? event.targetUserId ?? 'sys'}`"
+            :key="eventKey(event)"
             class="list-group-item border-0 bg-transparent"
           >
             <MessageItem :event="event" />
@@ -145,6 +145,7 @@ import { computed, ref, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { useConnectionStore } from '@hilos/sdk/stores'
 import { useWebSocket } from '@hilos/sdk/plugins/websocket'
 import { useChatStore } from '@/stores'
+import type { Event } from '@/types'
 import { ATTACHMENT_DRAFT_DELETE, FILE_UPLOAD_INIT, MESSAGE_RATE_LIMIT_SECONDS } from '@/constants'
 import MessageItem from './MessageItem.vue'
 import { LoadingButton } from '@hilos/sdk/components'
@@ -154,6 +155,17 @@ import { registerFileUploadPending } from '@/services/chatFileUpload'
 const connectionStore = useConnectionStore()
 const chatStore = useChatStore()
 const websocket = useWebSocket()
+
+const eventKey = (event: Event): number | string => {
+  return event.id || `event-${event.timestamp}-${
+    event.eventMessage?.authorUserId
+    ?? event.eventMessage?.authorBotId
+    ?? event.eventUserRegistration?.targetUserId
+    ?? event.eventUserRename?.targetUserId
+    ?? 'sys'
+  }`
+}
+
 const messagesContainer = ref<HTMLElement | null>(null)
 const fileInputRef = ref<HTMLInputElement | null>(null)
 const draftMessage = ref('')

@@ -263,7 +263,7 @@ final class ChatAgentModerationTest extends IntegrationTestCase
         foreach (Hilos::$db->events as $event) {
             if (
                 $event->type === ChatEventType::MESSAGE_SENT->value
-                && $event->message === $message
+                && $event->eventMessage?->message === $message
             ) {
                 return;
             }
@@ -277,11 +277,11 @@ final class ChatAgentModerationTest extends IntegrationTestCase
         foreach (Hilos::$db->events as $event) {
             if (
                 $event->type === ChatEventType::MESSAGE_SENT->value
-                && $event->authorBotId === $botId
-                && $event->message === $message
+                && $event->eventMessage?->authorBotId === $botId
+                && $event->eventMessage?->message === $message
             ) {
-                $this->assertSame($botId, $event->authorBotId);
-                $this->assertSame($message, $event->message);
+                $this->assertSame($botId, $event->eventMessage?->authorBotId);
+                $this->assertSame($message, $event->eventMessage?->message);
                 return;
             }
         }

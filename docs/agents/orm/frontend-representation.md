@@ -116,17 +116,22 @@ use the View item property as the source of the value.
 The runtime bridge should also live on the item or runtime collection:
 
 ```php
-private const string ONLINE_SESSION_COUNT_KEY = 'onlineSessionCount';
+public const string onlineSessionCount = 'onlineSessionCount';
 
 public function __get(string $name): mixed
 {
     return match ($name) {
         RtChatContext::connections => Hilos::$rt->connections->forUser($this->id),
-        self::ONLINE_SESSION_COUNT_KEY => count($this->connections),
+        self::onlineSessionCount => count($this->connections),
         default => parent::__get($name),
     };
 }
 ```
+
+For View item magic properties, local property constants must preserve the
+exact property key in both the constant name and value. Use
+`onlineSessionCount = 'onlineSessionCount'`, not
+`ONLINE_SESSION_COUNT_KEY = 'onlineSessionCount'`.
 
 Then table/detail projections that need the count can use the model API without
 putting the count into the generic entity payload:

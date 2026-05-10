@@ -22,11 +22,12 @@ use Hilos\Database\View\Item\DbItem;
  * @property-read string $oldName
  * @property-read string $newName
  * @property-read ?Event $event Parent chat event
- * @property-read ?User $user Renamed user
+ * @property-read ?User $targetUser Renamed user
  * @property-read ?User $actorUser User who initiated the rename, when known
  */
 final class EventUserRename extends DbItem
 {
+    public const string targetUser = 'targetUser';
     public const string actorUser = 'actorUser';
 
     /**
@@ -44,9 +45,9 @@ final class EventUserRename extends DbItem
             ObjectEventUserRename::actorUserId => $this->_object->actorUserId,
             ObjectEventUserRename::oldName => $this->_object->oldName,
             ObjectEventUserRename::newName => $this->_object->newName,
-            DbChatContext::event => Hilos::$db->events[$this->_object->eventId] ?? null,
-            DbChatContext::user => Hilos::$db->users[$this->_object->targetUserId] ?? null,
-            self::actorUser => Hilos::$db->users[$this->_object->actorUserId] ?? null,
+            DbChatContext::event => Hilos::$db->events[$this->_object->eventId],
+            self::targetUser => Hilos::$db->users[$this->_object->targetUserId],
+            self::actorUser => Hilos::$db->users[$this->_object->actorUserId],
             default => parent::__get($name),
         };
     }

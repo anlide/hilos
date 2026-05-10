@@ -3,7 +3,13 @@
  * Used by ChatEntitiesReceiver and by message handlers that need typed payloads.
  */
 
-import { Event } from '@/types/domain/Event'
+import {
+  Event,
+  type EventAttachment,
+  type EventMessage,
+  type EventUserRegistration,
+  type EventUserRename,
+} from '@/types/domain/Event'
 type JsonRecord = Record<string, unknown>
 
 export type UserPayload = {
@@ -35,22 +41,19 @@ export type EventPayload = {
   id: number
   type: string
   timestamp: number | string
-  message?: string | null
-  authorUserId?: number | null
-  authorBotId?: number | null
-  targetUserId?: number | null
-  actorUserId?: number | null
-  oldName?: string | null
-  newName?: string | null
+  eventMessage?: EventMessagePayload | null
+  eventUserRegistration?: EventUserRegistrationPayload | null
+  eventUserRename?: EventUserRenamePayload | null
   attachments?: EventAttachmentPayload[]
 }
 
-export type EventAttachmentPayload = {
-  id: number
-  eventId: number
-  filename: string
-  mimeType: string
-}
+export type EventMessagePayload = EventMessage
+
+export type EventUserRegistrationPayload = EventUserRegistration
+
+export type EventUserRenamePayload = EventUserRename
+
+export type EventAttachmentPayload = EventAttachment
 
 export const isRecord = (value: unknown): value is JsonRecord =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -59,7 +62,12 @@ export const isUserPayload = (value: unknown): value is UserPayload => {
   if (!isRecord(value) || typeof value.id !== 'number' || typeof value.name !== 'string') {
     return false
   }
-  if ('onlineSessionCount' in value || 'presence' in value || 'sessionToken' in value || 'moderationState' in value) {
+  if (
+    'onlineSessionCount' in value
+    || 'presence' in value
+    || 'sessionToken' in value
+    || 'moderationState' in value
+  ) {
     return false
   }
   if (value.lastActivity !== undefined && value.lastActivity !== null && typeof value.lastActivity !== 'string') {
@@ -70,9 +78,6 @@ export const isUserPayload = (value: unknown): value is UserPayload => {
 
 const isNullableNumber = (value: unknown): value is number | null =>
   value === null || typeof value === 'number'
-
-const isNullableString = (value: unknown): value is string | null =>
-  value === null || typeof value === 'string'
 
 export function parseUserPayloads(value: unknown): UserPayload[] | null {
   if (value === undefined) {
@@ -98,37 +103,67 @@ export const isEventPayload = (value: unknown): value is EventPayload => {
   if (!isRecord(value) || typeof value.id !== 'number' || typeof value.type !== 'string') {
     return false
   }
-  if ('data' in value || 'userId' in value || 'botId' in value) {
+  if (
+    'data' in value
+    || 'userId' in value
+    || 'botId' in value
+    || 'message' in value
+    || 'authorUserId' in value
+    || 'authorBotId' in value
+    || 'targetUserId' in value
+    || 'actorUserId' in value
+    || 'oldName' in value
+    || 'newName' in value
+  ) {
     return false
   }
   if (typeof value.timestamp !== 'number' && typeof value.timestamp !== 'string') {
     return false
   }
-  if ('message' in value && !isNullableString(value.message)) {
+  if ('eventMessage' in value && value.eventMessage !== null && !isEventMessagePayload(value.eventMessage)) {
     return false
   }
-  if ('authorUserId' in value && !isNullableNumber(value.authorUserId)) {
+  if (
+    'eventUserRegistration' in value
+    && value.eventUserRegistration !== null
+    && !isEventUserRegistrationPayload(value.eventUserRegistration)
+  ) {
     return false
   }
-  if ('authorBotId' in value && !isNullableNumber(value.authorBotId)) {
-    return false
-  }
-  if ('targetUserId' in value && !isNullableNumber(value.targetUserId)) {
-    return false
-  }
-  if ('actorUserId' in value && !isNullableNumber(value.actorUserId)) {
-    return false
-  }
-  if ('oldName' in value && !isNullableString(value.oldName)) {
-    return false
-  }
-  if ('newName' in value && !isNullableString(value.newName)) {
+  if (
+    'eventUserRename' in value
+    && value.eventUserRename !== null
+    && !isEventUserRenamePayload(value.eventUserRename)
+  ) {
     return false
   }
   if ('attachments' in value && parseEventAttachmentPayloads(value.attachments) === null) {
     return false
   }
   return true
+}
+
+export const isEventMessagePayload = (value: unknown): value is EventMessagePayload => {
+  return isRecord(value)
+    && typeof value.eventId === 'number'
+    && isNullableNumber(value.authorUserId)
+    && isNullableNumber(value.authorBotId)
+    && typeof value.message === 'string'
+}
+
+export const isEventUserRegistrationPayload = (value: unknown): value is EventUserRegistrationPayload => {
+  return isRecord(value)
+    && typeof value.eventId === 'number'
+    && typeof value.targetUserId === 'number'
+}
+
+export const isEventUserRenamePayload = (value: unknown): value is EventUserRenamePayload => {
+  return isRecord(value)
+    && typeof value.eventId === 'number'
+    && typeof value.targetUserId === 'number'
+    && isNullableNumber(value.actorUserId)
+    && typeof value.oldName === 'string'
+    && typeof value.newName === 'string'
 }
 
 export function parseEventAttachmentPayloads(value: unknown): EventAttachmentPayload[] | null {
@@ -175,13 +210,9 @@ export function eventPayloadToEvent(p: EventPayload): InstanceType<typeof Event>
     id: p.id,
     type: p.type,
     timestamp: timestampString,
-    message: p.message ?? null,
-    authorUserId: p.authorUserId ?? null,
-    authorBotId: p.authorBotId ?? null,
-    targetUserId: p.targetUserId ?? null,
-    actorUserId: p.actorUserId ?? null,
-    oldName: p.oldName ?? null,
-    newName: p.newName ?? null,
+    eventMessage: p.eventMessage ?? null,
+    eventUserRegistration: p.eventUserRegistration ?? null,
+    eventUserRename: p.eventUserRename ?? null,
     attachments: p.attachments ?? [],
   })
 }

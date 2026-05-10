@@ -167,11 +167,11 @@ function buildSignalRouter() {
     const chatStore = useChatStore()
     for (const event of events) {
       if (event.type === 'user_renamed' || event.type === 'user_renamed_by_admin') {
-        const newName = event.newName ?? undefined
-        const oldName = event.oldName ?? undefined
+        const newName = event.eventUserRename?.newName ?? undefined
+        const oldName = event.eventUserRename?.oldName ?? undefined
         if (
           newName &&
-          (event.targetUserId === chatStore.currentUserId ||
+          (event.eventUserRename?.targetUserId === chatStore.currentUserId ||
             (oldName && oldName === chatStore.currentUsername))
         ) {
           chatStore.currentUsername = newName

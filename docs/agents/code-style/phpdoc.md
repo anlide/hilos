@@ -36,8 +36,12 @@ Read this when writing or changing PHPDoc in project PHP code.
 9. If two imported names conflict, alias the import and use the alias in
    PHPDoc, for example `use Foo\Bar\User as RuntimeUser;`.
 10. Prefer `self::`, `static::`, or a short imported class name for links inside
-   the current namespace. Do not use leading-backslash fully qualified names in
-   docblocks unless there is no importable symbol.
+    the current namespace. Do not use leading-backslash fully qualified names in
+    docblocks unless there is no importable symbol.
+11. PHPDoc type references must use imported class names too. For
+    `@property-read`, `@method`, `@param`, `@return`, `@var`, and `@throws`,
+    add a `use` import and reference the short class name or alias instead of
+    writing a leading-backslash fully qualified class name in the docblock.
 
 ## `@throws` and error contracts
 
