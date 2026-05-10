@@ -44,7 +44,7 @@ final class Bot extends DbItem
      * @param string $name Property name
      * @return int|string|bool|RuntimeBotAgentStatus|BotActions|null Property value, linked runtime status, or actions
      * @throws PropertyNotFoundException If property does not exist
-     * @throws ActionsClassException If actions class is not defined for the collection
+     * @throws ActionsClassException If item actions class is invalid or not configured
      */
     public function __get(string $name): int|string|bool|RuntimeBotAgentStatus|BotActions|null
     {

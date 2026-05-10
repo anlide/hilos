@@ -56,6 +56,31 @@ documenting non-obvious error contracts.
   when the method throws that exception directly, calls another method whose
   local PHPDoc or signature documents that exception, or deliberately exposes
   that exception as a caller-facing contract.
+- Before finalizing PHPDoc for a method, audit every direct callee in the
+  method body: direct `throw` expressions, normal method calls, `parent::`
+  calls, return expressions, `match` arms, and magic property or array access
+  that resolves to a local `__get()` or `offsetGet()` contract. If a direct
+  callee documents `@throws` and this method does not catch or convert that
+  exception, propagate it in this method's PHPDoc with an imported short class
+  name and a short caller-facing reason. If the exception is caught and
+  converted, document the converted exception instead.
+- For magic property or array access with a statically known property/key, use
+  the exact resolved branch rather than the whole generic `__get()` or
+  `offsetGet()` contract. Do not propagate a broad default-branch exception
+  when the known branch only returns a scalar/object field. Do propagate
+  exceptions from explicit calls made by that known branch, such as
+  `$connections->forUser(...)`.
+- For normal `$item->property` reads of documented `@property-read` magic
+  properties, do not propagate exceptions from the underlying `__get()` branch
+  into the caller method's PHPDoc. Document those exceptions on the `__get()`
+  method that implements the bridge. Only propagate them from caller methods
+  when the caller explicitly invokes a documented throwing method, or when the
+  caller itself is the magic method implementing that branch.
+- Apply the same rule to documented context and facade magic properties such as
+  `Hilos::$fs->published`, `Hilos::$db->users`, or
+  `Hilos::$rt->connections`. Treat the property read as the declared
+  `@property-read` type, then audit only explicit method calls or array access
+  performed on that value.
 - For private helpers, prefer no `@throws` unless the helper has a meaningful
   local contract that callers inside the class need to see. Do not propagate
   incidental infrastructure risks through every private helper. Document broad
@@ -70,9 +95,10 @@ documenting non-obvious error contracts.
 - Keep `@throws` and `{@see ...}` imports consistent: import the class with
   `use` and reference the short class name in the docblock.
 
-Before finishing, review every added or changed `@throws` and verify where the
-exception originates, whether the callee documents it, whether the caller can
-act on it, and whether the method summary still describes the local behavior.
+Before finishing, review the full direct-callee audit and every added or
+changed `@throws`. Verify where each exception originates, whether the callee
+documents it, whether the caller can act on it, and whether the method summary
+still describes the local behavior.
 
 ## Example
 

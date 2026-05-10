@@ -6,6 +6,7 @@ namespace Demo\Chat\Database\View\Item;
 
 use Demo\Chat\Database\Actions\Item\ModeratorPromptPieceActions;
 use Demo\Chat\Database\Object\Item\ModeratorPromptPiece as ObjectModeratorPromptPiece;
+use Hilos\Database\Exception\View\Collection\ActionsClassException;
 use Hilos\Database\Exception\View\Item\PropertyNotFoundException;
 use Hilos\Database\View\Item\DbItem;
 
@@ -28,6 +29,7 @@ final class ModeratorPromptPiece extends DbItem
      * @param string $name Property name
      * @return int|string|bool|ModeratorPromptPieceActions|null Property value or actions
      * @throws PropertyNotFoundException If property does not exist
+     * @throws ActionsClassException If item actions class is invalid or not configured
      */
     public function __get(string $name): int|string|bool|ModeratorPromptPieceActions|null
     {

@@ -7,6 +7,7 @@ namespace Demo\Chat\Database\View\Collection;
 use Demo\Chat\Database\Actions\Collection\EventAttachmentsActions;
 use Demo\Chat\Database\Object\Collection\EventAttachments as ObjectEventAttachments;
 use Demo\Chat\Database\View\Item\EventAttachment;
+use Hilos\Database\DatabaseException;
 use Hilos\Database\Exception\View\CollectionNotManualException;
 use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 use Hilos\Database\View\Collection\DbCollection;
@@ -37,6 +38,7 @@ final class EventAttachments extends DbCollection
      *
      * @param ?int $eventId Parent event id, or null for no attachments
      * @return self Attachments linked to the event id
+     * @throws DatabaseException If attachment collection loading fails
      * @throws CollectionNotManualException If manual collection add fails
      * @throws ObjectGetIdStringNotImplementedException If an attachment id is not available
      */
@@ -61,6 +63,7 @@ final class EventAttachments extends DbCollection
      * Total size in bytes of files that still exist in published storage.
      *
      * @return int Total bytes
+     * @throws DatabaseException If attachment collection loading fails
      */
     public function sumPublishedAttachmentBytes(): int
     {
@@ -82,6 +85,7 @@ final class EventAttachments extends DbCollection
      *
      * @param string $normalized Normalized basename
      * @return bool True when a published attachment has that original filename
+     * @throws DatabaseException If attachment collection loading fails
      */
     public function hasPublishedFileWithNormalizedFilename(string $normalized): bool
     {
@@ -97,6 +101,8 @@ final class EventAttachments extends DbCollection
 
     /**
      * Loads the full attachment collection for aggregate reads.
+     *
+     * @throws DatabaseException If attachment collection loading fails
      */
     private function ensureAllLoaded(): void
     {

@@ -92,10 +92,19 @@ Use this skill for style-sensitive Hilos edits and reviews. Start with `agents.m
    read `docs/agents/code-style/exceptions.md` before changing exception types.
 24. Before finishing a PHP method change, re-check the affected docblock against
    `docs/agents/code-style/phpdoc.md`.
-25. Before finalizing PHPDoc, audit every added or changed `@throws`. Remove
-   any `@throws` based only on assumed framework, DB, or signal failure rather
-   than a direct throw, documented callee contract, or deliberate local
-   caller-facing contract.
+25. Before finalizing PHPDoc, audit every direct callee in the method body,
+   including `parent::` calls, return expressions, `match` arms, and magic
+   property or array access that resolves to a documented local API. Propagate
+   documented callee `@throws` when the method does not catch or convert them.
+   For statically known magic property or array keys, inspect the exact
+   resolved branch and do not propagate broad default-branch exceptions when
+   that branch only returns a scalar/object field. For normal reads of
+   documented `@property-read` magic properties, document branch exceptions on
+   the implementing `__get()`, not on caller methods that only read the
+   property. Apply the same rule to documented context/facade properties such
+   as `Hilos::$fs->published`; audit only explicit calls or array access after
+   the declared property value. Remove any `@throws` based only on assumed
+   framework, DB, or signal failure.
 
 ## Hard Rules
 

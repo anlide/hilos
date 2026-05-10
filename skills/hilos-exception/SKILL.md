@@ -22,7 +22,14 @@ reviewing `catch (...)`, or documenting `@throws` in Hilos PHP code.
 3. For user/business validation, use `ValidationException` or a child.
 4. Do not use `RtBaseException` for DB action validation.
 5. Do not use `DatabaseException` for domain validation.
-6. Update `@throws` to describe the caller-facing contract with a short reason.
+6. Audit direct throws, documented direct callees, and converted exceptions,
+   then update `@throws` to describe the caller-facing contract with a short
+   reason. For statically known magic property or array keys, inspect the exact
+   resolved branch instead of propagating the whole generic `__get()` or
+   `offsetGet()` contract; for normal reads of documented `@property-read`
+   magic properties, document branch exceptions on the implementing `__get()`,
+   not on caller methods that only read the property. Apply the same rule to
+   documented context/facade properties such as `Hilos::$fs->published`.
 7. If a page action catches `Throwable`, verify the thrown exception becomes the
    expected user-facing fail/error signal.
 

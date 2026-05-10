@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace Hilos\Database\View\Item;
 
-use Hilos\Database\Object\Item\Setting as ObjectSetting;
-
+use Hilos\Database\Exception\View\Collection\ActionsClassException;
 use Hilos\Database\Exception\View\Item\PropertyNotFoundException;
+use Hilos\Database\Object\Item\Setting as ObjectSetting;
 
 /**
  * Setting Db item - read-only wrapper around ObjectSetting.
@@ -25,6 +25,7 @@ final class Setting extends DbItem
      * @param string $name Property name (id, key, type, value)
      * @return mixed Property value (id, key, type, or value)
      * @throws PropertyNotFoundException If property does not exist
+     * @throws ActionsClassException If item actions class is invalid or not configured
      */
     public function __get(string $name): mixed
     {

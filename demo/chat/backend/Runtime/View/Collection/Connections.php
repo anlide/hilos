@@ -70,6 +70,7 @@ final class Connections extends RtCollection
      *
      * @param ?int $userId User id to summarize active runtime connections for
      * @return UserConnectionSummary Runtime presence and session count summary
+     * @throws RtActionsStateCollectionNullException If state collection is null (should not happen in properly initialized collection)
      */
     public function summaryForUser(?int $userId): UserConnectionSummary
     {

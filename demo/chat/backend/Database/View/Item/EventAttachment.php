@@ -7,6 +7,8 @@ namespace Demo\Chat\Database\View\Item;
 use Demo\Chat\Database\DbChatContext;
 use Demo\Chat\Database\Object\Item\EventAttachment as ObjectEventAttachment;
 use Demo\Chat\Hilos;
+use Hilos\Database\Exception\View\Collection\ActionsClassException;
+use Hilos\Database\Exception\View\Item\PropertyNotFoundException;
 use Hilos\Database\View\Item\DbItem;
 use Hilos\Fs\FsFile;
 
@@ -33,6 +35,8 @@ final class EventAttachment extends DbItem
      *
      * @param string $name Property or bridge name
      * @return mixed Property value, related item, or published file handle
+     * @throws PropertyNotFoundException If property does not exist
+     * @throws ActionsClassException If item actions class is invalid or not configured
      */
     public function __get(string $name): mixed
     {

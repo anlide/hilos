@@ -13,6 +13,7 @@ use Demo\Chat\Runtime\View\Item\ChatUserState as RuntimeChatUserState;
 use Hilos\Database\Exception\View\Collection\ActionsClassException;
 use Hilos\Database\Exception\View\Item\PropertyNotFoundException;
 use Hilos\Database\View\Item\DbItem;
+use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 
 /**
  * User - Db item with high-level abstraction and lazy loading.
@@ -42,7 +43,8 @@ final class User extends DbItem
      * @param string $name Property name
      * @return int|string|Connections|RuntimeChatUserState|UserActions|null Property value, actions, or linked runtime items
      * @throws PropertyNotFoundException If property does not exist
-     * @throws ActionsClassException If actions class is not defined or cannot be instantiated
+     * @throws ActionsClassException If item actions class is invalid or not configured
+     * @throws RtActionsStateCollectionNullException If runtime connection state collection is not initialized
      */
     public function __get(string $name): int|string|Connections|RuntimeChatUserState|UserActions|null
     {

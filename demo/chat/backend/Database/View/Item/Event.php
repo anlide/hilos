@@ -8,8 +8,11 @@ use Demo\Chat\Database\DbChatContext;
 use Demo\Chat\Database\Object\Item\Event as ObjectEvent;
 use Demo\Chat\Database\View\Collection\EventAttachments;
 use Demo\Chat\Hilos;
+use Hilos\Database\DatabaseException;
 use Hilos\Database\Exception\View\Collection\ActionsClassException;
+use Hilos\Database\Exception\View\CollectionNotManualException;
 use Hilos\Database\Exception\View\Item\PropertyNotFoundException;
+use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 use Hilos\Database\View\Item\DbItem;
 
 /**
@@ -36,7 +39,10 @@ final class Event extends DbItem
      * @param string $name Property name
      * @return mixed Property value, relation, or attachments collection
      * @throws PropertyNotFoundException If property does not exist
-     * @throws ActionsClassException If collection actions class is not defined for related item
+     * @throws ActionsClassException If item actions class is invalid or not configured
+     * @throws DatabaseException If attachment collection loading fails
+     * @throws CollectionNotManualException If attachments collection cannot accept filtered items
+     * @throws ObjectGetIdStringNotImplementedException If an attachment id is not available
      */
     public function __get(string $name): mixed
     {
