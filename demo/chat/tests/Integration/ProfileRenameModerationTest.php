@@ -7,6 +7,7 @@ namespace Demo\Chat\Tests\Integration;
 use Demo\Chat\Agents\ChatAgent;
 use Demo\Chat\Constants\ChatEventType;
 use Demo\Chat\Constants\ChatSignalConstants;
+use Demo\Chat\Constants\ConnectionRuntimeConstants;
 use Demo\Chat\Core\Page\ChatPageFactory;
 use Demo\Chat\Core\Page\DTO\RenameActionDTO;
 use Demo\Chat\Core\Router\ChatSignalRouter;
@@ -16,7 +17,6 @@ use Demo\Chat\Core\Router\DTO\RenameModerationResultSignalData;
 use Demo\Chat\Hilos;
 use Demo\Chat\Pages\ProfilePage;
 use Demo\Chat\Runtime\View\Context\RtChatContext;
-use Demo\Chat\Runtime\View\Item\Connection;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Page\ActionRouteConfig;
@@ -54,7 +54,7 @@ final class ProfileRenameModerationTest extends IntegrationTestCase
 
             $this->assertSame($oldName, Hilos::$db->users[$user->id]?->name);
             $this->assertSame(
-                Connection::RENAME_MODERATION_PHASE_CHECKING,
+                ConnectionRuntimeConstants::RENAME_MODERATION_PHASE_CHECKING,
                 Hilos::$rt->connections['rename-start-ak']?->renameModerationPhase,
             );
             $this->assertSame('Alice', Hilos::$rt->connections['rename-start-ak']?->renameModerationName);
@@ -91,7 +91,7 @@ final class ProfileRenameModerationTest extends IntegrationTestCase
 
             $this->assertSame('Alice', Hilos::$db->users[$user->id]?->name);
             $this->assertSame(
-                Connection::RENAME_MODERATION_PHASE_NONE,
+                ConnectionRuntimeConstants::RENAME_MODERATION_PHASE_NONE,
                 Hilos::$rt->connections['rename-approve-ak']?->renameModerationPhase,
             );
             $this->assertUserRenamedEventExists($user->id, $oldName, 'Alice');
@@ -133,7 +133,7 @@ final class ProfileRenameModerationTest extends IntegrationTestCase
 
             $this->assertSame($oldName, Hilos::$db->users[$user->id]?->name);
             $this->assertSame(
-                Connection::RENAME_MODERATION_PHASE_REJECTED,
+                ConnectionRuntimeConstants::RENAME_MODERATION_PHASE_REJECTED,
                 Hilos::$rt->connections['rename-reject-ak']?->renameModerationPhase,
             );
             $this->assertSame('policy', Hilos::$rt->connections['rename-reject-ak']?->renameModerationReason);

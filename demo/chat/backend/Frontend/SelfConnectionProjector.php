@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Frontend;
 
+use Demo\Chat\Constants\ConnectionRuntimeConstants;
 use Demo\Chat\Core\Router\DTO\SelfConnectionSignalData;
 use Demo\Chat\Runtime\View\Item\ChatUserState;
 use Demo\Chat\Runtime\View\Item\Connection;
@@ -41,7 +42,7 @@ final class SelfConnectionProjector
         }
 
         $fileUploadState = null;
-        if ($connection->fileUploadPhase !== Connection::FILE_UPLOAD_PHASE_IDLE) {
+        if ($connection->fileUploadPhase !== ConnectionRuntimeConstants::FILE_UPLOAD_PHASE_IDLE) {
             $fileUploadState = [
                 SelfConnectionSignalData::phase => $connection->fileUploadPhase,
                 SelfConnectionSignalData::clientUploadId => $connection->fileUploadClientUploadId,

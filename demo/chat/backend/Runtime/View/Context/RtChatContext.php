@@ -77,8 +77,10 @@ final class RtChatContext extends RtContext
     public const string selfConnection = 'selfConnection';
 
     /**
-     * @throws StateCollectionNotFoundException
-     * @throws StateItemNotFoundException
+     * Registers chat runtime state collections, singleton items, and view representations.
+     *
+     * @throws StateCollectionNotFoundException When a represented collection key is not registered
+     * @throws StateItemNotFoundException When a represented singleton item key is not registered
      */
     public function configure(): void
     {

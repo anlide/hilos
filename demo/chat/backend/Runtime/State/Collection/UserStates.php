@@ -30,7 +30,7 @@ final class UserStates extends RtStates
     }
 
     /**
-     * Array access is for required rows; use {@see get()} when absence is valid.
+     * Array access is for required rows; use `get()` when absence is valid.
      *
      * @param mixed $offset User id
      * @return ChatUserState User runtime state

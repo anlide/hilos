@@ -5,16 +5,13 @@ declare(strict_types=1);
 namespace Demo\Chat\Runtime\State\Item;
 
 use Demo\Chat\Runtime\View\Context\RtChatContext;
-use Demo\Chat\Runtime\View\Actions\Collection\UserStatesActions;
 use Hilos\Runtime\State\Item\RtState;
 
 /**
  * Per-user chat runtime row: shared outbound message rate-limit state.
  *
  * State id is `(string) userId`. Created lazily at chat WebSocket handshake via
- * {@see UserStatesActions::ensure()}.
- * Mutations go through {@see UserStatesActions}; connection-local moderation and binary upload sessions live on
- * {@see Connection}.
+ * `UserStatesActions::ensure()`. Connection-local moderation and binary upload sessions live on connections.
  */
 final class ChatUserState extends RtState
 {
@@ -54,13 +51,18 @@ final class ChatUserState extends RtState
         return $instance;
     }
 
+    /**
+     * Runtime collection key for per-user state rows.
+     *
+     * @return string Runtime collection key
+     */
     public static function getRtCollectionKey(): string
     {
         return RtChatContext::userStates;
     }
 
     /**
-     * @param array<string, mixed> $diff Partial update (same string keys as {@see ChatUserState::fromRow()})
+     * @param array<string, mixed> $diff Partial update using the same string keys as `fromRow()`
      */
     public function applyDiff(array $diff): void
     {

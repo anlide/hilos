@@ -60,6 +60,11 @@ final class ChatContext extends RtState
         return $instance;
     }
 
+    /**
+     * Runtime singleton key for the shared chat context row.
+     *
+     * @return string Runtime singleton item key
+     */
     public static function getRtCollectionKey(): string
     {
         return RtChatContext::chatContext;

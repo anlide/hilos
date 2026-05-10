@@ -7,6 +7,7 @@ namespace Demo\Chat\Pages;
 use Demo\Chat\Agents\ChatAgent;
 use Demo\Chat\Constants\ChatFileUploadConstants;
 use Demo\Chat\Constants\ChatSignalConstants;
+use Demo\Chat\Constants\ConnectionRuntimeConstants;
 use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Page\DTO\AttachmentDraftDeleteActionDTO;
 use Demo\Chat\Core\Page\DTO\FileUploadInitActionDTO;
@@ -16,7 +17,6 @@ use Demo\Chat\Database\Settings\ChatSettingsConstants;
 use Demo\Chat\Frontend\MainPageSubscriptionProjector;
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\View\Item\ChatUserState;
-use Demo\Chat\Runtime\View\Item\Connection;
 use Hilos\Core\Agent\Exception\AgentException;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
@@ -185,7 +185,7 @@ final class MainPage extends AbstractPage
         }
         if (
             Hilos::$rt->selfConnection->outboundModerationPhase
-            === Connection::OUTBOUND_MODERATION_PHASE_CHECKING
+            === ConnectionRuntimeConstants::OUTBOUND_MODERATION_PHASE_CHECKING
         ) {
             throw new ValidationException('Another message is already being moderated');
         }
@@ -231,7 +231,7 @@ final class MainPage extends AbstractPage
         }
         if (
             Hilos::$rt->selfConnection->outboundModerationPhase
-            === Connection::OUTBOUND_MODERATION_PHASE_CHECKING
+            === ConnectionRuntimeConstants::OUTBOUND_MODERATION_PHASE_CHECKING
         ) {
             throw new ValidationException('Cannot delete attachment while message is being moderated');
         }
@@ -261,7 +261,10 @@ final class MainPage extends AbstractPage
         if (Hilos::$rt->selfConnection === null) {
             throw new ItemNotFoundForUpdateException('User session not found');
         }
-        if (Hilos::$rt->selfConnection->outboundModerationPhase === Connection::OUTBOUND_MODERATION_PHASE_CHECKING) {
+        if (
+            Hilos::$rt->selfConnection->outboundModerationPhase
+            === ConnectionRuntimeConstants::OUTBOUND_MODERATION_PHASE_CHECKING
+        ) {
             throw new ValidationException('Cannot upload attachments while message is being moderated');
         }
 
@@ -475,8 +478,8 @@ final class MainPage extends AbstractPage
         if (!$result->allow) {
             $reason = $result->reason !== '' ? $result->reason : 'unknown';
             $phase = in_array($reason, ['service_unavailable', 'unknown'], true)
-                ? Connection::OUTBOUND_MODERATION_PHASE_UNAVAILABLE
-                : Connection::OUTBOUND_MODERATION_PHASE_REJECTED;
+                ? ConnectionRuntimeConstants::OUTBOUND_MODERATION_PHASE_UNAVAILABLE
+                : ConnectionRuntimeConstants::OUTBOUND_MODERATION_PHASE_REJECTED;
             Hilos::$rt->selfConnection->actions->failOutboundModeration(
                 $phase,
                 $reason,
@@ -490,7 +493,7 @@ final class MainPage extends AbstractPage
         } catch (FsException $e) {
             $this->logAgentError("Failed to publish attachment drafts: {$e->getMessage()}");
             Hilos::$rt->selfConnection->actions->failOutboundModeration(
-                Connection::OUTBOUND_MODERATION_PHASE_UNAVAILABLE,
+                ConnectionRuntimeConstants::OUTBOUND_MODERATION_PHASE_UNAVAILABLE,
                 'attachment_publish_failed',
             );
             return;
@@ -498,7 +501,7 @@ final class MainPage extends AbstractPage
 
         if ($attachments === null) {
             Hilos::$rt->selfConnection->actions->failOutboundModeration(
-                Connection::OUTBOUND_MODERATION_PHASE_UNAVAILABLE,
+                ConnectionRuntimeConstants::OUTBOUND_MODERATION_PHASE_UNAVAILABLE,
                 'attachment_missing',
             );
 

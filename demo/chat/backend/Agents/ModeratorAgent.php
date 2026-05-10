@@ -7,6 +7,7 @@ namespace Demo\Chat\Agents;
 use Demo\Chat\Agents\DTO\ModerationDecision;
 use Demo\Chat\Constants\AgentType;
 use Demo\Chat\Constants\ChatSignalConstants;
+use Demo\Chat\Constants\ConnectionRuntimeConstants;
 use Demo\Chat\Core\Router\DTO\ModerationResultSignalData;
 use Demo\Chat\Core\Router\DTO\RenameModerationResultSignalData;
 use Demo\Chat\Database\Object\Item\ModeratorPromptPiece as ObjectModeratorPromptPiece;
@@ -175,7 +176,10 @@ final class ModeratorAgent extends AbstractAgent
         }
 
         foreach (Hilos::$rt->connections as $connection) {
-            if ($connection->outboundModerationPhase !== Connection::OUTBOUND_MODERATION_PHASE_CHECKING) {
+            if (
+                $connection->outboundModerationPhase
+                !== ConnectionRuntimeConstants::OUTBOUND_MODERATION_PHASE_CHECKING
+            ) {
                 continue;
             }
 
@@ -190,7 +194,10 @@ final class ModeratorAgent extends AbstractAgent
         }
 
         foreach (Hilos::$rt->connections as $connection) {
-            if ($connection->renameModerationPhase !== Connection::RENAME_MODERATION_PHASE_CHECKING) {
+            if (
+                $connection->renameModerationPhase
+                !== ConnectionRuntimeConstants::RENAME_MODERATION_PHASE_CHECKING
+            ) {
                 continue;
             }
 
@@ -446,12 +453,14 @@ final class ModeratorAgent extends AbstractAgent
         return match ($this->currentRequestType) {
             self::REQUEST_TYPE_MESSAGE =>
                 $connection->userId === $this->currentUserId
-                && $connection->outboundModerationPhase === Connection::OUTBOUND_MODERATION_PHASE_CHECKING
+                && $connection->outboundModerationPhase
+                    === ConnectionRuntimeConstants::OUTBOUND_MODERATION_PHASE_CHECKING
                 && $connection->outboundModerationMessage === $this->currentModerationValue
                 && $connection->outboundModerationUpdatedAt === $this->currentModerationUpdatedAt,
             self::REQUEST_TYPE_RENAME =>
                 $connection->userId === $this->currentUserId
-                && $connection->renameModerationPhase === Connection::RENAME_MODERATION_PHASE_CHECKING
+                && $connection->renameModerationPhase
+                    === ConnectionRuntimeConstants::RENAME_MODERATION_PHASE_CHECKING
                 && $connection->renameModerationName === $this->currentModerationValue
                 && $connection->renameModerationUpdatedAt === $this->currentModerationUpdatedAt,
             default => false,

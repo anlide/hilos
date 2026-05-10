@@ -219,6 +219,7 @@ abstract class RtCollection implements ArrayAccess, Countable, Iterator
      *
      * @param string $key State ID
      * @return ?TItem RtItem instance or null if state not found
+     * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
      */
     protected function getRtItemForKey(string $key): ?RtItem
     {
@@ -244,6 +245,7 @@ abstract class RtCollection implements ArrayAccess, Countable, Iterator
      *
      * @param bool $idAsIndex Use state ID as array index
      * @return array<string|int, array<string, mixed>> Items as associative array
+     * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
      */
     public function toArray(bool $idAsIndex = true): array
     {
@@ -269,6 +271,7 @@ abstract class RtCollection implements ArrayAccess, Countable, Iterator
      * Get first RtItem.
      *
      * @return ?TItem First item or null if empty
+     * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
      */
     public function first(): ?RtItem
     {
@@ -284,6 +287,7 @@ abstract class RtCollection implements ArrayAccess, Countable, Iterator
      * Get last RtItem.
      *
      * @return ?TItem Last item or null if empty
+     * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
      */
     public function last(): ?RtItem
     {
@@ -309,6 +313,7 @@ abstract class RtCollection implements ArrayAccess, Countable, Iterator
      *
      * @param string $name Property name (actions only)
      * @return TActions Actions instance when name is "actions"
+     * @throws RtCollectionActionsClassException When actions class is missing or invalid
      * @throws RtCollectionPropertyNotFoundException When property does not exist
      */
     public function __get(string $name): mixed
@@ -325,6 +330,7 @@ abstract class RtCollection implements ArrayAccess, Countable, Iterator
      * Debug info for var_dump.
      *
      * @return array<string|int, array<string, mixed>> Collection as array
+     * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
      */
     public function __debugInfo(): array
     {
@@ -336,6 +342,7 @@ abstract class RtCollection implements ArrayAccess, Countable, Iterator
      *
      * @param mixed $offset State ID, or null for a missing optional runtime key
      * @return bool True if exists
+     * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
      */
     public function offsetExists(mixed $offset): bool
     {
@@ -351,6 +358,7 @@ abstract class RtCollection implements ArrayAccess, Countable, Iterator
      *
      * @param mixed $offset State ID, or null for a missing optional runtime key
      * @return ?TItem Item or null if not found
+     * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
      */
     public function offsetGet(mixed $offset): ?RtItem
     {
@@ -378,6 +386,7 @@ abstract class RtCollection implements ArrayAccess, Countable, Iterator
      * Remove item at offset.
      *
      * @param mixed $offset State ID to remove, or null for no-op
+     * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
      */
     public function offsetUnset(mixed $offset): void
     {
@@ -392,6 +401,7 @@ abstract class RtCollection implements ArrayAccess, Countable, Iterator
      * Get number of items.
      *
      * @return int Item count
+     * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
      */
     public function count(): int
     {
@@ -433,6 +443,8 @@ abstract class RtCollection implements ArrayAccess, Countable, Iterator
 
     /**
      * Reset iterator to first element.
+     *
+     * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
      */
     public function rewind(): void
     {

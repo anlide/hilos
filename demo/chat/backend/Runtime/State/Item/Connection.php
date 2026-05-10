@@ -12,7 +12,7 @@ use Hilos\Runtime\State\Item\RtState;
  * Runtime row for one WebSocket connection (`acceptKey` is the collection id).
  *
  * Holds transport metadata plus in-memory moderation, file upload session, and progress UI for this socket only.
- * Inbound RT updates use {@see applyDiff()}; local writes from item actions use typed properties + {@see sync()}.
+ * Inbound RT updates use `applyDiff()`; local writes from item actions use typed properties and `sync()`.
  * Public string constants name row keys.
  */
 final class Connection extends RtState
@@ -218,6 +218,11 @@ final class Connection extends RtState
         return $instance;
     }
 
+    /**
+     * Runtime collection key for connection rows.
+     *
+     * @return string Runtime collection key
+     */
     public static function getRtCollectionKey(): string
     {
         return RtChatContext::connections;

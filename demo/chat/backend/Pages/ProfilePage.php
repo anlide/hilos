@@ -6,6 +6,7 @@ namespace Demo\Chat\Pages;
 
 use Demo\Chat\Agents\ChatAgent;
 use Demo\Chat\Constants\ChatSignalConstants;
+use Demo\Chat\Constants\ConnectionRuntimeConstants;
 use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Page\DTO\RenameActionDTO;
 use Demo\Chat\Core\Router\DTO\ActionFailSignalData;
@@ -13,7 +14,6 @@ use Demo\Chat\Core\Router\DTO\ActionSuccessSignalData;
 use Demo\Chat\Core\Router\DTO\ChatEventSignalDTO;
 use Demo\Chat\Core\Router\DTO\RenameModerationResultSignalData;
 use Demo\Chat\Hilos;
-use Demo\Chat\Runtime\View\Item\Connection;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Agent\Exception\AgentException;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
@@ -162,7 +162,7 @@ final class ProfilePage extends AbstractPage
 
         if (
             Hilos::$rt->selfConnection->renameModerationPhase
-            === Connection::RENAME_MODERATION_PHASE_CHECKING
+            === ConnectionRuntimeConstants::RENAME_MODERATION_PHASE_CHECKING
         ) {
             throw new ValidationException('Another rename is already being moderated');
         }
@@ -190,7 +190,7 @@ final class ProfilePage extends AbstractPage
             Hilos::$rt->selfConnection->acceptKey !== $result->acceptKey
             || Hilos::$rt->selfConnection->userId !== $result->userId
             || Hilos::$rt->selfConnection->renameModerationPhase
-            !== Connection::RENAME_MODERATION_PHASE_CHECKING
+            !== ConnectionRuntimeConstants::RENAME_MODERATION_PHASE_CHECKING
             || Hilos::$rt->selfConnection->renameModerationName !== $result->newName
         ) {
             throw new AgentException('Rename moderation result does not match active request');
@@ -199,8 +199,8 @@ final class ProfilePage extends AbstractPage
         if (!$result->allow) {
             $reason = $result->reason !== '' ? $result->reason : 'unknown';
             $phase = in_array($reason, ['service_unavailable', 'unknown'], true)
-                ? Connection::RENAME_MODERATION_PHASE_UNAVAILABLE
-                : Connection::RENAME_MODERATION_PHASE_REJECTED;
+                ? ConnectionRuntimeConstants::RENAME_MODERATION_PHASE_UNAVAILABLE
+                : ConnectionRuntimeConstants::RENAME_MODERATION_PHASE_REJECTED;
             Hilos::$rt->selfConnection->actions->failRenameModeration(
                 $phase,
                 $reason,
@@ -212,7 +212,7 @@ final class ProfilePage extends AbstractPage
         $user = Hilos::$db->users[$result->userId] ?? null;
         if ($user === null) {
             Hilos::$rt->selfConnection->actions->failRenameModeration(
-                Connection::RENAME_MODERATION_PHASE_UNAVAILABLE,
+                ConnectionRuntimeConstants::RENAME_MODERATION_PHASE_UNAVAILABLE,
                 'user_not_found',
             );
             throw new ItemNotFoundForUpdateException('User not found for rename');

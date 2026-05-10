@@ -10,6 +10,7 @@ use Demo\Chat\Runtime\View\Item\AttachmentDraft;
 use Hilos\Fs\Exception\FileDeleteException;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
+use Hilos\Runtime\Exception\Item\RtItemParentCollectionNullException;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\Runtime\View\Actions\Item\RtActions;
 
@@ -27,9 +28,10 @@ final class AttachmentDraftActions extends RtActions
      * @param bool $deleteFiles When true, delete the quarantine file as well
      *
      * @throws FileDeleteException When a quarantine file cannot be deleted
-     * @throws RtActionsCollectionNameNullException When collection name is null.
-     * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable.
-     * @throws RtTruthSourceWriteNotAllowedException When truth source does not allow write.
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
+     * @throws RtItemParentCollectionNullException When this draft is not attached to a collection
+     * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      */
     public function delete(bool $deleteFiles): void
     {

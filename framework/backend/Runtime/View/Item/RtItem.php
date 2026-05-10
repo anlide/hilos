@@ -102,7 +102,7 @@ abstract class RtItem
      *
      * @return RtItemActions
      *
-     * @throws RtItemActionsClassException If class not set or invalid
+     * @throws RtItemActionsClassException When item actions class is missing or invalid
      */
     protected function getItemActions(): RtItemActions
     {
@@ -147,7 +147,7 @@ abstract class RtItem
      *
      * @param string $name Property name
      * @return mixed Property value (never reached, throws instead)
-     * @throws RtItemPropertyNotFoundException If the property does not exist
+     * @throws RtItemPropertyNotFoundException When the property does not exist
      */
     public function __get(string $name): mixed
     {

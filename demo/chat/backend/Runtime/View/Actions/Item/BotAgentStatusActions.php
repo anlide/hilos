@@ -21,8 +21,8 @@ final class BotAgentStatusActions extends RtActions
     /**
      * Mark this bot agent as joined.
      *
-     * @throws RtActionsCollectionNameNullException When collection name is null.
-     * @throws RtTruthSourceWriteNotAllowedException When truth source does not allow write.
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      */
     public function markJoined(): void
     {
@@ -32,8 +32,8 @@ final class BotAgentStatusActions extends RtActions
     /**
      * Mark this bot agent as left.
      *
-     * @throws RtActionsCollectionNameNullException When collection name is null.
-     * @throws RtTruthSourceWriteNotAllowedException When truth source does not allow write.
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      */
     public function markLeft(): void
     {
@@ -43,8 +43,8 @@ final class BotAgentStatusActions extends RtActions
     /**
      * @param string $status Lifecycle marker
      *
-     * @throws RtActionsCollectionNameNullException When collection name is null.
-     * @throws RtTruthSourceWriteNotAllowedException When truth source does not allow write.
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      */
     private function setStatus(string $status): void
     {

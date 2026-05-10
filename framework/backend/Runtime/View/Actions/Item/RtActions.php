@@ -16,6 +16,7 @@ use Hilos\Runtime\State\Item\RtState;
 use Hilos\Runtime\View\Collection\RtCollection;
 use Hilos\Runtime\View\Item\RtItem;
 use Hilos\TruthSource\RtTruthSourceRegistry;
+use InvalidArgumentException;
 
 /**
  * Base class for Rt item actions (write operations for a single RtItem).
@@ -43,20 +44,20 @@ abstract class RtActions
      * @param string $name Property name (state only)
      * @return RtState Backing state
      *
-     * @throws \InvalidArgumentException If property unknown
+     * @throws InvalidArgumentException When property is unknown
      */
     public function __get(string $name): mixed
     {
         return match ($name) {
             self::state => $this->item->getState(),
-            default => throw new \InvalidArgumentException("Unknown property: {$name}"),
+            default => throw new InvalidArgumentException("Unknown property: {$name}"),
         };
     }
 
     /**
      * Parent collection (truth source name, sync, view cache).
      *
-     * @throws RtItemParentCollectionNullException If item was not wired via RtCollection
+     * @throws RtItemParentCollectionNullException When item was not wired via RtCollection
      */
     protected function getRtCollection(): RtCollection
     {
@@ -67,7 +68,8 @@ abstract class RtActions
     }
 
     /**
-     * @throws RtActionsCollectionNameNullException
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      */
     protected function ensureCanWrite(): void
     {
@@ -79,7 +81,8 @@ abstract class RtActions
      *
      * Attached collection items use the parent collection name. Standalone items use their state class sync key.
      *
-     * @throws RtActionsCollectionNameNullException When neither source provides a key.
+     * @return string Runtime collection key used for truth-source checks
+     * @throws RtActionsCollectionNameNullException When neither source provides a key
      */
     private function getRtCollectionKey(): string
     {
@@ -95,7 +98,9 @@ abstract class RtActions
 
     /**
      * Queue RT_SYNC_UPDATED for pending state changes and clear the view cache.
-     * Call after mutating {@see $state} (assignments or applyDiff), analogous to Object_::sync() for workers.
+     * Call after mutating `state` assignments or applying diffs.
+     *
+     * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      */
     protected function sync(): void
     {
@@ -106,10 +111,10 @@ abstract class RtActions
     /**
      * Delete the current runtime item and broadcast the previous row.
      *
-     * @throws RtActionsCollectionNameNullException When collection name is null.
-     * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable.
-     * @throws RtItemParentCollectionNullException When item is not attached to a collection.
-     * @throws RtTruthSourceWriteNotAllowedException When truth source does not allow write.
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
+     * @throws RtItemParentCollectionNullException When item is not attached to a collection
+     * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      */
     protected function remove(): void
     {
@@ -133,9 +138,11 @@ abstract class RtActions
     }
 
     /**
-     * Apply diff to backing state, then {@see sync()}.
+     * Apply diff to backing state, then sync it.
      *
      * @param array<string, mixed> $diff
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      */
     protected function applyDiffWithSync(array $diff): void
     {

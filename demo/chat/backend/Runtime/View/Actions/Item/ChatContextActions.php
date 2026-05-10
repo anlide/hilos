@@ -24,8 +24,8 @@ final class ChatContextActions extends RtActions
      *
      * @param ChatContextUpdateData $data Fields to set
      *
-     * @throws RtActionsCollectionNameNullException When collection name is null.
-     * @throws RtTruthSourceWriteNotAllowedException When truth source does not allow write.
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      */
     public function update(ChatContextUpdateData $data): void
     {

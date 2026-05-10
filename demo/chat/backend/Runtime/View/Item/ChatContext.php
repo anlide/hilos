@@ -11,7 +11,7 @@ use Hilos\Runtime\Exception\Item\RtItemPropertyNotFoundException;
 use Hilos\Runtime\View\Item\RtItem;
 
 /**
- * ChatContext - Read-only wrapper for chat context state.
+ * Read-only runtime item for the shared chat context state.
  *
  * @extends RtItem<StateChatContext>
  *
@@ -25,8 +25,6 @@ final class ChatContext extends RtItem
     public const string ID_MAIN = StateChatContext::ID_MAIN;
 
     /**
-     * Create Rt item from chat context state.
-     *
      * @param StateChatContext $state Chat context state (reference)
      */
     public function __construct(StateChatContext &$state)
@@ -35,10 +33,10 @@ final class ChatContext extends RtItem
     }
 
     /**
-     * Get property value by name (topic, topicConfidence, summary).
+     * Delegates known keys to the backing state.
      *
      * @param string $name Property name
-     * @return mixed Property value
+     * @return ?string|float|ChatContextActions Property value
      * @throws RtItemActionsClassException When item actions class is missing or invalid
      * @throws RtItemPropertyNotFoundException When $name is not a declared property
      */
@@ -54,8 +52,6 @@ final class ChatContext extends RtItem
     }
 
     /**
-     * Convert state to array.
-     *
      * @return array<string, mixed> State data (topic, topicConfidence, summary)
      */
     public function toArray(): array

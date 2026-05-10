@@ -21,8 +21,8 @@ final class ChatUserStateActions extends RtActions
     /**
      * Record the shared per-user outbound submit timer.
      *
-     * @throws RtActionsCollectionNameNullException When collection name is null.
-     * @throws RtTruthSourceWriteNotAllowedException When truth source does not allow write.
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      */
     public function recordOutboundSubmission(): void
     {

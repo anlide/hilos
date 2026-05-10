@@ -39,10 +39,10 @@ final class AttachmentDraftsActions extends RtActions
      * Create a draft row after a file is moved to quarantine.
      *
      * @return AttachmentDraft Read wrapper around the new draft
-     * @throws RtActionsCallbackNotSetException
-     * @throws RtActionsCollectionNameNullException
-     * @throws RtActionsStateCollectionNullException
-     * @throws RtTruthSourceWriteNotAllowedException
+     * @throws RtActionsCallbackNotSetException When runtime item factory callback is not configured
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      */
     public function create(
         string $draftId,
@@ -146,8 +146,8 @@ final class AttachmentDraftsActions extends RtActions
      * @param bool $deleteFiles When true, delete quarantine files as well
      * @return bool True when at least one draft was removed
      * @throws FileDeleteException When a quarantine file cannot be deleted
-     * @throws RtActionsCollectionNameNullException
-     * @throws RtTruthSourceWriteNotAllowedException
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      */
     public function deleteByIds(array $draftIds, bool $deleteFiles): bool
     {
@@ -177,8 +177,8 @@ final class AttachmentDraftsActions extends RtActions
      *
      * @return list<string> Connection ids whose draft list changed
      * @throws FileDeleteException When a quarantine file cannot be deleted
-     * @throws RtActionsCollectionNameNullException
-     * @throws RtTruthSourceWriteNotAllowedException
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      */
     public function deleteExpired(): array
     {
@@ -244,8 +244,8 @@ final class AttachmentDraftsActions extends RtActions
      * Remove every draft and optionally delete all corresponding quarantine files.
      *
      * @throws FileDeleteException When a quarantine file cannot be deleted
-     * @throws RtActionsCollectionNameNullException
-     * @throws RtTruthSourceWriteNotAllowedException
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      */
     public function clear(bool $deleteFiles): void
     {
@@ -273,7 +273,7 @@ final class AttachmentDraftsActions extends RtActions
      *
      * @param RtState $state State instance
      * @return AttachmentDraft
-     * @throws RtActionsCallbackNotSetException
+     * @throws RtActionsCallbackNotSetException When runtime item factory callback is not configured
      */
     protected function createRtItemFromState(RtState &$state): AttachmentDraft
     {

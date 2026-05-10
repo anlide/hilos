@@ -10,6 +10,7 @@ use Hilos\Hilos;
 use Hilos\Runtime\Exception\State\RtStatePropertyNotFoundException;
 use Hilos\Runtime\Exception\State\RtStateReadOnlyException;
 use Hilos\Runtime\Exception\State\RtStateUnserializeException;
+use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 
 /**
@@ -100,7 +101,9 @@ abstract class RtState
     }
 
     /**
-     * RT collection key for {@see sync()} (e.g. chat "connections"). Empty string skips queue (baseline still advances).
+     * RT collection key for sync. Empty string skips queue while still advancing the baseline.
+     *
+     * @return string Runtime collection key, or an empty string to skip sync enqueue
      */
     public static function getRtCollectionKey(): string
     {
@@ -117,7 +120,9 @@ abstract class RtState
 
     /**
      * Queue RT_SYNC_UPDATED for all fields that differ from the last baseline, then advance the baseline.
-     * Does not persist to DB — cross-worker runtime sync only (analogous role to Object_::sync for workers).
+     * Does not persist to DB; cross-worker runtime sync only.
+     *
+     * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      */
     public function sync(): void
     {

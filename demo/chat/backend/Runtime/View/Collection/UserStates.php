@@ -23,7 +23,7 @@ use Hilos\Runtime\View\Collection\RtCollection;
 final class UserStates extends RtCollection
 {
     /**
-     * @throws RtActionsStateCollectionNullException
+     * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
      */
     public function getStateCollection(): StateUserStates
     {
@@ -100,7 +100,7 @@ final class UserStates extends RtCollection
 
     /**
      * @return UserStatesActions Actions instance
-     * @throws RtCollectionActionsClassException If actions class mismatch
+     * @throws RtCollectionActionsClassException When actions class is missing or invalid
      */
     protected function getActions(): UserStatesActions
     {
@@ -111,8 +111,8 @@ final class UserStates extends RtCollection
     }
 
     /**
-     * @throws RtCollectionPropertyNotFoundException
-     * @throws RtCollectionActionsClassException
+     * @throws RtCollectionPropertyNotFoundException When $name is not a declared property
+     * @throws RtCollectionActionsClassException When actions class is missing or invalid
      */
     public function __get(string $name): UserStatesActions
     {

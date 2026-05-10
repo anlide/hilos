@@ -19,7 +19,7 @@ use LogicException;
 /**
  * Write API for the active WebSocket connections runtime collection.
  *
- * Per-socket file upload UI uses {@see RuntimeConnection::$actions}.
+ * Per-socket file upload UI writes go through connection item actions.
  *
  * @extends RtActions<RuntimeConnection, Connections, StateConnections>
  * @property-read StateConnections $stateCollection
@@ -33,10 +33,10 @@ final class ConnectionsActions extends RtActions
      * @param int $userId Chat user id for this socket
      * @return RuntimeConnection View item for the new connection
      *
-     * @throws RtActionsCallbackNotSetException
-     * @throws RtActionsCollectionNameNullException
-     * @throws RtActionsStateCollectionNullException
-     * @throws RtTruthSourceWriteNotAllowedException
+     * @throws RtActionsCallbackNotSetException When runtime item factory callback is not configured
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      */
     public function register(string $acceptKey, int $userId): RuntimeConnection
     {
@@ -47,12 +47,12 @@ final class ConnectionsActions extends RtActions
     }
 
     /**
-     * Narrows parent return type to this collection's RtItem ({@see RuntimeConnection}).
+     * Narrows parent return type to this collection's RtItem.
      *
      * @param RtState $state State instance (reference)
      * @return RuntimeConnection
      *
-     * @throws RtActionsCallbackNotSetException
+     * @throws RtActionsCallbackNotSetException When runtime item factory callback is not configured
      */
     protected function createRtItemFromState(RtState &$state): RuntimeConnection
     {
@@ -67,10 +67,10 @@ final class ConnectionsActions extends RtActions
     /**
      * Remove every connection from runtime (full reset).
      *
-     * @throws RtActionsCallbackNotSetException
-     * @throws RtActionsCollectionNameNullException
-     * @throws RtActionsStateCollectionNullException
-     * @throws RtTruthSourceWriteNotAllowedException
+     * @throws RtActionsCallbackNotSetException When runtime item factory callback is not configured
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      */
     public function clear(): void
     {
@@ -80,8 +80,8 @@ final class ConnectionsActions extends RtActions
     /**
      * Clear file session and upload progress on each connection (e.g. after disk wipe).
      *
-     * @throws RtActionsCollectionNameNullException
-     * @throws RtTruthSourceWriteNotAllowedException
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      */
     public function clearAllFileRuntimeOnAllConnections(): void
     {

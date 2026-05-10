@@ -14,7 +14,7 @@ use Hilos\Runtime\Exception\Item\RtItemPropertyNotFoundException;
 use Hilos\Runtime\View\Item\RtItem;
 
 /**
- * Read-only {@see RtItem} over {@see StateChatUserState} (mirrors state fields + virtual `user`).
+ * Read-only runtime item over a user state row plus the virtual `user` link.
  *
  * @extends RtItem<StateChatUserState>
  *
@@ -61,7 +61,7 @@ final class ChatUserState extends RtItem
     }
 
     /**
-     * @return array<string, mixed> Full state row (same as {@see StateChatUserState::toArray()})
+     * @return array<string, mixed> Full state row
      */
     public function toArray(): array
     {

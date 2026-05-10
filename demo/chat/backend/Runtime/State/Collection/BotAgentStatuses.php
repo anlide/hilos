@@ -30,7 +30,7 @@ final class BotAgentStatuses extends RtStates
     }
 
     /**
-     * Array access is for required rows; use {@see get()} when absence is valid.
+     * Array access is for required rows; use `get()` when absence is valid.
      *
      * @param mixed $offset Bot id
      * @return BotAgentStatus Bot lifecycle status

@@ -24,8 +24,8 @@ final class GuardianAgentStatusActions extends RtActions
      *
      * @param GuardianRunStatus $status Guardian run status
      *
-     * @throws RtActionsCollectionNameNullException When collection name is null.
-     * @throws RtTruthSourceWriteNotAllowedException When truth source does not allow write.
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      */
     public function setStatus(GuardianRunStatus $status): void
     {

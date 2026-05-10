@@ -11,6 +11,8 @@ Read this when writing or changing PHPDoc in project PHP code.
    contract: what the method sends, mutates, routes, validates, or deliberately
    ignores. Do not leave the reader to jump to a parent class for page-specific
    behavior.
+   Include meaningful `@return` tags for contract methods even when the native
+   return type is explicit, such as runtime collection key and item id methods.
 3. Keep the free-text PHPDoc body compact. Prefer a one-line summary. Add
    extra description only when it explains a non-obvious local contract, side
    effect, routing decision, validation rule, deliberate ignore, or
@@ -64,6 +66,11 @@ documenting non-obvious error contracts.
   exception, propagate it in this method's PHPDoc with an imported short class
   name and a short caller-facing reason. If the exception is caught and
   converted, document the converted exception instead.
+- For inherited helper methods such as runtime actions `ensureCanWrite()`,
+  `sync()`, `remove()`, collection `getStateCollection()`, or framework
+  accessors, audit the parent implementation too. If the parent PHPDoc is
+  missing a documented callee exception, fix the parent contract first, then
+  propagate the exception from the child method that exposes it.
 - For magic property or array access with a statically known property/key, use
   the exact resolved branch rather than the whole generic `__get()` or
   `offsetGet()` contract. Do not propagate a broad default-branch exception

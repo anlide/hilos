@@ -7,6 +7,7 @@ namespace Demo\Chat\Tests\Integration;
 use Demo\Chat\Agents\ChatAgent;
 use Demo\Chat\Constants\ChatEventType;
 use Demo\Chat\Constants\ChatSignalConstants;
+use Demo\Chat\Constants\ConnectionRuntimeConstants;
 use Demo\Chat\Core\Page\ChatPageFactory;
 use Demo\Chat\Core\Page\DTO\MessageActionDTO;
 use Demo\Chat\Core\Router\ChatSignalRouter;
@@ -15,7 +16,6 @@ use Demo\Chat\Core\Router\DTO\ModerationResultSignalData;
 use Demo\Chat\Hilos;
 use Demo\Chat\Pages\MainPage;
 use Demo\Chat\Runtime\View\Context\RtChatContext;
-use Demo\Chat\Runtime\View\Item\Connection;
 use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\Exception\AgentException;
@@ -131,7 +131,7 @@ final class ChatAgentModerationTest extends IntegrationTestCase
             );
 
             $this->assertSame(
-                Connection::OUTBOUND_MODERATION_PHASE_NONE,
+                ConnectionRuntimeConstants::OUTBOUND_MODERATION_PHASE_NONE,
                 Hilos::$rt->connections['live-ak']?->outboundModerationPhase,
             );
             $this->assertMessageEventExists('approved message');
@@ -170,7 +170,7 @@ final class ChatAgentModerationTest extends IntegrationTestCase
             );
 
             $this->assertSame(
-                Connection::OUTBOUND_MODERATION_PHASE_REJECTED,
+                ConnectionRuntimeConstants::OUTBOUND_MODERATION_PHASE_REJECTED,
                 Hilos::$rt->connections['reject-ak']?->outboundModerationPhase,
             );
             $this->assertSame('policy', Hilos::$rt->connections['reject-ak']?->outboundModerationReason);

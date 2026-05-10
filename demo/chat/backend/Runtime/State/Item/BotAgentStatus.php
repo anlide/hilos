@@ -58,6 +58,11 @@ final class BotAgentStatus extends RtState
         return $instance;
     }
 
+    /**
+     * Runtime collection key for bot lifecycle status rows.
+     *
+     * @return string Runtime collection key
+     */
     public static function getRtCollectionKey(): string
     {
         return RtChatContext::botAgentStatuses;
@@ -76,6 +81,9 @@ final class BotAgentStatus extends RtState
         }
     }
 
+    /**
+     * @return string Runtime row id, `(string) botId`
+     */
     public function getId(): string
     {
         return (string)$this->botId;

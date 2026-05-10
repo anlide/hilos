@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Demo\Chat\Tests\Integration;
 
 use Demo\Chat\Constants\ChatSignalConstants;
+use Demo\Chat\Constants\ConnectionRuntimeConstants;
 use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Router\ChatSignalRouter;
 use Demo\Chat\Core\Router\DTO\SelfConnectionSignalData;
@@ -13,7 +14,6 @@ use Demo\Chat\Frontend\FrontendStateCollectionKey;
 use Demo\Chat\Frontend\SelfConnectionFrontendStateProjector;
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\View\Context\RtChatContext;
-use Demo\Chat\Runtime\View\Item\Connection;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Frontend\SourceChange;
 use Hilos\Core\Router\DTO\SignalDTO;
@@ -171,7 +171,7 @@ final class ChatFrontendProjectionTest extends IntegrationTestCase
             $selfConnection = $payload->data->toArray()['frontend']['full'][FrontendStateCollectionKey::SELF_CONNECTION][0] ?? [];
             $this->assertSame(
                 [
-                    SelfConnectionSignalData::phase => Connection::FILE_UPLOAD_PHASE_FAILED,
+                    SelfConnectionSignalData::phase => ConnectionRuntimeConstants::FILE_UPLOAD_PHASE_FAILED,
                     SelfConnectionSignalData::clientUploadId => 'client-upload-fail',
                     SelfConnectionSignalData::errorCode => 'size_limit',
                     SelfConnectionSignalData::errorMessage => 'File exceeds maximum allowed size',
@@ -219,7 +219,7 @@ final class ChatFrontendProjectionTest extends IntegrationTestCase
             $selfConnection = $payload->data->toArray()['frontend']['full'][FrontendStateCollectionKey::SELF_CONNECTION][0] ?? [];
             $this->assertSame(
                 [
-                    SelfConnectionSignalData::phase => Connection::FILE_UPLOAD_PHASE_READY,
+                    SelfConnectionSignalData::phase => ConnectionRuntimeConstants::FILE_UPLOAD_PHASE_READY,
                     SelfConnectionSignalData::clientUploadId => 'client-upload-projection',
                     SelfConnectionSignalData::errorCode => null,
                     SelfConnectionSignalData::errorMessage => null,
@@ -277,7 +277,7 @@ final class ChatFrontendProjectionTest extends IntegrationTestCase
             $this->assertInstanceOf(WebSocketSignalData::class, $payload);
             $selfConnection = $payload->data->toArray()['frontend']['full'][FrontendStateCollectionKey::SELF_CONNECTION][0] ?? [];
             $this->assertSame(
-                Connection::FILE_UPLOAD_PHASE_UPLOADING,
+                ConnectionRuntimeConstants::FILE_UPLOAD_PHASE_UPLOADING,
                 $selfConnection[SelfConnectionSignalData::fileUploadState][SelfConnectionSignalData::phase] ?? null,
             );
             $this->assertSame(

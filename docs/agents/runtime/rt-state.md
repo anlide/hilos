@@ -22,11 +22,13 @@ final class MyState extends RtState {
     public static function fromRow(array $row): static { ... }
 
     // Required: collection key this state belongs to
+    /** @return string Runtime collection key */
     public static function getRtCollectionKey(): string {
         return RtMyContext::myCollection;
     }
 
     // Required: unique id within collection
+    /** @return string Runtime row id */
     public function getId(): string { return (string)$this->userId; }
 
     // Required: serialize runtime row for sync (not a browser payload)

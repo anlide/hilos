@@ -29,10 +29,10 @@ final class BotAgentStatusesActions extends RtActions
      *
      * @param int $botId Bot database id
      * @return ViewBotAgentStatus Read wrapper around the ensured state
-     * @throws RtActionsCallbackNotSetException
-     * @throws RtActionsCollectionNameNullException
-     * @throws RtActionsStateCollectionNullException
-     * @throws RtTruthSourceWriteNotAllowedException
+     * @throws RtActionsCallbackNotSetException When runtime item factory callback is not configured
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      */
     public function ensure(int $botId): ViewBotAgentStatus
     {
@@ -55,10 +55,10 @@ final class BotAgentStatusesActions extends RtActions
      * @param int $botId Bot database id
      * @param string $status Initial lifecycle marker
      * @return ViewBotAgentStatus Created status row
-     * @throws RtActionsCallbackNotSetException
-     * @throws RtActionsCollectionNameNullException
-     * @throws RtActionsStateCollectionNullException
-     * @throws RtTruthSourceWriteNotAllowedException
+     * @throws RtActionsCallbackNotSetException When runtime item factory callback is not configured
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      */
     public function create(int $botId, string $status): ViewBotAgentStatus
     {
@@ -71,10 +71,10 @@ final class BotAgentStatusesActions extends RtActions
     /**
      * Remove every bot lifecycle status row from runtime state.
      *
-     * @throws RtActionsCallbackNotSetException
-     * @throws RtActionsCollectionNameNullException
-     * @throws RtActionsStateCollectionNullException
-     * @throws RtTruthSourceWriteNotAllowedException
+     * @throws RtActionsCallbackNotSetException When runtime item factory callback is not configured
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      */
     public function clear(): void
     {

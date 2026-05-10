@@ -18,6 +18,7 @@ use Hilos\Runtime\State\Item\RtState;
 use Hilos\Runtime\View\Collection\RtCollection;
 use Hilos\Runtime\View\Item\RtItem;
 use Hilos\TruthSource\RtTruthSourceRegistry;
+use InvalidArgumentException;
 
 /**
  * RtActions - create, bulk, and collection-wide write operations for runtime collections.
@@ -57,13 +58,14 @@ abstract class RtActions
      * @param string $name Property name
      * @return RtStates Backing state collection
      *
-     * @throws \InvalidArgumentException If property is unknown
+     * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
+     * @throws InvalidArgumentException When property is unknown
      */
     public function __get(string $name): mixed
     {
         return match ($name) {
             self::stateCollection => $this->getStateCollection(),
-            default => throw new \InvalidArgumentException("Unknown property: {$name}"),
+            default => throw new InvalidArgumentException("Unknown property: {$name}"),
         };
     }
 
@@ -91,7 +93,7 @@ abstract class RtActions
      * Creates RtItem from RtState via registered callback.
      *
      * @param RtState $state State instance (reference)
-     * @return T Concrete {@see RtItem} for this collection (bound by subclass @extends)
+     * @return T Concrete RtItem for this collection, bound by subclass `@extends`
      * @throws RtActionsCallbackNotSetException When createRtItemCallback is not set
      */
     protected function createRtItemFromState(RtState &$state): RtItem
@@ -123,7 +125,7 @@ abstract class RtActions
      * Returns underlying state collection.
      *
      * @return RtStates State collection instance
-     * @throws RtActionsStateCollectionNullException When state collection is null
+     * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
      */
     protected function getStateCollection(): RtStates
     {
@@ -143,8 +145,8 @@ abstract class RtActions
     /**
      * Ensures write is allowed (collection name set and truth source permits).
      *
-     * @throws RtActionsCollectionNameNullException When collection name is null.
-     * @throws RtTruthSourceWriteNotAllowedException When truth source does not allow write.
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      */
     protected function ensureCanWrite(): void
     {
@@ -160,8 +162,8 @@ abstract class RtActions
      *
      * @param string $stateId Runtime state id
      *
-     * @throws RtActionsCollectionNameNullException When collection name is null.
-     * @throws RtTruthSourceWriteNotAllowedException When truth source does not allow write.
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      */
     protected function ensureCanWriteState(string $stateId): void
     {
@@ -176,9 +178,9 @@ abstract class RtActions
      * Adds state to collection and queues RT sync created signal.
      *
      * @param RtState $state State instance to add
-     * @throws RtActionsCollectionNameNullException When collection name is null.
-     * @throws RtTruthSourceWriteNotAllowedException When truth source does not allow write.
-     * @throws RtActionsStateCollectionNullException
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      */
     protected function addStateToCollection(RtState $state): void
     {
@@ -190,12 +192,12 @@ abstract class RtActions
     /**
      * Apply diff to state and queue RT sync updated signal.
      *
-     * Analogous to Object_::sync() for DB — the diff is known at call site.
+     * Analogous to Object_::sync() for DB; the diff is known at call site.
      *
      * @param RtState $state State instance to apply diff to
      * @param array<string, mixed> $diff Changed fields and values
-     * @throws RtActionsCollectionNameNullException When collection name is null.
-     * @throws RtTruthSourceWriteNotAllowedException When truth source does not allow write.
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      */
     protected function applyDiffToState(RtState $state, array $diff): void
     {
@@ -209,6 +211,9 @@ abstract class RtActions
      * Removes state from collection by ID and queues RT sync deleted signal.
      *
      * @param string $id State ID to remove
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      */
     protected function removeStateFromCollection(string $id): void
     {
@@ -221,6 +226,11 @@ abstract class RtActions
 
     /**
      * Clears all states from collection and queues RT sync deleted for each.
+     *
+     * @throws RtActionsCallbackNotSetException When clear-cache callback is not configured
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      */
     protected function clearAllStates(): void
     {

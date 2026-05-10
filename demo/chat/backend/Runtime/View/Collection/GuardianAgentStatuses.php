@@ -23,7 +23,7 @@ use Hilos\Runtime\View\Collection\RtCollection;
 final class GuardianAgentStatuses extends RtCollection
 {
     /**
-     * @throws RtActionsStateCollectionNullException
+     * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
      */
     public function getStateCollection(): StateGuardianAgentStatuses
     {
@@ -55,7 +55,7 @@ final class GuardianAgentStatuses extends RtCollection
 
     /**
      * @return GuardianAgentStatusesActions Actions instance
-     * @throws RtCollectionActionsClassException If actions class mismatch
+     * @throws RtCollectionActionsClassException When actions class is missing or invalid
      */
     protected function getActions(): GuardianAgentStatusesActions
     {
@@ -66,8 +66,8 @@ final class GuardianAgentStatuses extends RtCollection
     }
 
     /**
-     * @throws RtCollectionPropertyNotFoundException
-     * @throws RtCollectionActionsClassException
+     * @throws RtCollectionPropertyNotFoundException When $name is not a declared property
+     * @throws RtCollectionActionsClassException When actions class is missing or invalid
      */
     public function __get(string $name): GuardianAgentStatusesActions
     {

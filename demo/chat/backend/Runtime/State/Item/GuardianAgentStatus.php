@@ -56,6 +56,11 @@ final class GuardianAgentStatus extends RtState
         return $instance;
     }
 
+    /**
+     * Runtime collection key for guardian status rows.
+     *
+     * @return string Runtime collection key
+     */
     public static function getRtCollectionKey(): string
     {
         return RtChatContext::guardianAgentStatuses;
@@ -74,6 +79,9 @@ final class GuardianAgentStatus extends RtState
         }
     }
 
+    /**
+     * @return string Runtime row id, the guardian agent id
+     */
     public function getId(): string
     {
         return $this->agentId;

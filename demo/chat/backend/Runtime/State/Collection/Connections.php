@@ -33,7 +33,7 @@ final class Connections extends RtStates
     }
 
     /**
-     * Array access is for required rows; use {@see get()} when absence is valid.
+     * Array access is for required rows; use `get()` when absence is valid.
      *
      * @param mixed $offset Accept key
      * @return Connection Connection runtime state

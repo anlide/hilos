@@ -29,10 +29,10 @@ final class GuardianAgentStatusesActions extends RtActions
      * Seed statuses from the guardian agent's current map.
      *
      * @param array<string, string> $statuses Status map keyed by guardian agent id
-     * @throws RtActionsCallbackNotSetException
-     * @throws RtActionsCollectionNameNullException
-     * @throws RtActionsStateCollectionNullException
-     * @throws RtTruthSourceWriteNotAllowedException
+     * @throws RtActionsCallbackNotSetException When runtime item factory callback is not configured
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      */
     public function syncStatuses(array $statuses): void
     {
@@ -51,10 +51,10 @@ final class GuardianAgentStatusesActions extends RtActions
      * @param string $agentId Guardian agent identifier
      * @param GuardianRunStatus $status Initial guardian run status
      * @return ViewGuardianAgentStatus Created status row
-     * @throws RtActionsCallbackNotSetException
-     * @throws RtActionsCollectionNameNullException
-     * @throws RtActionsStateCollectionNullException
-     * @throws RtTruthSourceWriteNotAllowedException
+     * @throws RtActionsCallbackNotSetException When runtime item factory callback is not configured
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      */
     public function create(string $agentId, GuardianRunStatus $status): ViewGuardianAgentStatus
     {
@@ -67,10 +67,10 @@ final class GuardianAgentStatusesActions extends RtActions
     /**
      * Remove every guardian status row from runtime state.
      *
-     * @throws RtActionsCallbackNotSetException
-     * @throws RtActionsCollectionNameNullException
-     * @throws RtActionsStateCollectionNullException
-     * @throws RtTruthSourceWriteNotAllowedException
+     * @throws RtActionsCallbackNotSetException When runtime item factory callback is not configured
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      */
     public function clear(): void
     {
@@ -84,7 +84,9 @@ final class GuardianAgentStatusesActions extends RtActions
     {
         $item = parent::createRtItemFromState($state);
         if (!$item instanceof ViewGuardianAgentStatus) {
-            throw new LogicException('GuardianAgentStatuses item factory must return ' . ViewGuardianAgentStatus::class);
+            throw new LogicException(
+                'GuardianAgentStatuses item factory must return ' . ViewGuardianAgentStatus::class,
+            );
         }
 
         return $item;

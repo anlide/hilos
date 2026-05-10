@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Frontend;
 
+use Demo\Chat\Constants\ConnectionRuntimeConstants;
 use Demo\Chat\Runtime\View\Item\Connection;
 
 /**
@@ -18,7 +19,10 @@ final class OutboundModerationStateProjector
      */
     public static function forConnection(Connection $connection): ?array
     {
-        if ($connection->outboundModerationPhase === Connection::OUTBOUND_MODERATION_PHASE_NONE) {
+        if (
+            $connection->outboundModerationPhase
+            === ConnectionRuntimeConstants::OUTBOUND_MODERATION_PHASE_NONE
+        ) {
             return null;
         }
 

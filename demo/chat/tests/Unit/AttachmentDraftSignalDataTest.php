@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Tests\Unit;
 
+use Demo\Chat\Constants\ConnectionRuntimeConstants;
 use Demo\Chat\Core\Page\DTO\AttachmentDraftDeleteActionDTO;
 use Demo\Chat\Core\Router\DTO\AttachmentDraftSignalData;
 use Demo\Chat\Core\Router\DTO\SelfConnectionSignalData;
-use Demo\Chat\Runtime\View\Item\Connection;
 use Hilos\Core\Router\DTO\FrontendChangesDTO;
 use PHPUnit\Framework\TestCase;
 
@@ -40,13 +40,13 @@ final class AttachmentDraftSignalDataTest extends TestCase
             'connectedAt' => 1710000000,
             'messageRateLimitSecondsRemaining' => 6,
             'outboundModerationState' => [
-                'phase' => Connection::OUTBOUND_MODERATION_PHASE_CHECKING,
+                'phase' => ConnectionRuntimeConstants::OUTBOUND_MODERATION_PHASE_CHECKING,
                 'text' => 'hello',
                 'reason' => null,
                 'updatedAt' => 1710000001,
             ],
             'fileUploadState' => [
-                'phase' => Connection::FILE_UPLOAD_PHASE_READY,
+                'phase' => ConnectionRuntimeConstants::FILE_UPLOAD_PHASE_READY,
                 'clientUploadId' => 'client-upload-1',
                 'errorCode' => null,
                 'errorMessage' => null,

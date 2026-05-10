@@ -109,6 +109,11 @@ final class AttachmentDraft extends RtState
         return $instance;
     }
 
+    /**
+     * Runtime collection key for attachment draft rows.
+     *
+     * @return string Runtime collection key
+     */
     public static function getRtCollectionKey(): string
     {
         return RtChatContext::attachmentDrafts;

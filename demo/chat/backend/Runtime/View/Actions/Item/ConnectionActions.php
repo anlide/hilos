@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Runtime\View\Actions\Item;
 
+use Demo\Chat\Constants\ConnectionRuntimeConstants;
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\State\Item\Connection as StateConnection;
 use Demo\Chat\Runtime\View\Item\Connection as RuntimeConnection;
@@ -13,6 +14,7 @@ use Hilos\Fs\Exception\FileDeleteException;
 use Hilos\Runtime\Exception\Actions\RtActionsCallbackNotSetException;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
+use Hilos\Runtime\Exception\Item\RtItemParentCollectionNullException;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\Runtime\View\Actions\Item\RtActions;
 
@@ -27,10 +29,11 @@ final class ConnectionActions extends RtActions
     /**
      * Remove this connection and its active quarantine `.part` file when present.
      *
-     * @throws FileDeleteException When an active quarantine file cannot be deleted.
-     * @throws RtActionsCollectionNameNullException When collection name is null.
-     * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable.
-     * @throws RtTruthSourceWriteNotAllowedException When truth source does not allow write.
+     * @throws FileDeleteException When an active quarantine file cannot be deleted
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
+     * @throws RtItemParentCollectionNullException When this connection is not attached to a collection
+     * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      */
     public function unregister(): void
     {
@@ -45,14 +48,14 @@ final class ConnectionActions extends RtActions
      * Start a connection-local outbound moderation state.
      *
      * @param string $message Submitted message text
-     * @throws RtActionsCollectionNameNullException When collection name is null.
-     * @throws RtTruthSourceWriteNotAllowedException When truth source does not allow write.
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      */
     public function startOutboundModeration(string $message): void
     {
         $this->ensureCanWrite();
 
-        $this->state->outboundModerationPhase = RuntimeConnection::OUTBOUND_MODERATION_PHASE_CHECKING;
+        $this->state->outboundModerationPhase = ConnectionRuntimeConstants::OUTBOUND_MODERATION_PHASE_CHECKING;
         $this->state->outboundModerationMessage = $message;
         $this->state->outboundModerationReason = '';
         $this->state->outboundModerationUpdatedAt = time();
@@ -66,8 +69,8 @@ final class ConnectionActions extends RtActions
      * @param string $phase Failure phase: rejected or unavailable
      * @param string $reason User-visible reason
      *
-     * @throws RtActionsCollectionNameNullException When collection name is null.
-     * @throws RtTruthSourceWriteNotAllowedException When truth source does not allow write.
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      */
     public function failOutboundModeration(string $phase, string $reason): void
     {
@@ -83,14 +86,14 @@ final class ConnectionActions extends RtActions
     /**
      * Clear current connection-local moderation state after approval.
      *
-     * @throws RtActionsCollectionNameNullException When collection name is null.
-     * @throws RtTruthSourceWriteNotAllowedException When truth source does not allow write.
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      */
     public function clearOutboundModeration(): void
     {
         $this->ensureCanWrite();
 
-        $this->state->outboundModerationPhase = RuntimeConnection::OUTBOUND_MODERATION_PHASE_NONE;
+        $this->state->outboundModerationPhase = ConnectionRuntimeConstants::OUTBOUND_MODERATION_PHASE_NONE;
         $this->state->outboundModerationMessage = '';
         $this->state->outboundModerationReason = '';
         $this->state->outboundModerationUpdatedAt = time();
@@ -102,14 +105,14 @@ final class ConnectionActions extends RtActions
      * Start connection-local moderation for a requested display name.
      *
      * @param string $newName Requested display name
-     * @throws RtActionsCollectionNameNullException When collection name is null.
-     * @throws RtTruthSourceWriteNotAllowedException When truth source does not allow write.
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      */
     public function startRenameModeration(string $newName): void
     {
         $this->ensureCanWrite();
 
-        $this->state->renameModerationPhase = RuntimeConnection::RENAME_MODERATION_PHASE_CHECKING;
+        $this->state->renameModerationPhase = ConnectionRuntimeConstants::RENAME_MODERATION_PHASE_CHECKING;
         $this->state->renameModerationName = $newName;
         $this->state->renameModerationReason = '';
         $this->state->renameModerationUpdatedAt = time();
@@ -123,8 +126,8 @@ final class ConnectionActions extends RtActions
      * @param string $phase Failure phase: rejected or unavailable
      * @param string $reason User-visible reason
      *
-     * @throws RtActionsCollectionNameNullException When collection name is null.
-     * @throws RtTruthSourceWriteNotAllowedException When truth source does not allow write.
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      */
     public function failRenameModeration(string $phase, string $reason): void
     {
@@ -140,14 +143,14 @@ final class ConnectionActions extends RtActions
     /**
      * Clear current connection-local rename moderation state after approval.
      *
-     * @throws RtActionsCollectionNameNullException When collection name is null.
-     * @throws RtTruthSourceWriteNotAllowedException When truth source does not allow write.
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      */
     public function clearRenameModeration(): void
     {
         $this->ensureCanWrite();
 
-        $this->state->renameModerationPhase = RuntimeConnection::RENAME_MODERATION_PHASE_NONE;
+        $this->state->renameModerationPhase = ConnectionRuntimeConstants::RENAME_MODERATION_PHASE_NONE;
         $this->state->renameModerationName = '';
         $this->state->renameModerationReason = '';
         $this->state->renameModerationUpdatedAt = time();
@@ -160,8 +163,8 @@ final class ConnectionActions extends RtActions
      *
      * Frontend projection sends the ready state and 0 / total baseline through selfConnection.
      *
-     * @throws RtActionsCollectionNameNullException When collection name is null.
-     * @throws RtTruthSourceWriteNotAllowedException When truth source does not allow write.
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      */
     public function beginBinaryFileUpload(
         string $uploadId,
@@ -184,7 +187,7 @@ final class ConnectionActions extends RtActions
         $this->state->fileSessionMimeType = $mimeType;
         $this->state->fileSessionClientUploadId = $clientUploadId;
         $this->state->fileSessionNormalizedFilename = $normalizedFilename;
-        $this->state->fileUploadPhase = RuntimeConnection::FILE_UPLOAD_PHASE_READY;
+        $this->state->fileUploadPhase = ConnectionRuntimeConstants::FILE_UPLOAD_PHASE_READY;
         $this->state->fileUploadClientUploadId = $clientUploadId;
         $this->state->fileUploadErrorCode = null;
         $this->state->fileUploadErrorMessage = null;
@@ -199,7 +202,8 @@ final class ConnectionActions extends RtActions
      * Delete any active upload tmp file and clear upload session/progress state.
      *
      * @throws FileDeleteException When the active tmp file cannot be deleted
-     * @throws RtActionsCollectionNameNullException When collection name is null.
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      */
     public function discardActiveBinaryUploadSessionAndProgressUi(): void
     {
@@ -212,7 +216,9 @@ final class ConnectionActions extends RtActions
 
     /**
      * Clear binary upload session and upload-progress UI (e.g. after receive complete or abort).
-     * @throws RtActionsCollectionNameNullException
+     *
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      */
     public function clearBinaryUploadSessionAndProgressUi(): void
     {
@@ -227,7 +233,9 @@ final class ConnectionActions extends RtActions
 
     /**
      * Clear all file-runtime fields on this socket (session and progress UI).
-     * @throws RtActionsCollectionNameNullException
+     *
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      */
     public function clearAllFileRuntimeOnSocket(): void
     {
@@ -246,7 +254,8 @@ final class ConnectionActions extends RtActions
      * @param ?string $clientUploadId Client-side upload correlation id, if known
      * @param string $code Short failure code for frontend behavior
      * @param string $message User-facing failure message
-     * @throws RtActionsCollectionNameNullException When collection name is null.
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      */
     public function failBinaryFileUpload(?string $clientUploadId, string $code, string $message): void
     {
@@ -254,7 +263,7 @@ final class ConnectionActions extends RtActions
 
         $this->resetBinaryUploadSessionFields();
         $this->resetUploadProgressUiFields();
-        $this->state->fileUploadPhase = RuntimeConnection::FILE_UPLOAD_PHASE_FAILED;
+        $this->state->fileUploadPhase = ConnectionRuntimeConstants::FILE_UPLOAD_PHASE_FAILED;
         $this->state->fileUploadClientUploadId = $clientUploadId;
         $this->state->fileUploadErrorCode = $code;
         $this->state->fileUploadErrorMessage = $message;
@@ -269,7 +278,8 @@ final class ConnectionActions extends RtActions
      * @param string $code Short failure code for frontend behavior
      * @param string $message User-facing failure message
      * @throws FileDeleteException When the active tmp file cannot be deleted
-     * @throws RtActionsCollectionNameNullException When collection name is null.
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      */
     public function failActiveBinaryFileUpload(?string $fallbackClientUploadId, string $code, string $message): void
     {
@@ -287,7 +297,8 @@ final class ConnectionActions extends RtActions
     /**
      * Update stored received bytes and progress-bar uploaded bytes after a binary chunk.
      *
-     * @throws RtActionsCollectionNameNullException When collection name is null.
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      */
     public function applyStoredBinaryChunkProgress(int $newReceivedBytes): void
     {
@@ -306,7 +317,8 @@ final class ConnectionActions extends RtActions
      * @param float $progressMinIntervalSec Minimum progress notification interval in seconds
      * @return bool True when received bytes reached the declared upload size
      * @throws FsException When the tmp file cannot be appended
-     * @throws RtActionsCollectionNameNullException When collection name is null.
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      */
     public function storeBinaryFileUploadChunk(string $payload, float $progressMinIntervalSec): bool
     {
@@ -330,7 +342,7 @@ final class ConnectionActions extends RtActions
             )
         ) {
             if ($this->state->fileSessionUploadId !== null && $this->state->fileSessionReceivedBytes > 0) {
-                $this->state->fileUploadPhase = RuntimeConnection::FILE_UPLOAD_PHASE_UPLOADING;
+                $this->state->fileUploadPhase = ConnectionRuntimeConstants::FILE_UPLOAD_PHASE_UPLOADING;
             }
             $this->state->uploadProgressLastSentAt = microtime(true);
         }
@@ -345,9 +357,9 @@ final class ConnectionActions extends RtActions
      *
      * @throws FsException When the completed tmp file cannot be moved to quarantine
      * @throws RtActionsCallbackNotSetException When attachment draft creation is not configured
-     * @throws RtActionsCollectionNameNullException When collection name is null.
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtActionsStateCollectionNullException When attachment draft runtime state is unavailable
-     * @throws RtTruthSourceWriteNotAllowedException When truth source does not allow write.
+     * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      */
     public function completeBinaryFileUpload(): void
     {
@@ -382,14 +394,15 @@ final class ConnectionActions extends RtActions
     /**
      * Record last upload-progress projection notify time.
      *
-     * @throws RtActionsCollectionNameNullException When collection name is null.
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      */
     public function noteUploadProgressSentAt(): void
     {
         $this->ensureCanWrite();
 
         if ($this->state->fileSessionUploadId !== null && $this->state->fileSessionReceivedBytes > 0) {
-            $this->state->fileUploadPhase = RuntimeConnection::FILE_UPLOAD_PHASE_UPLOADING;
+            $this->state->fileUploadPhase = ConnectionRuntimeConstants::FILE_UPLOAD_PHASE_UPLOADING;
         }
         $this->state->uploadProgressLastSentAt = microtime(true);
 
@@ -410,7 +423,7 @@ final class ConnectionActions extends RtActions
 
     private function resetUploadStateFields(): void
     {
-        $this->state->fileUploadPhase = RuntimeConnection::FILE_UPLOAD_PHASE_IDLE;
+        $this->state->fileUploadPhase = ConnectionRuntimeConstants::FILE_UPLOAD_PHASE_IDLE;
         $this->state->fileUploadClientUploadId = null;
         $this->state->fileUploadErrorCode = null;
         $this->state->fileUploadErrorMessage = null;

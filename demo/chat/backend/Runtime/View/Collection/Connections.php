@@ -34,10 +34,8 @@ final class Connections extends RtCollection
     public const string relevantUsers = 'relevantUsers';
 
     /**
-     * Get underlying state collection.
-     *
      * @return StateConnections State collection instance
-     * @throws RtActionsStateCollectionNullException If state collection is null (should not happen in properly initialized collection)
+     * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
      */
     public function getStateCollection(): StateConnections
     {
@@ -50,7 +48,7 @@ final class Connections extends RtCollection
      *
      * @param ?int $userId User ID, or null for an empty result
      * @return self Connections collection filtered by user
-     * @throws RtActionsStateCollectionNullException If state collection is null (should not happen in properly initialized collection)
+     * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
      */
     public function forUser(?int $userId): self
     {
@@ -70,7 +68,7 @@ final class Connections extends RtCollection
      *
      * @param ?int $userId User id to summarize active runtime connections for
      * @return UserConnectionSummary Runtime presence and session count summary
-     * @throws RtActionsStateCollectionNullException If state collection is null (should not happen in properly initialized collection)
+     * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
      */
     public function summaryForUser(?int $userId): UserConnectionSummary
     {
@@ -78,7 +76,9 @@ final class Connections extends RtCollection
     }
 
     /**
-     * Sum of (declaredSize - receivedBytes) over connections with an active file upload session (quota reserved until bytes arrive).
+     * Sum of unreceived bytes across active file upload sessions.
+     *
+     * The quota is reserved until bytes arrive.
      *
      * @return int Non-negative sum of unreceived bytes for in-flight uploads.
      */
@@ -116,8 +116,6 @@ final class Connections extends RtCollection
     }
 
     /**
-     * Create Rt item from state.
-     *
      * @param RtState $state StateConnection instance (passed by reference)
      * @return Connection View item for this connection state
      */
@@ -128,8 +126,6 @@ final class Connections extends RtCollection
     }
 
     /**
-     * Get connection by offset (accept key).
-     *
      * @param mixed $offset Accept key (string)
      * @return ?Connection Connection or null if not found
      */
@@ -142,8 +138,6 @@ final class Connections extends RtCollection
     }
 
     /**
-     * Get first connection in collection.
-     *
      * @return ?Connection First connection or null if empty
      */
     public function first(): ?Connection
@@ -155,8 +149,6 @@ final class Connections extends RtCollection
     }
 
     /**
-     * Get last connection in collection.
-     *
      * @return ?Connection Last connection or null if empty
      */
     public function last(): ?Connection
@@ -168,8 +160,6 @@ final class Connections extends RtCollection
     }
 
     /**
-     * Get current connection in iteration.
-     *
      * @return ?Connection Current connection or null
      */
     public function current(): ?Connection
@@ -181,8 +171,6 @@ final class Connections extends RtCollection
     }
 
     /**
-     * Get connection by key (accept key).
-     *
      * @param string $key Accept key
      * @return ?Connection Connection or null if not found
      */
@@ -195,10 +183,8 @@ final class Connections extends RtCollection
     }
 
     /**
-     * Get connections actions instance.
-     *
      * @return ConnectionsActions Actions for write operations
-     * @throws RtCollectionActionsClassException
+     * @throws RtCollectionActionsClassException When actions class is missing or invalid
      */
     protected function getActions(): ConnectionsActions
     {
@@ -212,8 +198,8 @@ final class Connections extends RtCollection
      * Get users who are online or mentioned in events.
      *
      * @return DbUsers Users collection with relevant users
-     * @throws CollectionNotManualException If collection is not manual, or item has no ID
-     * @throws ObjectGetIdStringNotImplementedException If DbItem's Object does not implement getIdString() (required for manual collections to use ID as key)
+     * @throws CollectionNotManualException When relevant users cannot be added to a manual collection
+     * @throws ObjectGetIdStringNotImplementedException When a DB user item cannot expose a manual collection key
      */
     private function getRelevantUsers(): DbUsers
     {
@@ -250,14 +236,14 @@ final class Connections extends RtCollection
     }
 
     /**
-     * Property getter (actions or relevantUsers).
+     * Resolves collection actions and the computed relevant users collection.
      *
      * @param string $name Property name (actions, relevantUsers)
      * @return ConnectionsActions|DbUsers Actions or relevant users collection
-     * @throws RtCollectionPropertyNotFoundException If property name is not recognized
-     * @throws RtCollectionActionsClassException
-     * @throws CollectionNotManualException If collection is not manual, or item has no ID
-     * @throws ObjectGetIdStringNotImplementedException If DbItem's Object does not implement getIdString() (required for manual collections to use ID as key)
+     * @throws RtCollectionPropertyNotFoundException When $name is not a declared property
+     * @throws RtCollectionActionsClassException When actions class is missing or invalid
+     * @throws CollectionNotManualException When relevant users cannot be added to a manual collection
+     * @throws ObjectGetIdStringNotImplementedException When a DB user item cannot expose a manual collection key
      */
     public function __get(string $name): ConnectionsActions|DbUsers
     {

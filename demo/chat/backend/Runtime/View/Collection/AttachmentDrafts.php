@@ -24,7 +24,7 @@ use Hilos\Runtime\View\Collection\RtCollection;
 final class AttachmentDrafts extends RtCollection
 {
     /**
-     * @throws RtActionsStateCollectionNullException
+     * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
      */
     public function getStateCollection(): StateAttachmentDrafts
     {
@@ -139,7 +139,7 @@ final class AttachmentDrafts extends RtCollection
 
     /**
      * @return AttachmentDraftsActions Actions instance
-     * @throws RtCollectionActionsClassException If actions class mismatch
+     * @throws RtCollectionActionsClassException When actions class is missing or invalid
      */
     protected function getActions(): AttachmentDraftsActions
     {
@@ -150,8 +150,8 @@ final class AttachmentDrafts extends RtCollection
     }
 
     /**
-     * @throws RtCollectionPropertyNotFoundException
-     * @throws RtCollectionActionsClassException
+     * @throws RtCollectionPropertyNotFoundException When $name is not a declared property
+     * @throws RtCollectionActionsClassException When actions class is missing or invalid
      */
     public function __get(string $name): AttachmentDraftsActions
     {

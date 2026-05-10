@@ -30,7 +30,7 @@ final class GuardianAgentStatuses extends RtStates
     }
 
     /**
-     * Array access is for required rows; use {@see get()} when absence is valid.
+     * Array access is for required rows; use `get()` when absence is valid.
      *
      * @param mixed $offset Guardian agent id
      * @return GuardianAgentStatus Guardian status
