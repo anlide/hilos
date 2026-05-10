@@ -1,6 +1,9 @@
 # Runtime: RtState
 
 `RtState` is the base class for individual runtime state items (rows in an RT collection).
+Its `toArray()` method is a runtime sync row serializer, not a browser payload
+contract. Browser-facing runtime state belongs in typed frontend projections or
+signal DTOs.
 
 ## Structure
 
@@ -26,7 +29,7 @@ final class MyState extends RtState {
     // Required: unique id within collection
     public function getId(): string { return (string)$this->userId; }
 
-    // Required: serialize to array for sync
+    // Required: serialize runtime row for sync (not a browser payload)
     public function toArray(): array { ... }
 
     // Required: apply partial update

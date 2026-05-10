@@ -58,28 +58,4 @@ final class User extends DbItem
         };
     }
 
-    /**
-     * Serializes the user item for backend or frontend payloads.
-     *
-     * Frontend entity payloads include only the compact public user identity.
-     * Extended user fields belong to explicit frontend state projections or table rows.
-     *
-     * @param bool $withId Include the user ID
-     * @param bool $idAsIndex Use the ID as array index when supported by the parent serializer
-     * @param bool $withBridges Include bridge fields
-     * @param bool $withCalculation Include calculated fields from the parent serializer
-     * @param bool $toFrontend Prepare a frontend-safe payload
-     * @return array<string, mixed> Serialized user data
-     */
-    public function toArray(bool $withId = true, bool $idAsIndex = true, bool $withBridges = false, bool $withCalculation = false, bool $toFrontend = false): array
-    {
-        $result = parent::toArray($withId, $idAsIndex, $withBridges, $withCalculation, $toFrontend);
-
-        if ($toFrontend) {
-            unset($result[ObjectUser::sessionToken]);
-            unset($result[ObjectUser::lastActivity]);
-        }
-
-        return $result;
-    }
 }

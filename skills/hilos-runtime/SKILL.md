@@ -152,7 +152,8 @@ Runtime state may add transient overlays to DB entities, such as presence,
 connection counts, upload progress, and socket-local UI state. It must not
 replace the DB entity as the source of durable business data. Keep persistent
 identity, history, settings, and catalog state in `Hilos::$db`, and project
-DB + RT together only at the view/frontend boundary:
+DB + RT together only through typed frontend projections, table rows, or signal
+DTOs:
 
 ```php
 use Demo\Chat\Tables\AdminUser\AdminUserTableRow;

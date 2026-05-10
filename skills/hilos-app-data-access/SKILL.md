@@ -17,7 +17,7 @@ switch to the focused data-layer skill first.
   `$hilos-runtime`.
 - Adding DB/RT shape, lookup APIs, or write paths: use `$hilos-data-extension`.
 - DB-backed item plus live runtime overlay: use `$hilos-db-rt-state`.
-- DB item frontend representation, `toFrontend`, and computed item fields:
+- Browser-facing frontend projections, legacy `toFrontend`, and computed item fields:
   use `$hilos-frontend-representation`.
 - Choosing between magic, array, result, and `findBy*()` access:
   use `$hilos-accessor-contracts`.

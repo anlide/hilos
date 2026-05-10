@@ -50,7 +50,7 @@ Quick navigation for AI agents. Read the relevant file before starting work.
 | [orm/db-collection.md](docs/agents/orm/db-collection.md) | querying data, writing actions, Hilos::$db usage |
 | [orm/db-item-bridges.md](docs/agents/orm/db-item-bridges.md) | DB View item relation bridges, reverse bridge naming, mandatory DB/RT overlay bridges |
 | [orm/accessor-contracts.md](docs/agents/orm/accessor-contracts.md) | choosing magic/array/result accessors vs `findBy*` helpers |
-| [orm/frontend-representation.md](docs/agents/orm/frontend-representation.md) | shaping `toFrontend`, `withCalculation`, and computed frontend item fields |
+| [orm/frontend-representation.md](docs/agents/orm/frontend-representation.md) | shaping browser-facing DB/RT projections, legacy `toFrontend`, and table rows |
 | [orm/migrations.md](docs/agents/orm/migrations.md) | DB schema changes, migration files, seeds |
 
 ## Runtime

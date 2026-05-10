@@ -1,6 +1,6 @@
 /**
  * Parsers for entity payloads from transport (users, events).
- * Used by ChatEntitiesReceiver and by message handlers that need typed payloads.
+ * User payload parsing is shared by frontend state and signal handlers.
  */
 
 import {

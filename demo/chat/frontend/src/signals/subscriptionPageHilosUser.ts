@@ -6,7 +6,7 @@ const isRecord = (value: unknown): value is Record<string, unknown> => {
 
 /**
  * `subscription_page_hilos_user` confirms that the single-user snapshot was sent.
- * The optional user entity rides in `entities.full.users` and is applied globally
+ * The optional user snapshot rides in `frontend.full.users` and is applied globally
  * before this handler runs.
  */
 export interface SubscriptionPageHilosUserPayload {

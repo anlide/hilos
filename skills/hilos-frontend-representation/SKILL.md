@@ -1,14 +1,14 @@
 ---
 name: hilos-frontend-representation
-description: Work with Hilos DB/View item frontend representation, DbItem::toArray(), DbCollection::toArray(), toFrontend, withCalculation, computed properties, frontend-safe payloads, table rows backed by DB items, and model-level fields such as onlineSessionCount or presence.
+description: Work with Hilos browser-facing DB/RT payloads, typed frontend projections, FrontendChangesDTO collections, legacy EntitiesChangesDTO paths, table rows, and boundaries between frontend DTOs and DB/RT toArray serializers.
 ---
 
 # Hilos Frontend Representation
 
-Use this skill when adding or reviewing browser payloads for DB-backed items,
-typed frontend state projections, table rows, or payloads that call
-`toArray(toFrontend: true)`. Start with `agents.md`, then read
-`docs/agents/orm/frontend-representation.md`.
+Use this skill when adding or reviewing browser payloads for DB-backed or
+runtime-backed items, typed frontend state projections, table rows, or legacy
+payloads that still call `toArray(toFrontend: true)`. Start with `agents.md`,
+then read `docs/agents/orm/frontend-representation.md`.
 
 ## Read First
 
@@ -24,41 +24,39 @@ typed frontend state projections, table rows, or payloads that call
 
 ## Mental Model
 
-- `toFrontend: true` is the framework's generic DB item serialization boundary.
-  It is still used by entity sync, collection serialization, and direct DB item
-  payloads.
-- Page-specific frontend state should prefer typed DTO/projection collections
-  with stable constants and matching TypeScript parsers.
-- Runtime-only fields such as presence or connection counters do not belong in
-  a generic user/entity payload just because the browser needs them.
-- Computed values that describe one DB item belong on the View item, Object
-  item, typed DTO, or signal payload, not in ad hoc table/page loops.
+- Browser-facing DB/RT state should go through typed frontend projections and
+  `FrontendChangesDTO` collections.
+- DB/RT `toArray()` methods are backend serializers, legacy entity serializers,
+  table row serializers, DTO serializers, or RT sync row serializers depending
+  on the owning class. They are not the default owner for new browser payloads.
+- Runtime-only fields such as presence, connection counters, upload progress,
+  and attachment draft internals belong in typed frontend projections or table
+  rows, not generic entity payloads.
+- RT state row `toArray()` is an internal sync/runtime contract; do not treat it
+  as a browser payload.
 - Tables own row shape only when the row is genuinely screen-specific.
 
 ## Workflow
 
-1. Decide whether the value belongs to a generic DB item payload, a typed
-   frontend state collection, a signal payload, or a table row.
-2. Inspect the existing backend DTO/projection/table row constants and the
-   matching TypeScript parser/store shape.
-3. Inspect the View item `__get()` and `toArray()` implementation.
+1. Decide whether the value belongs to frontend state, a signal payload, a
+   table row, DB sync, RT sync, or backend-only serialization.
+2. Inspect existing backend DTO/projection/table row constants and the matching
+   TypeScript parser/store shape.
+3. Inspect the View item `__get()` and existing bridge properties for model
+   access, but do not add new browser filtering to View item `toArray()`.
 4. Inspect existing Object item fields and runtime bridge properties.
 5. If runtime data is involved, inspect the RT collection helper first, such as
-   `connections->forUser($userId)`.
-6. Add item-level computed fields in View item `toArray()` only when they are
-   part of the generic DB item representation.
-7. Use typed DTO/projection payloads for page-specific frontend state.
-8. Use `$withCalculation` only for optional calculations that callers must
-   explicitly request.
-9. Keep local View item property constants exactly aligned with property keys,
-   for example `onlineSessionCount = 'onlineSessionCount'`.
-10. Keep table/page code as orchestration that calls existing model APIs, typed
+   `connections->summaryForUser($userId)`.
+6. Use typed DTO/projection payloads for browser state.
+7. Keep legacy `toFrontend` entity paths only when the existing generic entity
+   channel still depends on them and migration is out of scope.
+8. Keep table/page code as orchestration that calls existing model APIs, typed
    DTO contracts, or row factories.
-11. Validate through the narrow composer script selected by `$hilos-testing-cli`.
+9. Validate through the narrow composer script selected by `$hilos-testing-cli`.
 
 ## Examples
 
-Add an item-level runtime bridge:
+Expose an item-level runtime bridge for model access:
 
 ```php
 public function __get(string $name): mixed
@@ -70,27 +68,21 @@ public function __get(string $name): mixed
 }
 ```
 
-Send page-specific frontend state through a typed projection:
+Send browser user state through typed projections:
 
 ```php
 use Demo\Chat\Frontend\DTO\FrontendUserConnectionStatsProjection;
+use Demo\Chat\Frontend\DTO\FrontendUserProjection;
 use Demo\Chat\Frontend\FrontendStateCollectionKey;
 
-$collections[FrontendStateCollectionKey::USER_CONNECTION_STATS][] = (new FrontendUserConnectionStatsProjection(
-    userId: (int) $user->id,
-    onlineSessionCount: count($user->connections),
-))->toArray();
-```
+$collections[FrontendStateCollectionKey::USERS][] =
+    FrontendUserProjection::fromDbUser($user)->toArray();
 
-Use `toFrontend: true` for generic DB item payloads that already use the
-framework serialization boundary:
-
-```php
-if (!isset(Hilos::$db->bots[$botId])) {
-    return;
-}
-
-$payload = Hilos::$db->bots[$botId]->toArray(toFrontend: true);
+$collections[FrontendStateCollectionKey::USER_CONNECTION_STATS][] =
+    (new FrontendUserConnectionStatsProjection(
+        userId: (int) $user->id,
+        onlineSessionCount: Hilos::$rt->connections->summaryForUser((int) $user->id)->onlineSessionCount,
+    ))->toArray();
 ```
 
 Build screen-specific table rows through the table row contract:
@@ -103,43 +95,36 @@ foreach (Hilos::$db->users as $user) {
 
 ## Anti-Patterns
 
-Do not compute a model-level frontend field in a table loop:
+Do not send user browser state through a DB item serializer:
 
 ```php
-// Wrong: duplicates runtime lookup and hides a User field in table code.
-use Demo\Chat\Tables\AdminUser\AdminUserTableRow;
-
-foreach (Hilos::$db->users as $user) {
-    $rows[] = [
-        AdminUserTableRow::id => $user->id,
-        AdminUserTableRow::onlineSessionCount => count(Hilos::$rt->connections->forUser($user->id)),
-    ];
-}
+$payload = Hilos::$db->users[$userId]->toArray(toFrontend: true);
 ```
 
-Use a typed frontend projection or table row instead:
+Use a frontend projector:
 
 ```php
-use Demo\Chat\Frontend\DTO\FrontendUserConnectionStatsProjection;
-
-(new FrontendUserConnectionStatsProjection(
-    userId: (int) $user->id,
-    onlineSessionCount: count($user->connections),
-))->toArray();
+$payload = UserFrontendStateProjector::fullForUser(Hilos::$db->users[$userId])->toArray();
 ```
 
-Do not send raw Entity/Object arrays to the browser when View item
-`toArray(..., toFrontend: true)` owns field filtering.
+Do not send RT View item arrays to the browser:
+
+```php
+$draftRows[] = $draft->toArray();
+```
+
+Use the browser DTO:
+
+```php
+$draftRows[] = AttachmentDraftSignalData::fromDraft($draft)->toArray();
+```
 
 ## Hard Rules
 
-- Do not bypass `toFrontend: true` for frontend DB item payloads.
-- Do not compute item-level frontend fields in tables or pages when the View
-  item or typed payload should own them.
+- Do not add new browser-facing fields, privacy filters, or runtime overlays to
+  DB/RT View item `toArray()` methods.
+- Do not send raw RT state rows or RT View item arrays to the browser.
 - Do not put page-specific runtime overlays into generic entity payloads.
-- Do not use `$withCalculation` as a privacy or frontend-safety switch.
 - Do not put frontend representation logic in Entity classes.
-- Do not duplicate DB/RT aggregation in caller code when an item property can
-  expose the value once.
-- Do not name View item property constants with suffixes such as `_KEY` when
-  the property key itself is the constant name.
+- Keep frontend parsers and backend DTO/projection tests synchronized with any
+  changed browser payload shape.

@@ -12,7 +12,7 @@ documents by touched surface; it does not replace them.
 | Choosing between magic properties, `[]`, result accessors, and `findBy*()` | `accessor-contracts.md` |
 | Entity table mapping, persisted fields, primary keys, foreign keys, indexes, or row contracts | `entity.md` |
 | Object item mapping, object collection loading, object enrichment, or `getIdString()` | `object.md` |
-| Frontend-safe `toArray()`, `toFrontend`, calculated fields, or projection payloads | `frontend-representation.md` |
+| Browser-facing DB/RT payloads, frontend projections, legacy `toFrontend`, calculated fields, or table rows | `frontend-representation.md` |
 | Schema migrations, rollback files, seeds, or schema checks | `migrations.md` |
 
 When a change touches more than one surface, read every matching document before
@@ -29,8 +29,8 @@ the project contract approval gate before implementation.
   named finders, and existing result accessors.
 - `entity.md` describes raw persisted DB rows.
 - `object.md` describes object wrappers between entities and View items.
-- `frontend-representation.md` describes serialization and frontend payload
-  boundaries.
+- `frontend-representation.md` describes typed frontend projections and
+  serialization boundaries.
 - `migrations.md` describes schema change workflow and validation.
 
 ## Working Rule

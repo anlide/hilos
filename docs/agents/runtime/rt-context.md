@@ -211,7 +211,8 @@ Runtime state may add transient overlays to DB entities, such as presence,
 connection counts, upload progress, and socket-local UI state. It must not
 replace the DB entity as the source of durable business data. Keep persistent
 identity, history, settings, and catalog state in `Hilos::$db`, and project
-DB + RT together only at the view/frontend boundary:
+DB + RT together only through typed frontend projections, table rows, or signal
+DTOs:
 
 ```php
 use Demo\Chat\Tables\AdminUser\AdminUserTableRow;
@@ -304,7 +305,7 @@ an item action should own it.
 |---|---|
 | New runtime collection | `RtContext` plus `RtStates` and `RtCollection` |
 | App-level single runtime item | `RtState` in `_stateItems` plus `RtContext::setRepresentItem()` |
-| New runtime row field | `RtState` typed field, `toArray()`, `fromRow()`, and `applyDiff()` |
+| New runtime row field | `RtState` typed field, sync-row `toArray()`, `fromRow()`, and `applyDiff()` |
 | Runtime lookup helper | State collection plus View collection wrapper |
 | Caller-facing row read helper | View item |
 | Caller-facing collection read helper | View collection |

@@ -1,206 +1,162 @@
 # ORM: Frontend Representation
 
-Use `DbItem::toArray(..., toFrontend: true)` and `DbCollection::toArray(...)`
-for generic frontend-safe DB item representation. Page-specific frontend state
-should use typed DTO/projection payloads with stable key constants. Runtime-only
-telemetry that is needed by one table, detail view, or diagnostic surface should
-live in that table row or runtime summary payload.
+Read this before sending DB or RT data to the browser.
 
-## Rule
+## Core Rule
 
-Frontend representation is part of the model contract. Add fields such as
-display labels or other durable item-level derived values where the item is
-serialized for callers. Table/page code should consume that representation unless
-the row is truly screen-specific. Do not add table-only or page-specific runtime
-fields such as `presence` or `onlineSessionCount` to a generic entity payload.
+Use typed frontend projections for browser-facing DB/RT payloads. Do not add new
+browser shaping, privacy filtering, or runtime overlays to DB/RT View item
+`toArray()` methods.
 
-## Serialization Pipeline
+`toArray()` is still valid for backend row serialization, DTO serialization,
+table rows, and RT sync/runtime rows. It is not the preferred owner for
+project-specific browser state.
 
-`DbCollection::toArray(...)` calls each item's `toArray(...)` with the same
-flags:
-
-```php
-$collection->toArray(idAsIndex: false, toFrontend: true);
-```
-
-`DbItem::toArray(...)` starts from the Object layer data and then child View
-items may refine the payload:
-
-```php
-use Demo\Chat\Database\Object\Item\User as ObjectUser;
-
-public function toArray(
-    bool $withId = true,
-    bool $idAsIndex = true,
-    bool $withBridges = false,
-    bool $withCalculation = false,
-    bool $toFrontend = false,
-): array {
-    $result = parent::toArray($withId, $idAsIndex, $withBridges, $withCalculation, $toFrontend);
-
-    if ($toFrontend) {
-        unset($result[ObjectUser::sessionToken]);
-    }
-
-    return $result;
-}
-```
-
-`toFrontend: true` means the payload is safe and shaped for the browser. The
-base item always keeps primary key fields when `toFrontend` is true, even if
-`withId` is false.
-
-## `$toFrontend`
-
-Use `$toFrontend` when the payload crosses the frontend boundary:
-
-- page subscription full payloads;
-- DB sync or entity update payloads;
-- table rows that are direct projections of one DB collection;
-- action results or DTOs that expose DB item state to the browser.
-
-When `$toFrontend` is true, remove private or backend-only fields such as
-session tokens, internal state, or moderation details that have a different
-signal contract. Add only generic DB item fields here. Use typed frontend state
-DTOs for page-specific runtime overlays.
-
-## Frontend State Payloads
-
-Use typed DTO/projection payloads when the browser state is not the generic DB
-entity shape:
-
-```php
-use Demo\Chat\Frontend\DTO\FrontendUserConnectionStatsProjection;
-use Demo\Chat\Frontend\FrontendStateCollectionKey;
-
-$collections[FrontendStateCollectionKey::USER_CONNECTION_STATS][] = (new FrontendUserConnectionStatsProjection(
-    userId: (int) $user->id,
-    onlineSessionCount: count($user->connections),
-))->toArray();
-```
-
-The DTO owns payload key constants and should have a matching TypeScript parser
-or store shape on the frontend side. Do not copy those keys into generic entity
-arrays.
-
-## `$withCalculation`
-
-Use `$withCalculation` for optional calculated fields that are not always needed
-by backend callers. It is a pipeline flag passed from collection serialization
-to item serialization; it does not calculate anything by itself.
-
-Prefer `$withCalculation` when:
-
-- the calculation is expensive or needs runtime/DB lookups not needed by every
-  caller;
-- the field is useful outside the browser and should not be tied to
-  `$toFrontend`;
-- the caller explicitly requests a richer model snapshot.
-
-Do not use `$withCalculation` as a privacy flag. Use `$toFrontend` for frontend
-safety and field filtering.
-
-## Computed Item Fields
-
-If a computed value is needed by several callers, expose it through the View
-item or a typed payload:
-
-```php
-$onlineSessionCount = $user->onlineSessionCount;
-```
-
-Simple computed frontend fields may be expressed directly in `__get()` or
-`toArray()`. Keep table-only runtime counters in a typed row/runtime summary and
-use the View item property as the source of the value.
-
-The runtime bridge should also live on the item or runtime collection:
-
-```php
-public const string onlineSessionCount = 'onlineSessionCount';
-
-public function __get(string $name): mixed
-{
-    return match ($name) {
-        RtChatContext::connections => Hilos::$rt->connections->forUser($this->id),
-        self::onlineSessionCount => count($this->connections),
-        default => parent::__get($name),
-    };
-}
-```
-
-For View item magic properties, local property constants must preserve the
-exact property key in both the constant name and value. Use
-`onlineSessionCount = 'onlineSessionCount'`, not
-`ONLINE_SESSION_COUNT_KEY = 'onlineSessionCount'`.
-
-Then table/detail projections that need the count can use the model API without
-putting the count into the generic entity payload:
-
-```php
-$row = HilosUserTableRow::fromDbUser($user);
-```
-
-## Table Projection vs Model Representation
-
-Use table code for screen-specific row shape, pagination, sorting, and joins
-that are truly table-only. Do not place model-level computed fields in table
-code just because a table is the first frontend consumer.
+## Boundaries
 
 | Need | Put it in |
 |---|---|
-| Hide backend-only field from browser | View item `toArray(..., toFrontend: true)` |
-| Add generic frontend field for one model item | View item `toArray()` |
-| Add page-specific runtime frontend state | Typed DTO/projection payload |
-| Optional richer serialization | `withCalculation` branch in item `toArray()` |
-| Runtime overlay for one DB item | View item bridge plus RT collection lookup |
-| Direct DB collection table rows | Table row factory or protected table helper |
-| Runtime-enriched table/detail rows | Concrete row DTO or runtime summary payload |
-| Screen-specific joined row | Concrete table `query()` and typed row class |
+| Public browser state for one DB item | `Frontend/DTO/*Projection` plus a projector |
+| Runtime-backed browser state | Frontend projection DTO, fed by `Hilos::$rt` typed APIs |
+| Page-specific state collection | `FrontendChangesDTO` with `FrontendStateCollectionKey` |
+| Table row payload | Concrete table row DTO or table helper |
+| Generic legacy entity payload | Existing `EntitiesChangesDTO` path only when already established |
+| RT sync or delete tombstone row | Concrete `Runtime/State/Item/*::toArray()` |
+| Backend object/entity row | Object/entity `toArray()` |
 
-## Anti-Patterns
+For example, users are projected through `UserFrontendStateProjector` and
+`FrontendUserProjection`, while their DB View item remains a backend model API.
+Attachment drafts are projected through `AttachmentDraftFrontendStateProjector`
+and `AttachmentDraftSignalData`, while `StateAttachmentDraft::toArray()` remains
+the RT sync row contract.
 
-Do not recompute runtime table fields by bypassing the item API:
+## Workflow
+
+1. Decide whether the payload is browser state, table state, DB sync, RT sync,
+   or backend-only serialization.
+2. For browser state, inspect existing `Frontend/*Projector`,
+   `Frontend/DTO/*Projection`, `FrontendStateCollectionKey`, and the matching
+   TypeScript parser/store shape.
+3. Keep DB/RT View items as typed model access APIs: expose reusable properties
+   and bridges through `__get()`, but do not make their `toArray()` the browser
+   contract.
+4. If runtime data is involved, read it through existing RT collection/item APIs
+   such as `Hilos::$rt->connections->summaryForUser($userId)`.
+5. If the browser needs a new state collection or changes an existing payload
+   shape, stop for the contract approval gate before editing signal DTOs or
+   frontend parsers.
+6. Update backend DTO/projection tests and frontend parser/receiver tests
+   together.
+7. Validate through the narrow composer script selected by
+   `docs/agents/testing.md`.
+
+## Preferred Shape
+
+Send public user state through explicit frontend collections:
 
 ```php
-// Wrong: bypasses the User runtime bridge.
-use Demo\Chat\Tables\AdminUser\AdminUserTableRow;
+use Demo\Chat\Frontend\DTO\FrontendUserConnectionStatsProjection;
+use Demo\Chat\Frontend\DTO\FrontendUserProjection;
+use Demo\Chat\Frontend\FrontendStateCollectionKey;
 
+$collections[FrontendStateCollectionKey::USERS][] =
+    FrontendUserProjection::fromDbUser($user)->toArray();
+
+$collections[FrontendStateCollectionKey::USER_CONNECTION_STATS][] =
+    (new FrontendUserConnectionStatsProjection(
+        userId: (int) $user->id,
+        onlineSessionCount: Hilos::$rt->connections->summaryForUser((int) $user->id)->onlineSessionCount,
+    ))->toArray();
+```
+
+Use table rows for screen-specific row shape:
+
+```php
 foreach (Hilos::$db->users as $user) {
-    $rows[] = [
-        AdminUserTableRow::id => $user->id,
-        AdminUserTableRow::onlineSessionCount => count(Hilos::$rt->connections->forUser($user->id)),
+    $rows[] = $this->rowFromUser($user)->toArray();
+}
+```
+
+Keep RT sync rows on state items:
+
+```php
+public function toArray(): array
+{
+    return [
+        self::draftId => $this->draftId,
+        self::acceptKey => $this->acceptKey,
     ];
 }
 ```
 
-Expose the item-level value once and add it only to the row that needs it:
+That RT state row is input for sync and projection decisions; it is not the
+browser payload.
+
+## Legacy Entity Paths
+
+Some existing entity payloads still use `EntitiesChangesDTO`, which serializes
+DB collections through `DbCollection::toArray(idAsIndex: false, toFrontend:
+true)`. Treat this as a generic legacy entity path, not as the default for new
+browser contracts.
+
+When touching one of those paths:
+
+- prefer migrating the affected model to typed frontend projections;
+- do not add new model-specific browser filters to `DbItem::toArray()`;
+- do not send private fields such as tokens through `EntitiesChangesDTO`;
+- keep existing `toFrontend` behavior only when a legacy entity path still
+  depends on it and no projection migration is in scope.
+
+## Anti-Patterns
+
+Do not send user browser state through a DB item serializer:
 
 ```php
-HilosUserTableRow::fromDbUser($user);
+// Wrong: hides frontend contract in the DB View item.
+$payload = Hilos::$db->users[$userId]->toArray(toFrontend: true);
 ```
 
-Do not send raw Object or Entity arrays to the browser when a View item has
-frontend filtering. Do not add frontend-only shaping to Entity classes.
+Use an explicit projection:
 
-## Checklist
+```php
+$payload = UserFrontendStateProjector::fullForUser(Hilos::$db->users[$userId])->toArray();
+```
 
-1. Identify whether the value describes one DB item or one screen row.
-2. Inspect the View item `__get()` and `toArray()` before changing a table.
-3. Inspect the Object item when the value is durable or derived only from DB
-   fields.
-4. Inspect runtime collection helpers when the value depends on `Hilos::$rt`.
-5. Add a View item computed property for item-level frontend fields.
-6. Use typed DTO/projection payloads for page-specific frontend state.
-7. Use `toFrontend: true` when serializing generic DB item payloads for the browser.
-8. Use `withCalculation` only for optional richer calculations.
-9. Keep table/page code as orchestration unless the shape is table-specific.
+Do not reuse RT View item arrays as browser payloads:
+
+```php
+// Wrong: exposes runtime row fields such as acceptKey or quarantine filename.
+$drafts[] = $draft->toArray();
+```
+
+Use the browser DTO:
+
+```php
+$drafts[] = AttachmentDraftSignalData::fromDraft($draft)->toArray();
+```
+
+Do not compute reusable runtime state in a page/table loop by bypassing the
+model API:
+
+```php
+// Wrong: duplicates runtime lookup at the caller.
+$onlineSessionCount = count(Hilos::$rt->connections->forUser($user->id));
+```
+
+Use the established typed runtime summary or item property:
+
+```php
+$summary = Hilos::$rt->connections->summaryForUser((int) $user->id);
+```
 
 ## Hard Rules
 
-- Do not compute model-level frontend fields in table/page code when a View item
-  or typed payload should own them.
-- Do not expose backend-only fields by bypassing `toFrontend: true`.
+- Do not add new browser-facing fields, privacy filters, or runtime overlays to
+  DB/RT View item `toArray()` methods.
+- Do not send raw RT state rows or RT View item arrays to the browser.
 - Do not put page-specific runtime overlays into generic entity payloads.
 - Do not put frontend representation logic in Entity classes.
-- Do not duplicate DB/RT aggregation in tables when an item property can expose
-  the same value.
+- Use stable key constants from the owning DTO, projection, table row, entity,
+  object, or context for boundary arrays.
+- Keep frontend parsers and backend DTO/projection tests synchronized with any
+  changed browser payload shape.

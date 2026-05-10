@@ -1,22 +1,18 @@
 import { ChatBot } from '@/types'
 import { EntitiesReceiver } from '@hilos/sdk/entities'
-import { parseUserPayloads, parseEventPayloads, eventPayloadToEvent, parseBotPayloads } from './parsers'
-import { parsePartialUserPayloads } from './partialUserPayload'
+import { parseEventPayloads, eventPayloadToEvent, parseBotPayloads } from './parsers'
 
 /** Store interface required for applying entity changes (avoids importing store here). */
 interface ChatStoreForEntities {
-  upsertUsers(users: Array<{ id: number; name: string; lastActivity?: string | null }>): void
-  patchUsers(partials: Array<{ id: number; name?: string; lastActivity?: string | null }>): void
   upsertBots(bots: ChatBot[]): void
   upsertEvents(events: ReturnType<typeof eventPayloadToEvent>[]): void
   addEvent(event: ReturnType<typeof eventPayloadToEvent>): void
   clearEvents(): void
   removeEventsById(ids: number[]): void
-  removeUsers(ids: number[]): void
 }
 
 /**
- * Chat-specific entities receiver. Parses users/events from transport and applies to chat store.
+ * Chat-specific entities receiver. Public users are handled by ChatFrontendStateReceiver.
  */
 export class ChatEntitiesReceiver extends EntitiesReceiver {
   protected override applyFull(
@@ -27,14 +23,6 @@ export class ChatEntitiesReceiver extends EntitiesReceiver {
   ): void {
     const store = context as ChatStoreForEntities | undefined
     if (!store) return
-
-    if (collectionKey === 'users') {
-      const users = parseUserPayloads(rawItems)
-      if (users !== null) {
-        store.upsertUsers(users)
-      }
-      return
-    }
 
     if (collectionKey === 'bots') {
       const bots = parseBotPayloads(rawItems)
@@ -62,19 +50,6 @@ export class ChatEntitiesReceiver extends EntitiesReceiver {
     const store = context as ChatStoreForEntities | undefined
     if (!store) return
 
-    if (collectionKey === 'users') {
-      const partials = parsePartialUserPayloads(rawItems)
-      if (partials !== null) {
-        store.patchUsers(partials)
-      } else {
-        const users = parseUserPayloads(rawItems)
-        if (users !== null) {
-          store.upsertUsers(users)
-        }
-      }
-      return
-    }
-
     if (collectionKey === 'bots') {
       const bots = parseBotPayloads(rawItems)
       if (bots !== null) {
@@ -97,9 +72,7 @@ export class ChatEntitiesReceiver extends EntitiesReceiver {
     const store = context as ChatStoreForEntities | undefined
     if (!store) return
 
-    if (collectionKey === 'users') {
-      store.removeUsers(ids)
-    } else if (collectionKey === 'events') {
+    if (collectionKey === 'events') {
       store.removeEventsById(ids)
     }
   }

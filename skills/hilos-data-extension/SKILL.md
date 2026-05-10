@@ -17,7 +17,7 @@ you choose.
   use `$hilos-runtime`, `docs/agents/runtime/rt-context.md`, and
   `docs/agents/runtime/rt-state.md`.
 - DB-backed item plus live runtime overlay: use `$hilos-db-rt-state`.
-- Frontend-safe computed DB item fields and `toFrontend` serialization:
+- Browser-facing frontend projections and legacy `toFrontend` serialization:
   use `$hilos-frontend-representation`.
 - Truth source ownership: `docs/agents/agent-system/monopolistic-agent.md`.
 - Repository/service anti-pattern:
@@ -68,7 +68,7 @@ restart is acceptable and a truth source can own writes.
 | DB update/delete for one loaded item | Item actions |
 | New runtime collection | `RtContext`, `RtStates`, `RtCollection`, and actions |
 | App-level single runtime item alias | Existing runtime collection plus `_stateItems` resolver and `RtContext::setRepresentItem()` |
-| New runtime row field | `RtState` typed property, `toArray()`, `fromRow()`, `applyDiff()` |
+| New runtime row field | `RtState` typed property, sync-row `toArray()`, `fromRow()`, `applyDiff()` |
 | Runtime lookup | State collection plus View collection wrapper |
 | Runtime create/register/ensure/clear/bulk cleanup | Collection actions with `sync()` behavior |
 | Runtime update/delete for one loaded item | Item actions that mutate typed state and call `sync()` or remove |

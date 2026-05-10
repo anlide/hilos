@@ -1,5 +1,5 @@
 /**
- * Partial user update payload (e.g. entities.updates.users: array of items with id + changed fields).
+ * Partial user update payload (e.g. frontend.updates.users: array of items with id + changed fields).
  * Used for incremental updates (rename: [{ id, name }]).
  */
 

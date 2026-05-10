@@ -42,7 +42,6 @@ final class MainPageSubscriptionProjector
                 full: [
                     DbChatContext::bots => Hilos::$db->bots->activeOnly,
                     DbChatContext::events => Hilos::$db->events,
-                    DbChatContext::users => Hilos::$rt->connections->relevantUsers,
                 ],
             ),
             frontend: SelfConnectionFrontendStateProjector::appendFullForConnection(
@@ -50,7 +49,6 @@ final class MainPageSubscriptionProjector
                     BotFrontendStateProjector::appendFullForBots(
                         UserFrontendStateProjector::fullForUsers(
                             Hilos::$rt->connections->relevantUsers,
-                            includePublicUsers: false,
                         ),
                         Hilos::$db->bots->activeOnly,
                     ),

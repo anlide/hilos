@@ -4,28 +4,25 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Tests\Integration;
 
-use Demo\Chat\Database\DbChatContext;
 use Demo\Chat\Database\Object\Item\User as ObjectUser;
-use Demo\Chat\Database\View\Collection\Users;
 use Demo\Chat\Frontend\FrontendStateCollectionKey;
 use Demo\Chat\Frontend\UserFrontendStateProjector;
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\View\Context\RtChatContext;
 use Demo\Chat\Tables\AdminUser\AdminUserTableRow;
 use Demo\Chat\Tables\HilosUser\HilosUserTableRow;
-use Hilos\Core\Router\DTO\EntitiesChangesDTO;
 use Hilos\Core\Table\TableConstants;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Utils\Helpers\RandomHelper;
 
 /**
- * Integration tests for user frontend representation.
+ * Integration tests for user frontend projection.
  */
 final class UserFrontendRepresentationTest extends IntegrationTestCase
 {
     private const string TEST_AGENT_ID = 'test-agent';
 
-    public function testGenericFrontendPayloadExcludesRuntimeOnlineSessionCount(): void
+    public function testUserFrontendProjectionExcludesPrivateAndRuntimeFields(): void
     {
         RtTruthSourceRegistry::register(RtChatContext::connections, true, self::TEST_AGENT_ID);
         Hilos::$rt->connections->actions->clear();
@@ -33,24 +30,20 @@ final class UserFrontendRepresentationTest extends IntegrationTestCase
         $user = Hilos::$db->users->actions->register(RandomHelper::hex(16));
 
         try {
-            $offlinePayload = $user->toArray(toFrontend: true);
-            $this->assertArrayNotHasKey(ObjectUser::sessionToken, $offlinePayload);
-            $this->assertArrayNotHasKey('onlineSessionCount', $offlinePayload);
-            $this->assertArrayNotHasKey('presence', $offlinePayload);
+            $backendRow = $user->toArray();
+            $this->assertArrayHasKey(ObjectUser::sessionToken, $backendRow);
 
             Hilos::$rt->connections->actions->register('test-accept-key-1', $user->id);
             Hilos::$rt->connections->actions->register('test-accept-key-2', $user->id);
 
-            $onlinePayload = $user->toArray(toFrontend: true);
-            $this->assertArrayNotHasKey('onlineSessionCount', $onlinePayload);
-            $this->assertArrayNotHasKey('presence', $onlinePayload);
+            $payload = UserFrontendStateProjector::fullForUser($user)->toArray();
+            $publicUser = $payload['full'][FrontendStateCollectionKey::USERS][0];
 
-            $entitiesPayload = (new EntitiesChangesDTO(full: [
-                DbChatContext::users => Users::fromSingleItem($user),
-            ]))->toArray();
-            $entityUserPayload = $entitiesPayload['full'][DbChatContext::users][0];
-            $this->assertArrayNotHasKey('onlineSessionCount', $entityUserPayload);
-            $this->assertArrayNotHasKey('presence', $entityUserPayload);
+            $this->assertSame($user->id, $publicUser[ObjectUser::id]);
+            $this->assertSame($user->name, $publicUser[ObjectUser::name]);
+            $this->assertArrayNotHasKey(ObjectUser::sessionToken, $publicUser);
+            $this->assertArrayNotHasKey('onlineSessionCount', $publicUser);
+            $this->assertArrayNotHasKey('presence', $publicUser);
         } finally {
             Hilos::$rt->connections->actions->clear();
         }

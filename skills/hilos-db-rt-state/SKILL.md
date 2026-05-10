@@ -19,7 +19,7 @@ table or page.
   `$hilos-runtime`, `docs/agents/runtime/rt-context.md`, and
   `docs/agents/runtime/rt-state.md`.
 - DB vs RT choice and extension checklist: use `$hilos-data-extension`.
-- Frontend representation, `toFrontend`, `withCalculation`, and computed DB
+- Browser-facing frontend projections, legacy `toFrontend`, and computed DB
   item fields: use `$hilos-frontend-representation`.
 - Table/page subscription and frontend payload contracts: use
   `$hilos-frontend-sdk` when the value is sent through page/WebSocket state.
@@ -54,8 +54,8 @@ table or page.
    suffix when the related model starts with the parent model name.
 7. Put an item-level runtime bridge on the DB View item when callers should read
    it as part of the model.
-8. Put frontend-safe calculated fields in the DB View item `toArray(...)`, a
-   DTO, or a signal payload according to the existing contract.
+8. Put browser-facing calculated fields in a typed frontend projection, table
+   row DTO, or signal payload according to the existing contract.
 9. Keep table/page code as query/subscription orchestration that calls the DB
    collection or item API.
 10. Verify the truth source owns any RT writes; read-only calculated properties

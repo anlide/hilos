@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Demo\Chat\Tests\Integration;
 
 use Demo\Chat\Core\Router\DTO\SelfConnectionSignalData;
+use Demo\Chat\Database\DbChatContext;
+use Demo\Chat\Database\Object\Item\User as ObjectUser;
 use Demo\Chat\Frontend\FrontendStateCollectionKey;
 use Demo\Chat\Frontend\MainPageSubscriptionProjector;
 use Demo\Chat\Frontend\SelfConnectionFrontendStateProjector;
@@ -34,6 +36,13 @@ final class MainPageSubscriptionProjectorTest extends IntegrationTestCase
             )->toArray();
 
             $this->assertArrayNotHasKey(SelfConnectionSignalData::selfConnection, $payload);
+            $this->assertArrayNotHasKey(DbChatContext::users, $payload['entities']['full'] ?? []);
+
+            $publicUser = $payload['frontend']['full'][FrontendStateCollectionKey::USERS][0] ?? [];
+            $this->assertSame($user->id, $publicUser[ObjectUser::id] ?? null);
+            $this->assertSame($user->name, $publicUser[ObjectUser::name] ?? null);
+            $this->assertArrayNotHasKey(ObjectUser::sessionToken, $publicUser);
+
             $selfConnection = $payload['frontend']['full'][FrontendStateCollectionKey::SELF_CONNECTION][0] ?? [];
             $this->assertSame(SelfConnectionFrontendStateProjector::ID_SELF, $selfConnection['id'] ?? null);
             $this->assertSame($user->id, $selfConnection[SelfConnectionSignalData::userId] ?? null);

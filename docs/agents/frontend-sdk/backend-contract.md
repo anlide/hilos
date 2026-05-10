@@ -34,8 +34,8 @@ ws.on('new_event', (data: NewEventData) => {
 // Subscribe to page
 ws.send('PAGE_SUBSCRIBE', { page: 'main', params: {} })
 
-// Server responds with subscription signal carrying initial state
-// e.g. 'subscription_page_main' with full entity snapshot
+// Server responds with subscription signal carrying initial state.
+// Project browser state should normally ride in `frontend.full`.
 ```
 
 On the wire `params` is still a `Record<string, string>` — transport DTOs
@@ -69,21 +69,43 @@ two param-specific error codes are:
 Frontend can render subscription errors without assuming a specific param
 shape — `errorCode` is stable, `message` is for diagnostics only.
 
-## Entities snapshot
+## Frontend state snapshots
 
-On subscription, server typically sends `EntitiesChangesDTO`:
+Browser-facing DB/RT state should normally be sent as `FrontendChangesDTO` under
+the `frontend` payload key:
+
 ```json
 {
-  "entities": {
-    "full": { "users": [...], "events": [...] },
-    "created": [],
-    "updated": [],
-    "deleted": []
+  "frontend": {
+    "full": {
+      "users": [{ "id": 1, "name": "Ada", "lastActivity": null }],
+      "userPresence": [{ "userId": 1, "presence": "online" }]
+    },
+    "replaceFull": ["users"]
   }
 }
 ```
 
-Frontend applies this as initial state and subscribes to incremental updates.
+The frontend applies this through a project receiver such as
+`ChatFrontendStateReceiver`.
+
+## Entity snapshots
+
+Generic entity payloads use `EntitiesChangesDTO`:
+
+```json
+{
+  "entities": {
+    "full": { "events": [...] },
+    "updates": {},
+    "deleted": {}
+  }
+}
+```
+
+Treat entity snapshots as a generic or legacy channel. Do not add new
+project-specific browser filtering to DB/RT `toArray()` just to make an entity
+payload safe; prefer a typed frontend projection.
 
 ## Table snapshots
 

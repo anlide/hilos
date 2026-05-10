@@ -73,8 +73,8 @@ native scalar field, expose the reverse nullable bridge from the DB item to the
 RT item immediately.
 
 This is access API only. Adding a DB/RT bridge does not add the related item to
-`toArray()`, `toFrontend`, sync payloads, table rows, or signal DTOs unless
-that serialization contract explicitly asks for the relation data.
+backend serialization, frontend projections, sync payloads, table rows, or
+signal DTOs unless that explicit contract asks for the relation data.
 
 Use the normal naming rule for both directions:
 
@@ -213,11 +213,11 @@ semantics.
 
 Bridge properties are access API. They are not automatically serialized.
 
-- Add scalar computed fields to `toArray()` only when they are part of the
-  caller-facing item payload.
-- Add bridge data to `toArray()` only when the `withBridges`, `toFrontend`, or
-  local projection contract explicitly requires it.
-- Do not leak internal storage fields to frontend payloads just because a bridge
+- Add scalar computed fields to backend serialization only when they are part
+  of that explicit serialization contract.
+- Add bridge data to a frontend projection only when the projection DTO
+  explicitly requires it.
+- Do not leak internal storage fields to browser payloads just because a bridge
   uses them.
 - Do not serialize flattened copies of detail-row scalar fields on the parent
   item. Serialize the bridge item under its bridge key when a payload contract
