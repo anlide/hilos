@@ -24,7 +24,8 @@ and `$hilos-testing-cli`.
 
 ## Claude
 
-Claude uses `CLAUDE.md` at the repository root. It points Claude to `agents.md` and the same `docs/agents/*` files.
+Claude uses `CLAUDE.md` at the repository root only as a thin adapter that
+points to `agents.md`.
 
 ## Cursor
 

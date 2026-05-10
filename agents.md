@@ -43,15 +43,20 @@ Quick navigation for AI agents. Read the relevant file before starting work.
 
 ## ORM
 
-| File | Read when... |
-|---|---|
-| [orm/entity.md](docs/agents/orm/entity.md) | creating or modifying Entity classes, DB table mapping |
-| [orm/object.md](docs/agents/orm/object.md) | creating Object layer, transforming entity data for views |
-| [orm/db-collection.md](docs/agents/orm/db-collection.md) | querying data, writing actions, Hilos::$db usage |
-| [orm/db-item-bridges.md](docs/agents/orm/db-item-bridges.md) | DB View item relation bridges, reverse bridge naming, mandatory DB/RT overlay bridges |
-| [orm/accessor-contracts.md](docs/agents/orm/accessor-contracts.md) | choosing magic/array/result accessors vs `findBy*` helpers |
-| [orm/frontend-representation.md](docs/agents/orm/frontend-representation.md) | shaping browser-facing DB/RT projections, legacy `toFrontend`, and table rows |
-| [orm/migrations.md](docs/agents/orm/migrations.md) | DB schema changes, migration files, seeds |
+Start with [orm/README.md](docs/agents/orm/README.md) for any ORM change; it
+routes to the mandatory entity, object, collection, bridge, accessor,
+projection, and migration documents.
+
+Minimum ORM rules before editing:
+
+- Do not add Repository or Service layers over `DbCollection`; use typed
+  `Hilos::$db` collection/item APIs directly.
+- `actions` are write APIs; reads belong on collections, items, objects, or
+  typed projections.
+- If a DB item key is known, update/delete through that item's `actions`.
+- Entity/Object layers keep persisted rows scalar; View items expose
+  caller-facing relations and projections.
+- DB entity shape changes require the contract approval gate before editing.
 
 ## Runtime
 
@@ -101,13 +106,8 @@ Quick navigation for AI agents. Read the relevant file before starting work.
 
 ## AI Tool Integration
 
-| File | Purpose |
-|---|---|
-| [ai-tools.md](docs/agents/ai-tools.md) | applying these rules in Codex, Claude, and Cursor |
-| [rule-authoring.md](docs/agents/rule-authoring.md) | creating, extracting, and maintaining agent rules and tool adapters |
-| [skills/](skills) | Codex-format Hilos skill wrappers |
-| [CLAUDE.md](CLAUDE.md) | Claude project adapter |
-| [.cursor/rules/hilos-framework.mdc](.cursor/rules/hilos-framework.mdc) | Cursor project rule |
+See [ai-tools.md](docs/agents/ai-tools.md) for Codex, Claude, Cursor, skill
+wrappers, and rule-authoring integration.
 
 ---
 
@@ -136,17 +136,13 @@ additional change in one of these surfaces, stop and ask again before editing it
 1. **Never** use Repository or Service on top of DbCollection — call `Hilos::$db->collection->actions->...` directly
 2. **Never** block in `onTick()` — must complete in < 0.1s
 3. **Only the truth source agent** writes to its DB/RT collection
-4. **Contract approval gate is mandatory (confirmation wall)** — before changing RT item state shape, DB entity shape, or signals/routes, stop and ask the user for explicit confirmation with the exact contract surface list (fields, DTOs, and routes)
-5. All PHP files: `declare(strict_types=1)` at top
-6. Signal routing is **declarative** in `SignalRouter` — do not add routing logic in agents
-7. **Frontend edits go through `Modal` only** — inline edit forms on pages are forbidden (see [frontend-sdk/edit-in-modal.md](docs/agents/frontend-sdk/edit-in-modal.md))
-8. For code style, use the matching small rule from [code-style/README.md](docs/agents/code-style/README.md)
-9. Internal backend API uses typed parameters, DTOs, value objects, or typed collections — unstructured arrays need a boundary or explicit reason
-10. DB/RT `actions` are write APIs; put read-only helpers on collections, items, objects, or typed projections
-11. If a DB/RT item key is known, update/delete that one item through `Hilos::$db/$rt->collection[$key]->actions`, not through collection actions that accept the key
-12. `getStateCollection()`, `RtContext::getStateCollection()`, and `$this->stateCollection` are allowed only inside `Database/` or `Runtime/` files; all other code must use typed collection/item APIs
-13. During refactors, do not add new convenience read helpers or predicates such as `has*()`, `is*()`, `can*()`, or `get*()` on DB/RT View items, collections, objects, actions, or typed projections unless the user explicitly approved that exact method in the plan. Prefer explicit field access at the call site when the goal is to keep the data structure transparent.
-14. Direct DB/RT overlay relations are complete by default: expose both direct View-item bridge directions for 1:1 DB-RT overlays, and name reverse overlay/status bridges by the remaining semantic suffix when the related model starts with the parent model name.
+4. All PHP files: `declare(strict_types=1)` at top
+5. Signal routing is **declarative** in `SignalRouter` — do not add routing logic in agents
+6. **Frontend edits go through `Modal` only** — inline edit forms on pages are forbidden (see [frontend-sdk/edit-in-modal.md](docs/agents/frontend-sdk/edit-in-modal.md))
+7. For code style, use the matching small rule from [code-style/README.md](docs/agents/code-style/README.md)
+8. Internal backend API uses typed parameters, DTOs, value objects, or typed collections — unstructured arrays need a boundary or explicit reason
+9. DB/RT `actions` are write APIs; put read-only helpers on collections, items, objects, or typed projections
+10. If a DB/RT item key is known, update/delete that one item through `Hilos::$db/$rt->collection[$key]->actions`, not through collection actions that accept the key
 
 ## Project docs (existing)
 
