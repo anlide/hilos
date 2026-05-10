@@ -334,11 +334,14 @@ abstract class RtCollection implements ArrayAccess, Countable, Iterator
     /**
      * Check if item exists at offset.
      *
-     * @param mixed $offset State ID
+     * @param mixed $offset State ID, or null for a missing optional runtime key
      * @return bool True if exists
      */
     public function offsetExists(mixed $offset): bool
     {
+        if ($offset === null) {
+            return false;
+        }
         $stateCollection = $this->getStateCollection();
         return isset($stateCollection[$offset]);
     }
@@ -346,11 +349,14 @@ abstract class RtCollection implements ArrayAccess, Countable, Iterator
     /**
      * Get item at offset.
      *
-     * @param mixed $offset State ID
+     * @param mixed $offset State ID, or null for a missing optional runtime key
      * @return ?TItem Item or null if not found
      */
     public function offsetGet(mixed $offset): ?RtItem
     {
+        if ($offset === null) {
+            return null;
+        }
         return $this->getRtItemForKey((string)$offset);
     }
 
@@ -371,10 +377,13 @@ abstract class RtCollection implements ArrayAccess, Countable, Iterator
     /**
      * Remove item at offset.
      *
-     * @param mixed $offset State ID to remove
+     * @param mixed $offset State ID to remove, or null for no-op
      */
     public function offsetUnset(mixed $offset): void
     {
+        if ($offset === null) {
+            return;
+        }
         unset($this->items[(string)$offset]);
         $this->getStateCollection()->remove((string)$offset);
     }

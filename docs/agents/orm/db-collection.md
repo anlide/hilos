@@ -90,6 +90,11 @@ foreach (Hilos::$db->events as $event) {
 }
 ```
 
+DB collection read access treats a `null` key as absent. `isset($collection[null])`
+is false, `$collection[null]` returns `null`, and unset with `null` is a no-op.
+Use this for nullable relation keys in View item bridges instead of adding
+caller-side guards around every collection access.
+
 Put reusable lookups on the collection layer instead of rebuilding the same
 filter in pages or tables. Example: `Users::findBySession()` delegates to the
 Object collection and returns the matching `DbItem`.

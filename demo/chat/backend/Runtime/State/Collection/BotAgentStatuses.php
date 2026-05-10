@@ -18,10 +18,10 @@ final class BotAgentStatuses extends RtStates
     public const string STATE_CLASS = BotAgentStatus::class;
 
     /**
-     * @param string $id Bot id
+     * @param ?string $id Bot id, or null for a missing optional runtime key
      * @return ?BotAgentStatus Bot lifecycle status, or null when missing
      */
-    public function get(string $id): ?BotAgentStatus
+    public function get(?string $id): ?BotAgentStatus
     {
         /** @var ?BotAgentStatus $state */
         $state = parent::get($id);
@@ -37,6 +37,10 @@ final class BotAgentStatuses extends RtStates
      */
     public function offsetGet(mixed $offset): BotAgentStatus
     {
+        if ($offset === null) {
+            throw new OutOfBoundsException('Bot agent status not found: null');
+        }
+
         return $this->get((string)$offset)
             ?? throw new OutOfBoundsException("Bot agent status not found: {$offset}");
     }

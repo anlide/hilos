@@ -313,11 +313,14 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
      * Supports lazy loading from Object collection (for automatic mode)
      * Uses cached DbItem if available, otherwise creates new instance
      *
-     * @param int|string $key Primary key ID
+     * @param int|string|null $key Primary key ID, or null for a missing optional relation key
      * @return ?T DbItem instance for object at key, or null if not found (e.g. deleted)
      */
-    protected function getItemForKey(int|string $key): ?DbItem
+    protected function getItemForKey(int|string|null $key): ?DbItem
     {
+        if ($key === null) {
+            return null;
+        }
         if (isset($this->items[$key])) {
             return $this->items[$key];
         }
@@ -560,11 +563,14 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
      * Check if element exists at offset.
      * For automatic collections, may trigger lazy-load existence check.
      *
-     * @param mixed $offset Primary key ID
+     * @param mixed $offset Primary key ID, or null for a missing optional relation key
      * @return bool True if element exists at offset
      */
     public function offsetExists(mixed $offset): bool
     {
+        if ($offset === null) {
+            return false;
+        }
         if ($this->isManual) {
             return isset($this->items[$offset]);
         }
@@ -585,7 +591,7 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
     /**
      * Get item by primary key.
      *
-     * @param mixed $offset Primary key ID
+     * @param mixed $offset Primary key ID, or null for a missing optional relation key
      * @return ?T Item or null
      */
     public function offsetGet(mixed $offset): ?DbItem
@@ -608,10 +614,13 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
     /**
      * Remove item at offset (ArrayAccess).
      *
-     * @param mixed $offset Primary key ID to remove
+     * @param mixed $offset Primary key ID to remove, or null for no-op
      */
     public function offsetUnset(mixed $offset): void
     {
+        if ($offset === null) {
+            return;
+        }
         unset($this->items[$offset]);
         if (!$this->isManual) {
             $objectCollection = $this->getObjectCollection();

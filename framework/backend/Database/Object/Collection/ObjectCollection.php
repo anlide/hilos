@@ -78,11 +78,14 @@ class ObjectCollection implements ArrayAccess, Countable, Iterator
     /**
      * Remove object from collection.
      *
-     * @param int|string $key Key of object to remove
+     * @param int|string|null $key Key of object to remove, or null for no-op
      * @return self This collection for chaining
      */
-    public function remove(int|string $key): self
+    public function remove(int|string|null $key): self
     {
+        if ($key === null) {
+            return $this;
+        }
         if (isset($this->objects[$key])) {
             unset($this->objects[$key]);
             $this->keys = array_keys($this->objects);
@@ -93,22 +96,28 @@ class ObjectCollection implements ArrayAccess, Countable, Iterator
     /**
      * Get object by key.
      *
-     * @param int|string $key Key of object
+     * @param int|string|null $key Key of object, or null for a missing optional relation key
      * @return ?Object_ Object or null if not found
      */
-    public function get(int|string $key): ?Object_
+    public function get(int|string|null $key): ?Object_
     {
+        if ($key === null) {
+            return null;
+        }
         return $this->objects[$key] ?? null;
     }
 
     /**
      * Check if object exists at key.
      *
-     * @param int|string $key Key to check
+     * @param int|string|null $key Key to check, or null for a missing optional relation key
      * @return bool True if object exists
      */
-    public function has(int|string $key): bool
+    public function has(int|string|null $key): bool
     {
+        if ($key === null) {
+            return false;
+        }
         return isset($this->objects[$key]);
     }
 
@@ -189,22 +198,28 @@ class ObjectCollection implements ArrayAccess, Countable, Iterator
     /**
      * Check if offset exists (ArrayAccess).
      *
-     * @param mixed $offset Offset to check
+     * @param mixed $offset Offset to check, or null for a missing optional relation key
      * @return bool True if offset exists
      */
     public function offsetExists(mixed $offset): bool
     {
+        if ($offset === null) {
+            return false;
+        }
         return isset($this->objects[$offset]);
     }
 
     /**
      * Get object at offset (ArrayAccess).
      *
-     * @param mixed $offset Offset to get
+     * @param mixed $offset Offset to get, or null for a missing optional relation key
      * @return ?Object_ Object or null if not found
      */
     public function offsetGet(mixed $offset): ?Object_
     {
+        if ($offset === null) {
+            return null;
+        }
         return $this->objects[$offset] ?? null;
     }
 
@@ -235,10 +250,13 @@ class ObjectCollection implements ArrayAccess, Countable, Iterator
     /**
      * Unset object at offset (ArrayAccess).
      *
-     * @param mixed $offset Offset to unset
+     * @param mixed $offset Offset to unset, or null for no-op
      */
     public function offsetUnset(mixed $offset): void
     {
+        if ($offset === null) {
+            return;
+        }
         unset($this->objects[$offset]);
         $this->keys = array_keys($this->objects);
     }

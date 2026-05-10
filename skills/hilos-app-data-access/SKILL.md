@@ -41,6 +41,9 @@ switch to the focused data-layer skill first.
 - Collection access is for loading and querying groups of items.
 - Item access is for reading one loaded model and its item-level calculated
   properties.
+- DB collection reads and RT View collection reads treat `null` offsets as
+  missing optional keys. Caller code should guard when an item is required, not
+  just to protect `[]` from a nullable key.
 - Collection actions are for create/register/ensure and true collection-wide or
   bulk writes.
 - Item actions are for changing or deleting one loaded item.

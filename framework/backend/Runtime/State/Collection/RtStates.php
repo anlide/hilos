@@ -107,22 +107,28 @@ abstract class RtStates implements Iterator, ArrayAccess, Countable
     /**
      * Check if state exists in collection.
      *
-     * @param string $id State ID
+     * @param ?string $id State ID, or null for a missing optional runtime key
      * @return bool True if state exists
      */
-    public function has(string $id): bool
+    public function has(?string $id): bool
     {
+        if ($id === null) {
+            return false;
+        }
         return isset($this->states[$id]);
     }
 
     /**
      * Get state by ID.
      *
-     * @param string $id State ID
+     * @param ?string $id State ID, or null for a missing optional runtime key
      * @return ?T State instance or null if not found
      */
-    public function get(string $id): ?RtState
+    public function get(?string $id): ?RtState
     {
+        if ($id === null) {
+            return null;
+        }
         return $this->states[$id] ?? null;
     }
 
@@ -200,22 +206,28 @@ abstract class RtStates implements Iterator, ArrayAccess, Countable
     /**
      * Check if state exists at offset.
      *
-     * @param mixed $offset State ID (string)
+     * @param mixed $offset State ID, or null for a missing optional runtime key
      * @return bool True if state exists
      */
     public function offsetExists(mixed $offset): bool
     {
+        if ($offset === null) {
+            return false;
+        }
         return isset($this->states[$offset]);
     }
 
     /**
      * Get state at offset.
      *
-     * @param mixed $offset State ID (string)
+     * @param mixed $offset State ID, or null for a missing optional runtime key
      * @return ?T State instance or null if not found
      */
     public function offsetGet(mixed $offset): ?RtState
     {
+        if ($offset === null) {
+            return null;
+        }
         return $this->states[$offset] ?? null;
     }
 
@@ -235,10 +247,13 @@ abstract class RtStates implements Iterator, ArrayAccess, Countable
     /**
      * Remove state at offset.
      *
-     * @param mixed $offset State ID to remove
+     * @param mixed $offset State ID to remove, or null for no-op
      */
     public function offsetUnset(mixed $offset): void
     {
+        if ($offset === null) {
+            return;
+        }
         unset($this->states[$offset]);
     }
 

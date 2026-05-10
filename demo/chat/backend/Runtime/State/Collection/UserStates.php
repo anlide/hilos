@@ -18,10 +18,10 @@ final class UserStates extends RtStates
     public const string STATE_CLASS = ChatUserState::class;
 
     /**
-     * @param string $id User id
+     * @param ?string $id User id, or null for a missing optional runtime key
      * @return ?ChatUserState User runtime state, or null when missing
      */
-    public function get(string $id): ?ChatUserState
+    public function get(?string $id): ?ChatUserState
     {
         /** @var ?ChatUserState $state */
         $state = parent::get($id);
@@ -37,6 +37,10 @@ final class UserStates extends RtStates
      */
     public function offsetGet(mixed $offset): ChatUserState
     {
+        if ($offset === null) {
+            throw new OutOfBoundsException('User runtime state not found: null');
+        }
+
         return $this->get((string)$offset)
             ?? throw new OutOfBoundsException("User runtime state not found: {$offset}");
     }

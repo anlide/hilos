@@ -18,10 +18,10 @@ final class AttachmentDrafts extends RtStates
     public const string STATE_CLASS = AttachmentDraft::class;
 
     /**
-     * @param string $id Draft id
+     * @param ?string $id Draft id, or null for a missing optional runtime key
      * @return ?AttachmentDraft Draft runtime state, or null when missing
      */
-    public function get(string $id): ?AttachmentDraft
+    public function get(?string $id): ?AttachmentDraft
     {
         /** @var ?AttachmentDraft $state */
         $state = parent::get($id);
@@ -37,6 +37,10 @@ final class AttachmentDrafts extends RtStates
      */
     public function offsetGet(mixed $offset): AttachmentDraft
     {
+        if ($offset === null) {
+            throw new OutOfBoundsException('Attachment draft runtime state not found: null');
+        }
+
         return $this->get((string)$offset)
             ?? throw new OutOfBoundsException("Attachment draft runtime state not found: {$offset}");
     }
@@ -44,11 +48,15 @@ final class AttachmentDrafts extends RtStates
     /**
      * Finds all drafts owned by a WebSocket connection.
      *
-     * @param string $acceptKey WebSocket connection id
+     * @param ?string $acceptKey WebSocket connection id, or null for no drafts
      * @return array<string, AttachmentDraft> Draft id => state map
      */
-    public function findAllByAcceptKey(string $acceptKey): array
+    public function findAllByAcceptKey(?string $acceptKey): array
     {
+        if ($acceptKey === null) {
+            return [];
+        }
+
         return array_filter($this->states, static function ($draft) use ($acceptKey) {
             return $draft instanceof AttachmentDraft && $draft->acceptKey === $acceptKey;
         });

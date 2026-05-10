@@ -48,11 +48,11 @@ final class Connections extends RtCollection
     /**
      * Get connections for a specific user.
      *
-     * @param int $userId User ID
+     * @param ?int $userId User ID, or null for an empty result
      * @return self Connections collection filtered by user
      * @throws RtActionsStateCollectionNullException If state collection is null (should not happen in properly initialized collection)
      */
-    public function forUser(int $userId): self
+    public function forUser(?int $userId): self
     {
         $stateConnections = $this->getStateCollection();
         $filteredState = StateConnections::init();
@@ -68,10 +68,10 @@ final class Connections extends RtCollection
     /**
      * Builds the runtime connection summary used by user-facing table rows.
      *
-     * @param int $userId User id to summarize active runtime connections for
+     * @param ?int $userId User id to summarize active runtime connections for
      * @return UserConnectionSummary Runtime presence and session count summary
      */
-    public function summaryForUser(int $userId): UserConnectionSummary
+    public function summaryForUser(?int $userId): UserConnectionSummary
     {
         return new UserConnectionSummary(count($this->forUser($userId)));
     }

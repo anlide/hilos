@@ -18,10 +18,10 @@ final class GuardianAgentStatuses extends RtStates
     public const string STATE_CLASS = GuardianAgentStatus::class;
 
     /**
-     * @param string $id Guardian agent id
+     * @param ?string $id Guardian agent id, or null for a missing optional runtime key
      * @return ?GuardianAgentStatus Guardian status, or null when missing
      */
-    public function get(string $id): ?GuardianAgentStatus
+    public function get(?string $id): ?GuardianAgentStatus
     {
         /** @var ?GuardianAgentStatus $state */
         $state = parent::get($id);
@@ -37,6 +37,10 @@ final class GuardianAgentStatuses extends RtStates
      */
     public function offsetGet(mixed $offset): GuardianAgentStatus
     {
+        if ($offset === null) {
+            throw new OutOfBoundsException('Guardian agent status not found: null');
+        }
+
         return $this->get((string)$offset)
             ?? throw new OutOfBoundsException("Guardian agent status not found: {$offset}");
     }

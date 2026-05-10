@@ -122,7 +122,7 @@ public function __get(string $name): mixed
 {
     return match ($name) {
         RtChatContext::connections => Hilos::$rt->connections->forUser($this->id),
-        self::ONLINE_SESSION_COUNT_KEY => $this->_object->id !== null ? count($this->connections) : 0,
+        self::ONLINE_SESSION_COUNT_KEY => count($this->connections),
         default => parent::__get($name),
     };
 }

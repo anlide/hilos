@@ -94,9 +94,7 @@ final class RtChatContext extends RtContext
     {
         $this->_stateCollections[self::connections] = StateConnections::init();
         $this->_stateItems[self::selfConnection] = function (): ?StateConnection {
-            $acceptKey = ExecutionContext::currentAcceptKey();
-
-            return $acceptKey !== null ? $this->_stateCollections[self::connections][$acceptKey] ?? null : null;
+            return $this->_stateCollections[self::connections]->get(ExecutionContext::currentAcceptKey());
         };
 
         $this->setRepresent(
@@ -203,6 +201,11 @@ foreach (Hilos::$rt->connections->forUser(Hilos::$rt->connections[$acceptKey]->u
 // Optional one-shot when a missing row is an acceptable no-op.
 Hilos::$rt->connections[$acceptKey]?->actions->unregister();
 ```
+
+RT View collection read access treats a `null` key as absent. `isset($collection[null])`
+is false, `$collection[null]` returns `null`, and unset with `null` is a no-op.
+Use this for caller-facing nullable runtime keys instead of guarding only to
+protect array access.
 
 Runtime state may add transient overlays to DB entities, such as presence,
 connection counts, upload progress, and socket-local UI state. It must not

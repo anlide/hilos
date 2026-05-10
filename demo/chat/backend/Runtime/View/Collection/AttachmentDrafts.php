@@ -35,11 +35,11 @@ final class AttachmentDrafts extends RtCollection
     /**
      * Drafts owned by one WebSocket connection.
      *
-     * @param string $acceptKey WebSocket connection id
+     * @param ?string $acceptKey WebSocket connection id, or null for an empty result
      * @return self Filtered collection
      * @throws RtActionsStateCollectionNullException When runtime state is unavailable
      */
-    public function forAcceptKey(string $acceptKey): self
+    public function forAcceptKey(?string $acceptKey): self
     {
         $filteredState = StateAttachmentDrafts::init();
         foreach ($this->getStateCollection()->findAllByAcceptKey($acceptKey) as $stateDraft) {

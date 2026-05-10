@@ -73,32 +73,41 @@ class FilteredCollection extends Objects
     /**
      * Get object at offset.
      *
-     * @param string|int $offset Object key
+     * @param string|int|null $offset Object key, or null for a missing optional relation key
      * @return ?Object_ Object or null if not found
      */
     public function offsetGet($offset): ?Object_
     {
+        if ($offset === null) {
+            return null;
+        }
         return $this->filteredObjects[$offset] ?? null;
     }
 
     /**
      * Check if offset exists in filtered collection.
      *
-     * @param string|int $offset Object key
+     * @param string|int|null $offset Object key, or null for a missing optional relation key
      * @return bool True if exists
      */
     public function offsetExists($offset): bool
     {
+        if ($offset === null) {
+            return false;
+        }
         return isset($this->filteredObjects[$offset]);
     }
 
     /**
      * Remove object at offset from filtered collection.
      *
-     * @param string|int $offset Object key
+     * @param string|int|null $offset Object key, or null for no-op
      */
     public function offsetUnset($offset): void
     {
+        if ($offset === null) {
+            return;
+        }
         unset($this->filteredObjects[$offset]);
     }
 
@@ -190,10 +199,10 @@ class FilteredCollection extends Objects
     /**
      * Lazy load object by key (not used in filtered collection).
      *
-     * @param int|string $key Object key
+     * @param int|string|null $key Object key, or null for a missing optional relation key
      * @return ?Object_ Always null
      */
-    protected function lazyLoadObject(int|string $key): ?Object_
+    protected function lazyLoadObject(int|string|null $key): ?Object_
     {
         return null; // Not used in filtered collection
     }
@@ -216,4 +225,3 @@ class FilteredCollection extends Objects
         // Not used in filtered collection
     }
 }
-

@@ -36,6 +36,7 @@ touched ORM surfaces.
   `DbCollection` wrappers such as `Hilos::$db->users` or
   `Hilos::$db->settings`.
 - `DbCollection` is the read/query facade for a table-backed object collection.
+  DB collection reads treat `null` offsets as missing optional relation keys.
 - `DbItem` is the read-only item facade returned from a `DbCollection`.
 - Entity classes mirror raw DB rows; Object classes hold enriched or transformed
   view data; View collection/item classes expose the app-facing DB API.
@@ -63,7 +64,8 @@ touched ORM surfaces.
    redundant finder. Use named finders for business-key or complex queries when
    the collection does not document matching array access.
 7. Put direct relations from loaded DB items on View item bridge properties;
-   document collection offset semantics when a bridge uses `[]`.
+   document collection offset semantics when a bridge uses `[]`. Do not add
+   caller-side guards only to protect DB collection access from nullable keys.
 8. Put new DB writes in collection actions or item actions, not in page/table
    handlers.
 9. When updating or deleting one DB item and the collection key is known, load

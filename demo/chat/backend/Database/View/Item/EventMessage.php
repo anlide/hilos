@@ -45,12 +45,8 @@ final class EventMessage extends DbItem
             ObjectEventMessage::authorBotId => $this->_object->authorBotId,
             ObjectEventMessage::message => $this->_object->message,
             DbChatContext::event => Hilos::$db->events[$this->_object->eventId] ?? null,
-            DbChatContext::user => $this->_object->authorUserId === null
-                ? null
-                : (Hilos::$db->users[$this->_object->authorUserId] ?? null),
-            DbChatContext::bot => $this->_object->authorBotId === null
-                ? null
-                : (Hilos::$db->bots[$this->_object->authorBotId] ?? null),
+            DbChatContext::user => Hilos::$db->users[$this->_object->authorUserId] ?? null,
+            DbChatContext::bot => Hilos::$db->bots[$this->_object->authorBotId] ?? null,
             self::attachments => Hilos::$db->eventAttachments->forEventId($this->_object->eventId),
             default => parent::__get($name),
         };

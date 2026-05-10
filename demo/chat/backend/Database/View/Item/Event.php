@@ -62,15 +62,9 @@ final class Event extends DbItem
             ObjectEvent::id => $this->_object->id,
             ObjectEvent::type => $this->_object->type,
             ObjectEvent::timestamp => $this->_object->timestamp,
-            DbChatContext::eventMessage => $eventId === null
-                ? null
-                : (Hilos::$db->eventMessages[$eventId] ?? null),
-            DbChatContext::eventUserRegistration => $eventId === null
-                ? null
-                : (Hilos::$db->eventUserRegistrations[$eventId] ?? null),
-            DbChatContext::eventUserRename => $eventId === null
-                ? null
-                : (Hilos::$db->eventUserRenames[$eventId] ?? null),
+            DbChatContext::eventMessage => Hilos::$db->eventMessages[$eventId] ?? null,
+            DbChatContext::eventUserRegistration => Hilos::$db->eventUserRegistrations[$eventId] ?? null,
+            DbChatContext::eventUserRename => Hilos::$db->eventUserRenames[$eventId] ?? null,
             self::message => $this->eventMessage?->message,
             self::authorUserId => $this->eventMessage?->authorUserId,
             self::authorBotId => $this->eventMessage?->authorBotId,
@@ -79,17 +73,9 @@ final class Event extends DbItem
             self::actorUserId => $this->eventUserRename?->actorUserId,
             self::oldName => $this->eventUserRename?->oldName,
             self::newName => $this->eventUserRename?->newName,
-            DbChatContext::user => match (true) {
-                $this->authorUserId !== null => Hilos::$db->users[$this->authorUserId] ?? null,
-                $this->targetUserId !== null => Hilos::$db->users[$this->targetUserId] ?? null,
-                default => null,
-            },
-            DbChatContext::bot => $this->authorBotId === null
-                ? null
-                : (Hilos::$db->bots[$this->authorBotId] ?? null),
-            self::attachments => $eventId === null
-                ? EventAttachments::initEmpty()
-                : Hilos::$db->eventAttachments->forEventId($eventId),
+            DbChatContext::user => Hilos::$db->users[$this->authorUserId ?? $this->targetUserId] ?? null,
+            DbChatContext::bot => Hilos::$db->bots[$this->authorBotId] ?? null,
+            self::attachments => Hilos::$db->eventAttachments->forEventId($eventId),
             default => parent::__get($name),
         };
     }

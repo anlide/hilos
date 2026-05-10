@@ -127,11 +127,14 @@ class EntityCollection implements ArrayAccess, Countable, Iterator
     /**
      * Remove entity from collection by key.
      *
-     * @param int|string $key Entity key to remove
+     * @param int|string|null $key Entity key to remove, or null for no-op
      * @return self For chaining
      */
-    public function remove(int|string $key): self
+    public function remove(int|string|null $key): self
     {
+        if ($key === null) {
+            return $this;
+        }
         if (isset($this->entities[$key])) {
             unset($this->entities[$key]);
             $this->keys = array_keys($this->entities);
@@ -142,22 +145,28 @@ class EntityCollection implements ArrayAccess, Countable, Iterator
     /**
      * Get entity by key.
      *
-     * @param int|string $key Entity key
+     * @param int|string|null $key Entity key, or null for a missing optional relation key
      * @return ?T Entity or null if not found
      */
-    public function get(int|string $key): ?Entity
+    public function get(int|string|null $key): ?Entity
     {
+        if ($key === null) {
+            return null;
+        }
         return $this->entities[$key] ?? null;
     }
 
     /**
      * Check if entity exists at key.
      *
-     * @param int|string $key Entity key
+     * @param int|string|null $key Entity key, or null for a missing optional relation key
      * @return bool True if entity exists
      */
-    public function has(int|string $key): bool
+    public function has(int|string|null $key): bool
     {
+        if ($key === null) {
+            return false;
+        }
         return isset($this->entities[$key]);
     }
 
@@ -227,22 +236,28 @@ class EntityCollection implements ArrayAccess, Countable, Iterator
     /**
      * Check if offset exists (ArrayAccess).
      *
-     * @param mixed $offset Entity key
+     * @param mixed $offset Entity key, or null for a missing optional relation key
      * @return bool True if key exists
      */
     public function offsetExists(mixed $offset): bool
     {
+        if ($offset === null) {
+            return false;
+        }
         return isset($this->entities[$offset]);
     }
 
     /**
      * Get entity at offset (ArrayAccess).
      *
-     * @param mixed $offset Entity key
+     * @param mixed $offset Entity key, or null for a missing optional relation key
      * @return ?T Entity or null if not found
      */
     public function offsetGet(mixed $offset): ?Entity
     {
+        if ($offset === null) {
+            return null;
+        }
         return $this->entities[$offset] ?? null;
     }
 
@@ -278,10 +293,13 @@ class EntityCollection implements ArrayAccess, Countable, Iterator
     /**
      * Unset entity at offset (ArrayAccess).
      *
-     * @param mixed $offset Entity key to remove
+     * @param mixed $offset Entity key to remove, or null for no-op
      */
     public function offsetUnset(mixed $offset): void
     {
+        if ($offset === null) {
+            return;
+        }
         unset($this->entities[$offset]);
         $this->keys = array_keys($this->entities);
     }

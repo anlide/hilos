@@ -131,11 +131,14 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
     /**
      * Lazy load object by key.
      *
-     * @param int|string $key Object key (usually primary key)
+     * @param int|string|null $key Object key (usually primary key), or null for a missing optional relation key
      * @return ?T Object instance or null if not found
      */
-    protected function lazyLoadObject(int|string $key): ?Object_
+    protected function lazyLoadObject(int|string|null $key): ?Object_
     {
+        if ($key === null) {
+            return null;
+        }
         $objectClass = static::OBJECT_CLASS;
         $entityClass = $objectClass::ENTITY_CLASS;
         $entity = $entityClass::getById((int)$key);
@@ -404,21 +407,27 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
     /**
      * Check if offset exists.
      *
-     * @param mixed $offset Array key to check
+     * @param mixed $offset Array key to check, or null for a missing optional relation key
      * @return bool True if offset exists
      */
     public function offsetExists($offset): bool
     {
+        if ($offset === null) {
+            return false;
+        }
         return isset($this->objects[$offset]);
     }
 
     /**
      * Unset object at offset.
      *
-     * @param mixed $offset Array key to unset
+     * @param mixed $offset Array key to unset, or null for no-op
      */
     public function offsetUnset($offset): void
     {
+        if ($offset === null) {
+            return;
+        }
         unset($this->objects[$offset]);
     }
 
@@ -427,11 +436,14 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
      *
      * Supports lazy loading if enabled.
      *
-     * @param mixed $offset Array key (int or string)
+     * @param mixed $offset Array key, or null for a missing optional relation key
      * @return ?T Object instance or null if not found
      */
     public function offsetGet($offset): ?Object_
     {
+        if ($offset === null) {
+            return null;
+        }
         if (isset($this->objects[$offset])) {
             return $this->objects[$offset];
         }
@@ -578,10 +590,10 @@ abstract class Objects implements Iterator, ArrayAccess, Countable
     /**
      * Get object by key.
      *
-     * @param int|string $key Object key (id or string)
+     * @param int|string|null $key Object key (id or string), or null for a missing optional relation key
      * @return ?T Object or null if not found
      */
-    public function get(int|string $key): ?Object_
+    public function get(int|string|null $key): ?Object_
     {
         return $this->offsetGet($key);
     }

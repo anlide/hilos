@@ -46,9 +46,7 @@ final class EventUserRename extends DbItem
             ObjectEventUserRename::newName => $this->_object->newName,
             DbChatContext::event => Hilos::$db->events[$this->_object->eventId] ?? null,
             DbChatContext::user => Hilos::$db->users[$this->_object->targetUserId] ?? null,
-            self::actorUser => $this->_object->actorUserId === null
-                ? null
-                : (Hilos::$db->users[$this->_object->actorUserId] ?? null),
+            self::actorUser => Hilos::$db->users[$this->_object->actorUserId] ?? null,
             default => parent::__get($name),
         };
     }

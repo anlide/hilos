@@ -28,9 +28,9 @@ lookup API only on the owning layer when no contract exists.
 
 | Caller has | Prefer |
 |---|---|
-| Documented DB collection key | `Hilos::$db->collection[$id]` with an `isset()` guard when optional |
-| Documented RT collection key | `Hilos::$rt->collection[$id]` with an `isset()` guard when optional |
-| Documented key-based setting offset | `Hilos::$db->settings[$key]` with an `isset()` guard when optional |
+| Documented DB collection key | `Hilos::$db->collection[$id]` |
+| Documented RT View collection key | `Hilos::$rt->collection[$id]` |
+| Documented key-based setting offset | `Hilos::$db->settings[$key]` |
 | Business key without array-offset contract | Existing named method such as `findBySession($sessionToken)` |
 | Runtime rows for one DB item | Existing RT collection method such as `forUser($userId)` |
 | Direct relation from a loaded DB item | Existing bridge property such as `$event->eventMessage` |
@@ -67,6 +67,18 @@ Hilos::$db->users->findBySession($sessionToken);
 
 This rule is about using the existing model clearly. It does not require magic
 access blindly.
+
+## Nullable Keys
+
+DB collections, DB object/entity collections, and RT View collections treat a
+`null` offset as a missing optional relation key: `isset($collection[null])` is
+false and `$collection[null]` returns `null`. Do not add caller-side guards only
+to protect array access from `null`; let the owning collection express that
+contract.
+
+RT backing `RtStates` collections are stricter. Use `get($nullableId)` for
+optional state lookups; use `$stateCollection[$id]` only when the row must
+already exist.
 
 ## Result And Item Accessors
 

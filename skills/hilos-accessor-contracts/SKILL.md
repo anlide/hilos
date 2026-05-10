@@ -14,6 +14,11 @@ result, or collection value. Start with `agents.md`, then read
 - Accessor shape is part of the collection or item contract.
 - `Hilos::$db->collection[$id]` and `Hilos::$rt->collection[$id]` are preferred
   for known collection keys when the collection documents that key.
+- DB collection reads and RT View collection reads treat `null` offsets as
+  missing optional keys. Do not add caller-side guards only to protect `[]`
+  access from a nullable key.
+- RT backing `RtStates` keep `[]` as required-row access; use `get($nullableId)`
+  for optional state lookups.
 - Key-based array access such as `Hilos::$db->settings[$key]` is preferred when
   the collection explicitly supports that business key as its offset.
 - Caller code with a settings key must use `Hilos::$db->settings[$key]`; if the
@@ -98,6 +103,7 @@ if (!isset(Hilos::$db->users[$userId])) {
 
 count(Hilos::$db->users[$userId]->connections);
 Hilos::$db->events[$eventId]?->eventMessage?->message;
+Hilos::$db->eventMessages[$eventId]?->message; // null $eventId returns null
 
 if (!isset(Hilos::$db->settings[$dto->key])) {
     return;

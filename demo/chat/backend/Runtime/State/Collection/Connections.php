@@ -21,10 +21,10 @@ final class Connections extends RtStates
     public const string STATE_CLASS = Connection::class;
 
     /**
-     * @param string $id Accept key
+     * @param ?string $id Accept key, or null for a missing optional runtime key
      * @return ?Connection Connection runtime state, or null when missing
      */
-    public function get(string $id): ?Connection
+    public function get(?string $id): ?Connection
     {
         /** @var ?Connection $state */
         $state = parent::get($id);
@@ -40,6 +40,10 @@ final class Connections extends RtStates
      */
     public function offsetGet(mixed $offset): Connection
     {
+        if ($offset === null) {
+            throw new OutOfBoundsException('Connection runtime state not found: null');
+        }
+
         return $this->get((string)$offset)
             ?? throw new OutOfBoundsException("Connection runtime state not found: {$offset}");
     }
@@ -47,11 +51,15 @@ final class Connections extends RtStates
     /**
      * Finds all connections for given user (indexed by accept key).
      *
-     * @param int $userId User ID
+     * @param ?int $userId User ID, or null for no connections
      * @return array<string, Connection> Accept key => Connection map
      */
-    public function findAllByUserId(int $userId): array
+    public function findAllByUserId(?int $userId): array
     {
+        if ($userId === null) {
+            return [];
+        }
+
         return array_filter($this->states, function ($connection) use ($userId) {
             return $connection->userId === $userId;
         });

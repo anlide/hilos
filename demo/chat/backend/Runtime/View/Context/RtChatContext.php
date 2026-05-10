@@ -89,15 +89,10 @@ final class RtChatContext extends RtContext
         $this->_stateCollections[self::botAgentStatuses] = StateBotAgentStatuses::init();
         $this->_stateCollections[self::guardianAgentStatuses] = StateGuardianAgentStatuses::init();
         $this->_stateItems[self::selfConnection] = function (): ?StateConnection {
-            $acceptKey = ExecutionContext::currentAcceptKey();
-            if ($acceptKey === null) {
-                return null;
-            }
-
             /** @var StateConnections $connections */
             $connections = $this->_stateCollections[self::connections];
 
-            return $connections->get($acceptKey);
+            return $connections->get(ExecutionContext::currentAcceptKey());
         };
 
         $this->setRepresent(

@@ -108,10 +108,12 @@ $this->clearCollectionCache();
 ```
 
 Concrete `RtStates` subclasses should also narrow `get()` and `offsetGet()`:
-`get()` returns `?StateFoo` for optional lookups, while `offsetGet()` returns
-`StateFoo` and throws when the row is missing. This keeps `$collection[$id]`
-usable for required rows and lets PhpStorm resolve declared state properties
-without falling back to `?RtState`.
+`get()` returns `?StateFoo` and accepts nullable IDs for optional lookups, while
+`offsetGet()` returns `StateFoo` and throws when the row is missing. This keeps
+`$collection[$id]` usable for required rows and lets PhpStorm resolve declared
+state properties without falling back to `?RtState`. Never cast a nullable
+state key to string before deciding whether it is absent; `null` must not
+address the empty-string state key.
 
 ## Reading from state
 

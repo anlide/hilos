@@ -32,15 +32,19 @@ final class EventAttachments extends DbCollection
     /**
      * Returns published attachments for one event.
      *
-     * @param int $eventId Parent message event id
+     * @param ?int $eventId Parent message event id, or null for no attachments
      * @return self Attachments linked to the message event
      * @throws CollectionNotManualException If manual collection add fails
      * @throws ObjectGetIdStringNotImplementedException If an attachment id is not available
      */
-    public function forEventId(int $eventId): self
+    public function forEventId(?int $eventId): self
     {
-        $this->ensureAllLoaded();
         $collection = self::initEmpty();
+        if ($eventId === null) {
+            return $collection;
+        }
+
+        $this->ensureAllLoaded();
         foreach ($this as $attachment) {
             if ($attachment->eventId === $eventId) {
                 $collection->add($attachment);

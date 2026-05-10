@@ -45,12 +45,8 @@ final class Event extends DbItem
         $eventId = $this->_object->id;
 
         return match ($name) {
-            DbChatContext::eventMessage => $eventId === null
-                ? null
-                : (Hilos::$db->eventMessages[$eventId] ?? null),
-            self::attachments => $eventId === null
-                ? EventAttachments::initEmpty()
-                : Hilos::$db->eventAttachments->forEventId($eventId),
+            DbChatContext::eventMessage => Hilos::$db->eventMessages[$eventId] ?? null,
+            self::attachments => Hilos::$db->eventAttachments->forEventId($eventId),
             default => parent::__get($name),
         };
     }
@@ -73,8 +69,13 @@ genuinely complex or reused.
 - Nullable ID or missing optional one-to-one relation returns `null`.
 - Missing optional many-to-one relation returns `null`.
 - Empty one-to-many relation returns an empty typed collection, not `null`.
-- Guard nullable keys before collection access. Do not add `Hilos::$db !== null`
-  checks inside DB View item bridge code; DB View items are used in DB context.
+- DB collection array access treats a `null` offset as a missing optional key:
+  use `Hilos::$db->collection[$nullableId] ?? null` instead of caller-side
+  null guards.
+- DB collection filter helpers for nullable relation keys should return empty
+  typed collections when the key is `null`.
+- Do not add `Hilos::$db !== null` checks inside DB View item bridge code; DB
+  View items are used in DB context.
 - Use `?? null` for optional collection-key lookups.
 
 ## Collection Contracts

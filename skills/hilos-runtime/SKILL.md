@@ -27,7 +27,8 @@ Start with `agents.md`, then read the matching runtime guide.
   represented parent collection when one exists.
 - `RtStates` stores runtime-only `RtState` rows in memory.
 - `RtCollection` and `RtItem` expose read-oriented app APIs around the backing
-  state rows.
+  state rows. RT View collection reads treat `null` offsets as missing optional
+  keys.
 - Collection and item read helpers belong on `RtCollection`/`RtItem`, not on
   `actions`.
 - Collection actions handle create/register/ensure and true collection-wide or
@@ -80,8 +81,10 @@ Start with `agents.md`, then read the matching runtime guide.
     declared row fields; action code should read/write the declared properties
     directly, then call `sync()`.
 18. In concrete `RtStates` collections, override `get()` as nullable
-    `?StateFoo` and `offsetGet()` as non-null `StateFoo`; use `get()` for
-    optional lookups and `[]` only when the row must already exist.
+    `?StateFoo` that accepts nullable IDs and `offsetGet()` as non-null
+    `StateFoo`; use `get()` for optional lookups and `[]` only when the row
+    must already exist. Never cast a nullable state key to string before
+    deciding whether it is absent.
 19. During refactors, do not invent convenience read helpers or predicates on
     `RtItem`, `RtCollection`, actions, projections, or adjacent view objects to
     hide a field check or shorten a caller. Examples: `has*()`, `is*()`,
@@ -128,9 +131,7 @@ final class RtChatContext extends RtContext
     public function configure(): void
     {
         $this->_stateItems[self::selfConnection] = function (): ?StateConnection {
-            $acceptKey = ExecutionContext::currentAcceptKey();
-
-            return $acceptKey !== null ? $this->_stateCollections[self::connections][$acceptKey] ?? null : null;
+            return $this->_stateCollections[self::connections]->get(ExecutionContext::currentAcceptKey());
         };
 
         $this->setRepresent(self::connections, Connections::class, ConnectionsActions::class, ConnectionActions::class);
