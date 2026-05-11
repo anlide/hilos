@@ -16,7 +16,7 @@ use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalType;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Table\Collection\TableMutationSignalCollection;
-use Hilos\Core\Table\DTO\TableSourceEventDTO;
+use Hilos\Core\Projection\SourceChange;
 use Hilos\Hilos;
 use Hilos\Socket\WebSocket\DTO\WebSocketFrameBinarySignalDTO;
 use Hilos\Utils\Logger;
@@ -133,17 +133,23 @@ abstract class AbstractPage
     /**
      * Handle page subscription.
      *
-     * Called when a client subscribes to this page. Override in child classes
-     * when subscription logic is needed. Route params are available through
-     * the typed accessors on {@see PageRouteParams}; family-level abstract
-     * pages typically convert them into an {@see AbstractPageSubscribeParamsDTO}
-     * subclass before dispatching to a page-specific hook.
+     * Default behavior delegates to the projection layer: if the page has a
+     * registered {@see \Hilos\Core\Projection\PageProjection}, the framework
+     * builds and sends the initial snapshot through it. Override in concrete
+     * pages to add domain or routing parameter checks before (or instead of)
+     * delegating to the projection layer.
+     *
+     * Route params are available through the typed accessors on
+     * {@see PageRouteParams}; family-level abstract pages typically convert
+     * them into an {@see AbstractPageSubscribeParamsDTO} subclass before
+     * dispatching to a page-specific hook.
      *
      * @param string $acceptKey WebSocket accept key
      * @param PageRouteParams $params Route params from page subscription
      */
     public function onSubscribe(string $acceptKey, PageRouteParams $params): void
     {
+        Hilos::$projection?->subscribeSnapshot(static::PAGE, $acceptKey, $params);
     }
 
     /**
@@ -313,19 +319,19 @@ abstract class AbstractPage
      * Builds table mutation payloads for tables declared as affected by the event.
      *
      * @param string $eventKey Logical project event name used by SignalRouter table routes
-     * @param TableSourceEventDTO $event Source event to project into routed table mutations
+     * @param SourceChange $change DB/RT source change to project into routed table mutations
      * @return TableMutationSignalCollection Table mutation payloads for immediate or pending fan-out
      */
     protected function buildTableMutationSignalsForSourceEvent(
         string $eventKey,
-        TableSourceEventDTO $event,
+        SourceChange $change,
     ): TableMutationSignalCollection {
         if (Hilos::$table === null || Hilos::$sr === null) {
             return new TableMutationSignalCollection();
         }
 
         return Hilos::$table->buildMutationSignalsForSourceEvent(
-            $event,
+            $change,
             Hilos::$sr->getTableKeysForEvent($eventKey),
         );
     }

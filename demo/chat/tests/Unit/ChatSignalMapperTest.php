@@ -16,6 +16,7 @@ use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosPageRouteParams;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalTypeConstants;
+use Hilos\Core\Projection\SourceChange;
 use Hilos\Core\Router\DTO\EmitDbChangeSignalData;
 use Hilos\Core\Router\DTO\EmitRtChangeSignalData;
 use Hilos\Core\Router\DTO\FrontendChangesDTO;
@@ -29,9 +30,7 @@ use Hilos\Core\Table\Context\TableContext;
 use Hilos\Core\Table\Definition\TableDefinition;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableRowMutationDTO;
-use Hilos\Core\Table\DTO\TableSourceEventDTO;
 use Hilos\Core\Table\DTO\TableSnapshotDTO;
-use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\Core\Table\Row\GenericTableRow;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use PHPUnit\Framework\TestCase;
@@ -43,13 +42,9 @@ final class ChatSignalMapperTest extends TestCase
 {
     public function testMapChatUserRowUpdatedBuildsPendingMutationsFromRouterTableRoutes(): void
     {
-        $sourceEvent = new TableSourceEventDTO(
-            sourceKey: DbChatContext::users,
-            sourceRowKey: 7,
-            mutationType: TableMutationType::Update,
-        );
+        $sourceChange = SourceChange::dbUpdated(DbChatContext::users, '7', []);
         $emitData = new EmitDbChangeSignalData(
-            sourceEvent: $sourceEvent,
+            sourceChange: $sourceChange,
             excludeAcceptKey: 'key-admin',
             actorUserId: 1,
         );
@@ -80,7 +75,7 @@ final class ChatSignalMapperTest extends TestCase
             new SignalType(SignalTypeConstants::EMIT_DB_CHANGE),
             new SignalName('unknown_emit_event'),
             new EmitDbChangeSignalData(
-                new TableSourceEventDTO(DbChatContext::users, 1, TableMutationType::Update),
+                SourceChange::dbUpdated(DbChatContext::users, '1', []),
             ),
         );
 
@@ -94,11 +89,7 @@ final class ChatSignalMapperTest extends TestCase
             new SignalType(SignalTypeConstants::EMIT_DB_CHANGE),
             new SignalName(ChatSignalConstants::EMIT_CHAT_BOT_ROW_CHANGED),
             new EmitDbChangeSignalData(
-                sourceEvent: new TableSourceEventDTO(
-                    sourceKey: DbChatContext::bots,
-                    sourceRowKey: 5,
-                    mutationType: TableMutationType::Update,
-                ),
+                sourceChange: SourceChange::dbUpdated(DbChatContext::bots, '5', []),
                 excludeAcceptKey: 'admin-ak',
             ),
         );
@@ -305,17 +296,17 @@ final class ChatSignalMapperTest extends TestCase
                 parent::__construct();
             }
 
-            public function buildMutationForSourceEvent(TableSourceEventDTO $event): ?TableRowMutationDTO
+            public function buildMutationForSourceEvent(SourceChange $change): ?TableRowMutationDTO
             {
-                if ($event->sourceKey !== $this->sourceKey) {
+                if ($change->sourceKey !== $this->sourceKey) {
                     return null;
                 }
 
                 return new TableRowMutationDTO(
-                    $event->mutationType,
-                    $event->sourceRowKey,
+                    $change->mutationType,
+                    $change->sourceId,
                     GenericTableRow::fromArray([
-                        'id' => (int) $event->sourceRowKey,
+                        'id' => (int) $change->sourceId,
                         'label' => $this->label,
                     ]),
                 );

@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Hilos;
 
 use Hilos\Core\Analytics\AnalyticsCollector;
-use Hilos\Core\Frontend\FrontendProjectionContext;
+use Hilos\Core\Projection\ProjectionContext;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Table\Context\TableContext;
 use Hilos\Database\Context\DbContext;
@@ -25,7 +25,7 @@ use Hilos\Runtime\View\Context\RtContext;
  * - Hilos::$table — table layer
  * - Hilos::$fs    — filesystem layer
  * - Hilos::$sr    — signal router
- * - Hilos::$frontend — worker-local frontend projection accumulator
+ * - Hilos::$projection — worker-local projection accumulator
  */
 abstract class Hilos
 {
@@ -50,8 +50,8 @@ abstract class Hilos
     /** @var ?SignalRouter Signal router singleton */
     public static ?SignalRouter $sr = null;
 
-    /** @var ?FrontendProjectionContext Frontend projection accumulator */
-    public static ?FrontendProjectionContext $frontend = null;
+    /** @var ?ProjectionContext Worker-local projection accumulator and dispatcher */
+    public static ?ProjectionContext $projection = null;
 
     /** @var ?AnalyticsCollector Analytics collector singleton */
     public static ?AnalyticsCollector $ac = null;
@@ -91,8 +91,9 @@ abstract class Hilos
             static::$fs?->configure();
         }
 
-        if (static::$frontend === null) {
-            static::$frontend = static::createFrontendProjection();
+        if (static::$projection === null) {
+            static::$projection = static::createProjection();
+            static::$projection?->configure();
         }
     }
 
@@ -162,6 +163,18 @@ abstract class Hilos
     }
 
     /**
+     * Replaces the worker-local projection context.
+     *
+     * Mirrors {@see self::initSignalRouter()} for the projection layer: tests
+     * and bootstrap code can inject a specific {@see ProjectionContext} instance
+     * without going through {@see self::createProjection()}.
+     */
+    public static function initProjection(ProjectionContext $projection): void
+    {
+        static::$projection = $projection;
+    }
+
+    /**
      * Create database context instance.
      *
      * @return DbContext Database context instance
@@ -219,14 +232,16 @@ abstract class Hilos
     }
 
     /**
-     * Create frontend projection accumulator.
+     * Create the worker-local projection context.
      *
-     * The default framework has no projection. Projects may return a worker-local
-     * projection context that consumes DB/RT sync facts and emits frontend updates.
+     * The default framework has no projection. Projects return a {@see ProjectionContext}
+     * subclass that registers per-page and per-group projections inside its
+     * {@see ProjectionContext::configure()}; the configure step runs from
+     * {@see self::init()} immediately after the factory.
      *
-     * @return ?FrontendProjectionContext Frontend projection context or null if not used
+     * @return ?ProjectionContext Projection context or null if not used
      */
-    protected static function createFrontendProjection(): ?FrontendProjectionContext
+    protected static function createProjection(): ?ProjectionContext
     {
         return null;
     }

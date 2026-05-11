@@ -7,11 +7,13 @@ namespace Demo\Chat\Tables\AdminUser;
 use Demo\Chat\Database\DbChatContext;
 use Demo\Chat\Database\View\Item\User as DbUser;
 use Demo\Chat\Hilos;
+use Demo\Chat\Runtime\State\Item\Connection as ConnectionState;
+use Demo\Chat\Runtime\View\Context\RtChatContext;
 use Demo\Chat\Tables\AdminUser\Actions\AdminUserItemActions;
+use Hilos\Core\Projection\SourceChange;
 use Hilos\Core\Table\Definition\TableDefinition;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableRowMutationDTO;
-use Hilos\Core\Table\DTO\TableSourceEventDTO;
 use Hilos\Core\Table\DTO\TableSnapshotDTO;
 use Hilos\Core\Table\InMemoryTableFilter;
 use Hilos\Core\Table\Mutation\TableMutationType;
@@ -24,24 +26,37 @@ use Hilos\Database\DatabaseException;
 final class AdminUsersTable extends TableDefinition
 {
     /**
-     * Builds an admin users row mutation from a user source event.
+     * Builds an admin users row mutation from one user-affecting source change.
      *
-     * @param TableSourceEventDTO $event User source event to project into the admin users table
-     * @return ?TableRowMutationDTO Admin users row mutation, or null when the event does not affect this table
+     * Reacts to two sources:
+     * - {@see DbChatContext::users} — DB user create/update/delete.
+     * - {@see RtChatContext::connections} — connection lifecycle that flips the
+     *   user's online session count and presence summary projected into the row.
+     *
+     * @param SourceChange $change DB or RT source change to project into the admin users table
+     * @return ?TableRowMutationDTO Admin users row mutation, or null when the change does not affect this table
      * @throws DatabaseException If source user lookup fails
      */
-    public function buildMutationForSourceEvent(TableSourceEventDTO $event): ?TableRowMutationDTO
+    public function buildMutationForSourceEvent(SourceChange $change): ?TableRowMutationDTO
     {
-        if ($event->sourceKey !== DbChatContext::users) {
-            return null;
-        }
+        return match ($change->sourceKey) {
+            DbChatContext::users => $this->mutationForDbUser($change),
+            RtChatContext::connections => $this->mutationForConnection($change),
+            default => null,
+        };
+    }
 
-        $userId = (int) $event->sourceRowKey;
+    /**
+     * @throws DatabaseException If source user lookup fails
+     */
+    private function mutationForDbUser(SourceChange $change): ?TableRowMutationDTO
+    {
+        $userId = (int) $change->sourceId;
         if ($userId <= 0) {
             return null;
         }
 
-        if ($event->mutationType === TableMutationType::Delete) {
+        if ($change->mutationType === TableMutationType::Delete) {
             return $this->mutation(TableMutationType::Delete, $userId);
         }
 
@@ -51,10 +66,53 @@ final class AdminUsersTable extends TableDefinition
         }
 
         return $this->mutation(
-            $event->mutationType,
+            $change->mutationType,
             $userId,
             $this->rowFromUser($dbUser),
         );
+    }
+
+    /**
+     * Connection lifecycle never removes a user row; it always projects to an
+     * Update with refreshed onlineSessionCount/presence aggregates.
+     *
+     * @throws DatabaseException If source user lookup fails
+     */
+    private function mutationForConnection(SourceChange $change): ?TableRowMutationDTO
+    {
+        $userId = $this->resolveUserIdForConnection($change);
+        if ($userId <= 0) {
+            return null;
+        }
+
+        $dbUser = Hilos::$db->users[$userId] ?? null;
+        if ($dbUser === null) {
+            return null;
+        }
+
+        return $this->mutation(
+            TableMutationType::Update,
+            $userId,
+            $this->rowFromUser($dbUser),
+        );
+    }
+
+    /**
+     * Pulls the userId off a connection source change.
+     *
+     * On Create the row carries the full state. On Update the row may carry a
+     * narrow diff without userId, so we fall back to the live RT row. On Delete
+     * the RT row is already gone, so we rely on the previous-row payload that
+     * the source emits when available.
+     */
+    private function resolveUserIdForConnection(SourceChange $change): int
+    {
+        $userId = (int) ($change->row[ConnectionState::userId] ?? 0);
+        if ($userId > 0) {
+            return $userId;
+        }
+        $liveConnection = Hilos::$rt->connections[$change->sourceId] ?? null;
+        return $liveConnection?->userId ?? 0;
     }
 
     /**

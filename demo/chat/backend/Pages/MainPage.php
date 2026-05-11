@@ -14,7 +14,6 @@ use Demo\Chat\Core\Page\DTO\FileUploadInitActionDTO;
 use Demo\Chat\Core\Page\DTO\MessageActionDTO;
 use Demo\Chat\Core\Router\DTO\ModerationResultSignalData;
 use Demo\Chat\Database\Settings\ChatSettingsConstants;
-use Demo\Chat\Frontend\MainPageSubscriptionProjector;
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\View\Item\ChatUserState;
 use Hilos\Core\Agent\Exception\AgentException;
@@ -26,7 +25,6 @@ use Hilos\Core\Exception\ItemNotFoundForDeleteException;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Page\AbstractPage;
-use Hilos\Core\Page\Exception\PageInternalErrorException;
 use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
@@ -56,27 +54,6 @@ final class MainPage extends AbstractPage
      * Minimum wall-clock interval between projected upload-progress notifications when not forced.
      */
     private const float FILE_UPLOAD_PROGRESS_MIN_INTERVAL_SEC = 0.3;
-
-    /**
-     * Sends the initial main chat snapshot and connection-local session state.
-     *
-     * @param string $acceptKey WebSocket accept key for the subscribing client
-     * @param PageRouteParams $params Route params from page subscription (unused for main page)
-     * @throws PageInternalErrorException When the runtime connection row is missing for the subscribe accept key
-     * @throws HilosException On database, runtime, or truth source failure
-     */
-    public function onSubscribe(string $acceptKey, PageRouteParams $params): void
-    {
-        if (Hilos::$rt->selfConnection === null) {
-            throw new PageInternalErrorException('No RT connection for this subscribe acceptKey');
-        }
-
-        $this->sendToUser(
-            ChatSignalConstants::SUBSCRIPTION_PAGE_MAIN,
-            $acceptKey,
-            MainPageSubscriptionProjector::forConnection(Hilos::$rt->selfConnection),
-        );
-    }
 
     /**
      * Routes main-page actions to message, upload init, and attachment draft handlers.

@@ -8,10 +8,10 @@ use Demo\Chat\Database\Settings\SettingsCatalog;
 use Demo\Chat\Hilos;
 use Demo\Chat\Tables\Settings\Actions\SettingItemActions;
 use Demo\Chat\Tables\Settings\Actions\SettingsTableActions;
+use Hilos\Core\Projection\SourceChange;
 use Hilos\Core\Table\Definition\TableDefinition;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableRowMutationDTO;
-use Hilos\Core\Table\DTO\TableSourceEventDTO;
 use Hilos\Core\Table\DTO\TableSnapshotDTO;
 use Hilos\Core\Table\InMemoryTableFilter;
 use Hilos\Core\Table\Mutation\TableMutationType;
@@ -31,23 +31,23 @@ use Hilos\Database\View\Item\Setting as ViewSetting;
 final class SettingsTable extends TableDefinition
 {
     /**
-     * Builds a settings table row mutation from a settings DB source event.
+     * Builds a settings table row mutation from a settings DB source change.
      *
-     * @param TableSourceEventDTO $event Settings source event
-     * @return ?TableRowMutationDTO Settings row mutation, or null when the event does not affect this table
+     * @param SourceChange $change Settings source change
+     * @return ?TableRowMutationDTO Settings row mutation, or null when the change does not affect this table
      */
-    public function buildMutationForSourceEvent(TableSourceEventDTO $event): ?TableRowMutationDTO
+    public function buildMutationForSourceEvent(SourceChange $change): ?TableRowMutationDTO
     {
-        if ($event->sourceKey !== HilosDbContext::settings) {
+        if ($change->sourceKey !== HilosDbContext::settings) {
             return null;
         }
 
-        $key = (string)$event->sourceRowKey;
+        $key = $change->sourceId;
         if ($key === '') {
             return null;
         }
 
-        if ($event->mutationType === TableMutationType::Delete) {
+        if ($change->mutationType === TableMutationType::Delete) {
             return $this->mutation(TableMutationType::Delete, $key);
         }
 
@@ -57,7 +57,7 @@ final class SettingsTable extends TableDefinition
         }
 
         return $this->mutation(
-            $event->mutationType,
+            $change->mutationType,
             $key,
             $this->rowFromSetting($setting),
         );

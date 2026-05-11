@@ -17,7 +17,7 @@ use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Agent\Exception\AgentCreationFailedException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Execution\ExecutionContext;
-use Hilos\Core\Frontend\SourceChange;
+use Hilos\Core\Projection\SourceChange;
 use Hilos\Core\Page\Exception\PageSignalRouterNotFoundException;
 use Hilos\Core\Page\PageSignalRouter;
 use Hilos\Core\Router\SignalRouter;
@@ -478,7 +478,7 @@ abstract class WorkerManager extends BaseManager
             return;
         }
         DbSyncApplicator::applyCreated($data->signalData, skipSelfBroadcastCheck: false);
-        $this->recordFrontendSourceChange(SignalTypeConstants::DB_SYNC_CREATED, $data->signalData);
+        $this->recordProjectionSourceChange(SignalTypeConstants::DB_SYNC_CREATED, $data->signalData);
         $this->dispatchDbSyncToAgents(SignalConstants::DB_SYNC_CREATED, $data->signalData);
     }
 
@@ -493,7 +493,7 @@ abstract class WorkerManager extends BaseManager
             return;
         }
         DbSyncApplicator::applyUpdated($data->signalData, skipSelfBroadcastCheck: false);
-        $this->recordFrontendSourceChange(SignalTypeConstants::DB_SYNC_UPDATED, $data->signalData);
+        $this->recordProjectionSourceChange(SignalTypeConstants::DB_SYNC_UPDATED, $data->signalData);
         $this->dispatchDbSyncToAgents(SignalConstants::DB_SYNC_UPDATED, $data->signalData);
     }
 
@@ -508,7 +508,7 @@ abstract class WorkerManager extends BaseManager
             return;
         }
         DbSyncApplicator::applyDeleted($data->signalData, skipSelfBroadcastCheck: false);
-        $this->recordFrontendSourceChange(SignalTypeConstants::DB_SYNC_DELETED, $data->signalData);
+        $this->recordProjectionSourceChange(SignalTypeConstants::DB_SYNC_DELETED, $data->signalData);
         $this->dispatchDbSyncToAgents(SignalConstants::DB_SYNC_DELETED, $data->signalData);
     }
 
@@ -609,7 +609,7 @@ abstract class WorkerManager extends BaseManager
             return;
         }
         RtSyncApplicator::applyCreated($data->signalData, skipSelfBroadcastCheck: false);
-        $this->recordFrontendSourceChange(SignalTypeConstants::RT_SYNC_CREATED, $data->signalData);
+        $this->recordProjectionSourceChange(SignalTypeConstants::RT_SYNC_CREATED, $data->signalData);
         $this->dispatchRtSyncToAgents(SignalConstants::RT_SYNC_CREATED, $data->signalData);
     }
 
@@ -624,7 +624,7 @@ abstract class WorkerManager extends BaseManager
             return;
         }
         RtSyncApplicator::applyUpdated($data->signalData, skipSelfBroadcastCheck: false);
-        $this->recordFrontendSourceChange(SignalTypeConstants::RT_SYNC_UPDATED, $data->signalData);
+        $this->recordProjectionSourceChange(SignalTypeConstants::RT_SYNC_UPDATED, $data->signalData);
         $this->dispatchRtSyncToAgents(SignalConstants::RT_SYNC_UPDATED, $data->signalData);
     }
 
@@ -639,7 +639,7 @@ abstract class WorkerManager extends BaseManager
             return;
         }
         RtSyncApplicator::applyDeleted($data->signalData, skipSelfBroadcastCheck: false);
-        $this->recordFrontendSourceChange(SignalTypeConstants::RT_SYNC_DELETED, $data->signalData);
+        $this->recordProjectionSourceChange(SignalTypeConstants::RT_SYNC_DELETED, $data->signalData);
         $this->dispatchRtSyncToAgents(SignalConstants::RT_SYNC_DELETED, $data->signalData);
     }
 
@@ -670,9 +670,9 @@ abstract class WorkerManager extends BaseManager
      * @param string $signalType DB/RT sync signal type
      * @param array<string, mixed> $signalData Sync payload
      */
-    private function recordFrontendSourceChange(string $signalType, array $signalData): void
+    private function recordProjectionSourceChange(string $signalType, array $signalData): void
     {
-        if (Hilos::$frontend === null) {
+        if (Hilos::$projection === null) {
             return;
         }
 
@@ -705,7 +705,7 @@ abstract class WorkerManager extends BaseManager
         };
 
         if ($change !== null) {
-            Hilos::$frontend->record($change);
+            Hilos::$projection->record($change);
         }
     }
 
@@ -1423,7 +1423,7 @@ abstract class WorkerManager extends BaseManager
         // frontend projection. Phase 2 sends the WS_USER signals produced by the
         // projection flush in the same tick, instead of waiting for the next loop.
         $this->dispatchQueuedSignalsToDaemon();
-        Hilos::$frontend?->flushToSignalRouter();
+        Hilos::$projection?->flushToSignalRouter();
         $this->dispatchQueuedSignalsToDaemon();
     }
 
@@ -1460,7 +1460,7 @@ abstract class WorkerManager extends BaseManager
             };
 
             if ($syncDto !== null) {
-                $this->recordFrontendSourceChange($signalType, $signalData);
+                $this->recordProjectionSourceChange($signalType, $signalData);
                 $this->dispatchSyncToLocalAgents($signalType, $signalData);
                 $this->daemonClient->send($syncDto);
                 continue;

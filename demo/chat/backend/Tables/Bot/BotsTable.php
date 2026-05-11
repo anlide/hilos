@@ -9,10 +9,10 @@ use Demo\Chat\Database\View\Item\Bot as DbBot;
 use Demo\Chat\Hilos;
 use Demo\Chat\Tables\Bot\Actions\BotItemActions;
 use Demo\Chat\Tables\Bot\Actions\BotsTableActions;
+use Hilos\Core\Projection\SourceChange;
 use Hilos\Core\Table\Definition\TableDefinition;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableRowMutationDTO;
-use Hilos\Core\Table\DTO\TableSourceEventDTO;
 use Hilos\Core\Table\DTO\TableSnapshotDTO;
 use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\Core\Table\TableConstants;
@@ -26,24 +26,24 @@ use Hilos\Database\DatabaseException;
 final class BotsTable extends TableDefinition
 {
     /**
-     * Builds a bot row mutation from a bot source event.
+     * Builds a bot row mutation from a bot source change.
      *
-     * @param TableSourceEventDTO $event Bot source event to project into the bots table
-     * @return ?TableRowMutationDTO Bot row mutation, or null when the event does not affect this table
+     * @param SourceChange $change Bot source change to project into the bots table
+     * @return ?TableRowMutationDTO Bot row mutation, or null when the change does not affect this table
      * @throws DatabaseException If source bot lookup fails
      */
-    public function buildMutationForSourceEvent(TableSourceEventDTO $event): ?TableRowMutationDTO
+    public function buildMutationForSourceEvent(SourceChange $change): ?TableRowMutationDTO
     {
-        if ($event->sourceKey !== DbChatContext::bots) {
+        if ($change->sourceKey !== DbChatContext::bots) {
             return null;
         }
 
-        $botId = (int) $event->sourceRowKey;
+        $botId = (int) $change->sourceId;
         if ($botId <= 0) {
             return null;
         }
 
-        if ($event->mutationType === TableMutationType::Delete) {
+        if ($change->mutationType === TableMutationType::Delete) {
             return $this->mutation(TableMutationType::Delete, $botId);
         }
 
@@ -53,7 +53,7 @@ final class BotsTable extends TableDefinition
         }
 
         return $this->mutation(
-            $event->mutationType,
+            $change->mutationType,
             $botId,
             $this->rowFromBot($dbBot),
         );

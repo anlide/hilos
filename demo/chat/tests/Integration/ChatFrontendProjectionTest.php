@@ -9,13 +9,13 @@ use Demo\Chat\Constants\ConnectionRuntimeConstants;
 use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Router\ChatSignalRouter;
 use Demo\Chat\Core\Router\DTO\SelfConnectionSignalData;
-use Demo\Chat\Frontend\ChatFrontendProjection;
+use Demo\Chat\Projection\ChatProjectionContext;
 use Demo\Chat\Frontend\FrontendStateCollectionKey;
 use Demo\Chat\Frontend\SelfConnectionFrontendStateProjector;
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\View\Context\RtChatContext;
 use Hilos\Constants\SignalTypeConstants;
-use Hilos\Core\Frontend\SourceChange;
+use Hilos\Core\Projection\SourceChange;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Sync\DTO\RtSyncCreatedSignalData;
@@ -293,7 +293,7 @@ final class ChatFrontendProjectionTest extends IntegrationTestCase
     private function resetProjectionRouter(): void
     {
         Hilos::initSignalRouter(new ChatSignalRouter());
-        Hilos::$frontend = new ChatFrontendProjection();
+        Hilos::initProjection(new ChatProjectionContext());
     }
 
     /**
@@ -305,7 +305,7 @@ final class ChatFrontendProjectionTest extends IntegrationTestCase
             $this->recordProjectionSourceChange($signal);
         }
 
-        Hilos::$frontend?->flushToSignalRouter();
+        Hilos::$projection?->flushToSignalRouter();
 
         $signals = [];
         while (($signal = Hilos::$sr?->getNextQueuedSignal()) instanceof SignalDTO) {
@@ -323,21 +323,21 @@ final class ChatFrontendProjectionTest extends IntegrationTestCase
         $signalData = $signal->data;
 
         if ($signalType === SignalTypeConstants::RT_SYNC_CREATED && $signalData instanceof RtSyncCreatedSignalData) {
-            Hilos::$frontend?->record(
+            Hilos::$projection?->record(
                 SourceChange::rtCreated($signalData->collectionKey, $signalData->stateId, $signalData->row),
             );
             return;
         }
 
         if ($signalType === SignalTypeConstants::RT_SYNC_UPDATED && $signalData instanceof RtSyncUpdatedSignalData) {
-            Hilos::$frontend?->record(
+            Hilos::$projection?->record(
                 SourceChange::rtUpdated($signalData->collectionKey, $signalData->stateId, $signalData->row),
             );
             return;
         }
 
         if ($signalType === SignalTypeConstants::RT_SYNC_DELETED && $signalData instanceof RtSyncDeletedSignalData) {
-            Hilos::$frontend?->record(
+            Hilos::$projection?->record(
                 SourceChange::rtDeleted($signalData->collectionKey, $signalData->stateId, $signalData->row),
             );
         }

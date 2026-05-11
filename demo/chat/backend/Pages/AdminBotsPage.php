@@ -8,8 +8,6 @@ use Demo\Chat\Agents\LibraryAgent;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Router\DTO\BotAgentSignalData;
-use Demo\Chat\Core\Router\DTO\ChatEventSignalDTO;
-use Demo\Chat\Frontend\BotFrontendStateProjector;
 use Demo\Chat\Hilos;
 use Demo\Chat\Tables\Bot\DTO\BotCreateActionDTO;
 use Demo\Chat\Tables\Bot\DTO\BotDeleteActionDTO;
@@ -17,9 +15,7 @@ use Demo\Chat\Tables\Bot\DTO\BotUpdateActionDTO;
 use Demo\Chat\Tables\TableChatContext;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Page\AbstractPage;
-use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
-use Hilos\Core\Router\DTO\EntitiesChangesDTO;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
 use Hilos\Core\Table\DTO\TableActionErrorSignalData;
 use Hilos\Core\Table\Exception\TableActionException;
@@ -36,25 +32,6 @@ use Throwable;
 final class AdminBotsPage extends AbstractPage
 {
     public const string PAGE = PageConstants::ADMIN_BOTS;
-
-    /**
-     * Sends the initial bots table full snapshot to the user on page subscription.
-     *
-     * @param string $acceptKey WebSocket accept key for the subscribing client
-     * @param PageRouteParams $params Route params from page subscription (unused for admin bots page)
-     */
-    public function onSubscribe(string $acceptKey, PageRouteParams $params): void
-    {
-        $this->sendToUser(
-            ChatSignalConstants::SUBSCRIPTION_PAGE_ADMIN_BOTS,
-            $acceptKey,
-            new ChatEventSignalDTO(
-                new EntitiesChangesDTO(),
-                [TableChatContext::bots => Hilos::$table->bots->getFullSnapshot()],
-                frontend: BotFrontendStateProjector::fullForBots(Hilos::$db->bots),
-            ),
-        );
-    }
 
     /**
      * Routes incoming bot actions (create/update/delete) to the appropriate handler.

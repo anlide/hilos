@@ -5,12 +5,10 @@ declare(strict_types=1);
 namespace Hilos\Pages\Users;
 
 use Hilos\Constants\HilosPageConstants;
-use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Page\AbstractHilosPage;
 use Hilos\Core\Page\Exception\InvalidPageRouteParamException;
 use Hilos\Core\Page\Exception\MissingPageRouteParamException;
 use Hilos\Core\Page\PageRouteParams;
-use Hilos\Core\Router\SignalData;
 use Hilos\Pages\Users\DTO\HilosUserPageSubscribeParams;
 
 /**
@@ -37,6 +35,7 @@ abstract class AbstractHilosUserPage extends AbstractHilosPage
      */
     final public function onSubscribe(string $acceptKey, PageRouteParams $params): void
     {
+        parent::onSubscribe($acceptKey, $params);
         $this->onHilosUserSubscribe(
             $acceptKey,
             HilosUserPageSubscribeParams::fromPageRouteParams($params),
@@ -44,21 +43,13 @@ abstract class AbstractHilosUserPage extends AbstractHilosPage
     }
 
     /**
-     * Handle subscribe for a specific Hilos user.
-     *
-     * Default sends an empty subscription payload; apps with a shared `users`
-     * table typically override this to include `tables.users` (full snapshot
-     * or filtered) for the client.
+     * Optional project-specific subscribe hook running after the projection
+     * layer has emitted the initial snapshot. Default is a no-op.
      *
      * @param string $acceptKey WebSocket accept key
      * @param HilosUserPageSubscribeParams $params Parsed subscribe params (always has `userId > 0`)
      */
     protected function onHilosUserSubscribe(string $acceptKey, HilosUserPageSubscribeParams $params): void
     {
-        $this->sendToUser(
-            HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_USER,
-            $acceptKey,
-            new SignalData(),
-        );
     }
 }

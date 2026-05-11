@@ -7,11 +7,11 @@ namespace Demo\Chat;
 use Demo\Chat\Database\DbChatContext;
 use Demo\Chat\Database\Settings\ChatSettingsAccessor;
 use Demo\Chat\Environment\ChatEnvAccessor;
-use Demo\Chat\Frontend\ChatFrontendProjection;
 use Demo\Chat\Fs\FsChatContext;
+use Demo\Chat\Projection\ChatProjectionContext;
 use Demo\Chat\Runtime\View\Context\RtChatContext;
 use Demo\Chat\Tables\TableChatContext;
-use Hilos\Core\Frontend\FrontendProjectionContext;
+use Hilos\Core\Projection\ProjectionContext;
 use Hilos\Core\Table\Context\TableContext;
 use Hilos\Database\Context\DbContext;
 use Hilos\Database\Settings\SettingsAccessor;
@@ -30,6 +30,7 @@ use Hilos\Runtime\View\Context\RtContext;
  * - Hilos::$rt->userStates
  * - Hilos::$table->users
  * - Hilos::$fs->quarantine, Hilos::$fs->published, Hilos::$fs->tmp
+ * - Hilos::$projection->subscribeSnapshot(PageConstants::MAIN, $acceptKey, $params)
  *
  * @property-read DbChatContext $db Database context (narrows parent's DbContext for IDE)
  * @property-read EnvAccessor $env Environment accessor
@@ -101,12 +102,12 @@ final class Hilos extends \Hilos\Hilos
     }
 
     /**
-     * Creates the worker-local frontend projection accumulator.
+     * Creates the worker-local projection context for the chat demo.
      *
-     * @return ?ChatFrontendProjection Chat frontend projection context
+     * @return ?ChatProjectionContext Chat projection context
      */
-    protected static function createFrontendProjection(): ?FrontendProjectionContext
+    protected static function createProjection(): ?ProjectionContext
     {
-        return new ChatFrontendProjection();
+        return new ChatProjectionContext();
     }
 }

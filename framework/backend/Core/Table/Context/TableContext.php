@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Table\Context;
 
+use Hilos\Core\Projection\SourceChange;
 use Hilos\Core\Table\Collection\TableMutationSignalCollection;
 use Hilos\Core\Table\Definition\TableDefinition;
 use Hilos\Core\Table\DTO\TableMutationSignalData;
-use Hilos\Core\Table\DTO\TableSourceEventDTO;
 use Hilos\Core\Table\Exception\TableNotFoundException;
 
 /**
@@ -50,14 +50,14 @@ abstract class TableContext
     }
 
     /**
-     * Builds table mutation payloads for the routed tables that react to the source event.
+     * Builds table mutation payloads for the routed tables that react to the source change.
      *
-     * @param TableSourceEventDTO $event Source event being projected to tables
-     * @param iterable<string> $tableKeys Table keys from the signal router declaration
+     * @param SourceChange $change DB/RT source change being projected to tables
+     * @param iterable<string> $tableKeys Table keys from the signal router declaration or projection
      * @return TableMutationSignalCollection Table mutation payloads ready for WebSocket fan-out
      */
     public function buildMutationSignalsForSourceEvent(
-        TableSourceEventDTO $event,
+        SourceChange $change,
         iterable $tableKeys,
     ): TableMutationSignalCollection {
         $signals = new TableMutationSignalCollection();
@@ -72,7 +72,7 @@ abstract class TableContext
                 continue;
             }
 
-            $mutation = $table->buildMutationForSourceEvent($event);
+            $mutation = $table->buildMutationForSourceEvent($change);
             if ($mutation === null) {
                 continue;
             }

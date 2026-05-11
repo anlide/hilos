@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-namespace Hilos\Core\Frontend;
+namespace Hilos\Core\Projection;
 
 /**
- * Accumulated source facts waiting for one frontend projection flush.
+ * Accumulated source facts waiting for one projection flush.
  */
 final class SourceChangeSet
 {

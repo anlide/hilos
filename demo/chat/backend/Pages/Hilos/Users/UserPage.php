@@ -7,23 +7,16 @@ namespace Demo\Chat\Pages\Hilos\Users;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Core\Router\DTO\ActionFailSignalData;
 use Demo\Chat\Core\Router\DTO\ActionSuccessSignalData;
-use Demo\Chat\Core\Router\DTO\HilosUserSubscriptionSignalData;
 use Demo\Chat\Database\Actions\Item\UserActions;
-use Demo\Chat\Frontend\UserFrontendStateProjector;
 use Demo\Chat\Hilos;
 use Demo\Chat\Tables\HilosUser\DTO\HilosUserUpdateActionDTO;
-use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Core\Exception\ValidationException;
-use Hilos\Core\Page\Exception\PageResourceNotFoundException;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
-use Hilos\Database\Exception\View\CollectionNotManualException;
-use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 use Hilos\HilosException;
 use Hilos\Pages\Users\AbstractHilosUserPage;
-use Hilos\Pages\Users\DTO\HilosUserPageSubscribeParams;
 use Throwable;
 
 /**
@@ -34,35 +27,6 @@ use Throwable;
  */
 final class UserPage extends AbstractHilosUserPage
 {
-    /**
-     * Sends the initial single-user entity snapshot to a Hilos user-detail subscriber.
-     *
-     * Throws PageResourceNotFoundException when user is not found, which triggers
-     * subscription_page_error signal while keeping the subscription active. The
-     * `userId` param is already validated to be `> 0` by
-     * {@see HilosUserPageSubscribeParams::fromPageRouteParams()}.
-     *
-     * @param string $acceptKey WebSocket accept key for the subscribing client
-     * @param HilosUserPageSubscribeParams $params Parsed subscribe params
-     * @throws PageResourceNotFoundException When the user does not exist in the DB
-     * @throws ObjectGetIdStringNotImplementedException When user entity cannot be converted to an ID string
-     * @throws CollectionNotManualException When user snapshot cannot be created from an automatic collection
-     */
-    protected function onHilosUserSubscribe(string $acceptKey, HilosUserPageSubscribeParams $params): void
-    {
-        $dbUser = Hilos::$db->users[$params->userId]
-            ?? throw new PageResourceNotFoundException("User #{$params->userId} not found");
-
-        $this->sendToUser(
-            HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_USER,
-            $acceptKey,
-            HilosUserSubscriptionSignalData::fromFrontendChanges(
-                $params->userId,
-                UserFrontendStateProjector::fullForUser($dbUser, includeConnectionStats: true),
-            ),
-        );
-    }
-
     /**
      * Routes Hilos user-detail actions to page handlers.
      *

@@ -10,14 +10,14 @@ use Demo\Chat\Constants\HttpHeaders;
 use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Router\ChatSignalRouter;
 use Demo\Chat\Core\Router\DTO\UserPresenceSignalData;
-use Demo\Chat\Frontend\ChatFrontendProjection;
+use Demo\Chat\Projection\ChatProjectionContext;
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\View\Context\RtChatContext;
 use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Execution\ExecutionFrame;
-use Hilos\Core\Frontend\SourceChange;
+use Hilos\Core\Projection\SourceChange;
 use Hilos\Core\Http\RequestQueryParams;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\WebSocketSignalData;
@@ -48,7 +48,7 @@ final class ChatAgentPresenceTest extends IntegrationTestCase
         $agent = new ChatAgent();
 
         Hilos::initSignalRouter(new ChatSignalRouter());
-        Hilos::$frontend = new ChatFrontendProjection();
+        Hilos::initProjection(new ChatProjectionContext());
         Hilos::$sr->subscribeToPage(PageConstants::MAIN, new WebSocketPageSubscribeSignalDTO(
             'presence-listener-ak',
             PageConstants::MAIN,
@@ -77,7 +77,7 @@ final class ChatAgentPresenceTest extends IntegrationTestCase
 
             $eventCountBeforeClose = count(Hilos::$db->events);
             Hilos::initSignalRouter(new ChatSignalRouter());
-            Hilos::$frontend = new ChatFrontendProjection();
+            Hilos::initProjection(new ChatProjectionContext());
             Hilos::$sr->subscribeToPage(PageConstants::MAIN, new WebSocketPageSubscribeSignalDTO(
                 'presence-listener-ak',
                 PageConstants::MAIN,
@@ -106,7 +106,7 @@ final class ChatAgentPresenceTest extends IntegrationTestCase
         $agent = new ChatAgent();
 
         Hilos::initSignalRouter(new ChatSignalRouter());
-        Hilos::$frontend = new ChatFrontendProjection();
+        Hilos::initProjection(new ChatProjectionContext());
         Hilos::$sr->subscribeToPage(PageConstants::ADMIN_USERS, new WebSocketPageSubscribeSignalDTO(
             'presence-stats-listener-ak',
             PageConstants::ADMIN_USERS,
@@ -280,7 +280,7 @@ final class ChatAgentPresenceTest extends IntegrationTestCase
             $this->recordProjectionSourceChange($signal);
         }
 
-        Hilos::$frontend?->flushToSignalRouter();
+        Hilos::$projection?->flushToSignalRouter();
 
         $signals = [];
         while (($signal = Hilos::$sr?->getNextQueuedSignal()) instanceof SignalDTO) {
@@ -314,17 +314,17 @@ final class ChatAgentPresenceTest extends IntegrationTestCase
         $signalData = $signal->data;
 
         if ($signalType === SignalTypeConstants::RT_SYNC_CREATED && $signalData instanceof RtSyncCreatedSignalData) {
-            Hilos::$frontend?->record(SourceChange::rtCreated($signalData->collectionKey, $signalData->stateId, $signalData->row));
+            Hilos::$projection?->record(SourceChange::rtCreated($signalData->collectionKey, $signalData->stateId, $signalData->row));
             return;
         }
 
         if ($signalType === SignalTypeConstants::RT_SYNC_UPDATED && $signalData instanceof RtSyncUpdatedSignalData) {
-            Hilos::$frontend?->record(SourceChange::rtUpdated($signalData->collectionKey, $signalData->stateId, $signalData->row));
+            Hilos::$projection?->record(SourceChange::rtUpdated($signalData->collectionKey, $signalData->stateId, $signalData->row));
             return;
         }
 
         if ($signalType === SignalTypeConstants::RT_SYNC_DELETED && $signalData instanceof RtSyncDeletedSignalData) {
-            Hilos::$frontend?->record(SourceChange::rtDeleted($signalData->collectionKey, $signalData->stateId, $signalData->row));
+            Hilos::$projection?->record(SourceChange::rtDeleted($signalData->collectionKey, $signalData->stateId, $signalData->row));
         }
     }
 

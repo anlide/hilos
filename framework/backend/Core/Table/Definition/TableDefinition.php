@@ -6,12 +6,12 @@ namespace Hilos\Core\Table\Definition;
 
 use ArrayAccess;
 use Hilos\Core\Exception\NotImplementedException;
+use Hilos\Core\Projection\SourceChange;
 use Hilos\Core\Table\Actions\TableActions;
 use Hilos\Core\Table\Actions\TableItemActions;
 use Hilos\Core\Table\DTO\TablePageQueryDTO;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableRowMutationDTO;
-use Hilos\Core\Table\DTO\TableSourceEventDTO;
 use Hilos\Core\Table\DTO\TableSnapshotDTO;
 use Hilos\Core\Table\Exception\TableActionsNotConfiguredException;
 use Hilos\Core\Table\Exception\TableOffsetSetNotSupportedException;
@@ -145,16 +145,18 @@ abstract class TableDefinition implements ArrayAccess
     // ── Stateless query ──────────────────────────────────────────────────
 
     /**
-     * Builds a table row mutation for a source event this table reacts to.
+     * Builds a table row mutation for one source change this table reacts to.
      *
-     * Concrete tables decide whether the source event affects their projection.
-     * The base contract stays source-agnostic and does not assume DB, RT, or any
-     * other backing store.
+     * Concrete tables decide whether the change affects their projection and
+     * which DB/RT collections they observe. The base contract stays
+     * source-agnostic: a table may react to one or more DB sources, one or more
+     * RT sources, or any combination — the change kind and sourceKey are
+     * available on {@see SourceChange}.
      *
-     * @param TableSourceEventDTO $event Source event that may affect this table
+     * @param SourceChange $change Source change that may affect this table
      * @return ?TableRowMutationDTO Mutation to fan out, or null when the table is unaffected
      */
-    public function buildMutationForSourceEvent(TableSourceEventDTO $event): ?TableRowMutationDTO
+    public function buildMutationForSourceEvent(SourceChange $change): ?TableRowMutationDTO
     {
         return null;
     }

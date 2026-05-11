@@ -7,7 +7,6 @@ namespace Demo\Chat\Pages;
 use Demo\Chat\Agents\LibraryAgent;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\PageConstants;
-use Demo\Chat\Core\Router\DTO\ChatEventSignalDTO;
 use Demo\Chat\Hilos;
 use Demo\Chat\Tables\ModeratorPiece\DTO\ModeratorPieceCreateActionDTO;
 use Demo\Chat\Tables\ModeratorPiece\DTO\ModeratorPieceDeleteActionDTO;
@@ -15,9 +14,7 @@ use Demo\Chat\Tables\ModeratorPiece\DTO\ModeratorPieceUpdateActionDTO;
 use Demo\Chat\Tables\TableChatContext;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Page\AbstractPage;
-use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
-use Hilos\Core\Router\DTO\EntitiesChangesDTO;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
 use Hilos\Core\Table\DTO\TableActionErrorSignalData;
 use Hilos\Core\Table\Exception\TableActionException;
@@ -34,24 +31,6 @@ use Throwable;
 final class AdminModeratorPage extends AbstractPage
 {
     public const string PAGE = PageConstants::ADMIN_MODERATOR;
-
-    /**
-     * Sends the initial moderator prompt pieces table full snapshot to the user on page subscription.
-     *
-     * @param string $acceptKey WebSocket accept key for the subscribing client
-     * @param PageRouteParams $params Route params from page subscription (unused for moderator page)
-     */
-    public function onSubscribe(string $acceptKey, PageRouteParams $params): void
-    {
-        $this->sendToUser(
-            ChatSignalConstants::SUBSCRIPTION_PAGE_ADMIN_MODERATOR,
-            $acceptKey,
-            new ChatEventSignalDTO(
-                new EntitiesChangesDTO(),
-                [TableChatContext::moderatorPromptPieces => Hilos::$table->moderatorPromptPieces->getFullSnapshot()],
-            ),
-        );
-    }
 
     /**
      * Routes incoming moderator piece actions (create/update/delete) to the appropriate handler.

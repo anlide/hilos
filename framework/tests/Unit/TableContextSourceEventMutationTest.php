@@ -4,13 +4,12 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Core\Projection\SourceChange;
 use Hilos\Core\Table\Context\TableContext;
 use Hilos\Core\Table\Definition\TableDefinition;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableRowMutationDTO;
-use Hilos\Core\Table\DTO\TableSourceEventDTO;
 use Hilos\Core\Table\DTO\TableSnapshotDTO;
-use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\Core\Table\Row\GenericTableRow;
 use PHPUnit\Framework\TestCase;
 
@@ -25,16 +24,16 @@ final class TableContextSourceEventMutationTest extends TestCase
             public function configure(): void
             {
                 $this->register('reacting', new class extends TableDefinition {
-                    public function buildMutationForSourceEvent(TableSourceEventDTO $event): ?TableRowMutationDTO
+                    public function buildMutationForSourceEvent(SourceChange $change): ?TableRowMutationDTO
                     {
-                        if ($event->sourceKey !== 'users') {
+                        if ($change->sourceKey !== 'users') {
                             return null;
                         }
 
                         return new TableRowMutationDTO(
-                            $event->mutationType,
-                            $event->sourceRowKey,
-                            GenericTableRow::fromArray(['id' => $event->sourceRowKey]),
+                            $change->mutationType,
+                            $change->sourceId,
+                            GenericTableRow::fromArray(['id' => $change->sourceId]),
                         );
                     }
 
@@ -55,14 +54,14 @@ final class TableContextSourceEventMutationTest extends TestCase
         $context->configure();
 
         $signals = $context->buildMutationSignalsForSourceEvent(
-            new TableSourceEventDTO('users', 5, TableMutationType::Update),
+            SourceChange::dbUpdated('users', '5', []),
             ['reacting', 'silent', 'missing'],
         );
 
         $this->assertCount(1, $signals);
         foreach ($signals as $signal) {
             $this->assertSame('reacting', $signal->tableKey);
-            $this->assertSame(5, $signal->mutation->rowKey);
+            $this->assertSame('5', $signal->mutation->rowKey);
         }
     }
 }

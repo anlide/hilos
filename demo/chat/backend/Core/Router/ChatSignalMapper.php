@@ -118,11 +118,11 @@ final class ChatSignalMapper implements SignalMapperInterface
      */
     private function mapChatEventCreated(EmitDbChangeSignalData $data, bool $replaceEvents = false): array
     {
-        if ($data->sourceEvent->sourceKey !== DbChatContext::events || Hilos::$db === null) {
+        if ($data->sourceChange->sourceKey !== DbChatContext::events || Hilos::$db === null) {
             return [];
         }
 
-        $eventId = (int)$data->sourceEvent->sourceRowKey;
+        $eventId = (int)$data->sourceChange->sourceId;
         if ($eventId <= 0) {
             return [];
         }
@@ -167,7 +167,7 @@ final class ChatSignalMapper implements SignalMapperInterface
         }
 
         $tableSignals = $tableContext->buildMutationSignalsForSourceEvent(
-            $data->sourceEvent,
+            $data->sourceChange,
             $router->getTableKeysForEvent($eventKey),
         );
 
@@ -192,11 +192,11 @@ final class ChatSignalMapper implements SignalMapperInterface
      */
     private function mapChatBotFrontendUpdated(EmitDbChangeSignalData $data): array
     {
-        if ($data->sourceEvent->sourceKey !== DbChatContext::bots || Hilos::$db === null) {
+        if ($data->sourceChange->sourceKey !== DbChatContext::bots || Hilos::$db === null) {
             return [];
         }
 
-        $botId = (int)$data->sourceEvent->sourceRowKey;
+        $botId = (int)$data->sourceChange->sourceId;
         if ($botId <= 0) {
             return [];
         }

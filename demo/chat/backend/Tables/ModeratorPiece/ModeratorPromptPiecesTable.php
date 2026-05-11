@@ -9,10 +9,10 @@ use Demo\Chat\Database\View\Item\ModeratorPromptPiece as DbModeratorPromptPiece;
 use Demo\Chat\Hilos;
 use Demo\Chat\Tables\ModeratorPiece\Actions\ModeratorPromptPieceItemActions;
 use Demo\Chat\Tables\ModeratorPiece\Actions\ModeratorPromptPiecesTableActions;
+use Hilos\Core\Projection\SourceChange;
 use Hilos\Core\Table\Definition\TableDefinition;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableRowMutationDTO;
-use Hilos\Core\Table\DTO\TableSourceEventDTO;
 use Hilos\Core\Table\DTO\TableSnapshotDTO;
 use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\Core\Table\TableConstants;
@@ -26,24 +26,24 @@ use Hilos\Database\DatabaseException;
 final class ModeratorPromptPiecesTable extends TableDefinition
 {
     /**
-     * Builds a moderator prompt piece row mutation from a source event.
+     * Builds a moderator prompt piece row mutation from a source change.
      *
-     * @param TableSourceEventDTO $event Moderator prompt piece source event to project into the table
-     * @return ?TableRowMutationDTO Moderator prompt piece row mutation, or null when the event does not affect this table
+     * @param SourceChange $change Moderator prompt piece source change to project into the table
+     * @return ?TableRowMutationDTO Moderator prompt piece row mutation, or null when the change does not affect this table
      * @throws DatabaseException If source prompt piece lookup fails
      */
-    public function buildMutationForSourceEvent(TableSourceEventDTO $event): ?TableRowMutationDTO
+    public function buildMutationForSourceEvent(SourceChange $change): ?TableRowMutationDTO
     {
-        if ($event->sourceKey !== DbChatContext::moderatorPromptPieces) {
+        if ($change->sourceKey !== DbChatContext::moderatorPromptPieces) {
             return null;
         }
 
-        $pieceId = (int) $event->sourceRowKey;
+        $pieceId = (int) $change->sourceId;
         if ($pieceId <= 0) {
             return null;
         }
 
-        if ($event->mutationType === TableMutationType::Delete) {
+        if ($change->mutationType === TableMutationType::Delete) {
             return $this->mutation(TableMutationType::Delete, $pieceId);
         }
 
@@ -53,7 +53,7 @@ final class ModeratorPromptPiecesTable extends TableDefinition
         }
 
         return $this->mutation(
-            $event->mutationType,
+            $change->mutationType,
             $pieceId,
             $this->rowFromModeratorPromptPiece($dbPiece),
         );
