@@ -5,18 +5,17 @@ declare(strict_types=1);
 namespace Hilos\Core\Router;
 
 /**
- * SignalDataInterface - Interface for signal data.
+ * Transport payload for a routed signal.
  *
- * All signal data DTOs must implement this interface.
- * Signal data DTOs must extend BaseDTO and implement SignalDataInterface.
- * This interface ensures that all signal data can be serialized to array.
+ * Signal data DTOs implement this interface so routers and WebSocket payloads
+ * can serialize them without knowing the concrete DTO class.
  */
 interface SignalDataInterface
 {
     /**
-     * Converts signal data to array for transport/serialization.
+     * Serializes this signal payload for transport.
      *
-     * @return array<string, mixed> Signal data as associative array
+     * @return array<string, mixed> Signal payload
      */
     public function toArray(): array;
 }

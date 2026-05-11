@@ -99,7 +99,7 @@ abstract class TableDefinition implements ArrayAccess
     /**
      * Returns the row class used by this table.
      *
-     * @return class-string<AbstractTableRow>
+     * @return class-string<AbstractTableRow> Table row class name
      */
     public function getRowClass(): string
     {
@@ -122,8 +122,8 @@ abstract class TableDefinition implements ArrayAccess
     /**
      * Builds typed row objects for each raw or already-typed payload.
      *
-     * @param list<AbstractTableRow|array<string, mixed>> $rows Raw row payloads
-     * @return list<AbstractTableRow>
+     * @param list<AbstractTableRow|array<string, mixed>> $rows Typed row objects or raw row payloads
+     * @return list<AbstractTableRow> Typed row objects
      */
     public function makeRows(array $rows): array
     {
@@ -162,7 +162,7 @@ abstract class TableDefinition implements ArrayAccess
     }
 
     /**
-     * Creates a row mutation DTO for source-event fan-out.
+     * Creates a row mutation DTO for source-change fan-out.
      *
      * @param TableMutationType $type Mutation type
      * @param string|int $rowKey Affected table row key
@@ -190,7 +190,7 @@ abstract class TableDefinition implements ArrayAccess
      *
      * This helper is intended for simple tables whose rows are direct frontend
      * projections of a single DbCollection. Tables with joined, calculated, or
-     * runtime-enriched rows should implement {@see self::query()} directly.
+     * runtime-enriched rows should implement query() directly.
      *
      * @param DbCollection $collection Db collection used as the row source
      * @param TableQueryDTO $query Query parameters
@@ -237,7 +237,7 @@ abstract class TableDefinition implements ArrayAccess
      * Reserved API for future partial table loading.
      *
      * Paging is intentionally not implemented yet; current page subscriptions
-     * must use a full table snapshot from {@see self::getFullSnapshot()}.
+     * must use a full table snapshot from getFullSnapshot().
      *
      * @param TablePageQueryDTO $query Page query parameters
      * @return TableSnapshotDTO Partial table page once implemented

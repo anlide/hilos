@@ -14,6 +14,8 @@ final class SourceChangeSet
 
     /**
      * Records one source fact for the next projection flush.
+     *
+     * @param SourceChange $change Source fact to append
      */
     public function add(SourceChange $change): void
     {

@@ -14,7 +14,7 @@ use Hilos\Database\View\Collection\DbCollection;
  *
  * Rules add full entity collections, frontend collections, and table snapshots.
  * The owning PageProjection converts the accumulated state into the
- * page-specific wire DTO inside its wrap method.
+ * page-specific wire DTO inside wrapSnapshot().
  */
 final class SubscribeSnapshotAccumulator
 {
@@ -130,7 +130,7 @@ final class SubscribeSnapshotAccumulator
     /**
      * Returns all table snapshots accumulated for this subscription.
      *
-     * @return array<string, TableSnapshotDTO>
+     * @return array<string, TableSnapshotDTO> Table snapshots keyed by table key
      */
     public function getTableSnapshots(): array
     {

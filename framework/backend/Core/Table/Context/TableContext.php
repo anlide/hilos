@@ -11,11 +11,10 @@ use Hilos\Core\Table\DTO\TableMutationSignalData;
 use Hilos\Core\Table\Exception\TableNotFoundException;
 
 /**
- * Base table context — analogous to DbContext / RtContext.
+ * Registry for application table definitions.
  *
- * Holds named TableDefinition instances. Subclass in your app to register tables.
- *
- * Usage: Hilos::$table->users (via __get)
+ * Subclasses register named TableDefinition instances during configuration.
+ * Magic property access exposes registered tables as `Hilos::$table->users`.
  */
 abstract class TableContext
 {
@@ -84,7 +83,7 @@ abstract class TableContext
     }
 
     /**
-     * Magic property access: Hilos::$table->users → TableDefinition.
+     * Resolves a registered table through magic property access.
      *
      * @param string $name Table key
      * @return TableDefinition Table definition instance

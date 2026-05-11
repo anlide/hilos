@@ -5,12 +5,13 @@ declare(strict_types=1);
 namespace Hilos\Core\Router\DTO;
 
 use Hilos\BaseDTO;
+use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Projection\SourceChange;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Table\Mutation\TableMutationType;
 
 /**
- * Canonical DB change payload for {@see \Hilos\Constants\SignalTypeConstants::EMIT_DB_CHANGE}.
+ * Canonical DB change payload for {@see SignalTypeConstants::EMIT_DB_CHANGE}.
  *
  * Serializable for worker-to-daemon transport. The payload carries one source
  * change fact; table routing and mutation construction happen on the receiving
@@ -25,6 +26,8 @@ final class EmitDbChangeSignalData extends BaseDTO implements SignalDataInterfac
     public const string FIELD_ACTOR_USER_ID = 'actorUserId';
 
     /**
+     * Creates a worker-to-daemon source-change payload.
+     *
      * @param SourceChange $sourceChange Source change that tables and projections may consume
      * @param ?string $excludeAcceptKey Initiator connection to skip on broadcast leg
      * @param ?int $actorUserId Optional acting user id (audit / future rules)
@@ -37,7 +40,9 @@ final class EmitDbChangeSignalData extends BaseDTO implements SignalDataInterfac
     }
 
     /**
-     * @return array<string, mixed>
+     * Serializes the source-change signal payload for transport.
+     *
+     * @return array<string, mixed> Worker-to-daemon payload
      */
     public function toArray(): array
     {
@@ -49,7 +54,10 @@ final class EmitDbChangeSignalData extends BaseDTO implements SignalDataInterfac
     }
 
     /**
-     * @param array<string, mixed> $data
+     * Restores the source-change signal payload from transport data.
+     *
+     * @param array<string, mixed> $data Worker-to-daemon payload
+     * @return static Source-change signal payload
      */
     public static function fromArray(array $data): static
     {
