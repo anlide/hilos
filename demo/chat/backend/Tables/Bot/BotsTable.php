@@ -19,9 +19,9 @@ use Hilos\Core\Table\TableConstants;
 use Hilos\Database\DatabaseException;
 
 /**
- * BotsTable - Table definition with create/update/delete actions.
+ * Table definition for bot administration rows and actions.
  *
- * @property-read BotsTableActions $actions
+ * @property-read BotsTableActions $actions Table-level bot creation actions
  */
 final class BotsTable extends TableDefinition
 {
@@ -30,7 +30,6 @@ final class BotsTable extends TableDefinition
      *
      * @param SourceChange $change Bot source change to project into the bots table
      * @return ?TableRowMutationDTO Bot row mutation, or null when the change does not affect this table
-     * @throws DatabaseException If source bot lookup fails
      */
     public function buildMutationForSourceEvent(SourceChange $change): ?TableRowMutationDTO
     {
@@ -60,11 +59,11 @@ final class BotsTable extends TableDefinition
     }
 
     /**
-     * Queries bots for the bots table.
+     * Loads one page of bot rows for the bots table.
      *
      * @param TableQueryDTO $query Table query parameters
      * @return TableSnapshotDTO Bot table snapshot
-     * @throws DatabaseException If bot query execution fails
+     * @throws DatabaseException When bot query execution fails
      */
     protected function query(TableQueryDTO $query): TableSnapshotDTO
     {
@@ -107,7 +106,7 @@ final class BotsTable extends TableDefinition
     }
 
     /**
-     * Configures table-level actions (BotsTableActions for create) and item-level actions (BotItemActions for update/delete).
+     * Configures bot row and action classes.
      */
     protected function init(): void
     {

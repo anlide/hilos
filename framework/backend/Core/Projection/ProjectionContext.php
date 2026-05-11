@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Core\Projection;
 
 use Hilos\Constants\SignalTypeConstants;
+use Hilos\Core\Page\Exception\PageSubscriptionException;
 use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalSource;
@@ -83,6 +84,11 @@ abstract class ProjectionContext
      * the snapshot payload, and queues the resulting WS_USER signal addressed
      * to the subscribing client. Pages without a registered projection are a
      * no-op. Pages whose snapshot is null (marker subscriptions) emit no signal.
+     *
+     * @param string $page Page key from the subscription request
+     * @param string $acceptKey Subscribing WebSocket accept key
+     * @param PageRouteParams $params Page subscription route params
+     * @throws PageSubscriptionException When the page projection rejects the subscription
      */
     public function subscribeSnapshot(string $page, string $acceptKey, PageRouteParams $params): void
     {

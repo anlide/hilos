@@ -24,6 +24,7 @@ use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Sync\DTO\RtSyncCreatedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncDeletedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
+use Hilos\HilosException;
 use Hilos\Socket\WebSocket\DTO\WebSocketCloseSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
@@ -37,6 +38,11 @@ final class ChatAgentPresenceTest extends IntegrationTestCase
 {
     private const string TEST_AGENT_ID = 'test-agent';
 
+    /**
+     * Verifies handshake and close update runtime presence without writing history events.
+     *
+     * @throws HilosException When test setup or agent signal handling fails
+     */
     public function testHandshakeAndCloseUpdatePresenceWithoutHistoryEvents(): void
     {
         RtTruthSourceRegistry::register(RtChatContext::connections, true, self::TEST_AGENT_ID);
@@ -95,6 +101,11 @@ final class ChatAgentPresenceTest extends IntegrationTestCase
         }
     }
 
+    /**
+     * Verifies every connection count change emits projected presence stats.
+     *
+     * @throws HilosException When test setup or agent signal handling fails
+     */
     public function testEveryConnectionCountChangeEmitsPresenceStats(): void
     {
         RtTruthSourceRegistry::register(RtChatContext::connections, true, self::TEST_AGENT_ID);
@@ -151,6 +162,11 @@ final class ChatAgentPresenceTest extends IntegrationTestCase
         }
     }
 
+    /**
+     * Verifies closing a connection deletes only that connection's attachment drafts.
+     *
+     * @throws HilosException When runtime setup or connection close handling fails
+     */
     public function testCloseDeletesSelfConnectionAttachmentDrafts(): void
     {
         RtTruthSourceRegistry::register(RtChatContext::connections, true, self::TEST_AGENT_ID);
@@ -193,6 +209,11 @@ final class ChatAgentPresenceTest extends IntegrationTestCase
         }
     }
 
+    /**
+     * Verifies a connection exposes only its own attachment drafts.
+     *
+     * @throws HilosException When runtime setup fails
+     */
     public function testConnectionAttachmentDraftsExposeOwnedDrafts(): void
     {
         RtTruthSourceRegistry::register(RtChatContext::connections, true, self::TEST_AGENT_ID);
@@ -249,6 +270,8 @@ final class ChatAgentPresenceTest extends IntegrationTestCase
     }
 
     /**
+     * Drains queued signals and returns only their signal names.
+     *
      * @return list<string>
      */
     private function drainQueuedSignalNames(): array
@@ -261,6 +284,13 @@ final class ChatAgentPresenceTest extends IntegrationTestCase
         return $names;
     }
 
+    /**
+     * Runs a close signal inside the connection execution context.
+     *
+     * @param ChatAgent $agent Agent that owns the connection close handler
+     * @param string $acceptKey Accept key to expose as the current connection
+     * @throws HilosException When connection cleanup fails
+     */
     private function closeConnection(ChatAgent $agent, string $acceptKey): void
     {
         ExecutionContext::run(
@@ -272,6 +302,8 @@ final class ChatAgentPresenceTest extends IntegrationTestCase
     }
 
     /**
+     * Drains queued sync signals through projection and returns presence update signals.
+     *
      * @return list<SignalDTO>
      */
     private function drainProjectedPresenceSignals(): array
@@ -292,6 +324,12 @@ final class ChatAgentPresenceTest extends IntegrationTestCase
         return $signals;
     }
 
+    /**
+     * Asserts that one projected presence signal contains the expected session count.
+     *
+     * @param int $userId User id expected in the presence stats update
+     * @param int $onlineSessionCount Expected online session count
+     */
     private function assertSinglePresenceEmitStatsCount(int $userId, int $onlineSessionCount): void
     {
         $signals = $this->drainProjectedPresenceSignals();
@@ -308,6 +346,11 @@ final class ChatAgentPresenceTest extends IntegrationTestCase
         );
     }
 
+    /**
+     * Records one queued DB/RT sync signal as a projection source change.
+     *
+     * @param SignalDTO $signal Queued sync signal to inspect
+     */
     private function recordProjectionSourceChange(SignalDTO $signal): void
     {
         $signalType = $signal->signalType->getType();
@@ -328,6 +371,9 @@ final class ChatAgentPresenceTest extends IntegrationTestCase
         }
     }
 
+    /**
+     * Asserts that presence-only lifecycle changes did not create history events.
+     */
     private function assertNoPresenceEventsInHistory(): void
     {
         foreach (Hilos::$db->events as $event) {

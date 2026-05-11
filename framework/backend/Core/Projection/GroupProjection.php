@@ -17,6 +17,8 @@ abstract class GroupProjection
 {
     /**
      * Group identifier this projection serves.
+     *
+     * @return string Group key from the subscription catalog
      */
     abstract public function group(): string;
 

@@ -27,29 +27,30 @@ use Hilos\Database\DatabaseException;
 use Hilos\Database\View\Collection\DbCollection;
 
 /**
- * Base table definition — one per registered table.
+ * Base definition for one registered table.
  *
- * Stateless: each full snapshot pulls fresh data through the table query.
- * Supports ArrayAccess for item-level operations: $table->bots[$id]->actions->delete().
+ * Table definitions are stateless: each full snapshot pulls fresh data through
+ * the table query. ArrayAccess exposes item-level actions such as
+ * `$table->bots[$id]->actions->delete()`.
  *
  * @implements ArrayAccess<string|int, TableItem>
  */
 abstract class TableDefinition implements ArrayAccess
 {
-    /** @var ?TableActions lazy-loaded table-level actions instance */
+    /** @var ?TableActions Lazy-loaded table-level actions instance */
     private ?TableActions $_actions = null;
 
-    /** @var ?class-string<TableActions> table actions class for create, etc */
+    /** @var ?class-string<TableActions> Table actions class for create-like operations */
     private ?string $_actionsClass = null;
 
-    /** @var ?class-string<TableItemActions> item actions class for update, delete */
+    /** @var ?class-string<TableItemActions> Item actions class for update/delete-like operations */
     private ?string $_itemActionsClass = null;
 
-    /** @var class-string<AbstractTableRow> row class used by this table */
+    /** @var class-string<AbstractTableRow> Row class used by this table */
     private string $_rowClass = GenericTableRow::class;
 
     /**
-     * Creates table definition and applies table-specific configuration.
+     * Creates the table definition and applies table-specific configuration.
      */
     public function __construct()
     {
@@ -57,7 +58,7 @@ abstract class TableDefinition implements ArrayAccess
     }
 
     /**
-     * Override in subclasses to configure actions classes.
+     * Configures row and actions classes for subclasses.
      *
      * Called from the constructor after the base table state is initialized.
      */
@@ -66,7 +67,7 @@ abstract class TableDefinition implements ArrayAccess
     }
 
     /**
-     * Registers the table-level actions class (create, etc.).
+     * Registers the table-level actions class.
      *
      * @param class-string<TableActions> $class Table actions class name
      */
@@ -76,7 +77,7 @@ abstract class TableDefinition implements ArrayAccess
     }
 
     /**
-     * Registers the item-level actions class (update, delete).
+     * Registers the item-level actions class.
      *
      * @param class-string<TableItemActions> $class Item actions class name
      */
@@ -185,7 +186,7 @@ abstract class TableDefinition implements ArrayAccess
     abstract protected function query(TableQueryDTO $query): TableSnapshotDTO;
 
     /**
-     * Queries a DbCollection using the standard table search, sort and pagination behavior.
+     * Queries a DB collection with the standard table search, sort, and pagination behavior.
      *
      * This helper is intended for simple tables whose rows are direct frontend
      * projections of a single DbCollection. Tables with joined, calculated, or
@@ -194,7 +195,7 @@ abstract class TableDefinition implements ArrayAccess
      * @param DbCollection $collection Db collection used as the row source
      * @param TableQueryDTO $query Query parameters
      * @return TableSnapshotDTO Snapshot with raw rows
-     * @throws DatabaseException If query execution fails
+     * @throws DatabaseException When query execution fails
      */
     protected function queryDbCollection(DbCollection $collection, TableQueryDTO $query): TableSnapshotDTO
     {
@@ -250,11 +251,12 @@ abstract class TableDefinition implements ArrayAccess
     // ── Actions property ─────────────────────────────────────────────────
 
     /**
-     * Magic getter for table-level actions property.
+     * Resolves table-level magic properties.
      *
-     * @param string $name Property name (PROPERTY_ACTIONS for actions)
-     * @return TableActions Table actions instance
-     * @throws TablePropertyNotFoundException If the property does not exist
+     * @param string $name Property name, currently only `actions`
+     * @return TableActions Table-level actions instance
+     * @throws TableActionsNotConfiguredException When actions are requested before an actions class is configured
+     * @throws TablePropertyNotFoundException When the property is not declared
      */
     public function __get(string $name): mixed
     {
@@ -266,10 +268,10 @@ abstract class TableDefinition implements ArrayAccess
     }
 
     /**
-     * Magic isset for properties available via __get.
+     * Checks whether a magic property is available.
      *
      * @param string $name Property name
-     * @return bool True if property exists and is configurable
+     * @return bool True when table-level actions are configured
      */
     public function __isset(string $name): bool
     {
@@ -280,7 +282,7 @@ abstract class TableDefinition implements ArrayAccess
      * Lazily creates and returns the table actions instance.
      *
      * @return TableActions Table actions instance
-     * @throws TableActionsNotConfiguredException If actions class is not configured
+     * @throws TableActionsNotConfiguredException When actions class is not configured
      */
     private function getActions(): TableActions
     {
@@ -296,7 +298,7 @@ abstract class TableDefinition implements ArrayAccess
     // ── ArrayAccess — $table->bots[$id] ──────────────────────────────────
 
     /**
-     * ArrayAccess: always returns true (item creation is deferred to offsetGet).
+     * Reports table row keys as addressable for item action routing.
      *
      * @param mixed $offset Row key (unused)
      * @return bool Always true
@@ -307,7 +309,7 @@ abstract class TableDefinition implements ArrayAccess
     }
 
     /**
-     * ArrayAccess: returns a TableItem for the given row key.
+     * Returns a TableItem wrapper for the given row key.
      *
      * @param mixed $offset Row key
      * @return TableItem Table item for the row
@@ -318,7 +320,7 @@ abstract class TableDefinition implements ArrayAccess
     }
 
     /**
-     * ArrayAccess: set is not supported (tables are read-only).
+     * Rejects direct row writes through ArrayAccess.
      *
      * @param mixed $offset Row key (unused)
      * @param mixed $value Value to set (unused)
@@ -330,7 +332,7 @@ abstract class TableDefinition implements ArrayAccess
     }
 
     /**
-     * ArrayAccess: unset is not supported (tables are read-only).
+     * Rejects direct row removal through ArrayAccess.
      *
      * @param mixed $offset Row key (unused)
      * @throws TableOffsetUnsetNotSupportedException Always thrown

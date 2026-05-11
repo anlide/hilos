@@ -8,6 +8,9 @@ use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Page\DTO\PageActionErrorSignalData;
+use Hilos\Core\Page\Exception\PageSubscriptionException;
+use Hilos\Core\Projection\PageProjection;
+use Hilos\Core\Projection\SourceChange;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\EmitDbChangeSignalData;
@@ -16,18 +19,16 @@ use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalType;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Table\Collection\TableMutationSignalCollection;
-use Hilos\Core\Projection\SourceChange;
 use Hilos\Hilos;
 use Hilos\Socket\WebSocket\DTO\WebSocketFrameBinarySignalDTO;
 use Hilos\Utils\Logger;
 use Throwable;
 
 /**
- * AbstractPage - Abstract base class for page handlers.
+ * Base class for page handlers.
  *
- * Provides base implementation for page-specific logic.
- * Each page handles its own subscribe, unsubscribe, and action logic.
- * Signal router is available globally via Hilos::$sr.
+ * Concrete pages own subscribe, unsubscribe, action, and page-routed signal
+ * hooks. Shared framework state is read through the Hilos facade.
  */
 abstract class AbstractPage
 {
@@ -48,7 +49,7 @@ abstract class AbstractPage
     }
 
     /**
-     * Get page name (identifier)
+     * Returns the static page identifier.
      *
      * @return string Page name/identifier from PAGE constant
      */
@@ -58,7 +59,7 @@ abstract class AbstractPage
     }
 
     /**
-     * Get page agent instance
+     * Returns the page agent instance.
      *
      * @return PageAgentInterface Agent instance
      */
@@ -131,13 +132,12 @@ abstract class AbstractPage
     }
 
     /**
-     * Handle page subscription.
+     * Handles page subscription.
      *
      * Default behavior delegates to the projection layer: if the page has a
-     * registered {@see \Hilos\Core\Projection\PageProjection}, the framework
-     * builds and sends the initial snapshot through it. Override in concrete
-     * pages to add domain or routing parameter checks before (or instead of)
-     * delegating to the projection layer.
+     * registered {@see PageProjection}, the framework builds and sends the initial
+     * snapshot through it. Override in concrete pages to add domain or routing
+     * parameter checks before or instead of delegating to the projection layer.
      *
      * Route params are available through the typed accessors on
      * {@see PageRouteParams}; family-level abstract pages typically convert
@@ -146,6 +146,7 @@ abstract class AbstractPage
      *
      * @param string $acceptKey WebSocket accept key
      * @param PageRouteParams $params Route params from page subscription
+     * @throws PageSubscriptionException When the page rejects the subscription through its projection
      */
     public function onSubscribe(string $acceptKey, PageRouteParams $params): void
     {
@@ -153,7 +154,7 @@ abstract class AbstractPage
     }
 
     /**
-     * Handle page subscription update.
+     * Handles page subscription update.
      *
      * Called when a client updates params of an existing page subscription.
      * Default is a no-op; override in child classes when partial-state
@@ -168,7 +169,7 @@ abstract class AbstractPage
     }
 
     /**
-     * Handle page unsubscription
+     * Handles page unsubscription.
      *
      * Called when a client unsubscribes from this page.
      * Override in child classes when unsubscription logic is needed.
@@ -180,7 +181,7 @@ abstract class AbstractPage
     }
 
     /**
-     * Handle action signal
+     * Handles an action signal.
      *
      * Called when a client sends an action signal on this page.
      * Override in child classes when action handling is needed.
@@ -196,7 +197,7 @@ abstract class AbstractPage
     }
 
     /**
-     * Handle action exceptions.
+     * Handles action exceptions.
      *
      * Optional hook called by PageSignalRouter when onAction() throws. Override
      * only when the page has a more specific user-facing error contract.

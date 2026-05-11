@@ -18,10 +18,19 @@ use Hilos\Core\Page\PageRouteParams;
 interface ProjectionRule
 {
     /**
-     * @return list<string>
+     * Returns DB/RT source keys that can trigger this rule.
+     *
+     * @return list<string> Collection keys observed by this rule
      */
     public function sourceTriggers(): array;
 
+    /**
+     * Contributes full-state data for one page subscription.
+     *
+     * @param SubscribeSnapshotAccumulator $accumulator Snapshot accumulator shared by all page rules
+     * @param string $acceptKey Subscribing WebSocket accept key
+     * @param PageRouteParams $params Page subscription route params
+     */
     public function contributeToSnapshot(
         SubscribeSnapshotAccumulator $accumulator,
         string $acceptKey,
@@ -29,8 +38,11 @@ interface ProjectionRule
     ): void;
 
     /**
-     * @param list<string> $audienceAcceptKeys
-     * @return iterable<ProjectionDelivery>
+     * Builds incremental deliveries for one matching source change.
+     *
+     * @param SourceChange $change DB/RT source change recorded in this worker
+     * @param list<string> $audienceAcceptKeys Accept keys currently subscribed to the owning page or group
+     * @return iterable<ProjectionDelivery> Addressed WebSocket deliveries to queue
      */
     public function buildBroadcastDeliveries(SourceChange $change, array $audienceAcceptKeys): iterable;
 }

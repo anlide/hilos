@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Projection;
 
+use Hilos\Core\Page\Exception\PageSubscriptionException;
 use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Router\SignalDataInterface;
 
@@ -26,11 +27,23 @@ use Hilos\Core\Router\SignalDataInterface;
  */
 abstract class PageProjection
 {
+    /**
+     * Returns the page identifier served by this projection.
+     *
+     * @return string Page key from the page catalog or constants
+     */
     abstract public function page(): string;
 
+    /**
+     * Returns the signal name used for the initial subscribe snapshot.
+     *
+     * @return string Server-to-client signal name for page subscription data
+     */
     abstract public function subscribeSnapshotSignalName(): string;
 
     /**
+     * Lists the declarative rules used for snapshots and source-change broadcasts.
+     *
      * @return iterable<ProjectionRule>
      */
     abstract protected function rules(): iterable;
@@ -40,6 +53,12 @@ abstract class PageProjection
      *
      * Returning null suppresses the subscribe-snapshot signal entirely (used for
      * pages whose subscription is a marker without payload).
+     *
+     * @param SubscribeSnapshotAccumulator $accumulator Full state collected from this projection's rules
+     * @param string $acceptKey Subscribing WebSocket accept key
+     * @param PageRouteParams $params Page subscription route params
+     * @return ?SignalDataInterface Page-specific subscribe payload, or null to send no snapshot
+     * @throws PageSubscriptionException When page route params or resources reject the subscription
      */
     abstract protected function wrapSnapshot(
         SubscribeSnapshotAccumulator $accumulator,
@@ -47,6 +66,14 @@ abstract class PageProjection
         PageRouteParams $params,
     ): ?SignalDataInterface;
 
+    /**
+     * Builds the initial page snapshot payload for one subscriber.
+     *
+     * @param string $acceptKey Subscribing WebSocket accept key
+     * @param PageRouteParams $params Page subscription route params
+     * @return ?SignalDataInterface Page-specific subscribe payload, or null to send no snapshot
+     * @throws PageSubscriptionException When the page-specific wrapper rejects the subscription
+     */
     public function buildSubscribeSnapshot(string $acceptKey, PageRouteParams $params): ?SignalDataInterface
     {
         $accumulator = new SubscribeSnapshotAccumulator();
@@ -57,6 +84,8 @@ abstract class PageProjection
     }
 
     /**
+     * Builds incremental projection deliveries for one source change.
+     *
      * @param list<string> $audienceAcceptKeys
      * @return iterable<ProjectionDelivery>
      */

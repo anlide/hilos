@@ -20,25 +20,24 @@ use Hilos\HilosException;
 use Throwable;
 
 /**
- * AdminUsersPage - Admin users table page handler.
+ * Admin users table page action handler.
  *
- * Handles initial data load on subscribe and user_update actions.
- *
- * @property ChatAgent $agent
+ * @property ChatAgent $agent Page-owning chat agent
  */
 final class AdminUsersPage extends AbstractPage
 {
     public const string PAGE = PageConstants::ADMIN_USERS;
 
     /**
-     * Routes incoming actions to the appropriate handler.
+     * Routes admin user actions to typed handlers.
      *
      * @param string $acceptKey WebSocket accept key for the client
-     * @param string $action Action name (for error reporting)
+     * @param string $action Action name from the WebSocket envelope
      * @param ActionPayloadDTO $dto Action payload
      * @throws AgentUnknownActionException When action is not supported by this page
      * @throws InvalidActionPayloadException When action payload does not match the action name
-     * @throws HilosException On table mutation or signal failure
+     * @throws TableActionException When the target user is invalid or missing
+     * @throws HilosException When user update or audit event persistence fails
      */
     public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): void
     {
@@ -74,13 +73,12 @@ final class AdminUsersPage extends AbstractPage
     }
 
     /**
-     * Updates an existing user and broadcasts the mutation to all clients.
+     * Updates an existing user and records the admin rename event.
      *
-     * @param string $acceptKey WebSocket accept key for the requesting client
+     * @param string $acceptKey Requesting WebSocket accept key, kept for handler symmetry
      * @param AdminUserUpdateActionDTO $dto Update action payload
-     *
-     * @throws TableActionException If user ID is invalid or user not found
-     * @throws HilosException If update or broadcast fails
+     * @throws TableActionException When user id is invalid or the user is missing
+     * @throws HilosException When rename or audit event persistence fails
      */
     private function handleUserUpdate(string $acceptKey, AdminUserUpdateActionDTO $dto): void
     {

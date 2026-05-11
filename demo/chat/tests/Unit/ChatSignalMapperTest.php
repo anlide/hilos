@@ -40,6 +40,9 @@ use PHPUnit\Framework\TestCase;
  */
 final class ChatSignalMapperTest extends TestCase
 {
+    /**
+     * Verifies DB user row emits build pending mutations for every routed table.
+     */
     public function testMapChatUserRowUpdatedBuildsPendingMutationsFromRouterTableRoutes(): void
     {
         $sourceChange = SourceChange::dbUpdated(DbChatContext::users, '7', []);
@@ -68,6 +71,9 @@ final class ChatSignalMapperTest extends TestCase
         $this->assertArrayNotHasKey('targetAcceptKey', $items[1]->innerPayload->toArray());
     }
 
+    /**
+     * Verifies unknown DB emit events produce no mapper deliveries.
+     */
     public function testUnknownEventKeyReturnsEmpty(): void
     {
         $signal = new SignalDTO(
@@ -82,6 +88,9 @@ final class ChatSignalMapperTest extends TestCase
         $this->assertSame([], (new ChatSignalMapper($this->makeRouter(), $this->makeTableContext()))->mapDbEmit($signal));
     }
 
+    /**
+     * Verifies configured bot table events build one pending table mutation.
+     */
     public function testMapConfiguredBotTableEventBuildsPendingMutation(): void
     {
         $signal = new SignalDTO(
@@ -103,6 +112,9 @@ final class ChatSignalMapperTest extends TestCase
         $this->assertSame(TableChatContext::bots, $items[0]->innerPayload->tableKey);
     }
 
+    /**
+     * Verifies user presence emits are fanned out to page-scoped audiences.
+     */
     public function testMapChatUserPresenceUpdatedBuildsPageScopedFanout(): void
     {
         $router = $this->makeRouter();
@@ -184,6 +196,9 @@ final class ChatSignalMapperTest extends TestCase
         );
     }
 
+    /**
+     * Verifies bot agent status emits are mapped to bot lifecycle frontend updates.
+     */
     public function testMapBotAgentStatusUpdatedBuildsLifecycleFanout(): void
     {
         $signal = new SignalDTO(
@@ -211,6 +226,9 @@ final class ChatSignalMapperTest extends TestCase
         );
     }
 
+    /**
+     * Verifies guardian status emits are mapped to guardian status updates.
+     */
     public function testMapGuardianAgentStatusUpdatedBuildsGuardianFanout(): void
     {
         $signal = new SignalDTO(
@@ -238,9 +256,17 @@ final class ChatSignalMapperTest extends TestCase
         );
     }
 
+    /**
+     * Builds a router with only the table routes needed by mapper tests.
+     *
+     * @return SignalRouter Test router with table event route config
+     */
     private function makeRouter(): SignalRouter
     {
         return new class extends SignalRouter {
+            /**
+             * Creates a test router with deterministic table route config.
+             */
             public function __construct()
             {
                 parent::__construct();
@@ -260,6 +286,11 @@ final class ChatSignalMapperTest extends TestCase
         };
     }
 
+    /**
+     * Builds the table context used by mapper tests.
+     *
+     * @return TableContext Test table context with admin, Hilos, and bot tables
+     */
     private function makeTableContext(): TableContext
     {
         $context = new class(
@@ -267,6 +298,13 @@ final class ChatSignalMapperTest extends TestCase
             $this->makeTable('hilos'),
             $this->makeTable('bots', DbChatContext::bots),
         ) extends TableContext {
+            /**
+             * Creates a table context around prebuilt table definitions.
+             *
+             * @param TableDefinition $adminUsers Admin users table definition
+             * @param TableDefinition $hilosUsers Hilos users table definition
+             * @param TableDefinition $bots Bots table definition
+             */
             public function __construct(
                 private readonly TableDefinition $adminUsers,
                 private readonly TableDefinition $hilosUsers,
@@ -274,6 +312,9 @@ final class ChatSignalMapperTest extends TestCase
             ) {
             }
 
+            /**
+             * Registers the test table definitions by their project table keys.
+             */
             public function configure(): void
             {
                 $this->register(TableChatContext::adminUsers, $this->adminUsers);
@@ -286,9 +327,22 @@ final class ChatSignalMapperTest extends TestCase
         return $context;
     }
 
+    /**
+     * Builds a minimal table definition that reacts to one source key.
+     *
+     * @param string $label Label written into projected test rows
+     * @param string $sourceKey Source key that should produce a mutation
+     * @return TableDefinition Test table definition for mapper fan-out assertions
+     */
     private function makeTable(string $label, string $sourceKey = DbChatContext::users): TableDefinition
     {
         return new class($label, $sourceKey) extends TableDefinition {
+            /**
+             * Creates a test table definition.
+             *
+             * @param string $label Label written into projected rows
+             * @param string $sourceKey Source key that should produce a mutation
+             */
             public function __construct(
                 private readonly string $label,
                 private readonly string $sourceKey,
@@ -296,6 +350,12 @@ final class ChatSignalMapperTest extends TestCase
                 parent::__construct();
             }
 
+            /**
+             * Builds an update mutation when the source key matches this test table.
+             *
+             * @param SourceChange $change Source change under mapper test
+             * @return ?TableRowMutationDTO Mutation for matching source key, otherwise null
+             */
             public function buildMutationForSourceEvent(SourceChange $change): ?TableRowMutationDTO
             {
                 if ($change->sourceKey !== $this->sourceKey) {
@@ -312,6 +372,12 @@ final class ChatSignalMapperTest extends TestCase
                 );
             }
 
+            /**
+             * Returns an empty snapshot because mapper tests exercise only mutations.
+             *
+             * @param TableQueryDTO $query Query parameters, unused in this test table
+             * @return TableSnapshotDTO Empty table snapshot
+             */
             protected function query(TableQueryDTO $query): TableSnapshotDTO
             {
                 return new TableSnapshotDTO();

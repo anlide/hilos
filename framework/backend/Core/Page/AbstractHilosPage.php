@@ -7,12 +7,12 @@ namespace Hilos\Core\Page;
 use Hilos\Core\Agent\Hilos\AbstractHilosAgent;
 
 /**
- * AbstractHilosPage - Abstract base class for Hilos admin page handlers.
+ * Base class for framework-level Hilos admin page handlers.
  *
- * Base class for all framework-level Hilos admin pages.
- * Projects can extend these pages via inheritance.
+ * Projects extend these pages to bind framework admin routes to their own page
+ * catalog, agents, and projection setup.
  *
- * @property AbstractHilosAgent $agent
+ * @property AbstractHilosAgent $agent Framework admin agent for page operations
  */
 abstract class AbstractHilosPage extends AbstractPage
 {

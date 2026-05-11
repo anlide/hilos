@@ -20,11 +20,11 @@ abstract class IntegrationTestCase extends TestCase
 {
     private const string TEST_AGENT_ID = 'test-agent';
 
-    /** @var bool Whether database has been initialized for test run */
+    /** @var bool Whether the database has been initialized for this test process */
     protected static bool $dbInitialized = false;
 
     /**
-     * Initialize database and register test agent as truth source.
+     * Initializes the database once and registers test truth-source ownership.
      */
     protected function setUp(): void
     {
@@ -46,7 +46,7 @@ abstract class IntegrationTestCase extends TestCase
     }
 
     /**
-     * Unregister test agent from truth source.
+     * Unregisters test truth-source ownership after each test.
      */
     protected function tearDown(): void
     {
