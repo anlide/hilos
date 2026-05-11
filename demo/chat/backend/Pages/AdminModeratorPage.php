@@ -22,9 +22,7 @@ use Hilos\HilosException;
 use Throwable;
 
 /**
- * AdminModeratorPage - Admin moderator prompt pieces page handler.
- *
- * Handles initial data load on subscribe and piece create/update/delete actions.
+ * Handles admin moderator prompt piece table actions.
  *
  * @property LibraryAgent $agent
  */
@@ -33,14 +31,14 @@ final class AdminModeratorPage extends AbstractPage
     public const string PAGE = PageConstants::ADMIN_MODERATOR;
 
     /**
-     * Routes incoming moderator piece actions (create/update/delete) to the appropriate handler.
+     * Routes moderator prompt piece actions to typed handlers.
      *
      * @param string $acceptKey WebSocket accept key for the client
-     * @param string $action Action name (for error reporting)
-     * @param ActionPayloadDTO $dto Action payload (ModeratorPieceCreateActionDTO|ModeratorPieceUpdateActionDTO|ModeratorPieceDeleteActionDTO)
+     * @param string $action Action name from the WebSocket envelope
+     * @param ActionPayloadDTO $dto Parsed action payload
      * @throws AgentUnknownActionException When action is not supported by this page
      * @throws InvalidActionPayloadException When action payload does not match the action name
-     * @throws HilosException On table mutation or signal failure
+     * @throws HilosException When a routed table mutation fails
      */
     public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): void
     {
@@ -92,12 +90,11 @@ final class AdminModeratorPage extends AbstractPage
     }
 
     /**
-     * Creates a new moderator prompt piece and broadcasts the mutation to all clients.
+     * Creates a moderator prompt piece through the table action.
      *
-     * @param string $acceptKey WebSocket accept key for the requesting client
+     * @param string $acceptKey Requesting WebSocket accept key, kept for handler symmetry
      * @param ModeratorPieceCreateActionDTO $dto Create action payload
-     * @throws TableActionException If create fails
-     * @throws HilosException If mutation broadcasting fails
+     * @throws HilosException When prompt validation or persistence fails
      */
     private function handleCreate(string $acceptKey, ModeratorPieceCreateActionDTO $dto): void
     {
@@ -105,12 +102,12 @@ final class AdminModeratorPage extends AbstractPage
     }
 
     /**
-     * Updates an existing moderator prompt piece and broadcasts the mutation to all clients.
+     * Updates a moderator prompt piece through the table action.
      *
-     * @param string $acceptKey WebSocket accept key for the requesting client
+     * @param string $acceptKey Requesting WebSocket accept key, kept for handler symmetry
      * @param ModeratorPieceUpdateActionDTO $dto Update action payload
-     *
-     * @throws TableActionException If piece ID is invalid or piece not found
+     * @throws TableActionException When piece id is invalid or the piece is missing
+     * @throws HilosException When prompt persistence fails
      */
     private function handleUpdate(string $acceptKey, ModeratorPieceUpdateActionDTO $dto): void
     {
@@ -126,12 +123,12 @@ final class AdminModeratorPage extends AbstractPage
     }
 
     /**
-     * Deletes a moderator prompt piece and broadcasts the mutation to all clients.
+     * Deletes a moderator prompt piece through the table action.
      *
-     * @param string $acceptKey WebSocket accept key for the requesting client
+     * @param string $acceptKey Requesting WebSocket accept key, kept for handler symmetry
      * @param ModeratorPieceDeleteActionDTO $dto Delete action payload
-     *
-     * @throws TableActionException If piece ID is invalid or piece not found
+     * @throws TableActionException When piece id is invalid or the piece is missing
+     * @throws HilosException When prompt persistence fails
      */
     private function handleDelete(string $acceptKey, ModeratorPieceDeleteActionDTO $dto): void
     {

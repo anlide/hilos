@@ -33,11 +33,12 @@ use Hilos\Runtime\View\Context\RtContext;
  * - Hilos::$projection->subscribeSnapshot(PageConstants::MAIN, $acceptKey, $params)
  *
  * @property-read DbChatContext $db Database context (narrows parent's DbContext for IDE)
- * @property-read EnvAccessor $env Environment accessor
- * @property-read SettingsAccessor $setting Settings accessor
+ * @property-read ChatEnvAccessor $env Environment accessor (narrows parent's EnvAccessor for IDE)
+ * @property-read ChatSettingsAccessor $setting Settings accessor (narrows parent's SettingsAccessor for IDE)
  * @property-read RtChatContext $rt Runtime context (narrows parent's RtContext for IDE)
  * @property-read TableChatContext $table Table context (narrows parent's TableContext for IDE)
  * @property-read FsChatContext $fs Filesystem context (narrows parent's FsContext for IDE)
+ * @property-read ChatProjectionContext $projection Projection context (narrows parent's ProjectionContext for IDE)
  */
 final class Hilos extends \Hilos\Hilos
 {
@@ -52,9 +53,9 @@ final class Hilos extends \Hilos\Hilos
     }
 
     /**
-     * Creates and returns a database context instance.
+     * Creates the chat database context.
      *
-     * @return DbChatContext The database context instance.
+     * @return DbChatContext Chat database context
      */
     protected static function createDb(): DbContext
     {
@@ -72,9 +73,9 @@ final class Hilos extends \Hilos\Hilos
     }
 
     /**
-     * Creates and returns the runtime context instance.
+     * Creates the chat runtime context.
      *
-     * @return ?RtChatContext Runtime context or null if runtime is not available
+     * @return RtChatContext Chat runtime context
      */
     protected static function createRuntime(): ?RtContext
     {
@@ -82,9 +83,9 @@ final class Hilos extends \Hilos\Hilos
     }
 
     /**
-     * Creates and returns the table context.
+     * Creates the chat table context.
      *
-     * @return ?TableChatContext The table context instance.
+     * @return TableChatContext Chat table context
      */
     protected static function createTable(): ?TableContext
     {
@@ -92,9 +93,9 @@ final class Hilos extends \Hilos\Hilos
     }
 
     /**
-     * Creates and returns the filesystem context.
+     * Creates the chat filesystem context.
      *
-     * @return ?FsChatContext The filesystem context instance.
+     * @return FsChatContext Chat filesystem context
      */
     protected static function createFs(): ?FsContext
     {
@@ -104,7 +105,7 @@ final class Hilos extends \Hilos\Hilos
     /**
      * Creates the worker-local projection context for the chat demo.
      *
-     * @return ?ChatProjectionContext Chat projection context
+     * @return ChatProjectionContext Chat projection context
      */
     protected static function createProjection(): ?ProjectionContext
     {

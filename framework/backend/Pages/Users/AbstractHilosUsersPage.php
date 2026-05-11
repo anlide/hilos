@@ -10,7 +10,7 @@ use Hilos\Core\Page\AbstractHilosPage;
 use Hilos\Core\Projection\PageProjection;
 
 /**
- * Base class for the framework Hilos users list page.
+ * Base class for the framework Hilos users-list page.
  *
  * Subscribe behavior is fully driven by the projection layer: projects
  * register a {@see PageProjection} for {@see HilosPageConstants::HILOS_USERS}

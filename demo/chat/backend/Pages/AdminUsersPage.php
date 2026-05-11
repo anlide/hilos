@@ -73,7 +73,7 @@ final class AdminUsersPage extends AbstractPage
     }
 
     /**
-     * Updates an existing user and records the admin rename event.
+     * Renames a user through the admin table action and records the audit event.
      *
      * @param string $acceptKey Requesting WebSocket accept key, kept for handler symmetry
      * @param AdminUserUpdateActionDTO $dto Update action payload
@@ -98,5 +98,4 @@ final class AdminUsersPage extends AbstractPage
             adminUserId: Hilos::$rt->selfConnection?->userId,
         );
     }
-
 }

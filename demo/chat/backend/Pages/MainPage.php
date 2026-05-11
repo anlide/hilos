@@ -221,17 +221,16 @@ final class MainPage extends AbstractPage
     }
 
     /**
-     * Handle file-upload init: validate limits and filename, create tmp file, and publish RT ready state.
+     * Validates upload metadata, reserves storage, and publishes RT ready state.
      *
+     * @param FileUploadInitActionDTO $dto Parsed upload metadata
      * @throws ItemNotFoundForUpdateException When the WebSocket session is missing
-     * @throws ValidationException When the current outbound submit is being moderated or upload metadata lacks
-     * a client id
+     * @throws ValidationException When the current submit is being moderated or upload metadata lacks a client id
      * @throws DatabaseException When reading persisted attachment limit setting rows fails
-     * @throws SettingException When attachment limit catalog keys are missing, read through the wrong type, or resolve
-     * to invalid values
+     * @throws SettingException When attachment limit settings are missing, mistyped, or invalid
+     * @throws FileDeleteException When upload cleanup cannot delete tmp or quarantine files
      * @throws RtActionsCollectionNameNullException When the connections actions collection name is null
      * @throws RtTruthSourceWriteNotAllowedException When the truth source rejects a runtime write
-     * @throws FileDeleteException When upload cleanup cannot delete tmp or quarantine files
      */
     private function handleFileUploadInit(FileUploadInitActionDTO $dto): void
     {
@@ -331,7 +330,7 @@ final class MainPage extends AbstractPage
     }
 
     /**
-     * Handle a websocket binary frame for an active main-page upload session.
+     * Handles a WebSocket binary frame for an active main-page upload session.
      *
      * Appends the chunk to tmp storage, updates runtime progress, records throttled projection markers,
      * and completes the upload when received bytes reach the declared size.
@@ -420,7 +419,7 @@ final class MainPage extends AbstractPage
     }
 
     /**
-     * Resolve a user-facing message for an upload failure code exposed through self-connection state.
+     * Resolves a user-facing message for an upload failure code exposed through self-connection state.
      *
      * @param string $code One of ChatFileUploadConstants::FILE_UPLOAD_FAILURE_CODE_* constants
      * @return string User-facing upload failure message

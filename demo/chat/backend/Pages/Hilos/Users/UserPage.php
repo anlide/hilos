@@ -7,12 +7,10 @@ namespace Demo\Chat\Pages\Hilos\Users;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Core\Router\DTO\ActionFailSignalData;
 use Demo\Chat\Core\Router\DTO\ActionSuccessSignalData;
-use Demo\Chat\Database\Actions\Item\UserActions;
 use Demo\Chat\Hilos;
 use Demo\Chat\Tables\HilosUser\DTO\HilosUserUpdateActionDTO;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
-use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
 use Hilos\HilosException;
@@ -20,10 +18,10 @@ use Hilos\Pages\Users\AbstractHilosUserPage;
 use Throwable;
 
 /**
- * UserPage - Hilos single user page implementation for demo.
+ * Handles the chat demo implementation of the Hilos user-detail page.
  *
- * On subscribe, sends one requested user entity. {@see ChatSignalConstants::HILOS_USER_UPDATE}
- * renames through DB actions and broadcasts the same signals as admin user update.
+ * Subscription snapshots are projection-driven. The update action renames the
+ * selected user through table actions and sends modal success/fail acks.
  */
 final class UserPage extends AbstractHilosUserPage
 {
@@ -35,7 +33,8 @@ final class UserPage extends AbstractHilosUserPage
      * @param ActionPayloadDTO $dto Parsed action payload
      * @throws AgentUnknownActionException When action is not supported by this page
      * @throws InvalidActionPayloadException When action payload does not match the action name
-     * @throws HilosException On update or signal failure
+     * @throws ItemNotFoundForUpdateException When the target user is missing
+     * @throws HilosException When user update, audit event persistence, or success ack fails
      */
     public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): void
     {
@@ -77,17 +76,15 @@ final class UserPage extends AbstractHilosUserPage
     }
 
     /**
-     * Renames a user through {@see UserActions::rename} and fans out updates.
+     * Renames the selected user through the Hilos users table action and writes an audit event.
      *
-     * Thrown failures become a dedicated
-     * {@see ChatSignalConstants::HILOS_USER_UPDATE_FAIL} ack to the initiator.
-     * On success, sends {@see ChatSignalConstants::HILOS_USER_UPDATE_SUCCESS}
-     * after the broadcast fan-out.
+     * Thrown failures become a dedicated fail ack through onActionException().
+     * On success, the initiator receives the HILOS_USER_UPDATE_SUCCESS ack.
      *
      * @param string $acceptKey WebSocket accept key for the requesting client
      * @param HilosUserUpdateActionDTO $dto Update action payload
-     * @throws ValidationException When rename payload violates user validation rules
-     * @throws HilosException On database error or broadcast failure
+     * @throws ItemNotFoundForUpdateException When the target user is missing
+     * @throws HilosException When rename, audit event persistence, or success ack fails
      */
     private function handleHilosUserUpdate(string $acceptKey, HilosUserUpdateActionDTO $dto): void
     {

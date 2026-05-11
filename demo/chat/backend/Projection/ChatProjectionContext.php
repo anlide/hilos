@@ -20,6 +20,7 @@ use Demo\Chat\Runtime\State\Item\BotAgentStatus as StateBotAgentStatus;
 use Demo\Chat\Runtime\State\Item\GuardianAgentStatus as StateGuardianAgentStatus;
 use Demo\Chat\Runtime\View\Context\RtChatContext;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Core\Projection\PageProjection;
 use Hilos\Core\Projection\ProjectionContext;
 use Hilos\Core\Projection\ProjectionDelivery;
 use Hilos\Core\Projection\SourceChange;
@@ -32,13 +33,14 @@ use Hilos\Hilos;
 /**
  * Chat demo projection context.
  *
- * Registers seven {@see \Hilos\Core\Projection\PageProjection} instances that
- * cover all browser pages of the demo, and adds project-level global broadcast
- * rules for chat events and agent presence that fan out to every locally
- * subscribed accept key (regardless of which page they are on).
+ * Registers {@see PageProjection} instances for demo pages and adds
+ * project-level global broadcast rules for chat events and agent presence.
  */
 final class ChatProjectionContext extends ProjectionContext
 {
+    /**
+     * Registers all page projections used by the chat demo.
+     */
     public function configure(): void
     {
         $this->register(new MainPageProjection());
@@ -50,6 +52,9 @@ final class ChatProjectionContext extends ProjectionContext
         $this->register(new HilosSettingsPageProjection());
     }
 
+    /**
+     * Dispatches buffered projection changes, including chat-wide broadcasts.
+     */
     public function flushToSignalRouter(): void
     {
         if (!$this->hasChanges() || Hilos::$sr === null) {
@@ -66,6 +71,8 @@ final class ChatProjectionContext extends ProjectionContext
      * Broadcasts that fan out to every locally subscribed accept key on this
      * worker, regardless of which page the client is currently on. Preserves
      * the historical "everyone receives chat events and agent presence" behavior.
+     *
+     * @param SourceChangeSet $changes Buffered source changes to inspect
      */
     private function dispatchGlobalBroadcasts(SourceChangeSet $changes): void
     {
@@ -85,9 +92,12 @@ final class ChatProjectionContext extends ProjectionContext
     }
 
     /**
-     * @param list<string> $audience
-     * @param array<int, true> $deliveredEventIds
-     * @return iterable<ProjectionDelivery>
+     * Builds project-wide deliveries for one source change.
+     *
+     * @param SourceChange $change Source change being projected
+     * @param list<string> $audience Accept keys subscribed on this worker
+     * @param array<int, true> $deliveredEventIds Event ids already sent directly
+     * @return iterable<ProjectionDelivery> Global deliveries for the change
      */
     private function buildGlobalDeliveriesForChange(
         SourceChange $change,
@@ -134,7 +144,10 @@ final class ChatProjectionContext extends ProjectionContext
     }
 
     /**
-     * @return array<int, true>
+     * Returns chat event ids already covered by direct event broadcasts.
+     *
+     * @param SourceChangeSet $changes Buffered source changes to scan
+     * @return array<int, true> Set of event ids keyed by id
      */
     private function eventIdsBroadcastDirectly(SourceChangeSet $changes): array
     {
@@ -152,8 +165,11 @@ final class ChatProjectionContext extends ProjectionContext
     }
 
     /**
-     * @param list<string> $audience
-     * @return iterable<ProjectionDelivery>
+     * Builds global bot entity update deliveries.
+     *
+     * @param SourceChange $change Bot source change
+     * @param list<string> $audience Accept keys subscribed on this worker
+     * @return iterable<ProjectionDelivery> Bot update deliveries
      */
     private function buildBotUpdatedDeliveries(SourceChange $change, array $audience): iterable
     {
@@ -184,8 +200,11 @@ final class ChatProjectionContext extends ProjectionContext
     }
 
     /**
-     * @param list<string> $audience
-     * @return iterable<ProjectionDelivery>
+     * Builds global bot lifecycle deliveries.
+     *
+     * @param SourceChange $change Bot agent status source change
+     * @param list<string> $audience Accept keys subscribed on this worker
+     * @return iterable<ProjectionDelivery> Bot lifecycle deliveries
      */
     private function buildBotAgentStatusDeliveries(SourceChange $change, array $audience): iterable
     {
@@ -232,8 +251,11 @@ final class ChatProjectionContext extends ProjectionContext
     }
 
     /**
-     * @param list<string> $audience
-     * @return iterable<ProjectionDelivery>
+     * Builds global guardian agent status deliveries.
+     *
+     * @param SourceChange $change Guardian agent status source change
+     * @param list<string> $audience Accept keys subscribed on this worker
+     * @return iterable<ProjectionDelivery> Guardian status deliveries
      */
     private function buildGuardianAgentStatusDeliveries(SourceChange $change, array $audience): iterable
     {

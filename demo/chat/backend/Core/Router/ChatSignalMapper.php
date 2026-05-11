@@ -35,14 +35,10 @@ use Hilos\Database\Exception\View\CollectionNotManualException;
 use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 
 /**
- * Maps EMIT_* signals to concrete WebSocket payloads for the chat demo.
+ * Maps legacy EMIT_* daemon signals to chat WebSocket fan-out payloads.
  *
- * {@see ChatSignalConstants::EMIT_CHAT_USER_ROW_UPDATED}: one pending table
- * mutation per table declared in {@see SignalRouter::getTableKeysForEvent()},
- * broadcast to every subscribed client except the initiator.
- *
- * When payloads differ per page, use {@see SignalRouter::getAcceptKeysForPage} and extra {@see EmitFanoutItem}
- * with {@see EmitFanoutDelivery::Single}, deduping against clients that already received the broadcast leg.
+ * Table events resolve through SignalRouter table routes; page-specific
+ * presence updates use single-target fan-out for matching subscribers.
  */
 final class ChatSignalMapper implements SignalMapperInterface
 {
@@ -60,6 +56,8 @@ final class ChatSignalMapper implements SignalMapperInterface
 
     /**
      * Maps DB emit signals to WebSocket fan-out payloads.
+     *
+     * Non-DB payloads and unknown signal names are ignored.
      *
      * @param SignalDTO $emit Internal DB emit signal
      * @return list<EmitFanoutItem>
@@ -89,6 +87,8 @@ final class ChatSignalMapper implements SignalMapperInterface
     /**
      * Maps runtime emit signals to WebSocket fan-out payloads.
      *
+     * Non-runtime payloads and unknown signal names are ignored.
+     *
      * @param SignalDTO $emit Internal runtime emit signal
      * @return list<EmitFanoutItem>
      */
@@ -113,8 +113,8 @@ final class ChatSignalMapper implements SignalMapperInterface
      * @param EmitDbChangeSignalData $data Source event and delivery metadata from the internal emit signal
      * @param bool $replaceEvents Whether the event collection should be replaced on the frontend
      * @return list<EmitFanoutItem>
-     * @throws ObjectGetIdStringNotImplementedException
-     * @throws CollectionNotManualException
+     * @throws ObjectGetIdStringNotImplementedException When the event lacks a string id for collection projection
+     * @throws CollectionNotManualException When the event cannot be wrapped in a manual collection
      */
     private function mapChatEventCreated(EmitDbChangeSignalData $data, bool $replaceEvents = false): array
     {
@@ -219,9 +219,9 @@ final class ChatSignalMapper implements SignalMapperInterface
     }
 
     /**
-     * Builds page-scoped user presence fan-out from the daemon-side subscription registry.
+     * Builds page-scoped user presence fan-out from runtime connection changes.
      *
-     * @param EmitRtChangeSignalData $data Runtime emit payload from BotAgent
+     * @param EmitRtChangeSignalData $data Runtime emit payload for a connection presence change
      * @return list<EmitFanoutItem>
      */
     private function mapChatUserPresenceUpdated(EmitRtChangeSignalData $data): array

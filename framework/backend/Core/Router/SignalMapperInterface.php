@@ -13,16 +13,18 @@ use Hilos\Core\Router\DTO\SignalDTO;
 interface SignalMapperInterface
 {
     /**
-     * Expand a DB emit signal into WebSocket deliveries.
+     * Expands a DB emit signal into WebSocket deliveries.
      *
-     * @return list<EmitFanoutItem>
+     * @param SignalDTO $emit Internal DB emit signal
+     * @return list<EmitFanoutItem> Fan-out items queued for WebSocket delivery
      */
     public function mapDbEmit(SignalDTO $emit): array;
 
     /**
-     * Expand an RT emit signal into WebSocket deliveries.
+     * Expands an RT emit signal into WebSocket deliveries.
      *
-     * @return list<EmitFanoutItem>
+     * @param SignalDTO $emit Internal runtime emit signal
+     * @return list<EmitFanoutItem> Fan-out items queued for WebSocket delivery
      */
     public function mapRtEmit(SignalDTO $emit): array;
 }

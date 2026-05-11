@@ -23,9 +23,7 @@ use Hilos\HilosException;
 use Throwable;
 
 /**
- * AdminBotsPage - Admin bots table page handler.
- *
- * Handles initial data load on subscribe and bot create/update/delete actions.
+ * Handles admin bot table actions for the chat demo.
  *
  * @property LibraryAgent $agent
  */
@@ -34,14 +32,14 @@ final class AdminBotsPage extends AbstractPage
     public const string PAGE = PageConstants::ADMIN_BOTS;
 
     /**
-     * Routes incoming bot actions (create/update/delete) to the appropriate handler.
+     * Routes bot create, update, and delete actions to typed handlers.
      *
      * @param string $acceptKey WebSocket accept key for the client
-     * @param string $action Action name (for error reporting)
-     * @param ActionPayloadDTO $dto Action payload (BotCreateActionDTO|BotUpdateActionDTO|BotDeleteActionDTO)
+     * @param string $action Action name from the WebSocket envelope
+     * @param ActionPayloadDTO $dto Parsed action payload
      * @throws AgentUnknownActionException When action is not supported by this page
      * @throws InvalidActionPayloadException When action payload does not match the action name
-     * @throws HilosException On table mutation or signal failure
+     * @throws HilosException When a routed table mutation or agent signal fails
      */
     public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): void
     {
@@ -93,12 +91,11 @@ final class AdminBotsPage extends AbstractPage
     }
 
     /**
-     * Creates a new bot and broadcasts the mutation to all clients.
-     * Starts BotAgent if bot is created with active flag.
+     * Creates a bot through the table action and starts BotAgent when active.
      *
-     * @param string $acceptKey WebSocket accept key for the requesting client
+     * @param string $acceptKey Requesting WebSocket accept key, kept for handler symmetry
      * @param BotCreateActionDTO $dto Create action payload
-     * @throws HilosException If bot creation fails due to validation or database errors
+     * @throws HilosException When bot validation, persistence, or agent startup fails
      */
     private function handleCreate(string $acceptKey, BotCreateActionDTO $dto): void
     {
@@ -113,13 +110,14 @@ final class AdminBotsPage extends AbstractPage
     }
 
     /**
-     * Updates an existing bot and broadcasts the mutation to all clients.
-     * On active change: start agent when active false->true; stop via data sync on stage 3 when true->false.
+     * Updates a bot and starts BotAgent when an inactive bot becomes active.
      *
-     * @param string $acceptKey WebSocket accept key for the requesting client
+     * Active true-to-false changes are handled by BotAgent through data sync.
+     *
+     * @param string $acceptKey Requesting WebSocket accept key, kept for handler symmetry
      * @param BotUpdateActionDTO $dto Update action payload
-     *
-     * @throws TableActionException If bot ID is invalid or bot not found
+     * @throws TableActionException When bot id is invalid or the bot is missing
+     * @throws HilosException When bot persistence or agent startup fails
      */
     private function handleUpdate(string $acceptKey, BotUpdateActionDTO $dto): void
     {
@@ -143,12 +141,12 @@ final class AdminBotsPage extends AbstractPage
     }
 
     /**
-     * Deletes a bot and broadcasts the mutation to all clients.
+     * Deletes a bot through the table action.
      *
-     * @param string $acceptKey WebSocket accept key for the requesting client
+     * @param string $acceptKey Requesting WebSocket accept key, kept for handler symmetry
      * @param BotDeleteActionDTO $dto Delete action payload
-     *
-     * @throws TableActionException If bot ID is invalid or bot not found
+     * @throws TableActionException When bot id is invalid or the bot is missing
+     * @throws HilosException When bot persistence fails
      */
     private function handleDelete(string $acceptKey, BotDeleteActionDTO $dto): void
     {

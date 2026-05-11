@@ -15,27 +15,26 @@ use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
 use Hilos\Core\Table\DTO\TableActionErrorSignalData;
 use Hilos\Core\Table\Exception\TableActionException;
+use Hilos\Database\DatabaseException;
+use Hilos\Database\Settings\Exception\SettingException;
 use Hilos\HilosException;
 use Hilos\Pages\AbstractHilosSettingsPage;
 use Throwable;
 
 /**
- * SettingsPage - Hilos settings page handler.
- *
- * Handles initial settings table load on subscribe (with catalogKeys for Add modal)
- * and setting add/update/delete actions.
+ * Handles Hilos settings table actions for the chat demo.
  */
 final class SettingsPage extends AbstractHilosSettingsPage
 {
     /**
-     * Routes incoming setting actions (add/update/delete) to the appropriate handler.
+     * Routes setting add, update, and delete actions to typed handlers.
      *
      * @param string $acceptKey WebSocket accept key for the client
-     * @param string $action Action name (for error reporting)
-     * @param ActionPayloadDTO $dto Action payload (SettingAddActionDTO|SettingUpdateActionDTO|SettingDeleteActionDTO)
+     * @param string $action Action name from the WebSocket envelope
+     * @param ActionPayloadDTO $dto Parsed action payload
      * @throws AgentUnknownActionException When action is not supported by this page
      * @throws InvalidActionPayloadException When action payload does not match the action name
-     * @throws HilosException On table mutation or signal failure
+     * @throws HilosException When a routed settings table mutation fails
      */
     public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): void
     {
@@ -87,12 +86,12 @@ final class SettingsPage extends AbstractHilosSettingsPage
     }
 
     /**
-     * Adds a new setting and broadcasts the mutation.
+     * Adds a setting through the table action.
      *
-     * @param string $acceptKey WebSocket accept key for the requesting client
+     * @param string $acceptKey Requesting WebSocket accept key, kept for handler symmetry
      * @param SettingAddActionDTO $dto Add action payload
-     * @throws TableActionException If key is empty or not in catalog
-     * @throws HilosException If add or broadcast fails
+     * @throws TableActionException When setting key is empty
+     * @throws HilosException When catalog validation or setting persistence fails
      */
     private function handleAdd(string $acceptKey, SettingAddActionDTO $dto): void
     {
@@ -104,11 +103,13 @@ final class SettingsPage extends AbstractHilosSettingsPage
     }
 
     /**
-     * Updates an existing setting and broadcasts the mutation.
+     * Updates a setting through the table action.
      *
-     * @param string $acceptKey WebSocket accept key for the requesting client
+     * @param string $acceptKey Requesting WebSocket accept key, kept for handler symmetry
      * @param SettingUpdateActionDTO $dto Update action payload
-     * @throws TableActionException If key is empty or setting not found
+     * @throws TableActionException When setting key is empty or the setting is missing
+     * @throws DatabaseException When settings persistence or row reload fails
+     * @throws SettingException When catalog default metadata cannot rebuild the row
      */
     private function handleUpdate(string $acceptKey, SettingUpdateActionDTO $dto): void
     {
@@ -124,11 +125,12 @@ final class SettingsPage extends AbstractHilosSettingsPage
     }
 
     /**
-     * Deletes a setting and broadcasts the mutation.
+     * Deletes a setting through the table action.
      *
-     * @param string $acceptKey WebSocket accept key for the requesting client
+     * @param string $acceptKey Requesting WebSocket accept key, kept for handler symmetry
      * @param SettingDeleteActionDTO $dto Delete action payload
-     * @throws TableActionException If key is empty or setting not found
+     * @throws TableActionException When setting key is empty, missing, or still declared in the catalog
+     * @throws DatabaseException When settings persistence fails
      */
     private function handleDelete(string $acceptKey, SettingDeleteActionDTO $dto): void
     {

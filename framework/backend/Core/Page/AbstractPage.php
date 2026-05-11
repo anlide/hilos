@@ -39,7 +39,7 @@ abstract class AbstractPage
     protected PageAgentInterface $agent;
 
     /**
-     * Creates page with agent instance.
+     * Creates a page bound to its owning agent.
      *
      * @param PageAgentInterface $agent Agent instance
      */
@@ -69,7 +69,7 @@ abstract class AbstractPage
     }
 
     /**
-     * Log an info message under this page's owning agent id.
+     * Logs an info message under this page's owning agent id.
      *
      * @param string $message Message to log
      */
@@ -79,7 +79,7 @@ abstract class AbstractPage
     }
 
     /**
-     * Log an error message under this page's owning agent id.
+     * Logs an error message under this page's owning agent id.
      *
      * @param string $message Error message to log
      */
@@ -89,7 +89,7 @@ abstract class AbstractPage
     }
 
     /**
-     * Log a debug message under this page's owning agent id when debug logging is enabled.
+     * Logs a debug message under this page's owning agent id when debug logging is enabled.
      *
      * @param string $message Debug message to log
      */
@@ -99,7 +99,7 @@ abstract class AbstractPage
     }
 
     /**
-     * Log an info message when a static page workflow only has an agent id.
+     * Logs an info message when a static page workflow only has an agent id.
      *
      * @param string $agentId Agent id to use as the log source
      * @param string $message Message to log
@@ -110,7 +110,7 @@ abstract class AbstractPage
     }
 
     /**
-     * Log an error message when a static page workflow only has an agent id.
+     * Logs an error message when a static page workflow only has an agent id.
      *
      * @param string $agentId Agent id to use as the log source
      * @param string $message Error message to log
@@ -121,7 +121,7 @@ abstract class AbstractPage
     }
 
     /**
-     * Log a debug message when a static page workflow only has an agent id.
+     * Logs a debug message when a static page workflow only has an agent id.
      *
      * @param string $agentId Agent id to use as the log source
      * @param string $message Debug message to log
@@ -217,10 +217,10 @@ abstract class AbstractPage
     }
 
     /**
-     * Handle a routed binary frame signal.
+     * Handles a routed binary frame signal.
      *
-     * Default is a no-op. Override when the page owns binary frame handling
-     * for its agent.
+     * Default intentionally ignores the signal. Override when the page owns
+     * binary frame handling for its agent.
      *
      * @param WebSocketFrameBinarySignalDTO $data Binary frame payload
      * @param string $source Signal source
@@ -231,10 +231,10 @@ abstract class AbstractPage
     }
 
     /**
-     * Handle a routed agent-to-agent signal.
+     * Handles a routed agent-to-agent signal.
      *
-     * Default is a no-op. Override when the page owns a specific agent signal
-     * workflow while the agent remains the process/truth-source boundary.
+     * Default intentionally ignores the signal. Override when the page owns a
+     * specific agent signal workflow while the agent remains the process boundary.
      *
      * @param AgentSignalData $data Wrapped signal payload
      * @param string $source Signal source
@@ -245,9 +245,10 @@ abstract class AbstractPage
     }
 
     /**
-     * Handle a routed cron signal.
+     * Handles a routed cron signal.
      *
-     * Default is a no-op. Override when a page owns the scheduled workflow.
+     * Default intentionally ignores the signal. Override when a page owns the
+     * scheduled workflow.
      *
      * @param SignalDataInterface $data Cron payload
      * @param string $source Signal source
@@ -258,7 +259,7 @@ abstract class AbstractPage
     }
 
     /**
-     * Send signal to a specific user (WebSocket connection by acceptKey).
+     * Queues a signal to a specific WebSocket connection by accept key.
      *
      * Uses agent's signal source for routing context without depending on the
      * agent's concrete type.
@@ -278,7 +279,7 @@ abstract class AbstractPage
     }
 
     /**
-     * Send signal to all users (broadcast). Optionally exclude one connection.
+     * Queues a broadcast signal to all WebSocket connections.
      *
      * Uses agent's signal source for routing context without depending on the
      * agent's concrete type.
@@ -298,7 +299,7 @@ abstract class AbstractPage
     }
 
     /**
-     * Emit a DB-layer change; the daemon signal mapper expands it to WebSocket deliveries.
+     * Queues a legacy DB-layer emit signal for mapper-based WebSocket fan-out.
      *
      * Uses agent's signal source for routing context without depending on the
      * agent's concrete type.

@@ -8,28 +8,29 @@ use Hilos\Constants\HilosPageConstants;
 use Hilos\Core\Page\AbstractHilosPage;
 use Hilos\Core\Page\Exception\InvalidPageRouteParamException;
 use Hilos\Core\Page\Exception\MissingPageRouteParamException;
+use Hilos\Core\Page\Exception\PageSubscriptionException;
 use Hilos\Core\Page\PageRouteParams;
 use Hilos\Pages\Users\DTO\HilosUserPageSubscribeParams;
 
 /**
- * AbstractHilosUserPage - Abstract base for Hilos single user page.
+ * Base class for the framework Hilos single-user page.
  *
- * Projects must implement concrete class (e.g. Demo\Chat\Pages\Hilos\Users\UserPage)
- * by overriding {@see self::onHilosUserSubscribe()}. Parses the `userId` route
- * param into {@see HilosUserPageSubscribeParams} before the hook runs, so
- * subclasses receive a validated, positive integer id.
+ * The default subscription path emits the projection snapshot, parses the
+ * `userId` route param, and then calls {@see self::onHilosUserSubscribe()}.
  */
 abstract class AbstractHilosUserPage extends AbstractHilosPage
 {
     public const string PAGE = HilosPageConstants::HILOS_USER;
 
     /**
-     * Parses route params into {@see HilosUserPageSubscribeParams} and delegates to
-     * {@see self::onHilosUserSubscribe()}. Final: subclasses customize the subscribe
-     * behavior by overriding the typed hook, not this method.
+     * Emits the projection snapshot, parses route params, and runs the typed hook.
+     *
+     * Final: subclasses customize subscribe behavior through
+     * {@see self::onHilosUserSubscribe()}, not this method.
      *
      * @param string $acceptKey WebSocket accept key
      * @param PageRouteParams $params Route params for the page subscription
+     * @throws PageSubscriptionException When the page projection rejects the subscription
      * @throws MissingPageRouteParamException When `userId` is absent
      * @throws InvalidPageRouteParamException When `userId` is non-numeric or `<= 0`
      */
@@ -43,8 +44,9 @@ abstract class AbstractHilosUserPage extends AbstractHilosPage
     }
 
     /**
-     * Optional project-specific subscribe hook running after the projection
-     * layer has emitted the initial snapshot. Default is a no-op.
+     * Runs optional project-specific subscribe behavior after the initial snapshot.
+     *
+     * Default intentionally does nothing.
      *
      * @param string $acceptKey WebSocket accept key
      * @param HilosUserPageSubscribeParams $params Parsed subscribe params (always has `userId > 0`)

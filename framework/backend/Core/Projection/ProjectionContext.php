@@ -36,6 +36,9 @@ abstract class ProjectionContext
     /** @var array<string, GroupProjection> Map of group key to projection */
     private array $groups = [];
 
+    /**
+     * Starts with an empty worker-local source-change buffer.
+     */
     public function __construct()
     {
         $this->changes = new SourceChangeSet();
@@ -51,6 +54,8 @@ abstract class ProjectionContext
 
     /**
      * Registers a page or group projection instance.
+     *
+     * @param PageProjection|GroupProjection $projection Projection to register by its contract key
      */
     public function register(PageProjection|GroupProjection $projection): void
     {
@@ -63,6 +68,8 @@ abstract class ProjectionContext
 
     /**
      * Records a DB/RT sync fact in the worker-local projection buffer.
+     *
+     * @param SourceChange $change Source change to dispatch on the next flush
      */
     public function record(SourceChange $change): void
     {
@@ -70,6 +77,8 @@ abstract class ProjectionContext
     }
 
     /**
+     * Reports whether any source changes are buffered awaiting flush.
+     *
      * @return bool Whether any source changes are buffered awaiting flush
      */
     public function hasChanges(): bool
@@ -139,6 +148,8 @@ abstract class ProjectionContext
      * Subclasses that override {@see self::flushToSignalRouter()} call this
      * helper to take ownership of the buffered changes before producing extra
      * deliveries (for example, project-level global broadcasts).
+     *
+     * @return SourceChangeSet Buffered changes captured before the reset
      */
     protected function drainChanges(): SourceChangeSet
     {
@@ -152,6 +163,8 @@ abstract class ProjectionContext
      *
      * Reusable from subclasses that interleave per-page dispatch with their
      * own global broadcast pass.
+     *
+     * @param SourceChangeSet $changes Source changes to project to pages and groups
      */
     protected function dispatchChangesToPagesAndGroups(SourceChangeSet $changes): void
     {
@@ -177,7 +190,11 @@ abstract class ProjectionContext
     }
 
     /**
-     * @param iterable<ProjectionDelivery> $deliveries
+     * Queues addressed WebSocket deliveries produced by projections.
+     *
+     * Invalid deliveries and empty target accept keys are ignored.
+     *
+     * @param iterable<ProjectionDelivery> $deliveries Deliveries to queue through SignalRouter
      */
     protected function queueDeliveries(iterable $deliveries): void
     {
@@ -209,7 +226,8 @@ abstract class ProjectionContext
      * projections in this codebase are stubs awaiting first use; once a real group
      * subscription appears, add SignalRouter::getAcceptKeysForGroup() and route through it.
      *
-     * @return list<string>
+     * @param string $group Group key
+     * @return list<string> Accept keys subscribed to the group on this worker
      */
     private function getAcceptKeysForGroup(string $group): array
     {

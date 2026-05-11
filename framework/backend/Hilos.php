@@ -11,6 +11,7 @@ use Hilos\Core\Table\Context\TableContext;
 use Hilos\Database\Context\DbContext;
 use Hilos\Database\Settings\SettingsAccessor;
 use Hilos\Environment\EnvAccessor;
+use Hilos\Environment\Exception\EnvInvalidValueException;
 use Hilos\Fs\Context\FsContext;
 use Hilos\Runtime\View\Context\RtContext;
 
@@ -26,6 +27,7 @@ use Hilos\Runtime\View\Context\RtContext;
  * - Hilos::$fs    — filesystem layer
  * - Hilos::$sr    — signal router
  * - Hilos::$projection — worker-local projection accumulator
+ * - Hilos::$ac    — analytics collector
  */
 abstract class Hilos
 {
@@ -57,7 +59,7 @@ abstract class Hilos
     public static ?AnalyticsCollector $ac = null;
 
     /**
-     * Initialize all layers (env, setting, db, rt, table).
+     * Initializes env, settings, storage, runtime, table, filesystem, and projection layers.
      *
      * @throws HilosException When a layer factory or configure step cannot initialize its singleton
      */
@@ -116,6 +118,7 @@ abstract class Hilos
      * Loads an explicit env file into the active environment accessor.
      *
      * @param string $envFilePath Path to env file
+     * @throws EnvInvalidValueException When the env file is missing
      */
     public static function loadEnv(string $envFilePath): void
     {
@@ -139,7 +142,7 @@ abstract class Hilos
     }
 
     /**
-     * Initialize signal router layer.
+     * Initializes the signal router layer.
      *
      * Called separately from init() because the signal router is created
      * by DaemonManager/WorkerManager during process startup, which may
@@ -153,7 +156,7 @@ abstract class Hilos
     }
 
     /**
-     * Initialize analytics collector.
+     * Initializes the analytics collector.
      *
      * @param ?AnalyticsCollector $analyticsCollector Analytics collector instance
      */
@@ -163,13 +166,15 @@ abstract class Hilos
     }
 
     /**
-     * Replaces the worker-local projection context.
+     * Replaces and configures the worker-local projection context.
      *
      * Mirrors {@see self::initSignalRouter()} for the projection layer: tests
      * and bootstrap code can inject a specific {@see ProjectionContext} instance
      * without going through {@see self::createProjection()}. The injected
      * context is configured immediately, matching the normal {@see self::init()}
      * initialization path.
+     *
+     * @param ProjectionContext $projection Projection context to use for this worker
      */
     public static function initProjection(ProjectionContext $projection): void
     {
@@ -178,14 +183,14 @@ abstract class Hilos
     }
 
     /**
-     * Create database context instance.
+     * Creates database context instance.
      *
      * @return DbContext Database context instance
      */
     abstract protected static function createDb(): DbContext;
 
     /**
-     * Create environment accessor.
+     * Creates environment accessor.
      *
      * @return EnvAccessor Environment accessor
      */
@@ -195,7 +200,7 @@ abstract class Hilos
     }
 
     /**
-     * Create settings accessor.
+     * Creates settings accessor.
      *
      * @return SettingsAccessor Settings accessor
      */
@@ -205,7 +210,7 @@ abstract class Hilos
     }
 
     /**
-     * Create runtime instance.
+     * Creates runtime context instance.
      *
      * @return ?RtContext Runtime context or null if not used
      */
@@ -215,7 +220,7 @@ abstract class Hilos
     }
 
     /**
-     * Create table context instance.
+     * Creates table context instance.
      *
      * @return ?TableContext Table context or null if not used
      */
@@ -225,7 +230,7 @@ abstract class Hilos
     }
 
     /**
-     * Create filesystem context instance.
+     * Creates filesystem context instance.
      *
      * @return ?FsContext Filesystem context or null if not used
      */
@@ -235,7 +240,7 @@ abstract class Hilos
     }
 
     /**
-     * Create the worker-local projection context.
+     * Creates the worker-local projection context.
      *
      * The default framework has no projection. Projects return a {@see ProjectionContext}
      * subclass that registers per-page and per-group projections inside its

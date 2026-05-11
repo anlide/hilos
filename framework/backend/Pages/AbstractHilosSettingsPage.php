@@ -5,15 +5,16 @@ declare(strict_types=1);
 namespace Hilos\Pages;
 
 use Hilos\Constants\HilosPageConstants;
+use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Page\AbstractHilosPage;
+use Hilos\Core\Projection\PageProjection;
 
 /**
- * AbstractHilosSettingsPage - Abstract base for Hilos settings page.
+ * Base class for the framework Hilos settings page.
  *
  * Subscribe behavior is fully driven by the projection layer: projects register
- * a {@see \Hilos\Core\Projection\PageProjection} for {@see HilosPageConstants::HILOS_SETTINGS}
- * and the initial snapshot signal is built and delivered through
- * {@see \Hilos\Core\Page\AbstractPage::onSubscribe()}.
+ * a {@see PageProjection} for {@see HilosPageConstants::HILOS_SETTINGS} and
+ * the initial snapshot signal is built by {@see AbstractPage::onSubscribe()}.
  */
 abstract class AbstractHilosSettingsPage extends AbstractHilosPage
 {
