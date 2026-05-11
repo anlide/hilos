@@ -17,14 +17,17 @@ use Hilos\Core\Router\DTO\EntitiesChangesDTO;
 use Hilos\Core\Router\DTO\FrontendChangesDTO;
 
 /**
- * Builds {@see ChatSignalConstants::NEW_EVENT} deliveries for a chat event id,
- * shared by the global events broadcast and the eventAttachments-driven retry.
+ * Builds ChatSignalConstants::NEW_EVENT deliveries for a chat event id, shared
+ * by the global events broadcast and the eventAttachments-driven retry.
  */
 final class ChatEventBroadcastBuilder
 {
     /**
+     * Builds addressed new-event deliveries for one persisted chat event.
+     *
+     * @param int $eventId Persisted chat event id
      * @param list<string> $audienceAcceptKeys Accept keys that should receive the event
-     * @return iterable<ProjectionDelivery>
+     * @return iterable<ProjectionDelivery> New-event deliveries for the non-empty audience
      */
     public static function forEventId(int $eventId, array $audienceAcceptKeys): iterable
     {
@@ -58,6 +61,9 @@ final class ChatEventBroadcastBuilder
     /**
      * Resolves the eventId an attachment change refers to, falling back to the
      * persisted attachment row when the diff did not include `event_id`.
+     *
+     * @param SourceChange $change Event-attachment source change
+     * @return int Referenced event id, or 0 when it cannot be resolved
      */
     public static function eventIdFromAttachmentChange(SourceChange $change): int
     {
@@ -73,6 +79,13 @@ final class ChatEventBroadcastBuilder
         return (int)(Hilos::$db->eventAttachments[(int)$change->sourceId]?->eventId ?? 0);
     }
 
+    /**
+     * Builds frontend user updates needed by event types that change user state.
+     *
+     * @param string $eventType Chat event type value
+     * @param ?int $userId User id referenced by the event, if any
+     * @return ?FrontendChangesDTO User frontend updates, or null when none are needed
+     */
     private static function frontendUpdatesForEventUser(string $eventType, ?int $userId): ?FrontendChangesDTO
     {
         if (

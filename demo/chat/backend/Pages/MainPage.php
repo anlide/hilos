@@ -29,15 +29,8 @@ use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
-use Hilos\Database\DatabaseException;
-use Hilos\Database\Settings\Exception\SettingException;
-use Hilos\Fs\Exception\FileDeleteException;
 use Hilos\Fs\FsException;
 use Hilos\HilosException;
-use Hilos\Runtime\Exception\Actions\RtActionsCallbackNotSetException;
-use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
-use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
-use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\Socket\WebSocket\DTO\WebSocketFrameBinarySignalDTO;
 use Hilos\Utils\Helpers\FileSystemHelper;
 
@@ -63,7 +56,8 @@ final class MainPage extends AbstractPage
      * @param ActionPayloadDTO $dto Parsed action payload
      * @throws AgentUnknownActionException When action is not supported by this page
      * @throws InvalidActionPayloadException When action payload does not match the action name
-     * @throws HilosException On database, runtime, truth source, or signal failure
+     * @throws ValidationException When a routed handler rejects the action
+     * @throws HilosException When a routed handler exposes storage, settings, database, or runtime failure
      */
     public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): void
     {
@@ -107,7 +101,7 @@ final class MainPage extends AbstractPage
      * @throws InvalidAgentSignalPayloadException When signal payload does not match the signal name
      * @throws ValidationException When moderation rejects the message or is unavailable
      * @throws AgentException When moderation result does not match an active connection
-     * @throws HilosException On database, runtime, truth source, or signal failure
+     * @throws HilosException When moderation follow-up exposes storage, database, or runtime failure
      */
     public function onSignalAgent(AgentSignalData $data, string $source, string $name): void
     {
@@ -136,7 +130,7 @@ final class MainPage extends AbstractPage
      * @param WebSocketFrameBinarySignalDTO $data Frame payload and connection id
      * @param string $source Framework signal source identifier (unused)
      * @param string $name Framework signal name (unused)
-     * @throws HilosException On runtime or signal failure
+     * @throws HilosException When upload runtime cleanup or progress sync fails
      */
     public function onSignalFrameBinary(WebSocketFrameBinarySignalDTO $data, string $source, string $name): void
     {
@@ -150,7 +144,7 @@ final class MainPage extends AbstractPage
      * @throws EmptyValueException When message has no non-empty text and no attachments
      * @throws ItemNotFoundForUpdateException When the WebSocket session or user runtime state is missing
      * @throws ValidationException When the user is rate-limited or already moderating
-     * @throws HilosException On database, runtime, or truth source failure
+     * @throws HilosException When draft cleanup or runtime state writes fail
      */
     private function handleMessage(MessageActionDTO $dto): void
     {
@@ -190,7 +184,7 @@ final class MainPage extends AbstractPage
      * @throws ItemNotFoundForDeleteException When the requested draft does not belong to this session
      * @throws ItemNotFoundForUpdateException When the WebSocket session or user runtime state is missing
      * @throws ValidationException When the current outbound submit is being moderated
-     * @throws HilosException On runtime, filesystem, or signal failure
+     * @throws HilosException When draft deletion, filesystem cleanup, or runtime sync fails
      */
     private function handleAttachmentDraftDelete(AttachmentDraftDeleteActionDTO $dto): void
     {
@@ -226,11 +220,7 @@ final class MainPage extends AbstractPage
      * @param FileUploadInitActionDTO $dto Parsed upload metadata
      * @throws ItemNotFoundForUpdateException When the WebSocket session is missing
      * @throws ValidationException When the current submit is being moderated or upload metadata lacks a client id
-     * @throws DatabaseException When reading persisted attachment limit setting rows fails
-     * @throws SettingException When attachment limit settings are missing, mistyped, or invalid
-     * @throws FileDeleteException When upload cleanup cannot delete tmp or quarantine files
-     * @throws RtActionsCollectionNameNullException When the connections actions collection name is null
-     * @throws RtTruthSourceWriteNotAllowedException When the truth source rejects a runtime write
+     * @throws HilosException When settings lookup, quota checks, cleanup, or runtime state writes fail
      */
     private function handleFileUploadInit(FileUploadInitActionDTO $dto): void
     {
@@ -336,11 +326,7 @@ final class MainPage extends AbstractPage
      * and completes the upload when received bytes reach the declared size.
      *
      * @param WebSocketFrameBinarySignalDTO $data Binary frame payload and connection id
-     * @throws FileDeleteException When upload cleanup cannot delete its tmp file
-     * @throws RtActionsCallbackNotSetException When attachment draft runtime item creation is not configured
-     * @throws RtActionsCollectionNameNullException When the connections actions collection name is null
-     * @throws RtActionsStateCollectionNullException When attachment draft runtime state is unavailable
-     * @throws RtTruthSourceWriteNotAllowedException When the truth source rejects a runtime write
+     * @throws HilosException When upload cleanup, progress sync, or draft creation fails
      */
     private function handleFileUploadBinaryFrame(WebSocketFrameBinarySignalDTO $data): void
     {
@@ -443,7 +429,7 @@ final class MainPage extends AbstractPage
      * @param ModerationResultSignalData $result Uploader connection key, allow flag, message body, reason
      * @throws ValidationException When moderation rejects the message or is unavailable
      * @throws AgentException When result does not match an active connection
-     * @throws HilosException On database, runtime, or signal failure
+     * @throws HilosException When attachment publishing, runtime writes, or event persistence fails
      */
     private function handleTextModerationResult(ModerationResultSignalData $result): void
     {

@@ -135,13 +135,13 @@ abstract class AbstractPage
      * Handles page subscription.
      *
      * Default behavior delegates to the projection layer: if the page has a
-     * registered {@see PageProjection}, the framework builds and sends the initial
+     * registered PageProjection, the framework builds and sends the initial
      * snapshot through it. Override in concrete pages to add domain or routing
      * parameter checks before or instead of delegating to the projection layer.
      *
      * Route params are available through the typed accessors on
-     * {@see PageRouteParams}; family-level abstract pages typically convert
-     * them into an {@see AbstractPageSubscribeParamsDTO} subclass before
+     * PageRouteParams; family-level abstract pages typically convert
+     * them into an AbstractPageSubscribeParamsDTO subclass before
      * dispatching to a page-specific hook.
      *
      * @param string $acceptKey WebSocket accept key

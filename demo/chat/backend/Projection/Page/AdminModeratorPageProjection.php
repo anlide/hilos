@@ -16,18 +16,36 @@ use Hilos\Core\Projection\SubscribeSnapshotAccumulator;
 use Hilos\Core\Router\DTO\EntitiesChangesDTO;
 use Hilos\Core\Router\SignalDataInterface;
 
+/**
+ * Projects moderator prompt table state for the admin moderator page.
+ */
 final class AdminModeratorPageProjection extends PageProjection
 {
+    /**
+     * Returns the chat admin moderator page key.
+     *
+     * @return string Page key for the admin moderator route
+     */
     public function page(): string
     {
         return PageConstants::ADMIN_MODERATOR;
     }
 
+    /**
+     * Returns the subscribe snapshot signal for the admin moderator page.
+     *
+     * @return string Signal name for the initial moderator table snapshot
+     */
     public function subscribeSnapshotSignalName(): string
     {
         return ChatSignalConstants::SUBSCRIPTION_PAGE_ADMIN_MODERATOR;
     }
 
+    /**
+     * Registers moderator prompt table mutation projection for this page.
+     *
+     * @return iterable<TableRule>
+     */
     protected function rules(): iterable
     {
         yield new TableRule(
@@ -37,6 +55,14 @@ final class AdminModeratorPageProjection extends PageProjection
         );
     }
 
+    /**
+     * Wraps the moderator prompt table snapshot.
+     *
+     * @param SubscribeSnapshotAccumulator $accumulator Accumulated table snapshot state
+     * @param string $acceptKey Unused subscriber accept key; this snapshot is not connection-local
+     * @param PageRouteParams $params Unused route params; this page has no params
+     * @return ChatEventSignalDTO Admin moderator subscribe snapshot payload
+     */
     protected function wrapSnapshot(
         SubscribeSnapshotAccumulator $accumulator,
         string $acceptKey,

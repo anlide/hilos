@@ -19,18 +19,36 @@ use Hilos\Core\Router\DTO\EntitiesChangesDTO;
 use Hilos\Core\Router\DTO\FrontendChangesDTO;
 use Hilos\Core\Router\SignalDataInterface;
 
+/**
+ * Projects bot table and frontend state for the admin bots page.
+ */
 final class AdminBotsPageProjection extends PageProjection
 {
+    /**
+     * Returns the chat admin bots page key.
+     *
+     * @return string Page key for the admin bots route
+     */
     public function page(): string
     {
         return PageConstants::ADMIN_BOTS;
     }
 
+    /**
+     * Returns the subscribe snapshot signal for the admin bots page.
+     *
+     * @return string Signal name for the initial admin bots snapshot
+     */
     public function subscribeSnapshotSignalName(): string
     {
         return ChatSignalConstants::SUBSCRIPTION_PAGE_ADMIN_BOTS;
     }
 
+    /**
+     * Registers bot table mutation projection for this page.
+     *
+     * @return iterable<TableRule>
+     */
     protected function rules(): iterable
     {
         yield new TableRule(
@@ -40,6 +58,14 @@ final class AdminBotsPageProjection extends PageProjection
         );
     }
 
+    /**
+     * Wraps the bot table snapshot and full bot frontend state.
+     *
+     * @param SubscribeSnapshotAccumulator $accumulator Accumulated table snapshot state
+     * @param string $acceptKey Unused subscriber accept key; this snapshot is not connection-local
+     * @param PageRouteParams $params Unused route params; this page has no params
+     * @return ChatEventSignalDTO Admin bots subscribe snapshot payload
+     */
     protected function wrapSnapshot(
         SubscribeSnapshotAccumulator $accumulator,
         string $acceptKey,

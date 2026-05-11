@@ -22,8 +22,8 @@ use Hilos\Hilos;
  * only accept keys present in its own subscription mirror inside SignalRouter,
  * so the daemon remains a transport for already-addressed WebSocket frames.
  *
- * Subclasses register concrete {@see PageProjection} and {@see GroupProjection}
- * instances in {@see self::configure()}. Each projection owns the mapping from
+ * Subclasses register concrete PageProjection and GroupProjection instances in
+ * configure(). Each projection owns the mapping from
  * source facts to wire deliveries for one page or one group.
  */
 abstract class ProjectionContext
@@ -48,7 +48,7 @@ abstract class ProjectionContext
      * Registers concrete page and group projections.
      *
      * Called once during Hilos initialization. Subclasses call
-     * {@see self::register()} for each rule instance.
+     * register() for each rule instance.
      */
     abstract public function configure(): void;
 
@@ -89,7 +89,7 @@ abstract class ProjectionContext
     /**
      * Sends the initial subscribe-snapshot for a page subscription to one accept key.
      *
-     * Finds the registered {@see PageProjection} for the page, asks it to build
+     * Finds the registered PageProjection for the page, asks it to build
      * the snapshot payload, and queues the resulting WS_USER signal addressed
      * to the subscribing client. Pages without a registered projection are a
      * no-op. Pages whose snapshot is null (marker subscriptions) emit no signal.
@@ -145,7 +145,7 @@ abstract class ProjectionContext
     /**
      * Drains the buffered source changes and resets the accumulator.
      *
-     * Subclasses that override {@see self::flushToSignalRouter()} call this
+     * Subclasses that override flushToSignalRouter() call this
      * helper to take ownership of the buffered changes before producing extra
      * deliveries (for example, project-level global broadcasts).
      *

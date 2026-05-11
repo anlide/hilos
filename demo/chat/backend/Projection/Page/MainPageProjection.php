@@ -32,18 +32,36 @@ use Hilos\Core\Router\DTO\FrontendChangesDTO;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Table\Mutation\TableMutationType;
 
+/**
+ * Projects main chat page snapshots and connection-local frontend updates.
+ */
 final class MainPageProjection extends PageProjection
 {
+    /**
+     * Returns the main chat page key.
+     *
+     * @return string Page key for the main chat route
+     */
     public function page(): string
     {
         return PageConstants::MAIN;
     }
 
+    /**
+     * Returns the subscribe snapshot signal for the main chat page.
+     *
+     * @return string Signal name for the initial main page snapshot
+     */
     public function subscribeSnapshotSignalName(): string
     {
         return ChatSignalConstants::SUBSCRIPTION_PAGE_MAIN;
     }
 
+    /**
+     * Registers connection-local frontend state and global chat snapshot rules.
+     *
+     * @return iterable<ConnectionLocalRule|JoinedProjectionRule>
+     */
     protected function rules(): iterable
     {
         yield new ConnectionLocalRule(
@@ -95,6 +113,15 @@ final class MainPageProjection extends PageProjection
         );
     }
 
+    /**
+     * Wraps main-page entity and frontend state into the subscribe payload.
+     *
+     * @param SubscribeSnapshotAccumulator $accumulator Full frontend state collected from page rules
+     * @param string $acceptKey Subscribing WebSocket accept key used to verify the RT connection
+     * @param PageRouteParams $params Unused route params; this page has no params
+     * @return ChatEventSignalDTO Main page subscribe snapshot payload
+     * @throws PageInternalErrorException When DB, RT, or the subscriber connection is unavailable
+     */
     protected function wrapSnapshot(
         SubscribeSnapshotAccumulator $accumulator,
         string $acceptKey,
@@ -118,8 +145,11 @@ final class MainPageProjection extends PageProjection
     }
 
     /**
-     * @param list<string> $audienceAcceptKeys
-     * @return iterable<ProjectionDelivery>
+     * Builds self-connection updates for moderation and upload fields.
+     *
+     * @param SourceChange $change Connection source change recorded in this worker
+     * @param list<string> $audienceAcceptKeys Accept keys currently subscribed to the main page
+     * @return iterable<ProjectionDelivery> Self-connection update deliveries
      */
     private function buildSelfConnectionDeliveriesOnConnectionChange(
         SourceChange $change,
@@ -159,8 +189,11 @@ final class MainPageProjection extends PageProjection
     }
 
     /**
-     * @param list<string> $audienceAcceptKeys
-     * @return iterable<ProjectionDelivery>
+     * Builds public user presence updates for a connection change.
+     *
+     * @param SourceChange $change Connection source change recorded in this worker
+     * @param list<string> $audienceAcceptKeys Accept keys currently subscribed to the main page
+     * @return iterable<ProjectionDelivery> User presence update deliveries
      */
     private function buildUserPresenceDeliveriesOnConnectionChange(
         SourceChange $change,
@@ -186,8 +219,11 @@ final class MainPageProjection extends PageProjection
     }
 
     /**
-     * @param list<string> $audienceAcceptKeys
-     * @return iterable<ProjectionDelivery>
+     * Builds self-connection updates when a user's outbound submit timer changes.
+     *
+     * @param SourceChange $change User-state source change recorded in this worker
+     * @param list<string> $audienceAcceptKeys Accept keys currently subscribed to the main page
+     * @return iterable<ProjectionDelivery> Self-connection update deliveries
      */
     private function buildSelfConnectionDeliveriesOnUserStateChange(
         SourceChange $change,
@@ -219,8 +255,11 @@ final class MainPageProjection extends PageProjection
     }
 
     /**
-     * @param list<string> $audienceAcceptKeys
-     * @return iterable<ProjectionDelivery>
+     * Builds self-connection updates when attachment drafts change.
+     *
+     * @param SourceChange $change Attachment-draft source change recorded in this worker
+     * @param list<string> $audienceAcceptKeys Accept keys currently subscribed to the main page
+     * @return iterable<ProjectionDelivery> Self-connection update deliveries
      */
     private function buildSelfConnectionDeliveriesOnAttachmentDraftChange(
         SourceChange $change,
@@ -248,5 +287,4 @@ final class MainPageProjection extends PageProjection
             $acceptKey,
         );
     }
-
 }

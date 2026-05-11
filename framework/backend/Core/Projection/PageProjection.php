@@ -11,19 +11,18 @@ use Hilos\Core\Router\SignalDataInterface;
 /**
  * Page-scoped projection rule set.
  *
- * A concrete page projection lists declarative {@see ProjectionRule} instances
- * in {@see self::rules()}. The framework drives both the initial subscribe
+ * A concrete page projection lists declarative ProjectionRule instances in
+ * rules(). The framework drives both the initial subscribe
  * snapshot and the incremental broadcast through this single rule list:
  *
- * - {@see self::buildSubscribeSnapshot()} walks every rule, asks it to contribute
- *   to a {@see SubscribeSnapshotAccumulator}, then delegates to
- *   {@see self::wrapSnapshot()} to produce the page-specific wire DTO.
- * - {@see self::buildBroadcastDeliveries()} dispatches one source change to
- *   every rule whose {@see ProjectionRule::sourceTriggers()} contains the
- *   change's source key.
+ * - buildSubscribeSnapshot() walks every rule, asks it to contribute to a
+ *   SubscribeSnapshotAccumulator, then delegates to wrapSnapshot() to produce
+ *   the page-specific wire DTO.
+ * - buildBroadcastDeliveries() dispatches one source change to every rule
+ *   whose sourceTriggers() contains the change's source key.
  *
- * Subclasses may override {@see self::buildExtraBroadcastDeliveries()} for
- * rare cross-rule effects that do not map to a single rule.
+ * Subclasses may override buildExtraBroadcastDeliveries() for rare cross-rule
+ * effects that do not map to a single rule.
  */
 abstract class PageProjection
 {
@@ -86,8 +85,9 @@ abstract class PageProjection
     /**
      * Builds incremental projection deliveries for one source change.
      *
-     * @param list<string> $audienceAcceptKeys
-     * @return iterable<ProjectionDelivery>
+     * @param SourceChange $change DB/RT source change recorded in this worker
+     * @param list<string> $audienceAcceptKeys Accept keys currently subscribed to the page
+     * @return iterable<ProjectionDelivery> Addressed WebSocket deliveries to queue
      */
     public function buildBroadcastDeliveries(SourceChange $change, array $audienceAcceptKeys): iterable
     {
@@ -103,8 +103,9 @@ abstract class PageProjection
     /**
      * Hook for deliveries that span multiple rules and cannot be expressed as one.
      *
-     * @param list<string> $audienceAcceptKeys
-     * @return iterable<ProjectionDelivery>
+     * @param SourceChange $change DB/RT source change recorded in this worker
+     * @param list<string> $audienceAcceptKeys Accept keys currently subscribed to the page
+     * @return iterable<ProjectionDelivery> Extra addressed WebSocket deliveries to queue
      */
     protected function buildExtraBroadcastDeliveries(SourceChange $change, array $audienceAcceptKeys): iterable
     {

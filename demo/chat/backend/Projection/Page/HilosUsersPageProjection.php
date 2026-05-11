@@ -25,18 +25,36 @@ use Hilos\Core\Router\DTO\EntitiesChangesDTO;
 use Hilos\Core\Router\DTO\FrontendChangesDTO;
 use Hilos\Core\Router\SignalDataInterface;
 
+/**
+ * Projects framework user table and presence state for the Hilos users page.
+ */
 final class HilosUsersPageProjection extends PageProjection
 {
+    /**
+     * Returns the framework users page key.
+     *
+     * @return string Page key for the Hilos users route
+     */
     public function page(): string
     {
         return HilosPageConstants::HILOS_USERS;
     }
 
+    /**
+     * Returns the subscribe snapshot signal for the Hilos users page.
+     *
+     * @return string Signal name for the initial Hilos users snapshot
+     */
     public function subscribeSnapshotSignalName(): string
     {
         return HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_USERS;
     }
 
+    /**
+     * Registers Hilos user table mutations and presence update deliveries.
+     *
+     * @return iterable<TableRule|JoinedProjectionRule>
+     */
     protected function rules(): iterable
     {
         yield new TableRule(
@@ -70,6 +88,14 @@ final class HilosUsersPageProjection extends PageProjection
         );
     }
 
+    /**
+     * Wraps the Hilos users table snapshot and full user frontend state.
+     *
+     * @param SubscribeSnapshotAccumulator $accumulator Accumulated table snapshot state
+     * @param string $acceptKey Unused subscriber accept key; this snapshot is not connection-local
+     * @param PageRouteParams $params Unused route params; this page has no params
+     * @return ChatEventSignalDTO Hilos users subscribe snapshot payload
+     */
     protected function wrapSnapshot(
         SubscribeSnapshotAccumulator $accumulator,
         string $acceptKey,

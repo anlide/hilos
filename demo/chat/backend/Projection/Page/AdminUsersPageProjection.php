@@ -24,18 +24,36 @@ use Hilos\Core\Router\DTO\EntitiesChangesDTO;
 use Hilos\Core\Router\DTO\FrontendChangesDTO;
 use Hilos\Core\Router\SignalDataInterface;
 
+/**
+ * Projects user table and presence frontend state for the admin users page.
+ */
 final class AdminUsersPageProjection extends PageProjection
 {
+    /**
+     * Returns the chat admin users page key.
+     *
+     * @return string Page key for the admin users route
+     */
     public function page(): string
     {
         return PageConstants::ADMIN_USERS;
     }
 
+    /**
+     * Returns the subscribe snapshot signal for the admin users page.
+     *
+     * @return string Signal name for the initial admin users snapshot
+     */
     public function subscribeSnapshotSignalName(): string
     {
         return ChatSignalConstants::SUBSCRIPTION_PAGE_ADMIN_USERS;
     }
 
+    /**
+     * Registers admin user table mutations and presence update deliveries.
+     *
+     * @return iterable<TableRule|JoinedProjectionRule>
+     */
     protected function rules(): iterable
     {
         yield new TableRule(
@@ -69,6 +87,14 @@ final class AdminUsersPageProjection extends PageProjection
         );
     }
 
+    /**
+     * Wraps the admin users table snapshot and full user frontend state.
+     *
+     * @param SubscribeSnapshotAccumulator $accumulator Accumulated table snapshot state
+     * @param string $acceptKey Unused subscriber accept key; this snapshot is not connection-local
+     * @param PageRouteParams $params Unused route params; this page has no params
+     * @return ChatEventSignalDTO Admin users subscribe snapshot payload
+     */
     protected function wrapSnapshot(
         SubscribeSnapshotAccumulator $accumulator,
         string $acceptKey,

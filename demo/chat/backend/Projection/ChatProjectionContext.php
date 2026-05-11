@@ -33,8 +33,8 @@ use Hilos\Hilos;
 /**
  * Chat demo projection context.
  *
- * Registers {@see PageProjection} instances for demo pages and adds
- * project-level global broadcast rules for chat events and agent presence.
+ * Registers PageProjection instances for demo pages and adds project-level
+ * global broadcast rules for chat events and agent presence.
  */
 final class ChatProjectionContext extends ProjectionContext
 {
@@ -53,7 +53,7 @@ final class ChatProjectionContext extends ProjectionContext
     }
 
     /**
-     * Dispatches buffered projection changes, including chat-wide broadcasts.
+     * Dispatches buffered projection changes through chat-wide and page projections.
      */
     public function flushToSignalRouter(): void
     {

@@ -25,10 +25,15 @@ use Hilos\Core\Projection\SubscribeSnapshotAccumulator;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Pages\Users\DTO\HilosUserPageSubscribeParams;
 
+/**
+ * Projects the Hilos user detail page snapshot and targeted presence updates.
+ */
 final class HilosUserPageProjection extends PageProjection
 {
     /**
      * Returns the framework Hilos user detail page key.
+     *
+     * @return string Page key for the Hilos user detail route
      */
     public function page(): string
     {
@@ -37,6 +42,8 @@ final class HilosUserPageProjection extends PageProjection
 
     /**
      * Returns the signal used for the Hilos user detail subscribe snapshot.
+     *
+     * @return string Signal name for the initial Hilos user detail snapshot
      */
     public function subscribeSnapshotSignalName(): string
     {
@@ -94,7 +101,7 @@ final class HilosUserPageProjection extends PageProjection
      * @param SubscribeSnapshotAccumulator $accumulator Unused accumulator for this direct user snapshot
      * @param string $acceptKey Subscribing WebSocket accept key
      * @param PageRouteParams $params Route params containing the requested user id
-     * @return ?SignalDataInterface User detail subscription payload
+     * @return ?SignalDataInterface User detail subscription payload, or null when DB is unavailable
      * @throws MissingPageRouteParamException When the user id route param is absent
      * @throws InvalidPageRouteParamException When the user id route param is invalid
      * @throws PageResourceNotFoundException When the requested user does not exist
