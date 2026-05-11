@@ -23,10 +23,7 @@ use Hilos\Database\Settings\SettingsCatalogConstants;
 use Hilos\Database\View\Item\Setting as ViewSetting;
 
 /**
- * SettingsTable - Table definition merging catalog (PHP config) and DB.
- *
- * Operations: change setting, delete orphan (via item actions).
- * Collection-level add via SettingsTableActions.
+ * Table definition that merges settings catalog metadata with persisted rows.
  */
 final class SettingsTable extends TableDefinition
 {
@@ -35,6 +32,8 @@ final class SettingsTable extends TableDefinition
      *
      * @param SourceChange $change Settings source change
      * @return ?TableRowMutationDTO Settings row mutation, or null when the change does not affect this table
+     * @throws DatabaseException When persisted settings or referenced defaults cannot be read
+     * @throws SettingException When catalog default metadata is invalid
      */
     public function buildMutationForSourceEvent(SourceChange $change): ?TableRowMutationDTO
     {
@@ -97,7 +96,7 @@ final class SettingsTable extends TableDefinition
     }
 
     /**
-     * Configures table-level actions (add) and item-level actions (update, delete orphan).
+     * Configures the row shape and actions used by the settings table.
      */
     protected function init(): void
     {
@@ -110,6 +109,7 @@ final class SettingsTable extends TableDefinition
      * Builds an index of persisted setting rows by setting key.
      *
      * @return array<string, ViewSetting>
+     * @throws DatabaseException When settings query execution fails
      */
     private function buildDbByKey(): array
     {

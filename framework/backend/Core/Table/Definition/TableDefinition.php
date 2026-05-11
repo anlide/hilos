@@ -50,7 +50,7 @@ abstract class TableDefinition implements ArrayAccess
     private string $_rowClass = GenericTableRow::class;
 
     /**
-     * Creates the table definition and applies table-specific configuration.
+     * Creates the table definition and applies subclass configuration.
      */
     public function __construct()
     {
@@ -107,7 +107,7 @@ abstract class TableDefinition implements ArrayAccess
     }
 
     /**
-     * Builds one row object from an array payload.
+     * Builds one typed row object from an array payload.
      *
      * @param array<string, mixed> $row Row payload
      * @return AbstractTableRow Typed row object
@@ -120,7 +120,7 @@ abstract class TableDefinition implements ArrayAccess
     }
 
     /**
-     * Builds row objects for each payload array.
+     * Builds typed row objects for each raw or already-typed payload.
      *
      * @param list<AbstractTableRow|array<string, mixed>> $rows Raw row payloads
      * @return list<AbstractTableRow>
@@ -149,10 +149,9 @@ abstract class TableDefinition implements ArrayAccess
      * Builds a table row mutation for one source change this table reacts to.
      *
      * Concrete tables decide whether the change affects their projection and
-     * which DB/RT collections they observe. The base contract stays
-     * source-agnostic: a table may react to one or more DB sources, one or more
-     * RT sources, or any combination — the change kind and sourceKey are
-     * available on {@see SourceChange}.
+     * which DB/RT collections they observe. A table may react to one or more DB
+     * sources, one or more RT sources, or any combination; the change kind and
+     * source key are carried by the SourceChange DTO.
      *
      * @param SourceChange $change Source change that may affect this table
      * @return ?TableRowMutationDTO Mutation to fan out, or null when the table is unaffected
@@ -168,6 +167,7 @@ abstract class TableDefinition implements ArrayAccess
      * @param TableMutationType $type Mutation type
      * @param string|int $rowKey Affected table row key
      * @param ?AbstractTableRow $row Row payload for create/update mutations
+     * @return TableRowMutationDTO Row mutation payload
      */
     protected function mutation(TableMutationType $type, string|int $rowKey, ?AbstractTableRow $row = null): TableRowMutationDTO
     {
@@ -237,7 +237,7 @@ abstract class TableDefinition implements ArrayAccess
      * Reserved API for future partial table loading.
      *
      * Paging is intentionally not implemented yet; current page subscriptions
-     * must use {@see self::getFullSnapshot()} and receive a full table snapshot.
+     * must use a full table snapshot from {@see self::getFullSnapshot()}.
      *
      * @param TablePageQueryDTO $query Page query parameters
      * @return TableSnapshotDTO Partial table page once implemented

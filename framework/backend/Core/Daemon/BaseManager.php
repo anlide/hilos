@@ -12,25 +12,21 @@ use Hilos\Core\Exception\MissingRequiredParameterException;
 use Throwable;
 
 /**
- * BaseManager - Abstract base class for all managers.
+ * Base class for long-running process managers.
  *
- * Contains common logic for:
- * - Error and exception handling
- * - Signal management
- * - Precise timing control
- * - Function validation
- * - Logging infrastructure
+ * Provides shared error handling, signal handling, loop timing, required
+ * function validation, and logging hooks for concrete managers.
  */
 abstract class BaseManager
 {
-    /** @var bool Flag for manager termination */
+    /** Whether the manager loop should stop. */
     protected bool $shouldExit = false;
 
     /**
-     * Setup error handling for all managers
+     * Registers PHP error, exception, and shutdown handlers.
      *
-     * Registers error, exception and shutdown handlers to ensure
-     * proper error logging and graceful shutdown on critical errors.
+     * Concrete managers provide the logging and lifecycle hooks used by those
+     * handlers.
      */
     protected function setupErrorHandling(): void
     {
@@ -40,11 +36,10 @@ abstract class BaseManager
     }
 
     /**
-     * Setup signal handlers for graceful shutdown and restart
+     * Registers process signal handlers for graceful stop and restart.
      *
-     * Registers handlers for:
-     * - SIGTERM/SIGINT: Graceful shutdown
-     * - SIGHUP: Restart signal with environment reload
+     * SIGTERM and SIGINT request shutdown. SIGHUP reloads environment
+     * configuration and requests restart.
      */
     protected function setupSignalHandlers(): void
     {
@@ -54,13 +49,13 @@ abstract class BaseManager
     }
 
     /**
-     * Sleep with precise timing based on work duration
+     * Sleeps for the remaining time in a fixed-duration loop iteration.
      *
-     * Ensures consistent loop timing by sleeping for the remaining time
-     * after useful work is completed. Target loop duration is configurable.
+     * The method subtracts elapsed work time from the target duration and only
+     * sleeps when the loop still has time left.
      *
      * @param float $loopStartTime Start time of the loop iteration in seconds
-     * @param int $targetLoopTimeMicroseconds Target loop duration in microseconds (default 10000 = 10ms)
+     * @param int $targetLoopTimeMicroseconds Target loop duration in microseconds
      */
     protected function sleepWithPreciseTiming(float $loopStartTime, int $targetLoopTimeMicroseconds = 10000): void
     {
@@ -77,20 +72,19 @@ abstract class BaseManager
         }
     }
 
-
     /**
-     * Error handler with comprehensive logging
+     * Logs an active PHP error and converts it to ErrorException.
      *
-     * Handles PHP errors by logging them with detailed information
-     * and triggering appropriate cleanup actions. Maps error levels
-     * to human-readable names and truncates long messages.
+     * Masked error levels are left to normal PHP handling by returning false.
+     * Active errors are logged with a compact severity label before the manager
+     * error hook is called.
      *
      * @param int $severity Error severity level (E_ERROR, E_WARNING, etc.)
      * @param string $message Error message
      * @param string $file File where error occurred
      * @param int $line Line number where error occurred
-     * @return bool Always returns false to continue normal error handling
-     * @throws ErrorException Always throws exception for proper error handling
+     * @return bool False when the error level is masked
+     * @throws ErrorException When the active PHP error is converted to an exception
      */
     public function errorHandler(int $severity, string $message, string $file, int $line): bool
     {
@@ -135,11 +129,10 @@ abstract class BaseManager
     }
 
     /**
-     * Uncaught exception handler with detailed logging
+     * Logs an uncaught exception and invokes the manager exception hook.
      *
-     * Handles uncaught exceptions by logging them with full stack trace
-     * and triggering appropriate cleanup actions. Truncates long messages
-     * and stack traces to prevent log overflow.
+     * Exception messages and stack traces are truncated to the framework log
+     * limits before being passed to the concrete logger.
      *
      * @param Throwable $exception The uncaught exception
      */
@@ -159,11 +152,10 @@ abstract class BaseManager
     }
 
     /**
-     * Shutdown handler for catching fatal errors
+     * Logs fatal shutdown errors that PHP exposes through error_get_last().
      *
-     * Handles fatal errors that occur during shutdown by logging them
-     * and triggering cleanup actions. Only processes critical error types
-     * that cause script termination.
+     * Non-fatal shutdowns are ignored. Critical shutdowns invoke the concrete
+     * manager shutdown hook after logging.
      */
     public function shutdownHandler(): void
     {
@@ -184,10 +176,10 @@ abstract class BaseManager
     }
 
     /**
-     * Shutdown signal handler (SIGTERM, SIGINT)
+     * Handles SIGTERM and SIGINT by requesting manager shutdown.
      *
-     * Handles graceful shutdown signals by logging the event,
-     * setting the exit flag and triggering cleanup actions.
+     * The concrete manager receives the shutdown-signal hook after the exit flag
+     * is set.
      */
     public function handleShutdown(): void
     {
@@ -197,11 +189,10 @@ abstract class BaseManager
     }
 
     /**
-     * Restart signal handler (SIGHUP)
+     * Handles SIGHUP by reloading environment configuration and exiting.
      *
-     * Handles restart signals by logging the event,
-     * reloading environment configuration,
-     * setting the exit flag and triggering restart actions.
+     * The concrete manager receives the restart-signal hook after the exit flag
+     * is set.
      */
     public function handleRestart(): void
     {
@@ -215,13 +206,9 @@ abstract class BaseManager
     }
 
     /**
-     * Check availability of required functions
+     * Ensures process-management functions required by daemon managers exist.
      *
-     * Validates that all necessary PHP functions are available for
-     * process management and signal handling. Throws exception if
-     * any required functions are missing.
-     *
-     * @throws MissingRequiredParameterException When required PCNTL functions are not available
+     * @throws MissingRequiredParameterException When required functions are unavailable
      */
     protected function checkRequiredFunctions(): void
     {
@@ -249,27 +236,22 @@ abstract class BaseManager
     }
 
     /**
-     * Get manager name for logging purposes
+     * Returns the manager name used in shared log messages.
      *
-     * Returns a human-readable name for the manager instance,
-     * used in log messages and error reporting.
-     *
-     * @return string Manager name (e.g., "Daemon", "Docker watchdog")
+     * @return string Human-readable manager name
      */
     abstract protected function getManagerName(): string;
 
     /**
-     * Log error message (implementation specific)
+     * Logs an error message for this manager.
      *
-     * Handles logging of error messages. Implementation can vary
-     * between console logging, file logging, or system logging.
      *
      * @param string $message Error message to log
      */
     abstract protected function logError(string $message): void;
 
     /**
-     * Log exception message (implementation specific)
+     * Logs an uncaught exception message for this manager.
      *
      * Handles logging of exception messages with stack traces.
      * Implementation can vary between console logging, file logging,
@@ -280,7 +262,7 @@ abstract class BaseManager
     abstract protected function logException(string $message): void;
 
     /**
-     * Log shutdown message (implementation specific)
+     * Logs a fatal shutdown message for this manager.
      *
      * Handles logging of shutdown messages for fatal errors.
      * Implementation can vary between console logging, file logging,
@@ -291,42 +273,41 @@ abstract class BaseManager
     abstract protected function logShutdown(string $message): void;
 
     /**
-     * Handle error event (implementation specific)
+     * Handles a PHP error after it has been logged.
      *
-     * Called when an error occurs. Child classes should implement
-     * specific cleanup or recovery actions for their context.
+     * Concrete managers can request shutdown, cleanup resources, or record
+     * manager-specific state.
      */
     abstract protected function onError(): void;
 
     /**
-     * Handle exception event (implementation specific)
+     * Handles an uncaught exception after it has been logged.
      *
-     * Called when an uncaught exception occurs. Child classes should
-     * implement specific cleanup or recovery actions for their context.
+     * Concrete managers can request shutdown, cleanup resources, or record
+     * manager-specific state.
      */
     abstract protected function onException(): void;
 
     /**
-     * Handle shutdown event (implementation specific)
+     * Handles a fatal shutdown after it has been logged.
      *
-     * Called when a fatal shutdown occurs. Child classes should
-     * implement specific cleanup actions for their context.
+     * Concrete managers can release resources that are still safe to touch
+     * during PHP shutdown.
      */
     abstract protected function onShutdown(): void;
 
     /**
-     * Handle shutdown signal event (implementation specific)
+     * Handles a process shutdown signal after the exit flag is set.
      *
-     * Called when a shutdown signal (SIGTERM, SIGINT) is received.
-     * Child classes should implement specific cleanup actions.
+     * Concrete managers can add signal-specific cleanup while the normal loop
+     * shutdown path remains responsible for final resource release.
      */
     abstract protected function onShutdownSignal(): void;
 
     /**
-     * Handle restart signal event (implementation specific)
+     * Handles a restart signal after environment reload and exit flag update.
      *
-     * Called when a restart signal (SIGHUP) is received.
-     * Child classes should implement specific restart actions.
+     * Concrete managers can persist restart-specific state or notify peers.
      */
     abstract protected function onRestartSignal(): void;
 }

@@ -19,9 +19,9 @@ use Hilos\Core\Table\TableConstants;
 use Hilos\Database\DatabaseException;
 
 /**
- * ModeratorPromptPiecesTable - Table definition with create/update/delete actions.
+ * Table definition for moderator prompt pieces.
  *
- * @property-read ModeratorPromptPiecesTableActions $actions
+ * @property-read ModeratorPromptPiecesTableActions $actions Table-level prompt piece creation actions
  */
 final class ModeratorPromptPiecesTable extends TableDefinition
 {
@@ -30,7 +30,6 @@ final class ModeratorPromptPiecesTable extends TableDefinition
      *
      * @param SourceChange $change Moderator prompt piece source change to project into the table
      * @return ?TableRowMutationDTO Moderator prompt piece row mutation, or null when the change does not affect this table
-     * @throws DatabaseException If source prompt piece lookup fails
      */
     public function buildMutationForSourceEvent(SourceChange $change): ?TableRowMutationDTO
     {
@@ -64,7 +63,7 @@ final class ModeratorPromptPiecesTable extends TableDefinition
      *
      * @param TableQueryDTO $query Table query parameters
      * @return TableSnapshotDTO Moderator prompt piece table snapshot
-     * @throws DatabaseException If prompt piece query execution fails
+     * @throws DatabaseException When prompt piece query execution fails
      */
     protected function query(TableQueryDTO $query): TableSnapshotDTO
     {
@@ -97,7 +96,7 @@ final class ModeratorPromptPiecesTable extends TableDefinition
     }
 
     /**
-     * Configures table-level actions (ModeratorPromptPiecesTableActions for create) and item-level actions (ModeratorPromptPieceItemActions for update/delete).
+     * Configures the row shape and actions used by the moderator prompt pieces table.
      */
     protected function init(): void
     {

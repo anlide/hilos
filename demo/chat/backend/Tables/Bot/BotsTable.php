@@ -106,7 +106,7 @@ final class BotsTable extends TableDefinition
     }
 
     /**
-     * Configures bot row and action classes.
+     * Configures the row shape and actions used by the bots table.
      */
     protected function init(): void
     {

@@ -27,15 +27,15 @@ use Throwable;
 /**
  * Base class for page handlers.
  *
- * Concrete pages own subscribe, unsubscribe, action, and page-routed signal
- * hooks. Shared framework state is read through the Hilos facade.
+ * Concrete pages own subscription, action, and routed signal hooks. Shared
+ * framework state is resolved through the active Hilos facade.
  */
 abstract class AbstractPage
 {
-    /** @var string Page name or identifier, override in child classes */
+    /** Page name or identifier, overridden by concrete pages. */
     public const string PAGE = '';
 
-    /** @var PageAgentInterface Agent instance for page operations */
+    /** Agent instance that owns this page handler. */
     protected PageAgentInterface $agent;
 
     /**
@@ -51,7 +51,7 @@ abstract class AbstractPage
     /**
      * Returns the static page identifier.
      *
-     * @return string Page name/identifier from PAGE constant
+     * @return string Page identifier from the PAGE constant
      */
     public function getPageName(): string
     {
@@ -134,10 +134,10 @@ abstract class AbstractPage
     /**
      * Handles page subscription.
      *
-     * Default behavior delegates to the projection layer: if the page has a
-     * registered PageProjection, the framework builds and sends the initial
-     * snapshot through it. Override in concrete pages to add domain or routing
-     * parameter checks before or instead of delegating to the projection layer.
+     * Default behavior delegates to the projection layer. If the page has a
+     * registered {@see PageProjection}, the framework builds and sends the
+     * initial snapshot through it. Override in concrete pages to add domain or
+     * routing parameter checks before or instead of delegating to projection.
      *
      * Route params are available through the typed accessors on
      * PageRouteParams; family-level abstract pages typically convert
@@ -146,7 +146,7 @@ abstract class AbstractPage
      *
      * @param string $acceptKey WebSocket accept key
      * @param PageRouteParams $params Route params from page subscription
-     * @throws PageSubscriptionException When the page rejects the subscription through its projection
+     * @throws PageSubscriptionException When projection rejects the subscription
      */
     public function onSubscribe(string $acceptKey, PageRouteParams $params): void
     {
@@ -157,8 +157,8 @@ abstract class AbstractPage
      * Handles page subscription update.
      *
      * Called when a client updates params of an existing page subscription.
-     * Default is a no-op; override in child classes when partial-state
-     * refresh is needed. Route params arrive as a merged snapshot for the
+     * Default is a no-op; override in child classes when partial-state refresh
+     * is needed. Route params arrive as a merged snapshot for the
      * subscription after applying the update payload.
      *
      * @param string $acceptKey WebSocket accept key
@@ -171,8 +171,8 @@ abstract class AbstractPage
     /**
      * Handles page unsubscription.
      *
-     * Called when a client unsubscribes from this page.
-     * Override in child classes when unsubscription logic is needed.
+     * Default is a no-op; override in child classes when unsubscription cleanup
+     * is needed.
      *
      * @param string $acceptKey WebSocket accept key
      */
@@ -181,7 +181,7 @@ abstract class AbstractPage
     }
 
     /**
-     * Handles an action signal.
+     * Handles a page action signal.
      *
      * Called when a client sends an action signal on this page.
      * Override in child classes when action handling is needed.
@@ -189,7 +189,7 @@ abstract class AbstractPage
      * @param string $acceptKey WebSocket accept key
      * @param string $action Action name
      * @param ActionPayloadDTO $dto Action payload DTO
-     * @throws AgentUnknownActionException When the page does not support actions
+     * @throws AgentUnknownActionException When the page does not support the action
      */
     public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): void
     {
@@ -197,7 +197,7 @@ abstract class AbstractPage
     }
 
     /**
-     * Handles action exceptions.
+     * Sends the default page action error signal.
      *
      * Optional hook called by PageSignalRouter when onAction() throws. Override
      * only when the page has a more specific user-facing error contract.
@@ -205,7 +205,7 @@ abstract class AbstractPage
      * @param string $acceptKey WebSocket accept key
      * @param string $action Action name
      * @param ActionPayloadDTO $dto Action payload DTO
-     * @param Throwable $e Action failure
+     * @param Throwable $e Action failure exposed to the client
      */
     public function onActionException(string $acceptKey, string $action, ActionPayloadDTO $dto, Throwable $e): void
     {
@@ -261,8 +261,8 @@ abstract class AbstractPage
     /**
      * Queues a signal to a specific WebSocket connection by accept key.
      *
-     * Uses agent's signal source for routing context without depending on the
-     * agent's concrete type.
+     * Uses the owning agent signal source for routing context without depending
+     * on the agent's concrete class.
      *
      * @param string $signalName Signal name
      * @param string $acceptKey Target connection acceptKey
@@ -281,8 +281,8 @@ abstract class AbstractPage
     /**
      * Queues a broadcast signal to all WebSocket connections.
      *
-     * Uses agent's signal source for routing context without depending on the
-     * agent's concrete type.
+     * Uses the owning agent signal source for routing context without depending
+     * on the agent's concrete class.
      *
      * @param string $signalName Signal name
      * @param SignalDataInterface $data Signal payload
@@ -301,8 +301,8 @@ abstract class AbstractPage
     /**
      * Queues a legacy DB-layer emit signal for mapper-based WebSocket fan-out.
      *
-     * Uses agent's signal source for routing context without depending on the
-     * agent's concrete type.
+     * Uses the owning agent signal source for routing context without depending
+     * on the agent's concrete class.
      *
      * @param string $eventKey Logical event name for the project mapper
      * @param EmitDbChangeSignalData $data DB change payload

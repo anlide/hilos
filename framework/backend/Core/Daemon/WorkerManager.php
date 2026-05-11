@@ -63,46 +63,44 @@ use Hilos\Utils\Logger;
 use Throwable;
 
 /**
- * WorkerManager - Base worker process manager.
+ * Base process manager for worker processes.
  *
- * Main loop for worker processes. Extends BaseManager for error handling,
- * signal management and logging infrastructure.
- * Manages daemon connection and agents.
+ * Owns the daemon connection, worker-local agents, page signal routers,
+ * subscription mirrors, and frontend projection flushing.
  */
 abstract class WorkerManager extends BaseManager
 {
-    /** @var int Worker index */
+    /** Worker index assigned by the daemon supervisor. */
     protected int $workerIndex;
 
-    /** @var bool Whether this worker is monopolistic */
+    /** Whether this worker handles monopolistic agents only. */
     protected bool $isMonopolistic;
 
-    /** @var ?WorkerDaemonClient Client connection to daemon */
+    /** Daemon client connection, or null before connect/after cleanup. */
     private ?WorkerDaemonClient $daemonClient = null;
 
-    /** @var AgentManager Agent manager instance */
+    /** Agent manager for worker-local agent instances. */
     protected AgentManager $agentManager;
 
-    /** @var array<string, PageSignalRouter> Page routers by agent ID */
+    /** @var array<string, PageSignalRouter> Page routers by agent id */
     private array $pageSignalRouters = [];
 
     /**
      * Worker-local mirror of the current page subscription per WebSocket accept key.
      *
-     * The daemon-side {@see SignalRouter::subscribeToPage()} overwrites state when the client
-     * sends {@see SignalTypeConstants::PAGE_SUBSCRIBE}; the worker must remember the previous page
-     * so it can invoke {@see PageSignalRouter::dispatchPageUnsubscribe()} before handling the new
-     * subscribe, and on {@see SignalTypeConstants::CONNECTION_CLOSE} to run page teardown without
-     * relying on an explicit {@see SignalTypeConstants::PAGE_UNSUBSCRIBE} frame from the client.
+     * The daemon-side page subscription mirror overwrites state when the client
+     * sends a page subscribe signal. The worker keeps the previous page so it
+     * can run page teardown before a replacement subscribe and again on
+     * connection close when the client did not send an explicit unsubscribe.
      *
      * @var array<string, array{page: string, params: array<string, string>}> Accept key → last page id and route params
      */
     private array $pageSubscriptionByAcceptKey = [];
 
     /**
-     * Creates worker manager instance.
+     * Creates the worker manager and initializes worker-local framework services.
      *
-     * Initializes signal router via Hilos::initSignalRouter() and creates agent manager.
+     * The concrete worker supplies the signal router and agent manager factory.
      *
      * @param int $workerIndex Worker index
      * @param list<string> $argv Command line arguments
@@ -116,7 +114,7 @@ abstract class WorkerManager extends BaseManager
     }
 
     /**
-     * Set DB and RT truth-source context for the currently executing agent callback.
+     * Sets DB and RT truth-source context for the current agent callback.
      *
      * @param ?string $agentId Current agent id, or null outside an agent callback
      */
@@ -126,21 +124,20 @@ abstract class WorkerManager extends BaseManager
     }
 
     /**
-     * Create signal router instance.
+     * Creates the signal router used by this worker.
      *
-     * Must be implemented in child classes to create specific signal router.
-     * The created instance is registered globally via Hilos::$sr.
+     * The constructor registers the returned router globally through Hilos::$sr.
      *
      * @return SignalRouter Signal router instance
      */
     abstract protected function createSignalRouter(): SignalRouter;
 
     /**
-     * Run worker - main method
+     * Runs the worker event loop.
      *
-     * Starts the worker main loop with error handling and signal processing.
-     * Connects to daemon asynchronously and runs until shutdown signal is received.
-     * Worker tick() is only called when connection to daemon is established.
+     * Sets up process handlers, opens the daemon connection, handles daemon
+     * messages, ticks worker-local agents, and drains queued signals until a
+     * shutdown condition requests exit.
      */
     public function run(): void
     {
@@ -154,7 +151,7 @@ abstract class WorkerManager extends BaseManager
         // Start connection to daemon (non-blocking)
         try {
             $this->connectToDaemon();
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             $this->logError("Failed to start daemon connection: " . $e->getMessage());
             $this->cleanup();
             return;
@@ -244,12 +241,12 @@ abstract class WorkerManager extends BaseManager
     }
 
     /**
-     * Connect to daemon WorkerServer (non-blocking)
+     * Starts the non-blocking daemon connection and queues worker registration.
      *
-     * Starts connection attempt. Connection will be checked asynchronously in run() loop.
+     * Connection progress is polled by the main worker loop.
      *
-     * @throws SocketException If connection fails
-     * @throws EnvException If required daemon connection env values are missing or invalid
+     * @throws SocketException When connection setup fails
+     * @throws EnvException When daemon connection environment values are missing or invalid
      */
     private function connectToDaemon(): void
     {
@@ -265,11 +262,11 @@ abstract class WorkerManager extends BaseManager
     }
 
     /**
-     * Handle message from daemon
+     * Routes one daemon message to the worker handler that owns its type.
      *
-     * @param WorkerDTO $data Message data
-     * @throws AgentCreationFailedException If agent creation fails
-     * @throws PageSignalRouterNotFoundException If page router is not found for agent
+     * @param WorkerDTO $data Daemon message DTO
+     * @throws AgentCreationFailedException When agent creation fails
+     * @throws PageSignalRouterNotFoundException When page routing is requested for an unsupported agent
      */
     public function handleDaemonMessage(WorkerDTO $data): void
     {
@@ -372,9 +369,9 @@ abstract class WorkerManager extends BaseManager
     }
 
     /**
-     * Handle worker registered message
+     * Marks the daemon connection as registered and logs the worker session.
      *
-     * @param WorkerRegisteredDTO $data Message data
+     * @param WorkerRegisteredDTO $data Worker registration acknowledgement
      */
     private function handleWorkerRegistered(WorkerRegisteredDTO $data): void
     {
@@ -387,10 +384,10 @@ abstract class WorkerManager extends BaseManager
     }
 
     /**
-     * Handle agent start message
+     * Starts one worker-local agent requested by the daemon.
      *
-     * @param AgentStartDTO $data Message data
-     * @throws AgentCreationFailedException If agent creation fails
+     * @param AgentStartDTO $data Agent start request
+     * @throws AgentCreationFailedException When agent creation fails
      */
     private function handleAgentStart(AgentStartDTO $data): void
     {
@@ -425,9 +422,9 @@ abstract class WorkerManager extends BaseManager
     }
 
     /**
-     * Handle agent stop message
+     * Stops one worker-local agent requested by the daemon.
      *
-     * @param AgentStopDTO $data Message data
+     * @param AgentStopDTO $data Agent stop request
      */
     private function handleAgentStop(AgentStopDTO $data): void
     {
@@ -459,18 +456,18 @@ abstract class WorkerManager extends BaseManager
     }
 
     /**
-     * Handle daemon agent message (reserved for future use).
+     * Reserved handler for daemon-scoped agent messages.
      *
-     * @param WorkerDTO $data Message data from daemon
+     * @param WorkerDTO $data Daemon message DTO
      */
     private function handleDaemonAgentMessage(WorkerDTO $data): void
     {
     }
 
     /**
-     * Handle DB sync created message from daemon.
+     * Applies and forwards a DB create sync received from the daemon.
      *
-     * @param WorkerDbSyncCreatedMessageDTO $data Message data
+     * @param WorkerDbSyncCreatedMessageDTO $data Worker-level DB create sync message
      */
     private function handleDbSyncCreatedMessage(WorkerDbSyncCreatedMessageDTO $data): void
     {
@@ -483,9 +480,9 @@ abstract class WorkerManager extends BaseManager
     }
 
     /**
-     * Handle DB sync updated message from daemon.
+     * Applies and forwards a DB update sync received from the daemon.
      *
-     * @param WorkerDbSyncUpdatedMessageDTO $data Message data
+     * @param WorkerDbSyncUpdatedMessageDTO $data Worker-level DB update sync message
      */
     private function handleDbSyncUpdatedMessage(WorkerDbSyncUpdatedMessageDTO $data): void
     {
@@ -498,9 +495,9 @@ abstract class WorkerManager extends BaseManager
     }
 
     /**
-     * Handle DB sync deleted message from daemon.
+     * Applies and forwards a DB delete sync received from the daemon.
      *
-     * @param WorkerDbSyncDeletedMessageDTO $data Message data
+     * @param WorkerDbSyncDeletedMessageDTO $data Worker-level DB delete sync message
      */
     private function handleDbSyncDeletedMessage(WorkerDbSyncDeletedMessageDTO $data): void
     {
@@ -520,6 +517,7 @@ abstract class WorkerManager extends BaseManager
      * must therefore neither re-apply nor re-project the same fact.
      *
      * @param array<string, mixed> $signalData DB sync payload
+     * @return bool True when this worker should ignore the daemon echo
      */
     private function consumeIncomingDbSyncSelfBroadcast(array $signalData): bool
     {
@@ -533,8 +531,12 @@ abstract class WorkerManager extends BaseManager
     }
 
     /**
-     * Dispatch DB sync signal to all agents on this worker.
+     * Dispatches a DB sync signal to every agent on this worker.
+     *
      * Each agent can filter by collectionKey/idString in its onSignal* handler.
+     *
+     * @param string $signalName DB sync signal name
+     * @param array<string, mixed> $signalData DB sync payload
      */
     private function dispatchDbSyncToAgents(string $signalName, array $signalData): void
     {
@@ -566,8 +568,12 @@ abstract class WorkerManager extends BaseManager
     }
 
     /**
-     * Dispatch RT sync signal to all agents on this worker.
+     * Dispatches an RT sync signal to every agent on this worker.
+     *
      * Each agent can filter by collectionKey/stateId in its onSignal* handler.
+     *
+     * @param string $signalName RT sync signal name
+     * @param array<string, mixed> $signalData RT sync payload
      */
     private function dispatchRtSyncToAgents(string $signalName, array $signalData): void
     {
@@ -599,9 +605,9 @@ abstract class WorkerManager extends BaseManager
     }
 
     /**
-     * Handle RT sync created message from daemon.
+     * Applies and forwards an RT create sync received from the daemon.
      *
-     * @param WorkerRtSyncCreatedMessageDTO $data Message data
+     * @param WorkerRtSyncCreatedMessageDTO $data Worker-level RT create sync message
      */
     private function handleRtSyncCreatedMessage(WorkerRtSyncCreatedMessageDTO $data): void
     {
@@ -614,9 +620,9 @@ abstract class WorkerManager extends BaseManager
     }
 
     /**
-     * Handle RT sync updated message from daemon.
+     * Applies and forwards an RT update sync received from the daemon.
      *
-     * @param WorkerRtSyncUpdatedMessageDTO $data Message data
+     * @param WorkerRtSyncUpdatedMessageDTO $data Worker-level RT update sync message
      */
     private function handleRtSyncUpdatedMessage(WorkerRtSyncUpdatedMessageDTO $data): void
     {
@@ -629,9 +635,9 @@ abstract class WorkerManager extends BaseManager
     }
 
     /**
-     * Handle RT sync deleted message from daemon.
+     * Applies and forwards an RT delete sync received from the daemon.
      *
-     * @param WorkerRtSyncDeletedMessageDTO $data Message data
+     * @param WorkerRtSyncDeletedMessageDTO $data Worker-level RT delete sync message
      */
     private function handleRtSyncDeletedMessage(WorkerRtSyncDeletedMessageDTO $data): void
     {
@@ -647,6 +653,7 @@ abstract class WorkerManager extends BaseManager
      * Consume an RT sync self-broadcast marker before applying a daemon echo.
      *
      * @param array<string, mixed> $signalData RT sync payload
+     * @return bool True when this worker should ignore the daemon echo
      */
     private function consumeIncomingRtSyncSelfBroadcast(array $signalData): bool
     {
@@ -710,7 +717,7 @@ abstract class WorkerManager extends BaseManager
     }
 
     /**
-     * Dispatch a locally-originated DB/RT sync fact to agents in this worker.
+     * Dispatches a locally-originated DB/RT sync fact to agents in this worker.
      *
      * The daemon echo is intentionally consumed as a self-broadcast, so local
      * agents must see the sync when the worker first drains the queued signal.
@@ -732,10 +739,10 @@ abstract class WorkerManager extends BaseManager
     }
 
     /**
-     * Handle agent message (from worker or daemon)
+     * Routes one daemon-delivered agent signal to agent and page handlers.
      *
-     * @param DaemonAgentMessageDTO $data Message data (daemon -> worker)
-     * @throws PageSignalRouterNotFoundException If page router is not found for agent
+     * @param DaemonAgentMessageDTO $data Daemon-to-worker agent signal
+     * @throws PageSignalRouterNotFoundException When page routing is requested for an unsupported agent
      */
     private function handleAgentMessage(DaemonAgentMessageDTO $data): void
     {
@@ -990,7 +997,7 @@ abstract class WorkerManager extends BaseManager
     }
 
     /**
-     * Hook: page subscribe handled on worker.
+     * Hook called after a page subscribe signal reaches the worker.
      *
      * @param WebSocketPageSubscribeSignalDTO $signalData Subscribe signal (acceptKey, params)
      * @param string $source Signal source identifier
@@ -998,11 +1005,10 @@ abstract class WorkerManager extends BaseManager
      */
     protected function onPageSubscribed(WebSocketPageSubscribeSignalDTO $signalData, string $source, string $name): void
     {
-        // Default: no-op
     }
 
     /**
-     * Hook: page unsubscribe handled on worker.
+     * Hook called after a page unsubscribe signal reaches the worker.
      *
      * @param WebSocketPageUnsubscribeSignalDTO $signalData Unsubscribe signal (acceptKey)
      * @param string $source Signal source identifier
@@ -1010,11 +1016,10 @@ abstract class WorkerManager extends BaseManager
      */
     protected function onPageUnsubscribed(WebSocketPageUnsubscribeSignalDTO $signalData, string $source, string $name): void
     {
-        // Default: no-op
     }
 
     /**
-     * Hook: page update subscription handled on worker.
+     * Hook called after a page subscription update reaches the worker.
      *
      * @param WebSocketPageUpdateSubscriptionSignalDTO $signalData Update signal (acceptKey, params)
      * @param string $source Signal source identifier
@@ -1022,11 +1027,10 @@ abstract class WorkerManager extends BaseManager
      */
     protected function onPageSubscriptionUpdated(WebSocketPageUpdateSubscriptionSignalDTO $signalData, string $source, string $name): void
     {
-        // Default: no-op
     }
 
     /**
-     * Hook: group subscribe handled on worker.
+     * Hook called after a group subscribe signal reaches the worker.
      *
      * @param WebSocketGroupSubscribeSignalDTO $signalData Subscribe signal (acceptKey, params)
      * @param string $source Signal source identifier
@@ -1034,11 +1038,10 @@ abstract class WorkerManager extends BaseManager
      */
     protected function onGroupSubscribed(WebSocketGroupSubscribeSignalDTO $signalData, string $source, string $name): void
     {
-        // Default: no-op
     }
 
     /**
-     * Hook: group unsubscribe handled on worker.
+     * Hook called after a group unsubscribe signal reaches the worker.
      *
      * @param WebSocketGroupUnsubscribeSignalDTO $signalData Unsubscribe signal (acceptKey)
      * @param string $source Signal source identifier
@@ -1046,11 +1049,10 @@ abstract class WorkerManager extends BaseManager
      */
     protected function onGroupUnsubscribed(WebSocketGroupUnsubscribeSignalDTO $signalData, string $source, string $name): void
     {
-        // Default: no-op
     }
 
     /**
-     * Hook: group update subscription handled on worker.
+     * Hook called after a group subscription update reaches the worker.
      *
      * @param WebSocketGroupUpdateSubscriptionSignalDTO $signalData Update signal (acceptKey, params)
      * @param string $source Signal source identifier
@@ -1058,33 +1060,30 @@ abstract class WorkerManager extends BaseManager
      */
     protected function onGroupSubscriptionUpdated(WebSocketGroupUpdateSubscriptionSignalDTO $signalData, string $source, string $name): void
     {
-        // Default: no-op
     }
 
     /**
-     * Hook: action handled on worker.
+     * Hook called before a WebSocket action reaches agent and page handlers.
      *
      * @param string $action Action name
      * @param WebSocketActionSignalDTO $signalData Action signal (acceptKey, payload)
      */
     protected function onActionHandled(string $action, WebSocketActionSignalDTO $signalData): void
     {
-        // Default: no-op
     }
 
     /**
-     * Hook: cron signal handled on worker before agent and page handlers.
+     * Hook called before a cron signal reaches agent and page handlers.
      *
      * @param string $cron Cron job name
      * @param CronSignalDTO $signalData Cron signal payload
      */
     protected function onCronHandled(string $cron, CronSignalDTO $signalData): void
     {
-        // Default: no-op
     }
 
     /**
-     * Hook: binary frame signal handled on worker before agent and page handlers.
+     * Hook called before a binary frame signal reaches agent and page handlers.
      *
      * @param WebSocketFrameBinarySignalDTO $signalData Binary frame payload
      * @param string $source Signal source identifier
@@ -1092,26 +1091,24 @@ abstract class WorkerManager extends BaseManager
      */
     protected function onFrameBinaryHandled(WebSocketFrameBinarySignalDTO $signalData, string $source, string $name): void
     {
-        // Default: no-op
     }
 
     /**
-     * Hook: agent-to-agent signal handled on worker before agent and page handlers.
+     * Hook called before an agent-to-agent signal reaches agent and page handlers.
      *
      * @param string $name Signal name
      * @param AgentSignalData $signalData Wrapped agent signal payload
      */
     protected function onAgentSignalHandled(string $name, AgentSignalData $signalData): void
     {
-        // Default: no-op
     }
 
     /**
-     * Create page router for the given agent (if supported).
+     * Creates the page router for an agent that supports page routing.
      *
      * @param AgentInterface $agent Agent to create router for
      * @return PageSignalRouter Page router instance
-     * @throws PageSignalRouterNotFoundException If agent does not support page routing
+     * @throws PageSignalRouterNotFoundException When the agent does not support page routing
      */
     protected function createPageSignalRouter(AgentInterface $agent): PageSignalRouter
     {
@@ -1119,9 +1116,9 @@ abstract class WorkerManager extends BaseManager
     }
 
     /**
-     * Build a deterministic string for comparing route param sets on subscription changes.
+     * Builds a deterministic signature for comparing route parameter sets.
      *
-     * Uses {@see ksort()} then {@see serialize()} so two arrays with the same keys and values compare equal.
+     * Two arrays with the same keys and values compare equal after sorting.
      *
      * @param array<string, string> $params Route parameters from a page subscribe DTO
      * @return string Serialized representation after sorting keys
@@ -1134,17 +1131,16 @@ abstract class WorkerManager extends BaseManager
     }
 
     /**
-     * If this connection was already subscribed to a different page (or the same page with different params),
-     * dispatch an unsubscribe for the previous page before the new subscribe is processed.
+     * Dispatches a synthetic unsubscribe before a replacement page subscribe.
      *
-     * Matches SPA navigation where the client sends only {@see SignalTypeConstants::PAGE_SUBSCRIBE} for the
-     * next route without {@see SignalTypeConstants::PAGE_UNSUBSCRIBE} for the previous one. No-op when there is
+     * This matches SPA navigation where the client sends the next page subscribe
+     * without an explicit unsubscribe for the previous page. No-op when there is
      * no prior subscription or when page id and params are unchanged.
      *
      * @param string $agentId Agent instance id in this worker process
      * @param AgentInterface $agent Agent receiving the signal
-     * @param WebSocketPageSubscribeSignalDTO $dto Incoming subscribe payload (acceptKey, page, params)
-     * @param string $name Signal name (page id when {@see WebSocketPageSubscribeSignalDTO::$page} is empty)
+     * @param WebSocketPageSubscribeSignalDTO $dto Incoming subscribe payload
+     * @param string $name Signal name used as page id when the DTO page is empty
      * @param string $source Signal source identifier
      */
     private function dispatchPreviousPageUnsubscribeIfReplaced(
@@ -1186,12 +1182,12 @@ abstract class WorkerManager extends BaseManager
     }
 
     /**
-     * Store the current page id and params after {@see PageSignalRouter::dispatchPageSubscribe()} succeeds.
+     * Stores the current page id and params after page subscribe dispatch.
      *
      * Used by {@see self::dispatchPreviousPageUnsubscribeIfReplaced()} on subsequent subscribe signals.
      *
-     * @param WebSocketPageSubscribeSignalDTO $dto Subscribe payload (acceptKey, page, params)
-     * @param string $name Signal name fallback when {@see WebSocketPageSubscribeSignalDTO::$page} is empty
+     * @param WebSocketPageSubscribeSignalDTO $dto Subscribe payload
+     * @param string $name Signal name used as page id when the DTO page is empty
      */
     private function rememberPageSubscriptionAfterSubscribe(WebSocketPageSubscribeSignalDTO $dto, string $name): void
     {
@@ -1209,7 +1205,7 @@ abstract class WorkerManager extends BaseManager
     }
 
     /**
-     * Merge incoming params into the tracked subscription after {@see PageSignalRouter::dispatchPageUpdateSubscription()}.
+     * Merges incoming params into the tracked subscription after update dispatch.
      *
      * Aligns worker-side tracking with daemon {@see SignalRouter::updatePageSubscription()} merge semantics.
      * No-op when this accept key has no tracked subscription.
@@ -1236,11 +1232,12 @@ abstract class WorkerManager extends BaseManager
     }
 
     /**
-     * On WebSocket disconnect, run page unsubscribe for the last tracked page if any.
+     * Runs page unsubscribe for the last tracked page on WebSocket disconnect.
      *
-     * Invoked before {@see AgentInterface::onSignalConnectionClose()} so {@see AbstractPage::onUnsubscribe()}
-     * runs even when the client did not send {@see SignalTypeConstants::PAGE_UNSUBSCRIBE} (e.g. tab closed).
-     * Clears {@see self::$pageSubscriptionByAcceptKey} for this accept key after dispatch.
+     * Invoked before the agent connection-close hook so page cleanup runs even
+     * when the client closes the tab without sending a page unsubscribe signal.
+     * Clears the worker-local subscription mirror for this accept key after
+     * dispatch.
      *
      * @param string $agentId Agent instance id in this worker process
      * @param AgentInterface $agent Agent receiving the signal
@@ -1277,12 +1274,12 @@ abstract class WorkerManager extends BaseManager
     }
 
     /**
-     * Get cached page router for agent (create if missing)
+     * Returns the cached page router for an agent, creating it when needed.
      *
-     * @param string $agentId Agent ID
+     * @param string $agentId Agent id
      * @param AgentInterface $agent Agent instance
      * @return PageSignalRouter Page router instance
-     * @throws PageSignalRouterNotFoundException If router is not supported for agent
+     * @throws PageSignalRouterNotFoundException When the agent does not support page routing
      */
     private function getPageSignalRouter(string $agentId, AgentInterface $agent): PageSignalRouter
     {
@@ -1295,11 +1292,11 @@ abstract class WorkerManager extends BaseManager
     }
 
     /**
-     * Notify daemon that agent started
+     * Notifies the daemon that a worker-local agent has started.
      *
-     * @param string $agentId Agent ID
+     * @param string $agentId Agent id
      * @param string $agentType Agent type
-     * @param ?string $agentIndex Agent index (optional)
+     * @param ?string $agentIndex Agent index, or null for singleton agents
      */
     private function notifyAgentStarted(string $agentId, string $agentType, ?string $agentIndex): void
     {
@@ -1321,9 +1318,9 @@ abstract class WorkerManager extends BaseManager
     }
 
     /**
-     * Notify daemon that agent stopped
+     * Notifies the daemon that a worker-local agent has stopped.
      *
-     * @param string $agentId Agent ID
+     * @param string $agentId Agent id
      */
     private function notifyAgentStopped(string $agentId): void
     {
@@ -1340,7 +1337,7 @@ abstract class WorkerManager extends BaseManager
     }
 
     /**
-     * Cleanup on shutdown
+     * Stops local agents, closes daemon transport, and shuts down analytics.
      */
     private function cleanup(): void
     {
@@ -1391,27 +1388,25 @@ abstract class WorkerManager extends BaseManager
     }
 
     /**
-     * Tick method - called regularly in main loop
+     * Worker-level periodic hook called from the main loop.
      *
-     * Child classes can override to implement periodic tasks. Called only when connected to daemon.
+     * Child classes can override this for lightweight periodic tasks. The hook
+     * runs only while the worker is connected to the daemon.
      */
     protected function onTick(): void
     {
-        // Default: do nothing, child classes should override
     }
 
     /**
-     * Dispatch accumulated signals
+     * Drains queued worker signals and flushes frontend projection deliveries.
      *
      * Processes all queued signals from SignalRouter and forwards them to daemon.
      * Signals are processed one by one in while-do loop.
      * Called at the end of each loop iteration when connected to daemon.
      *
-     * Logic:
-     * - DB/RT sync: sent as WorkerDbSync*MessageDTO / WorkerRtSync*MessageDTO (worker-level broadcast)
-     * - Agent signals: sent as WorkerAgentMessageDTO (agent-level routing)
-     * - Frontend projection: DB/RT sync facts are recorded first; projection flush
-     *   then queues addressed WS_USER signals, which are drained in the second pass
+     * DB/RT sync signals are broadcast at worker level. Other signals are sent
+     * as agent messages. Projection flush runs between two queue drains so
+     * addressed WS_USER projection deliveries are sent in the same tick.
      */
     private function dispatchSignals(): void
     {
@@ -1428,7 +1423,7 @@ abstract class WorkerManager extends BaseManager
     }
 
     /**
-     * Drains the current worker signal queue and forwards its contents to the daemon.
+     * Drains the current worker signal queue and forwards it to the daemon.
      *
      * Called before and after frontend projection flush because flush itself
      * queues ordinary worker signals into the same router queue.
@@ -1481,18 +1476,16 @@ abstract class WorkerManager extends BaseManager
     }
 
     /**
-     * Create agent manager instance.
-     *
-     * Must be implemented in child classes to create specific agent manager.
+     * Creates the agent manager used by this worker.
      *
      * @return AgentManager Agent manager instance
      */
     abstract protected function createAgentManager(): AgentManager;
 
     /**
-     * Returns manager name for logging.
+     * Returns this worker's manager name for shared logging.
      *
-     * @return string Manager name. for logging.
+     * @return string Worker manager name
      */
     protected function getManagerName(): string
     {
@@ -1500,9 +1493,9 @@ abstract class WorkerManager extends BaseManager
     }
 
     /**
-     * Logs error message.
+     * Logs a worker error message.
      *
-     * @param string $message Error message to log.
+     * @param string $message Error message
      */
     protected function logError(string $message): void
     {
@@ -1510,9 +1503,9 @@ abstract class WorkerManager extends BaseManager
     }
 
     /**
-     * Logs exception message.
+     * Logs a worker exception message.
      *
-     * @param string $message Exception message to log.
+     * @param string $message Exception message
      */
     protected function logException(string $message): void
     {
@@ -1520,9 +1513,9 @@ abstract class WorkerManager extends BaseManager
     }
 
     /**
-     * Logs shutdown message.
+     * Logs a worker shutdown message.
      *
-     * @param string $message Shutdown message to log.
+     * @param string $message Shutdown message
      */
     protected function logShutdown(string $message): void
     {
@@ -1530,9 +1523,9 @@ abstract class WorkerManager extends BaseManager
     }
 
     /**
-     * Handles error event.
+     * Requests worker-loop exit after a PHP error.
      *
-     * Sets exit flag to stop worker loop.
+     * The main loop performs normal cleanup after the flag is set.
      */
     protected function onError(): void
     {
@@ -1540,9 +1533,9 @@ abstract class WorkerManager extends BaseManager
     }
 
     /**
-     * Handles exception event.
+     * Requests worker-loop exit after an uncaught exception.
      *
-     * Sets exit flag to stop worker loop.
+     * The main loop performs normal cleanup after the flag is set.
      */
     protected function onException(): void
     {
@@ -1550,9 +1543,9 @@ abstract class WorkerManager extends BaseManager
     }
 
     /**
-     * Handles shutdown event.
+     * Requests worker-loop exit after a fatal shutdown.
      *
-     * Sets exit flag to stop worker loop.
+     * The main loop performs normal cleanup after the flag is set.
      */
     protected function onShutdown(): void
     {
@@ -1560,9 +1553,9 @@ abstract class WorkerManager extends BaseManager
     }
 
     /**
-     * Handles shutdown signal event.
+     * Handles a shutdown signal after the base manager sets the exit flag.
      *
-     * Worker-specific shutdown logic can be implemented in child classes.
+     * The base worker does not need extra signal-specific work.
      */
     protected function onShutdownSignal(): void
     {
@@ -1570,9 +1563,9 @@ abstract class WorkerManager extends BaseManager
     }
 
     /**
-     * Handles restart signal event.
+     * Handles a restart signal after the base manager sets the exit flag.
      *
-     * Worker-specific restart logic can be implemented in child classes.
+     * The base worker does not need extra signal-specific work.
      */
     protected function onRestartSignal(): void
     {

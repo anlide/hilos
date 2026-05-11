@@ -19,6 +19,7 @@ use Hilos\Core\Table\InMemoryTableFilter;
 use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\Core\Table\TableConstants;
 use Hilos\Database\DatabaseException;
+use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 
 /**
  * Table definition for the admin users grid.
@@ -35,7 +36,7 @@ final class AdminUsersTable extends TableDefinition
      *
      * @param SourceChange $change DB or RT source change to project into the admin users table
      * @return ?TableRowMutationDTO Admin users row mutation, or null when the change does not affect this table
-     * @throws DatabaseException If source user lookup fails
+     * @throws RtActionsStateCollectionNullException When runtime connection state is unavailable
      */
     public function buildMutationForSourceEvent(SourceChange $change): ?TableRowMutationDTO
     {
@@ -47,7 +48,11 @@ final class AdminUsersTable extends TableDefinition
     }
 
     /**
-     * @throws DatabaseException If source user lookup fails
+     * Builds a row mutation for a DB user create, update, or delete.
+     *
+     * @param SourceChange $change DB user source change
+     * @return ?TableRowMutationDTO Admin users row mutation, or null for an invalid source id
+     * @throws RtActionsStateCollectionNullException When runtime connection state is unavailable
      */
     private function mutationForDbUser(SourceChange $change): ?TableRowMutationDTO
     {
@@ -76,7 +81,9 @@ final class AdminUsersTable extends TableDefinition
      * Connection lifecycle never removes a user row; it always projects to an
      * Update with refreshed onlineSessionCount/presence aggregates.
      *
-     * @throws DatabaseException If source user lookup fails
+     * @param SourceChange $change Runtime connection source change
+     * @return ?TableRowMutationDTO Admin users row update, or null when no user can be resolved
+     * @throws RtActionsStateCollectionNullException When runtime connection state is unavailable
      */
     private function mutationForConnection(SourceChange $change): ?TableRowMutationDTO
     {
@@ -98,12 +105,15 @@ final class AdminUsersTable extends TableDefinition
     }
 
     /**
-     * Pulls the userId off a connection source change.
+     * Resolves the user id affected by a connection source change.
      *
      * On Create the row carries the full state. On Update the row may carry a
      * narrow diff without userId, so we fall back to the live RT row. On Delete
      * the RT row is already gone, so we rely on the previous-row payload that
      * the source emits when available.
+     *
+     * @param SourceChange $change Runtime connection source change
+     * @return int Affected user id, or 0 when it cannot be resolved
      */
     private function resolveUserIdForConnection(SourceChange $change): int
     {
@@ -120,7 +130,8 @@ final class AdminUsersTable extends TableDefinition
      *
      * @param TableQueryDTO $query Table query parameters
      * @return TableSnapshotDTO Admin users table snapshot
-     * @throws DatabaseException If user query execution fails
+     * @throws DatabaseException When user query execution fails
+     * @throws RtActionsStateCollectionNullException When runtime connection state is unavailable
      */
     protected function query(TableQueryDTO $query): TableSnapshotDTO
     {
@@ -140,6 +151,7 @@ final class AdminUsersTable extends TableDefinition
      *
      * @param DbUser $user User DB item to project into the admin table
      * @return AdminUserTableRow Runtime-enriched admin users table row
+     * @throws RtActionsStateCollectionNullException When runtime connection state is unavailable
      */
     public function rowFromUser(DbUser $user): AdminUserTableRow
     {
