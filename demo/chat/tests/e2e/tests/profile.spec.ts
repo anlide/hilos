@@ -91,6 +91,7 @@ const allowNextRename = async (page: Page, currentName: () => string) => {
         const text = typeof message === 'string' ? message : message.toString()
         const newName = parseRenameActionName(text)
         if (newName !== null) {
+          const eventId = Date.now()
           const now = new Date().toISOString().slice(0, 19).replace('T', ' ')
           ws.send(JSON.stringify({
             type: 'new_event',
@@ -98,16 +99,18 @@ const allowNextRename = async (page: Page, currentName: () => string) => {
               entities: {
                 updates: {
                   events: [{
-                    id: Date.now(),
+                    id: eventId,
                     type: 'user_renamed',
                     timestamp: now,
-                    message: null,
-                    authorUserId: null,
-                    authorBotId: null,
-                    targetUserId: null,
-                    actorUserId: null,
-                    oldName: currentName(),
-                    newName,
+                    eventMessage: null,
+                    eventUserRegistration: null,
+                    eventUserRename: {
+                      eventId,
+                      targetUserId: 0,
+                      actorUserId: null,
+                      oldName: currentName(),
+                      newName,
+                    },
                     attachments: [],
                   }],
                 },

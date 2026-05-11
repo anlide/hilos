@@ -167,11 +167,14 @@ abstract class Hilos
      *
      * Mirrors {@see self::initSignalRouter()} for the projection layer: tests
      * and bootstrap code can inject a specific {@see ProjectionContext} instance
-     * without going through {@see self::createProjection()}.
+     * without going through {@see self::createProjection()}. The injected
+     * context is configured immediately, matching the normal {@see self::init()}
+     * initialization path.
      */
     public static function initProjection(ProjectionContext $projection): void
     {
         static::$projection = $projection;
+        static::$projection->configure();
     }
 
     /**
