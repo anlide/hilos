@@ -5,32 +5,31 @@ declare(strict_types=1);
 namespace Hilos;
 
 /**
- * BaseDTO - Abstract base class for all DTOs.
+ * Abstract base class for serializable DTOs.
  *
- * Provides common functionality for Data Transfer Objects:
- * JSON serialization, array conversion, data validation.
+ * Concrete DTOs own their array shape and inherit shared JSON conversion.
  */
 abstract class BaseDTO
 {
     /**
-     * Converts DTO to associative array.
+     * Serializes the DTO to its array payload.
      *
-     * @return array<string, mixed> DTO data as array
+     * @return array<string, mixed> DTO payload
      */
     abstract public function toArray(): array;
 
     /**
-     * Creates DTO instance from array.
+     * Restores a DTO instance from its array payload.
      *
-     * @param array<string, mixed> $data Source data
-     * @return static DTO instance
+     * @param array<string, mixed> $data DTO payload
+     * @return static Restored DTO instance
      */
     abstract public static function fromArray(array $data): static;
 
     /**
-     * Converts DTO to JSON string.
+     * Serializes the DTO payload to JSON.
      *
-     * @return string JSON representation
+     * @return string JSON representation of the DTO payload
      */
     public function toJson(): string
     {
@@ -44,11 +43,11 @@ abstract class BaseDTO
     }
 
     /**
-     * Creates DTO instance from JSON string.
+     * Restores a DTO instance from a JSON payload.
      *
-     * @param string $json JSON string
-     * @return static DTO instance
-     * @throws HilosException If JSON string is invalid or cannot be decoded
+     * @param string $json JSON-encoded DTO payload
+     * @return static Restored DTO instance
+     * @throws HilosException When JSON cannot be decoded into DTO data
      */
     public static function fromJson(string $json): static
     {

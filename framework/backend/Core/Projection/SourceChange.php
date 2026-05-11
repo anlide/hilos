@@ -12,8 +12,8 @@ use Hilos\Core\Table\Mutation\TableMutationType;
  *
  * Describes the backend source state, not the frontend payload. A project
  * page/group projection decides how one source fact maps to wire signals.
- * Serializable as a BaseDTO so the fact can also travel inside
- * EmitDbChangeSignalData on the worker-to-daemon transport.
+ * Serializable as a BaseDTO so the fact can also travel inside worker-to-daemon
+ * transport payloads.
  */
 final class SourceChange extends BaseDTO
 {
@@ -27,6 +27,8 @@ final class SourceChange extends BaseDTO
     public const string FIELD_ROW = 'row';
 
     /**
+     * Creates a source fact for one DB or RT collection mutation.
+     *
      * @param string $kind Source kind: KIND_DB or KIND_RT
      * @param string $sourceKey DB collection key or RT collection key
      * @param string $sourceId Row id or runtime state id, always serialized as string
@@ -43,7 +45,12 @@ final class SourceChange extends BaseDTO
     }
 
     /**
+     * Creates a DB create source fact.
+     *
+     * @param string $collectionKey DB collection key
+     * @param string $idString Created row id serialized as a string
      * @param array<string, mixed> $row Full persisted row
+     * @return self Source change for the created DB row
      */
     public static function dbCreated(string $collectionKey, string $idString, array $row): self
     {
@@ -51,7 +58,12 @@ final class SourceChange extends BaseDTO
     }
 
     /**
+     * Creates a DB update source fact.
+     *
+     * @param string $collectionKey DB collection key
+     * @param string $idString Updated row id serialized as a string
      * @param array<string, mixed> $row Changed columns
+     * @return self Source change for the updated DB row
      */
     public static function dbUpdated(string $collectionKey, string $idString, array $row): self
     {
@@ -59,7 +71,12 @@ final class SourceChange extends BaseDTO
     }
 
     /**
+     * Creates a DB delete source fact.
+     *
+     * @param string $collectionKey DB collection key
+     * @param string $idString Deleted row id serialized as a string
      * @param array<string, mixed> $row Previous persisted row, when the source can provide it
+     * @return self Source change for the deleted DB row
      */
     public static function dbDeleted(string $collectionKey, string $idString, array $row = []): self
     {
@@ -67,7 +84,12 @@ final class SourceChange extends BaseDTO
     }
 
     /**
+     * Creates an RT create source fact.
+     *
+     * @param string $collectionKey RT collection key
+     * @param string $stateId Created runtime state id
      * @param array<string, mixed> $row Full runtime row
+     * @return self Source change for the created runtime row
      */
     public static function rtCreated(string $collectionKey, string $stateId, array $row): self
     {
@@ -75,7 +97,12 @@ final class SourceChange extends BaseDTO
     }
 
     /**
+     * Creates an RT update source fact.
+     *
+     * @param string $collectionKey RT collection key
+     * @param string $stateId Updated runtime state id
      * @param array<string, mixed> $row Changed runtime fields
+     * @return self Source change for the updated runtime row
      */
     public static function rtUpdated(string $collectionKey, string $stateId, array $row): self
     {
@@ -83,7 +110,12 @@ final class SourceChange extends BaseDTO
     }
 
     /**
+     * Creates an RT delete source fact.
+     *
+     * @param string $collectionKey RT collection key
+     * @param string $stateId Deleted runtime state id
      * @param array<string, mixed> $row Previous runtime row, when the source can provide it
+     * @return self Source change for the deleted runtime row
      */
     public static function rtDeleted(string $collectionKey, string $stateId, array $row = []): self
     {
@@ -92,6 +124,8 @@ final class SourceChange extends BaseDTO
 
     /**
      * Checks whether this change originated from a DB collection sync.
+     *
+     * @return bool True when this is a DB source fact
      */
     public function isDb(): bool
     {
@@ -100,6 +134,8 @@ final class SourceChange extends BaseDTO
 
     /**
      * Checks whether this change originated from an RT collection sync.
+     *
+     * @return bool True when this is an RT source fact
      */
     public function isRt(): bool
     {
@@ -107,7 +143,9 @@ final class SourceChange extends BaseDTO
     }
 
     /**
-     * @return array<string, mixed>
+     * Serializes the source fact for worker-to-daemon transport.
+     *
+     * @return array<string, mixed> Source change payload
      */
     public function toArray(): array
     {
@@ -121,7 +159,10 @@ final class SourceChange extends BaseDTO
     }
 
     /**
-     * @param array<string, mixed> $data
+     * Restores a source fact from a serialized payload.
+     *
+     * @param array<string, mixed> $data Source change payload
+     * @return static Restored source change
      */
     public static function fromArray(array $data): static
     {

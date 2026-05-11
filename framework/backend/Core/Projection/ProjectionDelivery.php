@@ -11,6 +11,13 @@ use Hilos\Core\Router\SignalDataInterface;
  */
 final class ProjectionDelivery
 {
+    /**
+     * Creates an addressed signal delivery for one WebSocket connection.
+     *
+     * @param string $wireSignalName Signal name to queue through the signal router
+     * @param SignalDataInterface $payload Signal payload to send
+     * @param string $targetAcceptKey WebSocket accept key that should receive the payload
+     */
     public function __construct(
         public readonly string $wireSignalName,
         public readonly SignalDataInterface $payload,
