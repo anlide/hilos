@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos;
 
 use Hilos\Core\Analytics\AnalyticsCollector;
+use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Projection\ProjectionContext;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Table\Context\TableContext;
@@ -19,15 +20,16 @@ use Hilos\Runtime\View\Context\RtContext;
  * Main framework facade providing global access to core layer singletons.
  *
  * Application classes should extend this class and expose:
- * - Hilos::$db    — database layer
- * - Hilos::$env   — catalog-backed environment variables
- * - Hilos::$setting — catalog-backed setting values
- * - Hilos::$rt    — runtime layer
- * - Hilos::$table — table layer
- * - Hilos::$fs    — filesystem layer
- * - Hilos::$sr    — signal router
+ * - Hilos::$db         — database layer
+ * - Hilos::$env        — catalog-backed environment variables
+ * - Hilos::$setting    — catalog-backed setting values
+ * - Hilos::$rt         — runtime layer
+ * - Hilos::$table      — table layer
+ * - Hilos::$browser    — browser-facing state layer
+ * - Hilos::$fs         — filesystem layer
+ * - Hilos::$sr         — signal router
  * - Hilos::$projection — worker-local projection accumulator
- * - Hilos::$ac    — analytics collector
+ * - Hilos::$ac         — analytics collector
  */
 abstract class Hilos
 {
@@ -46,6 +48,9 @@ abstract class Hilos
     /** @var ?TableContext Table layer singleton */
     public static ?TableContext $table = null;
 
+    /** @var ?BrowserContext Browser-facing state layer singleton */
+    public static ?BrowserContext $browser = null;
+
     /** @var ?FsContext Filesystem layer singleton */
     public static ?FsContext $fs = null;
 
@@ -59,7 +64,7 @@ abstract class Hilos
     public static ?AnalyticsCollector $ac = null;
 
     /**
-     * Initializes env, settings, storage, runtime, table, filesystem, and projection layers.
+     * Initializes env, settings, storage, runtime, table, browser, filesystem, and projection layers.
      *
      * @throws HilosException When a layer factory or configure step cannot initialize its singleton
      */
@@ -86,6 +91,11 @@ abstract class Hilos
         if (static::$table === null) {
             static::$table = static::createTable();
             static::$table?->configure();
+        }
+
+        if (static::$browser === null) {
+            static::$browser = static::createBrowser();
+            static::$browser?->configure();
         }
 
         if (static::$fs === null) {
@@ -225,6 +235,16 @@ abstract class Hilos
      * @return ?TableContext Table context or null if not used
      */
     protected static function createTable(): ?TableContext
+    {
+        return null;
+    }
+
+    /**
+     * Creates browser-facing state context instance.
+     *
+     * @return ?BrowserContext Browser context or null if not used
+     */
+    protected static function createBrowser(): ?BrowserContext
     {
         return null;
     }

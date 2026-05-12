@@ -8,9 +8,9 @@ frontend components.
 
 Framework code should make the global Hilos facade contract explicit instead of
 threading it through incidental parameters. If code needs `Hilos::$db`,
-`Hilos::$rt`, `Hilos::$setting`, `Hilos::$table`, `Hilos::$fs`, `Hilos::$sr`, or
-another facade singleton, read it through the facade at the point where the
-current process-global instance is needed.
+`Hilos::$rt`, `Hilos::$setting`, `Hilos::$table`, `Hilos::$browser`,
+`Hilos::$fs`, `Hilos::$sr`, or another facade singleton, read it through the
+facade at the point where the current process-global instance is needed.
 
 Do not pass those globals through constructors, helper parameters, or nested
 value objects just to make them reachable. That creates a second dependency
