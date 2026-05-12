@@ -667,19 +667,19 @@ abstract class WorkerManager extends BaseManager
     }
 
     /**
-     * Record a DB/RT sync fact in the worker-local frontend projection.
+     * Records a DB/RT sync fact in worker-local frontend source buffers.
      *
      * Local writes are recorded when the worker first drains its queued sync
      * signal. Remote writes are recorded after the daemon sync message is
      * accepted. Incoming self-broadcast echoes are consumed before this method,
-     * so one backend fact becomes one projection invalidation per worker.
+     * so one backend fact becomes one frontend invalidation per worker.
      *
      * @param string $signalType DB/RT sync signal type
      * @param array<string, mixed> $signalData Sync payload
      */
     private function recordProjectionSourceChange(string $signalType, array $signalData): void
     {
-        if (Hilos::$projection === null) {
+        if (Hilos::$projection === null && Hilos::$browser === null) {
             return;
         }
 
@@ -712,7 +712,8 @@ abstract class WorkerManager extends BaseManager
         };
 
         if ($change !== null) {
-            Hilos::$projection->record($change);
+            Hilos::$projection?->record($change);
+            Hilos::$browser?->record($change);
         }
     }
 
@@ -847,7 +848,6 @@ abstract class WorkerManager extends BaseManager
             case SignalTypeConstants::PAGE_SUBSCRIBE:
                 if ($signalData instanceof WebSocketPageSubscribeSignalDTO) {
                     $this->dispatchPreviousPageUnsubscribeIfReplaced($agentId, $agent, $signalData, $name, $source);
-                    $this->onPageSubscribed($signalData, $source, $name);
                     $agent->onSignalPageSubscribe($signalData, $source, $name);
                     $this->getPageSignalRouter($agentId, $agent)->dispatchPageSubscribe($signalData, $source, $name);
                     $this->rememberPageSubscriptionAfterSubscribe($signalData, $name);
@@ -858,7 +858,6 @@ abstract class WorkerManager extends BaseManager
 
             case SignalTypeConstants::PAGE_UPDATE_SUBSCRIPTION:
                 if ($signalData instanceof WebSocketPageUpdateSubscriptionSignalDTO) {
-                    $this->onPageSubscriptionUpdated($signalData, $source, $name);
                     $agent->onSignalPageUpdateSubscription($signalData, $source, $name);
                     $this->getPageSignalRouter($agentId, $agent)->dispatchPageUpdateSubscription($signalData, $source, $name);
                     $this->mergePageSubscriptionParamsOnUpdate($signalData);
@@ -869,7 +868,6 @@ abstract class WorkerManager extends BaseManager
 
             case SignalTypeConstants::PAGE_UNSUBSCRIBE:
                 if ($signalData instanceof WebSocketPageUnsubscribeSignalDTO) {
-                    $this->onPageUnsubscribed($signalData, $source, $name);
                     $agent->onSignalPageUnsubscribe($signalData, $source, $name);
                     $this->getPageSignalRouter($agentId, $agent)->dispatchPageUnsubscribe($signalData, $source, $name);
                     if ($signalData->acceptKey !== '') {
@@ -884,7 +882,6 @@ abstract class WorkerManager extends BaseManager
 
             case SignalTypeConstants::GROUP_SUBSCRIBE:
                 if ($signalData instanceof WebSocketGroupSubscribeSignalDTO) {
-                    $this->onGroupSubscribed($signalData, $source, $name);
                     $agent->onSignalGroupSubscribe($signalData, $source, $name);
                     $group = $signalData->group !== '' ? $signalData->group : $name;
                     Hilos::$sr?->subscribeToGroup($group, $signalData);
@@ -895,7 +892,6 @@ abstract class WorkerManager extends BaseManager
 
             case SignalTypeConstants::GROUP_UNSUBSCRIBE:
                 if ($signalData instanceof WebSocketGroupUnsubscribeSignalDTO) {
-                    $this->onGroupUnsubscribed($signalData, $source, $name);
                     $agent->onSignalGroupUnsubscribe($signalData, $source, $name);
                     $group = $signalData->group !== '' ? $signalData->group : $name;
                     Hilos::$sr?->unsubscribeFromGroup($group, $signalData);
@@ -906,7 +902,6 @@ abstract class WorkerManager extends BaseManager
 
             case SignalTypeConstants::GROUP_UPDATE_SUBSCRIPTION:
                 if ($signalData instanceof WebSocketGroupUpdateSubscriptionSignalDTO) {
-                    $this->onGroupSubscriptionUpdated($signalData, $source, $name);
                     $agent->onSignalGroupUpdateSubscription($signalData, $source, $name);
                     $group = $signalData->group !== '' ? $signalData->group : $name;
                     try {
@@ -994,78 +989,6 @@ abstract class WorkerManager extends BaseManager
                 // Unknown signal type - ignore
                 break;
         }
-    }
-
-    /**
-     * Records a page subscribe signal in the browser context.
-     *
-     * @param WebSocketPageSubscribeSignalDTO $signalData Subscribe signal (acceptKey, params)
-     * @param string $source Signal source identifier
-     * @param string $name Signal name
-     */
-    protected function onPageSubscribed(WebSocketPageSubscribeSignalDTO $signalData, string $source, string $name): void
-    {
-        Hilos::$browser?->recordPageSubscribed($signalData, $source, $name);
-    }
-
-    /**
-     * Records a page unsubscribe signal in the browser context.
-     *
-     * @param WebSocketPageUnsubscribeSignalDTO $signalData Unsubscribe signal (acceptKey)
-     * @param string $source Signal source identifier
-     * @param string $name Signal name
-     */
-    protected function onPageUnsubscribed(WebSocketPageUnsubscribeSignalDTO $signalData, string $source, string $name): void
-    {
-        Hilos::$browser?->recordPageUnsubscribed($signalData, $source, $name);
-    }
-
-    /**
-     * Records a page subscription update signal in the browser context.
-     *
-     * @param WebSocketPageUpdateSubscriptionSignalDTO $signalData Update signal (acceptKey, params)
-     * @param string $source Signal source identifier
-     * @param string $name Signal name
-     */
-    protected function onPageSubscriptionUpdated(WebSocketPageUpdateSubscriptionSignalDTO $signalData, string $source, string $name): void
-    {
-        Hilos::$browser?->recordPageSubscriptionUpdated($signalData, $source, $name);
-    }
-
-    /**
-     * Records a group subscribe signal in the browser context.
-     *
-     * @param WebSocketGroupSubscribeSignalDTO $signalData Subscribe signal (acceptKey, params)
-     * @param string $source Signal source identifier
-     * @param string $name Signal name
-     */
-    protected function onGroupSubscribed(WebSocketGroupSubscribeSignalDTO $signalData, string $source, string $name): void
-    {
-        Hilos::$browser?->recordGroupSubscribed($signalData, $source, $name);
-    }
-
-    /**
-     * Records a group unsubscribe signal in the browser context.
-     *
-     * @param WebSocketGroupUnsubscribeSignalDTO $signalData Unsubscribe signal (acceptKey)
-     * @param string $source Signal source identifier
-     * @param string $name Signal name
-     */
-    protected function onGroupUnsubscribed(WebSocketGroupUnsubscribeSignalDTO $signalData, string $source, string $name): void
-    {
-        Hilos::$browser?->recordGroupUnsubscribed($signalData, $source, $name);
-    }
-
-    /**
-     * Records a group subscription update signal in the browser context.
-     *
-     * @param WebSocketGroupUpdateSubscriptionSignalDTO $signalData Update signal (acceptKey, params)
-     * @param string $source Signal source identifier
-     * @param string $name Signal name
-     */
-    protected function onGroupSubscriptionUpdated(WebSocketGroupUpdateSubscriptionSignalDTO $signalData, string $source, string $name): void
-    {
-        Hilos::$browser?->recordGroupSubscriptionUpdated($signalData, $source, $name);
     }
 
     /**

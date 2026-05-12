@@ -4,14 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Browser\Context;
 
-use Hilos\Core\Browser\BrowserSubscriptionEvent;
-use Hilos\Core\Router\SignalDataInterface;
-use Hilos\Socket\WebSocket\DTO\WebSocketGroupSubscribeSignalDTO;
-use Hilos\Socket\WebSocket\DTO\WebSocketGroupUnsubscribeSignalDTO;
-use Hilos\Socket\WebSocket\DTO\WebSocketGroupUpdateSubscriptionSignalDTO;
-use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
-use Hilos\Socket\WebSocket\DTO\WebSocketPageUnsubscribeSignalDTO;
-use Hilos\Socket\WebSocket\DTO\WebSocketPageUpdateSubscriptionSignalDTO;
+use Hilos\Core\Projection\SourceChange;
+use Hilos\Core\Projection\SourceChangeSet;
 
 /**
  * Base browser-facing context.
@@ -23,15 +17,15 @@ abstract class BrowserContext
     /** Browser-only table configs keyed by browser table name. */
     public const array TABLES = [];
 
-    public const string EVENT_PAGE_SUBSCRIBED = 'page_subscribed';
-    public const string EVENT_PAGE_UNSUBSCRIBED = 'page_unsubscribed';
-    public const string EVENT_PAGE_SUBSCRIPTION_UPDATED = 'page_subscription_updated';
-    public const string EVENT_GROUP_SUBSCRIBED = 'group_subscribed';
-    public const string EVENT_GROUP_UNSUBSCRIBED = 'group_unsubscribed';
-    public const string EVENT_GROUP_SUBSCRIPTION_UPDATED = 'group_subscription_updated';
+    protected SourceChangeSet $changes;
 
-    /** @var list<BrowserSubscriptionEvent> */
-    protected array $subscriptionEvents = [];
+    /**
+     * Starts with an empty worker-local browser source-change buffer.
+     */
+    public function __construct()
+    {
+        $this->changes = new SourceChangeSet();
+    }
 
     /**
      * Registers browser-facing state helpers.
@@ -41,150 +35,55 @@ abstract class BrowserContext
     abstract public function configure(): void;
 
     /**
-     * Records a page subscribe event for the next browser flush.
+     * Records a DB/RT sync fact in the worker-local browser buffer.
      *
-     * @param WebSocketPageSubscribeSignalDTO $signalData Original page subscribe signal DTO
-     * @param string $source Signal source identifier
-     * @param string $name Signal name
+     * @param SourceChange $change Source change to dispatch on the next browser flush
      */
-    public function recordPageSubscribed(
-        WebSocketPageSubscribeSignalDTO $signalData,
-        string $source,
-        string $name,
-    ): void {
-        $this->recordSubscriptionEvent(self::EVENT_PAGE_SUBSCRIBED, $signalData, $source, $name);
-    }
-
-    /**
-     * Records a page unsubscribe event for the next browser flush.
-     *
-     * @param WebSocketPageUnsubscribeSignalDTO $signalData Original page unsubscribe signal DTO
-     * @param string $source Signal source identifier
-     * @param string $name Signal name
-     */
-    public function recordPageUnsubscribed(
-        WebSocketPageUnsubscribeSignalDTO $signalData,
-        string $source,
-        string $name,
-    ): void {
-        $this->recordSubscriptionEvent(self::EVENT_PAGE_UNSUBSCRIBED, $signalData, $source, $name);
-    }
-
-    /**
-     * Records a page subscription update event for the next browser flush.
-     *
-     * @param WebSocketPageUpdateSubscriptionSignalDTO $signalData Original page update signal DTO
-     * @param string $source Signal source identifier
-     * @param string $name Signal name
-     */
-    public function recordPageSubscriptionUpdated(
-        WebSocketPageUpdateSubscriptionSignalDTO $signalData,
-        string $source,
-        string $name,
-    ): void {
-        $this->recordSubscriptionEvent(self::EVENT_PAGE_SUBSCRIPTION_UPDATED, $signalData, $source, $name);
-    }
-
-    /**
-     * Records a group subscribe event for the next browser flush.
-     *
-     * @param WebSocketGroupSubscribeSignalDTO $signalData Original group subscribe signal DTO
-     * @param string $source Signal source identifier
-     * @param string $name Signal name
-     */
-    public function recordGroupSubscribed(
-        WebSocketGroupSubscribeSignalDTO $signalData,
-        string $source,
-        string $name,
-    ): void {
-        $this->recordSubscriptionEvent(self::EVENT_GROUP_SUBSCRIBED, $signalData, $source, $name);
-    }
-
-    /**
-     * Records a group unsubscribe event for the next browser flush.
-     *
-     * @param WebSocketGroupUnsubscribeSignalDTO $signalData Original group unsubscribe signal DTO
-     * @param string $source Signal source identifier
-     * @param string $name Signal name
-     */
-    public function recordGroupUnsubscribed(
-        WebSocketGroupUnsubscribeSignalDTO $signalData,
-        string $source,
-        string $name,
-    ): void {
-        $this->recordSubscriptionEvent(self::EVENT_GROUP_UNSUBSCRIBED, $signalData, $source, $name);
-    }
-
-    /**
-     * Records a group subscription update event for the next browser flush.
-     *
-     * @param WebSocketGroupUpdateSubscriptionSignalDTO $signalData Original group update signal DTO
-     * @param string $source Signal source identifier
-     * @param string $name Signal name
-     */
-    public function recordGroupSubscriptionUpdated(
-        WebSocketGroupUpdateSubscriptionSignalDTO $signalData,
-        string $source,
-        string $name,
-    ): void {
-        $this->recordSubscriptionEvent(self::EVENT_GROUP_SUBSCRIPTION_UPDATED, $signalData, $source, $name);
-    }
-
-    /**
-     * Reports whether any browser subscription events are buffered.
-     *
-     * @return bool Whether the browser context has events waiting for flush
-     */
-    public function hasSubscriptionEvents(): bool
+    public function record(SourceChange $change): void
     {
-        return $this->subscriptionEvents !== [];
+        $this->changes->add($change);
     }
 
     /**
-     * Drains browser subscription events at the end of the worker tick.
+     * Reports whether any browser source changes are buffered.
+     *
+     * @return bool Whether the browser context has source changes waiting for flush
+     */
+    public function hasChanges(): bool
+    {
+        return !$this->changes->isEmpty();
+    }
+
+    /**
+     * Drains browser source changes at the end of the worker tick.
      */
     public function flushToSignalRouter(): void
     {
-        if ($this->subscriptionEvents === []) {
+        if ($this->changes->isEmpty()) {
             return;
         }
 
-        $this->collapseSubscriptionEvents();
-        $this->dispatchBrowserSignals();
+        $this->groupSourceChanges();
+        $this->emitBrowserSignals();
 
-        $this->subscriptionEvents = [];
+        $this->changes = new SourceChangeSet();
     }
 
     /**
-     * Collapses repeated browser events before expensive signal work.
+     * Groups source changes before browser signal work by modifying $this->changes.
+     *
+     * The default implementation keeps the source-change buffer as-is.
      */
-    protected function collapseSubscriptionEvents(): void
+    protected function groupSourceChanges(): void
     {
-        // TODO: Collapse repeated events within one tick, for example when the same field changes twice.
+        // TODO: Collapse repeated DB/RT source changes within $this->changes before browser emit.
     }
 
     /**
-     * Dispatches browser signals produced from collapsed subscription events.
+     * Emits browser signals produced from grouped DB/RT source changes in $this->changes.
      */
-    protected function dispatchBrowserSignals(): void
+    protected function emitBrowserSignals(): void
     {
         // TODO: Build and queue browser-facing signals here.
-    }
-
-    /**
-     * Appends one framework subscription event without transforming its DTO.
-     *
-     * @param string $event Browser event name
-     * @param SignalDataInterface $signalData Original framework signal DTO
-     * @param string $source Signal source identifier
-     * @param string $name Signal name
-     */
-    private function recordSubscriptionEvent(
-        string $event,
-        SignalDataInterface $signalData,
-        string $source,
-        string $name,
-    ): void {
-        $this->subscriptionEvents[] = new BrowserSubscriptionEvent($event, $signalData, $source, $name);
     }
 }
