@@ -8,10 +8,10 @@ use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Router\ChatSignalMapper;
 use Demo\Chat\Core\Router\DTO\UserPresenceEmitPayload;
-use Demo\Chat\Database\DbChatContext;
+use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Runtime\State\Item\BotAgentStatus as StateBotAgentStatus;
-use Demo\Chat\Runtime\View\Context\RtChatContext;
-use Demo\Chat\Tables\TableChatContext;
+use Demo\Chat\Runtime\View\Context\ChatRtContext;
+use Demo\Chat\Tables\ChatTableContext;
 use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosPageRouteParams;
 use Hilos\Constants\HilosSignalConstants;
@@ -45,7 +45,7 @@ final class ChatSignalMapperTest extends TestCase
      */
     public function testMapChatUserRowUpdatedBuildsPendingMutationsFromRouterTableRoutes(): void
     {
-        $sourceChange = SourceChange::dbUpdated(DbChatContext::users, '7', []);
+        $sourceChange = SourceChange::dbUpdated(ChatDbContext::users, '7', []);
         $emitData = new EmitDbChangeSignalData(
             sourceChange: $sourceChange,
             excludeAcceptKey: 'key-admin',
@@ -65,8 +65,8 @@ final class ChatSignalMapperTest extends TestCase
         $this->assertSame(EmitFanoutDelivery::AllExcept, $items[0]->delivery);
         $this->assertSame(ChatSignalConstants::TABLE_MUTATION_PENDING, $items[0]->wireSignalName);
         $this->assertSame('key-admin', $items[0]->excludeAcceptKey);
-        $this->assertSame(TableChatContext::adminUsers, $items[0]->innerPayload->tableKey);
-        $this->assertSame(TableChatContext::hilosUsers, $items[1]->innerPayload->tableKey);
+        $this->assertSame(ChatTableContext::adminUsers, $items[0]->innerPayload->tableKey);
+        $this->assertSame(ChatTableContext::hilosUsers, $items[1]->innerPayload->tableKey);
         $this->assertArrayNotHasKey('excludeAcceptKey', $items[0]->innerPayload->toArray());
         $this->assertArrayNotHasKey('targetAcceptKey', $items[1]->innerPayload->toArray());
     }
@@ -81,7 +81,7 @@ final class ChatSignalMapperTest extends TestCase
             new SignalType(SignalTypeConstants::EMIT_DB_CHANGE),
             new SignalName('unknown_emit_event'),
             new EmitDbChangeSignalData(
-                SourceChange::dbUpdated(DbChatContext::users, '1', []),
+                SourceChange::dbUpdated(ChatDbContext::users, '1', []),
             ),
         );
 
@@ -98,7 +98,7 @@ final class ChatSignalMapperTest extends TestCase
             new SignalType(SignalTypeConstants::EMIT_DB_CHANGE),
             new SignalName(ChatSignalConstants::EMIT_CHAT_BOT_ROW_CHANGED),
             new EmitDbChangeSignalData(
-                sourceChange: SourceChange::dbUpdated(DbChatContext::bots, '5', []),
+                sourceChange: SourceChange::dbUpdated(ChatDbContext::bots, '5', []),
                 excludeAcceptKey: 'admin-ak',
             ),
         );
@@ -109,7 +109,7 @@ final class ChatSignalMapperTest extends TestCase
         $this->assertSame(EmitFanoutDelivery::AllExcept, $items[0]->delivery);
         $this->assertSame(ChatSignalConstants::TABLE_MUTATION_PENDING, $items[0]->wireSignalName);
         $this->assertSame('admin-ak', $items[0]->excludeAcceptKey);
-        $this->assertSame(TableChatContext::bots, $items[0]->innerPayload->tableKey);
+        $this->assertSame(ChatTableContext::bots, $items[0]->innerPayload->tableKey);
     }
 
     /**
@@ -154,7 +154,7 @@ final class ChatSignalMapperTest extends TestCase
             new SignalType(SignalTypeConstants::EMIT_RT_CHANGE),
             new SignalName(ChatSignalConstants::EMIT_CHAT_USER_PRESENCE_UPDATED),
             new EmitRtChangeSignalData(
-                collectionKey: RtChatContext::connections,
+                collectionKey: ChatRtContext::connections,
                 stateId: '7',
                 payload: UserPresenceEmitPayload::fromFrontendChanges(
                     7,
@@ -206,7 +206,7 @@ final class ChatSignalMapperTest extends TestCase
             new SignalType(SignalTypeConstants::EMIT_RT_CHANGE),
             new SignalName(ChatSignalConstants::EMIT_CHAT_BOT_AGENT_STATUS_UPDATED),
             new EmitRtChangeSignalData(
-                collectionKey: RtChatContext::botAgentStatuses,
+                collectionKey: ChatRtContext::botAgentStatuses,
                 stateId: '9',
                 payload: [
                     StateBotAgentStatus::botId => 9,
@@ -236,7 +236,7 @@ final class ChatSignalMapperTest extends TestCase
             new SignalType(SignalTypeConstants::EMIT_RT_CHANGE),
             new SignalName(HilosSignalConstants::EMIT_HILOS_GUARDIAN_AGENT_STATUS_UPDATED),
             new EmitRtChangeSignalData(
-                collectionKey: RtChatContext::guardianAgentStatuses,
+                collectionKey: ChatRtContext::guardianAgentStatuses,
                 stateId: 'code_quality',
                 payload: [
                     'agentId' => 'code_quality',
@@ -274,11 +274,11 @@ final class ChatSignalMapperTest extends TestCase
                 $this->config = [
                     'table_event_routes' => [
                         ChatSignalConstants::EMIT_CHAT_USER_ROW_UPDATED => [
-                            TableChatContext::adminUsers,
-                            TableChatContext::hilosUsers,
+                            ChatTableContext::adminUsers,
+                            ChatTableContext::hilosUsers,
                         ],
                         ChatSignalConstants::EMIT_CHAT_BOT_ROW_CHANGED => [
-                            TableChatContext::bots,
+                            ChatTableContext::bots,
                         ],
                     ],
                 ];
@@ -296,7 +296,7 @@ final class ChatSignalMapperTest extends TestCase
         $context = new class(
             $this->makeTable('admin'),
             $this->makeTable('hilos'),
-            $this->makeTable('bots', DbChatContext::bots),
+            $this->makeTable('bots', ChatDbContext::bots),
         ) extends TableContext {
             /**
              * Creates a table context around prebuilt table definitions.
@@ -317,9 +317,9 @@ final class ChatSignalMapperTest extends TestCase
              */
             public function configure(): void
             {
-                $this->register(TableChatContext::adminUsers, $this->adminUsers);
-                $this->register(TableChatContext::hilosUsers, $this->hilosUsers);
-                $this->register(TableChatContext::bots, $this->bots);
+                $this->register(ChatTableContext::adminUsers, $this->adminUsers);
+                $this->register(ChatTableContext::hilosUsers, $this->hilosUsers);
+                $this->register(ChatTableContext::bots, $this->bots);
             }
         };
         $context->configure();
@@ -334,7 +334,7 @@ final class ChatSignalMapperTest extends TestCase
      * @param string $sourceKey Source key that should produce a mutation
      * @return TableDefinition Test table definition for mapper fan-out assertions
      */
-    private function makeTable(string $label, string $sourceKey = DbChatContext::users): TableDefinition
+    private function makeTable(string $label, string $sourceKey = ChatDbContext::users): TableDefinition
     {
         return new class($label, $sourceKey) extends TableDefinition {
             /**

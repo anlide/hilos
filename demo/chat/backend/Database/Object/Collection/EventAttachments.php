@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Database\Object\Collection;
 
-use Demo\Chat\Database\DbChatContext;
+use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Database\Entity\Collection\EventAttachments as EntityEventAttachments;
 use Demo\Chat\Database\Object\Item\EventAttachment as ObjectEventAttachment;
 use Hilos\Database\Object\Objects;
@@ -23,5 +23,5 @@ final class EventAttachments extends Objects
 {
     public const string OBJECT_CLASS = ObjectEventAttachment::class;
     public const string ENTITY_COLLECTION_CLASS = EntityEventAttachments::class;
-    public const string COLLECTION_KEY = DbChatContext::eventAttachments;
+    public const string COLLECTION_KEY = ChatDbContext::eventAttachments;
 }

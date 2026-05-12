@@ -13,7 +13,7 @@ use Demo\Chat\Core\Router\DTO\RenameModerationResultSignalData;
 use Demo\Chat\Database\Object\Item\ModeratorPromptPiece as ObjectModeratorPromptPiece;
 use Demo\Chat\Database\Settings\ChatSettingsConstants;
 use Demo\Chat\Hilos;
-use Demo\Chat\Runtime\View\Context\RtChatContext;
+use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Demo\Chat\Runtime\View\Item\Connection;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\LLMConstants;
@@ -97,7 +97,7 @@ final class ModeratorAgent extends AbstractAgent
     {
         if (
             $this->currentAcceptKey === null
-            || $data->collectionKey !== RtChatContext::connections
+            || $data->collectionKey !== ChatRtContext::connections
             || $data->stateId !== $this->currentAcceptKey
         ) {
             return;
@@ -121,7 +121,7 @@ final class ModeratorAgent extends AbstractAgent
     {
         if (
             $this->currentAcceptKey !== null
-            && $data->collectionKey === RtChatContext::connections
+            && $data->collectionKey === ChatRtContext::connections
             && $data->stateId === $this->currentAcceptKey
         ) {
             $this->resetCurrentModerationRequest();

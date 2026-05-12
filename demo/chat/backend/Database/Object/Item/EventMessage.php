@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Database\Object\Item;
 
-use Demo\Chat\Database\DbChatContext;
+use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Database\Entity\Item\EventMessage as EntityEventMessage;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Item\Object_;
@@ -31,11 +31,11 @@ final class EventMessage extends Object_
     /**
      * Returns the database collection key for message event details.
      *
-     * @return string Collection key (DbChatContext::eventMessages)
+     * @return string Collection key (ChatDbContext::eventMessages)
      */
     protected static function getCollectionKey(): string
     {
-        return DbChatContext::eventMessages;
+        return ChatDbContext::eventMessages;
     }
 
     /**

@@ -10,13 +10,13 @@ use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Router\DTO\ChatEventSignalDTO;
 use Demo\Chat\Core\Router\DTO\UserPresenceEmitPayload;
 use Demo\Chat\Core\Router\DTO\UserPresenceSignalData;
-use Demo\Chat\Database\DbChatContext;
+use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Database\View\Collection\Events;
 use Demo\Chat\Frontend\BotFrontendStateProjector;
 use Demo\Chat\Frontend\UserFrontendStateProjector;
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\State\Item\BotAgentStatus as StateBotAgentStatus;
-use Demo\Chat\Runtime\View\Context\RtChatContext;
+use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosPageRouteParams;
 use Hilos\Constants\HilosSignalConstants;
@@ -118,7 +118,7 @@ final class ChatSignalMapper implements SignalMapperInterface
      */
     private function mapChatEventCreated(EmitDbChangeSignalData $data, bool $replaceEvents = false): array
     {
-        if ($data->sourceChange->sourceKey !== DbChatContext::events || Hilos::$db === null) {
+        if ($data->sourceChange->sourceKey !== ChatDbContext::events || Hilos::$db === null) {
             return [];
         }
 
@@ -138,8 +138,8 @@ final class ChatSignalMapper implements SignalMapperInterface
                 wireSignalName: ChatSignalConstants::NEW_EVENT,
                 innerPayload: new ChatEventSignalDTO(
                     new EntitiesChangesDTO(
-                        full: [DbChatContext::events => Events::fromSingleItem($event)],
-                        replaceFullKeys: $replaceEvents ? [DbChatContext::events] : [],
+                        full: [ChatDbContext::events => Events::fromSingleItem($event)],
+                        replaceFullKeys: $replaceEvents ? [ChatDbContext::events] : [],
                     ),
                     frontend: $this->frontendUpdatesForEventUser(
                         $event->type,
@@ -192,7 +192,7 @@ final class ChatSignalMapper implements SignalMapperInterface
      */
     private function mapChatBotFrontendUpdated(EmitDbChangeSignalData $data): array
     {
-        if ($data->sourceChange->sourceKey !== DbChatContext::bots || Hilos::$db === null) {
+        if ($data->sourceChange->sourceKey !== ChatDbContext::bots || Hilos::$db === null) {
             return [];
         }
 
@@ -211,7 +211,7 @@ final class ChatSignalMapper implements SignalMapperInterface
                 delivery: EmitFanoutDelivery::AllExcept,
                 wireSignalName: ChatSignalConstants::BOT_UPDATED,
                 innerPayload: new ChatEventSignalDTO(new EntitiesChangesDTO(updates: [
-                    DbChatContext::bots => [$bot->toArray(toFrontend: true)],
+                    ChatDbContext::bots => [$bot->toArray(toFrontend: true)],
                 ])),
                 excludeAcceptKey: $data->excludeAcceptKey,
             ),
@@ -226,7 +226,7 @@ final class ChatSignalMapper implements SignalMapperInterface
      */
     private function mapChatUserPresenceUpdated(EmitRtChangeSignalData $data): array
     {
-        if ($data->collectionKey !== RtChatContext::connections) {
+        if ($data->collectionKey !== ChatRtContext::connections) {
             return [];
         }
 
@@ -283,7 +283,7 @@ final class ChatSignalMapper implements SignalMapperInterface
      */
     private function mapChatBotAgentStatusUpdated(EmitRtChangeSignalData $data): array
     {
-        if ($data->collectionKey !== RtChatContext::botAgentStatuses) {
+        if ($data->collectionKey !== ChatRtContext::botAgentStatuses) {
             return [];
         }
 
@@ -303,7 +303,7 @@ final class ChatSignalMapper implements SignalMapperInterface
             $bot = Hilos::$db->bots[$botId] ?? null;
             if ($bot !== null) {
                 $entities = new EntitiesChangesDTO(updates: [
-                    DbChatContext::bots => [$bot->toArray(toFrontend: true)],
+                    ChatDbContext::bots => [$bot->toArray(toFrontend: true)],
                 ]);
             }
         }
@@ -329,7 +329,7 @@ final class ChatSignalMapper implements SignalMapperInterface
      */
     private function mapGuardianAgentStatusUpdated(EmitRtChangeSignalData $data): array
     {
-        if ($data->collectionKey !== RtChatContext::guardianAgentStatuses) {
+        if ($data->collectionKey !== ChatRtContext::guardianAgentStatuses) {
             return [];
         }
 

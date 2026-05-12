@@ -9,7 +9,7 @@ use Demo\Chat\Core\Router\DTO\HilosUserSubscriptionSignalData;
 use Demo\Chat\Frontend\UserFrontendStateProjector;
 use Demo\Chat\Hilos;
 use Demo\Chat\Projection\Util\UserPresenceDeliveryBuilder;
-use Demo\Chat\Runtime\View\Context\RtChatContext;
+use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosPageRouteParams;
 use Hilos\Constants\HilosSignalConstants;
@@ -58,7 +58,7 @@ final class HilosUserPageProjection extends PageProjection
     protected function rules(): iterable
     {
         yield new CustomRule(
-            triggers: [RtChatContext::connections],
+            triggers: [ChatRtContext::connections],
             snapshot: static function (): void {
             },
             broadcast: function (SourceChange $change, array $audienceAcceptKeys): iterable {

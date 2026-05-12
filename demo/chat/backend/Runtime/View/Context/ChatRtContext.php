@@ -35,7 +35,7 @@ use Hilos\Runtime\Exception\Rt\StateItemNotFoundException;
 use Hilos\Runtime\View\Context\RtContext;
 
 /**
- * RtChatContext - chat runtime context (runtime data access for the chat app).
+ * ChatRtContext - chat runtime context (runtime data access for the chat app).
  *
  * Available collections:
  *   - connections: Active WebSocket connections (acceptKey → userId mapping)
@@ -60,7 +60,7 @@ use Hilos\Runtime\View\Context\RtContext;
  * @property-read BotAgentStatuses $botAgentStatuses Bot agent lifecycle status collection
  * @property-read GuardianAgentStatuses $guardianAgentStatuses Guardian run status collection
  */
-final class RtChatContext extends RtContext
+final class ChatRtContext extends RtContext
 {
     public const string connections = 'connections';
     public const string userStates = 'userStates';

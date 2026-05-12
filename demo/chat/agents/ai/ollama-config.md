@@ -25,7 +25,7 @@ composer run ollama:pull-gpu-amd
 
 ## Moderation provider settings (via DB)
 
-Moderation URL and model are stored in `DbChatContext::settings` (seed 003 populates defaults).
+Moderation URL and model are stored in `ChatDbContext::settings` (seed 003 populates defaults).
 Override at runtime via `/hilos/settings` or `/admin` → Settings table.
 
 `Hilos::$setting` reads these at runtime:

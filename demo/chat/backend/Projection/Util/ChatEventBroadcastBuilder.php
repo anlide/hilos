@@ -7,7 +7,7 @@ namespace Demo\Chat\Projection\Util;
 use Demo\Chat\Constants\ChatEventType;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Core\Router\DTO\ChatEventSignalDTO;
-use Demo\Chat\Database\DbChatContext;
+use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Database\View\Collection\Events;
 use Demo\Chat\Frontend\UserFrontendStateProjector;
 use Demo\Chat\Hilos;
@@ -41,8 +41,8 @@ final class ChatEventBroadcastBuilder
 
         $payload = new ChatEventSignalDTO(
             entities: new EntitiesChangesDTO(
-                full: [DbChatContext::events => Events::fromSingleItem($event)],
-                replaceFullKeys: $event->type === ChatEventType::CHAT_CLEARED->value ? [DbChatContext::events] : [],
+                full: [ChatDbContext::events => Events::fromSingleItem($event)],
+                replaceFullKeys: $event->type === ChatEventType::CHAT_CLEARED->value ? [ChatDbContext::events] : [],
             ),
             frontend: self::frontendUpdatesForEventUser(
                 $event->type,

@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Database\Object\Item;
 
-use Demo\Chat\Database\DbChatContext;
+use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Database\Entity\Item\Event as EntityEvent;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Item\Object_;
@@ -29,13 +29,13 @@ final class Event extends Object_
     public const string timestamp = 'timestamp';
 
     /**
-     * Return collection key used for DbChatContext lookup.
+     * Return collection key used for ChatDbContext lookup.
      *
-     * @return string Collection key (DbChatContext::events)
+     * @return string Collection key (ChatDbContext::events)
      */
     protected static function getCollectionKey(): string
     {
-        return DbChatContext::events;
+        return ChatDbContext::events;
     }
 
     /**

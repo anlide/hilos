@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Database\View\Item;
 
-use Demo\Chat\Database\DbChatContext;
+use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Database\Object\Item\EventMessage as ObjectEventMessage;
 use Demo\Chat\Database\View\Collection\EventAttachments;
 use Demo\Chat\Hilos;
@@ -54,7 +54,7 @@ final class EventMessage extends DbItem
             ObjectEventMessage::authorUserId => $this->_object->authorUserId,
             ObjectEventMessage::authorBotId => $this->_object->authorBotId,
             ObjectEventMessage::message => $this->_object->message,
-            DbChatContext::event => Hilos::$db->events[$this->_object->eventId],
+            ChatDbContext::event => Hilos::$db->events[$this->_object->eventId],
             self::authorUser => Hilos::$db->users[$this->_object->authorUserId],
             self::authorBot => Hilos::$db->bots[$this->_object->authorBotId],
             self::attachments => Hilos::$db->eventAttachments->forEventId($this->_object->eventId),

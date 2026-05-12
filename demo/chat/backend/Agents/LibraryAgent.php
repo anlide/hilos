@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Demo\Chat\Agents;
 
 use Demo\Chat\Constants\AgentType;
-use Demo\Chat\Database\DbChatContext;
+use Demo\Chat\Database\ChatDbContext;
 use Hilos\Core\Agent\AbstractAgent;
 
 /**
@@ -22,8 +22,8 @@ final class LibraryAgent extends AbstractAgent
      */
     public function onStart(): void
     {
-        $this->registerDbTruthSource(DbChatContext::bots);
-        $this->registerDbTruthSource(DbChatContext::moderatorPromptPieces);
+        $this->registerDbTruthSource(ChatDbContext::bots);
+        $this->registerDbTruthSource(ChatDbContext::moderatorPromptPieces);
     }
 
     /**

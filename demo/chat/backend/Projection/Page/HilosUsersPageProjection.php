@@ -6,12 +6,12 @@ namespace Demo\Chat\Projection\Page;
 
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Core\Router\DTO\ChatEventSignalDTO;
-use Demo\Chat\Database\DbChatContext;
+use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Frontend\UserFrontendStateProjector;
 use Demo\Chat\Hilos;
 use Demo\Chat\Projection\Util\UserPresenceDeliveryBuilder;
-use Demo\Chat\Runtime\View\Context\RtChatContext;
-use Demo\Chat\Tables\TableChatContext;
+use Demo\Chat\Runtime\View\Context\ChatRtContext;
+use Demo\Chat\Tables\ChatTableContext;
 use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Page\PageRouteParams;
@@ -58,13 +58,13 @@ final class HilosUsersPageProjection extends PageProjection
     protected function rules(): iterable
     {
         yield new TableRule(
-            tableKey: TableChatContext::hilosUsers,
-            triggers: [DbChatContext::users, RtChatContext::connections],
+            tableKey: ChatTableContext::hilosUsers,
+            triggers: [ChatDbContext::users, ChatRtContext::connections],
             wireSignalName: ChatSignalConstants::TABLE_MUTATION,
         );
 
         yield new JoinedProjectionRule(
-            triggers: [RtChatContext::connections],
+            triggers: [ChatRtContext::connections],
             snapshotChanges: fn(): FrontendChangesDTO => new FrontendChangesDTO(),
             broadcast: function (SourceChange $change, array $audienceAcceptKeys): iterable {
                 $payload = UserPresenceDeliveryBuilder::buildForConnectionChange(
@@ -101,8 +101,8 @@ final class HilosUsersPageProjection extends PageProjection
         string $acceptKey,
         PageRouteParams $params,
     ): ?SignalDataInterface {
-        $snapshot = $accumulator->getTableSnapshot(TableChatContext::hilosUsers);
-        $tables = $snapshot !== null ? [TableChatContext::hilosUsers => $snapshot] : [];
+        $snapshot = $accumulator->getTableSnapshot(ChatTableContext::hilosUsers);
+        $tables = $snapshot !== null ? [ChatTableContext::hilosUsers => $snapshot] : [];
         $frontend = Hilos::$db !== null
             ? UserFrontendStateProjector::fullForUsers(Hilos::$db->users, includeConnectionStats: true)
             : new FrontendChangesDTO();

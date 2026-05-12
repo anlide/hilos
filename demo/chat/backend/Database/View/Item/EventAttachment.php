@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Database\View\Item;
 
-use Demo\Chat\Database\DbChatContext;
+use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Database\Object\Item\EventAttachment as ObjectEventAttachment;
 use Demo\Chat\Hilos;
 use Hilos\Database\Exception\View\Collection\ActionsClassException;
@@ -46,7 +46,7 @@ final class EventAttachment extends DbItem
             ObjectEventAttachment::filename => $this->_object->filename,
             ObjectEventAttachment::mimeType => $this->_object->mimeType,
             ObjectEventAttachment::storedName => $this->_object->storedName,
-            DbChatContext::eventMessage => Hilos::$db->eventMessages[$this->_object->eventId],
+            ChatDbContext::eventMessage => Hilos::$db->eventMessages[$this->_object->eventId],
             self::file => Hilos::$fs->published[$this->_object->storedName],
             default => parent::__get($name),
         };

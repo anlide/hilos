@@ -1,6 +1,6 @@
 # Connection
 
-**Collection:** `RtChatContext::connections` | **Key:** `acceptKey`
+**Collection:** `ChatRtContext::connections` | **Key:** `acceptKey`
 
 Runtime row for one active WebSocket connection. Holds transport metadata plus connection-local outbound moderation, active binary upload session, and progress UI for this socket.
 
@@ -72,7 +72,7 @@ Completed uploads no longer live on `Connection`; they become `AttachmentDraft` 
 
 ## Truth Source
 
-`ChatAgent` owns `RtChatContext::connections`.
+`ChatAgent` owns `ChatRtContext::connections`.
 
 ## Note on Immutability
 

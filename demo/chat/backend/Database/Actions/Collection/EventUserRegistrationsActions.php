@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Database\Actions\Collection;
 
-use Demo\Chat\Database\DbChatContext;
+use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Database\Entity\Item\EventUserRegistration;
 use Demo\Chat\Database\Object\Collection\EventUserRegistrations as ObjectEventUserRegistrations;
 use Demo\Chat\Database\Object\Item\EventUserRegistration as ObjectEventUserRegistration;
@@ -43,7 +43,7 @@ final class EventUserRegistrationsActions extends DbActions
      */
     public function create(int $eventId, int $targetUserId): DbEventUserRegistration
     {
-        TruthSourceRegistry::checkCanCreate(DbChatContext::eventUserRegistrations);
+        TruthSourceRegistry::checkCanCreate(ChatDbContext::eventUserRegistrations);
         $this->ensureCanWrite();
 
         $detail = ObjectEventUserRegistration::create();
@@ -63,7 +63,7 @@ final class EventUserRegistrationsActions extends DbActions
      */
     public function deleteAll(): void
     {
-        TruthSourceRegistry::checkCanWrite(DbChatContext::eventUserRegistrations);
+        TruthSourceRegistry::checkCanWrite(ChatDbContext::eventUserRegistrations);
         $this->ensureCanWrite();
 
         $this->objectCollection->deleteAll();

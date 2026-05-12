@@ -64,9 +64,9 @@ inspects `$change->sourceKey` to decide which sources are observed.
 
 For example, both `AdminUsersTable` and `HilosUsersTable` react to two sources:
 
-- `DbChatContext::users` — DB user create/update/delete projects directly to a
+- `ChatDbContext::users` — DB user create/update/delete projects directly to a
   user row mutation;
-- `RtChatContext::connections` — connection lifecycle flips the user's
+- `ChatRtContext::connections` — connection lifecycle flips the user's
   `onlineSessionCount` and `presence` summary projected into the same row, so
   the table emits an Update mutation for the affected user id.
 

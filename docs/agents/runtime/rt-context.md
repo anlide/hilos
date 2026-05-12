@@ -15,7 +15,7 @@ Hilos::$rt->chatContext    // single ChatContext view item alias
 ```
 
 The available names are defined in the project's `RtContext` subclass, such as
-`RtChatContext`. A caller should use these existing access paths before adding a
+`ChatRtContext`. A caller should use these existing access paths before adding a
 new runtime collection, helper, table method, or page-level state map.
 
 ## RtContext vs DbContext
@@ -42,7 +42,7 @@ single-item aliases with `setRepresentItem()` when the application needs a
 typed shortcut to one item.
 
 ```php
-final class RtChatContext extends RtContext
+final class ChatRtContext extends RtContext
 {
     public const string connections = 'connections';
     public const string userStates  = 'userStates';
@@ -85,7 +85,7 @@ use Hilos\Core\Execution\ExecutionContext;
  * @property-read Connections $connections Active connections collection
  * @property-read ?Connection $selfConnection Current inbound WebSocket connection
  */
-final class RtChatContext extends RtContext
+final class ChatRtContext extends RtContext
 {
     public const string connections = 'connections';
     public const string selfConnection = 'selfConnection';
@@ -159,7 +159,7 @@ The layers are:
 Do not skip these layers with page/table-specific arrays or duplicated runtime
 mutation logic when the behavior belongs to a collection, item, or action.
 
-The project facade should create the context with `new RtChatContext()`.
+The project facade should create the context with `new ChatRtContext()`.
 `Hilos::init()` calls `configure()` after `createRuntime()`.
 
 ## Finding Existing Logic
@@ -167,7 +167,7 @@ The project facade should create the context with `new RtChatContext()`.
 Before writing runtime-backed code:
 
 1. Find the app context: search for `extends RtContext` or the collection
-   constant in `RtChatContext`.
+   constant in `ChatRtContext`.
 2. Check `setRepresent()` to locate View collections, collection actions, and
    item actions.
 3. Check `setRepresentItem()` for existing single-item aliases such as
@@ -248,7 +248,7 @@ or tests:
 
 ```php
 // Wrong outside Database/Runtime.
-$state = Hilos::$rt->getStateItem(RtChatContext::chatContext);
+$state = Hilos::$rt->getStateItem(ChatRtContext::chatContext);
 
 // Correct: use the registered single-item alias.
 $context = Hilos::$rt->chatContext;

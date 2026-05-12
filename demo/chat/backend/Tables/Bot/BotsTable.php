@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Tables\Bot;
 
-use Demo\Chat\Database\DbChatContext;
+use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Database\View\Item\Bot as DbBot;
 use Demo\Chat\Hilos;
 use Demo\Chat\Tables\Bot\Actions\BotItemActions;
@@ -33,7 +33,7 @@ final class BotsTable extends TableDefinition
      */
     public function buildMutationForSourceEvent(SourceChange $change): ?TableRowMutationDTO
     {
-        if ($change->sourceKey !== DbChatContext::bots) {
+        if ($change->sourceKey !== ChatDbContext::bots) {
             return null;
         }
 

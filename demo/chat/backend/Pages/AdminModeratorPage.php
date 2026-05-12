@@ -11,7 +11,7 @@ use Demo\Chat\Hilos;
 use Demo\Chat\Tables\ModeratorPiece\DTO\ModeratorPieceCreateActionDTO;
 use Demo\Chat\Tables\ModeratorPiece\DTO\ModeratorPieceDeleteActionDTO;
 use Demo\Chat\Tables\ModeratorPiece\DTO\ModeratorPieceUpdateActionDTO;
-use Demo\Chat\Tables\TableChatContext;
+use Demo\Chat\Tables\ChatTableContext;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
@@ -85,7 +85,7 @@ final class AdminModeratorPage extends AbstractPage
         $this->sendToUser(
             ChatSignalConstants::TABLE_ACTION_ERROR,
             $acceptKey,
-            new TableActionErrorSignalData(TableChatContext::moderatorPromptPieces, $action, $e->getMessage()),
+            new TableActionErrorSignalData(ChatTableContext::moderatorPromptPieces, $action, $e->getMessage()),
         );
     }
 

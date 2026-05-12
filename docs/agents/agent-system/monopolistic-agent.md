@@ -26,8 +26,8 @@ Monopolistic agents typically register as **truth source** — the authoritative
 
 ```php
 public function onStart(): void {
-    TruthSourceRegistry::register(DbChatContext::events, true, $this->getId());
-    RtTruthSourceRegistry::register(RtChatContext::connections, true, $this->getId());
+    TruthSourceRegistry::register(ChatDbContext::events, true, $this->getId());
+    RtTruthSourceRegistry::register(ChatRtContext::connections, true, $this->getId());
 }
 
 public function onStop(): void {

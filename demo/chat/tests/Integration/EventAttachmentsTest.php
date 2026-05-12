@@ -6,12 +6,12 @@ namespace Demo\Chat\Tests\Integration;
 
 use Demo\Chat\Database\DTO\PublishedAttachmentInput;
 use Demo\Chat\Database\DTO\PublishedAttachmentInputs;
-use Demo\Chat\Database\DbChatContext;
+use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Database\Object\Item\EventAttachment as ObjectEventAttachment;
 use Demo\Chat\Database\Object\Item\EventMessage as ObjectEventMessage;
 use Demo\Chat\Hilos;
 use Demo\Chat\Http\ChatAttachmentDownloadHandler;
-use Demo\Chat\Runtime\View\Context\RtChatContext;
+use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Hilos\Constants\HilosHttpHeaders;
 use Hilos\Constants\HttpConstants;
 use Hilos\Core\Http\RequestQueryParams;
@@ -78,8 +78,8 @@ final class EventAttachmentsTest extends IntegrationTestCase
             $this->assertSame('alpha', $download[HttpConstants::RESPONSE_KEY_BODY]);
 
             $frontendPayload = $event->toArray(toFrontend: true);
-            $this->assertSame('with files', $frontendPayload[DbChatContext::eventMessage][ObjectEventMessage::message]);
-            $this->assertSame($user->id, $frontendPayload[DbChatContext::eventMessage][ObjectEventMessage::authorUserId]);
+            $this->assertSame('with files', $frontendPayload[ChatDbContext::eventMessage][ObjectEventMessage::message]);
+            $this->assertSame($user->id, $frontendPayload[ChatDbContext::eventMessage][ObjectEventMessage::authorUserId]);
             $this->assertCount(2, $frontendPayload['attachments']);
             $this->assertSame('One.txt', $frontendPayload['attachments'][0][ObjectEventAttachment::filename]);
             $this->assertArrayNotHasKey(ObjectEventAttachment::storedName, $frontendPayload['attachments'][0]);
@@ -92,7 +92,7 @@ final class EventAttachmentsTest extends IntegrationTestCase
 
     public function testPublishConnectionDraftsMovesQuarantineFilesAndReturnsMetadata(): void
     {
-        RtTruthSourceRegistry::register(RtChatContext::connections, true, self::TEST_AGENT_ID);
+        RtTruthSourceRegistry::register(ChatRtContext::connections, true, self::TEST_AGENT_ID);
         Hilos::$rt->connections->actions->clear();
         Hilos::$rt->attachmentDrafts->actions->clear(deleteFiles: false);
         Hilos::$fs->quarantine['draft-publish.txt']->unlink();
@@ -137,7 +137,7 @@ final class EventAttachmentsTest extends IntegrationTestCase
 
     public function testPublishConnectionDraftsReturnsNullWhenQuarantineFileIsMissing(): void
     {
-        RtTruthSourceRegistry::register(RtChatContext::connections, true, self::TEST_AGENT_ID);
+        RtTruthSourceRegistry::register(ChatRtContext::connections, true, self::TEST_AGENT_ID);
         Hilos::$rt->connections->actions->clear();
         Hilos::$rt->attachmentDrafts->actions->clear(deleteFiles: false);
         Hilos::$fs->quarantine['draft-missing.txt']->unlink();

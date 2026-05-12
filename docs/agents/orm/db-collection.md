@@ -10,7 +10,7 @@ Hilos::$db->settings;
 ```
 
 The available names are defined in the project's `DbContext` subclass, such as
-`DbChatContext`. A caller should use these existing access paths before adding a
+`ChatDbContext`. A caller should use these existing access paths before adding a
 new collection, helper, table method, or page-level query.
 
 ## Layer Model
@@ -20,7 +20,7 @@ new collection, helper, table method, or page-level query.
 `setRepresent()`.
 
 ```php
-final class DbChatContext extends HilosDbContext
+final class ChatDbContext extends HilosDbContext
 {
     public const string users = 'users';
 
@@ -56,7 +56,7 @@ to a collection, item, or action.
 Before writing DB-backed code:
 
 1. Find the app context: search for `extends HilosDbContext` or the collection
-   constant in `DbChatContext`.
+   constant in `ChatDbContext`.
 2. Check `setRepresent()` to locate the View collection, collection actions, and
    item actions.
 3. Inspect the View collection for existing array/magic access contracts and

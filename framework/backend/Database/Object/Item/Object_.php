@@ -221,7 +221,7 @@ abstract class Object_
     }
 
     /**
-     * Collection key for DB sync broadcast (e.g. DbChatContext::bots).
+     * Collection key for DB sync broadcast (e.g. ChatDbContext::bots).
      *
      * Return empty string to skip broadcast.
      *

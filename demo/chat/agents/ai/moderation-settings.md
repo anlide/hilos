@@ -35,7 +35,7 @@ Rationale: context analyzer runs in monopolistic worker that starts before DB se
 
 ## Moderator prompt pieces
 
-Stored in `DbChatContext::moderatorPromptPieces` table.
+Stored in `ChatDbContext::moderatorPromptPieces` table.
 Managed via `/admin/moderator` → `ModeratorPromptPiecesTable`.
 `ModeratorAgent` builds its system prompt from these pieces on each LLM call.
 Allows dynamic prompt tuning without restart.

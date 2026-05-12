@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Tables\ModeratorPiece;
 
-use Demo\Chat\Database\DbChatContext;
+use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Database\View\Item\ModeratorPromptPiece as DbModeratorPromptPiece;
 use Demo\Chat\Hilos;
 use Demo\Chat\Tables\ModeratorPiece\Actions\ModeratorPromptPieceItemActions;
@@ -33,7 +33,7 @@ final class ModeratorPromptPiecesTable extends TableDefinition
      */
     public function buildMutationForSourceEvent(SourceChange $change): ?TableRowMutationDTO
     {
-        if ($change->sourceKey !== DbChatContext::moderatorPromptPieces) {
+        if ($change->sourceKey !== ChatDbContext::moderatorPromptPieces) {
             return null;
         }
 

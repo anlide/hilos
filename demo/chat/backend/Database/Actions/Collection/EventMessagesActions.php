@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Database\Actions\Collection;
 
-use Demo\Chat\Database\DbChatContext;
+use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Database\Entity\Item\EventMessage;
 use Demo\Chat\Database\Object\Collection\EventMessages as ObjectEventMessages;
 use Demo\Chat\Database\Object\Item\EventMessage as ObjectEventMessage;
@@ -45,7 +45,7 @@ final class EventMessagesActions extends DbActions
      */
     public function create(int $eventId, ?int $authorUserId, ?int $authorBotId, string $message): DbEventMessage
     {
-        TruthSourceRegistry::checkCanCreate(DbChatContext::eventMessages);
+        TruthSourceRegistry::checkCanCreate(ChatDbContext::eventMessages);
         $this->ensureCanWrite();
 
         $detail = ObjectEventMessage::create();
@@ -67,7 +67,7 @@ final class EventMessagesActions extends DbActions
      */
     public function deleteAll(): void
     {
-        TruthSourceRegistry::checkCanWrite(DbChatContext::eventMessages);
+        TruthSourceRegistry::checkCanWrite(ChatDbContext::eventMessages);
         $this->ensureCanWrite();
 
         $this->objectCollection->deleteAll();

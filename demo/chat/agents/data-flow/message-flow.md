@@ -53,6 +53,6 @@ Attachments are stored in `data.attachments`; standalone `file_shared` is legacy
 
 ## Rate Limiting
 
-`RtChatContext::userStates.lastOutboundSubmittedAt` tracks the last accepted outbound submit.
+`ChatRtContext::userStates.lastOutboundSubmittedAt` tracks the last accepted outbound submit.
 If `microtime(true) - last < 9s`, `MainPage` rejects the submit before moderation.
 The limit applies equally to text-only, attachment-only, and mixed messages.

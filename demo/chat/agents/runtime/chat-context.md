@@ -1,6 +1,6 @@
 # ChatContext
 
-**Collection:** `RtChatContext::chatContexts` | **Key:** `ChatContext::ID_MAIN = 'main'`
+**Collection:** `ChatRtContext::chatContexts` | **Key:** `ChatContext::ID_MAIN = 'main'`
 
 Single-instance RT state that holds the AI-generated summary of the current chat conversation.
 Written by `ChatContextAnalyzerAgent`, consumed by `BotAgent` for LLM prompts.
@@ -18,7 +18,7 @@ Typically contains: `summary` (string), `updatedAt` (int), `eventCount` (int).
 
 ## Truth source
 
-`ChatContextAnalyzerAgent` owns `RtChatContext::chatContexts`.
+`ChatContextAnalyzerAgent` owns `ChatRtContext::chatContexts`.
 
 ## Usage in BotAgent
 
@@ -31,6 +31,6 @@ $summary = $ctx?->summary ?? '';
 ## Location
 
 `backend/Runtime/State/Item/ChatContext.php` — state item
-`backend/Runtime/View/Context/RtChatContext.php` — context definition
+`backend/Runtime/View/Context/ChatRtContext.php` — context definition
 `backend/Runtime/View/Collection/ChatContexts.php` — collection
 `backend/Runtime/View/Actions/Collection/ChatContextsActions.php` — write actions

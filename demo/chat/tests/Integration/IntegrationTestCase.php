@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace Demo\Chat\Tests\Integration;
 
 use Demo\Chat\Database\Database;
-use Demo\Chat\Database\DbChatContext;
-use Demo\Chat\Runtime\View\Context\RtChatContext;
+use Demo\Chat\Database\ChatDbContext;
+use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use PHPUnit\Framework\TestCase;
@@ -33,16 +33,16 @@ abstract class IntegrationTestCase extends TestCase
             Database::initialize(initHilos: true);
             self::$dbInitialized = true;
         }
-        TruthSourceRegistry::register(DbChatContext::users, true, self::TEST_AGENT_ID);
-        TruthSourceRegistry::register(DbChatContext::events, true, self::TEST_AGENT_ID);
-        TruthSourceRegistry::register(DbChatContext::eventMessages, true, self::TEST_AGENT_ID);
-        TruthSourceRegistry::register(DbChatContext::eventUserRegistrations, true, self::TEST_AGENT_ID);
-        TruthSourceRegistry::register(DbChatContext::eventUserRenames, true, self::TEST_AGENT_ID);
-        TruthSourceRegistry::register(DbChatContext::eventAttachments, true, self::TEST_AGENT_ID);
-        TruthSourceRegistry::register(DbChatContext::bots, true, self::TEST_AGENT_ID);
-        TruthSourceRegistry::register(DbChatContext::moderatorPromptPieces, true, self::TEST_AGENT_ID);
-        RtTruthSourceRegistry::register(RtChatContext::userStates, true, self::TEST_AGENT_ID);
-        RtTruthSourceRegistry::register(RtChatContext::attachmentDrafts, true, self::TEST_AGENT_ID);
+        TruthSourceRegistry::register(ChatDbContext::users, true, self::TEST_AGENT_ID);
+        TruthSourceRegistry::register(ChatDbContext::events, true, self::TEST_AGENT_ID);
+        TruthSourceRegistry::register(ChatDbContext::eventMessages, true, self::TEST_AGENT_ID);
+        TruthSourceRegistry::register(ChatDbContext::eventUserRegistrations, true, self::TEST_AGENT_ID);
+        TruthSourceRegistry::register(ChatDbContext::eventUserRenames, true, self::TEST_AGENT_ID);
+        TruthSourceRegistry::register(ChatDbContext::eventAttachments, true, self::TEST_AGENT_ID);
+        TruthSourceRegistry::register(ChatDbContext::bots, true, self::TEST_AGENT_ID);
+        TruthSourceRegistry::register(ChatDbContext::moderatorPromptPieces, true, self::TEST_AGENT_ID);
+        RtTruthSourceRegistry::register(ChatRtContext::userStates, true, self::TEST_AGENT_ID);
+        RtTruthSourceRegistry::register(ChatRtContext::attachmentDrafts, true, self::TEST_AGENT_ID);
     }
 
     /**

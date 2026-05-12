@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Database\View\Item;
 
-use Demo\Chat\Database\DbChatContext;
+use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Database\Object\Item\Event as ObjectEvent;
 use Demo\Chat\Database\View\Collection\EventAttachments;
 use Demo\Chat\Hilos;
@@ -50,9 +50,9 @@ final class Event extends DbItem
             ObjectEvent::id => $this->_object->id,
             ObjectEvent::type => $this->_object->type,
             ObjectEvent::timestamp => $this->_object->timestamp,
-            DbChatContext::eventMessage => Hilos::$db->eventMessages[$this->_object->id],
-            DbChatContext::eventUserRegistration => Hilos::$db->eventUserRegistrations[$this->_object->id],
-            DbChatContext::eventUserRename => Hilos::$db->eventUserRenames[$this->_object->id],
+            ChatDbContext::eventMessage => Hilos::$db->eventMessages[$this->_object->id],
+            ChatDbContext::eventUserRegistration => Hilos::$db->eventUserRegistrations[$this->_object->id],
+            ChatDbContext::eventUserRename => Hilos::$db->eventUserRenames[$this->_object->id],
             self::attachments => Hilos::$db->eventAttachments->forEventId($this->_object->id),
             default => parent::__get($name),
         };
@@ -78,13 +78,13 @@ final class Event extends DbItem
         $result = parent::toArray($withId, $idAsIndex, $withBridges, $withCalculation, $toFrontend);
 
         if ($withBridges || $toFrontend) {
-            $result[DbChatContext::eventMessage] = $this->eventMessage?->toArray(
+            $result[ChatDbContext::eventMessage] = $this->eventMessage?->toArray(
                 toFrontend: $toFrontend,
             );
-            $result[DbChatContext::eventUserRegistration] = $this->eventUserRegistration?->toArray(
+            $result[ChatDbContext::eventUserRegistration] = $this->eventUserRegistration?->toArray(
                 toFrontend: $toFrontend,
             );
-            $result[DbChatContext::eventUserRename] = $this->eventUserRename?->toArray(
+            $result[ChatDbContext::eventUserRename] = $this->eventUserRename?->toArray(
                 toFrontend: $toFrontend,
             );
             $result[self::attachments] = $this->attachments->toArray(

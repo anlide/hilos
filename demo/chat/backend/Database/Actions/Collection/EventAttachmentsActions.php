@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Database\Actions\Collection;
 
-use Demo\Chat\Database\DbChatContext;
+use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Database\Entity\Item\EventAttachment;
 use Demo\Chat\Database\Object\Collection\EventAttachments as ObjectEventAttachments;
 use Demo\Chat\Database\Object\Item\EventAttachment as ObjectEventAttachment;
@@ -45,7 +45,7 @@ final class EventAttachmentsActions extends DbActions
      */
     public function create(int $eventId, string $filename, string $mimeType, string $storedName): DbEventAttachment
     {
-        TruthSourceRegistry::checkCanCreate(DbChatContext::eventAttachments);
+        TruthSourceRegistry::checkCanCreate(ChatDbContext::eventAttachments);
         $this->ensureCanWrite();
 
         $attachment = ObjectEventAttachment::create();
@@ -67,7 +67,7 @@ final class EventAttachmentsActions extends DbActions
      */
     public function deleteAll(): void
     {
-        TruthSourceRegistry::checkCanWrite(DbChatContext::eventAttachments);
+        TruthSourceRegistry::checkCanWrite(ChatDbContext::eventAttachments);
         $this->ensureCanWrite();
 
         $this->objectCollection->deleteAll();

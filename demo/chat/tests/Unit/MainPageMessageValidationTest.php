@@ -10,7 +10,7 @@ use Demo\Chat\Core\Page\DTO\AttachmentDraftDeleteActionDTO;
 use Demo\Chat\Core\Page\DTO\MessageActionDTO;
 use Demo\Chat\Hilos;
 use Demo\Chat\Pages\MainPage;
-use Demo\Chat\Runtime\View\Context\RtChatContext;
+use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Hilos\Core\Exception\ItemNotFoundForDeleteException;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Core\Execution\ExecutionContext;
@@ -28,7 +28,7 @@ final class MainPageMessageValidationTest extends TestCase
     {
         parent::setUp();
 
-        Hilos::$rt = new RtChatContext();
+        Hilos::$rt = new ChatRtContext();
         Hilos::$rt->configure();
     }
 
@@ -65,8 +65,8 @@ final class MainPageMessageValidationTest extends TestCase
 
     public function testRejectsDeletingMissingAttachmentDraft(): void
     {
-        RtTruthSourceRegistry::register(RtChatContext::connections, true, self::TEST_AGENT_ID);
-        RtTruthSourceRegistry::register(RtChatContext::userStates, true, self::TEST_AGENT_ID);
+        RtTruthSourceRegistry::register(ChatRtContext::connections, true, self::TEST_AGENT_ID);
+        RtTruthSourceRegistry::register(ChatRtContext::userStates, true, self::TEST_AGENT_ID);
 
         ExecutionContext::setCurrentAgentId(self::TEST_AGENT_ID);
         ExecutionContext::setCurrentAcceptKey('draft-ak');

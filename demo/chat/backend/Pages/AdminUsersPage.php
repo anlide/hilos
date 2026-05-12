@@ -9,7 +9,7 @@ use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Hilos;
 use Demo\Chat\Tables\AdminUser\DTO\AdminUserUpdateActionDTO;
-use Demo\Chat\Tables\TableChatContext;
+use Demo\Chat\Tables\ChatTableContext;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
@@ -68,7 +68,7 @@ final class AdminUsersPage extends AbstractPage
         $this->sendToUser(
             ChatSignalConstants::TABLE_ACTION_ERROR,
             $acceptKey,
-            new TableActionErrorSignalData(TableChatContext::adminUsers, $action, $e->getMessage()),
+            new TableActionErrorSignalData(ChatTableContext::adminUsers, $action, $e->getMessage()),
         );
     }
 

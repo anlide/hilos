@@ -8,12 +8,12 @@ Maintains a shared summary of the chat context for all bots to consume.
 
 - Listen to `DB_SYNC_CREATED` / `DB_SYNC_UPDATED` on events table → accumulate context
 - Periodically send LLM request to summarize the current chat state
-- Write result to `RtChatContext::chatContexts` collection (`ChatContext` item with ID `'main'`)
+- Write result to `ChatRtContext::chatContexts` collection (`ChatContext` item with ID `'main'`)
 - `BotAgent` reads `ChatContext` to include in its LLM prompt
 
 ## Truth source
 
-Owns `RtChatContext::chatContexts`. Only this agent writes to it.
+Owns `ChatRtContext::chatContexts`. Only this agent writes to it.
 
 ## LLM client
 

@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Demo\Chat\Tests\Integration;
 
 use Demo\Chat\Hilos;
-use Demo\Chat\Runtime\View\Context\RtChatContext;
+use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Execution\ExecutionFrame;
 use Hilos\TruthSource\RtTruthSourceRegistry;
@@ -20,7 +20,7 @@ final class RtSelfConnectionTest extends IntegrationTestCase
 
     public function testSelfConnectionUsesCurrentExecutionAcceptKey(): void
     {
-        RtTruthSourceRegistry::register(RtChatContext::connections, true, self::TEST_AGENT_ID);
+        RtTruthSourceRegistry::register(ChatRtContext::connections, true, self::TEST_AGENT_ID);
         Hilos::$rt->connections->actions->clear();
 
         try {

@@ -13,7 +13,7 @@ use Demo\Chat\Projection\ChatProjectionContext;
 use Demo\Chat\Frontend\FrontendStateCollectionKey;
 use Demo\Chat\Frontend\SelfConnectionFrontendStateProjector;
 use Demo\Chat\Hilos;
-use Demo\Chat\Runtime\View\Context\RtChatContext;
+use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Projection\SourceChange;
 use Hilos\Core\Router\DTO\SignalDTO;
@@ -34,7 +34,7 @@ final class ChatFrontendProjectionTest extends IntegrationTestCase
 
     public function testOutboundModerationProjectionTargetsOriginConnection(): void
     {
-        RtTruthSourceRegistry::register(RtChatContext::connections, true, self::TEST_AGENT_ID);
+        RtTruthSourceRegistry::register(ChatRtContext::connections, true, self::TEST_AGENT_ID);
         Hilos::$rt->connections->actions->clear();
         Hilos::$rt->userStates->actions->clear();
 
@@ -91,7 +91,7 @@ final class ChatFrontendProjectionTest extends IntegrationTestCase
 
     public function testAttachmentDraftProjectionTargetsOwningConnection(): void
     {
-        RtTruthSourceRegistry::register(RtChatContext::connections, true, self::TEST_AGENT_ID);
+        RtTruthSourceRegistry::register(ChatRtContext::connections, true, self::TEST_AGENT_ID);
         Hilos::$rt->connections->actions->clear();
         Hilos::$rt->attachmentDrafts->actions->clear(deleteFiles: false);
 
@@ -143,7 +143,7 @@ final class ChatFrontendProjectionTest extends IntegrationTestCase
 
     public function testUploadFailureProjectionTargetsOriginConnection(): void
     {
-        RtTruthSourceRegistry::register(RtChatContext::connections, true, self::TEST_AGENT_ID);
+        RtTruthSourceRegistry::register(ChatRtContext::connections, true, self::TEST_AGENT_ID);
         Hilos::$rt->connections->actions->clear();
 
         try {
@@ -186,7 +186,7 @@ final class ChatFrontendProjectionTest extends IntegrationTestCase
 
     public function testUploadProgressProjectionUsesThrottleMarker(): void
     {
-        RtTruthSourceRegistry::register(RtChatContext::connections, true, self::TEST_AGENT_ID);
+        RtTruthSourceRegistry::register(ChatRtContext::connections, true, self::TEST_AGENT_ID);
         Hilos::$rt->connections->actions->clear();
 
         try {

@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Database\View\Item;
 
-use Demo\Chat\Database\DbChatContext;
+use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Database\Object\Item\EventUserRename as ObjectEventUserRename;
 use Demo\Chat\Hilos;
 use Hilos\Database\Exception\View\Collection\ActionsClassException;
@@ -47,7 +47,7 @@ final class EventUserRename extends DbItem
             ObjectEventUserRename::actorUserId => $this->_object->actorUserId,
             ObjectEventUserRename::oldName => $this->_object->oldName,
             ObjectEventUserRename::newName => $this->_object->newName,
-            DbChatContext::event => Hilos::$db->events[$this->_object->eventId],
+            ChatDbContext::event => Hilos::$db->events[$this->_object->eventId],
             self::targetUser => Hilos::$db->users[$this->_object->targetUserId],
             self::actorUser => Hilos::$db->users[$this->_object->actorUserId],
             default => parent::__get($name),

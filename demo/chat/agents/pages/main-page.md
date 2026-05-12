@@ -27,7 +27,7 @@ File upload init and binary frame logic lives in `Pages/MainPage`:
 
 - Validates file size, MIME type, total storage, and filename uniqueness.
 - Keeps in-flight upload state on `Connection`.
-- Converts completed uploads into `RtChatContext::attachmentDrafts`.
+- Converts completed uploads into `ChatRtContext::attachmentDrafts`.
 - Publishes ready/failed upload state, progress, and attachment drafts through runtime-backed frontend projection.
 
 ## Incremental Signals

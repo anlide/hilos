@@ -12,7 +12,7 @@ Main-page message and upload workflows are routed to `MainPage` through `PageSig
 - **File upload routing**: binary WS frames are routed to `MainPage`; completed uploads become attachment drafts.
 - **Moderation results**: user outbound results are page-routed.
 - **Bot lifecycle**: handles generated bot messages and chat-visible bot events.
-- **Truth source**: owns `DbChatContext::events`, `eventAttachments`, `users`, and `RtChatContext::connections`, `userStates`, `attachmentDrafts`.
+- **Truth source**: owns `ChatDbContext::events`, `eventAttachments`, `users`, and `ChatRtContext::connections`, `userStates`, `attachmentDrafts`.
 
 ## Key Signal Handlers
 
@@ -31,13 +31,13 @@ Main-page message and upload workflows are routed to `MainPage` through `PageSig
 ## Rate Limiting
 
 Outbound submissions: 10 seconds per user.
-Tracked in `RtChatContext::userStates.lastOutboundSubmittedAt` through `UserStatesActions`.
+Tracked in `ChatRtContext::userStates.lastOutboundSubmittedAt` through `UserStatesActions`.
 The limit applies to text-only, attachment-only, and mixed messages.
 
 ## File Upload
 
 Active binary upload state lives on `Connection` RT item.
-Completed uploaded files waiting for submit live in `RtChatContext::attachmentDrafts`.
+Completed uploaded files waiting for submit live in `ChatRtContext::attachmentDrafts`.
 See `data-flow/file-upload-flow.md`.
 
 ## Cron

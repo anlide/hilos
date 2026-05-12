@@ -5,13 +5,13 @@ declare(strict_types=1);
 namespace Demo\Chat;
 
 use Demo\Chat\Browser\ChatBrowserContext;
-use Demo\Chat\Database\DbChatContext;
+use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Database\Settings\ChatSettingsAccessor;
 use Demo\Chat\Environment\ChatEnvAccessor;
-use Demo\Chat\Fs\FsChatContext;
+use Demo\Chat\Fs\ChatFsContext;
 use Demo\Chat\Projection\ChatProjectionContext;
-use Demo\Chat\Runtime\View\Context\RtChatContext;
-use Demo\Chat\Tables\TableChatContext;
+use Demo\Chat\Runtime\View\Context\ChatRtContext;
+use Demo\Chat\Tables\ChatTableContext;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Projection\ProjectionContext;
 use Hilos\Core\Table\Context\TableContext;
@@ -35,13 +35,13 @@ use Hilos\Runtime\View\Context\RtContext;
  * - Hilos::$fs->quarantine, Hilos::$fs->published, Hilos::$fs->tmp
  * - Hilos::$projection->subscribeSnapshot(PageConstants::MAIN, $acceptKey, $params)
  *
- * @property-read DbChatContext $db Database context (narrows parent's DbContext for IDE)
+ * @property-read ChatDbContext $db Database context (narrows parent's DbContext for IDE)
  * @property-read ChatEnvAccessor $env Environment accessor (narrows parent's EnvAccessor for IDE)
  * @property-read ChatSettingsAccessor $setting Settings accessor (narrows parent's SettingsAccessor for IDE)
- * @property-read RtChatContext $rt Runtime context (narrows parent's RtContext for IDE)
- * @property-read TableChatContext $table Table context (narrows parent's TableContext for IDE)
+ * @property-read ChatRtContext $rt Runtime context (narrows parent's RtContext for IDE)
+ * @property-read ChatTableContext $table Table context (narrows parent's TableContext for IDE)
  * @property-read ChatBrowserContext $browser Browser context (narrows parent's BrowserContext for IDE)
- * @property-read FsChatContext $fs Filesystem context (narrows parent's FsContext for IDE)
+ * @property-read ChatFsContext $fs Filesystem context (narrows parent's FsContext for IDE)
  * @property-read ChatProjectionContext $projection Projection context (narrows parent's ProjectionContext for IDE)
  */
 final class Hilos extends \Hilos\Hilos
@@ -59,11 +59,11 @@ final class Hilos extends \Hilos\Hilos
     /**
      * Creates the chat database context.
      *
-     * @return DbChatContext Chat database context
+     * @return ChatDbContext Chat database context
      */
     protected static function createDb(): DbContext
     {
-        return new DbChatContext();
+        return new ChatDbContext();
     }
 
     /**
@@ -79,21 +79,21 @@ final class Hilos extends \Hilos\Hilos
     /**
      * Creates the chat runtime context.
      *
-     * @return ?RtChatContext Chat runtime context
+     * @return ?ChatRtContext Chat runtime context
      */
     protected static function createRuntime(): ?RtContext
     {
-        return new RtChatContext();
+        return new ChatRtContext();
     }
 
     /**
      * Creates the chat table context.
      *
-     * @return ?TableChatContext Chat table context
+     * @return ?ChatTableContext Chat table context
      */
     protected static function createTable(): ?TableContext
     {
-        return new TableChatContext();
+        return new ChatTableContext();
     }
 
     /**
@@ -109,11 +109,11 @@ final class Hilos extends \Hilos\Hilos
     /**
      * Creates the chat filesystem context.
      *
-     * @return ?FsChatContext Chat filesystem context
+     * @return ?ChatFsContext Chat filesystem context
      */
     protected static function createFs(): ?FsContext
     {
-        return new FsChatContext();
+        return new ChatFsContext();
     }
 
     /**

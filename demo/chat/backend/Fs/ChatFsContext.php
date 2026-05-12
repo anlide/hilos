@@ -17,7 +17,7 @@ use Hilos\Fs\FsTmpDirectory;
  * @property-read FsDirectory $quarantine
  * @property-read FsDirectory $published
  */
-final class FsChatContext extends FsContext
+final class ChatFsContext extends FsContext
 {
     public const string quarantine = 'quarantine';
 

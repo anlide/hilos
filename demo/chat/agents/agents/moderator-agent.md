@@ -44,5 +44,5 @@ ProfilePage <--RENAME_MODERATION_RESULT---- ModeratorAgent
 ## Settings
 
 Model and URL are read from DB settings through `Hilos::$setting` on each new LLM client creation.
-Moderator prompt pieces are read from `DbChatContext::moderatorPromptPieces`; CRUD ownership belongs to `LibraryAgent`.
+Moderator prompt pieces are read from `ChatDbContext::moderatorPromptPieces`; CRUD ownership belongs to `LibraryAgent`.
 Settings change: restart moderator agent or reinitialize client.

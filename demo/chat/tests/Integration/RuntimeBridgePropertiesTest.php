@@ -6,7 +6,7 @@ namespace Demo\Chat\Tests\Integration;
 
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\State\Item\BotAgentStatus as StateBotAgentStatus;
-use Demo\Chat\Runtime\View\Context\RtChatContext;
+use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Utils\Helpers\RandomHelper;
 
@@ -20,7 +20,7 @@ final class RuntimeBridgePropertiesTest extends IntegrationTestCase
         $this->assertIsInt($bot->id);
 
         $agentId = 'bot:' . $bot->id . ':bridge-test';
-        RtTruthSourceRegistry::register(RtChatContext::botAgentStatuses, [(string)$bot->id], $agentId);
+        RtTruthSourceRegistry::register(ChatRtContext::botAgentStatuses, [(string)$bot->id], $agentId);
         RtTruthSourceRegistry::setCurrentAgentId($agentId);
 
         try {
@@ -37,7 +37,7 @@ final class RuntimeBridgePropertiesTest extends IntegrationTestCase
 
     public function testAttachmentDraftExposesUserAndConnectionBridges(): void
     {
-        RtTruthSourceRegistry::register(RtChatContext::connections, true, self::TEST_AGENT_ID);
+        RtTruthSourceRegistry::register(ChatRtContext::connections, true, self::TEST_AGENT_ID);
         Hilos::$rt->connections->actions->clear();
         Hilos::$rt->attachmentDrafts->actions->clear(deleteFiles: false);
 

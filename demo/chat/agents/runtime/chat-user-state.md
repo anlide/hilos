@@ -1,6 +1,6 @@
 # ChatUserState
 
-**Collection:** `RtChatContext::userStates` | **Key:** `(string) userId`
+**Collection:** `ChatRtContext::userStates` | **Key:** `(string) userId`
 
 Per-user runtime state. Tracks only shared user-level chat state, currently the common outbound submit rate limit for text-only, attachment-only, and mixed messages.
 
@@ -20,11 +20,11 @@ Per-user runtime state. Tracks only shared user-level chat state, currently the 
 
 ## Truth source
 
-`ChatAgent` owns this collection (`RtTruthSourceRegistry::register(RtChatContext::userStates, ...)`).
+`ChatAgent` owns this collection (`RtTruthSourceRegistry::register(ChatRtContext::userStates, ...)`).
 Only `ChatAgent` should write to it.
 
 ## Related State
 
 - Outbound moderation state lives on `Connection` (per connection).
 - Active binary upload state lives on `Connection` (per connection).
-- Completed uploaded files waiting to be sent live in `RtChatContext::attachmentDrafts` (per connection).
+- Completed uploaded files waiting to be sent live in `ChatRtContext::attachmentDrafts` (per connection).

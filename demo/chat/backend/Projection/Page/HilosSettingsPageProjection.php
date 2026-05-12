@@ -8,7 +8,7 @@ use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Core\Router\DTO\ChatEventSignalDTO;
 use Demo\Chat\Database\Settings\SettingsCatalog;
 use Demo\Chat\Tables\Settings\DTO\SettingsTableSnapshotDTO;
-use Demo\Chat\Tables\TableChatContext;
+use Demo\Chat\Tables\ChatTableContext;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Constants\HilosPageConstants;
 use Hilos\Core\Page\PageRouteParams;
@@ -51,7 +51,7 @@ final class HilosSettingsPageProjection extends PageProjection
     protected function rules(): iterable
     {
         yield new TableRule(
-            tableKey: TableChatContext::settings,
+            tableKey: ChatTableContext::settings,
             triggers: [HilosDbContext::settings],
             wireSignalName: ChatSignalConstants::TABLE_MUTATION,
         );
@@ -70,7 +70,7 @@ final class HilosSettingsPageProjection extends PageProjection
         string $acceptKey,
         PageRouteParams $params,
     ): ?SignalDataInterface {
-        $snapshot = $accumulator->getTableSnapshot(TableChatContext::settings);
+        $snapshot = $accumulator->getTableSnapshot(ChatTableContext::settings);
         if ($snapshot === null) {
             return null;
         }
@@ -78,7 +78,7 @@ final class HilosSettingsPageProjection extends PageProjection
         return new ChatEventSignalDTO(
             entities: new EntitiesChangesDTO(),
             tables: [
-                TableChatContext::settings => new SettingsTableSnapshotDTO(
+                ChatTableContext::settings => new SettingsTableSnapshotDTO(
                     $snapshot,
                     array_keys(SettingsCatalog::getCatalog()),
                 ),

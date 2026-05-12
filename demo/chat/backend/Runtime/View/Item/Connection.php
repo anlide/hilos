@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Demo\Chat\Runtime\View\Item;
 
 use Demo\Chat\Constants\ConnectionRuntimeConstants;
-use Demo\Chat\Database\DbChatContext;
+use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Database\View\Item\User;
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\State\Item\Connection as StateConnection;
@@ -102,7 +102,7 @@ final class Connection extends RtItem
             StateConnection::fileProgressTotalBytes => $this->_state->fileProgressTotalBytes,
             StateConnection::uploadProgressLastSentAt => $this->_state->uploadProgressLastSentAt,
             RtItem::actions => $this->getItemActions(),
-            DbChatContext::user => Hilos::$db->users[$this->_state->userId],
+            ChatDbContext::user => Hilos::$db->users[$this->_state->userId],
             ConnectionRuntimeConstants::userState => Hilos::$rt->userStates[$this->_state->userId],
             ConnectionRuntimeConstants::attachmentDrafts => Hilos::$rt->attachmentDrafts->forAcceptKey(
                 $this->_state->acceptKey,

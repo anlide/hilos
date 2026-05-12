@@ -8,7 +8,7 @@ use Demo\Chat\Agents\BotAgent;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Router\DTO\ChatEventSignalDTO;
-use Demo\Chat\Database\DbChatContext;
+use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Database\View\Collection\Bots;
 use Demo\Chat\Frontend\BotFrontendStateProjector;
 use Demo\Chat\Hilos;
@@ -58,7 +58,7 @@ final class BotPage extends AbstractPage
             $acceptKey,
             new ChatEventSignalDTO(
                 new EntitiesChangesDTO(
-                    full: [DbChatContext::bots => Bots::fromSingleItem($bot)],
+                    full: [ChatDbContext::bots => Bots::fromSingleItem($bot)],
                 ),
                 frontend: BotFrontendStateProjector::fullForBots([$bot]),
             ),

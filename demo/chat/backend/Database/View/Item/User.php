@@ -8,7 +8,7 @@ use Demo\Chat\Database\Actions\Item\UserActions;
 use Demo\Chat\Database\Object\Item\User as ObjectUser;
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\View\Collection\Connections;
-use Demo\Chat\Runtime\View\Context\RtChatContext;
+use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Demo\Chat\Runtime\View\Item\ChatUserState as RuntimeChatUserState;
 use Hilos\Database\Exception\View\Collection\ActionsClassException;
 use Hilos\Database\Exception\View\Item\PropertyNotFoundException;
@@ -53,9 +53,9 @@ final class User extends DbItem
             ObjectUser::name => $this->_object->name,
             ObjectUser::sessionToken => $this->_object->sessionToken,
             ObjectUser::lastActivity => $this->_object->lastActivity,
-            RtChatContext::connections => Hilos::$rt->connections->forUser($this->id),
+            ChatRtContext::connections => Hilos::$rt->connections->forUser($this->id),
             self::onlineSessionCount => count($this->connections),
-            RtChatContext::chatUserState => Hilos::$rt->userStates[$this->_object->id] ?? null,
+            ChatRtContext::chatUserState => Hilos::$rt->userStates[$this->_object->id] ?? null,
             default => parent::__get($name),
         };
     }

@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Runtime\View\Item;
 
-use Demo\Chat\Database\DbChatContext;
+use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Database\View\Item\User;
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\State\Item\ChatUserState as StateChatUserState;
@@ -54,7 +54,7 @@ final class ChatUserState extends RtItem
         return match ($name) {
             StateChatUserState::userId => $this->_state->userId,
             StateChatUserState::lastOutboundSubmittedAt => $this->_state->lastOutboundSubmittedAt,
-            DbChatContext::user => Hilos::$db->users[$this->_state->userId],
+            ChatDbContext::user => Hilos::$db->users[$this->_state->userId],
             RtItem::actions => $this->getItemActions(),
             default => parent::__get($name),
         };

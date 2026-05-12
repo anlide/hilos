@@ -2,7 +2,7 @@
 
 namespace Demo\Chat\Database\Object\Item;
 
-use Demo\Chat\Database\DbChatContext;
+use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Database\Entity\Item\Bot as EntityBot;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Item\Object_;
@@ -47,13 +47,13 @@ final class Bot extends Object_
     public const string priority = 'priority';
 
     /**
-     * Return collection key used for DbChatContext lookup.
+     * Return collection key used for ChatDbContext lookup.
      *
-     * @return string Collection key (DbChatContext::bots)
+     * @return string Collection key (ChatDbContext::bots)
      */
     protected static function getCollectionKey(): string
     {
-        return DbChatContext::bots;
+        return ChatDbContext::bots;
     }
 
     /**

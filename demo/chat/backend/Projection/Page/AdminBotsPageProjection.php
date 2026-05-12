@@ -7,10 +7,10 @@ namespace Demo\Chat\Projection\Page;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Router\DTO\ChatEventSignalDTO;
-use Demo\Chat\Database\DbChatContext;
+use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Frontend\BotFrontendStateProjector;
 use Demo\Chat\Hilos;
-use Demo\Chat\Tables\TableChatContext;
+use Demo\Chat\Tables\ChatTableContext;
 use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Projection\PageProjection;
 use Hilos\Core\Projection\Rule\TableRule;
@@ -52,8 +52,8 @@ final class AdminBotsPageProjection extends PageProjection
     protected function rules(): iterable
     {
         yield new TableRule(
-            tableKey: TableChatContext::bots,
-            triggers: [DbChatContext::bots],
+            tableKey: ChatTableContext::bots,
+            triggers: [ChatDbContext::bots],
             wireSignalName: ChatSignalConstants::TABLE_MUTATION,
         );
     }
@@ -71,8 +71,8 @@ final class AdminBotsPageProjection extends PageProjection
         string $acceptKey,
         PageRouteParams $params,
     ): ?SignalDataInterface {
-        $snapshot = $accumulator->getTableSnapshot(TableChatContext::bots);
-        $tables = $snapshot !== null ? [TableChatContext::bots => $snapshot] : [];
+        $snapshot = $accumulator->getTableSnapshot(ChatTableContext::bots);
+        $tables = $snapshot !== null ? [ChatTableContext::bots => $snapshot] : [];
         $frontend = Hilos::$db !== null
             ? BotFrontendStateProjector::fullForBots(Hilos::$db->bots)
             : new FrontendChangesDTO();

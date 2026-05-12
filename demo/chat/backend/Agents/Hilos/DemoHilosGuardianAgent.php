@@ -6,7 +6,7 @@ namespace Demo\Chat\Agents\Hilos;
 
 use Demo\Chat\AI\Agent\ChatAiAgentFactory;
 use Demo\Chat\Hilos;
-use Demo\Chat\Runtime\View\Context\RtChatContext;
+use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Hilos\AI\Agent\AiAgentInterface;
 use Hilos\AI\Agent\GuardianAiAgentId;
 use Hilos\Core\Agent\Hilos\AbstractHilosGuardianAgent;
@@ -32,7 +32,7 @@ final class DemoHilosGuardianAgent extends AbstractHilosGuardianAgent
      */
     public function onStart(): void
     {
-        $this->registerRtTruthSource(RtChatContext::guardianAgentStatuses);
+        $this->registerRtTruthSource(ChatRtContext::guardianAgentStatuses);
 
         $this->guardianAiAgents = ChatAiAgentFactory::createAll();
         Hilos::$rt->guardianAgentStatuses->actions->syncStatuses($this->getGuardianRunStatuses());

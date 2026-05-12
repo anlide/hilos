@@ -12,7 +12,7 @@ use Demo\Chat\Hilos;
 use Demo\Chat\Tables\Bot\DTO\BotCreateActionDTO;
 use Demo\Chat\Tables\Bot\DTO\BotDeleteActionDTO;
 use Demo\Chat\Tables\Bot\DTO\BotUpdateActionDTO;
-use Demo\Chat\Tables\TableChatContext;
+use Demo\Chat\Tables\ChatTableContext;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
@@ -86,7 +86,7 @@ final class AdminBotsPage extends AbstractPage
         $this->sendToUser(
             ChatSignalConstants::TABLE_ACTION_ERROR,
             $acceptKey,
-            new TableActionErrorSignalData(TableChatContext::bots, $action, $e->getMessage()),
+            new TableActionErrorSignalData(ChatTableContext::bots, $action, $e->getMessage()),
         );
     }
 

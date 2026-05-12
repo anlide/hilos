@@ -9,7 +9,7 @@ use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\GroupConstants;
 use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Router\DTO\BotAgentSignalData;
-use Demo\Chat\Tables\TableChatContext;
+use Demo\Chat\Tables\ChatTableContext;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\SignalDTO;
@@ -410,17 +410,17 @@ final class ChatSignalRouter extends SignalRouter
 
         $tableEventRoutes = [
             ChatSignalConstants::EMIT_CHAT_USER_ROW_UPDATED => [
-                TableChatContext::adminUsers,
-                TableChatContext::hilosUsers,
+                ChatTableContext::adminUsers,
+                ChatTableContext::hilosUsers,
             ],
             ChatSignalConstants::EMIT_CHAT_BOT_ROW_CHANGED => [
-                TableChatContext::bots,
+                ChatTableContext::bots,
             ],
             ChatSignalConstants::EMIT_CHAT_MODERATOR_PROMPT_PIECE_ROW_CHANGED => [
-                TableChatContext::moderatorPromptPieces,
+                ChatTableContext::moderatorPromptPieces,
             ],
             ChatSignalConstants::EMIT_CHAT_SETTING_ROW_CHANGED => [
-                TableChatContext::settings,
+                ChatTableContext::settings,
             ],
         ];
 

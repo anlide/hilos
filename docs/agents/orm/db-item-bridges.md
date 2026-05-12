@@ -80,7 +80,7 @@ Use the normal naming rule for both directions:
 
 ```php
 // Runtime/View/Item/BotAgentStatus.php
-DbChatContext::bot => Hilos::$db->bots[$this->_state->botId],
+ChatDbContext::bot => Hilos::$db->bots[$this->_state->botId],
 
 // Database/View/Item/Bot.php
 self::agentStatus => Hilos::$rt->botAgentStatuses[$this->_object->id],
@@ -108,7 +108,7 @@ final class Event extends DbItem
         $eventId = $this->_object->id;
 
         return match ($name) {
-            DbChatContext::eventMessage => Hilos::$db->eventMessages[$eventId],
+            ChatDbContext::eventMessage => Hilos::$db->eventMessages[$eventId],
             self::attachments => Hilos::$db->eventAttachments->forEventId($eventId),
             default => parent::__get($name),
         };
@@ -144,7 +144,7 @@ fields only to pass them into bridge lookups. Keep the source field visible in
 the branch:
 
 ```php
-DbChatContext::eventMessage => Hilos::$db->eventMessages[$this->_object->id],
+ChatDbContext::eventMessage => Hilos::$db->eventMessages[$this->_object->id],
 self::attachments => Hilos::$db->eventAttachments->forEventId($this->_object->id),
 ```
 
@@ -154,7 +154,7 @@ Do not write:
 $eventId = $this->_object->id;
 
 return match ($name) {
-    DbChatContext::eventMessage => Hilos::$db->eventMessages[$eventId],
+    ChatDbContext::eventMessage => Hilos::$db->eventMessages[$eventId],
     self::attachments => Hilos::$db->eventAttachments->forEventId($eventId),
 };
 ```

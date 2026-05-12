@@ -8,11 +8,11 @@ use Demo\Chat\Constants\AgentType;
 use Demo\Chat\Constants\ChatContextAnalyzerConstants;
 use Demo\Chat\Constants\ChatEventType;
 use Demo\Chat\Constants\ChatTopicConstants;
-use Demo\Chat\Database\DbChatContext;
+use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Database\Object\Item\Event as ObjectEvent;
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\View\DTO\ChatContextUpdateData;
-use Demo\Chat\Runtime\View\Context\RtChatContext;
+use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\LLMConstants;
 use Hilos\Core\Agent\AbstractAgent;
@@ -60,7 +60,7 @@ final class ChatContextAnalyzerAgent extends AbstractAgent
      */
     public function onStart(): void
     {
-        $this->registerRtTruthSource(RtChatContext::chatContext);
+        $this->registerRtTruthSource(ChatRtContext::chatContext);
     }
 
     /**
@@ -150,7 +150,7 @@ final class ChatContextAnalyzerAgent extends AbstractAgent
      */
     private function handleDbSyncChange(string $collectionKey, array $row): void
     {
-        if ($collectionKey === DbChatContext::events) {
+        if ($collectionKey === ChatDbContext::events) {
             $eventType = $row[ObjectEvent::type] ?? '';
             if ($eventType === ChatEventType::CHAT_CLEARED->value) {
                 $this->pendingSummarize = false;

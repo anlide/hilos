@@ -6,11 +6,11 @@ namespace Demo\Chat\Tests\Integration;
 
 use Demo\Chat\Agents\ChatContextAnalyzerAgent;
 use Demo\Chat\Constants\ChatEventType;
-use Demo\Chat\Database\DbChatContext;
+use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Database\Object\Item\Event as ObjectEvent;
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\State\Item\ChatContext as StateChatContext;
-use Demo\Chat\Runtime\View\Context\RtChatContext;
+use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Demo\Chat\Runtime\View\DTO\ChatContextUpdateData;
 use Hilos\Constants\SignalConstants;
 use Hilos\Core\Router\SignalSource;
@@ -33,7 +33,7 @@ final class ChatContextAnalyzerAgentTest extends IntegrationTestCase
 
     public function testRuntimeChatContextAliasExposesSingleton(): void
     {
-        RtTruthSourceRegistry::register(RtChatContext::chatContext, true, self::TEST_AGENT_ID);
+        RtTruthSourceRegistry::register(ChatRtContext::chatContext, true, self::TEST_AGENT_ID);
 
         Hilos::$rt->chatContext->actions->update(
             new ChatContextUpdateData('AI', 0.75, 'Alias summary'),
@@ -55,7 +55,7 @@ final class ChatContextAnalyzerAgentTest extends IntegrationTestCase
     {
         RtSyncApplicator::applyUpdated(
             [
-                'collectionKey' => RtChatContext::chatContext,
+                'collectionKey' => ChatRtContext::chatContext,
                 'stateId' => StateChatContext::ID_MAIN,
                 'row' => [
                     ChatContextUpdateData::topic => 'AI',
@@ -73,7 +73,7 @@ final class ChatContextAnalyzerAgentTest extends IntegrationTestCase
 
     public function testChatClearResetsInFlightSummarizationAndRuntimeContext(): void
     {
-        RtTruthSourceRegistry::register(RtChatContext::chatContext, true, self::TEST_AGENT_ID);
+        RtTruthSourceRegistry::register(ChatRtContext::chatContext, true, self::TEST_AGENT_ID);
         Hilos::$db->events->actions->deleteAll();
 
         try {
@@ -116,7 +116,7 @@ final class ChatContextAnalyzerAgentTest extends IntegrationTestCase
 
     public function testPendingMessageDuringInFlightSummarizationStartsFollowUpRequest(): void
     {
-        RtTruthSourceRegistry::register(RtChatContext::chatContext, true, self::TEST_AGENT_ID);
+        RtTruthSourceRegistry::register(ChatRtContext::chatContext, true, self::TEST_AGENT_ID);
         Hilos::$db->events->actions->deleteAll();
 
         try {
@@ -170,7 +170,7 @@ final class ChatContextAnalyzerAgentTest extends IntegrationTestCase
     private function eventSignal(ChatEventType $eventType): DbSyncCreatedSignalData
     {
         return new DbSyncCreatedSignalData(
-            collectionKey: DbChatContext::events,
+            collectionKey: ChatDbContext::events,
             idString: '1',
             row: [ObjectEvent::type => $eventType->value],
         );

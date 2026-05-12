@@ -9,11 +9,11 @@ use Demo\Chat\Constants\ChatCronConstants;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\HttpHeaders;
 use Demo\Chat\Core\Router\DTO\BotMessageSignalData;
-use Demo\Chat\Database\DbChatContext;
+use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Database\Pages\ChatPageCatalog;
 use Demo\Chat\Frontend\UserFrontendStateProjector;
 use Demo\Chat\Hilos;
-use Demo\Chat\Runtime\View\Context\RtChatContext;
+use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Demo\Chat\Socket\WebSocket\DTO\HandshakeResponseSignalData;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
@@ -46,15 +46,15 @@ final class ChatAgent extends AbstractAgent
      */
     public function onStart(): void
     {
-        $this->registerDbTruthSource(DbChatContext::events);
-        $this->registerDbTruthSource(DbChatContext::eventMessages);
-        $this->registerDbTruthSource(DbChatContext::eventUserRegistrations);
-        $this->registerDbTruthSource(DbChatContext::eventUserRenames);
-        $this->registerDbTruthSource(DbChatContext::eventAttachments);
-        $this->registerDbTruthSource(DbChatContext::users);
-        $this->registerRtTruthSource(RtChatContext::connections);
-        $this->registerRtTruthSource(RtChatContext::userStates);
-        $this->registerRtTruthSource(RtChatContext::attachmentDrafts);
+        $this->registerDbTruthSource(ChatDbContext::events);
+        $this->registerDbTruthSource(ChatDbContext::eventMessages);
+        $this->registerDbTruthSource(ChatDbContext::eventUserRegistrations);
+        $this->registerDbTruthSource(ChatDbContext::eventUserRenames);
+        $this->registerDbTruthSource(ChatDbContext::eventAttachments);
+        $this->registerDbTruthSource(ChatDbContext::users);
+        $this->registerRtTruthSource(ChatRtContext::connections);
+        $this->registerRtTruthSource(ChatRtContext::userStates);
+        $this->registerRtTruthSource(ChatRtContext::attachmentDrafts);
 
         Hilos::$db->events->actions->addChatStarted();
     }

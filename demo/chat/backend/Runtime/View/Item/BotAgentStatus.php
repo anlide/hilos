@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Runtime\View\Item;
 
-use Demo\Chat\Database\DbChatContext;
+use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Database\View\Item\Bot;
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\State\Item\BotAgentStatus as StateBotAgentStatus;
@@ -44,7 +44,7 @@ final class BotAgentStatus extends RtItem
             StateBotAgentStatus::botId => $this->_state->botId,
             StateBotAgentStatus::status => $this->_state->status,
             StateBotAgentStatus::updatedAt => $this->_state->updatedAt,
-            DbChatContext::bot => Hilos::$db->bots[$this->_state->botId],
+            ChatDbContext::bot => Hilos::$db->bots[$this->_state->botId],
             RtItem::actions => $this->getItemActions(),
             default => parent::__get($name),
         };

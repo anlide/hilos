@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Tables\HilosUser;
 
-use Demo\Chat\Database\DbChatContext;
+use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Database\View\Item\User as DbUser;
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\State\Item\Connection as ConnectionState;
-use Demo\Chat\Runtime\View\Context\RtChatContext;
+use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Demo\Chat\Tables\HilosUser\Actions\HilosUserItemActions;
 use Hilos\Core\Projection\SourceChange;
 use Hilos\Core\Table\Definition\TableDefinition;
@@ -30,8 +30,8 @@ final class HilosUsersTable extends TableDefinition
      * Builds a Hilos users row mutation from one user-affecting source change.
      *
      * Reacts to two sources:
-     * - {@see DbChatContext::users} — DB user create/update/delete.
-     * - {@see RtChatContext::connections} — connection lifecycle that flips the
+     * - {@see ChatDbContext::users} — DB user create/update/delete.
+     * - {@see ChatRtContext::connections} — connection lifecycle that flips the
      *   user's online session count and presence summary projected into the row.
      *
      * @param SourceChange $change DB or RT source change to project into the Hilos users table
@@ -41,8 +41,8 @@ final class HilosUsersTable extends TableDefinition
     public function buildMutationForSourceEvent(SourceChange $change): ?TableRowMutationDTO
     {
         return match ($change->sourceKey) {
-            DbChatContext::users => $this->mutationForDbUser($change),
-            RtChatContext::connections => $this->mutationForConnection($change),
+            ChatDbContext::users => $this->mutationForDbUser($change),
+            ChatRtContext::connections => $this->mutationForConnection($change),
             default => null,
         };
     }

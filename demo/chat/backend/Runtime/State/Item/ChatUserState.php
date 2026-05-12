@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Runtime\State\Item;
 
-use Demo\Chat\Runtime\View\Context\RtChatContext;
+use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Hilos\Runtime\State\Item\RtState;
 
 /**
@@ -58,7 +58,7 @@ final class ChatUserState extends RtState
      */
     public static function getRtCollectionKey(): string
     {
-        return RtChatContext::userStates;
+        return ChatRtContext::userStates;
     }
 
     /**

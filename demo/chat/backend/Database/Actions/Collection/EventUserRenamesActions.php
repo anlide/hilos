@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Database\Actions\Collection;
 
-use Demo\Chat\Database\DbChatContext;
+use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Database\Entity\Item\EventUserRename;
 use Demo\Chat\Database\Object\Collection\EventUserRenames as ObjectEventUserRenames;
 use Demo\Chat\Database\Object\Item\EventUserRename as ObjectEventUserRename;
@@ -52,7 +52,7 @@ final class EventUserRenamesActions extends DbActions
         string $newName,
     ): DbEventUserRename
     {
-        TruthSourceRegistry::checkCanCreate(DbChatContext::eventUserRenames);
+        TruthSourceRegistry::checkCanCreate(ChatDbContext::eventUserRenames);
         $this->ensureCanWrite();
 
         $detail = ObjectEventUserRename::create();
@@ -75,7 +75,7 @@ final class EventUserRenamesActions extends DbActions
      */
     public function deleteAll(): void
     {
-        TruthSourceRegistry::checkCanWrite(DbChatContext::eventUserRenames);
+        TruthSourceRegistry::checkCanWrite(ChatDbContext::eventUserRenames);
         $this->ensureCanWrite();
 
         $this->objectCollection->deleteAll();

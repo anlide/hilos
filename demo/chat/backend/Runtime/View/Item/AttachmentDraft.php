@@ -4,12 +4,12 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Runtime\View\Item;
 
-use Demo\Chat\Database\DbChatContext;
+use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Database\View\Item\User;
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\State\Item\AttachmentDraft as StateAttachmentDraft;
 use Demo\Chat\Runtime\View\Actions\Item\AttachmentDraftActions;
-use Demo\Chat\Runtime\View\Context\RtChatContext;
+use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Hilos\Runtime\Exception\Item\RtItemActionsClassException;
 use Hilos\Runtime\Exception\Item\RtItemPropertyNotFoundException;
 use Hilos\Runtime\View\Item\RtItem;
@@ -60,8 +60,8 @@ final class AttachmentDraft extends RtItem
             StateAttachmentDraft::size => $this->_state->size,
             StateAttachmentDraft::normalizedFilename => $this->_state->normalizedFilename,
             StateAttachmentDraft::uploadedAt => $this->_state->uploadedAt,
-            DbChatContext::user => Hilos::$db->users[$this->_state->userId],
-            RtChatContext::connection => Hilos::$rt->connections[$this->_state->acceptKey],
+            ChatDbContext::user => Hilos::$db->users[$this->_state->userId],
+            ChatRtContext::connection => Hilos::$rt->connections[$this->_state->acceptKey],
             RtItem::actions => $this->getItemActions(),
             default => parent::__get($name),
         };

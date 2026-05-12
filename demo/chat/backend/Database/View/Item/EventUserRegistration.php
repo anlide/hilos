@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Database\View\Item;
 
-use Demo\Chat\Database\DbChatContext;
+use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Database\Object\Item\EventUserRegistration as ObjectEventUserRegistration;
 use Demo\Chat\Hilos;
 use Hilos\Database\Exception\View\Collection\ActionsClassException;
@@ -39,7 +39,7 @@ final class EventUserRegistration extends DbItem
         return match ($name) {
             ObjectEventUserRegistration::eventId => $this->_object->eventId,
             ObjectEventUserRegistration::targetUserId => $this->_object->targetUserId,
-            DbChatContext::event => Hilos::$db->events[$this->_object->eventId],
+            ChatDbContext::event => Hilos::$db->events[$this->_object->eventId],
             self::targetUser => Hilos::$db->users[$this->_object->targetUserId],
             default => parent::__get($name),
         };

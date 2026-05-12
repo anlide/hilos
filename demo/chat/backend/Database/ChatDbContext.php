@@ -37,7 +37,7 @@ use Hilos\Database\Exception\View\ObjectCollectionNotFoundException;
 use Hilos\Database\Object\Objects;
 
 /**
- * DbChatContext - App-specific database context ($db layer).
+ * ChatDbContext - App-specific database context ($db layer).
  *
  * @extends HilosDbContext
  * @property-read Users $users
@@ -49,7 +49,7 @@ use Hilos\Database\Object\Objects;
  * @property-read Bots $bots
  * @property-read ModeratorPromptPieces $moderatorPromptPieces
  */
-final class DbChatContext extends HilosDbContext
+final class ChatDbContext extends HilosDbContext
 {
     public const string users = 'users';
     public const string events = 'events';

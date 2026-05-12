@@ -10,13 +10,13 @@ use Demo\Chat\Constants\ChatEventType;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\ChatTopicConstants;
 use Demo\Chat\Core\Router\DTO\BotMessageSignalData;
-use Demo\Chat\Database\DbChatContext;
+use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Database\Settings\ChatSettingsConstants;
 use Demo\Chat\Database\Object\Item\Bot as ObjectBot;
 use Demo\Chat\Database\Object\Item\Event as ObjectEvent;
 use Demo\Chat\Database\View\Item\Bot as ViewBot;
 use Demo\Chat\Hilos;
-use Demo\Chat\Runtime\View\Context\RtChatContext;
+use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Demo\Chat\Utils\ChatLLMHelper;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\LLMConstants;
@@ -99,7 +99,7 @@ final class BotAgent extends AbstractAgent
      */
     public function onStart(): void
     {
-        $this->registerRtTruthSource(RtChatContext::botAgentStatuses, [(string)$this->botId]);
+        $this->registerRtTruthSource(ChatRtContext::botAgentStatuses, [(string)$this->botId]);
         Hilos::$rt->botAgentStatuses->actions->ensure($this->botId)->actions->markJoined();
         $this->scheduleReaction();
     }
@@ -158,7 +158,7 @@ final class BotAgent extends AbstractAgent
      */
     public function onSignalDbSyncCreated(DbSyncCreatedSignalData $data, string $source, string $name): void
     {
-        if ($data->collectionKey !== DbChatContext::events) {
+        if ($data->collectionKey !== ChatDbContext::events) {
             return;
         }
 
@@ -177,7 +177,7 @@ final class BotAgent extends AbstractAgent
      */
     public function onSignalRtSyncCreated(RtSyncCreatedSignalData $data, string $source, string $name): void
     {
-        if ($data->collectionKey === RtChatContext::chatContext) {
+        if ($data->collectionKey === ChatRtContext::chatContext) {
             $this->scheduleReaction();
         }
     }
@@ -192,7 +192,7 @@ final class BotAgent extends AbstractAgent
      */
     public function onSignalRtSyncUpdated(RtSyncUpdatedSignalData $data, string $source, string $name): void
     {
-        if ($data->collectionKey === RtChatContext::chatContext) {
+        if ($data->collectionKey === ChatRtContext::chatContext) {
             $this->scheduleReaction();
         }
     }

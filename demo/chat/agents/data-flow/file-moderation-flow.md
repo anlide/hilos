@@ -26,7 +26,7 @@ Moderation content includes message text plus attachment metadata such as filena
 
 1. Move each draft file from quarantine to published storage.
 2. Clear outbound moderation fields on the originating `Connection`.
-3. Remove draft rows from `RtChatContext::attachmentDrafts`.
+3. Remove draft rows from `ChatRtContext::attachmentDrafts`.
 4. Add one `message_sent` event with `data.message` and `data.attachments`.
 5. Broadcast `new_event`.
 

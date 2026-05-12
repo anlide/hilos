@@ -79,7 +79,7 @@ $this->sendToUser(
     $acceptKey,
     new ChatEventSignalDTO(
         new EntitiesChangesDTO(),
-        [TableChatContext::users => Hilos::$table->users->getFullSnapshot()],
+        [ChatTableContext::users => Hilos::$table->users->getFullSnapshot()],
     ),
 );
 ```
@@ -94,7 +94,7 @@ $this->sendToUser(
     $acceptKey,
     new ChatEventSignalDTO(
         new EntitiesChangesDTO(),
-        [TableChatContext::users => $snapshot],
+        [ChatTableContext::users => $snapshot],
     ),
 );
 ```

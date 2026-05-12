@@ -6,7 +6,7 @@ namespace Demo\Chat\Projection;
 
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Core\Router\DTO\ChatEventSignalDTO;
-use Demo\Chat\Database\DbChatContext;
+use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Frontend\BotFrontendStateProjector;
 use Demo\Chat\Projection\Page\AdminBotsPageProjection;
 use Demo\Chat\Projection\Page\AdminModeratorPageProjection;
@@ -18,7 +18,7 @@ use Demo\Chat\Projection\Page\MainPageProjection;
 use Demo\Chat\Projection\Util\ChatEventBroadcastBuilder;
 use Demo\Chat\Runtime\State\Item\BotAgentStatus as StateBotAgentStatus;
 use Demo\Chat\Runtime\State\Item\GuardianAgentStatus as StateGuardianAgentStatus;
-use Demo\Chat\Runtime\View\Context\RtChatContext;
+use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Projection\PageProjection;
 use Hilos\Core\Projection\ProjectionContext;
@@ -105,7 +105,7 @@ final class ChatProjectionContext extends ProjectionContext
         array $deliveredEventIds,
     ): iterable {
         if ($change->kind === SourceChange::KIND_DB) {
-            if ($change->sourceKey === DbChatContext::events) {
+            if ($change->sourceKey === ChatDbContext::events) {
                 if ($change->mutationType !== TableMutationType::Create) {
                     return;
                 }
@@ -113,7 +113,7 @@ final class ChatProjectionContext extends ProjectionContext
                 return;
             }
 
-            if ($change->sourceKey === DbChatContext::eventAttachments) {
+            if ($change->sourceKey === ChatDbContext::eventAttachments) {
                 if ($change->mutationType === TableMutationType::Delete) {
                     return;
                 }
@@ -125,19 +125,19 @@ final class ChatProjectionContext extends ProjectionContext
                 return;
             }
 
-            if ($change->sourceKey === DbChatContext::bots) {
+            if ($change->sourceKey === ChatDbContext::bots) {
                 yield from $this->buildBotUpdatedDeliveries($change, $audience);
                 return;
             }
         }
 
         if ($change->kind === SourceChange::KIND_RT) {
-            if ($change->sourceKey === RtChatContext::botAgentStatuses) {
+            if ($change->sourceKey === ChatRtContext::botAgentStatuses) {
                 yield from $this->buildBotAgentStatusDeliveries($change, $audience);
                 return;
             }
 
-            if ($change->sourceKey === RtChatContext::guardianAgentStatuses) {
+            if ($change->sourceKey === ChatRtContext::guardianAgentStatuses) {
                 yield from $this->buildGuardianAgentStatusDeliveries($change, $audience);
             }
         }
@@ -155,7 +155,7 @@ final class ChatProjectionContext extends ProjectionContext
         foreach ($changes->all() as $change) {
             if (
                 $change->kind === SourceChange::KIND_DB
-                && $change->sourceKey === DbChatContext::events
+                && $change->sourceKey === ChatDbContext::events
                 && $change->mutationType === TableMutationType::Create
             ) {
                 $ids[(int)$change->sourceId] = true;
@@ -187,7 +187,7 @@ final class ChatProjectionContext extends ProjectionContext
 
         $payload = new ChatEventSignalDTO(
             entities: new EntitiesChangesDTO(updates: [
-                DbChatContext::bots => [$bot->toArray(toFrontend: true)],
+                ChatDbContext::bots => [$bot->toArray(toFrontend: true)],
             ]),
         );
 
@@ -232,7 +232,7 @@ final class ChatProjectionContext extends ProjectionContext
             $bot = Hilos::$db->bots[$botId] ?? null;
             if ($bot !== null) {
                 $entities = new EntitiesChangesDTO(updates: [
-                    DbChatContext::bots => [$bot->toArray(toFrontend: true)],
+                    ChatDbContext::bots => [$bot->toArray(toFrontend: true)],
                 ]);
             }
         }

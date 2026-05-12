@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Runtime\State\Item;
 
-use Demo\Chat\Runtime\View\Context\RtChatContext;
+use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Hilos\Runtime\State\Item\RtState;
 
 /**
@@ -116,7 +116,7 @@ final class AttachmentDraft extends RtState
      */
     public static function getRtCollectionKey(): string
     {
-        return RtChatContext::attachmentDrafts;
+        return ChatRtContext::attachmentDrafts;
     }
 
     /**

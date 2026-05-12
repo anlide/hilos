@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Demo\Chat\Runtime\State\Item;
 
 use Demo\Chat\Runtime\View\Actions\Item\ConnectionActions;
-use Demo\Chat\Runtime\View\Context\RtChatContext;
+use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Hilos\Runtime\State\Item\RtState;
 
 /**
@@ -225,7 +225,7 @@ final class Connection extends RtState
      */
     public static function getRtCollectionKey(): string
     {
-        return RtChatContext::connections;
+        return ChatRtContext::connections;
     }
 
     /**

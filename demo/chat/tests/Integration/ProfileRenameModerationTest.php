@@ -16,7 +16,7 @@ use Demo\Chat\Core\Router\DTO\ActionSuccessSignalData;
 use Demo\Chat\Core\Router\DTO\RenameModerationResultSignalData;
 use Demo\Chat\Hilos;
 use Demo\Chat\Pages\ProfilePage;
-use Demo\Chat\Runtime\View\Context\RtChatContext;
+use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Page\ActionRouteConfig;
@@ -35,7 +35,7 @@ final class ProfileRenameModerationTest extends IntegrationTestCase
 
     public function testRenameActionStartsModerationWithoutChangingUserName(): void
     {
-        RtTruthSourceRegistry::register(RtChatContext::connections, true, self::TEST_AGENT_ID);
+        RtTruthSourceRegistry::register(ChatRtContext::connections, true, self::TEST_AGENT_ID);
         Hilos::$rt->connections->actions->clear();
         Hilos::$db->events->actions->deleteAll();
 
@@ -67,7 +67,7 @@ final class ProfileRenameModerationTest extends IntegrationTestCase
 
     public function testApprovedRenameModerationResultRenamesUserAndSendsSuccess(): void
     {
-        RtTruthSourceRegistry::register(RtChatContext::connections, true, self::TEST_AGENT_ID);
+        RtTruthSourceRegistry::register(ChatRtContext::connections, true, self::TEST_AGENT_ID);
         Hilos::$rt->connections->actions->clear();
         Hilos::$db->events->actions->deleteAll();
 
@@ -109,7 +109,7 @@ final class ProfileRenameModerationTest extends IntegrationTestCase
 
     public function testRejectedRenameModerationResultPreservesNameAndSendsFail(): void
     {
-        RtTruthSourceRegistry::register(RtChatContext::connections, true, self::TEST_AGENT_ID);
+        RtTruthSourceRegistry::register(ChatRtContext::connections, true, self::TEST_AGENT_ID);
         Hilos::$rt->connections->actions->clear();
         Hilos::$db->events->actions->deleteAll();
 

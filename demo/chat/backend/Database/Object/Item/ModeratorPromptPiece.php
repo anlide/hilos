@@ -2,7 +2,7 @@
 
 namespace Demo\Chat\Database\Object\Item;
 
-use Demo\Chat\Database\DbChatContext;
+use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Database\Entity\Item\ModeratorPromptPiece as EntityModeratorPromptPiece;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Item\Object_;
@@ -31,11 +31,11 @@ final class ModeratorPromptPiece extends Object_
     /**
      * Returns the database collection key for this object type.
      *
-     * @return string Collection key (DbChatContext::moderatorPromptPieces)
+     * @return string Collection key (ChatDbContext::moderatorPromptPieces)
      */
     protected static function getCollectionKey(): string
     {
-        return DbChatContext::moderatorPromptPieces;
+        return ChatDbContext::moderatorPromptPieces;
     }
 
     /**

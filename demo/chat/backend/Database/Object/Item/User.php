@@ -2,7 +2,7 @@
 
 namespace Demo\Chat\Database\Object\Item;
 
-use Demo\Chat\Database\DbChatContext;
+use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Database\Entity\Item\User as EntityUser;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Item\Object_;
@@ -33,11 +33,11 @@ final class User extends Object_
     /**
      * Returns the database collection key for this object type.
      *
-     * @return string Collection key (DbChatContext::users)
+     * @return string Collection key (ChatDbContext::users)
      */
     protected static function getCollectionKey(): string
     {
-        return DbChatContext::users;
+        return ChatDbContext::users;
     }
 
     /**

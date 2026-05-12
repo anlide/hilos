@@ -2,7 +2,7 @@
 
 namespace Demo\Chat\Database\Object\Collection;
 
-use Demo\Chat\Database\DbChatContext;
+use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Database\Entity\Collection\Users as EntityUsers;
 use Demo\Chat\Database\Entity\Item\User as EntityUser;
 use Demo\Chat\Database\Object\Item\User as ObjectUser;
@@ -23,7 +23,7 @@ final class Users extends Objects
 {
     public const string OBJECT_CLASS = ObjectUser::class;
     public const string ENTITY_COLLECTION_CLASS = EntityUsers::class;
-    public const string COLLECTION_KEY = DbChatContext::users;
+    public const string COLLECTION_KEY = ChatDbContext::users;
 
     /**
      * Finds user by session token.

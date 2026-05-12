@@ -8,7 +8,7 @@ use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Router\DTO\ChatEventSignalDTO;
 use Demo\Chat\Core\Router\DTO\SelfConnectionSignalData;
-use Demo\Chat\Database\DbChatContext;
+use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Frontend\AttachmentDraftFrontendStateProjector;
 use Demo\Chat\Frontend\BotFrontendStateProjector;
 use Demo\Chat\Frontend\SelfConnectionFrontendStateProjector;
@@ -18,7 +18,7 @@ use Demo\Chat\Projection\Util\UserPresenceDeliveryBuilder;
 use Demo\Chat\Runtime\State\Item\AttachmentDraft as StateAttachmentDraft;
 use Demo\Chat\Runtime\State\Item\ChatUserState as StateChatUserState;
 use Demo\Chat\Runtime\State\Item\Connection as StateConnection;
-use Demo\Chat\Runtime\View\Context\RtChatContext;
+use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Hilos\Core\Page\Exception\PageInternalErrorException;
 use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Projection\PageProjection;
@@ -65,7 +65,7 @@ final class MainPageProjection extends PageProjection
     protected function rules(): iterable
     {
         yield new ConnectionLocalRule(
-            triggers: [RtChatContext::connections],
+            triggers: [ChatRtContext::connections],
             snapshotForAcceptKey: static function (string $acceptKey): FrontendChangesDTO {
                 if (Hilos::$rt === null || !isset(Hilos::$rt->connections[$acceptKey])) {
                     return new FrontendChangesDTO();
@@ -83,7 +83,7 @@ final class MainPageProjection extends PageProjection
         );
 
         yield new ConnectionLocalRule(
-            triggers: [RtChatContext::userStates],
+            triggers: [ChatRtContext::userStates],
             snapshotForAcceptKey: static fn(): FrontendChangesDTO => new FrontendChangesDTO(),
             broadcast: function (SourceChange $change, array $audienceAcceptKeys): iterable {
                 yield from $this->buildSelfConnectionDeliveriesOnUserStateChange($change, $audienceAcceptKeys);
@@ -91,7 +91,7 @@ final class MainPageProjection extends PageProjection
         );
 
         yield new ConnectionLocalRule(
-            triggers: [RtChatContext::attachmentDrafts],
+            triggers: [ChatRtContext::attachmentDrafts],
             snapshotForAcceptKey: static fn(): FrontendChangesDTO => new FrontendChangesDTO(),
             broadcast: function (SourceChange $change, array $audienceAcceptKeys): iterable {
                 yield from $this->buildSelfConnectionDeliveriesOnAttachmentDraftChange($change, $audienceAcceptKeys);
@@ -136,8 +136,8 @@ final class MainPageProjection extends PageProjection
         return new ChatEventSignalDTO(
             entities: new EntitiesChangesDTO(
                 full: [
-                    DbChatContext::bots => Hilos::$db->bots->activeOnly,
-                    DbChatContext::events => Hilos::$db->events,
+                    ChatDbContext::bots => Hilos::$db->bots->activeOnly,
+                    ChatDbContext::events => Hilos::$db->events,
                 ],
             ),
             frontend: $accumulator->buildFrontendChanges(),

@@ -8,7 +8,7 @@ use Demo\Chat\Database\Object\Item\User as ObjectUser;
 use Demo\Chat\Frontend\FrontendStateCollectionKey;
 use Demo\Chat\Frontend\UserFrontendStateProjector;
 use Demo\Chat\Hilos;
-use Demo\Chat\Runtime\View\Context\RtChatContext;
+use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Demo\Chat\Tables\AdminUser\AdminUserTableRow;
 use Demo\Chat\Tables\HilosUser\HilosUserTableRow;
 use Hilos\Core\Table\TableConstants;
@@ -24,7 +24,7 @@ final class UserFrontendRepresentationTest extends IntegrationTestCase
 
     public function testUserFrontendProjectionExcludesPrivateAndRuntimeFields(): void
     {
-        RtTruthSourceRegistry::register(RtChatContext::connections, true, self::TEST_AGENT_ID);
+        RtTruthSourceRegistry::register(ChatRtContext::connections, true, self::TEST_AGENT_ID);
         Hilos::$rt->connections->actions->clear();
 
         $user = Hilos::$db->users->actions->register(RandomHelper::hex(16));
@@ -51,7 +51,7 @@ final class UserFrontendRepresentationTest extends IntegrationTestCase
 
     public function testUserFrontendStateProjectionSplitsRuntimeFields(): void
     {
-        RtTruthSourceRegistry::register(RtChatContext::connections, true, self::TEST_AGENT_ID);
+        RtTruthSourceRegistry::register(ChatRtContext::connections, true, self::TEST_AGENT_ID);
         Hilos::$rt->connections->actions->clear();
 
         $user = Hilos::$db->users->actions->register(RandomHelper::hex(16));
@@ -79,7 +79,7 @@ final class UserFrontendRepresentationTest extends IntegrationTestCase
 
     public function testUserTableRowsIncludeRuntimeOnlineSessionCount(): void
     {
-        RtTruthSourceRegistry::register(RtChatContext::connections, true, self::TEST_AGENT_ID);
+        RtTruthSourceRegistry::register(ChatRtContext::connections, true, self::TEST_AGENT_ID);
         Hilos::$rt->connections->actions->clear();
 
         $user = Hilos::$db->users->actions->register(RandomHelper::hex(16));

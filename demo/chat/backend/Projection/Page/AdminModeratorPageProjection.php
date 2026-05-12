@@ -7,8 +7,8 @@ namespace Demo\Chat\Projection\Page;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Router\DTO\ChatEventSignalDTO;
-use Demo\Chat\Database\DbChatContext;
-use Demo\Chat\Tables\TableChatContext;
+use Demo\Chat\Database\ChatDbContext;
+use Demo\Chat\Tables\ChatTableContext;
 use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Projection\PageProjection;
 use Hilos\Core\Projection\Rule\TableRule;
@@ -49,8 +49,8 @@ final class AdminModeratorPageProjection extends PageProjection
     protected function rules(): iterable
     {
         yield new TableRule(
-            tableKey: TableChatContext::moderatorPromptPieces,
-            triggers: [DbChatContext::moderatorPromptPieces],
+            tableKey: ChatTableContext::moderatorPromptPieces,
+            triggers: [ChatDbContext::moderatorPromptPieces],
             wireSignalName: ChatSignalConstants::TABLE_MUTATION,
         );
     }
@@ -68,8 +68,8 @@ final class AdminModeratorPageProjection extends PageProjection
         string $acceptKey,
         PageRouteParams $params,
     ): ?SignalDataInterface {
-        $snapshot = $accumulator->getTableSnapshot(TableChatContext::moderatorPromptPieces);
-        $tables = $snapshot !== null ? [TableChatContext::moderatorPromptPieces => $snapshot] : [];
+        $snapshot = $accumulator->getTableSnapshot(ChatTableContext::moderatorPromptPieces);
+        $tables = $snapshot !== null ? [ChatTableContext::moderatorPromptPieces => $snapshot] : [];
 
         return new ChatEventSignalDTO(
             entities: new EntitiesChangesDTO(),

@@ -12,7 +12,7 @@ use Demo\Chat\Core\Router\ChatSignalRouter;
 use Demo\Chat\Core\Router\DTO\UserPresenceSignalData;
 use Demo\Chat\Projection\ChatProjectionContext;
 use Demo\Chat\Hilos;
-use Demo\Chat\Runtime\View\Context\RtChatContext;
+use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Execution\ExecutionContext;
@@ -45,7 +45,7 @@ final class ChatAgentPresenceTest extends IntegrationTestCase
      */
     public function testHandshakeAndCloseUpdatePresenceWithoutHistoryEvents(): void
     {
-        RtTruthSourceRegistry::register(RtChatContext::connections, true, self::TEST_AGENT_ID);
+        RtTruthSourceRegistry::register(ChatRtContext::connections, true, self::TEST_AGENT_ID);
         Hilos::$rt->connections->actions->clear();
         Hilos::$db->events->actions->deleteAll();
 
@@ -108,7 +108,7 @@ final class ChatAgentPresenceTest extends IntegrationTestCase
      */
     public function testEveryConnectionCountChangeEmitsPresenceStats(): void
     {
-        RtTruthSourceRegistry::register(RtChatContext::connections, true, self::TEST_AGENT_ID);
+        RtTruthSourceRegistry::register(ChatRtContext::connections, true, self::TEST_AGENT_ID);
         Hilos::$rt->connections->actions->clear();
         Hilos::$db->events->actions->deleteAll();
 
@@ -169,7 +169,7 @@ final class ChatAgentPresenceTest extends IntegrationTestCase
      */
     public function testCloseDeletesSelfConnectionAttachmentDrafts(): void
     {
-        RtTruthSourceRegistry::register(RtChatContext::connections, true, self::TEST_AGENT_ID);
+        RtTruthSourceRegistry::register(ChatRtContext::connections, true, self::TEST_AGENT_ID);
         Hilos::$rt->connections->actions->clear();
         Hilos::$rt->attachmentDrafts->actions->clear(deleteFiles: false);
 
@@ -216,7 +216,7 @@ final class ChatAgentPresenceTest extends IntegrationTestCase
      */
     public function testConnectionAttachmentDraftsExposeOwnedDrafts(): void
     {
-        RtTruthSourceRegistry::register(RtChatContext::connections, true, self::TEST_AGENT_ID);
+        RtTruthSourceRegistry::register(ChatRtContext::connections, true, self::TEST_AGENT_ID);
         Hilos::$rt->connections->actions->clear();
         Hilos::$rt->attachmentDrafts->actions->clear(deleteFiles: false);
 

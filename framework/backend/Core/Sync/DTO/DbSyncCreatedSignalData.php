@@ -17,7 +17,7 @@ class DbSyncCreatedSignalData extends BaseDTO implements SignalDataInterface
     /**
      * Creates DB sync created signal data.
      *
-     * @param string $collectionKey Collection key (e.g. DbChatContext::events)
+     * @param string $collectionKey Collection key (e.g. ChatDbContext::events)
      * @param string $idString Row ID from Object::getIdString()
      * @param array<string, mixed> $row Full row data (all columns)
      */

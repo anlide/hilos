@@ -11,7 +11,7 @@ use Demo\Chat\Core\Router\DTO\ModerationResultSignalData;
 use Demo\Chat\Core\Router\DTO\RenameModerationResultSignalData;
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\State\Item\Connection as StateConnection;
-use Demo\Chat\Runtime\View\Context\RtChatContext;
+use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
 use Hilos\LLM\Contract\AsyncChatLLMInterface;
@@ -31,7 +31,7 @@ final class ModeratorAgentTest extends IntegrationTestCase
 
     public function testOnTickDiscoversPendingUserModerationFromRuntimeState(): void
     {
-        RtTruthSourceRegistry::register(RtChatContext::connections, true, self::TEST_AGENT_ID);
+        RtTruthSourceRegistry::register(ChatRtContext::connections, true, self::TEST_AGENT_ID);
         Hilos::$rt->connections->actions->clear();
         Hilos::$rt->userStates->actions->clear();
 
@@ -66,7 +66,7 @@ final class ModeratorAgentTest extends IntegrationTestCase
 
     public function testOnTickDiscoversPendingRenameModerationFromRuntimeState(): void
     {
-        RtTruthSourceRegistry::register(RtChatContext::connections, true, self::TEST_AGENT_ID);
+        RtTruthSourceRegistry::register(ChatRtContext::connections, true, self::TEST_AGENT_ID);
         Hilos::$rt->connections->actions->clear();
         Hilos::$rt->userStates->actions->clear();
 
@@ -102,7 +102,7 @@ final class ModeratorAgentTest extends IntegrationTestCase
 
     public function testOnTickConvertsInvalidModerationModelOutputToUnknownDenial(): void
     {
-        RtTruthSourceRegistry::register(RtChatContext::connections, true, self::TEST_AGENT_ID);
+        RtTruthSourceRegistry::register(ChatRtContext::connections, true, self::TEST_AGENT_ID);
         Hilos::$rt->connections->actions->clear();
         Hilos::$rt->userStates->actions->clear();
 
@@ -134,7 +134,7 @@ final class ModeratorAgentTest extends IntegrationTestCase
             $this->assertNotNull($connection);
             $agent->onSignalRtSyncUpdated(
                 new RtSyncUpdatedSignalData(
-                    collectionKey: RtChatContext::connections,
+                    collectionKey: ChatRtContext::connections,
                     stateId: 'moderator-invalid-output-ak',
                     row: [
                         StateConnection::outboundModerationPhase => $connection->outboundModerationPhase,
@@ -159,7 +159,7 @@ final class ModeratorAgentTest extends IntegrationTestCase
 
     public function testRtUpdateCancelsInFlightModerationRequest(): void
     {
-        RtTruthSourceRegistry::register(RtChatContext::connections, true, self::TEST_AGENT_ID);
+        RtTruthSourceRegistry::register(ChatRtContext::connections, true, self::TEST_AGENT_ID);
         Hilos::$rt->connections->actions->clear();
         Hilos::$rt->userStates->actions->clear();
 
@@ -184,7 +184,7 @@ final class ModeratorAgentTest extends IntegrationTestCase
             $this->assertNotNull($connection);
             $agent->onSignalRtSyncUpdated(
                 new RtSyncUpdatedSignalData(
-                    collectionKey: RtChatContext::connections,
+                    collectionKey: ChatRtContext::connections,
                     stateId: 'moderator-in-flight-ak',
                     row: [
                         StateConnection::outboundModerationPhase => $connection->outboundModerationPhase,

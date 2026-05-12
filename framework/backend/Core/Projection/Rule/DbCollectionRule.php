@@ -21,7 +21,7 @@ final readonly class DbCollectionRule implements ProjectionRule
     /**
      * Creates a DB collection projection rule from a lazy collection getter.
      *
-     * @param string $sourceKey DB collection key (e.g. DbChatContext::events)
+     * @param string $sourceKey DB collection key (e.g. ChatDbContext::events)
      * @param Closure(): DbCollection $collection Lazy collection getter for snapshot
      * @param Closure(SourceChange $change, list<string> $audienceAcceptKeys): iterable<ProjectionDelivery> $broadcast
      *        Builds broadcast deliveries for one source change

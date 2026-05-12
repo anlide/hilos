@@ -12,7 +12,7 @@ use Demo\Chat\Tables\Settings\SettingsTable;
 use Hilos\Core\Table\Context\TableContext;
 
 /**
- * TableChatContext - App-specific table context ($table layer).
+ * ChatTableContext - App-specific table context ($table layer).
  *
  * Registers admin users, Hilos users, bots, moderator prompt pieces, and settings tables.
  * Accessed via Hilos::$table->adminUsers, Hilos::$table->hilosUsers, Hilos::$table->bots, etc.
@@ -23,7 +23,7 @@ use Hilos\Core\Table\Context\TableContext;
  * @property-read ModeratorPromptPiecesTable $moderatorPromptPieces
  * @property-read SettingsTable $settings
  */
-final class TableChatContext extends TableContext
+final class ChatTableContext extends TableContext
 {
     public const string adminUsers = 'adminUsers';
     public const string hilosUsers = 'hilosUsers';

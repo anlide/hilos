@@ -9,7 +9,7 @@ use Demo\Chat\Hilos;
 use Demo\Chat\Tables\Settings\DTO\SettingAddActionDTO;
 use Demo\Chat\Tables\Settings\DTO\SettingDeleteActionDTO;
 use Demo\Chat\Tables\Settings\DTO\SettingUpdateActionDTO;
-use Demo\Chat\Tables\TableChatContext;
+use Demo\Chat\Tables\ChatTableContext;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
@@ -81,7 +81,7 @@ final class SettingsPage extends AbstractHilosSettingsPage
         $this->sendToUser(
             ChatSignalConstants::TABLE_ACTION_ERROR,
             $acceptKey,
-            new TableActionErrorSignalData(TableChatContext::settings, $action, $e->getMessage()),
+            new TableActionErrorSignalData(ChatTableContext::settings, $action, $e->getMessage()),
         );
     }
 

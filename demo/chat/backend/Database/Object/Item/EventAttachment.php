@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Database\Object\Item;
 
-use Demo\Chat\Database\DbChatContext;
+use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Database\Entity\Item\EventAttachment as EntityEventAttachment;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Item\Object_;
@@ -33,11 +33,11 @@ final class EventAttachment extends Object_
     /**
      * Returns the database collection key for published attachments.
      *
-     * @return string Collection key (DbChatContext::eventAttachments)
+     * @return string Collection key (ChatDbContext::eventAttachments)
      */
     protected static function getCollectionKey(): string
     {
-        return DbChatContext::eventAttachments;
+        return ChatDbContext::eventAttachments;
     }
 
     /**
