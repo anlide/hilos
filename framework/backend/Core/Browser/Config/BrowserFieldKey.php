@@ -10,6 +10,7 @@ namespace Hilos\Core\Browser\Config;
 final class BrowserFieldKey
 {
     public const string SOURCE = 'source';
+    public const string ROW_KEY = 'rowKey';
     public const string FIELDS = 'fields';
     public const string COMPUTED = 'computed';
     public const string WHERE = 'where';

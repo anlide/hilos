@@ -27,6 +27,7 @@ final class MainUsersBrowserTable
         BrowserConfigKey::ROWS => [
             [
                 BrowserFieldKey::SOURCE => ChatBrowserSource::DB_USERS,
+                BrowserFieldKey::ROW_KEY => User::id,
                 BrowserFieldKey::FIELDS => [
                     User::id,
                     User::name,
@@ -35,6 +36,7 @@ final class MainUsersBrowserTable
             ],
             [
                 BrowserFieldKey::SOURCE => ChatBrowserSource::RT_CONNECTIONS,
+                BrowserFieldKey::ROW_KEY => Connection::userId,
                 BrowserFieldKey::FIELDS => [
                     Connection::acceptKey,
                     Connection::userId,

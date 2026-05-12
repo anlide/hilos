@@ -27,6 +27,7 @@ final class MainBotsBrowserTable
         BrowserConfigKey::ROWS => [
             [
                 BrowserFieldKey::SOURCE => ChatBrowserSource::DB_BOTS,
+                BrowserFieldKey::ROW_KEY => Bot::id,
                 BrowserFieldKey::WHERE => [
                     Bot::active => true,
                 ],
@@ -42,6 +43,7 @@ final class MainBotsBrowserTable
             ],
             [
                 BrowserFieldKey::SOURCE => ChatBrowserSource::RT_BOT_AGENT_STATUSES,
+                BrowserFieldKey::ROW_KEY => BotAgentStatus::botId,
                 BrowserFieldKey::FIELDS => [
                     BotAgentStatus::botId,
                     BotAgentStatus::status,

@@ -516,6 +516,60 @@ class SignalRouter
     }
 
     /**
+     * Page subscriptions currently mirrored in this router.
+     *
+     * Browser projection uses this worker-local mirror to send page-shaped
+     * signals only to connections that are subscribed in the current worker.
+     *
+     * @return array<string, array{page: string, params: array<string, string>}> Subscriptions keyed by accept key
+     */
+    public function getPageSubscriptions(): array
+    {
+        $subscriptions = [];
+        foreach ($this->subscriptionPages as $acceptKey => $subscription) {
+            if (!is_string($acceptKey) || $acceptKey === '') {
+                continue;
+            }
+
+            $page = $subscription[SignalPayloadConstants::SUBSCRIPTION_PAGE_KEY] ?? '';
+            $params = $subscription[SignalPayloadConstants::SUBSCRIPTION_PARAMS_KEY] ?? [];
+            if (!is_string($page) || $page === '') {
+                continue;
+            }
+
+            $subscriptions[$acceptKey] = [
+                SignalPayloadConstants::SUBSCRIPTION_PAGE_KEY => $page,
+                SignalPayloadConstants::SUBSCRIPTION_PARAMS_KEY => is_array($params)
+                    ? $this->stringParams($params)
+                    : [],
+            ];
+        }
+
+        return $subscriptions;
+    }
+
+    /**
+     * Keeps only string subscription params for browser config reference resolution.
+     *
+     * @param array<mixed> $params Raw subscription params from the mirror
+     * @return array<string, string> String-keyed params
+     */
+    private function stringParams(array $params): array
+    {
+        $result = [];
+        foreach ($params as $key => $value) {
+            if (!is_string($key)) {
+                continue;
+            }
+            if (is_string($value) || is_int($value)) {
+                $result[$key] = (string) $value;
+            }
+        }
+
+        return $result;
+    }
+
+    /**
      * Accept keys known to this router's subscription registry.
      *
      * In a worker this is the worker-local mirror used by frontend projections;

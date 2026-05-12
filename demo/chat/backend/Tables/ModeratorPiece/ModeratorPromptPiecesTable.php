@@ -36,6 +36,7 @@ final class ModeratorPromptPiecesTable extends TableDefinition
         BrowserConfigKey::ROWS => [
             [
                 BrowserFieldKey::SOURCE => ChatBrowserSource::DB_MODERATOR_PROMPT_PIECES,
+                BrowserFieldKey::ROW_KEY => ObjectModeratorPromptPiece::id,
                 BrowserFieldKey::FIELDS => [
                     ObjectModeratorPromptPiece::id => ModeratorPromptPieceTableRow::id,
                     ObjectModeratorPromptPiece::section => ModeratorPromptPieceTableRow::section,

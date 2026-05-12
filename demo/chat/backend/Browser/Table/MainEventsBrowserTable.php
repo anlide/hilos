@@ -32,6 +32,7 @@ final class MainEventsBrowserTable
         BrowserConfigKey::ROWS => [
             [
                 BrowserFieldKey::SOURCE => ChatBrowserSource::DB_EVENTS,
+                BrowserFieldKey::ROW_KEY => Event::id,
                 BrowserFieldKey::FIELDS => [
                     Event::id,
                     Event::type,
@@ -40,6 +41,7 @@ final class MainEventsBrowserTable
             ],
             [
                 BrowserFieldKey::SOURCE => ChatBrowserSource::DB_EVENT_MESSAGES,
+                BrowserFieldKey::ROW_KEY => EventMessage::eventId,
                 BrowserFieldKey::FIELDS => [
                     EventMessage::eventId,
                     EventMessage::authorUserId,
@@ -49,6 +51,7 @@ final class MainEventsBrowserTable
             ],
             [
                 BrowserFieldKey::SOURCE => ChatBrowserSource::DB_EVENT_USER_REGISTRATIONS,
+                BrowserFieldKey::ROW_KEY => EventUserRegistration::eventId,
                 BrowserFieldKey::FIELDS => [
                     EventUserRegistration::eventId,
                     EventUserRegistration::targetUserId,
@@ -56,6 +59,7 @@ final class MainEventsBrowserTable
             ],
             [
                 BrowserFieldKey::SOURCE => ChatBrowserSource::DB_EVENT_USER_RENAMES,
+                BrowserFieldKey::ROW_KEY => EventUserRename::eventId,
                 BrowserFieldKey::FIELDS => [
                     EventUserRename::eventId,
                     EventUserRename::targetUserId,
@@ -66,6 +70,7 @@ final class MainEventsBrowserTable
             ],
             [
                 BrowserFieldKey::SOURCE => ChatBrowserSource::DB_EVENT_ATTACHMENTS,
+                BrowserFieldKey::ROW_KEY => EventAttachment::eventId,
                 BrowserFieldKey::MANY => true,
                 BrowserFieldKey::FIELDS => [
                     EventAttachment::id,

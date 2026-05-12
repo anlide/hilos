@@ -35,6 +35,7 @@ final class AttachmentDraftsBrowserTable
         BrowserConfigKey::ROWS => [
             [
                 BrowserFieldKey::SOURCE => ChatBrowserSource::RT_ATTACHMENT_DRAFTS,
+                BrowserFieldKey::ROW_KEY => AttachmentDraft::draftId,
                 BrowserFieldKey::WHERE => [
                     AttachmentDraft::acceptKey => ChatBrowserRef::TABLE_ACCEPT_KEY,
                 ],

@@ -37,6 +37,7 @@ final class SelfConnectionBrowserTable
         BrowserConfigKey::ROWS => [
             [
                 BrowserFieldKey::SOURCE => ChatBrowserSource::RT_CONNECTIONS,
+                BrowserFieldKey::ROW_KEY => Connection::acceptKey,
                 BrowserFieldKey::WHERE => [
                     Connection::acceptKey => ChatBrowserRef::TABLE_ACCEPT_KEY,
                 ],
@@ -62,6 +63,7 @@ final class SelfConnectionBrowserTable
             ],
             [
                 BrowserFieldKey::SOURCE => ChatBrowserSource::RT_USER_STATES,
+                BrowserFieldKey::ROW_KEY => ChatBrowserRef::TABLE_ACCEPT_KEY,
                 BrowserFieldKey::VIA => [
                     ChatUserState::userId => Connection::userId,
                 ],

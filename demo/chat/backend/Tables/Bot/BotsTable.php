@@ -36,6 +36,7 @@ final class BotsTable extends TableDefinition
         BrowserConfigKey::ROWS => [
             [
                 BrowserFieldKey::SOURCE => ChatBrowserSource::DB_BOTS,
+                BrowserFieldKey::ROW_KEY => ObjectBot::id,
                 BrowserFieldKey::FIELDS => [
                     ObjectBot::id => BotTableRow::id,
                     ObjectBot::name => BotTableRow::name,

@@ -38,6 +38,7 @@ final class UserDetailBrowserTable
         BrowserConfigKey::ROWS => [
             [
                 BrowserFieldKey::SOURCE => ChatBrowserSource::DB_USERS,
+                BrowserFieldKey::ROW_KEY => User::id,
                 BrowserFieldKey::WHERE => [
                     User::id => ChatBrowserRef::TABLE_HILOS_USER_ID,
                 ],
@@ -49,6 +50,7 @@ final class UserDetailBrowserTable
             ],
             [
                 BrowserFieldKey::SOURCE => ChatBrowserSource::RT_CONNECTIONS,
+                BrowserFieldKey::ROW_KEY => Connection::userId,
                 BrowserFieldKey::WHERE => [
                     Connection::userId => ChatBrowserRef::TABLE_HILOS_USER_ID,
                 ],

@@ -38,6 +38,7 @@ final class SettingsTable extends TableDefinition
         BrowserConfigKey::ROWS => [
             [
                 BrowserFieldKey::SOURCE => ChatBrowserSource::DB_SETTINGS,
+                BrowserFieldKey::ROW_KEY => ObjectSetting::key,
                 BrowserFieldKey::FIELDS => [
                     ObjectSetting::id => SettingTableRow::id,
                     ObjectSetting::key => SettingTableRow::key,

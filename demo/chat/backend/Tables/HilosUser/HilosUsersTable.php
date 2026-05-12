@@ -38,6 +38,7 @@ final class HilosUsersTable extends TableDefinition
         BrowserConfigKey::ROWS => [
             [
                 BrowserFieldKey::SOURCE => ChatBrowserSource::DB_USERS,
+                BrowserFieldKey::ROW_KEY => ObjectUser::id,
                 BrowserFieldKey::FIELDS => [
                     ObjectUser::id => HilosUserTableRow::id,
                     ObjectUser::name => HilosUserTableRow::name,
@@ -46,6 +47,7 @@ final class HilosUsersTable extends TableDefinition
             ],
             [
                 BrowserFieldKey::SOURCE => ChatBrowserSource::RT_CONNECTIONS,
+                BrowserFieldKey::ROW_KEY => ConnectionState::userId,
                 BrowserFieldKey::FIELDS => [
                     ConnectionState::acceptKey,
                     ConnectionState::userId,

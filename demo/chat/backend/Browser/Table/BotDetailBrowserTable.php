@@ -35,6 +35,7 @@ final class BotDetailBrowserTable
         BrowserConfigKey::ROWS => [
             [
                 BrowserFieldKey::SOURCE => ChatBrowserSource::DB_BOTS,
+                BrowserFieldKey::ROW_KEY => Bot::id,
                 BrowserFieldKey::WHERE => [
                     Bot::id => ChatBrowserRef::TABLE_BOT_ID,
                 ],
