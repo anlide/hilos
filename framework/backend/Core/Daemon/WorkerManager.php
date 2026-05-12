@@ -997,7 +997,7 @@ abstract class WorkerManager extends BaseManager
     }
 
     /**
-     * Hook called after a page subscribe signal reaches the worker.
+     * Records a page subscribe signal in the browser context.
      *
      * @param WebSocketPageSubscribeSignalDTO $signalData Subscribe signal (acceptKey, params)
      * @param string $source Signal source identifier
@@ -1005,10 +1005,11 @@ abstract class WorkerManager extends BaseManager
      */
     protected function onPageSubscribed(WebSocketPageSubscribeSignalDTO $signalData, string $source, string $name): void
     {
+        Hilos::$browser?->recordPageSubscribed($signalData, $source, $name);
     }
 
     /**
-     * Hook called after a page unsubscribe signal reaches the worker.
+     * Records a page unsubscribe signal in the browser context.
      *
      * @param WebSocketPageUnsubscribeSignalDTO $signalData Unsubscribe signal (acceptKey)
      * @param string $source Signal source identifier
@@ -1016,10 +1017,11 @@ abstract class WorkerManager extends BaseManager
      */
     protected function onPageUnsubscribed(WebSocketPageUnsubscribeSignalDTO $signalData, string $source, string $name): void
     {
+        Hilos::$browser?->recordPageUnsubscribed($signalData, $source, $name);
     }
 
     /**
-     * Hook called after a page subscription update reaches the worker.
+     * Records a page subscription update signal in the browser context.
      *
      * @param WebSocketPageUpdateSubscriptionSignalDTO $signalData Update signal (acceptKey, params)
      * @param string $source Signal source identifier
@@ -1027,10 +1029,11 @@ abstract class WorkerManager extends BaseManager
      */
     protected function onPageSubscriptionUpdated(WebSocketPageUpdateSubscriptionSignalDTO $signalData, string $source, string $name): void
     {
+        Hilos::$browser?->recordPageSubscriptionUpdated($signalData, $source, $name);
     }
 
     /**
-     * Hook called after a group subscribe signal reaches the worker.
+     * Records a group subscribe signal in the browser context.
      *
      * @param WebSocketGroupSubscribeSignalDTO $signalData Subscribe signal (acceptKey, params)
      * @param string $source Signal source identifier
@@ -1038,10 +1041,11 @@ abstract class WorkerManager extends BaseManager
      */
     protected function onGroupSubscribed(WebSocketGroupSubscribeSignalDTO $signalData, string $source, string $name): void
     {
+        Hilos::$browser?->recordGroupSubscribed($signalData, $source, $name);
     }
 
     /**
-     * Hook called after a group unsubscribe signal reaches the worker.
+     * Records a group unsubscribe signal in the browser context.
      *
      * @param WebSocketGroupUnsubscribeSignalDTO $signalData Unsubscribe signal (acceptKey)
      * @param string $source Signal source identifier
@@ -1049,10 +1053,11 @@ abstract class WorkerManager extends BaseManager
      */
     protected function onGroupUnsubscribed(WebSocketGroupUnsubscribeSignalDTO $signalData, string $source, string $name): void
     {
+        Hilos::$browser?->recordGroupUnsubscribed($signalData, $source, $name);
     }
 
     /**
-     * Hook called after a group subscription update reaches the worker.
+     * Records a group subscription update signal in the browser context.
      *
      * @param WebSocketGroupUpdateSubscriptionSignalDTO $signalData Update signal (acceptKey, params)
      * @param string $source Signal source identifier
@@ -1060,6 +1065,7 @@ abstract class WorkerManager extends BaseManager
      */
     protected function onGroupSubscriptionUpdated(WebSocketGroupUpdateSubscriptionSignalDTO $signalData, string $source, string $name): void
     {
+        Hilos::$browser?->recordGroupSubscriptionUpdated($signalData, $source, $name);
     }
 
     /**
@@ -1405,8 +1411,8 @@ abstract class WorkerManager extends BaseManager
      * Called at the end of each loop iteration when connected to daemon.
      *
      * DB/RT sync signals are broadcast at worker level. Other signals are sent
-     * as agent messages. Projection flush runs between two queue drains so
-     * addressed WS_USER projection deliveries are sent in the same tick.
+     * as agent messages. Projection and browser flushes run between two queue
+     * drains so addressed WS_USER deliveries are sent in the same tick.
      */
     private function dispatchSignals(): void
     {
@@ -1415,18 +1421,19 @@ abstract class WorkerManager extends BaseManager
         }
 
         // Phase 1 sends backend state changes and records them for this worker's
-        // frontend projection. Phase 2 sends the WS_USER signals produced by the
-        // projection flush in the same tick, instead of waiting for the next loop.
+        // frontend projection/browser state. Phase 2 sends the WS_USER signals
+        // produced by flushes in the same tick, instead of waiting for the next loop.
         $this->dispatchQueuedSignalsToDaemon();
         Hilos::$projection?->flushToSignalRouter();
+        Hilos::$browser?->flushToSignalRouter();
         $this->dispatchQueuedSignalsToDaemon();
     }
 
     /**
      * Drains the current worker signal queue and forwards it to the daemon.
      *
-     * Called before and after frontend projection flush because flush itself
-     * queues ordinary worker signals into the same router queue.
+     * Called before and after frontend projection/browser flush because flushes
+     * queue ordinary worker signals into the same router queue.
      */
     private function dispatchQueuedSignalsToDaemon(): void
     {
