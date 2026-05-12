@@ -66,29 +66,23 @@ final class WorkerManagerBrowserContextTest extends TestCase
         $this->assertCount(1, $browser->emittedChangeSets);
 
         $changes = $browser->emittedChangeSets[0]->all();
-        $this->assertCount(6, $changes);
+        $this->assertCount(2, $changes);
         $this->assertSame(
             [
                 SourceChange::KIND_DB,
-                SourceChange::KIND_DB,
-                SourceChange::KIND_DB,
-                SourceChange::KIND_RT,
-                SourceChange::KIND_RT,
                 SourceChange::KIND_RT,
             ],
             array_map(static fn(SourceChange $change): string => $change->kind, $changes),
         );
         $this->assertSame(
             [
-                TableMutationType::Create,
-                TableMutationType::Update,
                 TableMutationType::Delete,
-                TableMutationType::Create,
-                TableMutationType::Update,
                 TableMutationType::Delete,
             ],
             array_map(static fn(SourceChange $change): TableMutationType => $change->mutationType, $changes),
         );
+        $this->assertSame(['name' => 'Grace'], $changes[0]->row);
+        $this->assertSame(['userId' => 1, 'presence' => 'online'], $changes[1]->row);
     }
 }
 

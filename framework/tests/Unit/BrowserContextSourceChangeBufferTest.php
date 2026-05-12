@@ -35,29 +35,79 @@ final class BrowserContextSourceChangeBufferTest extends TestCase
         $this->assertSame($context->groupedChangeSets, $context->emittedChangeSets);
 
         $changes = $context->emittedChangeSets[0]->all();
-        $this->assertCount(6, $changes);
+        $this->assertCount(2, $changes);
         $this->assertSame(
             [
                 SourceChange::KIND_DB,
-                SourceChange::KIND_DB,
-                SourceChange::KIND_DB,
-                SourceChange::KIND_RT,
-                SourceChange::KIND_RT,
                 SourceChange::KIND_RT,
             ],
             array_map(static fn(SourceChange $change): string => $change->kind, $changes),
         );
         $this->assertSame(
             [
-                TableMutationType::Create,
-                TableMutationType::Update,
                 TableMutationType::Delete,
-                TableMutationType::Create,
-                TableMutationType::Update,
                 TableMutationType::Delete,
             ],
             array_map(static fn(SourceChange $change): TableMutationType => $change->mutationType, $changes),
         );
+        $this->assertSame(['name' => 'Grace'], $changes[0]->row);
+        $this->assertSame(['userId' => 1, 'presence' => 'online'], $changes[1]->row);
+    }
+
+    public function testFlushMergesRepeatedUpdatesForSameSourceItem(): void
+    {
+        $context = new BrowserContextSourceChangeBufferTestContext();
+
+        $context->record(SourceChange::dbUpdated('users', '1', ['name' => 'Ada']));
+        $context->record(SourceChange::dbUpdated('users', '1', ['lastActivity' => '2026-05-12 10:00:00']));
+        $context->record(SourceChange::dbUpdated('users', '1', ['name' => 'Grace']));
+        $context->record(SourceChange::dbUpdated('users', '2', ['name' => 'Lin']));
+
+        $context->flushToSignalRouter();
+
+        $changes = $context->emittedChangeSets[0]->all();
+        $this->assertCount(2, $changes);
+        $this->assertSame('1', $changes[0]->sourceId);
+        $this->assertSame(TableMutationType::Update, $changes[0]->mutationType);
+        $this->assertSame(
+            [
+                'name' => 'Grace',
+                'lastActivity' => '2026-05-12 10:00:00',
+            ],
+            $changes[0]->row,
+        );
+        $this->assertSame('2', $changes[1]->sourceId);
+        $this->assertSame(['name' => 'Lin'], $changes[1]->row);
+    }
+
+    public function testFlushKeepsCreateWhenCreatedSourceItemIsUpdated(): void
+    {
+        $context = new BrowserContextSourceChangeBufferTestContext();
+
+        $context->record(SourceChange::dbCreated('users', '1', ['id' => 1, 'name' => 'Ada']));
+        $context->record(SourceChange::dbUpdated('users', '1', ['name' => 'Grace']));
+
+        $context->flushToSignalRouter();
+
+        $changes = $context->emittedChangeSets[0]->all();
+        $this->assertCount(1, $changes);
+        $this->assertSame(TableMutationType::Create, $changes[0]->mutationType);
+        $this->assertSame(['id' => 1, 'name' => 'Grace'], $changes[0]->row);
+    }
+
+    public function testFlushTreatsDeleteThenCreateAsUpdateWithReplacementRow(): void
+    {
+        $context = new BrowserContextSourceChangeBufferTestContext();
+
+        $context->record(SourceChange::dbDeleted('users', '1', ['id' => 1, 'name' => 'Ada', 'stale' => true]));
+        $context->record(SourceChange::dbCreated('users', '1', ['id' => 1, 'name' => 'Grace']));
+
+        $context->flushToSignalRouter();
+
+        $changes = $context->emittedChangeSets[0]->all();
+        $this->assertCount(1, $changes);
+        $this->assertSame(TableMutationType::Update, $changes[0]->mutationType);
+        $this->assertSame(['id' => 1, 'name' => 'Grace'], $changes[0]->row);
     }
 }
 
@@ -78,9 +128,9 @@ final class BrowserContextSourceChangeBufferTestContext extends BrowserContext
      */
     protected function groupSourceChanges(): void
     {
-        $this->groupedChangeSets[] = $this->changes;
-
         parent::groupSourceChanges();
+
+        $this->groupedChangeSets[] = $this->changes;
     }
 
     /**
