@@ -4,12 +4,16 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Tables\AdminUser;
 
+use Demo\Chat\Browser\ChatBrowserSource;
 use Demo\Chat\Database\ChatDbContext;
+use Demo\Chat\Database\Object\Item\User as ObjectUser;
 use Demo\Chat\Database\View\Item\User as DbUser;
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\State\Item\Connection as ConnectionState;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Demo\Chat\Tables\AdminUser\Actions\AdminUserItemActions;
+use Hilos\Core\Browser\Config\BrowserConfigKey;
+use Hilos\Core\Browser\Config\BrowserFieldKey;
 use Hilos\Core\Projection\SourceChange;
 use Hilos\Core\Table\Definition\TableDefinition;
 use Hilos\Core\Table\DTO\TableQueryDTO;
@@ -26,6 +30,34 @@ use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
  */
 final class AdminUsersTable extends TableDefinition
 {
+    public const array BROWSER = [
+        BrowserConfigKey::SOURCES => [
+            ChatBrowserSource::DB_USERS,
+            ChatBrowserSource::RT_CONNECTIONS,
+        ],
+        BrowserConfigKey::ROWS => [
+            [
+                BrowserFieldKey::SOURCE => ChatBrowserSource::DB_USERS,
+                BrowserFieldKey::FIELDS => [
+                    ObjectUser::id => AdminUserTableRow::id,
+                    ObjectUser::name => AdminUserTableRow::name,
+                    ObjectUser::lastActivity => AdminUserTableRow::lastActivity,
+                ],
+            ],
+            [
+                BrowserFieldKey::SOURCE => ChatBrowserSource::RT_CONNECTIONS,
+                BrowserFieldKey::FIELDS => [
+                    ConnectionState::acceptKey,
+                    ConnectionState::userId,
+                ],
+                BrowserFieldKey::COMPUTED => [
+                    AdminUserTableRow::presence,
+                    AdminUserTableRow::onlineSessionCount,
+                ],
+            ],
+        ],
+    ];
+
     /**
      * Builds an admin users row mutation from one user-affecting source change.
      *

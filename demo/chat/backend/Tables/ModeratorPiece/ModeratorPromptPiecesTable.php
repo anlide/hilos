@@ -4,11 +4,15 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Tables\ModeratorPiece;
 
+use Demo\Chat\Browser\ChatBrowserSource;
 use Demo\Chat\Database\ChatDbContext;
+use Demo\Chat\Database\Object\Item\ModeratorPromptPiece as ObjectModeratorPromptPiece;
 use Demo\Chat\Database\View\Item\ModeratorPromptPiece as DbModeratorPromptPiece;
 use Demo\Chat\Hilos;
 use Demo\Chat\Tables\ModeratorPiece\Actions\ModeratorPromptPieceItemActions;
 use Demo\Chat\Tables\ModeratorPiece\Actions\ModeratorPromptPiecesTableActions;
+use Hilos\Core\Browser\Config\BrowserConfigKey;
+use Hilos\Core\Browser\Config\BrowserFieldKey;
 use Hilos\Core\Projection\SourceChange;
 use Hilos\Core\Table\Definition\TableDefinition;
 use Hilos\Core\Table\DTO\TableQueryDTO;
@@ -25,6 +29,22 @@ use Hilos\Database\DatabaseException;
  */
 final class ModeratorPromptPiecesTable extends TableDefinition
 {
+    public const array BROWSER = [
+        BrowserConfigKey::SOURCES => [
+            ChatBrowserSource::DB_MODERATOR_PROMPT_PIECES,
+        ],
+        BrowserConfigKey::ROWS => [
+            [
+                BrowserFieldKey::SOURCE => ChatBrowserSource::DB_MODERATOR_PROMPT_PIECES,
+                BrowserFieldKey::FIELDS => [
+                    ObjectModeratorPromptPiece::id => ModeratorPromptPieceTableRow::id,
+                    ObjectModeratorPromptPiece::section => ModeratorPromptPieceTableRow::section,
+                    ObjectModeratorPromptPiece::promptPiece => ModeratorPromptPieceTableRow::promptPiece,
+                ],
+            ],
+        ],
+    ];
+
     /**
      * Builds a moderator prompt piece row mutation from a source change.
      *

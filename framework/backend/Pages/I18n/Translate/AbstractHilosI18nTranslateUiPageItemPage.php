@@ -6,6 +6,7 @@ namespace Hilos\Pages\I18n\Translate;
 
 use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Page\AbstractHilosPage;
 use Hilos\Core\Router\SignalData;
 use Hilos\Core\Page\PageRouteParams;
@@ -18,6 +19,10 @@ use Hilos\Core\Page\PageRouteParams;
 abstract class AbstractHilosI18nTranslateUiPageItemPage extends AbstractHilosPage
 {
     public const string PAGE = HilosPageConstants::HILOS_I18N_TRANSLATE_UI_PAGE_ITEM;
+
+    public const array BROWSER = [
+        BrowserConfigKey::SIGNAL => HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_I18N_TRANSLATE_UI_PAGE_ITEM,
+    ];
 
     /**
      * Handle page subscription.

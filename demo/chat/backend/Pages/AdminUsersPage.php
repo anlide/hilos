@@ -10,6 +10,7 @@ use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Hilos;
 use Demo\Chat\Tables\AdminUser\DTO\AdminUserUpdateActionDTO;
 use Demo\Chat\Tables\ChatTableContext;
+use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
@@ -27,6 +28,13 @@ use Throwable;
 final class AdminUsersPage extends AbstractPage
 {
     public const string PAGE = PageConstants::ADMIN_USERS;
+
+    public const array BROWSER = [
+        BrowserConfigKey::SIGNAL => ChatSignalConstants::SUBSCRIPTION_PAGE_ADMIN_USERS,
+        BrowserConfigKey::TABLES => [
+            ChatTableContext::adminUsers => [],
+        ],
+    ];
 
     /**
      * Routes admin user actions to typed handlers.

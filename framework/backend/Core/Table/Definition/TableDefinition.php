@@ -37,6 +37,9 @@ use Hilos\Database\View\Collection\DbCollection;
  */
 abstract class TableDefinition implements ArrayAccess
 {
+    /** Browser table config declared by data-bearing table definitions. */
+    public const array BROWSER = [];
+
     /** @var ?TableActions Lazy-loaded table-level actions instance */
     private ?TableActions $_actions = null;
 

@@ -6,11 +6,12 @@ namespace Demo\Chat\Pages\Hilos;
 
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Hilos;
+use Demo\Chat\Tables\ChatTableContext;
 use Demo\Chat\Tables\Settings\DTO\SettingAddActionDTO;
 use Demo\Chat\Tables\Settings\DTO\SettingDeleteActionDTO;
 use Demo\Chat\Tables\Settings\DTO\SettingUpdateActionDTO;
-use Demo\Chat\Tables\ChatTableContext;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
+use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
 use Hilos\Core\Table\DTO\TableActionErrorSignalData;
@@ -26,6 +27,13 @@ use Throwable;
  */
 final class SettingsPage extends AbstractHilosSettingsPage
 {
+    public const array BROWSER = [
+        BrowserConfigKey::SIGNAL => ChatSignalConstants::SUBSCRIPTION_PAGE_HILOS_SETTINGS,
+        BrowserConfigKey::TABLES => [
+            ChatTableContext::settings => [],
+        ],
+    ];
+
     /**
      * Routes setting add, update, and delete actions to typed handlers.
      *

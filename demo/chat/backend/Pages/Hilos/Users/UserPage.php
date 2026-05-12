@@ -4,12 +4,23 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Pages\Hilos\Users;
 
+use Demo\Chat\Browser\ChatBrowserRef;
+use Demo\Chat\Browser\ChatBrowserSource;
+use Demo\Chat\Browser\ChatBrowserTable;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Core\Router\DTO\ActionFailSignalData;
 use Demo\Chat\Core\Router\DTO\ActionSuccessSignalData;
 use Demo\Chat\Hilos;
 use Demo\Chat\Tables\HilosUser\DTO\HilosUserUpdateActionDTO;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
+use Hilos\Constants\HilosPageRouteParams;
+use Hilos\Constants\HilosSignalConstants;
+use Hilos\Core\Browser\Config\BrowserConfigKey;
+use Hilos\Core\Browser\Config\BrowserGuardKey;
+use Hilos\Core\Browser\Config\BrowserGuardType;
+use Hilos\Core\Browser\Config\BrowserParamKey;
+use Hilos\Core\Browser\Config\BrowserParamType;
+use Hilos\Core\Browser\Config\BrowserSubscriptionError;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
@@ -25,6 +36,31 @@ use Throwable;
  */
 final class UserPage extends AbstractHilosUserPage
 {
+    public const array BROWSER = [
+        BrowserConfigKey::SIGNAL => HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_USER,
+        BrowserConfigKey::PARAMS => [
+            HilosPageRouteParams::HILOS_USER_USER_ID => [
+                BrowserParamKey::TYPE => BrowserParamType::POSITIVE_INT,
+                BrowserParamKey::REQUIRED => true,
+            ],
+        ],
+        BrowserConfigKey::GUARDS => [
+            [
+                BrowserGuardKey::TYPE => BrowserGuardType::DB_EXISTS,
+                BrowserGuardKey::SOURCE => ChatBrowserSource::DB_USERS,
+                BrowserGuardKey::KEY => ChatBrowserRef::HILOS_USER_ID,
+                BrowserGuardKey::ERROR => BrowserSubscriptionError::NOT_FOUND,
+            ],
+        ],
+        BrowserConfigKey::TABLES => [
+            ChatBrowserTable::USER_DETAIL => [
+                BrowserParamKey::PARAMS => [
+                    HilosPageRouteParams::HILOS_USER_USER_ID => ChatBrowserRef::HILOS_USER_ID,
+                ],
+            ],
+        ],
+    ];
+
     /**
      * Routes Hilos user-detail actions to page handlers.
      *

@@ -6,6 +6,7 @@ namespace Hilos\Pages;
 
 use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Agent\Hilos\AbstractHilosGuardianAgent;
 use Hilos\Core\Page\AbstractHilosPage;
 use Hilos\Core\Page\Exception\InvalidPageRouteParamException;
@@ -26,6 +27,10 @@ use Hilos\Pages\DTO\HilosGuardianAgentPageSubscribeParams;
 abstract class AbstractHilosGuardianAgentPage extends AbstractHilosPage
 {
     public const string PAGE = HilosPageConstants::HILOS_GUARDIAN_AGENT;
+
+    public const array BROWSER = [
+        BrowserConfigKey::SIGNAL => HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_GUARDIAN_AGENT,
+    ];
 
     /**
      * Parses route params into {@see HilosGuardianAgentPageSubscribeParams} and delegates to

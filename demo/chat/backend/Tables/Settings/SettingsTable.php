@@ -4,10 +4,13 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Tables\Settings;
 
+use Demo\Chat\Browser\ChatBrowserSource;
 use Demo\Chat\Database\Settings\SettingsCatalog;
 use Demo\Chat\Hilos;
 use Demo\Chat\Tables\Settings\Actions\SettingItemActions;
 use Demo\Chat\Tables\Settings\Actions\SettingsTableActions;
+use Hilos\Core\Browser\Config\BrowserConfigKey;
+use Hilos\Core\Browser\Config\BrowserFieldKey;
 use Hilos\Core\Projection\SourceChange;
 use Hilos\Core\Table\Definition\TableDefinition;
 use Hilos\Core\Table\DTO\TableQueryDTO;
@@ -18,6 +21,7 @@ use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\Core\Table\TableConstants;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\Object\Item\Setting as ObjectSetting;
 use Hilos\Database\Settings\Exception\SettingException;
 use Hilos\Database\Settings\SettingsCatalogConstants;
 use Hilos\Database\View\Item\Setting as ViewSetting;
@@ -27,6 +31,29 @@ use Hilos\Database\View\Item\Setting as ViewSetting;
  */
 final class SettingsTable extends TableDefinition
 {
+    public const array BROWSER = [
+        BrowserConfigKey::SOURCES => [
+            ChatBrowserSource::DB_SETTINGS,
+        ],
+        BrowserConfigKey::ROWS => [
+            [
+                BrowserFieldKey::SOURCE => ChatBrowserSource::DB_SETTINGS,
+                BrowserFieldKey::FIELDS => [
+                    ObjectSetting::id => SettingTableRow::id,
+                    ObjectSetting::key => SettingTableRow::key,
+                    ObjectSetting::type => SettingTableRow::type,
+                    ObjectSetting::value => SettingTableRow::overrideValue,
+                ],
+                BrowserFieldKey::COMPUTED => [
+                    SettingTableRow::value,
+                    SettingTableRow::defaultValue,
+                    SettingTableRow::defaultReferenceKey,
+                    SettingTableRow::valueSource,
+                ],
+            ],
+        ],
+    ];
+
     /**
      * Builds a settings table row mutation from a settings DB source change.
      *

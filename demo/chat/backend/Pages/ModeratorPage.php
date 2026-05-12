@@ -8,6 +8,7 @@ use Demo\Chat\Agents\ModeratorAgent;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Router\DTO\ChatEventSignalDTO;
+use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Router\DTO\EntitiesChangesDTO;
 use Hilos\Core\Page\PageRouteParams;
@@ -22,6 +23,10 @@ use Hilos\Core\Page\PageRouteParams;
 final class ModeratorPage extends AbstractPage
 {
     public const string PAGE = PageConstants::MODERATOR;
+
+    public const array BROWSER = [
+        BrowserConfigKey::SIGNAL => ChatSignalConstants::SUBSCRIPTION_PAGE_MODERATOR,
+    ];
 
     /**
      * Handle page-specific subscription logic.

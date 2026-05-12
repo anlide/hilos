@@ -10,6 +10,7 @@ use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Constants\LogRotationConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\Hilos\AbstractHilosLogsAgent;
@@ -42,6 +43,10 @@ use Hilos\Core\Page\PageRouteParams;
 abstract class AbstractHilosLogsPage extends AbstractHilosPage
 {
     public const string PAGE = HilosPageConstants::HILOS_LOGS;
+
+    public const array BROWSER = [
+        BrowserConfigKey::SIGNAL => HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_LOGS,
+    ];
 
     /** @var array<string, true> WebSocket accept keys currently subscribed to this page */
     private static array $logsOverviewSubscribers = [];

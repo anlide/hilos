@@ -13,6 +13,7 @@ use Demo\Chat\Tables\Bot\DTO\BotCreateActionDTO;
 use Demo\Chat\Tables\Bot\DTO\BotDeleteActionDTO;
 use Demo\Chat\Tables\Bot\DTO\BotUpdateActionDTO;
 use Demo\Chat\Tables\ChatTableContext;
+use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
@@ -30,6 +31,13 @@ use Throwable;
 final class AdminBotsPage extends AbstractPage
 {
     public const string PAGE = PageConstants::ADMIN_BOTS;
+
+    public const array BROWSER = [
+        BrowserConfigKey::SIGNAL => ChatSignalConstants::SUBSCRIPTION_PAGE_ADMIN_BOTS,
+        BrowserConfigKey::TABLES => [
+            ChatTableContext::bots => [],
+        ],
+    ];
 
     /**
      * Routes bot create, update, and delete actions to typed handlers.

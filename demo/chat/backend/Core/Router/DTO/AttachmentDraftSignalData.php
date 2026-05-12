@@ -13,6 +13,12 @@ use Hilos\BaseDTO;
  */
 final class AttachmentDraftSignalData extends BaseDTO
 {
+    public const string draftId = 'draftId';
+    public const string filename = 'filename';
+    public const string mimeType = 'mimeType';
+    public const string size = 'size';
+    public const string uploadedAt = 'uploadedAt';
+
     public function __construct(
         public readonly string $draftId,
         public readonly string $filename,
@@ -72,11 +78,11 @@ final class AttachmentDraftSignalData extends BaseDTO
     public function toArray(): array
     {
         return [
-            'draftId' => $this->draftId,
-            'filename' => $this->filename,
-            'mimeType' => $this->mimeType,
-            'size' => $this->size,
-            'uploadedAt' => $this->uploadedAt,
+            self::draftId => $this->draftId,
+            self::filename => $this->filename,
+            self::mimeType => $this->mimeType,
+            self::size => $this->size,
+            self::uploadedAt => $this->uploadedAt,
         ];
     }
 
@@ -87,11 +93,11 @@ final class AttachmentDraftSignalData extends BaseDTO
     public static function fromArray(array $data): static
     {
         return new static(
-            draftId: (string)($data['draftId'] ?? ''),
-            filename: (string)($data['filename'] ?? ''),
-            mimeType: (string)($data['mimeType'] ?? ''),
-            size: (int)($data['size'] ?? 0),
-            uploadedAt: (int)($data['uploadedAt'] ?? 0),
+            draftId: (string)($data[self::draftId] ?? ''),
+            filename: (string)($data[self::filename] ?? ''),
+            mimeType: (string)($data[self::mimeType] ?? ''),
+            size: (int)($data[self::size] ?? 0),
+            uploadedAt: (int)($data[self::uploadedAt] ?? 0),
         );
     }
 }

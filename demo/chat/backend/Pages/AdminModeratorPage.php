@@ -12,6 +12,7 @@ use Demo\Chat\Tables\ModeratorPiece\DTO\ModeratorPieceCreateActionDTO;
 use Demo\Chat\Tables\ModeratorPiece\DTO\ModeratorPieceDeleteActionDTO;
 use Demo\Chat\Tables\ModeratorPiece\DTO\ModeratorPieceUpdateActionDTO;
 use Demo\Chat\Tables\ChatTableContext;
+use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
@@ -29,6 +30,13 @@ use Throwable;
 final class AdminModeratorPage extends AbstractPage
 {
     public const string PAGE = PageConstants::ADMIN_MODERATOR;
+
+    public const array BROWSER = [
+        BrowserConfigKey::SIGNAL => ChatSignalConstants::SUBSCRIPTION_PAGE_ADMIN_MODERATOR,
+        BrowserConfigKey::TABLES => [
+            ChatTableContext::moderatorPromptPieces => [],
+        ],
+    ];
 
     /**
      * Routes moderator prompt piece actions to typed handlers.

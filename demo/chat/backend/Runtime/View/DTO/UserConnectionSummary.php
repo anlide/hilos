@@ -9,6 +9,9 @@ namespace Demo\Chat\Runtime\View\DTO;
  */
 final class UserConnectionSummary
 {
+    public const string presence = 'presence';
+    public const string onlineSessionCount = 'onlineSessionCount';
+
     public const string PRESENCE_ONLINE = 'online';
     public const string PRESENCE_OFFLINE = 'offline';
 

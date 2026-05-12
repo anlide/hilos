@@ -5,6 +5,9 @@ declare(strict_types=1);
 namespace Demo\Chat\Pages;
 
 use Demo\Chat\Agents\BotAgent;
+use Demo\Chat\Browser\ChatBrowserRef;
+use Demo\Chat\Browser\ChatBrowserSource;
+use Demo\Chat\Browser\ChatBrowserTable;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Router\DTO\ChatEventSignalDTO;
@@ -13,6 +16,12 @@ use Demo\Chat\Database\View\Collection\Bots;
 use Demo\Chat\Frontend\BotFrontendStateProjector;
 use Demo\Chat\Hilos;
 use Demo\Chat\Pages\DTO\BotPageSubscribeParams;
+use Hilos\Core\Browser\Config\BrowserConfigKey;
+use Hilos\Core\Browser\Config\BrowserGuardKey;
+use Hilos\Core\Browser\Config\BrowserGuardType;
+use Hilos\Core\Browser\Config\BrowserParamKey;
+use Hilos\Core\Browser\Config\BrowserParamType;
+use Hilos\Core\Browser\Config\BrowserSubscriptionError;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Page\Exception\InvalidPageRouteParamException;
 use Hilos\Core\Page\Exception\MissingPageRouteParamException;
@@ -34,6 +43,31 @@ use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 final class BotPage extends AbstractPage
 {
     public const string PAGE = PageConstants::BOT;
+
+    public const array BROWSER = [
+        BrowserConfigKey::SIGNAL => ChatSignalConstants::SUBSCRIPTION_PAGE_BOT,
+        BrowserConfigKey::PARAMS => [
+            BotPageSubscribeParams::BOT_ID => [
+                BrowserParamKey::TYPE => BrowserParamType::POSITIVE_INT,
+                BrowserParamKey::REQUIRED => true,
+            ],
+        ],
+        BrowserConfigKey::GUARDS => [
+            [
+                BrowserGuardKey::TYPE => BrowserGuardType::DB_EXISTS,
+                BrowserGuardKey::SOURCE => ChatBrowserSource::DB_BOTS,
+                BrowserGuardKey::KEY => ChatBrowserRef::BOT_ID,
+                BrowserGuardKey::ERROR => BrowserSubscriptionError::NOT_FOUND,
+            ],
+        ],
+        BrowserConfigKey::TABLES => [
+            ChatBrowserTable::BOT_DETAIL => [
+                BrowserParamKey::PARAMS => [
+                    BotPageSubscribeParams::BOT_ID => ChatBrowserRef::BOT_ID,
+                ],
+            ],
+        ],
+    ];
 
     /**
      * Sends the requested bot profile on subscribe.

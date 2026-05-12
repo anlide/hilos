@@ -20,6 +20,9 @@ use Hilos\Socket\WebSocket\DTO\WebSocketPageUpdateSubscriptionSignalDTO;
  */
 abstract class BrowserContext
 {
+    /** Browser-only table configs keyed by browser table name. */
+    public const array TABLES = [];
+
     public const string EVENT_PAGE_SUBSCRIBED = 'page_subscribed';
     public const string EVENT_PAGE_UNSUBSCRIBED = 'page_unsubscribed';
     public const string EVENT_PAGE_SUBSCRIPTION_UPDATED = 'page_subscription_updated';

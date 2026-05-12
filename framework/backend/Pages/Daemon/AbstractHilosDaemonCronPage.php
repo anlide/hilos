@@ -6,6 +6,7 @@ namespace Hilos\Pages\Daemon;
 
 use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Page\AbstractHilosPage;
 use Hilos\Core\Router\SignalData;
 use Hilos\Core\Page\PageRouteParams;
@@ -18,6 +19,10 @@ use Hilos\Core\Page\PageRouteParams;
 abstract class AbstractHilosDaemonCronPage extends AbstractHilosPage
 {
     public const string PAGE = HilosPageConstants::HILOS_DAEMON_CRON;
+
+    public const array BROWSER = [
+        BrowserConfigKey::SIGNAL => HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_DAEMON_CRON,
+    ];
 
     /**
      * Handle page subscription.

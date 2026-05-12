@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace Demo\Chat\Pages;
 
 use Demo\Chat\Agents\ChatAgent;
+use Demo\Chat\Browser\ChatBrowserTable;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Router\DTO\ChatEventSignalDTO;
+use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Router\DTO\EntitiesChangesDTO;
 use Hilos\Core\Page\PageRouteParams;
@@ -22,6 +24,13 @@ use Hilos\Core\Page\PageRouteParams;
 final class UserPage extends AbstractPage
 {
     public const string PAGE = PageConstants::USER;
+
+    public const array BROWSER = [
+        BrowserConfigKey::SIGNAL => ChatSignalConstants::SUBSCRIPTION_PAGE_USER,
+        BrowserConfigKey::TABLES => [
+            ChatBrowserTable::USER_DETAIL => [],
+        ],
+    ];
 
     /**
      * Handle page-specific subscription logic.

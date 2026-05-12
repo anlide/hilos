@@ -4,11 +4,15 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Tables\Bot;
 
+use Demo\Chat\Browser\ChatBrowserSource;
 use Demo\Chat\Database\ChatDbContext;
+use Demo\Chat\Database\Object\Item\Bot as ObjectBot;
 use Demo\Chat\Database\View\Item\Bot as DbBot;
 use Demo\Chat\Hilos;
 use Demo\Chat\Tables\Bot\Actions\BotItemActions;
 use Demo\Chat\Tables\Bot\Actions\BotsTableActions;
+use Hilos\Core\Browser\Config\BrowserConfigKey;
+use Hilos\Core\Browser\Config\BrowserFieldKey;
 use Hilos\Core\Projection\SourceChange;
 use Hilos\Core\Table\Definition\TableDefinition;
 use Hilos\Core\Table\DTO\TableQueryDTO;
@@ -25,6 +29,32 @@ use Hilos\Database\DatabaseException;
  */
 final class BotsTable extends TableDefinition
 {
+    public const array BROWSER = [
+        BrowserConfigKey::SOURCES => [
+            ChatBrowserSource::DB_BOTS,
+        ],
+        BrowserConfigKey::ROWS => [
+            [
+                BrowserFieldKey::SOURCE => ChatBrowserSource::DB_BOTS,
+                BrowserFieldKey::FIELDS => [
+                    ObjectBot::id => BotTableRow::id,
+                    ObjectBot::name => BotTableRow::name,
+                    ObjectBot::description => BotTableRow::description,
+                    ObjectBot::style => BotTableRow::style,
+                    ObjectBot::topics => BotTableRow::topics,
+                    ObjectBot::personality => BotTableRow::personality,
+                    ObjectBot::active => BotTableRow::active,
+                    ObjectBot::reactionDelayMin => BotTableRow::reactionDelayMin,
+                    ObjectBot::reactionDelayMax => BotTableRow::reactionDelayMax,
+                    ObjectBot::reactionChance => BotTableRow::reactionChance,
+                    ObjectBot::topicMatchRequired => BotTableRow::topicMatchRequired,
+                    ObjectBot::cooldownAfterMessage => BotTableRow::cooldownAfterMessage,
+                    ObjectBot::priority => BotTableRow::priority,
+                ],
+            ],
+        ],
+    ];
+
     /**
      * Builds a bot row mutation from a bot source change.
      *

@@ -35,6 +35,9 @@ abstract class AbstractPage
     /** Page name or identifier, overridden by concrete pages. */
     public const string PAGE = '';
 
+    /** Browser data config declared by data-bearing pages. */
+    public const array BROWSER = [];
+
     /** Agent instance that owns this page handler. */
     protected PageAgentInterface $agent;
 
