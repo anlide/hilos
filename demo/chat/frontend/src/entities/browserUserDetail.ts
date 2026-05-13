@@ -14,6 +14,8 @@ export type BrowserUserDetail = {
   onlineSessionCount: number
 }
 
+export type BrowserUserListRow = BrowserUserDetail
+
 const isRecord = (value: unknown): value is Record<string, unknown> => {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
@@ -49,6 +51,25 @@ export const userDetailFromBrowserRow = (
     presence,
     onlineSessionCount,
   }
+}
+
+export const userListRowFromBrowserRow = (
+  row: BrowserPageRow | undefined,
+): BrowserUserListRow | null => {
+  return userDetailFromBrowserRow(row)
+}
+
+export const userListRowsFromBrowserRows = (
+  rowsByKey: Record<string, BrowserPageRow> | undefined,
+): BrowserUserListRow[] => {
+  if (rowsByKey === undefined) {
+    return []
+  }
+
+  return Object.values(rowsByKey)
+    .map(userListRowFromBrowserRow)
+    .filter((row): row is BrowserUserListRow => row !== null)
+    .sort((a, b) => a.id - b.id)
 }
 
 export const connectionUserIdFromBrowserRow = (

@@ -102,11 +102,11 @@ final class ChatAgentPresenceTest extends IntegrationTestCase
     }
 
     /**
-     * Verifies every connection count change emits projected presence stats.
+     * Verifies connection changes keep legacy presence delivery scoped to main.
      *
      * @throws HilosException When test setup or agent signal handling fails
      */
-    public function testEveryConnectionCountChangeEmitsPresenceStats(): void
+    public function testConnectionChangesEmitLegacyPresenceOnlyForMainPage(): void
     {
         RtTruthSourceRegistry::register(ChatRtContext::connections, true, self::TEST_AGENT_ID);
         Hilos::$rt->connections->actions->clear();
@@ -118,9 +118,19 @@ final class ChatAgentPresenceTest extends IntegrationTestCase
 
         Hilos::initSignalRouter(new ChatSignalRouter());
         Hilos::initProjection(new ChatProjectionContext());
+        Hilos::$sr->subscribeToPage(PageConstants::MAIN, new WebSocketPageSubscribeSignalDTO(
+            'presence-main-listener-ak',
+            PageConstants::MAIN,
+            [],
+        ));
         Hilos::$sr->subscribeToPage(PageConstants::ADMIN_USERS, new WebSocketPageSubscribeSignalDTO(
             'presence-stats-listener-ak',
             PageConstants::ADMIN_USERS,
+            [],
+        ));
+        Hilos::$sr->subscribeToPage(PageConstants::HILOS_USERS, new WebSocketPageSubscribeSignalDTO(
+            'hilos-presence-stats-listener-ak',
+            PageConstants::HILOS_USERS,
             [],
         ));
 
@@ -136,7 +146,7 @@ final class ChatAgentPresenceTest extends IntegrationTestCase
                 '',
                 '',
             );
-            $this->assertSinglePresenceEmitStatsCount($user->id, 1);
+            $this->assertSingleMainPresenceEmit($user->id, 'online');
 
             $agent->onSignalHandshake(
                 new WebSocketHandshakeSignalDTO(
@@ -149,13 +159,13 @@ final class ChatAgentPresenceTest extends IntegrationTestCase
                 '',
                 '',
             );
-            $this->assertSinglePresenceEmitStatsCount($user->id, 2);
+            $this->assertSingleMainPresenceEmit($user->id, 'online');
 
             $this->closeConnection($agent, 'presence-ak-2');
-            $this->assertSinglePresenceEmitStatsCount($user->id, 1);
+            $this->assertSingleMainPresenceEmit($user->id, 'online');
 
             $this->closeConnection($agent, 'presence-ak-1');
-            $this->assertSinglePresenceEmitStatsCount($user->id, 0);
+            $this->assertSingleMainPresenceEmit($user->id, 'offline');
             $this->assertNoPresenceEventsInHistory();
         } finally {
             Hilos::$rt->connections->actions->clear();
@@ -325,25 +335,30 @@ final class ChatAgentPresenceTest extends IntegrationTestCase
     }
 
     /**
-     * Asserts that one projected presence signal contains the expected session count.
+     * Asserts that one projected presence signal is delivered to the main page.
      *
-     * @param int $userId User id expected in the presence stats update
-     * @param int $onlineSessionCount Expected online session count
+     * List-page session counts are delivered through browser row updates, so
+     * the legacy presence signal must not include connection stats.
+     *
+     * @param int $userId User id expected in the presence update
+     * @param string $presence Expected projected presence value
      */
-    private function assertSinglePresenceEmitStatsCount(int $userId, int $onlineSessionCount): void
+    private function assertSingleMainPresenceEmit(int $userId, string $presence): void
     {
         $signals = $this->drainProjectedPresenceSignals();
         $this->assertCount(1, $signals);
         $webSocketData = $signals[0]->data;
         $this->assertInstanceOf(WebSocketSignalData::class, $webSocketData);
+        $this->assertSame('presence-main-listener-ak', $webSocketData->targetAcceptKey);
         $payload = $webSocketData->data;
         $this->assertInstanceOf(UserPresenceSignalData::class, $payload);
         $frontend = $payload->toArray()['frontend'];
 
         $this->assertSame(
-            [['userId' => $userId, 'onlineSessionCount' => $onlineSessionCount]],
-            $frontend['updates']['userConnectionStats'],
+            [['userId' => $userId, 'presence' => $presence]],
+            $frontend['updates']['userPresence'],
         );
+        $this->assertArrayNotHasKey('userConnectionStats', $frontend['updates']);
     }
 
     /**

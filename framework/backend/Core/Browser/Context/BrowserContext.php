@@ -28,7 +28,10 @@ use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
 use Hilos\Core\Router\WebSocketSignalData;
+use Hilos\Core\Table\DTO\TableQueryDTO;
+use Hilos\Core\Table\TableConstants;
 use Hilos\Core\Table\Mutation\TableMutationType;
+use Hilos\Database\View\Collection\DbCollection;
 use Hilos\Hilos;
 use Throwable;
 
@@ -693,7 +696,7 @@ abstract class BrowserContext
     ): array {
         $rowKeys = [];
         $seen = [];
-        foreach ($this->rowConfigs($tableConfig) as $rowConfig) {
+        foreach ($this->anchorRowConfigs($tableConfig) as $rowConfig) {
             if (($rowConfig[BrowserFieldKey::MANY] ?? false) === true) {
                 continue;
             }
@@ -703,12 +706,12 @@ abstract class BrowserContext
                 continue;
             }
 
-            $collection = $this->sourceCollection($source);
-            if (!is_iterable($collection)) {
+            $sourceItems = $this->sourceItemsForSnapshot($source);
+            if ($sourceItems === []) {
                 continue;
             }
 
-            foreach ($collection as $sourceItem) {
+            foreach ($sourceItems as $sourceItem) {
                 if (!$this->sourceItemMatchesWhere($rowConfig, $sourceItem, $acceptKey, $pageParams, $tableParams)) {
                     continue;
                 }
@@ -724,6 +727,58 @@ abstract class BrowserContext
         }
 
         return $rowKeys;
+    }
+
+    /**
+     * Returns the row configs that own full-snapshot row keys.
+     *
+     * Only the first non-many source is the row anchor. Joined sources enrich
+     * that row and must not add their own keys to the full browser snapshot.
+     *
+     * @param array<string, mixed> $tableConfig Browser table config
+     * @return list<array<string, mixed>> Anchor row config or an empty list
+     */
+    private function anchorRowConfigs(array $tableConfig): array
+    {
+        foreach ($this->rowConfigs($tableConfig) as $rowConfig) {
+            if (($rowConfig[BrowserFieldKey::MANY] ?? false) === true) {
+                continue;
+            }
+
+            return [$rowConfig];
+        }
+
+        return [];
+    }
+
+    /**
+     * Loads source items used for a full browser snapshot.
+     *
+     * DB-backed anchors must use a fresh full query so lazy key-only
+     * collections do not shrink list pages to already-cached rows.
+     *
+     * @param array<string, mixed> $source Browser source declaration
+     * @return list<mixed> Snapshot source items
+     */
+    private function sourceItemsForSnapshot(array $source): array
+    {
+        $collection = $this->sourceCollection($source);
+        if ($collection instanceof DbCollection && $this->sourceType($source) === BrowserSourceType::DB) {
+            try {
+                $result = $collection->queryPageItems(new TableQueryDTO());
+                $rows = $result[TableConstants::RESULT_KEY_ROWS] ?? [];
+
+                return is_array($rows) ? array_values($rows) : [];
+            } catch (Throwable) {
+                return [];
+            }
+        }
+
+        if (!is_iterable($collection)) {
+            return [];
+        }
+
+        return is_array($collection) ? array_values($collection) : iterator_to_array($collection, false);
     }
 
     /**

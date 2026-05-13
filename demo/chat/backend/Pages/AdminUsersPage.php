@@ -21,7 +21,7 @@ use Hilos\HilosException;
 use Throwable;
 
 /**
- * Admin users table page action handler.
+ * Admin users browser table page action handler.
  *
  * @property ChatAgent $agent Page-owning chat agent
  */

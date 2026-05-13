@@ -17,7 +17,6 @@ use Demo\Chat\Frontend\UserFrontendStateProjector;
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\State\Item\BotAgentStatus as StateBotAgentStatus;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
-use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Router\DTO\EmitDbChangeSignalData;
 use Hilos\Core\Router\DTO\EmitFanoutItem;
@@ -36,8 +35,8 @@ use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 /**
  * Maps legacy EMIT_* daemon signals to chat WebSocket fan-out payloads.
  *
- * Table events resolve through SignalRouter table routes; page-specific
- * presence updates use single-target fan-out for matching subscribers.
+ * Table events resolve through SignalRouter table routes; main-page presence
+ * updates use single-target fan-out for matching subscribers.
  */
 final class ChatSignalMapper implements SignalMapperInterface
 {
@@ -245,20 +244,6 @@ final class ChatSignalMapper implements SignalMapperInterface
             $router,
             PageConstants::MAIN,
             $payload->frontend(),
-            $data->excludeAcceptKey,
-        );
-        $this->appendPresenceUpdatesForPageSubscribers(
-            $items,
-            $router,
-            PageConstants::ADMIN_USERS,
-            $payload->statsFrontend(),
-            $data->excludeAcceptKey,
-        );
-        $this->appendPresenceUpdatesForPageSubscribers(
-            $items,
-            $router,
-            HilosPageConstants::HILOS_USERS,
-            $payload->statsFrontend(),
             $data->excludeAcceptKey,
         );
 

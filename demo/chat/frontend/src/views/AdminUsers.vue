@@ -11,7 +11,7 @@
             :items="users"
             item-key="id"
             :colspan="6"
-            :placeholder-when-empty="!connectionStore.isConnected"
+            :placeholder-when-empty="!connectionStore.isConnected || tableState === null"
             :searchable="true"
             search-placeholder="Search users..."
             :search-fields="['id', 'name']"
@@ -22,10 +22,7 @@
             :show-add-button="false"
             :show-edit-button="true"
             :show-delete-button="false"
-            :pending-changes="pendingChanges"
-            :change-markers="changeMarkers"
             @edit="handleEdit"
-            @update-snapshot="handleApplyChanges"
           >
             <template #header="{ sort, handleSort, isFieldSortable }">
               <th>
@@ -164,44 +161,28 @@
   </div>
 </template>
 
-<!-- TODO: extract useTableCrud composable after conflict resolution feature is implemented -->
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { useWebSocket } from '@hilos/sdk/plugins/websocket'
 import { Table, Modal, LoadingButton } from '@hilos/sdk/components'
-import { getTableDisplayRows, getTablePendingChanges, getTableChangeMarkers } from '@hilos/sdk/composables'
-import { useConnectionStore, useTableStore } from '@hilos/sdk/stores'
-import { useChatStore } from '@/stores'
+import { useBrowserStore, useConnectionStore } from '@hilos/sdk/stores'
 import { sendAction } from '@/services/websocketActions'
 import { TableActionConstants } from '@hilos/sdk/constants/tableActions'
-import type { ChatUserTableRow } from '@hilos/sdk/types/chatUserTableRow'
-import type { Presence } from '@/types/domain/Presence'
+import {
+  type BrowserUserListRow,
+  userListRowsFromBrowserRows,
+} from '@/entities/browserUserDetail'
 
-type UserEntity = ChatUserTableRow & { presence?: Presence }
+type UserEntity = BrowserUserListRow
 
-const chatStore = useChatStore()
 const connectionStore = useConnectionStore()
-const tableStore = useTableStore()
+const browserStore = useBrowserStore()
 const websocket = useWebSocket()
 
+const browserPageKey = 'subscription_page_admin_users'
 const tableKey = 'adminUsers'
-const tableState = computed(() => tableStore.tableData[tableKey])
-const displayRows = computed(() => getTableDisplayRows<UserEntity>(tableStore.tableData[tableKey]))
-const pendingChanges = computed(() => getTablePendingChanges(tableStore.tableData[tableKey]))
-const changeMarkers = computed(() => getTableChangeMarkers(tableStore.tableData[tableKey]))
-
-const users = computed(() => {
-  return displayRows.value.map((row) => {
-    const presence = chatStore.userPresenceById[row.id]?.presence ?? row.presence
-    const onlineSessionCount =
-      chatStore.userConnectionStatsById[row.id]?.onlineSessionCount ?? row.onlineSessionCount
-    return { ...row, presence, onlineSessionCount }
-  })
-})
-
-const handleApplyChanges = () => {
-  tableStore.applyPendingMutations(tableKey)
-}
+const tableState = computed(() => browserStore.pages[browserPageKey]?.tables[tableKey] ?? null)
+const users = computed(() => userListRowsFromBrowserRows(tableState.value?.rowsByKey))
 
 const showModal = ref(false)
 const selectedUser = ref<UserEntity | null>(null)

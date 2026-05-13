@@ -55,7 +55,6 @@ final class UserDetailBrowserTable
                     Connection::userId => ChatBrowserRef::TABLE_HILOS_USER_ID,
                 ],
                 BrowserFieldKey::FIELDS => [
-                    Connection::acceptKey,
                     Connection::userId,
                 ],
                 BrowserFieldKey::COMPUTED => [

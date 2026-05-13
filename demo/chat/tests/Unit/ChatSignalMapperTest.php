@@ -12,7 +12,6 @@ use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Runtime\State\Item\BotAgentStatus as StateBotAgentStatus;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Demo\Chat\Tables\ChatTableContext;
-use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Projection\SourceChange;
@@ -112,13 +111,18 @@ final class ChatSignalMapperTest extends TestCase
     }
 
     /**
-     * Verifies user presence emits are fanned out to page-scoped audiences.
+     * Verifies user presence emits are fanned out only to main-page audiences.
      */
-    public function testMapChatUserPresenceUpdatedBuildsPageScopedFanout(): void
+    public function testMapChatUserPresenceUpdatedBuildsMainPageFanoutOnly(): void
     {
         $router = $this->makeRouter();
         $router->subscribeToPage(PageConstants::MAIN, new WebSocketPageSubscribeSignalDTO(
             'main-ak',
+            PageConstants::MAIN,
+            [],
+        ));
+        $router->subscribeToPage(PageConstants::MAIN, new WebSocketPageSubscribeSignalDTO(
+            'excluded-ak',
             PageConstants::MAIN,
             [],
         ));
@@ -127,14 +131,9 @@ final class ChatSignalMapperTest extends TestCase
             PageConstants::ADMIN_USERS,
             [],
         ));
-        $router->subscribeToPage(PageConstants::ADMIN_USERS, new WebSocketPageSubscribeSignalDTO(
-            'excluded-ak',
-            PageConstants::ADMIN_USERS,
-            [],
-        ));
-        $router->subscribeToPage(HilosPageConstants::HILOS_USERS, new WebSocketPageSubscribeSignalDTO(
+        $router->subscribeToPage(PageConstants::HILOS_USERS, new WebSocketPageSubscribeSignalDTO(
             'hilos-users-ak',
-            HilosPageConstants::HILOS_USERS,
+            PageConstants::HILOS_USERS,
             [],
         ));
 
@@ -161,9 +160,9 @@ final class ChatSignalMapperTest extends TestCase
 
         $items = (new ChatSignalMapper($router, $this->makeTableContext()))->mapRtEmit($signal);
 
-        $this->assertCount(3, $items);
+        $this->assertCount(1, $items);
         $this->assertSame(
-            ['main-ak', 'admin-ak', 'hilos-users-ak'],
+            ['main-ak'],
             array_map(static fn ($item) => $item->targetAcceptKey, $items),
         );
         foreach ($items as $item) {
@@ -174,14 +173,6 @@ final class ChatSignalMapperTest extends TestCase
         $this->assertArrayNotHasKey(
             'userConnectionStats',
             $items[0]->innerPayload->toArray()['frontend']['updates'],
-        );
-        $this->assertSame(
-            [['userId' => 7, 'onlineSessionCount' => 2]],
-            $items[1]->innerPayload->toArray()['frontend']['updates']['userConnectionStats'],
-        );
-        $this->assertSame(
-            [['userId' => 7, 'onlineSessionCount' => 2]],
-            $items[2]->innerPayload->toArray()['frontend']['updates']['userConnectionStats'],
         );
     }
 

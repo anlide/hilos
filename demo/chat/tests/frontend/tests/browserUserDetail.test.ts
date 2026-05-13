@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { userDetailFromBrowserRow, connectionUserIdFromBrowserRow } from '@/entities/browserUserDetail'
+import {
+  userDetailFromBrowserRow,
+  userListRowsFromBrowserRows,
+  connectionUserIdFromBrowserRow,
+} from '@/entities/browserUserDetail'
 
 describe('browser user detail rows', () => {
   it('parses user detail rows with runtime connection stats', () => {
@@ -31,6 +35,40 @@ describe('browser user detail rows', () => {
       presence: 'offline',
       onlineSessionCount: 0,
     })
+  })
+
+  it('parses sorted user list rows from browser table state', () => {
+    expect(userListRowsFromBrowserRows({
+      '9': {
+        rowKey: 9,
+        sources: {
+          users: { id: 9, name: 'Grace', lastActivity: null },
+          connections: { presence: 'offline', onlineSessionCount: 0 },
+        },
+      },
+      '7': {
+        rowKey: 7,
+        sources: {
+          users: { id: 7, name: 'Ada', lastActivity: '2026-05-13 10:15:00' },
+          connections: { presence: 'online', onlineSessionCount: 2 },
+        },
+      },
+    })).toEqual([
+      {
+        id: 7,
+        name: 'Ada',
+        lastActivity: '2026-05-13 10:15:00',
+        presence: 'online',
+        onlineSessionCount: 2,
+      },
+      {
+        id: 9,
+        name: 'Grace',
+        lastActivity: null,
+        presence: 'offline',
+        onlineSessionCount: 0,
+      },
+    ])
   })
 
   it('extracts the current user id from self-connection rows', () => {

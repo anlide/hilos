@@ -14,7 +14,7 @@
     </p>
     <template v-else>
       <Table
-        :items="rowsWithPresence"
+        :items="users"
         item-key="id"
         :colspan="6"
         :searchable="true"
@@ -22,9 +22,6 @@
         :search-fields="['id', 'name']"
         :sortable="true"
         :sortable-fields="['id', 'name', 'lastActivity']"
-        :pending-changes="pendingChanges"
-        :change-markers="changeMarkers"
-        @update-snapshot="handleApplyChanges"
       >
         <template #header="{ sort, handleSort, isFieldSortable }">
           <th scope="col">
@@ -102,32 +99,15 @@ import { computed } from 'vue'
 import { useHead } from '@unhead/vue'
 import DaemonSectionShell from '@hilos/sdk/views/Hilos/Daemon/DaemonSectionShell.vue'
 import { Table } from '@hilos/sdk/components'
-import { getTableDisplayRows, getTablePendingChanges, getTableChangeMarkers } from '@hilos/sdk/composables'
-import { useConnectionStore, useTableStore } from '@hilos/sdk/stores'
-import type { ChatUserTableRow } from '@hilos/sdk/types/chatUserTableRow'
-import { useChatStore } from '@/stores'
+import { useBrowserStore, useConnectionStore } from '@hilos/sdk/stores'
+import { userListRowsFromBrowserRows } from '@/entities/browserUserDetail'
 
 const connectionStore = useConnectionStore()
-const tableStore = useTableStore()
-const chatStore = useChatStore()
+const browserStore = useBrowserStore()
+const browserPageKey = 'subscription_page_hilos_users'
 const tableKey = 'hilosUsers'
-const tableState = computed(() => tableStore.tableData[tableKey])
-const displayRows = computed(() => getTableDisplayRows<ChatUserTableRow>(tableState.value))
-const pendingChanges = computed(() => getTablePendingChanges(tableState.value))
-const changeMarkers = computed(() => getTableChangeMarkers(tableState.value))
-
-const rowsWithPresence = computed(() =>
-  displayRows.value.map((row) => {
-    const presence = chatStore.userPresenceById[row.id]?.presence ?? row.presence
-    const onlineSessionCount =
-      chatStore.userConnectionStatsById[row.id]?.onlineSessionCount ?? row.onlineSessionCount
-    return { ...row, presence, onlineSessionCount }
-  }),
-)
-
-const handleApplyChanges = () => {
-  tableStore.applyPendingMutations(tableKey)
-}
+const tableState = computed(() => browserStore.pages[browserPageKey]?.tables[tableKey] ?? null)
+const users = computed(() => userListRowsFromBrowserRows(tableState.value?.rowsByKey))
 
 const formatDate = (dateStr: string | null | undefined): string => {
   if (!dateStr) return 'Never'
