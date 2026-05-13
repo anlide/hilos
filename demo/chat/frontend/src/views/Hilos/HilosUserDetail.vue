@@ -7,8 +7,8 @@
       Invalid user ID.
       <router-link to="/hilos/users">Back to users</router-link>
     </p>
-    <p v-else-if="subscriptionState === 'loading'" class="text-body-secondary mb-3">Loading…</p>
-    <div v-else-if="subscriptionState === 'error' && pageError" class="alert alert-warning" role="alert">
+    <p v-else-if="isSubscriptionLoading" class="text-body-secondary mb-3">Loading…</p>
+    <div v-else-if="pageError" class="alert alert-warning" role="alert">
       <h5 class="alert-heading">
         <i class="bi bi-exclamation-triangle-fill" aria-hidden="true"></i>
         {{ pageError.httpCode === 404 ? 'User Not Found' : 'Error' }}
@@ -107,25 +107,28 @@ import { useHead } from '@unhead/vue'
 import DaemonSectionShell from '@hilos/sdk/views/Hilos/Daemon/DaemonSectionShell.vue'
 import { LoadingButton, Modal } from '@hilos/sdk/components'
 import { TableActionConstants } from '@hilos/sdk/constants/tableActions'
-import { useConnectionStore } from '@hilos/sdk/stores'
+import { useBrowserStore, useConnectionStore } from '@hilos/sdk/stores'
 import { HilosPageRouteParams } from '@hilos/sdk/constants/hilosPageRouteParams'
 import { useWebSocket } from '@hilos/sdk/plugins/websocket'
 import { subscriptionPageError, type PageSubscriptionError } from '@hilos/sdk/signals'
 import { sendAction } from '@/services/websocketActions'
-import { useChatStore } from '@/stores'
-import type { UserViewModel } from '@/stores'
 import { useSignalRouter } from '@/plugins/websocket'
 import {
   hilosUserUpdateSuccess,
   hilosUserUpdateFail,
-  subscriptionPageHilosUser,
 } from '@/signals'
+import {
+  BROWSER_TABLE_USER_DETAIL,
+  type BrowserUserDetail,
+  userDetailFromBrowserRow,
+} from '@/entities/browserUserDetail'
 
 const route = useRoute()
 const connectionStore = useConnectionStore()
-const chatStore = useChatStore()
+const browserStore = useBrowserStore()
 const websocket = useWebSocket()
 const signalRouter = useSignalRouter()
+const browserPageKey = 'subscription_page_hilos_user'
 
 const userIdParam = computed(() => {
   const raw = route.params[HilosPageRouteParams.HILOS_USER_USER_ID]
@@ -138,15 +141,19 @@ const parsedUserId = computed((): number | null => {
   return Number.isFinite(n) && n > 0 ? n : null
 })
 
-const currentUser = computed((): UserViewModel | null => {
+const tableState = computed(() => {
+  return browserStore.pages[browserPageKey]?.tables[BROWSER_TABLE_USER_DETAIL] ?? null
+})
+
+const currentUser = computed((): BrowserUserDetail | null => {
   const id = parsedUserId.value
   if (id === null) return null
-  return chatStore.userViewModels.find((u) => u.id === id) ?? null
+  return userDetailFromBrowserRow(tableState.value?.rowsByKey[String(id)])
 })
 
 // Local subscription state for this page
-const subscriptionState = ref<'loading' | 'success' | 'error'>('loading')
 const pageError = ref<PageSubscriptionError | null>(null)
+const loadedUserId = ref<number | null>(null)
 
 const showModal = ref(false)
 const form = ref({ name: '' })
@@ -159,6 +166,14 @@ const isFormDirty = computed(() => form.value.name.trim() !== baselineName.value
 const isFormValid = computed(() => {
   const name = form.value.name.trim()
   return name.length >= 2 && name.length <= 64
+})
+
+const isSubscriptionLoading = computed(() => {
+  const id = parsedUserId.value
+  return id !== null
+    && pageError.value === null
+    && currentUser.value === null
+    && loadedUserId.value !== id
 })
 
 const pageTitle = computed(() => {
@@ -226,37 +241,34 @@ const onUpdateFail = ({ reason }: { reason: string }) => {
   updateErrorMessage.value = reason
 }
 
-const onSubscriptionSuccess = ({ userId }: { userId: number }) => {
-  if (userId === parsedUserId.value) {
-    subscriptionState.value = 'success'
-    pageError.value = null
-  }
-}
-
 const onSubscriptionError = (error: PageSubscriptionError) => {
   if (error.page === 'hilos_user') {
-    // Extract userId from message like "User #123 not found"
-    const match = error.message?.match(/User #(\d+)/)
+    const match = error.message?.match(/#(\d+)/)
     const errorUserId = match?.[1] ? parseInt(match[1], 10) : null
-    if (errorUserId === parsedUserId.value) {
-      subscriptionState.value = 'error'
-      pageError.value = error
+    if (errorUserId !== null && errorUserId !== parsedUserId.value) {
+      return
     }
+    pageError.value = error
   }
 }
 
 onMounted(() => {
   signalRouter.on(hilosUserUpdateSuccess, onUpdateSuccess)
   signalRouter.on(hilosUserUpdateFail, onUpdateFail)
-  signalRouter.on(subscriptionPageHilosUser, onSubscriptionSuccess)
   signalRouter.on(subscriptionPageError, onSubscriptionError)
 })
 
 // Reset subscription state when navigating to a different user
 watch(parsedUserId, () => {
-  subscriptionState.value = 'loading'
+  loadedUserId.value = null
   pageError.value = null
 })
+
+watch(currentUser, (user) => {
+  if (user !== null) {
+    loadedUserId.value = user.id
+  }
+}, { immediate: true })
 
 const saveUser = () => {
   const id = parsedUserId.value

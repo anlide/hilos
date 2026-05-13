@@ -15,7 +15,7 @@ use Hilos\Pages\Users\DTO\HilosUserPageSubscribeParams;
 /**
  * Base class for the framework Hilos single-user page.
  *
- * The default subscription path emits the projection snapshot, parses the
+ * The default subscription path emits the configured snapshot, parses the
  * `userId` route param, and then calls {@see self::onHilosUserSubscribe()}.
  */
 abstract class AbstractHilosUserPage extends AbstractHilosPage
@@ -23,14 +23,14 @@ abstract class AbstractHilosUserPage extends AbstractHilosPage
     public const string PAGE = HilosPageConstants::HILOS_USER;
 
     /**
-     * Emits the projection snapshot, parses route params, and runs the typed hook.
+     * Emits the configured snapshot, parses route params, and runs the typed hook.
      *
      * Final: subclasses customize subscribe behavior through
      * {@see self::onHilosUserSubscribe()}, not this method.
      *
      * @param string $acceptKey WebSocket accept key
      * @param PageRouteParams $params Route params for the page subscription
-     * @throws PageSubscriptionException When the page projection rejects the subscription
+     * @throws PageSubscriptionException When the page subscription snapshot rejects the subscription
      * @throws MissingPageRouteParamException When `userId` is absent
      * @throws InvalidPageRouteParamException When `userId` is non-numeric or `<= 0`
      */

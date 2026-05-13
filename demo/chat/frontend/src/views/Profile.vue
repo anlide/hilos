@@ -97,15 +97,20 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
-import { useConnectionStore } from '@hilos/sdk/stores'
+import { useBrowserStore, useConnectionStore } from '@hilos/sdk/stores'
 import { useChatStore } from '@/stores'
 import { useWebSocket } from '@hilos/sdk/plugins/websocket'
 import { useSignalRouter } from '@/plugins/websocket'
 import { sendAction } from '@/services/websocketActions'
 import { renameSuccess, renameFail } from '@/signals'
 import { Modal, ConflictHeader, ConflictActions, LoadingButton } from '@hilos/sdk/components'
+import {
+  BROWSER_TABLE_SELF_CONNECTION,
+  connectionUserIdFromBrowserRow,
+} from '@/entities/browserUserDetail'
 
 const connectionStore = useConnectionStore()
+const browserStore = useBrowserStore()
 const chatStore = useChatStore()
 const websocket = useWebSocket()
 const signalRouter = useSignalRouter()
@@ -116,9 +121,17 @@ const baselineUsername = ref('')
 const remoteUsername = ref('')
 const saveLoading = ref(false)
 const renameErrorMessage = ref<string | null>(null)
+const browserPageKey = 'subscription_page_profile'
+
+const profileConnectionRow = computed(() => {
+  const rows = browserStore.pages[browserPageKey]?.tables[BROWSER_TABLE_SELF_CONNECTION]?.rowsByKey
+  return rows ? Object.values(rows)[0] : undefined
+})
+
+const profileUserId = computed(() => connectionUserIdFromBrowserRow(profileConnectionRow.value))
 
 const displayUsername = computed(() => {
-  return chatStore.currentUsername || 'User'
+  return chatStore.currentUsername || (profileUserId.value !== null ? `User #${profileUserId.value}` : 'User')
 })
 
 const isValidUsername = computed(() => {

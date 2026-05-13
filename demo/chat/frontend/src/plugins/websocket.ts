@@ -30,7 +30,6 @@ import {
   newEvent,
   userPresenceUpdate,
   subscriptionPageHilosLogs,
-  subscriptionPageHilosUser,
 } from '@/signals'
 
 /**
@@ -154,10 +153,6 @@ function buildSignalRouter() {
   signalRouter.on(subscriptionPageHilosLogs, (snapshot) => {
     useHilosLogsStore().setHilosLogsOverview(snapshot)
   })
-
-  // User frontend state is applied by ChatFrontendStateReceiver before this handler runs.
-  // Page-level subscription handling moved to individual page components
-  signalRouter.on(subscriptionPageHilosUser, () => {})
 
   signalRouter.on(botJoined, ({ botId }) => {
     useChatStore().setBotPresence(botId, 'online')

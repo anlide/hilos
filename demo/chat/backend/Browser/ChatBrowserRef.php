@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Demo\Chat\Browser;
 
 use Demo\Chat\Pages\DTO\BotPageSubscribeParams;
+use Demo\Chat\Pages\DTO\UserPageSubscribeParams;
 use Hilos\Constants\HilosPageRouteParams;
 use Hilos\Core\Browser\Config\BrowserRefKey;
 use Hilos\Core\Browser\Config\BrowserRefType;
@@ -22,6 +23,11 @@ final class ChatBrowserRef
     public const array BOT_ID = [
         BrowserRefKey::TYPE => BrowserRefType::PAGE_PARAM,
         BrowserRefKey::KEY => BotPageSubscribeParams::BOT_ID,
+    ];
+
+    public const array USER_ID = [
+        BrowserRefKey::TYPE => BrowserRefType::PAGE_PARAM,
+        BrowserRefKey::KEY => UserPageSubscribeParams::USER_ID,
     ];
 
     public const array HILOS_USER_ID = [

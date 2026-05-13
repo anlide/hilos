@@ -12,7 +12,6 @@ use Demo\Chat\Projection\Page\AdminBotsPageProjection;
 use Demo\Chat\Projection\Page\AdminModeratorPageProjection;
 use Demo\Chat\Projection\Page\AdminUsersPageProjection;
 use Demo\Chat\Projection\Page\HilosSettingsPageProjection;
-use Demo\Chat\Projection\Page\HilosUserPageProjection;
 use Demo\Chat\Projection\Page\HilosUsersPageProjection;
 use Demo\Chat\Projection\Page\MainPageProjection;
 use Demo\Chat\Projection\Util\ChatEventBroadcastBuilder;
@@ -20,7 +19,6 @@ use Demo\Chat\Runtime\State\Item\BotAgentStatus as StateBotAgentStatus;
 use Demo\Chat\Runtime\State\Item\GuardianAgentStatus as StateGuardianAgentStatus;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Hilos\Constants\HilosSignalConstants;
-use Hilos\Core\Projection\PageProjection;
 use Hilos\Core\Projection\ProjectionContext;
 use Hilos\Core\Projection\ProjectionDelivery;
 use Hilos\Core\Projection\SourceChange;
@@ -48,7 +46,6 @@ final class ChatProjectionContext extends ProjectionContext
         $this->register(new AdminUsersPageProjection());
         $this->register(new AdminModeratorPageProjection());
         $this->register(new HilosUsersPageProjection());
-        $this->register(new HilosUserPageProjection());
         $this->register(new HilosSettingsPageProjection());
     }
 

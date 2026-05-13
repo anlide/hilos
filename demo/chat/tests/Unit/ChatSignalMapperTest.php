@@ -13,7 +13,6 @@ use Demo\Chat\Runtime\State\Item\BotAgentStatus as StateBotAgentStatus;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Demo\Chat\Tables\ChatTableContext;
 use Hilos\Constants\HilosPageConstants;
-use Hilos\Constants\HilosPageRouteParams;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Projection\SourceChange;
@@ -138,16 +137,6 @@ final class ChatSignalMapperTest extends TestCase
             HilosPageConstants::HILOS_USERS,
             [],
         ));
-        $router->subscribeToPage(HilosPageConstants::HILOS_USER, new WebSocketPageSubscribeSignalDTO(
-            'hilos-user-7-ak',
-            HilosPageConstants::HILOS_USER,
-            [HilosPageRouteParams::HILOS_USER_USER_ID => '7'],
-        ));
-        $router->subscribeToPage(HilosPageConstants::HILOS_USER, new WebSocketPageSubscribeSignalDTO(
-            'hilos-user-8-ak',
-            HilosPageConstants::HILOS_USER,
-            [HilosPageRouteParams::HILOS_USER_USER_ID => '8'],
-        ));
 
         $signal = new SignalDTO(
             new SignalSource(SignalSource::AGENT, 'chat', null),
@@ -172,9 +161,9 @@ final class ChatSignalMapperTest extends TestCase
 
         $items = (new ChatSignalMapper($router, $this->makeTableContext()))->mapRtEmit($signal);
 
-        $this->assertCount(4, $items);
+        $this->assertCount(3, $items);
         $this->assertSame(
-            ['main-ak', 'admin-ak', 'hilos-users-ak', 'hilos-user-7-ak'],
+            ['main-ak', 'admin-ak', 'hilos-users-ak'],
             array_map(static fn ($item) => $item->targetAcceptKey, $items),
         );
         foreach ($items as $item) {
@@ -192,7 +181,7 @@ final class ChatSignalMapperTest extends TestCase
         );
         $this->assertSame(
             [['userId' => 7, 'onlineSessionCount' => 2]],
-            $items[3]->innerPayload->toArray()['frontend']['updates']['userConnectionStats'],
+            $items[2]->innerPayload->toArray()['frontend']['updates']['userConnectionStats'],
         );
     }
 

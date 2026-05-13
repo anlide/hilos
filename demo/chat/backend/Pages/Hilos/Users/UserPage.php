@@ -31,7 +31,7 @@ use Throwable;
 /**
  * Handles the chat demo implementation of the Hilos user-detail page.
  *
- * Subscription snapshots are projection-driven. The update action renames the
+ * Subscription snapshots are browser-config driven. The update action renames the
  * selected user through table actions and sends modal success/fail acks.
  */
 final class UserPage extends AbstractHilosUserPage

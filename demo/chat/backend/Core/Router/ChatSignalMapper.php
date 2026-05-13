@@ -18,7 +18,6 @@ use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\State\Item\BotAgentStatus as StateBotAgentStatus;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Hilos\Constants\HilosPageConstants;
-use Hilos\Constants\HilosPageRouteParams;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Router\DTO\EmitDbChangeSignalData;
 use Hilos\Core\Router\DTO\EmitFanoutItem;
@@ -261,15 +260,6 @@ final class ChatSignalMapper implements SignalMapperInterface
             HilosPageConstants::HILOS_USERS,
             $payload->statsFrontend(),
             $data->excludeAcceptKey,
-        );
-        $this->appendPresenceUpdatesForPageSubscribers(
-            $items,
-            $router,
-            HilosPageConstants::HILOS_USER,
-            $payload->statsFrontend(),
-            $data->excludeAcceptKey,
-            HilosPageRouteParams::HILOS_USER_USER_ID,
-            (string) $payload->userId,
         );
 
         return $items;

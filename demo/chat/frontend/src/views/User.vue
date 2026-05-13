@@ -13,11 +13,31 @@
               <span class="placeholder col-5" style="height: 0.875rem"></span>
             </div>
           </template>
+          <template v-else-if="parsedUserId === null">
+            <p class="text-muted mb-0">Invalid user ID.</p>
+          </template>
+          <template v-else-if="pageError">
+            <div class="alert alert-warning mb-0" role="alert">
+              {{ pageError.message }}
+            </div>
+          </template>
+          <template v-else-if="isLoading">
+            <p class="text-muted mb-0">Loading user...</p>
+          </template>
+          <template v-else-if="!user">
+            <p class="text-muted mb-0">User not found.</p>
+          </template>
           <template v-else>
             <p class="text-muted">User profile</p>
-            <p>User ID: {{ userId }}</p>
-            <p v-if="userName">Name: {{ userName }}</p>
-            <p v-else class="text-muted">Name not loaded yet</p>
+            <p>User ID: {{ user.id }}</p>
+            <p>Name: {{ user.name }}</p>
+            <p>Last activity: {{ formatDate(user.lastActivity) }}</p>
+            <p>
+              Presence:
+              <span :class="user.presence === 'online' ? 'text-success' : 'text-secondary'">
+                {{ user.presence }}
+              </span>
+            </p>
           </template>
         </div>
       </div>
@@ -26,22 +46,82 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { useConnectionStore } from '@hilos/sdk/stores'
-import { useChatStore } from '@/stores'
+import { useBrowserStore, useConnectionStore } from '@hilos/sdk/stores'
+import { subscriptionPageError, type PageSubscriptionError } from '@hilos/sdk/signals'
+import { useSignalRouter } from '@/plugins/websocket'
+import {
+  BROWSER_TABLE_USER_DETAIL,
+  userDetailFromBrowserRow,
+} from '@/entities/browserUserDetail'
 
 const route = useRoute()
 const connectionStore = useConnectionStore()
-const chatStore = useChatStore()
+const browserStore = useBrowserStore()
+const signalRouter = useSignalRouter()
+const browserPageKey = 'subscription_page_user'
 
-const userId = computed(() => Number(route.params.id))
-const userName = computed(() => {
-  if (!Number.isFinite(userId.value)) {
-    return ''
-  }
-
-  const user = chatStore.users.find(item => item.id === userId.value)
-  return user?.name ?? ''
+const parsedUserId = computed((): number | null => {
+  const id = route.params.id
+  const parsed = typeof id === 'string' ? parseInt(id, 10) : Number(id)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null
 })
+
+const tableState = computed(() => {
+  return browserStore.pages[browserPageKey]?.tables[BROWSER_TABLE_USER_DETAIL] ?? null
+})
+
+const user = computed(() => {
+  const id = parsedUserId.value
+  if (id === null) return null
+  return userDetailFromBrowserRow(tableState.value?.rowsByKey[String(id)])
+})
+
+const pageError = ref<PageSubscriptionError | null>(null)
+const loadedUserId = ref<number | null>(null)
+
+const isLoading = computed(() => {
+  const id = parsedUserId.value
+  return id !== null
+    && pageError.value === null
+    && user.value === null
+    && loadedUserId.value !== id
+})
+
+const onSubscriptionError = (error: PageSubscriptionError) => {
+  if (error.page !== 'user') {
+    return
+  }
+  const match = error.message?.match(/#(\d+)/)
+  const errorUserId = match?.[1] ? parseInt(match[1], 10) : null
+  if (errorUserId !== null && errorUserId !== parsedUserId.value) {
+    return
+  }
+  pageError.value = error
+}
+
+watch(parsedUserId, () => {
+  loadedUserId.value = null
+  pageError.value = null
+})
+
+watch(user, (current) => {
+  if (current !== null) {
+    loadedUserId.value = current.id
+  }
+}, { immediate: true })
+
+onMounted(() => {
+  signalRouter.on(subscriptionPageError, onSubscriptionError)
+})
+
+const formatDate = (dateStr: string | null | undefined): string => {
+  if (!dateStr) return 'Never'
+  try {
+    return new Date(dateStr).toLocaleString()
+  } catch {
+    return dateStr
+  }
+}
 </script>

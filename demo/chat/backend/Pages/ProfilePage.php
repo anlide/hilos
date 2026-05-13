@@ -5,13 +5,14 @@ declare(strict_types=1);
 namespace Demo\Chat\Pages;
 
 use Demo\Chat\Agents\ChatAgent;
+use Demo\Chat\Browser\ChatBrowserRef;
+use Demo\Chat\Browser\ChatBrowserTable;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\ConnectionRuntimeConstants;
 use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Page\DTO\RenameActionDTO;
 use Demo\Chat\Core\Router\DTO\ActionFailSignalData;
 use Demo\Chat\Core\Router\DTO\ActionSuccessSignalData;
-use Demo\Chat\Core\Router\DTO\ChatEventSignalDTO;
 use Demo\Chat\Core\Router\DTO\RenameModerationResultSignalData;
 use Demo\Chat\Hilos;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
@@ -19,22 +20,20 @@ use Hilos\Core\Agent\Exception\AgentException;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
+use Hilos\Core\Browser\Config\BrowserParamKey;
+use Hilos\Core\Browser\Config\BrowserRuntimeParam;
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Page\AbstractPage;
-use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
-use Hilos\Core\Router\DTO\EntitiesChangesDTO;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
 use Hilos\HilosException;
 use Throwable;
 
 /**
- * ProfilePage - User profile page handler.
- *
- * Handles subscription, unsubscription, and actions for the user profile page.
+ * Handles profile browser subscription and user-initiated rename actions.
  *
  * @property ChatAgent $agent
  */
@@ -44,32 +43,24 @@ final class ProfilePage extends AbstractPage
 
     public const array BROWSER = [
         BrowserConfigKey::SIGNAL => ChatSignalConstants::SUBSCRIPTION_PAGE_PROFILE,
+        BrowserConfigKey::TABLES => [
+            ChatBrowserTable::SELF_CONNECTION => [
+                BrowserParamKey::PARAMS => [
+                    BrowserRuntimeParam::ACCEPT_KEY => ChatBrowserRef::ACCEPT_KEY,
+                ],
+            ],
+        ],
     ];
 
     /**
-     * Handle page-specific subscription logic.
+     * Routes profile actions to typed handlers.
      *
-     * @param string $acceptKey Accept key
-     * @param PageRouteParams $params Route params from page subscription (unused for profile page)
-     */
-    public function onSubscribe(string $acceptKey, PageRouteParams $params): void
-    {
-        $this->sendToUser(
-            ChatSignalConstants::SUBSCRIPTION_PAGE_PROFILE,
-            $acceptKey,
-            new ChatEventSignalDTO(new EntitiesChangesDTO()),
-        );
-    }
-
-    /**
-     * Handle page-specific action logic.
-     *
-     * @param string $acceptKey Accept key
-     * @param string $action Action name
-     * @param ActionPayloadDTO $dto Action payload DTO
+     * @param string $acceptKey WebSocket accept key for the client
+     * @param string $action Action name from the WebSocket envelope
+     * @param ActionPayloadDTO $dto Parsed action payload
      * @throws AgentUnknownActionException When action is not supported by this page
      * @throws InvalidActionPayloadException When action payload does not match the action name
-     * @throws HilosException On error during action handling
+     * @throws HilosException When rename moderation setup fails
      */
     public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): void
     {
