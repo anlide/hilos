@@ -11,7 +11,7 @@
             :items="displayRows"
             item-key="id"
             :colspan="4"
-            :placeholder-when-empty="!connectionStore.isConnected"
+            :placeholder-when-empty="!connectionStore.isConnected || tableState === null"
             :searchable="true"
             search-placeholder="Search prompt pieces..."
             :search-fields="['id', 'section', 'promptPiece']"
@@ -22,12 +22,9 @@
             :show-add-button="true"
             :show-edit-button="true"
             :show-delete-button="true"
-            :pending-changes="pendingChanges"
-            :change-markers="changeMarkers"
             @add="handleAdd"
             @edit="handleEdit"
             @delete="handleDelete"
-            @update-snapshot="handleApplyChanges"
           >
             <template #header="{ sort, handleSort, isFieldSortable }">
               <th>
@@ -194,31 +191,29 @@
   </div>
 </template>
 
-<!-- TODO: extract useTableCrud composable after conflict resolution feature is implemented -->
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { useWebSocket } from '@hilos/sdk/plugins/websocket'
 import { Table, Modal, LoadingButton } from '@hilos/sdk/components'
-import { getTableDisplayRows, getTablePendingChanges, getTableChangeMarkers } from '@hilos/sdk/composables'
-import { useTableDeleteMutationModal } from '@/composables/useTableDeleteMutationModal'
-import { useConnectionStore, useTableStore } from '@hilos/sdk/stores'
+import { useConnectionStore, useBrowserStore } from '@hilos/sdk/stores'
+import { useBrowserTableDeleteMutationModal } from '@/composables/useBrowserTableDeleteMutationModal'
 import { sendAction } from '@/services/websocketActions'
 import { MODERATOR_PIECE_CREATE, MODERATOR_PIECE_UPDATE, MODERATOR_PIECE_DELETE } from '@/constants'
 import type { ModeratorPromptPieceEntity } from '@/types/domain'
+import {
+  BROWSER_PAGE_ADMIN_MODERATOR,
+  BROWSER_TABLE_MODERATOR_PROMPT_PIECES,
+  moderatorPromptPiecesFromBrowserRows,
+} from '@/entities/browserAdminTables'
 
 const connectionStore = useConnectionStore()
-const tableStore = useTableStore()
+const browserStore = useBrowserStore()
 const websocket = useWebSocket()
 
-const tableKey = 'moderatorPromptPieces'
-const tableState = computed(() => tableStore.tableData[tableKey])
-const displayRows = computed(() => getTableDisplayRows<ModeratorPromptPieceEntity>(tableStore.tableData[tableKey]))
-const pendingChanges = computed(() => getTablePendingChanges(tableStore.tableData[tableKey]))
-const changeMarkers = computed(() => getTableChangeMarkers(tableStore.tableData[tableKey]))
-
-const handleApplyChanges = () => {
-  tableStore.applyPendingMutations(tableKey)
-}
+const tableState = computed(() => {
+  return browserStore.pages[BROWSER_PAGE_ADMIN_MODERATOR]?.tables[BROWSER_TABLE_MODERATOR_PROMPT_PIECES] ?? null
+})
+const displayRows = computed(() => moderatorPromptPiecesFromBrowserRows(tableState.value?.rowsByKey))
 
 const showModal = ref(false)
 const isCreating = ref(false)
@@ -239,7 +234,11 @@ const {
   resetDeleteModal,
   openDeleteModal,
   confirmDelete,
-} = useTableDeleteMutationModal<ModeratorPromptPieceEntity>(tableKey, (p) => p.id ?? null)
+} = useBrowserTableDeleteMutationModal<ModeratorPromptPieceEntity>(
+  BROWSER_PAGE_ADMIN_MODERATOR,
+  BROWSER_TABLE_MODERATOR_PROMPT_PIECES,
+  (p) => p.id ?? null,
+)
 
 const deleteModalTitle = computed(() => {
   const p = deleteTarget.value

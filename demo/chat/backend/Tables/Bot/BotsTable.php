@@ -9,6 +9,8 @@ use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Database\Object\Item\Bot as ObjectBot;
 use Demo\Chat\Database\View\Item\Bot as DbBot;
 use Demo\Chat\Hilos;
+use Demo\Chat\Runtime\State\Item\BotAgentStatus as StateBotAgentStatus;
+use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Demo\Chat\Tables\Bot\Actions\BotItemActions;
 use Demo\Chat\Tables\Bot\Actions\BotsTableActions;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
@@ -32,6 +34,7 @@ final class BotsTable extends TableDefinition
     public const array BROWSER = [
         BrowserConfigKey::SOURCES => [
             ChatBrowserSource::DB_BOTS,
+            ChatBrowserSource::RT_BOT_AGENT_STATUSES,
         ],
         BrowserConfigKey::ROWS => [
             [
@@ -53,21 +56,41 @@ final class BotsTable extends TableDefinition
                     ObjectBot::priority => BotTableRow::priority,
                 ],
             ],
+            [
+                BrowserFieldKey::SOURCE => ChatBrowserSource::RT_BOT_AGENT_STATUSES,
+                BrowserFieldKey::ROW_KEY => StateBotAgentStatus::botId,
+                BrowserFieldKey::FIELDS => [
+                    StateBotAgentStatus::botId,
+                    StateBotAgentStatus::status,
+                    StateBotAgentStatus::updatedAt,
+                ],
+            ],
         ],
     ];
 
     /**
-     * Builds a bot row mutation from a bot source change.
+     * Builds a bot row mutation from a bot or bot-runtime source change.
      *
      * @param SourceChange $change Bot source change to project into the bots table
      * @return ?TableRowMutationDTO Bot row mutation, or null when the change does not affect this table
      */
     public function buildMutationForSourceEvent(SourceChange $change): ?TableRowMutationDTO
     {
-        if ($change->sourceKey !== ChatDbContext::bots) {
-            return null;
-        }
+        return match ($change->sourceKey) {
+            ChatDbContext::bots => $this->mutationForDbBot($change),
+            ChatRtContext::botAgentStatuses => $this->mutationForBotAgentStatus($change),
+            default => null,
+        };
+    }
 
+    /**
+     * Builds a row mutation for a persisted bot create, update, or delete.
+     *
+     * @param SourceChange $change DB bot source change
+     * @return ?TableRowMutationDTO Bot row mutation, or null for an invalid source id
+     */
+    private function mutationForDbBot(SourceChange $change): ?TableRowMutationDTO
+    {
         $botId = (int) $change->sourceId;
         if ($botId <= 0) {
             return null;
@@ -84,6 +107,31 @@ final class BotsTable extends TableDefinition
 
         return $this->mutation(
             $change->mutationType,
+            $botId,
+            $this->rowFromBot($dbBot),
+        );
+    }
+
+    /**
+     * Bot agent status changes keep the DB row visible and refresh the runtime fragment.
+     *
+     * @param SourceChange $change Runtime bot status source change
+     * @return ?TableRowMutationDTO Bot row update, or null when no bot can be resolved
+     */
+    private function mutationForBotAgentStatus(SourceChange $change): ?TableRowMutationDTO
+    {
+        $botId = (int) ($change->row[StateBotAgentStatus::botId] ?? $change->sourceId);
+        if ($botId <= 0) {
+            return null;
+        }
+
+        $dbBot = Hilos::$db->bots[$botId] ?? null;
+        if ($dbBot === null) {
+            return null;
+        }
+
+        return $this->mutation(
+            TableMutationType::Update,
             $botId,
             $this->rowFromBot($dbBot),
         );

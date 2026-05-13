@@ -8,8 +8,6 @@ use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Core\Router\DTO\ChatEventSignalDTO;
 use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Frontend\BotFrontendStateProjector;
-use Demo\Chat\Projection\Page\AdminBotsPageProjection;
-use Demo\Chat\Projection\Page\AdminModeratorPageProjection;
 use Demo\Chat\Projection\Page\HilosSettingsPageProjection;
 use Demo\Chat\Projection\Util\ChatEventBroadcastBuilder;
 use Demo\Chat\Runtime\State\Item\BotAgentStatus as StateBotAgentStatus;
@@ -28,8 +26,9 @@ use Hilos\Hilos;
 /**
  * Chat demo projection context.
  *
- * Registers legacy PageProjection instances and adds project-level global
- * broadcast rules for chat events and agent presence.
+ * Registers legacy PageProjection instances that still need ChatEventSignalDTO
+ * snapshots and adds project-level global broadcast rules for chat events and
+ * agent presence.
  */
 final class ChatProjectionContext extends ProjectionContext
 {
@@ -38,8 +37,6 @@ final class ChatProjectionContext extends ProjectionContext
      */
     public function configure(): void
     {
-        $this->register(new AdminBotsPageProjection());
-        $this->register(new AdminModeratorPageProjection());
         $this->register(new HilosSettingsPageProjection());
     }
 

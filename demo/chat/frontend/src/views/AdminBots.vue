@@ -11,7 +11,7 @@
             :items="displayRows"
             item-key="id"
             :colspan="7"
-            :placeholder-when-empty="!connectionStore.isConnected"
+            :placeholder-when-empty="!connectionStore.isConnected || tableState === null"
             :searchable="true"
             search-placeholder="Search bots..."
             :search-fields="['id', 'name', 'description', 'style']"
@@ -22,12 +22,9 @@
             :show-add-button="true"
             :show-edit-button="true"
             :show-delete-button="true"
-            :pending-changes="pendingChanges"
-            :change-markers="changeMarkers"
             @add="handleAdd"
             @edit="handleEdit"
             @delete="handleDelete"
-            @update-snapshot="handleApplyChanges"
           >
             <template #header="{ sort, handleSort, isFieldSortable }">
               <th>
@@ -92,9 +89,9 @@
               <td>
                 <span
                   class="badge"
-                  :class="botPresence(row.item.id) === 'online' ? 'bg-success' : 'bg-secondary'"
+                  :class="row.item.presence === 'online' ? 'bg-success' : 'bg-secondary'"
                 >
-                  {{ botPresence(row.item.id) }}
+                  {{ row.item.presence }}
                 </span>
               </td>
               <td>
@@ -251,54 +248,44 @@
   </div>
 </template>
 
-<!-- TODO: extract useTableCrud composable after conflict resolution feature is implemented -->
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { useWebSocket } from '@hilos/sdk/plugins/websocket'
 import { Table, Modal, LoadingButton } from '@hilos/sdk/components'
-import { getTableDisplayRows, getTablePendingChanges, getTableChangeMarkers } from '@hilos/sdk/composables'
-import { useTableDeleteMutationModal } from '@/composables/useTableDeleteMutationModal'
-import { useConnectionStore, useTableStore } from '@hilos/sdk/stores'
+import { useConnectionStore, useBrowserStore } from '@hilos/sdk/stores'
+import { useBrowserTableDeleteMutationModal } from '@/composables/useBrowserTableDeleteMutationModal'
 import { sendAction } from '@/services/websocketActions'
 import { BOT_CREATE, BOT_UPDATE, BOT_DELETE } from '@/constants'
-import { useChatStore } from '@/stores'
-import type { BotEntity } from '@/types/domain'
+import {
+  adminBotsFromBrowserRows,
+  BROWSER_PAGE_ADMIN_BOTS,
+  BROWSER_TABLE_BOTS,
+  type AdminBotRow,
+} from '@/entities/browserAdminTables'
 
 const connectionStore = useConnectionStore()
-const tableStore = useTableStore()
-const chatStore = useChatStore()
+const browserStore = useBrowserStore()
 const websocket = useWebSocket()
 
-const tableKey = 'bots'
-const tableState = computed(() => tableStore.tableData[tableKey])
-const displayRows = computed(() => getTableDisplayRows<BotEntity>(tableStore.tableData[tableKey]))
-const pendingChanges = computed(() => getTablePendingChanges(tableStore.tableData[tableKey]))
-const changeMarkers = computed(() => getTableChangeMarkers(tableStore.tableData[tableKey]))
-
-const botPresence = (botId: number | null) => {
-  if (botId === null) {
-    return 'offline'
-  }
-  return chatStore.botPresenceById[botId]?.presence ?? 'offline'
-}
-
-const handleApplyChanges = () => {
-  tableStore.applyPendingMutations(tableKey)
-}
+const tableState = computed(() => {
+  return browserStore.pages[BROWSER_PAGE_ADMIN_BOTS]?.tables[BROWSER_TABLE_BOTS] ?? null
+})
+const displayRows = computed(() => adminBotsFromBrowserRows(tableState.value?.rowsByKey))
 
 const showModal = ref(false)
 const isCreating = ref(false)
-const selectedBot = ref<BotEntity | null>(null)
-const formBot = ref<BotEntity>({
+const selectedBot = ref<AdminBotRow | null>(null)
+const formBot = ref<AdminBotRow>({
   id: null,
   name: '',
   description: null,
   style: null,
   topics: null,
   personality: null,
-  active: true
+  active: true,
+  presence: 'offline',
 })
-const baselineBot = ref<BotEntity | null>(null)
+const baselineBot = ref<AdminBotRow | null>(null)
 
 const modalTitle = computed(() => isCreating.value ? 'Create Bot' : 'Edit Bot')
 
@@ -309,7 +296,11 @@ const {
   resetDeleteModal,
   openDeleteModal,
   confirmDelete,
-} = useTableDeleteMutationModal<BotEntity>(tableKey, (b) => b.id ?? null)
+} = useBrowserTableDeleteMutationModal<AdminBotRow>(
+  BROWSER_PAGE_ADMIN_BOTS,
+  BROWSER_TABLE_BOTS,
+  (b) => b.id ?? null,
+)
 
 const deleteModalTitle = computed(() => {
   const b = deleteTarget.value
@@ -317,8 +308,8 @@ const deleteModalTitle = computed(() => {
   return b.name?.trim() ? `Delete · ${b.name}` : 'Delete bot'
 })
 
-const cloneBot = (bot: BotEntity): BotEntity => {
-  return JSON.parse(JSON.stringify(bot)) as BotEntity
+const cloneBot = (bot: AdminBotRow): AdminBotRow => {
+  return JSON.parse(JSON.stringify(bot)) as AdminBotRow
 }
 
 const isFormDirty = computed(() => {
@@ -343,6 +334,7 @@ const handleAdd = () => {
     topics: null,
     personality: null,
     active: true,
+    presence: 'offline',
   }
   baselineBot.value = null
   showModal.value = true
@@ -350,7 +342,7 @@ const handleAdd = () => {
 
 const handleEdit = (item: unknown) => {
   if (typeof item !== 'object' || item === null) return
-  const bot = item as BotEntity
+  const bot = item as AdminBotRow
   isCreating.value = false
   selectedBot.value = bot
   formBot.value = cloneBot(bot)
@@ -360,7 +352,7 @@ const handleEdit = (item: unknown) => {
 
 const handleDelete = (item: unknown) => {
   if (typeof item !== 'object' || item === null) return
-  const bot = item as BotEntity
+  const bot = item as AdminBotRow
   if (bot.id == null) return
   openDeleteModal(bot)
 }
@@ -410,7 +402,8 @@ const resetForm = () => {
     style: null,
     topics: null,
     personality: null,
-    active: true
+    active: true,
+    presence: 'offline',
   }
 }
 </script>
