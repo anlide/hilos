@@ -25,6 +25,7 @@ use Hilos\Database\Object\Item\Setting as ObjectSetting;
 use Hilos\Database\Settings\Exception\SettingException;
 use Hilos\Database\Settings\SettingsCatalogConstants;
 use Hilos\Database\View\Item\Setting as ViewSetting;
+use Throwable;
 
 /**
  * Table definition that merges settings catalog metadata with persisted rows.
@@ -69,24 +70,20 @@ final class SettingsTable extends TableDefinition
             return null;
         }
 
-        $key = $change->sourceId;
+        $key = $this->settingKeyFromSourceChange($change);
         if ($key === '') {
             return null;
         }
 
-        if ($change->mutationType === TableMutationType::Delete) {
+        $row = $this->rowForKey($key);
+        if ($row === null) {
             return $this->mutation(TableMutationType::Delete, $key);
         }
 
-        $setting = Hilos::$db->settings[$key];
-        if ($setting === null) {
-            return null;
-        }
-
         return $this->mutation(
-            $change->mutationType,
+            $change->mutationType === TableMutationType::Delete ? TableMutationType::Update : $change->mutationType,
             $key,
-            $this->rowFromSetting($setting),
+            $row,
         );
     }
 
@@ -134,6 +131,36 @@ final class SettingsTable extends TableDefinition
     }
 
     /**
+     * Builds the current table row for a setting key.
+     *
+     * Catalog keys without a persisted setting return their placeholder row.
+     * Unknown uncataloged keys return null so browser state can delete orphan rows.
+     *
+     * @param string $key Setting key
+     * @return ?SettingTableRow Current settings table row, or null when the key is not visible
+     * @throws DatabaseException When persisted settings or referenced defaults cannot be read
+     * @throws SettingException When catalog default metadata is invalid
+     */
+    public function rowForKey(string $key): ?SettingTableRow
+    {
+        if ($key === '') {
+            return null;
+        }
+
+        $setting = Hilos::$db->settings[$key] ?? null;
+        if ($setting !== null) {
+            return $this->rowFromSetting($setting);
+        }
+
+        $catalog = SettingsCatalog::getCatalog();
+        if (!isset($catalog[$key])) {
+            return null;
+        }
+
+        return $this->rowFromCatalogEntry($key, $catalog[$key]);
+    }
+
+    /**
      * Builds an index of persisted setting rows by setting key.
      *
      * @return array<string, ViewSetting>
@@ -147,6 +174,33 @@ final class SettingsTable extends TableDefinition
             $result[$setting->key] = $setting;
         }
         return $result;
+    }
+
+    /**
+     * Resolves the settings key from a DB source change.
+     *
+     * @param SourceChange $change Settings source change
+     * @return string Setting key, or an empty string when it cannot be resolved
+     */
+    private function settingKeyFromSourceChange(SourceChange $change): string
+    {
+        $key = $change->row[ObjectSetting::key] ?? null;
+        if (is_string($key) || is_int($key)) {
+            return (string) $key;
+        }
+
+        try {
+            $setting = ctype_digit($change->sourceId)
+                ? (Hilos::$db->settings[(int) $change->sourceId] ?? null)
+                : null;
+            if ($setting !== null) {
+                return $setting->key;
+            }
+        } catch (Throwable) {
+            return '';
+        }
+
+        return $change->sourceId;
     }
 
     /**

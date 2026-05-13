@@ -22,12 +22,9 @@
             :show-add-button="true"
             :show-edit-button="true"
             :show-delete-button="true"
-            :pending-changes="pendingChanges"
-            :change-markers="changeMarkers"
             @add="handleAdd"
             @edit="handleEdit"
             @delete="handleDelete"
-            @update-snapshot="handleApplyChanges"
           >
             <template #header="{ sort, handleSort, isFieldSortable }">
               <th>
@@ -228,49 +225,32 @@
 import { ref, computed } from 'vue'
 import { useWebSocket } from '@hilos/sdk/plugins/websocket'
 import { Table, Modal, LoadingButton } from '@hilos/sdk/components'
-import { getTableDisplayRows, getTablePendingChanges, getTableChangeMarkers } from '@hilos/sdk/composables'
-import { useTableDeleteMutationModal } from '@/composables/useTableDeleteMutationModal'
-import { useConnectionStore, useTableStore } from '@hilos/sdk/stores'
+import { useConnectionStore, useBrowserStore } from '@hilos/sdk/stores'
+import { useBrowserTableDeleteMutationModal } from '@/composables/useBrowserTableDeleteMutationModal'
 import { sendAction } from '@/services/websocketActions'
 import { SETTING_ADD, SETTING_UPDATE, SETTING_DELETE } from '@/constants'
+import {
+  BROWSER_PAGE_HILOS_SETTINGS,
+  BROWSER_TABLE_SETTINGS,
+  availableCatalogKeysFromSettings,
+  isOrphanSetting,
+  settingsFromBrowserRows,
+  type SettingEntity,
+} from '@/entities/browserSettings'
 import HilosSettingsValueCell from './HilosSettingsValueCell.vue'
 
-interface SettingEntity {
-  id: number | null
-  key: string
-  type: string
-  value: string | null
-  override_value: string | null
-  default_value: string | null
-  default_reference_key: string | null
-  value_source: 'default' | 'reference' | 'override' | 'orphan'
-}
-
 const connectionStore = useConnectionStore()
-const tableStore = useTableStore()
+const browserStore = useBrowserStore()
 const websocket = useWebSocket()
 
-const tableKey = 'settings'
-const tableState = computed(() => tableStore.tableData[tableKey])
-const displayRows = computed(() => getTableDisplayRows<SettingEntity>(tableStore.tableData[tableKey]))
-const pendingChanges = computed(() => getTablePendingChanges(tableStore.tableData[tableKey]))
-const changeMarkers = computed(() => getTableChangeMarkers(tableStore.tableData[tableKey]))
+const browserPageKey = BROWSER_PAGE_HILOS_SETTINGS
+const tableKey = BROWSER_TABLE_SETTINGS
+const tableState = computed(() => browserStore.pages[browserPageKey]?.tables[tableKey] ?? null)
+const displayRows = computed(() => settingsFromBrowserRows(tableState.value?.rowsByKey))
 
-/** Catalog keys from subscription payload (backend). */
-const catalogKeys = computed(() => (tableState.value as { catalogKeys?: string[] })?.catalogKeys ?? [])
+const availableCatalogKeys = computed(() => availableCatalogKeysFromSettings(displayRows.value))
 
-/** Catalog keys not yet used in table (for Add modal dropdown). */
-const availableCatalogKeys = computed(() => {
-  const usedKeys = new Set(displayRows.value.map((r) => r.key))
-  return catalogKeys.value.filter((k) => !usedKeys.has(k))
-})
-
-/** Orphan = key exists in DB but not in catalog. Only orphans can be deleted. */
-const isOrphan = (item: { key: string }) => !catalogKeys.value.includes(item.key)
-
-const handleApplyChanges = () => {
-  tableStore.applyPendingMutations(tableKey)
-}
+const isOrphan = (item: Pick<SettingEntity, 'value_source'>) => isOrphanSetting(item)
 
 const showModal = ref(false)
 const isCreating = ref(false)
@@ -278,6 +258,10 @@ const selectedSetting = ref<SettingEntity | null>(null)
 const formSetting = ref<{ key: string; value: string | null }>({ key: '', value: null })
 const baselineSetting = ref<SettingEntity | null>(null)
 const useCustomValue = ref(false)
+const selectedCatalogSetting = computed(() => {
+  return displayRows.value.find((setting) => setting.key === formSetting.value.key) ?? null
+})
+const activeFormSetting = computed(() => selectedSetting.value ?? selectedCatalogSetting.value)
 
 /** Boolean binding for checkbox (value stored as '0'/'1' string). */
 const formSettingValueBool = computed({
@@ -287,13 +271,13 @@ const formSettingValueBool = computed({
 
 /** Input type for value: text, number, or checkbox. */
 const valueInputType = computed(() => {
-  const t = selectedSetting.value?.type ?? (isCreating.value ? 'string' : 'string')
+  const t = activeFormSetting.value?.type ?? 'string'
   if (t === 'boolean') return 'checkbox'
   if (t === 'integer' || t === 'float') return 'number'
   return 'text'
 })
 
-const valueInputStep = computed(() => selectedSetting.value?.type === 'float' ? 'any' : undefined)
+const valueInputStep = computed(() => activeFormSetting.value?.type === 'float' ? 'any' : undefined)
 
 const defaultValueSource = computed(() => {
   if (!selectedSetting.value) return 'default'
@@ -359,7 +343,7 @@ const {
   resetDeleteModal,
   openDeleteModal,
   confirmDelete,
-} = useTableDeleteMutationModal<SettingEntity>(tableKey, (s) => s.key)
+} = useBrowserTableDeleteMutationModal<SettingEntity>(browserPageKey, tableKey, (s) => s.key)
 
 const deleteModalTitle = computed(() => {
   const k = deleteTarget.value?.key
