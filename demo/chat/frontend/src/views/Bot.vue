@@ -57,10 +57,16 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
-import { useConnectionStore } from '@hilos/sdk/stores'
+import { useBrowserStore, useConnectionStore } from '@hilos/sdk/stores'
+import {
+  BROWSER_PAGE_BOT,
+  BROWSER_TABLE_BOT_DETAIL,
+  botDetailFromBrowserRows,
+} from '@/entities/browserBotDetail'
 import { useChatStore } from '@/stores'
 
 const route = useRoute()
+const browserStore = useBrowserStore()
 const connectionStore = useConnectionStore()
 const chatStore = useChatStore()
 
@@ -73,6 +79,17 @@ const bot = computed(() => {
   if (!Number.isFinite(botId.value) || botId.value <= 0) {
     return null
   }
-  return chatStore.botViewModels.find((b) => b.id === botId.value) ?? null
+  const detail = botDetailFromBrowserRows(
+    browserStore.pages[BROWSER_PAGE_BOT]?.tables[BROWSER_TABLE_BOT_DETAIL]?.rowsByKey,
+    botId.value,
+  )
+  if (detail === null) {
+    return null
+  }
+
+  return {
+    ...detail,
+    presence: chatStore.botPresenceById[detail.id]?.presence ?? detail.presence,
+  }
 })
 </script>

@@ -7,10 +7,9 @@ namespace Demo\Chat\Pages;
 use Demo\Chat\Agents\ModeratorAgent;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\PageConstants;
-use Demo\Chat\Core\Router\DTO\ChatEventSignalDTO;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
+use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Page\AbstractPage;
-use Hilos\Core\Router\DTO\EntitiesChangesDTO;
 use Hilos\Core\Page\PageRouteParams;
 
 /**
@@ -29,7 +28,7 @@ final class ModeratorPage extends AbstractPage
     ];
 
     /**
-     * Handle page-specific subscription logic.
+     * Sends an empty browser page payload for the moderator landing page.
      *
      * @param string $acceptKey Accept key
      * @param PageRouteParams $params Route params from page subscription (unused for moderator page)
@@ -39,7 +38,7 @@ final class ModeratorPage extends AbstractPage
         $this->sendToUser(
             ChatSignalConstants::SUBSCRIPTION_PAGE_MODERATOR,
             $acceptKey,
-            new ChatEventSignalDTO(new EntitiesChangesDTO()),
+            new BrowserPageSignalData(),
         );
     }
 }
