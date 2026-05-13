@@ -8,12 +8,20 @@ use Hilos\Constants\SignalPayloadConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Browser\Config\BrowserFieldKey;
+use Hilos\Core\Browser\Config\BrowserGuardKey;
+use Hilos\Core\Browser\Config\BrowserGuardType;
 use Hilos\Core\Browser\Config\BrowserParamKey;
+use Hilos\Core\Browser\Config\BrowserParamType;
 use Hilos\Core\Browser\Config\BrowserRefKey;
 use Hilos\Core\Browser\Config\BrowserRefType;
 use Hilos\Core\Browser\Config\BrowserSourceKey;
 use Hilos\Core\Browser\Config\BrowserSourceType;
+use Hilos\Core\Browser\Config\BrowserSubscriptionError;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
+use Hilos\Core\Page\Exception\PageForbiddenException;
+use Hilos\Core\Page\Exception\PageResourceNotFoundException;
+use Hilos\Core\Page\Exception\PageSubscriptionException;
+use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Projection\SourceChange;
 use Hilos\Core\Projection\SourceChangeSet;
 use Hilos\Core\Router\SignalName;
@@ -72,6 +80,71 @@ abstract class BrowserContext
     public function hasChanges(): bool
     {
         return !$this->changes->isEmpty();
+    }
+
+    /**
+     * Sends a full browser snapshot for one page subscription.
+     *
+     * The snapshot uses the same page/table browser config as incremental
+     * source-change delivery, addressed directly to the subscribing accept key.
+     *
+     * @param string $page Page name from the subscription request
+     * @param string $acceptKey Subscribing WebSocket accept key
+     * @param PageRouteParams $params Route params for this page subscription
+     * @throws PageSubscriptionException When browser params or guards reject the subscription
+     */
+    public function subscribeSnapshot(string $page, string $acceptKey, PageRouteParams $params): void
+    {
+        if (Hilos::$sr === null) {
+            return;
+        }
+
+        $pageConfig = $this->pageConfig($page);
+        if ($pageConfig === []) {
+            return;
+        }
+
+        $signalName = $this->pageSignalName($pageConfig);
+        if ($signalName === '') {
+            return;
+        }
+
+        $this->validateParams($pageConfig[BrowserConfigKey::PARAMS] ?? [], $params);
+        $pageParams = $params->toArray();
+        $this->assertPageGuards($pageConfig, $acceptKey, $pageParams);
+
+        $tables = [];
+        foreach ($this->pageTables($pageConfig) as $tableKey => $pageTableConfig) {
+            $tableConfig = $this->tableConfig($tableKey);
+            if ($tableConfig === []) {
+                continue;
+            }
+
+            $tableParams = $this->tableParams($pageTableConfig, $acceptKey, $pageParams);
+            $tables[$tableKey] = [
+                BrowserPageSignalData::rows => $this->buildBrowserSnapshotRows(
+                    tableKey: $tableKey,
+                    tableConfig: $tableConfig,
+                    acceptKey: $acceptKey,
+                    pageParams: $pageParams,
+                    tableParams: $tableParams,
+                ),
+            ];
+        }
+
+        if ($tables === []) {
+            return;
+        }
+
+        Hilos::$sr->queueSignal(
+            signalSource: new SignalSource(SignalSource::WORKER),
+            signalType: new SignalType(SignalTypeConstants::WS_USER),
+            signalName: new SignalName($signalName),
+            signalData: new WebSocketSignalData(
+                data: new BrowserPageSignalData($tables),
+                targetAcceptKey: $acceptKey,
+            ),
+        );
     }
 
     /**
@@ -569,6 +642,91 @@ abstract class BrowserContext
     }
 
     /**
+     * Builds all current browser rows for one page-bound table.
+     *
+     * @param string $tableKey Browser table key
+     * @param array<string, mixed> $tableConfig Browser table config
+     * @param string $acceptKey Subscriber accept key
+     * @param array<string, string> $pageParams Current page subscription params
+     * @param array<string, mixed> $tableParams Resolved table params for this page subscription
+     * @return list<array{rowKey: int|string, sources: array<string, mixed>}> Current browser rows
+     */
+    private function buildBrowserSnapshotRows(
+        string $tableKey,
+        array $tableConfig,
+        string $acceptKey,
+        array $pageParams,
+        array $tableParams,
+    ): array {
+        $rows = [];
+        foreach ($this->snapshotRowKeys($tableConfig, $acceptKey, $pageParams, $tableParams) as $rowKey) {
+            $row = $this->buildBrowserRow(
+                tableKey: $tableKey,
+                tableConfig: $tableConfig,
+                rowKey: $rowKey,
+                acceptKey: $acceptKey,
+                pageParams: $pageParams,
+                tableParams: $tableParams,
+            );
+            if ($row !== null) {
+                $rows[] = $row;
+            }
+        }
+
+        return $rows;
+    }
+
+    /**
+     * Collects logical row keys visible in a full browser table snapshot.
+     *
+     * @param array<string, mixed> $tableConfig Browser table config
+     * @param string $acceptKey Subscriber accept key
+     * @param array<string, string> $pageParams Current page subscription params
+     * @param array<string, mixed> $tableParams Resolved table params for this page subscription
+     * @return list<int|string> Logical row keys for current source items
+     */
+    private function snapshotRowKeys(
+        array $tableConfig,
+        string $acceptKey,
+        array $pageParams,
+        array $tableParams,
+    ): array {
+        $rowKeys = [];
+        $seen = [];
+        foreach ($this->rowConfigs($tableConfig) as $rowConfig) {
+            if (($rowConfig[BrowserFieldKey::MANY] ?? false) === true) {
+                continue;
+            }
+
+            $source = $rowConfig[BrowserFieldKey::SOURCE] ?? [];
+            if (!is_array($source)) {
+                continue;
+            }
+
+            $collection = $this->sourceCollection($source);
+            if (!is_iterable($collection)) {
+                continue;
+            }
+
+            foreach ($collection as $sourceItem) {
+                if (!$this->sourceItemMatchesWhere($rowConfig, $sourceItem, $acceptKey, $pageParams, $tableParams)) {
+                    continue;
+                }
+
+                $rowKey = $this->rowKeyForSourceItem($rowConfig, $sourceItem, $acceptKey, $pageParams, $tableParams);
+                if ($rowKey === null || isset($seen[(string) $rowKey])) {
+                    continue;
+                }
+
+                $seen[(string) $rowKey] = true;
+                $rowKeys[] = $rowKey;
+            }
+        }
+
+        return $rowKeys;
+    }
+
+    /**
      * Finds current source items that contribute to a logical browser row.
      *
      * @param array<string, mixed> $rowConfig Browser row source config
@@ -613,6 +771,35 @@ abstract class BrowserContext
         }
 
         return $items;
+    }
+
+    /**
+     * Resolves a logical row key from a current source item.
+     *
+     * @param array<string, mixed> $rowConfig Browser row source config
+     * @param mixed $sourceItem Current source item
+     * @param string $acceptKey Subscriber accept key
+     * @param array<string, string> $pageParams Current page subscription params
+     * @param array<string, mixed> $tableParams Resolved table params for this page subscription
+     * @return int|string|null Browser row key
+     */
+    private function rowKeyForSourceItem(
+        array $rowConfig,
+        mixed $sourceItem,
+        string $acceptKey,
+        array $pageParams,
+        array $tableParams,
+    ): int|string|null {
+        $rowKey = $rowConfig[BrowserFieldKey::ROW_KEY] ?? null;
+        if (is_array($rowKey)) {
+            return $this->normalizeKey($this->resolveReference($rowKey, $acceptKey, $pageParams, $tableParams));
+        }
+
+        if (is_string($rowKey) && $rowKey !== '') {
+            return $this->normalizeKey($this->fieldValue($sourceItem, $rowKey));
+        }
+
+        return $this->normalizeKey($this->fieldValue($sourceItem, 'id'));
     }
 
     /**
@@ -940,6 +1127,96 @@ abstract class BrowserContext
         }
 
         return $left === $right;
+    }
+
+    /**
+     * Validates route params declared by a browser page config.
+     *
+     * @param mixed $paramConfigs Browser param declarations
+     * @param PageRouteParams $params Route params from the subscription request
+     * @throws PageSubscriptionException When a required param is missing or malformed
+     */
+    private function validateParams(mixed $paramConfigs, PageRouteParams $params): void
+    {
+        if (!is_array($paramConfigs)) {
+            return;
+        }
+
+        foreach ($paramConfigs as $paramKey => $paramConfig) {
+            if (!is_string($paramKey) || !is_array($paramConfig)) {
+                continue;
+            }
+
+            $isRequired = ($paramConfig[BrowserParamKey::REQUIRED] ?? false) === true;
+            if (($paramConfig[BrowserParamKey::TYPE] ?? BrowserParamType::STRING) === BrowserParamType::POSITIVE_INT) {
+                if ($isRequired) {
+                    $params->requirePositiveInt($paramKey);
+                } else {
+                    $params->getPositiveInt($paramKey);
+                }
+                continue;
+            }
+
+            if ($isRequired) {
+                $params->requireString($paramKey);
+            } else {
+                $params->getString($paramKey);
+            }
+        }
+    }
+
+    /**
+     * Enforces page-level browser guards.
+     *
+     * @param array<string, mixed> $pageConfig Browser page config
+     * @param string $acceptKey Subscriber accept key
+     * @param array<string, string> $pageParams Current page subscription params
+     * @throws PageSubscriptionException When a guard rejects the subscription
+     */
+    private function assertPageGuards(array $pageConfig, string $acceptKey, array $pageParams): void
+    {
+        $guards = $pageConfig[BrowserConfigKey::GUARDS] ?? [];
+        if (!is_array($guards)) {
+            return;
+        }
+
+        foreach ($guards as $guard) {
+            if (!is_array($guard)) {
+                continue;
+            }
+            if (($guard[BrowserGuardKey::TYPE] ?? '') === BrowserGuardType::DB_EXISTS) {
+                $this->assertDbExistsGuard($guard, $acceptKey, $pageParams);
+            }
+        }
+    }
+
+    /**
+     * Enforces a DB-exists browser guard.
+     *
+     * @param array<string, mixed> $guard Browser guard config
+     * @param string $acceptKey Subscriber accept key
+     * @param array<string, string> $pageParams Current page subscription params
+     * @throws PageSubscriptionException When the guarded DB item is absent
+     */
+    private function assertDbExistsGuard(array $guard, string $acceptKey, array $pageParams): void
+    {
+        $source = $guard[BrowserGuardKey::SOURCE] ?? [];
+        if (!is_array($source)) {
+            return;
+        }
+
+        $key = $this->normalizeKey(
+            $this->resolveReference($guard[BrowserGuardKey::KEY] ?? null, $acceptKey, $pageParams, []),
+        );
+        if ($key === null || $this->sourceItemById($source, (string) $key) !== null) {
+            return;
+        }
+
+        if (($guard[BrowserGuardKey::ERROR] ?? null) === BrowserSubscriptionError::FORBIDDEN) {
+            throw new PageForbiddenException('Access forbidden');
+        }
+
+        throw new PageResourceNotFoundException("Resource #{$key} not found");
     }
 
     /**

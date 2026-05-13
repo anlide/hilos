@@ -1,5 +1,6 @@
 import { useGuardianStore } from '../stores/useGuardianStore'
 import { useTableStore } from '../stores/useTableStore'
+import { extractBrowserPagePayload } from '../types/browserState'
 import {
   actionError,
   tableData,
@@ -66,6 +67,9 @@ export function registerHilosSignalHandlers(router: VueSignalRouter): void {
   router.on(subscriptionUpdated, () => {})
 
   router.onPrefix(SUBSCRIPTION_PAGE_PREFIX, (data: unknown) => {
+    if (extractBrowserPagePayload(data) !== null) {
+      return
+    }
     if (!isRecord(data)) return
     if (isRecord(data.tables)) {
       const tableStore = useTableStore()

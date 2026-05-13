@@ -11,6 +11,7 @@ use Hilos\Core\Browser\Config\BrowserSourceKey;
 use Hilos\Core\Browser\Config\BrowserSourceType;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
+use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Projection\SourceChange;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\WebSocketSignalData;
@@ -108,6 +109,61 @@ final class BrowserContextEmitSignalsTest extends TestCase
                 BrowserPageSignalData::tables => [
                     BrowserContextEmitSignalsTestContext::TABLE => [
                         BrowserPageSignalData::deleted => ['1'],
+                    ],
+                ],
+            ],
+            $signal->data->data->toArray(),
+        );
+    }
+
+    public function testSubscribeSnapshotQueuesFullBrowserRowsForPage(): void
+    {
+        Hilos::$sr = new SignalRouter();
+        Hilos::$rt = new BrowserContextEmitSignalsTestRtContext();
+        Hilos::$rt->configure();
+        Hilos::$rt->addRow(BrowserContextEmitSignalsTestState::create('1', 'Ada'));
+        Hilos::$rt->addRow(BrowserContextEmitSignalsTestState::create('2', 'Grace'));
+
+        (new BrowserContextEmitSignalsTestContext())->subscribeSnapshot(
+            BrowserContextEmitSignalsTestContext::PAGE,
+            'ak-1',
+            new PageRouteParams([]),
+        );
+
+        $signal = Hilos::$sr->getNextQueuedSignal();
+
+        $this->assertNotNull($signal);
+        $this->assertSame(SignalTypeConstants::WS_USER, $signal->signalType->getType());
+        $this->assertSame(BrowserContextEmitSignalsTestContext::SIGNAL, $signal->signalName->getName());
+        $this->assertInstanceOf(WebSocketSignalData::class, $signal->data);
+        $this->assertSame('ak-1', $signal->data->targetAcceptKey);
+        $this->assertInstanceOf(BrowserPageSignalData::class, $signal->data->data);
+        $this->assertSame(
+            [
+                BrowserPageSignalData::tables => [
+                    BrowserContextEmitSignalsTestContext::TABLE => [
+                        BrowserPageSignalData::rows => [
+                            [
+                                BrowserPageSignalData::rowKey => '1',
+                                BrowserPageSignalData::sources => [
+                                    BrowserContextEmitSignalsTestRtContext::ROWS => [
+                                        'id' => '1',
+                                        'displayName' => 'Ada',
+                                        'computedLabel' => 'row-1',
+                                    ],
+                                ],
+                            ],
+                            [
+                                BrowserPageSignalData::rowKey => '2',
+                                BrowserPageSignalData::sources => [
+                                    BrowserContextEmitSignalsTestRtContext::ROWS => [
+                                        'id' => '2',
+                                        'displayName' => 'Grace',
+                                        'computedLabel' => 'row-2',
+                                    ],
+                                ],
+                            ],
+                        ],
                     ],
                 ],
             ],

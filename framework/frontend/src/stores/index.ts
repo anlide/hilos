@@ -1,4 +1,5 @@
 export { useConnectionStore } from './useConnectionStore'
+export { useBrowserStore } from './useBrowserStore'
 export { useTableStore } from './useTableStore'
 export { usePageCatalogStore } from './usePageCatalogStore'
 export { useGuardianStore } from './useGuardianStore'

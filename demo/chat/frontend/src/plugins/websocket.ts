@@ -1,6 +1,11 @@
 import { createWebSocketPlugin } from '@hilos/sdk/plugins/websocket'
-import { useConnectionStore, usePageCatalogStore, useHilosLogsStore } from '@hilos/sdk/stores'
-import { hasEntities, hasFrontendChanges } from '@hilos/sdk/types'
+import {
+  useBrowserStore,
+  useConnectionStore,
+  usePageCatalogStore,
+  useHilosLogsStore,
+} from '@hilos/sdk/stores'
+import { extractBrowserPagePayload, hasEntities, hasFrontendChanges } from '@hilos/sdk/types'
 import { actionError } from '@hilos/sdk/signals'
 import { createHilosSignalRouter } from '@hilos/sdk/services/hilosSignalHandlers'
 import type { VueSignalRouter } from '@hilos/sdk/services/VueSignalRouter'
@@ -235,6 +240,11 @@ export function createChatWebSocketPlugin() {
       }
       if (hasFrontendChanges(message.data)) {
         frontendStateReceiver.apply(message.data, chatStore)
+      }
+      const browserPayload = extractBrowserPagePayload(message.data)
+      if (browserPayload !== null) {
+        useBrowserStore().applyPagePayload(message.type, browserPayload)
+        return
       }
 
       signalRouter.dispatch(message.type, message.data, message.outcome)

@@ -20,6 +20,10 @@ export { extractEntitiesEnvelope, hasEntities } from './entities'
 export type { FrontendChangesEnvelope } from './frontendState'
 export { extractFrontendChangesEnvelope, hasFrontendChanges } from './frontendState'
 
+// Browser page state transport (tables with rowKey/source fragments)
+export type { BrowserPagePayload, BrowserPageRow, BrowserPageTableChanges } from './browserState'
+export { extractBrowserPagePayload, hasBrowserPagePayload } from './browserState'
+
 // Table types
 export type { TableRowMutationDTO, TableDataState, PendingChanges, ChangeMarkers, ApplyMutationsResult } from './table'
 

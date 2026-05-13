@@ -137,10 +137,12 @@ abstract class AbstractPage
     /**
      * Handles page subscription.
      *
-     * Default behavior delegates to the projection layer. If the page has a
-     * registered {@see PageProjection}, the framework builds and sends the
-     * initial snapshot through it. Override in concrete pages to add domain or
-     * routing parameter checks before or instead of delegating to projection.
+     * Default behavior delegates to the projection and browser layers. If the
+     * page has a registered {@see PageProjection}, the framework builds and
+     * sends the legacy initial snapshot through it. If the active browser
+     * context has a matching page config, it also sends the browser-shaped
+     * snapshot. Override in concrete pages to add domain or routing parameter
+     * checks before or instead of delegating to these layers.
      *
      * Route params are available through the typed accessors on
      * PageRouteParams; family-level abstract pages typically convert
@@ -149,11 +151,12 @@ abstract class AbstractPage
      *
      * @param string $acceptKey WebSocket accept key
      * @param PageRouteParams $params Route params from page subscription
-     * @throws PageSubscriptionException When projection rejects the subscription
+     * @throws PageSubscriptionException When projection or browser snapshot rejects the subscription
      */
     public function onSubscribe(string $acceptKey, PageRouteParams $params): void
     {
         Hilos::$projection?->subscribeSnapshot(static::PAGE, $acceptKey, $params);
+        Hilos::$browser?->subscribeSnapshot(static::PAGE, $acceptKey, $params);
     }
 
     /**
