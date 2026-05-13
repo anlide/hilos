@@ -37,7 +37,7 @@ final class SelfConnectionBrowserTable
         BrowserConfigKey::ROWS => [
             [
                 BrowserFieldKey::SOURCE => ChatBrowserSource::RT_CONNECTIONS,
-                BrowserFieldKey::ROW_KEY => Connection::acceptKey,
+                BrowserFieldKey::ROW_KEY => Connection::userId,
                 BrowserFieldKey::WHERE => [
                     Connection::acceptKey => ChatBrowserRef::TABLE_ACCEPT_KEY,
                 ],
@@ -60,10 +60,25 @@ final class SelfConnectionBrowserTable
                     SelfConnectionSignalData::fileUploadState,
                     SelfConnectionSignalData::fileUploadProgress,
                 ],
+                BrowserFieldKey::TRIGGERS => [
+                    Connection::userId,
+                    Connection::connectedAt,
+                    Connection::outboundModerationPhase,
+                    Connection::outboundModerationMessage,
+                    Connection::outboundModerationReason,
+                    Connection::outboundModerationUpdatedAt,
+                    Connection::fileUploadPhase,
+                    Connection::fileUploadClientUploadId,
+                    Connection::fileUploadErrorCode,
+                    Connection::fileUploadErrorMessage,
+                    Connection::fileProgressFilename,
+                    Connection::fileProgressTotalBytes,
+                    Connection::uploadProgressLastSentAt,
+                ],
             ],
             [
                 BrowserFieldKey::SOURCE => ChatBrowserSource::RT_USER_STATES,
-                BrowserFieldKey::ROW_KEY => ChatBrowserRef::TABLE_ACCEPT_KEY,
+                BrowserFieldKey::ROW_KEY => ChatUserState::userId,
                 BrowserFieldKey::VIA => [
                     ChatUserState::userId => Connection::userId,
                 ],
@@ -72,6 +87,9 @@ final class SelfConnectionBrowserTable
                 ],
                 BrowserFieldKey::COMPUTED => [
                     SelfConnectionSignalData::messageRateLimitSecondsRemaining,
+                ],
+                BrowserFieldKey::TRIGGERS => [
+                    ChatUserState::lastOutboundSubmittedAt,
                 ],
             ],
         ],

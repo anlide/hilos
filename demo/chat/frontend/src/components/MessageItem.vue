@@ -103,17 +103,33 @@
 <script setup lang="ts">
 import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { RouterLink } from 'vue-router'
+import { useBrowserStore } from '@hilos/sdk/stores'
 import { Event, type EventAttachment } from '@/types'
 import { useChatStore } from '@/stores'
 import { config } from '@/config'
 import { localStorageService } from '@/services/LocalStorageService'
+import {
+  BROWSER_PAGE_MAIN,
+  BROWSER_TABLE_MAIN_BOTS,
+  BROWSER_TABLE_MAIN_USERS,
+  mainBotsFromBrowserRows,
+  mainUsersFromBrowserRows,
+} from '@/entities/browserMainPage'
 
 interface Props {
   event: Event
 }
 
 const props = defineProps<Props>()
+const browserStore = useBrowserStore()
 const chatStore = useChatStore()
+
+const mainTableRows = (tableKey: string) => {
+  return browserStore.pages[BROWSER_PAGE_MAIN]?.tables[tableKey]?.rowsByKey
+}
+
+const users = computed(() => mainUsersFromBrowserRows(mainTableRows(BROWSER_TABLE_MAIN_USERS)))
+const bots = computed(() => mainBotsFromBrowserRows(mainTableRows(BROWSER_TABLE_MAIN_BOTS)))
 
 const isServiceMessage = computed(() => {
   return props.event.type !== 'message_sent'
@@ -191,7 +207,7 @@ const getParticipantName = (userId: number | null): string => {
   if (userId === null) {
     return 'Unknown user'
   }
-  const user = chatStore.users.find((u) => u.id === userId)
+  const user = users.value.find((u) => u.id === userId)
   return user?.name || `User${userId}`
 }
 
@@ -201,7 +217,7 @@ const getBotName = (botId: number | null | undefined): string => {
   if (botId == null) {
     return 'Unknown bot'
   }
-  const bot = chatStore.bots.find((b) => b.id === botId)
+  const bot = bots.value.find((b) => b.id === botId)
   return bot?.name ?? `Bot${botId}`
 }
 

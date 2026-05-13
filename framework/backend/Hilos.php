@@ -193,6 +193,22 @@ abstract class Hilos
     }
 
     /**
+     * Replaces and configures the worker-local browser context.
+     *
+     * Mirrors {@see self::initProjection()} for browser-facing state: tests and
+     * bootstrap code can reset the browser source-change buffer without
+     * assigning facade globals directly. When no context is passed, the active
+     * project factory creates the browser context.
+     *
+     * @param ?BrowserContext $browser Browser context to use for this worker
+     */
+    public static function initBrowser(?BrowserContext $browser = null): void
+    {
+        static::$browser = $browser ?? static::createBrowser();
+        static::$browser?->configure();
+    }
+
+    /**
      * Creates database context instance.
      *
      * @return DbContext Database context instance

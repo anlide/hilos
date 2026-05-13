@@ -22,13 +22,10 @@ import {
 } from '@/services/chatFileUpload'
 import {
   handshakeResponse,
-  subscriptionPageMain,
-  selfConnectionUpdate,
   botJoined,
   botLeft,
   botUpdated,
   newEvent,
-  userPresenceUpdate,
   subscriptionPageHilosLogs,
 } from '@/signals'
 
@@ -115,19 +112,6 @@ function buildSignalRouter() {
     useChatStore().handleSubscriptionResponse(self.id, self.name)
   })
 
-  signalRouter.on(subscriptionPageMain, ({ selfConnection }) => {
-    const chatStore = useChatStore()
-    if (selfConnection !== undefined) {
-      chatStore.setSelfConnection(selfConnection)
-    }
-  })
-
-  signalRouter.on(selfConnectionUpdate, ({ selfConnection }) => {
-    if (selfConnection !== undefined) {
-      useChatStore().setSelfConnection(selfConnection)
-    }
-  })
-
   signalRouter.on(actionError, ({ action, reason }) => {
     const chatStore = useChatStore()
     switch (action) {
@@ -161,7 +145,6 @@ function buildSignalRouter() {
     useChatStore().setBotPresence(botId, 'offline')
   })
   signalRouter.on(botUpdated, () => {})
-  signalRouter.on(userPresenceUpdate, () => {})
 
   signalRouter.on(newEvent, ({ events }) => {
     const chatStore = useChatStore()

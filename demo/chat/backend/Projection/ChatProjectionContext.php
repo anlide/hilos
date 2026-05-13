@@ -11,7 +11,6 @@ use Demo\Chat\Frontend\BotFrontendStateProjector;
 use Demo\Chat\Projection\Page\AdminBotsPageProjection;
 use Demo\Chat\Projection\Page\AdminModeratorPageProjection;
 use Demo\Chat\Projection\Page\HilosSettingsPageProjection;
-use Demo\Chat\Projection\Page\MainPageProjection;
 use Demo\Chat\Projection\Util\ChatEventBroadcastBuilder;
 use Demo\Chat\Runtime\State\Item\BotAgentStatus as StateBotAgentStatus;
 use Demo\Chat\Runtime\State\Item\GuardianAgentStatus as StateGuardianAgentStatus;
@@ -39,7 +38,6 @@ final class ChatProjectionContext extends ProjectionContext
      */
     public function configure(): void
     {
-        $this->register(new MainPageProjection());
         $this->register(new AdminBotsPageProjection());
         $this->register(new AdminModeratorPageProjection());
         $this->register(new HilosSettingsPageProjection());

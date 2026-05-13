@@ -2,7 +2,6 @@ export { handshakeResponse, type HandshakePayload } from './handshake'
 export {
   subscriptionPageMain,
   selfConnectionUpdate,
-  type ChatSessionFields,
   type SelfConnectionUpdatePayload,
 } from './chatSession'
 export { botJoined, botLeft, botUpdated } from './botEvents'

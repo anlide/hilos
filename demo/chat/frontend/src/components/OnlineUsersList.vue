@@ -37,7 +37,7 @@
       </template>
       <template v-else>
         <div class="px-3 py-2 text-muted small border-bottom" data-id="online-users-label">
-          Users ({{ chatStore.onlineUsers.length }} online)
+          Users ({{ onlineUsers.length }} online)
         </div>
         <div v-if="sortedUsers.length === 0" class="text-muted p-3 border-bottom" data-id="online-users-empty">
           No users yet
@@ -64,7 +64,7 @@
         </div>
 
         <div class="px-3 py-2 text-muted small border-bottom">
-          Bots ({{ chatStore.onlineBots.length }} online)
+          Bots ({{ onlineBots.length }} online)
         </div>
         <div v-if="sortedBots.length === 0" class="text-muted p-3">
           No bots yet
@@ -95,14 +95,29 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { RouterLink } from 'vue-router'
-import { useConnectionStore } from '@hilos/sdk/stores'
-import { useChatStore } from '@/stores'
+import { useBrowserStore, useConnectionStore } from '@hilos/sdk/stores'
+import {
+  BROWSER_PAGE_MAIN,
+  BROWSER_TABLE_MAIN_BOTS,
+  BROWSER_TABLE_MAIN_USERS,
+  mainBotsFromBrowserRows,
+  mainUsersFromBrowserRows,
+} from '@/entities/browserMainPage'
 
 const connectionStore = useConnectionStore()
-const chatStore = useChatStore()
+const browserStore = useBrowserStore()
+
+const mainTableRows = (tableKey: string) => {
+  return browserStore.pages[BROWSER_PAGE_MAIN]?.tables[tableKey]?.rowsByKey
+}
+
+const users = computed(() => mainUsersFromBrowserRows(mainTableRows(BROWSER_TABLE_MAIN_USERS)))
+const bots = computed(() => mainBotsFromBrowserRows(mainTableRows(BROWSER_TABLE_MAIN_BOTS)))
+const onlineUsers = computed(() => users.value.filter((user) => user.presence === 'online'))
+const onlineBots = computed(() => bots.value.filter((bot) => bot.presence === 'online'))
 
 const sortedUsers = computed(() =>
-  [...chatStore.userViewModels].sort((a, b) => {
+  [...users.value].sort((a, b) => {
     if (a.presence !== b.presence) {
       return a.presence === 'online' ? -1 : 1
     }
@@ -111,7 +126,7 @@ const sortedUsers = computed(() =>
 )
 
 const sortedBots = computed(() =>
-  [...chatStore.botViewModels].sort((a, b) => {
+  [...bots.value].sort((a, b) => {
     if (a.presence !== b.presence) {
       return a.presence === 'online' ? -1 : 1
     }

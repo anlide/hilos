@@ -116,6 +116,24 @@ final class BrowserContextEmitSignalsTest extends TestCase
         );
     }
 
+    public function testFlushIgnoresBrowserRowUpdateOutsideTriggerFields(): void
+    {
+        Hilos::$sr = new SignalRouter();
+        Hilos::$rt = new BrowserContextEmitSignalsTestRtContext();
+        Hilos::$rt->configure();
+        Hilos::$rt->addRow(BrowserContextEmitSignalsTestState::create('1', 'Ada'));
+        Hilos::$sr->subscribeToPage(
+            BrowserContextEmitSignalsTestContext::PAGE,
+            new WebSocketPageSubscribeSignalDTO('ak-1', BrowserContextEmitSignalsTestContext::PAGE),
+        );
+
+        $context = new BrowserContextEmitSignalsTestContext();
+        $context->record(SourceChange::rtUpdated(BrowserContextEmitSignalsTestRtContext::ROWS, '1', ['ignored' => 'value']));
+        $context->flushToSignalRouter();
+
+        $this->assertNull(Hilos::$sr->getNextQueuedSignal());
+    }
+
     public function testSubscribeSnapshotQueuesFullBrowserRowsForPage(): void
     {
         Hilos::$sr = new SignalRouter();
@@ -204,6 +222,9 @@ final class BrowserContextEmitSignalsTestContext extends BrowserContext
                     ],
                     BrowserFieldKey::COMPUTED => [
                         'computedLabel',
+                    ],
+                    BrowserFieldKey::TRIGGERS => [
+                        'name',
                     ],
                 ],
             ],

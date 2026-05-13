@@ -493,7 +493,39 @@ abstract class BrowserContext
 
         return is_array($source)
             && $this->sourceType($source) === $change->kind
-            && $this->sourceKey($source) === $change->sourceKey;
+            && $this->sourceKey($source) === $change->sourceKey
+            && $this->rowConfigTriggersOnChange($rowConfig, $change);
+    }
+
+    /**
+     * Checks whether a row source should react to the changed fields.
+     *
+     * Create and delete changes always invalidate the row. Update changes may
+     * opt into a narrow trigger field list to avoid emitting browser rows for
+     * backend-only source fields.
+     *
+     * @param array<string, mixed> $rowConfig Browser row source config
+     * @param SourceChange $change Grouped DB/RT source change
+     * @return bool True when this row source should be rebuilt for the change
+     */
+    private function rowConfigTriggersOnChange(array $rowConfig, SourceChange $change): bool
+    {
+        if ($change->mutationType !== TableMutationType::Update) {
+            return true;
+        }
+
+        $triggers = $rowConfig[BrowserFieldKey::TRIGGERS] ?? [];
+        if (!is_array($triggers) || $triggers === []) {
+            return true;
+        }
+
+        foreach ($triggers as $field) {
+            if (is_string($field) && array_key_exists($field, $change->row)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**

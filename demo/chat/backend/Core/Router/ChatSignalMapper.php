@@ -6,10 +6,7 @@ namespace Demo\Chat\Core\Router;
 
 use Demo\Chat\Constants\ChatEventType;
 use Demo\Chat\Constants\ChatSignalConstants;
-use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Router\DTO\ChatEventSignalDTO;
-use Demo\Chat\Core\Router\DTO\UserPresenceEmitPayload;
-use Demo\Chat\Core\Router\DTO\UserPresenceSignalData;
 use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Database\View\Collection\Events;
 use Demo\Chat\Frontend\BotFrontendStateProjector;
@@ -35,8 +32,8 @@ use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 /**
  * Maps legacy EMIT_* daemon signals to chat WebSocket fan-out payloads.
  *
- * Table events resolve through SignalRouter table routes; main-page presence
- * updates use single-target fan-out for matching subscribers.
+ * Table events resolve through SignalRouter table routes. Main-page chat state
+ * is delivered by the browser context.
  */
 final class ChatSignalMapper implements SignalMapperInterface
 {
@@ -98,7 +95,6 @@ final class ChatSignalMapper implements SignalMapperInterface
         }
 
         return match ($emit->signalName->getName()) {
-            ChatSignalConstants::EMIT_CHAT_USER_PRESENCE_UPDATED => $this->mapChatUserPresenceUpdated($data),
             ChatSignalConstants::EMIT_CHAT_BOT_AGENT_STATUS_UPDATED => $this->mapChatBotAgentStatusUpdated($data),
             HilosSignalConstants::EMIT_HILOS_GUARDIAN_AGENT_STATUS_UPDATED => $this->mapGuardianAgentStatusUpdated($data),
             default => [],
@@ -217,40 +213,6 @@ final class ChatSignalMapper implements SignalMapperInterface
     }
 
     /**
-     * Builds page-scoped user presence fan-out from runtime connection changes.
-     *
-     * @param EmitRtChangeSignalData $data Runtime emit payload for a connection presence change
-     * @return list<EmitFanoutItem>
-     */
-    private function mapChatUserPresenceUpdated(EmitRtChangeSignalData $data): array
-    {
-        if ($data->collectionKey !== ChatRtContext::connections) {
-            return [];
-        }
-
-        $router = $this->router ?? Hilos::$sr;
-        if ($router === null) {
-            return [];
-        }
-
-        $payload = UserPresenceEmitPayload::fromArray($data->payload);
-        if ($payload->userId <= 0) {
-            return [];
-        }
-
-        $items = [];
-        $this->appendPresenceUpdatesForPageSubscribers(
-            $items,
-            $router,
-            PageConstants::MAIN,
-            $payload->frontend(),
-            $data->excludeAcceptKey,
-        );
-
-        return $items;
-    }
-
-    /**
      * Builds bot lifecycle fan-out from runtime bot status changes.
      *
      * @param EmitRtChangeSignalData $data Runtime emit payload from ChatAgent
@@ -356,37 +318,4 @@ final class ChatSignalMapper implements SignalMapperInterface
         return UserFrontendStateProjector::updatesForUser($user, includePublicUser: true);
     }
 
-    /**
-     * Appends one single-target user presence message per matching page subscriber.
-     *
-     * @param list<EmitFanoutItem> $items Fan-out items being assembled
-     * @param SignalRouter $router Daemon-side router with current subscriptions
-     * @param string $page Page contract key
-     * @param FrontendChangesDTO $frontend Frontend state update for this page contract
-     * @param ?string $excludeAcceptKey Optional connection to skip
-     * @param ?string $paramKey Optional route param filter key
-     * @param ?string $paramValue Optional route param filter value
-     */
-    private function appendPresenceUpdatesForPageSubscribers(
-        array &$items,
-        SignalRouter $router,
-        string $page,
-        FrontendChangesDTO $frontend,
-        ?string $excludeAcceptKey,
-        ?string $paramKey = null,
-        ?string $paramValue = null,
-    ): void {
-        foreach ($router->getAcceptKeysForPage($page, $paramKey, $paramValue) as $targetAcceptKey) {
-            if ($targetAcceptKey === $excludeAcceptKey) {
-                continue;
-            }
-
-            $items[] = new EmitFanoutItem(
-                delivery: EmitFanoutDelivery::Single,
-                wireSignalName: ChatSignalConstants::USER_PRESENCE_UPDATE,
-                innerPayload: UserPresenceSignalData::fromFrontendChanges($frontend),
-                targetAcceptKey: $targetAcceptKey,
-            );
-        }
-    }
 }

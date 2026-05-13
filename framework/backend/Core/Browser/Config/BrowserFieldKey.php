@@ -13,6 +13,7 @@ final class BrowserFieldKey
     public const string ROW_KEY = 'rowKey';
     public const string FIELDS = 'fields';
     public const string COMPUTED = 'computed';
+    public const string TRIGGERS = 'triggers';
     public const string WHERE = 'where';
     public const string VIA = 'via';
     public const string MANY = 'many';

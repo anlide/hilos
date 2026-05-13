@@ -42,6 +42,11 @@ final class MainUsersBrowserTable
                 ],
                 BrowserFieldKey::COMPUTED => [
                     UserConnectionSummary::presence,
+                    UserConnectionSummary::onlineSessionCount,
+                ],
+                BrowserFieldKey::TRIGGERS => [
+                    Connection::userId,
+                    Connection::connectedAt,
                 ],
             ],
         ],

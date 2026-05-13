@@ -21,14 +21,14 @@
       <template v-else>
         <div class="list-group list-group-flush">
           <div
-            v-for="event in chatStore.events"
+            v-for="event in events"
             :key="eventKey(event)"
             class="list-group-item border-0 bg-transparent"
           >
             <MessageItem :event="event" />
           </div>
         </div>
-        <div v-if="chatStore.events.length === 0" class="text-center text-muted p-5">
+        <div v-if="events.length === 0" class="text-center text-muted p-5">
           <p class="mb-0">No events yet. Start chatting!</p>
         </div>
       </template>
@@ -83,7 +83,7 @@
           <button
             type="button"
             class="btn-close btn-close-white chat-attachment-draft-remove"
-            :disabled="chatStore.isModeratingMessage"
+            :disabled="isModeratingMessage"
             aria-label="Remove attachment"
             @click="deleteAttachmentDraft(draft.draftId)"
           />
@@ -100,7 +100,7 @@
         <button
           type="button"
           class="btn btn-outline-secondary flex-shrink-0"
-          :disabled="!connectionStore.isConnected || isBinaryUploading || chatStore.isModeratingMessage"
+          :disabled="!connectionStore.isConnected || isBinaryUploading || isModeratingMessage"
           title="Attach file"
           aria-label="Attach file"
           @click="openFilePicker"
@@ -115,8 +115,8 @@
           class="form-control"
           placeholder="Type your message..."
           data-id="chat-input"
-          :readonly="chatStore.isModeratingMessage"
-          :disabled="!connectionStore.isConnected || chatStore.isModeratingMessage"
+          :readonly="isModeratingMessage"
+          :disabled="!connectionStore.isConnected || isModeratingMessage"
           maxlength="500"
         />
         <span
@@ -128,7 +128,7 @@
         <LoadingButton
           type="submit"
           variant="btn-primary"
-          :loading="chatStore.isModeratingMessage"
+          :loading="isModeratingMessage"
           :disabled="!canSubmit"
           :loading-delay="300"
           data-id="chat-send"
@@ -142,21 +142,31 @@
 
 <script setup lang="ts">
 import { computed, ref, watch, nextTick, onMounted, onUnmounted } from 'vue'
-import { useConnectionStore } from '@hilos/sdk/stores'
+import { useBrowserStore, useConnectionStore } from '@hilos/sdk/stores'
 import { useWebSocket } from '@hilos/sdk/plugins/websocket'
 import { useChatStore } from '@/stores'
-import type { Event } from '@/types'
+import type { Event as ChatEvent } from '@/types'
 import { ATTACHMENT_DRAFT_DELETE, FILE_UPLOAD_INIT, MESSAGE_RATE_LIMIT_SECONDS } from '@/constants'
 import MessageItem from './MessageItem.vue'
 import { LoadingButton } from '@hilos/sdk/components'
 import { sendAction } from '@/services/websocketActions'
-import { registerFileUploadPending } from '@/services/chatFileUpload'
+import { registerFileUploadPending, resolveFileUploadOutcomeFromState } from '@/services/chatFileUpload'
+import {
+  attachmentDraftsFromBrowserRows,
+  BROWSER_PAGE_MAIN,
+  BROWSER_TABLE_ATTACHMENT_DRAFTS,
+  BROWSER_TABLE_MAIN_EVENTS,
+  BROWSER_TABLE_SELF_CONNECTION,
+  mainEventsFromBrowserRows,
+  selfConnectionFromBrowserRows,
+} from '@/entities/browserMainPage'
 
 const connectionStore = useConnectionStore()
+const browserStore = useBrowserStore()
 const chatStore = useChatStore()
 const websocket = useWebSocket()
 
-const eventKey = (event: Event): number | string => {
+const eventKey = (event: ChatEvent): number | string => {
   return event.id || `event-${event.timestamp}-${
     event.eventMessage?.authorUserId
     ?? event.eventMessage?.authorBotId
@@ -169,7 +179,7 @@ const eventKey = (event: Event): number | string => {
 const messagesContainer = ref<HTMLElement | null>(null)
 const fileInputRef = ref<HTMLInputElement | null>(null)
 const draftMessage = ref('')
-const rateLimitSecondsLeft = ref(chatStore.messageRateLimitSecondsRemaining)
+const rateLimitSecondsLeft = ref(0)
 const dragDepth = ref(0)
 const isBinaryUploading = ref(false)
 const uploadClientError = ref<string | null>(null)
@@ -181,8 +191,15 @@ const emit = defineEmits<{
   send: [payload: { content: string }]
 }>()
 
-const attachmentDrafts = computed(() => chatStore.attachmentDrafts)
-const outboundModerationState = computed(() => chatStore.outboundModerationState)
+const mainTableRows = (tableKey: string) => {
+  return browserStore.pages[BROWSER_PAGE_MAIN]?.tables[tableKey]?.rowsByKey
+}
+
+const events = computed(() => mainEventsFromBrowserRows(mainTableRows(BROWSER_TABLE_MAIN_EVENTS)))
+const selfConnection = computed(() => selfConnectionFromBrowserRows(mainTableRows(BROWSER_TABLE_SELF_CONNECTION)))
+const attachmentDrafts = computed(() => attachmentDraftsFromBrowserRows(mainTableRows(BROWSER_TABLE_ATTACHMENT_DRAFTS)))
+const outboundModerationState = computed(() => selfConnection.value?.outboundModerationState ?? null)
+const isModeratingMessage = computed(() => outboundModerationState.value?.phase === 'checking')
 const displayMessage = computed(() => {
   if (outboundModerationState.value?.phase === 'checking') {
     return outboundModerationState.value.text
@@ -195,7 +212,7 @@ const hasDraftContent = computed(() => {
 })
 const canSubmit = computed(() => {
   return connectionStore.isConnected
-    && !chatStore.isModeratingMessage
+    && !isModeratingMessage.value
     && !isRateLimited.value
     && hasDraftContent.value
 })
@@ -203,7 +220,7 @@ const canSubmit = computed(() => {
 type FileBanner = { filename: string; pct: number }
 
 const fileBanner = computed((): FileBanner | null => {
-  const prog = chatStore.fileUploadProgress
+  const prog = selfConnection.value?.fileUploadProgress ?? null
   if (prog !== null) {
     const tot = prog.totalBytes > 0 ? prog.totalBytes : 1
     const pct = Math.min(100, Math.round((prog.uploadedBytes / tot) * 100))
@@ -213,7 +230,7 @@ const fileBanner = computed((): FileBanner | null => {
 })
 
 const uploadStateError = computed((): string | null => {
-  const state = chatStore.selfConnection?.fileUploadState
+  const state = selfConnection.value?.fileUploadState
   if (state?.phase !== 'failed') {
     return null
   }
@@ -291,17 +308,17 @@ onUnmounted(() => {
   if (rateLimitInterval) clearInterval(rateLimitInterval)
 })
 
-const handleInput = (event: Event) => {
-  if (chatStore.isModeratingMessage) {
+const handleInput = (event: globalThis.Event) => {
+  if (isModeratingMessage.value) {
     return
   }
   const target = event.target as HTMLInputElement
   draftMessage.value = target.value
 }
 
-watch(() => chatStore.events.length, scrollToBottom)
+watch(() => events.value.length, scrollToBottom)
 watch(
-  () => chatStore.messageRateLimitSecondsRemaining,
+  () => selfConnection.value?.messageRateLimitSecondsRemaining ?? 0,
   (seconds) => {
     if (seconds > rateLimitSecondsLeft.value) {
       startRateLimitCountdown(seconds)
@@ -310,7 +327,14 @@ watch(
   { immediate: true },
 )
 watch(
-  () => chatStore.outboundModerationState,
+  () => selfConnection.value?.fileUploadState ?? null,
+  (state) => {
+    resolveFileUploadOutcomeFromState(state)
+  },
+  { immediate: true },
+)
+watch(
+  () => outboundModerationState.value,
   (state, previous) => {
     if (previous?.phase === 'checking' && state === null) {
       draftMessage.value = ''
@@ -370,7 +394,7 @@ const uploadSingleFile = async (file: File) => {
   }
 }
 
-const onFileInputChange = (ev: Event) => {
+const onFileInputChange = (ev: globalThis.Event) => {
   const input = ev.target as HTMLInputElement
   const f = input.files?.[0]
   input.value = ''
@@ -396,7 +420,7 @@ const onPaste = (ev: ClipboardEvent) => {
 }
 
 const deleteAttachmentDraft = (draftId: string) => {
-  if (chatStore.isModeratingMessage) {
+  if (isModeratingMessage.value) {
     return
   }
   sendAction(websocket, ATTACHMENT_DRAFT_DELETE, { draftId })

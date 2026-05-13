@@ -25,10 +25,33 @@ const selfConnectionPayload = {
 }
 
 describe('chat session signal parsers', () => {
-  it('parses main page selfConnection payloads', () => {
+  it('parses main page browser payloads', () => {
     expect(subscriptionPageMain.parse({
-      selfConnection: selfConnectionPayload,
-    })?.selfConnection).toEqual(selfConnectionPayload)
+      tables: {
+        mainEvents: {
+          rows: [{
+            rowKey: 9,
+            sources: {
+              events: { id: 9, type: 'chat_started', timestamp: '2026-05-13 10:00:00' },
+            },
+          }],
+          deleted: [3],
+        },
+      },
+    })).toEqual({
+      tables: {
+        mainEvents: {
+          rows: [{
+            rowKey: 9,
+            sources: {
+              events: { id: 9, type: 'chat_started', timestamp: '2026-05-13 10:00:00' },
+            },
+          }],
+          deleted: [3],
+        },
+      },
+    })
+    expect(subscriptionPageMain.parse({ selfConnection: selfConnectionPayload })).toBeNull()
   })
 
   it('parses selfConnection update payloads', () => {

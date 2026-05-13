@@ -5,16 +5,18 @@ declare(strict_types=1);
 namespace Demo\Chat\Tests\Integration;
 
 use Demo\Chat\Agents\ChatAgent;
+use Demo\Chat\Browser\ChatBrowserTable;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\HttpHeaders;
 use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Router\ChatSignalRouter;
-use Demo\Chat\Core\Router\DTO\UserPresenceSignalData;
+use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Projection\ChatProjectionContext;
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
+use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Execution\ExecutionFrame;
 use Hilos\Core\Projection\SourceChange;
@@ -55,6 +57,7 @@ final class ChatAgentPresenceTest extends IntegrationTestCase
 
         Hilos::initSignalRouter(new ChatSignalRouter());
         Hilos::initProjection(new ChatProjectionContext());
+        Hilos::initBrowser();
         Hilos::$sr->subscribeToPage(PageConstants::MAIN, new WebSocketPageSubscribeSignalDTO(
             'presence-listener-ak',
             PageConstants::MAIN,
@@ -84,6 +87,7 @@ final class ChatAgentPresenceTest extends IntegrationTestCase
             $eventCountBeforeClose = count(Hilos::$db->events);
             Hilos::initSignalRouter(new ChatSignalRouter());
             Hilos::initProjection(new ChatProjectionContext());
+            Hilos::initBrowser();
             Hilos::$sr->subscribeToPage(PageConstants::MAIN, new WebSocketPageSubscribeSignalDTO(
                 'presence-listener-ak',
                 PageConstants::MAIN,
@@ -102,11 +106,11 @@ final class ChatAgentPresenceTest extends IntegrationTestCase
     }
 
     /**
-     * Verifies connection changes keep legacy presence delivery scoped to main.
+     * Verifies connection changes update main browser user rows without legacy presence delivery.
      *
      * @throws HilosException When test setup or agent signal handling fails
      */
-    public function testConnectionChangesEmitLegacyPresenceOnlyForMainPage(): void
+    public function testConnectionChangesEmitBrowserMainUsersWithoutLegacyPresence(): void
     {
         RtTruthSourceRegistry::register(ChatRtContext::connections, true, self::TEST_AGENT_ID);
         Hilos::$rt->connections->actions->clear();
@@ -118,6 +122,7 @@ final class ChatAgentPresenceTest extends IntegrationTestCase
 
         Hilos::initSignalRouter(new ChatSignalRouter());
         Hilos::initProjection(new ChatProjectionContext());
+        Hilos::initBrowser();
         Hilos::$sr->subscribeToPage(PageConstants::MAIN, new WebSocketPageSubscribeSignalDTO(
             'presence-main-listener-ak',
             PageConstants::MAIN,
@@ -146,7 +151,7 @@ final class ChatAgentPresenceTest extends IntegrationTestCase
                 '',
                 '',
             );
-            $this->assertSingleMainPresenceEmit($user->id, 'online');
+            $this->assertSingleMainUserBrowserUpdate($user->id, 'online', 1);
 
             $agent->onSignalHandshake(
                 new WebSocketHandshakeSignalDTO(
@@ -159,13 +164,13 @@ final class ChatAgentPresenceTest extends IntegrationTestCase
                 '',
                 '',
             );
-            $this->assertSingleMainPresenceEmit($user->id, 'online');
+            $this->assertSingleMainUserBrowserUpdate($user->id, 'online', 2);
 
             $this->closeConnection($agent, 'presence-ak-2');
-            $this->assertSingleMainPresenceEmit($user->id, 'online');
+            $this->assertSingleMainUserBrowserUpdate($user->id, 'online', 1);
 
             $this->closeConnection($agent, 'presence-ak-1');
-            $this->assertSingleMainPresenceEmit($user->id, 'offline');
+            $this->assertSingleMainUserBrowserUpdate($user->id, 'offline', 0);
             $this->assertNoPresenceEventsInHistory();
         } finally {
             Hilos::$rt->connections->actions->clear();
@@ -312,53 +317,89 @@ final class ChatAgentPresenceTest extends IntegrationTestCase
     }
 
     /**
-     * Drains queued sync signals through projection and returns presence update signals.
+     * Drains queued sync signals through browser/projection and returns main browser page signals.
      *
      * @return list<SignalDTO>
      */
-    private function drainProjectedPresenceSignals(): array
+    private function drainProjectedMainBrowserSignals(): array
     {
         while (($signal = Hilos::$sr?->getNextQueuedSignal()) instanceof SignalDTO) {
-            $this->recordProjectionSourceChange($signal);
+            $this->recordFrontendSourceChange($signal);
         }
 
         Hilos::$projection?->flushToSignalRouter();
+        Hilos::$browser?->flushToSignalRouter();
 
         $signals = [];
+        $legacyPresenceSignals = [];
         while (($signal = Hilos::$sr?->getNextQueuedSignal()) instanceof SignalDTO) {
-            if ($signal->signalName->getName() === ChatSignalConstants::USER_PRESENCE_UPDATE) {
+            if ($signal->signalName->getName() === ChatSignalConstants::SUBSCRIPTION_PAGE_MAIN) {
                 $signals[] = $signal;
+                continue;
+            }
+            if ($signal->signalName->getName() === ChatSignalConstants::USER_PRESENCE_UPDATE) {
+                $legacyPresenceSignals[] = $signal;
             }
         }
+
+        $this->assertSame([], $legacyPresenceSignals);
 
         return $signals;
     }
 
     /**
-     * Asserts that one projected presence signal is delivered to the main page.
-     *
-     * List-page session counts are delivered through browser row updates, so
-     * the legacy presence signal must not include connection stats.
+     * Asserts that one projected browser row update is delivered to the main page.
      *
      * @param int $userId User id expected in the presence update
      * @param string $presence Expected projected presence value
+     * @param int $onlineSessionCount Expected projected online session count
      */
-    private function assertSingleMainPresenceEmit(int $userId, string $presence): void
+    private function assertSingleMainUserBrowserUpdate(
+        int $userId,
+        string $presence,
+        int $onlineSessionCount,
+    ): void
     {
-        $signals = $this->drainProjectedPresenceSignals();
+        $signals = $this->drainProjectedMainBrowserSignals();
         $this->assertCount(1, $signals);
         $webSocketData = $signals[0]->data;
         $this->assertInstanceOf(WebSocketSignalData::class, $webSocketData);
         $this->assertSame('presence-main-listener-ak', $webSocketData->targetAcceptKey);
         $payload = $webSocketData->data;
-        $this->assertInstanceOf(UserPresenceSignalData::class, $payload);
-        $frontend = $payload->toArray()['frontend'];
+        $this->assertInstanceOf(BrowserPageSignalData::class, $payload);
+        $rows = $payload->toArray()[BrowserPageSignalData::tables][ChatBrowserTable::MAIN_USERS][BrowserPageSignalData::rows] ?? [];
+        $row = $this->findMainUserBrowserRow($rows, $userId);
 
-        $this->assertSame(
-            [['userId' => $userId, 'presence' => $presence]],
-            $frontend['updates']['userPresence'],
-        );
-        $this->assertArrayNotHasKey('userConnectionStats', $frontend['updates']);
+        $this->assertIsArray($row);
+        $connection = $row[BrowserPageSignalData::sources][ChatRtContext::connections] ?? null;
+        if ($onlineSessionCount === 0) {
+            $this->assertNull($connection);
+            return;
+        }
+
+        $this->assertIsArray($connection);
+        $this->assertSame($presence, $connection['presence'] ?? null);
+        $this->assertSame($onlineSessionCount, $connection['onlineSessionCount'] ?? null);
+        $this->assertArrayNotHasKey('acceptKey', $connection);
+    }
+
+    /**
+     * Finds a main browser user row by DB user id.
+     *
+     * @param list<array<string, mixed>> $rows Main browser user rows
+     * @param int $userId User id to find
+     * @return ?array<string, mixed> Matching row, or null
+     */
+    private function findMainUserBrowserRow(array $rows, int $userId): ?array
+    {
+        foreach ($rows as $row) {
+            $user = $row[BrowserPageSignalData::sources][ChatDbContext::users] ?? null;
+            if (is_array($user) && ($user['id'] ?? null) === $userId) {
+                return $row;
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -366,23 +407,29 @@ final class ChatAgentPresenceTest extends IntegrationTestCase
      *
      * @param SignalDTO $signal Queued sync signal to inspect
      */
-    private function recordProjectionSourceChange(SignalDTO $signal): void
+    private function recordFrontendSourceChange(SignalDTO $signal): void
     {
         $signalType = $signal->signalType->getType();
         $signalData = $signal->data;
 
         if ($signalType === SignalTypeConstants::RT_SYNC_CREATED && $signalData instanceof RtSyncCreatedSignalData) {
-            Hilos::$projection?->record(SourceChange::rtCreated($signalData->collectionKey, $signalData->stateId, $signalData->row));
+            $change = SourceChange::rtCreated($signalData->collectionKey, $signalData->stateId, $signalData->row);
+            Hilos::$projection?->record($change);
+            Hilos::$browser?->record($change);
             return;
         }
 
         if ($signalType === SignalTypeConstants::RT_SYNC_UPDATED && $signalData instanceof RtSyncUpdatedSignalData) {
-            Hilos::$projection?->record(SourceChange::rtUpdated($signalData->collectionKey, $signalData->stateId, $signalData->row));
+            $change = SourceChange::rtUpdated($signalData->collectionKey, $signalData->stateId, $signalData->row);
+            Hilos::$projection?->record($change);
+            Hilos::$browser?->record($change);
             return;
         }
 
         if ($signalType === SignalTypeConstants::RT_SYNC_DELETED && $signalData instanceof RtSyncDeletedSignalData) {
-            Hilos::$projection?->record(SourceChange::rtDeleted($signalData->collectionKey, $signalData->stateId, $signalData->row));
+            $change = SourceChange::rtDeleted($signalData->collectionKey, $signalData->stateId, $signalData->row);
+            Hilos::$projection?->record($change);
+            Hilos::$browser?->record($change);
         }
     }
 
