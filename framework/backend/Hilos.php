@@ -28,7 +28,7 @@ use Hilos\Runtime\View\Context\RtContext;
  * - Hilos::$browser    — browser-facing state layer
  * - Hilos::$fs         — filesystem layer
  * - Hilos::$sr         — signal router
- * - Hilos::$projection — worker-local projection accumulator
+ * - Hilos::$projection — legacy projection/global broadcast accumulator
  * - Hilos::$ac         — analytics collector
  */
 abstract class Hilos
@@ -57,14 +57,14 @@ abstract class Hilos
     /** @var ?SignalRouter Signal router singleton */
     public static ?SignalRouter $sr = null;
 
-    /** @var ?ProjectionContext Worker-local projection accumulator and dispatcher */
+    /** @var ?ProjectionContext Legacy projection/global broadcast accumulator */
     public static ?ProjectionContext $projection = null;
 
     /** @var ?AnalyticsCollector Analytics collector singleton */
     public static ?AnalyticsCollector $ac = null;
 
     /**
-     * Initializes env, settings, storage, runtime, table, browser, filesystem, and projection layers.
+     * Initializes env, settings, storage, runtime, table, browser, filesystem, and legacy projection layers.
      *
      * @throws HilosException When a layer factory or configure step cannot initialize its singleton
      */
@@ -176,7 +176,7 @@ abstract class Hilos
     }
 
     /**
-     * Replaces and configures the worker-local projection context.
+     * Replaces and configures the legacy projection/global broadcast context.
      *
      * Mirrors {@see self::initSignalRouter()} for the projection layer: tests
      * and bootstrap code can inject a specific {@see ProjectionContext} instance
@@ -276,11 +276,11 @@ abstract class Hilos
     }
 
     /**
-     * Creates the worker-local projection context.
+     * Creates the legacy projection/global broadcast context.
      *
-     * The default framework has no projection. Projects return a {@see ProjectionContext}
-     * subclass that registers per-page and per-group projections inside its
-     * {@see ProjectionContext::configure()}; the configure step runs from
+     * The default framework has no projection. Projects may return a
+     * {@see ProjectionContext} subclass for project-wide broadcasts or legacy
+     * per-page/per-group projections; the configure step runs from
      * {@see self::init()} immediately after the factory.
      *
      * @return ?ProjectionContext Projection context or null if not used

@@ -41,7 +41,7 @@ final class WorkerManagerBrowserContextTest extends TestCase
 
         $recordSourceChange = \Closure::bind(
             static function (WorkerManager $manager, string $signalType, array $signalData): void {
-                $manager->recordProjectionSourceChange($signalType, $signalData);
+                $manager->recordBrowserSourceChange($signalType, $signalData);
             },
             null,
             WorkerManager::class,

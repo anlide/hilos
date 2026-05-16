@@ -17,7 +17,7 @@ switch to the focused data-layer skill first.
   `$hilos-runtime`.
 - Adding DB/RT shape, lookup APIs, or write paths: use `$hilos-data-extension`.
 - DB-backed item plus live runtime overlay: use `$hilos-db-rt-state`.
-- Browser-facing frontend projections, legacy `toFrontend`, and computed item fields:
+- BrowserContext rows, frontend projections, legacy `toFrontend`, and computed item fields:
   use `$hilos-frontend-representation`.
 - Choosing between magic, array, result, and `findBy*()` access:
   use `$hilos-accessor-contracts`.
@@ -30,8 +30,8 @@ switch to the focused data-layer skill first.
 ## Mental Model
 
 - Caller code should orchestrate existing typed APIs; it should not become the
-  owner of DB lookup logic, runtime aggregation, frontend projection, and signal
-  delivery at the same time.
+  owner of DB lookup logic, runtime aggregation, browser/frontend payload
+  shaping, and signal delivery at the same time.
 - `Hilos::$db` is the durable business data entry point. Use it for persisted
   users, settings, catalog rows, history, and other state that must survive
   restart.

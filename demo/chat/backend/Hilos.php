@@ -33,7 +33,7 @@ use Hilos\Runtime\View\Context\RtContext;
  * - Hilos::$table->users
  * - Hilos::$browser
  * - Hilos::$fs->quarantine, Hilos::$fs->published, Hilos::$fs->tmp
- * - Hilos::$projection->subscribeSnapshot(PageConstants::MAIN, $acceptKey, $params)
+ * - Hilos::$projection
  *
  * @property-read ChatDbContext $db Database context (narrows parent's DbContext for IDE)
  * @property-read ChatEnvAccessor $env Environment accessor (narrows parent's EnvAccessor for IDE)
@@ -42,7 +42,7 @@ use Hilos\Runtime\View\Context\RtContext;
  * @property-read ChatTableContext $table Table context (narrows parent's TableContext for IDE)
  * @property-read ChatBrowserContext $browser Browser context (narrows parent's BrowserContext for IDE)
  * @property-read ChatFsContext $fs Filesystem context (narrows parent's FsContext for IDE)
- * @property-read ChatProjectionContext $projection Projection context (narrows parent's ProjectionContext for IDE)
+ * @property-read ChatProjectionContext $projection Global broadcast projection context (narrows parent's ProjectionContext for IDE)
  */
 final class Hilos extends \Hilos\Hilos
 {
@@ -117,9 +117,9 @@ final class Hilos extends \Hilos\Hilos
     }
 
     /**
-     * Creates the worker-local projection context for the chat demo.
+     * Creates the chat global broadcast projection context.
      *
-     * @return ?ChatProjectionContext Chat projection context
+     * @return ?ChatProjectionContext Chat global broadcast projection context
      */
     protected static function createProjection(): ?ProjectionContext
     {

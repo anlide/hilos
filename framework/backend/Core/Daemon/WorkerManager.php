@@ -66,7 +66,7 @@ use Throwable;
  * Base process manager for worker processes.
  *
  * Owns the daemon connection, worker-local agents, page signal routers,
- * subscription mirrors, and frontend projection flushing.
+ * subscription mirrors, and browser/projection flushing.
  */
 abstract class WorkerManager extends BaseManager
 {
@@ -475,7 +475,7 @@ abstract class WorkerManager extends BaseManager
             return;
         }
         DbSyncApplicator::applyCreated($data->signalData, skipSelfBroadcastCheck: false);
-        $this->recordProjectionSourceChange(SignalTypeConstants::DB_SYNC_CREATED, $data->signalData);
+        $this->recordBrowserSourceChange(SignalTypeConstants::DB_SYNC_CREATED, $data->signalData);
         $this->dispatchDbSyncToAgents(SignalConstants::DB_SYNC_CREATED, $data->signalData);
     }
 
@@ -490,7 +490,7 @@ abstract class WorkerManager extends BaseManager
             return;
         }
         DbSyncApplicator::applyUpdated($data->signalData, skipSelfBroadcastCheck: false);
-        $this->recordProjectionSourceChange(SignalTypeConstants::DB_SYNC_UPDATED, $data->signalData);
+        $this->recordBrowserSourceChange(SignalTypeConstants::DB_SYNC_UPDATED, $data->signalData);
         $this->dispatchDbSyncToAgents(SignalConstants::DB_SYNC_UPDATED, $data->signalData);
     }
 
@@ -505,7 +505,7 @@ abstract class WorkerManager extends BaseManager
             return;
         }
         DbSyncApplicator::applyDeleted($data->signalData, skipSelfBroadcastCheck: false);
-        $this->recordProjectionSourceChange(SignalTypeConstants::DB_SYNC_DELETED, $data->signalData);
+        $this->recordBrowserSourceChange(SignalTypeConstants::DB_SYNC_DELETED, $data->signalData);
         $this->dispatchDbSyncToAgents(SignalConstants::DB_SYNC_DELETED, $data->signalData);
     }
 
@@ -615,7 +615,7 @@ abstract class WorkerManager extends BaseManager
             return;
         }
         RtSyncApplicator::applyCreated($data->signalData, skipSelfBroadcastCheck: false);
-        $this->recordProjectionSourceChange(SignalTypeConstants::RT_SYNC_CREATED, $data->signalData);
+        $this->recordBrowserSourceChange(SignalTypeConstants::RT_SYNC_CREATED, $data->signalData);
         $this->dispatchRtSyncToAgents(SignalConstants::RT_SYNC_CREATED, $data->signalData);
     }
 
@@ -630,7 +630,7 @@ abstract class WorkerManager extends BaseManager
             return;
         }
         RtSyncApplicator::applyUpdated($data->signalData, skipSelfBroadcastCheck: false);
-        $this->recordProjectionSourceChange(SignalTypeConstants::RT_SYNC_UPDATED, $data->signalData);
+        $this->recordBrowserSourceChange(SignalTypeConstants::RT_SYNC_UPDATED, $data->signalData);
         $this->dispatchRtSyncToAgents(SignalConstants::RT_SYNC_UPDATED, $data->signalData);
     }
 
@@ -645,7 +645,7 @@ abstract class WorkerManager extends BaseManager
             return;
         }
         RtSyncApplicator::applyDeleted($data->signalData, skipSelfBroadcastCheck: false);
-        $this->recordProjectionSourceChange(SignalTypeConstants::RT_SYNC_DELETED, $data->signalData);
+        $this->recordBrowserSourceChange(SignalTypeConstants::RT_SYNC_DELETED, $data->signalData);
         $this->dispatchRtSyncToAgents(SignalConstants::RT_SYNC_DELETED, $data->signalData);
     }
 
@@ -667,17 +667,20 @@ abstract class WorkerManager extends BaseManager
     }
 
     /**
-     * Records a DB/RT sync fact in worker-local frontend source buffers.
+     * Records a DB/RT sync fact in worker-local browser source buffers.
      *
      * Local writes are recorded when the worker first drains its queued sync
      * signal. Remote writes are recorded after the daemon sync message is
      * accepted. Incoming self-broadcast echoes are consumed before this method,
-     * so one backend fact becomes one frontend invalidation per worker.
+     * so one backend fact becomes one browser invalidation per worker.
+     *
+     * The legacy projection context still receives the same SourceChange while
+     * project-level global broadcasts live there.
      *
      * @param string $signalType DB/RT sync signal type
      * @param array<string, mixed> $signalData Sync payload
      */
-    private function recordProjectionSourceChange(string $signalType, array $signalData): void
+    private function recordBrowserSourceChange(string $signalType, array $signalData): void
     {
         if (Hilos::$projection === null && Hilos::$browser === null) {
             return;
@@ -1327,7 +1330,7 @@ abstract class WorkerManager extends BaseManager
     }
 
     /**
-     * Drains queued worker signals and flushes frontend projection deliveries.
+     * Drains queued worker signals and flushes browser/projection deliveries.
      *
      * Processes all queued signals from SignalRouter and forwards them to daemon.
      * Signals are processed one by one in while-do loop.
@@ -1344,7 +1347,7 @@ abstract class WorkerManager extends BaseManager
         }
 
         // Phase 1 sends backend state changes and records them for this worker's
-        // frontend projection/browser state. Phase 2 sends the WS_USER signals
+        // browser/projection state. Phase 2 sends the WS_USER signals
         // produced by flushes in the same tick, instead of waiting for the next loop.
         $this->dispatchQueuedSignalsToDaemon();
         Hilos::$projection?->flushToSignalRouter();
@@ -1355,7 +1358,7 @@ abstract class WorkerManager extends BaseManager
     /**
      * Drains the current worker signal queue and forwards it to the daemon.
      *
-     * Called before and after frontend projection/browser flush because flushes
+     * Called before and after browser/projection flush because flushes
      * queue ordinary worker signals into the same router queue.
      */
     private function dispatchQueuedSignalsToDaemon(): void
@@ -1385,13 +1388,13 @@ abstract class WorkerManager extends BaseManager
             };
 
             if ($syncDto !== null) {
-                $this->recordProjectionSourceChange($signalType, $signalData);
+                $this->recordBrowserSourceChange($signalType, $signalData);
                 $this->dispatchSyncToLocalAgents($signalType, $signalData);
                 $this->daemonClient->send($syncDto);
                 continue;
             }
 
-            // Worker projection signals may be already-addressed WebSocket deliveries.
+            // Worker browser/projection flush signals may be already-addressed WebSocket deliveries.
             // The daemon ignores agentId for WorkerAgentMessageDTO and routes the inner
             // SignalDTO by its signal type and WebSocket target metadata.
             $agentType = $signal->signalSource->getType();

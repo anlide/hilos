@@ -15,7 +15,7 @@ use Hilos\Core\Table\Mutation\TableMutationType;
  *
  * Serializable for worker-to-daemon transport. The payload carries one source
  * change fact; table routing and mutation construction happen on the receiving
- * worker through the projection layer.
+ * worker through browser/projection source-change consumers.
  */
 final class EmitDbChangeSignalData extends BaseDTO implements SignalDataInterface
 {
@@ -28,7 +28,7 @@ final class EmitDbChangeSignalData extends BaseDTO implements SignalDataInterfac
     /**
      * Creates a worker-to-daemon source-change payload.
      *
-     * @param SourceChange $sourceChange Source change that tables and projections may consume
+     * @param SourceChange $sourceChange Source change that tables, browser state, and projections may consume
      * @param ?string $excludeAcceptKey Initiator connection to skip on broadcast leg
      * @param ?int $actorUserId Optional acting user id (audit / future rules)
      */

@@ -1,113 +1,122 @@
-# Frontend Projection
+# Browser Source Projection
 
-Frontend projection is the worker-local layer that turns backend source facts
-into frontend wire payloads.
+Read this before changing DB/RT sync fan-out into browser payloads,
+`BrowserContext`, `SourceChange`, worker-local subscription mirrors, or the
+legacy projection context.
 
-## Boundary
+## Core Rule
 
-Each worker owns its own `Hilos::$projection` context (a
-`Hilos\Core\Projection\ProjectionContext` subclass). The daemon does not keep
-projection state and does not decide which frontend collections changed.
+Page-shaped DB/RT browser state belongs to `Hilos::$browser`
+(`Hilos\Core\Browser\Context\BrowserContext`). The legacy
+`Hilos::$projection` context may still consume the same `SourceChange` facts
+for project-wide broadcasts or old projection-backed snapshots, but new page
+state should not be added through `PageProjection`.
 
-The input to the projection is DB/RT sync:
+## Source Flow
+
+Each worker owns its own browser context. The daemon does not keep browser
+state and does not decide which frontend collections changed.
 
 1. Local code writes DB or RT through the normal collection/actions layer.
 2. DB_SYNC/RT_SYNC is queued.
-3. The worker records that sync fact in its local projection through
-   `Hilos::$projection->record(SourceChange)` and sends the sync to the daemon.
-4. The daemon applies/broadcasts the sync to workers.
-5. Every other worker applies the sync and records the same fact in its own
-   projection.
+3. The worker turns the sync payload into `SourceChange` via its browser
+   source-change recording path.
+4. The worker records the source fact in `Hilos::$browser` and, while the
+   legacy context exists, also in `Hilos::$projection`.
+5. The daemon applies/broadcasts the sync to workers.
+6. Every other worker applies the sync and records the same source fact in its
+   own browser/projection consumers.
 
 The originating worker receives its daemon echo too, but it consumes the
 self-broadcast marker and does not record the fact a second time.
 
 ## Delivery
 
-Projection flush happens in the worker after queued DB/RT sync messages are
-sent. `Hilos::$projection->flushToSignalRouter()` produces already-addressed
-WebSocket deliveries (`Hilos\Core\Projection\ProjectionDelivery`):
+Browser/projection flush happens in the worker after queued DB/RT sync messages
+are sent. The worker then drains the ordinary router queue again so flush output
+is delivered in the same tick.
 
-- signal name, for example `new_event` or `table_mutation`;
-- payload DTO implementing `SignalDataInterface`;
-- target `acceptKey`.
+`Hilos::$browser->flushToSignalRouter()` emits page-shaped
+`BrowserPageSignalData` payloads addressed to local accept keys subscribed to
+matching pages. The daemon routes each addressed `WS_USER` frame to that exact
+accept key.
 
-The worker queues these deliveries as normal `WS_USER` signals. The daemon
-routes each frame to that exact accept key.
+`Hilos::$projection->flushToSignalRouter()` is still available for legacy
+projection users and project-wide broadcasts such as chat events or agent
+presence. Do not move those broadcasts into `BrowserContext` unless the payload
+is actually page-shaped browser state.
 
-This is why duplicate frontend broadcasts do not happen: a connection is served
-by one worker, and each worker targets only accept keys present in its own
-local subscription mirror.
+This worker-local fan-out prevents duplicate frontend broadcasts: a connection
+is served by one worker, and each worker targets only accept keys present in
+its local subscription mirror.
 
 ## Subscription Mirror
 
 The daemon still owns the global subscription registry for WebSocket routing.
-Workers keep a local mirror only for projection decisions:
+Workers keep a local mirror for browser/projection decisions:
 
 - page subscribe stores page and params by accept key;
 - page update merges params;
 - page unsubscribe and connection close remove local entries;
 - group subscriptions are mirrored for completeness.
 
-Projection code should use this local router mirror
-(`Hilos::$sr->getAcceptKeysForPage()`) to find interested accept keys. It must
-not query daemon state directly.
+Browser/projection code should use this local router mirror, for example
+`Hilos::$sr->getPageSubscriptions()` or `Hilos::$sr->getAcceptKeysForPage()`.
+It must not query daemon state directly.
 
-## Tables
+## Page Snapshots
 
-Tables are projection targets. A DB/RT source fact can produce a table row
-mutation through `Hilos::$table->buildMutationSignalsForSourceEvent(SourceChange, …)`.
+The default `AbstractPage::onSubscribe()` delegates to both layers:
 
-A `TableDefinition` subclass may react to multiple sources (DB collections and
-RT collections both): `TableDefinition::buildMutationForSourceEvent(SourceChange $change)`
-inspects `$change->sourceKey` to decide which sources are observed.
-
-For example, both `AdminUsersTable` and `HilosUsersTable` react to two sources:
-
-- `ChatDbContext::users` — DB user create/update/delete projects directly to a
-  user row mutation;
-- `ChatRtContext::connections` — connection lifecycle flips the user's
-  `onlineSessionCount` and `presence` summary projected into the same row, so
-  the table emits an Update mutation for the affected user id.
-
-The current table delivery policy is server-authoritative immediate
-`table_mutation` to local subscribers. `table_mutation_pending` remains
-available for explicit acting-user-driven flows.
-
-## Subscribe Snapshot
-
-The default `AbstractPage::onSubscribe()` delegates to
-`Hilos::$projection->subscribeSnapshot(static::PAGE, $acceptKey, $params)`.
-Per-page projection subclasses (planned: `Hilos\Core\Projection\PageProjection`)
-build the initial snapshot payload and the framework queues it as a single
-`WS_USER` signal to the subscribing accept key.
+- `Hilos::$projection?->subscribeSnapshot(...)` for legacy projection-backed
+  pages;
+- `Hilos::$browser?->subscribeSnapshot(...)` for current page-shaped browser
+  payloads.
 
 Pages override `onSubscribe()` only when they need domain or routing parameter
-checks before (or instead of) delegating to the projection layer.
+checks before or instead of delegating to these layers.
+
+## Browser Tables
+
+Browser table configs declare the DB/RT sources that shape a page row. A source
+fact can trigger a `BrowserPageSignalData` row update or delete when the
+subscribed page includes a table observing that source.
+
+Screen-specific table rows may still live on concrete table definitions or
+browser table config classes. Declare every DB/RT source that materially
+changes the browser row so a source fact never has to be bridged by imperative
+agent/page fan-out.
+
+The separate `table_mutation` transport remains server-authoritative immediate
+table state. Use it for table-store mutations, not for new page-shaped browser
+payloads.
 
 ## Source Change DTO
 
-`Hilos\Core\Projection\SourceChange` is the unified source-fact carrier:
+`Hilos\Core\Projection\SourceChange` is the shared source-fact carrier used by
+browser and legacy projection consumers:
 
 - `kind` — `KIND_DB` or `KIND_RT`;
 - `sourceKey` — DB or RT collection key;
-- `sourceId` — row id or runtime state id (always serialized as `string`);
-- `mutationType` — `TableMutationType` (Create/Update/Delete);
-- `row` — full row on Create, diff on Update, previous row on Delete when
+- `sourceId` — row id or runtime state id, serialized as `string`;
+- `mutationType` — `TableMutationType` (`Create`, `Update`, `Delete`);
+- `row` — full row on create, diff on update, previous row on delete when
   available.
 
-`SourceChange` extends `BaseDTO`, so it is also the serializable payload used
-by `EmitDbChangeSignalData` on the worker-to-daemon transport.
+`SourceChange` extends `BaseDTO`, so it is also serializable for worker/daemon
+transport payloads that need to carry a source fact.
 
 ## Rules
 
-- Do not build frontend fan-out in agents/pages when the source state already
+- Do not build browser fan-out in agents/pages when the source state already
   changes DB or RT.
-- Do not put projection state in the daemon.
-- Remote DB_SYNC/RT_SYNC must invalidate the receiving worker projection.
-- Self-broadcast DB_SYNC/RT_SYNC echoes must not invalidate projection again.
-- If a delete projection needs fields such as `userId`, include the previous row
-  in the delete sync payload before removing the DB/RT item.
-- A `TableDefinition` should declare every DB/RT source that materially
-  changes its row shape so that a single source fact never has to be bridged
-  by imperative code in the projection layer.
+- Do not add new page-shaped DB/RT browser state through `PageProjection`; use
+  `BrowserContext` and page/table `BROWSER` config.
+- Do not put browser or projection state in the daemon.
+- Remote DB_SYNC/RT_SYNC must invalidate the receiving worker's browser source
+  state.
+- Self-broadcast DB_SYNC/RT_SYNC echoes must not invalidate browser/projection
+  consumers again.
+- If a delete projection needs fields such as `userId`, include the previous
+  row in the delete sync payload before removing the DB/RT item.
+- Keep global, non-page broadcasts separate from page-shaped browser payloads.

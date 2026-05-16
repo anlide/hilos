@@ -572,8 +572,9 @@ class SignalRouter
     /**
      * Accept keys known to this router's subscription registry.
      *
-     * In a worker this is the worker-local mirror used by frontend projections;
-     * in the daemon this is the global routing registry used for broadcasts.
+     * In a worker this is the worker-local mirror used by browser/projection
+     * fan-out; in the daemon this is the global routing registry used for
+     * broadcasts.
      *
      * @return list<string>
      */

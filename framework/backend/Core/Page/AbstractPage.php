@@ -9,7 +9,6 @@ use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Page\DTO\PageActionErrorSignalData;
 use Hilos\Core\Page\Exception\PageSubscriptionException;
-use Hilos\Core\Projection\PageProjection;
 use Hilos\Core\Projection\SourceChange;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
@@ -137,12 +136,12 @@ abstract class AbstractPage
     /**
      * Handles page subscription.
      *
-     * Default behavior delegates to the projection and browser layers. If the
-     * page has a registered {@see PageProjection}, the framework builds and
-     * sends the legacy initial snapshot through it. If the active browser
-     * context has a matching page config, it also sends the browser-shaped
-     * snapshot. Override in concrete pages to add domain or routing parameter
-     * checks before or instead of delegating to these layers.
+     * Default behavior delegates to the legacy projection hook and the browser
+     * layer. The browser context is the current owner of page-shaped DB/RT
+     * snapshots; the projection hook remains for compatibility while older
+     * projects may still register projection-backed snapshots. Override in
+     * concrete pages to add domain or routing parameter checks before or
+     * instead of delegating to these layers.
      *
      * Route params are available through the typed accessors on
      * PageRouteParams; family-level abstract pages typically convert

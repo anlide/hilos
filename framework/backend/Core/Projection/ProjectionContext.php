@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Core\Projection;
 
 use Hilos\Constants\SignalTypeConstants;
+use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Page\Exception\PageSubscriptionException;
 use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Router\SignalName;
@@ -14,7 +15,7 @@ use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Hilos;
 
 /**
- * Worker-local projection accumulator and dispatcher.
+ * Legacy worker-local projection accumulator and dispatcher.
  *
  * Projection state is intentionally not stored in the daemon. DB_SYNC/RT_SYNC
  * facts invalidate the projection of every worker that receives them, including
@@ -22,9 +23,10 @@ use Hilos\Hilos;
  * only accept keys present in its own subscription mirror inside SignalRouter,
  * so the daemon remains a transport for already-addressed WebSocket frames.
  *
- * Subclasses register concrete PageProjection and GroupProjection instances in
- * configure(). Each projection owns the mapping from
- * source facts to wire deliveries for one page or one group.
+ * Subclasses may register concrete PageProjection and GroupProjection instances
+ * in configure(). New page-shaped DB/RT browser payloads should use
+ * BrowserContext instead; this context remains for legacy projections and
+ * project-wide broadcasts.
  */
 abstract class ProjectionContext
 {
@@ -67,7 +69,7 @@ abstract class ProjectionContext
     }
 
     /**
-     * Records a DB/RT sync fact in the worker-local projection buffer.
+     * Records a DB/RT sync fact in the legacy projection buffer.
      *
      * @param SourceChange $change Source change to dispatch on the next flush
      */

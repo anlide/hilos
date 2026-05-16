@@ -35,7 +35,7 @@ ws.on('new_event', (data: NewEventData) => {
 ws.send('PAGE_SUBSCRIBE', { page: 'main', params: {} })
 
 // Server responds with subscription signal carrying initial state.
-// Project browser state should normally ride in `frontend.full`.
+// Page-shaped DB/RT state should normally ride in BrowserPageSignalData.
 ```
 
 On the wire `params` is still a `Record<string, string>` — transport DTOs
@@ -71,8 +71,8 @@ shape — `errorCode` is stable, `message` is for diagnostics only.
 
 ## Frontend state snapshots
 
-Browser-facing DB/RT state should normally be sent as `FrontendChangesDTO` under
-the `frontend` payload key:
+Project-wide frontend state collections can be sent as `FrontendChangesDTO`
+under the `frontend` payload key:
 
 ```json
 {
@@ -88,6 +88,33 @@ the `frontend` payload key:
 
 The frontend applies this through a project receiver such as
 `ChatFrontendStateReceiver`.
+
+## Browser page snapshots
+
+Page-shaped DB/RT state should normally be sent as `BrowserPageSignalData`:
+
+```json
+{
+  "tables": {
+    "mainUsers": {
+      "rows": [
+        {
+          "rowKey": 1,
+          "sources": {
+            "users": { "id": 1, "name": "Ada" },
+            "connections": { "presence": "online" }
+          }
+        }
+      ]
+    }
+  }
+}
+```
+
+The frontend applies this through `useBrowserStore().applyPagePayload(...)`.
+Use this shape for page/table browser state produced by `BrowserContext`; use
+`FrontendChangesDTO` for project-wide frontend collections that are not tied to
+one subscribed page table.
 
 ## Entity snapshots
 
@@ -134,9 +161,9 @@ a full snapshot.
 ## Table mutation delivery
 
 `table_mutation` is an immediate server-authoritative mutation. Backend
-projection sends it to subscribed local accept keys after DB/RT sync facts are
-recorded in the worker-local frontend projection, and the frontend applies it to
-the table rows immediately.
+source-change fan-out sends it to subscribed local accept keys after DB/RT sync
+facts are recorded in the worker-local browser/projection consumers, and the
+frontend applies it to the table rows immediately.
 
 `table_mutation_pending` is reserved for an explicit "review external changes"
 product policy. It is not the default way to propagate table changes from

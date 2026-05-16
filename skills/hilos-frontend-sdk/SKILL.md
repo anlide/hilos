@@ -11,13 +11,15 @@ Use this skill for frontend SDK and Vue page work in Hilos. Start with `agents.m
 
 - WebSocket lifecycle, `acceptKey`, reconnect: `docs/agents/frontend-sdk/websocket-connection.md`
 - Client actions, server signals, page subscription: `docs/agents/frontend-sdk/backend-contract.md`
+- DB/RT source fan-out to page-shaped browser payloads:
+  `docs/agents/architecture/frontend-projection.md`
 - Editing entities from Vue pages: `docs/agents/frontend-sdk/edit-in-modal.md`
 - Page action handler routing/acks/errors: `docs/agents/code-style/page-action-handlers.md`
 - Signal DTO conventions: use `$hilos-signals`
 
 ## Workflow
 
-1. Identify whether the change is connection behavior, action sending, signal parsing, page subscription, or entity editing.
+1. Identify whether the change is connection behavior, action sending, signal parsing, page subscription, browser payload fan-out, or entity editing.
 2. Keep the backend and frontend wire contract synchronized.
 3. Add or update frontend parser tests for new or changed signals.
 4. Add or update backend DTO roundtrip tests when signal payloads change.

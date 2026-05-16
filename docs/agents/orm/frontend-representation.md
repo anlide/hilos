@@ -4,8 +4,10 @@ Read this before sending DB or RT data to the browser.
 
 ## Core Rule
 
-Use typed frontend projections for browser-facing DB/RT payloads. Do not add new
-browser shaping, privacy filtering, or runtime overlays to DB/RT View item
+Use explicit browser-facing contracts for DB/RT payloads: `BrowserContext` and
+`BrowserPageSignalData` for page-shaped table state, or typed frontend
+projections / `FrontendChangesDTO` for project-wide frontend state. Do not add
+new browser shaping, privacy filtering, or runtime overlays to DB/RT View item
 `toArray()` methods.
 
 `toArray()` is still valid for backend row serialization, DTO serialization,
@@ -18,7 +20,8 @@ project-specific browser state.
 |---|---|
 | Public browser state for one DB item | `Frontend/DTO/*Projection` plus a projector |
 | Runtime-backed browser state | Frontend projection DTO, fed by `Hilos::$rt` typed APIs |
-| Page-specific state collection | `FrontendChangesDTO` with `FrontendStateCollectionKey` |
+| Page-specific table state | `BrowserContext` / `BrowserPageSignalData` rows |
+| Project-wide frontend state collection | `FrontendChangesDTO` with `FrontendStateCollectionKey` |
 | Table row payload | Concrete table row DTO or table helper |
 | Generic legacy entity payload | Existing `EntitiesChangesDTO` path only when already established |
 | RT sync or delete tombstone row | Concrete `Runtime/State/Item/*::toArray()` |
@@ -34,20 +37,23 @@ the RT sync row contract.
 
 1. Decide whether the payload is browser state, table state, DB sync, RT sync,
    or backend-only serialization.
-2. For browser state, inspect existing `Frontend/*Projector`,
+2. For page-shaped browser state, inspect `BrowserContext`, page/table
+   `BROWSER` config, `BrowserPageSignalData`, and the matching TypeScript
+   parser/store shape.
+3. For project-wide frontend state, inspect existing `Frontend/*Projector`,
    `Frontend/DTO/*Projection`, `FrontendStateCollectionKey`, and the matching
    TypeScript parser/store shape.
-3. Keep DB/RT View items as typed model access APIs: expose reusable properties
+4. Keep DB/RT View items as typed model access APIs: expose reusable properties
    and bridges through `__get()`, but do not make their `toArray()` the browser
    contract.
-4. If runtime data is involved, read it through existing RT collection/item APIs
+5. If runtime data is involved, read it through existing RT collection/item APIs
    such as `Hilos::$rt->connections->summaryForUser($userId)`.
-5. If the browser needs a new state collection or changes an existing payload
+6. If the browser needs a new state collection or changes an existing payload
    shape, stop for the contract approval gate before editing signal DTOs or
    frontend parsers.
-6. Update backend DTO/projection tests and frontend parser/receiver tests
+7. Update backend DTO/projection/browser tests and frontend parser/receiver tests
    together.
-7. Validate through the narrow composer script selected by
+8. Validate through the narrow composer script selected by
    `docs/agents/testing.md`.
 
 ## Preferred Shape

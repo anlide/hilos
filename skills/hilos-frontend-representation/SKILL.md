@@ -1,14 +1,15 @@
 ---
 name: hilos-frontend-representation
-description: Work with Hilos browser-facing DB/RT payloads, typed frontend projections, FrontendChangesDTO collections, legacy EntitiesChangesDTO paths, table rows, and boundaries between frontend DTOs and DB/RT toArray serializers.
+description: Work with Hilos browser-facing DB/RT payloads, BrowserContext page-shaped rows, typed frontend projections, FrontendChangesDTO collections, legacy EntitiesChangesDTO paths, table rows, and boundaries between frontend DTOs and DB/RT toArray serializers.
 ---
 
 # Hilos Frontend Representation
 
 Use this skill when adding or reviewing browser payloads for DB-backed or
-runtime-backed items, typed frontend state projections, table rows, or legacy
-payloads that still call `toArray(toFrontend: true)`. Start with `agents.md`,
-then read `docs/agents/orm/frontend-representation.md`.
+runtime-backed items, BrowserContext page-shaped rows, typed frontend state
+projections, table rows, or legacy payloads that still call
+`toArray(toFrontend: true)`. Start with `agents.md`, then read
+`docs/agents/orm/frontend-representation.md`.
 
 ## Read First
 
@@ -24,8 +25,9 @@ then read `docs/agents/orm/frontend-representation.md`.
 
 ## Mental Model
 
-- Browser-facing DB/RT state should go through typed frontend projections and
-  `FrontendChangesDTO` collections.
+- Page-shaped DB/RT browser state should go through `BrowserContext` and
+  `BrowserPageSignalData`; project-wide frontend state should go through typed
+  frontend projections and `FrontendChangesDTO` collections.
 - DB/RT `toArray()` methods are backend serializers, legacy entity serializers,
   table row serializers, DTO serializers, or RT sync row serializers depending
   on the owning class. They are not the default owner for new browser payloads.
@@ -38,16 +40,19 @@ then read `docs/agents/orm/frontend-representation.md`.
 
 ## Workflow
 
-1. Decide whether the value belongs to frontend state, a signal payload, a
-   table row, DB sync, RT sync, or backend-only serialization.
-2. Inspect existing backend DTO/projection/table row constants and the matching
-   TypeScript parser/store shape.
+1. Decide whether the value belongs to page-shaped browser state, project-wide
+   frontend state, a signal payload, a table row, DB sync, RT sync, or
+   backend-only serialization.
+2. Inspect existing `BrowserContext`, page/table `BROWSER` config,
+   backend DTO/projection/table row constants, and the matching TypeScript
+   parser/store shape.
 3. Inspect the View item `__get()` and existing bridge properties for model
    access, but do not add new browser filtering to View item `toArray()`.
 4. Inspect existing Object item fields and runtime bridge properties.
 5. If runtime data is involved, inspect the RT collection helper first, such as
    `connections->summaryForUser($userId)`.
-6. Use typed DTO/projection payloads for browser state.
+6. Use `BrowserPageSignalData` for page-shaped browser rows and typed
+   DTO/projection payloads for project-wide frontend state.
 7. Keep legacy `toFrontend` entity paths only when the existing generic entity
    channel still depends on them and migration is out of scope.
 8. Keep table/page code as orchestration that calls existing model APIs, typed
@@ -126,5 +131,5 @@ $draftRows[] = AttachmentDraftSignalData::fromDraft($draft)->toArray();
 - Do not send raw RT state rows or RT View item arrays to the browser.
 - Do not put page-specific runtime overlays into generic entity payloads.
 - Do not put frontend representation logic in Entity classes.
-- Keep frontend parsers and backend DTO/projection tests synchronized with any
-  changed browser payload shape.
+- Keep frontend parsers and backend DTO/projection/browser tests synchronized
+  with any changed browser payload shape.

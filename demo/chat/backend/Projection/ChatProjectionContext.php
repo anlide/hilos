@@ -23,14 +23,18 @@ use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\Hilos;
 
 /**
- * Chat demo projection context.
+ * Chat demo global broadcast projection context.
  *
  * Adds project-level global broadcast rules for chat events and agent presence.
+ * Page-shaped DB/RT snapshots and updates are handled by ChatBrowserContext.
  */
 final class ChatProjectionContext extends ProjectionContext
 {
     /**
      * Registers legacy page projections.
+     *
+     * Chat currently keeps this empty because page-shaped payloads are owned by
+     * ChatBrowserContext.
      */
     public function configure(): void
     {

@@ -8,10 +8,11 @@ use Hilos\BaseDTO;
 use Hilos\Core\Table\Mutation\TableMutationType;
 
 /**
- * DB/RT sync fact that can invalidate a worker-local projection.
+ * DB/RT sync fact that can invalidate worker-local browser/projection state.
  *
  * Describes the backend source state, not the frontend payload. A project
- * page/group projection decides how one source fact maps to wire signals.
+ * browser context or legacy projection decides how one source fact maps to wire
+ * signals.
  * Serializable as a BaseDTO so the fact can also travel inside worker-to-daemon
  * transport payloads.
  */
