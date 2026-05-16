@@ -61,7 +61,7 @@ final class DemoHilosGuardianAgent extends AbstractHilosGuardianAgent
     }
 
     /**
-     * Mirror guardian status changes into runtime state for frontend projection.
+     * Mirror guardian status changes into runtime state for browser rows.
      *
      * @param string $agentId Guardian agent identifier
      * @param GuardianRunStatus $status Run status

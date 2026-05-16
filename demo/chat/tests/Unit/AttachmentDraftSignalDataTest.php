@@ -8,11 +8,10 @@ use Demo\Chat\Constants\ConnectionRuntimeConstants;
 use Demo\Chat\Core\Page\DTO\AttachmentDraftDeleteActionDTO;
 use Demo\Chat\Core\Router\DTO\AttachmentDraftSignalData;
 use Demo\Chat\Core\Router\DTO\SelfConnectionSignalData;
-use Hilos\Core\Router\DTO\FrontendChangesDTO;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Unit tests for attachment draft related wire DTOs.
+ * Unit tests for attachment draft and self-connection browser row DTOs.
  */
 final class AttachmentDraftSignalDataTest extends TestCase
 {
@@ -31,7 +30,7 @@ final class AttachmentDraftSignalDataTest extends TestCase
     }
 
     /**
-     * Self connection updates preserve session-local state through IPC roundtrip.
+     * Self-connection row payload preserves session-local browser fields.
      */
     public function testSelfConnectionUpdateRoundtrip(): void
     {
@@ -64,29 +63,6 @@ final class AttachmentDraftSignalDataTest extends TestCase
 
         $this->assertSame($selfConnection, $restored->selfConnection);
         $this->assertSame(['selfConnection' => $selfConnection], $restored->toArray());
-    }
-
-    /**
-     * Self connection updates can carry framework frontend state changes without a selfConnection payload.
-     */
-    public function testSelfConnectionUpdateCarriesFrontendChanges(): void
-    {
-        $frontend = new FrontendChangesDTO(
-            full: ['attachmentDrafts' => [[
-                'draftId' => 'draft-1',
-                'filename' => 'report.pdf',
-                'mimeType' => 'application/pdf',
-                'size' => 1234,
-                'uploadedAt' => 1710000000,
-            ]]],
-            replaceFullKeys: ['attachmentDrafts'],
-        );
-
-        $restored = SelfConnectionSignalData::fromArray(
-            SelfConnectionSignalData::fromFrontendChanges($frontend)->toArray(),
-        );
-
-        $this->assertSame($frontend->toArray(), $restored->toArray()['frontend'] ?? null);
     }
 
     /**

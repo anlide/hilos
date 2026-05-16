@@ -19,9 +19,9 @@ use Hilos\Core\Router\WebSocketEnvelopeAware;
  * router uses to dispatch to success handlers (see {@see WebSocketEnvelopeAware}).
  *
  * The `data` payload is optional: most success acks have no body since
- * the real state transition is already broadcast via `new_event` /
- * `table_mutation` / etc. An optional `message` field is reserved for
- * future toast UI.
+ * the real state transition is already broadcast via browser page data,
+ * `table_mutation`, or another state-specific signal. An optional `message`
+ * field is reserved for future toast UI.
  */
 final class ActionSuccessSignalData extends SignalData implements SignalDataInterface, WebSocketEnvelopeAware
 {

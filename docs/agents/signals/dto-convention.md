@@ -8,8 +8,6 @@ Every signal carries a payload object implementing `SignalDataInterface`.
 |---|---|
 | `WebSocketSignalData` | Wraps WS-bound data with `targetAcceptKey` or `targetGroup` |
 | `AgentSignalData` | Wraps agent-to-agent data with inner `$data` |
-| `EmitDbChangeSignalData` | DB emit: carry entity key + id for mapper fan-out |
-| `EmitRtChangeSignalData` | RT emit: carry collection key + state id |
 
 ## Creating a signal DTO
 

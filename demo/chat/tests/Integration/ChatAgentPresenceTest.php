@@ -11,7 +11,6 @@ use Demo\Chat\Constants\HttpHeaders;
 use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Router\ChatSignalRouter;
 use Demo\Chat\Database\ChatDbContext;
-use Demo\Chat\Projection\ChatProjectionContext;
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Hilos\Constants\SignalConstants;
@@ -19,7 +18,7 @@ use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Execution\ExecutionFrame;
-use Hilos\Core\Projection\SourceChange;
+use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Http\RequestQueryParams;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\WebSocketSignalData;
@@ -56,7 +55,6 @@ final class ChatAgentPresenceTest extends IntegrationTestCase
         $agent = new ChatAgent();
 
         Hilos::initSignalRouter(new ChatSignalRouter());
-        Hilos::initProjection(new ChatProjectionContext());
         Hilos::initBrowser();
         Hilos::$sr->subscribeToPage(PageConstants::MAIN, new WebSocketPageSubscribeSignalDTO(
             'presence-listener-ak',
@@ -86,7 +84,6 @@ final class ChatAgentPresenceTest extends IntegrationTestCase
 
             $eventCountBeforeClose = count(Hilos::$db->events);
             Hilos::initSignalRouter(new ChatSignalRouter());
-            Hilos::initProjection(new ChatProjectionContext());
             Hilos::initBrowser();
             Hilos::$sr->subscribeToPage(PageConstants::MAIN, new WebSocketPageSubscribeSignalDTO(
                 'presence-listener-ak',
@@ -121,7 +118,6 @@ final class ChatAgentPresenceTest extends IntegrationTestCase
         $agent = new ChatAgent();
 
         Hilos::initSignalRouter(new ChatSignalRouter());
-        Hilos::initProjection(new ChatProjectionContext());
         Hilos::initBrowser();
         Hilos::$sr->subscribeToPage(PageConstants::MAIN, new WebSocketPageSubscribeSignalDTO(
             'presence-main-listener-ak',
@@ -317,7 +313,7 @@ final class ChatAgentPresenceTest extends IntegrationTestCase
     }
 
     /**
-     * Drains queued sync signals through browser/projection and returns main browser page signals.
+     * Drains queued sync signals through browser and returns main browser page signals.
      *
      * @return list<SignalDTO>
      */
@@ -326,23 +322,14 @@ final class ChatAgentPresenceTest extends IntegrationTestCase
         while (($signal = Hilos::$sr?->getNextQueuedSignal()) instanceof SignalDTO) {
             $this->recordFrontendSourceChange($signal);
         }
-
-        Hilos::$projection?->flushToSignalRouter();
         Hilos::$browser?->flushToSignalRouter();
 
         $signals = [];
-        $legacyPresenceSignals = [];
         while (($signal = Hilos::$sr?->getNextQueuedSignal()) instanceof SignalDTO) {
             if ($signal->signalName->getName() === ChatSignalConstants::SUBSCRIPTION_PAGE_MAIN) {
                 $signals[] = $signal;
-                continue;
-            }
-            if ($signal->signalName->getName() === ChatSignalConstants::USER_PRESENCE_UPDATE) {
-                $legacyPresenceSignals[] = $signal;
             }
         }
-
-        $this->assertSame([], $legacyPresenceSignals);
 
         return $signals;
     }
@@ -403,7 +390,7 @@ final class ChatAgentPresenceTest extends IntegrationTestCase
     }
 
     /**
-     * Records one queued DB/RT sync signal as a projection source change.
+     * Records one queued DB/RT sync signal as a browser source change.
      *
      * @param SignalDTO $signal Queued sync signal to inspect
      */
@@ -414,21 +401,18 @@ final class ChatAgentPresenceTest extends IntegrationTestCase
 
         if ($signalType === SignalTypeConstants::RT_SYNC_CREATED && $signalData instanceof RtSyncCreatedSignalData) {
             $change = SourceChange::rtCreated($signalData->collectionKey, $signalData->stateId, $signalData->row);
-            Hilos::$projection?->record($change);
             Hilos::$browser?->record($change);
             return;
         }
 
         if ($signalType === SignalTypeConstants::RT_SYNC_UPDATED && $signalData instanceof RtSyncUpdatedSignalData) {
             $change = SourceChange::rtUpdated($signalData->collectionKey, $signalData->stateId, $signalData->row);
-            Hilos::$projection?->record($change);
             Hilos::$browser?->record($change);
             return;
         }
 
         if ($signalType === SignalTypeConstants::RT_SYNC_DELETED && $signalData instanceof RtSyncDeletedSignalData) {
             $change = SourceChange::rtDeleted($signalData->collectionKey, $signalData->stateId, $signalData->row);
-            Hilos::$projection?->record($change);
             Hilos::$browser?->record($change);
         }
     }

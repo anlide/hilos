@@ -1,4 +1,3 @@
-import { useGuardianStore } from '../stores/useGuardianStore'
 import { useTableStore } from '../stores/useTableStore'
 import { extractBrowserPagePayload } from '../types/browserState'
 import {
@@ -7,9 +6,6 @@ import {
   tableMutation,
   tableMutationPending,
   tableActionError,
-  guardianAgentStatusUpdate,
-  subscriptionPageHilosGuardian,
-  subscriptionPageHilosGuardianAgent,
   subscriptionUpdated,
   SUBSCRIPTION_PAGE_PREFIX,
 } from '../signals'
@@ -47,21 +43,6 @@ export function registerHilosSignalHandlers(router: VueSignalRouter): void {
     if (message) {
       console.error(`[Table action error] ${tableKey}: ${message}`)
     }
-  })
-
-  router.on(guardianAgentStatusUpdate, ({ agentId, status }) => {
-    const guardianStore = useGuardianStore()
-    guardianStore.setGuardianAgentStatus(agentId, status)
-  })
-
-  router.on(subscriptionPageHilosGuardian, (snapshot) => {
-    const guardianStore = useGuardianStore()
-    guardianStore.setGuardianAgentStatuses(snapshot)
-  })
-
-  router.on(subscriptionPageHilosGuardianAgent, (snapshot) => {
-    const guardianStore = useGuardianStore()
-    guardianStore.setGuardianAgentStatuses(snapshot)
   })
 
   router.on(subscriptionUpdated, () => {})

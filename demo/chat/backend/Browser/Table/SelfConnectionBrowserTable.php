@@ -8,6 +8,7 @@ use Demo\Chat\Browser\ChatBrowserRef;
 use Demo\Chat\Browser\ChatBrowserSource;
 use Demo\Chat\Browser\ChatBrowserTable;
 use Demo\Chat\Core\Router\DTO\SelfConnectionSignalData;
+use Demo\Chat\Database\Object\Item\User;
 use Demo\Chat\Runtime\State\Item\ChatUserState;
 use Demo\Chat\Runtime\State\Item\Connection;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
@@ -31,6 +32,7 @@ final class SelfConnectionBrowserTable
             ],
         ],
         BrowserConfigKey::SOURCES => [
+            ChatBrowserSource::DB_USERS,
             ChatBrowserSource::RT_CONNECTIONS,
             ChatBrowserSource::RT_USER_STATES,
         ],
@@ -74,6 +76,20 @@ final class SelfConnectionBrowserTable
                     Connection::fileProgressFilename,
                     Connection::fileProgressTotalBytes,
                     Connection::uploadProgressLastSentAt,
+                ],
+            ],
+            [
+                BrowserFieldKey::SOURCE => ChatBrowserSource::DB_USERS,
+                BrowserFieldKey::ROW_KEY => User::id,
+                BrowserFieldKey::VIA => [
+                    User::id => Connection::userId,
+                ],
+                BrowserFieldKey::FIELDS => [
+                    User::id,
+                    User::name,
+                ],
+                BrowserFieldKey::TRIGGERS => [
+                    User::name,
                 ],
             ],
             [

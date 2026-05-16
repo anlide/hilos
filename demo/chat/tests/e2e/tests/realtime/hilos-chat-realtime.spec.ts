@@ -13,11 +13,11 @@ test.describe('hilos-chat realtime @realtime', () => {
     await hilosUserDetail.goto('/hilos/users/1')
 
     await admin.getByRole('button', { name: 'Edit' }).first().click()
-    await admin.locator('#user-name').fill('Hilos Projection Sync')
+    await admin.locator('#user-name').fill('Hilos Browser Sync')
     await admin.getByRole('button', { name: 'Save' }).click()
 
-    await expect(hilosUsers.getByText('Hilos Projection Sync')).toBeVisible()
-    await expect(hilosUserDetail.getByText('Hilos Projection Sync')).toBeVisible()
+    await expect(hilosUsers.getByText('Hilos Browser Sync')).toBeVisible()
+    await expect(hilosUserDetail.getByText('Hilos Browser Sync')).toBeVisible()
   })
 
   test.fixme('syncs hilos detail edits back to admin users and profile pages', async ({ browser }) => {
@@ -48,9 +48,9 @@ test.describe('hilos-chat realtime @realtime', () => {
 
     await logs.goto('/hilos/logs')
     await actor.goto('/')
-    await actor.getByTestId('chat-input').fill('Log projection check')
+    await actor.getByTestId('chat-input').fill('Log browser check')
     await actor.getByTestId('chat-send').click()
 
-    await expect(logs.getByText(/Log projection check|events|messages/i)).toBeVisible()
+    await expect(logs.getByText(/Log browser check|events|messages/i)).toBeVisible()
   })
 })

@@ -120,12 +120,18 @@ import {
   hilosOssBudgetTopDependenciesStub,
 } from '@/constants/hilosGuardianStubs'
 import { sendAction } from '@/services/websocketActions'
-import { useConnectionStore, useGuardianStore } from '@hilos/sdk/stores'
-import type { GuardianRunStatus } from '@/types/guardianAgentRuns'
+import { useBrowserStore, useConnectionStore, useGuardianStore } from '@hilos/sdk/stores'
+import {
+  BROWSER_PAGE_HILOS_GUARDIAN_AGENT,
+  BROWSER_TABLE_GUARDIAN_AGENT_STATUS_DETAIL,
+  guardianAgentStatusRowsFromBrowserRows,
+  type GuardianRunStatus,
+} from '@/types/guardianAgentRuns'
 
 const route = useRoute()
 const router = useRouter()
 const websocket = useWebSocket()
+const browserStore = useBrowserStore()
 const connectionStore = useConnectionStore()
 const guardianStore = useGuardianStore()
 
@@ -139,9 +145,35 @@ const agent = computed(() => {
   return value && isGuardianAiAgentId(value) ? guardianAiAgentMap[value] : null
 })
 
+const guardianStatusRowsByKey = computed(() => {
+  return browserStore.pages[BROWSER_PAGE_HILOS_GUARDIAN_AGENT]
+    ?.tables[BROWSER_TABLE_GUARDIAN_AGENT_STATUS_DETAIL]
+    ?.rowsByKey
+})
+
+const guardianStatusRowsById = computed(() => guardianAgentStatusRowsFromBrowserRows(guardianStatusRowsByKey.value))
+
 const agentStatus = computed<GuardianRunStatus>(() => {
   const id = agent.value?.id
-  return id ? guardianStore.guardianAgentStatuses[id] ?? 'not_started' : 'not_started'
+  return id ? guardianStatusRowsById.value[id]?.status ?? 'not_started' : 'not_started'
+})
+
+const agentStatusToken = computed(() => {
+  const id = agent.value?.id
+  const status = id ? guardianStatusRowsById.value[id] : undefined
+  return status === undefined ? '' : `${status.status}:${status.updatedAt}`
+})
+
+watch(agentStatusToken, (token, previous) => {
+  const id = agent.value?.id
+  if (
+    id
+    && guardianStore.isGuardianAgentActionPending(id)
+    && token !== ''
+    && token !== previous
+  ) {
+    guardianStore.settleGuardianAgentAction(id)
+  }
 })
 
 watch(agentId, (value) => {

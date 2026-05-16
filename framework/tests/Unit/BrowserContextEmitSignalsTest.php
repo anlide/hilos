@@ -12,7 +12,7 @@ use Hilos\Core\Browser\Config\BrowserSourceType;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Page\PageRouteParams;
-use Hilos\Core\Projection\SourceChange;
+use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Hilos;

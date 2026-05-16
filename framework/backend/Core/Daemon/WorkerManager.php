@@ -17,7 +17,7 @@ use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Agent\Exception\AgentCreationFailedException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Execution\ExecutionContext;
-use Hilos\Core\Projection\SourceChange;
+use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Page\Exception\PageSignalRouterNotFoundException;
 use Hilos\Core\Page\PageSignalRouter;
 use Hilos\Core\Router\SignalRouter;
@@ -66,7 +66,7 @@ use Throwable;
  * Base process manager for worker processes.
  *
  * Owns the daemon connection, worker-local agents, page signal routers,
- * subscription mirrors, and browser/projection flushing.
+ * subscription mirrors, and browser flushing.
  */
 abstract class WorkerManager extends BaseManager
 {
@@ -512,9 +512,9 @@ abstract class WorkerManager extends BaseManager
     /**
      * Consume a DB sync self-broadcast marker before applying a daemon echo.
      *
-     * The originating worker already recorded the local DB change for frontend
-     * projection when it sent the sync to the daemon. The echoed worker message
-     * must therefore neither re-apply nor re-project the same fact.
+     * The originating worker already recorded the local DB change for browser
+     * state when it sent the sync to the daemon. The echoed worker message
+     * must therefore neither re-apply nor re-emit the same fact.
      *
      * @param array<string, mixed> $signalData DB sync payload
      * @return bool True when this worker should ignore the daemon echo
@@ -674,15 +674,12 @@ abstract class WorkerManager extends BaseManager
      * accepted. Incoming self-broadcast echoes are consumed before this method,
      * so one backend fact becomes one browser invalidation per worker.
      *
-     * The legacy projection context still receives the same SourceChange while
-     * project-level global broadcasts live there.
-     *
      * @param string $signalType DB/RT sync signal type
      * @param array<string, mixed> $signalData Sync payload
      */
     private function recordBrowserSourceChange(string $signalType, array $signalData): void
     {
-        if (Hilos::$projection === null && Hilos::$browser === null) {
+        if (Hilos::$browser === null) {
             return;
         }
 
@@ -715,7 +712,6 @@ abstract class WorkerManager extends BaseManager
         };
 
         if ($change !== null) {
-            Hilos::$projection?->record($change);
             Hilos::$browser?->record($change);
         }
     }
@@ -1330,15 +1326,15 @@ abstract class WorkerManager extends BaseManager
     }
 
     /**
-     * Drains queued worker signals and flushes browser/projection deliveries.
+     * Drains queued worker signals and flushes browser deliveries.
      *
      * Processes all queued signals from SignalRouter and forwards them to daemon.
      * Signals are processed one by one in while-do loop.
      * Called at the end of each loop iteration when connected to daemon.
      *
      * DB/RT sync signals are broadcast at worker level. Other signals are sent
-     * as agent messages. Projection and browser flushes run between two queue
-     * drains so addressed WS_USER deliveries are sent in the same tick.
+     * as agent messages. Browser flushes run between two queue drains so
+     * addressed WS_USER deliveries are sent in the same tick.
      */
     private function dispatchSignals(): void
     {
@@ -1347,10 +1343,9 @@ abstract class WorkerManager extends BaseManager
         }
 
         // Phase 1 sends backend state changes and records them for this worker's
-        // browser/projection state. Phase 2 sends the WS_USER signals
-        // produced by flushes in the same tick, instead of waiting for the next loop.
+        // browser state. Phase 2 sends the WS_USER signals produced by flushes
+        // in the same tick, instead of waiting for the next loop.
         $this->dispatchQueuedSignalsToDaemon();
-        Hilos::$projection?->flushToSignalRouter();
         Hilos::$browser?->flushToSignalRouter();
         $this->dispatchQueuedSignalsToDaemon();
     }
@@ -1358,7 +1353,7 @@ abstract class WorkerManager extends BaseManager
     /**
      * Drains the current worker signal queue and forwards it to the daemon.
      *
-     * Called before and after browser/projection flush because flushes
+     * Called before and after browser flush because flushes
      * queue ordinary worker signals into the same router queue.
      */
     private function dispatchQueuedSignalsToDaemon(): void
@@ -1394,7 +1389,7 @@ abstract class WorkerManager extends BaseManager
                 continue;
             }
 
-            // Worker browser/projection flush signals may be already-addressed WebSocket deliveries.
+            // Worker browser flush signals may be already-addressed WebSocket deliveries.
             // The daemon ignores agentId for WorkerAgentMessageDTO and routes the inner
             // SignalDTO by its signal type and WebSocket target metadata.
             $agentType = $signal->signalSource->getType();

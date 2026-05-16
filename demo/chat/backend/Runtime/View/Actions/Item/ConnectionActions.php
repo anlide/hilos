@@ -161,7 +161,7 @@ final class ConnectionActions extends RtActions
     /**
      * After successful FILE_UPLOAD_INIT: open session row, progress UI, and ready state on this socket.
      *
-     * Frontend projection sends the ready state and 0 / total baseline through selfConnection.
+     * Browser selfConnection rows send the ready state and 0 / total baseline.
      *
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
@@ -392,7 +392,7 @@ final class ConnectionActions extends RtActions
     }
 
     /**
-     * Record last upload-progress projection notify time.
+     * Record last upload-progress browser notify time.
      *
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source

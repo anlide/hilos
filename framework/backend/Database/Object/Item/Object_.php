@@ -151,7 +151,7 @@ abstract class Object_
     /**
      * Delete entity from database and broadcast a delete sync with previous row data.
      *
-     * Delete projections may need fields that disappear after the row is removed
+     * Delete consumers may need fields that disappear after the row is removed
      * (for example a settings key or any derived frontend/table lookup key).
      *
      * @throws DatabaseException If database operation fails

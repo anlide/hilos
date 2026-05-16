@@ -63,12 +63,10 @@ import {
   BROWSER_TABLE_BOT_DETAIL,
   botDetailFromBrowserRows,
 } from '@/entities/browserBotDetail'
-import { useChatStore } from '@/stores'
 
 const route = useRoute()
 const browserStore = useBrowserStore()
 const connectionStore = useConnectionStore()
-const chatStore = useChatStore()
 
 const botId = computed(() => {
   const id = route.params.id
@@ -79,17 +77,9 @@ const bot = computed(() => {
   if (!Number.isFinite(botId.value) || botId.value <= 0) {
     return null
   }
-  const detail = botDetailFromBrowserRows(
+  return botDetailFromBrowserRows(
     browserStore.pages[BROWSER_PAGE_BOT]?.tables[BROWSER_TABLE_BOT_DETAIL]?.rowsByKey,
     botId.value,
   )
-  if (detail === null) {
-    return null
-  }
-
-  return {
-    ...detail,
-    presence: chatStore.botPresenceById[detail.id]?.presence ?? detail.presence,
-  }
 })
 </script>

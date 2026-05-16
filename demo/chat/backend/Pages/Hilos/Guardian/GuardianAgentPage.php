@@ -5,14 +5,20 @@ declare(strict_types=1);
 namespace Demo\Chat\Pages\Hilos\Guardian;
 
 use Demo\Chat\Agents\Hilos\DemoHilosGuardianAgent;
+use Demo\Chat\Browser\ChatBrowserRef;
+use Demo\Chat\Browser\ChatBrowserTable;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Core\Page\DTO\GuardianAgentRunStartActionDTO;
 use Demo\Chat\Core\Page\DTO\GuardianAgentRunStopActionDTO;
+use Demo\Chat\Hilos;
+use Hilos\Constants\HilosPageRouteParams;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Core\Agent\Hilos\GuardianRunStatus;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
+use Hilos\Core\Browser\Config\BrowserConfigKey;
+use Hilos\Core\Browser\Config\BrowserParamKey;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
-use Hilos\Core\Router\SignalData;
 use Hilos\Pages\AbstractHilosGuardianAgentPage;
 use Throwable;
 
@@ -23,6 +29,22 @@ use Throwable;
  */
 final class GuardianAgentPage extends AbstractHilosGuardianAgentPage
 {
+    public const array BROWSER = [
+        BrowserConfigKey::SIGNAL => HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_GUARDIAN_AGENT,
+        BrowserConfigKey::PARAMS => [
+            HilosPageRouteParams::HILOS_GUARDIAN_AGENT_AGENT_ID => [
+                BrowserParamKey::REQUIRED => true,
+            ],
+        ],
+        BrowserConfigKey::TABLES => [
+            ChatBrowserTable::GUARDIAN_AGENT_STATUS_DETAIL => [
+                BrowserParamKey::PARAMS => [
+                    HilosPageRouteParams::HILOS_GUARDIAN_AGENT_AGENT_ID => ChatBrowserRef::HILOS_GUARDIAN_AGENT_ID,
+                ],
+            ],
+        ],
+    ];
+
     /**
      * Handle guardian run start/stop actions.
      *
@@ -67,14 +89,12 @@ final class GuardianAgentPage extends AbstractHilosGuardianAgentPage
     public function onActionException(string $acceptKey, string $action, ActionPayloadDTO $dto, Throwable $e): void
     {
         if ($dto instanceof GuardianAgentRunStartActionDTO || $dto instanceof GuardianAgentRunStopActionDTO) {
-            $this->sendToUser(
-                HilosSignalConstants::GUARDIAN_AGENT_STATUS_UPDATE,
-                $acceptKey,
-                new SignalData([
-                    'agentId' => $dto->agentId,
-                    'status' => 'failed',
-                ]),
-            );
+            $status = Hilos::$rt->guardianAgentStatuses[$dto->agentId] ?? null;
+            if ($status === null) {
+                Hilos::$rt->guardianAgentStatuses->actions->create($dto->agentId, GuardianRunStatus::FAILED);
+            } else {
+                $status->actions->setStatus(GuardianRunStatus::FAILED);
+            }
 
             return;
         }

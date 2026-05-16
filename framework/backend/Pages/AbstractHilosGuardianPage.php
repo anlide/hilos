@@ -9,8 +9,6 @@ use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Agent\Hilos\AbstractHilosGuardianAgent;
 use Hilos\Core\Page\AbstractHilosPage;
-use Hilos\Core\Router\SignalData;
-use Hilos\Core\Page\PageRouteParams;
 
 /**
  * AbstractHilosGuardianPage - Abstract base for Hilos guardian page.
@@ -27,20 +25,4 @@ abstract class AbstractHilosGuardianPage extends AbstractHilosPage
         BrowserConfigKey::SIGNAL => HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_GUARDIAN,
     ];
 
-    /**
-     * Handle page subscription.
-     *
-     * @param string $acceptKey WebSocket accept key
-     * @param PageRouteParams $params Page params from route (e.g. ['id' => '123'])
-     */
-    public function onSubscribe(string $acceptKey, PageRouteParams $params): void
-    {
-        $this->sendToUser(
-            HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_GUARDIAN,
-            $acceptKey,
-            new SignalData([
-                'guardianAgentStatuses' => $this->agent->getGuardianRunStatuses(),
-            ]),
-        );
-    }
 }

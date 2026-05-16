@@ -12,15 +12,13 @@ use Hilos\Core\Page\AbstractHilosPage;
 use Hilos\Core\Page\Exception\InvalidPageRouteParamException;
 use Hilos\Core\Page\Exception\MissingPageRouteParamException;
 use Hilos\Core\Page\PageRouteParams;
-use Hilos\Core\Router\SignalData;
 use Hilos\Pages\DTO\HilosGuardianAgentPageSubscribeParams;
 
 /**
  * AbstractHilosGuardianAgentPage - Abstract base for Hilos guardian AI agent page.
  *
  * Projects must implement concrete class (e.g. Demo\Chat\Pages\Hilos\Guardian\GuardianAgentPage).
- * Parses the `agentId` route param into {@see HilosGuardianAgentPageSubscribeParams}
- * before dispatching to {@see self::onHilosGuardianAgentSubscribe()}.
+ * Parses the `agentId` route param before sending the browser snapshot.
  *
  * @property AbstractHilosGuardianAgent $agent
  */
@@ -33,9 +31,8 @@ abstract class AbstractHilosGuardianAgentPage extends AbstractHilosPage
     ];
 
     /**
-     * Parses route params into {@see HilosGuardianAgentPageSubscribeParams} and delegates to
-     * {@see self::onHilosGuardianAgentSubscribe()}. Final: subclasses customize the subscribe
-     * behavior by overriding the typed hook, not this method.
+     * Parses route params into {@see HilosGuardianAgentPageSubscribeParams} before emitting
+     * the browser snapshot. Final: subclasses customize page state through browser config.
      *
      * @param string $acceptKey WebSocket accept key
      * @param PageRouteParams $params Route params for the page subscription
@@ -44,32 +41,8 @@ abstract class AbstractHilosGuardianAgentPage extends AbstractHilosPage
      */
     final public function onSubscribe(string $acceptKey, PageRouteParams $params): void
     {
-        $this->onHilosGuardianAgentSubscribe(
-            $acceptKey,
-            HilosGuardianAgentPageSubscribeParams::fromPageRouteParams($params),
-        );
-    }
+        HilosGuardianAgentPageSubscribeParams::fromPageRouteParams($params);
 
-    /**
-     * Handle subscribe for a specific guardian agent.
-     *
-     * Default sends the current guardian run statuses plus the requested `agentId`
-     * echo back to the subscriber. Override when a project needs a richer payload.
-     *
-     * @param string $acceptKey WebSocket accept key
-     * @param HilosGuardianAgentPageSubscribeParams $params Parsed subscribe params
-     */
-    protected function onHilosGuardianAgentSubscribe(
-        string $acceptKey,
-        HilosGuardianAgentPageSubscribeParams $params,
-    ): void {
-        $this->sendToUser(
-            HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_GUARDIAN_AGENT,
-            $acceptKey,
-            new SignalData([
-                'agentId' => $params->agentId,
-                'guardianAgentStatuses' => $this->agent->getGuardianRunStatuses(),
-            ]),
-        );
+        parent::onSubscribe($acceptKey, $params);
     }
 }

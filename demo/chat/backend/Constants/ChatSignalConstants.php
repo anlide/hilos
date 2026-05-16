@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Constants;
 
-use Demo\Chat\Core\Router\ChatSignalMapper;
-
 /**
  * ChatSignalConstants - Chat signal name constants.
  *
@@ -28,12 +26,6 @@ final class ChatSignalConstants
     /** @var string Client → server: delete one completed attachment draft */
     public const string ATTACHMENT_DRAFT_DELETE = 'attachment_draft_delete';
 
-    /** @var string Reserved legacy upload-progress signal; projection sends selfConnection updates */
-    public const string FILE_UPLOAD_PROGRESS_UPDATE = 'file_upload_progress_update';
-
-    /** @var string Server → client: full current connection-local chat session state */
-    public const string SELF_CONNECTION_UPDATE = 'self_connection_update';
-
     /** @var string Rename signal name */
     public const string RENAME = 'rename';
 
@@ -45,12 +37,6 @@ final class ChatSignalConstants
 
     /** @var string Handshake response signal name */
     public const string HANDSHAKE_RESPONSE = 'handshake_response';
-
-    /** @var string New event signal name */
-    public const string NEW_EVENT = 'new_event';
-
-    /** @var string Server → frontend: runtime-derived user presence changed */
-    public const string USER_PRESENCE_UPDATE = 'user_presence_update';
 
     /** @var string Subscription page main signal name */
     public const string SUBSCRIPTION_PAGE_MAIN = 'subscription_page_main';
@@ -95,15 +81,6 @@ final class ChatSignalConstants
 
     /** @var string BotAgent → ChatAgent: publish generated bot message */
     public const string BOT_MESSAGE = 'bot_message';
-
-    /** @var string BotAgent → ChatAgent → frontend: bot joined the chat */
-    public const string BOT_JOINED = 'bot_joined';
-
-    /** @var string BotAgent → ChatAgent → frontend: bot left the chat */
-    public const string BOT_LEFT = 'bot_left';
-
-    /** @var string Server → frontend: bot data updated (e.g. after admin edit) */
-    public const string BOT_UPDATED = 'bot_updated';
 
     // ── Table actions (client → server) ──────────────────────────────────
     /** @var string User update signal name */
@@ -150,34 +127,6 @@ final class ChatSignalConstants
 
     /** @var string Guardian agent run stop action name */
     public const string GUARDIAN_AGENT_RUN_STOP = 'guardian_agent_run_stop';
-
-    // ── Emit events (worker → daemon → mapper → WebSocket) ───────────────
-    /** @var string DB chat event created; {@see ChatSignalMapper} fan-out rules */
-    public const string EMIT_CHAT_EVENT_CREATED = 'emit_chat_event_created';
-
-    /** @var string DB chat event stream replaced; {@see ChatSignalMapper} fan-out rules */
-    public const string EMIT_CHAT_EVENTS_REPLACED = 'emit_chat_events_replaced';
-
-    /** @var string DB user row updated; {@see ChatSignalMapper} fan-out rules */
-    public const string EMIT_CHAT_USER_ROW_UPDATED = 'emit_chat_user_row_updated';
-
-    /** @var string DB bot table row changed; {@see ChatSignalMapper} fan-out rules */
-    public const string EMIT_CHAT_BOT_ROW_CHANGED = 'emit_chat_bot_row_changed';
-
-    /** @var string DB bot frontend state changed; {@see ChatSignalMapper} fan-out rules */
-    public const string EMIT_CHAT_BOT_FRONTEND_UPDATED = 'emit_chat_bot_frontend_updated';
-
-    /** @var string DB moderator prompt piece row changed; {@see ChatSignalMapper} fan-out rules */
-    public const string EMIT_CHAT_MODERATOR_PROMPT_PIECE_ROW_CHANGED = 'emit_chat_moderator_prompt_piece_row_changed';
-
-    /** @var string DB settings row changed; {@see ChatSignalMapper} fan-out rules */
-    public const string EMIT_CHAT_SETTING_ROW_CHANGED = 'emit_chat_setting_row_changed';
-
-    /** @var string RT user presence changed; {@see ChatSignalMapper} page-scoped fan-out rules */
-    public const string EMIT_CHAT_USER_PRESENCE_UPDATED = 'emit_chat_user_presence_updated';
-
-    /** @var string RT bot agent lifecycle changed; {@see ChatSignalMapper} fan-out rules */
-    public const string EMIT_CHAT_BOT_AGENT_STATUS_UPDATED = 'emit_chat_bot_agent_status_updated';
 
     // ── Table signals (server → client) ──────────────────────────────────
     /** @var string Server responds with fresh table data */

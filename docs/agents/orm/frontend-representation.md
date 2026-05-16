@@ -95,7 +95,7 @@ public function toArray(): array
 }
 ```
 
-That RT state row is input for sync and projection decisions; it is not the
+That RT state row is input for sync and browser/source-change decisions; it is not the
 browser payload.
 
 ## Legacy Entity Paths
@@ -111,7 +111,7 @@ When touching one of those paths:
 - do not add new model-specific browser filters to `DbItem::toArray()`;
 - do not send private fields such as tokens through `EntitiesChangesDTO`;
 - keep existing `toFrontend` behavior only when a legacy entity path still
-  depends on it and no projection migration is in scope.
+  depends on it and no frontend representation migration is in scope.
 
 ## Anti-Patterns
 

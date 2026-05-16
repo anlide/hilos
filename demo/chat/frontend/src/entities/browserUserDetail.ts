@@ -16,6 +16,11 @@ export type BrowserUserDetail = {
 
 export type BrowserUserListRow = BrowserUserDetail
 
+export type BrowserConnectionUser = {
+  id: number
+  name: string
+}
+
 const isRecord = (value: unknown): value is Record<string, unknown> => {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
@@ -84,4 +89,22 @@ export const connectionUserIdFromBrowserRow = (
   return isRecord(connection) && typeof connection.userId === 'number'
     ? connection.userId
     : null
+}
+
+export const connectionUserFromBrowserRow = (
+  row: BrowserPageRow | undefined,
+): BrowserConnectionUser | null => {
+  if (row === undefined || !isRecord(row.sources)) {
+    return null
+  }
+
+  const user = row.sources[BROWSER_SOURCE_USERS]
+  if (!isRecord(user) || typeof user.id !== 'number' || typeof user.name !== 'string') {
+    return null
+  }
+
+  return {
+    id: user.id,
+    name: user.name,
+  }
 }

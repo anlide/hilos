@@ -1,13 +1,7 @@
 import { defineStore } from 'pinia'
 import { ChatBot, Event, User } from '@/types'
-import { resolveFileUploadOutcomeFromState } from '@/services/chatFileUpload'
 import type { Presence } from '@/types/domain/Presence'
 import type {
-  AttachmentDraftPayload,
-  BotPresencePayload,
-  FileUploadProgressPayload,
-  OutboundModerationStatePayload,
-  SelfConnectionPayload,
   UserConnectionStatsPayload,
   UserPresencePayload,
 } from '@/entities/frontendStateParsers'
@@ -15,10 +9,6 @@ import type {
 export type UserViewModel = User & {
   presence: Presence
   onlineSessionCount: number
-}
-
-export type BotViewModel = ChatBot & {
-  presence: Presence
 }
 
 /**
@@ -32,11 +22,7 @@ export const useChatStore = defineStore('chat', {
     userPresenceById: {} as Record<number, UserPresencePayload>,
     userConnectionStatsById: {} as Record<number, UserConnectionStatsPayload>,
     bots: [] as ChatBot[],
-    botPresenceById: {} as Record<number, BotPresencePayload>,
-    attachmentDraftRows: [] as AttachmentDraftPayload[],
     currentUserId: null as number | null,
-    currentUsername: null as string | null,
-    selfConnection: null as SelfConnectionPayload | null,
     messageError: null as string | null,
   }),
 
@@ -57,88 +43,21 @@ export const useChatStore = defineStore('chat', {
     onlineUsers(): UserViewModel[] {
       return this.userViewModels.filter((user) => user.presence === 'online')
     },
-    botViewModels(): BotViewModel[] {
-      return this.bots.map((bot) => ({
-        ...bot,
-        presence: this.botPresenceById[bot.id]?.presence ?? 'offline',
-      }))
-    },
-    onlineBots(): BotViewModel[] {
-      return this.botViewModels.filter((bot) => bot.presence === 'online')
-    },
     currentUser(): UserViewModel | null {
       if (this.currentUserId === null) {
         return null
       }
       return this.userViewModels.find((user) => user.id === this.currentUserId) ?? null
     },
-    outboundModerationState(): OutboundModerationStatePayload | null {
-      return this.selfConnection?.outboundModerationState ?? null
-    },
-    attachmentDrafts(): AttachmentDraftPayload[] {
-      return this.attachmentDraftRows
-    },
-    fileUploadProgress(): FileUploadProgressPayload | null {
-      return this.selfConnection?.fileUploadProgress ?? null
-    },
-    messageRateLimitSecondsRemaining(): number {
-      return this.selfConnection?.messageRateLimitSecondsRemaining ?? 0
-    },
-    isModeratingMessage(): boolean {
-      return this.outboundModerationState?.phase === 'checking'
-    },
   },
 
   actions: {
-    handleSubscriptionResponse(userId: number, username: string) {
+    handleSubscriptionResponse(userId: number) {
       this.currentUserId = userId
-      this.currentUsername = username
-    },
-
-    setSelfConnection(value: SelfConnectionPayload) {
-      this.selfConnection = value
-      resolveFileUploadOutcomeFromState(value.fileUploadState)
-    },
-
-    clearSelfConnection() {
-      this.selfConnection = null
-      this.attachmentDraftRows = []
-    },
-
-    setOutboundModerationState(value: OutboundModerationStatePayload | null) {
-      if (this.selfConnection !== null) {
-        this.selfConnection.outboundModerationState = value
-      }
     },
 
     setMessageError(value: string | null) {
       this.messageError = value
-    },
-
-    setAttachmentDrafts(value: AttachmentDraftPayload[]) {
-      this.attachmentDraftRows = value
-    },
-
-    upsertAttachmentDrafts(value: AttachmentDraftPayload[], replace = false) {
-      if (replace) {
-        this.attachmentDraftRows = []
-      }
-      for (const draft of value) {
-        const index = this.attachmentDraftRows.findIndex((existing) => existing.draftId === draft.draftId)
-        if (index >= 0) {
-          this.attachmentDraftRows[index] = draft
-        } else {
-          this.attachmentDraftRows.push(draft)
-        }
-      }
-    },
-
-    removeAttachmentDraft(draftId: string) {
-      this.attachmentDraftRows = this.attachmentDraftRows.filter((draft) => draft.draftId !== draftId)
-    },
-
-    clearAttachmentDrafts() {
-      this.attachmentDraftRows = []
     },
 
     addEvent(event: Event) {
@@ -254,25 +173,6 @@ export const useChatStore = defineStore('chat', {
     removeUserConnectionStats(userIds: number[]) {
       for (const id of userIds) {
         delete this.userConnectionStatsById[id]
-      }
-    },
-
-    upsertBotPresence(items: BotPresencePayload[], replace = false) {
-      if (replace) {
-        this.botPresenceById = {}
-      }
-      for (const item of items) {
-        this.botPresenceById[item.botId] = item
-      }
-    },
-
-    setBotPresence(botId: number, presence: Presence) {
-      this.botPresenceById[botId] = { botId, presence }
-    },
-
-    removeBotPresence(botIds: number[]) {
-      for (const id of botIds) {
-        delete this.botPresenceById[id]
       }
     },
 

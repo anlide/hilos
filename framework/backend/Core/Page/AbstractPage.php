@@ -9,15 +9,12 @@ use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Page\DTO\PageActionErrorSignalData;
 use Hilos\Core\Page\Exception\PageSubscriptionException;
-use Hilos\Core\Projection\SourceChange;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
-use Hilos\Core\Router\DTO\EmitDbChangeSignalData;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalType;
 use Hilos\Core\Router\WebSocketSignalData;
-use Hilos\Core\Table\Collection\TableMutationSignalCollection;
 use Hilos\Hilos;
 use Hilos\Socket\WebSocket\DTO\WebSocketFrameBinarySignalDTO;
 use Hilos\Utils\Logger;
@@ -136,12 +133,9 @@ abstract class AbstractPage
     /**
      * Handles page subscription.
      *
-     * Default behavior delegates to the legacy projection hook and the browser
-     * layer. The browser context is the current owner of page-shaped DB/RT
-     * snapshots; the projection hook remains for compatibility while older
-     * projects may still register projection-backed snapshots. Override in
-     * concrete pages to add domain or routing parameter checks before or
-     * instead of delegating to these layers.
+     * Default behavior delegates to the browser layer. Override in concrete
+     * pages to add domain or routing parameter checks before or instead of
+     * delegating to browser state.
      *
      * Route params are available through the typed accessors on
      * PageRouteParams; family-level abstract pages typically convert
@@ -150,11 +144,10 @@ abstract class AbstractPage
      *
      * @param string $acceptKey WebSocket accept key
      * @param PageRouteParams $params Route params from page subscription
-     * @throws PageSubscriptionException When projection or browser snapshot rejects the subscription
+     * @throws PageSubscriptionException When browser snapshot rejects the subscription
      */
     public function onSubscribe(string $acceptKey, PageRouteParams $params): void
     {
-        Hilos::$projection?->subscribeSnapshot(static::PAGE, $acceptKey, $params);
         Hilos::$browser?->subscribeSnapshot(static::PAGE, $acceptKey, $params);
     }
 
@@ -303,43 +296,4 @@ abstract class AbstractPage
         );
     }
 
-    /**
-     * Queues a legacy DB-layer emit signal for mapper-based WebSocket fan-out.
-     *
-     * Uses the owning agent signal source for routing context without depending
-     * on the agent's concrete class.
-     *
-     * @param string $eventKey Logical event name for the project mapper
-     * @param EmitDbChangeSignalData $data DB change payload
-     */
-    protected function emitChangeDb(string $eventKey, EmitDbChangeSignalData $data): void
-    {
-        Hilos::$sr->queueSignal(
-            signalSource: $this->agent->getAgentSignalSource(),
-            signalType: new SignalType(SignalTypeConstants::EMIT_DB_CHANGE),
-            signalName: new SignalName($eventKey),
-            signalData: $data,
-        );
-    }
-
-    /**
-     * Builds table mutation payloads for tables declared as affected by the event.
-     *
-     * @param string $eventKey Logical project event name used by SignalRouter table routes
-     * @param SourceChange $change DB/RT source change to project into routed table mutations
-     * @return TableMutationSignalCollection Table mutation payloads for immediate or pending fan-out
-     */
-    protected function buildTableMutationSignalsForSourceEvent(
-        string $eventKey,
-        SourceChange $change,
-    ): TableMutationSignalCollection {
-        if (Hilos::$table === null || Hilos::$sr === null) {
-            return new TableMutationSignalCollection();
-        }
-
-        return Hilos::$table->buildMutationSignalsForSourceEvent(
-            $change,
-            Hilos::$sr->getTableKeysForEvent($eventKey),
-        );
-    }
 }

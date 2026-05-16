@@ -59,12 +59,6 @@ class SignalTypeConstants
     /** @var string WebSocket signal to group */
     public const string WS_GROUP = 'ws_group';
 
-    /** @var string Emit: DB-layer change to be mapped to WebSocket deliveries (daemon expansion) */
-    public const string EMIT_DB_CHANGE = 'emit_db_change';
-
-    /** @var string Emit: RT-layer change to be mapped to WebSocket deliveries (daemon expansion) */
-    public const string EMIT_RT_CHANGE = 'emit_rt_change';
-
     /** @var string DB sync created signal type */
     public const string DB_SYNC_CREATED = 'db_sync_created';
 

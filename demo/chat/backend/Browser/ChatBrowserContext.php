@@ -6,6 +6,8 @@ namespace Demo\Chat\Browser;
 
 use Demo\Chat\Browser\Table\AttachmentDraftsBrowserTable;
 use Demo\Chat\Browser\Table\BotDetailBrowserTable;
+use Demo\Chat\Browser\Table\GuardianAgentStatusDetailBrowserTable;
+use Demo\Chat\Browser\Table\GuardianAgentStatusesBrowserTable;
 use Demo\Chat\Browser\Table\MainBotsBrowserTable;
 use Demo\Chat\Browser\Table\MainEventsBrowserTable;
 use Demo\Chat\Browser\Table\MainUsersBrowserTable;
@@ -21,6 +23,8 @@ use Demo\Chat\Pages\AdminPage;
 use Demo\Chat\Pages\AdminUsersPage;
 use Demo\Chat\Pages\BotPage;
 use Demo\Chat\Pages\Hilos\SettingsPage;
+use Demo\Chat\Pages\Hilos\Guardian\GuardianAgentPage;
+use Demo\Chat\Pages\Hilos\GuardianPage;
 use Demo\Chat\Pages\Hilos\Users\UserPage as HilosUserPage;
 use Demo\Chat\Pages\Hilos\Users\UsersPage as HilosUsersPage;
 use Demo\Chat\Pages\MainPage;
@@ -37,8 +41,8 @@ use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Page\Exception\PageSubscriptionException;
 use Hilos\Core\Page\PageRouteParams;
-use Hilos\Core\Projection\SourceChange;
-use Hilos\Core\Projection\SourceChangeSet;
+use Hilos\Core\Source\SourceChange;
+use Hilos\Core\Source\SourceChangeSet;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
@@ -62,6 +66,8 @@ final class ChatBrowserContext extends BrowserContext
         BotPage::PAGE => BotPage::BROWSER,
         ChatUserPage::PAGE => ChatUserPage::BROWSER,
         SettingsPage::PAGE => SettingsPage::BROWSER,
+        GuardianPage::PAGE => GuardianPage::BROWSER,
+        GuardianAgentPage::PAGE => GuardianAgentPage::BROWSER,
         HilosUsersPage::PAGE => HilosUsersPage::BROWSER,
         HilosUserPage::PAGE => HilosUserPage::BROWSER,
     ];
@@ -74,6 +80,8 @@ final class ChatBrowserContext extends BrowserContext
         AttachmentDraftsBrowserTable::TABLE => AttachmentDraftsBrowserTable::BROWSER,
         BotDetailBrowserTable::TABLE => BotDetailBrowserTable::BROWSER,
         UserDetailBrowserTable::TABLE => UserDetailBrowserTable::BROWSER,
+        GuardianAgentStatusesBrowserTable::TABLE => GuardianAgentStatusesBrowserTable::BROWSER,
+        GuardianAgentStatusDetailBrowserTable::TABLE => GuardianAgentStatusDetailBrowserTable::BROWSER,
     ];
 
     /**

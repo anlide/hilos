@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-namespace Hilos\Core\Projection;
+namespace Hilos\Core\Source;
 
 /**
- * Accumulated source facts waiting for one projection flush.
+ * Accumulated source facts waiting for one browser flush.
  */
 final class SourceChangeSet
 {
@@ -13,7 +13,7 @@ final class SourceChangeSet
     private array $changes = [];
 
     /**
-     * Records one source fact for the next projection flush.
+     * Records one source fact for the next browser flush.
      *
      * @param SourceChange $change Source fact to append
      */
@@ -35,7 +35,7 @@ final class SourceChangeSet
     /**
      * Returns the recorded source facts in insertion order.
      *
-     * @return list<SourceChange> Source facts waiting for projection flush
+     * @return list<SourceChange> Source facts waiting for browser flush
      */
     public function all(): array
     {

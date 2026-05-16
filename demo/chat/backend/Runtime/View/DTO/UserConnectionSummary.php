@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Demo\Chat\Runtime\View\DTO;
 
 /**
- * Runtime connection projection for one user.
+ * Runtime connection summary for one user.
  */
 final class UserConnectionSummary
 {

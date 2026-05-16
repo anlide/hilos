@@ -60,8 +60,8 @@ final class ChatAgent extends AbstractAgent
     }
 
     /**
-     * Authenticates the session token, registers the connection, emits registration and presence updates, and sends
-     * the handshake response with the current user frontend projection and page catalog.
+     * Authenticates the session token, registers the connection, emits registration updates, and sends
+     * the handshake response with the current user frontend state and page catalog.
      *
      * Runtime presence is emitted after every successful connection register so
      * pages that show online session counts update for additional tabs, not only

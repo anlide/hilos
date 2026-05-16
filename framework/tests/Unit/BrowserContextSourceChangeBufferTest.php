@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit;
 
 use Hilos\Core\Browser\Context\BrowserContext;
-use Hilos\Core\Projection\SourceChange;
-use Hilos\Core\Projection\SourceChangeSet;
+use Hilos\Core\Source\SourceChange;
+use Hilos\Core\Source\SourceChangeSet;
 use Hilos\Core\Table\Mutation\TableMutationType;
 use PHPUnit\Framework\TestCase;
 

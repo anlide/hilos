@@ -5,13 +5,11 @@ declare(strict_types=1);
 namespace Demo\Chat\Core\Router\DTO;
 
 use Hilos\BaseDTO;
-use Hilos\Core\Router\DTO\FrontendChangesDTO;
-use Hilos\Core\Router\SignalDataInterface;
 
 /**
- * Server → client: current connection-local chat session state.
+ * Browser field names for current connection-local chat session state.
  */
-final class SelfConnectionSignalData extends BaseDTO implements SignalDataInterface
+final class SelfConnectionSignalData extends BaseDTO
 {
     public const string selfConnection = 'selfConnection';
     public const string userId = 'userId';
@@ -27,24 +25,13 @@ final class SelfConnectionSignalData extends BaseDTO implements SignalDataInterf
     public const string filename = 'filename';
     public const string uploadedBytes = 'uploadedBytes';
     public const string totalBytes = 'totalBytes';
-    private const string frontend = 'frontend';
 
     /**
      * @param array<string, mixed> $selfConnection Browser-safe connection summary
-     * @param ?FrontendChangesDTO $frontend Optional frontend state collection changes
      */
     public function __construct(
         public readonly array $selfConnection = [],
-        private readonly ?FrontendChangesDTO $frontend = null,
     ) {
-    }
-
-    /**
-     * Creates a self-connection update signal that only carries frontend state changes.
-     */
-    public static function fromFrontendChanges(FrontendChangesDTO $frontend): self
-    {
-        return new self(frontend: $frontend);
     }
 
     /**
@@ -55,10 +42,6 @@ final class SelfConnectionSignalData extends BaseDTO implements SignalDataInterf
         $data = [];
         if ($this->selfConnection !== []) {
             $data[self::selfConnection] = $this->selfConnection;
-        }
-        $frontend = $this->frontend?->toArray();
-        if ($frontend !== null && $frontend !== []) {
-            $data[self::frontend] = $frontend;
         }
 
         return $data;
@@ -71,11 +54,9 @@ final class SelfConnectionSignalData extends BaseDTO implements SignalDataInterf
     public static function fromArray(array $data): static
     {
         $selfConnection = $data[self::selfConnection] ?? [];
-        $frontend = $data[self::frontend] ?? null;
 
         return new static(
             selfConnection: is_array($selfConnection) ? $selfConnection : [],
-            frontend: is_array($frontend) ? FrontendChangesDTO::fromArray($frontend) : null,
         );
     }
 }

@@ -6,7 +6,7 @@ namespace Hilos\Core\Table\Definition;
 
 use ArrayAccess;
 use Hilos\Core\Exception\NotImplementedException;
-use Hilos\Core\Projection\SourceChange;
+use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Table\Actions\TableActions;
 use Hilos\Core\Table\Actions\TableItemActions;
 use Hilos\Core\Table\DTO\TablePageQueryDTO;
@@ -151,7 +151,7 @@ abstract class TableDefinition implements ArrayAccess
     /**
      * Builds a table row mutation for one source change this table reacts to.
      *
-     * Concrete tables decide whether the change affects their projection and
+     * Concrete tables decide whether the change affects their row state and
      * which DB/RT collections they observe. A table may react to one or more DB
      * sources, one or more RT sources, or any combination; the change kind and
      * source key are carried by the SourceChange DTO.
@@ -192,7 +192,7 @@ abstract class TableDefinition implements ArrayAccess
      * Queries a DB collection with the standard table search, sort, and pagination behavior.
      *
      * This helper is intended for simple tables whose rows are direct frontend
-     * projections of a single DbCollection. Tables with joined, calculated, or
+     * rows of a single DbCollection. Tables with joined, calculated, or
      * runtime-enriched rows should implement query() directly.
      *
      * @param DbCollection $collection Db collection used as the row source

@@ -10,7 +10,7 @@ use Hilos\Core\Agent\Hilos\AbstractHilosAgent;
  * Base class for framework-level Hilos admin page handlers.
  *
  * Projects extend these pages to bind framework admin routes to their own page
- * catalog, agents, and projection setup.
+ * catalog, agents, and browser setup.
  *
  * @property AbstractHilosAgent $agent Framework admin agent for page operations
  */

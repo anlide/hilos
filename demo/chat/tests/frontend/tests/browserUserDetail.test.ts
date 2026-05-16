@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   userDetailFromBrowserRow,
   userListRowsFromBrowserRows,
+  connectionUserFromBrowserRow,
   connectionUserIdFromBrowserRow,
 } from '@/entities/browserUserDetail'
 
@@ -80,6 +81,16 @@ describe('browser user detail rows', () => {
     })).toBe(12)
   })
 
+  it('extracts the current user row from self-connection browser rows', () => {
+    expect(connectionUserFromBrowserRow({
+      rowKey: 12,
+      sources: {
+        connections: { userId: 12 },
+        users: { id: 12, name: 'Ada' },
+      },
+    })).toEqual({ id: 12, name: 'Ada' })
+  })
+
   it('rejects malformed rows', () => {
     expect(userDetailFromBrowserRow(undefined)).toBeNull()
     expect(userDetailFromBrowserRow({ rowKey: 7, sources: {} })).toBeNull()
@@ -93,6 +104,12 @@ describe('browser user detail rows', () => {
       rowKey: 'accept-key',
       sources: {
         connections: { userId: '12' },
+      },
+    })).toBeNull()
+    expect(connectionUserFromBrowserRow({
+      rowKey: 12,
+      sources: {
+        users: { id: 12, name: null },
       },
     })).toBeNull()
   })

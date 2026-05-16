@@ -41,11 +41,6 @@ export type UserConnectionStatsPayload = {
   onlineSessionCount: number
 }
 
-export type BotPresencePayload = {
-  botId: number
-  presence: Presence
-}
-
 export type AttachmentDraftPayload = {
   draftId: string
   filename: string
@@ -138,15 +133,6 @@ export const parseSelfConnection = (raw: unknown): SelfConnectionPayload | null 
   }
 }
 
-export function parseSelfConnectionPayloads(value: unknown): SelfConnectionPayload[] | null {
-  if (!Array.isArray(value)) {
-    return null
-  }
-
-  const parsed = value.map(parseSelfConnection)
-  return parsed.every((item): item is SelfConnectionPayload => item !== null) ? parsed : null
-}
-
 export function isUserPresencePayload(value: unknown): value is UserPresencePayload {
   return isRecord(value) && typeof value.userId === 'number' && isPresence(value.presence)
 }
@@ -169,17 +155,6 @@ export function parseUserConnectionStatsPayloads(value: unknown): UserConnection
   return value.every(isUserConnectionStatsPayload) ? value : null
 }
 
-export function isBotPresencePayload(value: unknown): value is BotPresencePayload {
-  return isRecord(value) && typeof value.botId === 'number' && isPresence(value.presence)
-}
-
-export function parseBotPresencePayloads(value: unknown): BotPresencePayload[] | null {
-  if (!Array.isArray(value)) {
-    return null
-  }
-  return value.every(isBotPresencePayload) ? value : null
-}
-
 export function isAttachmentDraftPayload(value: unknown): value is AttachmentDraftPayload {
   return isRecord(value)
     && typeof value.draftId === 'string'
@@ -187,11 +162,4 @@ export function isAttachmentDraftPayload(value: unknown): value is AttachmentDra
     && typeof value.mimeType === 'string'
     && typeof value.size === 'number'
     && typeof value.uploadedAt === 'number'
-}
-
-export function parseAttachmentDraftPayloads(value: unknown): AttachmentDraftPayload[] | null {
-  if (!Array.isArray(value)) {
-    return null
-  }
-  return value.every(isAttachmentDraftPayload) ? value : null
 }

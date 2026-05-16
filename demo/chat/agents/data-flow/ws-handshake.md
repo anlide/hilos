@@ -18,10 +18,10 @@ Browser                    WS Server (Daemon)         ChatAgent (Worker)
   │                              │                   1. validate token → userId
   │                              │                   2. Connection::create(acceptKey, userId)
   │                              │                   3. send to RT connections collection
-  │                              │                   4. send user_presence_update if first connection
+  │                              │                   4. send browser source updates through DB/RT sync
   │                              │                          │
   │◀────{ type:"handshake_response",                        │
-  │       data:{user, token} }───────────────────────────────┤
+  │       data:{frontend, pageCatalog} }──────────────────────┤
   │                              │                          │
   ├──{ page:"main", params:{} }─▶│                          │
   │    PAGE_SUBSCRIBE             │──PAGE_SUBSCRIBE─────────▶│
@@ -31,7 +31,7 @@ Browser                    WS Server (Daemon)         ChatAgent (Worker)
   │                              │                   send SUBSCRIPTION_PAGE_MAIN
   │                              │                   with full state snapshot
   │◀────{ type:"subscription_page_main",                     │
-  │       data:{entities:{users,bots,events},...} }──────────┤
+  │       data:{tables:{mainEvents,...}} }───────────────────┤
 ```
 
 ## acceptKey

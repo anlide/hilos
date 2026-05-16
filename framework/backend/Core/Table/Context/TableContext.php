@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Table\Context;
 
-use Hilos\Core\Projection\SourceChange;
+use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Table\Collection\TableMutationSignalCollection;
 use Hilos\Core\Table\Definition\TableDefinition;
 use Hilos\Core\Table\DTO\TableMutationSignalData;
@@ -51,8 +51,8 @@ abstract class TableContext
     /**
      * Builds table mutation payloads for the routed tables that react to the source change.
      *
-     * @param SourceChange $change DB/RT source change being projected to tables
-     * @param iterable<string> $tableKeys Table keys from the signal router declaration or projection
+     * @param SourceChange $change DB/RT source change being applied to tables
+     * @param iterable<string> $tableKeys Table keys from the source-change routing declaration
      * @return TableMutationSignalCollection Table mutation payloads ready for WebSocket fan-out
      */
     public function buildMutationSignalsForSourceEvent(

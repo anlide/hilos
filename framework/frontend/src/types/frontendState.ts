@@ -1,6 +1,6 @@
 /**
  * Transport shape for explicit frontend state collection changes.
- * Keys are stable client collection names; values are arrays of projection rows.
+ * Keys are stable client collection names; values are arrays of frontend state rows.
  */
 export interface FrontendChangesEnvelope {
   full?: Record<string, unknown[]>

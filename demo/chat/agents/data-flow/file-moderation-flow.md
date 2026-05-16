@@ -28,12 +28,12 @@ Moderation content includes message text plus attachment metadata such as filena
 2. Clear outbound moderation fields on the originating `Connection`.
 3. Remove draft rows from `ChatRtContext::attachmentDrafts`.
 4. Add one `message_sent` event with `data.message` and `data.attachments`.
-5. Broadcast `new_event`.
+5. Browser source fan-out updates the main event and attachment draft rows.
 
 ## Rejected or Unavailable
 
 1. Keep draft rows in quarantine so the user can retry.
 2. Set `outboundModerationPhase` to `rejected` or `unavailable` on the originating `Connection`.
-3. Runtime projection sends `self_connection_update` to the originating connection.
+3. Browser source fan-out updates the originating connection's `selfConnection` row.
 
 Drafts are still subject to the one-hour TTL and disconnect cleanup.

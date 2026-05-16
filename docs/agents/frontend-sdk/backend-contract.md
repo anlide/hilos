@@ -18,13 +18,13 @@ The agent's associated Page handles the action via `onAction(acceptKey, actionNa
 
 Server sends:
 ```json
-{ "type": "new_event", "data": { "id": 42, "text": "Hello world", "userId": 7 } }
+{ "type": "subscription_page_main", "data": { "tables": { "mainEvents": { "rows": [] } } } }
 ```
 
 Frontend registers listeners:
 ```ts
-ws.on('new_event', (data: NewEventData) => {
-    store.addEvent(data)
+ws.on('subscription_page_main', (data) => {
+    browserStore.applyPagePayload('main', data)
 })
 ```
 
@@ -162,7 +162,7 @@ a full snapshot.
 
 `table_mutation` is an immediate server-authoritative mutation. Backend
 source-change fan-out sends it to subscribed local accept keys after DB/RT sync
-facts are recorded in the worker-local browser/projection consumers, and the
+facts are recorded in the worker-local browser consumers, and the
 frontend applies it to the table rows immediately.
 
 `table_mutation_pending` is reserved for an explicit "review external changes"

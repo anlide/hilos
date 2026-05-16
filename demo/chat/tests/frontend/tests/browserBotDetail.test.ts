@@ -30,6 +30,11 @@ describe('bot detail browser rows', () => {
             personality: 'direct',
             active: true,
           },
+          botAgentStatuses: {
+            botId: 3,
+            status: 'joined',
+            updatedAt: 1710000000,
+          },
         },
       },
     }, 3)).toMatchObject({
@@ -40,7 +45,7 @@ describe('bot detail browser rows', () => {
       topics: 'support',
       personality: 'direct',
       active: true,
-      presence: 'offline',
+      presence: 'online',
     })
   })
 

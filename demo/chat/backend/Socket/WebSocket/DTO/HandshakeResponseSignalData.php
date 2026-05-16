@@ -13,8 +13,9 @@ use Hilos\Core\Exception\NotImplementedException;
  * HandshakeResponseSignalData - Signal data for handshake response.
  *
  * {@see self::$frontend} must contain exactly the current authorized user under full.users;
- * the client reads id and name from that projection. Full chat snapshot (users, bots, events) and
- * session fields (moderation, file UI, upload progress) are sent on main page subscribe.
+ * the client reads the identity id from that payload. Display name, full chat snapshot
+ * (users, bots, events), and session fields (moderation, file UI, upload progress)
+ * are sent on page subscribe through browser rows.
  * Target client ID is handled by WebSocketSignalData wrapper for routing.
  */
 final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInterface

@@ -67,7 +67,7 @@ final class MainPage extends AbstractPage
     ];
 
     /**
-     * Minimum wall-clock interval between projected upload-progress notifications when not forced.
+     * Minimum wall-clock interval between upload-progress browser notifications when not forced.
      */
     private const float FILE_UPLOAD_PROGRESS_MIN_INTERVAL_SEC = 0.3;
 
@@ -345,7 +345,7 @@ final class MainPage extends AbstractPage
     /**
      * Handles a WebSocket binary frame for an active main-page upload session.
      *
-     * Appends the chunk to tmp storage, updates runtime progress, records throttled projection markers,
+     * Appends the chunk to tmp storage, updates runtime progress, records throttled browser markers,
      * and completes the upload when received bytes reach the declared size.
      *
      * @param WebSocketFrameBinarySignalDTO $data Binary frame payload and connection id

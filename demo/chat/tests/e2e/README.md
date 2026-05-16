@@ -96,7 +96,7 @@ Run realtime-only checks when changing:
 - WebSocket connection, reconnect, page subscription, or signal routing.
 - Frontend stores, table mutation handling, optimistic/pending row behavior, or
   conflict UI.
-- DB/RT projection code that fans updates from one page to another.
+- DB/RT browser fan-out code that updates subscribed pages.
 - Admin actions that should be visible to users or other admins without reload.
 - Hilos dashboard/user/log pages where demo pages implement framework contracts.
 

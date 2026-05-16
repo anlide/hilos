@@ -33,9 +33,9 @@ Move approved draft files from quarantine to published
         |
 Hilos::$db->events->actions->addMessage(content, userId, attachments)
         |
-ChatSignalMapper broadcasts NEW_EVENT
+Browser source fan-out updates subscribed main-page event rows
         |
-All connected clients receive message_sent with data.attachments
+Subscribed clients receive the new message_sent row with data.attachments
 ```
 
 ## Attachment-Only Messages

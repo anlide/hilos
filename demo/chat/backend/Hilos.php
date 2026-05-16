@@ -9,11 +9,9 @@ use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Database\Settings\ChatSettingsAccessor;
 use Demo\Chat\Environment\ChatEnvAccessor;
 use Demo\Chat\Fs\ChatFsContext;
-use Demo\Chat\Projection\ChatProjectionContext;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Demo\Chat\Tables\ChatTableContext;
 use Hilos\Core\Browser\Context\BrowserContext;
-use Hilos\Core\Projection\ProjectionContext;
 use Hilos\Core\Table\Context\TableContext;
 use Hilos\Database\Context\DbContext;
 use Hilos\Database\Settings\SettingsAccessor;
@@ -33,7 +31,6 @@ use Hilos\Runtime\View\Context\RtContext;
  * - Hilos::$table->users
  * - Hilos::$browser
  * - Hilos::$fs->quarantine, Hilos::$fs->published, Hilos::$fs->tmp
- * - Hilos::$projection
  *
  * @property-read ChatDbContext $db Database context (narrows parent's DbContext for IDE)
  * @property-read ChatEnvAccessor $env Environment accessor (narrows parent's EnvAccessor for IDE)
@@ -42,7 +39,6 @@ use Hilos\Runtime\View\Context\RtContext;
  * @property-read ChatTableContext $table Table context (narrows parent's TableContext for IDE)
  * @property-read ChatBrowserContext $browser Browser context (narrows parent's BrowserContext for IDE)
  * @property-read ChatFsContext $fs Filesystem context (narrows parent's FsContext for IDE)
- * @property-read ChatProjectionContext $projection Global broadcast projection context (narrows parent's ProjectionContext for IDE)
  */
 final class Hilos extends \Hilos\Hilos
 {
@@ -116,13 +112,4 @@ final class Hilos extends \Hilos\Hilos
         return new ChatFsContext();
     }
 
-    /**
-     * Creates the chat global broadcast projection context.
-     *
-     * @return ?ChatProjectionContext Chat global broadcast projection context
-     */
-    protected static function createProjection(): ?ProjectionContext
-    {
-        return new ChatProjectionContext();
-    }
 }

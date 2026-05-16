@@ -32,9 +32,9 @@ Client sends raw binary WS frames. The server associates frames with the active 
 1. Validate that the connection has an active upload session.
 2. Append bytes to tmp storage.
 3. Update `fileSessionReceivedBytes` and upload progress on `Connection`.
-4. Record throttled runtime projection markers for upload progress (min interval: `0.3s`).
+4. Record throttled browser update markers for upload progress (min interval: `0.3s`).
 5. When `receivedBytes == declaredSize`, move tmp to quarantine and create an attachment draft.
-6. Clear upload state/progress runtime fields; draft and progress UI arrive through frontend projection.
+6. Clear upload state/progress runtime fields; draft and progress UI arrive through main-page browser rows.
 
 ## Draft Lifecycle
 

@@ -7,13 +7,18 @@ namespace Demo\Chat\Tests\Integration;
 use Demo\Chat\Browser\ChatBrowserTable;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Core\Router\ChatSignalRouter;
-use Demo\Chat\Core\Router\DTO\ChatEventSignalDTO;
 use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Hilos;
+use Demo\Chat\Pages\Hilos\Guardian\GuardianAgentPage;
+use Demo\Chat\Pages\Hilos\GuardianPage;
 use Demo\Chat\Pages\AdminPage;
 use Demo\Chat\Pages\BotPage;
 use Demo\Chat\Pages\ModeratorPage;
-use Demo\Chat\Projection\ChatProjectionContext;
+use Demo\Chat\Runtime\State\Item\BotAgentStatus as StateBotAgentStatus;
+use Demo\Chat\Runtime\View\Context\ChatRtContext;
+use Hilos\Constants\HilosPageRouteParams;
+use Hilos\Constants\HilosSignalConstants;
+use Hilos\Core\Agent\Hilos\GuardianRunStatus;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Page\PageAgentInterface;
 use Hilos\Core\Page\PageRouteParams;
@@ -21,6 +26,7 @@ use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalSourceInterface;
 use Hilos\Core\Router\WebSocketSignalData;
+use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Utils\Helpers\RandomHelper;
 
 /**
@@ -39,7 +45,6 @@ final class PageSubscriptionBrowserPayloadTest extends IntegrationTestCase
         );
 
         $this->assertInstanceOf(BrowserPageSignalData::class, $adminPayload->data);
-        $this->assertNotInstanceOf(ChatEventSignalDTO::class, $adminPayload->data);
         $this->assertSame([], $adminPayload->data->toArray());
 
         (new ModeratorPage($this->pageAgent()))->onSubscribe('moderator-subscribe-ak', new PageRouteParams([]));
@@ -49,35 +54,98 @@ final class PageSubscriptionBrowserPayloadTest extends IntegrationTestCase
         );
 
         $this->assertInstanceOf(BrowserPageSignalData::class, $moderatorPayload->data);
-        $this->assertNotInstanceOf(ChatEventSignalDTO::class, $moderatorPayload->data);
         $this->assertSame([], $moderatorPayload->data->toArray());
     }
 
     public function testBotSubscriptionReturnsBrowserSnapshotPayload(): void
     {
+        RtTruthSourceRegistry::register(ChatRtContext::botAgentStatuses, true, 'test-page-agent');
+        Hilos::$rt->botAgentStatuses->actions->clear();
         $bot = Hilos::$db->bots->actions->create('Browser Subscribe Bot ' . RandomHelper::hex(8));
+        Hilos::$rt->botAgentStatuses->actions->create($bot->id, StateBotAgentStatus::STATUS_JOINED);
 
-        $this->resetFrontendRouter();
+        try {
+            $this->resetFrontendRouter();
 
-        (new BotPage($this->pageAgent()))->onSubscribe(
-            'bot-subscribe-ak',
-            new PageRouteParams(['id' => (string)$bot->id]),
-        );
+            (new BotPage($this->pageAgent()))->onSubscribe(
+                'bot-subscribe-ak',
+                new PageRouteParams(['id' => (string)$bot->id]),
+            );
 
-        $payload = $this->drainSingleWebSocketPayload(
-            ChatSignalConstants::SUBSCRIPTION_PAGE_BOT,
-            'bot-subscribe-ak',
-        );
+            $payload = $this->drainSingleWebSocketPayload(
+                ChatSignalConstants::SUBSCRIPTION_PAGE_BOT,
+                'bot-subscribe-ak',
+            );
 
-        $this->assertInstanceOf(BrowserPageSignalData::class, $payload->data);
-        $this->assertNotInstanceOf(ChatEventSignalDTO::class, $payload->data);
+            $this->assertInstanceOf(BrowserPageSignalData::class, $payload->data);
 
-        $tables = $payload->data->toArray()[BrowserPageSignalData::tables] ?? [];
-        $rows = $tables[ChatBrowserTable::BOT_DETAIL][BrowserPageSignalData::rows] ?? [];
-        $botRow = $this->findBrowserRowBySourceField($rows, ChatDbContext::bots, 'id', (int)$bot->id);
+            $tables = $payload->data->toArray()[BrowserPageSignalData::tables] ?? [];
+            $rows = $tables[ChatBrowserTable::BOT_DETAIL][BrowserPageSignalData::rows] ?? [];
+            $botRow = $this->findBrowserRowBySourceField($rows, ChatDbContext::bots, 'id', (int)$bot->id);
 
-        $this->assertIsArray($botRow);
-        $this->assertSame($bot->name, $botRow[BrowserPageSignalData::sources][ChatDbContext::bots]['name'] ?? null);
+            $this->assertIsArray($botRow);
+            $this->assertSame($bot->name, $botRow[BrowserPageSignalData::sources][ChatDbContext::bots]['name'] ?? null);
+            $this->assertSame(
+                StateBotAgentStatus::STATUS_JOINED,
+                $botRow[BrowserPageSignalData::sources][ChatRtContext::botAgentStatuses]['status'] ?? null,
+            );
+        } finally {
+            Hilos::$rt->botAgentStatuses->actions->clear();
+        }
+    }
+
+    public function testGuardianSubscriptionsReturnBrowserStatusRows(): void
+    {
+        RtTruthSourceRegistry::register(ChatRtContext::guardianAgentStatuses, true, 'test-page-agent');
+        Hilos::$rt->guardianAgentStatuses->actions->clear();
+
+        try {
+            Hilos::$rt->guardianAgentStatuses->actions->create('static_analysis', GuardianRunStatus::IN_PROGRESS);
+            $this->resetFrontendRouter();
+
+            (new GuardianPage($this->pageAgent()))->onSubscribe('guardian-subscribe-ak', new PageRouteParams([]));
+            $guardianPayload = $this->drainSingleWebSocketPayload(
+                HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_GUARDIAN,
+                'guardian-subscribe-ak',
+            );
+            $guardianRows = $guardianPayload->data->toArray()[BrowserPageSignalData::tables]
+                [ChatBrowserTable::GUARDIAN_AGENT_STATUSES][BrowserPageSignalData::rows] ?? [];
+            $guardianRow = $this->findBrowserRowBySourceField(
+                $guardianRows,
+                ChatRtContext::guardianAgentStatuses,
+                'agentId',
+                'static_analysis',
+            );
+            $this->assertIsArray($guardianRow);
+            $this->assertSame(
+                GuardianRunStatus::IN_PROGRESS->value,
+                $guardianRow[BrowserPageSignalData::sources][ChatRtContext::guardianAgentStatuses]['status'] ?? null,
+            );
+
+            (new GuardianAgentPage($this->pageAgent()))->onSubscribe(
+                'guardian-agent-subscribe-ak',
+                new PageRouteParams([HilosPageRouteParams::HILOS_GUARDIAN_AGENT_AGENT_ID => 'static_analysis']),
+            );
+            $detailPayload = $this->drainSingleWebSocketPayload(
+                HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_GUARDIAN_AGENT,
+                'guardian-agent-subscribe-ak',
+            );
+            $detailRows = $detailPayload->data->toArray()[BrowserPageSignalData::tables]
+                [ChatBrowserTable::GUARDIAN_AGENT_STATUS_DETAIL][BrowserPageSignalData::rows] ?? [];
+            $detailRow = $this->findBrowserRowBySourceField(
+                $detailRows,
+                ChatRtContext::guardianAgentStatuses,
+                'agentId',
+                'static_analysis',
+            );
+            $this->assertIsArray($detailRow);
+            $this->assertSame(
+                GuardianRunStatus::IN_PROGRESS->value,
+                $detailRow[BrowserPageSignalData::sources][ChatRtContext::guardianAgentStatuses]['status'] ?? null,
+            );
+        } finally {
+            Hilos::$rt->guardianAgentStatuses->actions->clear();
+        }
     }
 
     /**
@@ -86,7 +154,6 @@ final class PageSubscriptionBrowserPayloadTest extends IntegrationTestCase
     private function resetFrontendRouter(): void
     {
         Hilos::initSignalRouter(new ChatSignalRouter());
-        Hilos::initProjection(new ChatProjectionContext());
         Hilos::initBrowser();
     }
 

@@ -89,7 +89,7 @@
 - При создании плагина можно передать, например, `entitiesReceiver: EntitiesReceiver` (вариант 1) или `onEntities: (payload: unknown) => void`.
 - В обработчике сообщений (внутри framework или в одном общем колбэке, который framework вызывает):  
   `if (data && typeof data === 'object' && 'entities' in data && data.entities != null) { entitiesReceiver.apply(data); }`  
-  Затем вызывается пользовательский `onMessage(data)` (или следующий шаг pipeline), чтобы проект мог отреагировать на тип сообщения (handshake_response, new_event и т.д.).
+  Затем вызывается пользовательский `onMessage(data)` (или следующий шаг pipeline), чтобы проект мог отреагировать на тип сообщения (handshake_response, subscription_page_main и т.д.).
 
 **Проект:**
 

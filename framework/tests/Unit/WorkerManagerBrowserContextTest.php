@@ -10,8 +10,8 @@ use Hilos\Core\Agent\AgentInterface;
 use Hilos\Core\Agent\AgentManager;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Daemon\WorkerManager;
-use Hilos\Core\Projection\SourceChange;
-use Hilos\Core\Projection\SourceChangeSet;
+use Hilos\Core\Source\SourceChange;
+use Hilos\Core\Source\SourceChangeSet;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\Hilos;
@@ -25,17 +25,15 @@ final class WorkerManagerBrowserContextTest extends TestCase
     public function tearDown(): void
     {
         Hilos::$browser = null;
-        Hilos::$projection = null;
         Hilos::$sr = null;
 
         parent::tearDown();
     }
 
-    public function testWorkerRecordsDbRtSourceChangesInBrowserContextWithoutProjection(): void
+    public function testWorkerRecordsDbRtSourceChangesInBrowserContext(): void
     {
         $browser = new WorkerManagerBrowserContextTestBrowserContext();
         Hilos::$browser = $browser;
-        Hilos::$projection = null;
 
         $manager = new WorkerManagerBrowserContextTestManager(new WorkerManagerBrowserContextTestAgent());
 

@@ -6,7 +6,6 @@ namespace Hilos;
 
 use Hilos\Core\Analytics\AnalyticsCollector;
 use Hilos\Core\Browser\Context\BrowserContext;
-use Hilos\Core\Projection\ProjectionContext;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Table\Context\TableContext;
 use Hilos\Database\Context\DbContext;
@@ -28,7 +27,6 @@ use Hilos\Runtime\View\Context\RtContext;
  * - Hilos::$browser    — browser-facing state layer
  * - Hilos::$fs         — filesystem layer
  * - Hilos::$sr         — signal router
- * - Hilos::$projection — legacy projection/global broadcast accumulator
  * - Hilos::$ac         — analytics collector
  */
 abstract class Hilos
@@ -57,14 +55,11 @@ abstract class Hilos
     /** @var ?SignalRouter Signal router singleton */
     public static ?SignalRouter $sr = null;
 
-    /** @var ?ProjectionContext Legacy projection/global broadcast accumulator */
-    public static ?ProjectionContext $projection = null;
-
     /** @var ?AnalyticsCollector Analytics collector singleton */
     public static ?AnalyticsCollector $ac = null;
 
     /**
-     * Initializes env, settings, storage, runtime, table, browser, filesystem, and legacy projection layers.
+     * Initializes env, settings, storage, runtime, table, browser, and filesystem layers.
      *
      * @throws HilosException When a layer factory or configure step cannot initialize its singleton
      */
@@ -103,10 +98,6 @@ abstract class Hilos
             static::$fs?->configure();
         }
 
-        if (static::$projection === null) {
-            static::$projection = static::createProjection();
-            static::$projection?->configure();
-        }
     }
 
     /**
@@ -176,27 +167,9 @@ abstract class Hilos
     }
 
     /**
-     * Replaces and configures the legacy projection/global broadcast context.
-     *
-     * Mirrors {@see self::initSignalRouter()} for the projection layer: tests
-     * and bootstrap code can inject a specific {@see ProjectionContext} instance
-     * without going through {@see self::createProjection()}. The injected
-     * context is configured immediately, matching the normal {@see self::init()}
-     * initialization path.
-     *
-     * @param ProjectionContext $projection Projection context to use for this worker
-     */
-    public static function initProjection(ProjectionContext $projection): void
-    {
-        static::$projection = $projection;
-        static::$projection->configure();
-    }
-
-    /**
      * Replaces and configures the worker-local browser context.
      *
-     * Mirrors {@see self::initProjection()} for browser-facing state: tests and
-     * bootstrap code can reset the browser source-change buffer without
+     * Tests and bootstrap code can reset the browser source-change buffer without
      * assigning facade globals directly. When no context is passed, the active
      * project factory creates the browser context.
      *
@@ -275,18 +248,4 @@ abstract class Hilos
         return null;
     }
 
-    /**
-     * Creates the legacy projection/global broadcast context.
-     *
-     * The default framework has no projection. Projects may return a
-     * {@see ProjectionContext} subclass for project-wide broadcasts or legacy
-     * per-page/per-group projections; the configure step runs from
-     * {@see self::init()} immediately after the factory.
-     *
-     * @return ?ProjectionContext Projection context or null if not used
-     */
-    protected static function createProjection(): ?ProjectionContext
-    {
-        return null;
-    }
 }

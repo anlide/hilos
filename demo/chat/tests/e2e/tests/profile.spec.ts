@@ -81,7 +81,7 @@ const rejectNextRename = async (page: Page, reason: string) => {
   )
 }
 
-const allowNextRename = async (page: Page, currentName: () => string) => {
+const allowNextRename = async (page: Page) => {
   await page.routeWebSocket(
     (url) => url.protocol === 'ws:' || url.protocol === 'wss:',
     (ws) => {
@@ -91,27 +91,17 @@ const allowNextRename = async (page: Page, currentName: () => string) => {
         const text = typeof message === 'string' ? message : message.toString()
         const newName = parseRenameActionName(text)
         if (newName !== null) {
-          const eventId = Date.now()
-          const now = new Date().toISOString().slice(0, 19).replace('T', ' ')
           ws.send(JSON.stringify({
-            type: 'new_event',
+            type: 'subscription_page_profile',
             data: {
-              entities: {
-                updates: {
-                  events: [{
-                    id: eventId,
-                    type: 'user_renamed',
-                    timestamp: now,
-                    eventMessage: null,
-                    eventUserRegistration: null,
-                    eventUserRename: {
-                      eventId,
-                      targetUserId: 0,
-                      actorUserId: null,
-                      oldName: currentName(),
-                      newName,
+              tables: {
+                selfConnection: {
+                  rows: [{
+                    rowKey: `profile-test-${Date.now()}`,
+                    sources: {
+                      connections: { userId: 0 },
+                      users: { id: 0, name: newName },
                     },
-                    attachments: [],
                   }],
                 },
               },
@@ -137,11 +127,9 @@ const uniqueProfileName = () => {
 
 test.describe('Profile', () => {
   test('renames the current user from the profile modal', async ({ page }) => {
-    let currentName = ''
-    await allowNextRename(page, () => currentName)
+    await allowNextRename(page)
     const modal = await openProfileModal(page)
     const newName = uniqueProfileName()
-    currentName = await profileName(page).textContent() ?? ''
 
     await usernameInput(page).fill(newName)
     await modal.getByRole('button', { name: 'Save' }).click()

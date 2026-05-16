@@ -16,4 +16,6 @@ final class ChatBrowserTable
     public const string ATTACHMENT_DRAFTS = 'attachmentDrafts';
     public const string BOT_DETAIL = 'botDetail';
     public const string USER_DETAIL = 'userDetail';
+    public const string GUARDIAN_AGENT_STATUSES = 'guardianAgentStatuses';
+    public const string GUARDIAN_AGENT_STATUS_DETAIL = 'guardianAgentStatusDetail';
 }

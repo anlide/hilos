@@ -2,16 +2,16 @@
 
 declare(strict_types=1);
 
-namespace Hilos\Core\Projection;
+namespace Hilos\Core\Source;
 
 use Hilos\BaseDTO;
 use Hilos\Core\Table\Mutation\TableMutationType;
 
 /**
- * DB/RT sync fact that can invalidate worker-local browser/projection state.
+ * DB/RT sync fact that can invalidate worker-local browser state.
  *
  * Describes the backend source state, not the frontend payload. A project
- * browser context or legacy projection decides how one source fact maps to wire
+ * browser context decides how one source fact maps to wire
  * signals.
  * Serializable as a BaseDTO so the fact can also travel inside worker-to-daemon
  * transport payloads.

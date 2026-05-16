@@ -14,13 +14,6 @@ export {
 } from './tableSignals'
 
 export {
-  guardianAgentStatusUpdate,
-  subscriptionPageHilosGuardian,
-  subscriptionPageHilosGuardianAgent,
-  type GuardianAgentStatusUpdatePayload,
-} from './guardianSignals'
-
-export {
   subscriptionUpdated,
   subscriptionPageError,
   SUBSCRIPTION_PAGE_PREFIX,

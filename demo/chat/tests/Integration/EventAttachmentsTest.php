@@ -19,7 +19,7 @@ use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Utils\Helpers\RandomHelper;
 
 /**
- * Integration coverage for published event attachment persistence and projection.
+ * Integration coverage for published event attachment persistence and frontend serialization.
  */
 final class EventAttachmentsTest extends IntegrationTestCase
 {

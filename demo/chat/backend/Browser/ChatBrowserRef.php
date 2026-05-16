@@ -35,6 +35,11 @@ final class ChatBrowserRef
         BrowserRefKey::KEY => HilosPageRouteParams::HILOS_USER_USER_ID,
     ];
 
+    public const array HILOS_GUARDIAN_AGENT_ID = [
+        BrowserRefKey::TYPE => BrowserRefType::PAGE_PARAM,
+        BrowserRefKey::KEY => HilosPageRouteParams::HILOS_GUARDIAN_AGENT_AGENT_ID,
+    ];
+
     public const array TABLE_ACCEPT_KEY = [
         BrowserRefKey::TYPE => BrowserRefType::TABLE_PARAM,
         BrowserRefKey::KEY => BrowserRuntimeParam::ACCEPT_KEY,
@@ -48,5 +53,10 @@ final class ChatBrowserRef
     public const array TABLE_HILOS_USER_ID = [
         BrowserRefKey::TYPE => BrowserRefType::TABLE_PARAM,
         BrowserRefKey::KEY => HilosPageRouteParams::HILOS_USER_USER_ID,
+    ];
+
+    public const array TABLE_HILOS_GUARDIAN_AGENT_ID = [
+        BrowserRefKey::TYPE => BrowserRefType::TABLE_PARAM,
+        BrowserRefKey::KEY => HilosPageRouteParams::HILOS_GUARDIAN_AGENT_AGENT_ID,
     ];
 }

@@ -81,9 +81,9 @@ final class UserFrontendStateProjector
     }
 
     /**
-     * Builds projection collections for the given users.
+     * Builds frontend state collections for the given users.
      *
-     * @param iterable<DbUser> $users Users to project
+     * @param iterable<DbUser> $users Users to serialize
      * @param bool $includePublicUsers Include public user records
      * @param bool $includeConnectionStats Include runtime session counters
      * @return array<string, list<array<string, mixed>>>

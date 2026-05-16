@@ -22,10 +22,6 @@ import {
 } from '@/services/chatFileUpload'
 import {
   handshakeResponse,
-  botJoined,
-  botLeft,
-  botUpdated,
-  newEvent,
   subscriptionPageHilosLogs,
 } from '@/signals'
 
@@ -109,19 +105,13 @@ function buildSignalRouter() {
       const pageCatalogStore = usePageCatalogStore()
       pageCatalogStore.setPageCatalog(pageCatalog)
     }
-    useChatStore().handleSubscriptionResponse(self.id, self.name)
+    useChatStore().handleSubscriptionResponse(self.id)
   })
 
   signalRouter.on(actionError, ({ action, reason }) => {
     const chatStore = useChatStore()
     switch (action) {
       case 'message':
-        if (
-          chatStore.outboundModerationState?.phase === 'rejected'
-          || chatStore.outboundModerationState?.phase === 'unavailable'
-        ) {
-          break
-        }
         chatStore.setMessageError(reason)
         break
 
@@ -136,31 +126,6 @@ function buildSignalRouter() {
 
   signalRouter.on(subscriptionPageHilosLogs, (snapshot) => {
     useHilosLogsStore().setHilosLogsOverview(snapshot)
-  })
-
-  signalRouter.on(botJoined, ({ botId }) => {
-    useChatStore().setBotPresence(botId, 'online')
-  })
-  signalRouter.on(botLeft, ({ botId }) => {
-    useChatStore().setBotPresence(botId, 'offline')
-  })
-  signalRouter.on(botUpdated, () => {})
-
-  signalRouter.on(newEvent, ({ events }) => {
-    const chatStore = useChatStore()
-    for (const event of events) {
-      if (event.type === 'user_renamed' || event.type === 'user_renamed_by_admin') {
-        const newName = event.eventUserRename?.newName ?? undefined
-        const oldName = event.eventUserRename?.oldName ?? undefined
-        if (
-          newName &&
-          (event.eventUserRename?.targetUserId === chatStore.currentUserId ||
-            (oldName && oldName === chatStore.currentUsername))
-        ) {
-          chatStore.currentUsername = newName
-        }
-      }
-    }
   })
 
   return signalRouter
@@ -193,7 +158,6 @@ export function createChatWebSocketPlugin() {
     },
     onClose: () => {
       rejectFileUploadPending('disconnected')
-      useChatStore().clearSelfConnection()
       const connectionStore = useConnectionStore()
       connectionStore.setConnected(false)
       connectionStore.setConnecting(false)

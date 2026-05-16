@@ -1,11 +1,9 @@
 import { defineStore } from 'pinia'
-import type { GuardianAgentStatusMap, GuardianRunStatus } from '../types/guardianAgentRuns'
 
 const guardianActionUnlockTimers: Record<string, ReturnType<typeof setTimeout> | undefined> = {}
 
 export const useGuardianStore = defineStore('guardian', {
   state: () => ({
-    guardianAgentStatuses: {} as GuardianAgentStatusMap,
     guardianAgentPendingById: {} as Record<string, boolean>,
     guardianAgentCooldownById: {} as Record<string, boolean>,
   }),
@@ -21,10 +19,6 @@ export const useGuardianStore = defineStore('guardian', {
   },
 
   actions: {
-    setGuardianAgentStatuses(snapshot: GuardianAgentStatusMap) {
-      this.guardianAgentStatuses = { ...snapshot }
-    },
-
     setGuardianAgentActionPending(agentId: string) {
       this.guardianAgentPendingById = {
         ...this.guardianAgentPendingById,
@@ -32,12 +26,10 @@ export const useGuardianStore = defineStore('guardian', {
       }
     },
 
-    setGuardianAgentStatus(agentId: string, status: GuardianRunStatus) {
-      this.guardianAgentStatuses = {
-        ...this.guardianAgentStatuses,
-        [agentId]: status,
+    settleGuardianAgentAction(agentId: string) {
+      if (this.guardianAgentPendingById[agentId] !== true) {
+        return
       }
-
       this.guardianAgentPendingById = {
         ...this.guardianAgentPendingById,
         [agentId]: false,

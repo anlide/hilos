@@ -82,7 +82,7 @@ Realtime specs (`tests/e2e/tests/realtime/*`, tagged `@realtime`) are the
 multi-actor layer: cross-tab sync, cross-user propagation, admin-to-user fan-out,
 table mutation fan-out, and concurrent edit/conflict flows. Run the realtime
 subset when changing WebSocket/page subscription routing, frontend stores,
-table mutation handling, DB/RT projections, admin actions, or Hilos pages. The
+table mutation handling, DB/RT browser fan-out, admin actions, or Hilos pages. The
 regular `test:e2e-full` includes realtime specs because it runs the whole
 Playwright suite.
 

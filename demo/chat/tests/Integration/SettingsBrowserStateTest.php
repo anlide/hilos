@@ -10,13 +10,12 @@ use Demo\Chat\Core\Router\ChatSignalRouter;
 use Demo\Chat\Database\Settings\ChatSettingsConstants;
 use Demo\Chat\Database\Settings\SettingsCatalog;
 use Demo\Chat\Hilos;
-use Demo\Chat\Projection\ChatProjectionContext;
 use Demo\Chat\Tables\ChatTableContext;
 use Demo\Chat\Tables\Settings\SettingTableRow;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Page\PageRouteParams;
-use Hilos\Core\Projection\SourceChange;
+use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Sync\DTO\DbSyncCreatedSignalData;
@@ -32,7 +31,7 @@ use Hilos\Utils\Helpers\RandomHelper;
 /**
  * Integration coverage for the Hilos settings page browser payload.
  */
-final class SettingsBrowserProjectionTest extends IntegrationTestCase
+final class SettingsBrowserStateTest extends IntegrationTestCase
 {
     private const string TEST_SETTINGS_AGENT_ID = 'test-settings-browser-agent';
 
@@ -160,22 +159,12 @@ final class SettingsBrowserProjectionTest extends IntegrationTestCase
         }
     }
 
-    public function testLegacySettingsPageProjectionIsNotRegistered(): void
-    {
-        $this->resetFrontendRouter();
-
-        Hilos::$projection?->subscribeSnapshot(PageConstants::HILOS_SETTINGS, 'legacy-settings-ak', new PageRouteParams([]));
-
-        $this->assertNull(Hilos::$sr->getNextQueuedSignal());
-    }
-
     /**
      * Reinitializes worker-local routers before recording browser source changes.
      */
     private function resetFrontendRouter(): void
     {
         Hilos::initSignalRouter(new ChatSignalRouter());
-        Hilos::initProjection(new ChatProjectionContext());
         Hilos::initBrowser();
     }
 
@@ -184,14 +173,13 @@ final class SettingsBrowserProjectionTest extends IntegrationTestCase
      *
      * @param string $signalName Browser page signal name
      * @param string $targetAcceptKey Expected target accept key
-     * @param bool $flushFrontend Whether queued DB sync signals should be projected first
+     * @param bool $flushFrontend Whether queued DB sync signals should be flushed first
      * @return array<string, mixed> Browser payload array
      */
     private function drainSinglePayload(string $signalName, string $targetAcceptKey, bool $flushFrontend = false): array
     {
         if ($flushFrontend) {
             $this->drainSyncSignalsToFrontendBuffers();
-            Hilos::$projection?->flushToSignalRouter();
             Hilos::$browser?->flushToSignalRouter();
         }
 
@@ -215,7 +203,7 @@ final class SettingsBrowserProjectionTest extends IntegrationTestCase
     }
 
     /**
-     * Records queued DB sync signals as projection and browser source changes.
+     * Records queued DB sync signals as browser source changes.
      */
     private function drainSyncSignalsToFrontendBuffers(): void
     {
@@ -224,8 +212,6 @@ final class SettingsBrowserProjectionTest extends IntegrationTestCase
             if ($change === null) {
                 continue;
             }
-
-            Hilos::$projection?->record($change);
             Hilos::$browser?->record($change);
         }
     }

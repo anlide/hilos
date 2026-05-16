@@ -43,5 +43,5 @@ Access in components:
 ```ts
 const ws = inject('webSocket') as WebSocketService
 ws.send('message', { text: 'hello' })
-ws.on('new_event', (data) => { ... })
+ws.on('subscription_page_main', (data) => { ... })
 ```

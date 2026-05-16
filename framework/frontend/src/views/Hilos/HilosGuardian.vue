@@ -46,15 +46,20 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, watch } from 'vue'
 import { useHead } from '@unhead/vue'
 import { useWebSocket } from '../../plugins/websocket'
 import GuardianAgentControls from '../../components/GuardianAgentControls.vue'
 import { guardianAiAgentIds, guardianAiAgents } from '../../constants/guardianAiAgents'
 import { GUARDIAN_AGENT_RUN_START, GUARDIAN_AGENT_RUN_STOP } from '../../constants/hilosActions'
 import { sendAction } from '../../services/websocketActions'
-import { useConnectionStore, useGuardianStore } from '../../stores'
-import type { GuardianRunStatus } from '../../types/guardianAgentRuns'
+import { useBrowserStore, useConnectionStore, useGuardianStore } from '../../stores'
+import {
+  BROWSER_PAGE_HILOS_GUARDIAN,
+  BROWSER_TABLE_GUARDIAN_AGENT_STATUSES,
+  guardianAgentStatusRowsFromBrowserRows,
+  type GuardianRunStatus,
+} from '../../types/guardianAgentRuns'
 
 useHead({
   title: 'Guardian | Chat Hilos Demo',
@@ -67,14 +72,41 @@ useHead({
 })
 
 const connectionStore = useConnectionStore()
+const browserStore = useBrowserStore()
 const guardianStore = useGuardianStore()
 const websocket = useWebSocket()
 
+const guardianStatusRowsByKey = computed(() => {
+  return browserStore.pages[BROWSER_PAGE_HILOS_GUARDIAN]?.tables[BROWSER_TABLE_GUARDIAN_AGENT_STATUSES]?.rowsByKey
+})
+
+const guardianStatusRowsById = computed(() => guardianAgentStatusRowsFromBrowserRows(guardianStatusRowsByKey.value))
+
 const guardianStatusesById = computed(() => {
   return guardianAiAgentIds.reduce<Record<string, GuardianRunStatus>>((acc, id) => {
-    acc[id] = guardianStore.guardianAgentStatuses[id] ?? 'not_started'
+    acc[id] = guardianStatusRowsById.value[id]?.status ?? 'not_started'
     return acc
   }, {})
+})
+
+const guardianStatusTokensById = computed(() => {
+  return guardianAiAgentIds.reduce<Record<string, string>>((acc, id) => {
+    const status = guardianStatusRowsById.value[id]
+    acc[id] = status === undefined ? '' : `${status.status}:${status.updatedAt}`
+    return acc
+  }, {})
+})
+
+watch(guardianStatusTokensById, (tokens, previous) => {
+  for (const id of guardianAiAgentIds) {
+    if (
+      guardianStore.isGuardianAgentActionPending(id)
+      && tokens[id] !== ''
+      && tokens[id] !== previous?.[id]
+    ) {
+      guardianStore.settleGuardianAgentAction(id)
+    }
+  }
 })
 
 const handleStart = (agentId: string) => {

@@ -9,6 +9,7 @@ use Demo\Chat\Browser\ChatBrowserSource;
 use Demo\Chat\Browser\ChatBrowserTable;
 use Demo\Chat\Database\Object\Item\Bot;
 use Demo\Chat\Pages\DTO\BotPageSubscribeParams;
+use Demo\Chat\Runtime\State\Item\BotAgentStatus;
 use Demo\Chat\Tables\Bot\BotTableRow;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Browser\Config\BrowserFieldKey;
@@ -31,8 +32,21 @@ final class BotDetailBrowserTable
         ],
         BrowserConfigKey::SOURCES => [
             ChatBrowserSource::DB_BOTS,
+            ChatBrowserSource::RT_BOT_AGENT_STATUSES,
         ],
         BrowserConfigKey::ROWS => [
+            [
+                BrowserFieldKey::SOURCE => ChatBrowserSource::RT_BOT_AGENT_STATUSES,
+                BrowserFieldKey::ROW_KEY => BotAgentStatus::botId,
+                BrowserFieldKey::WHERE => [
+                    BotAgentStatus::botId => ChatBrowserRef::TABLE_BOT_ID,
+                ],
+                BrowserFieldKey::FIELDS => [
+                    BotAgentStatus::botId,
+                    BotAgentStatus::status,
+                    BotAgentStatus::updatedAt,
+                ],
+            ],
             [
                 BrowserFieldKey::SOURCE => ChatBrowserSource::DB_BOTS,
                 BrowserFieldKey::ROW_KEY => Bot::id,

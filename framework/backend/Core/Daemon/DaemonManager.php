@@ -13,9 +13,7 @@ use Hilos\Core\Agent\Exception\AgentDaemonCreationFailedException;
 use Hilos\Core\Agent\Exception\NoSuitableWorkerException;
 use Hilos\Core\Daemon\Cron\CronRule;
 use Hilos\Core\EventLoop\EventLoop;
-use Hilos\Core\Router\DTO\EmitFanoutItem;
 use Hilos\Core\Router\DTO\SignalDTO;
-use Hilos\Core\Router\EmitFanoutDelivery;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\WebSocketEnvelopeAware;
@@ -495,16 +493,6 @@ abstract class DaemonManager extends BaseManager
             // Update subscriptions BEFORE routing (routing may depend on current subscriptions)
             $this->updateSubscriptions($signal);
 
-            $signalTypeEarly = $signal->signalType->getType();
-            if ($signalTypeEarly === SignalTypeConstants::EMIT_DB_CHANGE) {
-                $this->dispatchEmitDbSignals($webSocketServer, $signal);
-                continue;
-            }
-            if ($signalTypeEarly === SignalTypeConstants::EMIT_RT_CHANGE) {
-                $this->dispatchEmitRtSignals($webSocketServer, $signal);
-                continue;
-            }
-
             if (in_array($signal->signalType->getType(), $syncTypes, true)) {
                 $this->sendSyncToWorkers($workerServer, $signal);
                 $this->handleDaemonSignal($signal);
@@ -654,70 +642,6 @@ abstract class DaemonManager extends BaseManager
             SignalTypeConstants::RT_SYNC_DELETED => RtSyncApplicator::applyDeleted($signal->data->toArray()),
             default => null,
         };
-    }
-
-    /**
-     * Expand {@see SignalTypeConstants::EMIT_DB_CHANGE} to WebSocket fan-out using the registered mapper.
-     */
-    private function dispatchEmitDbSignals(?WebSocketServer $webSocketServer, SignalDTO $signal): void
-    {
-        if ($webSocketServer === null) {
-            Logger::debug('No WebSocket server for EMIT_DB_CHANGE; skipping');
-            return;
-        }
-        $mapper = Hilos::$sr->getEmitMapper();
-        if ($mapper === null) {
-            Logger::debug('No emit mapper registered; skipping EMIT_DB_CHANGE');
-            return;
-        }
-        foreach ($mapper->mapDbEmit($signal) as $item) {
-            $this->deliverEmitFanoutItem($webSocketServer, $item);
-        }
-    }
-
-    /**
-     * Expand {@see SignalTypeConstants::EMIT_RT_CHANGE} to WebSocket fan-out using the registered mapper.
-     */
-    private function dispatchEmitRtSignals(?WebSocketServer $webSocketServer, SignalDTO $signal): void
-    {
-        if ($webSocketServer === null) {
-            Logger::debug('No WebSocket server for EMIT_RT_CHANGE; skipping');
-            return;
-        }
-        $mapper = Hilos::$sr->getEmitMapper();
-        if ($mapper === null) {
-            Logger::debug('No emit mapper registered; skipping EMIT_RT_CHANGE');
-            return;
-        }
-        foreach ($mapper->mapRtEmit($signal) as $item) {
-            $this->deliverEmitFanoutItem($webSocketServer, $item);
-        }
-    }
-
-    private function deliverEmitFanoutItem(WebSocketServer $server, EmitFanoutItem $item): void
-    {
-        $json = $this->buildWebSocketJsonForEmitInner($item->wireSignalName, $item->innerPayload);
-        if ($item->delivery === EmitFanoutDelivery::AllExcept) {
-            $this->sendToAllClients($server, $json, $item->excludeAcceptKey);
-            return;
-        }
-        if ($item->delivery === EmitFanoutDelivery::Single) {
-            $key = $item->targetAcceptKey;
-            if ($key !== null && $key !== '') {
-                $this->sendToClient($server, $key, $json);
-            }
-        }
-    }
-
-    private function buildWebSocketJsonForEmitInner(string $wireSignalName, SignalDataInterface $inner): string
-    {
-        $message = [
-            'type' => $wireSignalName,
-            'data' => $inner->toArray(),
-        ];
-        $this->mergeEnvelopeMetadata($message, $inner);
-
-        return json_encode($message, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     }
 
     /**

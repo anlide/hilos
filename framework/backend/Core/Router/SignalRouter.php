@@ -36,7 +36,6 @@ use Hilos\Utils\Logger;
  * - 'actions'  — action -> agentType mapping
  * - 'page_subscription_routing' — per-page agent override for PAGE_SUBSCRIBE/UNSUBSCRIBE/UPDATE:
  *       ['default' => agentType, 'pages' => [pageName => agentType, ...]]
- * - 'table_event_routes' — eventKey -> table keys affected by the event
  *
  * For dynamic routing (agentIndex depends on signal content), override getDestinations()
  * in child router. Static routing must always be declared in config.
@@ -52,7 +51,6 @@ class SignalRouter
      * - 'signals' — array<source, array<signalType, string|string[]>> (static agent routing)
      * - 'actions' — array<actionName, string> (action -> agentType)
      * - 'page_subscription_routing' — array{default: string, pages: array<pageName, string>}
-     * - 'table_event_routes' — array<eventKey, list<tableKey>>
      *
      * @var array<string, mixed>
      */
@@ -94,8 +92,6 @@ class SignalRouter
      * @var array<string, array<string, array<string, mixed>>>
      */
     private array $subscriptionGroups = [];
-
-    private ?SignalMapperInterface $emitMapper = null;
 
     /**
      * Creates signal router with empty configuration.
@@ -441,54 +437,6 @@ class SignalRouter
     }
 
     /**
-     * Register mapper that expands EMIT_* signals to WebSocket fan-out on the daemon.
-     *
-     * @param ?SignalMapperInterface $emitMapper Emit mapper, or null to disable emit fan-out mapping
-     */
-    public function setEmitMapper(?SignalMapperInterface $emitMapper): void
-    {
-        $this->emitMapper = $emitMapper;
-    }
-
-    /**
-     * Returns mapper that expands EMIT_* signals to WebSocket fan-out on the daemon.
-     *
-     * @return ?SignalMapperInterface Current emit mapper, or null when emit fan-out mapping is disabled
-     */
-    public function getEmitMapper(): ?SignalMapperInterface
-    {
-        return $this->emitMapper;
-    }
-
-    /**
-     * Returns table keys declared as affected by a project event.
-     *
-     * @param string $eventKey Logical project event name
-     * @return list<string>
-     */
-    public function getTableKeysForEvent(string $eventKey): array
-    {
-        $tableEventRoutes = $this->config['table_event_routes'] ?? [];
-        if (!is_array($tableEventRoutes)) {
-            return [];
-        }
-
-        $routes = $tableEventRoutes[$eventKey] ?? [];
-        if (!is_array($routes)) {
-            return [];
-        }
-
-        $tableKeys = [];
-        foreach ($routes as $tableKey) {
-            if (is_string($tableKey) && $tableKey !== '') {
-                $tableKeys[] = $tableKey;
-            }
-        }
-
-        return array_values(array_unique($tableKeys));
-    }
-
-    /**
      * Accept keys currently subscribed to a page, optionally filtered by a single route param.
      *
      * @return list<string>
@@ -518,7 +466,7 @@ class SignalRouter
     /**
      * Page subscriptions currently mirrored in this router.
      *
-     * Browser projection uses this worker-local mirror to send page-shaped
+     * Browser context uses this worker-local mirror to send page-shaped
      * signals only to connections that are subscribed in the current worker.
      *
      * @return array<string, array{page: string, params: array<string, string>}> Subscriptions keyed by accept key
@@ -572,7 +520,7 @@ class SignalRouter
     /**
      * Accept keys known to this router's subscription registry.
      *
-     * In a worker this is the worker-local mirror used by browser/projection
+     * In a worker this is the worker-local mirror used by browser
      * fan-out; in the daemon this is the global routing registry used for
      * broadcasts.
      *

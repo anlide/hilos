@@ -11,14 +11,13 @@ use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Router\ChatSignalRouter;
 use Demo\Chat\Core\Router\DTO\SelfConnectionSignalData;
 use Demo\Chat\Database\ChatDbContext;
-use Demo\Chat\Projection\ChatProjectionContext;
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\State\Item\BotAgentStatus as StateBotAgentStatus;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Page\PageRouteParams;
-use Hilos\Core\Projection\SourceChange;
+use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Sync\DTO\DbSyncCreatedSignalData;
@@ -32,9 +31,9 @@ use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Utils\Helpers\RandomHelper;
 
 /**
- * Integration tests for browser projection of main chat page state.
+ * Integration tests for browser state of main chat page.
  */
-final class ChatFrontendProjectionTest extends IntegrationTestCase
+final class ChatBrowserStateTest extends IntegrationTestCase
 {
     private const string TEST_AGENT_ID = 'test-agent';
 
@@ -139,6 +138,10 @@ final class ChatFrontendProjectionTest extends IntegrationTestCase
                 $user->id,
                 $selfRows[0][BrowserPageSignalData::sources][ChatRtContext::connections]['userId'] ?? null,
             );
+            $this->assertSame(
+                $user->name,
+                $selfRows[0][BrowserPageSignalData::sources][ChatDbContext::users]['name'] ?? null,
+            );
 
             $draftRows = $tables[ChatBrowserTable::ATTACHMENT_DRAFTS][BrowserPageSignalData::rows];
             $this->assertNotNull($this->findBrowserRowBySourceField($draftRows, ChatRtContext::attachmentDrafts, 'draftId', 'main-browser-draft'));
@@ -206,14 +209,14 @@ final class ChatFrontendProjectionTest extends IntegrationTestCase
             ));
 
             Hilos::$rt->attachmentDrafts->actions->create(
-                'draft-projection',
+                'draft-browser',
                 'draft-ak',
                 $user->id,
                 '',
-                'projection.txt',
+                'browser.txt',
                 'text/plain',
                 12,
-                'projection.txt',
+                'browser.txt',
                 time(),
             );
 
@@ -223,11 +226,11 @@ final class ChatFrontendProjectionTest extends IntegrationTestCase
                 $draftRows,
                 ChatRtContext::attachmentDrafts,
                 'draftId',
-                'draft-projection',
+                'draft-browser',
             );
 
             $this->assertIsArray($draftRow);
-            $this->assertSame('projection.txt', $draftRow[BrowserPageSignalData::sources][ChatRtContext::attachmentDrafts]['filename'] ?? null);
+            $this->assertSame('browser.txt', $draftRow[BrowserPageSignalData::sources][ChatRtContext::attachmentDrafts]['filename'] ?? null);
             $this->assertNoAcceptKeyInBrowserTables($payload[BrowserPageSignalData::tables]);
         } finally {
             Hilos::$rt->connections->actions->clear();
@@ -252,14 +255,14 @@ final class ChatFrontendProjectionTest extends IntegrationTestCase
             ));
 
             Hilos::$rt->connections['upload-ak']?->actions->beginBinaryFileUpload(
-                'upload-projection',
+                'upload-browser',
                 1024,
-                'tmp-upload-projection',
-                'projection.txt',
+                'tmp-upload-browser',
+                'browser.txt',
                 'text/plain',
-                'client-upload-projection',
-                'projection.txt',
-                'projection.txt',
+                'client-upload-browser',
+                'browser.txt',
+                'browser.txt',
                 1024,
             );
 
@@ -268,7 +271,7 @@ final class ChatFrontendProjectionTest extends IntegrationTestCase
             $this->assertSame(
                 [
                     SelfConnectionSignalData::phase => ConnectionRuntimeConstants::FILE_UPLOAD_PHASE_READY,
-                    SelfConnectionSignalData::clientUploadId => 'client-upload-projection',
+                    SelfConnectionSignalData::clientUploadId => 'client-upload-browser',
                     SelfConnectionSignalData::errorCode => null,
                     SelfConnectionSignalData::errorMessage => null,
                 ],
@@ -276,7 +279,7 @@ final class ChatFrontendProjectionTest extends IntegrationTestCase
             );
             $this->assertSame(
                 [
-                    SelfConnectionSignalData::filename => 'projection.txt',
+                    SelfConnectionSignalData::filename => 'browser.txt',
                     SelfConnectionSignalData::uploadedBytes => 0,
                     SelfConnectionSignalData::totalBytes => 1024,
                 ],
@@ -308,12 +311,11 @@ final class ChatFrontendProjectionTest extends IntegrationTestCase
     private function resetFrontendRouter(): void
     {
         Hilos::initSignalRouter(new ChatSignalRouter());
-        Hilos::initProjection(new ChatProjectionContext());
         Hilos::initBrowser();
     }
 
     /**
-     * Drains projected main browser signals and returns the only payload for the given target.
+     * Drains main browser signals and returns the only payload for the given target.
      *
      * @param string $targetAcceptKey Expected WebSocket accept key
      * @return array<string, mixed> Browser payload array
@@ -337,7 +339,7 @@ final class ChatFrontendProjectionTest extends IntegrationTestCase
     }
 
     /**
-     * Drains queued sync signals through projection/browser and returns main browser signals.
+     * Drains queued sync signals through browser and returns main browser signals.
      *
      * @return list<SignalDTO>
      */
@@ -346,8 +348,6 @@ final class ChatFrontendProjectionTest extends IntegrationTestCase
         while (($signal = Hilos::$sr?->getNextQueuedSignal()) instanceof SignalDTO) {
             $this->recordFrontendSourceChange($signal);
         }
-
-        Hilos::$projection?->flushToSignalRouter();
         Hilos::$browser?->flushToSignalRouter();
 
         $signals = [];
@@ -361,7 +361,7 @@ final class ChatFrontendProjectionTest extends IntegrationTestCase
     }
 
     /**
-     * Records one queued DB/RT sync signal as browser and projection source changes.
+     * Records one queued DB/RT sync signal as a browser source change.
      *
      * @param SignalDTO $signal Queued sync signal to inspect
      */
@@ -371,8 +371,6 @@ final class ChatFrontendProjectionTest extends IntegrationTestCase
         if ($change === null) {
             return;
         }
-
-        Hilos::$projection?->record($change);
         Hilos::$browser?->record($change);
     }
 
