@@ -1,19 +1,27 @@
 import { test, expect } from '@playwright/test'
+import { openMainPage, uniqueRealtimeName } from './realtime-helpers'
 
 test.describe('Chat realtime @realtime', () => {
-  test.fixme('broadcasts a message between two browser sessions', async ({ browser }) => {
+  test('broadcasts a message between two browser sessions', async ({ browser }) => {
     const senderContext = await browser.newContext()
     const receiverContext = await browser.newContext()
     const sender = await senderContext.newPage()
     const receiver = await receiverContext.newPage()
+    const message = uniqueRealtimeName('main chat fanout')
 
-    await sender.goto('/')
-    await receiver.goto('/')
+    try {
+      await openMainPage(sender)
+      await openMainPage(receiver)
 
-    await sender.getByTestId('chat-input').fill('Cross-session message')
-    await sender.getByTestId('chat-send').click()
+      await sender.getByTestId('chat-input').fill(message)
+      await sender.getByTestId('chat-send').click()
 
-    await expect(receiver.getByText('Cross-session message')).toBeVisible()
+      await expect(receiver.getByText(message)).toBeVisible({ timeout: 30000 })
+      await expect(receiver.getByText(message)).toHaveCount(1)
+    } finally {
+      await senderContext.close()
+      await receiverContext.close()
+    }
   })
 
   test.fixme('updates participants when another user connects and disconnects', async ({ browser }) => {

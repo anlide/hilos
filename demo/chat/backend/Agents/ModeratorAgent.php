@@ -66,6 +66,11 @@ final class ModeratorAgent extends AbstractAgent
      */
     public function __construct()
     {
+        if (Hilos::$env[EnvConstants::APP_ENV] === 'test') {
+            $this->chatClient = new TestModerationChatClient();
+            return;
+        }
+
         $this->chatClient = Hilos::$setting[ChatSettingsConstants::CHAT_MODERATION_PROVIDER]->string()
             === LLMConstants::PROVIDER_EXTERNAL
             ? ClientFactory::createChatClient()

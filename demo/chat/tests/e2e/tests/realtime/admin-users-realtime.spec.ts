@@ -1,6 +1,17 @@
 import { test, expect } from '@playwright/test'
+import {
+  adminUserSearch,
+  getCurrentProfileName,
+  openAdminUsersPage,
+  openMainPage,
+  renameAdminUser,
+  uniqueRealtimeName,
+  waitForSearchedUserRow,
+} from './realtime-helpers'
 
 test.describe('Admin users realtime @realtime', () => {
+  test.setTimeout(60000)
+
   test.fixme('propagates an admin rename to the user profile and home participants list', async ({ browser }) => {
     const adminContext = await browser.newContext()
     const userContext = await browser.newContext()
@@ -20,35 +31,59 @@ test.describe('Admin users realtime @realtime', () => {
     await expect(userHome.getByText('Admin Propagated User')).toBeVisible()
   })
 
-  test.fixme('updates presence and online session counts while the admin table is open', async ({ browser }) => {
+  test('updates presence and online session counts while the admin table is open', async ({ browser }) => {
     const adminContext = await browser.newContext()
     const userContext = await browser.newContext()
     const admin = await adminContext.newPage()
-    const user = await userContext.newPage()
+    const firstUserTab = await userContext.newPage()
 
-    await admin.goto('/hilos/admin_users')
-    await user.goto('/')
+    try {
+      await openAdminUsersPage(admin)
 
-    await expect(admin.getByText('online')).toBeVisible()
+      const userName = await getCurrentProfileName(firstUserTab)
+      const row = await waitForSearchedUserRow(admin, adminUserSearch(admin), userName)
+      await expect(row.locator('td').nth(3)).toHaveText('online', { timeout: 30000 })
+      await expect(row.locator('td').nth(4)).toHaveText('1', { timeout: 30000 })
 
-    await user.close()
-    await expect(admin.getByText(/offline|unstable/)).toBeVisible()
+      const secondUserTab = await userContext.newPage()
+      await openMainPage(secondUserTab)
+      await expect(row).toHaveCount(1)
+      await expect(row.locator('td').nth(4)).toHaveText('2', { timeout: 30000 })
+
+      await secondUserTab.close()
+      await expect(row.locator('td').nth(4)).toHaveText('1', { timeout: 30000 })
+    } finally {
+      await userContext.close()
+      await adminContext.close()
+    }
   })
 
-  test.fixme('syncs table mutations between two admin sessions', async ({ browser }) => {
+  test('syncs table mutations between two admin sessions', async ({ browser }) => {
+    const userContext = await browser.newContext()
     const firstAdminContext = await browser.newContext()
     const secondAdminContext = await browser.newContext()
+    const userProfile = await userContext.newPage()
     const firstAdmin = await firstAdminContext.newPage()
     const secondAdmin = await secondAdminContext.newPage()
+    const renamedUser = uniqueRealtimeName('admin users')
 
-    await firstAdmin.goto('/hilos/admin_users')
-    await secondAdmin.goto('/hilos/admin_users')
+    try {
+      const initialName = await getCurrentProfileName(userProfile)
 
-    await firstAdmin.getByRole('button', { name: 'Edit' }).first().click()
-    await firstAdmin.locator('#user-name').fill('Admin Table Sync')
-    await firstAdmin.getByRole('button', { name: 'Save' }).click()
+      await openAdminUsersPage(firstAdmin)
+      await openAdminUsersPage(secondAdmin)
+      await waitForSearchedUserRow(firstAdmin, adminUserSearch(firstAdmin), initialName)
+      await waitForSearchedUserRow(secondAdmin, adminUserSearch(secondAdmin), initialName)
 
-    await expect(secondAdmin.getByText('Admin Table Sync')).toBeVisible()
+      await renameAdminUser(firstAdmin, initialName, renamedUser)
+
+      const syncedRow = await waitForSearchedUserRow(secondAdmin, adminUserSearch(secondAdmin), renamedUser)
+      await expect(syncedRow.locator('td').nth(1)).toHaveText(renamedUser)
+    } finally {
+      await userContext.close()
+      await firstAdminContext.close()
+      await secondAdminContext.close()
+    }
   })
 
   test.fixme('handles concurrent admin edits to the same user row', async ({ browser }) => {
