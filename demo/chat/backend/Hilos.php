@@ -5,12 +5,103 @@ declare(strict_types=1);
 namespace Demo\Chat;
 
 use Demo\Chat\Browser\ChatBrowserContext;
+use Demo\Chat\Browser\ChatBrowserRef;
+use Demo\Chat\Browser\Table\AttachmentDraftsBrowserTable;
+use Demo\Chat\Browser\Table\BotDetailBrowserTable;
+use Demo\Chat\Browser\Table\GuardianAgentStatusDetailBrowserTable;
+use Demo\Chat\Browser\Table\GuardianAgentStatusesBrowserTable;
+use Demo\Chat\Browser\Table\MainBotsBrowserTable;
+use Demo\Chat\Browser\Table\MainEventsBrowserTable;
+use Demo\Chat\Browser\Table\MainUsersBrowserTable;
+use Demo\Chat\Browser\Table\SelfConnectionBrowserTable;
+use Demo\Chat\Browser\Table\UserDetailBrowserTable;
+use Demo\Chat\Constants\AgentType;
 use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Database\Settings\ChatSettingsAccessor;
 use Demo\Chat\Environment\ChatEnvAccessor;
 use Demo\Chat\Fs\ChatFsContext;
+use Demo\Chat\Pages\AdminBotsPage;
+use Demo\Chat\Pages\AdminModeratorPage;
+use Demo\Chat\Pages\AdminPage;
+use Demo\Chat\Pages\AdminUsersPage;
+use Demo\Chat\Pages\BotPage;
+use Demo\Chat\Pages\DTO\BotPageSubscribeParams;
+use Demo\Chat\Pages\Hilos\AnalyticsPage;
+use Demo\Chat\Pages\Hilos\Backup\BackupPage;
+use Demo\Chat\Pages\Hilos\Billing\BillingPage;
+use Demo\Chat\Pages\Hilos\Billing\BillingPaymentsPage;
+use Demo\Chat\Pages\Hilos\Billing\BillingProviderPage;
+use Demo\Chat\Pages\Hilos\Billing\BillingRefundsPage;
+use Demo\Chat\Pages\Hilos\ChangeLog\ChangeLogDashboardPage;
+use Demo\Chat\Pages\Hilos\ChangeLog\ChangeLogTablePage;
+use Demo\Chat\Pages\Hilos\ChangeLog\ChangeLogTablesPage;
+use Demo\Chat\Pages\Hilos\Communications\CommunicationsChannelPage;
+use Demo\Chat\Pages\Hilos\Communications\CommunicationsDeliveriesPage;
+use Demo\Chat\Pages\Hilos\Communications\CommunicationsPage;
+use Demo\Chat\Pages\Hilos\Daemon\DaemonAgentsPage;
+use Demo\Chat\Pages\Hilos\Daemon\DaemonCronPage;
+use Demo\Chat\Pages\Hilos\Daemon\DaemonHttpServerPage;
+use Demo\Chat\Pages\Hilos\Daemon\DaemonPage;
+use Demo\Chat\Pages\Hilos\Daemon\DaemonWebsocketsPage;
+use Demo\Chat\Pages\Hilos\Daemon\DaemonWorkersPage;
+use Demo\Chat\Pages\Hilos\DashboardPage;
+use Demo\Chat\Pages\Hilos\Guardian\GuardianAgentPage;
+use Demo\Chat\Pages\Hilos\GuardianPage;
+use Demo\Chat\Pages\Hilos\I18n\Details\ActionDetailPage;
+use Demo\Chat\Pages\Hilos\I18n\Details\CountryDetailPage;
+use Demo\Chat\Pages\Hilos\I18n\Details\GroupDetailPage;
+use Demo\Chat\Pages\Hilos\I18n\Details\LanguageDetailPage;
+use Demo\Chat\Pages\Hilos\I18n\Details\UiPageDetailPage;
+use Demo\Chat\Pages\Hilos\I18n\Lists\ActionsListPage;
+use Demo\Chat\Pages\Hilos\I18n\Lists\CountriesListPage;
+use Demo\Chat\Pages\Hilos\I18n\Lists\EmailsListPage;
+use Demo\Chat\Pages\Hilos\I18n\Lists\EntitiesListPage;
+use Demo\Chat\Pages\Hilos\I18n\Lists\GroupsListPage;
+use Demo\Chat\Pages\Hilos\I18n\Lists\LanguagesListPage;
+use Demo\Chat\Pages\Hilos\I18n\Lists\UiPagesListPage;
+use Demo\Chat\Pages\Hilos\I18n\Translate\TranslateActionErrorPage;
+use Demo\Chat\Pages\Hilos\I18n\Translate\TranslateEmailPage;
+use Demo\Chat\Pages\Hilos\I18n\Translate\TranslateEntityPage;
+use Demo\Chat\Pages\Hilos\I18n\Translate\TranslateGroupItemPage;
+use Demo\Chat\Pages\Hilos\I18n\Translate\TranslateGroupPage;
+use Demo\Chat\Pages\Hilos\I18n\Translate\TranslateUiPageItemPage;
+use Demo\Chat\Pages\Hilos\I18n\Translate\TranslateUiPagePage;
+use Demo\Chat\Pages\Hilos\I18nPage;
+use Demo\Chat\Pages\Hilos\Logs\LogsKeysPage;
+use Demo\Chat\Pages\Hilos\Logs\LogsOverviewPage;
+use Demo\Chat\Pages\Hilos\Logs\LogsRotationsPage;
+use Demo\Chat\Pages\Hilos\Logs\LogsViewPage;
+use Demo\Chat\Pages\Hilos\Logs\LogsWorkersPage;
+use Demo\Chat\Pages\Hilos\McpSkills\McpSkillsDashboardPage;
+use Demo\Chat\Pages\Hilos\McpSkills\McpSkillsMcpLogsPage;
+use Demo\Chat\Pages\Hilos\McpSkills\McpSkillsMcpLogsViewPage;
+use Demo\Chat\Pages\Hilos\McpSkills\McpSkillsMcpPage;
+use Demo\Chat\Pages\Hilos\Operations\OperationsPage;
+use Demo\Chat\Pages\Hilos\Roles\RolesPage;
+use Demo\Chat\Pages\Hilos\Security\SecurityOAuthPage;
+use Demo\Chat\Pages\Hilos\Security\SecurityOAuthProviderPage;
+use Demo\Chat\Pages\Hilos\Security\SecurityPage;
+use Demo\Chat\Pages\Hilos\Security\SecurityTwoFactorPage;
+use Demo\Chat\Pages\Hilos\SettingsPage;
+use Demo\Chat\Pages\Hilos\Sil\SilDashboardPage;
+use Demo\Chat\Pages\Hilos\Sil\SilRequestsPage;
+use Demo\Chat\Pages\Hilos\Sil\SilUserHistoryPage;
+use Demo\Chat\Pages\Hilos\Users\UserPage as HilosUserPage;
+use Demo\Chat\Pages\Hilos\Users\UsersPage as HilosUsersPage;
+use Demo\Chat\Pages\MainPage;
+use Demo\Chat\Pages\ModeratorPage;
+use Demo\Chat\Pages\ProfilePage;
+use Demo\Chat\Pages\UserPage as ChatUserPage;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
+use Demo\Chat\Tables\AdminUser\AdminUsersTable;
+use Demo\Chat\Tables\Bot\BotsTable;
 use Demo\Chat\Tables\ChatTableContext;
+use Demo\Chat\Tables\HilosUser\HilosUsersTable;
+use Demo\Chat\Tables\ModeratorPiece\ModeratorPromptPiecesTable;
+use Demo\Chat\Tables\Settings\SettingsTable;
+use Hilos\Constants\HilosPageRouteParams;
+use Hilos\Core\Browser\Config\BrowserParamKey;
+use Hilos\Core\Browser\Config\BrowserRuntimeParam;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Table\Context\TableContext;
 use Hilos\Database\Context\DbContext;
@@ -42,6 +133,245 @@ use Hilos\Runtime\View\Context\RtContext;
  */
 final class Hilos extends \Hilos\Hilos
 {
+    public const array PAGES = [
+        MainPage::PAGE => MainPage::class,
+        ProfilePage::PAGE => ProfilePage::class,
+        ChatUserPage::PAGE => ChatUserPage::class,
+        BotPage::PAGE => BotPage::class,
+        ModeratorPage::PAGE => ModeratorPage::class,
+        AdminPage::PAGE => AdminPage::class,
+        AdminUsersPage::PAGE => AdminUsersPage::class,
+        AdminModeratorPage::PAGE => AdminModeratorPage::class,
+        AdminBotsPage::PAGE => AdminBotsPage::class,
+        DashboardPage::PAGE => DashboardPage::class,
+        SettingsPage::PAGE => SettingsPage::class,
+        I18nPage::PAGE => I18nPage::class,
+        LanguagesListPage::PAGE => LanguagesListPage::class,
+        CountriesListPage::PAGE => CountriesListPage::class,
+        EntitiesListPage::PAGE => EntitiesListPage::class,
+        UiPagesListPage::PAGE => UiPagesListPage::class,
+        GroupsListPage::PAGE => GroupsListPage::class,
+        ActionsListPage::PAGE => ActionsListPage::class,
+        EmailsListPage::PAGE => EmailsListPage::class,
+        LanguageDetailPage::PAGE => LanguageDetailPage::class,
+        CountryDetailPage::PAGE => CountryDetailPage::class,
+        UiPageDetailPage::PAGE => UiPageDetailPage::class,
+        GroupDetailPage::PAGE => GroupDetailPage::class,
+        ActionDetailPage::PAGE => ActionDetailPage::class,
+        TranslateEntityPage::PAGE => TranslateEntityPage::class,
+        TranslateUiPagePage::PAGE => TranslateUiPagePage::class,
+        TranslateUiPageItemPage::PAGE => TranslateUiPageItemPage::class,
+        TranslateGroupPage::PAGE => TranslateGroupPage::class,
+        TranslateGroupItemPage::PAGE => TranslateGroupItemPage::class,
+        TranslateActionErrorPage::PAGE => TranslateActionErrorPage::class,
+        TranslateEmailPage::PAGE => TranslateEmailPage::class,
+        GuardianPage::PAGE => GuardianPage::class,
+        GuardianAgentPage::PAGE => GuardianAgentPage::class,
+        AnalyticsPage::PAGE => AnalyticsPage::class,
+        BackupPage::PAGE => BackupPage::class,
+        DaemonPage::PAGE => DaemonPage::class,
+        DaemonWorkersPage::PAGE => DaemonWorkersPage::class,
+        DaemonAgentsPage::PAGE => DaemonAgentsPage::class,
+        DaemonCronPage::PAGE => DaemonCronPage::class,
+        DaemonWebsocketsPage::PAGE => DaemonWebsocketsPage::class,
+        DaemonHttpServerPage::PAGE => DaemonHttpServerPage::class,
+        LogsOverviewPage::PAGE => LogsOverviewPage::class,
+        LogsKeysPage::PAGE => LogsKeysPage::class,
+        LogsWorkersPage::PAGE => LogsWorkersPage::class,
+        LogsRotationsPage::PAGE => LogsRotationsPage::class,
+        LogsViewPage::PAGE => LogsViewPage::class,
+        OperationsPage::PAGE => OperationsPage::class,
+        HilosUsersPage::PAGE => HilosUsersPage::class,
+        HilosUserPage::PAGE => HilosUserPage::class,
+        RolesPage::PAGE => RolesPage::class,
+        McpSkillsDashboardPage::PAGE => McpSkillsDashboardPage::class,
+        McpSkillsMcpPage::PAGE => McpSkillsMcpPage::class,
+        McpSkillsMcpLogsPage::PAGE => McpSkillsMcpLogsPage::class,
+        McpSkillsMcpLogsViewPage::PAGE => McpSkillsMcpLogsViewPage::class,
+        SilDashboardPage::PAGE => SilDashboardPage::class,
+        SilRequestsPage::PAGE => SilRequestsPage::class,
+        SilUserHistoryPage::PAGE => SilUserHistoryPage::class,
+        CommunicationsPage::PAGE => CommunicationsPage::class,
+        CommunicationsChannelPage::PAGE => CommunicationsChannelPage::class,
+        CommunicationsDeliveriesPage::PAGE => CommunicationsDeliveriesPage::class,
+        SecurityPage::PAGE => SecurityPage::class,
+        SecurityTwoFactorPage::PAGE => SecurityTwoFactorPage::class,
+        SecurityOAuthPage::PAGE => SecurityOAuthPage::class,
+        SecurityOAuthProviderPage::PAGE => SecurityOAuthProviderPage::class,
+        BillingPage::PAGE => BillingPage::class,
+        BillingProviderPage::PAGE => BillingProviderPage::class,
+        BillingPaymentsPage::PAGE => BillingPaymentsPage::class,
+        BillingRefundsPage::PAGE => BillingRefundsPage::class,
+        ChangeLogDashboardPage::PAGE => ChangeLogDashboardPage::class,
+        ChangeLogTablesPage::PAGE => ChangeLogTablesPage::class,
+        ChangeLogTablePage::PAGE => ChangeLogTablePage::class,
+    ];
+
+    public const array PAGE_ROUTES = [
+        MainPage::PAGE => AgentType::CHAT,
+        ProfilePage::PAGE => AgentType::CHAT,
+        ChatUserPage::PAGE => AgentType::CHAT,
+        BotPage::PAGE => AgentType::BOT,
+        ModeratorPage::PAGE => AgentType::MODERATOR,
+        AdminPage::PAGE => AgentType::CHAT,
+        AdminUsersPage::PAGE => AgentType::CHAT,
+        AdminModeratorPage::PAGE => AgentType::LIBRARY,
+        AdminBotsPage::PAGE => AgentType::LIBRARY,
+        DashboardPage::PAGE => AgentType::HILOS_INDEX,
+        SettingsPage::PAGE => AgentType::HILOS_INDEX,
+        I18nPage::PAGE => AgentType::HILOS_INDEX,
+        LanguagesListPage::PAGE => AgentType::HILOS_INDEX,
+        CountriesListPage::PAGE => AgentType::HILOS_INDEX,
+        EntitiesListPage::PAGE => AgentType::HILOS_INDEX,
+        UiPagesListPage::PAGE => AgentType::HILOS_INDEX,
+        GroupsListPage::PAGE => AgentType::HILOS_INDEX,
+        ActionsListPage::PAGE => AgentType::HILOS_INDEX,
+        EmailsListPage::PAGE => AgentType::HILOS_INDEX,
+        LanguageDetailPage::PAGE => AgentType::HILOS_INDEX,
+        CountryDetailPage::PAGE => AgentType::HILOS_INDEX,
+        UiPageDetailPage::PAGE => AgentType::HILOS_INDEX,
+        GroupDetailPage::PAGE => AgentType::HILOS_INDEX,
+        ActionDetailPage::PAGE => AgentType::HILOS_INDEX,
+        TranslateEntityPage::PAGE => AgentType::HILOS_INDEX,
+        TranslateUiPagePage::PAGE => AgentType::HILOS_INDEX,
+        TranslateUiPageItemPage::PAGE => AgentType::HILOS_INDEX,
+        TranslateGroupPage::PAGE => AgentType::HILOS_INDEX,
+        TranslateGroupItemPage::PAGE => AgentType::HILOS_INDEX,
+        TranslateActionErrorPage::PAGE => AgentType::HILOS_INDEX,
+        TranslateEmailPage::PAGE => AgentType::HILOS_INDEX,
+        GuardianPage::PAGE => AgentType::HILOS_GUARDIAN,
+        GuardianAgentPage::PAGE => AgentType::HILOS_GUARDIAN,
+        AnalyticsPage::PAGE => AgentType::HILOS_ANALYTICS,
+        BackupPage::PAGE => AgentType::HILOS_INDEX,
+        DaemonPage::PAGE => AgentType::HILOS_INDEX,
+        DaemonWorkersPage::PAGE => AgentType::HILOS_INDEX,
+        DaemonAgentsPage::PAGE => AgentType::HILOS_INDEX,
+        DaemonCronPage::PAGE => AgentType::HILOS_INDEX,
+        DaemonWebsocketsPage::PAGE => AgentType::HILOS_INDEX,
+        DaemonHttpServerPage::PAGE => AgentType::HILOS_INDEX,
+        LogsOverviewPage::PAGE => AgentType::HILOS_LOGS,
+        LogsKeysPage::PAGE => AgentType::HILOS_INDEX,
+        LogsWorkersPage::PAGE => AgentType::HILOS_INDEX,
+        LogsRotationsPage::PAGE => AgentType::HILOS_INDEX,
+        LogsViewPage::PAGE => AgentType::HILOS_INDEX,
+        OperationsPage::PAGE => AgentType::HILOS_INDEX,
+        HilosUsersPage::PAGE => AgentType::HILOS_INDEX,
+        HilosUserPage::PAGE => AgentType::HILOS_INDEX,
+        RolesPage::PAGE => AgentType::HILOS_INDEX,
+        McpSkillsDashboardPage::PAGE => AgentType::HILOS_INDEX,
+        McpSkillsMcpPage::PAGE => AgentType::HILOS_INDEX,
+        McpSkillsMcpLogsPage::PAGE => AgentType::HILOS_INDEX,
+        McpSkillsMcpLogsViewPage::PAGE => AgentType::HILOS_INDEX,
+        SilDashboardPage::PAGE => AgentType::HILOS_INDEX,
+        SilRequestsPage::PAGE => AgentType::HILOS_INDEX,
+        SilUserHistoryPage::PAGE => AgentType::HILOS_INDEX,
+        CommunicationsPage::PAGE => AgentType::HILOS_INDEX,
+        CommunicationsChannelPage::PAGE => AgentType::HILOS_INDEX,
+        CommunicationsDeliveriesPage::PAGE => AgentType::HILOS_INDEX,
+        SecurityPage::PAGE => AgentType::HILOS_INDEX,
+        SecurityTwoFactorPage::PAGE => AgentType::HILOS_INDEX,
+        SecurityOAuthPage::PAGE => AgentType::HILOS_INDEX,
+        SecurityOAuthProviderPage::PAGE => AgentType::HILOS_INDEX,
+        BillingPage::PAGE => AgentType::HILOS_INDEX,
+        BillingProviderPage::PAGE => AgentType::HILOS_INDEX,
+        BillingPaymentsPage::PAGE => AgentType::HILOS_INDEX,
+        BillingRefundsPage::PAGE => AgentType::HILOS_INDEX,
+        ChangeLogDashboardPage::PAGE => AgentType::HILOS_INDEX,
+        ChangeLogTablesPage::PAGE => AgentType::HILOS_INDEX,
+        ChangeLogTablePage::PAGE => AgentType::HILOS_INDEX,
+    ];
+
+    public const array TABLES = [
+        ChatTableContext::adminUsers => AdminUsersTable::class,
+        ChatTableContext::hilosUsers => HilosUsersTable::class,
+        ChatTableContext::bots => BotsTable::class,
+        ChatTableContext::moderatorPromptPieces => ModeratorPromptPiecesTable::class,
+        ChatTableContext::settings => SettingsTable::class,
+    ];
+
+    public const array BROWSER_TABLES = [
+        MainEventsBrowserTable::TABLE => MainEventsBrowserTable::class,
+        MainUsersBrowserTable::TABLE => MainUsersBrowserTable::class,
+        MainBotsBrowserTable::TABLE => MainBotsBrowserTable::class,
+        SelfConnectionBrowserTable::TABLE => SelfConnectionBrowserTable::class,
+        AttachmentDraftsBrowserTable::TABLE => AttachmentDraftsBrowserTable::class,
+        BotDetailBrowserTable::TABLE => BotDetailBrowserTable::class,
+        UserDetailBrowserTable::TABLE => UserDetailBrowserTable::class,
+        GuardianAgentStatusesBrowserTable::TABLE => GuardianAgentStatusesBrowserTable::class,
+        GuardianAgentStatusDetailBrowserTable::TABLE => GuardianAgentStatusDetailBrowserTable::class,
+    ];
+
+    public const array PAGE_TABLES = [
+        MainPage::PAGE => [
+            MainEventsBrowserTable::TABLE => [],
+            MainUsersBrowserTable::TABLE => [],
+            MainBotsBrowserTable::TABLE => [],
+            SelfConnectionBrowserTable::TABLE => [
+                BrowserParamKey::PARAMS => [
+                    BrowserRuntimeParam::ACCEPT_KEY => ChatBrowserRef::ACCEPT_KEY,
+                ],
+            ],
+            AttachmentDraftsBrowserTable::TABLE => [
+                BrowserParamKey::PARAMS => [
+                    BrowserRuntimeParam::ACCEPT_KEY => ChatBrowserRef::ACCEPT_KEY,
+                ],
+            ],
+        ],
+        ProfilePage::PAGE => [
+            SelfConnectionBrowserTable::TABLE => [
+                BrowserParamKey::PARAMS => [
+                    BrowserRuntimeParam::ACCEPT_KEY => ChatBrowserRef::ACCEPT_KEY,
+                ],
+            ],
+        ],
+        ChatUserPage::PAGE => [
+            UserDetailBrowserTable::TABLE => [
+                BrowserParamKey::PARAMS => [
+                    HilosPageRouteParams::HILOS_USER_USER_ID => ChatBrowserRef::USER_ID,
+                ],
+            ],
+        ],
+        BotPage::PAGE => [
+            BotDetailBrowserTable::TABLE => [
+                BrowserParamKey::PARAMS => [
+                    BotPageSubscribeParams::BOT_ID => ChatBrowserRef::BOT_ID,
+                ],
+            ],
+        ],
+        AdminUsersPage::PAGE => [
+            ChatTableContext::adminUsers => [],
+        ],
+        AdminModeratorPage::PAGE => [
+            ChatTableContext::moderatorPromptPieces => [],
+        ],
+        AdminBotsPage::PAGE => [
+            ChatTableContext::bots => [],
+        ],
+        SettingsPage::PAGE => [
+            ChatTableContext::settings => [],
+        ],
+        GuardianPage::PAGE => [
+            GuardianAgentStatusesBrowserTable::TABLE => [],
+        ],
+        GuardianAgentPage::PAGE => [
+            GuardianAgentStatusDetailBrowserTable::TABLE => [
+                BrowserParamKey::PARAMS => [
+                    HilosPageRouteParams::HILOS_GUARDIAN_AGENT_AGENT_ID => ChatBrowserRef::HILOS_GUARDIAN_AGENT_ID,
+                ],
+            ],
+        ],
+        HilosUsersPage::PAGE => [
+            ChatTableContext::hilosUsers => [],
+        ],
+        HilosUserPage::PAGE => [
+            UserDetailBrowserTable::TABLE => [
+                BrowserParamKey::PARAMS => [
+                    HilosPageRouteParams::HILOS_USER_USER_ID => ChatBrowserRef::HILOS_USER_ID,
+                ],
+            ],
+        ],
+    ];
+
     /**
      * Creates the project environment accessor with the chat env catalog.
      *
