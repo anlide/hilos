@@ -65,11 +65,11 @@ Use this skill for style-sensitive Hilos edits and reviews. Start with `agents.m
 14. Use named constants for action names, signal names, route params, model
    fields, DTO payload keys, table row keys, and boundary array keys whenever
    a constant exists. If a repeated payload key has no owner constant, add one
-   to the owning DTO, projection, table row, entity, object, or context before
+   to the owning DTO, browser payload, table row, entity, object, or context before
    using that key in examples or code.
 15. During refactors, do not add new convenience read helpers or predicates
    such as `has*()`, `is*()`, `can*()`, or `get*()` on DB/RT View items,
-   collections, objects, actions, or projections unless the user explicitly
+   collections, objects, actions, or read payload objects unless the user explicitly
    approved that exact method in the plan. Prefer explicit field access when
    preserving transparent data shape is the goal.
 16. Keep comments concise and in English.

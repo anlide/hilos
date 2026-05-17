@@ -210,8 +210,8 @@ protect array access.
 Runtime state may add transient overlays to DB entities, such as presence,
 connection counts, upload progress, and socket-local UI state. It must not
 replace the DB entity as the source of durable business data. Keep persistent
-identity, history, settings, and catalog state in `Hilos::$db`, and project
-DB + RT together only through BrowserContext rows, typed frontend projections,
+identity, history, settings, and catalog state in `Hilos::$db`, and combine
+DB + RT only through BrowserContext rows, typed frontend state payloads,
 table rows, or signal DTOs:
 
 ```php
@@ -226,7 +226,7 @@ foreach (Hilos::$db->users as $user) {
 }
 ```
 
-Boundary arrays must use key constants from the owning DTO, projection, table
+Boundary arrays must use key constants from the owning DTO, browser payload, table
 row, entity, object, or context. Add the missing constant before adding another
 string key.
 

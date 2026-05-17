@@ -17,7 +17,7 @@ switch to the focused data-layer skill first.
   `$hilos-runtime`.
 - Adding DB/RT shape, lookup APIs, or write paths: use `$hilos-data-extension`.
 - DB-backed item plus live runtime overlay: use `$hilos-db-rt-state`.
-- BrowserContext rows, frontend projections, legacy `toFrontend`, and computed item fields:
+- BrowserContext rows, frontend state payloads, legacy `toFrontend`, and computed item fields:
   use `$hilos-frontend-representation`.
 - Choosing between magic, array, result, and `findBy*()` access:
   use `$hilos-accessor-contracts`.
@@ -48,7 +48,7 @@ switch to the focused data-layer skill first.
   bulk writes.
 - Item actions are for changing or deleting one loaded item.
 - Actions are write APIs. Read-only helpers belong on collections, items,
-  objects, or typed projections.
+  objects, or typed read APIs.
 - Tables and pages assemble responses by calling model APIs. They should not
   duplicate filters, ad hoc joins, or mutation logic that belongs to DB/RT
   collections, items, or actions.
@@ -65,7 +65,7 @@ switch to the focused data-layer skill first.
 4. Prefer an existing accessor or magic/array contract when it is part of that
    collection API. Use `$hilos-accessor-contracts` when the correct accessor is
    not obvious.
-5. For reads, call the collection or item directly and keep local projection
+5. For reads, call the collection or item directly and keep local payload assembly
    minimal.
 6. Never call `getStateCollection()`, `RtContext::getStateCollection()`, or
    `$this->stateCollection` from agents, pages, tables, signal handlers, tests,
@@ -101,7 +101,7 @@ switch to the focused data-layer skill first.
 | Create/register/ensure runtime state | RT collection action owned by the truth source |
 | Update/delete one runtime item | Loaded `RtItem` action owned by the truth source |
 | Add a missing reusable lookup | Collection/item layer, not page/table private helper |
-| Build frontend row data | Table projection from model API or View item serialization |
+| Build frontend row data | Browser/table row contract from model API or View item serialization |
 
 If both array access and a finder exist, use the contract that best matches the
 collection semantics. For settings and other key-based collections, array access
@@ -165,7 +165,7 @@ foreach (Hilos::$rt->connections->forUser($userId) as $userConnection) {
 Hilos::$rt->connections[$acceptKey]?->actions->unregister();
 ```
 
-Keep table projection thin:
+Keep table row assembly thin:
 
 ```php
 foreach (Hilos::$db->users as $user) {
@@ -187,7 +187,7 @@ $result[AdminUserTableRow::onlineSessionCount] = count(Hilos::$db->users[$userId
 
 ## Anti-Patterns
 
-Do not mix business write, projection, and manual signal routing in one handler:
+Do not mix business write, payload assembly, and manual signal routing in one handler:
 
 ```php
 $payload = $this->buildManualPayload($id, $value); // WRONG
@@ -216,7 +216,7 @@ foreach (Hilos::$db->users as $user) { // WRONG
 } // WRONG
 ```
 
-Move reusable relationships to the DB item, RT collection, or typed projection,
+Move reusable relationships to the DB item, RT collection, or typed payload contract,
 then call that API from the table/page.
 
 ## Hard Rules

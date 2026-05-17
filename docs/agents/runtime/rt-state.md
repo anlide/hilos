@@ -3,7 +3,7 @@
 `RtState` is the base class for individual runtime state items (rows in an RT collection).
 Its `toArray()` method is a runtime sync row serializer, not a browser payload
 contract. Browser-facing runtime state belongs in BrowserContext rows, typed
-frontend projections, or signal DTOs.
+frontend state payloads, or signal DTOs.
 
 ## Structure
 

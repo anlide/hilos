@@ -234,4 +234,4 @@ layers just because it is local to one screen. Page/table code should orchestrat
 existing typed DB APIs; the DB layer should own persistent data behavior.
 
 Do not add read-only methods to actions. Put reads on `DbCollection`, `DbItem`,
-Object collection/item helpers, or typed projection APIs.
+Object collection/item helpers, or typed read payload APIs.

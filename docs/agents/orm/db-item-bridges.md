@@ -73,7 +73,7 @@ native scalar field, expose the reverse nullable bridge from the DB item to the
 RT item immediately.
 
 This is access API only. Adding a DB/RT bridge does not add the related item to
-backend serialization, BrowserContext rows, frontend projections, sync
+backend serialization, BrowserContext rows, frontend state payloads, sync
 payloads, table rows, or signal DTOs unless that explicit contract asks for the
 relation data.
 
@@ -216,7 +216,7 @@ Bridge properties are access API. They are not automatically serialized.
 
 - Add scalar computed fields to backend serialization only when they are part
   of that explicit serialization contract.
-- Add bridge data to a BrowserContext row or frontend projection only when that
+- Add bridge data to a BrowserContext row or typed frontend state payload only when that
   payload contract explicitly requires it.
 - Do not leak internal storage fields to browser payloads just because a bridge
   uses them.

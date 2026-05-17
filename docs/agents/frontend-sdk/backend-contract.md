@@ -133,7 +133,8 @@ Generic entity payloads use `EntitiesChangesDTO`:
 
 Treat entity snapshots as a generic or legacy channel. Do not add new
 project-specific browser filtering to DB/RT `toArray()` just to make an entity
-payload safe; prefer a typed frontend projection.
+payload safe; prefer a BrowserContext row for page state or a typed
+`FrontendChangesDTO` collection for project-wide state.
 
 ## Table snapshots
 

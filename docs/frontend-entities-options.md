@@ -3,7 +3,7 @@
 > Примечание: это исторический документ про generic `entities` channel.
 > Текущая политика для browser-facing DB/RT состояния — использовать
 > BrowserContext rows для page-shaped payloads или `frontend.full` /
-> `frontend.updates` и typed frontend projections для project-wide collections.
+> `frontend.updates` и typed frontend state payloads для project-wide collections.
 > Например, публичные `users` больше не должны приходить через
 > `entities.full.users`.
 

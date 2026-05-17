@@ -51,7 +51,7 @@ reviewing noisy code.
    shorten repeated access. Guard the contextual item explicitly, then keep
    `Hilos::$rt->selfConnection` visible at read and action call sites. If the
    repeated access becomes too noisy, move the behavior to an approved
-   collection/item API or projection boundary instead of hiding it behind a
+   collection/item API or payload boundary instead of hiding it behind a
    local alias.
 
    A local variable is allowed when it is not just an alias: it comes from

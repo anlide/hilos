@@ -5,9 +5,9 @@ Read this before sending DB or RT data to the browser.
 ## Core Rule
 
 Use explicit browser-facing contracts for DB/RT payloads: `BrowserContext` and
-`BrowserPageSignalData` for page-shaped table state, or typed frontend
-projections / `FrontendChangesDTO` for project-wide frontend state. Do not add
-new browser shaping, privacy filtering, or runtime overlays to DB/RT View item
+`BrowserPageSignalData` for page-shaped table state, or typed
+`FrontendChangesDTO` collections for project-wide frontend state. Do not add new
+browser shaping, privacy filtering, or runtime overlays to DB/RT View item
 `toArray()` methods.
 
 `toArray()` is still valid for backend row serialization, DTO serialization,
@@ -40,9 +40,9 @@ sync row contract.
 2. For page-shaped browser state, inspect `BrowserContext`, page/table
    `BROWSER` config, `BrowserPageSignalData`, and the matching TypeScript
    parser/store shape.
-3. For project-wide frontend state, inspect existing `Frontend/*Projector`,
-   `Frontend/DTO/*Projection`, project collection key constants, and the matching
-   TypeScript parser/store shape.
+3. For project-wide frontend state, inspect existing `FrontendChangesDTO`
+   producers, project collection key constants, and the matching TypeScript
+   parser/store shape.
 4. Keep DB/RT View items as typed model access APIs: expose reusable properties
    and bridges through `__get()`, but do not make their `toArray()` the browser
    contract.
@@ -51,7 +51,7 @@ sync row contract.
 6. If the browser needs a new state collection or changes an existing payload
    shape, stop for the contract approval gate before editing signal DTOs or
    frontend parsers.
-7. Update backend DTO/projection/browser tests and frontend parser/receiver tests
+7. Update backend DTO/browser tests and frontend parser/receiver tests
    together.
 8. Validate through the narrow composer script selected by
    `docs/agents/testing.md`.
@@ -114,7 +114,8 @@ browser contracts.
 
 When touching one of those paths:
 
-- prefer migrating the affected model to typed frontend projections;
+- prefer migrating the affected model to BrowserContext rows or typed
+  `FrontendChangesDTO` collections;
 - do not add new model-specific browser filters to `DbItem::toArray()`;
 - do not send private fields such as tokens through `EntitiesChangesDTO`;
 - keep existing `toFrontend` behavior only when a legacy entity path still
@@ -173,7 +174,7 @@ $summary = Hilos::$rt->connections->summaryForUser((int) $user->id);
 - Do not send raw RT state rows or RT View item arrays to the browser.
 - Do not put page-specific runtime overlays into generic entity payloads.
 - Do not put frontend representation logic in Entity classes.
-- Use stable key constants from the owning DTO, projection, table row, entity,
+- Use stable key constants from the owning DTO, browser payload, table row, entity,
   object, or context for boundary arrays.
-- Keep frontend parsers and backend DTO/projection tests synchronized with any
+- Keep frontend parsers and backend DTO/browser tests synchronized with any
   changed browser payload shape.

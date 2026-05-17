@@ -44,7 +44,7 @@ touched ORM surfaces.
   bulk writes.
 - Item actions handle update/delete writes for one loaded item.
 - Read helpers belong on `DbCollection`, `DbItem`, Object helpers, or typed
-  projection APIs, not on `actions`.
+  read payload APIs, not on `actions`.
 
 ## Workflow
 

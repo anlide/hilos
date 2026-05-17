@@ -444,8 +444,8 @@ abstract class DbCollection implements ArrayAccess, Countable, Iterator
     /**
      * Query a page of typed DbItems from DB via the Object layer.
      *
-     * Use this when a caller owns a projection that must not be sourced from
-     * the generic frontend serialization of the DbItem.
+     * Use this when a caller owns a browser/table row shape that must not be
+     * sourced from the generic frontend serialization of the DbItem.
      *
      * @param TableQueryDTO $query Query parameters
      *

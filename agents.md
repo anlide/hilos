@@ -45,17 +45,17 @@ Quick navigation for AI agents. Read the relevant file before starting work.
 
 Start with [orm/README.md](docs/agents/orm/README.md) for any ORM change; it
 routes to the mandatory entity, object, collection, bridge, accessor,
-projection, and migration documents.
+frontend representation, and migration documents.
 
 Minimum ORM rules before editing:
 
 - Do not add Repository or Service layers over `DbCollection`; use typed
   `Hilos::$db` collection/item APIs directly.
 - `actions` are write APIs; reads belong on collections, items, objects, or
-  typed projections.
+  typed read APIs.
 - If a DB item key is known, update/delete through that item's `actions`.
 - Entity/Object layers keep persisted rows scalar; View items expose
-  caller-facing relations and projections.
+  caller-facing relations and read shapes.
 - DB entity shape changes require the contract approval gate before editing.
 
 ## Runtime
@@ -141,7 +141,7 @@ additional change in one of these surfaces, stop and ask again before editing it
 6. **Frontend edits go through `Modal` only** — inline edit forms on pages are forbidden (see [frontend-sdk/edit-in-modal.md](docs/agents/frontend-sdk/edit-in-modal.md))
 7. For code style, use the matching small rule from [code-style/README.md](docs/agents/code-style/README.md)
 8. Internal backend API uses typed parameters, DTOs, value objects, or typed collections — unstructured arrays need a boundary or explicit reason
-9. DB/RT `actions` are write APIs; put read-only helpers on collections, items, objects, or typed projections
+9. DB/RT `actions` are write APIs; put read-only helpers on collections, items, objects, or typed read APIs
 10. If a DB/RT item key is known, update/delete that one item through `Hilos::$db/$rt->collection[$key]->actions`, not through collection actions that accept the key
 
 ## Project docs (existing)
