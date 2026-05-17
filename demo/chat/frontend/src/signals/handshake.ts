@@ -1,4 +1,4 @@
-import { ChatSignalDefinition } from '@/services/signals'
+import { SignalDefinition } from '@hilos/sdk/services/signals'
 import type { PageCatalogState } from '@hilos/sdk/types/pageCatalog'
 
 /**
@@ -14,7 +14,7 @@ const isRecord = (value: unknown): value is Record<string, unknown> => {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-export const handshakeResponse = new ChatSignalDefinition<
+export const handshakeResponse = new SignalDefinition<
   'handshake_response',
   HandshakePayload
 >('handshake_response', (raw) => {

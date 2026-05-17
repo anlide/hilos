@@ -5,7 +5,7 @@ import {
   usePageCatalogStore,
   useHilosLogsStore,
 } from '@hilos/sdk/stores'
-import { extractBrowserPagePayload, hasEntities } from '@hilos/sdk/types'
+import { extractBrowserPagePayload } from '@hilos/sdk/types'
 import { actionError } from '@hilos/sdk/signals'
 import { createHilosSignalRouter } from '@hilos/sdk/services/hilosSignalHandlers'
 import type { VueSignalRouter } from '@hilos/sdk/services/VueSignalRouter'
@@ -13,7 +13,6 @@ import type { WebSocketOutcome } from '@hilos/sdk/types/websocket-messages'
 import { config } from '@/config'
 import { useChatStore } from '@/stores'
 import { localStorageService } from '@/services/LocalStorageService'
-import { ChatEntitiesReceiver } from '@/entities/ChatEntitiesReceiver'
 import { isRecord } from '@/entities/parsers'
 import {
   rejectFileUploadPending,
@@ -69,8 +68,6 @@ const toRawMessage = (value: unknown): RawMessage | null => {
   }
   return message
 }
-
-const entitiesReceiver = new ChatEntitiesReceiver()
 
 /**
  * Module-level reference to the signal router, set by
@@ -131,7 +128,7 @@ function buildSignalRouter() {
 
 /**
  * WebSocket plugin configuration for chat application.
- * Entity changes (full/updates/deleted) are applied via framework EntitiesReceiver.
+ * Page-shaped DB/RT payloads are applied through the browser store.
  */
 export function createChatWebSocketPlugin() {
   const websocketUrl = `${config.websocketProtocol}://${config.websocketHost}:${config.websocketPort}${config.websocketPath}`
@@ -169,15 +166,11 @@ export function createChatWebSocketPlugin() {
       if (data instanceof Blob || data instanceof ArrayBuffer) {
         return
       }
-      const chatStore = useChatStore()
       const message = parseIncomingMessage(data)
       if (!message) {
         throw new Error('Invalid websocket message payload')
       }
 
-      if (hasEntities(message.data)) {
-        entitiesReceiver.apply(message.data, chatStore)
-      }
       const browserPayload = extractBrowserPagePayload(message.data)
       if (browserPayload !== null) {
         useBrowserStore().applyPagePayload(message.type, browserPayload)

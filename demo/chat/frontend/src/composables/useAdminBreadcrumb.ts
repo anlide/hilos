@@ -1,7 +1,11 @@
 import { useAdminBreadcrumb as useFrameworkBreadcrumb } from '@hilos/sdk/composables'
 import { useBrowserStore } from '@hilos/sdk/stores'
-import { useChatStore } from '@/stores'
 import { SUBSCRIPTION_PAGE_USER } from '@/constants'
+import {
+  BROWSER_PAGE_BOT,
+  BROWSER_TABLE_BOT_DETAIL,
+  botDetailFromBrowserRows,
+} from '@/entities/browserBotDetail'
 import {
   BROWSER_TABLE_USER_DETAIL,
   userDetailFromBrowserRow,
@@ -19,7 +23,6 @@ const parsePositiveInt = (value: unknown): number | null => {
  * Demo-specific dynamic label resolver for chat entities (user/bot pages).
  */
 const resolveChatDynamicLabel = (pageId: string, routeParams: Record<string, unknown>): string | null => {
-  const chatStore = useChatStore()
   const browserStore = useBrowserStore()
 
   switch (pageId) {
@@ -39,7 +42,12 @@ const resolveChatDynamicLabel = (pageId: string, routeParams: Record<string, unk
       if (botId === null) {
         return 'Bot not found'
       }
-      const bot = chatStore.bots.find((item) => item.id === botId)
+      const bot = botDetailFromBrowserRows(
+        browserStore.pages[BROWSER_PAGE_BOT]
+          ?.tables[BROWSER_TABLE_BOT_DETAIL]
+          ?.rowsByKey,
+        botId,
+      )
       return bot?.name ?? 'Bot not found'
     }
     default:
