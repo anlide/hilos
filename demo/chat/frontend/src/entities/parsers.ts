@@ -1,6 +1,6 @@
 /**
  * Parsers for entity payloads from transport (users, events).
- * User payload parsing is shared by frontend state and signal handlers.
+ * User payload parsing is shared by browser rows and signal handlers.
  */
 
 import {
@@ -70,10 +70,7 @@ export const isUserPayload = (value: unknown): value is UserPayload => {
   ) {
     return false
   }
-  if (value.lastActivity !== undefined && value.lastActivity !== null && typeof value.lastActivity !== 'string') {
-    return false
-  }
-  return true
+  return !(value.lastActivity !== undefined && value.lastActivity !== null && typeof value.lastActivity !== 'string');
 }
 
 const isNullableNumber = (value: unknown): value is number | null =>
@@ -137,10 +134,7 @@ export const isEventPayload = (value: unknown): value is EventPayload => {
   ) {
     return false
   }
-  if ('attachments' in value && parseEventAttachmentPayloads(value.attachments) === null) {
-    return false
-  }
-  return true
+  return !('attachments' in value && parseEventAttachmentPayloads(value.attachments) === null);
 }
 
 export const isEventMessagePayload = (value: unknown): value is EventMessagePayload => {

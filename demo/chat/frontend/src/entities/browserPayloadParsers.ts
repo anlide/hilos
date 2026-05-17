@@ -1,3 +1,7 @@
+/**
+ * Parsers for demo-specific browser row source fragments.
+ */
+
 type JsonRecord = Record<string, unknown>
 
 export type FileUploadProgressPayload = {

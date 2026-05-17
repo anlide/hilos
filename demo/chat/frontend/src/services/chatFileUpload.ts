@@ -2,7 +2,7 @@
  * Single in-flight file_upload_init correlation (demo chat has one active upload at a time).
  */
 
-import type { FileUploadStatePayload } from '@/entities/frontendStateParsers'
+import type { FileUploadStatePayload } from '@/entities/browserPayloadParsers'
 
 export type UploadOutcome = { ok: true } | { ok: false; code: string; message?: string }
 

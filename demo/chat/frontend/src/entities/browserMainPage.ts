@@ -15,7 +15,7 @@ import {
   parseSelfConnection,
   type AttachmentDraftPayload,
   type SelfConnectionPayload,
-} from '@/entities/frontendStateParsers'
+} from '@/entities/browserPayloadParsers'
 import { type Presence } from '@/types/domain/Presence'
 import {
   userListRowsFromBrowserRows,
