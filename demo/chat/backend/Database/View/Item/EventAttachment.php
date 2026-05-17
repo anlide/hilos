@@ -53,13 +53,16 @@ final class EventAttachment extends DbItem
     }
 
     /**
-     * Converts the attachment to a caller-facing array.
+     * Converts the attachment to a backend or legacy entity array.
+     *
+     * Browser page payloads use BrowserContext rows; the frontend mode remains
+     * only for established generic entity callers.
      *
      * @param bool $withId Include ID fields
      * @param bool $idAsIndex Use ID as array index
      * @param bool $withBridges Include bridge data
      * @param bool $withCalculation Include calculated fields
-     * @param bool $toFrontend Prepare a frontend-safe payload
+     * @param bool $toFrontend Prepare a legacy frontend-safe entity payload
      * @return array<string, mixed> Attachment payload
      */
     public function toArray(

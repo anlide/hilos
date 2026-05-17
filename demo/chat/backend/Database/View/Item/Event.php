@@ -59,13 +59,16 @@ final class Event extends DbItem
     }
 
     /**
-     * Converts the event to a caller-facing array with direct bridge data.
+     * Converts the event to a backend or legacy entity array with direct bridge data.
+     *
+     * Browser page payloads use BrowserContext rows; the frontend mode remains
+     * only for established generic entity callers.
      *
      * @param bool $withId Include ID fields
      * @param bool $idAsIndex Use ID as array index
      * @param bool $withBridges Include bridge data
      * @param bool $withCalculation Include calculated fields
-     * @param bool $toFrontend Prepare a frontend-safe payload
+     * @param bool $toFrontend Prepare a legacy frontend-safe entity payload
      * @return array<string, mixed> Event payload
      */
     public function toArray(

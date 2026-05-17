@@ -4,9 +4,14 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Tests\Integration;
 
+use Demo\Chat\Browser\ChatBrowserTable;
+use Demo\Chat\Constants\ChatSignalConstants;
+use Demo\Chat\Constants\PageConstants;
+use Demo\Chat\Core\Router\ChatSignalRouter;
 use Demo\Chat\Database\DTO\PublishedAttachmentInput;
 use Demo\Chat\Database\DTO\PublishedAttachmentInputs;
 use Demo\Chat\Database\ChatDbContext;
+use Demo\Chat\Database\Object\Item\Event as ObjectEvent;
 use Demo\Chat\Database\Object\Item\EventAttachment as ObjectEventAttachment;
 use Demo\Chat\Database\Object\Item\EventMessage as ObjectEventMessage;
 use Demo\Chat\Hilos;
@@ -14,12 +19,15 @@ use Demo\Chat\Http\ChatAttachmentDownloadHandler;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Hilos\Constants\HilosHttpHeaders;
 use Hilos\Constants\HttpConstants;
+use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Http\RequestQueryParams;
+use Hilos\Core\Page\PageRouteParams;
+use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Utils\Helpers\RandomHelper;
 
 /**
- * Integration coverage for published event attachment persistence and frontend serialization.
+ * Integration coverage for published event attachment persistence and browser representation.
  */
 final class EventAttachmentsTest extends IntegrationTestCase
 {
@@ -77,12 +85,44 @@ final class EventAttachmentsTest extends IntegrationTestCase
             $this->assertSame(HttpConstants::HTTP_OK, $download[HttpConstants::RESPONSE_KEY_STATUS]);
             $this->assertSame('alpha', $download[HttpConstants::RESPONSE_KEY_BODY]);
 
-            $frontendPayload = $event->toArray(toFrontend: true);
-            $this->assertSame('with files', $frontendPayload[ChatDbContext::eventMessage][ObjectEventMessage::message]);
-            $this->assertSame($user->id, $frontendPayload[ChatDbContext::eventMessage][ObjectEventMessage::authorUserId]);
-            $this->assertCount(2, $frontendPayload['attachments']);
-            $this->assertSame('One.txt', $frontendPayload['attachments'][0][ObjectEventAttachment::filename]);
-            $this->assertArrayNotHasKey(ObjectEventAttachment::storedName, $frontendPayload['attachments'][0]);
+            Hilos::initSignalRouter(new ChatSignalRouter());
+            Hilos::$browser->subscribeSnapshot(
+                PageConstants::MAIN,
+                'event-attachments-browser-ak',
+                new PageRouteParams([]),
+            );
+
+            $signal = Hilos::$sr->getNextQueuedSignal();
+            $this->assertNotNull($signal);
+            $this->assertSame(ChatSignalConstants::SUBSCRIPTION_PAGE_MAIN, $signal->signalName->getName());
+            $this->assertInstanceOf(WebSocketSignalData::class, $signal->data);
+            $this->assertSame('event-attachments-browser-ak', $signal->data->targetAcceptKey);
+            $this->assertInstanceOf(BrowserPageSignalData::class, $signal->data->data);
+
+            $payload = $signal->data->data->toArray();
+            $mainEventRows = $payload[BrowserPageSignalData::tables][ChatBrowserTable::MAIN_EVENTS][BrowserPageSignalData::rows] ?? [];
+            $eventRow = $this->findBrowserRowBySourceField(
+                $mainEventRows,
+                ChatDbContext::events,
+                ObjectEvent::id,
+                (int)$event->id,
+            );
+            $this->assertIsArray($eventRow);
+
+            $message = $eventRow[BrowserPageSignalData::sources][ChatDbContext::eventMessages] ?? null;
+            $this->assertIsArray($message);
+            $this->assertSame('with files', $message[ObjectEventMessage::message]);
+            $this->assertSame($user->id, $message[ObjectEventMessage::authorUserId]);
+
+            $attachments = $eventRow[BrowserPageSignalData::sources][ChatDbContext::eventAttachments] ?? null;
+            $this->assertIsArray($attachments);
+            $this->assertCount(2, $attachments);
+            $this->assertContains('One.txt', array_column($attachments, ObjectEventAttachment::filename));
+
+            foreach ($attachments as $attachment) {
+                $this->assertIsArray($attachment);
+                $this->assertArrayNotHasKey(ObjectEventAttachment::storedName, $attachment);
+            }
         } finally {
             Hilos::$db->events->actions->deleteAll();
             Hilos::$fs->published['event-attachment-one.txt']->unlink();
@@ -170,5 +210,26 @@ final class EventAttachmentsTest extends IntegrationTestCase
             Hilos::$fs->quarantine['draft-missing.txt']->unlink();
             Hilos::$fs->published['draft-missing.txt']->unlink();
         }
+    }
+
+    /**
+     * Finds a browser row by a source field.
+     *
+     * @param list<array<string, mixed>> $rows Browser rows
+     * @param string $sourceKey Browser source key
+     * @param string $field Source field name
+     * @param mixed $value Expected source field value
+     * @return ?array<string, mixed> Matching browser row, or null
+     */
+    private function findBrowserRowBySourceField(array $rows, string $sourceKey, string $field, mixed $value): ?array
+    {
+        foreach ($rows as $row) {
+            $source = $row[BrowserPageSignalData::sources][$sourceKey] ?? null;
+            if (is_array($source) && ($source[$field] ?? null) === $value) {
+                return $row;
+            }
+        }
+
+        return null;
     }
 }
