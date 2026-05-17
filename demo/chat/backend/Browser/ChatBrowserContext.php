@@ -236,7 +236,7 @@ final class ChatBrowserContext extends BrowserContext
             return null;
         }
 
-        $payload = SelfConnectionBrowserProjector::forConnection($connection);
+        $payload = SelfConnectionBrowserPayload::forConnection($connection);
 
         return $payload[$field] ?? null;
     }

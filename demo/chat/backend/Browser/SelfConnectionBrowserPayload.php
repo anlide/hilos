@@ -12,7 +12,7 @@ use Demo\Chat\Runtime\View\Item\Connection;
 /**
  * Builds the browser-safe current connection payload for the main chat page.
  */
-final class SelfConnectionBrowserProjector
+final class SelfConnectionBrowserPayload
 {
     /**
      * Builds the current connection summary visible to one WebSocket connection.
@@ -56,7 +56,7 @@ final class SelfConnectionBrowserProjector
             SelfConnectionSignalData::connectedAt => $connection->connectedAt,
             SelfConnectionSignalData::messageRateLimitSecondsRemaining => $messageRateLimitSecondsRemaining,
             SelfConnectionSignalData::outboundModerationState =>
-                OutboundModerationBrowserProjector::forConnection($connection),
+                OutboundModerationBrowserPayload::forConnection($connection),
             SelfConnectionSignalData::fileUploadState => $fileUploadState,
             SelfConnectionSignalData::fileUploadProgress => $fileUploadProgress,
         ];

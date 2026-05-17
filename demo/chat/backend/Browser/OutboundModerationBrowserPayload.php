@@ -10,7 +10,7 @@ use Demo\Chat\Runtime\View\Item\Connection;
 /**
  * Builds the connection-local outbound moderation payload used by the chat composer.
  */
-final class OutboundModerationBrowserProjector
+final class OutboundModerationBrowserPayload
 {
     /**
      * Builds the moderation payload visible to one WebSocket connection.
