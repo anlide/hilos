@@ -12,7 +12,9 @@ interface ChatStoreForEntities {
 }
 
 /**
- * Chat-specific entities receiver. Public users are handled by ChatFrontendStateReceiver.
+ * Chat-specific legacy entity receiver.
+ *
+ * Page-shaped users are handled by BrowserPageSignalData.
  */
 export class ChatEntitiesReceiver extends EntitiesReceiver {
   protected override applyFull(

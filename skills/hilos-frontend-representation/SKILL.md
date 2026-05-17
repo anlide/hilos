@@ -73,21 +73,17 @@ public function __get(string $name): mixed
 }
 ```
 
-Send browser user state through typed projections:
+Send page-shaped user state through browser table configs:
 
 ```php
-use Demo\Chat\Frontend\DTO\FrontendUserConnectionStatsProjection;
-use Demo\Chat\Frontend\DTO\FrontendUserProjection;
-use Demo\Chat\Frontend\FrontendStateCollectionKey;
-
-$collections[FrontendStateCollectionKey::USERS][] =
-    FrontendUserProjection::fromDbUser($user)->toArray();
-
-$collections[FrontendStateCollectionKey::USER_CONNECTION_STATS][] =
-    (new FrontendUserConnectionStatsProjection(
-        userId: (int) $user->id,
-        onlineSessionCount: Hilos::$rt->connections->summaryForUser((int) $user->id)->onlineSessionCount,
-    ))->toArray();
+[
+    BrowserFieldKey::SOURCE => ChatBrowserSource::RT_CONNECTIONS,
+    BrowserFieldKey::ROW_KEY => Connection::userId,
+    BrowserFieldKey::COMPUTED => [
+        UserConnectionSummary::presence,
+        UserConnectionSummary::onlineSessionCount,
+    ],
+]
 ```
 
 Build screen-specific table rows through the table row contract:
@@ -106,10 +102,14 @@ Do not send user browser state through a DB item serializer:
 $payload = Hilos::$db->users[$userId]->toArray(toFrontend: true);
 ```
 
-Use a frontend projector:
+Use a browser row contract:
 
 ```php
-$payload = UserFrontendStateProjector::fullForUser(Hilos::$db->users[$userId])->toArray();
+$payload = new BrowserPageSignalData([
+    ChatBrowserTable::MAIN_USERS => [
+        BrowserPageSignalData::rows => $rows,
+    ],
+]);
 ```
 
 Do not send RT View item arrays to the browser:

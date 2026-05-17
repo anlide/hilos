@@ -1,11 +1,8 @@
 import { SignalDefinition, type SignalParser } from '@hilos/sdk/services/signals'
 import {
   extractEntitiesEnvelope,
-  extractFrontendChangesEnvelope,
   hasEntities,
-  hasFrontendChanges,
   type EntitiesEnvelope,
-  type FrontendChangesEnvelope,
 } from '@hilos/sdk/types'
 import type { WebSocketOutcome } from '@hilos/sdk/types/websocket-messages'
 
@@ -41,27 +38,6 @@ export class ChatSignalDefinition<
         return null
       }
       const envelope = extractEntitiesEnvelope(raw)
-      if (envelope === null) {
-        return null
-      }
-      return extract(envelope, raw)
-    }
-    return new ChatSignalDefinition(type, parser, null)
-  }
-
-  /**
-   * Build a signal definition whose `data` payload must contain a `frontend`
-   * key (server's FrontendChangesDTO transport shape).
-   */
-  static fromFrontendChangesEnvelope<T extends string, D>(
-    type: T,
-    extract: (envelope: FrontendChangesEnvelope, raw: Record<string, unknown>) => D | null,
-  ): ChatSignalDefinition<T, D, null> {
-    const parser: SignalParser<D> = (raw: unknown): D | null => {
-      if (!isRecord(raw) || !hasFrontendChanges(raw)) {
-        return null
-      }
-      const envelope = extractFrontendChangesEnvelope(raw)
       if (envelope === null) {
         return null
       }

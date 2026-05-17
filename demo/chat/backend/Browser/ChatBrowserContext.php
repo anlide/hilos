@@ -15,7 +15,6 @@ use Demo\Chat\Browser\Table\SelfConnectionBrowserTable;
 use Demo\Chat\Browser\Table\UserDetailBrowserTable;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Core\Router\DTO\SelfConnectionSignalData;
-use Demo\Chat\Frontend\SelfConnectionProjector;
 use Demo\Chat\Hilos;
 use Demo\Chat\Pages\AdminBotsPage;
 use Demo\Chat\Pages\AdminModeratorPage;
@@ -237,7 +236,7 @@ final class ChatBrowserContext extends BrowserContext
             return null;
         }
 
-        $payload = SelfConnectionProjector::forConnection($connection);
+        $payload = SelfConnectionBrowserProjector::forConnection($connection);
 
         return $payload[$field] ?? null;
     }

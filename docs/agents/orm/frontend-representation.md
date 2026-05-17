@@ -18,20 +18,20 @@ project-specific browser state.
 
 | Need | Put it in |
 |---|---|
-| Public browser state for one DB item | `Frontend/DTO/*Projection` plus a projector |
-| Runtime-backed browser state | Frontend projection DTO, fed by `Hilos::$rt` typed APIs |
+| Public browser state for one DB item on a page | `BrowserContext` / `BrowserPageSignalData` row sources |
+| Runtime-backed browser state on a page | `BrowserContext` computed fields fed by `Hilos::$rt` typed APIs |
 | Page-specific table state | `BrowserContext` / `BrowserPageSignalData` rows |
-| Project-wide frontend state collection | `FrontendChangesDTO` with `FrontendStateCollectionKey` |
+| Project-wide frontend state collection | `FrontendChangesDTO` with project-owned collection key constants |
 | Table row payload | Concrete table row DTO or table helper |
 | Generic legacy entity payload | Existing `EntitiesChangesDTO` path only when already established |
 | RT sync or delete tombstone row | Concrete `Runtime/State/Item/*::toArray()` |
 | Backend object/entity row | Object/entity `toArray()` |
 
-For example, users are projected through `UserFrontendStateProjector` and
-`FrontendUserProjection`, while their DB View item remains a backend model API.
-Attachment drafts are projected through `AttachmentDraftFrontendStateProjector`
-and `AttachmentDraftSignalData`, while `StateAttachmentDraft::toArray()` remains
-the RT sync row contract.
+For example, chat users on list/detail pages are declared through browser table
+configs that combine DB user fields with runtime connection summaries, while
+their DB View item remains a backend model API. Attachment drafts are projected
+through browser rows, while `StateAttachmentDraft::toArray()` remains the RT
+sync row contract.
 
 ## Workflow
 
@@ -41,7 +41,7 @@ the RT sync row contract.
    `BROWSER` config, `BrowserPageSignalData`, and the matching TypeScript
    parser/store shape.
 3. For project-wide frontend state, inspect existing `Frontend/*Projector`,
-   `Frontend/DTO/*Projection`, `FrontendStateCollectionKey`, and the matching
+   `Frontend/DTO/*Projection`, project collection key constants, and the matching
    TypeScript parser/store shape.
 4. Keep DB/RT View items as typed model access APIs: expose reusable properties
    and bridges through `__get()`, but do not make their `toArray()` the browser
@@ -58,21 +58,28 @@ the RT sync row contract.
 
 ## Preferred Shape
 
-Send public user state through explicit frontend collections:
+Send page-shaped public user state through explicit browser table configs:
 
 ```php
-use Demo\Chat\Frontend\DTO\FrontendUserConnectionStatsProjection;
-use Demo\Chat\Frontend\DTO\FrontendUserProjection;
-use Demo\Chat\Frontend\FrontendStateCollectionKey;
-
-$collections[FrontendStateCollectionKey::USERS][] =
-    FrontendUserProjection::fromDbUser($user)->toArray();
-
-$collections[FrontendStateCollectionKey::USER_CONNECTION_STATS][] =
-    (new FrontendUserConnectionStatsProjection(
-        userId: (int) $user->id,
-        onlineSessionCount: Hilos::$rt->connections->summaryForUser((int) $user->id)->onlineSessionCount,
-    ))->toArray();
+public const array BROWSER = [
+    BrowserConfigKey::ROWS => [
+        [
+            BrowserFieldKey::SOURCE => ChatBrowserSource::DB_USERS,
+            BrowserFieldKey::FIELDS => [
+                User::id,
+                User::name,
+                User::lastActivity,
+            ],
+        ],
+        [
+            BrowserFieldKey::SOURCE => ChatBrowserSource::RT_CONNECTIONS,
+            BrowserFieldKey::COMPUTED => [
+                UserConnectionSummary::presence,
+                UserConnectionSummary::onlineSessionCount,
+            ],
+        ],
+    ],
+];
 ```
 
 Use table rows for screen-specific row shape:
@@ -122,10 +129,14 @@ Do not send user browser state through a DB item serializer:
 $payload = Hilos::$db->users[$userId]->toArray(toFrontend: true);
 ```
 
-Use an explicit projection:
+Use an explicit browser row contract:
 
 ```php
-$payload = UserFrontendStateProjector::fullForUser(Hilos::$db->users[$userId])->toArray();
+$payload = new BrowserPageSignalData([
+    ChatBrowserTable::MAIN_USERS => [
+        BrowserPageSignalData::rows => $rows,
+    ],
+]);
 ```
 
 Do not reuse RT View item arrays as browser payloads:

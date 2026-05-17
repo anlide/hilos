@@ -94,15 +94,13 @@ public function __get(string $name): mixed
 }
 ```
 
-Then compute frontend fields from that bridge:
+Then compute browser fields from that bridge or the matching RT summary:
 
 ```php
-use Demo\Chat\Frontend\DTO\FrontendUserConnectionStatsProjection;
-use Demo\Chat\Frontend\DTO\FrontendUserPresenceProjection;
 use Demo\Chat\Runtime\View\DTO\UserConnectionSummary;
 
-$result[FrontendUserConnectionStatsProjection::onlineSessionCount] = count($this->connections);
-$result[FrontendUserPresenceProjection::presence] = count($this->connections) > 0
+$result[UserConnectionSummary::onlineSessionCount] = count($this->connections);
+$result[UserConnectionSummary::presence] = count($this->connections) > 0
     ? UserConnectionSummary::PRESENCE_ONLINE
     : UserConnectionSummary::PRESENCE_OFFLINE;
 ```

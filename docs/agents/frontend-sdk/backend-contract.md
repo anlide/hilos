@@ -86,8 +86,9 @@ under the `frontend` payload key:
 }
 ```
 
-The frontend applies this through a project receiver such as
-`ChatFrontendStateReceiver`.
+The frontend applies this through a project receiver when a project defines a
+project-wide collection channel. Page-shaped DB/RT state should use the browser
+page payload below instead.
 
 ## Browser page snapshots
 

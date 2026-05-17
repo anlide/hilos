@@ -9,8 +9,6 @@ use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Router\ChatSignalRouter;
 use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Database\Object\Item\User as ObjectUser;
-use Demo\Chat\Frontend\FrontendStateCollectionKey;
-use Demo\Chat\Frontend\UserFrontendStateProjector;
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Demo\Chat\Tables\AdminUser\AdminUserTableRow;
@@ -23,66 +21,11 @@ use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Utils\Helpers\RandomHelper;
 
 /**
- * Integration tests for user frontend projection.
+ * Integration tests for user browser representation.
  */
-final class UserFrontendRepresentationTest extends IntegrationTestCase
+final class UserBrowserRepresentationTest extends IntegrationTestCase
 {
     private const string TEST_AGENT_ID = 'test-agent';
-
-    public function testUserFrontendProjectionExcludesPrivateAndRuntimeFields(): void
-    {
-        RtTruthSourceRegistry::register(ChatRtContext::connections, true, self::TEST_AGENT_ID);
-        Hilos::$rt->connections->actions->clear();
-
-        $user = Hilos::$db->users->actions->register(RandomHelper::hex(16));
-
-        try {
-            $backendRow = $user->toArray();
-            $this->assertArrayHasKey(ObjectUser::sessionToken, $backendRow);
-
-            Hilos::$rt->connections->actions->register('test-accept-key-1', $user->id);
-            Hilos::$rt->connections->actions->register('test-accept-key-2', $user->id);
-
-            $payload = UserFrontendStateProjector::fullForUser($user)->toArray();
-            $publicUser = $payload['full'][FrontendStateCollectionKey::USERS][0];
-
-            $this->assertSame($user->id, $publicUser[ObjectUser::id]);
-            $this->assertSame($user->name, $publicUser[ObjectUser::name]);
-            $this->assertArrayNotHasKey(ObjectUser::sessionToken, $publicUser);
-            $this->assertArrayNotHasKey('onlineSessionCount', $publicUser);
-            $this->assertArrayNotHasKey('presence', $publicUser);
-        } finally {
-            Hilos::$rt->connections->actions->clear();
-        }
-    }
-
-    public function testUserFrontendStateProjectionSplitsRuntimeFields(): void
-    {
-        RtTruthSourceRegistry::register(ChatRtContext::connections, true, self::TEST_AGENT_ID);
-        Hilos::$rt->connections->actions->clear();
-
-        $user = Hilos::$db->users->actions->register(RandomHelper::hex(16));
-
-        try {
-            Hilos::$rt->connections->actions->register('test-accept-key-1', $user->id);
-            Hilos::$rt->connections->actions->register('test-accept-key-2', $user->id);
-
-            $payload = UserFrontendStateProjector::fullForUser($user, includeConnectionStats: true)->toArray();
-            $publicUser = $payload['full'][FrontendStateCollectionKey::USERS][0];
-            $presence = $payload['full'][FrontendStateCollectionKey::USER_PRESENCE][0];
-            $stats = $payload['full'][FrontendStateCollectionKey::USER_CONNECTION_STATS][0];
-
-            $this->assertSame($user->id, $publicUser['id']);
-            $this->assertSame($user->name, $publicUser['name']);
-            $this->assertArrayNotHasKey(ObjectUser::sessionToken, $publicUser);
-            $this->assertArrayNotHasKey('presence', $publicUser);
-            $this->assertArrayNotHasKey('onlineSessionCount', $publicUser);
-            $this->assertSame(['userId' => $user->id, 'presence' => 'online'], $presence);
-            $this->assertSame(['userId' => $user->id, 'onlineSessionCount' => 2], $stats);
-        } finally {
-            Hilos::$rt->connections->actions->clear();
-        }
-    }
 
     public function testUserTableRowsIncludeRuntimeOnlineSessionCount(): void
     {
@@ -150,6 +93,14 @@ final class UserFrontendRepresentationTest extends IntegrationTestCase
 
             $firstBrowserRow = $this->findBrowserRowByUserId($rows, $firstUser->id);
             $this->assertIsArray($firstBrowserRow);
+            $userSource = $firstBrowserRow[BrowserPageSignalData::sources][ChatDbContext::users] ?? null;
+            $this->assertIsArray($userSource);
+            $this->assertSame($firstUser->id, $userSource[ObjectUser::id] ?? null);
+            $this->assertSame($firstUser->name, $userSource[ObjectUser::name] ?? null);
+            $this->assertArrayNotHasKey(ObjectUser::sessionToken, $userSource);
+            $this->assertArrayNotHasKey(AdminUserTableRow::presence, $userSource);
+            $this->assertArrayNotHasKey(AdminUserTableRow::onlineSessionCount, $userSource);
+
             $connection = $firstBrowserRow[BrowserPageSignalData::sources][ChatRtContext::connections] ?? null;
             $this->assertIsArray($connection);
             $this->assertArrayHasKey('userId', $connection);

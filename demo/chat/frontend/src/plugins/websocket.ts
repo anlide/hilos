@@ -5,7 +5,7 @@ import {
   usePageCatalogStore,
   useHilosLogsStore,
 } from '@hilos/sdk/stores'
-import { extractBrowserPagePayload, hasEntities, hasFrontendChanges } from '@hilos/sdk/types'
+import { extractBrowserPagePayload, hasEntities } from '@hilos/sdk/types'
 import { actionError } from '@hilos/sdk/signals'
 import { createHilosSignalRouter } from '@hilos/sdk/services/hilosSignalHandlers'
 import type { VueSignalRouter } from '@hilos/sdk/services/VueSignalRouter'
@@ -14,7 +14,6 @@ import { config } from '@/config'
 import { useChatStore } from '@/stores'
 import { localStorageService } from '@/services/LocalStorageService'
 import { ChatEntitiesReceiver } from '@/entities/ChatEntitiesReceiver'
-import { ChatFrontendStateReceiver } from '@/entities/ChatFrontendStateReceiver'
 import { isRecord } from '@/entities/parsers'
 import {
   rejectFileUploadPending,
@@ -72,7 +71,6 @@ const toRawMessage = (value: unknown): RawMessage | null => {
 }
 
 const entitiesReceiver = new ChatEntitiesReceiver()
-const frontendStateReceiver = new ChatFrontendStateReceiver()
 
 /**
  * Module-level reference to the signal router, set by
@@ -179,9 +177,6 @@ export function createChatWebSocketPlugin() {
 
       if (hasEntities(message.data)) {
         entitiesReceiver.apply(message.data, chatStore)
-      }
-      if (hasFrontendChanges(message.data)) {
-        frontendStateReceiver.apply(message.data, chatStore)
       }
       const browserPayload = extractBrowserPagePayload(message.data)
       if (browserPayload !== null) {
