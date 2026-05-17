@@ -14,17 +14,6 @@ use Hilos\Database\Migration;
 use Hilos\Database\Seed;
 use Hilos\Utils\Logger;
 
-// Project root (demo/chat): .env lives here, not under Bootstrap/
-$projectRoot = dirname(__DIR__, 2);
-Hilos::initEnv($projectRoot);
-
-// Test CLI commands should prefer tests/.env over the default project .env.
-$appEnv = Hilos::$env[EnvConstants::APP_ENV];
-$testEnvPath = $projectRoot . '/tests/.env';
-if ($appEnv === 'test' && file_exists($testEnvPath)) {
-    Hilos::loadEnv($testEnvPath);
-}
-
 /**
  * CLI - Entry point for CLI interface.
  *
@@ -33,6 +22,15 @@ if ($appEnv === 'test' && file_exists($testEnvPath)) {
  */
 
 try {
+    // Project root (demo/chat): .env lives here, not under Bootstrap/
+    $projectRoot = dirname(__DIR__, 2);
+    Hilos::initEnv($projectRoot);
+
+    // Test CLI commands load tests/.env over the default project .env.
+    if (Hilos::$env[EnvConstants::APP_ENV] === 'test') {
+        Hilos::loadEnv($projectRoot . '/tests/.env');
+    }
+
     // Initialize migration configuration
     Migration::setMigrationListPath(__DIR__ . '/../Database/Migration');
     Migration::setMigrationName('Schema');

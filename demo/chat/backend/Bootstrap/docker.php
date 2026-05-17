@@ -17,17 +17,6 @@ use Hilos\Database\DatabaseException;
 use Hilos\Database\Migration;
 use Hilos\Utils\Logger;
 
-// Project root (demo/chat): .env lives here, not under Bootstrap/
-$projectRoot = dirname(__DIR__, 2);
-Hilos::initEnv($projectRoot);
-
-// Test Docker stack should prefer tests/.env over the default project .env.
-$appEnv = Hilos::$env[EnvConstants::APP_ENV];
-$testEnvPath = $projectRoot . '/tests/.env';
-if ($appEnv === 'test' && file_exists($testEnvPath)) {
-    Hilos::loadEnv($testEnvPath);
-}
-
 /**
  * Docker Watchdog - Process manager for Docker containers.
  *
@@ -36,6 +25,15 @@ if ($appEnv === 'test' && file_exists($testEnvPath)) {
  */
 
 try {
+    // Project root (demo/chat): .env lives here, not under Bootstrap/
+    $projectRoot = dirname(__DIR__, 2);
+    Hilos::initEnv($projectRoot);
+
+    // Test Docker stack loads tests/.env over the default project .env.
+    if (Hilos::$env[EnvConstants::APP_ENV] === 'test') {
+        Hilos::loadEnv($projectRoot . '/tests/.env');
+    }
+
     // Initialize database connection and schema (without Hilos — migrations must run first)
     // Enable connection retry for Docker startup (MySQL may not be ready yet)
     Database::initialize(initHilos: false, retryConnection: true);

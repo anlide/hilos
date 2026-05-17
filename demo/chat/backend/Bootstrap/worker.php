@@ -21,21 +21,19 @@ use Hilos\Utils\Logger;
  * Parses worker ID from command line and starts ChatWorkerManager.
  */
 
-// Project root (demo/chat): .env lives here, not under Bootstrap/
-$projectRoot = dirname(__DIR__, 2);
-Hilos::initEnv($projectRoot);
-
-// Test Docker stack should prefer tests/.env over the default project .env.
-$appEnv = Hilos::$env[EnvConstants::APP_ENV];
-$testEnvPath = $projectRoot . '/tests/.env';
-if ($appEnv === 'test' && file_exists($testEnvPath)) {
-    Hilos::loadEnv($testEnvPath);
-}
-
 // Enable debug logging (optional - uncomment to enable)
 #Logger::setDebugEnabled(true);
 
 try {
+    // Project root (demo/chat): .env lives here, not under Bootstrap/
+    $projectRoot = dirname(__DIR__, 2);
+    Hilos::initEnv($projectRoot);
+
+    // Test Docker stack loads tests/.env over the default project .env.
+    if (Hilos::$env[EnvConstants::APP_ENV] === 'test') {
+        Hilos::loadEnv($projectRoot . '/tests/.env');
+    }
+
     // Initialize database connection, schema and Hilos context.
     Database::initialize();
     Hilos::initAnalytics();
