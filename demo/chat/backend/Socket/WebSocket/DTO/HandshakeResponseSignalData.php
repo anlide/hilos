@@ -5,29 +5,30 @@ declare(strict_types=1);
 namespace Demo\Chat\Socket\WebSocket\DTO;
 
 use Hilos\BaseDTO;
-use Hilos\Core\Router\DTO\FrontendChangesDTO;
 use Hilos\Core\Router\SignalDataInterface;
-use Hilos\Core\Exception\NotImplementedException;
 
 /**
  * HandshakeResponseSignalData - Signal data for handshake response.
  *
- * {@see self::$frontend} must contain exactly the current authorized user under full.users;
- * the client reads the identity id from that payload. Display name, full chat snapshot
- * (users, bots, events), and session fields (moderation, file UI, upload progress)
- * are sent on page subscribe through browser rows.
+ * Carries the current authorized user id and bootstrap page catalog. Display
+ * name, chat snapshot, and session fields are sent through browser rows after
+ * page subscription.
  * Target client ID is handled by WebSocketSignalData wrapper for routing.
  */
 final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInterface
 {
+    public const string currentUser = 'self';
+    public const string id = 'id';
+    public const string pageCatalog = 'pageCatalog';
+
     /**
      * Creates handshake response signal data.
      *
-     * @param FrontendChangesDTO $frontend Frontend state payload (full.users with exactly the current user)
+     * @param int $selfId Current authorized user id
      * @param array<string, array<string, mixed>> $pageCatalog Page catalog for breadcrumb rendering
      */
     public function __construct(
-        public readonly FrontendChangesDTO $frontend,
+        public readonly int $selfId,
         public readonly array $pageCatalog = [],
     ) {
     }
@@ -40,22 +41,26 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
     public function toArray(): array
     {
         return [
-            'frontend' => $this->frontend->toArray(),
-            'pageCatalog' => $this->pageCatalog,
+            self::currentUser => [
+                self::id => $this->selfId,
+            ],
+            self::pageCatalog => $this->pageCatalog,
         ];
     }
 
     /**
-     * Create DTO from array (not implemented - response is created directly).
+     * Create DTO from wire payload.
      *
-     * @param array<string, mixed> $data Source data (ignored)
+     * @param array<string, mixed> $data Source data
      * @return static DTO instance
-     * @throws NotImplementedException Deserialization is not implemented
      */
     public static function fromArray(array $data): static
     {
-        // This is not used for deserialization from array
-        // Response is created directly in ChatAgent
-        throw new NotImplementedException('HandshakeResponseSignalData::fromArray() is not implemented');
+        $self = $data[self::currentUser] ?? [];
+
+        return new static(
+            selfId: is_array($self) ? (int)($self[self::id] ?? 0) : 0,
+            pageCatalog: is_array($data[self::pageCatalog] ?? null) ? $data[self::pageCatalog] : [],
+        );
     }
 }

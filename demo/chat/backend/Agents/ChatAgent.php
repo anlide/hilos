@@ -11,7 +11,6 @@ use Demo\Chat\Constants\HttpHeaders;
 use Demo\Chat\Core\Router\DTO\BotMessageSignalData;
 use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Database\Pages\ChatPageCatalog;
-use Demo\Chat\Frontend\UserFrontendStateProjector;
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Demo\Chat\Socket\WebSocket\DTO\HandshakeResponseSignalData;
@@ -61,7 +60,7 @@ final class ChatAgent extends AbstractAgent
 
     /**
      * Authenticates the session token, registers the connection, emits registration updates, and sends
-     * the handshake response with the current user frontend state and page catalog.
+     * the handshake response with the current user id and page catalog.
      *
      * Runtime presence is emitted after every successful connection register so
      * pages that show online session counts update for additional tabs, not only
@@ -105,7 +104,7 @@ final class ChatAgent extends AbstractAgent
             ChatSignalConstants::HANDSHAKE_RESPONSE,
             $data->acceptKey,
             new HandshakeResponseSignalData(
-                frontend: UserFrontendStateProjector::fullForUser($user),
+                selfId: $userId,
                 pageCatalog: ChatPageCatalog::getCatalog(),
             ),
         );
