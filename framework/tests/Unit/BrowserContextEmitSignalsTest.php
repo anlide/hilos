@@ -7,8 +7,11 @@ namespace Hilos\Tests\Unit;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Browser\Config\BrowserFieldKey;
+use Hilos\Core\Browser\Config\BrowserPageConfig;
+use Hilos\Core\Browser\Config\BrowserPageTableBindings;
 use Hilos\Core\Browser\Config\BrowserSourceKey;
 use Hilos\Core\Browser\Config\BrowserSourceType;
+use Hilos\Core\Browser\Config\BrowserTableConfig;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Page\PageRouteParams;
@@ -243,17 +246,53 @@ final class BrowserContextEmitSignalsTestContext extends BrowserContext
         BrowserSourceKey::KEY => BrowserContextEmitSignalsTestRtContext::ROWS,
     ];
 
-    public const array PAGES = [
-        self::PAGE => [
-            BrowserConfigKey::SIGNAL => self::SIGNAL,
-            BrowserConfigKey::TABLES => [
-                self::TABLE => [],
-            ],
-        ],
-    ];
+    /**
+     * Resolves test page browser metadata.
+     *
+     * @param string $page Page name from the subscription mirror
+     * @return ?BrowserPageConfig Test page metadata, or null when absent
+     */
+    protected function resolveBrowserPageConfig(string $page): ?BrowserPageConfig
+    {
+        if ($page !== self::PAGE) {
+            return null;
+        }
 
-    public const array TABLES = [
-        self::TABLE => [
+        return BrowserPageConfig::fromArray([
+            BrowserConfigKey::SIGNAL => self::SIGNAL,
+        ]);
+    }
+
+    /**
+     * Resolves test page table bindings.
+     *
+     * @param string $page Page name from the subscription mirror
+     * @return BrowserPageTableBindings Test page table bindings
+     */
+    protected function resolveBrowserPageTables(string $page): BrowserPageTableBindings
+    {
+        if ($page !== self::PAGE) {
+            return BrowserPageTableBindings::empty();
+        }
+
+        return BrowserPageTableBindings::fromArray([
+            self::TABLE => [],
+        ]);
+    }
+
+    /**
+     * Resolves test browser-only table config.
+     *
+     * @param string $tableKey Browser table key
+     * @return ?BrowserTableConfig Test browser-only table config
+     */
+    protected function resolveBrowserOnlyTableConfig(string $tableKey): ?BrowserTableConfig
+    {
+        if ($tableKey !== self::TABLE) {
+            return null;
+        }
+
+        return BrowserTableConfig::fromArray([
             BrowserConfigKey::ROWS => [
                 [
                     BrowserFieldKey::SOURCE => self::SOURCE,
@@ -270,8 +309,8 @@ final class BrowserContextEmitSignalsTestContext extends BrowserContext
                     ],
                 ],
             ],
-        ],
-    ];
+        ]);
+    }
 
     /**
      * Computes the test-only label declared in the browser table config.
@@ -310,38 +349,52 @@ final class BrowserContextTopologyHooksTestContext extends BrowserContext
     ];
 
     /**
-     * Reads page browser topology through the protected hook instead of static::PAGES.
+     * Reads page browser metadata through the protected hook.
      *
      * @param string $page Page name from the subscription mirror
-     * @return array<string, mixed> Browser page config
+     * @return ?BrowserPageConfig Browser page metadata
      */
-    protected function resolveBrowserPageConfig(string $page): array
+    protected function resolveBrowserPageConfig(string $page): ?BrowserPageConfig
     {
         if ($page !== self::PAGE) {
-            return [];
+            return null;
         }
 
-        return [
+        return BrowserPageConfig::fromArray([
             BrowserConfigKey::SIGNAL => self::SIGNAL,
-            BrowserConfigKey::TABLES => [
-                self::TABLE => [],
-            ],
-        ];
+        ]);
     }
 
     /**
-     * Reads browser-only table topology through the protected hook instead of static::TABLES.
+     * Reads page table bindings through the protected topology hook.
+     *
+     * @param string $page Page name from the subscription mirror
+     * @return BrowserPageTableBindings Browser page table bindings
+     */
+    protected function resolveBrowserPageTables(string $page): BrowserPageTableBindings
+    {
+        if ($page !== self::PAGE) {
+            return BrowserPageTableBindings::empty();
+        }
+
+        return BrowserPageTableBindings::fromArray([
+            self::TABLE => [],
+        ]);
+    }
+
+    /**
+     * Reads browser-only table topology through the protected hook.
      *
      * @param string $tableKey Browser table key
-     * @return ?array<string, mixed> Browser-only table config
+     * @return ?BrowserTableConfig Browser-only table config
      */
-    protected function resolveBrowserOnlyTableConfig(string $tableKey): ?array
+    protected function resolveBrowserOnlyTableConfig(string $tableKey): ?BrowserTableConfig
     {
         if ($tableKey !== self::TABLE) {
             return null;
         }
 
-        return [
+        return BrowserTableConfig::fromArray([
             BrowserConfigKey::ROWS => [
                 [
                     BrowserFieldKey::SOURCE => self::SOURCE,
@@ -352,7 +405,7 @@ final class BrowserContextTopologyHooksTestContext extends BrowserContext
                     ],
                 ],
             ],
-        ];
+        ]);
     }
 }
 

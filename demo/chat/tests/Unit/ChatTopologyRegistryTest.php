@@ -9,7 +9,10 @@ use Demo\Chat\Core\Page\ChatPageFactory;
 use Demo\Chat\Hilos;
 use Demo\Chat\Tables\ChatTableContext;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
-use Hilos\Core\Browser\Context\BrowserContext;
+use Hilos\Core\Browser\Config\BrowserPageConfig;
+use Hilos\Core\Browser\Config\BrowserPageTableBindings;
+use Hilos\Core\Browser\Config\BrowserParamKey;
+use Hilos\Core\Browser\Config\BrowserTableConfig;
 use Hilos\Core\Page\PageAgentInterface;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalSourceInterface;
@@ -84,50 +87,72 @@ final class ChatTopologyRegistryTest extends TestCase
         }
     }
 
-    public function testChatBrowserContextDoesNotOwnManualTopologyLists(): void
+    public function testChatBrowserContextDoesNotUseLegacyManualTopologyLists(): void
     {
         $reflection = new ReflectionClass(ChatBrowserContext::class);
-        $pageConstant = $reflection->getReflectionConstant('PAGES');
-        $tableConstant = $reflection->getReflectionConstant('TABLES');
 
-        $this->assertNotFalse($pageConstant);
-        $this->assertNotFalse($tableConstant);
-        $this->assertSame(BrowserContext::class, $pageConstant->getDeclaringClass()->getName());
-        $this->assertSame(BrowserContext::class, $tableConstant->getDeclaringClass()->getName());
+        $this->assertFalse($reflection->getReflectionConstant('PAGES'));
+        $this->assertFalse($reflection->getReflectionConstant('TABLES'));
     }
 
-    public function testChatBrowserContextResolvesPageConfigsFromTopology(): void
+    public function testChatBrowserContextResolvesPageMetadataFromTopology(): void
     {
         $context = new ChatBrowserContext();
         $resolvePageConfig = \Closure::bind(
-            static fn(ChatBrowserContext $context, string $page): array => $context->resolveBrowserPageConfig($page),
+            static fn(ChatBrowserContext $context, string $page): ?BrowserPageConfig => $context->resolveBrowserPageConfig($page),
             null,
             ChatBrowserContext::class,
         );
 
         foreach (Hilos::PAGES as $page => $pageClass) {
-            $expectedConfig = $pageClass::BROWSER;
-            if ($expectedConfig !== [] || array_key_exists($page, Hilos::PAGE_TABLES)) {
-                $expectedConfig[BrowserConfigKey::TABLES] = Hilos::PAGE_TABLES[$page] ?? [];
-            }
+            $browserConfig = $pageClass::BROWSER;
+            $config = $resolvePageConfig($context, $page);
 
-            $this->assertSame($expectedConfig, $resolvePageConfig($context, $page));
+            $this->assertNotNull($config);
+            $this->assertSame($this->expectedSignalName($browserConfig), $config->signalName);
+            $this->assertSame($this->expectedPageParams($browserConfig), $config->paramConfigs());
+            $this->assertSame($this->expectedPageGuards($browserConfig), $config->guardConfigs());
         }
 
-        $this->assertSame([], $resolvePageConfig($context, 'missing_page'));
+        $this->assertNull($resolvePageConfig($context, 'missing_page'));
+    }
+
+    public function testChatBrowserContextResolvesPageTableBindingsFromTopology(): void
+    {
+        $context = new ChatBrowserContext();
+        $resolvePageTables = \Closure::bind(
+            static fn(ChatBrowserContext $context, string $page): BrowserPageTableBindings => $context->resolveBrowserPageTables($page),
+            null,
+            ChatBrowserContext::class,
+        );
+
+        foreach (Hilos::PAGE_TABLES as $page => $tableConfigs) {
+            $bindings = iterator_to_array($resolvePageTables($context, $page), false);
+
+            $this->assertSame(array_keys($tableConfigs), array_map(static fn($binding): string => $binding->tableKey, $bindings));
+            foreach ($bindings as $binding) {
+                $tableConfig = $tableConfigs[$binding->tableKey] ?? [];
+                $this->assertSame($this->expectedBindingParamRefs($tableConfig), $binding->paramRefs());
+            }
+        }
+
+        $this->assertSame([], iterator_to_array($resolvePageTables($context, 'missing_page'), false));
     }
 
     public function testChatBrowserContextResolvesBrowserOnlyTablesFromTopology(): void
     {
         $context = new ChatBrowserContext();
         $resolveTableConfig = \Closure::bind(
-            static fn(ChatBrowserContext $context, string $tableKey): ?array => $context->resolveBrowserOnlyTableConfig($tableKey),
+            static fn(ChatBrowserContext $context, string $tableKey): ?BrowserTableConfig => $context->resolveBrowserOnlyTableConfig($tableKey),
             null,
             ChatBrowserContext::class,
         );
 
         foreach (Hilos::BROWSER_TABLES as $table => $tableClass) {
-            $this->assertSame($tableClass::BROWSER, $resolveTableConfig($context, $table));
+            $config = $resolveTableConfig($context, $table);
+
+            $this->assertNotNull($config);
+            $this->assertSame($this->expectedTableRows($tableClass::BROWSER), $config->rowConfigs());
         }
 
         $this->assertNull($resolveTableConfig($context, ChatTableContext::settings));
@@ -179,5 +204,78 @@ final class ChatTopologyRegistryTest extends TestCase
                 return new SignalSource(SignalSource::AGENT, 'test-page-agent');
             }
         };
+    }
+
+    /**
+     * Extracts the expected browser signal name from a page config.
+     *
+     * @param array<string, mixed> $browserConfig Page BROWSER config
+     * @return string Browser signal name
+     */
+    private function expectedSignalName(array $browserConfig): string
+    {
+        $signalName = $browserConfig[BrowserConfigKey::SIGNAL] ?? '';
+
+        return is_string($signalName) ? $signalName : '';
+    }
+
+    /**
+     * Extracts expected route param declarations from a page config.
+     *
+     * @param array<string, mixed> $browserConfig Page BROWSER config
+     * @return array<string, mixed> Route param declarations
+     */
+    private function expectedPageParams(array $browserConfig): array
+    {
+        $params = $browserConfig[BrowserConfigKey::PARAMS] ?? [];
+
+        return is_array($params) ? $params : [];
+    }
+
+    /**
+     * Extracts expected guard declarations from a page config.
+     *
+     * @param array<string, mixed> $browserConfig Page BROWSER config
+     * @return list<array<string, mixed>> Guard declarations
+     */
+    private function expectedPageGuards(array $browserConfig): array
+    {
+        $guards = $browserConfig[BrowserConfigKey::GUARDS] ?? [];
+
+        return is_array($guards)
+            ? array_values(array_filter($guards, static fn(mixed $guard): bool => is_array($guard)))
+            : [];
+    }
+
+    /**
+     * Extracts expected binding param references from a PAGE_TABLES entry.
+     *
+     * @param mixed $tableConfig Page table binding config
+     * @return array<string, mixed> Table param reference declarations
+     */
+    private function expectedBindingParamRefs(mixed $tableConfig): array
+    {
+        if (!is_array($tableConfig)) {
+            return [];
+        }
+
+        $params = $tableConfig[BrowserParamKey::PARAMS] ?? [];
+
+        return is_array($params) ? $params : [];
+    }
+
+    /**
+     * Extracts expected row configs from a table BROWSER config.
+     *
+     * @param array<string, mixed> $browserConfig Table BROWSER config
+     * @return list<array<string, mixed>> Row source configs
+     */
+    private function expectedTableRows(array $browserConfig): array
+    {
+        $rows = $browserConfig[BrowserConfigKey::ROWS] ?? [];
+
+        return is_array($rows)
+            ? array_values(array_filter($rows, static fn(mixed $row): bool => is_array($row)))
+            : [];
     }
 }

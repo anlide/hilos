@@ -80,7 +80,8 @@ public const array PAGE_TABLES = [
 ## Anti-Patterns
 
 - Do not duplicate project page lists in a project `BrowserContext`; resolve
-  page config from `Hilos::PAGES` and `Hilos::PAGE_TABLES`.
+  page metadata from `Hilos::PAGES` and table bindings from
+  `Hilos::PAGE_TABLES`.
 - Do not duplicate project browser-only table lists in a project
   `BrowserContext`; resolve table config from `Hilos::BROWSER_TABLES`.
 - Do not put page-table bindings in page `BROWSER` constants; use
