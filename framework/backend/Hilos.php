@@ -8,6 +8,8 @@ use Hilos\Core\Analytics\AnalyticsCollector;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Table\Context\TableContext;
+use Hilos\Core\Topology\Exception\InvalidTopologyException;
+use Hilos\Core\Topology\TopologyValidator;
 use Hilos\Database\Context\DbContext;
 use Hilos\Database\Settings\SettingsAccessor;
 use Hilos\Environment\EnvAccessor;
@@ -31,6 +33,21 @@ use Hilos\Runtime\View\Context\RtContext;
  */
 abstract class Hilos
 {
+    /** Page classes keyed by page name. */
+    public const array PAGES = [];
+
+    /** Page subscription routes keyed by page name. */
+    public const array PAGE_ROUTES = [];
+
+    /** Registered table definition classes keyed by table name. */
+    public const array TABLES = [];
+
+    /** Browser-only table config classes keyed by table name. */
+    public const array BROWSER_TABLES = [];
+
+    /** Page table bindings keyed by page name, then table name. */
+    public const array PAGE_TABLES = [];
+
     /** @var ?EnvAccessor Catalog-backed environment accessor */
     public static ?EnvAccessor $env = null;
 
@@ -61,10 +78,13 @@ abstract class Hilos
     /**
      * Initializes env, settings, storage, runtime, table, browser, and filesystem layers.
      *
+     * @throws InvalidTopologyException When project topology constants are inconsistent
      * @throws HilosException When a layer factory or configure step cannot initialize its singleton
      */
     public static function init(): void
     {
+        static::validateTopology();
+
         if (static::$env === null) {
             static::$env = static::createEnv();
         }
@@ -98,6 +118,16 @@ abstract class Hilos
             static::$fs?->configure();
         }
 
+    }
+
+    /**
+     * Validates project topology constants before runtime layers use them.
+     *
+     * @throws InvalidTopologyException When topology constants are inconsistent
+     */
+    public static function validateTopology(): void
+    {
+        static::createTopologyValidator()->validate(static::class);
     }
 
     /**
@@ -187,6 +217,16 @@ abstract class Hilos
      * @return DbContext Database context instance
      */
     abstract protected static function createDb(): DbContext;
+
+    /**
+     * Creates topology validator instance.
+     *
+     * @return TopologyValidator Topology validator
+     */
+    protected static function createTopologyValidator(): TopologyValidator
+    {
+        return new TopologyValidator();
+    }
 
     /**
      * Creates environment accessor.
