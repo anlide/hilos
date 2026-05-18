@@ -57,7 +57,10 @@ $this->sendToGroup($signalName, $groupName, $data);
 
 ## Per-page agent override
 
-`page_subscription_routing` config lets different pages route subscription signals to different agents:
+At project level, declare per-page subscription ownership in
+`Hilos::PAGE_ROUTES`; see [app-topology.md](../app-topology.md). The router may
+convert that registry into `page_subscription_routing` config so different
+pages route subscription signals to different agents:
 ```php
 'page_subscription_routing' => [
     'default' => AgentType::CHAT,

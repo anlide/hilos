@@ -70,6 +70,11 @@ Browser table configs declare the DB/RT sources that shape a page row. A source
 fact can trigger a `BrowserPageSignalData` row update or delete when the
 subscribed page includes a table observing that source.
 
+Register browser-only table config classes in `Hilos::BROWSER_TABLES` and bind
+them to pages through `Hilos::PAGE_TABLES`; see
+[app-topology.md](../app-topology.md). Project browser contexts should resolve
+those registries instead of owning local page or table lists.
+
 Screen-specific table rows may still live on concrete table definitions or
 browser table config classes. Declare every DB/RT source that materially
 changes the browser row so a source fact never has to be bridged by imperative

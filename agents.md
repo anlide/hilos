@@ -25,6 +25,12 @@ Quick navigation for AI agents. Read the relevant file before starting work.
 |---|---|
 | [framework-development.md](docs/agents/framework-development.md) | changing framework-level APIs, facade globals, extension points, framework subsystem exceptions |
 
+## App Topology
+
+| File | Read when... |
+|---|---|
+| [app-topology.md](docs/agents/app-topology.md) | adding pages, page subscription routes, registered tables, browser-only tables, or page-table bindings |
+
 ## Agent System
 
 | File | Read when... |

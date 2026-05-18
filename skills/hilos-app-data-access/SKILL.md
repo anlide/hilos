@@ -1,6 +1,6 @@
 ---
 name: hilos-app-data-access
-description: Use Hilos::$db and Hilos::$rt correctly from application code. Use when reading DB or runtime data in pages, tables, agents, action handlers, table actions, signal handlers, or when choosing collection access, item access, action calls, settings access, existing magic/result accessors, array access, or find helpers.
+description: Use Hilos::$db and Hilos::$rt correctly from application code. Use when reading DB or runtime data in pages, tables, agents, action handlers, table actions, signal handlers, page/table topology code, or when choosing collection access, item access, action calls, settings access, existing magic/result accessors, array access, or find helpers.
 ---
 
 # Hilos App Data Access
@@ -19,6 +19,8 @@ switch to the focused data-layer skill first.
 - DB-backed item plus live runtime overlay: use `$hilos-db-rt-state`.
 - BrowserContext rows, frontend state payloads, legacy `toFrontend`, and computed item fields:
   use `$hilos-frontend-representation`.
+- Page/table topology registry and page-table bindings:
+  `docs/agents/app-topology.md`.
 - Choosing between magic, array, result, and `findBy*()` access:
   use `$hilos-accessor-contracts`.
 - Page action routing and action error behavior:
@@ -228,6 +230,8 @@ then call that API from the table/page.
   `$this->stateCollection` outside files under `Database/` or `Runtime/`.
 - Do not bypass `Hilos::$db` or `Hilos::$rt` with raw arrays, raw SQL, or
   duplicated filters in page/table/agent code.
+- Do not duplicate project page or table registries in caller code; use the
+  project `Hilos` topology registry.
 - Do not store durable business state in `Hilos::$rt`.
 - Do not write DB/RT state directly from pages, tables, or signal handlers when
   a collection/item action owns the mutation.

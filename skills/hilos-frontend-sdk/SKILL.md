@@ -1,6 +1,6 @@
 ---
 name: hilos-frontend-sdk
-description: Work with the Hilos frontend SDK, Vue pages, WebSocket connection lifecycle, acceptKey handling, reconnect behavior, client actions, server signals, page subscriptions, frontend signal parsers, and entity editing UI. Use when modifying frontend-server contracts or Hilos Vue page behavior.
+description: Work with the Hilos frontend SDK, Vue pages, WebSocket connection lifecycle, acceptKey handling, reconnect behavior, client actions, server signals, page subscriptions, frontend signal parsers, page/browser topology, and entity editing UI. Use when modifying frontend-server contracts or Hilos Vue page behavior.
 ---
 
 # Hilos Frontend SDK
@@ -11,6 +11,8 @@ Use this skill for frontend SDK and Vue page work in Hilos. Start with `agents.m
 
 - WebSocket lifecycle, `acceptKey`, reconnect: `docs/agents/frontend-sdk/websocket-connection.md`
 - Client actions, server signals, page subscription: `docs/agents/frontend-sdk/backend-contract.md`
+- App topology for pages, page routes, browser tables, and page-table bindings:
+  `docs/agents/app-topology.md`
 - DB/RT source fan-out to page-shaped browser payloads:
   `docs/agents/architecture/browser-source-fanout.md`
 - Editing entities from Vue pages: `docs/agents/frontend-sdk/edit-in-modal.md`
@@ -19,12 +21,15 @@ Use this skill for frontend SDK and Vue page work in Hilos. Start with `agents.m
 
 ## Workflow
 
-1. Identify whether the change is connection behavior, action sending, signal parsing, page subscription, browser payload fan-out, or entity editing.
+1. Identify whether the change is connection behavior, action sending, signal parsing, page subscription, app topology, browser payload fan-out, or entity editing.
 2. Keep the backend and frontend wire contract synchronized.
-3. Add or update frontend parser tests for new or changed signals.
-4. Add or update backend DTO roundtrip tests when signal payloads change.
-5. For entity edits, use `Modal`; do not create inline edit forms on pages.
-6. Run frontend tests through composer scripts from `$hilos-testing-cli`.
+3. For page or page-table topology changes, route through
+   `docs/agents/app-topology.md` before changing local frontend or browser
+   lists.
+4. Add or update frontend parser tests for new or changed signals.
+5. Add or update backend DTO roundtrip tests when signal payloads change.
+6. For entity edits, use `Modal`; do not create inline edit forms on pages.
+7. Run frontend tests through composer scripts from `$hilos-testing-cli`.
 
 ## Hard Rules
 

@@ -1,6 +1,6 @@
 ---
 name: hilos-frontend-representation
-description: Work with Hilos browser-facing DB/RT payloads, BrowserContext page-shaped rows, typed frontend state payloads, FrontendChangesDTO collections, legacy EntitiesChangesDTO paths, table rows, and boundaries between frontend DTOs and DB/RT toArray serializers.
+description: Work with Hilos browser-facing DB/RT payloads, BrowserContext page-shaped rows, page-table topology, typed frontend state payloads, FrontendChangesDTO collections, legacy EntitiesChangesDTO paths, table rows, and boundaries between frontend DTOs and DB/RT toArray serializers.
 ---
 
 # Hilos Frontend Representation
@@ -15,6 +15,8 @@ payloads, table rows, or legacy payloads that still call
 
 - Frontend representation rule:
   `docs/agents/orm/frontend-representation.md`.
+- App topology for browser-only tables and page-table bindings:
+  `docs/agents/app-topology.md`.
 - DB collections, View items, Object layer, and actions: use `$hilos-orm`.
 - DB item plus runtime overlay: use `$hilos-db-rt-state`.
 - Caller-side DB/RT consumption from pages, tables, and actions:
@@ -45,8 +47,8 @@ payloads, table rows, or legacy payloads that still call
    frontend state, a signal payload, a table row, DB sync, RT sync, or
    backend-only serialization.
 2. Inspect existing `BrowserContext`, page/table `BROWSER` config,
-   backend DTO/browser/table row constants, and the matching TypeScript
-   parser/store shape.
+   `Hilos::BROWSER_TABLES`, `Hilos::PAGE_TABLES`, backend DTO/browser/table
+   row constants, and the matching TypeScript parser/store shape.
 3. Inspect the View item `__get()` and existing bridge properties for model
    access, but do not add new browser filtering to View item `toArray()`.
 4. Inspect existing Object item fields and runtime bridge properties.
@@ -132,5 +134,7 @@ $draftRows[] = AttachmentDraftSignalData::fromDraft($draft)->toArray();
 - Do not send raw RT state rows or RT View item arrays to the browser.
 - Do not put page-specific runtime overlays into generic entity payloads.
 - Do not put frontend representation logic in Entity classes.
+- Do not put page-table bindings in page `BROWSER` constants; route them
+  through `Hilos::PAGE_TABLES`.
 - Keep frontend parsers and backend DTO/browser tests synchronized
   with any changed browser payload shape.

@@ -6,6 +6,11 @@ Signals flow: **source → SignalRouter → daemon → worker → agent**.
 
 Route by **sender**, not by destination. The router is declarative — it maps source + type → agent type.
 
+For project page subscription routing, keep the page-to-agent ownership in
+`Hilos::PAGE_ROUTES` and let the project router import that registry. Do not
+maintain a duplicate page routing list only inside the router; see
+[app-topology.md](../app-topology.md).
+
 ## Config structure (in SignalRouter subclass)
 
 ```php

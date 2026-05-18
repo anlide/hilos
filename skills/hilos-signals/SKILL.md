@@ -1,6 +1,6 @@
 ---
 name: hilos-signals
-description: Work with Hilos signal routing, SignalRouter declarations, signal payload DTOs, page subscriptions, group subscriptions, sendToUser, sendToGroup, sendToAgent, client-server actions, server-client signals, and signal delivery debugging. Use when adding, changing, or tracing Hilos signal flow.
+description: Work with Hilos signal routing, SignalRouter declarations, Hilos::PAGE_ROUTES topology, signal payload DTOs, page subscriptions, group subscriptions, sendToUser, sendToGroup, sendToAgent, client-server actions, server-client signals, and signal delivery debugging. Use when adding, changing, or tracing Hilos signal flow.
 ---
 
 # Hilos Signals
@@ -10,6 +10,8 @@ Use this skill for every change that affects signal shape, route, subscription, 
 ## Read First
 
 - Routing rules and tracing signal paths: `docs/agents/signals/routing.md`
+- App topology for page subscription routing:
+  `docs/agents/app-topology.md`
 - Page/group subscriptions and send helpers: `docs/agents/signals/subscriptions.md`
 - Payload DTOs and agent-to-agent signals: `docs/agents/signals/dto-convention.md`
 - Frontend action/signal contract: `docs/agents/frontend-sdk/backend-contract.md`
@@ -19,7 +21,9 @@ Use this skill for every change that affects signal shape, route, subscription, 
 ## Workflow
 
 1. Identify the signal source and destination: WS, agent, DB sync, RT sync, cron, or system.
-2. Add or update declarative routing in `SignalRouter`.
+2. For project page subscription routing, update `Hilos::PAGE_ROUTES` through
+   `docs/agents/app-topology.md`; otherwise add or update declarative routing
+   in `SignalRouter`.
 3. Route named signal handlers with `switch ($name)` and explicit cases.
 4. Omit empty `default` branches in partial shared-broadcast handlers; document
    the ignore contract in PHPDoc instead.
@@ -32,5 +36,6 @@ Use this skill for every change that affects signal shape, route, subscription, 
 
 - Never run `git commit` or `git push`.
 - Keep routing declarative in `SignalRouter`.
+- Keep project page subscription ownership in `Hilos::PAGE_ROUTES`.
 - Do not hide subscription or delivery decisions inside unrelated business logic.
 - Preserve envelope metadata when DTOs cross worker and daemon boundaries.

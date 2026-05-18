@@ -1,6 +1,6 @@
 ---
 name: hilos-page-subscribe
-description: Work with Hilos page subscription params, PageRouteParams accessors, AbstractPageSubscribeParamsDTO subclasses, onSubscribe/onUpdateSubscription signatures, template method dispatch in abstract pages, and subscription error signals. Use when adding or changing page route params or subscribe handlers.
+description: Work with Hilos page subscription params, page registration and routing, PageRouteParams accessors, AbstractPageSubscribeParamsDTO subclasses, onSubscribe/onUpdateSubscription signatures, template method dispatch in abstract pages, and subscription error signals. Use when adding or changing page route params or subscribe handlers.
 ---
 
 # Hilos Page Subscribe Params
@@ -12,6 +12,8 @@ signals back to their source.
 
 ## Read First
 
+- Page registration and subscription routing:
+  `docs/agents/app-topology.md`
 - Subscribe handlers, `PageRouteParams` accessors, per-page DTO template:
   `docs/agents/code-style/page-action-handlers.md` (section
   "Subscribe handlers and route params")
@@ -27,34 +29,37 @@ signals back to their source.
 1. Decide whether the page has real route params. If it has none, keep
    `onSubscribe(string $acceptKey, PageRouteParams $params): void` empty and
    skip the DTO.
-2. For pages with params, add the key to `Hilos\Constants\HilosPageRouteParams`
+2. When adding a page or changing its subscription owner, update project
+   topology through `Hilos::PAGES` and `Hilos::PAGE_ROUTES` as described in
+   `docs/agents/app-topology.md`.
+3. For pages with params, add the key to `Hilos\Constants\HilosPageRouteParams`
    (or a page-level constant for demo-only pages) and mirror it in
    `framework/frontend/src/constants/hilosPageRouteParams.ts` if the frontend
    also uses the key.
-3. Create a `SomePageSubscribeParams` DTO extending
+4. Create a `SomePageSubscribeParams` DTO extending
    `AbstractPageSubscribeParamsDTO` with readonly promoted properties and a
    `public static function fromPageRouteParams(PageRouteParams $params): static`
    factory.
-4. Parse values via the narrowest accessor: `requireString`, `requireInt`,
+5. Parse values via the narrowest accessor: `requireString`, `requireInt`,
    `requirePositiveInt`, `requireEnum`, or the matching `get*` variants when
    the param is optional. `require*` is missing-safe (throws
    `MissingPageRouteParamException`); any accessor throws
    `InvalidPageRouteParamException` on malformed non-empty values.
-5. In the abstract page class, make `onSubscribe()` `final` and dispatch to a
+6. In the abstract page class, make `onSubscribe()` `final` and dispatch to a
    `protected abstract function onSomePageSubscribe(string $acceptKey,
    SomePageSubscribeParams $params): void`. Do the same for
    `onUpdateSubscription()` when the page uses it.
-6. Keep domain checks (entity exists, permissions, lookup by id) inside the
+7. Keep domain checks (entity exists, permissions, lookup by id) inside the
    page handler, not in the DTO. Throw `PageResourceNotFoundException` or
    another `PageSubscriptionException` subclass after the DTO has validated
    the raw route shape.
-7. `PageRouteParams` never performs DB lookups. Do not import collections,
+8. `PageRouteParams` never performs DB lookups. Do not import collections,
    actions, or `Hilos::$db` inside `fromPageRouteParams()`.
-8. When the concrete page has no subclasses and no shared subscribe logic,
+9. When the concrete page has no subclasses and no shared subscribe logic,
    parse the DTO directly in its own `onSubscribe()` without a template method;
    reserve the `final`/`abstract` split for abstract pages with more than one
    concrete subclass.
-9. Run `composer test:framework:unit` after changing `PageRouteParams`, its
+10. Run `composer test:framework:unit` after changing `PageRouteParams`, its
    DTOs, or any abstract page's subscribe contract.
 
 ## Hard Rules
@@ -67,6 +72,8 @@ signals back to their source.
 - Do not catch `MissingPageRouteParamException` or
   `InvalidPageRouteParamException` inside page code; let the router convert
   them into a `subscription_page_error` signal.
+- Do not keep page subscription ownership only in router config when the
+  project has `Hilos::PAGE_ROUTES`.
 - Once an abstract page introduces a typed subscribe DTO, keep its
   `onSubscribe()` / `onUpdateSubscription()` `final` so subclasses cannot
   bypass the parsed DTO.
