@@ -7,7 +7,6 @@ namespace Demo\Chat\Pages;
 use Demo\Chat\Agents\BotAgent;
 use Demo\Chat\Browser\ChatBrowserRef;
 use Demo\Chat\Browser\ChatBrowserSource;
-use Demo\Chat\Browser\ChatBrowserTable;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Pages\DTO\BotPageSubscribeParams;
@@ -50,13 +49,6 @@ final class BotPage extends AbstractPage
                 BrowserGuardKey::SOURCE => ChatBrowserSource::DB_BOTS,
                 BrowserGuardKey::KEY => ChatBrowserRef::BOT_ID,
                 BrowserGuardKey::ERROR => BrowserSubscriptionError::NOT_FOUND,
-            ],
-        ],
-        BrowserConfigKey::TABLES => [
-            ChatBrowserTable::BOT_DETAIL => [
-                BrowserParamKey::PARAMS => [
-                    BotPageSubscribeParams::BOT_ID => ChatBrowserRef::BOT_ID,
-                ],
             ],
         ],
     ];

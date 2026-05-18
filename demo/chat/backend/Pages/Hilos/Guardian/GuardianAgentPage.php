@@ -5,8 +5,6 @@ declare(strict_types=1);
 namespace Demo\Chat\Pages\Hilos\Guardian;
 
 use Demo\Chat\Agents\Hilos\DemoHilosGuardianAgent;
-use Demo\Chat\Browser\ChatBrowserRef;
-use Demo\Chat\Browser\ChatBrowserTable;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Core\Page\DTO\GuardianAgentRunStartActionDTO;
 use Demo\Chat\Core\Page\DTO\GuardianAgentRunStopActionDTO;
@@ -34,13 +32,6 @@ final class GuardianAgentPage extends AbstractHilosGuardianAgentPage
         BrowserConfigKey::PARAMS => [
             HilosPageRouteParams::HILOS_GUARDIAN_AGENT_AGENT_ID => [
                 BrowserParamKey::REQUIRED => true,
-            ],
-        ],
-        BrowserConfigKey::TABLES => [
-            ChatBrowserTable::GUARDIAN_AGENT_STATUS_DETAIL => [
-                BrowserParamKey::PARAMS => [
-                    HilosPageRouteParams::HILOS_GUARDIAN_AGENT_AGENT_ID => ChatBrowserRef::HILOS_GUARDIAN_AGENT_ID,
-                ],
             ],
         ],
     ];

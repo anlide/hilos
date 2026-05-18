@@ -5,8 +5,6 @@ declare(strict_types=1);
 namespace Demo\Chat\Pages;
 
 use Demo\Chat\Agents\ChatAgent;
-use Demo\Chat\Browser\ChatBrowserRef;
-use Demo\Chat\Browser\ChatBrowserTable;
 use Demo\Chat\Constants\ChatFileUploadConstants;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\ConnectionRuntimeConstants;
@@ -27,8 +25,6 @@ use Hilos\Core\Exception\ItemNotFoundForDeleteException;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
-use Hilos\Core\Browser\Config\BrowserParamKey;
-use Hilos\Core\Browser\Config\BrowserRuntimeParam;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
@@ -49,21 +45,6 @@ final class MainPage extends AbstractPage
 
     public const array BROWSER = [
         BrowserConfigKey::SIGNAL => ChatSignalConstants::SUBSCRIPTION_PAGE_MAIN,
-        BrowserConfigKey::TABLES => [
-            ChatBrowserTable::MAIN_EVENTS => [],
-            ChatBrowserTable::MAIN_USERS => [],
-            ChatBrowserTable::MAIN_BOTS => [],
-            ChatBrowserTable::SELF_CONNECTION => [
-                BrowserParamKey::PARAMS => [
-                    BrowserRuntimeParam::ACCEPT_KEY => ChatBrowserRef::ACCEPT_KEY,
-                ],
-            ],
-            ChatBrowserTable::ATTACHMENT_DRAFTS => [
-                BrowserParamKey::PARAMS => [
-                    BrowserRuntimeParam::ACCEPT_KEY => ChatBrowserRef::ACCEPT_KEY,
-                ],
-            ],
-        ],
     ];
 
     /**

@@ -5,8 +5,6 @@ declare(strict_types=1);
 namespace Demo\Chat\Pages;
 
 use Demo\Chat\Agents\ChatAgent;
-use Demo\Chat\Browser\ChatBrowserRef;
-use Demo\Chat\Browser\ChatBrowserTable;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\ConnectionRuntimeConstants;
 use Demo\Chat\Constants\PageConstants;
@@ -20,8 +18,6 @@ use Hilos\Core\Agent\Exception\AgentException;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
-use Hilos\Core\Browser\Config\BrowserParamKey;
-use Hilos\Core\Browser\Config\BrowserRuntimeParam;
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Core\Exception\ValidationException;
@@ -43,13 +39,6 @@ final class ProfilePage extends AbstractPage
 
     public const array BROWSER = [
         BrowserConfigKey::SIGNAL => ChatSignalConstants::SUBSCRIPTION_PAGE_PROFILE,
-        BrowserConfigKey::TABLES => [
-            ChatBrowserTable::SELF_CONNECTION => [
-                BrowserParamKey::PARAMS => [
-                    BrowserRuntimeParam::ACCEPT_KEY => ChatBrowserRef::ACCEPT_KEY,
-                ],
-            ],
-        ],
     ];
 
     /**

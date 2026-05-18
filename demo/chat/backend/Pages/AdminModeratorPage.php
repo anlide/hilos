@@ -33,9 +33,6 @@ final class AdminModeratorPage extends AbstractPage
 
     public const array BROWSER = [
         BrowserConfigKey::SIGNAL => ChatSignalConstants::SUBSCRIPTION_PAGE_ADMIN_MODERATOR,
-        BrowserConfigKey::TABLES => [
-            ChatTableContext::moderatorPromptPieces => [],
-        ],
     ];
 
     /**

@@ -7,11 +7,9 @@ namespace Demo\Chat\Pages;
 use Demo\Chat\Agents\ChatAgent;
 use Demo\Chat\Browser\ChatBrowserRef;
 use Demo\Chat\Browser\ChatBrowserSource;
-use Demo\Chat\Browser\ChatBrowserTable;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Pages\DTO\UserPageSubscribeParams;
-use Hilos\Constants\HilosPageRouteParams;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Browser\Config\BrowserGuardKey;
 use Hilos\Core\Browser\Config\BrowserGuardType;
@@ -47,13 +45,6 @@ final class UserPage extends AbstractPage
                 BrowserGuardKey::SOURCE => ChatBrowserSource::DB_USERS,
                 BrowserGuardKey::KEY => ChatBrowserRef::USER_ID,
                 BrowserGuardKey::ERROR => BrowserSubscriptionError::NOT_FOUND,
-            ],
-        ],
-        BrowserConfigKey::TABLES => [
-            ChatBrowserTable::USER_DETAIL => [
-                BrowserParamKey::PARAMS => [
-                    HilosPageRouteParams::HILOS_USER_USER_ID => ChatBrowserRef::USER_ID,
-                ],
             ],
         ],
     ];

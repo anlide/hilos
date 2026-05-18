@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Pages\Hilos\Users;
 
-use Demo\Chat\Tables\ChatTableContext;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Pages\Users\AbstractHilosUsersPage;
@@ -19,8 +18,5 @@ final class UsersPage extends AbstractHilosUsersPage
 {
     public const array BROWSER = [
         BrowserConfigKey::SIGNAL => HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_USERS,
-        BrowserConfigKey::TABLES => [
-            ChatTableContext::hilosUsers => [],
-        ],
     ];
 }

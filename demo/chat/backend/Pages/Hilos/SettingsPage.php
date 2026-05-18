@@ -29,9 +29,6 @@ final class SettingsPage extends AbstractHilosSettingsPage
 {
     public const array BROWSER = [
         BrowserConfigKey::SIGNAL => ChatSignalConstants::SUBSCRIPTION_PAGE_HILOS_SETTINGS,
-        BrowserConfigKey::TABLES => [
-            ChatTableContext::settings => [],
-        ],
     ];
 
     /**

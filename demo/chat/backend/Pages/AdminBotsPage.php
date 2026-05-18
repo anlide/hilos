@@ -34,9 +34,6 @@ final class AdminBotsPage extends AbstractPage
 
     public const array BROWSER = [
         BrowserConfigKey::SIGNAL => ChatSignalConstants::SUBSCRIPTION_PAGE_ADMIN_BOTS,
-        BrowserConfigKey::TABLES => [
-            ChatTableContext::bots => [],
-        ],
     ];
 
     /**
