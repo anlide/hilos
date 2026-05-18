@@ -38,7 +38,7 @@ use Throwable;
 /**
  * Base browser-facing context.
  *
- * Project subclasses register browser-facing state helpers during configuration.
+ * Project subclasses provide topology and computed-field hooks when needed.
  */
 abstract class BrowserContext
 {
@@ -57,13 +57,6 @@ abstract class BrowserContext
     {
         $this->changes = new SourceChangeSet();
     }
-
-    /**
-     * Registers browser-facing state helpers.
-     *
-     * Called during Hilos::init().
-     */
-    abstract public function configure(): void;
 
     /**
      * Records a DB/RT sync fact in the worker-local browser buffer.

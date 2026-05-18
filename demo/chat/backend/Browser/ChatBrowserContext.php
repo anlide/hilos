@@ -34,13 +34,6 @@ use Throwable;
 final class ChatBrowserContext extends BrowserContext
 {
     /**
-     * Registers chat browser-facing state helpers.
-     */
-    public function configure(): void
-    {
-    }
-
-    /**
      * Resolves page browser config from the chat topology registry.
      *
      * @param string $page Page name from the subscription mirror

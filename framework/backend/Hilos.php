@@ -129,7 +129,6 @@ abstract class Hilos
 
         if (static::$browser === null) {
             static::$browser = static::createBrowser();
-            static::$browser?->configure();
         }
 
         if (static::$fs === null) {
@@ -216,7 +215,7 @@ abstract class Hilos
     }
 
     /**
-     * Replaces and configures the worker-local browser context.
+     * Replaces the worker-local browser context.
      *
      * Tests and bootstrap code can reset the browser source-change buffer without
      * assigning facade globals directly. When no context is passed, the active
@@ -227,7 +226,6 @@ abstract class Hilos
     public static function initBrowser(?BrowserContext $browser = null): void
     {
         static::$browser = $browser ?? static::createBrowser();
-        static::$browser?->configure();
     }
 
     /**

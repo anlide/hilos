@@ -273,10 +273,6 @@ final class BrowserContextEmitSignalsTestContext extends BrowserContext
         ],
     ];
 
-    public function configure(): void
-    {
-    }
-
     /**
      * Computes the test-only label declared in the browser table config.
      *
@@ -312,10 +308,6 @@ final class BrowserContextTopologyHooksTestContext extends BrowserContext
         BrowserSourceKey::TYPE => BrowserSourceType::RT,
         BrowserSourceKey::KEY => BrowserContextEmitSignalsTestRtContext::ROWS,
     ];
-
-    public function configure(): void
-    {
-    }
 
     /**
      * Reads page browser topology through the protected hook instead of static::PAGES.

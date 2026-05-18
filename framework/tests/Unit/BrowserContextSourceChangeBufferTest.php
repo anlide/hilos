@@ -119,10 +119,6 @@ final class BrowserContextSourceChangeBufferTestContext extends BrowserContext
     /** @var list<SourceChangeSet> */
     public array $emittedChangeSets = [];
 
-    public function configure(): void
-    {
-    }
-
     /**
      * Records the changes that reached the grouping hook.
      */
