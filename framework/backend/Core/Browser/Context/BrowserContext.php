@@ -343,6 +343,42 @@ abstract class BrowserContext
     }
 
     /**
+     * Resolves the browser config for one page.
+     *
+     * Project browser contexts may override this to read page topology from a
+     * facade registry while keeping static::PAGES as the framework fallback.
+     *
+     * @param string $page Page name from the subscription mirror
+     * @return array<string, mixed> Browser page config, or an empty array when absent
+     */
+    protected function resolveBrowserPageConfig(string $page): array
+    {
+        $config = static::PAGES[$page] ?? [];
+
+        return is_array($config) ? $config : [];
+    }
+
+    /**
+     * Resolves a browser-only table config.
+     *
+     * Returning null lets the generic table context fallback resolve ordinary
+     * registered table metadata without requiring it for browser-only topology.
+     *
+     * @param string $tableKey Browser table key
+     * @return ?array<string, mixed> Browser-only table config, or null when absent
+     */
+    protected function resolveBrowserOnlyTableConfig(string $tableKey): ?array
+    {
+        if (!array_key_exists($tableKey, static::TABLES)) {
+            return null;
+        }
+
+        $config = static::TABLES[$tableKey];
+
+        return is_array($config) ? $config : null;
+    }
+
+    /**
      * Returns the browser config for one page.
      *
      * @param string $page Page name from the subscription mirror
@@ -350,9 +386,7 @@ abstract class BrowserContext
      */
     private function pageConfig(string $page): array
     {
-        $config = static::PAGES[$page] ?? [];
-
-        return is_array($config) ? $config : [];
+        return $this->resolveBrowserPageConfig($page);
     }
 
     /**
@@ -400,8 +434,8 @@ abstract class BrowserContext
      */
     private function tableConfig(string $tableKey): array
     {
-        $browserConfig = static::TABLES[$tableKey] ?? null;
-        if (is_array($browserConfig)) {
+        $browserConfig = $this->resolveBrowserOnlyTableConfig($tableKey);
+        if ($browserConfig !== null) {
             return $browserConfig;
         }
 

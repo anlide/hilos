@@ -188,6 +188,48 @@ final class BrowserContextEmitSignalsTest extends TestCase
             $signal->data->data->toArray(),
         );
     }
+
+    public function testSubscribeSnapshotCanUseProtectedTopologyHooksWithoutTableContext(): void
+    {
+        Hilos::$sr = new SignalRouter();
+        Hilos::$rt = new BrowserContextEmitSignalsTestRtContext();
+        Hilos::$rt->configure();
+        Hilos::$rt->addRow(BrowserContextEmitSignalsTestState::create('1', 'Ada'));
+
+        (new BrowserContextTopologyHooksTestContext())->subscribeSnapshot(
+            BrowserContextTopologyHooksTestContext::PAGE,
+            'ak-1',
+            new PageRouteParams([]),
+        );
+
+        $signal = Hilos::$sr->getNextQueuedSignal();
+
+        $this->assertNull(Hilos::$table);
+        $this->assertNotNull($signal);
+        $this->assertSame(BrowserContextTopologyHooksTestContext::SIGNAL, $signal->signalName->getName());
+        $this->assertInstanceOf(WebSocketSignalData::class, $signal->data);
+        $this->assertInstanceOf(BrowserPageSignalData::class, $signal->data->data);
+        $this->assertSame(
+            [
+                BrowserPageSignalData::tables => [
+                    BrowserContextTopologyHooksTestContext::TABLE => [
+                        BrowserPageSignalData::rows => [
+                            [
+                                BrowserPageSignalData::rowKey => '1',
+                                BrowserPageSignalData::sources => [
+                                    BrowserContextEmitSignalsTestRtContext::ROWS => [
+                                        'id' => '1',
+                                        'displayName' => 'Ada',
+                                    ],
+                                ],
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+            $signal->data->data->toArray(),
+        );
+    }
 }
 
 final class BrowserContextEmitSignalsTestContext extends BrowserContext
@@ -257,6 +299,68 @@ final class BrowserContextEmitSignalsTestContext extends BrowserContext
         array $sources,
     ): mixed {
         return $field === 'computedLabel' ? "row-{$rowKey}" : null;
+    }
+}
+
+final class BrowserContextTopologyHooksTestContext extends BrowserContext
+{
+    public const string PAGE = 'topology_browser_page';
+    public const string SIGNAL = 'topology_browser_signal';
+    public const string TABLE = 'topologyRows';
+
+    private const array SOURCE = [
+        BrowserSourceKey::TYPE => BrowserSourceType::RT,
+        BrowserSourceKey::KEY => BrowserContextEmitSignalsTestRtContext::ROWS,
+    ];
+
+    public function configure(): void
+    {
+    }
+
+    /**
+     * Reads page browser topology through the protected hook instead of static::PAGES.
+     *
+     * @param string $page Page name from the subscription mirror
+     * @return array<string, mixed> Browser page config
+     */
+    protected function resolveBrowserPageConfig(string $page): array
+    {
+        if ($page !== self::PAGE) {
+            return [];
+        }
+
+        return [
+            BrowserConfigKey::SIGNAL => self::SIGNAL,
+            BrowserConfigKey::TABLES => [
+                self::TABLE => [],
+            ],
+        ];
+    }
+
+    /**
+     * Reads browser-only table topology through the protected hook instead of static::TABLES.
+     *
+     * @param string $tableKey Browser table key
+     * @return ?array<string, mixed> Browser-only table config
+     */
+    protected function resolveBrowserOnlyTableConfig(string $tableKey): ?array
+    {
+        if ($tableKey !== self::TABLE) {
+            return null;
+        }
+
+        return [
+            BrowserConfigKey::ROWS => [
+                [
+                    BrowserFieldKey::SOURCE => self::SOURCE,
+                    BrowserFieldKey::ROW_KEY => 'id',
+                    BrowserFieldKey::FIELDS => [
+                        'id',
+                        'name' => 'displayName',
+                    ],
+                ],
+            ],
+        ];
     }
 }
 
