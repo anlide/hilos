@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Tests\Unit;
 
+use Demo\Chat\Browser\ChatBrowserContext;
 use Demo\Chat\Hilos;
 use Demo\Chat\Pages\AdminBotsPage;
 use Demo\Chat\Pages\AdminModeratorPage;
@@ -17,8 +18,11 @@ use Demo\Chat\Pages\Hilos\Users\UsersPage as HilosUsersPage;
 use Demo\Chat\Pages\MainPage;
 use Demo\Chat\Pages\ProfilePage;
 use Demo\Chat\Pages\UserPage as ChatUserPage;
+use Demo\Chat\Tables\ChatTableContext;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
+use Hilos\Core\Browser\Context\BrowserContext;
 use PHPUnit\Framework\TestCase;
+use ReflectionClass;
 
 /**
  * Guards the project-level chat topology registry.
@@ -75,6 +79,56 @@ final class ChatTopologyRegistryTest extends TestCase
                 Hilos::PAGE_TABLES[$pageClass::PAGE],
             );
         }
+    }
+
+    public function testChatBrowserContextDoesNotOwnManualTopologyLists(): void
+    {
+        $reflection = new ReflectionClass(ChatBrowserContext::class);
+        $pageConstant = $reflection->getReflectionConstant('PAGES');
+        $tableConstant = $reflection->getReflectionConstant('TABLES');
+
+        $this->assertNotFalse($pageConstant);
+        $this->assertNotFalse($tableConstant);
+        $this->assertSame(BrowserContext::class, $pageConstant->getDeclaringClass()->getName());
+        $this->assertSame(BrowserContext::class, $tableConstant->getDeclaringClass()->getName());
+    }
+
+    public function testChatBrowserContextResolvesPageConfigsFromTopology(): void
+    {
+        $context = new ChatBrowserContext();
+        $resolvePageConfig = \Closure::bind(
+            static fn(ChatBrowserContext $context, string $page): array => $context->resolveBrowserPageConfig($page),
+            null,
+            ChatBrowserContext::class,
+        );
+
+        foreach (Hilos::PAGES as $page => $pageClass) {
+            $expectedConfig = $pageClass::BROWSER;
+            if ($expectedConfig !== [] || array_key_exists($page, Hilos::PAGE_TABLES)) {
+                $expectedConfig[BrowserConfigKey::TABLES] = Hilos::PAGE_TABLES[$page] ?? [];
+            }
+
+            $this->assertSame($expectedConfig, $resolvePageConfig($context, $page));
+        }
+
+        $this->assertSame([], $resolvePageConfig($context, 'missing_page'));
+    }
+
+    public function testChatBrowserContextResolvesBrowserOnlyTablesFromTopology(): void
+    {
+        $context = new ChatBrowserContext();
+        $resolveTableConfig = \Closure::bind(
+            static fn(ChatBrowserContext $context, string $tableKey): ?array => $context->resolveBrowserOnlyTableConfig($tableKey),
+            null,
+            ChatBrowserContext::class,
+        );
+
+        foreach (Hilos::BROWSER_TABLES as $table => $tableClass) {
+            $this->assertSame($tableClass::BROWSER, $resolveTableConfig($context, $table));
+        }
+
+        $this->assertNull($resolveTableConfig($context, ChatTableContext::settings));
+        $this->assertNull($resolveTableConfig($context, 'missing_table'));
     }
 
     /**

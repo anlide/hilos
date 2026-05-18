@@ -4,38 +4,17 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Browser;
 
-use Demo\Chat\Browser\Table\AttachmentDraftsBrowserTable;
-use Demo\Chat\Browser\Table\BotDetailBrowserTable;
-use Demo\Chat\Browser\Table\GuardianAgentStatusDetailBrowserTable;
-use Demo\Chat\Browser\Table\GuardianAgentStatusesBrowserTable;
-use Demo\Chat\Browser\Table\MainBotsBrowserTable;
-use Demo\Chat\Browser\Table\MainEventsBrowserTable;
-use Demo\Chat\Browser\Table\MainUsersBrowserTable;
-use Demo\Chat\Browser\Table\SelfConnectionBrowserTable;
-use Demo\Chat\Browser\Table\UserDetailBrowserTable;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Core\Router\DTO\SelfConnectionSignalData;
 use Demo\Chat\Hilos;
-use Demo\Chat\Pages\AdminBotsPage;
-use Demo\Chat\Pages\AdminModeratorPage;
-use Demo\Chat\Pages\AdminPage;
-use Demo\Chat\Pages\AdminUsersPage;
-use Demo\Chat\Pages\BotPage;
 use Demo\Chat\Pages\Hilos\SettingsPage;
-use Demo\Chat\Pages\Hilos\Guardian\GuardianAgentPage;
-use Demo\Chat\Pages\Hilos\GuardianPage;
-use Demo\Chat\Pages\Hilos\Users\UserPage as HilosUserPage;
-use Demo\Chat\Pages\Hilos\Users\UsersPage as HilosUsersPage;
-use Demo\Chat\Pages\MainPage;
-use Demo\Chat\Pages\ModeratorPage;
-use Demo\Chat\Pages\ProfilePage;
-use Demo\Chat\Pages\UserPage as ChatUserPage;
 use Demo\Chat\Runtime\View\DTO\UserConnectionSummary;
 use Demo\Chat\Tables\ChatTableContext;
 use Demo\Chat\Tables\Settings\SettingTableRow;
 use Demo\Chat\Tables\Settings\SettingsTable;
 use Hilos\Constants\SignalPayloadConstants;
 use Hilos\Constants\SignalTypeConstants;
+use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Page\Exception\PageSubscriptionException;
@@ -54,40 +33,54 @@ use Throwable;
  */
 final class ChatBrowserContext extends BrowserContext
 {
-    public const array PAGES = [
-        MainPage::PAGE => MainPage::BROWSER,
-        ProfilePage::PAGE => ProfilePage::BROWSER,
-        ModeratorPage::PAGE => ModeratorPage::BROWSER,
-        AdminPage::PAGE => AdminPage::BROWSER,
-        AdminUsersPage::PAGE => AdminUsersPage::BROWSER,
-        AdminBotsPage::PAGE => AdminBotsPage::BROWSER,
-        AdminModeratorPage::PAGE => AdminModeratorPage::BROWSER,
-        BotPage::PAGE => BotPage::BROWSER,
-        ChatUserPage::PAGE => ChatUserPage::BROWSER,
-        SettingsPage::PAGE => SettingsPage::BROWSER,
-        GuardianPage::PAGE => GuardianPage::BROWSER,
-        GuardianAgentPage::PAGE => GuardianAgentPage::BROWSER,
-        HilosUsersPage::PAGE => HilosUsersPage::BROWSER,
-        HilosUserPage::PAGE => HilosUserPage::BROWSER,
-    ];
-
-    public const array TABLES = [
-        MainEventsBrowserTable::TABLE => MainEventsBrowserTable::BROWSER,
-        MainUsersBrowserTable::TABLE => MainUsersBrowserTable::BROWSER,
-        MainBotsBrowserTable::TABLE => MainBotsBrowserTable::BROWSER,
-        SelfConnectionBrowserTable::TABLE => SelfConnectionBrowserTable::BROWSER,
-        AttachmentDraftsBrowserTable::TABLE => AttachmentDraftsBrowserTable::BROWSER,
-        BotDetailBrowserTable::TABLE => BotDetailBrowserTable::BROWSER,
-        UserDetailBrowserTable::TABLE => UserDetailBrowserTable::BROWSER,
-        GuardianAgentStatusesBrowserTable::TABLE => GuardianAgentStatusesBrowserTable::BROWSER,
-        GuardianAgentStatusDetailBrowserTable::TABLE => GuardianAgentStatusDetailBrowserTable::BROWSER,
-    ];
-
     /**
      * Registers chat browser-facing state helpers.
      */
     public function configure(): void
     {
+    }
+
+    /**
+     * Resolves page browser config from the chat topology registry.
+     *
+     * @param string $page Page name from the subscription mirror
+     * @return array<string, mixed> Browser page config, or an empty array when absent
+     */
+    protected function resolveBrowserPageConfig(string $page): array
+    {
+        $pageClass = Hilos::PAGES[$page] ?? null;
+        if (!is_string($pageClass) || !class_exists($pageClass)) {
+            return [];
+        }
+
+        /** @var array<string, mixed> $config */
+        $config = $pageClass::BROWSER;
+        if ($config === [] && !array_key_exists($page, Hilos::PAGE_TABLES)) {
+            return [];
+        }
+
+        $config[BrowserConfigKey::TABLES] = Hilos::PAGE_TABLES[$page] ?? [];
+
+        return $config;
+    }
+
+    /**
+     * Resolves browser-only table config from the chat topology registry.
+     *
+     * @param string $tableKey Browser table key
+     * @return ?array<string, mixed> Browser-only table config, or null when absent
+     */
+    protected function resolveBrowserOnlyTableConfig(string $tableKey): ?array
+    {
+        $tableClass = Hilos::BROWSER_TABLES[$tableKey] ?? null;
+        if (!is_string($tableClass) || !class_exists($tableClass)) {
+            return null;
+        }
+
+        /** @var array<string, mixed> $config */
+        $config = $tableClass::BROWSER;
+
+        return $config;
     }
 
     /**
