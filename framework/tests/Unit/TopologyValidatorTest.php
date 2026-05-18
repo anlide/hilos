@@ -42,6 +42,14 @@ final class TopologyValidatorTest extends TestCase
         $this->addToAssertionCount(1);
     }
 
+    public function testComputedPageRoutesComeFromRegisteredPageClasses(): void
+    {
+        $this->assertSame(
+            [TopologyValidPage::PAGE => TopologyValidPage::SUBSCRIPTION_AGENT_TYPE],
+            TopologyValidHilos::getPageRoutes(),
+        );
+    }
+
     public function testPageRegistryRejectsBrokenPageClasses(): void
     {
         $this->assertTopologyErrors(
@@ -58,14 +66,22 @@ final class TopologyValidatorTest extends TestCase
         );
     }
 
-    public function testPageRoutesAndPageTablesRejectUnknownPages(): void
+    public function testPageSubscriptionOwnersMustBeNonEmpty(): void
+    {
+        $this->expectException(InvalidTopologyException::class);
+        $this->expectExceptionMessage('PAGES[missing_owner_page] class');
+        $this->expectExceptionMessage('must declare a non-empty SUBSCRIPTION_AGENT_TYPE');
+
+        TopologyMissingSubscriptionOwnerHilos::validateTopology();
+    }
+
+    public function testPageTablesRejectUnknownPages(): void
     {
         $this->assertTopologyErrors(
             static function (): void {
-                TopologyUnknownPageReferenceHilos::validateTopology();
+                TopologyUnknownPageTableReferenceHilos::validateTopology();
             },
             [
-                'PAGE_ROUTES[missing_page] references a page missing from PAGES',
                 'PAGE_TABLES[missing_page] references a page missing from PAGES',
             ],
         );
@@ -139,9 +155,16 @@ final class TopologyValidPage extends AbstractPage
 {
     public const string PAGE = 'valid_page';
 
+    public const string SUBSCRIPTION_AGENT_TYPE = 'valid_agent';
+
     public const array BROWSER = [
         BrowserConfigKey::SIGNAL => 'valid_signal',
     ];
+}
+
+final class TopologyMissingSubscriptionOwnerPage extends AbstractPage
+{
+    public const string PAGE = 'missing_owner_page';
 }
 
 final class TopologyMismatchedPage extends AbstractPage
@@ -200,10 +223,6 @@ final class TopologyValidHilos extends HilosFacade
         TopologyValidPage::PAGE => TopologyValidPage::class,
     ];
 
-    public const array PAGE_ROUTES = [
-        TopologyValidPage::PAGE => 'valid_agent',
-    ];
-
     public const array TABLES = [
         'valid_table' => TopologyValidTable::class,
     ];
@@ -249,14 +268,27 @@ final class TopologyInvalidPagesHilos extends HilosFacade
     }
 }
 
-final class TopologyUnknownPageReferenceHilos extends HilosFacade
+final class TopologyMissingSubscriptionOwnerHilos extends HilosFacade
+{
+    public const array PAGES = [
+        TopologyMissingSubscriptionOwnerPage::PAGE => TopologyMissingSubscriptionOwnerPage::class,
+    ];
+
+    /**
+     * Creates a no-op DB context for tests.
+     *
+     * @return DbContext Test DB context
+     */
+    protected static function createDb(): DbContext
+    {
+        return new TopologyTestDbContext();
+    }
+}
+
+final class TopologyUnknownPageTableReferenceHilos extends HilosFacade
 {
     public const array PAGES = [
         TopologyValidPage::PAGE => TopologyValidPage::class,
-    ];
-
-    public const array PAGE_ROUTES = [
-        'missing_page' => 'valid_agent',
     ];
 
     public const array PAGE_TABLES = [

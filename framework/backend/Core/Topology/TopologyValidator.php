@@ -25,7 +25,6 @@ final class TopologyValidator
     {
         $errors = [];
         $pages = $this->constantArray($hilosClass, 'PAGES', $errors);
-        $pageRoutes = $this->constantArray($hilosClass, 'PAGE_ROUTES', $errors);
         $tables = $this->constantArray($hilosClass, 'TABLES', $errors);
         $browserTables = $this->constantArray($hilosClass, 'BROWSER_TABLES', $errors);
         $pageTables = $this->constantArray($hilosClass, 'PAGE_TABLES', $errors);
@@ -33,7 +32,7 @@ final class TopologyValidator
         $this->validatePages($pages, $errors);
         $this->validateRegisteredTables($tables, $errors);
         $this->validateBrowserTables($browserTables, $errors);
-        $this->validatePageRoutes($pages, $pageRoutes, $errors);
+        $this->validatePageRoutes($pages, $hilosClass::getPageRoutes(), $errors);
         $this->validatePageTables($pages, $tables, $browserTables, $pageTables, $errors);
 
         if ($errors !== []) {
@@ -169,22 +168,42 @@ final class TopologyValidator
     }
 
     /**
-     * Validates page route declarations against registered pages.
+     * Validates computed page route declarations against registered pages.
      *
      * @param array<mixed, mixed> $pages Page registry
-     * @param array<mixed, mixed> $pageRoutes Page route registry
+     * @param array<mixed, mixed> $pageRoutes Computed page route registry
      * @param list<string> $errors Validation error accumulator
      */
     private function validatePageRoutes(array $pages, array $pageRoutes, array &$errors): void
     {
+        foreach ($pages as $page => $pageClass) {
+            if (!is_string($page)) {
+                continue;
+            }
+
+            if (!array_key_exists($page, $pageRoutes)) {
+                $errors[] = "PAGES[{$page}] is missing from computed page routes";
+                continue;
+            }
+
+            $agentType = $pageRoutes[$page];
+            if (!is_string($agentType) || $agentType === '') {
+                if (is_string($pageClass)) {
+                    $errors[] = "PAGES[{$page}] class {$pageClass} must declare a non-empty SUBSCRIPTION_AGENT_TYPE";
+                } else {
+                    $errors[] = "PAGES[{$page}] must declare a non-empty SUBSCRIPTION_AGENT_TYPE";
+                }
+            }
+        }
+
         foreach ($pageRoutes as $page => $_agentType) {
             if (!is_string($page)) {
-                $errors[] = 'PAGE_ROUTES contains a non-string page key';
+                $errors[] = 'Computed page routes contain a non-string page key';
                 continue;
             }
 
             if (!array_key_exists($page, $pages)) {
-                $errors[] = "PAGE_ROUTES[{$page}] references a page missing from PAGES";
+                $errors[] = "Computed page route {$page} references a page missing from PAGES";
             }
         }
     }

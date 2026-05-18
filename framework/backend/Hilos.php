@@ -6,6 +6,7 @@ namespace Hilos;
 
 use Hilos\Core\Analytics\AnalyticsCollector;
 use Hilos\Core\Browser\Context\BrowserContext;
+use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Table\Context\TableContext;
 use Hilos\Core\Topology\Exception\InvalidTopologyException;
@@ -35,9 +36,6 @@ abstract class Hilos
 {
     /** Page classes keyed by page name. */
     public const array PAGES = [];
-
-    /** Page subscription routes keyed by page name. */
-    public const array PAGE_ROUTES = [];
 
     /** Registered table definition classes keyed by table name. */
     public const array TABLES = [];
@@ -74,6 +72,27 @@ abstract class Hilos
 
     /** @var ?AnalyticsCollector Analytics collector singleton */
     public static ?AnalyticsCollector $ac = null;
+
+    /**
+     * Returns page subscription owner agent types declared by registered page classes.
+     *
+     * Invalid page registry entries are skipped here and reported by topology validation.
+     *
+     * @return array<string, string> Agent type keyed by page name
+     */
+    public static function getPageRoutes(): array
+    {
+        $pageRoutes = [];
+        foreach (static::PAGES as $page => $pageClass) {
+            if (!is_string($page) || !is_string($pageClass) || !is_subclass_of($pageClass, AbstractPage::class)) {
+                continue;
+            }
+
+            $pageRoutes[$page] = $pageClass::SUBSCRIPTION_AGENT_TYPE;
+        }
+
+        return $pageRoutes;
+    }
 
     /**
      * Initializes env, settings, storage, runtime, table, browser, and filesystem layers.

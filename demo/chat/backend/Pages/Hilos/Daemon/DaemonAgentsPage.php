@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Pages\Hilos\Daemon;
 
+use Demo\Chat\Constants\AgentType;
 use Hilos\Pages\Daemon\AbstractHilosDaemonAgentsPage;
 
 /**
@@ -11,4 +12,5 @@ use Hilos\Pages\Daemon\AbstractHilosDaemonAgentsPage;
  */
 final class DaemonAgentsPage extends AbstractHilosDaemonAgentsPage
 {
+    public const string SUBSCRIPTION_AGENT_TYPE = AgentType::HILOS_INDEX;
 }

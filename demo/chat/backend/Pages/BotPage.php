@@ -7,6 +7,7 @@ namespace Demo\Chat\Pages;
 use Demo\Chat\Agents\BotAgent;
 use Demo\Chat\Browser\ChatBrowserRef;
 use Demo\Chat\Browser\ChatBrowserSource;
+use Demo\Chat\Constants\AgentType;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Pages\DTO\BotPageSubscribeParams;
@@ -34,6 +35,8 @@ use Hilos\Core\Page\PageRouteParams;
 final class BotPage extends AbstractPage
 {
     public const string PAGE = PageConstants::BOT;
+
+    public const string SUBSCRIPTION_AGENT_TYPE = AgentType::BOT;
 
     public const array BROWSER = [
         BrowserConfigKey::SIGNAL => ChatSignalConstants::SUBSCRIPTION_PAGE_BOT,

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Pages\Hilos\Billing;
 
+use Demo\Chat\Constants\AgentType;
 use Hilos\Pages\Billing\AbstractHilosBillingPaymentsPage;
 
 /**
@@ -11,4 +12,5 @@ use Hilos\Pages\Billing\AbstractHilosBillingPaymentsPage;
  */
 final class BillingPaymentsPage extends AbstractHilosBillingPaymentsPage
 {
+    public const string SUBSCRIPTION_AGENT_TYPE = AgentType::HILOS_INDEX;
 }

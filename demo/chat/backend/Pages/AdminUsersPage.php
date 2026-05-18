@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Demo\Chat\Pages;
 
 use Demo\Chat\Agents\ChatAgent;
+use Demo\Chat\Constants\AgentType;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Hilos;
@@ -28,6 +29,8 @@ use Throwable;
 final class AdminUsersPage extends AbstractPage
 {
     public const string PAGE = PageConstants::ADMIN_USERS;
+
+    public const string SUBSCRIPTION_AGENT_TYPE = AgentType::CHAT;
 
     public const array BROWSER = [
         BrowserConfigKey::SIGNAL => ChatSignalConstants::SUBSCRIPTION_PAGE_ADMIN_USERS,

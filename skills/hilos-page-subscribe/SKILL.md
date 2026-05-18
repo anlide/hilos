@@ -30,8 +30,8 @@ signals back to their source.
    `onSubscribe(string $acceptKey, PageRouteParams $params): void` empty and
    skip the DTO.
 2. When adding a page or changing its subscription owner, update project
-   topology through `Hilos::PAGES` and `Hilos::PAGE_ROUTES` as described in
-   `docs/agents/app-topology.md`.
+   topology through `Hilos::PAGES` and page `SUBSCRIPTION_AGENT_TYPE` as
+   described in `docs/agents/app-topology.md`.
 3. For pages with params, add the key to `Hilos\Constants\HilosPageRouteParams`
    (or a page-level constant for demo-only pages) and mirror it in
    `framework/frontend/src/constants/hilosPageRouteParams.ts` if the frontend
@@ -73,7 +73,7 @@ signals back to their source.
   `InvalidPageRouteParamException` inside page code; let the router convert
   them into a `subscription_page_error` signal.
 - Do not keep page subscription ownership only in router config when the
-  project has `Hilos::PAGE_ROUTES`.
+  project can compute it through `Hilos::getPageRoutes()`.
 - Once an abstract page introduces a typed subscribe DTO, keep its
   `onSubscribe()` / `onUpdateSubscription()` `final` so subclasses cannot
   bypass the parsed DTO.

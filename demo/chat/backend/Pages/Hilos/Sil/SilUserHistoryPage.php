@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Pages\Hilos\Sil;
 
+use Demo\Chat\Constants\AgentType;
 use Hilos\Pages\Sil\AbstractHilosSilUserHistoryPage;
 
 /**
@@ -11,4 +12,5 @@ use Hilos\Pages\Sil\AbstractHilosSilUserHistoryPage;
  */
 final class SilUserHistoryPage extends AbstractHilosSilUserHistoryPage
 {
+    public const string SUBSCRIPTION_AGENT_TYPE = AgentType::HILOS_INDEX;
 }

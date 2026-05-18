@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Demo\Chat\Pages;
 
 use Demo\Chat\Agents\ChatAgent;
+use Demo\Chat\Constants\AgentType;
 use Demo\Chat\Constants\ChatFileUploadConstants;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\ConnectionRuntimeConstants;
@@ -42,6 +43,8 @@ use Hilos\Utils\Helpers\FileSystemHelper;
 final class MainPage extends AbstractPage
 {
     public const string PAGE = PageConstants::MAIN;
+
+    public const string SUBSCRIPTION_AGENT_TYPE = AgentType::CHAT;
 
     public const array BROWSER = [
         BrowserConfigKey::SIGNAL => ChatSignalConstants::SUBSCRIPTION_PAGE_MAIN,

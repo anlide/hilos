@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Pages\Hilos\Users;
 
+use Demo\Chat\Constants\AgentType;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Pages\Users\AbstractHilosUsersPage;
@@ -16,6 +17,8 @@ use Hilos\Pages\Users\AbstractHilosUsersPage;
  */
 final class UsersPage extends AbstractHilosUsersPage
 {
+    public const string SUBSCRIPTION_AGENT_TYPE = AgentType::HILOS_INDEX;
+
     public const array BROWSER = [
         BrowserConfigKey::SIGNAL => HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_USERS,
     ];

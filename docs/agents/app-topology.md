@@ -5,17 +5,20 @@ registered tables, browser-only tables, or page-table browser bindings.
 
 ## Core Rule
 
-Declare application topology in the project `Hilos` facade constants. Do not
-rebuild local page, route, or table lists in page factories, browser contexts,
-signal routers, or table contexts when they can read the project registry.
+Declare application topology in the project `Hilos` facade registry and
+page-owned constants. Do not rebuild local page, route, or table lists in page
+factories, browser contexts, signal routers, or table contexts when they can
+read the project registry.
 
 ## Registry
 
 - `Hilos::PAGES` registers page classes keyed by each page class `::PAGE`
   value.
-- `Hilos::PAGE_ROUTES` declares page subscription routing by page key to agent
-  type. Signal router subclasses should import this registry instead of owning
-  a duplicate page-to-agent list.
+- Each page class declares its page subscription owner in
+  `PageClass::SUBSCRIPTION_AGENT_TYPE`. `Hilos::getPageRoutes()` computes the
+  page-to-agent routing map from `Hilos::PAGES` and those page-level constants.
+  Signal router subclasses should import that computed registry instead of
+  owning a duplicate page-to-agent list.
 - `Hilos::TABLES` registers server table definition classes keyed by table
   name.
 - `Hilos::BROWSER_TABLES` registers browser-only table config classes keyed by
@@ -26,13 +29,15 @@ signal routers, or table contexts when they can read the project registry.
 
 `Hilos::validateTopology()` runs before layer initialization and checks the
 registry for missing classes, mismatched keys, unknown page/table references,
-and page-local table bindings that should live in `Hilos::PAGE_TABLES`.
+missing page subscription owners, and page-local table bindings that should
+live in `Hilos::PAGE_TABLES`.
 
 ## Workflow
 
 1. For a new page, add the page class to `Hilos::PAGES` using
    `SomePage::PAGE => SomePage::class`.
-2. Declare the page subscription owner in `Hilos::PAGE_ROUTES`.
+2. Declare the page subscription owner in the page class:
+   `public const string SUBSCRIPTION_AGENT_TYPE = AgentType::CHAT;`.
 3. For a server table definition, add the table class to `Hilos::TABLES`.
 4. For a browser-only table config, add the config class to
    `Hilos::BROWSER_TABLES`.
@@ -46,12 +51,15 @@ and page-local table bindings that should live in `Hilos::PAGE_TABLES`.
 ## Preferred Shape
 
 ```php
+final class MainPage extends AbstractPage
+{
+    public const string PAGE = PageConstants::MAIN;
+
+    public const string SUBSCRIPTION_AGENT_TYPE = AgentType::CHAT;
+}
+
 public const array PAGES = [
     MainPage::PAGE => MainPage::class,
-];
-
-public const array PAGE_ROUTES = [
-    MainPage::PAGE => AgentType::CHAT,
 ];
 
 public const array TABLES = [
@@ -78,7 +86,7 @@ public const array PAGE_TABLES = [
 - Do not put page-table bindings in page `BROWSER` constants; use
   `Hilos::PAGE_TABLES`.
 - Do not keep page subscription routing only in `SignalRouter` config when the
-  project has `Hilos::PAGE_ROUTES`.
+  project can compute it through `Hilos::getPageRoutes()`.
 - Do not register a page, table, or browser table under a key that differs from
   the class constant that owns that key.
 
@@ -86,9 +94,9 @@ public const array PAGE_TABLES = [
 
 The root `AGENTS.md` contract approval gate still applies before
 implementation. Stop and ask for explicit confirmation before changing
-`Hilos::PAGE_ROUTES`, `SignalRouter`, `PageSignalRouter`, or page/worker route
-config. The confirmation must list the exact pages, agent routes, signal DTOs,
-and route declarations that would change.
+page `SUBSCRIPTION_AGENT_TYPE` values, `SignalRouter`, `PageSignalRouter`, or
+page/worker route config. The confirmation must list the exact pages, agent
+routes, signal DTOs, and route declarations that would change.
 
 ## Validation
 

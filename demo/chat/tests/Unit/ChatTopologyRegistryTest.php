@@ -21,9 +21,9 @@ use ReflectionClass;
  */
 final class ChatTopologyRegistryTest extends TestCase
 {
-    public function testPageRoutesCoverEveryRegisteredPage(): void
+    public function testComputedPageRoutesCoverEveryRegisteredPage(): void
     {
-        $this->assertSame(array_keys(Hilos::PAGES), array_keys(Hilos::PAGE_ROUTES));
+        $this->assertSame(array_keys(Hilos::PAGES), array_keys(Hilos::getPageRoutes()));
     }
 
     public function testRegistryValuesAreClassStrings(): void
@@ -38,6 +38,16 @@ final class ChatTopologyRegistryTest extends TestCase
     {
         foreach (Hilos::PAGES as $page => $pageClass) {
             $this->assertSame($page, $pageClass::PAGE);
+        }
+    }
+
+    public function testPageSubscriptionOwnersAreDeclaredByPageClasses(): void
+    {
+        $pageRoutes = Hilos::getPageRoutes();
+
+        foreach (Hilos::PAGES as $page => $pageClass) {
+            $this->assertSame($pageClass::SUBSCRIPTION_AGENT_TYPE, $pageRoutes[$page]);
+            $this->assertNotSame('', $pageClass::SUBSCRIPTION_AGENT_TYPE, "{$page} must declare a subscription owner");
         }
     }
 

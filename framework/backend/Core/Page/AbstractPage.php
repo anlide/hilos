@@ -31,6 +31,9 @@ abstract class AbstractPage
     /** Page name or identifier, overridden by concrete pages. */
     public const string PAGE = '';
 
+    /** Agent type that owns subscription signals for this page. */
+    public const string SUBSCRIPTION_AGENT_TYPE = '';
+
     /** Browser data config declared by data-bearing pages. */
     public const array BROWSER = [];
 

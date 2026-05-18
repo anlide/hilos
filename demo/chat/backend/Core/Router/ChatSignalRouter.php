@@ -33,8 +33,9 @@ final class ChatSignalRouter extends SignalRouter
     {
         parent::__construct();
 
+        $pageRoutes = Hilos::getPageRoutes();
         $pages = [];
-        foreach (Hilos::PAGE_ROUTES as $page => $agentType) {
+        foreach ($pageRoutes as $page => $agentType) {
             $pages[$page] = [
                 'agentType' => $agentType,
                 'agentIndex' => null,
@@ -85,7 +86,7 @@ final class ChatSignalRouter extends SignalRouter
 
         $pageSubscriptionRouting = [
             'default' => AgentType::CHAT,
-            'pages' => Hilos::PAGE_ROUTES,
+            'pages' => $pageRoutes,
         ];
 
         $actions = [

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Pages\Hilos\ChangeLog;
 
+use Demo\Chat\Constants\AgentType;
 use Hilos\Pages\ChangeLog\AbstractHilosChangeLogDashboardPage;
 
 /**
@@ -11,4 +12,5 @@ use Hilos\Pages\ChangeLog\AbstractHilosChangeLogDashboardPage;
  */
 final class ChangeLogDashboardPage extends AbstractHilosChangeLogDashboardPage
 {
+    public const string SUBSCRIPTION_AGENT_TYPE = AgentType::HILOS_INDEX;
 }

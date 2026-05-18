@@ -1,6 +1,6 @@
 ---
 name: hilos-signals
-description: Work with Hilos signal routing, SignalRouter declarations, Hilos::PAGE_ROUTES topology, signal payload DTOs, page subscriptions, group subscriptions, sendToUser, sendToGroup, sendToAgent, client-server actions, server-client signals, and signal delivery debugging. Use when adding, changing, or tracing Hilos signal flow.
+description: Work with Hilos signal routing, SignalRouter declarations, page subscription topology, signal payload DTOs, page subscriptions, group subscriptions, sendToUser, sendToGroup, sendToAgent, client-server actions, server-client signals, and signal delivery debugging. Use when adding, changing, or tracing Hilos signal flow.
 ---
 
 # Hilos Signals
@@ -21,9 +21,9 @@ Use this skill for every change that affects signal shape, route, subscription, 
 ## Workflow
 
 1. Identify the signal source and destination: WS, agent, DB sync, RT sync, cron, or system.
-2. For project page subscription routing, update `Hilos::PAGE_ROUTES` through
-   `docs/agents/app-topology.md`; otherwise add or update declarative routing
-   in `SignalRouter`.
+2. For project page subscription routing, update page
+   `SUBSCRIPTION_AGENT_TYPE` values through `docs/agents/app-topology.md`;
+   otherwise add or update declarative routing in `SignalRouter`.
 3. Route named signal handlers with `switch ($name)` and explicit cases.
 4. Omit empty `default` branches in partial shared-broadcast handlers; document
    the ignore contract in PHPDoc instead.
@@ -36,6 +36,7 @@ Use this skill for every change that affects signal shape, route, subscription, 
 
 - Never run `git commit` or `git push`.
 - Keep routing declarative in `SignalRouter`.
-- Keep project page subscription ownership in `Hilos::PAGE_ROUTES`.
+- Keep project page subscription ownership on page `SUBSCRIPTION_AGENT_TYPE`
+  constants.
 - Do not hide subscription or delivery decisions inside unrelated business logic.
 - Preserve envelope metadata when DTOs cross worker and daemon boundaries.

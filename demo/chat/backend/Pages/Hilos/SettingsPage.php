@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Pages\Hilos;
 
+use Demo\Chat\Constants\AgentType;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Hilos;
 use Demo\Chat\Tables\ChatTableContext;
@@ -27,6 +28,8 @@ use Throwable;
  */
 final class SettingsPage extends AbstractHilosSettingsPage
 {
+    public const string SUBSCRIPTION_AGENT_TYPE = AgentType::HILOS_INDEX;
+
     public const array BROWSER = [
         BrowserConfigKey::SIGNAL => ChatSignalConstants::SUBSCRIPTION_PAGE_HILOS_SETTINGS,
     ];

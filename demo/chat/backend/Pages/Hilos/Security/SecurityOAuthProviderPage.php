@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Pages\Hilos\Security;
 
+use Demo\Chat\Constants\AgentType;
 use Hilos\Pages\Security\AbstractHilosSecurityOAuthProviderPage;
 
 /**
@@ -11,4 +12,5 @@ use Hilos\Pages\Security\AbstractHilosSecurityOAuthProviderPage;
  */
 final class SecurityOAuthProviderPage extends AbstractHilosSecurityOAuthProviderPage
 {
+    public const string SUBSCRIPTION_AGENT_TYPE = AgentType::HILOS_INDEX;
 }

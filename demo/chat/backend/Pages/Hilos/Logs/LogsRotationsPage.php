@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Pages\Hilos\Logs;
 
+use Demo\Chat\Constants\AgentType;
 use Hilos\Pages\Logs\AbstractHilosLogsRotationsPage;
 
 /**
@@ -11,4 +12,5 @@ use Hilos\Pages\Logs\AbstractHilosLogsRotationsPage;
  */
 final class LogsRotationsPage extends AbstractHilosLogsRotationsPage
 {
+    public const string SUBSCRIPTION_AGENT_TYPE = AgentType::HILOS_INDEX;
 }

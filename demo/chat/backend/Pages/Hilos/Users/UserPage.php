@@ -6,6 +6,7 @@ namespace Demo\Chat\Pages\Hilos\Users;
 
 use Demo\Chat\Browser\ChatBrowserRef;
 use Demo\Chat\Browser\ChatBrowserSource;
+use Demo\Chat\Constants\AgentType;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Core\Router\DTO\ActionFailSignalData;
 use Demo\Chat\Core\Router\DTO\ActionSuccessSignalData;
@@ -35,6 +36,8 @@ use Throwable;
  */
 final class UserPage extends AbstractHilosUserPage
 {
+    public const string SUBSCRIPTION_AGENT_TYPE = AgentType::HILOS_INDEX;
+
     public const array BROWSER = [
         BrowserConfigKey::SIGNAL => HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_USER,
         BrowserConfigKey::PARAMS => [

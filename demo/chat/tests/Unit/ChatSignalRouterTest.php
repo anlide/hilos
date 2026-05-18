@@ -83,7 +83,7 @@ final class ChatSignalRouterTest extends TestCase
             ));
 
             $this->assertSame([
-                ['type' => 'agent', 'agentType' => Hilos::PAGE_ROUTES[$page], 'agentIndex' => null],
+                ['type' => 'agent', 'agentType' => Hilos::getPageRoutes()[$page], 'agentIndex' => null],
             ], $destinations);
         }
     }

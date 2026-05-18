@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Demo\Chat\Pages\Hilos\Guardian;
 
 use Demo\Chat\Agents\Hilos\DemoHilosGuardianAgent;
+use Demo\Chat\Constants\AgentType;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Core\Page\DTO\GuardianAgentRunStartActionDTO;
 use Demo\Chat\Core\Page\DTO\GuardianAgentRunStopActionDTO;
@@ -27,6 +28,8 @@ use Throwable;
  */
 final class GuardianAgentPage extends AbstractHilosGuardianAgentPage
 {
+    public const string SUBSCRIPTION_AGENT_TYPE = AgentType::HILOS_GUARDIAN;
+
     public const array BROWSER = [
         BrowserConfigKey::SIGNAL => HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_GUARDIAN_AGENT,
         BrowserConfigKey::PARAMS => [
