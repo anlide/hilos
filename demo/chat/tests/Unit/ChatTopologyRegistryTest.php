@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Demo\Chat\Tests\Unit;
 
 use Demo\Chat\Browser\ChatBrowserContext;
+use Demo\Chat\Core\Page\ChatPageFactory;
 use Demo\Chat\Hilos;
 use Demo\Chat\Pages\AdminBotsPage;
 use Demo\Chat\Pages\AdminModeratorPage;
@@ -21,6 +22,9 @@ use Demo\Chat\Pages\UserPage as ChatUserPage;
 use Demo\Chat\Tables\ChatTableContext;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Browser\Context\BrowserContext;
+use Hilos\Core\Page\PageAgentInterface;
+use Hilos\Core\Router\SignalSource;
+use Hilos\Core\Router\SignalSourceInterface;
 use PHPUnit\Framework\TestCase;
 use ReflectionClass;
 
@@ -131,6 +135,25 @@ final class ChatTopologyRegistryTest extends TestCase
         $this->assertNull($resolveTableConfig($context, 'missing_table'));
     }
 
+    public function testChatPageFactoryCreatesRegisteredPagesFromTopology(): void
+    {
+        $factory = new ChatPageFactory($this->pageAgent());
+
+        foreach (Hilos::PAGES as $page => $pageClass) {
+            $this->assertInstanceOf($pageClass, $factory->getPage($page));
+        }
+    }
+
+    public function testChatTableContextRegistersTablesFromTopology(): void
+    {
+        $context = new ChatTableContext();
+        $context->configure();
+
+        foreach (Hilos::TABLES as $table => $tableClass) {
+            $this->assertInstanceOf($tableClass, $context->get($table));
+        }
+    }
+
     /**
      * @return list<class-string>
      */
@@ -150,5 +173,33 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosUsersPage::class,
             HilosUserPage::class,
         ];
+    }
+
+    /**
+     * Creates a minimal page agent for page factory tests.
+     */
+    private function pageAgent(): PageAgentInterface
+    {
+        return new class implements PageAgentInterface {
+            /**
+             * Return the fixture agent id.
+             *
+             * @return string Agent id
+             */
+            public function getId(): string
+            {
+                return 'test-page-agent';
+            }
+
+            /**
+             * Return the fixture signal source for page helpers.
+             *
+             * @return SignalSourceInterface Signal source
+             */
+            public function getAgentSignalSource(): SignalSourceInterface
+            {
+                return new SignalSource(SignalSource::AGENT, 'test-page-agent');
+            }
+        };
     }
 }

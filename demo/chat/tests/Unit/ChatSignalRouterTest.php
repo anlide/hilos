@@ -9,6 +9,7 @@ use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Router\ChatSignalRouter;
 use Demo\Chat\Core\Router\DTO\BotMessageSignalData;
+use Demo\Chat\Hilos;
 use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Router\AgentSignalData;
@@ -65,6 +66,24 @@ final class ChatSignalRouterTest extends TestCase
 
             $this->assertSame([
                 ['type' => 'agent', 'agentType' => AgentType::LIBRARY, 'agentIndex' => null],
+            ], $destinations);
+        }
+    }
+
+    public function testPageSubscriptionsRouteFromTopology(): void
+    {
+        $router = new ChatSignalRouter();
+
+        foreach ([PageConstants::BOT, PageConstants::HILOS_I18N_LANGUAGES] as $page) {
+            $destinations = $router->getDestinations(new SignalDTO(
+                new SignalSource(SignalSource::WEBSOCKET),
+                new SignalType(SignalTypeConstants::PAGE_SUBSCRIBE),
+                new SignalName($page),
+                new WebSocketPageSubscribeSignalDTO('accept-key', $page),
+            ));
+
+            $this->assertSame([
+                ['type' => 'agent', 'agentType' => Hilos::PAGE_ROUTES[$page], 'agentIndex' => null],
             ], $destinations);
         }
     }

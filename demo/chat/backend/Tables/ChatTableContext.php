@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Tables;
 
+use Demo\Chat\Hilos;
 use Demo\Chat\Tables\AdminUser\AdminUsersTable;
 use Demo\Chat\Tables\Bot\BotsTable;
 use Demo\Chat\Tables\HilosUser\HilosUsersTable;
@@ -32,14 +33,12 @@ final class ChatTableContext extends TableContext
     public const string settings = 'settings';
 
     /**
-     * Registers all chat table definitions.
+     * Registers chat table definitions from the project topology registry.
      */
     public function configure(): void
     {
-        $this->register(self::adminUsers, new AdminUsersTable());
-        $this->register(self::hilosUsers, new HilosUsersTable());
-        $this->register(self::bots, new BotsTable());
-        $this->register(self::moderatorPromptPieces, new ModeratorPromptPiecesTable());
-        $this->register(self::settings, new SettingsTable());
+        foreach (Hilos::TABLES as $tableName => $tableClass) {
+            $this->register($tableName, new $tableClass());
+        }
     }
 }
