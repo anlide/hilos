@@ -24,6 +24,13 @@ use ReflectionClass;
  */
 final class ChatTopologyRegistryTest extends TestCase
 {
+    protected function tearDown(): void
+    {
+        Hilos::$browser = null;
+
+        parent::tearDown();
+    }
+
     public function testComputedPageRoutesCoverEveryRegisteredPage(): void
     {
         $this->assertSame(array_keys(Hilos::PAGES), array_keys(Hilos::getPageRoutes()));
@@ -98,6 +105,7 @@ final class ChatTopologyRegistryTest extends TestCase
     public function testChatBrowserContextResolvesPageMetadataFromTopology(): void
     {
         $context = new ChatBrowserContext();
+        Hilos::initBrowser($context);
         $resolvePageConfig = \Closure::bind(
             static fn(ChatBrowserContext $context, string $page): ?BrowserPageConfig => $context->resolveBrowserPageConfig($page),
             null,
@@ -120,6 +128,7 @@ final class ChatTopologyRegistryTest extends TestCase
     public function testChatBrowserContextResolvesPageTableBindingsFromTopology(): void
     {
         $context = new ChatBrowserContext();
+        Hilos::initBrowser($context);
         $resolvePageTables = \Closure::bind(
             static fn(ChatBrowserContext $context, string $page): BrowserPageTableBindings => $context->resolveBrowserPageTables($page),
             null,
@@ -142,6 +151,7 @@ final class ChatTopologyRegistryTest extends TestCase
     public function testChatBrowserContextResolvesBrowserOnlyTablesFromTopology(): void
     {
         $context = new ChatBrowserContext();
+        Hilos::initBrowser($context);
         $resolveTableConfig = \Closure::bind(
             static fn(ChatBrowserContext $context, string $tableKey): ?BrowserTableConfig => $context->resolveBrowserOnlyTableConfig($tableKey),
             null,

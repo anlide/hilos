@@ -14,9 +14,6 @@ use Demo\Chat\Tables\Settings\SettingTableRow;
 use Demo\Chat\Tables\Settings\SettingsTable;
 use Hilos\Constants\SignalPayloadConstants;
 use Hilos\Constants\SignalTypeConstants;
-use Hilos\Core\Browser\Config\BrowserPageConfig;
-use Hilos\Core\Browser\Config\BrowserPageTableBindings;
-use Hilos\Core\Browser\Config\BrowserTableConfig;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Page\Exception\PageSubscriptionException;
@@ -35,57 +32,6 @@ use Throwable;
  */
 final class ChatBrowserContext extends BrowserContext
 {
-    /**
-     * Resolves page browser config from the chat topology registry.
-     *
-     * @param string $page Page name from the subscription mirror
-     * @return ?BrowserPageConfig Browser page metadata, or null when absent
-     */
-    protected function resolveBrowserPageConfig(string $page): ?BrowserPageConfig
-    {
-        $pageClass = Hilos::PAGES[$page] ?? null;
-        if (!is_string($pageClass)) {
-            return null;
-        }
-
-        /** @var array<string, mixed> $config */
-        $config = $pageClass::BROWSER;
-
-        return BrowserPageConfig::fromArray($config);
-    }
-
-    /**
-     * Resolves page table bindings from the chat topology registry.
-     *
-     * @param string $page Page name from the subscription mirror
-     * @return BrowserPageTableBindings Page table bindings
-     */
-    protected function resolveBrowserPageTables(string $page): BrowserPageTableBindings
-    {
-        $tables = Hilos::PAGE_TABLES[$page] ?? [];
-
-        return BrowserPageTableBindings::fromArray(is_array($tables) ? $tables : []);
-    }
-
-    /**
-     * Resolves browser-only table config from the chat topology registry.
-     *
-     * @param string $tableKey Browser table key
-     * @return ?BrowserTableConfig Browser-only table config, or null when absent
-     */
-    protected function resolveBrowserOnlyTableConfig(string $tableKey): ?BrowserTableConfig
-    {
-        $tableClass = Hilos::BROWSER_TABLES[$tableKey] ?? null;
-        if (!is_string($tableClass)) {
-            return null;
-        }
-
-        /** @var array<string, mixed> $config */
-        $config = $tableClass::BROWSER;
-
-        return BrowserTableConfig::fromArray($config);
-    }
-
     /**
      * Sends a settings-specific full browser snapshot with catalog placeholder rows.
      *

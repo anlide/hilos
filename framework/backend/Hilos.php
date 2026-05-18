@@ -130,6 +130,7 @@ abstract class Hilos
         if (static::$browser === null) {
             static::$browser = static::createBrowser();
         }
+        static::bindBrowserContext();
 
         if (static::$fs === null) {
             static::$fs = static::createFs();
@@ -226,6 +227,15 @@ abstract class Hilos
     public static function initBrowser(?BrowserContext $browser = null): void
     {
         static::$browser = $browser ?? static::createBrowser();
+        static::bindBrowserContext();
+    }
+
+    /**
+     * Gives the active browser context access to this project facade topology.
+     */
+    private static function bindBrowserContext(): void
+    {
+        static::$browser?->bindHilosFacade(static::class);
     }
 
     /**

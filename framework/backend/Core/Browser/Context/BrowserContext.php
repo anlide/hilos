@@ -45,6 +45,9 @@ use Throwable;
  */
 abstract class BrowserContext
 {
+    /** @var class-string<Hilos> Active project facade class for topology registry reads. */
+    private string $hilosClass = Hilos::class;
+
     protected SourceChangeSet $changes;
 
     /**
@@ -53,6 +56,16 @@ abstract class BrowserContext
     public function __construct()
     {
         $this->changes = new SourceChangeSet();
+    }
+
+    /**
+     * Binds this browser context to the active project facade.
+     *
+     * @param class-string<Hilos> $hilosClass Active project facade class
+     */
+    final public function bindHilosFacade(string $hilosClass): void
+    {
+        $this->hilosClass = $hilosClass;
     }
 
     /**
@@ -332,15 +345,24 @@ abstract class BrowserContext
     /**
      * Resolves browser metadata for one page.
      *
-     * Project browser contexts read page metadata from the active topology
-     * registry. Page-table bindings are resolved separately.
+     * Reads page metadata from the active project topology registry.
+     * Page-table bindings are resolved separately.
      *
      * @param string $page Page name from the subscription mirror
      * @return ?BrowserPageConfig Browser page metadata, or null when absent
      */
     protected function resolveBrowserPageConfig(string $page): ?BrowserPageConfig
     {
-        return null;
+        $hilosClass = $this->hilosClass;
+        $pageClass = $hilosClass::PAGES[$page] ?? null;
+        if (!is_string($pageClass)) {
+            return null;
+        }
+
+        /** @var array<string, mixed> $config */
+        $config = $pageClass::BROWSER;
+
+        return BrowserPageConfig::fromArray($config);
     }
 
     /**
@@ -351,7 +373,10 @@ abstract class BrowserContext
      */
     protected function resolveBrowserPageTables(string $page): BrowserPageTableBindings
     {
-        return BrowserPageTableBindings::empty();
+        $hilosClass = $this->hilosClass;
+        $tables = $hilosClass::PAGE_TABLES[$page] ?? [];
+
+        return BrowserPageTableBindings::fromArray(is_array($tables) ? $tables : []);
     }
 
     /**
@@ -365,7 +390,16 @@ abstract class BrowserContext
      */
     protected function resolveBrowserOnlyTableConfig(string $tableKey): ?BrowserTableConfig
     {
-        return null;
+        $hilosClass = $this->hilosClass;
+        $tableClass = $hilosClass::BROWSER_TABLES[$tableKey] ?? null;
+        if (!is_string($tableClass)) {
+            return null;
+        }
+
+        /** @var array<string, mixed> $config */
+        $config = $tableClass::BROWSER;
+
+        return BrowserTableConfig::fromArray($config);
     }
 
     /**

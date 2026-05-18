@@ -14,10 +14,12 @@ use Hilos\Core\Browser\Config\BrowserSourceType;
 use Hilos\Core\Browser\Config\BrowserTableConfig;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
+use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\WebSocketSignalData;
+use Hilos\Database\Context\DbContext;
 use Hilos\Hilos;
 use Hilos\Runtime\State\Collection\RtStates;
 use Hilos\Runtime\State\Item\RtState;
@@ -38,6 +40,7 @@ final class BrowserContextEmitSignalsTest extends TestCase
         Hilos::$rt = null;
         Hilos::$sr = null;
         Hilos::$table = null;
+        Hilos::$browser = null;
 
         parent::tearDown();
     }
@@ -233,6 +236,49 @@ final class BrowserContextEmitSignalsTest extends TestCase
             $signal->data->data->toArray(),
         );
     }
+
+    public function testInitBrowserBindsDefaultResolversToProjectTopologyRegistry(): void
+    {
+        Hilos::$sr = new SignalRouter();
+        Hilos::$rt = new BrowserContextEmitSignalsTestRtContext();
+        Hilos::$rt->configure();
+        Hilos::$rt->addRow(BrowserContextEmitSignalsTestState::create('1', 'Ada'));
+
+        $context = new BrowserContextRegistryTopologyTestContext();
+        BrowserContextRegistryTopologyTestHilos::initBrowser($context);
+        $context->subscribeSnapshot(
+            BrowserContextRegistryTopologyTestPage::PAGE,
+            'ak-1',
+            new PageRouteParams([]),
+        );
+
+        $signal = Hilos::$sr->getNextQueuedSignal();
+
+        $this->assertNotNull($signal);
+        $this->assertSame(BrowserContextRegistryTopologyTestPage::SIGNAL, $signal->signalName->getName());
+        $this->assertInstanceOf(WebSocketSignalData::class, $signal->data);
+        $this->assertInstanceOf(BrowserPageSignalData::class, $signal->data->data);
+        $this->assertSame(
+            [
+                BrowserPageSignalData::tables => [
+                    BrowserContextRegistryTopologyTestTable::TABLE => [
+                        BrowserPageSignalData::rows => [
+                            [
+                                BrowserPageSignalData::rowKey => '1',
+                                BrowserPageSignalData::sources => [
+                                    BrowserContextEmitSignalsTestRtContext::ROWS => [
+                                        'id' => '1',
+                                        'displayName' => 'Ada',
+                                    ],
+                                ],
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+            $signal->data->data->toArray(),
+        );
+    }
 }
 
 final class BrowserContextEmitSignalsTestContext extends BrowserContext
@@ -406,6 +452,82 @@ final class BrowserContextTopologyHooksTestContext extends BrowserContext
                 ],
             ],
         ]);
+    }
+}
+
+final class BrowserContextRegistryTopologyTestContext extends BrowserContext
+{
+}
+
+final class BrowserContextRegistryTopologyTestPage extends AbstractPage
+{
+    public const string PAGE = 'registry_browser_page';
+    public const string SIGNAL = 'registry_browser_signal';
+
+    public const string SUBSCRIPTION_AGENT_TYPE = 'registry_agent';
+
+    public const array BROWSER = [
+        BrowserConfigKey::SIGNAL => self::SIGNAL,
+    ];
+}
+
+final class BrowserContextRegistryTopologyTestTable
+{
+    public const string TABLE = 'registryRows';
+
+    private const array SOURCE = [
+        BrowserSourceKey::TYPE => BrowserSourceType::RT,
+        BrowserSourceKey::KEY => BrowserContextEmitSignalsTestRtContext::ROWS,
+    ];
+
+    public const array BROWSER = [
+        BrowserConfigKey::ROWS => [
+            [
+                BrowserFieldKey::SOURCE => self::SOURCE,
+                BrowserFieldKey::ROW_KEY => 'id',
+                BrowserFieldKey::FIELDS => [
+                    'id',
+                    'name' => 'displayName',
+                ],
+            ],
+        ],
+    ];
+}
+
+final class BrowserContextRegistryTopologyTestHilos extends Hilos
+{
+    public const array PAGES = [
+        BrowserContextRegistryTopologyTestPage::PAGE => BrowserContextRegistryTopologyTestPage::class,
+    ];
+
+    public const array BROWSER_TABLES = [
+        BrowserContextRegistryTopologyTestTable::TABLE => BrowserContextRegistryTopologyTestTable::class,
+    ];
+
+    public const array PAGE_TABLES = [
+        BrowserContextRegistryTopologyTestPage::PAGE => [
+            BrowserContextRegistryTopologyTestTable::TABLE => [],
+        ],
+    ];
+
+    /**
+     * Creates a no-op DB context for the abstract facade contract.
+     *
+     * @return DbContext Test DB context
+     */
+    protected static function createDb(): DbContext
+    {
+        return new BrowserContextRegistryTopologyTestDbContext();
+    }
+}
+
+final class BrowserContextRegistryTopologyTestDbContext extends DbContext
+{
+    /**
+     * No-op DB configuration for browser topology tests.
+     */
+    public function configure(): void
+    {
     }
 }
 
