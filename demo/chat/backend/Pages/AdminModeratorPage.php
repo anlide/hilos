@@ -34,6 +34,12 @@ final class AdminModeratorPage extends AbstractPage
 
     public const string SUBSCRIPTION_AGENT_TYPE = AgentType::LIBRARY;
 
+    public const array ACTIONS = [
+        ChatSignalConstants::MODERATOR_PIECE_CREATE,
+        ChatSignalConstants::MODERATOR_PIECE_UPDATE,
+        ChatSignalConstants::MODERATOR_PIECE_DELETE,
+    ];
+
     public const array BROWSER = [
         BrowserConfigKey::SIGNAL => ChatSignalConstants::SUBSCRIPTION_PAGE_ADMIN_MODERATOR,
     ];

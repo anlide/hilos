@@ -38,6 +38,10 @@ final class UserPage extends AbstractHilosUserPage
 {
     public const string SUBSCRIPTION_AGENT_TYPE = AgentType::HILOS_INDEX;
 
+    public const array ACTIONS = [
+        ChatSignalConstants::HILOS_USER_UPDATE,
+    ];
+
     public const array BROWSER = [
         BrowserConfigKey::SIGNAL => HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_USER,
         BrowserConfigKey::PARAMS => [

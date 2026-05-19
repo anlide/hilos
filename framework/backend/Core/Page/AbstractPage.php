@@ -34,6 +34,9 @@ abstract class AbstractPage
     /** Agent type that owns subscription signals for this page. */
     public const string SUBSCRIPTION_AGENT_TYPE = '';
 
+    /** WebSocket action names owned by this page. */
+    public const array ACTIONS = [];
+
     /** Browser data config declared by data-bearing pages. */
     public const array BROWSER = [];
 

@@ -33,6 +33,7 @@ final class TopologyValidator
         $this->validateRegisteredTables($tables, $errors);
         $this->validateBrowserTables($browserTables, $errors);
         $this->validatePageRoutes($pages, $hilosClass::getPageRoutes(), $errors);
+        $this->validatePageActionRoutes($pages, $hilosClass::getPageActionRoutes(), $errors);
         $this->validatePageTables($pages, $tables, $browserTables, $pageTables, $errors);
 
         if ($errors !== []) {
@@ -204,6 +205,59 @@ final class TopologyValidator
 
             if (!array_key_exists($page, $pages)) {
                 $errors[] = "Computed page route {$page} references a page missing from PAGES";
+            }
+        }
+    }
+
+    /**
+     * Validates page-owned WebSocket action route declarations.
+     *
+     * @param array<mixed, mixed> $pages Page registry
+     * @param array<mixed, mixed> $pageActionRoutes Computed action route registry
+     * @param list<string> $errors Validation error accumulator
+     */
+    private function validatePageActionRoutes(array $pages, array $pageActionRoutes, array &$errors): void
+    {
+        $declaredRoutes = [];
+        foreach ($pages as $page => $pageClass) {
+            if (!is_string($page) || !is_string($pageClass) || !is_subclass_of($pageClass, AbstractPage::class)) {
+                continue;
+            }
+
+            foreach ($pageClass::ACTIONS as $action) {
+                if (!is_string($action) || $action === '') {
+                    $errors[] = "PAGES[{$page}] class {$pageClass} ACTIONS must contain only non-empty action strings";
+                    continue;
+                }
+
+                if (isset($declaredRoutes[$action]) && $declaredRoutes[$action] !== $page) {
+                    $errors[] = "Action {$action} is declared by multiple pages: {$declaredRoutes[$action]} and {$page}";
+                    continue;
+                }
+
+                $declaredRoutes[$action] = $page;
+            }
+        }
+
+        foreach ($declaredRoutes as $action => $page) {
+            if (($pageActionRoutes[$action] ?? null) !== $page) {
+                $errors[] = "Page action route {$action} is missing from computed action routes";
+            }
+        }
+
+        foreach ($pageActionRoutes as $action => $page) {
+            if (!is_string($action) || $action === '') {
+                $errors[] = 'Computed page action routes contain a non-string or empty action key';
+                continue;
+            }
+
+            if (!is_string($page) || $page === '') {
+                $errors[] = "Computed page action route {$action} must reference a non-empty page";
+                continue;
+            }
+
+            if (!array_key_exists($page, $pages)) {
+                $errors[] = "Computed page action route {$action} references a page missing from PAGES";
             }
         }
     }

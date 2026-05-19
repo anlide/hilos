@@ -50,6 +50,18 @@ final class TopologyValidatorTest extends TestCase
         );
     }
 
+    public function testComputedActionRoutesComeFromRegisteredPageClasses(): void
+    {
+        $this->assertSame(
+            [TopologyValidPage::VALID_ACTION => TopologyValidPage::PAGE],
+            TopologyValidHilos::getPageActionRoutes(),
+        );
+        $this->assertSame(
+            [TopologyValidPage::VALID_ACTION => TopologyValidPage::SUBSCRIPTION_AGENT_TYPE],
+            TopologyValidHilos::getActionAgentRoutes(),
+        );
+    }
+
     public function testPageRegistryRejectsBrokenPageClasses(): void
     {
         $this->assertTopologyErrors(
@@ -73,6 +85,25 @@ final class TopologyValidatorTest extends TestCase
         $this->expectExceptionMessage('must declare a non-empty SUBSCRIPTION_AGENT_TYPE');
 
         TopologyMissingSubscriptionOwnerHilos::validateTopology();
+    }
+
+    public function testPageActionsMustBeNonEmptyStrings(): void
+    {
+        $this->expectException(InvalidTopologyException::class);
+        $this->expectExceptionMessage('PAGES[invalid_action_page] class');
+        $this->expectExceptionMessage('ACTIONS must contain only non-empty action strings');
+
+        TopologyInvalidActionHilos::validateTopology();
+    }
+
+    public function testPageActionsMustHaveSingleOwner(): void
+    {
+        $this->expectException(InvalidTopologyException::class);
+        $this->expectExceptionMessage('Action shared_action is declared by multiple pages');
+        $this->expectExceptionMessage(TopologyFirstActionPage::PAGE);
+        $this->expectExceptionMessage(TopologySecondActionPage::PAGE);
+
+        TopologyDuplicateActionHilos::validateTopology();
     }
 
     public function testPageTablesRejectUnknownPages(): void
@@ -157,6 +188,12 @@ final class TopologyValidPage extends AbstractPage
 
     public const string SUBSCRIPTION_AGENT_TYPE = 'valid_agent';
 
+    public const string VALID_ACTION = 'valid_action';
+
+    public const array ACTIONS = [
+        self::VALID_ACTION,
+    ];
+
     public const array BROWSER = [
         BrowserConfigKey::SIGNAL => 'valid_signal',
     ];
@@ -170,6 +207,40 @@ final class TopologyMissingSubscriptionOwnerPage extends AbstractPage
 final class TopologyMismatchedPage extends AbstractPage
 {
     public const string PAGE = 'actual_page';
+}
+
+final class TopologyInvalidActionPage extends AbstractPage
+{
+    public const string PAGE = 'invalid_action_page';
+
+    public const string SUBSCRIPTION_AGENT_TYPE = 'valid_agent';
+
+    public const array ACTIONS = [
+        '',
+        42,
+    ];
+}
+
+final class TopologyFirstActionPage extends AbstractPage
+{
+    public const string PAGE = 'first_action_page';
+
+    public const string SUBSCRIPTION_AGENT_TYPE = 'valid_agent';
+
+    public const array ACTIONS = [
+        'shared_action',
+    ];
+}
+
+final class TopologySecondActionPage extends AbstractPage
+{
+    public const string PAGE = 'second_action_page';
+
+    public const string SUBSCRIPTION_AGENT_TYPE = 'valid_agent';
+
+    public const array ACTIONS = [
+        'shared_action',
+    ];
 }
 
 final class TopologyLegacyTablesPage extends AbstractPage
@@ -272,6 +343,41 @@ final class TopologyMissingSubscriptionOwnerHilos extends HilosFacade
 {
     public const array PAGES = [
         TopologyMissingSubscriptionOwnerPage::PAGE => TopologyMissingSubscriptionOwnerPage::class,
+    ];
+
+    /**
+     * Creates a no-op DB context for tests.
+     *
+     * @return DbContext Test DB context
+     */
+    protected static function createDb(): DbContext
+    {
+        return new TopologyTestDbContext();
+    }
+}
+
+final class TopologyInvalidActionHilos extends HilosFacade
+{
+    public const array PAGES = [
+        TopologyInvalidActionPage::PAGE => TopologyInvalidActionPage::class,
+    ];
+
+    /**
+     * Creates a no-op DB context for tests.
+     *
+     * @return DbContext Test DB context
+     */
+    protected static function createDb(): DbContext
+    {
+        return new TopologyTestDbContext();
+    }
+}
+
+final class TopologyDuplicateActionHilos extends HilosFacade
+{
+    public const array PAGES = [
+        TopologyFirstActionPage::PAGE => TopologyFirstActionPage::class,
+        TopologySecondActionPage::PAGE => TopologySecondActionPage::class,
     ];
 
     /**

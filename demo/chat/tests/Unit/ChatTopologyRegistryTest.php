@@ -5,6 +5,9 @@ declare(strict_types=1);
 namespace Demo\Chat\Tests\Unit;
 
 use Demo\Chat\Browser\ChatBrowserContext;
+use Demo\Chat\Constants\AgentType;
+use Demo\Chat\Constants\ChatSignalConstants;
+use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Page\ChatPageFactory;
 use Demo\Chat\Hilos;
 use Demo\Chat\Tables\ChatTableContext;
@@ -13,6 +16,7 @@ use Hilos\Core\Browser\Config\BrowserPageConfig;
 use Hilos\Core\Browser\Config\BrowserPageTableBindings;
 use Hilos\Core\Browser\Config\BrowserParamKey;
 use Hilos\Core\Browser\Config\BrowserTableConfig;
+use Hilos\Core\Page\ActionRouteConfig;
 use Hilos\Core\Page\PageAgentInterface;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalSourceInterface;
@@ -58,6 +62,73 @@ final class ChatTopologyRegistryTest extends TestCase
         foreach (Hilos::PAGES as $page => $pageClass) {
             $this->assertSame($pageClass::SUBSCRIPTION_AGENT_TYPE, $pageRoutes[$page]);
             $this->assertNotSame('', $pageClass::SUBSCRIPTION_AGENT_TYPE, "{$page} must declare a subscription owner");
+        }
+    }
+
+    public function testComputedPageActionRoutesMatchChatActionOwnership(): void
+    {
+        $this->assertSame([
+            ChatSignalConstants::MESSAGE => PageConstants::MAIN,
+            ChatSignalConstants::FILE_UPLOAD_INIT => PageConstants::MAIN,
+            ChatSignalConstants::ATTACHMENT_DRAFT_DELETE => PageConstants::MAIN,
+            ChatSignalConstants::RENAME => PageConstants::PROFILE,
+            ChatSignalConstants::USER_UPDATE => PageConstants::ADMIN_USERS,
+            ChatSignalConstants::MODERATOR_PIECE_CREATE => PageConstants::ADMIN_MODERATOR,
+            ChatSignalConstants::MODERATOR_PIECE_UPDATE => PageConstants::ADMIN_MODERATOR,
+            ChatSignalConstants::MODERATOR_PIECE_DELETE => PageConstants::ADMIN_MODERATOR,
+            ChatSignalConstants::BOT_CREATE => PageConstants::ADMIN_BOTS,
+            ChatSignalConstants::BOT_UPDATE => PageConstants::ADMIN_BOTS,
+            ChatSignalConstants::BOT_DELETE => PageConstants::ADMIN_BOTS,
+            ChatSignalConstants::SETTING_ADD => PageConstants::HILOS_SETTINGS,
+            ChatSignalConstants::SETTING_UPDATE => PageConstants::HILOS_SETTINGS,
+            ChatSignalConstants::SETTING_DELETE => PageConstants::HILOS_SETTINGS,
+            ChatSignalConstants::GUARDIAN_AGENT_RUN_START => PageConstants::HILOS_GUARDIAN_AGENT,
+            ChatSignalConstants::GUARDIAN_AGENT_RUN_STOP => PageConstants::HILOS_GUARDIAN_AGENT,
+            ChatSignalConstants::HILOS_USER_UPDATE => PageConstants::HILOS_USER,
+        ], Hilos::getPageActionRoutes());
+    }
+
+    public function testComputedActionAgentRoutesUseOwningPageSubscriptionAgents(): void
+    {
+        $this->assertSame([
+            ChatSignalConstants::MESSAGE => AgentType::CHAT,
+            ChatSignalConstants::FILE_UPLOAD_INIT => AgentType::CHAT,
+            ChatSignalConstants::ATTACHMENT_DRAFT_DELETE => AgentType::CHAT,
+            ChatSignalConstants::RENAME => AgentType::CHAT,
+            ChatSignalConstants::USER_UPDATE => AgentType::CHAT,
+            ChatSignalConstants::MODERATOR_PIECE_CREATE => AgentType::LIBRARY,
+            ChatSignalConstants::MODERATOR_PIECE_UPDATE => AgentType::LIBRARY,
+            ChatSignalConstants::MODERATOR_PIECE_DELETE => AgentType::LIBRARY,
+            ChatSignalConstants::BOT_CREATE => AgentType::LIBRARY,
+            ChatSignalConstants::BOT_UPDATE => AgentType::LIBRARY,
+            ChatSignalConstants::BOT_DELETE => AgentType::LIBRARY,
+            ChatSignalConstants::SETTING_ADD => AgentType::HILOS_INDEX,
+            ChatSignalConstants::SETTING_UPDATE => AgentType::HILOS_INDEX,
+            ChatSignalConstants::SETTING_DELETE => AgentType::HILOS_INDEX,
+            ChatSignalConstants::GUARDIAN_AGENT_RUN_START => AgentType::HILOS_GUARDIAN,
+            ChatSignalConstants::GUARDIAN_AGENT_RUN_STOP => AgentType::HILOS_GUARDIAN,
+            ChatSignalConstants::HILOS_USER_UPDATE => AgentType::HILOS_INDEX,
+        ], Hilos::getActionAgentRoutes());
+    }
+
+    public function testPageActionRoutesCoverDeclaredPageActions(): void
+    {
+        $declaredRoutes = [];
+        foreach (Hilos::PAGES as $page => $pageClass) {
+            foreach ($pageClass::ACTIONS as $action) {
+                $declaredRoutes[$action] = $page;
+            }
+        }
+
+        $this->assertSame($declaredRoutes, Hilos::getPageActionRoutes());
+    }
+
+    public function testActionRouteConfigUsesComputedPageActionRoutes(): void
+    {
+        $actionRoutes = new ActionRouteConfig(Hilos::getPageActionRoutes());
+
+        foreach (Hilos::getPageActionRoutes() as $action => $page) {
+            $this->assertSame($page, $actionRoutes->getPageForAction($action));
         }
     }
 

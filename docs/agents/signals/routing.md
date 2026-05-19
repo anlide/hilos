@@ -12,6 +12,12 @@ the computed `Hilos::getPageRoutes()` registry. Do not maintain a duplicate
 page routing list only inside the router; see
 [app-topology.md](../app-topology.md).
 
+For WebSocket actions, keep action ownership in each page class `ACTIONS`.
+Project routers should import `Hilos::getActionAgentRoutes()` for
+`action -> agent` routing, and worker page routers should import
+`Hilos::getPageActionRoutes()` for `action -> page` dispatch. WebSocket client
+allowlists should read the same page-action registry.
+
 ## Config structure (in SignalRouter subclass)
 
 ```php
@@ -30,7 +36,7 @@ $this->config = [
             ],
         ],
     ],
-    'actions' => [ 'message' => AgentType::CHAT ],
+    'actions' => Hilos::getActionAgentRoutes(),
     'page_subscription_routing' => [
         'default' => AgentType::CHAT,
         'pages'   => [ PageConstants::BOT => AgentType::BOT ],
@@ -49,6 +55,9 @@ $this->config = [
 ## WebSocket → agent
 
 WS frame arrives → server parses → queues signal in `Hilos::$sr` with source `WS` → dispatched to agent.
+For `ACTION` frames, routing first checks the page-owned action registry.
+Projects should not keep a generic `WEBSOCKET/ACTION => AgentType::*`
+fallback when action ownership can be derived from pages.
 
 ## Agent → agent
 

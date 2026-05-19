@@ -30,6 +30,11 @@ final class GuardianAgentPage extends AbstractHilosGuardianAgentPage
 {
     public const string SUBSCRIPTION_AGENT_TYPE = AgentType::HILOS_GUARDIAN;
 
+    public const array ACTIONS = [
+        ChatSignalConstants::GUARDIAN_AGENT_RUN_START,
+        ChatSignalConstants::GUARDIAN_AGENT_RUN_STOP,
+    ];
+
     public const array BROWSER = [
         BrowserConfigKey::SIGNAL => HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_GUARDIAN_AGENT,
         BrowserConfigKey::PARAMS => [

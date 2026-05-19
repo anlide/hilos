@@ -9,6 +9,7 @@ use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Agent\ChatAgentManager;
 use Demo\Chat\Core\Page\ChatPageFactory;
 use Demo\Chat\Core\Router\ChatSignalRouter;
+use Demo\Chat\Hilos;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\AgentInterface;
 use Hilos\Core\Agent\AgentManager;
@@ -61,29 +62,7 @@ final class ChatWorkerManager extends WorkerManager
         }
 
         $pageFactory = new ChatPageFactory($agent);
-        $actionRoutes = new ActionRouteConfig([
-            ChatSignalConstants::MESSAGE => PageConstants::MAIN,
-            ChatSignalConstants::RENAME => PageConstants::PROFILE,
-            ChatSignalConstants::FILE_UPLOAD_INIT => PageConstants::MAIN,
-            ChatSignalConstants::ATTACHMENT_DRAFT_DELETE => PageConstants::MAIN,
-
-            ChatSignalConstants::USER_UPDATE => PageConstants::ADMIN_USERS,
-            ChatSignalConstants::HILOS_USER_UPDATE => PageConstants::HILOS_USER,
-
-            ChatSignalConstants::BOT_CREATE => PageConstants::ADMIN_BOTS,
-            ChatSignalConstants::BOT_UPDATE => PageConstants::ADMIN_BOTS,
-            ChatSignalConstants::BOT_DELETE => PageConstants::ADMIN_BOTS,
-
-            ChatSignalConstants::MODERATOR_PIECE_CREATE => PageConstants::ADMIN_MODERATOR,
-            ChatSignalConstants::MODERATOR_PIECE_UPDATE => PageConstants::ADMIN_MODERATOR,
-            ChatSignalConstants::MODERATOR_PIECE_DELETE => PageConstants::ADMIN_MODERATOR,
-
-            ChatSignalConstants::SETTING_ADD => PageConstants::HILOS_SETTINGS,
-            ChatSignalConstants::SETTING_UPDATE => PageConstants::HILOS_SETTINGS,
-            ChatSignalConstants::SETTING_DELETE => PageConstants::HILOS_SETTINGS,
-            ChatSignalConstants::GUARDIAN_AGENT_RUN_START => PageConstants::HILOS_GUARDIAN_AGENT,
-            ChatSignalConstants::GUARDIAN_AGENT_RUN_STOP => PageConstants::HILOS_GUARDIAN_AGENT,
-        ]);
+        $actionRoutes = new ActionRouteConfig(Hilos::getPageActionRoutes());
 
         $signalRoutes = [
             SignalTypeConstants::FRAME_BINARY => PageConstants::MAIN,

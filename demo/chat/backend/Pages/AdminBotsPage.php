@@ -35,6 +35,12 @@ final class AdminBotsPage extends AbstractPage
 
     public const string SUBSCRIPTION_AGENT_TYPE = AgentType::LIBRARY;
 
+    public const array ACTIONS = [
+        ChatSignalConstants::BOT_CREATE,
+        ChatSignalConstants::BOT_UPDATE,
+        ChatSignalConstants::BOT_DELETE,
+    ];
+
     public const array BROWSER = [
         BrowserConfigKey::SIGNAL => ChatSignalConstants::SUBSCRIPTION_PAGE_ADMIN_BOTS,
     ];

@@ -5,6 +5,10 @@ especially `onAction()`.
 
 ## Rules
 
+If a page handles a WebSocket action, declare that action in the page's
+`public const array ACTIONS`. The project facade uses those declarations to
+compute action routing and WebSocket validation.
+
 1. `onAction()` routes by action name. Always use `switch ($action)` with
    explicit `case SomeConstants::ACTION_NAME:` branches, even when the page
    currently has only one action.

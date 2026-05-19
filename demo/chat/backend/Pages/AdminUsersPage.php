@@ -32,6 +32,10 @@ final class AdminUsersPage extends AbstractPage
 
     public const string SUBSCRIPTION_AGENT_TYPE = AgentType::CHAT;
 
+    public const array ACTIONS = [
+        ChatSignalConstants::USER_UPDATE,
+    ];
+
     public const array BROWSER = [
         BrowserConfigKey::SIGNAL => ChatSignalConstants::SUBSCRIPTION_PAGE_ADMIN_USERS,
     ];

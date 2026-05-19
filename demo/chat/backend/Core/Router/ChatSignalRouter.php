@@ -79,7 +79,6 @@ final class ChatSignalRouter extends SignalRouter
                 SignalTypeConstants::GROUP_SUBSCRIBE => AgentType::CHAT,
                 SignalTypeConstants::GROUP_UNSUBSCRIBE => AgentType::CHAT,
                 SignalTypeConstants::GROUP_UPDATE_SUBSCRIPTION => AgentType::CHAT,
-                SignalTypeConstants::ACTION => AgentType::CHAT,
                 SignalTypeConstants::CRON => AgentType::CHAT,
             ],
         ];
@@ -89,30 +88,11 @@ final class ChatSignalRouter extends SignalRouter
             'pages' => $pageRoutes,
         ];
 
-        $actions = [
-            ChatSignalConstants::MESSAGE => AgentType::CHAT,
-            ChatSignalConstants::FILE_UPLOAD_INIT => AgentType::CHAT,
-            ChatSignalConstants::RENAME => AgentType::CHAT,
-            ChatSignalConstants::USER_UPDATE => AgentType::CHAT,
-            ChatSignalConstants::HILOS_USER_UPDATE => AgentType::CHAT,
-            ChatSignalConstants::BOT_CREATE => AgentType::LIBRARY,
-            ChatSignalConstants::BOT_UPDATE => AgentType::LIBRARY,
-            ChatSignalConstants::BOT_DELETE => AgentType::LIBRARY,
-            ChatSignalConstants::MODERATOR_PIECE_CREATE => AgentType::LIBRARY,
-            ChatSignalConstants::MODERATOR_PIECE_UPDATE => AgentType::LIBRARY,
-            ChatSignalConstants::MODERATOR_PIECE_DELETE => AgentType::LIBRARY,
-            ChatSignalConstants::SETTING_ADD => AgentType::HILOS_INDEX,
-            ChatSignalConstants::SETTING_UPDATE => AgentType::HILOS_INDEX,
-            ChatSignalConstants::SETTING_DELETE => AgentType::HILOS_INDEX,
-            ChatSignalConstants::GUARDIAN_AGENT_RUN_START => AgentType::HILOS_GUARDIAN,
-            ChatSignalConstants::GUARDIAN_AGENT_RUN_STOP => AgentType::HILOS_GUARDIAN,
-        ];
-
         $this->config = [
             'pages' => $pages,
             'groups' => $groups,
             'signals' => $signals,
-            'actions' => $actions,
+            'actions' => Hilos::getActionAgentRoutes(),
             'page_subscription_routing' => $pageSubscriptionRouting,
         ];
     }

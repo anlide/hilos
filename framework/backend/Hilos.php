@@ -95,6 +95,55 @@ abstract class Hilos
     }
 
     /**
+     * Returns page-owned WebSocket action routes declared by registered page classes.
+     *
+     * Invalid page registry entries and malformed action declarations are skipped
+     * here and reported by topology validation.
+     *
+     * @return array<string, string> Page name keyed by action name
+     */
+    public static function getPageActionRoutes(): array
+    {
+        $actionRoutes = [];
+        foreach (static::PAGES as $page => $pageClass) {
+            if (!is_string($page) || !is_string($pageClass) || !is_subclass_of($pageClass, AbstractPage::class)) {
+                continue;
+            }
+
+            foreach ($pageClass::ACTIONS as $action) {
+                if (!is_string($action) || $action === '') {
+                    continue;
+                }
+
+                $actionRoutes[$action] = $page;
+            }
+        }
+
+        return $actionRoutes;
+    }
+
+    /**
+     * Returns WebSocket action owner agent types through page-owned action routes.
+     *
+     * @return array<string, string> Agent type keyed by action name
+     */
+    public static function getActionAgentRoutes(): array
+    {
+        $pageRoutes = static::getPageRoutes();
+        $actionAgentRoutes = [];
+        foreach (static::getPageActionRoutes() as $action => $page) {
+            $agentType = $pageRoutes[$page] ?? '';
+            if ($agentType === '') {
+                continue;
+            }
+
+            $actionAgentRoutes[$action] = $agentType;
+        }
+
+        return $actionAgentRoutes;
+    }
+
+    /**
      * Initializes env, settings, storage, runtime, table, browser, and filesystem layers.
      *
      * @throws InvalidTopologyException When project topology constants are inconsistent

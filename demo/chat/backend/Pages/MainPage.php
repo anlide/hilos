@@ -46,6 +46,12 @@ final class MainPage extends AbstractPage
 
     public const string SUBSCRIPTION_AGENT_TYPE = AgentType::CHAT;
 
+    public const array ACTIONS = [
+        ChatSignalConstants::MESSAGE,
+        ChatSignalConstants::FILE_UPLOAD_INIT,
+        ChatSignalConstants::ATTACHMENT_DRAFT_DELETE,
+    ];
+
     public const array BROWSER = [
         BrowserConfigKey::SIGNAL => ChatSignalConstants::SUBSCRIPTION_PAGE_MAIN,
     ];

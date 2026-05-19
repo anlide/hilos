@@ -52,6 +52,48 @@ final class ChatSignalRouterTest extends TestCase
         }
     }
 
+    public function testPageOwnedActionsRouteToOwningPageAgent(): void
+    {
+        $router = new ChatSignalRouter();
+
+        foreach (Hilos::getActionAgentRoutes() as $action => $agentType) {
+            $destinations = $router->getDestinations(new SignalDTO(
+                new SignalSource(SignalSource::WEBSOCKET),
+                new SignalType(SignalTypeConstants::ACTION),
+                new SignalName($action),
+                new WebSocketActionSignalDTO('accept-key', $action),
+            ));
+
+            $this->assertSame([
+                ['type' => 'agent', 'agentType' => $agentType, 'agentIndex' => null],
+            ], $destinations);
+        }
+    }
+
+    public function testAttachmentDraftDeleteRouteIsDeclaredByMainPage(): void
+    {
+        $this->assertSame(
+            PageConstants::MAIN,
+            Hilos::getPageActionRoutes()[ChatSignalConstants::ATTACHMENT_DRAFT_DELETE] ?? null,
+        );
+        $this->assertSame(
+            AgentType::CHAT,
+            Hilos::getActionAgentRoutes()[ChatSignalConstants::ATTACHMENT_DRAFT_DELETE] ?? null,
+        );
+    }
+
+    public function testUnknownActionsDoNotUseWebSocketActionFallback(): void
+    {
+        $destinations = (new ChatSignalRouter())->getDestinations(new SignalDTO(
+            new SignalSource(SignalSource::WEBSOCKET),
+            new SignalType(SignalTypeConstants::ACTION),
+            new SignalName('unknown_action'),
+            new WebSocketActionSignalDTO('accept-key', 'unknown_action'),
+        ));
+
+        $this->assertSame([], $destinations);
+    }
+
     public function testAdminLibraryPagesSubscribeThroughLibraryAgent(): void
     {
         $router = new ChatSignalRouter();

@@ -40,6 +40,10 @@ final class ProfilePage extends AbstractPage
 
     public const string SUBSCRIPTION_AGENT_TYPE = AgentType::CHAT;
 
+    public const array ACTIONS = [
+        ChatSignalConstants::RENAME,
+    ];
+
     public const array BROWSER = [
         BrowserConfigKey::SIGNAL => ChatSignalConstants::SUBSCRIPTION_PAGE_PROFILE,
     ];

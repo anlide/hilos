@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Core\Socket\Client;
 
-use Demo\Chat\Constants\ChatSignalConstants;
+use Demo\Chat\Hilos;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Http\RequestQueryParams;
 use Hilos\Socket\Client\WebSocketClient;
@@ -24,25 +24,7 @@ final class ChatWebSocketClient extends WebSocketClient
      */
     protected function onActionValidated(string $actionName): void
     {
-        if (!in_array($actionName, [
-            ChatSignalConstants::RENAME,
-            ChatSignalConstants::MESSAGE,
-            ChatSignalConstants::FILE_UPLOAD_INIT,
-            ChatSignalConstants::ATTACHMENT_DRAFT_DELETE,
-            ChatSignalConstants::USER_UPDATE,
-            ChatSignalConstants::HILOS_USER_UPDATE,
-            ChatSignalConstants::BOT_CREATE,
-            ChatSignalConstants::BOT_UPDATE,
-            ChatSignalConstants::BOT_DELETE,
-            ChatSignalConstants::MODERATOR_PIECE_CREATE,
-            ChatSignalConstants::MODERATOR_PIECE_UPDATE,
-            ChatSignalConstants::MODERATOR_PIECE_DELETE,
-            ChatSignalConstants::SETTING_ADD,
-            ChatSignalConstants::SETTING_UPDATE,
-            ChatSignalConstants::SETTING_DELETE,
-            ChatSignalConstants::GUARDIAN_AGENT_RUN_START,
-            ChatSignalConstants::GUARDIAN_AGENT_RUN_STOP,
-        ], true)) {
+        if (!array_key_exists($actionName, Hilos::getPageActionRoutes())) {
             throw new AgentUnknownActionException("Unknown websocket action type: {$actionName}");
         }
     }
