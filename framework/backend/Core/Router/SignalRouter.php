@@ -33,8 +33,9 @@ use Hilos\Utils\Logger;
  * - 'groups'   — group -> agentType mapping
  * - 'signals'  — source -> signalType -> agentType mapping (static routing)
  * - 'actions'  — action -> agentType mapping
- * - 'page_subscription_routing' — per-page agent override for PAGE_SUBSCRIBE/UNSUBSCRIBE/UPDATE:
- *       ['default' => agentType, 'pages' => [pageName => agentType, ...]]
+ *
+ * Page subscription routing is derived from the active project Hilos facade
+ * and registered page SUBSCRIPTION_AGENT_TYPE constants.
  *
  * For dynamic routing (agentIndex depends on signal content), override getDestinations()
  * in child router. Static routing must always be declared in config.
@@ -48,7 +49,6 @@ class SignalRouter
      * - 'groups' — array<string, array{agentType: string, agentIndex: ?string, params: array}>
      * - 'signals' — array<source, array<signalType, string|string[]>> (static agent routing)
      * - 'actions' — array<actionName, string> (action -> agentType)
-     * - 'page_subscription_routing' — array{default: string, pages: array<pageName, string>}
      *
      * @var array<string, mixed>
      */
@@ -100,6 +100,31 @@ class SignalRouter
     public function __construct()
     {
         $this->config = [];
+    }
+
+    /**
+     * Returns the active project facade class for topology registry reads.
+     *
+     * Project routers override this so framework routing can read project
+     * page subscription ownership from the correct Hilos facade.
+     *
+     * @return class-string<Hilos> Active project facade class
+     */
+    protected function hilosClass(): string
+    {
+        return Hilos::class;
+    }
+
+    /**
+     * Returns the fallback owner for page subscriptions to unregistered pages.
+     *
+     * Return null when unknown pages should not route to an agent.
+     *
+     * @return ?string Fallback agent type
+     */
+    protected function getDefaultPageSubscriptionAgentType(): ?string
+    {
+        return null;
     }
 
     /**
@@ -630,8 +655,8 @@ class SignalRouter
     /**
      * Get agent destinations for page subscription signals (subscribe/unsubscribe/update)
      *
-     * Uses config['page_subscription_routing'] to resolve per-page agent type.
-     * Falls back to config['page_subscription_routing']['default'] when page has no override.
+     * Uses the active project topology to resolve per-page agent type.
+     * Falls back to getDefaultPageSubscriptionAgentType() for unregistered pages.
      *
      * @param SignalDTO $signal Signal DTO
      * @return list<array{type: string, agentType: string, agentIndex: null}>
@@ -653,19 +678,35 @@ class SignalRouter
             return [];
         }
 
-        $routingConfig = $this->config['page_subscription_routing'] ?? [];
-        $pagesOverrides = $routingConfig['pages'] ?? [];
-        $defaultAgentType = $routingConfig['default'] ?? null;
-
-        $agentType = $pagesOverrides[$page] ?? $defaultAgentType;
-
-        if ($agentType === null || $agentType === '') {
+        $agentType = $this->getPageSubscriptionAgentType($page);
+        if ($agentType === null) {
             return [];
         }
 
         return [
             ['type' => 'agent', 'agentType' => $agentType, 'agentIndex' => null],
         ];
+    }
+
+    /**
+     * Resolves page subscription owner from project topology.
+     *
+     * @param string $page Page name from the subscription signal
+     * @return ?string Agent type or null when no route exists
+     */
+    private function getPageSubscriptionAgentType(string $page): ?string
+    {
+        $hilosClass = $this->hilosClass();
+        $agentType = $hilosClass::getPageRoutes()[$page] ?? null;
+        if (is_string($agentType) && $agentType !== '') {
+            return $agentType;
+        }
+
+        $fallbackAgentType = $this->getDefaultPageSubscriptionAgentType();
+
+        return is_string($fallbackAgentType) && $fallbackAgentType !== ''
+            ? $fallbackAgentType
+            : null;
     }
 
     /**

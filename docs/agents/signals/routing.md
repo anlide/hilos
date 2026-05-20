@@ -7,9 +7,9 @@ Signals flow: **source → SignalRouter → daemon → worker → agent**.
 Route by **sender**, not by destination. The router is declarative — it maps source + type → agent type.
 
 For project page subscription routing, keep the page-to-agent ownership in
-each page class `SUBSCRIPTION_AGENT_TYPE` and let the project router import
-the computed `Hilos::getPageRoutes()` registry. Do not maintain a duplicate
-page routing list only inside the router; see
+each page class `SUBSCRIPTION_AGENT_TYPE`. `SignalRouter` reads the computed
+`Hilos::getPageRoutes()` registry through the project facade hook; project
+routers should not maintain a duplicate page routing list in config. See
 [app-topology.md](../app-topology.md).
 
 For WebSocket actions, keep action ownership in each page class `ACTIONS`.
@@ -30,6 +30,16 @@ should import `Hilos::getAgentSignalRoutes()`.
 ## Config structure (in SignalRouter subclass)
 
 ```php
+protected function hilosClass(): string
+{
+    return Hilos::class;
+}
+
+protected function getDefaultPageSubscriptionAgentType(): ?string
+{
+    return AgentType::CHAT;
+}
+
 $pageSignalAgentRoutes = Hilos::getPageSignalAgentRoutes();
 $pageOwnedAgentSignals = $pageSignalAgentRoutes[SignalTypeConstants::AGENT_SIGNAL] ?? [];
 if (!is_array($pageOwnedAgentSignals)) {
@@ -39,9 +49,9 @@ if (!is_array($pageOwnedAgentSignals)) {
 $this->config = [
     'groups'  => [ 'group_name' => ['agentType' => 'chat', 'agentIndex' => null, 'params' => []] ],
     'signals' => [
-        SignalSource::WS => [
-            SignalTypeConstants::WS_HANDSHAKE => AgentType::CHAT,
-            SignalTypeConstants::WS_CLOSE     => AgentType::CHAT,
+        SignalSource::WEBSOCKET => [
+            SignalTypeConstants::HANDSHAKE => AgentType::CHAT,
+            SignalTypeConstants::CONNECTION_CLOSE => AgentType::CHAT,
             SignalTypeConstants::FRAME_BINARY => $pageSignalAgentRoutes[SignalTypeConstants::FRAME_BINARY] ?? AgentType::CHAT,
         ],
         SignalSource::AGENT => [
@@ -52,12 +62,12 @@ $this->config = [
         ],
     ],
     'actions' => Hilos::getActionAgentRoutes(),
-    'page_subscription_routing' => [
-        'default' => AgentType::CHAT,
-        'pages'   => [ PageConstants::BOT => AgentType::BOT ],
-    ],
 ];
 ```
+
+Do not duplicate page subscription ownership in project router config.
+Registered page subscription routes come from page classes through
+`Hilos::getPageRoutes()`.
 
 ## Signal flow
 

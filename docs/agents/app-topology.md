@@ -20,8 +20,9 @@ table contexts when they can read the project registry.
 - Each page class declares its page subscription owner in
   `PageClass::SUBSCRIPTION_AGENT_TYPE`. `Hilos::getPageRoutes()` computes the
   page-to-agent routing map from `Hilos::PAGES` and those page-level constants.
-  Signal router subclasses should import that computed registry instead of
-  owning a duplicate page-to-agent list.
+  `SignalRouter` resolves page subscription signals from that computed registry
+  through the active project Hilos facade; project routers should not rebuild
+  the page-to-agent list in config.
 - Each page class declares WebSocket actions it owns in `PageClass::ACTIONS`.
   `Hilos::getPageActionRoutes()` computes `action -> page`, and
   `Hilos::getActionAgentRoutes()` derives `action -> agent` through the owning
@@ -125,8 +126,9 @@ public const array PAGE_TABLES = [
   `BrowserContext`; resolve table config from `Hilos::BROWSER_TABLES`.
 - Do not put page-table bindings in page `BROWSER` constants; use
   `Hilos::PAGE_TABLES`.
-- Do not keep page subscription routing only in `SignalRouter` config when the
-  project can compute it through `Hilos::getPageRoutes()`.
+- Do not keep page subscription routing in project `SignalRouter` config when
+  the project can compute it through `Hilos::getPageRoutes()`. Override the
+  router's project facade hook and keep page ownership on page classes.
 - Do not keep WebSocket action routing only in `SignalRouter`, `WorkerManager`,
   or WebSocket client config when the project can compute it through
   `Hilos::getPageActionRoutes()` and `Hilos::getActionAgentRoutes()`.

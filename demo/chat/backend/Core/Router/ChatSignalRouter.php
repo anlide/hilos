@@ -21,8 +21,8 @@ use Hilos\Core\Router\SignalSource;
  * Defines declarative routing rules for all signal types in the chat demo project.
  * Routes signals by source and type to the appropriate agent.
  *
- * Page subscription signals (PAGE_SUBSCRIBE, PAGE_UNSUBSCRIBE, PAGE_UPDATE_SUBSCRIPTION)
- * are routed per-page via 'page_subscription_routing' config, with a default fallback.
+ * Page subscription signals are routed by framework topology through page
+ * SUBSCRIPTION_AGENT_TYPE declarations.
  */
 final class ChatSignalRouter extends SignalRouter
 {
@@ -33,7 +33,6 @@ final class ChatSignalRouter extends SignalRouter
     {
         parent::__construct();
 
-        $pageRoutes = Hilos::getPageRoutes();
         $pageSignalAgentRoutes = Hilos::getPageSignalAgentRoutes();
         $pageOwnedAgentSignalRoutes = $pageSignalAgentRoutes[SignalTypeConstants::AGENT_SIGNAL] ?? [];
         $agentSignalRoutes = Hilos::getAgentSignalRoutes();
@@ -69,17 +68,31 @@ final class ChatSignalRouter extends SignalRouter
             SignalSource::WEBSOCKET => $this->buildWebSocketRoutes($pageSignalAgentRoutes),
         ];
 
-        $pageSubscriptionRouting = [
-            'default' => AgentType::CHAT,
-            'pages' => $pageRoutes,
-        ];
-
         $this->config = [
             'groups' => $groups,
             'signals' => $signals,
             'actions' => Hilos::getActionAgentRoutes(),
-            'page_subscription_routing' => $pageSubscriptionRouting,
         ];
+    }
+
+    /**
+     * Returns chat project facade for topology registry reads.
+     *
+     * @return class-string<Hilos> Chat project facade class
+     */
+    protected function hilosClass(): string
+    {
+        return Hilos::class;
+    }
+
+    /**
+     * Returns the chat owner for subscriptions to unregistered pages.
+     *
+     * @return ?string Fallback agent type
+     */
+    protected function getDefaultPageSubscriptionAgentType(): ?string
+    {
+        return AgentType::CHAT;
     }
 
     /**

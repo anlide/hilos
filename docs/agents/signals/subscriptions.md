@@ -39,7 +39,7 @@ PAGE_UNSUBSCRIBE / GROUP_UNSUBSCRIBE
 
 From daemon's `dispatchSignals()`, `getDestinations()` resolves:
 - PAGE signal → find agent declared by page `SUBSCRIPTION_AGENT_TYPE` through
-  `page_subscription_routing`
+  the project topology registry
 - GROUP signal → find agent registered for that group in `config['groups']`
 
 ## Sending to subscribers
@@ -60,15 +60,17 @@ $this->sendToGroup($signalName, $groupName, $data);
 
 At project level, declare per-page subscription ownership in
 each page class `SUBSCRIPTION_AGENT_TYPE`; see [app-topology.md](../app-topology.md).
-The router may convert the computed `Hilos::getPageRoutes()` registry into
-`page_subscription_routing` config so different pages route subscription signals
-to different agents:
+`SignalRouter` reads the computed `Hilos::getPageRoutes()` registry through the
+project facade hook, so different pages route subscription signals to different
+agents without project router config:
 ```php
-'page_subscription_routing' => [
-    'default' => AgentType::CHAT,
-    'pages' => [
-        PageConstants::BOT      => AgentType::BOT,
-        PageConstants::MODERATOR => AgentType::MODERATOR,
-    ],
-],
+final class BotPage extends AbstractPage
+{
+    public const string PAGE = PageConstants::BOT;
+
+    public const string SUBSCRIPTION_AGENT_TYPE = AgentType::BOT;
+}
 ```
+
+Use `SignalRouter::getDefaultPageSubscriptionAgentType()` only as a project
+fallback for subscriptions to unregistered pages.

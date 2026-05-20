@@ -31,7 +31,8 @@ signals back to their source.
    skip the DTO.
 2. When adding a page or changing its subscription owner, update project
    topology through `Hilos::PAGES` and page `SUBSCRIPTION_AGENT_TYPE` as
-   described in `docs/agents/app-topology.md`.
+   described in `docs/agents/app-topology.md`; `SignalRouter` reads these
+   owners through the project facade hook.
 3. For pages with params, add the key to `Hilos\Constants\HilosPageRouteParams`
    (or a page-level constant for demo-only pages) and mirror it in
    `framework/frontend/src/constants/hilosPageRouteParams.ts` if the frontend
@@ -72,8 +73,9 @@ signals back to their source.
 - Do not catch `MissingPageRouteParamException` or
   `InvalidPageRouteParamException` inside page code; let the router convert
   them into a `subscription_page_error` signal.
-- Do not keep page subscription ownership only in router config when the
-  project can compute it through `Hilos::getPageRoutes()`.
+- Do not keep page subscription ownership in project router config for
+  registered pages; keep it on page `SUBSCRIPTION_AGENT_TYPE` and let
+  `SignalRouter` read `Hilos::getPageRoutes()`.
 - Once an abstract page introduces a typed subscribe DTO, keep its
   `onSubscribe()` / `onUpdateSubscription()` `final` so subclasses cannot
   bypass the parsed DTO.

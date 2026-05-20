@@ -24,7 +24,7 @@ Use this skill for every change that affects signal shape, route, subscription, 
 2. For project page subscription, page signal, action, or direct agent-signal
    ownership, update `SUBSCRIPTION_AGENT_TYPE`, `SIGNALS`, `ACTIONS`,
    `AGENT_SIGNALS`, and `Hilos::AGENTS` through `docs/agents/app-topology.md`;
-   keep payload-dependent routes in `SignalRouter`.
+   keep payload-dependent routes and the project facade hook in `SignalRouter`.
 3. Route named signal handlers with `switch ($name)` and explicit cases.
 4. Omit empty `default` branches in partial shared-broadcast handlers; document
    the ignore contract in PHPDoc instead.
@@ -40,5 +40,7 @@ Use this skill for every change that affects signal shape, route, subscription, 
 - Keep project page subscription ownership on page `SUBSCRIPTION_AGENT_TYPE`,
   page signal ownership on page `SIGNALS`, and direct agent signal ownership on
   agent `AGENT_SIGNALS`.
+- Do not duplicate page subscription ownership in project router config;
+  `SignalRouter` reads page owners from `Hilos::getPageRoutes()`.
 - Do not hide subscription or delivery decisions inside unrelated business logic.
 - Preserve envelope metadata when DTOs cross worker and daemon boundaries.
