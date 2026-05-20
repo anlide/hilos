@@ -40,7 +40,8 @@ PAGE_UNSUBSCRIBE / GROUP_UNSUBSCRIBE
 From daemon's `dispatchSignals()`, `getDestinations()` resolves:
 - PAGE signal → find agent declared by page `SUBSCRIPTION_AGENT_TYPE` through
   the project topology registry
-- GROUP signal → find agent registered for that group in `config['groups']`
+- GROUP_SUBSCRIBE / GROUP_UNSUBSCRIBE / GROUP_UPDATE_SUBSCRIPTION → find agent
+  declared by group `SUBSCRIPTION_AGENT_TYPE` through `Hilos::getGroupRoutes()`
 
 ## Sending to subscribers
 

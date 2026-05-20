@@ -27,11 +27,17 @@ For direct agent-to-agent signals, keep ownership in each agent class
 `AGENT_SIGNALS` and register the agent class in `Hilos::AGENTS`. `SignalRouter`
 reads `Hilos::getAgentSignalRoutes()` at dispatch time.
 
+For WebSocket group subscriptions, keep per-group ownership in each group class
+`SUBSCRIPTION_AGENT_TYPE` and register the group in `Hilos::GROUPS`.
+`SignalRouter` reads `Hilos::getGroupRoutes()` through the project facade hook;
+project routers should not maintain a duplicate group routing list in config. See
+[app-topology.md](../app-topology.md).
+
 ## Config structure (in SignalRouter subclass)
 
-Project routers declare only non-topology static routes in config: groups,
-daemon/system/cron, handshake, group subscription, and similar project-specific
-mappings. Override `hilosClass()` so framework routing can read project topology.
+Project routers declare only non-topology static routes in config: daemon/system/cron,
+handshake, connection close, and similar project-specific mappings. Override
+`hilosClass()` so framework routing can read project topology.
 
 ```php
 protected function hilosClass(): string
@@ -45,7 +51,6 @@ protected function getDefaultPageSubscriptionAgentType(): ?string
 }
 
 $this->config = [
-    'groups'  => [ 'group_name' => ['agentType' => 'chat', 'agentIndex' => null, 'params' => []] ],
     'signals' => [
         SignalSource::WEBSOCKET => [
             SignalTypeConstants::HANDSHAKE => AgentType::CHAT,
@@ -55,9 +60,10 @@ $this->config = [
 ];
 ```
 
-Do not duplicate page subscription ownership, page actions, page-owned signals,
-or agent-owned agent signals in project router config. Those routes come from
-page and agent classes through the active project Hilos facade.
+Do not duplicate page subscription ownership, group subscription ownership,
+page actions, page-owned signals, or agent-owned agent signals in project router
+config. Those routes come from page, group, and agent classes through the active
+project Hilos facade.
 
 ## Signal flow
 

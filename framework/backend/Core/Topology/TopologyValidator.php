@@ -7,6 +7,7 @@ namespace Hilos\Core\Topology;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
+use Hilos\Core\Group\AbstractGroup;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Table\Definition\TableDefinition;
 use Hilos\Core\Topology\Exception\InvalidTopologyException;
@@ -27,16 +28,19 @@ final class TopologyValidator
     {
         $errors = [];
         $pages = $this->constantArray($hilosClass, 'PAGES', $errors);
+        $groups = $this->constantArray($hilosClass, 'GROUPS', $errors);
         $agents = $this->constantArray($hilosClass, 'AGENTS', $errors);
         $tables = $this->constantArray($hilosClass, 'TABLES', $errors);
         $browserTables = $this->constantArray($hilosClass, 'BROWSER_TABLES', $errors);
         $pageTables = $this->constantArray($hilosClass, 'PAGE_TABLES', $errors);
 
         $this->validatePages($pages, $errors);
+        $this->validateGroups($groups, $errors);
         $this->validateAgents($agents, $errors);
         $this->validateRegisteredTables($tables, $errors);
         $this->validateBrowserTables($browserTables, $errors);
         $this->validatePageRoutes($pages, $hilosClass::getPageRoutes(), $errors);
+        $this->validateGroupRoutes($groups, $hilosClass::getGroupRoutes(), $errors);
         $this->validatePageActionRoutes($pages, $hilosClass::getPageActionRoutes(), $errors);
         $this->validatePageSignalRoutes($pages, $hilosClass::getPageSignalRoutes(), $errors);
         $this->validateAgentSignalRoutes(
@@ -107,6 +111,78 @@ final class TopologyValidator
 
             if (array_key_exists(BrowserConfigKey::TABLES, $pageClass::BROWSER)) {
                 $errors[] = "PAGES[{$page}] class {$pageClass} must declare page-table bindings in PAGE_TABLES, not BROWSER['" . BrowserConfigKey::TABLES . "']";
+            }
+        }
+    }
+
+    /**
+     * Validates group registry keys and group classes.
+     *
+     * @param array<mixed, mixed> $groups Group registry
+     * @param list<string> $errors Validation error accumulator
+     */
+    private function validateGroups(array $groups, array &$errors): void
+    {
+        foreach ($groups as $group => $groupClass) {
+            if (!is_string($group)) {
+                $errors[] = 'GROUPS contains a non-string group key';
+                continue;
+            }
+
+            if (!$this->isExistingClassString($groupClass, "GROUPS[{$group}]", $errors)) {
+                continue;
+            }
+
+            if (!is_subclass_of($groupClass, AbstractGroup::class)) {
+                $errors[] = "GROUPS[{$group}] class {$groupClass} must extend " . AbstractGroup::class;
+                continue;
+            }
+
+            /** @var class-string<AbstractGroup> $groupClass */
+            $classGroup = $groupClass::GROUP;
+            if ($classGroup !== $group) {
+                $errors[] = "GROUPS[{$group}] key must match {$groupClass}::GROUP ({$classGroup})";
+            }
+        }
+    }
+
+    /**
+     * Validates computed group route declarations against registered groups.
+     *
+     * @param array<mixed, mixed> $groups Group registry
+     * @param array<mixed, mixed> $groupRoutes Computed group route registry
+     * @param list<string> $errors Validation error accumulator
+     */
+    private function validateGroupRoutes(array $groups, array $groupRoutes, array &$errors): void
+    {
+        foreach ($groups as $group => $groupClass) {
+            if (!is_string($group)) {
+                continue;
+            }
+
+            if (!array_key_exists($group, $groupRoutes)) {
+                $errors[] = "GROUPS[{$group}] is missing from computed group routes";
+                continue;
+            }
+
+            $agentType = $groupRoutes[$group];
+            if (!is_string($agentType) || $agentType === '') {
+                if (is_string($groupClass)) {
+                    $errors[] = "GROUPS[{$group}] class {$groupClass} must declare a non-empty SUBSCRIPTION_AGENT_TYPE";
+                } else {
+                    $errors[] = "GROUPS[{$group}] must declare a non-empty SUBSCRIPTION_AGENT_TYPE";
+                }
+            }
+        }
+
+        foreach ($groupRoutes as $group => $_agentType) {
+            if (!is_string($group)) {
+                $errors[] = 'Computed group routes contain a non-string group key';
+                continue;
+            }
+
+            if (!array_key_exists($group, $groups)) {
+                $errors[] = "Computed group route {$group} references a group missing from GROUPS";
             }
         }
     }

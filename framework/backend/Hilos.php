@@ -7,6 +7,7 @@ namespace Hilos;
 use Hilos\Core\Analytics\AnalyticsCollector;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Browser\Context\BrowserContext;
+use Hilos\Core\Group\AbstractGroup;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Table\Context\TableContext;
@@ -40,6 +41,9 @@ abstract class Hilos
 
     /** Agent classes keyed by agent type. */
     public const array AGENTS = [];
+
+    /** Group classes keyed by group name. */
+    public const array GROUPS = [];
 
     /** Registered table definition classes keyed by table name. */
     public const array TABLES = [];
@@ -96,6 +100,27 @@ abstract class Hilos
         }
 
         return $pageRoutes;
+    }
+
+    /**
+     * Returns group subscription owner agent types declared by registered group classes.
+     *
+     * Invalid group registry entries are skipped here and reported by topology validation.
+     *
+     * @return array<string, string> Agent type keyed by group name
+     */
+    public static function getGroupRoutes(): array
+    {
+        $groupRoutes = [];
+        foreach (static::GROUPS as $group => $groupClass) {
+            if (!is_string($group) || !is_string($groupClass) || !is_subclass_of($groupClass, AbstractGroup::class)) {
+                continue;
+            }
+
+            $groupRoutes[$group] = $groupClass::SUBSCRIPTION_AGENT_TYPE;
+        }
+
+        return $groupRoutes;
     }
 
     /**

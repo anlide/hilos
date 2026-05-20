@@ -30,8 +30,9 @@ use Hilos\Utils\Logger;
  * Agents do not pull signals — they receive them based on declarative routing config.
  *
  * Config structure:
- * - 'groups'   — group -> agentType mapping
- * - 'signals'  — source -> signalType -> agentType mapping (project-only static routing)
+ * - 'signals' — source -> signalType -> agentType mapping (project-only static routing)
+ *
+ * Group subscription ownership is derived from Hilos::getGroupRoutes() at dispatch time.
  *
  * Page subscription, page actions, page-owned non-action signals, and agent-owned
  * agent signals are derived from the active project Hilos facade at dispatch time.
@@ -51,7 +52,6 @@ class SignalRouter
      * Signal routing configuration
      *
      * Set by child router in __construct(). Keys:
-     * - 'groups' — array<string, array{agentType: string, agentIndex: ?string, params: array}>
      * - 'signals' — array<source, array<signalType, string|string[]>> (project-only static routing)
      *
      * @var array<string, mixed>
@@ -127,6 +127,18 @@ class SignalRouter
      * @return ?string Fallback agent type
      */
     protected function getDefaultPageSubscriptionAgentType(): ?string
+    {
+        return null;
+    }
+
+    /**
+     * Returns the fallback owner for group subscriptions to unregistered groups.
+     *
+     * Return null when unknown groups should not route to an agent.
+     *
+     * @return ?string Fallback agent type
+     */
+    protected function getDefaultGroupSubscriptionAgentType(): ?string
     {
         return null;
     }
@@ -599,6 +611,12 @@ class SignalRouter
             SignalTypeConstants::PAGE_UPDATE_SUBSCRIPTION,
         ], true)) {
             $destinations = array_merge($destinations, $this->getPageSubscriptionDestinations($signal));
+        } elseif (in_array($signalType, [
+            SignalTypeConstants::GROUP_SUBSCRIBE,
+            SignalTypeConstants::GROUP_UNSUBSCRIBE,
+            SignalTypeConstants::GROUP_UPDATE_SUBSCRIPTION,
+        ], true)) {
+            $destinations = array_merge($destinations, $this->getGroupSubscriptionDestinations($signal));
         } elseif ($signalType === SignalTypeConstants::ACTION) {
             $actionDestinations = $this->getActionDestinations($signal);
 
@@ -710,6 +728,65 @@ class SignalRouter
         }
 
         $fallbackAgentType = $this->getDefaultPageSubscriptionAgentType();
+
+        return is_string($fallbackAgentType) && $fallbackAgentType !== ''
+            ? $fallbackAgentType
+            : null;
+    }
+
+    /**
+     * Get agent destinations for group subscription signals (subscribe/unsubscribe/update).
+     *
+     * Uses the active project topology to resolve per-group agent type.
+     * Falls back to getDefaultGroupSubscriptionAgentType() for unregistered groups.
+     *
+     * @param SignalDTO $signal Signal DTO
+     * @return list<array{type: string, agentType: string, agentIndex: null}>
+     *         List of agent destination configs
+     */
+    private function getGroupSubscriptionDestinations(SignalDTO $signal): array
+    {
+        $signalType = $signal->signalType->getType();
+        $data = $signal->data;
+
+        $group = match ($signalType) {
+            SignalTypeConstants::GROUP_SUBSCRIBE => $data instanceof WebSocketGroupSubscribeSignalDTO ? $data->group : '',
+            SignalTypeConstants::GROUP_UPDATE_SUBSCRIPTION => $data instanceof WebSocketGroupUpdateSubscriptionSignalDTO ? $data->group : '',
+            SignalTypeConstants::GROUP_UNSUBSCRIBE => $data instanceof WebSocketGroupUnsubscribeSignalDTO
+                ? $data->group
+                : $signal->signalName->getName(),
+            default => '',
+        };
+
+        if ($group === '') {
+            return [];
+        }
+
+        $agentType = $this->getGroupSubscriptionAgentType($group);
+        if ($agentType === null) {
+            return [];
+        }
+
+        return [
+            ['type' => 'agent', 'agentType' => $agentType, 'agentIndex' => null],
+        ];
+    }
+
+    /**
+     * Resolves group subscription owner from project topology.
+     *
+     * @param string $group Group name from the subscription signal
+     * @return ?string Agent type or null when no route exists
+     */
+    private function getGroupSubscriptionAgentType(string $group): ?string
+    {
+        $hilosClass = $this->hilosClass();
+        $agentType = $hilosClass::getGroupRoutes()[$group] ?? null;
+        if (is_string($agentType) && $agentType !== '') {
+            return $agentType;
+        }
+
+        $fallbackAgentType = $this->getDefaultGroupSubscriptionAgentType();
 
         return is_string($fallbackAgentType) && $fallbackAgentType !== ''
             ? $fallbackAgentType

@@ -28,6 +28,7 @@ use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Database\Settings\ChatSettingsAccessor;
 use Demo\Chat\Environment\ChatEnvAccessor;
 use Demo\Chat\Fs\ChatFsContext;
+use Demo\Chat\Groups\SessionGroup;
 use Demo\Chat\Pages\AdminBotsPage;
 use Demo\Chat\Pages\AdminModeratorPage;
 use Demo\Chat\Pages\AdminPage;
@@ -213,6 +214,10 @@ final class Hilos extends \Hilos\Hilos
         ChangeLogDashboardPage::PAGE => ChangeLogDashboardPage::class,
         ChangeLogTablesPage::PAGE => ChangeLogTablesPage::class,
         ChangeLogTablePage::PAGE => ChangeLogTablePage::class,
+    ];
+
+    public const array GROUPS = [
+        SessionGroup::GROUP => SessionGroup::class,
     ];
 
     public const array AGENTS = [

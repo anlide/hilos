@@ -15,6 +15,8 @@ table contexts when they can read the project registry.
 
 - `Hilos::PAGES` registers page classes keyed by each page class `::PAGE`
   value.
+- `Hilos::GROUPS` registers group classes keyed by each group class `::GROUP`
+  value.
 - `Hilos::AGENTS` registers agent classes keyed by each agent class
   `::AGENT_TYPE` value.
 - Each page class declares its page subscription owner in
@@ -23,6 +25,12 @@ table contexts when they can read the project registry.
   `SignalRouter` resolves page subscription signals from that computed registry
   through the active project Hilos facade; project routers should not rebuild
   the page-to-agent list in config.
+- Each group class declares its group subscription owner in
+  `GroupClass::SUBSCRIPTION_AGENT_TYPE`. `Hilos::getGroupRoutes()` computes the
+  group-to-agent routing map from `Hilos::GROUPS` and those group-level constants.
+  `SignalRouter` resolves group subscription signals from that computed registry
+  through the active project Hilos facade; project routers should not rebuild
+  the group-to-agent list in config.
 - Each page class declares WebSocket actions it owns in `PageClass::ACTIONS`.
   `Hilos::getPageActionRoutes()` computes `action -> page`, and
   `Hilos::getActionAgentRoutes()` derives `action -> agent` through the owning
@@ -56,29 +64,40 @@ table bindings that should live in `Hilos::PAGE_TABLES`.
    `SomePage::PAGE => SomePage::class`.
 2. Declare the page subscription owner in the page class:
    `public const string SUBSCRIPTION_AGENT_TYPE = AgentType::CHAT;`.
-3. Declare inbound WebSocket actions owned by that page in
+3. For a new WebSocket group, add the group class to `Hilos::GROUPS` using
+   `SomeGroup::GROUP => SomeGroup::class` and declare
+   `public const string SUBSCRIPTION_AGENT_TYPE = AgentType::CHAT;` on the group
+   class.
+4. Declare inbound WebSocket actions owned by that page in
    `public const array ACTIONS = [...]`. Leave it as the inherited empty array
    when the page has no actions.
 4. Declare page-dispatched non-action signals in
    `public const array SIGNALS = [...]` when the page handles them.
-5. For a new agent, add the agent class to `Hilos::AGENTS` using
+6. For a new agent, add the agent class to `Hilos::AGENTS` using
    `SomeAgent::AGENT_TYPE => SomeAgent::class`.
-6. Declare directly handled agent-to-agent signal names in
+7. Declare directly handled agent-to-agent signal names in
    `public const array AGENT_SIGNALS = [...]` when the agent owns them.
-7. For a server table definition, add the table class to `Hilos::TABLES`.
-8. For a browser-only table config, add the config class to
+8. For a server table definition, add the table class to `Hilos::TABLES`.
+9. For a browser-only table config, add the config class to
    `Hilos::BROWSER_TABLES`.
-9. For page-shaped browser state, bind the page to its tables in
+10. For page-shaped browser state, bind the page to its tables in
    `Hilos::PAGE_TABLES`, including any browser params.
-10. Make page factories, table contexts, browser contexts, signal routers,
+11. Make page factories, table contexts, browser contexts, signal routers,
     worker page routers, and WebSocket clients read the project registry through
     their established hooks or factory
     methods instead of adding another local topology list.
-11. Add or update a topology registry test when a project registry changes.
+12. Add or update a topology registry test when a project registry changes.
 
 ## Preferred Shape
 
 ```php
+final class SessionGroup extends AbstractGroup
+{
+    public const string GROUP = GroupConstants::SESSION;
+
+    public const string SUBSCRIPTION_AGENT_TYPE = AgentType::CHAT;
+}
+
 final class MainPage extends AbstractPage
 {
     public const string PAGE = PageConstants::MAIN;
@@ -96,6 +115,10 @@ final class MainPage extends AbstractPage
 
 public const array PAGES = [
     MainPage::PAGE => MainPage::class,
+];
+
+public const array GROUPS = [
+    SessionGroup::GROUP => SessionGroup::class,
 ];
 
 public const array AGENTS = [
@@ -129,6 +152,9 @@ public const array PAGE_TABLES = [
 - Do not keep page subscription routing in project `SignalRouter` config when
   the project can compute it through `Hilos::getPageRoutes()`. Override the
   router's project facade hook and keep page ownership on page classes.
+- Do not keep group subscription routing in project `SignalRouter` config when
+  the project can compute it through `Hilos::getGroupRoutes()`. Override the
+  router's project facade hook and keep group ownership on group classes.
 - Do not keep WebSocket action routing only in `SignalRouter`, `WorkerManager`,
   or WebSocket client config when the project can compute it through
   `Hilos::getPageActionRoutes()` and `Hilos::getActionAgentRoutes()`.

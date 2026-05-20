@@ -6,6 +6,7 @@ namespace Demo\Chat\Tests\Unit;
 
 use Demo\Chat\Constants\AgentType;
 use Demo\Chat\Constants\ChatSignalConstants;
+use Demo\Chat\Constants\GroupConstants;
 use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Router\ChatSignalRouter;
 use Demo\Chat\Core\Router\DTO\BotMessageSignalData;
@@ -21,6 +22,7 @@ use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
 use Hilos\Socket\WebSocket\DTO\WebSocketActionSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketFrameBinarySignalDTO;
+use Hilos\Socket\WebSocket\DTO\WebSocketGroupSubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\Socket\Worker\DTO\SystemSignalDTO;
 use PHPUnit\Framework\TestCase;
@@ -113,6 +115,36 @@ final class ChatSignalRouterTest extends TestCase
                 ['type' => 'agent', 'agentType' => AgentType::LIBRARY, 'agentIndex' => null],
             ], $destinations);
         }
+    }
+
+    public function testGroupSubscriptionsRouteFromTopology(): void
+    {
+        $router = new ChatSignalRouter();
+
+        $destinations = $router->getDestinations(new SignalDTO(
+            new SignalSource(SignalSource::WEBSOCKET),
+            new SignalType(SignalTypeConstants::GROUP_SUBSCRIBE),
+            new SignalName(GroupConstants::SESSION),
+            new WebSocketGroupSubscribeSignalDTO('accept-key', GroupConstants::SESSION),
+        ));
+
+        $this->assertSame([
+            ['type' => 'agent', 'agentType' => Hilos::getGroupRoutes()[GroupConstants::SESSION], 'agentIndex' => null],
+        ], $destinations);
+    }
+
+    public function testUnregisteredGroupUsesChatFallback(): void
+    {
+        $destinations = (new ChatSignalRouter())->getDestinations(new SignalDTO(
+            new SignalSource(SignalSource::WEBSOCKET),
+            new SignalType(SignalTypeConstants::GROUP_SUBSCRIBE),
+            new SignalName('unknown_group'),
+            new WebSocketGroupSubscribeSignalDTO('accept-key', 'unknown_group'),
+        ));
+
+        $this->assertSame([
+            ['type' => 'agent', 'agentType' => AgentType::CHAT, 'agentIndex' => null],
+        ], $destinations);
     }
 
     public function testPageSubscriptionsRouteFromTopology(): void

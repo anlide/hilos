@@ -6,7 +6,6 @@ namespace Demo\Chat\Core\Router;
 
 use Demo\Chat\Constants\AgentType;
 use Demo\Chat\Constants\ChatSignalConstants;
-use Demo\Chat\Constants\GroupConstants;
 use Demo\Chat\Core\Router\DTO\BotAgentSignalData;
 use Demo\Chat\Hilos;
 use Hilos\Constants\SignalTypeConstants;
@@ -18,9 +17,9 @@ use Hilos\Core\Router\SignalSource;
 /**
  * ChatSignalRouter - Signal router for chat demo.
  *
- * Defines chat-specific static routing rules for daemon and WebSocket lifecycle
- * signals. Page subscription, page actions, page-owned signals, and agent-owned
- * agent signals are resolved by framework SignalRouter from project topology.
+ * Declares chat-specific static routes for daemon and WebSocket lifecycle signals.
+ * Page subscription, page actions, page-owned signals, group subscription ownership,
+ * and agent-owned agent signals are resolved by framework SignalRouter from project topology.
  */
 final class ChatSignalRouter extends SignalRouter
 {
@@ -31,41 +30,27 @@ final class ChatSignalRouter extends SignalRouter
     {
         parent::__construct();
 
-        $groups = [
-            GroupConstants::SESSION => [
-                'agentType' => AgentType::CHAT,
-                'agentIndex' => null,
-                'params' => [],
-            ],
-        ];
-
-        $signals = [
-            SignalSource::DAEMON => [
-                SignalTypeConstants::SYSTEM => [
-                    AgentType::CHAT,
-                    AgentType::LIBRARY,
-                    AgentType::CHAT_CONTEXT_ANALYZER,
-                    AgentType::MODERATOR,
-                    AgentType::HILOS_INDEX,
-                    AgentType::HILOS_GUARDIAN,
-                    AgentType::HILOS_ANALYTICS,
-                    AgentType::HILOS_LOGS,
-                ],
-                SignalTypeConstants::CRON => AgentType::CHAT,
-            ],
-            SignalSource::WEBSOCKET => [
-                SignalTypeConstants::HANDSHAKE => AgentType::CHAT,
-                SignalTypeConstants::CONNECTION_CLOSE => AgentType::CHAT,
-                SignalTypeConstants::GROUP_SUBSCRIBE => AgentType::CHAT,
-                SignalTypeConstants::GROUP_UNSUBSCRIBE => AgentType::CHAT,
-                SignalTypeConstants::GROUP_UPDATE_SUBSCRIPTION => AgentType::CHAT,
-                SignalTypeConstants::CRON => AgentType::CHAT,
-            ],
-        ];
-
         $this->config = [
-            'groups' => $groups,
-            'signals' => $signals,
+            'signals' => [
+                SignalSource::DAEMON => [
+                    SignalTypeConstants::SYSTEM => [
+                        AgentType::CHAT,
+                        AgentType::LIBRARY,
+                        AgentType::CHAT_CONTEXT_ANALYZER,
+                        AgentType::MODERATOR,
+                        AgentType::HILOS_INDEX,
+                        AgentType::HILOS_GUARDIAN,
+                        AgentType::HILOS_ANALYTICS,
+                        AgentType::HILOS_LOGS,
+                    ],
+                    SignalTypeConstants::CRON => AgentType::CHAT,
+                ],
+                SignalSource::WEBSOCKET => [
+                    SignalTypeConstants::HANDSHAKE => AgentType::CHAT,
+                    SignalTypeConstants::CONNECTION_CLOSE => AgentType::CHAT,
+                    SignalTypeConstants::CRON => AgentType::CHAT,
+                ],
+            ],
         ];
     }
 
@@ -85,6 +70,16 @@ final class ChatSignalRouter extends SignalRouter
      * @return ?string Fallback agent type
      */
     protected function getDefaultPageSubscriptionAgentType(): ?string
+    {
+        return AgentType::CHAT;
+    }
+
+    /**
+     * Returns the chat owner for subscriptions to unregistered groups.
+     *
+     * @return ?string Fallback agent type
+     */
+    protected function getDefaultGroupSubscriptionAgentType(): ?string
     {
         return AgentType::CHAT;
     }

@@ -41,9 +41,14 @@ final class ChatTopologyRegistryTest extends TestCase
         $this->assertSame(array_keys(Hilos::PAGES), array_keys(Hilos::getPageRoutes()));
     }
 
+    public function testComputedGroupRoutesCoverEveryRegisteredGroup(): void
+    {
+        $this->assertSame(array_keys(Hilos::GROUPS), array_keys(Hilos::getGroupRoutes()));
+    }
+
     public function testRegistryValuesAreClassStrings(): void
     {
-        foreach ([Hilos::PAGES, Hilos::AGENTS, Hilos::TABLES, Hilos::BROWSER_TABLES] as $registry) {
+        foreach ([Hilos::PAGES, Hilos::GROUPS, Hilos::AGENTS, Hilos::TABLES, Hilos::BROWSER_TABLES] as $registry) {
             foreach ($registry as $class) {
                 $this->assertIsString($class);
                 $this->assertTrue(class_exists($class), "{$class} must be a concrete class string");
@@ -72,6 +77,23 @@ final class ChatTopologyRegistryTest extends TestCase
         foreach (Hilos::PAGES as $page => $pageClass) {
             $this->assertSame($pageClass::SUBSCRIPTION_AGENT_TYPE, $pageRoutes[$page]);
             $this->assertNotSame('', $pageClass::SUBSCRIPTION_AGENT_TYPE, "{$page} must declare a subscription owner");
+        }
+    }
+
+    public function testGroupRegistryKeysMatchGroupClassConstants(): void
+    {
+        foreach (Hilos::GROUPS as $group => $groupClass) {
+            $this->assertSame($group, $groupClass::GROUP);
+        }
+    }
+
+    public function testGroupSubscriptionOwnersAreDeclaredByGroupClasses(): void
+    {
+        $groupRoutes = Hilos::getGroupRoutes();
+
+        foreach (Hilos::GROUPS as $group => $groupClass) {
+            $this->assertSame($groupClass::SUBSCRIPTION_AGENT_TYPE, $groupRoutes[$group]);
+            $this->assertNotSame('', $groupClass::SUBSCRIPTION_AGENT_TYPE, "{$group} must declare a subscription owner");
         }
     }
 
