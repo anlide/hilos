@@ -132,12 +132,15 @@ public const array PAGE_TABLES = [
 - Do not keep WebSocket action routing only in `SignalRouter`, `WorkerManager`,
   or WebSocket client config when the project can compute it through
   `Hilos::getPageActionRoutes()` and `Hilos::getActionAgentRoutes()`.
+  Framework `SignalRouter` reads action ownership at dispatch time.
 - Do not keep page-dispatched signal routes in project `SignalRouter` config
   when the project can compute them through `Hilos::getPageSignalRoutes()` and
   `Hilos::getPageSignalAgentRoutes()`.
-- Do not keep direct agent-to-agent signal routes only in `SignalRouter` when
-  the project can compute them through `Hilos::AGENTS` and
+  Framework `SignalRouter` reads page signal ownership at dispatch time.
+- Do not keep direct agent-to-agent signal routes in project `SignalRouter`
+  config when the project can compute them through `Hilos::AGENTS` and
   `Hilos::getAgentSignalRoutes()`.
+  Framework `SignalRouter` reads agent signal ownership at dispatch time.
 - Do not register a page, table, or browser table under a key that differs from
   the class constant that owns that key.
 

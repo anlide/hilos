@@ -13,8 +13,8 @@ routers should not maintain a duplicate page routing list in config. See
 [app-topology.md](../app-topology.md).
 
 For WebSocket actions, keep action ownership in each page class `ACTIONS`.
-Project routers should import `Hilos::getActionAgentRoutes()` for
-`action -> agent` routing, and worker page routers should import
+`SignalRouter` reads `Hilos::getActionAgentRoutes()` through the project
+facade hook at dispatch time. Worker page routers should import
 `Hilos::getPageActionRoutes()` for `action -> page` dispatch. WebSocket client
 allowlists should read the same page-action registry.
 
@@ -24,10 +24,14 @@ For page-dispatched non-action signals, keep ownership in each page class
 page routers import `Hilos::getPageSignalRoutes()` for page dispatch.
 
 For direct agent-to-agent signals, keep ownership in each agent class
-`AGENT_SIGNALS` and register the agent class in `Hilos::AGENTS`; project routers
-should import `Hilos::getAgentSignalRoutes()`.
+`AGENT_SIGNALS` and register the agent class in `Hilos::AGENTS`. `SignalRouter`
+reads `Hilos::getAgentSignalRoutes()` at dispatch time.
 
 ## Config structure (in SignalRouter subclass)
+
+Project routers declare only non-topology static routes in config: groups,
+daemon/system/cron, handshake, group subscription, and similar project-specific
+mappings. Override `hilosClass()` so framework routing can read project topology.
 
 ```php
 protected function hilosClass(): string
@@ -47,21 +51,13 @@ $this->config = [
             SignalTypeConstants::HANDSHAKE => AgentType::CHAT,
             SignalTypeConstants::CONNECTION_CLOSE => AgentType::CHAT,
         ],
-        SignalSource::AGENT => [
-            SignalTypeConstants::AGENT_SIGNAL => Hilos::getAgentSignalRoutes(),
-        ],
     ],
-    'actions' => Hilos::getActionAgentRoutes(),
 ];
 ```
 
-Do not duplicate page subscription ownership in project router config.
-Registered page subscription routes come from page classes through
-`Hilos::getPageRoutes()`.
-
-Do not duplicate page-owned non-action signal ownership in project router
-config. Registered page signal routes come from page classes through
-`Hilos::getPageSignalAgentRoutes()` inside the framework router.
+Do not duplicate page subscription ownership, page actions, page-owned signals,
+or agent-owned agent signals in project router config. Those routes come from
+page and agent classes through the active project Hilos facade.
 
 ## Signal flow
 
@@ -74,18 +70,19 @@ config. Registered page signal routes come from page classes through
 ## WebSocket → agent
 
 WS frame arrives → server parses → queues signal in `Hilos::$sr` with source `WS` → dispatched to agent.
-For `ACTION` frames, routing first checks the page-owned action registry.
-Projects should not keep a generic `WEBSOCKET/ACTION => AgentType::*`
-fallback when action ownership can be derived from pages.
+For `ACTION` frames, the framework router reads the page-owned action registry
+at dispatch time. Projects should not keep a generic `WEBSOCKET/ACTION =>
+AgentType::*` fallback when action ownership can be derived from pages.
 
 For page-owned non-action frames such as `FRAME_BINARY`, the framework router
-checks the page signal registry before project-specific static config.
+reads the page signal registry at dispatch time before project-specific static
+config.
 
 ## Agent → agent
 
 ```php
 $this->sendToAgent('moderate_bot_request', $data);
-// → AGENT_SIGNAL type → router config → target agent
+// → AGENT_SIGNAL type → topology registry → target agent
 ```
 
 ## Sync signals (DB/RT)

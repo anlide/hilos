@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit;
 
 use Hilos\Constants\SignalTypeConstants;
+use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\SignalDTO;
@@ -15,12 +16,14 @@ use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
 use Hilos\Database\Context\DbContext;
 use Hilos\Hilos as HilosFacade;
+use Hilos\Socket\WebSocket\DTO\WebSocketActionSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketFrameBinarySignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
+use Hilos\Socket\Worker\DTO\CronSignalDTO;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Tests page subscription routing from project topology.
+ * Tests topology-driven routing from project page and agent declarations.
  */
 final class SignalRouterPageSubscriptionRoutingTest extends TestCase
 {
@@ -87,6 +90,89 @@ final class SignalRouterPageSubscriptionRoutingTest extends TestCase
                 new SignalType(SignalTypeConstants::FRAME_BINARY),
                 new SignalName(SignalName::EMPTY),
                 new WebSocketFrameBinarySignalDTO('accept-key', 'payload'),
+            )),
+        );
+    }
+
+    public function testNamedCronSignalRoutesThroughPageSignalTopology(): void
+    {
+        $this->assertSame(
+            [
+                [
+                    'type' => 'agent',
+                    'agentType' => SignalRouterTopologyTestPage::SUBSCRIPTION_AGENT_TYPE,
+                    'agentIndex' => null,
+                ],
+            ],
+            (new SignalRouterTopologyTestRouter())->getDestinations(new SignalDTO(
+                new SignalSource(SignalSource::DAEMON),
+                new SignalType(SignalTypeConstants::CRON),
+                new SignalName(SignalRouterTopologyTestPage::TOPOLOGY_CRON),
+                new CronSignalDTO(SignalRouterTopologyTestPage::TOPOLOGY_CRON),
+            )),
+        );
+    }
+
+    public function testPageOwnedCronDoesNotRouteFromWrongSource(): void
+    {
+        $this->assertSame(
+            [],
+            (new SignalRouterTopologyTestRouter())->getDestinations(new SignalDTO(
+                new SignalSource(SignalSource::WEBSOCKET),
+                new SignalType(SignalTypeConstants::CRON),
+                new SignalName(SignalRouterTopologyTestPage::TOPOLOGY_CRON),
+                new CronSignalDTO(SignalRouterTopologyTestPage::TOPOLOGY_CRON),
+            )),
+        );
+    }
+
+    public function testActionRoutesThroughProjectTopology(): void
+    {
+        $this->assertSame(
+            [
+                [
+                    'type' => 'agent',
+                    'agentType' => SignalRouterTopologyTestPage::SUBSCRIPTION_AGENT_TYPE,
+                    'agentIndex' => null,
+                ],
+            ],
+            (new SignalRouterTopologyTestRouter())->getDestinations(new SignalDTO(
+                new SignalSource(SignalSource::WEBSOCKET),
+                new SignalType(SignalTypeConstants::ACTION),
+                new SignalName(SignalRouterTopologyTestPage::TOPOLOGY_ACTION),
+                new WebSocketActionSignalDTO('accept-key', SignalRouterTopologyTestPage::TOPOLOGY_ACTION),
+            )),
+        );
+    }
+
+    public function testAgentOwnedSignalRoutesThroughProjectTopology(): void
+    {
+        $this->assertSame(
+            [
+                [
+                    'type' => 'agent',
+                    'agentType' => SignalRouterTopologySignalTestAgent::AGENT_TYPE,
+                    'agentIndex' => null,
+                ],
+            ],
+            (new SignalRouterTopologyTestRouter())->getDestinations(new SignalDTO(
+                new SignalSource(SignalSource::AGENT),
+                new SignalType(SignalTypeConstants::AGENT_SIGNAL),
+                new SignalName(SignalRouterTopologySignalTestAgent::TOPOLOGY_AGENT_SIGNAL),
+                new AgentSignalData(new SignalData()),
+            )),
+        );
+    }
+
+    public function testAgentOwnedSignalDoesNotRouteFromWrongSource(): void
+    {
+        $this->assertSame(
+            [],
+            (new SignalRouterTopologyTestRouter())->getDestinations(new SignalDTO(
+                new SignalSource(SignalSource::WEBSOCKET),
+                new SignalType(SignalTypeConstants::AGENT_SIGNAL),
+                new SignalName(SignalRouterTopologySignalTestAgent::TOPOLOGY_AGENT_SIGNAL),
+                new AgentSignalData(new SignalData()),
             )),
         );
     }
@@ -178,8 +264,19 @@ final class SignalRouterTopologyTestPage extends AbstractPage
 
     public const string PAGE_AGENT_SIGNAL = 'page_agent_signal';
 
+    public const string TOPOLOGY_ACTION = 'topology_action';
+
+    public const string TOPOLOGY_CRON = 'topology_cron';
+
+    public const array ACTIONS = [
+        self::TOPOLOGY_ACTION,
+    ];
+
     public const array SIGNALS = [
         SignalTypeConstants::FRAME_BINARY => [],
+        SignalTypeConstants::CRON => [
+            self::TOPOLOGY_CRON,
+        ],
         SignalTypeConstants::AGENT_SIGNAL => [
             self::PAGE_AGENT_SIGNAL,
         ],
@@ -202,6 +299,10 @@ final class SignalRouterTopologyTestHilos extends HilosFacade
         SignalRouterTopologyTestPage::PAGE => SignalRouterTopologyTestPage::class,
     ];
 
+    public const array AGENTS = [
+        SignalRouterTopologySignalTestAgent::AGENT_TYPE => SignalRouterTopologySignalTestAgent::class,
+    ];
+
     /**
      * Creates a no-op DB context for tests.
      *
@@ -210,5 +311,23 @@ final class SignalRouterTopologyTestHilos extends HilosFacade
     protected static function createDb(): DbContext
     {
         return new SignalRouterTopologyTestDbContext();
+    }
+}
+
+final class SignalRouterTopologySignalTestAgent extends AbstractAgent
+{
+    public const string AGENT_TYPE = 'topology_direct_agent';
+
+    public const string TOPOLOGY_AGENT_SIGNAL = 'topology_agent_signal';
+
+    public const array AGENT_SIGNALS = [
+        self::TOPOLOGY_AGENT_SIGNAL,
+    ];
+
+    /**
+     * No-op stop hook for router topology tests.
+     */
+    public function onStop(): void
+    {
     }
 }

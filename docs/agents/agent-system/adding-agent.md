@@ -75,9 +75,9 @@ class MyAgent extends AbstractAgent {
 }
 ```
 
-Project routers import `Hilos::getAgentSignalRoutes()` for static
-agent-to-agent routes. Keep payload-dependent routes, such as indexed agent
-starts, in `SignalRouter::getDestinations()`.
+Project routers override `hilosClass()` so framework routing can read
+`Hilos::getAgentSignalRoutes()` at dispatch time. Keep payload-dependent routes,
+such as indexed agent starts, in `SignalRouter::getDestinations()`.
 
 ## 8. Add static source/type routing when needed
 

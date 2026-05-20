@@ -18,16 +18,14 @@ use Hilos\Core\Router\SignalSource;
 /**
  * ChatSignalRouter - Signal router for chat demo.
  *
- * Defines declarative routing rules for all signal types in the chat demo project.
- * Routes signals by source and type to the appropriate agent.
- *
- * Page subscription and page-owned non-action signals are routed by framework
- * topology through page declarations.
+ * Defines chat-specific static routing rules for daemon and WebSocket lifecycle
+ * signals. Page subscription, page actions, page-owned signals, and agent-owned
+ * agent signals are resolved by framework SignalRouter from project topology.
  */
 final class ChatSignalRouter extends SignalRouter
 {
     /**
-     * Creates signal router with topology-driven pages and chat-specific static routes.
+     * Creates signal router with chat-specific static routes.
      */
     public function __construct()
     {
@@ -55,9 +53,6 @@ final class ChatSignalRouter extends SignalRouter
                 ],
                 SignalTypeConstants::CRON => AgentType::CHAT,
             ],
-            SignalSource::AGENT => [
-                SignalTypeConstants::AGENT_SIGNAL => Hilos::getAgentSignalRoutes(),
-            ],
             SignalSource::WEBSOCKET => [
                 SignalTypeConstants::HANDSHAKE => AgentType::CHAT,
                 SignalTypeConstants::CONNECTION_CLOSE => AgentType::CHAT,
@@ -71,7 +66,6 @@ final class ChatSignalRouter extends SignalRouter
         $this->config = [
             'groups' => $groups,
             'signals' => $signals,
-            'actions' => Hilos::getActionAgentRoutes(),
         ];
     }
 
@@ -100,7 +94,6 @@ final class ChatSignalRouter extends SignalRouter
      *
      * Only use for cases where agentIndex or destination depends on signal payload
      * (e.g. BOT_AGENT_START extracts botId to route to specific BotAgent instance).
-     * Project-specific static routing is declared in $config above.
      *
      * @param SignalDTO $signal Signal DTO
      * @return list<array<string, mixed>> Array of destinations

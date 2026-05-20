@@ -31,11 +31,10 @@ use Hilos\Utils\Logger;
  *
  * Config structure:
  * - 'groups'   — group -> agentType mapping
- * - 'signals'  — source -> signalType -> agentType mapping (static routing)
- * - 'actions'  — action -> agentType mapping
+ * - 'signals'  — source -> signalType -> agentType mapping (project-only static routing)
  *
- * Page subscription and page-owned non-action signal routing are derived from
- * the active project Hilos facade and registered page constants.
+ * Page subscription, page actions, page-owned non-action signals, and agent-owned
+ * agent signals are derived from the active project Hilos facade at dispatch time.
  *
  * For dynamic routing (agentIndex depends on signal content), override getDestinations()
  * in child router. Project-specific static routing belongs in config.
@@ -53,8 +52,7 @@ class SignalRouter
      *
      * Set by child router in __construct(). Keys:
      * - 'groups' — array<string, array{agentType: string, agentIndex: ?string, params: array}>
-     * - 'signals' — array<source, array<signalType, string|string[]>> (project-specific static agent routing)
-     * - 'actions' — array<actionName, string> (action -> agentType)
+     * - 'signals' — array<source, array<signalType, string|string[]>> (project-only static routing)
      *
      * @var array<string, mixed>
      */
@@ -632,8 +630,7 @@ class SignalRouter
     /**
      * Get agent destinations for user actions.
      *
-     * Uses config['actions'][actionName] -> agentType mapping.
-     * Falls back to regular source/type routing when no explicit action mapping is declared.
+     * Uses page ACTIONS ownership through the active project topology.
      *
      * @param SignalDTO $signal Signal DTO
      * @return list<array{type: string, agentType: string, agentIndex: null}>
@@ -646,12 +643,11 @@ class SignalRouter
             return [];
         }
 
-        $actionRoutes = $this->config['actions'] ?? [];
-        if (!is_array($actionRoutes)) {
+        if ($signal->signalSource->getSource() !== SignalSource::WEBSOCKET) {
             return [];
         }
 
-        $agentType = $actionRoutes[$actionName] ?? null;
+        $agentType = $this->hilosClass()::getActionAgentRoutes()[$actionName] ?? null;
         if (!is_string($agentType) || $agentType === '') {
             return [];
         }
@@ -854,50 +850,34 @@ class SignalRouter
     /**
      * Get agent destinations for agent-to-agent signal
      *
-     * Uses page-owned signal topology first, then
-     * config['signals'][source][AGENT_SIGNAL][signalName] for direct agent routes.
-     * Supports single agent (string) or multiple agents (array of strings).
+     * Uses page-owned signal topology first, then agent AGENT_SIGNALS ownership
+     * through the active project topology.
      *
      * @param SignalDTO $signal Signal DTO
-     * @return list<array{type: string, agentType: string, agentIndex: ?string}>
+     * @return list<array{type: string, agentType: string, agentIndex: null}>
      *         List of agent destination configs
      */
     private function getAgentDestinations(SignalDTO $signal): array
     {
-        $source = $signal->signalSource->getSource();
-        $signalName = $signal->signalName->getName();
         $pageSignalDestinations = $this->getPageSignalDestinations($signal);
         if ($pageSignalDestinations !== []) {
             return $pageSignalDestinations;
         }
 
-        $signalsConfig = $this->config['signals'] ?? [];
-        $sourceConfig = $signalsConfig[$source] ?? [];
-        $agentSignalsConfig = $sourceConfig[SignalTypeConstants::AGENT_SIGNAL] ?? null;
-
-        if (!is_array($agentSignalsConfig) || !isset($agentSignalsConfig[$signalName])) {
+        if ($signal->signalSource->getSource() !== SignalSource::AGENT) {
             return [];
         }
 
-        $agentTypes = $agentSignalsConfig[$signalName];
-        if (is_string($agentTypes)) {
-            $agentTypes = [$agentTypes];
-        }
-        if (!is_array($agentTypes)) {
+        $signalName = $signal->signalName->getName();
+        $agentType = $this->hilosClass()::getAgentSignalRoutes()[$signalName] ?? null;
+        if (!is_string($agentType) || $agentType === '') {
             return [];
         }
 
-        $destinations = [];
-        foreach ($agentTypes as $agentType) {
-            if (is_string($agentType) && $agentType !== '') {
-                $destinations[] = [
-                    'type' => 'agent',
-                    'agentType' => $agentType,
-                    'agentIndex' => null,
-                ];
-            }
-        }
-
-        return $destinations;
+        return [[
+            'type' => 'agent',
+            'agentType' => $agentType,
+            'agentIndex' => null,
+        ]];
     }
 }
