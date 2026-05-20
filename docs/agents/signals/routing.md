@@ -35,9 +35,9 @@ project routers should not maintain a duplicate group routing list in config. Se
 
 ## Service-signal defaults (in SignalRouter subclass)
 
-Project routers should prefer protected defaults for daemon/WebSocket service
-signals instead of repeating them in `$config['signals']`. Override
-`hilosClass()` so framework routing can read project topology.
+Project routers declare daemon/WebSocket service-signal ownership through
+protected default hooks. Override `hilosClass()` so framework routing can read
+project topology.
 
 ```php
 protected function hilosClass(): string
@@ -76,12 +76,9 @@ It is not a blanket "all agents listen to all system signals" rule. Indexed agen
 such as bots should be started by project worker-server hooks, not included here
 unless the project explicitly wants that.
 
-Use `$config['signals']` only for project-specific overrides that differ from the
-defaults above.
-
 Do not duplicate page subscription ownership, group subscription ownership,
 page actions, page-owned signals, or agent-owned agent signals in project router
-config. Those routes come from page, group, and agent classes through the active
+code. Those routes come from page, group, and agent classes through the active
 project Hilos facade.
 
 ## Signal flow
@@ -100,8 +97,7 @@ at dispatch time. Projects should not keep a generic `WEBSOCKET/ACTION =>
 AgentType::*` fallback when action ownership can be derived from pages.
 
 For page-owned non-action frames such as `FRAME_BINARY`, the framework router
-reads the page signal registry at dispatch time before project-specific static
-config.
+reads the page signal registry at dispatch time before service-signal default hooks.
 
 ## Agent → agent
 

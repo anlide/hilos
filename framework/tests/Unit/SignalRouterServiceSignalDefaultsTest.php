@@ -90,25 +90,6 @@ final class SignalRouterServiceSignalDefaultsTest extends TestCase
         )));
     }
 
-    public function testExplicitConfigOverridesServiceDefaults(): void
-    {
-        $destinations = (new SignalRouterServiceDefaultsOverrideTestRouter())->getDestinations(new SignalDTO(
-            new SignalSource(SignalSource::WEBSOCKET),
-            new SignalType(SignalTypeConstants::HANDSHAKE),
-            new SignalName(SignalTypeConstants::HANDSHAKE),
-            new WebSocketHandshakeSignalDTO(
-                headers: [],
-                acceptKey: 'accept-key',
-                cookies: [],
-                clientIp: '127.0.0.1',
-                queryParams: RequestQueryParams::empty(),
-            ),
-        ));
-
-        $this->assertSame([
-            ['type' => 'agent', 'agentType' => 'override_agent', 'agentIndex' => null],
-        ], $destinations);
-    }
 }
 
 final class SignalRouterServiceDefaultsTestRouter extends SignalRouter
@@ -127,30 +108,6 @@ final class SignalRouterServiceDefaultsTestRouter extends SignalRouter
     protected function getDefaultDaemonCronAgentType(): ?string
     {
         return 'cron_agent';
-    }
-
-    /**
-     * @return ?string
-     */
-    protected function getDefaultWebSocketLifecycleAgentType(): ?string
-    {
-        return 'lifecycle_agent';
-    }
-}
-
-final class SignalRouterServiceDefaultsOverrideTestRouter extends SignalRouter
-{
-    public function __construct()
-    {
-        parent::__construct();
-
-        $this->config = [
-            'signals' => [
-                SignalSource::WEBSOCKET => [
-                    SignalTypeConstants::HANDSHAKE => 'override_agent',
-                ],
-            ],
-        ];
     }
 
     /**

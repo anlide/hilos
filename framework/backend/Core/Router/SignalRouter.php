@@ -22,18 +22,15 @@ use Hilos\Utils\Logger;
 /**
  * SignalRouter - Base class for routing signals from sources to agents.
  *
- * Routes signals based on configuration stored in protected $config array.
- * Extended by project-level routers (e.g. ChatSignalRouter) to define routing rules.
+ * Extended by project-level routers (e.g. ChatSignalRouter) to declare service-signal
+ * defaults and optional dynamic routing.
  *
  * Routing design principle: route by sender, not by destination.
  * Signal source and type determine which agent receives the signal.
- * Agents do not pull signals — they receive them based on declarative routing config.
- *
- * Config structure:
- * - 'signals' — source -> signalType -> agentType mapping (optional project overrides)
+ * Agents do not pull signals — they receive them based on routing rules.
  *
  * Service-signal defaults (daemon system bootstrap, generic daemon cron, WebSocket
- * lifecycle) are resolved from protected hooks when config does not declare a route.
+ * lifecycle) are resolved from protected hooks in the project router subclass.
  *
  * Group subscription ownership is derived from Hilos::getGroupRoutes() at dispatch time.
  *
@@ -41,7 +38,7 @@ use Hilos\Utils\Logger;
  * agent signals are derived from the active project Hilos facade at dispatch time.
  *
  * For dynamic routing (agentIndex depends on signal content), override getDestinations()
- * in child router. Project-specific static routing belongs in config.
+ * in the child router.
  */
 class SignalRouter
 {
@@ -50,16 +47,6 @@ class SignalRouter
         SignalTypeConstants::CRON => SignalSource::DAEMON,
         SignalTypeConstants::FRAME_BINARY => SignalSource::WEBSOCKET,
     ];
-
-    /**
-     * Signal routing configuration
-     *
-     * Set by child router in __construct(). Keys:
-     * - 'signals' — array<source, array<signalType, string|string[]>> (project-only static routing)
-     *
-     * @var array<string, mixed>
-     */
-    protected array $config;
 
     /** @var list<SignalDTO> queued signals to dispatch */
     private array $queuedSignals = [];
@@ -97,17 +84,6 @@ class SignalRouter
      * @var array<string, array<string, array<string, mixed>>>
      */
     private array $subscriptionGroups = [];
-
-    /**
-     * Creates signal router with empty configuration.
-     *
-     * Child classes should override constructor and call parent::__construct(),
-     * then set $this->config with custom routing rules.
-     */
-    public function __construct()
-    {
-        $this->config = [];
-    }
 
     /**
      * Returns the active project facade class for topology registry reads.
@@ -175,7 +151,7 @@ class SignalRouter
     /**
      * Returns the fallback owner for WebSocket lifecycle service signals.
      *
-     * Covers HANDSHAKE, CONNECTION_CLOSE, and WEBSOCKET/CRON when no explicit config exists.
+     * Covers HANDSHAKE, CONNECTION_CLOSE, and WEBSOCKET/CRON.
      *
      * @return ?string Fallback agent type
      */
@@ -200,7 +176,7 @@ class SignalRouter
         $source = $signalSource->getSource();
         $signalTypeValue = $signalType->getType();
 
-        $routeConfig = $this->resolveStaticRouteConfig($source, $signalTypeValue);
+        $routeConfig = $this->resolveServiceSignalRouteConfig($source, $signalTypeValue);
         if ($routeConfig === null) {
             return [];
         }
@@ -209,31 +185,13 @@ class SignalRouter
     }
 
     /**
-     * Resolves project static route config from explicit config or service-signal defaults.
+     * Resolves service-signal routes from project router protected hooks.
      *
      * @param string $source Signal source identifier
      * @param string $signalTypeValue Signal type value
      * @return string|list<string>|null Route config or null when no route exists
      */
-    private function resolveStaticRouteConfig(string $source, string $signalTypeValue): string|array|null
-    {
-        $signalsConfig = $this->config['signals'] ?? [];
-
-        if (array_key_exists($source, $signalsConfig) && array_key_exists($signalTypeValue, $signalsConfig[$source])) {
-            return $signalsConfig[$source][$signalTypeValue];
-        }
-
-        return $this->resolveDefaultStaticRouteConfig($source, $signalTypeValue);
-    }
-
-    /**
-     * Resolves service-signal defaults when project config does not declare a route.
-     *
-     * @param string $source Signal source identifier
-     * @param string $signalTypeValue Signal type value
-     * @return string|list<string>|null Route config or null when no default exists
-     */
-    private function resolveDefaultStaticRouteConfig(string $source, string $signalTypeValue): string|array|null
+    private function resolveServiceSignalRouteConfig(string $source, string $signalTypeValue): string|array|null
     {
         if ($source === SignalSource::DAEMON && $signalTypeValue === SignalTypeConstants::SYSTEM) {
             $bootstrapAgentTypes = $this->getDefaultSystemBootstrapAgentTypes();
@@ -674,7 +632,7 @@ class SignalRouter
     /**
      * Get destinations for signal
      *
-     * Resolves signal destinations from config and project topology. Override in
+     * Resolves signal destinations from project topology and service-signal hooks. Override in
      * child routers only for dynamic routing that depends on signal content
      * (e.g. extracting agentIndex from payload).
      *

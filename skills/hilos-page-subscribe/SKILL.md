@@ -73,7 +73,7 @@ signals back to their source.
 - Do not catch `MissingPageRouteParamException` or
   `InvalidPageRouteParamException` inside page code; let the router convert
   them into a `subscription_page_error` signal.
-- Do not keep page subscription ownership in project router config for
+- Do not keep page subscription ownership in project SignalRouter code for
   registered pages; keep it on page `SUBSCRIPTION_AGENT_TYPE` and let
   `SignalRouter` read `Hilos::getPageRoutes()`.
 - Once an abstract page introduces a typed subscribe DTO, keep its

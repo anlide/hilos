@@ -40,7 +40,7 @@ Use this skill for every change that affects signal shape, route, subscription, 
 - Keep project page subscription ownership on page `SUBSCRIPTION_AGENT_TYPE`,
   page signal ownership on page `SIGNALS`, and direct agent signal ownership on
   agent `AGENT_SIGNALS`.
-- Do not duplicate page subscription ownership in project router config;
+- Do not duplicate page subscription ownership in project SignalRouter code;
   `SignalRouter` reads page owners from `Hilos::getPageRoutes()`.
 - Do not hide subscription or delivery decisions inside unrelated business logic.
 - Preserve envelope metadata when DTOs cross worker and daemon boundaries.
