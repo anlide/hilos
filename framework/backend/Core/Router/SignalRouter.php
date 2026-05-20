@@ -981,13 +981,19 @@ class SignalRouter
     }
 
     /**
-     * Get agent destinations for agent-to-agent signal
+     * Get agent destinations for agent-to-agent signal.
      *
      * Uses page-owned signal topology first, then agent AGENT_SIGNALS ownership
      * through the active project topology.
      *
+     * For indexed multi-instance agents, reads the index field declared in
+     * AGENT_SIGNALS config via getAgentSignalIndexFields() and extracts the
+     * value from the inner payload's toArray(). Positive int and non-empty
+     * string values are both accepted as agent index. Absent or invalid values
+     * produce no destination and a warning is logged.
+     *
      * @param SignalDTO $signal Signal DTO
-     * @return list<array{type: string, agentType: string, agentIndex: null}>
+     * @return list<array{type: string, agentType: string, agentIndex: ?string}>
      *         List of agent destination configs
      */
     private function getAgentDestinations(SignalDTO $signal): array
@@ -1002,15 +1008,31 @@ class SignalRouter
         }
 
         $signalName = $signal->signalName->getName();
-        $agentType = $this->hilosClass()::getAgentSignalRoutes()[$signalName] ?? null;
+        $hilosClass = $this->hilosClass();
+        $agentType = $hilosClass::getAgentSignalRoutes()[$signalName] ?? null;
         if (!is_string($agentType) || $agentType === '') {
             return [];
+        }
+
+        $agentIndex = null;
+        $indexField = $hilosClass::getAgentSignalIndexFields()[$signalName] ?? null;
+        if (is_string($indexField) && $indexField !== '') {
+            $payload = $signal->data instanceof AgentSignalData ? $signal->data->data : null;
+            $value = $payload?->toArray()[$indexField] ?? null;
+            if (is_int($value) && $value > 0) {
+                $agentIndex = (string) $value;
+            } elseif (is_string($value) && $value !== '') {
+                $agentIndex = $value;
+            } else {
+                Logger::error("Indexed agent signal {$signalName} payload missing or invalid field '{$indexField}'");
+                return [];
+            }
         }
 
         return [[
             'type' => 'agent',
             'agentType' => $agentType,
-            'agentIndex' => null,
+            'agentIndex' => $agentIndex,
         ]];
     }
 }

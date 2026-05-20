@@ -73,6 +73,27 @@ payload-provided accept key, action name, and action DTO data. Keep contract or
 stale-signal failures under `AgentException`; those are logged, not sent to the
 client.
 
+## Indexed agent signal DTOs
+
+When a signal DTO is used as the inner payload for an indexed agent signal
+(declared via `AgentSignalConfigKey::INDEX_FIELD`), its `toArray()` must
+include the field named in `INDEX_FIELD`. The framework extracts the agent
+index from `toArray()` at dispatch time — a missing or zero/empty-string field
+produces no destination.
+
+```php
+// INDEX_FIELD => 'botId'  →  toArray() must expose 'botId'
+final class BotAgentSignalData extends BaseDTO implements SignalDataInterface
+{
+    public function __construct(public readonly int $botId) {}
+
+    public function toArray(): array
+    {
+        return ['botId' => $this->botId];
+    }
+}
+```
+
 ## declare(strict_types=1) required
 
 All DTO files must have `declare(strict_types=1)` at the top.

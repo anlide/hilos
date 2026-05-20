@@ -22,6 +22,9 @@ Arrays are allowed at system boundaries:
 - Raw DB rows and low-level migration/seed payloads.
 - External API payloads.
 - Infrastructure code whose contract is intentionally array-shaped.
+- Project topology and routing config constants (`PAGES`, `AGENTS`, `GROUPS`,
+  `AGENT_SIGNALS`, page `SIGNALS`, `ACTIONS`, `BROWSER`, and similar declarative
+  config arrays). These are framework-consumed registries, not internal backend API.
 
 If an array remains in internal backend API, the reason must be obvious from
 the surrounding boundary or documented in PHPDoc.

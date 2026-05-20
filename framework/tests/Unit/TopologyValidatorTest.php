@@ -6,6 +6,7 @@ namespace Hilos\Tests\Unit;
 
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\AbstractAgent;
+use Hilos\Core\Agent\Config\AgentSignalConfigKey;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Table\Definition\TableDefinition;
@@ -196,6 +197,47 @@ final class TopologyValidatorTest extends TestCase
         $this->expectExceptionMessage('Agent signal valid_page_signal is declared by both page-owned and agent-owned routes');
 
         TopologyPageAgentSignalConflictHilos::validateTopology();
+    }
+
+    public function testIndexedAgentSignalPassesValidation(): void
+    {
+        TopologyIndexedAgentSignalHilos::validateTopology();
+
+        $this->assertSame(
+            [
+                TopologyIndexedAgent::SINGLETON_SIGNAL => TopologyIndexedAgent::AGENT_TYPE,
+                TopologyIndexedAgent::INDEXED_SIGNAL => TopologyIndexedAgent::AGENT_TYPE,
+            ],
+            TopologyIndexedAgentSignalHilos::getAgentSignalRoutes(),
+        );
+        $this->assertSame(
+            [TopologyIndexedAgent::INDEXED_SIGNAL => 'entityId'],
+            TopologyIndexedAgentSignalHilos::getAgentSignalIndexFields(),
+        );
+    }
+
+    public function testIndexedAgentSignalMissingIndexFieldFails(): void
+    {
+        $this->expectException(InvalidTopologyException::class);
+        $this->expectExceptionMessage(AgentSignalConfigKey::INDEX_FIELD);
+
+        TopologyIndexedAgentMissingIndexFieldHilos::validateTopology();
+    }
+
+    public function testIndexedAgentSignalEmptyIndexFieldFails(): void
+    {
+        $this->expectException(InvalidTopologyException::class);
+        $this->expectExceptionMessage(AgentSignalConfigKey::INDEX_FIELD);
+
+        TopologyIndexedAgentEmptyIndexFieldHilos::validateTopology();
+    }
+
+    public function testIndexedAgentSignalUnknownConfigKeyFails(): void
+    {
+        $this->expectException(InvalidTopologyException::class);
+        $this->expectExceptionMessage('unknown_key');
+
+        TopologyIndexedAgentUnknownConfigKeyHilos::validateTopology();
     }
 
     public function testPageTablesRejectUnknownPages(): void
@@ -804,5 +846,121 @@ final class TopologyInitInvalidHilos extends HilosFacade
     protected static function createDb(): DbContext
     {
         throw new RuntimeException('Topology validation did not run before DB initialization');
+    }
+}
+
+final class TopologyIndexedAgent extends TopologyTestAgent
+{
+    public const string AGENT_TYPE = 'indexed_agent';
+
+    public const string SINGLETON_SIGNAL = 'indexed_singleton_signal';
+
+    public const string INDEXED_SIGNAL = 'indexed_indexed_signal';
+
+    public const array AGENT_SIGNALS = [
+        self::SINGLETON_SIGNAL,
+        self::INDEXED_SIGNAL => [
+            AgentSignalConfigKey::INDEX_FIELD => 'entityId',
+        ],
+    ];
+}
+
+final class TopologyIndexedAgentSignalHilos extends HilosFacade
+{
+    public const array AGENTS = [
+        TopologyIndexedAgent::AGENT_TYPE => TopologyIndexedAgent::class,
+    ];
+
+    /**
+     * Creates a no-op DB context for tests.
+     *
+     * @return DbContext Test DB context
+     */
+    protected static function createDb(): DbContext
+    {
+        return new TopologyTestDbContext();
+    }
+}
+
+final class TopologyIndexedAgentMissingIndexField extends TopologyTestAgent
+{
+    public const string AGENT_TYPE = 'indexed_missing_field_agent';
+
+    public const array AGENT_SIGNALS = [
+        'some_indexed_signal' => [],
+    ];
+}
+
+final class TopologyIndexedAgentMissingIndexFieldHilos extends HilosFacade
+{
+    public const array AGENTS = [
+        TopologyIndexedAgentMissingIndexField::AGENT_TYPE => TopologyIndexedAgentMissingIndexField::class,
+    ];
+
+    /**
+     * Creates a no-op DB context for tests.
+     *
+     * @return DbContext Test DB context
+     */
+    protected static function createDb(): DbContext
+    {
+        return new TopologyTestDbContext();
+    }
+}
+
+final class TopologyIndexedAgentEmptyIndexField extends TopologyTestAgent
+{
+    public const string AGENT_TYPE = 'indexed_empty_field_agent';
+
+    public const array AGENT_SIGNALS = [
+        'some_indexed_signal' => [
+            AgentSignalConfigKey::INDEX_FIELD => '',
+        ],
+    ];
+}
+
+final class TopologyIndexedAgentEmptyIndexFieldHilos extends HilosFacade
+{
+    public const array AGENTS = [
+        TopologyIndexedAgentEmptyIndexField::AGENT_TYPE => TopologyIndexedAgentEmptyIndexField::class,
+    ];
+
+    /**
+     * Creates a no-op DB context for tests.
+     *
+     * @return DbContext Test DB context
+     */
+    protected static function createDb(): DbContext
+    {
+        return new TopologyTestDbContext();
+    }
+}
+
+final class TopologyIndexedAgentUnknownConfigKey extends TopologyTestAgent
+{
+    public const string AGENT_TYPE = 'indexed_unknown_key_agent';
+
+    public const array AGENT_SIGNALS = [
+        'some_indexed_signal' => [
+            AgentSignalConfigKey::INDEX_FIELD => 'entityId',
+            'unknown_key' => 'value',
+        ],
+    ];
+}
+
+final class TopologyIndexedAgentUnknownConfigKeyHilos extends HilosFacade
+{
+    public const array AGENTS = [
+        TopologyIndexedAgentUnknownConfigKey::AGENT_TYPE => TopologyIndexedAgentUnknownConfigKey::class,
+    ];
+
+    /**
+     * Creates a no-op DB context for tests.
+     *
+     * @return DbContext Test DB context
+     */
+    protected static function createDb(): DbContext
+    {
+        return new TopologyTestDbContext();
     }
 }

@@ -75,9 +75,31 @@ class MyAgent extends AbstractAgent {
 }
 ```
 
+For **indexed multi-instance agents** (one per entity, keyed by `agentIndex`),
+declare the payload field that carries the index using
+`AgentSignalConfigKey::INDEX_FIELD`:
+
+```php
+use Hilos\Core\Agent\Config\AgentSignalConfigKey;
+
+class MyIndexedAgent extends AbstractAgent {
+    public const array AGENT_SIGNALS = [
+        MySignalConstants::SINGLETON_SIGNAL,                    // singleton
+        MySignalConstants::INDEXED_SIGNAL => [                  // indexed
+            AgentSignalConfigKey::INDEX_FIELD => 'entityId',
+        ],
+    ];
+}
+```
+
+`SignalRouter` resolves the index from the inner payload's `toArray()` at
+dispatch time. The inner DTO must expose the named field; see
+[dto-convention.md](../signals/dto-convention.md).
+
 Project routers override `hilosClass()` so framework routing can read
-`Hilos::getAgentSignalRoutes()` at dispatch time. Keep payload-dependent routes,
-such as indexed agent starts, in `SignalRouter::getDestinations()`.
+`Hilos::getAgentSignalRoutes()` and `Hilos::getAgentSignalIndexFields()` at
+dispatch time. Reserve `SignalRouter::getDestinations()` overrides for routing
+patterns that the topology registry cannot express at all.
 
 ## 8. Add static source/type routing when needed
 
@@ -101,7 +123,7 @@ class MyPage extends AbstractPage {
 - [ ] `AGENT_TYPE` constant matches value in `AgentType`
 - [ ] Added to both worker factory AND daemon factory
 - [ ] Registered in `Hilos::AGENTS`
-- [ ] Direct agent-to-agent signals declared in `AGENT_SIGNALS`
-- [ ] Static source/type or dynamic indexed routes declared in `SignalRouter`
+- [ ] Direct agent-to-agent signals declared in `AGENT_SIGNALS`; indexed multi-instance signals use `AgentSignalConfigKey::INDEX_FIELD` instead of `SignalRouter::getDestinations()`
+- [ ] Static source/type routes declared in `SignalRouter` when needed (not covered by topology)
 - [ ] `onStop()` cleans owned state; `WorkerManager` unregisters truth sources after the hook
 - [ ] `onTick()` completes in < 0.1s

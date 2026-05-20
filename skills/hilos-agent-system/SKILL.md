@@ -22,6 +22,10 @@ Use this skill for agent business logic and registration work. Start by reading 
 2. For a new agent, add the `AgentType` constant, Agent class, AgentDaemon class,
    worker factory registration, daemon factory registration, `Hilos::AGENTS`
    registration, and `AGENT_SIGNALS` or `SignalRouter` routes.
+   For indexed multi-instance agents, declare
+   `AGENT_SIGNALS[$signal][AgentSignalConfigKey::INDEX_FIELD]` to route by
+   payload field declaratively — do not override `SignalRouter::getDestinations()`
+   for this case.
 3. Keep `onStart()` for registration/initialization, `onTick()` for tiny incremental work, and `onStop()` for cleanup.
 4. Move long or blocking work out of `onTick()` and signal handlers.
 5. In named signal handlers, omit empty `default` branches for intentionally
@@ -33,5 +37,6 @@ Use this skill for agent business logic and registration work. Start by reading 
 
 - Never run `git commit` or `git push`.
 - Never add routing logic directly inside agents; use topology declarations or `SignalRouter`.
+- Routing for indexed multi-instance agents must stay declarative in `AGENT_SIGNALS` with `AgentSignalConfigKey::INDEX_FIELD`; do not add `switch` by signal name inside agents or routers for this purpose.
 - Never let non-truth-source agents write to a DB/RT collection they do not own.
 - Never add Repository or Service layers above `DbCollection`.

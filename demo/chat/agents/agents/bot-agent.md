@@ -13,7 +13,7 @@ Each active bot gets its own `BotAgent` instance, started on boot or by `Library
 ## Lifecycle
 
 1. `LibraryAgent` sends `BOT_AGENT_START` after creating or reactivating an active bot
-2. Signal routing targets `BotAgent:botId` → framework starts if not running
+2. Signal routing: `BotAgent::AGENT_SIGNALS` declares `BOT_AGENT_START` with `AgentSignalConfigKey::INDEX_FIELD => 'botId'`; framework extracts `botId` from the inner `BotAgentSignalData` payload and routes to `bot:{botId}`, starting the agent if not running
 3. `BotAgent::onStart()` — registers runtime status truth source, reads bot config from DB
 4. `BotAgent::onTick()` — polls LLM client, checks timing for next message
 5. When message ready: `sendToAgent(BOT_MESSAGE, data)` → `ChatAgent`

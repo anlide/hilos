@@ -169,7 +169,15 @@ final class ChatTopologyRegistryTest extends TestCase
     {
         $this->assertSame([
             ChatSignalConstants::BOT_MESSAGE => AgentType::CHAT,
+            ChatSignalConstants::BOT_AGENT_START => AgentType::BOT,
         ], Hilos::getAgentSignalRoutes());
+    }
+
+    public function testComputedAgentSignalIndexFieldsMatchBotAgentDeclaration(): void
+    {
+        $this->assertSame([
+            ChatSignalConstants::BOT_AGENT_START => 'botId',
+        ], Hilos::getAgentSignalIndexFields());
     }
 
     public function testPageActionRoutesCoverDeclaredPageActions(): void
@@ -207,8 +215,12 @@ final class ChatTopologyRegistryTest extends TestCase
     {
         $declaredRoutes = [];
         foreach (Hilos::AGENTS as $agentType => $agentClass) {
-            foreach ($agentClass::AGENT_SIGNALS as $signalName) {
-                $declaredRoutes[$signalName] = $agentType;
+            foreach ($agentClass::AGENT_SIGNALS as $key => $value) {
+                if (is_int($key) && is_string($value) && $value !== '') {
+                    $declaredRoutes[$value] = $agentType;
+                } elseif (is_string($key) && $key !== '' && is_array($value)) {
+                    $declaredRoutes[$key] = $agentType;
+                }
             }
         }
 

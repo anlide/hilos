@@ -106,6 +106,40 @@ $this->sendToAgent('moderate_bot_request', $data);
 // → AGENT_SIGNAL type → topology registry → target agent
 ```
 
+## Indexed agent signals
+
+Multi-instance agents (one process per entity, keyed by `agentIndex`) can be
+targeted declaratively without overriding `getDestinations()`.
+
+Declare `AgentSignalConfigKey::INDEX_FIELD` on the receiving agent class:
+
+```php
+use Hilos\Core\Agent\Config\AgentSignalConfigKey;
+
+final class BotAgent extends AbstractAgent
+{
+    public const array AGENT_SIGNALS = [
+        ChatSignalConstants::BOT_MESSAGE,               // singleton route
+        ChatSignalConstants::BOT_AGENT_START => [       // indexed route
+            AgentSignalConfigKey::INDEX_FIELD => 'botId',
+        ],
+    ];
+}
+```
+
+At dispatch time `SignalRouter::getAgentDestinations()` reads the field name
+from `Hilos::getAgentSignalIndexFields()` and extracts the value from the inner
+payload's `toArray()`. Accepted types: positive `int` (converted to string) or
+non-empty `string`. Any other value — absent field, `0`, empty string, `null` —
+produces no destination and logs a warning.
+
+The inner DTO's `toArray()` must expose the declared field name. See
+[dto-convention.md](dto-convention.md) for the requirement.
+
+Do **not** override `SignalRouter::getDestinations()` for indexed routing when
+`INDEX_FIELD` covers the case. Reserve overrides for routing patterns that the
+topology registry cannot express at all.
+
 ## Sync signals (DB/RT)
 
 DB/RT changes are broadcast to ALL workers simultaneously (not routed to a specific agent).

@@ -25,6 +25,10 @@ Use this skill for every change that affects signal shape, route, subscription, 
    ownership, update `SUBSCRIPTION_AGENT_TYPE`, `SIGNALS`, `ACTIONS`,
    `AGENT_SIGNALS`, and `Hilos::AGENTS` through `docs/agents/app-topology.md`;
    keep payload-dependent routes and the project facade hook in `SignalRouter`.
+   For indexed multi-instance agents, set
+   `AGENT_SIGNALS[$signal][AgentSignalConfigKey::INDEX_FIELD]` instead of
+   overriding `SignalRouter::getDestinations()`. See
+   `docs/agents/signals/routing.md` "Indexed agent signals".
 3. Route named signal handlers with `switch ($name)` and explicit cases.
 4. Omit empty `default` branches in partial shared-broadcast handlers; document
    the ignore contract in PHPDoc instead.

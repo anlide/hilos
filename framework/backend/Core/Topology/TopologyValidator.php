@@ -6,6 +6,7 @@ namespace Hilos\Core\Topology;
 
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\AbstractAgent;
+use Hilos\Core\Agent\Config\AgentSignalConfigKey;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Group\AbstractGroup;
 use Hilos\Core\Page\AbstractPage;
@@ -509,12 +510,46 @@ final class TopologyValidator
                 continue;
             }
 
-            foreach ($agentClass::AGENT_SIGNALS as $signalName) {
-                if (!is_string($signalName) || $signalName === '') {
-                    $errors[] = "AGENTS[{$agentType}] class {$agentClass} AGENT_SIGNALS must contain only non-empty signal names";
+            foreach ($agentClass::AGENT_SIGNALS as $key => $value) {
+                // Singleton: list entry — int key + non-empty string signal name.
+                if (is_int($key)) {
+                    if (!is_string($value) || $value === '') {
+                        $errors[] = "AGENTS[{$agentType}] class {$agentClass} AGENT_SIGNALS must contain only non-empty signal names or valid indexed config arrays";
+                        continue;
+                    }
+
+                    $signalName = $value;
+                    if (isset($declaredRoutes[$signalName]) && $declaredRoutes[$signalName] !== $agentType) {
+                        $errors[] = "Agent signal {$signalName} is declared by multiple agents: {$declaredRoutes[$signalName]} and {$agentType}";
+                        continue;
+                    }
+
+                    $declaredRoutes[$signalName] = $agentType;
                     continue;
                 }
 
+                // Indexed: map entry — non-empty string key + array config.
+                if (!is_string($key) || $key === '') {
+                    $errors[] = "AGENTS[{$agentType}] class {$agentClass} AGENT_SIGNALS must contain only non-empty signal names or valid indexed config arrays";
+                    continue;
+                }
+
+                if (!is_array($value)) {
+                    $errors[] = "AGENTS[{$agentType}] class {$agentClass} AGENT_SIGNALS[{$key}] config must be an array";
+                    continue;
+                }
+
+                $unknownKeys = array_diff(array_keys($value), [AgentSignalConfigKey::INDEX_FIELD]);
+                if ($unknownKeys !== []) {
+                    $errors[] = "AGENTS[{$agentType}] class {$agentClass} AGENT_SIGNALS[{$key}] contains unknown config keys: " . implode(', ', $unknownKeys);
+                }
+
+                $indexField = $value[AgentSignalConfigKey::INDEX_FIELD] ?? null;
+                if (!is_string($indexField) || $indexField === '') {
+                    $errors[] = "AGENTS[{$agentType}] class {$agentClass} AGENT_SIGNALS[{$key}] must declare a non-empty '" . AgentSignalConfigKey::INDEX_FIELD . "'";
+                }
+
+                $signalName = $key;
                 if (isset($declaredRoutes[$signalName]) && $declaredRoutes[$signalName] !== $agentType) {
                     $errors[] = "Agent signal {$signalName} is declared by multiple agents: {$declaredRoutes[$signalName]} and {$agentType}";
                     continue;

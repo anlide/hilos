@@ -5,12 +5,7 @@ declare(strict_types=1);
 namespace Demo\Chat\Core\Router;
 
 use Demo\Chat\Constants\AgentType;
-use Demo\Chat\Constants\ChatSignalConstants;
-use Demo\Chat\Core\Router\DTO\BotAgentSignalData;
 use Demo\Chat\Hilos;
-use Hilos\Constants\SignalTypeConstants;
-use Hilos\Core\Router\AgentSignalData;
-use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\SignalRouter;
 
 /**
@@ -89,57 +84,5 @@ final class ChatSignalRouter extends SignalRouter
     protected function getDefaultWebSocketLifecycleAgentType(): ?string
     {
         return AgentType::CHAT;
-    }
-
-    /**
-     * Dynamic routing for signals that require content-based destination resolution.
-     *
-     * Only use for cases where agentIndex or destination depends on signal payload
-     * (e.g. BOT_AGENT_START extracts botId to route to specific BotAgent instance).
-     *
-     * @param SignalDTO $signal Signal DTO
-     * @return list<array<string, mixed>> Array of destinations
-     */
-    public function getDestinations(SignalDTO $signal): array
-    {
-        $destinations = parent::getDestinations($signal);
-
-        $signalType = $signal->signalType->getType();
-        $signalName = $signal->signalName->getName();
-
-        if ($signalType === SignalTypeConstants::AGENT_SIGNAL) {
-            if ($signalName === ChatSignalConstants::BOT_AGENT_START) {
-                $botId = $this->extractBotIdFromSignal($signal);
-                if ($botId > 0) {
-                    $destinations[] = [
-                        'type' => 'agent',
-                        'agentType' => AgentType::BOT,
-                        'agentIndex' => (string) $botId,
-                    ];
-                }
-            }
-        }
-
-        return $destinations;
-    }
-
-    /**
-     * Extracts bot ID from agent signal data.
-     *
-     * @param SignalDTO $signal Signal DTO containing agent signal data
-     * @return int Bot ID if found, otherwise 0
-     */
-    private function extractBotIdFromSignal(SignalDTO $signal): int
-    {
-        $data = $signal->data;
-        if (!$data instanceof AgentSignalData) {
-            return 0;
-        }
-
-        if (!$data->data instanceof BotAgentSignalData) {
-            return 0;
-        }
-
-        return $data->data->botId;
     }
 }

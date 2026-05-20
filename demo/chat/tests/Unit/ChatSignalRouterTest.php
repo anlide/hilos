@@ -9,6 +9,7 @@ use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\GroupConstants;
 use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Router\ChatSignalRouter;
+use Demo\Chat\Core\Router\DTO\BotAgentSignalData;
 use Demo\Chat\Core\Router\DTO\BotMessageSignalData;
 use Demo\Chat\Core\Router\DTO\ModerationResultSignalData;
 use Demo\Chat\Core\Router\DTO\RenameModerationResultSignalData;
@@ -245,5 +246,31 @@ final class ChatSignalRouterTest extends TestCase
         $this->assertSame([
             ['type' => 'agent', 'agentType' => AgentType::CHAT, 'agentIndex' => null],
         ], $destinations);
+    }
+
+    public function testBotAgentStartRoutesToBotAgentWithExtractedIndex(): void
+    {
+        $destinations = (new ChatSignalRouter())->getDestinations(new SignalDTO(
+            new SignalSource(SignalSource::AGENT),
+            new SignalType(SignalTypeConstants::AGENT_SIGNAL),
+            new SignalName(ChatSignalConstants::BOT_AGENT_START),
+            new AgentSignalData(new BotAgentSignalData(botId: 42)),
+        ));
+
+        $this->assertSame([
+            ['type' => 'agent', 'agentType' => AgentType::BOT, 'agentIndex' => '42'],
+        ], $destinations);
+    }
+
+    public function testBotAgentStartWithZeroBotIdProducesNoDestination(): void
+    {
+        $destinations = (new ChatSignalRouter())->getDestinations(new SignalDTO(
+            new SignalSource(SignalSource::AGENT),
+            new SignalType(SignalTypeConstants::AGENT_SIGNAL),
+            new SignalName(ChatSignalConstants::BOT_AGENT_START),
+            new AgentSignalData(new BotAgentSignalData(botId: 0)),
+        ));
+
+        $this->assertSame([], $destinations);
     }
 }

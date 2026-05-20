@@ -21,6 +21,7 @@ use Demo\Chat\Utils\ChatLLMHelper;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\LLMConstants;
 use Hilos\Core\Agent\AbstractAgent;
+use Hilos\Core\Agent\Config\AgentSignalConfigKey;
 use Hilos\Core\Agent\Exception\AgentIndexRequiredException;
 use Hilos\Core\Agent\Exception\InvalidAgentIndexException;
 use Hilos\Core\Sync\DTO\DbSyncCreatedSignalData;
@@ -46,6 +47,12 @@ use Hilos\Utils\Helpers\RandomHelper;
 final class BotAgent extends AbstractAgent
 {
     public const string AGENT_TYPE = AgentType::BOT;
+
+    public const array AGENT_SIGNALS = [
+        ChatSignalConstants::BOT_AGENT_START => [
+            AgentSignalConfigKey::INDEX_FIELD => 'botId',
+        ],
+    ];
 
     private const int MAX_RESPONSE_TOKENS = 256;
 

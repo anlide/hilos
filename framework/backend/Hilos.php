@@ -6,6 +6,7 @@ namespace Hilos;
 
 use Hilos\Core\Analytics\AnalyticsCollector;
 use Hilos\Core\Agent\AbstractAgent;
+use Hilos\Core\Agent\Config\AgentSignalConfigKey;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Group\AbstractGroup;
 use Hilos\Core\Page\AbstractPage;
@@ -254,6 +255,10 @@ abstract class Hilos
     /**
      * Returns agent-owned agent signal routes declared by registered agent classes.
      *
+     * Accepts mixed list/map AGENT_SIGNALS shape:
+     * - int-keyed string entry  → singleton route (agentIndex null)
+     * - string-keyed array entry → indexed route (agentIndex from INDEX_FIELD payload field)
+     *
      * @return array<string, string> Agent type keyed by signal name
      */
     public static function getAgentSignalRoutes(): array
@@ -264,16 +269,50 @@ abstract class Hilos
                 continue;
             }
 
-            foreach ($agentClass::AGENT_SIGNALS as $signalName) {
-                if (!is_string($signalName) || $signalName === '') {
+            foreach ($agentClass::AGENT_SIGNALS as $key => $value) {
+                if (is_int($key) && is_string($value) && $value !== '') {
+                    $signalRoutes[$value] = $agentType;
                     continue;
                 }
 
-                $signalRoutes[$signalName] = $agentType;
+                if (is_string($key) && $key !== '' && is_array($value)) {
+                    $signalRoutes[$key] = $agentType;
+                }
             }
         }
 
         return $signalRoutes;
+    }
+
+    /**
+     * Returns index field names for indexed agent signal routes.
+     *
+     * Only signals declared with AgentSignalConfigKey::INDEX_FIELD are returned.
+     * At dispatch time SignalRouter reads this field from the inner payload's toArray().
+     *
+     * @return array<string, string> Payload field name keyed by signal name
+     */
+    public static function getAgentSignalIndexFields(): array
+    {
+        $indexFields = [];
+        foreach (static::AGENTS as $agentType => $agentClass) {
+            if (!is_string($agentType) || !is_string($agentClass) || !is_subclass_of($agentClass, AbstractAgent::class)) {
+                continue;
+            }
+
+            foreach ($agentClass::AGENT_SIGNALS as $key => $value) {
+                if (!is_string($key) || $key === '' || !is_array($value)) {
+                    continue;
+                }
+
+                $indexField = $value[AgentSignalConfigKey::INDEX_FIELD] ?? null;
+                if (is_string($indexField) && $indexField !== '') {
+                    $indexFields[$key] = $indexField;
+                }
+            }
+        }
+
+        return $indexFields;
     }
 
     /**
