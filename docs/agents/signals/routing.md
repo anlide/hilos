@@ -33,10 +33,10 @@ For WebSocket group subscriptions, keep per-group ownership in each group class
 project routers should not maintain a duplicate group routing list in config. See
 [app-topology.md](../app-topology.md).
 
-## Config structure (in SignalRouter subclass)
+## Service-signal defaults (in SignalRouter subclass)
 
-Project routers declare only non-topology static routes in config: daemon/system/cron,
-handshake, connection close, and similar project-specific mappings. Override
+Project routers should prefer protected defaults for daemon/WebSocket service
+signals instead of repeating them in `$config['signals']`. Override
 `hilosClass()` so framework routing can read project topology.
 
 ```php
@@ -50,15 +50,34 @@ protected function getDefaultPageSubscriptionAgentType(): ?string
     return AgentType::CHAT;
 }
 
-$this->config = [
-    'signals' => [
-        SignalSource::WEBSOCKET => [
-            SignalTypeConstants::HANDSHAKE => AgentType::CHAT,
-            SignalTypeConstants::CONNECTION_CLOSE => AgentType::CHAT,
-        ],
-    ],
-];
+protected function getDefaultWebSocketLifecycleAgentType(): ?string
+{
+    return AgentType::CHAT;
+}
+
+protected function getDefaultDaemonCronAgentType(): ?string
+{
+    return AgentType::CHAT;
+}
+
+protected function getDefaultSystemBootstrapAgentTypes(): array
+{
+    return [
+        AgentType::CHAT,
+        AgentType::LIBRARY,
+        // ...agents started on INITIAL_AGENTS_START
+    ];
+}
 ```
+
+`getDefaultSystemBootstrapAgentTypes()` defines which agents are started when
+daemon delivers `DAEMON/SYSTEM` bootstrap signals such as `INITIAL_AGENTS_START`.
+It is not a blanket "all agents listen to all system signals" rule. Indexed agents
+such as bots should be started by project worker-server hooks, not included here
+unless the project explicitly wants that.
+
+Use `$config['signals']` only for project-specific overrides that differ from the
+defaults above.
 
 Do not duplicate page subscription ownership, group subscription ownership,
 page actions, page-owned signals, or agent-owned agent signals in project router

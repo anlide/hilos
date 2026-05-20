@@ -30,7 +30,10 @@ use Hilos\Utils\Logger;
  * Agents do not pull signals — they receive them based on declarative routing config.
  *
  * Config structure:
- * - 'signals' — source -> signalType -> agentType mapping (project-only static routing)
+ * - 'signals' — source -> signalType -> agentType mapping (optional project overrides)
+ *
+ * Service-signal defaults (daemon system bootstrap, generic daemon cron, WebSocket
+ * lifecycle) are resolved from protected hooks when config does not declare a route.
  *
  * Group subscription ownership is derived from Hilos::getGroupRoutes() at dispatch time.
  *
@@ -144,6 +147,44 @@ class SignalRouter
     }
 
     /**
+     * Returns agent types started when daemon delivers DAEMON/SYSTEM bootstrap signals.
+     *
+     * Used for INITIAL_AGENTS_START and other system signals that should wake project
+     * agents via WorkerServer::sendSignalToAgent(). Return an empty list when the
+     * project starts agents elsewhere.
+     *
+     * @return list<string> Agent type identifiers
+     */
+    protected function getDefaultSystemBootstrapAgentTypes(): array
+    {
+        return [];
+    }
+
+    /**
+     * Returns the fallback owner for generic DAEMON/CRON signals without page ownership.
+     *
+     * Named cron signals declared on pages are resolved from topology before this fallback.
+     *
+     * @return ?string Fallback agent type
+     */
+    protected function getDefaultDaemonCronAgentType(): ?string
+    {
+        return null;
+    }
+
+    /**
+     * Returns the fallback owner for WebSocket lifecycle service signals.
+     *
+     * Covers HANDSHAKE, CONNECTION_CLOSE, and WEBSOCKET/CRON when no explicit config exists.
+     *
+     * @return ?string Fallback agent type
+     */
+    protected function getDefaultWebSocketLifecycleAgentType(): ?string
+    {
+        return null;
+    }
+
+    /**
      * Route signal to target
      *
      * Returns routing information for signal, or null if no route found.
@@ -159,31 +200,88 @@ class SignalRouter
         $source = $signalSource->getSource();
         $signalTypeValue = $signalType->getType();
 
-        $signalsConfig = $this->config['signals'] ?? [];
-
-        if (!isset($signalsConfig[$source][$signalTypeValue])) {
+        $routeConfig = $this->resolveStaticRouteConfig($source, $signalTypeValue);
+        if ($routeConfig === null) {
             return [];
         }
 
-        $routeConfig = $signalsConfig[$source][$signalTypeValue];
+        return $this->normalizeStaticRoutes($routeConfig);
+    }
 
+    /**
+     * Resolves project static route config from explicit config or service-signal defaults.
+     *
+     * @param string $source Signal source identifier
+     * @param string $signalTypeValue Signal type value
+     * @return string|list<string>|null Route config or null when no route exists
+     */
+    private function resolveStaticRouteConfig(string $source, string $signalTypeValue): string|array|null
+    {
+        $signalsConfig = $this->config['signals'] ?? [];
+
+        if (array_key_exists($source, $signalsConfig) && array_key_exists($signalTypeValue, $signalsConfig[$source])) {
+            return $signalsConfig[$source][$signalTypeValue];
+        }
+
+        return $this->resolveDefaultStaticRouteConfig($source, $signalTypeValue);
+    }
+
+    /**
+     * Resolves service-signal defaults when project config does not declare a route.
+     *
+     * @param string $source Signal source identifier
+     * @param string $signalTypeValue Signal type value
+     * @return string|list<string>|null Route config or null when no default exists
+     */
+    private function resolveDefaultStaticRouteConfig(string $source, string $signalTypeValue): string|array|null
+    {
+        if ($source === SignalSource::DAEMON && $signalTypeValue === SignalTypeConstants::SYSTEM) {
+            $bootstrapAgentTypes = $this->getDefaultSystemBootstrapAgentTypes();
+
+            return $bootstrapAgentTypes !== [] ? $bootstrapAgentTypes : null;
+        }
+
+        if ($source === SignalSource::DAEMON && $signalTypeValue === SignalTypeConstants::CRON) {
+            $agentType = $this->getDefaultDaemonCronAgentType();
+
+            return is_string($agentType) && $agentType !== '' ? $agentType : null;
+        }
+
+        if ($source === SignalSource::WEBSOCKET && in_array($signalTypeValue, [
+            SignalTypeConstants::HANDSHAKE,
+            SignalTypeConstants::CONNECTION_CLOSE,
+            SignalTypeConstants::CRON,
+        ], true)) {
+            $agentType = $this->getDefaultWebSocketLifecycleAgentType();
+
+            return is_string($agentType) && $agentType !== '' ? $agentType : null;
+        }
+
+        return null;
+    }
+
+    /**
+     * Normalizes static route config to agent route rows.
+     *
+     * @param string|list<string> $routeConfig Single agent type or list of agent types
+     * @return list<array{agentType: string, agentIndex: null}>
+     */
+    private function normalizeStaticRoutes(string|array $routeConfig): array
+    {
         if (is_string($routeConfig)) {
             return [
                 ['agentType' => $routeConfig, 'agentIndex' => null],
             ];
         }
 
-        if (is_array($routeConfig)) {
-            $routes = [];
-            foreach ($routeConfig as $agentType) {
-                if (is_string($agentType)) {
-                    $routes[] = ['agentType' => $agentType, 'agentIndex' => null];
-                }
+        $routes = [];
+        foreach ($routeConfig as $agentType) {
+            if (is_string($agentType) && $agentType !== '') {
+                $routes[] = ['agentType' => $agentType, 'agentIndex' => null];
             }
-            return $routes;
         }
 
-        return [];
+        return $routes;
     }
 
     /**

@@ -12,48 +12,16 @@ use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\SignalRouter;
-use Hilos\Core\Router\SignalSource;
 
 /**
  * ChatSignalRouter - Signal router for chat demo.
  *
- * Declares chat-specific static routes for daemon and WebSocket lifecycle signals.
+ * Declares chat service-signal defaults and dynamic routes that depend on signal payload.
  * Page subscription, page actions, page-owned signals, group subscription ownership,
  * and agent-owned agent signals are resolved by framework SignalRouter from project topology.
  */
 final class ChatSignalRouter extends SignalRouter
 {
-    /**
-     * Creates signal router with chat-specific static routes.
-     */
-    public function __construct()
-    {
-        parent::__construct();
-
-        $this->config = [
-            'signals' => [
-                SignalSource::DAEMON => [
-                    SignalTypeConstants::SYSTEM => [
-                        AgentType::CHAT,
-                        AgentType::LIBRARY,
-                        AgentType::CHAT_CONTEXT_ANALYZER,
-                        AgentType::MODERATOR,
-                        AgentType::HILOS_INDEX,
-                        AgentType::HILOS_GUARDIAN,
-                        AgentType::HILOS_ANALYTICS,
-                        AgentType::HILOS_LOGS,
-                    ],
-                    SignalTypeConstants::CRON => AgentType::CHAT,
-                ],
-                SignalSource::WEBSOCKET => [
-                    SignalTypeConstants::HANDSHAKE => AgentType::CHAT,
-                    SignalTypeConstants::CONNECTION_CLOSE => AgentType::CHAT,
-                    SignalTypeConstants::CRON => AgentType::CHAT,
-                ],
-            ],
-        ];
-    }
-
     /**
      * Returns chat project facade for topology registry reads.
      *
@@ -80,6 +48,45 @@ final class ChatSignalRouter extends SignalRouter
      * @return ?string Fallback agent type
      */
     protected function getDefaultGroupSubscriptionAgentType(): ?string
+    {
+        return AgentType::CHAT;
+    }
+
+    /**
+     * Returns chat agents started on DAEMON/SYSTEM bootstrap signals.
+     *
+     * @return list<string> Agent type identifiers
+     */
+    protected function getDefaultSystemBootstrapAgentTypes(): array
+    {
+        return [
+            AgentType::CHAT,
+            AgentType::LIBRARY,
+            AgentType::CHAT_CONTEXT_ANALYZER,
+            AgentType::MODERATOR,
+            AgentType::HILOS_INDEX,
+            AgentType::HILOS_GUARDIAN,
+            AgentType::HILOS_ANALYTICS,
+            AgentType::HILOS_LOGS,
+        ];
+    }
+
+    /**
+     * Returns the chat owner for generic daemon cron signals.
+     *
+     * @return ?string Fallback agent type
+     */
+    protected function getDefaultDaemonCronAgentType(): ?string
+    {
+        return AgentType::CHAT;
+    }
+
+    /**
+     * Returns the chat owner for WebSocket lifecycle service signals.
+     *
+     * @return ?string Fallback agent type
+     */
+    protected function getDefaultWebSocketLifecycleAgentType(): ?string
     {
         return AgentType::CHAT;
     }
