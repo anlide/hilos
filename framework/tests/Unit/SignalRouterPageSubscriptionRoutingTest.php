@@ -6,13 +6,16 @@ namespace Hilos\Tests\Unit;
 
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Page\AbstractPage;
+use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\SignalDTO;
+use Hilos\Core\Router\SignalData;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
 use Hilos\Database\Context\DbContext;
 use Hilos\Hilos as HilosFacade;
+use Hilos\Socket\WebSocket\DTO\WebSocketFrameBinarySignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use PHPUnit\Framework\TestCase;
 
@@ -34,6 +37,57 @@ final class SignalRouterPageSubscriptionRoutingTest extends TestCase
             (new SignalRouterTopologyTestRouter())->getDestinations(
                 $this->pageSubscribeSignal(SignalRouterTopologyTestPage::PAGE),
             ),
+        );
+    }
+
+    public function testBinaryFrameRoutesThroughPageSignalTopology(): void
+    {
+        $this->assertSame(
+            [
+                [
+                    'type' => 'agent',
+                    'agentType' => SignalRouterTopologyTestPage::SUBSCRIPTION_AGENT_TYPE,
+                    'agentIndex' => null,
+                ],
+            ],
+            (new SignalRouterTopologyTestRouter())->getDestinations(new SignalDTO(
+                new SignalSource(SignalSource::WEBSOCKET),
+                new SignalType(SignalTypeConstants::FRAME_BINARY),
+                new SignalName(SignalName::EMPTY),
+                new WebSocketFrameBinarySignalDTO('accept-key', 'payload'),
+            )),
+        );
+    }
+
+    public function testNamedAgentSignalRoutesThroughPageSignalTopology(): void
+    {
+        $this->assertSame(
+            [
+                [
+                    'type' => 'agent',
+                    'agentType' => SignalRouterTopologyTestPage::SUBSCRIPTION_AGENT_TYPE,
+                    'agentIndex' => null,
+                ],
+            ],
+            (new SignalRouterTopologyTestRouter())->getDestinations(new SignalDTO(
+                new SignalSource(SignalSource::AGENT),
+                new SignalType(SignalTypeConstants::AGENT_SIGNAL),
+                new SignalName(SignalRouterTopologyTestPage::PAGE_AGENT_SIGNAL),
+                new AgentSignalData(new SignalData()),
+            )),
+        );
+    }
+
+    public function testPageOwnedSignalDoesNotRouteFromWrongSource(): void
+    {
+        $this->assertSame(
+            [],
+            (new SignalRouterTopologyTestRouter())->getDestinations(new SignalDTO(
+                new SignalSource(SignalSource::DAEMON),
+                new SignalType(SignalTypeConstants::FRAME_BINARY),
+                new SignalName(SignalName::EMPTY),
+                new WebSocketFrameBinarySignalDTO('accept-key', 'payload'),
+            )),
         );
     }
 
@@ -121,6 +175,15 @@ final class SignalRouterTopologyTestPage extends AbstractPage
     public const string PAGE = 'topology_page';
 
     public const string SUBSCRIPTION_AGENT_TYPE = 'topology_agent';
+
+    public const string PAGE_AGENT_SIGNAL = 'page_agent_signal';
+
+    public const array SIGNALS = [
+        SignalTypeConstants::FRAME_BINARY => [],
+        SignalTypeConstants::AGENT_SIGNAL => [
+            self::PAGE_AGENT_SIGNAL,
+        ],
+    ];
 }
 
 final class SignalRouterTopologyTestDbContext extends DbContext

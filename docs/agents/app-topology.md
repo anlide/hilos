@@ -31,9 +31,9 @@ table contexts when they can read the project registry.
   instead of owning duplicate action lists.
 - Each page class declares non-action page-dispatched signals in
   `PageClass::SIGNALS`. `Hilos::getPageSignalRoutes()` computes
-  `signal type/name -> page` routes for `PageSignalRouter`, and
-  `Hilos::getPageSignalAgentRoutes()` derives the matching signal-router
-  `signal type/name -> agent` routes through `SUBSCRIPTION_AGENT_TYPE`.
+  `signal type/name -> page` routes for `PageSignalRouter`.
+  `SignalRouter` derives the matching `signal type/name -> agent` routes
+  through `Hilos::getPageSignalAgentRoutes()` and `SUBSCRIPTION_AGENT_TYPE`.
 - Each agent class declares directly handled agent-to-agent signal names in
   `AgentClass::AGENT_SIGNALS`. `Hilos::getAgentSignalRoutes()` computes
   `agent signal name -> agent` routes.
@@ -132,9 +132,9 @@ public const array PAGE_TABLES = [
 - Do not keep WebSocket action routing only in `SignalRouter`, `WorkerManager`,
   or WebSocket client config when the project can compute it through
   `Hilos::getPageActionRoutes()` and `Hilos::getActionAgentRoutes()`.
-- Do not keep page-dispatched signal routes only in `WorkerManager` or
-  `SignalRouter` when the project can compute them through
-  `Hilos::getPageSignalRoutes()` and `Hilos::getPageSignalAgentRoutes()`.
+- Do not keep page-dispatched signal routes in project `SignalRouter` config
+  when the project can compute them through `Hilos::getPageSignalRoutes()` and
+  `Hilos::getPageSignalAgentRoutes()`.
 - Do not keep direct agent-to-agent signal routes only in `SignalRouter` when
   the project can compute them through `Hilos::AGENTS` and
   `Hilos::getAgentSignalRoutes()`.

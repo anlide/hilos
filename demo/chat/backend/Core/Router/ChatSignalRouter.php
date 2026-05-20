@@ -21,8 +21,8 @@ use Hilos\Core\Router\SignalSource;
  * Defines declarative routing rules for all signal types in the chat demo project.
  * Routes signals by source and type to the appropriate agent.
  *
- * Page subscription signals are routed by framework topology through page
- * SUBSCRIPTION_AGENT_TYPE declarations.
+ * Page subscription and page-owned non-action signals are routed by framework
+ * topology through page declarations.
  */
 final class ChatSignalRouter extends SignalRouter
 {
@@ -32,13 +32,6 @@ final class ChatSignalRouter extends SignalRouter
     public function __construct()
     {
         parent::__construct();
-
-        $pageSignalAgentRoutes = Hilos::getPageSignalAgentRoutes();
-        $pageOwnedAgentSignalRoutes = $pageSignalAgentRoutes[SignalTypeConstants::AGENT_SIGNAL] ?? [];
-        $agentSignalRoutes = Hilos::getAgentSignalRoutes();
-        if (is_array($pageOwnedAgentSignalRoutes)) {
-            $agentSignalRoutes = array_merge($pageOwnedAgentSignalRoutes, $agentSignalRoutes);
-        }
 
         $groups = [
             GroupConstants::SESSION => [
@@ -63,9 +56,16 @@ final class ChatSignalRouter extends SignalRouter
                 SignalTypeConstants::CRON => AgentType::CHAT,
             ],
             SignalSource::AGENT => [
-                SignalTypeConstants::AGENT_SIGNAL => $agentSignalRoutes,
+                SignalTypeConstants::AGENT_SIGNAL => Hilos::getAgentSignalRoutes(),
             ],
-            SignalSource::WEBSOCKET => $this->buildWebSocketRoutes($pageSignalAgentRoutes),
+            SignalSource::WEBSOCKET => [
+                SignalTypeConstants::HANDSHAKE => AgentType::CHAT,
+                SignalTypeConstants::CONNECTION_CLOSE => AgentType::CHAT,
+                SignalTypeConstants::GROUP_SUBSCRIBE => AgentType::CHAT,
+                SignalTypeConstants::GROUP_UNSUBSCRIBE => AgentType::CHAT,
+                SignalTypeConstants::GROUP_UPDATE_SUBSCRIPTION => AgentType::CHAT,
+                SignalTypeConstants::CRON => AgentType::CHAT,
+            ],
         ];
 
         $this->config = [
@@ -96,37 +96,11 @@ final class ChatSignalRouter extends SignalRouter
     }
 
     /**
-     * Builds WebSocket signal routes from static chat routes and page-owned signal routes.
-     *
-     * @param array<string, string|array<string, string>> $pageSignalAgentRoutes Page-owned signal owner agent routes
-     * @return array<string, string> Signal type to agent type routes
-     */
-    private function buildWebSocketRoutes(array $pageSignalAgentRoutes): array
-    {
-        $routes = [
-            SignalTypeConstants::HANDSHAKE => AgentType::CHAT,
-            SignalTypeConstants::CONNECTION_CLOSE => AgentType::CHAT,
-        ];
-
-        $frameBinaryAgentType = $pageSignalAgentRoutes[SignalTypeConstants::FRAME_BINARY] ?? null;
-        if (is_string($frameBinaryAgentType) && $frameBinaryAgentType !== '') {
-            $routes[SignalTypeConstants::FRAME_BINARY] = $frameBinaryAgentType;
-        }
-
-        return $routes + [
-            SignalTypeConstants::GROUP_SUBSCRIBE => AgentType::CHAT,
-            SignalTypeConstants::GROUP_UNSUBSCRIBE => AgentType::CHAT,
-            SignalTypeConstants::GROUP_UPDATE_SUBSCRIPTION => AgentType::CHAT,
-            SignalTypeConstants::CRON => AgentType::CHAT,
-        ];
-    }
-
-    /**
      * Dynamic routing for signals that require content-based destination resolution.
      *
      * Only use for cases where agentIndex or destination depends on signal payload
      * (e.g. BOT_AGENT_START extracts botId to route to specific BotAgent instance).
-     * All static routing is declared in $config above.
+     * Project-specific static routing is declared in $config above.
      *
      * @param SignalDTO $signal Signal DTO
      * @return list<array<string, mixed>> Array of destinations

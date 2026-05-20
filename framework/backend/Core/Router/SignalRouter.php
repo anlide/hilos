@@ -34,20 +34,26 @@ use Hilos\Utils\Logger;
  * - 'signals'  — source -> signalType -> agentType mapping (static routing)
  * - 'actions'  — action -> agentType mapping
  *
- * Page subscription routing is derived from the active project Hilos facade
- * and registered page SUBSCRIPTION_AGENT_TYPE constants.
+ * Page subscription and page-owned non-action signal routing are derived from
+ * the active project Hilos facade and registered page constants.
  *
  * For dynamic routing (agentIndex depends on signal content), override getDestinations()
- * in child router. Static routing must always be declared in config.
+ * in child router. Project-specific static routing belongs in config.
  */
 class SignalRouter
 {
+    private const array PAGE_SIGNAL_SOURCES = [
+        SignalTypeConstants::AGENT_SIGNAL => SignalSource::AGENT,
+        SignalTypeConstants::CRON => SignalSource::DAEMON,
+        SignalTypeConstants::FRAME_BINARY => SignalSource::WEBSOCKET,
+    ];
+
     /**
      * Signal routing configuration
      *
      * Set by child router in __construct(). Keys:
      * - 'groups' — array<string, array{agentType: string, agentIndex: ?string, params: array}>
-     * - 'signals' — array<source, array<signalType, string|string[]>> (static agent routing)
+     * - 'signals' — array<source, array<signalType, string|string[]>> (project-specific static agent routing)
      * - 'actions' — array<actionName, string> (action -> agentType)
      *
      * @var array<string, mixed>
@@ -560,9 +566,9 @@ class SignalRouter
     /**
      * Get destinations for signal
      *
-     * Resolves signal destinations from config. Override in child routers ONLY for
-     * dynamic routing that depends on signal content (e.g. extracting agentIndex from payload).
-     * All static routing (source -> agent type mapping) must be declared in $config.
+     * Resolves signal destinations from config and project topology. Override in
+     * child routers only for dynamic routing that depends on signal content
+     * (e.g. extracting agentIndex from payload).
      *
      * Design principle: route by sender (signal source + type), not by destination.
      * The signal source and type determine where the signal goes; the destination agent
@@ -609,9 +615,14 @@ class SignalRouter
         } elseif ($signalType === SignalTypeConstants::AGENT_SIGNAL) {
             $destinations = array_merge($destinations, $this->getAgentDestinations($signal));
         } else {
-            $routes = $this->route($signal->signalSource, $signal->signalType, $signal->data);
-            foreach ($routes as $route) {
-                $destinations[] = array_merge(['type' => 'agent'], $route);
+            $pageSignalDestinations = $this->getPageSignalDestinations($signal);
+            if ($pageSignalDestinations !== []) {
+                $destinations = array_merge($destinations, $pageSignalDestinations);
+            } else {
+                $routes = $this->route($signal->signalSource, $signal->signalType, $signal->data);
+                foreach ($routes as $route) {
+                    $destinations[] = array_merge(['type' => 'agent'], $route);
+                }
             }
         }
 
@@ -710,6 +721,61 @@ class SignalRouter
     }
 
     /**
+     * Get agent destinations for page-owned non-action signals.
+     *
+     * Uses page SIGNALS declarations and page SUBSCRIPTION_AGENT_TYPE owners
+     * through the active project topology.
+     *
+     * @param SignalDTO $signal Signal DTO
+     * @return list<array{type: string, agentType: string, agentIndex: null}>
+     *         List of agent destination configs
+     */
+    private function getPageSignalDestinations(SignalDTO $signal): array
+    {
+        $agentType = $this->getPageSignalAgentType($signal);
+        if ($agentType === null) {
+            return [];
+        }
+
+        return [[
+            'type' => 'agent',
+            'agentType' => $agentType,
+            'agentIndex' => null,
+        ]];
+    }
+
+    /**
+     * Resolve page-owned signal owner from project topology.
+     *
+     * @param SignalDTO $signal Signal DTO
+     * @return ?string Agent type or null when no page-owned route exists
+     */
+    private function getPageSignalAgentType(SignalDTO $signal): ?string
+    {
+        $signalType = $signal->signalType->getType();
+        $expectedSource = self::PAGE_SIGNAL_SOURCES[$signalType] ?? null;
+        if ($expectedSource === null || $signal->signalSource->getSource() !== $expectedSource) {
+            return null;
+        }
+
+        $hilosClass = $this->hilosClass();
+        $route = $hilosClass::getPageSignalAgentRoutes()[$signalType] ?? null;
+        if (is_string($route) && $route !== '') {
+            return $route;
+        }
+
+        if (!is_array($route)) {
+            return null;
+        }
+
+        $agentType = $route[$signal->signalName->getName()] ?? null;
+
+        return is_string($agentType) && $agentType !== ''
+            ? $agentType
+            : null;
+    }
+
+    /**
      * Get WebSocket destinations for signal
      *
      * Returns array of WebSocket client destinations based on signal type and subscriptions.
@@ -788,8 +854,8 @@ class SignalRouter
     /**
      * Get agent destinations for agent-to-agent signal
      *
-     * Uses config['signals'][source][AGENT_SIGNAL][signalName] -> agentType or [agentTypes].
-     * Project routers may populate this from page and agent topology registries.
+     * Uses page-owned signal topology first, then
+     * config['signals'][source][AGENT_SIGNAL][signalName] for direct agent routes.
      * Supports single agent (string) or multiple agents (array of strings).
      *
      * @param SignalDTO $signal Signal DTO
@@ -800,6 +866,10 @@ class SignalRouter
     {
         $source = $signal->signalSource->getSource();
         $signalName = $signal->signalName->getName();
+        $pageSignalDestinations = $this->getPageSignalDestinations($signal);
+        if ($pageSignalDestinations !== []) {
+            return $pageSignalDestinations;
+        }
 
         $signalsConfig = $this->config['signals'] ?? [];
         $sourceConfig = $signalsConfig[$source] ?? [];

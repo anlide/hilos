@@ -19,9 +19,9 @@ Project routers should import `Hilos::getActionAgentRoutes()` for
 allowlists should read the same page-action registry.
 
 For page-dispatched non-action signals, keep ownership in each page class
-`SIGNALS`. Project routers should import `Hilos::getPageSignalAgentRoutes()`
-for signal-router agent ownership, and worker page routers should import
-`Hilos::getPageSignalRoutes()` for page dispatch.
+`SIGNALS`. `SignalRouter` resolves the owning agent through
+`Hilos::getPageSignalAgentRoutes()` and its project facade hook, while worker
+page routers import `Hilos::getPageSignalRoutes()` for page dispatch.
 
 For direct agent-to-agent signals, keep ownership in each agent class
 `AGENT_SIGNALS` and register the agent class in `Hilos::AGENTS`; project routers
@@ -40,25 +40,15 @@ protected function getDefaultPageSubscriptionAgentType(): ?string
     return AgentType::CHAT;
 }
 
-$pageSignalAgentRoutes = Hilos::getPageSignalAgentRoutes();
-$pageOwnedAgentSignals = $pageSignalAgentRoutes[SignalTypeConstants::AGENT_SIGNAL] ?? [];
-if (!is_array($pageOwnedAgentSignals)) {
-    $pageOwnedAgentSignals = [];
-}
-
 $this->config = [
     'groups'  => [ 'group_name' => ['agentType' => 'chat', 'agentIndex' => null, 'params' => []] ],
     'signals' => [
         SignalSource::WEBSOCKET => [
             SignalTypeConstants::HANDSHAKE => AgentType::CHAT,
             SignalTypeConstants::CONNECTION_CLOSE => AgentType::CHAT,
-            SignalTypeConstants::FRAME_BINARY => $pageSignalAgentRoutes[SignalTypeConstants::FRAME_BINARY] ?? AgentType::CHAT,
         ],
         SignalSource::AGENT => [
-            SignalTypeConstants::AGENT_SIGNAL => array_merge(
-                $pageOwnedAgentSignals,
-                Hilos::getAgentSignalRoutes(),
-            ),
+            SignalTypeConstants::AGENT_SIGNAL => Hilos::getAgentSignalRoutes(),
         ],
     ],
     'actions' => Hilos::getActionAgentRoutes(),
@@ -68,6 +58,10 @@ $this->config = [
 Do not duplicate page subscription ownership in project router config.
 Registered page subscription routes come from page classes through
 `Hilos::getPageRoutes()`.
+
+Do not duplicate page-owned non-action signal ownership in project router
+config. Registered page signal routes come from page classes through
+`Hilos::getPageSignalAgentRoutes()` inside the framework router.
 
 ## Signal flow
 
@@ -83,6 +77,9 @@ WS frame arrives → server parses → queues signal in `Hilos::$sr` with source
 For `ACTION` frames, routing first checks the page-owned action registry.
 Projects should not keep a generic `WEBSOCKET/ACTION => AgentType::*`
 fallback when action ownership can be derived from pages.
+
+For page-owned non-action frames such as `FRAME_BINARY`, the framework router
+checks the page signal registry before project-specific static config.
 
 ## Agent → agent
 
