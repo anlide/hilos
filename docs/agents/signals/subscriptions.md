@@ -38,7 +38,8 @@ PAGE_UNSUBSCRIBE / GROUP_UNSUBSCRIBE
 ## Routing by subscription
 
 From daemon's `dispatchSignals()`, `getDestinations()` resolves:
-- PAGE signal → find agent registered for that page in `config['pages']`
+- PAGE signal → find agent declared by page `SUBSCRIPTION_AGENT_TYPE` through
+  `page_subscription_routing`
 - GROUP signal → find agent registered for that group in `config['groups']`
 
 ## Sending to subscribers

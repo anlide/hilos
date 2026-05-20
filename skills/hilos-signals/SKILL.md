@@ -21,9 +21,10 @@ Use this skill for every change that affects signal shape, route, subscription, 
 ## Workflow
 
 1. Identify the signal source and destination: WS, agent, DB sync, RT sync, cron, or system.
-2. For project page subscription routing, update page
-   `SUBSCRIPTION_AGENT_TYPE` values through `docs/agents/app-topology.md`;
-   otherwise add or update declarative routing in `SignalRouter`.
+2. For project page subscription, page signal, action, or direct agent-signal
+   ownership, update `SUBSCRIPTION_AGENT_TYPE`, `SIGNALS`, `ACTIONS`,
+   `AGENT_SIGNALS`, and `Hilos::AGENTS` through `docs/agents/app-topology.md`;
+   keep payload-dependent routes in `SignalRouter`.
 3. Route named signal handlers with `switch ($name)` and explicit cases.
 4. Omit empty `default` branches in partial shared-broadcast handlers; document
    the ignore contract in PHPDoc instead.
@@ -36,7 +37,8 @@ Use this skill for every change that affects signal shape, route, subscription, 
 
 - Never run `git commit` or `git push`.
 - Keep routing declarative in `SignalRouter`.
-- Keep project page subscription ownership on page `SUBSCRIPTION_AGENT_TYPE`
-  constants.
+- Keep project page subscription ownership on page `SUBSCRIPTION_AGENT_TYPE`,
+  page signal ownership on page `SIGNALS`, and direct agent signal ownership on
+  agent `AGENT_SIGNALS`.
 - Do not hide subscription or delivery decisions inside unrelated business logic.
 - Preserve envelope metadata when DTOs cross worker and daemon boundaries.

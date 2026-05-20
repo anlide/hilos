@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos;
 
 use Hilos\Core\Analytics\AnalyticsCollector;
+use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Router\SignalRouter;
@@ -36,6 +37,9 @@ abstract class Hilos
 {
     /** Page classes keyed by page name. */
     public const array PAGES = [];
+
+    /** Agent classes keyed by agent type. */
+    public const array AGENTS = [];
 
     /** Registered table definition classes keyed by table name. */
     public const array TABLES = [];
@@ -141,6 +145,110 @@ abstract class Hilos
         }
 
         return $actionAgentRoutes;
+    }
+
+    /**
+     * Returns page-owned non-action signal routes declared by registered page classes.
+     *
+     * Empty signal name lists declare a type-wide route; non-empty lists declare
+     * named routes for that signal type.
+     *
+     * @return array<string, string|array<string, string>> Page route keyed by signal type, then signal name
+     */
+    public static function getPageSignalRoutes(): array
+    {
+        $signalRoutes = [];
+        foreach (static::PAGES as $page => $pageClass) {
+            if (!is_string($page) || !is_string($pageClass) || !is_subclass_of($pageClass, AbstractPage::class)) {
+                continue;
+            }
+
+            foreach ($pageClass::SIGNALS as $signalType => $signalNames) {
+                if (!is_string($signalType) || $signalType === '' || !is_array($signalNames)) {
+                    continue;
+                }
+
+                if ($signalNames === []) {
+                    if (!array_key_exists($signalType, $signalRoutes)) {
+                        $signalRoutes[$signalType] = $page;
+                    }
+                    continue;
+                }
+
+                if (isset($signalRoutes[$signalType]) && is_string($signalRoutes[$signalType])) {
+                    continue;
+                }
+
+                if (!isset($signalRoutes[$signalType])) {
+                    $signalRoutes[$signalType] = [];
+                }
+
+                foreach ($signalNames as $signalName) {
+                    if (!is_string($signalName) || $signalName === '') {
+                        continue;
+                    }
+
+                    $signalRoutes[$signalType][$signalName] = $page;
+                }
+            }
+        }
+
+        return $signalRoutes;
+    }
+
+    /**
+     * Returns page-owned non-action signal owner agent routes.
+     *
+     * @return array<string, string|array<string, string>> Agent route keyed by signal type, then signal name
+     */
+    public static function getPageSignalAgentRoutes(): array
+    {
+        $pageRoutes = static::getPageRoutes();
+        $signalAgentRoutes = [];
+        foreach (static::getPageSignalRoutes() as $signalType => $route) {
+            if (is_string($route)) {
+                $agentType = $pageRoutes[$route] ?? '';
+                if ($agentType !== '') {
+                    $signalAgentRoutes[$signalType] = $agentType;
+                }
+                continue;
+            }
+
+            $signalAgentRoutes[$signalType] = [];
+            foreach ($route as $signalName => $page) {
+                $agentType = $pageRoutes[$page] ?? '';
+                if ($agentType !== '') {
+                    $signalAgentRoutes[$signalType][$signalName] = $agentType;
+                }
+            }
+        }
+
+        return $signalAgentRoutes;
+    }
+
+    /**
+     * Returns agent-owned agent signal routes declared by registered agent classes.
+     *
+     * @return array<string, string> Agent type keyed by signal name
+     */
+    public static function getAgentSignalRoutes(): array
+    {
+        $signalRoutes = [];
+        foreach (static::AGENTS as $agentType => $agentClass) {
+            if (!is_string($agentType) || !is_string($agentClass) || !is_subclass_of($agentClass, AbstractAgent::class)) {
+                continue;
+            }
+
+            foreach ($agentClass::AGENT_SIGNALS as $signalName) {
+                if (!is_string($signalName) || $signalName === '') {
+                    continue;
+                }
+
+                $signalRoutes[$signalName] = $agentType;
+            }
+        }
+
+        return $signalRoutes;
     }
 
     /**

@@ -30,7 +30,6 @@ use Hilos\Utils\Logger;
  * Agents do not pull signals — they receive them based on declarative routing config.
  *
  * Config structure:
- * - 'pages'    — page -> agentType mapping (which agent handles which page)
  * - 'groups'   — group -> agentType mapping
  * - 'signals'  — source -> signalType -> agentType mapping (static routing)
  * - 'actions'  — action -> agentType mapping
@@ -46,7 +45,6 @@ class SignalRouter
      * Signal routing configuration
      *
      * Set by child router in __construct(). Keys:
-     * - 'pages'  — array<string, array{agentType: string, agentIndex: ?string, params: array}>
      * - 'groups' — array<string, array{agentType: string, agentIndex: ?string, params: array}>
      * - 'signals' — array<source, array<signalType, string|string[]>> (static agent routing)
      * - 'actions' — array<actionName, string> (action -> agentType)
@@ -750,7 +748,7 @@ class SignalRouter
      * Get agent destinations for agent-to-agent signal
      *
      * Uses config['signals'][source][AGENT_SIGNAL][signalName] -> agentType or [agentTypes].
-     * Configure in child router's __construct (e.g. ChatSignalRouter).
+     * Project routers may populate this from page and agent topology registries.
      * Supports single agent (string) or multiple agents (array of strings).
      *
      * @param SignalDTO $signal Signal DTO

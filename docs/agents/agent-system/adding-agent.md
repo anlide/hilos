@@ -55,34 +55,53 @@ protected function createAgentDaemon(string $agentType): AbstractAgentDaemon {
 }
 ```
 
-## 6. Add routing rules in SignalRouter
+## 6. Register in Hilos topology
 
 ```php
-// backend/Core/Router/ChatSignalRouter.php
-$signals = [
-    SignalSource::WS => [
-        SignalTypeConstants::WS_HANDSHAKE => AgentType::MY_AGENT,
-    ],
-    // ...
+// backend/Hilos.php
+public const array AGENTS = [
+    MyAgent::AGENT_TYPE => MyAgent::class,
 ];
 ```
 
-## 7. For page-based agents: register page mapping
+## 7. Declare direct agent signal ownership
 
 ```php
-$pages = [
-    PageConstants::MY_PAGE => [
-        'agentType' => AgentType::MY_AGENT,
-        'agentIndex' => null,
-        'params' => [],
-    ],
+// backend/Agents/MyAgent.php
+class MyAgent extends AbstractAgent {
+    public const array AGENT_SIGNALS = [
+        MySignalConstants::MY_AGENT_SIGNAL,
+    ];
+}
+```
+
+Project routers import `Hilos::getAgentSignalRoutes()` for static
+agent-to-agent routes. Keep payload-dependent routes, such as indexed agent
+starts, in `SignalRouter::getDestinations()`.
+
+## 8. Add static source/type routing when needed
+
+```php
+// backend/Core/Router/ChatSignalRouter.php
+$signals[SignalSource::WEBSOCKET] = [
+    SignalTypeConstants::HANDSHAKE => AgentType::MY_AGENT,
 ];
+```
+
+## 9. For page-based agents: register page ownership
+
+```php
+class MyPage extends AbstractPage {
+    public const string SUBSCRIPTION_AGENT_TYPE = AgentType::MY_AGENT;
+}
 ```
 
 ## Checklist
 
 - [ ] `AGENT_TYPE` constant matches value in `AgentType`
 - [ ] Added to both worker factory AND daemon factory
-- [ ] Routing rules declared in `SignalRouter`
+- [ ] Registered in `Hilos::AGENTS`
+- [ ] Direct agent-to-agent signals declared in `AGENT_SIGNALS`
+- [ ] Static source/type or dynamic indexed routes declared in `SignalRouter`
 - [ ] `onStop()` cleans owned state; `WorkerManager` unregisters truth sources after the hook
 - [ ] `onTick()` completes in < 0.1s

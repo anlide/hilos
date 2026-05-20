@@ -34,13 +34,11 @@ final class ChatSignalRouter extends SignalRouter
         parent::__construct();
 
         $pageRoutes = Hilos::getPageRoutes();
-        $pages = [];
-        foreach ($pageRoutes as $page => $agentType) {
-            $pages[$page] = [
-                'agentType' => $agentType,
-                'agentIndex' => null,
-                'params' => [],
-            ];
+        $pageSignalAgentRoutes = Hilos::getPageSignalAgentRoutes();
+        $pageOwnedAgentSignalRoutes = $pageSignalAgentRoutes[SignalTypeConstants::AGENT_SIGNAL] ?? [];
+        $agentSignalRoutes = Hilos::getAgentSignalRoutes();
+        if (is_array($pageOwnedAgentSignalRoutes)) {
+            $agentSignalRoutes = array_merge($pageOwnedAgentSignalRoutes, $agentSignalRoutes);
         }
 
         $groups = [
@@ -66,21 +64,9 @@ final class ChatSignalRouter extends SignalRouter
                 SignalTypeConstants::CRON => AgentType::CHAT,
             ],
             SignalSource::AGENT => [
-                SignalTypeConstants::AGENT_SIGNAL => [
-                    ChatSignalConstants::MODERATION_RESULT => AgentType::CHAT,
-                    ChatSignalConstants::RENAME_MODERATION_RESULT => AgentType::CHAT,
-                    ChatSignalConstants::BOT_MESSAGE => AgentType::CHAT,
-                ],
+                SignalTypeConstants::AGENT_SIGNAL => $agentSignalRoutes,
             ],
-            SignalSource::WEBSOCKET => [
-                SignalTypeConstants::HANDSHAKE => AgentType::CHAT,
-                SignalTypeConstants::CONNECTION_CLOSE => AgentType::CHAT,
-                SignalTypeConstants::FRAME_BINARY => AgentType::CHAT,
-                SignalTypeConstants::GROUP_SUBSCRIBE => AgentType::CHAT,
-                SignalTypeConstants::GROUP_UNSUBSCRIBE => AgentType::CHAT,
-                SignalTypeConstants::GROUP_UPDATE_SUBSCRIPTION => AgentType::CHAT,
-                SignalTypeConstants::CRON => AgentType::CHAT,
-            ],
+            SignalSource::WEBSOCKET => $this->buildWebSocketRoutes($pageSignalAgentRoutes),
         ];
 
         $pageSubscriptionRouting = [
@@ -89,11 +75,36 @@ final class ChatSignalRouter extends SignalRouter
         ];
 
         $this->config = [
-            'pages' => $pages,
             'groups' => $groups,
             'signals' => $signals,
             'actions' => Hilos::getActionAgentRoutes(),
             'page_subscription_routing' => $pageSubscriptionRouting,
+        ];
+    }
+
+    /**
+     * Builds WebSocket signal routes from static chat routes and page-owned signal routes.
+     *
+     * @param array<string, string|array<string, string>> $pageSignalAgentRoutes Page-owned signal owner agent routes
+     * @return array<string, string> Signal type to agent type routes
+     */
+    private function buildWebSocketRoutes(array $pageSignalAgentRoutes): array
+    {
+        $routes = [
+            SignalTypeConstants::HANDSHAKE => AgentType::CHAT,
+            SignalTypeConstants::CONNECTION_CLOSE => AgentType::CHAT,
+        ];
+
+        $frameBinaryAgentType = $pageSignalAgentRoutes[SignalTypeConstants::FRAME_BINARY] ?? null;
+        if (is_string($frameBinaryAgentType) && $frameBinaryAgentType !== '') {
+            $routes[SignalTypeConstants::FRAME_BINARY] = $frameBinaryAgentType;
+        }
+
+        return $routes + [
+            SignalTypeConstants::GROUP_SUBSCRIBE => AgentType::CHAT,
+            SignalTypeConstants::GROUP_UNSUBSCRIBE => AgentType::CHAT,
+            SignalTypeConstants::GROUP_UPDATE_SUBSCRIPTION => AgentType::CHAT,
+            SignalTypeConstants::CRON => AgentType::CHAT,
         ];
     }
 

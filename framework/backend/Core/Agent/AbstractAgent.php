@@ -48,6 +48,9 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface
     /** @var string Agent type identifier. Override in child classes. */
     public const string AGENT_TYPE = '';
 
+    /** @var list<string> Agent signal names owned directly by this agent. */
+    public const array AGENT_SIGNALS = [];
+
     /** @var ?string Agent index for multi-instance agents (null for singletons) */
     protected ?string $agentIndex = null;
 
@@ -211,8 +214,8 @@ abstract class AbstractAgent implements AgentInterface, PageAgentInterface
     /**
      * Send signal to another agent (agent-to-agent).
      *
-     * Target agent is determined by routing config: signals[AGENT][AGENT_SIGNAL][signalName].
-     * Configure in application router (e.g. ChatSignalRouter::__construct).
+     * Target agent is determined by the application router. Static direct agent
+     * routes should be declared in AGENT_SIGNALS and imported by the router.
      *
      * @param string $signalName Signal name (used for routing)
      * @param SignalDataInterface $data Signal payload

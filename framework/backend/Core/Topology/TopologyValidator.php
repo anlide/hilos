@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Topology;
 
+use Hilos\Constants\SignalTypeConstants;
+use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Table\Definition\TableDefinition;
@@ -25,15 +27,24 @@ final class TopologyValidator
     {
         $errors = [];
         $pages = $this->constantArray($hilosClass, 'PAGES', $errors);
+        $agents = $this->constantArray($hilosClass, 'AGENTS', $errors);
         $tables = $this->constantArray($hilosClass, 'TABLES', $errors);
         $browserTables = $this->constantArray($hilosClass, 'BROWSER_TABLES', $errors);
         $pageTables = $this->constantArray($hilosClass, 'PAGE_TABLES', $errors);
 
         $this->validatePages($pages, $errors);
+        $this->validateAgents($agents, $errors);
         $this->validateRegisteredTables($tables, $errors);
         $this->validateBrowserTables($browserTables, $errors);
         $this->validatePageRoutes($pages, $hilosClass::getPageRoutes(), $errors);
         $this->validatePageActionRoutes($pages, $hilosClass::getPageActionRoutes(), $errors);
+        $this->validatePageSignalRoutes($pages, $hilosClass::getPageSignalRoutes(), $errors);
+        $this->validateAgentSignalRoutes(
+            $agents,
+            $hilosClass::getAgentSignalRoutes(),
+            $hilosClass::getPageSignalAgentRoutes(),
+            $errors,
+        );
         $this->validatePageTables($pages, $tables, $browserTables, $pageTables, $errors);
 
         if ($errors !== []) {
@@ -96,6 +107,37 @@ final class TopologyValidator
 
             if (array_key_exists(BrowserConfigKey::TABLES, $pageClass::BROWSER)) {
                 $errors[] = "PAGES[{$page}] class {$pageClass} must declare page-table bindings in PAGE_TABLES, not BROWSER['" . BrowserConfigKey::TABLES . "']";
+            }
+        }
+    }
+
+    /**
+     * Validates agent registry keys and agent classes.
+     *
+     * @param array<mixed, mixed> $agents Agent registry
+     * @param list<string> $errors Validation error accumulator
+     */
+    private function validateAgents(array $agents, array &$errors): void
+    {
+        foreach ($agents as $agentType => $agentClass) {
+            if (!is_string($agentType) || $agentType === '') {
+                $errors[] = 'AGENTS contains a non-string or empty agent type key';
+                continue;
+            }
+
+            if (!$this->isExistingClassString($agentClass, "AGENTS[{$agentType}]", $errors)) {
+                continue;
+            }
+
+            if (!is_subclass_of($agentClass, AbstractAgent::class)) {
+                $errors[] = "AGENTS[{$agentType}] class {$agentClass} must extend " . AbstractAgent::class;
+                continue;
+            }
+
+            /** @var class-string<AbstractAgent> $agentClass */
+            $classAgentType = $agentClass::AGENT_TYPE;
+            if ($classAgentType !== $agentType) {
+                $errors[] = "AGENTS[{$agentType}] key must match {$agentClass}::AGENT_TYPE ({$classAgentType})";
             }
         }
     }
@@ -258,6 +300,184 @@ final class TopologyValidator
 
             if (!array_key_exists($page, $pages)) {
                 $errors[] = "Computed page action route {$action} references a page missing from PAGES";
+            }
+        }
+    }
+
+    /**
+     * Validates page-owned non-action signal route declarations.
+     *
+     * @param array<mixed, mixed> $pages Page registry
+     * @param array<mixed, mixed> $pageSignalRoutes Computed page signal route registry
+     * @param list<string> $errors Validation error accumulator
+     */
+    private function validatePageSignalRoutes(array $pages, array $pageSignalRoutes, array &$errors): void
+    {
+        $typeWideRoutes = [];
+        $namedRoutes = [];
+        foreach ($pages as $page => $pageClass) {
+            if (!is_string($page) || !is_string($pageClass) || !is_subclass_of($pageClass, AbstractPage::class)) {
+                continue;
+            }
+
+            foreach ($pageClass::SIGNALS as $signalType => $signalNames) {
+                if (!is_string($signalType) || $signalType === '') {
+                    $errors[] = "PAGES[{$page}] class {$pageClass} SIGNALS must use non-empty signal type strings";
+                    continue;
+                }
+
+                if (!is_array($signalNames)) {
+                    $errors[] = "PAGES[{$page}] class {$pageClass} SIGNALS[{$signalType}] must be an array";
+                    continue;
+                }
+
+                if ($signalNames === []) {
+                    if (isset($namedRoutes[$signalType])) {
+                        $errors[] = "Page signal type {$signalType} is declared as both type-wide and named routes";
+                        continue;
+                    }
+
+                    if (isset($typeWideRoutes[$signalType]) && $typeWideRoutes[$signalType] !== $page) {
+                        $errors[] = "Page signal type {$signalType} is declared by multiple pages: {$typeWideRoutes[$signalType]} and {$page}";
+                        continue;
+                    }
+
+                    $typeWideRoutes[$signalType] = $page;
+                    continue;
+                }
+
+                if (isset($typeWideRoutes[$signalType])) {
+                    $errors[] = "Page signal type {$signalType} is declared as both type-wide and named routes";
+                    continue;
+                }
+
+                foreach ($signalNames as $signalName) {
+                    if (!is_string($signalName) || $signalName === '') {
+                        $errors[] = "PAGES[{$page}] class {$pageClass} SIGNALS[{$signalType}] must contain only non-empty signal names";
+                        continue;
+                    }
+
+                    if (isset($namedRoutes[$signalType][$signalName]) && $namedRoutes[$signalType][$signalName] !== $page) {
+                        $errors[] = "Page signal {$signalType}/{$signalName} is declared by multiple pages: {$namedRoutes[$signalType][$signalName]} and {$page}";
+                        continue;
+                    }
+
+                    $namedRoutes[$signalType][$signalName] = $page;
+                }
+            }
+        }
+
+        foreach ($typeWideRoutes as $signalType => $page) {
+            if (($pageSignalRoutes[$signalType] ?? null) !== $page) {
+                $errors[] = "Page signal route {$signalType} is missing from computed signal routes";
+            }
+        }
+
+        foreach ($namedRoutes as $signalType => $routes) {
+            foreach ($routes as $signalName => $page) {
+                $computedRoutes = $pageSignalRoutes[$signalType] ?? null;
+                if (!is_array($computedRoutes) || ($computedRoutes[$signalName] ?? null) !== $page) {
+                    $errors[] = "Page signal route {$signalType}/{$signalName} is missing from computed signal routes";
+                }
+            }
+        }
+
+        foreach ($pageSignalRoutes as $signalType => $route) {
+            if (!is_string($signalType) || $signalType === '') {
+                $errors[] = 'Computed page signal routes contain a non-string or empty signal type key';
+                continue;
+            }
+
+            if (is_string($route)) {
+                if ($route === '' || !array_key_exists($route, $pages)) {
+                    $errors[] = "Computed page signal route {$signalType} references a page missing from PAGES";
+                }
+                continue;
+            }
+
+            if (!is_array($route)) {
+                $errors[] = "Computed page signal route {$signalType} must reference a page or named page routes";
+                continue;
+            }
+
+            foreach ($route as $signalName => $page) {
+                if (!is_string($signalName) || $signalName === '') {
+                    $errors[] = "Computed page signal route {$signalType} contains a non-string or empty signal name";
+                    continue;
+                }
+
+                if (!is_string($page) || $page === '' || !array_key_exists($page, $pages)) {
+                    $errors[] = "Computed page signal route {$signalType}/{$signalName} references a page missing from PAGES";
+                }
+            }
+        }
+    }
+
+    /**
+     * Validates agent-owned agent signal route declarations.
+     *
+     * @param array<mixed, mixed> $agents Agent registry
+     * @param array<mixed, mixed> $agentSignalRoutes Computed agent signal route registry
+     * @param array<mixed, mixed> $pageSignalAgentRoutes Computed page signal owner agent routes
+     * @param list<string> $errors Validation error accumulator
+     */
+    private function validateAgentSignalRoutes(
+        array $agents,
+        array $agentSignalRoutes,
+        array $pageSignalAgentRoutes,
+        array &$errors,
+    ): void {
+        $declaredRoutes = [];
+        foreach ($agents as $agentType => $agentClass) {
+            if (!is_string($agentType) || !is_string($agentClass) || !is_subclass_of($agentClass, AbstractAgent::class)) {
+                continue;
+            }
+
+            foreach ($agentClass::AGENT_SIGNALS as $signalName) {
+                if (!is_string($signalName) || $signalName === '') {
+                    $errors[] = "AGENTS[{$agentType}] class {$agentClass} AGENT_SIGNALS must contain only non-empty signal names";
+                    continue;
+                }
+
+                if (isset($declaredRoutes[$signalName]) && $declaredRoutes[$signalName] !== $agentType) {
+                    $errors[] = "Agent signal {$signalName} is declared by multiple agents: {$declaredRoutes[$signalName]} and {$agentType}";
+                    continue;
+                }
+
+                $declaredRoutes[$signalName] = $agentType;
+            }
+        }
+
+        foreach ($declaredRoutes as $signalName => $agentType) {
+            if (($agentSignalRoutes[$signalName] ?? null) !== $agentType) {
+                $errors[] = "Agent signal route {$signalName} is missing from computed agent signal routes";
+            }
+        }
+
+        foreach ($agentSignalRoutes as $signalName => $agentType) {
+            if (!is_string($signalName) || $signalName === '') {
+                $errors[] = 'Computed agent signal routes contain a non-string or empty signal name';
+                continue;
+            }
+
+            if (!is_string($agentType) || $agentType === '' || !array_key_exists($agentType, $agents)) {
+                $errors[] = "Computed agent signal route {$signalName} references an agent missing from AGENTS";
+            }
+        }
+
+        $pageAgentSignalRoutes = $pageSignalAgentRoutes[SignalTypeConstants::AGENT_SIGNAL] ?? [];
+        if (is_string($pageAgentSignalRoutes) && $declaredRoutes !== []) {
+            $errors[] = 'Type-wide page-owned AGENT_SIGNAL route conflicts with agent-owned signal routes';
+            return;
+        }
+
+        if (!is_array($pageAgentSignalRoutes)) {
+            return;
+        }
+
+        foreach ($pageAgentSignalRoutes as $signalName => $_agentType) {
+            if (isset($declaredRoutes[$signalName])) {
+                $errors[] = "Agent signal {$signalName} is declared by both page-owned and agent-owned routes";
             }
         }
     }

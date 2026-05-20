@@ -9,6 +9,8 @@ use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Router\ChatSignalRouter;
 use Demo\Chat\Core\Router\DTO\BotMessageSignalData;
+use Demo\Chat\Core\Router\DTO\ModerationResultSignalData;
+use Demo\Chat\Core\Router\DTO\RenameModerationResultSignalData;
 use Demo\Chat\Hilos;
 use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
@@ -18,6 +20,7 @@ use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
 use Hilos\Socket\WebSocket\DTO\WebSocketActionSignalDTO;
+use Hilos\Socket\WebSocket\DTO\WebSocketFrameBinarySignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\Socket\Worker\DTO\SystemSignalDTO;
 use PHPUnit\Framework\TestCase;
@@ -151,6 +154,60 @@ final class ChatSignalRouterTest extends TestCase
             new SignalType(SignalTypeConstants::AGENT_SIGNAL),
             new SignalName(ChatSignalConstants::BOT_MESSAGE),
             new AgentSignalData(new BotMessageSignalData(botId: 7, message: 'hello')),
+        ));
+
+        $this->assertSame([
+            ['type' => 'agent', 'agentType' => AgentType::CHAT, 'agentIndex' => null],
+        ], $destinations);
+    }
+
+    public function testModerationResultRoutesToChatAgentThroughPageSignalOwnership(): void
+    {
+        $destinations = (new ChatSignalRouter())->getDestinations(new SignalDTO(
+            new SignalSource(SignalSource::AGENT),
+            new SignalType(SignalTypeConstants::AGENT_SIGNAL),
+            new SignalName(ChatSignalConstants::MODERATION_RESULT),
+            new AgentSignalData(new ModerationResultSignalData(
+                acceptKey: 'accept-key',
+                userId: 7,
+                message: 'hello',
+                allow: true,
+                reason: '',
+            )),
+        ));
+
+        $this->assertSame([
+            ['type' => 'agent', 'agentType' => AgentType::CHAT, 'agentIndex' => null],
+        ], $destinations);
+    }
+
+    public function testRenameModerationResultRoutesToChatAgentThroughPageSignalOwnership(): void
+    {
+        $destinations = (new ChatSignalRouter())->getDestinations(new SignalDTO(
+            new SignalSource(SignalSource::AGENT),
+            new SignalType(SignalTypeConstants::AGENT_SIGNAL),
+            new SignalName(ChatSignalConstants::RENAME_MODERATION_RESULT),
+            new AgentSignalData(new RenameModerationResultSignalData(
+                acceptKey: 'accept-key',
+                userId: 7,
+                newName: 'new-name',
+                allow: true,
+                reason: '',
+            )),
+        ));
+
+        $this->assertSame([
+            ['type' => 'agent', 'agentType' => AgentType::CHAT, 'agentIndex' => null],
+        ], $destinations);
+    }
+
+    public function testBinaryFramesRouteToChatAgentThroughPageSignalOwnership(): void
+    {
+        $destinations = (new ChatSignalRouter())->getDestinations(new SignalDTO(
+            new SignalSource(SignalSource::WEBSOCKET),
+            new SignalType(SignalTypeConstants::FRAME_BINARY),
+            new SignalName(SignalName::EMPTY),
+            new WebSocketFrameBinarySignalDTO('accept-key', 'payload'),
         ));
 
         $this->assertSame([

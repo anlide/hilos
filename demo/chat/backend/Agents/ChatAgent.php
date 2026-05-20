@@ -36,6 +36,10 @@ final class ChatAgent extends AbstractAgent
 {
     public const string AGENT_TYPE = AgentType::CHAT;
 
+    public const array AGENT_SIGNALS = [
+        ChatSignalConstants::BOT_MESSAGE,
+    ];
+
     private const string SESSION_TOKEN_PATTERN = '/\A[0-9a-f]{32}\z/';
 
     /**

@@ -18,22 +18,37 @@ Project routers should import `Hilos::getActionAgentRoutes()` for
 `Hilos::getPageActionRoutes()` for `action -> page` dispatch. WebSocket client
 allowlists should read the same page-action registry.
 
+For page-dispatched non-action signals, keep ownership in each page class
+`SIGNALS`. Project routers should import `Hilos::getPageSignalAgentRoutes()`
+for signal-router agent ownership, and worker page routers should import
+`Hilos::getPageSignalRoutes()` for page dispatch.
+
+For direct agent-to-agent signals, keep ownership in each agent class
+`AGENT_SIGNALS` and register the agent class in `Hilos::AGENTS`; project routers
+should import `Hilos::getAgentSignalRoutes()`.
+
 ## Config structure (in SignalRouter subclass)
 
 ```php
+$pageSignalAgentRoutes = Hilos::getPageSignalAgentRoutes();
+$pageOwnedAgentSignals = $pageSignalAgentRoutes[SignalTypeConstants::AGENT_SIGNAL] ?? [];
+if (!is_array($pageOwnedAgentSignals)) {
+    $pageOwnedAgentSignals = [];
+}
+
 $this->config = [
-    'pages'   => [ 'page_name' => ['agentType' => 'chat', 'agentIndex' => null, 'params' => []] ],
     'groups'  => [ 'group_name' => ['agentType' => 'chat', 'agentIndex' => null, 'params' => []] ],
     'signals' => [
         SignalSource::WS => [
             SignalTypeConstants::WS_HANDSHAKE => AgentType::CHAT,
             SignalTypeConstants::WS_CLOSE     => AgentType::CHAT,
+            SignalTypeConstants::FRAME_BINARY => $pageSignalAgentRoutes[SignalTypeConstants::FRAME_BINARY] ?? AgentType::CHAT,
         ],
         SignalSource::AGENT => [
-            SignalTypeConstants::AGENT_SIGNAL => [
-                'moderate_bot_request' => AgentType::MODERATOR,
-                'moderation_result' => AgentType::CHAT,
-            ],
+            SignalTypeConstants::AGENT_SIGNAL => array_merge(
+                $pageOwnedAgentSignals,
+                Hilos::getAgentSignalRoutes(),
+            ),
         ],
     ],
     'actions' => Hilos::getActionAgentRoutes(),

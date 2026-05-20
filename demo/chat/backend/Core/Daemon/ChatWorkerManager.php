@@ -4,13 +4,10 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Core\Daemon;
 
-use Demo\Chat\Constants\ChatSignalConstants;
-use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Agent\ChatAgentManager;
 use Demo\Chat\Core\Page\ChatPageFactory;
 use Demo\Chat\Core\Router\ChatSignalRouter;
 use Demo\Chat\Hilos;
-use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\AgentInterface;
 use Hilos\Core\Agent\AgentManager;
 use Hilos\Core\Daemon\WorkerManager;
@@ -63,14 +60,7 @@ final class ChatWorkerManager extends WorkerManager
 
         $pageFactory = new ChatPageFactory($agent);
         $actionRoutes = new ActionRouteConfig(Hilos::getPageActionRoutes());
-
-        $signalRoutes = [
-            SignalTypeConstants::FRAME_BINARY => PageConstants::MAIN,
-            SignalTypeConstants::AGENT_SIGNAL => [
-                ChatSignalConstants::MODERATION_RESULT => PageConstants::MAIN,
-                ChatSignalConstants::RENAME_MODERATION_RESULT => PageConstants::PROFILE,
-            ],
-        ];
+        $signalRoutes = Hilos::getPageSignalRoutes();
 
         return new PageSignalRouter($pageFactory, $actionRoutes, $signalRoutes);
     }

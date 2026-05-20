@@ -19,7 +19,9 @@ Use this skill for agent business logic and registration work. Start by reading 
 ## Workflow
 
 1. Decide whether the work is a new agent, an existing agent behavior change, or lifecycle cleanup.
-2. For a new agent, add the `AgentType` constant, Agent class, AgentDaemon class, worker factory registration, daemon factory registration, and `SignalRouter` rules.
+2. For a new agent, add the `AgentType` constant, Agent class, AgentDaemon class,
+   worker factory registration, daemon factory registration, `Hilos::AGENTS`
+   registration, and `AGENT_SIGNALS` or `SignalRouter` routes.
 3. Keep `onStart()` for registration/initialization, `onTick()` for tiny incremental work, and `onStop()` for cleanup.
 4. Move long or blocking work out of `onTick()` and signal handlers.
 5. In named signal handlers, omit empty `default` branches for intentionally
@@ -30,6 +32,6 @@ Use this skill for agent business logic and registration work. Start by reading 
 ## Hard Rules
 
 - Never run `git commit` or `git push`.
-- Never add routing logic directly inside agents; use `SignalRouter`.
+- Never add routing logic directly inside agents; use topology declarations or `SignalRouter`.
 - Never let non-truth-source agents write to a DB/RT collection they do not own.
 - Never add Repository or Service layers above `DbCollection`.

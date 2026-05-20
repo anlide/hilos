@@ -37,6 +37,9 @@ abstract class AbstractPage
     /** WebSocket action names owned by this page. */
     public const array ACTIONS = [];
 
+    /** Non-action signal routes owned by this page, keyed by signal type. */
+    public const array SIGNALS = [];
+
     /** Browser data config declared by data-bearing pages. */
     public const array BROWSER = [];
 

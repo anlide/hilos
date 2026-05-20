@@ -4,6 +4,15 @@ declare(strict_types=1);
 
 namespace Demo\Chat;
 
+use Demo\Chat\Agents\BotAgent;
+use Demo\Chat\Agents\ChatAgent;
+use Demo\Chat\Agents\ChatContextAnalyzerAgent;
+use Demo\Chat\Agents\Hilos\DemoHilosAgent;
+use Demo\Chat\Agents\Hilos\DemoHilosAnalyticsAgent;
+use Demo\Chat\Agents\Hilos\DemoHilosGuardianAgent;
+use Demo\Chat\Agents\Hilos\DemoHilosLogsAgent;
+use Demo\Chat\Agents\LibraryAgent;
+use Demo\Chat\Agents\ModeratorAgent;
 use Demo\Chat\Browser\ChatBrowserContext;
 use Demo\Chat\Browser\ChatBrowserRef;
 use Demo\Chat\Browser\Table\AttachmentDraftsBrowserTable;
@@ -204,6 +213,18 @@ final class Hilos extends \Hilos\Hilos
         ChangeLogDashboardPage::PAGE => ChangeLogDashboardPage::class,
         ChangeLogTablesPage::PAGE => ChangeLogTablesPage::class,
         ChangeLogTablePage::PAGE => ChangeLogTablePage::class,
+    ];
+
+    public const array AGENTS = [
+        ChatAgent::AGENT_TYPE => ChatAgent::class,
+        LibraryAgent::AGENT_TYPE => LibraryAgent::class,
+        ChatContextAnalyzerAgent::AGENT_TYPE => ChatContextAnalyzerAgent::class,
+        BotAgent::AGENT_TYPE => BotAgent::class,
+        ModeratorAgent::AGENT_TYPE => ModeratorAgent::class,
+        DemoHilosAgent::AGENT_TYPE => DemoHilosAgent::class,
+        DemoHilosGuardianAgent::AGENT_TYPE => DemoHilosGuardianAgent::class,
+        DemoHilosAnalyticsAgent::AGENT_TYPE => DemoHilosAnalyticsAgent::class,
+        DemoHilosLogsAgent::AGENT_TYPE => DemoHilosLogsAgent::class,
     ];
 
     public const array TABLES = [

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Constants\SignalTypeConstants;
+use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Table\Definition\TableDefinition;
@@ -62,6 +64,36 @@ final class TopologyValidatorTest extends TestCase
         );
     }
 
+    public function testComputedPageSignalRoutesComeFromRegisteredPageClasses(): void
+    {
+        $this->assertSame(
+            [
+                SignalTypeConstants::FRAME_BINARY => TopologyValidPage::PAGE,
+                SignalTypeConstants::AGENT_SIGNAL => [
+                    TopologyValidPage::VALID_PAGE_SIGNAL => TopologyValidPage::PAGE,
+                ],
+            ],
+            TopologyValidHilos::getPageSignalRoutes(),
+        );
+        $this->assertSame(
+            [
+                SignalTypeConstants::FRAME_BINARY => TopologyValidPage::SUBSCRIPTION_AGENT_TYPE,
+                SignalTypeConstants::AGENT_SIGNAL => [
+                    TopologyValidPage::VALID_PAGE_SIGNAL => TopologyValidPage::SUBSCRIPTION_AGENT_TYPE,
+                ],
+            ],
+            TopologyValidHilos::getPageSignalAgentRoutes(),
+        );
+    }
+
+    public function testComputedAgentSignalRoutesComeFromRegisteredAgentClasses(): void
+    {
+        $this->assertSame(
+            [TopologyValidAgent::VALID_AGENT_SIGNAL => TopologyValidAgent::AGENT_TYPE],
+            TopologyValidHilos::getAgentSignalRoutes(),
+        );
+    }
+
     public function testPageRegistryRejectsBrokenPageClasses(): void
     {
         $this->assertTopologyErrors(
@@ -104,6 +136,66 @@ final class TopologyValidatorTest extends TestCase
         $this->expectExceptionMessage(TopologySecondActionPage::PAGE);
 
         TopologyDuplicateActionHilos::validateTopology();
+    }
+
+    public function testPageSignalsMustBeNonEmptyStrings(): void
+    {
+        $this->expectException(InvalidTopologyException::class);
+        $this->expectExceptionMessage('PAGES[invalid_signal_page] class');
+        $this->expectExceptionMessage('SIGNALS[agent_signal] must contain only non-empty signal names');
+
+        TopologyInvalidPageSignalHilos::validateTopology();
+    }
+
+    public function testPageSignalsMustHaveSingleOwner(): void
+    {
+        $this->expectException(InvalidTopologyException::class);
+        $this->expectExceptionMessage('Page signal agent_signal/shared_signal is declared by multiple pages');
+        $this->expectExceptionMessage(TopologyFirstSignalPage::PAGE);
+        $this->expectExceptionMessage(TopologySecondSignalPage::PAGE);
+
+        TopologyDuplicatePageSignalHilos::validateTopology();
+    }
+
+    public function testAgentRegistryRejectsBrokenAgentClasses(): void
+    {
+        $this->assertTopologyErrors(
+            static function (): void {
+                TopologyInvalidAgentsHilos::validateTopology();
+            },
+            [
+                'AGENTS[wrong_agent] key must match',
+                'AGENTS[not_agent] class',
+                'must extend ' . AbstractAgent::class,
+            ],
+        );
+    }
+
+    public function testAgentSignalsMustBeNonEmptyStrings(): void
+    {
+        $this->expectException(InvalidTopologyException::class);
+        $this->expectExceptionMessage('AGENTS[invalid_agent_signal_agent] class');
+        $this->expectExceptionMessage('AGENT_SIGNALS must contain only non-empty signal names');
+
+        TopologyInvalidAgentSignalHilos::validateTopology();
+    }
+
+    public function testAgentSignalsMustHaveSingleOwner(): void
+    {
+        $this->expectException(InvalidTopologyException::class);
+        $this->expectExceptionMessage('Agent signal shared_agent_signal is declared by multiple agents');
+        $this->expectExceptionMessage(TopologyFirstAgentSignalAgent::AGENT_TYPE);
+        $this->expectExceptionMessage(TopologySecondAgentSignalAgent::AGENT_TYPE);
+
+        TopologyDuplicateAgentSignalHilos::validateTopology();
+    }
+
+    public function testPageAndAgentSignalsMustNotShareAgentSignalName(): void
+    {
+        $this->expectException(InvalidTopologyException::class);
+        $this->expectExceptionMessage('Agent signal valid_page_signal is declared by both page-owned and agent-owned routes');
+
+        TopologyPageAgentSignalConflictHilos::validateTopology();
     }
 
     public function testPageTablesRejectUnknownPages(): void
@@ -190,12 +282,42 @@ final class TopologyValidPage extends AbstractPage
 
     public const string VALID_ACTION = 'valid_action';
 
+    public const string VALID_PAGE_SIGNAL = 'valid_page_signal';
+
     public const array ACTIONS = [
         self::VALID_ACTION,
     ];
 
+    public const array SIGNALS = [
+        SignalTypeConstants::FRAME_BINARY => [],
+        SignalTypeConstants::AGENT_SIGNAL => [
+            self::VALID_PAGE_SIGNAL,
+        ],
+    ];
+
     public const array BROWSER = [
         BrowserConfigKey::SIGNAL => 'valid_signal',
+    ];
+}
+
+abstract class TopologyTestAgent extends AbstractAgent
+{
+    /**
+     * No-op stop hook for topology test agents.
+     */
+    public function onStop(): void
+    {
+    }
+}
+
+final class TopologyValidAgent extends TopologyTestAgent
+{
+    public const string AGENT_TYPE = 'valid_agent';
+
+    public const string VALID_AGENT_SIGNAL = 'valid_agent_signal';
+
+    public const array AGENT_SIGNALS = [
+        self::VALID_AGENT_SIGNAL,
     ];
 }
 
@@ -243,6 +365,46 @@ final class TopologySecondActionPage extends AbstractPage
     ];
 }
 
+final class TopologyInvalidPageSignalPage extends AbstractPage
+{
+    public const string PAGE = 'invalid_signal_page';
+
+    public const string SUBSCRIPTION_AGENT_TYPE = 'valid_agent';
+
+    public const array SIGNALS = [
+        SignalTypeConstants::AGENT_SIGNAL => [
+            '',
+            42,
+        ],
+    ];
+}
+
+final class TopologyFirstSignalPage extends AbstractPage
+{
+    public const string PAGE = 'first_signal_page';
+
+    public const string SUBSCRIPTION_AGENT_TYPE = 'valid_agent';
+
+    public const array SIGNALS = [
+        SignalTypeConstants::AGENT_SIGNAL => [
+            'shared_signal',
+        ],
+    ];
+}
+
+final class TopologySecondSignalPage extends AbstractPage
+{
+    public const string PAGE = 'second_signal_page';
+
+    public const string SUBSCRIPTION_AGENT_TYPE = 'valid_agent';
+
+    public const array SIGNALS = [
+        SignalTypeConstants::AGENT_SIGNAL => [
+            'shared_signal',
+        ],
+    ];
+}
+
 final class TopologyLegacyTablesPage extends AbstractPage
 {
     public const string PAGE = 'legacy_tables_page';
@@ -254,6 +416,52 @@ final class TopologyLegacyTablesPage extends AbstractPage
 
 final class TopologyNotPage
 {
+}
+
+final class TopologyMismatchedAgent extends TopologyTestAgent
+{
+    public const string AGENT_TYPE = 'actual_agent';
+}
+
+final class TopologyNotAgent
+{
+}
+
+final class TopologyInvalidAgentSignalAgent extends TopologyTestAgent
+{
+    public const string AGENT_TYPE = 'invalid_agent_signal_agent';
+
+    public const array AGENT_SIGNALS = [
+        '',
+        42,
+    ];
+}
+
+final class TopologyFirstAgentSignalAgent extends TopologyTestAgent
+{
+    public const string AGENT_TYPE = 'first_agent_signal_agent';
+
+    public const array AGENT_SIGNALS = [
+        'shared_agent_signal',
+    ];
+}
+
+final class TopologySecondAgentSignalAgent extends TopologyTestAgent
+{
+    public const string AGENT_TYPE = 'second_agent_signal_agent';
+
+    public const array AGENT_SIGNALS = [
+        'shared_agent_signal',
+    ];
+}
+
+final class TopologyConflictingAgent extends TopologyTestAgent
+{
+    public const string AGENT_TYPE = 'conflicting_agent';
+
+    public const array AGENT_SIGNALS = [
+        TopologyValidPage::VALID_PAGE_SIGNAL,
+    ];
 }
 
 final class TopologyValidTable extends TableDefinition
@@ -292,6 +500,10 @@ final class TopologyValidHilos extends HilosFacade
 {
     public const array PAGES = [
         TopologyValidPage::PAGE => TopologyValidPage::class,
+    ];
+
+    public const array AGENTS = [
+        TopologyValidAgent::AGENT_TYPE => TopologyValidAgent::class,
     ];
 
     public const array TABLES = [
@@ -378,6 +590,115 @@ final class TopologyDuplicateActionHilos extends HilosFacade
     public const array PAGES = [
         TopologyFirstActionPage::PAGE => TopologyFirstActionPage::class,
         TopologySecondActionPage::PAGE => TopologySecondActionPage::class,
+    ];
+
+    /**
+     * Creates a no-op DB context for tests.
+     *
+     * @return DbContext Test DB context
+     */
+    protected static function createDb(): DbContext
+    {
+        return new TopologyTestDbContext();
+    }
+}
+
+final class TopologyInvalidPageSignalHilos extends HilosFacade
+{
+    public const array PAGES = [
+        TopologyInvalidPageSignalPage::PAGE => TopologyInvalidPageSignalPage::class,
+    ];
+
+    /**
+     * Creates a no-op DB context for tests.
+     *
+     * @return DbContext Test DB context
+     */
+    protected static function createDb(): DbContext
+    {
+        return new TopologyTestDbContext();
+    }
+}
+
+final class TopologyDuplicatePageSignalHilos extends HilosFacade
+{
+    public const array PAGES = [
+        TopologyFirstSignalPage::PAGE => TopologyFirstSignalPage::class,
+        TopologySecondSignalPage::PAGE => TopologySecondSignalPage::class,
+    ];
+
+    /**
+     * Creates a no-op DB context for tests.
+     *
+     * @return DbContext Test DB context
+     */
+    protected static function createDb(): DbContext
+    {
+        return new TopologyTestDbContext();
+    }
+}
+
+final class TopologyInvalidAgentsHilos extends HilosFacade
+{
+    public const array AGENTS = [
+        'wrong_agent' => TopologyMismatchedAgent::class,
+        'not_agent' => TopologyNotAgent::class,
+    ];
+
+    /**
+     * Creates a no-op DB context for tests.
+     *
+     * @return DbContext Test DB context
+     */
+    protected static function createDb(): DbContext
+    {
+        return new TopologyTestDbContext();
+    }
+}
+
+final class TopologyInvalidAgentSignalHilos extends HilosFacade
+{
+    public const array AGENTS = [
+        TopologyInvalidAgentSignalAgent::AGENT_TYPE => TopologyInvalidAgentSignalAgent::class,
+    ];
+
+    /**
+     * Creates a no-op DB context for tests.
+     *
+     * @return DbContext Test DB context
+     */
+    protected static function createDb(): DbContext
+    {
+        return new TopologyTestDbContext();
+    }
+}
+
+final class TopologyDuplicateAgentSignalHilos extends HilosFacade
+{
+    public const array AGENTS = [
+        TopologyFirstAgentSignalAgent::AGENT_TYPE => TopologyFirstAgentSignalAgent::class,
+        TopologySecondAgentSignalAgent::AGENT_TYPE => TopologySecondAgentSignalAgent::class,
+    ];
+
+    /**
+     * Creates a no-op DB context for tests.
+     *
+     * @return DbContext Test DB context
+     */
+    protected static function createDb(): DbContext
+    {
+        return new TopologyTestDbContext();
+    }
+}
+
+final class TopologyPageAgentSignalConflictHilos extends HilosFacade
+{
+    public const array PAGES = [
+        TopologyValidPage::PAGE => TopologyValidPage::class,
+    ];
+
+    public const array AGENTS = [
+        TopologyConflictingAgent::AGENT_TYPE => TopologyConflictingAgent::class,
     ];
 
     /**

@@ -17,6 +17,7 @@ use Demo\Chat\Core\Router\DTO\ModerationResultSignalData;
 use Demo\Chat\Database\Settings\ChatSettingsConstants;
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\View\Item\ChatUserState;
+use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\Exception\AgentException;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
@@ -50,6 +51,13 @@ final class MainPage extends AbstractPage
         ChatSignalConstants::MESSAGE,
         ChatSignalConstants::FILE_UPLOAD_INIT,
         ChatSignalConstants::ATTACHMENT_DRAFT_DELETE,
+    ];
+
+    public const array SIGNALS = [
+        SignalTypeConstants::FRAME_BINARY => [],
+        SignalTypeConstants::AGENT_SIGNAL => [
+            ChatSignalConstants::MODERATION_RESULT,
+        ],
     ];
 
     public const array BROWSER = [

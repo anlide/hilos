@@ -14,6 +14,7 @@ use Demo\Chat\Core\Router\DTO\ActionFailSignalData;
 use Demo\Chat\Core\Router\DTO\ActionSuccessSignalData;
 use Demo\Chat\Core\Router\DTO\RenameModerationResultSignalData;
 use Demo\Chat\Hilos;
+use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Agent\Exception\AgentException;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
@@ -42,6 +43,12 @@ final class ProfilePage extends AbstractPage
 
     public const array ACTIONS = [
         ChatSignalConstants::RENAME,
+    ];
+
+    public const array SIGNALS = [
+        SignalTypeConstants::AGENT_SIGNAL => [
+            ChatSignalConstants::RENAME_MODERATION_RESULT,
+        ],
     ];
 
     public const array BROWSER = [

@@ -11,6 +11,7 @@ use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Page\ChatPageFactory;
 use Demo\Chat\Hilos;
 use Demo\Chat\Tables\ChatTableContext;
+use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Browser\Config\BrowserPageConfig;
 use Hilos\Core\Browser\Config\BrowserPageTableBindings;
@@ -42,9 +43,11 @@ final class ChatTopologyRegistryTest extends TestCase
 
     public function testRegistryValuesAreClassStrings(): void
     {
-        foreach (Hilos::PAGES + Hilos::TABLES + Hilos::BROWSER_TABLES as $class) {
-            $this->assertIsString($class);
-            $this->assertTrue(class_exists($class), "{$class} must be a concrete class string");
+        foreach ([Hilos::PAGES, Hilos::AGENTS, Hilos::TABLES, Hilos::BROWSER_TABLES] as $registry) {
+            foreach ($registry as $class) {
+                $this->assertIsString($class);
+                $this->assertTrue(class_exists($class), "{$class} must be a concrete class string");
+            }
         }
     }
 
@@ -52,6 +55,13 @@ final class ChatTopologyRegistryTest extends TestCase
     {
         foreach (Hilos::PAGES as $page => $pageClass) {
             $this->assertSame($page, $pageClass::PAGE);
+        }
+    }
+
+    public function testAgentRegistryKeysMatchAgentClassConstants(): void
+    {
+        foreach (Hilos::AGENTS as $agentType => $agentClass) {
+            $this->assertSame($agentType, $agentClass::AGENT_TYPE);
         }
     }
 
@@ -111,6 +121,35 @@ final class ChatTopologyRegistryTest extends TestCase
         ], Hilos::getActionAgentRoutes());
     }
 
+    public function testComputedPageSignalRoutesMatchChatSignalOwnership(): void
+    {
+        $this->assertSame([
+            SignalTypeConstants::FRAME_BINARY => PageConstants::MAIN,
+            SignalTypeConstants::AGENT_SIGNAL => [
+                ChatSignalConstants::MODERATION_RESULT => PageConstants::MAIN,
+                ChatSignalConstants::RENAME_MODERATION_RESULT => PageConstants::PROFILE,
+            ],
+        ], Hilos::getPageSignalRoutes());
+    }
+
+    public function testComputedPageSignalAgentRoutesUseOwningPageSubscriptionAgents(): void
+    {
+        $this->assertSame([
+            SignalTypeConstants::FRAME_BINARY => AgentType::CHAT,
+            SignalTypeConstants::AGENT_SIGNAL => [
+                ChatSignalConstants::MODERATION_RESULT => AgentType::CHAT,
+                ChatSignalConstants::RENAME_MODERATION_RESULT => AgentType::CHAT,
+            ],
+        ], Hilos::getPageSignalAgentRoutes());
+    }
+
+    public function testComputedAgentSignalRoutesMatchChatAgentOwnership(): void
+    {
+        $this->assertSame([
+            ChatSignalConstants::BOT_MESSAGE => AgentType::CHAT,
+        ], Hilos::getAgentSignalRoutes());
+    }
+
     public function testPageActionRoutesCoverDeclaredPageActions(): void
     {
         $declaredRoutes = [];
@@ -121,6 +160,37 @@ final class ChatTopologyRegistryTest extends TestCase
         }
 
         $this->assertSame($declaredRoutes, Hilos::getPageActionRoutes());
+    }
+
+    public function testPageSignalRoutesCoverDeclaredPageSignals(): void
+    {
+        $declaredRoutes = [];
+        foreach (Hilos::PAGES as $page => $pageClass) {
+            foreach ($pageClass::SIGNALS as $signalType => $signalNames) {
+                if ($signalNames === []) {
+                    $declaredRoutes[$signalType] = $page;
+                    continue;
+                }
+
+                foreach ($signalNames as $signalName) {
+                    $declaredRoutes[$signalType][$signalName] = $page;
+                }
+            }
+        }
+
+        $this->assertSame($declaredRoutes, Hilos::getPageSignalRoutes());
+    }
+
+    public function testAgentSignalRoutesCoverDeclaredAgentSignals(): void
+    {
+        $declaredRoutes = [];
+        foreach (Hilos::AGENTS as $agentType => $agentClass) {
+            foreach ($agentClass::AGENT_SIGNALS as $signalName) {
+                $declaredRoutes[$signalName] = $agentType;
+            }
+        }
+
+        $this->assertSame($declaredRoutes, Hilos::getAgentSignalRoutes());
     }
 
     public function testActionRouteConfigUsesComputedPageActionRoutes(): void
