@@ -57,6 +57,42 @@ Topology mismatch after declaration is a contract error:
 `InvalidAgentSignalPayloadException` for agent and page-routed agent signals,
 `InvalidActionPayloadException` for actions.
 
+## Outbound server→client WebSocket signals (decision)
+
+**Decision: defer.** Do not add a backend topology registry for outbound WS
+signals in the current framework cycle.
+
+Inbound topology solves a different problem: untrusted wire JSON must be parsed
+and validated before handlers run, and duplicate ownership must fail at startup.
+Outbound signals are constructed in trusted server code
+(`sendToUser()`, `sendToGroup()`, `sendToAllUsers()`) with typed
+`*SignalData` objects and serialized through `toArray()` in
+`DaemonManager::sendSignalToWebSocketClient()`. There is no raw inbound payload
+to parse at send time.
+
+| Possible benefit | Current coverage | Registry value |
+|---|---|---|
+| Contract documentation | PHP `*SignalData` classes; frontend `SignalDefinition` parsers | Low — adds a third registry to maintain |
+| Allowlist validation | PHP types on `$data`; tests and code review | Low — mismatched `signalName`/DTO is a dev bug, not user input |
+| Frontend codegen | Manual `SignalDefinition` modules per project | Medium only with a separate codegen tooling spike |
+
+Keep outbound contracts on:
+
+- backend `*SignalData` classes (authoritative payload shape),
+- frontend `SignalDefinition` modules (runtime parse/narrow on receive),
+- existing out-of-scope notes in `app-topology.md` and `routing.md`.
+
+If backend/frontend drift becomes painful, prefer a **separate** dev-time spike
+for one of:
+
+- static analysis or unit tests that pair wire `type` with PHP DTO class at
+  send sites,
+- codegen from PHP `*SignalData` into TypeScript `SignalDefinition` factories.
+
+Do not mirror inbound `Page::ACTIONS` / `Page::SIGNALS` topology for outbound
+WS delivery — it would expand the contract gate without solving untrusted-input
+validation.
+
 ## Receiving agent-to-agent signal
 
 Named signal handlers must route with `switch ($name)`; see
