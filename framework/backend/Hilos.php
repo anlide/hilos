@@ -346,6 +346,7 @@ abstract class Hilos
      *
      * Accepts mixed list/map AGENT_SIGNALS shape:
      * - int-keyed string entry  → singleton route (agentIndex null)
+     * - string-keyed class-string entry → singleton route with inner payload DTO
      * - string-keyed array entry → indexed route (agentIndex from INDEX_FIELD payload field)
      *
      * @return array<string, string> Agent type keyed by signal name
@@ -364,6 +365,11 @@ abstract class Hilos
                     continue;
                 }
 
+                if (is_string($key) && $key !== '' && is_string($value) && $value !== '') {
+                    $signalRoutes[$key] = $agentType;
+                    continue;
+                }
+
                 if (is_string($key) && $key !== '' && is_array($value)) {
                     $signalRoutes[$key] = $agentType;
                 }
@@ -371,6 +377,43 @@ abstract class Hilos
         }
 
         return $signalRoutes;
+    }
+
+    /**
+     * Returns agent-owned signal inner payload DTO classes.
+     *
+     * List-style signal name entries declare routing only. Map-style entries with
+     * class-string values declare both routing and inner payload DTO classes.
+     * Indexed config arrays may optionally declare AgentSignalConfigKey::DTO.
+     *
+     * @return array<string, class-string<SignalDataInterface>> DTO class keyed by signal name
+     */
+    public static function getAgentSignalDtoRoutes(): array
+    {
+        $dtoRoutes = [];
+        foreach (static::AGENTS as $agentType => $agentClass) {
+            if (!is_string($agentType) || !is_string($agentClass) || !is_subclass_of($agentClass, AbstractAgent::class)) {
+                continue;
+            }
+
+            foreach ($agentClass::AGENT_SIGNALS as $key => $value) {
+                if (is_string($key) && $key !== '' && is_string($value) && $value !== '') {
+                    $dtoRoutes[$key] = $value;
+                    continue;
+                }
+
+                if (!is_string($key) || $key === '' || !is_array($value)) {
+                    continue;
+                }
+
+                $dtoClass = $value[AgentSignalConfigKey::DTO] ?? null;
+                if (is_string($dtoClass) && $dtoClass !== '') {
+                    $dtoRoutes[$key] = $dtoClass;
+                }
+            }
+        }
+
+        return $dtoRoutes;
     }
 
     /**

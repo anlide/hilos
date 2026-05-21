@@ -54,6 +54,7 @@ final class TopologyValidator
             $hilosClass::getPageSignalAgentRoutes(),
             $errors,
         );
+        $this->validateAgentSignalDtoRoutes($agents, $hilosClass::getAgentSignalDtoRoutes(), $errors);
         $this->validatePageTables($pages, $tables, $browserTables, $pageTables, $errors);
 
         if ($errors !== []) {
@@ -690,18 +691,43 @@ final class TopologyValidator
                     continue;
                 }
 
-                // Indexed: map entry — non-empty string key + array config.
                 if (!is_string($key) || $key === '') {
-                    $errors[] = "AGENTS[{$agentType}] class {$agentClass} AGENT_SIGNALS must contain only non-empty signal names or valid indexed config arrays";
+                    $errors[] = "AGENTS[{$agentType}] class {$agentClass} AGENT_SIGNALS must contain only non-empty signal names, valid signal DTO map entries, or valid indexed config arrays";
                     continue;
                 }
 
+                // Singleton DTO: map entry — non-empty string key + class-string value.
+                if (is_string($value) && $value !== '') {
+                    if (!$this->isExistingClassString(
+                        $value,
+                        "AGENTS[{$agentType}] class {$agentClass} AGENT_SIGNALS[{$key}]",
+                        $errors,
+                    )) {
+                        continue;
+                    }
+
+                    if (!is_subclass_of($value, SignalDataInterface::class)) {
+                        $errors[] = "AGENTS[{$agentType}] class {$agentClass} AGENT_SIGNALS[{$key}] class {$value} must implement "
+                            . SignalDataInterface::class;
+                    }
+
+                    $signalName = $key;
+                    if (isset($declaredRoutes[$signalName]) && $declaredRoutes[$signalName] !== $agentType) {
+                        $errors[] = "Agent signal {$signalName} is declared by multiple agents: {$declaredRoutes[$signalName]} and {$agentType}";
+                        continue;
+                    }
+
+                    $declaredRoutes[$signalName] = $agentType;
+                    continue;
+                }
+
+                // Indexed: map entry — non-empty string key + array config.
                 if (!is_array($value)) {
-                    $errors[] = "AGENTS[{$agentType}] class {$agentClass} AGENT_SIGNALS[{$key}] config must be an array";
+                    $errors[] = "AGENTS[{$agentType}] class {$agentClass} AGENT_SIGNALS[{$key}] must be a non-empty signal name, a SignalDataInterface class, or a valid indexed config array";
                     continue;
                 }
 
-                $unknownKeys = array_diff(array_keys($value), [AgentSignalConfigKey::INDEX_FIELD]);
+                $unknownKeys = array_diff(array_keys($value), [AgentSignalConfigKey::INDEX_FIELD, AgentSignalConfigKey::DTO]);
                 if ($unknownKeys !== []) {
                     $errors[] = "AGENTS[{$agentType}] class {$agentClass} AGENT_SIGNALS[{$key}] contains unknown config keys: " . implode(', ', $unknownKeys);
                 }
@@ -709,6 +735,20 @@ final class TopologyValidator
                 $indexField = $value[AgentSignalConfigKey::INDEX_FIELD] ?? null;
                 if (!is_string($indexField) || $indexField === '') {
                     $errors[] = "AGENTS[{$agentType}] class {$agentClass} AGENT_SIGNALS[{$key}] must declare a non-empty '" . AgentSignalConfigKey::INDEX_FIELD . "'";
+                }
+
+                $dtoClass = $value[AgentSignalConfigKey::DTO] ?? null;
+                if ($dtoClass !== null) {
+                    if (!$this->isExistingClassString(
+                        $dtoClass,
+                        "AGENTS[{$agentType}] class {$agentClass} AGENT_SIGNALS[{$key}][" . AgentSignalConfigKey::DTO . ']',
+                        $errors,
+                    )) {
+                        // Continue validating route ownership even when DTO class is invalid.
+                    } elseif (!is_subclass_of($dtoClass, SignalDataInterface::class)) {
+                        $errors[] = "AGENTS[{$agentType}] class {$agentClass} AGENT_SIGNALS[{$key}][" . AgentSignalConfigKey::DTO . "] class {$dtoClass} must implement "
+                            . SignalDataInterface::class;
+                    }
                 }
 
                 $signalName = $key;
@@ -751,6 +791,56 @@ final class TopologyValidator
         foreach ($pageAgentSignalRoutes as $signalName => $_agentType) {
             if (isset($declaredRoutes[$signalName])) {
                 $errors[] = "Agent signal {$signalName} is declared by both page-owned and agent-owned routes";
+            }
+        }
+    }
+
+    /**
+     * Validates agent-owned signal inner payload DTO route declarations.
+     *
+     * @param array<mixed, mixed> $agents Agent registry
+     * @param array<mixed, mixed> $agentSignalDtoRoutes Computed agent signal DTO route registry
+     * @param list<string> $errors Validation error accumulator
+     */
+    private function validateAgentSignalDtoRoutes(array $agents, array $agentSignalDtoRoutes, array &$errors): void
+    {
+        $declaredRoutes = [];
+        foreach ($agents as $agentType => $agentClass) {
+            if (!is_string($agentType) || !is_string($agentClass) || !is_subclass_of($agentClass, AbstractAgent::class)) {
+                continue;
+            }
+
+            foreach ($agentClass::AGENT_SIGNALS as $key => $value) {
+                if (is_string($key) && $key !== '' && is_string($value) && $value !== '') {
+                    $declaredRoutes[$key] = $value;
+                    continue;
+                }
+
+                if (!is_string($key) || $key === '' || !is_array($value)) {
+                    continue;
+                }
+
+                $dtoClass = $value[AgentSignalConfigKey::DTO] ?? null;
+                if (is_string($dtoClass) && $dtoClass !== '') {
+                    $declaredRoutes[$key] = $dtoClass;
+                }
+            }
+        }
+
+        foreach ($declaredRoutes as $signalName => $dtoClass) {
+            if (($agentSignalDtoRoutes[$signalName] ?? null) !== $dtoClass) {
+                $errors[] = "Agent signal DTO route {$signalName} is missing from computed agent signal DTO routes";
+            }
+        }
+
+        foreach ($agentSignalDtoRoutes as $signalName => $dtoClass) {
+            if (!is_string($signalName) || $signalName === '') {
+                $errors[] = 'Computed agent signal DTO routes contain a non-string or empty signal name';
+                continue;
+            }
+
+            if (!is_string($dtoClass) || $dtoClass === '' || !is_subclass_of($dtoClass, SignalDataInterface::class)) {
+                $errors[] = "Computed agent signal DTO route {$signalName} must reference a valid SignalDataInterface class";
             }
         }
     }

@@ -12,8 +12,10 @@ namespace Hilos\Core\Agent\Config;
  *
  * ```php
  * public const array AGENT_SIGNALS = [
+ *     MySignal::SINGLETON_SIGNAL => MySingletonSignalData::class,
  *     MySignal::INDEXED_SIGNAL => [
  *         AgentSignalConfigKey::INDEX_FIELD => 'entityId',
+ *         AgentSignalConfigKey::DTO => MyIndexedSignalData::class,
  *     ],
  * ];
  * ```
@@ -28,4 +30,9 @@ final class AgentSignalConfigKey
      * Accepted field values: positive int or non-empty string.
      */
     public const string INDEX_FIELD = 'indexField';
+
+    /**
+     * Inner payload DTO class for topology-driven parsing at dispatch time.
+     */
+    public const string DTO = 'dto';
 }

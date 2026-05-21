@@ -130,6 +130,35 @@ final class TopologyValidatorTest extends TestCase
             [TopologyValidAgent::VALID_AGENT_SIGNAL => TopologyValidAgent::AGENT_TYPE],
             TopologyValidHilos::getAgentSignalRoutes(),
         );
+        $this->assertSame([], TopologyValidHilos::getAgentSignalDtoRoutes());
+    }
+
+    public function testComputedAgentSignalDtoRoutesComeFromRegisteredAgentClasses(): void
+    {
+        $this->assertSame(
+            [
+                TopologyAgentSignalDtoAgent::SINGLETON_SIGNAL => TopologyTestAgentSignalData::class,
+                TopologyAgentSignalDtoAgent::INDEXED_SIGNAL => TopologyTestIndexedAgentSignalData::class,
+            ],
+            TopologyAgentSignalDtoHilos::getAgentSignalDtoRoutes(),
+        );
+        $this->assertSame(
+            [
+                TopologyAgentSignalDtoAgent::SINGLETON_SIGNAL => TopologyAgentSignalDtoAgent::AGENT_TYPE,
+                TopologyAgentSignalDtoAgent::INDEXED_SIGNAL => TopologyAgentSignalDtoAgent::AGENT_TYPE,
+            ],
+            TopologyAgentSignalDtoHilos::getAgentSignalRoutes(),
+        );
+
+        TopologyAgentSignalDtoHilos::validateTopology();
+    }
+
+    public function testAgentSignalDtoMustImplementSignalDataInterface(): void
+    {
+        $this->expectException(InvalidTopologyException::class);
+        $this->expectExceptionMessage(SignalDataInterface::class);
+
+        TopologyInvalidAgentSignalDtoHilos::validateTopology();
     }
 
     public function testPageRegistryRejectsBrokenPageClasses(): void
@@ -1068,7 +1097,89 @@ final class TopologyIndexedAgentUnknownConfigKeyHilos extends HilosFacade
     }
 }
 
+final class TopologyAgentSignalDtoAgent extends TopologyTestAgent
+{
+    public const string AGENT_TYPE = 'agent_signal_dto_agent';
+
+    public const string SINGLETON_SIGNAL = 'agent_signal_with_dto';
+
+    public const string INDEXED_SIGNAL = 'indexed_agent_signal_with_dto';
+
+    public const array AGENT_SIGNALS = [
+        self::SINGLETON_SIGNAL => TopologyTestAgentSignalData::class,
+        self::INDEXED_SIGNAL => [
+            AgentSignalConfigKey::INDEX_FIELD => 'entityId',
+            AgentSignalConfigKey::DTO => TopologyTestIndexedAgentSignalData::class,
+        ],
+    ];
+}
+
+final class TopologyInvalidAgentSignalDtoAgent extends TopologyTestAgent
+{
+    public const string AGENT_TYPE = 'invalid_agent_signal_dto_agent';
+
+    public const array AGENT_SIGNALS = [
+        'invalid_agent_signal_dto' => TopologyTestActionPayloadDTO::class,
+    ];
+}
+
+final class TopologyAgentSignalDtoHilos extends HilosFacade
+{
+    public const array AGENTS = [
+        TopologyAgentSignalDtoAgent::AGENT_TYPE => TopologyAgentSignalDtoAgent::class,
+    ];
+
+    /**
+     * Creates a no-op DB context for tests.
+     *
+     * @return DbContext Test DB context
+     */
+    protected static function createDb(): DbContext
+    {
+        return new TopologyTestDbContext();
+    }
+}
+
+final class TopologyInvalidAgentSignalDtoHilos extends HilosFacade
+{
+    public const array AGENTS = [
+        TopologyInvalidAgentSignalDtoAgent::AGENT_TYPE => TopologyInvalidAgentSignalDtoAgent::class,
+    ];
+
+    /**
+     * Creates a no-op DB context for tests.
+     *
+     * @return DbContext Test DB context
+     */
+    protected static function createDb(): DbContext
+    {
+        return new TopologyTestDbContext();
+    }
+}
+
 final class TopologyTestPageSignalData implements SignalDataInterface
+{
+    /**
+     * @return array<string, mixed>
+     */
+    public function toArray(): array
+    {
+        return [];
+    }
+}
+
+final class TopologyTestAgentSignalData implements SignalDataInterface
+{
+    /**
+     * @return array<string, mixed>
+     */
+    public function toArray(): array
+    {
+        return [];
+    }
+}
+
+final class TopologyTestIndexedAgentSignalData implements SignalDataInterface
 {
     /**
      * @return array<string, mixed>
