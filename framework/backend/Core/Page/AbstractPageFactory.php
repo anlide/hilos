@@ -7,6 +7,7 @@ namespace Hilos\Core\Page;
 use Hilos\Core\Page\Exception\PageNotFoundException;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\UnknownActionPayloadDTO;
+use Hilos\Core\Router\SignalDataInterface;
 
 /**
  * AbstractPageFactory - Abstract factory for creating page instances.
@@ -83,5 +84,23 @@ abstract class AbstractPageFactory
     public function createActionPayloadDTO(string $action, array $data): ActionPayloadDTO
     {
         return new UnknownActionPayloadDTO($action, $data);
+    }
+
+    /**
+     * Create page-routed signal inner payload DTO when topology declares one.
+     *
+     * Default implementation returns the payload unchanged.
+     *
+     * @param string $signalType Signal type constant
+     * @param string $signalName Signal name
+     * @param SignalDataInterface $payload Inner signal payload from AgentSignalData
+     * @return SignalDataInterface Validated or passthrough payload
+     */
+    public function createPageSignalPayloadDTO(
+        string $signalType,
+        string $signalName,
+        SignalDataInterface $payload,
+    ): SignalDataInterface {
+        return $payload;
     }
 }

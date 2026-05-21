@@ -4,10 +4,13 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Page;
 
+use Hilos\BaseDTO;
 use Hilos\Constants\HilosPageConstants;
+use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
 use Hilos\Core\Page\Exception\PageNotFoundException;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\UnknownActionPayloadDTO;
+use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Hilos;
 
 /**
@@ -154,5 +157,43 @@ class HilosPageFactory extends AbstractPageFactory
         }
 
         return new UnknownActionPayloadDTO($action, $data);
+    }
+
+    /**
+     * Creates page-routed signal inner payload DTO from project topology.
+     *
+     * @param string $signalType Signal type constant
+     * @param string $signalName Signal name
+     * @param SignalDataInterface $payload Inner signal payload from AgentSignalData
+     * @return SignalDataInterface Validated or passthrough payload
+     * @throws InvalidAgentSignalPayloadException When topology declares a DTO and payload does not match
+     */
+    public function createPageSignalPayloadDTO(
+        string $signalType,
+        string $signalName,
+        SignalDataInterface $payload,
+    ): SignalDataInterface {
+        $dtoClass = $this->hilosClass::getPageSignalDtoRoutes()[$signalType][$signalName] ?? null;
+        if (!is_string($dtoClass) || !is_subclass_of($dtoClass, SignalDataInterface::class)) {
+            return $payload;
+        }
+
+        if ($payload instanceof $dtoClass) {
+            return $payload;
+        }
+
+        $dataArray = $payload instanceof BaseDTO ? $payload->toArray() : [];
+
+        try {
+            $parsed = $dtoClass::fromArray($dataArray);
+        } catch (\Throwable) {
+            throw new InvalidAgentSignalPayloadException($signalName, $dtoClass, $payload);
+        }
+
+        if (!$parsed instanceof $dtoClass) {
+            throw new InvalidAgentSignalPayloadException($signalName, $dtoClass, $payload);
+        }
+
+        return $parsed;
     }
 }

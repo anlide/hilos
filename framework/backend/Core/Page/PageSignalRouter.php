@@ -218,9 +218,16 @@ class PageSignalRouter
         }
 
         try {
-            $pageInstance->onSignalAgent($data, $source, $name);
+            $innerPayload = $this->pageFactory->createPageSignalPayloadDTO(
+                SignalTypeConstants::AGENT_SIGNAL,
+                $name,
+                $data->data,
+            );
+            $signalData = $innerPayload === $data->data ? $data : new AgentSignalData($innerPayload);
+
+            $pageInstance->onSignalAgent($signalData, $source, $name);
         } catch (ValidationException $e) {
-            $this->dispatchAgentSignalActionException($pageInstance, $data, $e);
+            $this->dispatchAgentSignalActionException($pageInstance, $signalData ?? $data, $e);
         }
     }
 

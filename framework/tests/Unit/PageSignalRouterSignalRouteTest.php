@@ -5,11 +5,13 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit;
 
 use Hilos\Constants\SignalTypeConstants;
+use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Page\AbstractPageFactory;
 use Hilos\Core\Page\ActionRouteConfig;
 use Hilos\Core\Page\Exception\PageNotFoundException;
+use Hilos\Core\Page\HilosPageFactory;
 use Hilos\Core\Page\PageAgentInterface;
 use Hilos\Core\Page\PageSignalRouter;
 use Hilos\Core\Router\ActionErrorSignalDataInterface;
@@ -20,6 +22,8 @@ use Hilos\Core\Router\SignalData;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalSourceInterface;
+use Hilos\Database\Context\DbContext;
+use Hilos\Hilos as HilosFacade;
 use Hilos\Socket\WebSocket\DTO\WebSocketFrameBinarySignalDTO;
 use PHPUnit\Framework\TestCase;
 use Throwable;
@@ -163,6 +167,74 @@ final class PageSignalRouterSignalRouteTest extends TestCase
             'validation_error',
         );
     }
+
+    public function testParsesAgentSignalPayloadFromTopologyBeforeHandler(): void
+    {
+        $agent = new PageSignalRouterTestAgent();
+        $factory = new HilosPageFactory($agent, PageSignalRouterTestHilos::class);
+        $router = new PageSignalRouter(
+            $factory,
+            new ActionRouteConfig(),
+            PageSignalRouterTestHilos::getPageSignalRoutes(),
+        );
+
+        $router->dispatchAgentSignal(
+            new AgentSignalData(new SignalData(['message' => 'ok'])),
+            'agent',
+            'moderation_result',
+        );
+
+        $page = $factory->getPage(PageSignalRouterTestPageWithDto::PAGE);
+        $this->assertInstanceOf(PageSignalRouterTestPageWithDto::class, $page);
+        $this->assertInstanceOf(PageSignalRouterTestSignalData::class, $page->agentSignalData?->data);
+        $this->assertSame('ok', $page->agentSignalData?->data->message);
+    }
+
+    public function testTypedAgentSignalPayloadPassesThroughUnchanged(): void
+    {
+        $agent = new PageSignalRouterTestAgent();
+        $factory = new HilosPageFactory($agent, PageSignalRouterTestHilos::class);
+        $router = new PageSignalRouter(
+            $factory,
+            new ActionRouteConfig(),
+            PageSignalRouterTestHilos::getPageSignalRoutes(),
+        );
+        $payload = new PageSignalRouterTestSignalData('already-typed');
+
+        $router->dispatchAgentSignal(
+            new AgentSignalData($payload),
+            'agent',
+            'moderation_result',
+        );
+
+        $page = $factory->getPage(PageSignalRouterTestPageWithDto::PAGE);
+        $this->assertInstanceOf(PageSignalRouterTestPageWithDto::class, $page);
+        $this->assertSame($payload, $page->agentSignalData?->data);
+    }
+
+    public function testInvalidAgentSignalPayloadThrowsWhenTopologyDtoDoesNotMatch(): void
+    {
+        $agent = new PageSignalRouterTestAgent();
+        $factory = new HilosPageFactory($agent, PageSignalRouterTestHilos::class);
+        $router = new PageSignalRouter(
+            $factory,
+            new ActionRouteConfig(),
+            PageSignalRouterTestHilos::getPageSignalRoutes(),
+        );
+
+        $this->expectException(InvalidAgentSignalPayloadException::class);
+        $this->expectExceptionMessage(PageSignalRouterTestSignalData::class);
+
+        $router->dispatchAgentSignal(
+            new AgentSignalData(new PageSignalRouterActionErrorSignalData(
+                acceptKey: 'accept-key',
+                action: 'message',
+                payload: ['content' => 'blocked'],
+            )),
+            'agent',
+            'moderation_result',
+        );
+    }
 }
 
 final class PageSignalRouterTestPage extends AbstractPage
@@ -237,6 +309,79 @@ final class PageSignalRouterTestPage extends AbstractPage
 
         $this->cronSignalData = $data;
         $this->cronSignalName = $name;
+    }
+}
+
+final class PageSignalRouterTestPageWithDto extends AbstractPage
+{
+    public const string PAGE = 'main';
+
+    public const array SIGNALS = [
+        SignalTypeConstants::AGENT_SIGNAL => [
+            'moderation_result' => PageSignalRouterTestSignalData::class,
+        ],
+    ];
+
+    public ?AgentSignalData $agentSignalData = null;
+    public ?string $agentSignalName = null;
+
+    /**
+     * Store the routed agent signal so the test can assert the dispatch target.
+     *
+     * @param AgentSignalData $data Wrapped signal payload
+     * @param string $source Signal source (unused)
+     * @param string $name Signal name
+     */
+    public function onSignalAgent(AgentSignalData $data, string $source, string $name): void
+    {
+        $this->agentSignalData = $data;
+        $this->agentSignalName = $name;
+    }
+}
+
+final class PageSignalRouterTestSignalData extends SignalData
+{
+    /**
+     * Creates a page signal router test payload.
+     *
+     * @param string $message Test payload message
+     */
+    public function __construct(
+        public readonly string $message = '',
+    ) {
+        parent::__construct(['message' => $message]);
+    }
+
+    /**
+     * Creates a page signal router test payload from array data.
+     *
+     * @param array<string, mixed> $data Source data
+     * @return static DTO instance
+     */
+    public static function fromArray(array $data): static
+    {
+        if (!array_key_exists('message', $data)) {
+            throw new \InvalidArgumentException('Missing message');
+        }
+
+        return new self((string)$data['message']);
+    }
+}
+
+final class PageSignalRouterTestHilos extends HilosFacade
+{
+    public const array PAGES = [
+        PageSignalRouterTestPageWithDto::PAGE => PageSignalRouterTestPageWithDto::class,
+    ];
+
+    /**
+     * Creates a no-op DB context for page signal router tests.
+     *
+     * @return DbContext Test DB context
+     */
+    protected static function createDb(): DbContext
+    {
+        return new TopologyTestDbContext();
     }
 }
 
