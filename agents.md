@@ -130,7 +130,8 @@ the user for explicit confirmation:
   fields, table mapping, schema/migration shape, or `Database/Entity/Item/*`
   row contracts.
 - Signals and routes: adding, removing, renaming, or changing signal constants,
-  signal DTO payload shape, or declarative routing in `SignalRouter`,
+  signal DTO payload shape, topology DTO class declarations in page `SIGNALS`
+  or agent `AGENT_SIGNALS`, or declarative routing in `SignalRouter`,
   `PageSignalRouter`, or worker/page route config.
 
 The confirmation request must list the exact RT item fields, DB entity fields,

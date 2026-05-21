@@ -52,7 +52,16 @@ table contexts when they can read the project registry.
   through `Hilos::getPageSignalAgentRoutes()` and `SUBSCRIPTION_AGENT_TYPE`.
 - Each agent class declares directly handled agent-to-agent signal names in
   `AgentClass::AGENT_SIGNALS`. `Hilos::getAgentSignalRoutes()` computes
-  `agent signal name -> agent` routes.
+  `agent signal name -> agent` routes. Named entries may be list-style strings
+  (routing only), map-style `signal name => SignalDataInterface` class (routing
+  plus inner payload DTO), or indexed config arrays with
+  `AgentSignalConfigKey::INDEX_FIELD` and optional `AgentSignalConfigKey::DTO`.
+  `Hilos::getAgentSignalDtoRoutes()` computes
+  `agent signal name -> inner payload DTO class` for map-style and indexed
+  entries. `SignalRouter::createAgentSignalPayloadDTO()` parses agent-owned
+  signals before dispatch; `PageSignalRouter` uses
+  `HilosPageFactory::createPageSignalPayloadDTO()` for page-routed agent
+  signals.
 - `Hilos::TABLES` registers server table definition classes keyed by table
   name.
 - `Hilos::BROWSER_TABLES` registers browser-only table config classes keyed by
@@ -79,12 +88,18 @@ table bindings that should live in `Hilos::PAGE_TABLES`.
 4. Declare inbound WebSocket actions owned by that page in
    `public const array ACTIONS = [ActionConstants::NAME => SomeActionDTO::class]`.
    Leave it as the inherited empty array when the page has no actions.
-4. Declare page-dispatched non-action signals in
-   `public const array SIGNALS = [...]` when the page handles them.
+5. Declare page-dispatched non-action signals in
+   `public const array SIGNALS = [...]` when the page handles them. For named
+   agent-signal routes, prefer `signal name => SignalDataInterface` class over
+   routing-only strings when the page handler needs a typed inner payload.
 6. For a new agent, add the agent class to `Hilos::AGENTS` using
    `SomeAgent::AGENT_TYPE => SomeAgent::class`.
 7. Declare directly handled agent-to-agent signal names in
-   `public const array AGENT_SIGNALS = [...]` when the agent owns them.
+   `public const array AGENT_SIGNALS = [...]` when the agent owns them. Prefer
+   `signal name => SignalDataInterface` class for singleton typed signals. For
+   indexed multi-instance agents, use
+   `AgentSignalConfigKey::INDEX_FIELD` and optional `AgentSignalConfigKey::DTO`
+   in the config array.
 8. For a server table definition, add the table class to `Hilos::TABLES`.
 9. For a browser-only table config, add the config class to
    `Hilos::BROWSER_TABLES`.
@@ -132,8 +147,26 @@ public const array GROUPS = [
     SessionGroup::GROUP => SessionGroup::class,
 ];
 
+final class ChatAgent extends AbstractAgent
+{
+    public const array AGENT_SIGNALS = [
+        ChatSignalConstants::BOT_MESSAGE => BotMessageSignalData::class,
+    ];
+}
+
+final class BotAgent extends AbstractAgent
+{
+    public const array AGENT_SIGNALS = [
+        ChatSignalConstants::BOT_AGENT_START => [
+            AgentSignalConfigKey::INDEX_FIELD => 'botId',
+            AgentSignalConfigKey::DTO => BotAgentSignalData::class,
+        ],
+    ];
+}
+
 public const array AGENTS = [
     ChatAgent::AGENT_TYPE => ChatAgent::class,
+    BotAgent::AGENT_TYPE => BotAgent::class,
 ];
 
 public const array TABLES = [
@@ -179,9 +212,30 @@ public const array PAGE_TABLES = [
   `Hilos::getAgentSignalRoutes()`.
   Framework `SignalRouter` reads agent signal ownership at dispatch time.
 - Do not add a project page factory that only mirrors `Hilos::PAGES` lookup or
-  action-to-DTO parsing. Use `HilosPageFactory` with the project facade class.
+  action, page-signal, or agent-signal DTO parsing. Use `HilosPageFactory`
+  with the project facade class and `SignalRouter::createAgentSignalPayloadDTO()`
+  for agent-owned signals.
+- Do not duplicate `getPageSignalDtoRoutes()`, `getAgentSignalDtoRoutes()`, or
+  local signal-name-to-DTO maps in project routers, worker managers, or page
+  factories when the project Hilos facade already computes them from page and
+  agent constants.
 - Do not register a page, table, or browser table under a key that differs from
   the class constant that owns that key.
+
+## Out Of Scope
+
+Topology-driven inner payload DTO declarations apply to inbound signals whose
+payload shape is owned by a page or agent constant. Do not extend this pattern
+to:
+
+- Type-wide page signal routes such as `SignalTypeConstants::FRAME_BINARY => []`
+  — the framework envelope DTO is enough; page handlers receive the typed frame
+  DTO directly.
+- Framework WebSocket lifecycle signals (subscribe, handshake, close).
+- DB/RT sync signals — broadcast to all workers; not page- or agent-owned
+  topology routes.
+- Outbound server→client WebSocket signals — constructed explicitly in code, not
+  parsed from raw inbound JSON.
 
 ## Contract Gate
 

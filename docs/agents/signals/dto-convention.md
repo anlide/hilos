@@ -31,10 +31,57 @@ final class ModerationBotRequestSignalData extends BaseDTO implements SignalData
 - `*SignalDTO` — framework-internal signal envelope (rarely created by app code)
 - `*ActionDTO` — action payload from client → server (parsed in `onAction`)
 
+## Topology-driven inbound signal DTOs
+
+Declare inner payload DTO classes in page `ACTIONS`, page `SIGNALS`, or agent
+`AGENT_SIGNALS`. `TopologyValidator` checks class existence,
+`SignalDataInterface` implementation, and duplicate ownership at startup.
+Dispatch layers parse raw or loosely typed payloads before handlers run:
+
+| Inbound path | Topology constant | Computed registry | Parser |
+|---|---|---|---|
+| Client action | `Page::ACTIONS` | `Hilos::getActionDtoRoutes()` | `HilosPageFactory::createActionPayloadDTO()` |
+| Page-routed agent signal | `Page::SIGNALS[AGENT_SIGNAL]` | `Hilos::getPageSignalDtoRoutes()` | `HilosPageFactory::createPageSignalPayloadDTO()` |
+| Agent-owned signal | `Agent::AGENT_SIGNALS` | `Hilos::getAgentSignalDtoRoutes()` | `SignalRouter::createAgentSignalPayloadDTO()` |
+
+When topology declares a DTO class, handlers may pass `$data->data` directly to
+private methods typed with that DTO. Do not add redundant `instanceof` checks
+for topology-covered signals.
+
+Routing-only entries — list-style signal name strings, type-wide page routes such
+as `FRAME_BINARY => []`, or agent signals that intentionally passthrough — keep
+generic inner payloads. Handlers that need typed data must either add the DTO to
+topology or validate manually until the contract is declared.
+
+Topology mismatch after declaration is a contract error:
+`InvalidAgentSignalPayloadException` for agent and page-routed agent signals,
+`InvalidActionPayloadException` for actions.
+
 ## Receiving agent-to-agent signal
 
 Named signal handlers must route with `switch ($name)`; see
 `docs/agents/code-style/signal-handlers.md` for the full handler shape.
+
+```php
+// Agent::AGENT_SIGNALS declares BotMessageSignalData::class
+public function onSignalAgent(AgentSignalData $data, string $source, string $name): void {
+    switch ($name) {
+        case ChatSignalConstants::BOT_MESSAGE:
+            $this->handleBotMessage($data->data);
+            return;
+
+        default:
+            throw new AgentUnknownSignalException($name);
+    }
+}
+
+private function handleBotMessage(BotMessageSignalData $message): void
+{
+    // topology already parsed and validated the inner payload
+}
+```
+
+For routing-only agent signals without a topology DTO, validate manually:
 
 ```php
 public function onSignalAgent(AgentSignalData $data, string $source, string $name): void {
@@ -58,7 +105,13 @@ public function onSignalAgent(AgentSignalData $data, string $source, string $nam
 }
 ```
 
-Known signal names must validate their exact payload class. A mismatched inner
+For page-routed agent signals, declare the inner DTO in `Page::SIGNALS` and
+type private handlers the same way. `PageSignalRouter::dispatchAgentSignal()`
+parses through `HilosPageFactory::createPageSignalPayloadDTO()` before
+`onSignalAgent()`.
+
+Known signal names with a topology DTO rely on dispatch-time parsing. For
+routing-only signals, validate the exact payload class manually. A mismatched inner
 payload is a contract error: throw `InvalidAgentSignalPayloadException`, do not
 log and return. Unknown agent signal names throw `AgentUnknownSignalException`.
 `WorkerManager` catches `AgentException` around agent and page signal dispatch
@@ -75,8 +128,9 @@ client.
 
 ## Indexed agent signal DTOs
 
-When a signal DTO is used as the inner payload for an indexed agent signal
-(declared via `AgentSignalConfigKey::INDEX_FIELD`), its `toArray()` must
+When a signal DTO is used as the inner payload for an indexed agent signal,
+declare both `AgentSignalConfigKey::INDEX_FIELD` and
+`AgentSignalConfigKey::DTO` in `Agent::AGENT_SIGNALS`. Its `toArray()` must
 include the field named in `INDEX_FIELD`. The framework extracts the agent
 index from `toArray()` at dispatch time — a missing or zero/empty-string field
 produces no destination.
