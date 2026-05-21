@@ -27,44 +27,43 @@ class MyAgent extends AbstractAgent {
 ```php
 // backend/Core/Agent/Daemon/MyAgentDaemon.php
 class MyAgentDaemon extends AbstractAgentDaemon {
-    public function getAgentType(): string { return AgentType::MY_AGENT; }
+    public const string AGENT_TYPE = AgentType::MY_AGENT;
 }
 ```
 
-## 4. Register in AgentManager (worker factory)
+## 4. Register in Hilos topology
 
-```php
-// backend/Core/Agent/ChatAgentWorkerFactory.php (or equivalent)
-protected function createAgent(string $agentType, ?string $agentIndex): AgentInterface {
-    return match($agentType) {
-        AgentType::MY_AGENT => new MyAgent(),
-        // ...
-    };
-}
-```
-
-## 5. Register in AgentManagerDaemon (daemon factory)
-
-```php
-// backend/Core/Agent/ChatAgentDaemonFactory.php (or equivalent)
-protected function createAgentDaemon(string $agentType): AbstractAgentDaemon {
-    return match($agentType) {
-        AgentType::MY_AGENT => new MyAgentDaemon(),
-        // ...
-    };
-}
-```
-
-## 6. Register in Hilos topology
+Declare worker and daemon classes in `Hilos::AGENTS`. Use `AgentRegistryKey::INDEXED`
+when the agent requires `agentIndex` at creation (for example one bot per index):
 
 ```php
 // backend/Hilos.php
+use Hilos\Core\Agent\Config\AgentRegistryKey;
+
 public const array AGENTS = [
-    MyAgent::AGENT_TYPE => MyAgent::class,
+    MyAgent::AGENT_TYPE => [
+        AgentRegistryKey::WORKER => MyAgent::class,
+        AgentRegistryKey::DAEMON => MyAgentDaemon::class,
+    ],
+    BotAgent::AGENT_TYPE => [
+        AgentRegistryKey::WORKER => BotAgent::class,
+        AgentRegistryKey::DAEMON => BotAgentDaemon::class,
+        AgentRegistryKey::INDEXED => true,
+    ],
 ];
 ```
 
-## 7. Declare direct agent signal ownership
+`TopologyAgentFactory` creates worker and daemon instances from this registry.
+Project `AgentManager` / `AgentManagerDaemon` subclasses should delegate to it:
+
+```php
+TopologyAgentFactory::createWorker(Hilos::class, $agentType, $agentIndex);
+TopologyAgentFactory::createDaemon(Hilos::class, $agentType, $agentIndex);
+```
+
+Do not add a project-level worker/daemon factory that only mirrors `Hilos::AGENTS`.
+
+## 5. Declare direct agent signal ownership
 
 ```php
 // backend/Agents/MyAgent.php
@@ -101,7 +100,7 @@ Project routers override `hilosClass()` so framework routing can read
 dispatch time. Reserve `SignalRouter::getDestinations()` overrides for routing
 patterns that the topology registry cannot express at all.
 
-## 8. Add static source/type routing when needed
+## 6. Add static source/type routing when needed
 
 ```php
 // backend/Core/Router/ChatSignalRouter.php
@@ -110,7 +109,7 @@ $signals[SignalSource::WEBSOCKET] = [
 ];
 ```
 
-## 9. For page-based agents: register page ownership
+## 7. For page-based agents: register page ownership
 
 ```php
 class MyPage extends AbstractPage {
@@ -121,8 +120,7 @@ class MyPage extends AbstractPage {
 ## Checklist
 
 - [ ] `AGENT_TYPE` constant matches value in `AgentType`
-- [ ] Added to both worker factory AND daemon factory
-- [ ] Registered in `Hilos::AGENTS`
+- [ ] Registered in `Hilos::AGENTS` with `WORKER`, `DAEMON`, and `INDEXED` when needed
 - [ ] Direct agent-to-agent signals declared in `AGENT_SIGNALS`; indexed multi-instance signals use `AgentSignalConfigKey::INDEX_FIELD` instead of `SignalRouter::getDestinations()`
 - [ ] Static source/type routes declared in `SignalRouter` when needed (not covered by topology)
 - [ ] `onStop()` cleans owned state; `WorkerManager` unregisters truth sources after the hook

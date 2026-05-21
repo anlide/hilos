@@ -31,7 +31,10 @@
     "autoload-dev": {
         "psr-4": {
             "Hilos\\Tests\\": "framework/tests/"
-        }
+        },
+        "classmap": [
+            "framework/tests/Unit/TopologyAgentsTestSupport.php"
+        ]
     },
     "scripts": {
         "ollama:start": "docker compose -f framework/docker/ollama-local.yml up -d",

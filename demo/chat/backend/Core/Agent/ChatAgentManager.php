@@ -4,10 +4,12 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Core\Agent;
 
+use Demo\Chat\Hilos;
 use Hilos\Core\Agent\AgentInterface;
 use Hilos\Core\Agent\AgentManager;
 use Hilos\Core\Agent\Exception\AgentCreationFailedException;
 use Hilos\Core\Agent\Exception\AgentIndexRequiredException;
+use Hilos\Core\Agent\TopologyAgentFactory;
 
 /**
  * ChatAgentManager - Agent manager for chat demo (worker side).
@@ -27,6 +29,6 @@ final class ChatAgentManager extends AgentManager
      */
     protected function createAgent(string $agentType, ?string $agentIndex): AgentInterface
     {
-        return ChatAgentWorkerFactory::createAgent($agentType, $agentIndex);
+        return TopologyAgentFactory::createWorker(Hilos::class, $agentType, $agentIndex);
     }
 }

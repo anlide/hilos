@@ -6,6 +6,7 @@ namespace Hilos;
 
 use Hilos\Core\Analytics\AnalyticsCollector;
 use Hilos\Core\Agent\AbstractAgent;
+use Hilos\Core\Agent\AgentRegistry;
 use Hilos\Core\Agent\Config\AgentSignalConfigKey;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Group\AbstractGroup;
@@ -42,7 +43,11 @@ abstract class Hilos
     /** Page classes keyed by page name. */
     public const array PAGES = [];
 
-    /** Agent classes keyed by agent type. */
+    /**
+     * Agent runtime bindings keyed by agent type.
+     *
+     * Each entry declares worker and daemon classes via AgentRegistryKey.
+     */
     public const array AGENTS = [];
 
     /** Group classes keyed by group name. */
@@ -354,8 +359,9 @@ abstract class Hilos
     public static function getAgentSignalRoutes(): array
     {
         $signalRoutes = [];
-        foreach (static::AGENTS as $agentType => $agentClass) {
-            if (!is_string($agentType) || !is_string($agentClass) || !is_subclass_of($agentClass, AbstractAgent::class)) {
+        foreach (static::AGENTS as $agentType => $registryEntry) {
+            $agentClass = AgentRegistry::workerClass($registryEntry);
+            if (!is_string($agentType) || $agentClass === null || !is_subclass_of($agentClass, AbstractAgent::class)) {
                 continue;
             }
 
@@ -391,8 +397,9 @@ abstract class Hilos
     public static function getAgentSignalDtoRoutes(): array
     {
         $dtoRoutes = [];
-        foreach (static::AGENTS as $agentType => $agentClass) {
-            if (!is_string($agentType) || !is_string($agentClass) || !is_subclass_of($agentClass, AbstractAgent::class)) {
+        foreach (static::AGENTS as $agentType => $registryEntry) {
+            $agentClass = AgentRegistry::workerClass($registryEntry);
+            if (!is_string($agentType) || $agentClass === null || !is_subclass_of($agentClass, AbstractAgent::class)) {
                 continue;
             }
 
@@ -427,8 +434,9 @@ abstract class Hilos
     public static function getAgentSignalIndexFields(): array
     {
         $indexFields = [];
-        foreach (static::AGENTS as $agentType => $agentClass) {
-            if (!is_string($agentType) || !is_string($agentClass) || !is_subclass_of($agentClass, AbstractAgent::class)) {
+        foreach (static::AGENTS as $agentType => $registryEntry) {
+            $agentClass = AgentRegistry::workerClass($registryEntry);
+            if (!is_string($agentType) || $agentClass === null || !is_subclass_of($agentClass, AbstractAgent::class)) {
                 continue;
             }
 

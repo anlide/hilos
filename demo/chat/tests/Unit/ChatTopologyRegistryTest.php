@@ -10,10 +10,15 @@ use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\PageConstants;
 use Demo\Chat\Core\Router\DTO\BotAgentSignalData;
 use Demo\Chat\Core\Router\DTO\BotMessageSignalData;
+use Demo\Chat\Agents\BotAgent;
+use Demo\Chat\Core\Agent\Daemon\BotAgentDaemon;
 use Demo\Chat\Hilos;
 use Demo\Chat\Tables\ChatTableContext;
 use Hilos\Constants\SignalTypeConstants;
+use Hilos\Core\Agent\AgentRegistry;
+use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Core\Agent\Config\AgentSignalConfigKey;
+use Hilos\Core\Agent\Daemon\AbstractAgentDaemon;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Browser\Config\BrowserPageConfig;
 use Hilos\Core\Browser\Config\BrowserPageTableBindings;
@@ -51,11 +56,23 @@ final class ChatTopologyRegistryTest extends TestCase
 
     public function testRegistryValuesAreClassStrings(): void
     {
-        foreach ([Hilos::PAGES, Hilos::GROUPS, Hilos::AGENTS, Hilos::TABLES, Hilos::BROWSER_TABLES] as $registry) {
+        foreach ([Hilos::PAGES, Hilos::GROUPS, Hilos::TABLES, Hilos::BROWSER_TABLES] as $registry) {
             foreach ($registry as $class) {
                 $this->assertIsString($class);
                 $this->assertTrue(class_exists($class), "{$class} must be a concrete class string");
             }
+        }
+
+        foreach (Hilos::AGENTS as $agentType => $registryEntry) {
+            $workerClass = AgentRegistry::workerClass($registryEntry);
+            $daemonClass = AgentRegistry::daemonClass($registryEntry);
+
+            $this->assertIsString($workerClass);
+            $this->assertIsString($daemonClass);
+            $this->assertTrue(class_exists($workerClass), "{$workerClass} must be a concrete worker class");
+            $this->assertTrue(class_exists($daemonClass), "{$daemonClass} must be a concrete daemon class");
+            $this->assertTrue(is_subclass_of($daemonClass, AbstractAgentDaemon::class));
+            $this->assertSame($agentType, $workerClass::AGENT_TYPE);
         }
     }
 
@@ -68,9 +85,22 @@ final class ChatTopologyRegistryTest extends TestCase
 
     public function testAgentRegistryKeysMatchAgentClassConstants(): void
     {
-        foreach (Hilos::AGENTS as $agentType => $agentClass) {
-            $this->assertSame($agentType, $agentClass::AGENT_TYPE);
+        foreach (Hilos::AGENTS as $agentType => $registryEntry) {
+            $workerClass = AgentRegistry::workerClass($registryEntry);
+            $this->assertNotNull($workerClass);
+            $this->assertSame($agentType, $workerClass::AGENT_TYPE);
         }
+    }
+
+    public function testBotAgentRegistryRequiresIndex(): void
+    {
+        $botEntry = Hilos::AGENTS[BotAgent::AGENT_TYPE] ?? null;
+
+        $this->assertIsArray($botEntry);
+        $this->assertTrue(AgentRegistry::requiresIndex($botEntry));
+        $this->assertSame(BotAgent::class, AgentRegistry::workerClass($botEntry));
+        $this->assertSame(BotAgentDaemon::class, AgentRegistry::daemonClass($botEntry));
+        $this->assertFalse(AgentRegistry::requiresIndex(Hilos::AGENTS[AgentType::CHAT]));
     }
 
     public function testPageSubscriptionOwnersAreDeclaredByPageClasses(): void
@@ -186,7 +216,9 @@ final class ChatTopologyRegistryTest extends TestCase
     public function testAgentSignalDtoRoutesCoverDeclaredAgentSignals(): void
     {
         $declaredRoutes = [];
-        foreach (Hilos::AGENTS as $agentType => $agentClass) {
+        foreach (Hilos::AGENTS as $agentType => $registryEntry) {
+            $agentClass = AgentRegistry::workerClass($registryEntry);
+            $this->assertNotNull($agentClass);
             foreach ($agentClass::AGENT_SIGNALS as $key => $value) {
                 if (is_string($key) && $key !== '' && is_string($value) && $value !== '') {
                     $declaredRoutes[$key] = $value;
@@ -245,7 +277,12 @@ final class ChatTopologyRegistryTest extends TestCase
                     continue;
                 }
 
-                foreach ($signalNames as $signalName) {
+                foreach ($signalNames as $signalKey => $signalValue) {
+                    $signalName = is_int($signalKey) ? $signalValue : $signalKey;
+                    if (!is_string($signalName) || $signalName === '') {
+                        continue;
+                    }
+
                     $declaredRoutes[$signalType][$signalName] = $page;
                 }
             }
@@ -257,7 +294,9 @@ final class ChatTopologyRegistryTest extends TestCase
     public function testAgentSignalRoutesCoverDeclaredAgentSignals(): void
     {
         $declaredRoutes = [];
-        foreach (Hilos::AGENTS as $agentType => $agentClass) {
+        foreach (Hilos::AGENTS as $agentType => $registryEntry) {
+            $agentClass = AgentRegistry::workerClass($registryEntry);
+            $this->assertNotNull($agentClass);
             foreach ($agentClass::AGENT_SIGNALS as $key => $value) {
                 if (is_int($key) && is_string($value) && $value !== '') {
                     $declaredRoutes[$value] = $agentType;

@@ -6,6 +6,8 @@ namespace Hilos\Tests\Unit;
 
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\AbstractAgent;
+use Hilos\Core\Agent\Config\AgentRegistryKey;
+use Hilos\Core\Agent\Daemon\AbstractAgentDaemon;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
@@ -301,7 +303,10 @@ final class SignalRouterTopologyTestHilos extends HilosFacade
     ];
 
     public const array AGENTS = [
-        SignalRouterTopologySignalTestAgent::AGENT_TYPE => SignalRouterTopologySignalTestAgent::class,
+        SignalRouterTopologySignalTestAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => SignalRouterTopologySignalTestAgent::class,
+            AgentRegistryKey::DAEMON => SignalRouterTopologySignalTestAgentDaemon::class,
+        ],
     ];
 
     /**
@@ -313,6 +318,11 @@ final class SignalRouterTopologyTestHilos extends HilosFacade
     {
         return new SignalRouterTopologyTestDbContext();
     }
+}
+
+final class SignalRouterTopologySignalTestAgentDaemon extends TopologyTestAgentDaemon
+{
+    public const string AGENT_TYPE = 'topology_direct_agent';
 }
 
 final class SignalRouterTopologySignalTestAgent extends AbstractAgent

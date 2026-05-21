@@ -17,8 +17,10 @@ table contexts when they can read the project registry.
   value.
 - `Hilos::GROUPS` registers group classes keyed by each group class `::GROUP`
   value.
-- `Hilos::AGENTS` registers agent classes keyed by each agent class
-  `::AGENT_TYPE` value.
+- `Hilos::AGENTS` registers agent runtime bindings keyed by each worker class
+  `::AGENT_TYPE` value. Each entry declares `AgentRegistryKey::WORKER`,
+  `AgentRegistryKey::DAEMON`, and optional `AgentRegistryKey::INDEXED`.
+  `TopologyAgentFactory` creates worker and daemon instances from this registry.
 - Each page class declares its page subscription owner in
   `PageClass::SUBSCRIPTION_AGENT_TYPE`. `Hilos::getPageRoutes()` computes the
   page-to-agent routing map from `Hilos::PAGES` and those page-level constants.
@@ -92,8 +94,9 @@ table bindings that should live in `Hilos::PAGE_TABLES`.
    `public const array SIGNALS = [...]` when the page handles them. For named
    agent-signal routes, prefer `signal name => SignalDataInterface` class over
    routing-only strings when the page handler needs a typed inner payload.
-6. For a new agent, add the agent class to `Hilos::AGENTS` using
-   `SomeAgent::AGENT_TYPE => SomeAgent::class`.
+6. For a new agent, add worker and daemon classes to `Hilos::AGENTS` using
+   `SomeAgent::AGENT_TYPE => [AgentRegistryKey::WORKER => SomeAgent::class, AgentRegistryKey::DAEMON => SomeAgentDaemon::class]`.
+   Set `AgentRegistryKey::INDEXED => true` when creation requires `agentIndex`.
 7. Declare directly handled agent-to-agent signal names in
    `public const array AGENT_SIGNALS = [...]` when the agent owns them. Prefer
    `signal name => SignalDataInterface` class for singleton typed signals. For
@@ -165,8 +168,15 @@ final class BotAgent extends AbstractAgent
 }
 
 public const array AGENTS = [
-    ChatAgent::AGENT_TYPE => ChatAgent::class,
-    BotAgent::AGENT_TYPE => BotAgent::class,
+    ChatAgent::AGENT_TYPE => [
+        AgentRegistryKey::WORKER => ChatAgent::class,
+        AgentRegistryKey::DAEMON => ChatAgentDaemon::class,
+    ],
+    BotAgent::AGENT_TYPE => [
+        AgentRegistryKey::WORKER => BotAgent::class,
+        AgentRegistryKey::DAEMON => BotAgentDaemon::class,
+        AgentRegistryKey::INDEXED => true,
+    ],
 ];
 
 public const array TABLES = [
@@ -215,6 +225,8 @@ public const array PAGE_TABLES = [
   action, page-signal, or agent-signal DTO parsing. Use `HilosPageFactory`
   with the project facade class and `SignalRouter::createAgentSignalPayloadDTO()`
   for agent-owned signals.
+- Do not add project worker/daemon factories that only mirror `Hilos::AGENTS`.
+  Use `TopologyAgentFactory` with the project facade class.
 - Do not duplicate `getPageSignalDtoRoutes()`, `getAgentSignalDtoRoutes()`, or
   local signal-name-to-DTO maps in project routers, worker managers, or page
   factories when the project Hilos facade already computes them from page and

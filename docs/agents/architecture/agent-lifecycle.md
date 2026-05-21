@@ -68,8 +68,7 @@ Agent can request its own removal: `$this->selfStop()`.
 
 1. Add constant to `AgentType` class
 2. Create `AgentDaemon` subclass (for daemon-side routing)
-3. Register in `AgentManager::createAgent()` factory
-4. Register in `AgentManagerDaemon::createAgentDaemon()` factory
-5. Register the agent class in `Hilos::AGENTS`
+3. Register worker and daemon classes in `Hilos::AGENTS` via `AgentRegistryKey`
+4. Delegate `AgentManager` / `AgentManagerDaemon` creation to `TopologyAgentFactory`
 6. Add direct agent-to-agent signal names to `AGENT_SIGNALS`, or keep dynamic
    payload-dependent routes in `SignalRouter`

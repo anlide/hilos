@@ -13,6 +13,15 @@ use Demo\Chat\Agents\Hilos\DemoHilosGuardianAgent;
 use Demo\Chat\Agents\Hilos\DemoHilosLogsAgent;
 use Demo\Chat\Agents\LibraryAgent;
 use Demo\Chat\Agents\ModeratorAgent;
+use Demo\Chat\Core\Agent\Daemon\BotAgentDaemon;
+use Demo\Chat\Core\Agent\Daemon\ChatAgentDaemon;
+use Demo\Chat\Core\Agent\Daemon\ChatContextAnalyzerAgentDaemon;
+use Demo\Chat\Core\Agent\Daemon\Hilos\DemoHilosAgentDaemon;
+use Demo\Chat\Core\Agent\Daemon\Hilos\DemoHilosAnalyticsAgentDaemon;
+use Demo\Chat\Core\Agent\Daemon\Hilos\DemoHilosGuardianAgentDaemon;
+use Demo\Chat\Core\Agent\Daemon\Hilos\DemoHilosLogsAgentDaemon;
+use Demo\Chat\Core\Agent\Daemon\LibraryAgentDaemon;
+use Demo\Chat\Core\Agent\Daemon\ModeratorAgentDaemon;
 use Demo\Chat\Browser\ChatBrowserContext;
 use Demo\Chat\Browser\ChatBrowserRef;
 use Demo\Chat\Browser\Table\AttachmentDraftsBrowserTable;
@@ -109,6 +118,7 @@ use Demo\Chat\Tables\HilosUser\HilosUsersTable;
 use Demo\Chat\Tables\ModeratorPiece\ModeratorPromptPiecesTable;
 use Demo\Chat\Tables\Settings\SettingsTable;
 use Hilos\Constants\HilosPageRouteParams;
+use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Core\Browser\Config\BrowserParamKey;
 use Hilos\Core\Browser\Config\BrowserRuntimeParam;
 use Hilos\Core\Browser\Context\BrowserContext;
@@ -221,15 +231,43 @@ final class Hilos extends \Hilos\Hilos
     ];
 
     public const array AGENTS = [
-        ChatAgent::AGENT_TYPE => ChatAgent::class,
-        LibraryAgent::AGENT_TYPE => LibraryAgent::class,
-        ChatContextAnalyzerAgent::AGENT_TYPE => ChatContextAnalyzerAgent::class,
-        BotAgent::AGENT_TYPE => BotAgent::class,
-        ModeratorAgent::AGENT_TYPE => ModeratorAgent::class,
-        DemoHilosAgent::AGENT_TYPE => DemoHilosAgent::class,
-        DemoHilosGuardianAgent::AGENT_TYPE => DemoHilosGuardianAgent::class,
-        DemoHilosAnalyticsAgent::AGENT_TYPE => DemoHilosAnalyticsAgent::class,
-        DemoHilosLogsAgent::AGENT_TYPE => DemoHilosLogsAgent::class,
+        ChatAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => ChatAgent::class,
+            AgentRegistryKey::DAEMON => ChatAgentDaemon::class,
+        ],
+        LibraryAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => LibraryAgent::class,
+            AgentRegistryKey::DAEMON => LibraryAgentDaemon::class,
+        ],
+        ChatContextAnalyzerAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => ChatContextAnalyzerAgent::class,
+            AgentRegistryKey::DAEMON => ChatContextAnalyzerAgentDaemon::class,
+        ],
+        BotAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => BotAgent::class,
+            AgentRegistryKey::DAEMON => BotAgentDaemon::class,
+            AgentRegistryKey::INDEXED => true,
+        ],
+        ModeratorAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => ModeratorAgent::class,
+            AgentRegistryKey::DAEMON => ModeratorAgentDaemon::class,
+        ],
+        DemoHilosAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => DemoHilosAgent::class,
+            AgentRegistryKey::DAEMON => DemoHilosAgentDaemon::class,
+        ],
+        DemoHilosGuardianAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => DemoHilosGuardianAgent::class,
+            AgentRegistryKey::DAEMON => DemoHilosGuardianAgentDaemon::class,
+        ],
+        DemoHilosAnalyticsAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => DemoHilosAnalyticsAgent::class,
+            AgentRegistryKey::DAEMON => DemoHilosAnalyticsAgentDaemon::class,
+        ],
+        DemoHilosLogsAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => DemoHilosLogsAgent::class,
+            AgentRegistryKey::DAEMON => DemoHilosLogsAgentDaemon::class,
+        ],
     ];
 
     public const array TABLES = [

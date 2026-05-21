@@ -6,6 +6,7 @@ namespace Hilos\Tests\Unit;
 
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\AbstractAgent;
+use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Core\Agent\Config\AgentSignalConfigKey;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Page\AbstractPage;
@@ -232,7 +233,7 @@ final class TopologyValidatorTest extends TestCase
             },
             [
                 'AGENTS[wrong_agent] key must match',
-                'AGENTS[not_agent] class',
+                'AGENTS[not_agent][worker] class',
                 'must extend ' . AbstractAgent::class,
             ],
         );
@@ -639,7 +640,10 @@ final class TopologyPageSignalDtoHilos extends HilosFacade
     ];
 
     public const array AGENTS = [
-        TopologyValidAgent::AGENT_TYPE => TopologyValidAgent::class,
+        TopologyValidAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyValidAgent::class,
+            AgentRegistryKey::DAEMON => TopologyValidAgentDaemon::class,
+        ],
     ];
 
     /**
@@ -677,7 +681,10 @@ final class TopologyValidHilos extends HilosFacade
     ];
 
     public const array AGENTS = [
-        TopologyValidAgent::AGENT_TYPE => TopologyValidAgent::class,
+        TopologyValidAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyValidAgent::class,
+            AgentRegistryKey::DAEMON => TopologyValidAgentDaemon::class,
+        ],
     ];
 
     public const array TABLES = [
@@ -815,8 +822,14 @@ final class TopologyDuplicatePageSignalHilos extends HilosFacade
 final class TopologyInvalidAgentsHilos extends HilosFacade
 {
     public const array AGENTS = [
-        'wrong_agent' => TopologyMismatchedAgent::class,
-        'not_agent' => TopologyNotAgent::class,
+        'wrong_agent' => [
+            AgentRegistryKey::WORKER => TopologyMismatchedAgent::class,
+            AgentRegistryKey::DAEMON => TopologyMismatchedAgentDaemon::class,
+        ],
+        'not_agent' => [
+            AgentRegistryKey::WORKER => TopologyNotAgent::class,
+            AgentRegistryKey::DAEMON => TopologyNotAgentDaemon::class,
+        ],
     ];
 
     /**
@@ -833,7 +846,10 @@ final class TopologyInvalidAgentsHilos extends HilosFacade
 final class TopologyInvalidAgentSignalHilos extends HilosFacade
 {
     public const array AGENTS = [
-        TopologyInvalidAgentSignalAgent::AGENT_TYPE => TopologyInvalidAgentSignalAgent::class,
+        TopologyInvalidAgentSignalAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyInvalidAgentSignalAgent::class,
+            AgentRegistryKey::DAEMON => TopologyInvalidAgentSignalAgentDaemon::class,
+        ],
     ];
 
     /**
@@ -850,8 +866,14 @@ final class TopologyInvalidAgentSignalHilos extends HilosFacade
 final class TopologyDuplicateAgentSignalHilos extends HilosFacade
 {
     public const array AGENTS = [
-        TopologyFirstAgentSignalAgent::AGENT_TYPE => TopologyFirstAgentSignalAgent::class,
-        TopologySecondAgentSignalAgent::AGENT_TYPE => TopologySecondAgentSignalAgent::class,
+        TopologyFirstAgentSignalAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyFirstAgentSignalAgent::class,
+            AgentRegistryKey::DAEMON => TopologyFirstAgentSignalAgentDaemon::class,
+        ],
+        TopologySecondAgentSignalAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologySecondAgentSignalAgent::class,
+            AgentRegistryKey::DAEMON => TopologySecondAgentSignalAgentDaemon::class,
+        ],
     ];
 
     /**
@@ -872,7 +894,10 @@ final class TopologyPageAgentSignalConflictHilos extends HilosFacade
     ];
 
     public const array AGENTS = [
-        TopologyConflictingAgent::AGENT_TYPE => TopologyConflictingAgent::class,
+        TopologyConflictingAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyConflictingAgent::class,
+            AgentRegistryKey::DAEMON => TopologyConflictingAgentDaemon::class,
+        ],
     ];
 
     /**
@@ -1000,7 +1025,10 @@ final class TopologyIndexedAgent extends TopologyTestAgent
 final class TopologyIndexedAgentSignalHilos extends HilosFacade
 {
     public const array AGENTS = [
-        TopologyIndexedAgent::AGENT_TYPE => TopologyIndexedAgent::class,
+        TopologyIndexedAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyIndexedAgent::class,
+            AgentRegistryKey::DAEMON => TopologyIndexedAgentDaemon::class,
+        ],
     ];
 
     /**
@@ -1026,7 +1054,10 @@ final class TopologyIndexedAgentMissingIndexField extends TopologyTestAgent
 final class TopologyIndexedAgentMissingIndexFieldHilos extends HilosFacade
 {
     public const array AGENTS = [
-        TopologyIndexedAgentMissingIndexField::AGENT_TYPE => TopologyIndexedAgentMissingIndexField::class,
+        TopologyIndexedAgentMissingIndexField::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyIndexedAgentMissingIndexField::class,
+            AgentRegistryKey::DAEMON => TopologyIndexedAgentMissingIndexFieldDaemon::class,
+        ],
     ];
 
     /**
@@ -1054,7 +1085,10 @@ final class TopologyIndexedAgentEmptyIndexField extends TopologyTestAgent
 final class TopologyIndexedAgentEmptyIndexFieldHilos extends HilosFacade
 {
     public const array AGENTS = [
-        TopologyIndexedAgentEmptyIndexField::AGENT_TYPE => TopologyIndexedAgentEmptyIndexField::class,
+        TopologyIndexedAgentEmptyIndexField::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyIndexedAgentEmptyIndexField::class,
+            AgentRegistryKey::DAEMON => TopologyIndexedAgentEmptyIndexFieldDaemon::class,
+        ],
     ];
 
     /**
@@ -1083,7 +1117,10 @@ final class TopologyIndexedAgentUnknownConfigKey extends TopologyTestAgent
 final class TopologyIndexedAgentUnknownConfigKeyHilos extends HilosFacade
 {
     public const array AGENTS = [
-        TopologyIndexedAgentUnknownConfigKey::AGENT_TYPE => TopologyIndexedAgentUnknownConfigKey::class,
+        TopologyIndexedAgentUnknownConfigKey::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyIndexedAgentUnknownConfigKey::class,
+            AgentRegistryKey::DAEMON => TopologyIndexedAgentUnknownConfigKeyDaemon::class,
+        ],
     ];
 
     /**
@@ -1126,7 +1163,10 @@ final class TopologyInvalidAgentSignalDtoAgent extends TopologyTestAgent
 final class TopologyAgentSignalDtoHilos extends HilosFacade
 {
     public const array AGENTS = [
-        TopologyAgentSignalDtoAgent::AGENT_TYPE => TopologyAgentSignalDtoAgent::class,
+        TopologyAgentSignalDtoAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyAgentSignalDtoAgent::class,
+            AgentRegistryKey::DAEMON => TopologyAgentSignalDtoAgentDaemon::class,
+        ],
     ];
 
     /**
@@ -1143,7 +1183,10 @@ final class TopologyAgentSignalDtoHilos extends HilosFacade
 final class TopologyInvalidAgentSignalDtoHilos extends HilosFacade
 {
     public const array AGENTS = [
-        TopologyInvalidAgentSignalDtoAgent::AGENT_TYPE => TopologyInvalidAgentSignalDtoAgent::class,
+        TopologyInvalidAgentSignalDtoAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => TopologyInvalidAgentSignalDtoAgent::class,
+            AgentRegistryKey::DAEMON => TopologyInvalidAgentSignalDtoAgentDaemon::class,
+        ],
     ];
 
     /**

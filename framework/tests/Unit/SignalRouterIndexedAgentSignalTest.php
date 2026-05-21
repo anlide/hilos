@@ -7,7 +7,9 @@ namespace Hilos\Tests\Unit;
 use Hilos\BaseDTO;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\AbstractAgent;
+use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Core\Agent\Config\AgentSignalConfigKey;
+use Hilos\Core\Agent\Daemon\AbstractAgentDaemon;
 use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\SignalDTO;
@@ -274,10 +276,18 @@ final class IndexedAgentSignalTestDbContext extends DbContext
     }
 }
 
+final class IndexedAgentSignalTestAgentDaemon extends TopologyTestAgentDaemon
+{
+    public const string AGENT_TYPE = 'indexed_test_agent';
+}
+
 final class IndexedAgentSignalTestHilos extends HilosFacade
 {
     public const array AGENTS = [
-        IndexedAgentSignalTestAgent::AGENT_TYPE => IndexedAgentSignalTestAgent::class,
+        IndexedAgentSignalTestAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => IndexedAgentSignalTestAgent::class,
+            AgentRegistryKey::DAEMON => IndexedAgentSignalTestAgentDaemon::class,
+        ],
     ];
 
     /**
@@ -291,11 +301,22 @@ final class IndexedAgentSignalTestHilos extends HilosFacade
     }
 }
 
+final class IndexedAgentSignalDtoTestAgentDaemon extends TopologyTestAgentDaemon
+{
+    public const string AGENT_TYPE = 'indexed_dto_test_agent';
+}
+
 final class IndexedAgentSignalDtoTestHilos extends HilosFacade
 {
     public const array AGENTS = [
-        IndexedAgentSignalDtoTestAgent::AGENT_TYPE => IndexedAgentSignalDtoTestAgent::class,
-        IndexedAgentSignalTestAgent::AGENT_TYPE => IndexedAgentSignalTestAgent::class,
+        IndexedAgentSignalDtoTestAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => IndexedAgentSignalDtoTestAgent::class,
+            AgentRegistryKey::DAEMON => IndexedAgentSignalDtoTestAgentDaemon::class,
+        ],
+        IndexedAgentSignalTestAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => IndexedAgentSignalTestAgent::class,
+            AgentRegistryKey::DAEMON => IndexedAgentSignalTestAgentDaemon::class,
+        ],
     ];
 
     /**

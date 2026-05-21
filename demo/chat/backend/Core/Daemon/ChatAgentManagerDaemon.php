@@ -4,8 +4,9 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Core\Daemon;
 
-use Demo\Chat\Core\Agent\ChatAgentDaemonFactory;
+use Demo\Chat\Hilos;
 use Hilos\Core\Agent\Daemon\AgentDaemonInterface;
+use Hilos\Core\Agent\TopologyAgentFactory;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\Agent\Exception\AgentDaemonCreationFailedException;
 use Hilos\Core\Agent\Exception\AgentIndexRequiredException;
@@ -28,6 +29,6 @@ final class ChatAgentManagerDaemon extends AgentManagerDaemon
      */
     protected function createAgentDaemon(string $agentType, ?string $agentIndex): AgentDaemonInterface
     {
-        return ChatAgentDaemonFactory::createAgentDaemon($agentType, $agentIndex);
+        return TopologyAgentFactory::createDaemon(Hilos::class, $agentType, $agentIndex);
     }
 }

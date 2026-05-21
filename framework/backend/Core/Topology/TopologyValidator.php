@@ -6,7 +6,10 @@ namespace Hilos\Core\Topology;
 
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\AbstractAgent;
+use Hilos\Core\Agent\AgentRegistry;
+use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Core\Agent\Config\AgentSignalConfigKey;
+use Hilos\Core\Agent\Daemon\AbstractAgentDaemon;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Group\AbstractGroup;
 use Hilos\Core\Page\AbstractPage;
@@ -201,25 +204,73 @@ final class TopologyValidator
      */
     private function validateAgents(array $agents, array &$errors): void
     {
-        foreach ($agents as $agentType => $agentClass) {
+        foreach ($agents as $agentType => $registryEntry) {
             if (!is_string($agentType) || $agentType === '') {
                 $errors[] = 'AGENTS contains a non-string or empty agent type key';
                 continue;
             }
 
-            if (!$this->isExistingClassString($agentClass, "AGENTS[{$agentType}]", $errors)) {
+            if (!is_array($registryEntry)) {
+                $errors[] = "AGENTS[{$agentType}] must be an array declaring worker and daemon classes";
                 continue;
             }
 
-            if (!is_subclass_of($agentClass, AbstractAgent::class)) {
-                $errors[] = "AGENTS[{$agentType}] class {$agentClass} must extend " . AbstractAgent::class;
+            $unknownKeys = array_diff(array_keys($registryEntry), AgentRegistry::ALLOWED_CONFIG_KEYS);
+            if ($unknownKeys !== []) {
+                $errors[] = 'AGENTS[' . $agentType . '] contains unknown config keys: ' . implode(', ', $unknownKeys);
+            }
+
+            $workerClass = AgentRegistry::workerClass($registryEntry);
+            if (
+                $workerClass === null
+                || !$this->isExistingClassString(
+                    $workerClass,
+                    'AGENTS[' . $agentType . '][' . AgentRegistryKey::WORKER . ']',
+                    $errors,
+                )
+            ) {
                 continue;
             }
 
-            /** @var class-string<AbstractAgent> $agentClass */
-            $classAgentType = $agentClass::AGENT_TYPE;
+            if (!is_subclass_of($workerClass, AbstractAgent::class)) {
+                $errors[] = 'AGENTS[' . $agentType . '][' . AgentRegistryKey::WORKER . "] class {$workerClass} must extend "
+                    . AbstractAgent::class;
+                continue;
+            }
+
+            /** @var class-string<AbstractAgent> $workerClass */
+            $classAgentType = $workerClass::AGENT_TYPE;
             if ($classAgentType !== $agentType) {
-                $errors[] = "AGENTS[{$agentType}] key must match {$agentClass}::AGENT_TYPE ({$classAgentType})";
+                $errors[] = "AGENTS[{$agentType}] key must match {$workerClass}::AGENT_TYPE ({$classAgentType})";
+            }
+
+            $daemonClass = AgentRegistry::daemonClass($registryEntry);
+            if (
+                $daemonClass === null
+                || !$this->isExistingClassString(
+                    $daemonClass,
+                    'AGENTS[' . $agentType . '][' . AgentRegistryKey::DAEMON . ']',
+                    $errors,
+                )
+            ) {
+                continue;
+            }
+
+            if (!is_subclass_of($daemonClass, AbstractAgentDaemon::class)) {
+                $errors[] = 'AGENTS[' . $agentType . '][' . AgentRegistryKey::DAEMON . "] class {$daemonClass} must extend "
+                    . AbstractAgentDaemon::class;
+                continue;
+            }
+
+            /** @var class-string<AbstractAgentDaemon> $daemonClass */
+            $daemonAgentType = $daemonClass::AGENT_TYPE;
+            if (is_string($daemonAgentType) && $daemonAgentType !== '' && $daemonAgentType !== $agentType) {
+                $errors[] = "AGENTS[{$agentType}][" . AgentRegistryKey::DAEMON . "] class {$daemonClass} AGENT_TYPE must match registry key ({$daemonAgentType})";
+            }
+
+            $indexed = $registryEntry[AgentRegistryKey::INDEXED] ?? false;
+            if ($indexed !== false && !is_bool($indexed)) {
+                $errors[] = 'AGENTS[' . $agentType . '][' . AgentRegistryKey::INDEXED . '] must be a boolean';
             }
         }
     }
@@ -668,8 +719,9 @@ final class TopologyValidator
         array &$errors,
     ): void {
         $declaredRoutes = [];
-        foreach ($agents as $agentType => $agentClass) {
-            if (!is_string($agentType) || !is_string($agentClass) || !is_subclass_of($agentClass, AbstractAgent::class)) {
+        foreach ($agents as $agentType => $registryEntry) {
+            $agentClass = AgentRegistry::workerClass($registryEntry);
+            if (!is_string($agentType) || $agentClass === null || !is_subclass_of($agentClass, AbstractAgent::class)) {
                 continue;
             }
 
@@ -805,8 +857,9 @@ final class TopologyValidator
     private function validateAgentSignalDtoRoutes(array $agents, array $agentSignalDtoRoutes, array &$errors): void
     {
         $declaredRoutes = [];
-        foreach ($agents as $agentType => $agentClass) {
-            if (!is_string($agentType) || !is_string($agentClass) || !is_subclass_of($agentClass, AbstractAgent::class)) {
+        foreach ($agents as $agentType => $registryEntry) {
+            $agentClass = AgentRegistry::workerClass($registryEntry);
+            if (!is_string($agentType) || $agentClass === null || !is_subclass_of($agentClass, AbstractAgent::class)) {
                 continue;
             }
 

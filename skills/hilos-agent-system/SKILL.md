@@ -20,8 +20,9 @@ Use this skill for agent business logic and registration work. Start by reading 
 
 1. Decide whether the work is a new agent, an existing agent behavior change, or lifecycle cleanup.
 2. For a new agent, add the `AgentType` constant, Agent class, AgentDaemon class,
-   worker factory registration, daemon factory registration, `Hilos::AGENTS`
-   registration, and `AGENT_SIGNALS` or `SignalRouter` routes.
+   `Hilos::AGENTS` entry (`WORKER`, `DAEMON`, optional `INDEXED`),
+   `TopologyAgentFactory` delegation in managers, and `AGENT_SIGNALS` or
+   `SignalRouter` routes.
    For indexed multi-instance agents, declare
    `AGENT_SIGNALS[$signal][AgentSignalConfigKey::INDEX_FIELD]` to route by
    payload field declaratively — do not override `SignalRouter::getDestinations()`
