@@ -9,6 +9,7 @@ use Demo\Chat\Constants\ChatContextAnalyzerConstants;
 use Demo\Chat\Constants\ChatEventType;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\ChatTopicConstants;
+use Demo\Chat\Core\Router\DTO\BotAgentSignalData;
 use Demo\Chat\Core\Router\DTO\BotMessageSignalData;
 use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Database\Settings\ChatSettingsConstants;
@@ -51,6 +52,7 @@ final class BotAgent extends AbstractAgent
     public const array AGENT_SIGNALS = [
         ChatSignalConstants::BOT_AGENT_START => [
             AgentSignalConfigKey::INDEX_FIELD => 'botId',
+            AgentSignalConfigKey::DTO => BotAgentSignalData::class,
         ],
     ];
 

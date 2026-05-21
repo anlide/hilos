@@ -8,9 +8,12 @@ use Demo\Chat\Browser\ChatBrowserContext;
 use Demo\Chat\Constants\AgentType;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\PageConstants;
+use Demo\Chat\Core\Router\DTO\BotAgentSignalData;
+use Demo\Chat\Core\Router\DTO\BotMessageSignalData;
 use Demo\Chat\Hilos;
 use Demo\Chat\Tables\ChatTableContext;
 use Hilos\Constants\SignalTypeConstants;
+use Hilos\Core\Agent\Config\AgentSignalConfigKey;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Browser\Config\BrowserPageConfig;
 use Hilos\Core\Browser\Config\BrowserPageTableBindings;
@@ -180,6 +183,34 @@ final class ChatTopologyRegistryTest extends TestCase
         ], Hilos::getAgentSignalIndexFields());
     }
 
+    public function testAgentSignalDtoRoutesCoverDeclaredAgentSignals(): void
+    {
+        $declaredRoutes = [];
+        foreach (Hilos::AGENTS as $agentType => $agentClass) {
+            foreach ($agentClass::AGENT_SIGNALS as $key => $value) {
+                if (is_string($key) && $key !== '' && is_string($value) && $value !== '') {
+                    $declaredRoutes[$key] = $value;
+                    continue;
+                }
+
+                if (!is_string($key) || $key === '' || !is_array($value)) {
+                    continue;
+                }
+
+                $dtoClass = $value[AgentSignalConfigKey::DTO] ?? null;
+                if (is_string($dtoClass) && $dtoClass !== '') {
+                    $declaredRoutes[$key] = $dtoClass;
+                }
+            }
+        }
+
+        $this->assertSame([
+            ChatSignalConstants::BOT_MESSAGE => BotMessageSignalData::class,
+            ChatSignalConstants::BOT_AGENT_START => BotAgentSignalData::class,
+        ], $declaredRoutes);
+        $this->assertSame($declaredRoutes, Hilos::getAgentSignalDtoRoutes());
+    }
+
     public function testPageActionRoutesCoverDeclaredPageActions(): void
     {
         $declaredRoutes = [];
@@ -230,6 +261,8 @@ final class ChatTopologyRegistryTest extends TestCase
             foreach ($agentClass::AGENT_SIGNALS as $key => $value) {
                 if (is_int($key) && is_string($value) && $value !== '') {
                     $declaredRoutes[$value] = $agentType;
+                } elseif (is_string($key) && $key !== '' && is_string($value) && $value !== '') {
+                    $declaredRoutes[$key] = $agentType;
                 } elseif (is_string($key) && $key !== '' && is_array($value)) {
                     $declaredRoutes[$key] = $agentType;
                 }

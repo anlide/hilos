@@ -16,7 +16,6 @@ use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Demo\Chat\Socket\WebSocket\DTO\HandshakeResponseSignalData;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
-use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
 use Hilos\Core\CLI\Exception\CommandException;
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\InvalidFormatException;
@@ -37,7 +36,7 @@ final class ChatAgent extends AbstractAgent
     public const string AGENT_TYPE = AgentType::CHAT;
 
     public const array AGENT_SIGNALS = [
-        ChatSignalConstants::BOT_MESSAGE,
+        ChatSignalConstants::BOT_MESSAGE => BotMessageSignalData::class,
     ];
 
     private const string SESSION_TOKEN_PATTERN = '/\A[0-9a-f]{32}\z/';
@@ -180,7 +179,6 @@ final class ChatAgent extends AbstractAgent
      * @param string $source Framework signal source identifier (unused)
      * @param string $name Agent signal name
      * @throws AgentUnknownSignalException When signal name is not supported by this agent
-     * @throws InvalidAgentSignalPayloadException When signal payload does not match the signal name
      * @throws HilosException On bot message publish failure
      * @throws CommandException If event id is null after sync
      */
@@ -191,13 +189,6 @@ final class ChatAgent extends AbstractAgent
             case ChatSignalConstants::RENAME_MODERATION_RESULT:
                 return;
             case ChatSignalConstants::BOT_MESSAGE:
-                if (!$data->data instanceof BotMessageSignalData) {
-                    throw new InvalidAgentSignalPayloadException(
-                        $name,
-                        BotMessageSignalData::class,
-                        $data->data,
-                    );
-                }
                 $this->handleBotMessage($data->data);
                 return;
             default:
