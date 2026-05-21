@@ -15,7 +15,10 @@ use Hilos\Core\Daemon\Cron\CronRule;
 use Hilos\Core\EventLoop\EventLoop;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\SignalDataInterface;
+use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalRouter;
+use Hilos\Core\Router\SignalSource;
+use Hilos\Core\Router\SignalType;
 use Hilos\Core\Router\WebSocketEnvelopeAware;
 use Hilos\Database\DbSyncApplicator;
 use Hilos\Runtime\RtSyncApplicator;
@@ -32,6 +35,7 @@ use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageUnsubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageUpdateSubscriptionSignalDTO;
 use Hilos\Socket\Client\WorkerClient;
+use Hilos\Socket\Worker\DTO\CronSignalDTO;
 use Hilos\Socket\Worker\DTO\DaemonAgentMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncCreatedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncDeletedMessageDTO;
@@ -851,7 +855,7 @@ abstract class DaemonManager extends BaseManager
     /**
      * Tick method - called regularly in main loop
      *
-     * Child classes can override this method to handle cron job execution.
+     * Child classes can override this method for app-specific daemon logic.
      * Default implementation does nothing.
      */
     protected function onTick(): void
@@ -862,14 +866,19 @@ abstract class DaemonManager extends BaseManager
     /**
      * Called when a cron job should be executed
      *
-     * Child classes can override this method to handle cron job execution.
-     * Default implementation does nothing.
+     * Default implementation queues a DAEMON/CRON signal for routing via SignalRouter.
+     * Override only when cron work must run directly in the daemon process.
      *
      * @param CronRule $rule Cron rule that should be executed
      */
     protected function onCron(CronRule $rule): void
     {
-        // Default: do nothing, child classes should override
+        Hilos::$sr->queueSignal(
+            new SignalSource(SignalSource::DAEMON),
+            new SignalType(SignalTypeConstants::CRON),
+            new SignalName($rule->name),
+            new CronSignalDTO(cronName: $rule->name),
+        );
     }
 
     /**

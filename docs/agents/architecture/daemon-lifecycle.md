@@ -38,6 +38,12 @@ sleepWithPreciseTiming()
 
 ## Cron
 
-Register: `$this->addCronRule('name', '*/5 * * * *')`.
-Override `onCron(CronRule $rule)` to handle execution.
+Register rules in the daemon manager constructor:
+`$this->addCronRule('name', '*/5 * * * *')`.
+
+When a rule is due, `DaemonManager::onCron()` queues a `DAEMON/CRON` signal.
+Handle the cron name in the target agent's `onSignalCron()` (or on a page cron
+handler declared in topology). Override `onCron()` only for daemon-local work
+that must not go through the signal router.
+
 Cron fires only after `WORKERS_READY` and at most once per minute.

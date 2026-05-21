@@ -6,16 +6,9 @@ namespace Demo\Chat\Core\Daemon;
 
 use Demo\Chat\Constants\ChatCronConstants;
 use Demo\Chat\Core\Router\ChatSignalRouter;
-use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
-use Hilos\Core\Daemon\Cron\CronRule;
 use Hilos\Core\Daemon\DaemonManager;
-use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalRouter;
-use Hilos\Core\Router\SignalSource;
-use Hilos\Core\Router\SignalType;
-use Hilos\Hilos;
-use Hilos\Socket\Worker\DTO\CronSignalDTO;
 
 /**
  * ChatDaemonManager - Main daemon manager for chat demo.
@@ -61,26 +54,5 @@ final class ChatDaemonManager extends DaemonManager
     protected function createAgentManagerDaemon(): AgentManagerDaemon
     {
         return new ChatAgentManagerDaemon();
-    }
-
-    /**
-     * Called when a cron job should be executed.
-     *
-     * Sends cron signal to appropriate agent via signal router.
-     *
-     * @param CronRule $rule Cron rule to execute
-     */
-    protected function onCron(CronRule $rule): void
-    {
-        $dto = new CronSignalDTO(
-            cronName: $rule->name,
-        );
-
-        Hilos::$sr->queueSignal(
-            new SignalSource(SignalSource::DAEMON),
-            new SignalType(SignalTypeConstants::CRON),
-            new SignalName($rule->name),
-            $dto,
-        );
     }
 }
