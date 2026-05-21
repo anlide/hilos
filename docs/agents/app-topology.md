@@ -44,6 +44,10 @@ table contexts when they can read the project registry.
 - Each page class declares non-action page-dispatched signals in
   `PageClass::SIGNALS`. `Hilos::getPageSignalRoutes()` computes
   `signal type/name -> page` routes for `PageSignalRouter`.
+  Named routes may use a list of signal name strings (routing only) or a map
+  of `signal name => SignalDataInterface` class (routing plus inner payload
+  DTO). `Hilos::getPageSignalDtoRoutes()` computes
+  `signal type/name -> inner payload DTO class` for map-style entries.
   `SignalRouter` derives the matching `signal type/name -> agent` routes
   through `Hilos::getPageSignalAgentRoutes()` and `SUBSCRIPTION_AGENT_TYPE`.
 - Each agent class declares directly handled agent-to-agent signal names in
@@ -114,6 +118,9 @@ final class MainPage extends AbstractPage
 
     public const array SIGNALS = [
         SignalTypeConstants::FRAME_BINARY => [],
+        SignalTypeConstants::AGENT_SIGNAL => [
+            ChatSignalConstants::MODERATION_RESULT => ModerationResultSignalData::class,
+        ],
     ];
 }
 

@@ -10,6 +10,7 @@ use Hilos\Core\Agent\Config\AgentSignalConfigKey;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
+use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Table\Definition\TableDefinition;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableSnapshotDTO;
@@ -90,6 +91,37 @@ final class TopologyValidatorTest extends TestCase
             ],
             TopologyValidHilos::getPageSignalAgentRoutes(),
         );
+        $this->assertSame([], TopologyValidHilos::getPageSignalDtoRoutes());
+    }
+
+    public function testComputedPageSignalDtoRoutesComeFromRegisteredPageClasses(): void
+    {
+        $this->assertSame(
+            [
+                SignalTypeConstants::AGENT_SIGNAL => [
+                    TopologyPageSignalDtoPage::VALID_PAGE_SIGNAL => TopologyTestPageSignalData::class,
+                ],
+            ],
+            TopologyPageSignalDtoHilos::getPageSignalDtoRoutes(),
+        );
+        $this->assertSame(
+            [
+                SignalTypeConstants::AGENT_SIGNAL => [
+                    TopologyPageSignalDtoPage::VALID_PAGE_SIGNAL => TopologyPageSignalDtoPage::PAGE,
+                ],
+            ],
+            TopologyPageSignalDtoHilos::getPageSignalRoutes(),
+        );
+
+        TopologyPageSignalDtoHilos::validateTopology();
+    }
+
+    public function testPageSignalDtoMustImplementSignalDataInterface(): void
+    {
+        $this->expectException(InvalidTopologyException::class);
+        $this->expectExceptionMessage(SignalDataInterface::class);
+
+        TopologyInvalidPageSignalDtoHilos::validateTopology();
     }
 
     public function testComputedAgentSignalRoutesComeFromRegisteredAgentClasses(): void
@@ -148,7 +180,7 @@ final class TopologyValidatorTest extends TestCase
     {
         $this->expectException(InvalidTopologyException::class);
         $this->expectExceptionMessage('PAGES[invalid_signal_page] class');
-        $this->expectExceptionMessage('SIGNALS[agent_signal] must contain only non-empty signal names');
+        $this->expectExceptionMessage('SIGNALS[agent_signal] must contain only non-empty signal names or valid signal DTO map entries');
 
         TopologyInvalidPageSignalHilos::validateTopology();
     }
@@ -319,6 +351,34 @@ final class TopologyTestDbContext extends DbContext
     public function configure(): void
     {
     }
+}
+
+final class TopologyPageSignalDtoPage extends AbstractPage
+{
+    public const string PAGE = 'page_signal_dto_page';
+
+    public const string SUBSCRIPTION_AGENT_TYPE = 'valid_agent';
+
+    public const string VALID_PAGE_SIGNAL = 'valid_page_signal_with_dto';
+
+    public const array SIGNALS = [
+        SignalTypeConstants::AGENT_SIGNAL => [
+            self::VALID_PAGE_SIGNAL => TopologyTestPageSignalData::class,
+        ],
+    ];
+}
+
+final class TopologyInvalidPageSignalDtoPage extends AbstractPage
+{
+    public const string PAGE = 'invalid_page_signal_dto_page';
+
+    public const string SUBSCRIPTION_AGENT_TYPE = 'valid_agent';
+
+    public const array SIGNALS = [
+        SignalTypeConstants::AGENT_SIGNAL => [
+            'invalid_page_signal_dto' => TopologyTestActionPayloadDTO::class,
+        ],
+    ];
 }
 
 final class TopologyValidPage extends AbstractPage
@@ -541,6 +601,44 @@ final class TopologyBadBrowserTable
     public const string TABLE = 'actual_browser_table';
 
     public const array BROWSER = [];
+}
+
+final class TopologyPageSignalDtoHilos extends HilosFacade
+{
+    public const array PAGES = [
+        TopologyPageSignalDtoPage::PAGE => TopologyPageSignalDtoPage::class,
+    ];
+
+    public const array AGENTS = [
+        TopologyValidAgent::AGENT_TYPE => TopologyValidAgent::class,
+    ];
+
+    /**
+     * Creates a no-op DB context for tests.
+     *
+     * @return DbContext Test DB context
+     */
+    protected static function createDb(): DbContext
+    {
+        return new TopologyTestDbContext();
+    }
+}
+
+final class TopologyInvalidPageSignalDtoHilos extends HilosFacade
+{
+    public const array PAGES = [
+        TopologyInvalidPageSignalDtoPage::PAGE => TopologyInvalidPageSignalDtoPage::class,
+    ];
+
+    /**
+     * Creates a no-op DB context for tests.
+     *
+     * @return DbContext Test DB context
+     */
+    protected static function createDb(): DbContext
+    {
+        return new TopologyTestDbContext();
+    }
 }
 
 final class TopologyValidHilos extends HilosFacade
@@ -967,6 +1065,17 @@ final class TopologyIndexedAgentUnknownConfigKeyHilos extends HilosFacade
     protected static function createDb(): DbContext
     {
         return new TopologyTestDbContext();
+    }
+}
+
+final class TopologyTestPageSignalData implements SignalDataInterface
+{
+    /**
+     * @return array<string, mixed>
+     */
+    public function toArray(): array
+    {
+        return [];
     }
 }
 

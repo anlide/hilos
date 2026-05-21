@@ -11,6 +11,7 @@ use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Group\AbstractGroup;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
+use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Table\Context\TableContext;
 use Hilos\Core\Topology\Exception\InvalidTopologyException;
@@ -238,8 +239,9 @@ abstract class Hilos
                     $signalRoutes[$signalType] = [];
                 }
 
-                foreach ($signalNames as $signalName) {
-                    if (!is_string($signalName) || $signalName === '') {
+                foreach ($signalNames as $key => $entry) {
+                    $signalName = self::resolvePageSignalRouteName($key, $entry);
+                    if ($signalName === null) {
                         continue;
                     }
 
@@ -249,6 +251,64 @@ abstract class Hilos
         }
 
         return $signalRoutes;
+    }
+
+    /**
+     * Returns page-owned named signal inner payload DTO classes.
+     *
+     * List-style signal name entries declare routing only. Map-style entries with
+     * class-string values declare both routing and inner payload DTO classes.
+     *
+     * @return array<string, array<string, class-string<SignalDataInterface>>> DTO class keyed by signal type, then signal name
+     */
+    public static function getPageSignalDtoRoutes(): array
+    {
+        $dtoRoutes = [];
+        foreach (static::PAGES as $page => $pageClass) {
+            if (!is_string($page) || !is_string($pageClass) || !is_subclass_of($pageClass, AbstractPage::class)) {
+                continue;
+            }
+
+            foreach ($pageClass::SIGNALS as $signalType => $signalNames) {
+                if (!is_string($signalType) || $signalType === '' || !is_array($signalNames) || $signalNames === []) {
+                    continue;
+                }
+
+                foreach ($signalNames as $key => $entry) {
+                    if (!is_string($key) || $key === '' || !is_string($entry) || $entry === '') {
+                        continue;
+                    }
+
+                    if (!isset($dtoRoutes[$signalType])) {
+                        $dtoRoutes[$signalType] = [];
+                    }
+
+                    $dtoRoutes[$signalType][$key] = $entry;
+                }
+            }
+        }
+
+        return $dtoRoutes;
+    }
+
+    /**
+     * Resolves a named page signal route entry to its signal name.
+     *
+     * @param int|string $key SIGNALS entry key
+     * @param mixed $entry SIGNALS entry value
+     * @return ?string Signal name when the entry declares a named route
+     */
+    private static function resolvePageSignalRouteName(int|string $key, mixed $entry): ?string
+    {
+        if (is_int($key)) {
+            return is_string($entry) && $entry !== '' ? $entry : null;
+        }
+
+        if (is_string($key) && $key !== '') {
+            return $key;
+        }
+
+        return null;
     }
 
     /**

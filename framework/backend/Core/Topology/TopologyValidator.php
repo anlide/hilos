@@ -11,6 +11,7 @@ use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Group\AbstractGroup;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
+use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Table\Definition\TableDefinition;
 use Hilos\Core\Topology\Exception\InvalidTopologyException;
 use Hilos\Hilos;
@@ -46,6 +47,7 @@ final class TopologyValidator
         $this->validatePageActionRoutes($pages, $hilosClass::getPageActionRoutes(), $errors);
         $this->validateActionDtoRoutes($pages, $hilosClass::getActionDtoRoutes(), $errors);
         $this->validatePageSignalRoutes($pages, $hilosClass::getPageSignalRoutes(), $errors);
+        $this->validatePageSignalDtoRoutes($pages, $hilosClass::getPageSignalDtoRoutes(), $errors);
         $this->validateAgentSignalRoutes(
             $agents,
             $hilosClass::getAgentSignalRoutes(),
@@ -486,10 +488,26 @@ final class TopologyValidator
                     continue;
                 }
 
-                foreach ($signalNames as $signalName) {
-                    if (!is_string($signalName) || $signalName === '') {
-                        $errors[] = "PAGES[{$page}] class {$pageClass} SIGNALS[{$signalType}] must contain only non-empty signal names";
+                foreach ($signalNames as $key => $entry) {
+                    $signalName = $this->resolvePageSignalRouteName($key, $entry);
+                    if ($signalName === null) {
+                        $errors[] = "PAGES[{$page}] class {$pageClass} SIGNALS[{$signalType}] must contain only non-empty signal names or valid signal DTO map entries";
                         continue;
+                    }
+
+                    if (is_string($key) && $key !== '' && is_string($entry) && $entry !== '') {
+                        if (!$this->isExistingClassString(
+                            $entry,
+                            "PAGES[{$page}] class {$pageClass} SIGNALS[{$signalType}][{$signalName}]",
+                            $errors,
+                        )) {
+                            continue;
+                        }
+
+                        if (!is_subclass_of($entry, SignalDataInterface::class)) {
+                            $errors[] = "PAGES[{$page}] class {$pageClass} SIGNALS[{$signalType}][{$signalName}] class {$entry} must implement "
+                                . SignalDataInterface::class;
+                        }
                     }
 
                     if (isset($namedRoutes[$signalType][$signalName]) && $namedRoutes[$signalType][$signalName] !== $page) {
@@ -546,6 +564,92 @@ final class TopologyValidator
                 }
             }
         }
+    }
+
+    /**
+     * Validates page-owned named signal inner payload DTO route declarations.
+     *
+     * @param array<mixed, mixed> $pages Page registry
+     * @param array<mixed, mixed> $pageSignalDtoRoutes Computed page signal DTO route registry
+     * @param list<string> $errors Validation error accumulator
+     */
+    private function validatePageSignalDtoRoutes(array $pages, array $pageSignalDtoRoutes, array &$errors): void
+    {
+        $declaredRoutes = [];
+        foreach ($pages as $page => $pageClass) {
+            if (!is_string($page) || !is_string($pageClass) || !is_subclass_of($pageClass, AbstractPage::class)) {
+                continue;
+            }
+
+            foreach ($pageClass::SIGNALS as $signalType => $signalNames) {
+                if (!is_string($signalType) || $signalType === '' || !is_array($signalNames) || $signalNames === []) {
+                    continue;
+                }
+
+                foreach ($signalNames as $key => $entry) {
+                    if (!is_string($key) || $key === '' || !is_string($entry) || $entry === '') {
+                        continue;
+                    }
+
+                    if (!isset($declaredRoutes[$signalType])) {
+                        $declaredRoutes[$signalType] = [];
+                    }
+
+                    $declaredRoutes[$signalType][$key] = $entry;
+                }
+            }
+        }
+
+        foreach ($declaredRoutes as $signalType => $routes) {
+            foreach ($routes as $signalName => $dtoClass) {
+                if (($pageSignalDtoRoutes[$signalType][$signalName] ?? null) !== $dtoClass) {
+                    $errors[] = "Page signal DTO route {$signalType}/{$signalName} is missing from computed page signal DTO routes";
+                }
+            }
+        }
+
+        foreach ($pageSignalDtoRoutes as $signalType => $routes) {
+            if (!is_string($signalType) || $signalType === '') {
+                $errors[] = 'Computed page signal DTO routes contain a non-string or empty signal type key';
+                continue;
+            }
+
+            if (!is_array($routes)) {
+                $errors[] = "Computed page signal DTO route {$signalType} must be a named route map";
+                continue;
+            }
+
+            foreach ($routes as $signalName => $dtoClass) {
+                if (!is_string($signalName) || $signalName === '') {
+                    $errors[] = "Computed page signal DTO route {$signalType} contains a non-string or empty signal name";
+                    continue;
+                }
+
+                if (!is_string($dtoClass) || $dtoClass === '' || !is_subclass_of($dtoClass, SignalDataInterface::class)) {
+                    $errors[] = "Computed page signal DTO route {$signalType}/{$signalName} must reference a valid SignalDataInterface class";
+                }
+            }
+        }
+    }
+
+    /**
+     * Resolves a named page signal route entry to its signal name.
+     *
+     * @param int|string $key SIGNALS entry key
+     * @param mixed $entry SIGNALS entry value
+     * @return ?string Signal name when the entry declares a named route
+     */
+    private function resolvePageSignalRouteName(int|string $key, mixed $entry): ?string
+    {
+        if (is_int($key)) {
+            return is_string($entry) && $entry !== '' ? $entry : null;
+        }
+
+        if (is_string($key) && $key !== '') {
+            return $key;
+        }
+
+        return null;
     }
 
     /**

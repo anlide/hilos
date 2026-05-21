@@ -37,7 +37,13 @@ abstract class AbstractPage
     /** WebSocket actions owned by this page, keyed by action name with payload DTO class values. */
     public const array ACTIONS = [];
 
-    /** Non-action signal routes owned by this page, keyed by signal type. */
+    /**
+     * Non-action signal routes owned by this page, keyed by signal type.
+     *
+     * Type-wide routes use an empty list (`SignalTypeConstants::FRAME_BINARY => []`).
+     * Named routes use either a list of signal name strings or
+     * `signalName => SignalDataInterface` class map entries.
+     */
     public const array SIGNALS = [];
 
     /** Browser data config declared by data-bearing pages. */
