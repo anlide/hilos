@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Socket\WebSocket\DTO;
 
-use Demo\Chat\Core\Router\DTO\ChatMessageDTOInterface;
 use Hilos\Socket\WebSocket\DTO\WebSocketCloseSignalDTO as FrameworkWebSocketCloseSignalDTO;
 
 /**
@@ -13,7 +12,7 @@ use Hilos\Socket\WebSocket\DTO\WebSocketCloseSignalDTO as FrameworkWebSocketClos
  * Represents a WebSocket close signal sent from WebSocket client to chat agent.
  * Extends framework WebSocketCloseSignalDTO for chat-specific functionality.
  */
-final class WebSocketCloseSignalDTO extends FrameworkWebSocketCloseSignalDTO implements ChatMessageDTOInterface
+final class WebSocketCloseSignalDTO extends FrameworkWebSocketCloseSignalDTO
 {
     /**
      * Creates DTO from array.

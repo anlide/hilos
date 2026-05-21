@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Socket\WebSocket\DTO;
 
-use Demo\Chat\Core\Router\DTO\ChatMessageDTOInterface;
 use Hilos\Socket\WebSocket\DTO\WebSocketActionSignalDTO as FrameworkWebSocketActionSignalDTO;
 
 /**
@@ -13,7 +12,7 @@ use Hilos\Socket\WebSocket\DTO\WebSocketActionSignalDTO as FrameworkWebSocketAct
  * Represents an action signal sent from WebSocket client to chat agent.
  * Extends framework WebSocketActionSignalDTO for chat-specific functionality.
  */
-final class WebSocketActionSignalDTO extends FrameworkWebSocketActionSignalDTO implements ChatMessageDTOInterface
+final class WebSocketActionSignalDTO extends FrameworkWebSocketActionSignalDTO
 {
     /**
      * Creates DTO from array.

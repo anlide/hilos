@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Socket\WebSocket\DTO;
 
-use Demo\Chat\Core\Router\DTO\ChatMessageDTOInterface;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Http\RequestQueryParams;
 use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO as FrameworkWebSocketHandshakeSignalDTO;
@@ -15,7 +14,7 @@ use Hilos\Socket\WebSocket\DTO\WebSocketHandshakeSignalDTO as FrameworkWebSocket
  * Represents a WebSocket handshake signal sent from WebSocket client to chat agent.
  * Extends framework WebSocketHandshakeSignalDTO for chat-specific functionality.
  */
-final class WebSocketHandshakeSignalDTO extends FrameworkWebSocketHandshakeSignalDTO implements ChatMessageDTOInterface
+final class WebSocketHandshakeSignalDTO extends FrameworkWebSocketHandshakeSignalDTO
 {
     /**
      * Creates DTO from array. Override returns correct child class type.
