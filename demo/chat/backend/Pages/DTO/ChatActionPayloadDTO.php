@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Demo\Chat\Core\Page\DTO;
+namespace Demo\Chat\Pages\DTO;
 
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 

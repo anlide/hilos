@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Demo\Chat\Tables\Settings\DTO;
 
 use Demo\Chat\Constants\ChatSignalConstants;
-use Demo\Chat\Core\Page\DTO\ChatActionPayloadDTO;
+use Demo\Chat\Pages\DTO\ChatActionPayloadDTO;
 use Hilos\Database\Entity\Item\Setting;
 use Hilos\Constants\SignalPayloadConstants;
 

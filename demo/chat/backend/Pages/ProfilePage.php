@@ -9,7 +9,7 @@ use Demo\Chat\Constants\AgentType;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\ConnectionRuntimeConstants;
 use Demo\Chat\Constants\PageConstants;
-use Demo\Chat\Core\Page\DTO\RenameActionDTO;
+use Demo\Chat\Pages\DTO\Profile\RenameActionDTO;
 use Demo\Chat\Core\Router\DTO\ActionFailSignalData;
 use Demo\Chat\Core\Router\DTO\ActionSuccessSignalData;
 use Demo\Chat\Core\Router\DTO\RenameModerationResultSignalData;

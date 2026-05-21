@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Demo\Chat\Tests\Unit;
 
 use Demo\Chat\Constants\ConnectionRuntimeConstants;
-use Demo\Chat\Core\Page\DTO\AttachmentDraftDeleteActionDTO;
+use Demo\Chat\Pages\DTO\Main\AttachmentDraftDeleteActionDTO;
 use Demo\Chat\Core\Router\DTO\AttachmentDraftSignalData;
 use Demo\Chat\Core\Router\DTO\SelfConnectionSignalData;
 use PHPUnit\Framework\TestCase;

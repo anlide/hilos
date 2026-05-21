@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Demo\Chat\Tables\ModeratorPiece\DTO;
 
 use Demo\Chat\Constants\ChatSignalConstants;
-use Demo\Chat\Core\Page\DTO\ChatActionPayloadDTO;
+use Demo\Chat\Pages\DTO\ChatActionPayloadDTO;
 use Demo\Chat\Database\Object\Item\ModeratorPromptPiece as ObjectModeratorPromptPiece;
 use Hilos\Constants\SignalPayloadConstants;
 

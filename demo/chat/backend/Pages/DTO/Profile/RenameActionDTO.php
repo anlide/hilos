@@ -2,9 +2,10 @@
 
 declare(strict_types=1);
 
-namespace Demo\Chat\Core\Page\DTO;
+namespace Demo\Chat\Pages\DTO\Profile;
 
 use Demo\Chat\Constants\ChatSignalConstants;
+use Demo\Chat\Pages\DTO\ChatActionPayloadDTO;
 
 /**
  * RenameActionDTO - DTO for rename action payload.

@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Tests\Unit;
 
-use Demo\Chat\Core\Page\DTO\MessageActionDTO;
+use Demo\Chat\Pages\DTO\Main\MessageActionDTO;
 use PHPUnit\Framework\TestCase;
 
 /**

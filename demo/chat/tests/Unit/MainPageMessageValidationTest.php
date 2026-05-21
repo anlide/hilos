@@ -6,8 +6,8 @@ namespace Demo\Chat\Tests\Unit;
 
 use Demo\Chat\Agents\ChatAgent;
 use Demo\Chat\Constants\ChatSignalConstants;
-use Demo\Chat\Core\Page\DTO\AttachmentDraftDeleteActionDTO;
-use Demo\Chat\Core\Page\DTO\MessageActionDTO;
+use Demo\Chat\Pages\DTO\Main\AttachmentDraftDeleteActionDTO;
+use Demo\Chat\Pages\DTO\Main\MessageActionDTO;
 use Demo\Chat\Hilos;
 use Demo\Chat\Pages\MainPage;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;

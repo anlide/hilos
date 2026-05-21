@@ -2,9 +2,10 @@
 
 declare(strict_types=1);
 
-namespace Demo\Chat\Core\Page\DTO;
+namespace Demo\Chat\Pages\DTO\Hilos\Guardian;
 
 use Demo\Chat\Constants\ChatSignalConstants;
+use Demo\Chat\Pages\DTO\ChatActionPayloadDTO;
 
 /**
  * GuardianAgentRunStartActionDTO - DTO for guardian run start action.
