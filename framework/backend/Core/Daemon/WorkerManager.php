@@ -10,6 +10,7 @@ use Hilos\Constants\SignalTypeConstants;
 use Hilos\Constants\WorkerConstants;
 use Hilos\Core\Agent\AgentInterface;
 use Hilos\Core\Agent\Exception\AgentException;
+use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
 use Hilos\Database\DbSyncApplicator;
 use Hilos\Runtime\RtSyncApplicator;
 use Hilos\Core\Agent\AgentManager;
@@ -919,13 +920,17 @@ abstract class WorkerManager extends BaseManager
                         Hilos::$ac?->logApiAgentAction($apiRequestId, $agent->getType(), $agent->getIndex(), $name, $signalData->toArray());
                     }
                     $this->onAgentSignalHandled($name, $signalData);
+                    $parsedAgentSignalData = $signalData;
                     try {
-                        $agent->onSignalAgent($signalData, $source, $name);
+                        $parsedAgentSignalData = Hilos::$sr?->createAgentSignalPayloadDTO($name, $signalData) ?? $signalData;
+                        $agent->onSignalAgent($parsedAgentSignalData, $source, $name);
+                    } catch (InvalidAgentSignalPayloadException $e) {
+                        Logger::logAgentError($agent->getId(), "Agent signal payload validation failed: {$e->getMessage()}");
                     } catch (AgentException $e) {
                         Logger::logAgentError($agent->getId(), "Agent signal handler failed: {$e->getMessage()}");
                     }
                     try {
-                        $this->getPageSignalRouter($agentId, $agent)->dispatchAgentSignal($signalData, $source, $name);
+                        $this->getPageSignalRouter($agentId, $agent)->dispatchAgentSignal($parsedAgentSignalData, $source, $name);
                     } catch (ValidationException $e) {
                         Logger::logAgentError($agent->getId(), "Page signal validation failed: {$e->getMessage()}");
                     } catch (AgentException $e) {

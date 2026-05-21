@@ -8,8 +8,10 @@ use Hilos\BaseDTO;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\Config\AgentSignalConfigKey;
+use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\SignalDTO;
+use Hilos\Core\Router\SignalData;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalRouter;
@@ -105,6 +107,73 @@ final class SignalRouterIndexedAgentSignalTest extends TestCase
         $this->assertSame([], $destinations);
     }
 
+    public function testParsesAgentSignalPayloadFromTopology(): void
+    {
+        $router = new IndexedAgentSignalDtoTestRouter();
+        $parsed = $router->createAgentSignalPayloadDTO(
+            IndexedAgentSignalDtoTestAgent::TYPED_SIGNAL,
+            new AgentSignalData(new SignalData(['message' => 'hello'])),
+        );
+
+        $this->assertInstanceOf(IndexedAgentSignalDtoTestPayload::class, $parsed->data);
+        $this->assertSame('hello', $parsed->data->message);
+    }
+
+    public function testTypedAgentSignalPayloadPassesThroughUnchanged(): void
+    {
+        $router = new IndexedAgentSignalDtoTestRouter();
+        $payload = new IndexedAgentSignalDtoTestPayload('already-typed');
+        $signalData = new AgentSignalData($payload);
+
+        $parsed = $router->createAgentSignalPayloadDTO(
+            IndexedAgentSignalDtoTestAgent::TYPED_SIGNAL,
+            $signalData,
+        );
+
+        $this->assertSame($signalData, $parsed);
+        $this->assertSame($payload, $parsed->data);
+    }
+
+    public function testInvalidAgentSignalPayloadThrowsWhenTopologyDtoDoesNotMatch(): void
+    {
+        $router = new IndexedAgentSignalDtoTestRouter();
+
+        $this->expectException(InvalidAgentSignalPayloadException::class);
+        $this->expectExceptionMessage(IndexedAgentSignalDtoTestPayload::class);
+
+        $router->createAgentSignalPayloadDTO(
+            IndexedAgentSignalDtoTestAgent::TYPED_SIGNAL,
+            new AgentSignalData(new IndexedAgentSignalTestPayload(['entityId' => 42])),
+        );
+    }
+
+    public function testIndexedSignalRoutesWithDeclaredDto(): void
+    {
+        $destinations = (new IndexedAgentSignalDtoTestRouter())->getDestinations(
+            $this->agentSignal(
+                IndexedAgentSignalDtoTestAgent::INDEXED_TYPED_SIGNAL,
+                ['entityId' => 7, 'message' => 'route-me'],
+            ),
+        );
+
+        $this->assertSame([
+            ['type' => 'agent', 'agentType' => IndexedAgentSignalDtoTestAgent::AGENT_TYPE, 'agentIndex' => '7'],
+        ], $destinations);
+    }
+
+    public function testParsesIndexedAgentSignalPayloadFromTopology(): void
+    {
+        $router = new IndexedAgentSignalDtoTestRouter();
+        $parsed = $router->createAgentSignalPayloadDTO(
+            IndexedAgentSignalDtoTestAgent::INDEXED_TYPED_SIGNAL,
+            new AgentSignalData(new SignalData(['entityId' => 7, 'message' => 'route-me'])),
+        );
+
+        $this->assertInstanceOf(IndexedAgentSignalDtoTestPayload::class, $parsed->data);
+        $this->assertSame(7, $parsed->data->entityId);
+        $this->assertSame('route-me', $parsed->data->message);
+    }
+
     /**
      * Builds an AGENT_SIGNAL DTO with an in-memory inner payload.
      *
@@ -135,6 +204,19 @@ final class IndexedAgentSignalTestRouter extends SignalRouter
     }
 }
 
+final class IndexedAgentSignalDtoTestRouter extends SignalRouter
+{
+    /**
+     * Returns DTO fixture facade for topology reads.
+     *
+     * @return class-string<HilosFacade> Fixture facade class
+     */
+    protected function hilosClass(): string
+    {
+        return IndexedAgentSignalDtoTestHilos::class;
+    }
+}
+
 final class IndexedAgentSignalTestAgent extends AbstractAgent
 {
     public const string AGENT_TYPE = 'indexed_test_agent';
@@ -158,6 +240,30 @@ final class IndexedAgentSignalTestAgent extends AbstractAgent
     }
 }
 
+final class IndexedAgentSignalDtoTestAgent extends AbstractAgent
+{
+    public const string AGENT_TYPE = 'indexed_dto_test_agent';
+
+    public const string TYPED_SIGNAL = 'typed_test_signal';
+
+    public const string INDEXED_TYPED_SIGNAL = 'indexed_typed_test_signal';
+
+    public const array AGENT_SIGNALS = [
+        self::TYPED_SIGNAL => IndexedAgentSignalDtoTestPayload::class,
+        self::INDEXED_TYPED_SIGNAL => [
+            AgentSignalConfigKey::INDEX_FIELD => 'entityId',
+            AgentSignalConfigKey::DTO => IndexedAgentSignalDtoTestPayload::class,
+        ],
+    ];
+
+    /**
+     * No-op stop hook for indexed agent signal DTO tests.
+     */
+    public function onStop(): void
+    {
+    }
+}
+
 final class IndexedAgentSignalTestDbContext extends DbContext
 {
     /**
@@ -171,6 +277,24 @@ final class IndexedAgentSignalTestDbContext extends DbContext
 final class IndexedAgentSignalTestHilos extends HilosFacade
 {
     public const array AGENTS = [
+        IndexedAgentSignalTestAgent::AGENT_TYPE => IndexedAgentSignalTestAgent::class,
+    ];
+
+    /**
+     * Creates a no-op DB context for tests.
+     *
+     * @return DbContext Test DB context
+     */
+    protected static function createDb(): DbContext
+    {
+        return new IndexedAgentSignalTestDbContext();
+    }
+}
+
+final class IndexedAgentSignalDtoTestHilos extends HilosFacade
+{
+    public const array AGENTS = [
+        IndexedAgentSignalDtoTestAgent::AGENT_TYPE => IndexedAgentSignalDtoTestAgent::class,
         IndexedAgentSignalTestAgent::AGENT_TYPE => IndexedAgentSignalTestAgent::class,
     ];
 
@@ -211,5 +335,50 @@ final class IndexedAgentSignalTestPayload extends BaseDTO implements SignalDataI
     public static function fromArray(array $data): static
     {
         return new self($data);
+    }
+}
+
+/**
+ * Typed inner payload DTO for agent signal topology parsing tests.
+ */
+final class IndexedAgentSignalDtoTestPayload extends BaseDTO implements SignalDataInterface
+{
+    /**
+     * @param ?int $entityId Indexed routing field
+     */
+    public function __construct(
+        public readonly string $message = '',
+        public readonly ?int $entityId = null,
+    ) {
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function toArray(): array
+    {
+        $data = ['message' => $this->message];
+        if ($this->entityId !== null) {
+            $data['entityId'] = $this->entityId;
+        }
+
+        return $data;
+    }
+
+    /**
+     * @param array<string, mixed> $data
+     */
+    public static function fromArray(array $data): static
+    {
+        if (!array_key_exists('message', $data)) {
+            throw new \InvalidArgumentException('Missing message');
+        }
+
+        $entityId = $data['entityId'] ?? null;
+
+        return new self(
+            message: is_string($data['message']) ? $data['message'] : '',
+            entityId: is_int($entityId) ? $entityId : null,
+        );
     }
 }

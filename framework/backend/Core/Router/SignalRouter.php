@@ -7,8 +7,10 @@ namespace Hilos\Core\Router;
 use Hilos\API\Router\Exception\GroupSubscriptionNotFoundException;
 use Hilos\API\Router\Exception\PageSubscriptionMismatchException;
 use Hilos\API\Router\Exception\PageSubscriptionNotFoundException;
+use Hilos\BaseDTO;
 use Hilos\Constants\SignalPayloadConstants;
 use Hilos\Constants\SignalTypeConstants;
+use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Hilos;
 use Hilos\Socket\WebSocket\DTO\WebSocketGroupSubscribeSignalDTO;
@@ -1034,5 +1036,40 @@ class SignalRouter
             'agentType' => $agentType,
             'agentIndex' => $agentIndex,
         ]];
+    }
+
+    /**
+     * Creates agent-owned signal inner payload DTO from project topology.
+     *
+     * @param string $signalName Signal name
+     * @param AgentSignalData $signalData Wrapped agent signal payload
+     * @return AgentSignalData Validated or passthrough wrapper
+     * @throws InvalidAgentSignalPayloadException When topology declares a DTO and payload does not match
+     */
+    public function createAgentSignalPayloadDTO(string $signalName, AgentSignalData $signalData): AgentSignalData
+    {
+        $dtoClass = $this->hilosClass()::getAgentSignalDtoRoutes()[$signalName] ?? null;
+        if (!is_string($dtoClass) || !is_subclass_of($dtoClass, SignalDataInterface::class)) {
+            return $signalData;
+        }
+
+        $payload = $signalData->data;
+        if ($payload instanceof $dtoClass) {
+            return $signalData;
+        }
+
+        $dataArray = $payload instanceof BaseDTO ? $payload->toArray() : [];
+
+        try {
+            $parsed = $dtoClass::fromArray($dataArray);
+        } catch (\Throwable) {
+            throw new InvalidAgentSignalPayloadException($signalName, $dtoClass, $payload);
+        }
+
+        if (!$parsed instanceof $dtoClass) {
+            throw new InvalidAgentSignalPayloadException($signalName, $dtoClass, $payload);
+        }
+
+        return new AgentSignalData($parsed);
     }
 }
