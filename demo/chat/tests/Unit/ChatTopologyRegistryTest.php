@@ -8,7 +8,6 @@ use Demo\Chat\Browser\ChatBrowserContext;
 use Demo\Chat\Constants\AgentType;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\PageConstants;
-use Demo\Chat\Core\Page\ChatPageFactory;
 use Demo\Chat\Hilos;
 use Demo\Chat\Tables\ChatTableContext;
 use Hilos\Constants\SignalTypeConstants;
@@ -18,6 +17,7 @@ use Hilos\Core\Browser\Config\BrowserPageTableBindings;
 use Hilos\Core\Browser\Config\BrowserParamKey;
 use Hilos\Core\Browser\Config\BrowserTableConfig;
 use Hilos\Core\Page\ActionRouteConfig;
+use Hilos\Core\Page\HilosPageFactory;
 use Hilos\Core\Page\PageAgentInterface;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalSourceInterface;
@@ -184,12 +184,24 @@ final class ChatTopologyRegistryTest extends TestCase
     {
         $declaredRoutes = [];
         foreach (Hilos::PAGES as $page => $pageClass) {
-            foreach ($pageClass::ACTIONS as $action) {
+            foreach ($pageClass::ACTIONS as $action => $_dtoClass) {
                 $declaredRoutes[$action] = $page;
             }
         }
 
         $this->assertSame($declaredRoutes, Hilos::getPageActionRoutes());
+    }
+
+    public function testActionDtoRoutesCoverDeclaredPageActions(): void
+    {
+        $declaredRoutes = [];
+        foreach (Hilos::PAGES as $page => $pageClass) {
+            foreach ($pageClass::ACTIONS as $action => $dtoClass) {
+                $declaredRoutes[$action] = $dtoClass;
+            }
+        }
+
+        $this->assertSame($declaredRoutes, Hilos::getActionDtoRoutes());
     }
 
     public function testPageSignalRoutesCoverDeclaredPageSignals(): void
@@ -344,9 +356,9 @@ final class ChatTopologyRegistryTest extends TestCase
         $this->assertNull($resolveTableConfig($context, 'missing_table'));
     }
 
-    public function testChatPageFactoryCreatesRegisteredPagesFromTopology(): void
+    public function testHilosPageFactoryCreatesRegisteredPagesFromTopology(): void
     {
-        $factory = new ChatPageFactory($this->pageAgent());
+        $factory = new HilosPageFactory($this->pageAgent(), Hilos::class);
 
         foreach (Hilos::PAGES as $page => $pageClass) {
             $this->assertInstanceOf($pageClass, $factory->getPage($page));

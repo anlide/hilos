@@ -15,10 +15,12 @@ The agent's associated Page handles the action via `onAction(acceptKey, actionNa
 `ActionPayloadDTO` contains the raw `data` array; parse it into a typed DTO inside `onAction`.
 
 Backend action ownership is page-owned: concrete pages declare supported
-WebSocket action names in `PageClass::ACTIONS`. The project facade computes
-`Hilos::getPageActionRoutes()` for `action -> page` and
-`Hilos::getActionAgentRoutes()` for `action -> agent`; routers and WebSocket
-clients should read those registries instead of maintaining separate allowlists.
+WebSocket actions in `PageClass::ACTIONS` as `action name =>
+ActionPayloadDTO class`. The project facade computes `Hilos::getPageActionRoutes()`
+for `action -> page`, `Hilos::getActionDtoRoutes()` for `action -> payload DTO
+class`, and `Hilos::getActionAgentRoutes()` for `action -> agent`; routers and
+WebSocket clients should read those registries instead of maintaining separate
+allowlists.
 
 ## Signals (server → client)
 

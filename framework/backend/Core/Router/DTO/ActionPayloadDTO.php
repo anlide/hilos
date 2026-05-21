@@ -13,14 +13,12 @@ use Hilos\BaseDTO;
  * Child classes in demo/app level define specific action DTOs.
  *
  * Usage:
- *   // In PageFactory
- *   public function createActionPayloadDTO(string $action, array $data): ActionPayloadDTO
- *   {
- *       return match ($action) {
- *           'message' => MessageActionDTO::fromArray($data),
- *           default => new UnknownActionPayloadDTO($action, $data),
- *       };
- *   }
+ *   // In PageClass::ACTIONS
+ *   public const array ACTIONS = [
+ *       'message' => MessageActionDTO::class,
+ *   ];
+ *
+ *   // Parsed by HilosPageFactory via Hilos::getActionDtoRoutes()
  */
 abstract class ActionPayloadDTO extends BaseDTO
 {

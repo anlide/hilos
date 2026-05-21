@@ -48,9 +48,9 @@ final class MainPage extends AbstractPage
     public const string SUBSCRIPTION_AGENT_TYPE = AgentType::CHAT;
 
     public const array ACTIONS = [
-        ChatSignalConstants::MESSAGE,
-        ChatSignalConstants::FILE_UPLOAD_INIT,
-        ChatSignalConstants::ATTACHMENT_DRAFT_DELETE,
+        ChatSignalConstants::MESSAGE => MessageActionDTO::class,
+        ChatSignalConstants::FILE_UPLOAD_INIT => FileUploadInitActionDTO::class,
+        ChatSignalConstants::ATTACHMENT_DRAFT_DELETE => AttachmentDraftDeleteActionDTO::class,
     ];
 
     public const array SIGNALS = [

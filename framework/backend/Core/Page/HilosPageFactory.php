@@ -6,16 +6,30 @@ namespace Hilos\Core\Page;
 
 use Hilos\Constants\HilosPageConstants;
 use Hilos\Core\Page\Exception\PageNotFoundException;
+use Hilos\Core\Router\DTO\ActionPayloadDTO;
+use Hilos\Core\Router\DTO\UnknownActionPayloadDTO;
+use Hilos\Hilos;
 
 /**
- * HilosPageFactory - Factory for creating Hilos admin page instances.
+ * HilosPageFactory - Factory for creating page instances from project topology.
  *
- * Hilos pages are abstract; projects must implement concrete classes.
- * For HILOS_* page names, createPage() throws - child factory (e.g. ChatPageFactory)
- * must handle these and return concrete implementations.
+ * Resolves pages and action payload DTOs from the active project Hilos facade.
+ * Known Hilos admin page ids remain visible through hasPage() until the project
+ * registers concrete implementations in Hilos::PAGES.
  */
 class HilosPageFactory extends AbstractPageFactory
 {
+    /**
+     * Creates a page factory bound to a project topology registry.
+     *
+     * @param PageAgentInterface $agent Agent instance
+     * @param class-string<Hilos> $hilosClass Active project Hilos facade class
+     */
+    public function __construct(PageAgentInterface $agent, protected string $hilosClass)
+    {
+        parent::__construct($agent);
+    }
+
     /**
      * All Hilos admin page ids (dashboard, i18n subtree, guardian, etc.).
      *
@@ -90,16 +104,19 @@ class HilosPageFactory extends AbstractPageFactory
     }
 
     /**
-     * Create page instance by Hilos page name.
+     * Create page instance from the project topology registry.
      *
-     * For HILOS_* constants, throws - implement in project's page factory.
-     *
-     * @param string $pageName Page constant (e.g. HilosPageConstants::HILOS_DASHBOARD)
+     * @param string $pageName Page constant
      * @return AbstractPage Page instance
-     * @throws PageNotFoundException When page cannot be created (HILOS_* or unknown)
+     * @throws PageNotFoundException When page cannot be created
      */
     protected function createPage(string $pageName): AbstractPage
     {
+        $pageClass = $this->hilosClass::PAGES[$pageName] ?? null;
+        if (is_string($pageClass)) {
+            return new $pageClass($this->agent);
+        }
+
         if (in_array($pageName, self::hilosPageIds(), true)) {
             throw new PageNotFoundException(
                 "Hilos page '{$pageName}' requires implementation in project. "
@@ -111,13 +128,31 @@ class HilosPageFactory extends AbstractPageFactory
     }
 
     /**
-     * Check if Hilos page name is supported.
+     * Check if page is registered locally or known as a Hilos admin page id.
      *
      * @param string $pageName Page name constant
      * @return bool True if page exists
      */
     public function hasPage(string $pageName): bool
     {
-        return in_array($pageName, self::hilosPageIds(), true);
+        return isset($this->hilosClass::PAGES[$pageName])
+            || in_array($pageName, self::hilosPageIds(), true);
+    }
+
+    /**
+     * Creates action payload DTO from project topology action routes.
+     *
+     * @param string $action Action name
+     * @param array<string, mixed> $data Payload data
+     * @return ActionPayloadDTO Action payload DTO
+     */
+    public function createActionPayloadDTO(string $action, array $data): ActionPayloadDTO
+    {
+        $dtoClass = $this->hilosClass::getActionDtoRoutes()[$action] ?? null;
+        if (is_string($dtoClass) && is_subclass_of($dtoClass, ActionPayloadDTO::class)) {
+            return $dtoClass::fromArray($data);
+        }
+
+        return new UnknownActionPayloadDTO($action, $data);
     }
 }

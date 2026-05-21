@@ -8,7 +8,6 @@ use Demo\Chat\Agents\ChatAgent;
 use Demo\Chat\Constants\ChatEventType;
 use Demo\Chat\Constants\ChatSignalConstants;
 use Demo\Chat\Constants\ConnectionRuntimeConstants;
-use Demo\Chat\Core\Page\ChatPageFactory;
 use Demo\Chat\Core\Page\DTO\RenameActionDTO;
 use Demo\Chat\Core\Router\ChatSignalRouter;
 use Demo\Chat\Core\Router\DTO\ActionFailSignalData;
@@ -20,6 +19,7 @@ use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Page\ActionRouteConfig;
+use Hilos\Core\Page\HilosPageFactory;
 use Hilos\Core\Page\PageSignalRouter;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\WebSocketSignalData;
@@ -155,7 +155,7 @@ final class ProfileRenameModerationTest extends IntegrationTestCase
         RenameModerationResultSignalData $result,
     ): void {
         $router = new PageSignalRouter(
-            new ChatPageFactory($agent),
+            new HilosPageFactory($agent, Hilos::class),
             new ActionRouteConfig(),
             [
                 SignalTypeConstants::AGENT_SIGNAL => [

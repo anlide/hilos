@@ -10,6 +10,7 @@ use Hilos\Core\Agent\Config\AgentSignalConfigKey;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Group\AbstractGroup;
 use Hilos\Core\Page\AbstractPage;
+use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Table\Context\TableContext;
 use Hilos\Core\Topology\Exception\InvalidTopologyException;
@@ -140,7 +141,7 @@ abstract class Hilos
                 continue;
             }
 
-            foreach ($pageClass::ACTIONS as $action) {
+            foreach ($pageClass::ACTIONS as $action => $_dtoClass) {
                 if (!is_string($action) || $action === '') {
                     continue;
                 }
@@ -150,6 +151,34 @@ abstract class Hilos
         }
 
         return $actionRoutes;
+    }
+
+    /**
+     * Returns page-owned WebSocket action payload DTO classes.
+     *
+     * Invalid page registry entries and malformed action declarations are skipped
+     * here and reported by topology validation.
+     *
+     * @return array<string, class-string<ActionPayloadDTO>> DTO class keyed by action name
+     */
+    public static function getActionDtoRoutes(): array
+    {
+        $dtoRoutes = [];
+        foreach (static::PAGES as $page => $pageClass) {
+            if (!is_string($page) || !is_string($pageClass) || !is_subclass_of($pageClass, AbstractPage::class)) {
+                continue;
+            }
+
+            foreach ($pageClass::ACTIONS as $action => $dtoClass) {
+                if (!is_string($action) || $action === '' || !is_string($dtoClass)) {
+                    continue;
+                }
+
+                $dtoRoutes[$action] = $dtoClass;
+            }
+        }
+
+        return $dtoRoutes;
     }
 
     /**

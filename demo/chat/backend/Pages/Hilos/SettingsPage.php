@@ -31,9 +31,9 @@ final class SettingsPage extends AbstractHilosSettingsPage
     public const string SUBSCRIPTION_AGENT_TYPE = AgentType::HILOS_INDEX;
 
     public const array ACTIONS = [
-        ChatSignalConstants::SETTING_ADD,
-        ChatSignalConstants::SETTING_UPDATE,
-        ChatSignalConstants::SETTING_DELETE,
+        ChatSignalConstants::SETTING_ADD => SettingAddActionDTO::class,
+        ChatSignalConstants::SETTING_UPDATE => SettingUpdateActionDTO::class,
+        ChatSignalConstants::SETTING_DELETE => SettingDeleteActionDTO::class,
     ];
 
     public const array BROWSER = [

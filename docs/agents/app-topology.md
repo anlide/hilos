@@ -31,12 +31,16 @@ table contexts when they can read the project registry.
   `SignalRouter` resolves group subscription signals from that computed registry
   through the active project Hilos facade; project routers should not rebuild
   the group-to-agent list in config.
-- Each page class declares WebSocket actions it owns in `PageClass::ACTIONS`.
-  `Hilos::getPageActionRoutes()` computes `action -> page`, and
-  `Hilos::getActionAgentRoutes()` derives `action -> agent` through the owning
-  page's `SUBSCRIPTION_AGENT_TYPE`. Signal routers, worker page routers, and
-  WebSocket client action allowlists should read these computed registries
-  instead of owning duplicate action lists.
+- Each page class declares WebSocket actions it owns in `PageClass::ACTIONS` as
+  `action name => ActionPayloadDTO class`. `Hilos::getPageActionRoutes()`
+  computes `action -> page`, `Hilos::getActionDtoRoutes()` computes
+  `action -> payload DTO class`, and `Hilos::getActionAgentRoutes()` derives
+  `action -> agent` through the owning page's `SUBSCRIPTION_AGENT_TYPE`.
+  Signal routers, worker page routers, and WebSocket client action allowlists
+  should read these computed registries instead of owning duplicate action lists.
+  `HilosPageFactory` resolves page instances and parses action payloads from the
+  same registry; projects should not add a local page factory when
+  `HilosPageFactory` can read the project facade.
 - Each page class declares non-action page-dispatched signals in
   `PageClass::SIGNALS`. `Hilos::getPageSignalRoutes()` computes
   `signal type/name -> page` routes for `PageSignalRouter`.
@@ -69,8 +73,8 @@ table bindings that should live in `Hilos::PAGE_TABLES`.
    `public const string SUBSCRIPTION_AGENT_TYPE = AgentType::CHAT;` on the group
    class.
 4. Declare inbound WebSocket actions owned by that page in
-   `public const array ACTIONS = [...]`. Leave it as the inherited empty array
-   when the page has no actions.
+   `public const array ACTIONS = [ActionConstants::NAME => SomeActionDTO::class]`.
+   Leave it as the inherited empty array when the page has no actions.
 4. Declare page-dispatched non-action signals in
    `public const array SIGNALS = [...]` when the page handles them.
 6. For a new agent, add the agent class to `Hilos::AGENTS` using
@@ -82,10 +86,10 @@ table bindings that should live in `Hilos::PAGE_TABLES`.
    `Hilos::BROWSER_TABLES`.
 10. For page-shaped browser state, bind the page to its tables in
    `Hilos::PAGE_TABLES`, including any browser params.
-11. Make page factories, table contexts, browser contexts, signal routers,
-    worker page routers, and WebSocket clients read the project registry through
-    their established hooks or factory
-    methods instead of adding another local topology list.
+11. Make table contexts, browser contexts, signal routers, worker page routers,
+    and WebSocket clients read the project registry through their established
+    hooks or factory methods instead of adding another local topology list.
+    Use `HilosPageFactory` with the project facade class for page routing.
 12. Add or update a topology registry test when a project registry changes.
 
 ## Preferred Shape
@@ -105,7 +109,7 @@ final class MainPage extends AbstractPage
     public const string SUBSCRIPTION_AGENT_TYPE = AgentType::CHAT;
 
     public const array ACTIONS = [
-        ChatSignalConstants::MESSAGE,
+        ChatSignalConstants::MESSAGE => MessageActionDTO::class,
     ];
 
     public const array SIGNALS = [
@@ -167,6 +171,8 @@ public const array PAGE_TABLES = [
   config when the project can compute them through `Hilos::AGENTS` and
   `Hilos::getAgentSignalRoutes()`.
   Framework `SignalRouter` reads agent signal ownership at dispatch time.
+- Do not add a project page factory that only mirrors `Hilos::PAGES` lookup or
+  action-to-DTO parsing. Use `HilosPageFactory` with the project facade class.
 - Do not register a page, table, or browser table under a key that differs from
   the class constant that owns that key.
 

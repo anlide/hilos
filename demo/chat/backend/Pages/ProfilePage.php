@@ -42,7 +42,7 @@ final class ProfilePage extends AbstractPage
     public const string SUBSCRIPTION_AGENT_TYPE = AgentType::CHAT;
 
     public const array ACTIONS = [
-        ChatSignalConstants::RENAME,
+        ChatSignalConstants::RENAME => RenameActionDTO::class,
     ];
 
     public const array SIGNALS = [

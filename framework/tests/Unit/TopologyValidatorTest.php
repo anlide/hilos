@@ -9,6 +9,7 @@ use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\Config\AgentSignalConfigKey;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Page\AbstractPage;
+use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Table\Definition\TableDefinition;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableSnapshotDTO;
@@ -58,6 +59,10 @@ final class TopologyValidatorTest extends TestCase
         $this->assertSame(
             [TopologyValidPage::VALID_ACTION => TopologyValidPage::PAGE],
             TopologyValidHilos::getPageActionRoutes(),
+        );
+        $this->assertSame(
+            [TopologyValidPage::VALID_ACTION => TopologyTestActionPayloadDTO::class],
+            TopologyValidHilos::getActionDtoRoutes(),
         );
         $this->assertSame(
             [TopologyValidPage::VALID_ACTION => TopologyValidPage::SUBSCRIPTION_AGENT_TYPE],
@@ -120,11 +125,11 @@ final class TopologyValidatorTest extends TestCase
         TopologyMissingSubscriptionOwnerHilos::validateTopology();
     }
 
-    public function testPageActionsMustBeNonEmptyStrings(): void
+    public function testPageActionsMustUseNonEmptyActionNameKeys(): void
     {
         $this->expectException(InvalidTopologyException::class);
         $this->expectExceptionMessage('PAGES[invalid_action_page] class');
-        $this->expectExceptionMessage('ACTIONS must contain only non-empty action strings');
+        $this->expectExceptionMessage('ACTIONS must use non-empty action name keys');
 
         TopologyInvalidActionHilos::validateTopology();
     }
@@ -327,7 +332,7 @@ final class TopologyValidPage extends AbstractPage
     public const string VALID_PAGE_SIGNAL = 'valid_page_signal';
 
     public const array ACTIONS = [
-        self::VALID_ACTION,
+        self::VALID_ACTION => TopologyTestActionPayloadDTO::class,
     ];
 
     public const array SIGNALS = [
@@ -380,8 +385,8 @@ final class TopologyInvalidActionPage extends AbstractPage
     public const string SUBSCRIPTION_AGENT_TYPE = 'valid_agent';
 
     public const array ACTIONS = [
-        '',
-        42,
+        '' => TopologyTestActionPayloadDTO::class,
+        'invalid_dto_action' => 42,
     ];
 }
 
@@ -392,7 +397,7 @@ final class TopologyFirstActionPage extends AbstractPage
     public const string SUBSCRIPTION_AGENT_TYPE = 'valid_agent';
 
     public const array ACTIONS = [
-        'shared_action',
+        'shared_action' => TopologyTestActionPayloadDTO::class,
     ];
 }
 
@@ -403,7 +408,7 @@ final class TopologySecondActionPage extends AbstractPage
     public const string SUBSCRIPTION_AGENT_TYPE = 'valid_agent';
 
     public const array ACTIONS = [
-        'shared_action',
+        'shared_action' => TopologyTestActionPayloadDTO::class,
     ];
 }
 
@@ -962,5 +967,39 @@ final class TopologyIndexedAgentUnknownConfigKeyHilos extends HilosFacade
     protected static function createDb(): DbContext
     {
         return new TopologyTestDbContext();
+    }
+}
+
+final class TopologyTestActionPayloadDTO extends ActionPayloadDTO
+{
+    /**
+     * Creates a no-op topology test action payload DTO.
+     *
+     * @param array<string, mixed> $data Payload data
+     * @return static DTO instance
+     */
+    public static function fromArray(array $data): static
+    {
+        return new self();
+    }
+
+    /**
+     * Returns the topology test action name.
+     *
+     * @return string Action name
+     */
+    public function getAction(): string
+    {
+        return 'topology_test_action';
+    }
+
+    /**
+     * Converts the DTO to array.
+     *
+     * @return array<string, mixed> Empty payload
+     */
+    public function toArray(): array
+    {
+        return [];
     }
 }

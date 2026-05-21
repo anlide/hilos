@@ -10,6 +10,7 @@ use Hilos\Core\Agent\Config\AgentSignalConfigKey;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Group\AbstractGroup;
 use Hilos\Core\Page\AbstractPage;
+use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Table\Definition\TableDefinition;
 use Hilos\Core\Topology\Exception\InvalidTopologyException;
 use Hilos\Hilos;
@@ -43,6 +44,7 @@ final class TopologyValidator
         $this->validatePageRoutes($pages, $hilosClass::getPageRoutes(), $errors);
         $this->validateGroupRoutes($groups, $hilosClass::getGroupRoutes(), $errors);
         $this->validatePageActionRoutes($pages, $hilosClass::getPageActionRoutes(), $errors);
+        $this->validateActionDtoRoutes($pages, $hilosClass::getActionDtoRoutes(), $errors);
         $this->validatePageSignalRoutes($pages, $hilosClass::getPageSignalRoutes(), $errors);
         $this->validateAgentSignalRoutes(
             $agents,
@@ -343,9 +345,23 @@ final class TopologyValidator
                 continue;
             }
 
-            foreach ($pageClass::ACTIONS as $action) {
+            foreach ($pageClass::ACTIONS as $action => $dtoClass) {
                 if (!is_string($action) || $action === '') {
-                    $errors[] = "PAGES[{$page}] class {$pageClass} ACTIONS must contain only non-empty action strings";
+                    $errors[] = "PAGES[{$page}] class {$pageClass} ACTIONS must use non-empty action name keys";
+                    continue;
+                }
+
+                if (!$this->isExistingClassString(
+                    $dtoClass,
+                    "PAGES[{$page}] class {$pageClass} ACTIONS[{$action}]",
+                    $errors,
+                )) {
+                    continue;
+                }
+
+                if (!is_subclass_of($dtoClass, ActionPayloadDTO::class)) {
+                    $errors[] = "PAGES[{$page}] class {$pageClass} ACTIONS[{$action}] class {$dtoClass} must extend "
+                        . ActionPayloadDTO::class;
                     continue;
                 }
 
@@ -377,6 +393,48 @@ final class TopologyValidator
 
             if (!array_key_exists($page, $pages)) {
                 $errors[] = "Computed page action route {$action} references a page missing from PAGES";
+            }
+        }
+    }
+
+    /**
+     * Validates page-owned WebSocket action payload DTO route declarations.
+     *
+     * @param array<mixed, mixed> $pages Page registry
+     * @param array<mixed, mixed> $actionDtoRoutes Computed action DTO route registry
+     * @param list<string> $errors Validation error accumulator
+     */
+    private function validateActionDtoRoutes(array $pages, array $actionDtoRoutes, array &$errors): void
+    {
+        $declaredRoutes = [];
+        foreach ($pages as $page => $pageClass) {
+            if (!is_string($page) || !is_string($pageClass) || !is_subclass_of($pageClass, AbstractPage::class)) {
+                continue;
+            }
+
+            foreach ($pageClass::ACTIONS as $action => $dtoClass) {
+                if (!is_string($action) || $action === '' || !is_string($dtoClass)) {
+                    continue;
+                }
+
+                $declaredRoutes[$action] = $dtoClass;
+            }
+        }
+
+        foreach ($declaredRoutes as $action => $dtoClass) {
+            if (($actionDtoRoutes[$action] ?? null) !== $dtoClass) {
+                $errors[] = "Action DTO route {$action} is missing from computed action DTO routes";
+            }
+        }
+
+        foreach ($actionDtoRoutes as $action => $dtoClass) {
+            if (!is_string($action) || $action === '') {
+                $errors[] = 'Computed action DTO routes contain a non-string or empty action key';
+                continue;
+            }
+
+            if (!is_string($dtoClass) || $dtoClass === '' || !is_subclass_of($dtoClass, ActionPayloadDTO::class)) {
+                $errors[] = "Computed action DTO route {$action} must reference a valid ActionPayloadDTO class";
             }
         }
     }

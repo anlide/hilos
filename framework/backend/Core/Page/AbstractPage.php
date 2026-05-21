@@ -34,7 +34,7 @@ abstract class AbstractPage
     /** Agent type that owns subscription signals for this page. */
     public const string SUBSCRIPTION_AGENT_TYPE = '';
 
-    /** WebSocket action names owned by this page. */
+    /** WebSocket actions owned by this page, keyed by action name with payload DTO class values. */
     public const array ACTIONS = [];
 
     /** Non-action signal routes owned by this page, keyed by signal type. */

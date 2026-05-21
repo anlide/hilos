@@ -33,7 +33,7 @@ final class AdminUsersPage extends AbstractPage
     public const string SUBSCRIPTION_AGENT_TYPE = AgentType::CHAT;
 
     public const array ACTIONS = [
-        ChatSignalConstants::USER_UPDATE,
+        ChatSignalConstants::USER_UPDATE => AdminUserUpdateActionDTO::class,
     ];
 
     public const array BROWSER = [

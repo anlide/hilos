@@ -39,7 +39,7 @@ final class UserPage extends AbstractHilosUserPage
     public const string SUBSCRIPTION_AGENT_TYPE = AgentType::HILOS_INDEX;
 
     public const array ACTIONS = [
-        ChatSignalConstants::HILOS_USER_UPDATE,
+        ChatSignalConstants::HILOS_USER_UPDATE => HilosUserUpdateActionDTO::class,
     ];
 
     public const array BROWSER = [

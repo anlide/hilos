@@ -15,8 +15,10 @@ routers should not maintain a duplicate page routing list in config. See
 For WebSocket actions, keep action ownership in each page class `ACTIONS`.
 `SignalRouter` reads `Hilos::getActionAgentRoutes()` through the project
 facade hook at dispatch time. Worker page routers should import
-`Hilos::getPageActionRoutes()` for `action -> page` dispatch. WebSocket client
-allowlists should read the same page-action registry.
+`Hilos::getPageActionRoutes()` for `action -> page` dispatch and use
+`HilosPageFactory` with the project facade class to parse action payloads from
+`Hilos::getActionDtoRoutes()`. WebSocket client allowlists should read the same
+page-action registry.
 
 For page-dispatched non-action signals, keep ownership in each page class
 `SIGNALS`. `SignalRouter` resolves the owning agent through

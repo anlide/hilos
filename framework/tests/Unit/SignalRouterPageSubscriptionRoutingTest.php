@@ -8,6 +8,7 @@ use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Router\AgentSignalData;
+use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\SignalData;
 use Hilos\Core\Router\SignalName;
@@ -269,7 +270,7 @@ final class SignalRouterTopologyTestPage extends AbstractPage
     public const string TOPOLOGY_CRON = 'topology_cron';
 
     public const array ACTIONS = [
-        self::TOPOLOGY_ACTION,
+        self::TOPOLOGY_ACTION => SignalRouterTopologyTestActionPayloadDTO::class,
     ];
 
     public const array SIGNALS = [
@@ -329,5 +330,39 @@ final class SignalRouterTopologySignalTestAgent extends AbstractAgent
      */
     public function onStop(): void
     {
+    }
+}
+
+final class SignalRouterTopologyTestActionPayloadDTO extends ActionPayloadDTO
+{
+    /**
+     * Creates a no-op router topology test action payload DTO.
+     *
+     * @param array<string, mixed> $data Payload data
+     * @return static DTO instance
+     */
+    public static function fromArray(array $data): static
+    {
+        return new self();
+    }
+
+    /**
+     * Returns the router topology test action name.
+     *
+     * @return string Action name
+     */
+    public function getAction(): string
+    {
+        return 'topology_action';
+    }
+
+    /**
+     * Converts the DTO to array.
+     *
+     * @return array<string, mixed> Empty payload
+     */
+    public function toArray(): array
+    {
+        return [];
     }
 }

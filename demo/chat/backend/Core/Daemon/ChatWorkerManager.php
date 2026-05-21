@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Demo\Chat\Core\Daemon;
 
 use Demo\Chat\Core\Agent\ChatAgentManager;
-use Demo\Chat\Core\Page\ChatPageFactory;
 use Demo\Chat\Core\Router\ChatSignalRouter;
 use Demo\Chat\Hilos;
 use Hilos\Core\Agent\AgentInterface;
@@ -13,6 +12,7 @@ use Hilos\Core\Agent\AgentManager;
 use Hilos\Core\Daemon\WorkerManager;
 use Hilos\Core\Page\ActionRouteConfig;
 use Hilos\Core\Page\Exception\PageSignalRouterNotFoundException;
+use Hilos\Core\Page\HilosPageFactory;
 use Hilos\Core\Page\PageAgentInterface;
 use Hilos\Core\Page\PageSignalRouter;
 use Hilos\Core\Router\SignalRouter;
@@ -58,7 +58,7 @@ final class ChatWorkerManager extends WorkerManager
             throw new PageSignalRouterNotFoundException($agent::class);
         }
 
-        $pageFactory = new ChatPageFactory($agent);
+        $pageFactory = new HilosPageFactory($agent, Hilos::class);
         $actionRoutes = new ActionRouteConfig(Hilos::getPageActionRoutes());
         $signalRoutes = Hilos::getPageSignalRoutes();
 
