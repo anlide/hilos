@@ -18,7 +18,6 @@ use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Agent\Exception\AgentException;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
-use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
@@ -47,7 +46,7 @@ final class ProfilePage extends AbstractPage
 
     public const array SIGNALS = [
         SignalTypeConstants::AGENT_SIGNAL => [
-            ChatSignalConstants::RENAME_MODERATION_RESULT,
+            ChatSignalConstants::RENAME_MODERATION_RESULT => RenameModerationResultSignalData::class,
         ],
     ];
 
@@ -88,7 +87,6 @@ final class ProfilePage extends AbstractPage
      * @param string $source Framework signal source identifier (unused)
      * @param string $name Agent signal name
      * @throws AgentUnknownSignalException When signal name is not supported by this page
-     * @throws InvalidAgentSignalPayloadException When signal payload does not match the signal name
      * @throws ValidationException When moderation rejects the requested display name
      * @throws AgentException When moderation result does not match an active rename request
      * @throws HilosException On database, runtime, truth-source, or signal failure
@@ -97,15 +95,7 @@ final class ProfilePage extends AbstractPage
     {
         switch ($name) {
             case ChatSignalConstants::RENAME_MODERATION_RESULT:
-                $moderationResult = $data->data;
-                if (!$moderationResult instanceof RenameModerationResultSignalData) {
-                    throw new InvalidAgentSignalPayloadException(
-                        $name,
-                        RenameModerationResultSignalData::class,
-                        $moderationResult,
-                    );
-                }
-                $this->handleRenameModerationResult($moderationResult);
+                $this->handleRenameModerationResult($data->data);
 
                 return;
 

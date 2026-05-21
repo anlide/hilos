@@ -21,7 +21,6 @@ use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\Exception\AgentException;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
-use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\ItemNotFoundForDeleteException;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
@@ -56,7 +55,7 @@ final class MainPage extends AbstractPage
     public const array SIGNALS = [
         SignalTypeConstants::FRAME_BINARY => [],
         SignalTypeConstants::AGENT_SIGNAL => [
-            ChatSignalConstants::MODERATION_RESULT,
+            ChatSignalConstants::MODERATION_RESULT => ModerationResultSignalData::class,
         ],
     ];
 
@@ -119,7 +118,6 @@ final class MainPage extends AbstractPage
      * @param string $source Framework signal source identifier (unused)
      * @param string $name Moderation result signal name
      * @throws AgentUnknownSignalException When signal name is not supported by this page
-     * @throws InvalidAgentSignalPayloadException When signal payload does not match the signal name
      * @throws ValidationException When moderation rejects the message or is unavailable
      * @throws AgentException When moderation result does not match an active connection
      * @throws HilosException When moderation follow-up exposes storage, database, or runtime failure
@@ -128,15 +126,7 @@ final class MainPage extends AbstractPage
     {
         switch ($name) {
             case ChatSignalConstants::MODERATION_RESULT:
-                $moderationResult = $data->data;
-                if (!$moderationResult instanceof ModerationResultSignalData) {
-                    throw new InvalidAgentSignalPayloadException(
-                        $name,
-                        ModerationResultSignalData::class,
-                        $moderationResult,
-                    );
-                }
-                $this->handleTextModerationResult($moderationResult);
+                $this->handleTextModerationResult($data->data);
 
                 return;
 
