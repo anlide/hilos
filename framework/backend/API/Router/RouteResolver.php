@@ -19,7 +19,7 @@ class RouteResolver
      *
      * @param array<string, mixed> $route Route data (handler, params)
      * @param array<string, mixed> $request Request data (method, path, etc.)
-     * @return array<string, mixed> Response data (status, headers, body)
+     * @return array{status: int, headers: array<string, string>, body: string} HTTP response payload
      */
     public function resolve(array $route, array $request): array
     {
@@ -43,7 +43,7 @@ class RouteResolver
      * Formats handler result into HTTP response.
      *
      * @param mixed $result Handler result (array, string, or other)
-     * @return array<string, mixed> Response with status, headers, body keys
+     * @return array{status: int, headers: array<string, string>, body: string} HTTP response payload
      */
     private function formatResponse(mixed $result): array
     {

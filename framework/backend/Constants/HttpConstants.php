@@ -59,6 +59,9 @@ class HttpConstants
     /** @var string HTTP header Content-Type */
     public const string HEADER_CONTENT_TYPE = 'Content-Type';
 
+    /** @var string HTTP header Content-Disposition */
+    public const string HEADER_CONTENT_DISPOSITION = 'Content-Disposition';
+
     /** @var string HTTP header Content-Length */
     public const string HEADER_CONTENT_LENGTH = 'Content-Length';
 
@@ -76,6 +79,15 @@ class HttpConstants
 
     /** @var string HTTP header Cookie */
     public const string HEADER_COOKIE = 'Cookie';
+
+    /** @var string HTTP header User-Agent */
+    public const string HEADER_USER_AGENT = 'User-Agent';
+
+    /** @var string HTTP header Accept-Language */
+    public const string HEADER_ACCEPT_LANGUAGE = 'Accept-Language';
+
+    /** @var string HTTP header Vary */
+    public const string HEADER_VARY = 'Vary';
 
     /** @var string HTTP header Sec-WebSocket-Key */
     public const string HEADER_SEC_WEBSOCKET_KEY = 'Sec-WebSocket-Key';
@@ -103,6 +115,15 @@ class HttpConstants
 
     /** @var string Content type for plain text */
     public const string CONTENT_TYPE_TEXT = 'text/plain';
+
+    /** @var string Content type for arbitrary binary data */
+    public const string CONTENT_TYPE_OCTET_STREAM = 'application/octet-stream';
+
+    /** @var string Content-Disposition type for inline rendering */
+    public const string CONTENT_DISPOSITION_INLINE = 'inline';
+
+    /** @var string Content-Disposition type for file downloads */
+    public const string CONTENT_DISPOSITION_ATTACHMENT = 'attachment';
 
     /** @var string WebSocket protocol value */
     public const string WEBSOCKET_PROTOCOL = 'websocket';

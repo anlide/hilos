@@ -843,8 +843,8 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
         $sessionToken = $headers[HilosHttpHeaders::HILOS_SESSION_TOKEN]
             ?? $queryParams->getString(HilosHttpHeaders::HILOS_SESSION_TOKEN)
             ?? null;
-        $userAgent = $headers['User-Agent'] ?? null;
-        $acceptLanguage = $headers['Accept-Language'] ?? null;
+        $userAgent = $headers[HttpConstants::HEADER_USER_AGENT] ?? null;
+        $acceptLanguage = $headers[HttpConstants::HEADER_ACCEPT_LANGUAGE] ?? null;
         Hilos::$ac?->ensureBrowserSession(
             is_string($sessionToken) ? $sessionToken : null,
             is_string($userAgent) ? $userAgent : null,

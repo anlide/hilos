@@ -48,7 +48,7 @@ class HttpRouter
      * Routes HTTP request to matching handler.
      *
      * @param array<string, mixed> $request Request data (method, path, etc.)
-     * @return array<string, mixed> Response data (status, headers, body)
+     * @return array{status: int, headers: array<string, string>, body: string} HTTP response payload
      */
     public function route(array $request): array
     {
@@ -59,8 +59,8 @@ class HttpRouter
         $request['queryParams'] = $queryParams;
         $sessionToken = $headers[HilosHttpHeaders::HILOS_SESSION_TOKEN]
             ?? $queryParams->getString(HilosHttpHeaders::HILOS_SESSION_TOKEN);
-        $userAgent = $headers['User-Agent'] ?? null;
-        $acceptLanguage = $headers['Accept-Language'] ?? null;
+        $userAgent = $headers[HttpConstants::HEADER_USER_AGENT] ?? null;
+        $acceptLanguage = $headers[HttpConstants::HEADER_ACCEPT_LANGUAGE] ?? null;
 
         // Find matching route
         $route = $this->registry->match($method, $path);

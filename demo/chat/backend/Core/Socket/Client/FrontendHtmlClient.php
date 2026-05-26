@@ -57,7 +57,7 @@ final class FrontendHtmlClient extends AbstractClient implements HttpClientInter
 
         $request = $this->parseRequest($this->readBuffer);
         $path = $request['path'] ?? '/';
-        $acceptLanguage = $request['headers']['Accept-Language'] ?? '';
+        $acceptLanguage = $request['headers'][HttpConstants::HEADER_ACCEPT_LANGUAGE] ?? '';
 
         $resolved = $this->resolver->resolve($path, $acceptLanguage);
         $html = $this->cache->get($resolved['path'], $resolved['locale']);
@@ -69,7 +69,7 @@ final class FrontendHtmlClient extends AbstractClient implements HttpClientInter
 
         $headers = [
             HttpConstants::HEADER_CONTENT_TYPE => HttpConstants::CONTENT_TYPE_HTML,
-            'Vary' => 'Accept-Language',
+            HttpConstants::HEADER_VARY => HttpConstants::HEADER_ACCEPT_LANGUAGE,
         ];
 
         $response = [
@@ -116,17 +116,17 @@ final class FrontendHtmlClient extends AbstractClient implements HttpClientInter
     /**
      * Build HTTP response string from status, headers and body.
      *
-     * @param array<string, mixed> $response Response data
+     * @param array{status?: int, headers?: array<string, string>, body?: string} $response Response data
      * @return string Raw HTTP response
      */
     private function buildResponse(array $response): string
     {
-        $status = $response[HttpConstants::RESPONSE_KEY_STATUS] ?? 200;
+        $status = $response[HttpConstants::RESPONSE_KEY_STATUS] ?? HttpConstants::HTTP_OK;
         $statusTexts = [
-            200 => 'OK',
-            403 => 'Forbidden',
-            404 => 'Not Found',
-            500 => 'Internal Server Error',
+            HttpConstants::HTTP_OK => 'OK',
+            HttpConstants::HTTP_FORBIDDEN => 'Forbidden',
+            HttpConstants::HTTP_NOT_FOUND => 'Not Found',
+            HttpConstants::HTTP_INTERNAL_ERROR => 'Internal Server Error',
         ];
         $statusText = $statusTexts[$status] ?? 'Unknown';
         $headers = $response[HttpConstants::RESPONSE_KEY_HEADERS] ?? [];

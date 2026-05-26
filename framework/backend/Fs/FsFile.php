@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Fs;
 
 use finfo;
+use Hilos\Constants\HttpConstants;
 use Hilos\Fs\Exception\FileDeleteException;
 use Hilos\Fs\Exception\FileMoveException;
 use Hilos\Fs\Exception\FileNotFoundException;
@@ -67,7 +68,7 @@ final class FsFile
         }
         $finfo = new finfo(FILEINFO_MIME_TYPE);
 
-        return $finfo->file($this->path) ?: 'application/octet-stream';
+        return $finfo->file($this->path) ?: HttpConstants::CONTENT_TYPE_OCTET_STREAM;
     }
 
     /**
