@@ -71,6 +71,9 @@ abstract class Hilos
     /** Page table bindings keyed by page name, then table name. */
     public const array PAGE_TABLES = [];
 
+    /** Conventional name of the project-level persistent-data directory. */
+    public const string DATA_DIR = 'data';
+
     /** @var ?EnvAccessor Catalog-backed environment accessor */
     public static ?EnvAccessor $env = null;
 

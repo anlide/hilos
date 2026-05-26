@@ -6,6 +6,7 @@ namespace Demo\Chat\Runtime\View\Actions\Collection;
 
 use Demo\Chat\Database\DTO\PublishedAttachmentInput;
 use Demo\Chat\Database\DTO\PublishedAttachmentInputs;
+use Demo\Chat\Fs\ChatFsContext;
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\State\Collection\AttachmentDrafts as StateAttachmentDrafts;
 use Demo\Chat\Runtime\State\Item\AttachmentDraft as StateAttachmentDraft;
@@ -232,7 +233,7 @@ final class AttachmentDraftsActions extends RtActions
         }
 
         foreach ($connection->attachmentDrafts as $draft) {
-            Hilos::$fs->quarantine[$draft->quarantineBasename]->move('published');
+            Hilos::$fs->quarantine[$draft->quarantineBasename]->move(ChatFsContext::published);
         }
 
         $this->deleteByIds($draftIds, deleteFiles: false);

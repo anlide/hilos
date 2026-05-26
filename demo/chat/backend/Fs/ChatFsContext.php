@@ -23,12 +23,14 @@ final class ChatFsContext extends FsContext
 
     public const string published = 'published';
 
+    private const string STORAGE_DIR = 'chat_attachments';
+
     /**
      * Project-relative base: demo/chat/data/chat_attachments.
      */
     private static function defaultBaseDir(): string
     {
-        return dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . 'data' . DIRECTORY_SEPARATOR . 'chat_attachments';
+        return dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . Hilos::DATA_DIR . DIRECTORY_SEPARATOR . self::STORAGE_DIR;
     }
 
     public function configure(): void
@@ -37,16 +39,16 @@ final class ChatFsContext extends FsContext
         $quarantinePath = Hilos::$env[ChatEnvConstants::CHAT_FILES_QUARANTINE_DIR];
         $publishedPath = Hilos::$env[ChatEnvConstants::CHAT_FILES_PUBLISHED_DIR];
 
-        $this->setTmpPath($base . DIRECTORY_SEPARATOR . 'tmp');
+        $this->setTmpPath($base . DIRECTORY_SEPARATOR . self::TMP);
 
         $this->registerDirectory(
             self::quarantine,
-            $quarantinePath !== '' ? $quarantinePath : $base . DIRECTORY_SEPARATOR . 'quarantine',
+            $quarantinePath !== '' ? $quarantinePath : $base . DIRECTORY_SEPARATOR . self::quarantine,
         );
 
         $this->registerDirectory(
             self::published,
-            $publishedPath !== '' ? $publishedPath : $base . DIRECTORY_SEPARATOR . 'published',
+            $publishedPath !== '' ? $publishedPath : $base . DIRECTORY_SEPARATOR . self::published,
         );
     }
 }

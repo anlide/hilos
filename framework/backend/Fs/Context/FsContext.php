@@ -16,6 +16,9 @@ use Hilos\Hilos;
  */
 abstract class FsContext
 {
+    /** Reserved logical name for the built-in temporary directory. */
+    public const string TMP = 'tmp';
+
     protected ?FsTmpDirectory $_tmp = null;
 
     /** @var array<string, FsDirectory> */
@@ -74,7 +77,7 @@ abstract class FsContext
      */
     public function __get(string $name): FsTmpDirectory|FsDirectory
     {
-        if ($name === 'tmp') {
+        if ($name === self::TMP) {
             return $this->getTmp();
         }
 
