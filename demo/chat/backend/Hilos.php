@@ -34,8 +34,8 @@ use Demo\Chat\Browser\Table\MainUsersBrowserTable;
 use Demo\Chat\Browser\Table\SelfConnectionBrowserTable;
 use Demo\Chat\Browser\Table\UserDetailBrowserTable;
 use Demo\Chat\Database\ChatDbContext;
-use Demo\Chat\Database\Settings\ChatSettingsAccessor;
-use Demo\Chat\Environment\ChatEnvAccessor;
+use Demo\Chat\Database\Settings\SettingsCatalog;
+use Demo\Chat\Environment\ChatEnvCatalog;
 use Demo\Chat\Fs\ChatFsContext;
 use Demo\Chat\Groups\SessionGroup;
 use Demo\Chat\Pages\AdminBotsPage;
@@ -143,8 +143,8 @@ use Hilos\Runtime\View\Context\RtContext;
  * - Hilos::$fs->quarantine, Hilos::$fs->published, Hilos::$fs->tmp
  *
  * @property-read ChatDbContext $db Database context (narrows parent's DbContext for IDE)
- * @property-read ChatEnvAccessor $env Environment accessor (narrows parent's EnvAccessor for IDE)
- * @property-read ChatSettingsAccessor $setting Settings accessor (narrows parent's SettingsAccessor for IDE)
+ * @property-read EnvAccessor $env Environment accessor (narrows parent's EnvAccessor for IDE)
+ * @property-read SettingsAccessor $setting Settings accessor (narrows parent's SettingsAccessor for IDE)
  * @property-read ChatRtContext $rt Runtime context (narrows parent's RtContext for IDE)
  * @property-read ChatTableContext $table Table context (narrows parent's TableContext for IDE)
  * @property-read ChatBrowserContext $browser Browser context (narrows parent's BrowserContext for IDE)
@@ -152,6 +152,10 @@ use Hilos\Runtime\View\Context\RtContext;
  */
 final class Hilos extends \Hilos\Hilos
 {
+    protected const string ENV_CATALOG = ChatEnvCatalog::class;
+
+    protected const string SETTINGS_CATALOG = SettingsCatalog::class;
+
     public const array PAGES = [
         MainPage::PAGE => MainPage::class,
         ProfilePage::PAGE => ProfilePage::class,
@@ -362,16 +366,6 @@ final class Hilos extends \Hilos\Hilos
     ];
 
     /**
-     * Creates the project environment accessor with the chat env catalog.
-     *
-     * @return EnvAccessor Environment accessor
-     */
-    protected static function createEnv(): EnvAccessor
-    {
-        return new ChatEnvAccessor();
-    }
-
-    /**
      * Creates the chat database context.
      *
      * @return ChatDbContext Chat database context
@@ -379,16 +373,6 @@ final class Hilos extends \Hilos\Hilos
     protected static function createDb(): DbContext
     {
         return new ChatDbContext();
-    }
-
-    /**
-     * Creates the project settings accessor with the chat settings catalog.
-     *
-     * @return SettingsAccessor Settings accessor
-     */
-    protected static function createSetting(): SettingsAccessor
-    {
-        return new ChatSettingsAccessor();
     }
 
     /**

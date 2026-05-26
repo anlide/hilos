@@ -23,7 +23,9 @@ the fact that the framework source of truth is the active facade.
   override methods.
 - The default framework implementation should be simple, usually
   `return new FrameworkThing();`.
-- Project subclasses customize by overriding the factory and returning
+- Project subclasses customize catalog-backed accessors through protected
+  catalog provider constants when only metadata changes.
+- Project subclasses customize behavior by overriding the factory and returning
   `new ProjectThing();`.
 - Do not make project code initialize framework metadata by passing DB, catalog,
   or facade objects through constructors when the framework can resolve them
@@ -32,19 +34,13 @@ the fact that the framework source of truth is the active facade.
 Example shape:
 
 ```php
-protected static function createSetting(): SettingsAccessor
-{
-    return new SettingsAccessor();
-}
+protected const string SETTINGS_CATALOG = SettingsCatalogStub::class;
 ```
 
 Project override:
 
 ```php
-protected static function createSetting(): SettingsAccessor
-{
-    return new ChatSettingsAccessor();
-}
+protected const string SETTINGS_CATALOG = SettingsCatalog::class;
 ```
 
 ## Settings and catalogs
@@ -54,6 +50,8 @@ protected static function createSetting(): SettingsAccessor
 - Keep those arrays at the catalog boundary. Runtime readers and accessors
   should expose typed methods or typed value objects instead of accepting the
   whole catalog as constructor state.
+- Use catalog provider class strings for project env/settings metadata; do not
+  add empty accessor subclasses that only override `getCatalog()`.
 - Catalog metadata and default values must not require DB initialization.
 - Persisted values may require `Hilos::$db`; missing DB should fall back to
   catalog defaults only when the accessor contract explicitly supports that.

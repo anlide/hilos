@@ -7,11 +7,12 @@ namespace Hilos\Environment;
 use Hilos\Constants\AppEnv;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\LLMConstants;
+use Hilos\Core\Catalog\CatalogProviderInterface;
 
 /**
  * Framework default catalog for environment variables.
  */
-final class EnvCatalogStub
+final class EnvCatalogStub implements CatalogProviderInterface
 {
     /**
      * Returns the framework environment catalog.

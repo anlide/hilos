@@ -8,13 +8,14 @@ use Demo\Chat\Constants\ChatEnvConstants;
 use Demo\Chat\Constants\ChatLLMConstants;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\LLMConstants;
+use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Environment\EnvCatalogConstants;
 use Hilos\Environment\EnvCatalogStub;
 
 /**
  * Chat demo environment catalog.
  */
-final class ChatEnvCatalog
+final class ChatEnvCatalog implements CatalogProviderInterface
 {
     /**
      * Returns the chat demo environment catalog.

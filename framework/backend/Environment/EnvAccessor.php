@@ -7,6 +7,7 @@ namespace Hilos\Environment;
 use ArrayAccess;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\LLMConstants;
+use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Environment\Exception\EnvInvalidValueException;
 use Hilos\Environment\Exception\EnvKeyInvalidException;
 use Hilos\Environment\Exception\EnvMutationNotSupportedException;
@@ -21,6 +22,11 @@ use Hilos\Environment\Exception\MissingEnvironmentVariableException;
  */
 class EnvAccessor implements ArrayAccess
 {
+    /**
+     * @var class-string<CatalogProviderInterface> Catalog provider class
+     */
+    private string $catalogClass = EnvCatalogStub::class;
+
     /** @var ?array<string, string> Loaded .env file cache */
     private ?array $envCache = null;
 
@@ -34,13 +40,23 @@ class EnvAccessor implements ArrayAccess
     private ?string $examplePath = null;
 
     /**
+     * Creates an environment accessor backed by the given catalog provider.
+     *
+     * @param class-string<CatalogProviderInterface> $catalogClass Catalog provider class
+     */
+    public function __construct(string $catalogClass = EnvCatalogStub::class)
+    {
+        $this->catalogClass = $catalogClass;
+    }
+
+    /**
      * Returns the environment catalog for this accessor.
      *
      * @return array<string, array<string, mixed>> Catalog keyed by env variable name
      */
     protected function getCatalog(): array
     {
-        return EnvCatalogStub::getCatalog();
+        return $this->catalogClass::getCatalog();
     }
 
     /**

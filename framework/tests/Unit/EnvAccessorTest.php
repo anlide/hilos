@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Environment\EnvCatalogConstants;
 use Hilos\Environment\Exception\EnvInvalidValueException;
@@ -162,20 +163,9 @@ final class EnvAccessorTest extends TestCase
      */
     private function env(array $catalog): EnvAccessor
     {
-        return new class ($catalog) extends EnvAccessor {
-            /**
-             * @param array<string, array<string, mixed>> $catalog Env catalog
-             */
-            public function __construct(
-                private readonly array $catalog,
-            ) {
-            }
+        EnvAccessorTestCatalog::$catalog = $catalog;
 
-            protected function getCatalog(): array
-            {
-                return $this->catalog;
-            }
-        };
+        return new EnvAccessor(EnvAccessorTestCatalog::class);
     }
 
     /**
@@ -189,5 +179,24 @@ final class EnvAccessorTest extends TestCase
             EnvCatalogConstants::CATALOG_ENTRY_EMPTY_IS_MISSING => $emptyIsMissing,
             EnvCatalogConstants::CATALOG_ENTRY_THROW_IF_MISSING => false,
         ];
+    }
+}
+
+/**
+ * Catalog provider for EnvAccessor unit tests.
+ */
+final class EnvAccessorTestCatalog implements CatalogProviderInterface
+{
+    /** @var array<string, array<string, mixed>> Env catalog */
+    public static array $catalog = [];
+
+    /**
+     * Returns the current test catalog.
+     *
+     * @return array<string, array<string, mixed>> Catalog keyed by env variable name
+     */
+    public static function getCatalog(): array
+    {
+        return self::$catalog;
     }
 }

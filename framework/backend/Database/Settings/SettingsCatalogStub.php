@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Database\Settings;
 
+use Hilos\Core\Catalog\CatalogProviderInterface;
+
 /**
  * SettingsCatalogStub - Stub-example of settings catalog.
  *
@@ -12,7 +14,7 @@ namespace Hilos\Database\Settings;
  *
  * @see SettingsCatalogConstants
  */
-final class SettingsCatalogStub
+final class SettingsCatalogStub implements CatalogProviderInterface
 {
     /**
      * Returns stub catalog array for example reference.

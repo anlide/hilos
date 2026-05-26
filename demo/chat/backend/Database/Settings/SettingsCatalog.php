@@ -6,6 +6,7 @@ namespace Demo\Chat\Database\Settings;
 
 use Demo\Chat\Constants\ChatAttachmentDefaults;
 use Demo\Chat\Constants\ChatLLMConstants;
+use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Database\Settings\SettingsCatalogConstants;
 
 /**
@@ -17,7 +18,7 @@ use Hilos\Database\Settings\SettingsCatalogConstants;
  * @see SettingsCatalogConstants
  * @see ChatSettingsConstants Chat-specific keys for Bot and Moderator agents
  */
-final class SettingsCatalog
+final class SettingsCatalog implements CatalogProviderInterface
 {
     /**
      * Returns settings catalog for this project.

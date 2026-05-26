@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Database\Settings;
 
 use ArrayAccess;
+use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Settings\Exception\SettingDefaultReferenceCycleException;
@@ -24,13 +25,28 @@ use Hilos\Hilos;
 class SettingsAccessor implements ArrayAccess
 {
     /**
+     * @var class-string<CatalogProviderInterface> Catalog provider class
+     */
+    private string $catalogClass = SettingsCatalogStub::class;
+
+    /**
+     * Creates a settings accessor backed by the given catalog provider.
+     *
+     * @param class-string<CatalogProviderInterface> $catalogClass Catalog provider class
+     */
+    public function __construct(string $catalogClass = SettingsCatalogStub::class)
+    {
+        $this->catalogClass = $catalogClass;
+    }
+
+    /**
      * Returns the settings catalog for this accessor.
      *
      * @return array<string, array<string, mixed>> Catalog keyed by setting key
      */
     protected function getCatalog(): array
     {
-        return SettingsCatalogStub::getCatalog();
+        return $this->catalogClass::getCatalog();
     }
 
     /**

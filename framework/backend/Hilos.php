@@ -9,6 +9,7 @@ use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\AgentRegistry;
 use Hilos\Core\Agent\Config\AgentSignalConfigKey;
 use Hilos\Core\Browser\Context\BrowserContext;
+use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Core\Group\AbstractGroup;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
@@ -19,7 +20,9 @@ use Hilos\Core\Topology\Exception\InvalidTopologyException;
 use Hilos\Core\Topology\TopologyValidator;
 use Hilos\Database\Context\DbContext;
 use Hilos\Database\Settings\SettingsAccessor;
+use Hilos\Database\Settings\SettingsCatalogStub;
 use Hilos\Environment\EnvAccessor;
+use Hilos\Environment\EnvCatalogStub;
 use Hilos\Environment\Exception\EnvInvalidValueException;
 use Hilos\Fs\Context\FsContext;
 use Hilos\Runtime\View\Context\RtContext;
@@ -40,6 +43,12 @@ use Hilos\Runtime\View\Context\RtContext;
  */
 abstract class Hilos
 {
+    /** @var class-string<CatalogProviderInterface> Environment catalog provider class. */
+    protected const string ENV_CATALOG = EnvCatalogStub::class;
+
+    /** @var class-string<CatalogProviderInterface> Settings catalog provider class. */
+    protected const string SETTINGS_CATALOG = SettingsCatalogStub::class;
+
     /** Page classes keyed by page name. */
     public const array PAGES = [];
 
@@ -623,7 +632,7 @@ abstract class Hilos
      */
     protected static function createEnv(): EnvAccessor
     {
-        return new EnvAccessor();
+        return new EnvAccessor(static::ENV_CATALOG);
     }
 
     /**
@@ -633,7 +642,7 @@ abstract class Hilos
      */
     protected static function createSetting(): SettingsAccessor
     {
-        return new SettingsAccessor();
+        return new SettingsAccessor(static::SETTINGS_CATALOG);
     }
 
     /**

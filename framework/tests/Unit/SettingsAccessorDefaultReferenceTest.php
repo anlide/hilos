@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Database\Context\DbContext;
 use Hilos\Database\Settings\Exception\SettingDefaultReferenceCycleException;
 use Hilos\Database\Settings\Exception\SettingInvalidValueException;
@@ -168,20 +169,9 @@ final class SettingsAccessorDefaultReferenceTest extends TestCase
      */
     private function settings(array $catalog): SettingsAccessor
     {
-        return new class ($catalog) extends SettingsAccessor {
-            /**
-             * @param array<string, array<string, mixed>> $catalog Settings catalog
-             */
-            public function __construct(
-                private readonly array $catalog,
-            ) {
-            }
+        SettingsAccessorTestCatalog::$catalog = $catalog;
 
-            protected function getCatalog(): array
-            {
-                return $this->catalog;
-            }
-        };
+        return new SettingsAccessor(SettingsAccessorTestCatalog::class);
     }
 
     /**
@@ -193,5 +183,24 @@ final class SettingsAccessorDefaultReferenceTest extends TestCase
             SettingsCatalogConstants::CATALOG_ENTRY_TYPE => $type,
             SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => $default,
         ];
+    }
+}
+
+/**
+ * Catalog provider for SettingsAccessor unit tests.
+ */
+final class SettingsAccessorTestCatalog implements CatalogProviderInterface
+{
+    /** @var array<string, array<string, mixed>> Settings catalog */
+    public static array $catalog = [];
+
+    /**
+     * Returns the current test catalog.
+     *
+     * @return array<string, array<string, mixed>> Catalog keyed by setting key
+     */
+    public static function getCatalog(): array
+    {
+        return self::$catalog;
     }
 }
