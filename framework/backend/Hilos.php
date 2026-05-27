@@ -17,6 +17,7 @@ use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Table\Context\TableContext;
 use Hilos\Core\Topology\Exception\InvalidTopologyException;
+use Hilos\Core\Topology\PageSignalRouteRegistry;
 use Hilos\Core\Topology\TopologyValidator;
 use Hilos\Database\Context\DbContext;
 use Hilos\Database\Settings\SettingsAccessor;
@@ -230,44 +231,7 @@ abstract class Hilos
      */
     public static function getPageSignalRoutes(): array
     {
-        $signalRoutes = [];
-        foreach (static::PAGES as $page => $pageClass) {
-            if (!is_string($page) || !is_string($pageClass) || !is_subclass_of($pageClass, AbstractPage::class)) {
-                continue;
-            }
-
-            foreach ($pageClass::SIGNALS as $signalType => $signalNames) {
-                if (!is_string($signalType) || $signalType === '' || !is_array($signalNames)) {
-                    continue;
-                }
-
-                if ($signalNames === []) {
-                    if (!array_key_exists($signalType, $signalRoutes)) {
-                        $signalRoutes[$signalType] = $page;
-                    }
-                    continue;
-                }
-
-                if (isset($signalRoutes[$signalType]) && is_string($signalRoutes[$signalType])) {
-                    continue;
-                }
-
-                if (!isset($signalRoutes[$signalType])) {
-                    $signalRoutes[$signalType] = [];
-                }
-
-                foreach ($signalNames as $key => $entry) {
-                    $signalName = self::resolvePageSignalRouteName($key, $entry);
-                    if ($signalName === null) {
-                        continue;
-                    }
-
-                    $signalRoutes[$signalType][$signalName] = $page;
-                }
-            }
-        }
-
-        return $signalRoutes;
+        return PageSignalRouteRegistry::routes(static::PAGES);
     }
 
     /**
@@ -280,52 +244,7 @@ abstract class Hilos
      */
     public static function getPageSignalDtoRoutes(): array
     {
-        $dtoRoutes = [];
-        foreach (static::PAGES as $page => $pageClass) {
-            if (!is_string($page) || !is_string($pageClass) || !is_subclass_of($pageClass, AbstractPage::class)) {
-                continue;
-            }
-
-            foreach ($pageClass::SIGNALS as $signalType => $signalNames) {
-                if (!is_string($signalType) || $signalType === '' || !is_array($signalNames) || $signalNames === []) {
-                    continue;
-                }
-
-                foreach ($signalNames as $key => $entry) {
-                    if (!is_string($key) || $key === '' || !is_string($entry) || $entry === '') {
-                        continue;
-                    }
-
-                    if (!isset($dtoRoutes[$signalType])) {
-                        $dtoRoutes[$signalType] = [];
-                    }
-
-                    $dtoRoutes[$signalType][$key] = $entry;
-                }
-            }
-        }
-
-        return $dtoRoutes;
-    }
-
-    /**
-     * Resolves a named page signal route entry to its signal name.
-     *
-     * @param int|string $key SIGNALS entry key
-     * @param mixed $entry SIGNALS entry value
-     * @return ?string Signal name when the entry declares a named route
-     */
-    private static function resolvePageSignalRouteName(int|string $key, mixed $entry): ?string
-    {
-        if (is_int($key)) {
-            return is_string($entry) && $entry !== '' ? $entry : null;
-        }
-
-        if (is_string($key) && $key !== '') {
-            return $key;
-        }
-
-        return null;
+        return PageSignalRouteRegistry::dtoRoutes(static::PAGES);
     }
 
     /**

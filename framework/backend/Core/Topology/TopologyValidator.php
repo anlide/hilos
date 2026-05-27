@@ -541,7 +541,7 @@ final class TopologyValidator
                 }
 
                 foreach ($signalNames as $key => $entry) {
-                    $signalName = $this->resolvePageSignalRouteName($key, $entry);
+                    $signalName = PageSignalRouteRegistry::resolveRouteName($key, $entry);
                     if ($signalName === null) {
                         $errors[] = "PAGES[{$page}] class {$pageClass} SIGNALS[{$signalType}] must contain only non-empty signal names or valid signal DTO map entries";
                         continue;
@@ -627,30 +627,7 @@ final class TopologyValidator
      */
     private function validatePageSignalDtoRoutes(array $pages, array $pageSignalDtoRoutes, array &$errors): void
     {
-        $declaredRoutes = [];
-        foreach ($pages as $page => $pageClass) {
-            if (!is_string($page) || !is_string($pageClass) || !is_subclass_of($pageClass, AbstractPage::class)) {
-                continue;
-            }
-
-            foreach ($pageClass::SIGNALS as $signalType => $signalNames) {
-                if (!is_string($signalType) || $signalType === '' || !is_array($signalNames) || $signalNames === []) {
-                    continue;
-                }
-
-                foreach ($signalNames as $key => $entry) {
-                    if (!is_string($key) || $key === '' || !is_string($entry) || $entry === '') {
-                        continue;
-                    }
-
-                    if (!isset($declaredRoutes[$signalType])) {
-                        $declaredRoutes[$signalType] = [];
-                    }
-
-                    $declaredRoutes[$signalType][$key] = $entry;
-                }
-            }
-        }
+        $declaredRoutes = PageSignalRouteRegistry::dtoRoutes($pages);
 
         foreach ($declaredRoutes as $signalType => $routes) {
             foreach ($routes as $signalName => $dtoClass) {
@@ -682,26 +659,6 @@ final class TopologyValidator
                 }
             }
         }
-    }
-
-    /**
-     * Resolves a named page signal route entry to its signal name.
-     *
-     * @param int|string $key SIGNALS entry key
-     * @param mixed $entry SIGNALS entry value
-     * @return ?string Signal name when the entry declares a named route
-     */
-    private function resolvePageSignalRouteName(int|string $key, mixed $entry): ?string
-    {
-        if (is_int($key)) {
-            return is_string($entry) && $entry !== '' ? $entry : null;
-        }
-
-        if (is_string($key) && $key !== '') {
-            return $key;
-        }
-
-        return null;
     }
 
     /**
