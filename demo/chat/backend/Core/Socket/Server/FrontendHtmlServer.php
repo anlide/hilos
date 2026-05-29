@@ -7,7 +7,6 @@ namespace Demo\Chat\Core\Socket\Server;
 use Demo\Chat\Core\Frontend\HtmlCache;
 use Demo\Chat\Core\Frontend\HtmlResolver;
 use Demo\Chat\Core\Socket\Client\FrontendHtmlClient;
-use Hilos\Socket\Client\ClientInterface;
 use Hilos\Socket\Server\AbstractServer;
 use Hilos\Socket\SocketException;
 use Hilos\Socket\SocketOperation;
@@ -17,6 +16,8 @@ use Hilos\Socket\SocketOperation;
  *
  * Serves HTML with Accept-Language content negotiation.
  * Separate from status server (port 8090).
+ *
+ * @extends AbstractServer<FrontendHtmlClient>
  */
 final class FrontendHtmlServer extends AbstractServer
 {
@@ -38,23 +39,12 @@ final class FrontendHtmlServer extends AbstractServer
     }
 
     /**
-     * Accept new client connection.
-     *
-     * @return ?ClientInterface New client or null
-     * @throws SocketException If connection accept fails
-     */
-    public function acceptConnection(): ?ClientInterface
-    {
-        return parent::acceptConnection();
-    }
-
-    /**
      * Create client instance for accepted socket.
      *
      * @param resource $socket Client socket
-     * @return ClientInterface Client instance
+     * @return FrontendHtmlClient Client instance
      */
-    protected function onCreateClient($socket): ClientInterface
+    protected function onCreateClient($socket): FrontendHtmlClient
     {
         return new FrontendHtmlClient($socket, $this->resolver, $this->cache);
     }

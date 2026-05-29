@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Socket\Worker;
 
 use Hilos\Constants\EnvConstants;
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\Socket\AbstractSocket;
@@ -155,7 +156,8 @@ class WorkerDaemonClient extends AbstractSocket
     /**
      * Read data from socket.
      *
-     * @throws SocketException When socket read fails
+     * @throws SocketException When socket read fails or read buffer limits are exceeded
+     * @throws InvalidArgumentException When a complete message has invalid JSON or type
      */
     public function read(): void
     {
@@ -219,9 +221,10 @@ class WorkerDaemonClient extends AbstractSocket
     }
 
     /**
-     * Process read buffer - extract complete messages.
+     * Extract complete JSON messages from the read buffer and enqueue DTOs.
      *
-     * @throws SocketException When JSON parsing fails
+     * @throws SocketException When read buffer or JSON depth exceeds limits
+     * @throws InvalidArgumentException When message JSON or worker message type is invalid
      */
     private function processReadBuffer(): void
     {

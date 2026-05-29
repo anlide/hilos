@@ -119,17 +119,6 @@ abstract class WorkerServer extends AbstractServer
     }
 
     /**
-     * Accept new worker connection.
-     *
-     * @return ?WorkerClientInterface New worker client or null
-     * @throws SocketException If socket operation fails
-     */
-    public function acceptConnection(): ?WorkerClientInterface
-    {
-        return parent::acceptConnection();
-    }
-
-    /**
      * Called when a new worker client connection is accepted.
      *
      * @param resource $socket Client socket

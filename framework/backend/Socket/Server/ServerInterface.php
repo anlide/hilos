@@ -10,6 +10,9 @@ use Hilos\Socket\Client\ClientInterface;
  * ServerInterface - Interface for all server implementations.
  *
  * Defines common interface for server components that work with epoll.
+ *
+ * Concrete servers extend AbstractServer with a client template type; callers that
+ * need a narrowed client type should depend on the concrete server, not this interface.
  */
 interface ServerInterface
 {

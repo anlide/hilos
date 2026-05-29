@@ -156,12 +156,12 @@ abstract class AbstractServer extends AbstractSocket implements ServerInterface
     }
 
     /**
-     * Accept new connection - common implementation
+     * Accept new connection - common implementation.
      *
      * Handles socket_accept and socket_set_nonblock.
-     * Child classes should implement onCreateClient() to create specific client type.
+     * Child classes implement onCreateClient() to create the concrete client type.
      *
-     * @return ?TClient New client instance or null if no connection available (EWOULDBLOCK in non-blocking mode)
+     * @return ?TClient New client or null when no connection is pending (EWOULDBLOCK)
      * @throws SocketException When socket operations fail
      */
     public function acceptConnection(): ?ClientInterface

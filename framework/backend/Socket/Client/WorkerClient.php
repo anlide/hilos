@@ -6,6 +6,7 @@ namespace Hilos\Socket\Client;
 
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\Agent\Exception\AgentDaemonCreationFailedException;
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Socket\Client\Interface\WorkerClientInterface;
 use Hilos\Socket\SocketException;
 use Hilos\Socket\Worker\DTO\AgentStartDTO;
@@ -126,13 +127,11 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
     }
 
     /**
-     * Process read buffer - check for complete messages
+     * Extract complete JSON messages from the read buffer and dispatch worker protocol handlers.
      *
-     * Safely parses JSON messages by tracking bracket depth.
-     * Handles JSON objects that may contain newlines in strings.
-     *
-     * @throws AgentDaemonCreationFailedException If agent creation fails during message handling
-     * @throws SocketException If socket read/write fails
+     * @throws SocketException When read buffer or JSON depth exceeds limits
+     * @throws InvalidArgumentException When message JSON or worker message type is invalid
+     * @throws AgentDaemonCreationFailedException When agent creation fails during message handling
      */
     protected function processReadBuffer(): void
     {
@@ -148,10 +147,11 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
     }
 
     /**
-     * Process message from worker
+     * Process message from worker.
      *
-     * @param string $message Message data
-     * @throws AgentDaemonCreationFailedException If agent creation fails during message handling
+     * @param string $message Complete JSON message payload
+     * @throws InvalidArgumentException When message JSON or worker message type is invalid
+     * @throws AgentDaemonCreationFailedException When agent creation fails during message handling
      */
     private function processMessage(string $message): void
     {

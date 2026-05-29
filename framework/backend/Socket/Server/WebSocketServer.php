@@ -22,17 +22,6 @@ use Hilos\Socket\SocketOperation;
 abstract class WebSocketServer extends AbstractServer
 {
     /**
-     * Accept new connection.
-     *
-     * @return ?WebSocketClientInterface New client or null if no connection pending
-     * @throws SocketException If socket operation fails
-     */
-    public function acceptConnection(): ?WebSocketClientInterface
-    {
-        return parent::acceptConnection();
-    }
-
-    /**
      * Called when a new WebSocket client connection is accepted.
      *
      * Must be implemented by child classes to create concrete WebSocketClient.

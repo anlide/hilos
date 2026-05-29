@@ -7,6 +7,7 @@ namespace Hilos\Socket\Server;
 use Hilos\Socket\Client\HttpClient;
 use Hilos\Socket\Client\Interface\HttpClientInterface;
 use Hilos\Socket\SocketException;
+use Hilos\Socket\SocketOperation;
 
 /**
  * HttpServer - HTTP server implementation.
@@ -18,17 +19,6 @@ use Hilos\Socket\SocketException;
  */
 class HttpServer extends AbstractServer
 {
-    /**
-     * Accept new connection.
-     *
-     * @return ?HttpClientInterface New client or null
-     * @throws SocketException If socket operation fails
-     */
-    public function acceptConnection(): ?HttpClientInterface
-    {
-        return parent::acceptConnection();
-    }
-
     /**
      * Called when a new HTTP client connection is accepted.
      *
@@ -87,7 +77,7 @@ class HttpServer extends AbstractServer
         if ($this->socket !== null) {
             socket_close($this->socket);
             // Check for errors during close
-            $this->handleSocketError(\Hilos\Socket\SocketOperation::CLOSE);
+            $this->handleSocketError(SocketOperation::CLOSE);
             $this->socket = null;
         }
 
