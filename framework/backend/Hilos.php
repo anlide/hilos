@@ -5,9 +5,6 @@ declare(strict_types=1);
 namespace Hilos;
 
 use Hilos\Core\Analytics\AnalyticsCollector;
-use Hilos\Core\Agent\AbstractAgent;
-use Hilos\Core\Agent\AgentRegistry;
-use Hilos\Core\Agent\Config\AgentSignalConfigKey;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Core\Group\AbstractGroup;
@@ -17,6 +14,7 @@ use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Table\Context\TableContext;
 use Hilos\Core\Topology\Exception\InvalidTopologyException;
+use Hilos\Core\Topology\AgentSignalRouteRegistry;
 use Hilos\Core\Topology\PageSignalRouteRegistry;
 use Hilos\Core\Topology\TopologyValidator;
 use Hilos\Database\Context\DbContext;
@@ -289,31 +287,7 @@ abstract class Hilos
      */
     public static function getAgentSignalRoutes(): array
     {
-        $signalRoutes = [];
-        foreach (static::AGENTS as $agentType => $registryEntry) {
-            $agentClass = AgentRegistry::workerClass($registryEntry);
-            if (!is_string($agentType) || $agentClass === null || !is_subclass_of($agentClass, AbstractAgent::class)) {
-                continue;
-            }
-
-            foreach ($agentClass::AGENT_SIGNALS as $key => $value) {
-                if (is_int($key) && is_string($value) && $value !== '') {
-                    $signalRoutes[$value] = $agentType;
-                    continue;
-                }
-
-                if (is_string($key) && $key !== '' && is_string($value) && $value !== '') {
-                    $signalRoutes[$key] = $agentType;
-                    continue;
-                }
-
-                if (is_string($key) && $key !== '' && is_array($value)) {
-                    $signalRoutes[$key] = $agentType;
-                }
-            }
-        }
-
-        return $signalRoutes;
+        return AgentSignalRouteRegistry::routes(static::AGENTS);
     }
 
     /**
@@ -327,31 +301,7 @@ abstract class Hilos
      */
     public static function getAgentSignalDtoRoutes(): array
     {
-        $dtoRoutes = [];
-        foreach (static::AGENTS as $agentType => $registryEntry) {
-            $agentClass = AgentRegistry::workerClass($registryEntry);
-            if (!is_string($agentType) || $agentClass === null || !is_subclass_of($agentClass, AbstractAgent::class)) {
-                continue;
-            }
-
-            foreach ($agentClass::AGENT_SIGNALS as $key => $value) {
-                if (is_string($key) && $key !== '' && is_string($value) && $value !== '') {
-                    $dtoRoutes[$key] = $value;
-                    continue;
-                }
-
-                if (!is_string($key) || $key === '' || !is_array($value)) {
-                    continue;
-                }
-
-                $dtoClass = $value[AgentSignalConfigKey::DTO] ?? null;
-                if (is_string($dtoClass) && $dtoClass !== '') {
-                    $dtoRoutes[$key] = $dtoClass;
-                }
-            }
-        }
-
-        return $dtoRoutes;
+        return AgentSignalRouteRegistry::dtoRoutes(static::AGENTS);
     }
 
     /**
@@ -364,26 +314,7 @@ abstract class Hilos
      */
     public static function getAgentSignalIndexFields(): array
     {
-        $indexFields = [];
-        foreach (static::AGENTS as $agentType => $registryEntry) {
-            $agentClass = AgentRegistry::workerClass($registryEntry);
-            if (!is_string($agentType) || $agentClass === null || !is_subclass_of($agentClass, AbstractAgent::class)) {
-                continue;
-            }
-
-            foreach ($agentClass::AGENT_SIGNALS as $key => $value) {
-                if (!is_string($key) || $key === '' || !is_array($value)) {
-                    continue;
-                }
-
-                $indexField = $value[AgentSignalConfigKey::INDEX_FIELD] ?? null;
-                if (is_string($indexField) && $indexField !== '') {
-                    $indexFields[$key] = $indexField;
-                }
-            }
-        }
-
-        return $indexFields;
+        return AgentSignalRouteRegistry::indexFields(static::AGENTS);
     }
 
     /**

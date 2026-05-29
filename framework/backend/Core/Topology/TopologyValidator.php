@@ -813,29 +813,7 @@ final class TopologyValidator
      */
     private function validateAgentSignalDtoRoutes(array $agents, array $agentSignalDtoRoutes, array &$errors): void
     {
-        $declaredRoutes = [];
-        foreach ($agents as $agentType => $registryEntry) {
-            $agentClass = AgentRegistry::workerClass($registryEntry);
-            if (!is_string($agentType) || $agentClass === null || !is_subclass_of($agentClass, AbstractAgent::class)) {
-                continue;
-            }
-
-            foreach ($agentClass::AGENT_SIGNALS as $key => $value) {
-                if (is_string($key) && $key !== '' && is_string($value) && $value !== '') {
-                    $declaredRoutes[$key] = $value;
-                    continue;
-                }
-
-                if (!is_string($key) || $key === '' || !is_array($value)) {
-                    continue;
-                }
-
-                $dtoClass = $value[AgentSignalConfigKey::DTO] ?? null;
-                if (is_string($dtoClass) && $dtoClass !== '') {
-                    $declaredRoutes[$key] = $dtoClass;
-                }
-            }
-        }
+        $declaredRoutes = AgentSignalRouteRegistry::dtoRoutes($agents);
 
         foreach ($declaredRoutes as $signalName => $dtoClass) {
             if (($agentSignalDtoRoutes[$signalName] ?? null) !== $dtoClass) {
