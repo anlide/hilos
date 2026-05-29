@@ -8,6 +8,8 @@ use Hilos\Constants\HttpConstants;
 use Hilos\Constants\HilosHttpHeaders;
 use Hilos\Constants\SignalPayloadConstants;
 use Hilos\Constants\SignalTypeConstants;
+use Hilos\Constants\WebSocketConstants;
+use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Http\RequestQueryParams;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalSource;
@@ -31,8 +33,10 @@ use Hilos\Socket\WebSocket\Exception\ReservedOpcodeException;
 use Hilos\Socket\WebSocket\Exception\UnknownOpcodeException;
 use Hilos\Socket\WebSocket\Exception\UnsupportedProtocolVersionException;
 use Hilos\Hilos;
+use Hilos\Socket\WebSocket\WebSocketException;
 use Hilos\Socket\WebSocket\WebSocketFrameDTO;
 use Hilos\Utils\Helpers\JsonHelper;
+use Hilos\Utils\Logger;
 use Hilos\Core\Exception\InvalidStateException;
 use Hilos\Core\Exception\UnsupportedOperationException;
 
@@ -57,9 +61,6 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
 
     /** @var string Backing storage for accept key */
     private string $acceptKeyValue = '';
-
-    /** WebSocket protocol magic string for handshake */
-    private const string WS_MAGIC_STRING = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
 
     /** WebSocket frame opcodes */
     private const int OPCODE_CONTINUATION = 0x0;     // Continuation frame
@@ -102,7 +103,6 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
     /** @var string Accumulated payload for fragmented message */
     private string $fragmentedPayload = '';
 
-
     /**
      * Process read buffer - parse WebSocket frames
      *
@@ -113,40 +113,41 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
      * @throws UnknownOpcodeException If unknown opcode is received
      * @throws UnsupportedProtocolVersionException If WebSocket version is unsupported
      * @throws InvalidFrameException If frame payload is invalid
+     * @throws AgentUnknownActionException When action name is not allowed
+     * @throws UnsupportedOperationException When an internal signal branch is unreachable
      */
     protected function processReadBuffer(): void
     {
-        // Handle WebSocket handshake first
-        if (!$this->handshakeCompleted) {
-            $this->handleHandshake();
-            return;
-        }
-
-        // Parse WebSocket frames
-        while (strlen($this->readBuffer) >= self::HEADER_LEN_BASE) {
-            $frame = $this->parseFrame();
-            if ($frame === null) {
-                break; // Incomplete frame, wait for more data
+        try {
+            if (!$this->handshakeCompleted) {
+                $this->handleHandshake();
+                return;
             }
 
-            try {
+            while (strlen($this->readBuffer) >= self::HEADER_LEN_BASE) {
+                $frame = $this->parseFrame();
+                if ($frame === null) {
+                    break;
+                }
+
                 $this->handleFrame($frame);
-            } catch (UnknownOpcodeException|ReservedOpcodeException|InvalidFrameException $exception) {
-                // Log and close connection on unknown/reserved opcode
-                $this->shouldClose = true;
-                throw $exception;
             }
+        } catch (UnknownOpcodeException|ReservedOpcodeException|InvalidFrameException $exception) {
+            $this->shouldClose = true;
+            throw $exception;
         }
     }
 
     /**
-     * Handle WebSocket frame based on opcode
+     * Handle WebSocket frame based on opcode.
      *
      * @param WebSocketFrameDTO $frame Parsed frame data
      * @throws UnknownOpcodeException When opcode is unknown
      * @throws ReservedOpcodeException When opcode is reserved
      * @throws InvalidFrameSequenceException When frame sequence is invalid
-     * @throws InvalidFrameException When frame payload is invalid
+     * @throws InvalidFrameException When text/binary payload is invalid
+     * @throws AgentUnknownActionException When action name is not allowed
+     * @throws UnsupportedOperationException When an internal signal branch is unreachable
      */
     private function handleFrame(WebSocketFrameDTO $frame): void
     {
@@ -186,8 +187,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
                     $this->fragmentedOpcode = self::OPCODE_TEXT;
                     $this->fragmentedPayload = $frame->payload;
                 } else {
-                    // Check if text is "ping" - respond with pong
-                    if ($frame->payload === 'ping') {
+                    if ($frame->payload === WebSocketConstants::KEEPALIVE_TEXT_PING) {
                         $this->sendPong('');
                     } else {
                         // Complete text frame
@@ -266,8 +266,9 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
         $requestLine = $this->parseRequestLine($request);
         $queryParams = $this->parseQueryParams($requestLine[HttpConstants::REQUEST_KEY_PATH] ?? '');
 
-        // Parse headers
-        $headers = $this->parseHeaders($request);
+        $lines = explode(HttpConstants::HTTP_LINE_SEPARATOR, $request);
+        array_shift($lines);
+        $headers = $this->parseHeaders($lines);
 
         // Check if it's a WebSocket upgrade request
         if (!isset($headers[HttpConstants::HEADER_UPGRADE]) ||
@@ -277,7 +278,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
 
         // Check WebSocket protocol version (RFC 6455 requires version 13)
         $version = $headers[HttpConstants::HEADER_SEC_WEBSOCKET_VERSION] ?? '';
-        if ($version !== '13') {
+        if ($version !== WebSocketConstants::PROTOCOL_VERSION) {
             throw new UnsupportedProtocolVersionException($version ?: 'not specified');
         }
 
@@ -291,7 +292,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
         }
 
         // Concatenate key + magic string, compute SHA1 (binary output), encode as base64
-        $acceptKey = base64_encode(sha1($key . self::WS_MAGIC_STRING, true));
+        $acceptKey = base64_encode(sha1($key . WebSocketConstants::RFC6455_ACCEPT_MAGIC, true));
 
         // Call onHandshake callback before completing handshake
         $this->handleHandshakeInternal(
@@ -303,7 +304,10 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
         );
 
         // Send handshake response
-        $response = HttpConstants::HTTP_VERSION . " 101 Switching Protocols" . HttpConstants::HTTP_LINE_SEPARATOR;
+        $response = HttpConstants::HTTP_VERSION
+            . ' ' . HttpConstants::HTTP_STATUS_SWITCHING_PROTOCOLS
+            . ' ' . HttpConstants::HTTP_REASON_SWITCHING_PROTOCOLS
+            . HttpConstants::HTTP_LINE_SEPARATOR;
         $response .= HttpConstants::HEADER_UPGRADE . ": " . HttpConstants::WEBSOCKET_PROTOCOL . HttpConstants::HTTP_LINE_SEPARATOR;
         $response .= HttpConstants::HEADER_CONNECTION . ": " . HttpConstants::HEADER_UPGRADE . HttpConstants::HTTP_LINE_SEPARATOR;
         $response .= HttpConstants::HEADER_SEC_WEBSOCKET_ACCEPT . ": " . $acceptKey . HttpConstants::HTTP_LINE_SEPARATOR;
@@ -343,34 +347,6 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
     private function parseQueryParams(string $path): RequestQueryParams
     {
         return RequestQueryParams::fromPath($path);
-    }
-
-    /**
-     * Parse HTTP headers from request.
-     *
-     * @param string $request Raw HTTP request string
-     * @return array<string, string> Headers as key-value pairs
-     */
-    private function parseHeaders(string $request): array
-    {
-        $headers = [];
-        $lines = explode(HttpConstants::HTTP_LINE_SEPARATOR, $request);
-
-        // Skip request line
-        array_shift($lines);
-
-        foreach ($lines as $line) {
-            if (empty($line)) {
-                continue;
-            }
-
-            $parts = explode(':', $line, 2);
-            if (count($parts) === 2) {
-                $headers[trim($parts[0])] = trim($parts[1]);
-            }
-        }
-
-        return $headers;
     }
 
     /**
@@ -518,7 +494,9 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
      * Handle received WebSocket text frame.
      *
      * @param string $payload Frame payload (UTF-8 text)
-     * @throws InvalidFrameException When frame payload is invalid
+     * @throws InvalidFrameException When JSON or signal fields are invalid
+     * @throws AgentUnknownActionException When action name is not allowed
+     * @throws UnsupportedOperationException When an internal signal branch is unreachable
      */
     protected function onFrame(string $payload): void
     {
@@ -757,10 +735,11 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
      * Hook: validate action name from parsed payload.
      *
      * @param string $actionName Action name (e.g. message, rename)
+     * @throws AgentUnknownActionException When action name is not allowed
      */
     protected function onActionValidated(string $actionName): void
     {
-        throw new UnsupportedOperationException("Unknown websocket action type: {$actionName}");
+        throw new AgentUnknownActionException("Unknown websocket action type: {$actionName}");
     }
 
     /**

@@ -13,6 +13,7 @@ export class WebSocketService {
 
   private readonly defaultReconnectDelay = 3000 // 3 seconds
   private readonly defaultPingInterval = 40000 // 40 seconds
+  /** Must match Hilos WebSocketConstants::KEEPALIVE_TEXT_PING */
   private readonly defaultPingMessage = 'ping'
 
   constructor(options: WebSocketOptions) {

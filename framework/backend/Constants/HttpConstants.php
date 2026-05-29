@@ -44,6 +44,12 @@ class HttpConstants
     /** @var int HTTP status code for success */
     public const int HTTP_OK = 200;
 
+    /** @var int HTTP status code for switching protocols (WebSocket handshake) */
+    public const int HTTP_STATUS_SWITCHING_PROTOCOLS = 101;
+
+    /** @var string HTTP reason phrase for switching protocols */
+    public const string HTTP_REASON_SWITCHING_PROTOCOLS = 'Switching Protocols';
+
     /** @var int HTTP status code for bad request */
     public const int HTTP_BAD_REQUEST = 400;
 
@@ -71,6 +77,7 @@ class HttpConstants
     /** @var array<int, string> HTTP status code to reason phrase map */
     public const array HTTP_STATUS_TEXTS = [
         self::HTTP_OK => 'OK',
+        self::HTTP_STATUS_SWITCHING_PROTOCOLS => self::HTTP_REASON_SWITCHING_PROTOCOLS,
         self::HTTP_UNAUTHORIZED => 'Unauthorized',
         self::HTTP_FORBIDDEN => 'Forbidden',
         self::HTTP_NOT_FOUND => 'Not Found',
