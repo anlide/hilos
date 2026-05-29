@@ -8,6 +8,7 @@ use Hilos\Constants\WorkerConstants;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\Agent\Exception\AgentDaemonCreationFailedException;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Environment\Exception\EnvException;
 use Hilos\Socket\Client\Interface\WorkerClientInterface;
 use Hilos\Socket\SocketException;
 use Hilos\Socket\Worker\DTO\AgentStartDTO;
@@ -57,6 +58,7 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
      *
      * @param resource $socket Client socket
      * @param AgentManagerDaemon $agentManager Agent manager daemon instance
+     * @throws EnvException When socket read buffer env value is missing or invalid
      */
     public function __construct($socket, AgentManagerDaemon $agentManager)
     {

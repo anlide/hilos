@@ -8,8 +8,10 @@ use Hilos\API\Router\HttpRouter;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HttpConstants;
 use Hilos\Core\Http\RequestQueryParams;
+use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\Socket\Client\Interface\HttpClientInterface;
+use Hilos\Socket\SocketException;
 
 /**
  * HttpClient - Represents a single HTTP client connection.
@@ -30,7 +32,10 @@ class HttpClient extends AbstractClient implements HttpClientInterface
     private bool $serverAllowsPersistentConnections = true;
 
     /**
+     * Create HTTP client with socket and load keep-alive policy from env.
+     *
      * @param resource|object $socket Client socket resource or Socket object
+     * @throws EnvException When socket buffer or keep-alive env values are missing or invalid
      */
     public function __construct($socket)
     {
@@ -40,7 +45,7 @@ class HttpClient extends AbstractClient implements HttpClientInterface
     }
 
     /**
-     * Set router for handling requests
+     * Set router for handling HTTP requests.
      *
      * @param HttpRouter $router Router instance
      */
@@ -50,7 +55,9 @@ class HttpClient extends AbstractClient implements HttpClientInterface
     }
 
     /**
-     * Process read buffer: handle complete request(s) when no response is still being transmitted.
+     * Parse complete HTTP request(s) from the read buffer when outbound data is fully sent.
+     *
+     * @throws SocketException When outbound write fails during request handling
      */
     protected function processReadBuffer(): void
     {
@@ -74,7 +81,10 @@ class HttpClient extends AbstractClient implements HttpClientInterface
     }
 
     /**
-     * Handle one complete HTTP request message and queue its response.
+     * Route one complete HTTP request and queue its response.
+     *
+     * @param string $rawRequest Raw HTTP request including header/body delimiter
+     * @throws SocketException When outbound write fails while sending the response
      */
     private function processSingleHttpRequest(string $rawRequest): void
     {
@@ -109,7 +119,11 @@ class HttpClient extends AbstractClient implements HttpClientInterface
     }
 
     /**
-     * Whether this response may leave the TCP connection open for another request.
+     * Resolve whether the response may use a persistent TCP connection.
+     *
+     * @param array<string, string> $headers Request headers
+     * @param string $version HTTP version from the request line
+     * @return bool True when keep-alive is allowed for this response
      */
     private function effectivePersistentConnectionForResponse(array $headers, string $version): bool
     {
@@ -117,7 +131,13 @@ class HttpClient extends AbstractClient implements HttpClientInterface
             return false;
         }
 
-        $conn = strtolower($this->getHeaderCaseInsensitive($headers, HttpConstants::HEADER_CONNECTION));
+        $conn = '';
+        foreach ($headers as $key => $value) {
+            if (strtolower($key) === strtolower(HttpConstants::HEADER_CONNECTION)) {
+                $conn = strtolower(is_string($value) ? trim($value) : '');
+                break;
+            }
+        }
         if ($conn !== '') {
             if (str_contains($conn, HttpConstants::CONNECTION_VALUE_CLOSE)) {
                 return false;
@@ -133,22 +153,7 @@ class HttpClient extends AbstractClient implements HttpClientInterface
     }
 
     /**
-     * @param array<string, string> $headers
-     */
-    private function getHeaderCaseInsensitive(array $headers, string $name): string
-    {
-        $want = strtolower($name);
-        foreach ($headers as $key => $value) {
-            if (strtolower($key) === $want) {
-                return is_string($value) ? trim($value) : '';
-            }
-        }
-
-        return '';
-    }
-
-    /**
-     * Parse HTTP request.
+     * Parse raw HTTP request into method, path, headers, and query params.
      *
      * @param string $rawRequest Raw HTTP request
      * @return array{
@@ -159,7 +164,7 @@ class HttpClient extends AbstractClient implements HttpClientInterface
      *     body: string,
      *     query: string,
      *     queryParams: RequestQueryParams
-     * } Keys use {@see HttpConstants::REQUEST_KEY_*}
+     * } Parsed request keyed by HttpConstants::REQUEST_KEY_* constants
      */
     private function parseRequest(string $rawRequest): array
     {
@@ -189,37 +194,16 @@ class HttpClient extends AbstractClient implements HttpClientInterface
     }
 
     /**
-     * Parse HTTP headers.
-     *
-     * @param list<string> $lines Request lines (from explode of raw request)
-     * @return array<string, string> Headers (name => value)
-     */
-    private function parseHeaders(array $lines): array
-    {
-        $headers = [];
-        for ($i = 1; $i < count($lines); $i++) {
-            if ($lines[$i] === '') {
-                break;
-            }
-            $headerParts = explode(':', $lines[$i], 2);
-            if (count($headerParts) === 2) {
-                $headers[trim($headerParts[0])] = trim($headerParts[1]);
-            }
-        }
-
-        return $headers;
-    }
-
-    /**
-     * Build HTTP response.
+     * Build raw HTTP response string from status, headers, and body.
      *
      * @param array{status?: int, headers?: array<string, string>, body?: string} $response Response data
-     * @return string HTTP response string
+     * @return string Serialized HTTP response
      */
     private function buildResponse(array $response): string
     {
         $status = $response[HttpConstants::RESPONSE_KEY_STATUS] ?? HttpConstants::HTTP_OK;
-        $statusText = $this->getStatusText($status);
+        $statusText = HttpConstants::HTTP_STATUS_TEXTS[$status]
+            ?? HttpConstants::HTTP_STATUS_TEXT_UNKNOWN;
         $headers = $response[HttpConstants::RESPONSE_KEY_HEADERS] ?? [];
         $body = $response[HttpConstants::RESPONSE_KEY_BODY] ?? '';
 
@@ -237,19 +221,9 @@ class HttpClient extends AbstractClient implements HttpClientInterface
     }
 
     /**
-     * Get HTTP status text
+     * After a full response is sent on a keep-alive connection, parse any pipelined request in the buffer.
      *
-     * @param int $status Status code
-     * @return string Status text
-     */
-    private function getStatusText(int $status): string
-    {
-        return HttpConstants::HTTP_STATUS_TEXTS[$status]
-            ?? HttpConstants::HTTP_STATUS_TEXT_UNKNOWN;
-    }
-
-    /**
-     * After a full response is sent on a keep-alive connection, try to parse another request already in the buffer.
+     * @throws SocketException When outbound write fails while handling a subsequent request
      */
     protected function onAfterOutboundDrained(): void
     {
@@ -257,7 +231,7 @@ class HttpClient extends AbstractClient implements HttpClientInterface
     }
 
     /**
-     * Tick method - called on each server tick.
+     * Periodic tick hook; HTTP clients have no timeout or heartbeat work.
      */
     public function onTick(): void
     {
@@ -265,7 +239,7 @@ class HttpClient extends AbstractClient implements HttpClientInterface
     }
 
     /**
-     * Called when socket connection is successfully closed.
+     * Connection close hook; no HTTP-specific cleanup is required.
      */
     protected function onClose(): void
     {

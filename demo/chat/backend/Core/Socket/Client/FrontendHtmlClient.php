@@ -8,6 +8,7 @@ use Demo\Chat\Core\Frontend\HtmlCache;
 use Demo\Chat\Core\Frontend\HtmlResolver;
 use Hilos\API\Router\HttpRouter;
 use Hilos\Constants\HttpConstants;
+use Hilos\Environment\Exception\EnvException;
 use Hilos\Socket\Client\AbstractClient;
 use Hilos\Socket\Client\Interface\HttpClientInterface;
 
@@ -24,6 +25,7 @@ final class FrontendHtmlClient extends AbstractClient implements HttpClientInter
      * @param resource $socket Client socket resource
      * @param HtmlResolver $resolver Path resolver for HTML
      * @param HtmlCache $cache HTML content cache
+     * @throws EnvException When socket read buffer env value is missing or invalid
      */
     public function __construct(
         $socket,
@@ -95,21 +97,10 @@ final class FrontendHtmlClient extends AbstractClient implements HttpClientInter
         $firstLine = $lines[0] ?? '';
         $parts = explode(' ', $firstLine);
 
-        $headers = [];
-        for ($i = 1; $i < count($lines); $i++) {
-            if ($lines[$i] === '') {
-                break;
-            }
-            $headerParts = explode(':', $lines[$i], 2);
-            if (count($headerParts) === 2) {
-                $headers[trim($headerParts[0])] = trim($headerParts[1]);
-            }
-        }
-
         return [
             HttpConstants::REQUEST_KEY_METHOD => $parts[0] ?? HttpConstants::METHOD_GET,
             HttpConstants::REQUEST_KEY_PATH => $parts[1] ?? HttpConstants::PATH_ROOT,
-            HttpConstants::REQUEST_KEY_HEADERS => $headers,
+            HttpConstants::REQUEST_KEY_HEADERS => $this->parseHeaders($lines),
         ];
     }
 

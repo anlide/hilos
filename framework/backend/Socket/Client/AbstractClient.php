@@ -6,6 +6,7 @@ namespace Hilos\Socket\Client;
 
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HttpConstants;
+use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\Socket\AbstractSocket;
 use Hilos\Socket\SocketException;
@@ -38,9 +39,10 @@ abstract class AbstractClient extends AbstractSocket implements ClientInterface
     protected bool $closeWhenOutputDrained = false;
 
     /**
-     * Create client with socket. Reads buffer size from env.
+     * Create client with socket and read buffer size from env.
      *
      * @param resource|object $socket Client socket resource or Socket object
+     * @throws EnvException When socket read buffer env value is missing or invalid
      */
     public function __construct($socket)
     {
@@ -205,6 +207,28 @@ abstract class AbstractClient extends AbstractSocket implements ClientInterface
         $this->handleSocketError(SocketOperation::GETPEERNAME);
 
         return '';
+    }
+
+    /**
+     * Parse HTTP headers from request lines after the request line.
+     *
+     * @param list<string> $lines Request lines from explode of raw request
+     * @return array<string, string> Header name to value map
+     */
+    protected function parseHeaders(array $lines): array
+    {
+        $headers = [];
+        for ($i = 1; $i < count($lines); $i++) {
+            if ($lines[$i] === '') {
+                break;
+            }
+            $headerParts = explode(':', $lines[$i], 2);
+            if (count($headerParts) === 2) {
+                $headers[trim($headerParts[0])] = trim($headerParts[1]);
+            }
+        }
+
+        return $headers;
     }
 
     /**
