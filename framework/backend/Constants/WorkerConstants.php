@@ -34,6 +34,12 @@ class WorkerConstants
     /** @var string Monopolistic worker type */
     public const string TYPE_MONOPOLISTIC = 'monopolistic';
 
+    /** @var string Separator between worker type and index in worker key (format: "type:index") */
+    public const string KEY_SEPARATOR = ':';
+
+    /** @var int Maximum number of parts when splitting worker key by KEY_SEPARATOR */
+    public const int KEY_MAX_PARTS = 2;
+
     // Message types from daemon to worker
     /** @var string Worker registration confirmation */
     public const string MESSAGE_WORKER_REGISTERED = 'worker_registered';

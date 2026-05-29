@@ -26,6 +26,12 @@ class Logger
     /** Agent log marker for parsing in daemon */
     public const string AGENT_LOG_MARKER = '[AGENT_LOG]';
 
+    /** Field separator in agent log line (format: agentId|level|message) */
+    public const string AGENT_LOG_FIELD_SEPARATOR = '|';
+
+    /** Number of pipe-separated fields in agent log line (agentId, level, message) */
+    public const int AGENT_LOG_FIELDS_COUNT = 3;
+
     /** Maximum length of user message in agent log before truncation */
     private const int AGENT_USER_MESSAGE_MAX_LENGTH = 200;
 
@@ -301,7 +307,7 @@ class Logger
     private static function logAgent(string $agentId, string $level, string $message, bool $useStderr = false): void
     {
         $timestamp = TimeHelper::getTimestampWithMs();
-        $logLine = self::AGENT_LOG_MARKER . "{$agentId}|{$level}|[{$timestamp}] {$message}";
+        $logLine = self::AGENT_LOG_MARKER . "{$agentId}" . self::AGENT_LOG_FIELD_SEPARATOR . "{$level}" . self::AGENT_LOG_FIELD_SEPARATOR . "[{$timestamp}] {$message}";
 
         if ($useStderr) {
             self::errorLog($logLine);

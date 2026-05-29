@@ -86,6 +86,39 @@ abstract class WorkerServer extends AbstractServer
     /** @var float Interval between worker processes tick checks in seconds */
     private const float WORKER_PROCESSES_TICK_INTERVAL = 1.0;
 
+    /** @var string PHP binary used to spawn worker processes */
+    private const string PHP_BINARY = 'php';
+
+    /** @var string Standard log file extension */
+    private const string LOG_EXTENSION = '.log';
+
+    /** @var string Error log file extension */
+    private const string ERROR_LOG_EXTENSION = '.error.log';
+
+    /** @var string Worker log file name prefix */
+    private const string WORKER_LOG_PREFIX = 'worker-';
+
+    /** @var string Agent log file name prefix */
+    private const string AGENT_LOG_PREFIX = 'agent-';
+
+    /** @var string Regex pattern for sanitizing agent ID in log file names */
+    private const string AGENT_ID_SANITIZE_PATTERN = '/[^a-zA-Z0-9_-]/';
+
+    /** @var string Replacement for unsafe characters in agent log file names */
+    private const string AGENT_ID_SANITIZE_REPLACEMENT = '_';
+
+    /** @var string Worker count limit key: minimum */
+    private const string LIMIT_MIN = 'min';
+
+    /** @var string Worker count limit key: maximum */
+    private const string LIMIT_MAX = 'max';
+
+    /** @var int Directory permissions for worker/agent log files */
+    private const int LOG_DIR_PERMISSIONS = 0755;
+
+    /** @var int Placeholder worker index before agent is linked to a worker */
+    private const int UNLINKED_WORKER_INDEX = 0;
+
     /** @var ?float Last time worker processes were ticked (null = never) */
     private ?float $lastWorkerProcessesTick = null;
 
@@ -149,7 +182,7 @@ abstract class WorkerServer extends AbstractServer
      */
     final protected function buildAgentId(string $agentType, ?string $agentIndex): string
     {
-        return $agentIndex !== null ? $agentType . ':' . $agentIndex : $agentType;
+        return $agentIndex !== null ? $agentType . AgentConstants::ID_SEPARATOR . $agentIndex : $agentType;
     }
 
     /**
@@ -160,7 +193,7 @@ abstract class WorkerServer extends AbstractServer
      */
     final protected function parseAgentId(string $agentId): array
     {
-        $parts = explode(':', $agentId, 2);
+        $parts = explode(AgentConstants::ID_SEPARATOR, $agentId, AgentConstants::ID_MAX_PARTS);
         return [
             AgentConstants::FIELD_AGENT_TYPE => $parts[0] ?? '',
             AgentConstants::FIELD_AGENT_INDEX => $parts[1] ?? null,
@@ -215,7 +248,7 @@ abstract class WorkerServer extends AbstractServer
     private function buildWorkerKey(bool $isMonopolistic, int $index): string
     {
         $type = $isMonopolistic ? WorkerConstants::TYPE_MONOPOLISTIC : WorkerConstants::TYPE_REGULAR;
-        return "{$type}:{$index}";
+        return "{$type}" . WorkerConstants::KEY_SEPARATOR . "{$index}";
     }
 
     /**
@@ -226,7 +259,7 @@ abstract class WorkerServer extends AbstractServer
      */
     private function parseWorkerKey(string $key): array
     {
-        [$type, $index] = explode(':', $key, 2);
+        [$type, $index] = explode(WorkerConstants::KEY_SEPARATOR, $key, WorkerConstants::KEY_MAX_PARTS);
         return [
             WorkerConstants::FIELD_WORKER_TYPE => $type,
             WorkerConstants::FIELD_WORKER_INDEX => (int)$index
@@ -441,7 +474,7 @@ abstract class WorkerServer extends AbstractServer
 
         // Ensure log directory exists
         if (!is_dir($logDirectory)) {
-            if (!mkdir($logDirectory, 0755, true)) {
+            if (!mkdir($logDirectory, self::LOG_DIR_PERMISSIONS, true)) {
                 Logger::error("Failed to create log directory: {$logDirectory}");
             }
         }
@@ -481,14 +514,14 @@ abstract class WorkerServer extends AbstractServer
         // Read stdout and write to file
         $stdout = $process->getStdOut();
         if (!empty($stdout)) {
-            $stdoutFile = $logDirectory . "/worker-{$workerType}-{$workerIndex}.log";
+            $stdoutFile = $logDirectory . '/' . self::WORKER_LOG_PREFIX . "{$workerType}-{$workerIndex}" . self::LOG_EXTENSION;
             $this->processWorkerOutput($stdout, $stdoutFile, $logDirectory, false);
         }
 
         // Read stderr and write to file
         $stderr = $process->getStdErr();
         if (!empty($stderr)) {
-            $stderrFile = $logDirectory . "/worker-{$workerType}-{$workerIndex}.error.log";
+            $stderrFile = $logDirectory . '/' . self::WORKER_LOG_PREFIX . "{$workerType}-{$workerIndex}" . self::ERROR_LOG_EXTENSION;
             $this->processWorkerOutput($stderr, $stderrFile, $logDirectory, true);
         }
     }
@@ -551,8 +584,8 @@ abstract class WorkerServer extends AbstractServer
         $content = substr($line, strlen($marker));
 
         // Split by pipe: agentId|level|message
-        $parts = explode('|', $content, 3);
-        if (count($parts) < 3) {
+        $parts = explode(Logger::AGENT_LOG_FIELD_SEPARATOR, $content, Logger::AGENT_LOG_FIELDS_COUNT);
+        if (count($parts) < Logger::AGENT_LOG_FIELDS_COUNT) {
             // Invalid format, skip
             return;
         }
@@ -587,13 +620,13 @@ abstract class WorkerServer extends AbstractServer
     {
         foreach ($agentLogs as $agentId => $levels) {
             // Sanitize agent ID for filename (replace : and other special chars)
-            $safeAgentId = preg_replace('/[^a-zA-Z0-9_-]/', '_', $agentId);
+            $safeAgentId = preg_replace(self::AGENT_ID_SANITIZE_PATTERN, self::AGENT_ID_SANITIZE_REPLACEMENT, $agentId);
 
             foreach ($levels as $level => $messages) {
                 // Determine log file extension
                 // ERROR level or stderr -> .error.log, otherwise -> .log
-                $extension = ($level === Logger::LEVEL_ERROR || $isStderr) ? '.error.log' : '.log';
-                $agentLogFile = $logDirectory . "/agent-{$safeAgentId}{$extension}";
+                $extension = ($level === Logger::LEVEL_ERROR || $isStderr) ? self::ERROR_LOG_EXTENSION : self::LOG_EXTENSION;
+                $agentLogFile = $logDirectory . '/' . self::AGENT_LOG_PREFIX . "{$safeAgentId}{$extension}";
 
                 // Write messages
                 foreach ($messages as $message) {
@@ -620,8 +653,8 @@ abstract class WorkerServer extends AbstractServer
         }
 
         $types = [
-            WorkerConstants::TYPE_REGULAR => ['min' => $this->minRegular, 'max' => $this->maxRegular],
-            WorkerConstants::TYPE_MONOPOLISTIC => ['min' => $this->minMonopolistic, 'max' => PHP_INT_MAX]
+            WorkerConstants::TYPE_REGULAR => [self::LIMIT_MIN => $this->minRegular, self::LIMIT_MAX => $this->maxRegular],
+            WorkerConstants::TYPE_MONOPOLISTIC => [self::LIMIT_MIN => $this->minMonopolistic, self::LIMIT_MAX => PHP_INT_MAX]
         ];
 
         foreach ($types as $type => $limits) {
@@ -629,13 +662,13 @@ abstract class WorkerServer extends AbstractServer
             $isMonopolistic = ($type === WorkerConstants::TYPE_MONOPOLISTIC);
 
             // Check if we need to start a worker of this type
-            if ($count < $limits['min']) {
+            if ($count < $limits[self::LIMIT_MIN]) {
                 // For regular workers, also check max limit
-                if ($type === WorkerConstants::TYPE_REGULAR && $count >= $limits['max']) {
+                if ($type === WorkerConstants::TYPE_REGULAR && $count >= $limits[self::LIMIT_MAX]) {
                     continue;
                 }
                 // For monopolistic workers, skip if min is 0
-                if ($type === WorkerConstants::TYPE_MONOPOLISTIC && $limits['min'] === 0) {
+                if ($type === WorkerConstants::TYPE_MONOPOLISTIC && $limits[self::LIMIT_MIN] === 0) {
                     continue;
                 }
 
@@ -664,7 +697,7 @@ abstract class WorkerServer extends AbstractServer
 
         // Create process
         $process = new Process(
-            'php',
+            self::PHP_BINARY,
             array_merge([$this->workerScript], ArgumentHelper::buildWorkerArgs($workerIndex, $isMonopolistic)),
             $this->workingDirectory,
             [Process::DESCRIPTOR_PIPE, Process::PIPE_READ], // stdin
@@ -741,7 +774,7 @@ abstract class WorkerServer extends AbstractServer
         // Create agent daemon if it doesn't exist (temporary, will be linked to worker below)
         if (!$this->agentManager->hasAgent($agentId)) {
             // Create agent daemon with dummy worker info (will be updated when linked)
-            $this->agentManager->createAndAddAgent($agentType, $agentIndex, 0, false);
+            $this->agentManager->createAndAddAgent($agentType, $agentIndex, self::UNLINKED_WORKER_INDEX, false);
         }
 
         $agentDaemon = $this->agentManager->getAgent($agentId)
@@ -908,7 +941,7 @@ abstract class WorkerServer extends AbstractServer
         $workerClient = $agentDaemon->getWorkerClient();
         if ($workerClient === null) {
             $workerClient = $this->findWorkerClientById($this->agentManager->getAgentWorkerId($agentId))
-                ?? throw new WorkerClientNotFoundException($agentId, $workerInfo['workerIndex'], $workerInfo['isMonopolistic']);
+                ?? throw new WorkerClientNotFoundException($agentId, $workerInfo[AgentManagerDaemon::WORKER_INFO_INDEX], $workerInfo[AgentManagerDaemon::WORKER_INFO_IS_MONOPOLISTIC]);
 
             $agentDaemon->setWorkerClient($workerClient);
         }
@@ -936,8 +969,8 @@ abstract class WorkerServer extends AbstractServer
         }
 
         $workerId = $this->agentManager->calculateWorkerId(
-            $workerInfo['workerIndex'],
-            $workerInfo['isMonopolistic'],
+            $workerInfo[AgentManagerDaemon::WORKER_INFO_INDEX],
+            $workerInfo[AgentManagerDaemon::WORKER_INFO_IS_MONOPOLISTIC],
         );
         $workerClient = $this->findWorkerClientById($workerId);
         if ($workerClient === null) {

@@ -38,6 +38,12 @@ use Hilos\Utils\Logger;
  */
 abstract class AgentManagerDaemon
 {
+    /** @var string Worker index key in getAgentWorkerInfo() / extractWorkerInfo() result */
+    public const string WORKER_INFO_INDEX = 'workerIndex';
+
+    /** @var string Monopolistic flag key in getAgentWorkerInfo() / extractWorkerInfo() result */
+    public const string WORKER_INFO_IS_MONOPOLISTIC = 'isMonopolistic';
+
     /** @var array<string, AgentDaemonInterface> Active agent daemons indexed by agent ID */
     protected array $agentDaemons = [];
 
@@ -92,8 +98,8 @@ abstract class AgentManagerDaemon
     public function extractWorkerInfo(int $workerId): array
     {
         return [
-            'workerIndex' => abs($workerId),
-            'isMonopolistic' => $workerId < 0,
+            self::WORKER_INFO_INDEX => abs($workerId),
+            self::WORKER_INFO_IS_MONOPOLISTIC => $workerId < 0,
         ];
     }
 
