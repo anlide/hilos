@@ -16,4 +16,7 @@ class SocketConstants
 
     /** @var int Maximum JSON nesting depth */
     public const int MAX_JSON_DEPTH = 100;
+
+    /** @var int Default socket_listen backlog (typical Linux SOMAXCONN) */
+    public const int DEFAULT_LISTEN_BACKLOG = 128;
 }

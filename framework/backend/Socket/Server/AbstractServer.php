@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Socket\Server;
 
+use Hilos\Constants\SocketConstants;
 use Hilos\Socket\AbstractSocket;
 use Hilos\Socket\Client\ClientInterface;
 use Hilos\Socket\SocketException;
@@ -208,7 +209,7 @@ abstract class AbstractServer extends AbstractSocket implements ServerInterface
      * Backlog specifies the maximum length of the queue of pending connections.
      * When the queue is full, new connection attempts are refused.
      *
-     * Return 0 or less to use system SOMAXCONN value (obtained via getSystemMaxBacklog()).
+     * Default value is SocketConstants::DEFAULT_LISTEN_BACKLOG.
      * Override this method in child classes to set custom backlog size.
      *
      * Note: The actual backlog may be capped by system SOMAXCONN value.
@@ -217,13 +218,12 @@ abstract class AbstractServer extends AbstractSocket implements ServerInterface
      * Common values:
      * - 5-10: For low-traffic servers (HTTP)
      * - 50-100: For high-traffic servers (WebSocket)
-     * - 0: Use system default (SOMAXCONN, usually 128)
      *
-     * @return int Backlog size (maximum pending connections, 0 for system default)
+     * @return int Backlog size (maximum pending connections)
      */
     protected function getBacklogSize(): int
     {
-        return 128; // Use system SOMAXCONN by default
+        return SocketConstants::DEFAULT_LISTEN_BACKLOG;
     }
 
     /**
