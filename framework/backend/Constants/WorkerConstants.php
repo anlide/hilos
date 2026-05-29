@@ -19,6 +19,21 @@ class WorkerConstants
     /** @var string Monopolistic worker flag name */
     public const string MONOPOLISTIC_ARG = 'monopolistic';
 
+    /** @var string Worker process field key */
+    public const string FIELD_WORKER_PROCESS = 'process';
+
+    /** @var string Worker type field key */
+    public const string FIELD_WORKER_TYPE = 'type';
+
+    /** @var string Worker index field key */
+    public const string FIELD_WORKER_INDEX = 'index';
+
+    /** @var string Regular worker type */
+    public const string TYPE_REGULAR = 'regular';
+
+    /** @var string Monopolistic worker type */
+    public const string TYPE_MONOPOLISTIC = 'monopolistic';
+
     // Message types from daemon to worker
     /** @var string Worker registration confirmation */
     public const string MESSAGE_WORKER_REGISTERED = 'worker_registered';

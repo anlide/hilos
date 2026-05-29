@@ -8,6 +8,7 @@ use Hilos\Constants\AgentConstants;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
+use Hilos\Constants\WorkerConstants;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\Agent\Exception\AgentDaemonCreationFailedException;
 use Hilos\Core\Agent\Exception\AgentNotFoundException;
@@ -30,7 +31,6 @@ use Hilos\Hilos;
 use Hilos\Socket\Client\ClientInterface;
 use Hilos\Socket\Client\Interface\WorkerClientInterface;
 use Hilos\Socket\Client\WorkerClient;
-use Hilos\Socket\SocketException;
 use Hilos\Socket\Worker\DTO\DaemonAgentMessageDTO;
 use Hilos\Socket\Worker\DTO\SystemSignalDTO;
 use Hilos\Utils\Helpers\ArgumentHelper;
@@ -50,7 +50,7 @@ use Hilos\Utils\Logger;
  */
 abstract class WorkerServer extends AbstractServer
 {
-    /** @var array<string, array<string, Process|string|int>> Workers indexed by key (format: "type:index"), values: process, type, index */
+    /** @var array<string, array<string, Process|string|int>> Workers indexed by key (format: "type:index"), values: WorkerConstants::FIELD_WORKER_* */
     private array $workers = [];
 
     /** @var array<int> Available worker indices (sorted, can be reused) */
@@ -192,7 +192,7 @@ abstract class WorkerServer extends AbstractServer
      */
     public function getRegularWorkersCount(): int
     {
-        return count(array_filter($this->workers, fn($worker) => $worker['type'] === 'regular'));
+        return count(array_filter($this->workers, fn($worker) => $worker[WorkerConstants::FIELD_WORKER_TYPE] === WorkerConstants::TYPE_REGULAR));
     }
 
     /**
@@ -202,7 +202,7 @@ abstract class WorkerServer extends AbstractServer
      */
     public function getMonopolisticWorkersCount(): int
     {
-        return count(array_filter($this->workers, fn($worker) => $worker['type'] === 'monopolistic'));
+        return count(array_filter($this->workers, fn($worker) => $worker[WorkerConstants::FIELD_WORKER_TYPE] === WorkerConstants::TYPE_MONOPOLISTIC));
     }
 
     /**
@@ -214,7 +214,7 @@ abstract class WorkerServer extends AbstractServer
      */
     private function buildWorkerKey(bool $isMonopolistic, int $index): string
     {
-        $type = $isMonopolistic ? 'monopolistic' : 'regular';
+        $type = $isMonopolistic ? WorkerConstants::TYPE_MONOPOLISTIC : WorkerConstants::TYPE_REGULAR;
         return "{$type}:{$index}";
     }
 
@@ -222,26 +222,26 @@ abstract class WorkerServer extends AbstractServer
      * Parse worker key to extract type and index.
      *
      * @param string $key Worker key (format: "type:index")
-     * @return array<string, string|int> Parsed type and index (keys: type, index)
+     * @return array<string, string|int> Parsed type and index (keys: WorkerConstants::FIELD_WORKER_TYPE, WorkerConstants::FIELD_WORKER_INDEX)
      */
     private function parseWorkerKey(string $key): array
     {
         [$type, $index] = explode(':', $key, 2);
         return [
-            'type' => $type,
-            'index' => (int)$index
+            WorkerConstants::FIELD_WORKER_TYPE => $type,
+            WorkerConstants::FIELD_WORKER_INDEX => (int)$index
         ];
     }
 
     /**
      * Get workers count by type
      *
-     * @param string $type Worker type ('regular' or 'monopolistic')
+     * @param string $type Worker type (WorkerConstants::TYPE_REGULAR or WorkerConstants::TYPE_MONOPOLISTIC)
      * @return int Count
      */
     private function getWorkersCountByType(string $type): int
     {
-        return count(array_filter($this->workers, fn($worker) => $worker['type'] === $type));
+        return count(array_filter($this->workers, fn($worker) => $worker[WorkerConstants::FIELD_WORKER_TYPE] === $type));
     }
 
     /**
@@ -383,9 +383,9 @@ abstract class WorkerServer extends AbstractServer
     private function tickWorkerProcesses(): void
     {
         foreach ($this->workers as $key => $worker) {
-            $process = $worker['process'];
-            $type = $worker['type'];
-            $index = $worker['index'];
+            $process = $worker[WorkerConstants::FIELD_WORKER_PROCESS];
+            $type = $worker[WorkerConstants::FIELD_WORKER_TYPE];
+            $index = $worker[WorkerConstants::FIELD_WORKER_INDEX];
 
             try {
                 $this->tickWorkerProcess($process, $type, $index, $key);
@@ -470,7 +470,7 @@ abstract class WorkerServer extends AbstractServer
      * Save worker stdout and stderr output to files
      *
      * @param Process $process Worker process
-     * @param string $workerType Worker type ('regular' or 'monopolistic')
+     * @param string $workerType Worker type (WorkerConstants::TYPE_REGULAR or WorkerConstants::TYPE_MONOPOLISTIC)
      * @param int $workerIndex Worker index
      */
     private function saveWorkerOutput(Process $process, string $workerType, int $workerIndex): void
@@ -620,22 +620,22 @@ abstract class WorkerServer extends AbstractServer
         }
 
         $types = [
-            'regular' => ['min' => $this->minRegular, 'max' => $this->maxRegular],
-            'monopolistic' => ['min' => $this->minMonopolistic, 'max' => PHP_INT_MAX]
+            WorkerConstants::TYPE_REGULAR => ['min' => $this->minRegular, 'max' => $this->maxRegular],
+            WorkerConstants::TYPE_MONOPOLISTIC => ['min' => $this->minMonopolistic, 'max' => PHP_INT_MAX]
         ];
 
         foreach ($types as $type => $limits) {
             $count = $this->getWorkersCountByType($type);
-            $isMonopolistic = ($type === 'monopolistic');
+            $isMonopolistic = ($type === WorkerConstants::TYPE_MONOPOLISTIC);
 
             // Check if we need to start a worker of this type
             if ($count < $limits['min']) {
                 // For regular workers, also check max limit
-                if ($type === 'regular' && $count >= $limits['max']) {
+                if ($type === WorkerConstants::TYPE_REGULAR && $count >= $limits['max']) {
                     continue;
                 }
                 // For monopolistic workers, skip if min is 0
-                if ($type === 'monopolistic' && $limits['min'] === 0) {
+                if ($type === WorkerConstants::TYPE_MONOPOLISTIC && $limits['min'] === 0) {
                     continue;
                 }
 
@@ -657,7 +657,7 @@ abstract class WorkerServer extends AbstractServer
      */
     private function startWorker(bool $isMonopolistic): void
     {
-        $type = $isMonopolistic ? 'monopolistic' : 'regular';
+        $type = $isMonopolistic ? WorkerConstants::TYPE_MONOPOLISTIC : WorkerConstants::TYPE_REGULAR;
 
         // Get next available index
         $workerIndex = $this->getNextWorkerIndex();
@@ -675,9 +675,9 @@ abstract class WorkerServer extends AbstractServer
         // Store worker
         $key = $this->buildWorkerKey($isMonopolistic, $workerIndex);
         $this->workers[$key] = [
-            'process' => $process,
-            'type' => $type,
-            'index' => $workerIndex,
+            WorkerConstants::FIELD_WORKER_PROCESS => $process,
+            WorkerConstants::FIELD_WORKER_TYPE => $type,
+            WorkerConstants::FIELD_WORKER_INDEX => $workerIndex,
         ];
 
         // Log worker start
@@ -694,9 +694,9 @@ abstract class WorkerServer extends AbstractServer
     public function stop(): void
     {
         foreach ($this->workers as $key => $worker) {
-            $process = $worker['process'];
-            $index = $worker['index'];
-            $type = $worker['type'];
+            $process = $worker[WorkerConstants::FIELD_WORKER_PROCESS];
+            $index = $worker[WorkerConstants::FIELD_WORKER_INDEX];
+            $type = $worker[WorkerConstants::FIELD_WORKER_TYPE];
 
             try {
                 $process->stop($this->shutdownTimeout); // Send SIGTERM with timeout
@@ -752,7 +752,7 @@ abstract class WorkerServer extends AbstractServer
 
         // If no suitable worker available, throw exception
         if ($workerClient === null) {
-            $workerType = $agentDaemon->requiresMonopolisticProcess() ? 'monopolistic' : 'regular';
+            $workerType = $agentDaemon->requiresMonopolisticProcess() ? WorkerConstants::TYPE_MONOPOLISTIC : WorkerConstants::TYPE_REGULAR;
             throw new NoSuitableWorkerException($workerType, $agentDaemon->requiresMonopolisticProcess());
         }
 

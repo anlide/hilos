@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Socket\Client;
 
+use Hilos\Constants\WorkerConstants;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\Agent\Exception\AgentDaemonCreationFailedException;
 use Hilos\Core\Exception\InvalidArgumentException;
@@ -189,7 +190,7 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
         $this->isRegistered = true;
 
         // Log worker registration on daemon side
-        $workerType = $dto->monopolistic ? 'monopolistic' : 'regular';
+        $workerType = $dto->monopolistic ? WorkerConstants::TYPE_MONOPOLISTIC : WorkerConstants::TYPE_REGULAR;
         Logger::debug("Worker #{$dto->workerIndex} registered [type={$workerType}]");
 
         // Send registration confirmation to worker using DTO
@@ -366,7 +367,7 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
     {
         // Log worker disconnection on daemon side
         if ($this->workerIndex > 0) {
-            $workerType = $this->isMonopolistic ? 'monopolistic' : 'regular';
+            $workerType = $this->isMonopolistic ? WorkerConstants::TYPE_MONOPOLISTIC : WorkerConstants::TYPE_REGULAR;
             Logger::debug("Worker #{$this->workerIndex} disconnected [type={$workerType}]");
         }
     }
