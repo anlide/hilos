@@ -15,6 +15,7 @@ catalog for small code-style rules.
 | [Page Action Handlers](agents/code-style/page-action-handlers.md) | editing `Page::onAction()` and action handlers |
 | [Internal Backend API](agents/code-style/internal-backend-api.md) | changing backend contracts, DB actions, table actions, DTO/value object boundaries, or typed collections |
 | [Local Variables](agents/code-style/local-variables.md) | introducing temporary variables or reviewing one-use locals |
+| [PHP Class Members](agents/code-style/php-class-members.md) | adding or reordering PHP class constants, properties, or methods |
 | [Frontend Vue](agents/code-style/frontend-vue.md) | editing Vue SFC templates, global components, or frontend line endings |
 
 ## Baseline
@@ -38,7 +39,8 @@ The old content in this file was a draft plan, not active rules. Keep these
 areas as backlog for future small rule files:
 
 - PHP backend: namespaces, class/method/property naming, imports, line length,
-  PHPDoc details.
+  PHPDoc details. Class member order is covered by
+  [php-class-members.md](agents/code-style/php-class-members.md).
 - TypeScript/Vue frontend: Composition API, strict typing, component structure,
   file naming, imports.
 - File and directory structure: backend layout, Entity/Object/Db placement,

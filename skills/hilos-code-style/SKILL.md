@@ -25,6 +25,8 @@ Use this skill for style-sensitive Hilos edits and reviews. Start with `agents.m
 - Method command/predicate/result contracts:
   `docs/agents/code-style/method-contracts.md`
 - Temporary/local variable rules: `docs/agents/code-style/local-variables.md`
+- PHP class member order: `docs/agents/code-style/php-class-members.md` -
+  read when adding or reordering class constants, properties, or methods.
 - Broader style guide: `docs/code-style.md`
 - Quality guide: `docs/quality.md`
 
@@ -114,3 +116,5 @@ Use this skill for style-sensitive Hilos edits and reviews. Start with `agents.m
 - Do not add unapproved convenience helpers or predicates during refactors.
 - Do not write repeated payload/model/table keys as magic strings when an owner
   constant exists or should exist.
+- Declare PHP class constants before properties; read `php-class-members.md`
+  when adding or reordering class members.

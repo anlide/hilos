@@ -14,6 +14,24 @@ use Hilos\Utils\Helpers\TimeHelper;
  */
 class Logger
 {
+    /** Log level: informational messages */
+    public const string LEVEL_INFO = 'INFO';
+
+    /** Log level: error messages */
+    public const string LEVEL_ERROR = 'ERROR';
+
+    /** Log level: debug messages */
+    public const string LEVEL_DEBUG = 'DEBUG';
+
+    /** Agent log marker for parsing in daemon */
+    public const string AGENT_LOG_MARKER = '[AGENT_LOG]';
+
+    /** Maximum length of user message in agent log before truncation */
+    private const int AGENT_USER_MESSAGE_MAX_LENGTH = 200;
+
+    /** Suffix appended when agent user message is truncated */
+    private const string TRUNCATION_SUFFIX = '...';
+
     /** @var ?string Log file path for daemon-side logging */
     private static ?string $logFile = null;
 
@@ -25,9 +43,6 @@ class Logger
 
     /** @var bool Whether to enable debug logging (default: false) */
     private static bool $debugEnabled = false;
-
-    /** @var string Agent log marker for parsing in daemon */
-    private const string AGENT_LOG_MARKER = '[AGENT_LOG]';
 
     /**
      * Set log file path for daemon-side logging.
@@ -77,7 +92,7 @@ class Logger
      */
     public static function info(string $message, array $context = []): void
     {
-        self::log('INFO', $message, $context);
+        self::log(self::LEVEL_INFO, $message, $context);
     }
 
     /**
@@ -88,7 +103,7 @@ class Logger
      */
     public static function error(string $message, array $context = []): void
     {
-        self::log('ERROR', $message, $context, true);
+        self::log(self::LEVEL_ERROR, $message, $context, true);
     }
 
     /**
@@ -105,7 +120,7 @@ class Logger
         if (!self::$debugEnabled) {
             return;
         }
-        self::log('DEBUG', $message, $context);
+        self::log(self::LEVEL_DEBUG, $message, $context);
     }
 
     /**
@@ -127,7 +142,7 @@ class Logger
         if (self::$showLogLevel) {
             $mainLogPrefix = "[{$level}]";
         } else {
-            $mainLogPrefix = ($level === 'INFO') ? '' : "{$level}:";
+            $mainLogPrefix = ($level === self::LEVEL_INFO) ? '' : "{$level}:";
         }
         $mainLogLine = "[{$timestamp}]" . ($mainLogPrefix !== '' ? " {$mainLogPrefix}" : '') . " {$message}{$contextStr}";
 
@@ -139,13 +154,13 @@ class Logger
             file_put_contents(self::$logFile, $mainLogLine . "\n", FILE_APPEND | LOCK_EX);
 
             // If ERROR level, also write to error log file (without prefix)
-            if ($level === 'ERROR' && self::$errorLogFile !== null) {
+            if ($level === self::LEVEL_ERROR && self::$errorLogFile !== null) {
                 file_put_contents(self::$errorLogFile, $errorLogLine . "\n", FILE_APPEND | LOCK_EX);
             }
         } else {
             // Fallback to echo/error_log
             // For ERROR level: write to both stdout (with prefix) and stderr (without prefix)
-            if ($level === 'ERROR') {
+            if ($level === self::LEVEL_ERROR) {
                 // Write to stdout (main log file) with ERROR: prefix
                 echo $mainLogLine . "\n";
                 // Write to stderr (error log file) without prefix
@@ -181,7 +196,7 @@ class Logger
         if (self::$logFile !== null) {
             // Write to main log file with ERROR: prefix
             $timestamp = TimeHelper::getTimestampWithMs();
-            $mainLogLine = "[{$timestamp}] ERROR: {$message}";
+            $mainLogLine = "[{$timestamp}] " . self::LEVEL_ERROR . ": {$message}";
             file_put_contents(self::$logFile, $mainLogLine . "\n", FILE_APPEND | LOCK_EX);
 
             // Also write to error log file without prefix
@@ -205,7 +220,7 @@ class Logger
      */
     public static function logAgentStart(string $agentId, string $agentType): void
     {
-        self::logAgent($agentId, 'INFO', "Agent started '{$agentType}'");
+        self::logAgent($agentId, self::LEVEL_INFO, "Agent started '{$agentType}'");
     }
 
     /**
@@ -216,7 +231,7 @@ class Logger
      */
     public static function logAgentStop(string $agentId, string $agentType): void
     {
-        self::logAgent($agentId, 'INFO', "Agent stopped '{$agentType}'");
+        self::logAgent($agentId, self::LEVEL_INFO, "Agent stopped '{$agentType}'");
     }
 
     /**
@@ -228,12 +243,12 @@ class Logger
      */
     public static function logAgentUserMessage(string $agentId, string $userId, string $message): void
     {
-        // Truncate message if too long (e.g., > 200 chars) for readability
-        $truncatedMessage = mb_strlen($message) > 200
-            ? mb_substr($message, 0, 197) . '...'
+        // Truncate message if too long for readability
+        $truncatedMessage = mb_strlen($message) > self::AGENT_USER_MESSAGE_MAX_LENGTH
+            ? mb_substr($message, 0, self::AGENT_USER_MESSAGE_MAX_LENGTH - mb_strlen(self::TRUNCATION_SUFFIX)) . self::TRUNCATION_SUFFIX
             : $message;
 
-        self::logAgent($agentId, 'INFO', "User message [userId={$userId}] [message={$truncatedMessage}]");
+        self::logAgent($agentId, self::LEVEL_INFO, "User message [userId={$userId}] [message={$truncatedMessage}]");
     }
 
     /**
@@ -244,7 +259,7 @@ class Logger
      */
     public static function logAgentInfo(string $agentId, string $message): void
     {
-        self::logAgent($agentId, 'INFO', $message);
+        self::logAgent($agentId, self::LEVEL_INFO, $message);
     }
 
     /**
@@ -255,7 +270,7 @@ class Logger
      */
     public static function logAgentError(string $agentId, string $message): void
     {
-        self::logAgent($agentId, 'ERROR', $message, true);
+        self::logAgent($agentId, self::LEVEL_ERROR, $message, true);
     }
 
     /**
@@ -272,7 +287,7 @@ class Logger
         if (!self::$debugEnabled) {
             return;
         }
-        self::logAgent($agentId, 'DEBUG', $message);
+        self::logAgent($agentId, self::LEVEL_DEBUG, $message);
     }
 
     /**

@@ -507,7 +507,7 @@ abstract class WorkerServer extends AbstractServer
      * Process worker output and extract agent logs
      *
      * Parses stdout/stderr to find agent log lines and writes them to separate agent log files.
-     * Format: [AGENT_LOG]agentId|level|message
+     * Format: Logger::AGENT_LOG_MARKER + agentId|level|message
      *
      * @param string $output Worker output (stdout or stderr)
      * @param string $workerLogFile Worker log file path
@@ -516,7 +516,7 @@ abstract class WorkerServer extends AbstractServer
      */
     private function processWorkerOutput(string $output, string $workerLogFile, string $logDirectory, bool $isStderr): void
     {
-        $agentLogMarker = '[AGENT_LOG]';
+        $agentLogMarker = Logger::AGENT_LOG_MARKER;
         $lines = explode("\n", $output);
         $workerLogContent = [];
         $agentLogs = [];
@@ -549,7 +549,7 @@ abstract class WorkerServer extends AbstractServer
     /**
      * Parse agent log line
      *
-     * Format: [AGENT_LOG]agentId|level|message
+     * Format: Logger::AGENT_LOG_MARKER + agentId|level|message
      *
      * @param string $line Log line
      * @param string $marker Agent log marker
@@ -602,7 +602,7 @@ abstract class WorkerServer extends AbstractServer
             foreach ($levels as $level => $messages) {
                 // Determine log file extension
                 // ERROR level or stderr -> .error.log, otherwise -> .log
-                $extension = ($level === 'ERROR' || $isStderr) ? '.error.log' : '.log';
+                $extension = ($level === Logger::LEVEL_ERROR || $isStderr) ? '.error.log' : '.log';
                 $agentLogFile = $logDirectory . "/agent-{$safeAgentId}{$extension}";
 
                 // Write messages
