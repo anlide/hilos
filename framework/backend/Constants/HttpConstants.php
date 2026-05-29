@@ -20,6 +20,27 @@ class HttpConstants
     /** @var string HttpRouter/HttpClient response key for headers */
     public const string RESPONSE_KEY_HEADERS = 'headers';
 
+    /** @var string Parsed HTTP request key for method */
+    public const string REQUEST_KEY_METHOD = 'method';
+
+    /** @var string Parsed HTTP request key for path */
+    public const string REQUEST_KEY_PATH = 'path';
+
+    /** @var string Parsed HTTP request key for HTTP version */
+    public const string REQUEST_KEY_VERSION = 'version';
+
+    /** @var string Parsed HTTP request key for headers */
+    public const string REQUEST_KEY_HEADERS = 'headers';
+
+    /** @var string Parsed HTTP request key for body */
+    public const string REQUEST_KEY_BODY = 'body';
+
+    /** @var string Parsed HTTP request key for raw query string */
+    public const string REQUEST_KEY_QUERY = 'query';
+
+    /** @var string Parsed HTTP request key for typed query params */
+    public const string REQUEST_KEY_QUERY_PARAMS = 'queryParams';
+
     /** @var int HTTP status code for success */
     public const int HTTP_OK = 200;
 
@@ -43,6 +64,18 @@ class HttpConstants
 
     /** @var int HTTP status code for internal server error */
     public const int HTTP_INTERNAL_ERROR = 500;
+
+    /** @var string Fallback HTTP status reason phrase for unknown codes */
+    public const string HTTP_STATUS_TEXT_UNKNOWN = 'Unknown';
+
+    /** @var array<int, string> HTTP status code to reason phrase map */
+    public const array HTTP_STATUS_TEXTS = [
+        self::HTTP_OK => 'OK',
+        self::HTTP_UNAUTHORIZED => 'Unauthorized',
+        self::HTTP_FORBIDDEN => 'Forbidden',
+        self::HTTP_NOT_FOUND => 'Not Found',
+        self::HTTP_INTERNAL_ERROR => 'Internal Server Error',
+    ];
 
     /** @var string HTTP method GET */
     public const string METHOD_GET = 'GET';
@@ -73,6 +106,12 @@ class HttpConstants
 
     /** @var string HTTP header Connection */
     public const string HEADER_CONNECTION = 'Connection';
+
+    /** @var string Connection header value for persistent connections */
+    public const string CONNECTION_VALUE_KEEP_ALIVE = 'keep-alive';
+
+    /** @var string Connection header value for closing after response */
+    public const string CONNECTION_VALUE_CLOSE = 'close';
 
     /** @var string HTTP header Upgrade */
     public const string HEADER_UPGRADE = 'Upgrade';
@@ -106,6 +145,15 @@ class HttpConstants
 
     /** @var string HTTP version */
     public const string HTTP_VERSION = 'HTTP/1.1';
+
+    /** @var string HTTP version number fragment used in version checks */
+    public const string HTTP_VERSION_NUMBER = '1.1';
+
+    /** @var string Root URL path */
+    public const string PATH_ROOT = '/';
+
+    /** @var string Query string separator in request paths */
+    public const string QUERY_STRING_SEPARATOR = '?';
 
     /** @var string Content type for JSON */
     public const string CONTENT_TYPE_JSON = 'application/json';

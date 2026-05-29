@@ -264,7 +264,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
 
         // Parse request line to extract path and query parameters
         $requestLine = $this->parseRequestLine($request);
-        $queryParams = $this->parseQueryParams($requestLine['path'] ?? '');
+        $queryParams = $this->parseQueryParams($requestLine[HttpConstants::REQUEST_KEY_PATH] ?? '');
 
         // Parse headers
         $headers = $this->parseHeaders($request);
@@ -328,9 +328,9 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
         $parts = explode(' ', $firstLine);
 
         return [
-            'method' => $parts[0] ?? 'GET',
-            'path' => $parts[1] ?? '/',
-            'version' => $parts[2] ?? 'HTTP/1.1',
+            HttpConstants::REQUEST_KEY_METHOD => $parts[0] ?? HttpConstants::METHOD_GET,
+            HttpConstants::REQUEST_KEY_PATH => $parts[1] ?? HttpConstants::PATH_ROOT,
+            HttpConstants::REQUEST_KEY_VERSION => $parts[2] ?? HttpConstants::HTTP_VERSION,
         ];
     }
 

@@ -51,13 +51,13 @@ final class FrontendHtmlClient extends AbstractClient implements HttpClientInter
      */
     protected function processReadBuffer(): void
     {
-        if (strpos($this->readBuffer, HttpConstants::HTTP_DELIMITER) === false) {
+        if (!str_contains($this->readBuffer, HttpConstants::HTTP_DELIMITER)) {
             return;
         }
 
         $request = $this->parseRequest($this->readBuffer);
-        $path = $request['path'] ?? '/';
-        $acceptLanguage = $request['headers'][HttpConstants::HEADER_ACCEPT_LANGUAGE] ?? '';
+        $path = $request[HttpConstants::REQUEST_KEY_PATH] ?? HttpConstants::PATH_ROOT;
+        $acceptLanguage = $request[HttpConstants::REQUEST_KEY_HEADERS][HttpConstants::HEADER_ACCEPT_LANGUAGE] ?? '';
 
         $resolved = $this->resolver->resolve($path, $acceptLanguage);
         $html = $this->cache->get($resolved['path'], $resolved['locale']);
@@ -107,9 +107,9 @@ final class FrontendHtmlClient extends AbstractClient implements HttpClientInter
         }
 
         return [
-            'method' => $parts[0] ?? 'GET',
-            'path' => $parts[1] ?? '/',
-            'headers' => $headers,
+            HttpConstants::REQUEST_KEY_METHOD => $parts[0] ?? HttpConstants::METHOD_GET,
+            HttpConstants::REQUEST_KEY_PATH => $parts[1] ?? HttpConstants::PATH_ROOT,
+            HttpConstants::REQUEST_KEY_HEADERS => $headers,
         ];
     }
 
@@ -122,13 +122,8 @@ final class FrontendHtmlClient extends AbstractClient implements HttpClientInter
     private function buildResponse(array $response): string
     {
         $status = $response[HttpConstants::RESPONSE_KEY_STATUS] ?? HttpConstants::HTTP_OK;
-        $statusTexts = [
-            HttpConstants::HTTP_OK => 'OK',
-            HttpConstants::HTTP_FORBIDDEN => 'Forbidden',
-            HttpConstants::HTTP_NOT_FOUND => 'Not Found',
-            HttpConstants::HTTP_INTERNAL_ERROR => 'Internal Server Error',
-        ];
-        $statusText = $statusTexts[$status] ?? 'Unknown';
+        $statusText = HttpConstants::HTTP_STATUS_TEXTS[$status]
+            ?? HttpConstants::HTTP_STATUS_TEXT_UNKNOWN;
         $headers = $response[HttpConstants::RESPONSE_KEY_HEADERS] ?? [];
         $body = $response[HttpConstants::RESPONSE_KEY_BODY] ?? '';
 

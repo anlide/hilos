@@ -52,11 +52,13 @@ class HttpRouter
      */
     public function route(array $request): array
     {
-        $method = $request['method'] ?? 'GET';
-        $path = $request['path'] ?? '/';
-        $headers = is_array($request['headers'] ?? null) ? $request['headers'] : [];
+        $method = $request[HttpConstants::REQUEST_KEY_METHOD] ?? HttpConstants::METHOD_GET;
+        $path = $request[HttpConstants::REQUEST_KEY_PATH] ?? HttpConstants::PATH_ROOT;
+        $headers = is_array($request[HttpConstants::REQUEST_KEY_HEADERS] ?? null)
+            ? $request[HttpConstants::REQUEST_KEY_HEADERS]
+            : [];
         $queryParams = $this->queryParamsFromRequest($request);
-        $request['queryParams'] = $queryParams;
+        $request[HttpConstants::REQUEST_KEY_QUERY_PARAMS] = $queryParams;
         $sessionToken = $headers[HilosHttpHeaders::HILOS_SESSION_TOKEN]
             ?? $queryParams->getString(HilosHttpHeaders::HILOS_SESSION_TOKEN);
         $userAgent = $headers[HttpConstants::HEADER_USER_AGENT] ?? null;
@@ -121,7 +123,7 @@ class HttpRouter
      */
     private function queryParamsFromRequest(array $request): RequestQueryParams
     {
-        $queryParams = $request['queryParams'] ?? null;
+        $queryParams = $request[HttpConstants::REQUEST_KEY_QUERY_PARAMS] ?? null;
         if ($queryParams instanceof RequestQueryParams) {
             return $queryParams;
         }

@@ -79,7 +79,10 @@ class HttpClient extends AbstractClient implements HttpClientInterface
     private function processSingleHttpRequest(string $rawRequest): void
     {
         $request = $this->parseRequest($rawRequest);
-        $persistent = $this->effectivePersistentConnectionForResponse($request['headers'], $request['version']);
+        $persistent = $this->effectivePersistentConnectionForResponse(
+            $request[HttpConstants::REQUEST_KEY_HEADERS],
+            $request[HttpConstants::REQUEST_KEY_VERSION],
+        );
 
         if ($this->router !== null) {
             $response = $this->router->route($request);
@@ -95,7 +98,9 @@ class HttpClient extends AbstractClient implements HttpClientInterface
         if (!is_array($headers)) {
             $headers = [];
         }
-        $headers[HttpConstants::HEADER_CONNECTION] = $persistent ? 'keep-alive' : 'close';
+        $headers[HttpConstants::HEADER_CONNECTION] = $persistent
+            ? HttpConstants::CONNECTION_VALUE_KEEP_ALIVE
+            : HttpConstants::CONNECTION_VALUE_CLOSE;
         $response[HttpConstants::RESPONSE_KEY_HEADERS] = $headers;
 
         $this->writeBuffer = $this->buildResponse($response);
@@ -114,17 +119,17 @@ class HttpClient extends AbstractClient implements HttpClientInterface
 
         $conn = strtolower($this->getHeaderCaseInsensitive($headers, HttpConstants::HEADER_CONNECTION));
         if ($conn !== '') {
-            if (str_contains($conn, 'close')) {
+            if (str_contains($conn, HttpConstants::CONNECTION_VALUE_CLOSE)) {
                 return false;
             }
-            if (str_contains($conn, 'keep-alive')) {
+            if (str_contains($conn, HttpConstants::CONNECTION_VALUE_KEEP_ALIVE)) {
                 return true;
             }
         }
 
         $ver = strtoupper(trim($version));
 
-        return str_contains($ver, '1.1');
+        return str_contains($ver, HttpConstants::HTTP_VERSION_NUMBER);
     }
 
     /**
@@ -146,7 +151,15 @@ class HttpClient extends AbstractClient implements HttpClientInterface
      * Parse HTTP request.
      *
      * @param string $rawRequest Raw HTTP request
-     * @return array{method: string, path: string, version: string, headers: array<string, string>, body: string, query: string, queryParams: RequestQueryParams}
+     * @return array{
+     *     method: string,
+     *     path: string,
+     *     version: string,
+     *     headers: array<string, string>,
+     *     body: string,
+     *     query: string,
+     *     queryParams: RequestQueryParams
+     * } Keys use {@see HttpConstants::REQUEST_KEY_*}
      */
     private function parseRequest(string $rawRequest): array
     {
@@ -155,23 +168,23 @@ class HttpClient extends AbstractClient implements HttpClientInterface
 
         // Parse: GET /path?a=1 HTTP/1.1
         $parts = explode(' ', $firstLine);
-        $rawPath = $parts[1] ?? '/';
+        $rawPath = $parts[1] ?? HttpConstants::PATH_ROOT;
         $path = $rawPath;
         $queryString = '';
-        $queryPos = strpos($rawPath, '?');
+        $queryPos = strpos($rawPath, HttpConstants::QUERY_STRING_SEPARATOR);
         if ($queryPos !== false) {
             $path = substr($rawPath, 0, $queryPos);
             $queryString = substr($rawPath, $queryPos + 1);
         }
 
         return [
-            'method' => $parts[0] ?? 'GET',
-            'path' => $path,
-            'version' => $parts[2] ?? 'HTTP/1.1',
-            'headers' => $this->parseHeaders($lines),
-            'body' => '',
-            'query' => $queryString,
-            'queryParams' => RequestQueryParams::fromQueryString($queryString),
+            HttpConstants::REQUEST_KEY_METHOD => $parts[0] ?? HttpConstants::METHOD_GET,
+            HttpConstants::REQUEST_KEY_PATH => $path,
+            HttpConstants::REQUEST_KEY_VERSION => $parts[2] ?? HttpConstants::HTTP_VERSION,
+            HttpConstants::REQUEST_KEY_HEADERS => $this->parseHeaders($lines),
+            HttpConstants::REQUEST_KEY_BODY => '',
+            HttpConstants::REQUEST_KEY_QUERY => $queryString,
+            HttpConstants::REQUEST_KEY_QUERY_PARAMS => RequestQueryParams::fromQueryString($queryString),
         ];
     }
 
@@ -231,14 +244,8 @@ class HttpClient extends AbstractClient implements HttpClientInterface
      */
     private function getStatusText(int $status): string
     {
-        $statusTexts = [
-            HttpConstants::HTTP_OK => 'OK',
-            HttpConstants::HTTP_UNAUTHORIZED => 'Unauthorized',
-            HttpConstants::HTTP_NOT_FOUND => 'Not Found',
-            HttpConstants::HTTP_INTERNAL_ERROR => 'Internal Server Error',
-        ];
-
-        return $statusTexts[$status] ?? 'Unknown';
+        return HttpConstants::HTTP_STATUS_TEXTS[$status]
+            ?? HttpConstants::HTTP_STATUS_TEXT_UNKNOWN;
     }
 
     /**
