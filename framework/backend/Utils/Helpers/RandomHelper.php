@@ -62,6 +62,12 @@ class RandomHelper
         }
     }
 
+    /**
+     * Generate fallback pseudorandom bytes when the secure random source fails.
+     *
+     * @param int $length Byte length
+     * @return string Pseudorandom byte string of the requested length
+     */
     private static function pseudoRandomBytes(int $length): string
     {
         $bytes = '';

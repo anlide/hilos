@@ -24,8 +24,10 @@ Read this when writing or changing PHPDoc in project PHP code.
 5. Keep `@param` entries specific to the local meaning of the argument. Add
    `@throws` for exceptions the caller or caller-facing error path should know
    about.
-6. Avoid empty PHPDoc. If a private method is obvious from its name and types,
-   no docblock is better than a boilerplate docblock.
+6. Avoid empty PHPDoc. Always add PHPDoc when creating or changing a method.
+   A boilerplate docblock merely repeats parameter names, types, and the return
+   type without explaining any local contract; write a compact meaningful
+   summary instead of omitting the docblock or restating the signature.
 7. Avoid `{@see ...}` in normal prose. Use it only when the docblock needs to
    point to a contract symbol that is not already visible in the method
    signature or method body, or when the target lives outside the local code path
