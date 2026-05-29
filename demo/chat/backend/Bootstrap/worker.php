@@ -11,7 +11,7 @@ use Hilos\Constants\ErrorConstants;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\ExitCode;
 use Hilos\Utils\Helpers\ArgumentHelper;
-use Hilos\Utils\Helpers\Exception\InvalidWorkerIdException;
+use Hilos\Core\Daemon\Exception\InvalidWorkerIdException;
 use Hilos\Utils\Logger;
 
 /**

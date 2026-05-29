@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Hilos\Utils\Helpers\Exception;
+namespace Hilos\Core\Daemon\Exception;
 
 use Hilos\HilosException;
 use Throwable;

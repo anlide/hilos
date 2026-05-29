@@ -6,7 +6,7 @@ namespace Hilos\Tests\Unit;
 
 use Hilos\Constants\WorkerConstants;
 use Hilos\Utils\Helpers\ArgumentHelper;
-use Hilos\Utils\Helpers\Exception\InvalidWorkerIdException;
+use Hilos\Core\Daemon\Exception\InvalidWorkerIdException;
 use PHPUnit\Framework\TestCase;
 
 /**
