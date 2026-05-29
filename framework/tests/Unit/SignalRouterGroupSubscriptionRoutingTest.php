@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Constants\AgentConstants;
+use Hilos\Constants\SignalPayloadConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Group\AbstractGroup;
 use Hilos\Core\Router\DTO\SignalDTO;
@@ -28,9 +30,9 @@ final class SignalRouterGroupSubscriptionRoutingTest extends TestCase
         $this->assertSame(
             [
                 [
-                    'type' => 'agent',
-                    'agentType' => SignalRouterTopologyTestGroup::SUBSCRIPTION_AGENT_TYPE,
-                    'agentIndex' => null,
+                    SignalPayloadConstants::FIELD_TYPE => AgentConstants::DESTINATION_TYPE_AGENT,
+                    AgentConstants::FIELD_AGENT_TYPE => SignalRouterTopologyTestGroup::SUBSCRIPTION_AGENT_TYPE,
+                    AgentConstants::FIELD_AGENT_INDEX => null,
                 ],
             ],
             (new SignalRouterGroupTopologyTestRouter())->getDestinations(
@@ -44,9 +46,9 @@ final class SignalRouterGroupSubscriptionRoutingTest extends TestCase
         $this->assertSame(
             [
                 [
-                    'type' => 'agent',
-                    'agentType' => SignalRouterTopologyTestGroup::SUBSCRIPTION_AGENT_TYPE,
-                    'agentIndex' => null,
+                    SignalPayloadConstants::FIELD_TYPE => AgentConstants::DESTINATION_TYPE_AGENT,
+                    AgentConstants::FIELD_AGENT_TYPE => SignalRouterTopologyTestGroup::SUBSCRIPTION_AGENT_TYPE,
+                    AgentConstants::FIELD_AGENT_INDEX => null,
                 ],
             ],
             (new SignalRouterGroupTopologyTestRouter())->getDestinations(new SignalDTO(
@@ -63,9 +65,9 @@ final class SignalRouterGroupSubscriptionRoutingTest extends TestCase
         $this->assertSame(
             [
                 [
-                    'type' => 'agent',
-                    'agentType' => SignalRouterTopologyTestGroup::SUBSCRIPTION_AGENT_TYPE,
-                    'agentIndex' => null,
+                    SignalPayloadConstants::FIELD_TYPE => AgentConstants::DESTINATION_TYPE_AGENT,
+                    AgentConstants::FIELD_AGENT_TYPE => SignalRouterTopologyTestGroup::SUBSCRIPTION_AGENT_TYPE,
+                    AgentConstants::FIELD_AGENT_INDEX => null,
                 ],
             ],
             (new SignalRouterGroupTopologyTestRouter())->getDestinations(new SignalDTO(
@@ -82,9 +84,9 @@ final class SignalRouterGroupSubscriptionRoutingTest extends TestCase
         $this->assertSame(
             [
                 [
-                    'type' => 'agent',
-                    'agentType' => SignalRouterTopologyFallbackTestRouter::FALLBACK_AGENT_TYPE,
-                    'agentIndex' => null,
+                    SignalPayloadConstants::FIELD_TYPE => AgentConstants::DESTINATION_TYPE_AGENT,
+                    AgentConstants::FIELD_AGENT_TYPE => SignalRouterTopologyFallbackTestRouter::FALLBACK_AGENT_TYPE,
+                    AgentConstants::FIELD_AGENT_INDEX => null,
                 ],
             ],
             (new SignalRouterGroupTopologyFallbackTestRouter())->getDestinations(

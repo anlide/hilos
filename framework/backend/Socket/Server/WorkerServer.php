@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Socket\Server;
 
+use Hilos\Constants\AgentConstants;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
@@ -161,8 +162,8 @@ abstract class WorkerServer extends AbstractServer
     {
         $parts = explode(':', $agentId, 2);
         return [
-            'agentType' => $parts[0] ?? '',
-            'agentIndex' => $parts[1] ?? null,
+            AgentConstants::FIELD_AGENT_TYPE => $parts[0] ?? '',
+            AgentConstants::FIELD_AGENT_INDEX => $parts[1] ?? null,
         ];
     }
 
@@ -878,8 +879,8 @@ abstract class WorkerServer extends AbstractServer
 
         // Parse agentId to get type and index for startAgent if needed
         $parsed = $this->parseAgentId($agentId);
-        $parsedAgentType = $parsed['agentType'];
-        $parsedAgentIndex = $parsed['agentIndex'];
+        $parsedAgentType = $parsed[AgentConstants::FIELD_AGENT_TYPE];
+        $parsedAgentIndex = $parsed[AgentConstants::FIELD_AGENT_INDEX];
 
         // If agent doesn't exist or not linked to worker, try to start it
         if (!$this->agentManager->hasAgent($agentId)) {

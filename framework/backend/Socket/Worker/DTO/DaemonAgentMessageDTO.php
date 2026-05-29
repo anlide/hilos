@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Socket\Worker\DTO;
 
+use Hilos\Constants\AgentConstants;
 use Hilos\Constants\WorkerConstants;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Socket\Worker\WorkerDTO;
@@ -16,8 +17,6 @@ use Hilos\Socket\Worker\WorkerDTO;
  */
 class DaemonAgentMessageDTO extends WorkerDTO
 {
-    // Field name constants
-    public const string AGENT_ID = 'agentId';
     public const string SIGNAL = 'signal';
 
     // Message type (daemon -> worker; distinct from WorkerAgentMessageDTO for worker -> daemon)
@@ -54,7 +53,7 @@ class DaemonAgentMessageDTO extends WorkerDTO
     {
         return [
             self::TYPE => $this->getType(),
-            self::AGENT_ID => $this->agentId,
+            AgentConstants::FIELD_AGENT_ID => $this->agentId,
             self::SIGNAL => $this->signal->toArray(),
         ];
     }
@@ -73,7 +72,7 @@ class DaemonAgentMessageDTO extends WorkerDTO
             : SignalDTO::fromArray($signalData);
 
         return new self(
-            agentId: $data[self::AGENT_ID] ?? '',
+            agentId: $data[AgentConstants::FIELD_AGENT_ID] ?? '',
             signal: $signal,
         );
     }

@@ -14,7 +14,9 @@ use Demo\Chat\Core\Router\DTO\BotMessageSignalData;
 use Demo\Chat\Core\Router\DTO\ModerationResultSignalData;
 use Demo\Chat\Core\Router\DTO\RenameModerationResultSignalData;
 use Demo\Chat\Hilos;
+use Hilos\Constants\AgentConstants;
 use Hilos\Constants\SignalConstants;
+use Hilos\Constants\SignalPayloadConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\SignalDTO;
@@ -53,7 +55,7 @@ final class ChatSignalRouterTest extends TestCase
             ));
 
             $this->assertSame([
-                ['type' => 'agent', 'agentType' => AgentType::LIBRARY, 'agentIndex' => null],
+                [SignalPayloadConstants::FIELD_TYPE => AgentConstants::DESTINATION_TYPE_AGENT, AgentConstants::FIELD_AGENT_TYPE => AgentType::LIBRARY, AgentConstants::FIELD_AGENT_INDEX => null],
             ], $destinations);
         }
     }
@@ -71,7 +73,7 @@ final class ChatSignalRouterTest extends TestCase
             ));
 
             $this->assertSame([
-                ['type' => 'agent', 'agentType' => $agentType, 'agentIndex' => null],
+                [SignalPayloadConstants::FIELD_TYPE => AgentConstants::DESTINATION_TYPE_AGENT, AgentConstants::FIELD_AGENT_TYPE => $agentType, AgentConstants::FIELD_AGENT_INDEX => null],
             ], $destinations);
         }
     }
@@ -113,7 +115,7 @@ final class ChatSignalRouterTest extends TestCase
             ));
 
             $this->assertSame([
-                ['type' => 'agent', 'agentType' => AgentType::LIBRARY, 'agentIndex' => null],
+                [SignalPayloadConstants::FIELD_TYPE => AgentConstants::DESTINATION_TYPE_AGENT, AgentConstants::FIELD_AGENT_TYPE => AgentType::LIBRARY, AgentConstants::FIELD_AGENT_INDEX => null],
             ], $destinations);
         }
     }
@@ -130,7 +132,7 @@ final class ChatSignalRouterTest extends TestCase
         ));
 
         $this->assertSame([
-            ['type' => 'agent', 'agentType' => Hilos::getGroupRoutes()[GroupConstants::SESSION], 'agentIndex' => null],
+            [SignalPayloadConstants::FIELD_TYPE => AgentConstants::DESTINATION_TYPE_AGENT, AgentConstants::FIELD_AGENT_TYPE => Hilos::getGroupRoutes()[GroupConstants::SESSION], AgentConstants::FIELD_AGENT_INDEX => null],
         ], $destinations);
     }
 
@@ -144,7 +146,7 @@ final class ChatSignalRouterTest extends TestCase
         ));
 
         $this->assertSame([
-            ['type' => 'agent', 'agentType' => AgentType::CHAT, 'agentIndex' => null],
+            [SignalPayloadConstants::FIELD_TYPE => AgentConstants::DESTINATION_TYPE_AGENT, AgentConstants::FIELD_AGENT_TYPE => AgentType::CHAT, AgentConstants::FIELD_AGENT_INDEX => null],
         ], $destinations);
     }
 
@@ -161,7 +163,7 @@ final class ChatSignalRouterTest extends TestCase
             ));
 
             $this->assertSame([
-                ['type' => 'agent', 'agentType' => Hilos::getPageRoutes()[$page], 'agentIndex' => null],
+                [SignalPayloadConstants::FIELD_TYPE => AgentConstants::DESTINATION_TYPE_AGENT, AgentConstants::FIELD_AGENT_TYPE => Hilos::getPageRoutes()[$page], AgentConstants::FIELD_AGENT_INDEX => null],
             ], $destinations);
         }
     }
@@ -175,7 +177,7 @@ final class ChatSignalRouterTest extends TestCase
             new SystemSignalDTO(SignalConstants::INITIAL_AGENTS_START),
         ));
 
-        $agentTypes = array_map(static fn (array $destination): ?string => $destination['agentType'] ?? null, $destinations);
+        $agentTypes = array_map(static fn (array $destination): ?string => $destination[AgentConstants::FIELD_AGENT_TYPE] ?? null, $destinations);
 
         $this->assertContains(AgentType::LIBRARY, $agentTypes);
     }
@@ -190,7 +192,7 @@ final class ChatSignalRouterTest extends TestCase
         ));
 
         $this->assertSame([
-            ['type' => 'agent', 'agentType' => AgentType::CHAT, 'agentIndex' => null],
+            [SignalPayloadConstants::FIELD_TYPE => AgentConstants::DESTINATION_TYPE_AGENT, AgentConstants::FIELD_AGENT_TYPE => AgentType::CHAT, AgentConstants::FIELD_AGENT_INDEX => null],
         ], $destinations);
     }
 
@@ -210,7 +212,7 @@ final class ChatSignalRouterTest extends TestCase
         ));
 
         $this->assertSame([
-            ['type' => 'agent', 'agentType' => AgentType::CHAT, 'agentIndex' => null],
+            [SignalPayloadConstants::FIELD_TYPE => AgentConstants::DESTINATION_TYPE_AGENT, AgentConstants::FIELD_AGENT_TYPE => AgentType::CHAT, AgentConstants::FIELD_AGENT_INDEX => null],
         ], $destinations);
     }
 
@@ -230,7 +232,7 @@ final class ChatSignalRouterTest extends TestCase
         ));
 
         $this->assertSame([
-            ['type' => 'agent', 'agentType' => AgentType::CHAT, 'agentIndex' => null],
+            [SignalPayloadConstants::FIELD_TYPE => AgentConstants::DESTINATION_TYPE_AGENT, AgentConstants::FIELD_AGENT_TYPE => AgentType::CHAT, AgentConstants::FIELD_AGENT_INDEX => null],
         ], $destinations);
     }
 
@@ -244,7 +246,7 @@ final class ChatSignalRouterTest extends TestCase
         ));
 
         $this->assertSame([
-            ['type' => 'agent', 'agentType' => AgentType::CHAT, 'agentIndex' => null],
+            [SignalPayloadConstants::FIELD_TYPE => AgentConstants::DESTINATION_TYPE_AGENT, AgentConstants::FIELD_AGENT_TYPE => AgentType::CHAT, AgentConstants::FIELD_AGENT_INDEX => null],
         ], $destinations);
     }
 
@@ -258,7 +260,7 @@ final class ChatSignalRouterTest extends TestCase
         ));
 
         $this->assertSame([
-            ['type' => 'agent', 'agentType' => AgentType::BOT, 'agentIndex' => '42'],
+            [SignalPayloadConstants::FIELD_TYPE => AgentConstants::DESTINATION_TYPE_AGENT, AgentConstants::FIELD_AGENT_TYPE => AgentType::BOT, AgentConstants::FIELD_AGENT_INDEX => '42'],
         ], $destinations);
     }
 

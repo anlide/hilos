@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit;
 
 use Hilos\BaseDTO;
+use Hilos\Constants\AgentConstants;
+use Hilos\Constants\SignalPayloadConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
@@ -35,7 +37,7 @@ final class SignalRouterIndexedAgentSignalTest extends TestCase
         );
 
         $this->assertSame([
-            ['type' => 'agent', 'agentType' => IndexedAgentSignalTestAgent::AGENT_TYPE, 'agentIndex' => '42'],
+            [SignalPayloadConstants::FIELD_TYPE => AgentConstants::DESTINATION_TYPE_AGENT, AgentConstants::FIELD_AGENT_TYPE => IndexedAgentSignalTestAgent::AGENT_TYPE, AgentConstants::FIELD_AGENT_INDEX => '42'],
         ], $destinations);
     }
 
@@ -46,7 +48,7 @@ final class SignalRouterIndexedAgentSignalTest extends TestCase
         );
 
         $this->assertSame([
-            ['type' => 'agent', 'agentType' => IndexedAgentSignalTestAgent::AGENT_TYPE, 'agentIndex' => 'abc'],
+            [SignalPayloadConstants::FIELD_TYPE => AgentConstants::DESTINATION_TYPE_AGENT, AgentConstants::FIELD_AGENT_TYPE => IndexedAgentSignalTestAgent::AGENT_TYPE, AgentConstants::FIELD_AGENT_INDEX => 'abc'],
         ], $destinations);
     }
 
@@ -93,7 +95,7 @@ final class SignalRouterIndexedAgentSignalTest extends TestCase
         );
 
         $this->assertSame([
-            ['type' => 'agent', 'agentType' => IndexedAgentSignalTestAgent::AGENT_TYPE, 'agentIndex' => null],
+            [SignalPayloadConstants::FIELD_TYPE => AgentConstants::DESTINATION_TYPE_AGENT, AgentConstants::FIELD_AGENT_TYPE => IndexedAgentSignalTestAgent::AGENT_TYPE, AgentConstants::FIELD_AGENT_INDEX => null],
         ], $destinations);
     }
 
@@ -159,7 +161,7 @@ final class SignalRouterIndexedAgentSignalTest extends TestCase
         );
 
         $this->assertSame([
-            ['type' => 'agent', 'agentType' => IndexedAgentSignalDtoTestAgent::AGENT_TYPE, 'agentIndex' => '7'],
+            [SignalPayloadConstants::FIELD_TYPE => AgentConstants::DESTINATION_TYPE_AGENT, AgentConstants::FIELD_AGENT_TYPE => IndexedAgentSignalDtoTestAgent::AGENT_TYPE, AgentConstants::FIELD_AGENT_INDEX => '7'],
         ], $destinations);
     }
 

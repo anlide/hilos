@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Socket\Worker\DTO;
 
+use Hilos\Constants\AgentConstants;
 use Hilos\Socket\Worker\WorkerDTO;
 
 /**
@@ -13,12 +14,6 @@ use Hilos\Socket\Worker\WorkerDTO;
  */
 class WorkerAgentStartedDTO extends WorkerDTO
 {
-    // Field name constants
-    public const string TYPE = 'type';
-    public const string AGENT_ID = 'agentId';
-    public const string AGENT_TYPE = 'agentType';
-    public const string AGENT_INDEX = 'agentIndex';
-
     // Message type
     public const string MESSAGE_TYPE = 'agent_started';
 
@@ -55,12 +50,12 @@ class WorkerAgentStartedDTO extends WorkerDTO
     {
         $result = [
             self::TYPE => self::MESSAGE_TYPE,
-            self::AGENT_ID => $this->agentId,
-            self::AGENT_TYPE => $this->agentType,
+            AgentConstants::FIELD_AGENT_ID => $this->agentId,
+            AgentConstants::FIELD_AGENT_TYPE => $this->agentType,
         ];
 
         if ($this->agentIndex !== null) {
-            $result[self::AGENT_INDEX] = $this->agentIndex;
+            $result[AgentConstants::FIELD_AGENT_INDEX] = $this->agentIndex;
         }
 
         return $result;
@@ -75,9 +70,9 @@ class WorkerAgentStartedDTO extends WorkerDTO
     public static function fromArray(array $data): static
     {
         return new self(
-            agentId: $data[self::AGENT_ID] ?? '',
-            agentType: $data[self::AGENT_TYPE] ?? '',
-            agentIndex: $data[self::AGENT_INDEX] ?? null,
+            agentId: $data[AgentConstants::FIELD_AGENT_ID] ?? '',
+            agentType: $data[AgentConstants::FIELD_AGENT_TYPE] ?? '',
+            agentIndex: $data[AgentConstants::FIELD_AGENT_INDEX] ?? null,
         );
     }
 }

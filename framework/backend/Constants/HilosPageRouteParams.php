@@ -25,5 +25,5 @@ class HilosPageRouteParams
     /**
      * Route param for {@see HilosPageConstants::HILOS_GUARDIAN_AGENT} (`/hilos/guardian/{agentId}`).
      */
-    public const string HILOS_GUARDIAN_AGENT_AGENT_ID = 'agentId';
+    public const string HILOS_GUARDIAN_AGENT_AGENT_ID = AgentConstants::FIELD_AGENT_ID;
 }

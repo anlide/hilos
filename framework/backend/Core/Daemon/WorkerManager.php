@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Core\Daemon;
 
 use Hilos\Core\Analytics\AnalyticsCollector;
+use Hilos\Constants\AgentConstants;
 use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Constants\WorkerConstants;
@@ -405,8 +406,8 @@ abstract class WorkerManager extends BaseManager
 
         // Parse agentId to extract agentType and agentIndex
         $parsed = $this->agentManager->parseAgentId($agentId);
-        $agentType = $parsed['agentType'];
-        $agentIndex = $parsed['agentIndex'];
+        $agentType = $parsed[AgentConstants::FIELD_AGENT_TYPE];
+        $agentIndex = $parsed[AgentConstants::FIELD_AGENT_INDEX];
 
         // Create agent using factory method
         $agent = $this->agentManager->createAndAddAgent($agentType, $agentIndex);
@@ -1238,13 +1239,13 @@ abstract class WorkerManager extends BaseManager
         }
 
         $message = [
-            'type' => WorkerConstants::MESSAGE_AGENT_STARTED,
-            'agentId' => $agentId,
-            'agentType' => $agentType,
+            WorkerDTO::TYPE => WorkerConstants::MESSAGE_AGENT_STARTED,
+            AgentConstants::FIELD_AGENT_ID => $agentId,
+            AgentConstants::FIELD_AGENT_TYPE => $agentType,
         ];
 
         if ($agentIndex !== null) {
-            $message['agentIndex'] = $agentIndex;
+            $message[AgentConstants::FIELD_AGENT_INDEX] = $agentIndex;
         }
 
         $this->daemonClient->send($message);
@@ -1262,8 +1263,8 @@ abstract class WorkerManager extends BaseManager
         }
 
         $message = [
-            'type' => WorkerConstants::MESSAGE_AGENT_STOPPED,
-            'agentId' => $agentId,
+            WorkerDTO::TYPE => WorkerConstants::MESSAGE_AGENT_STOPPED,
+            AgentConstants::FIELD_AGENT_ID => $agentId,
         ];
 
         $this->daemonClient->send($message);

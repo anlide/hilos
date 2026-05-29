@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Socket\Worker\DTO;
 
+use Hilos\Constants\AgentConstants;
 use Hilos\Socket\Worker\WorkerDTO;
 
 /**
@@ -13,10 +14,6 @@ use Hilos\Socket\Worker\WorkerDTO;
  */
 class WorkerAgentStoppedDTO extends WorkerDTO
 {
-    // Field name constants
-    public const string TYPE = 'type';
-    public const string AGENT_ID = 'agentId';
-
     // Message type
     public const string MESSAGE_TYPE = 'agent_stopped';
 
@@ -49,7 +46,7 @@ class WorkerAgentStoppedDTO extends WorkerDTO
     {
         return [
             self::TYPE => self::MESSAGE_TYPE,
-            self::AGENT_ID => $this->agentId,
+            AgentConstants::FIELD_AGENT_ID => $this->agentId,
         ];
     }
 
@@ -62,7 +59,7 @@ class WorkerAgentStoppedDTO extends WorkerDTO
     public static function fromArray(array $data): static
     {
         return new self(
-            agentId: $data[self::AGENT_ID] ?? '',
+            agentId: $data[AgentConstants::FIELD_AGENT_ID] ?? '',
         );
     }
 }

@@ -6,7 +6,9 @@ namespace Hilos\Core\Daemon;
 
 use Hilos\API\Router\HttpRouter;
 use Hilos\BaseDTO;
+use Hilos\Constants\AgentConstants;
 use Hilos\Constants\SignalConstants;
+use Hilos\Constants\SignalPayloadConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\Agent\Exception\AgentDaemonCreationFailedException;
@@ -532,13 +534,13 @@ abstract class DaemonManager extends BaseManager
                     break;
                 }
 
-                $destinationType = $destination['type'] ?? 'agent';
+                $destinationType = $destination[SignalPayloadConstants::FIELD_TYPE] ?? AgentConstants::DESTINATION_TYPE_AGENT;
 
                 switch ($destinationType) {
-                    case 'agent':
+                    case AgentConstants::DESTINATION_TYPE_AGENT:
                         // Send signal to agent via worker server
-                        $agentType = $destination['agentType'] ?? 'unknown';
-                        $agentIndex = $destination['agentIndex'] ?? null;
+                        $agentType = $destination[AgentConstants::FIELD_AGENT_TYPE] ?? 'unknown';
+                        $agentIndex = $destination[AgentConstants::FIELD_AGENT_INDEX] ?? null;
                         $agentId = $agentIndex !== null ? $agentType . ':' . $agentIndex : $agentType;
                         $indexInfo = $agentIndex !== null ? " (index: {$agentIndex})" : '';
                         Logger::debug("Dispatching signal to agent: {$signalType}/{$signalName} -> agent: {$agentType}{$indexInfo}");

@@ -8,6 +8,7 @@ use Hilos\API\Router\Exception\GroupSubscriptionNotFoundException;
 use Hilos\API\Router\Exception\PageSubscriptionMismatchException;
 use Hilos\API\Router\Exception\PageSubscriptionNotFoundException;
 use Hilos\BaseDTO;
+use Hilos\Constants\AgentConstants;
 use Hilos\Constants\SignalPayloadConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
@@ -230,14 +231,14 @@ class SignalRouter
     {
         if (is_string($routeConfig)) {
             return [
-                ['agentType' => $routeConfig, 'agentIndex' => null],
+                [AgentConstants::FIELD_AGENT_TYPE => $routeConfig, AgentConstants::FIELD_AGENT_INDEX => null],
             ];
         }
 
         $routes = [];
         foreach ($routeConfig as $agentType) {
             if (is_string($agentType) && $agentType !== '') {
-                $routes[] = ['agentType' => $agentType, 'agentIndex' => null];
+                $routes[] = [AgentConstants::FIELD_AGENT_TYPE => $agentType, AgentConstants::FIELD_AGENT_INDEX => null];
             }
         }
 
@@ -683,7 +684,7 @@ class SignalRouter
             } else {
                 $routes = $this->route($signal->signalSource, $signal->signalType, $signal->data);
                 foreach ($routes as $route) {
-                    $destinations[] = array_merge(['type' => 'agent'], $route);
+                    $destinations[] = array_merge([SignalPayloadConstants::FIELD_TYPE => AgentConstants::DESTINATION_TYPE_AGENT], $route);
                 }
             }
         } elseif ($signalType === SignalTypeConstants::AGENT_SIGNAL) {
@@ -695,7 +696,7 @@ class SignalRouter
             } else {
                 $routes = $this->route($signal->signalSource, $signal->signalType, $signal->data);
                 foreach ($routes as $route) {
-                    $destinations[] = array_merge(['type' => 'agent'], $route);
+                    $destinations[] = array_merge([SignalPayloadConstants::FIELD_TYPE => AgentConstants::DESTINATION_TYPE_AGENT], $route);
                 }
             }
         }
@@ -729,9 +730,9 @@ class SignalRouter
         }
 
         return [[
-            'type' => 'agent',
-            'agentType' => $agentType,
-            'agentIndex' => null,
+            SignalPayloadConstants::FIELD_TYPE => AgentConstants::DESTINATION_TYPE_AGENT,
+            AgentConstants::FIELD_AGENT_TYPE => $agentType,
+            AgentConstants::FIELD_AGENT_INDEX => null,
         ]];
     }
 
@@ -767,7 +768,7 @@ class SignalRouter
         }
 
         return [
-            ['type' => 'agent', 'agentType' => $agentType, 'agentIndex' => null],
+            [SignalPayloadConstants::FIELD_TYPE => AgentConstants::DESTINATION_TYPE_AGENT, AgentConstants::FIELD_AGENT_TYPE => $agentType, AgentConstants::FIELD_AGENT_INDEX => null],
         ];
     }
 
@@ -826,7 +827,7 @@ class SignalRouter
         }
 
         return [
-            ['type' => 'agent', 'agentType' => $agentType, 'agentIndex' => null],
+            [SignalPayloadConstants::FIELD_TYPE => AgentConstants::DESTINATION_TYPE_AGENT, AgentConstants::FIELD_AGENT_TYPE => $agentType, AgentConstants::FIELD_AGENT_INDEX => null],
         ];
     }
 
@@ -869,9 +870,9 @@ class SignalRouter
         }
 
         return [[
-            'type' => 'agent',
-            'agentType' => $agentType,
-            'agentIndex' => null,
+            SignalPayloadConstants::FIELD_TYPE => AgentConstants::DESTINATION_TYPE_AGENT,
+            AgentConstants::FIELD_AGENT_TYPE => $agentType,
+            AgentConstants::FIELD_AGENT_INDEX => null,
         ]];
     }
 
@@ -1032,9 +1033,9 @@ class SignalRouter
         }
 
         return [[
-            'type' => 'agent',
-            'agentType' => $agentType,
-            'agentIndex' => $agentIndex,
+            SignalPayloadConstants::FIELD_TYPE => AgentConstants::DESTINATION_TYPE_AGENT,
+            AgentConstants::FIELD_AGENT_TYPE => $agentType,
+            AgentConstants::FIELD_AGENT_INDEX => $agentIndex,
         ]];
     }
 

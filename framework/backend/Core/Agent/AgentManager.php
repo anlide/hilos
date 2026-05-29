@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Agent;
 
+use Hilos\Constants\AgentConstants;
 use Hilos\Core\Agent\Exception\AgentCreationFailedException;
 
 /**
@@ -49,14 +50,14 @@ abstract class AgentManager
      * Parse agent ID to extract type and index.
      *
      * @param string $agentId Agent ID (format: "type" or "type:index")
-     * @return array<string, string|null> Associative array with 'agentType' and 'agentIndex' keys
+     * @return array<string, string|null> Associative array with agent type and index field keys
      */
     public function parseAgentId(string $agentId): array
     {
         $parts = explode(':', $agentId, 2);
         return [
-            'agentType' => $parts[0] ?? '',
-            'agentIndex' => $parts[1] ?? null,
+            AgentConstants::FIELD_AGENT_TYPE => $parts[0] ?? '',
+            AgentConstants::FIELD_AGENT_INDEX => $parts[1] ?? null,
         ];
     }
 

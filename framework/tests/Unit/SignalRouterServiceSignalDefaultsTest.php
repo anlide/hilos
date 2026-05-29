@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Constants\AgentConstants;
 use Hilos\Constants\SignalConstants;
+use Hilos\Constants\SignalPayloadConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\SignalName;
@@ -33,8 +35,8 @@ final class SignalRouterServiceSignalDefaultsTest extends TestCase
         ));
 
         $this->assertSame([
-            ['type' => 'agent', 'agentType' => 'bootstrap_alpha', 'agentIndex' => null],
-            ['type' => 'agent', 'agentType' => 'bootstrap_beta', 'agentIndex' => null],
+            [SignalPayloadConstants::FIELD_TYPE => AgentConstants::DESTINATION_TYPE_AGENT, AgentConstants::FIELD_AGENT_TYPE => 'bootstrap_alpha', AgentConstants::FIELD_AGENT_INDEX => null],
+            [SignalPayloadConstants::FIELD_TYPE => AgentConstants::DESTINATION_TYPE_AGENT, AgentConstants::FIELD_AGENT_TYPE => 'bootstrap_beta', AgentConstants::FIELD_AGENT_INDEX => null],
         ], $destinations);
     }
 
@@ -48,7 +50,7 @@ final class SignalRouterServiceSignalDefaultsTest extends TestCase
         ));
 
         $this->assertSame([
-            ['type' => 'agent', 'agentType' => 'cron_agent', 'agentIndex' => null],
+            [SignalPayloadConstants::FIELD_TYPE => AgentConstants::DESTINATION_TYPE_AGENT, AgentConstants::FIELD_AGENT_TYPE => 'cron_agent', AgentConstants::FIELD_AGENT_INDEX => null],
         ], $destinations);
     }
 
@@ -57,7 +59,7 @@ final class SignalRouterServiceSignalDefaultsTest extends TestCase
         $router = new SignalRouterServiceDefaultsTestRouter();
 
         $this->assertSame([
-            ['type' => 'agent', 'agentType' => 'lifecycle_agent', 'agentIndex' => null],
+            [SignalPayloadConstants::FIELD_TYPE => AgentConstants::DESTINATION_TYPE_AGENT, AgentConstants::FIELD_AGENT_TYPE => 'lifecycle_agent', AgentConstants::FIELD_AGENT_INDEX => null],
         ], $router->getDestinations(new SignalDTO(
             new SignalSource(SignalSource::WEBSOCKET),
             new SignalType(SignalTypeConstants::HANDSHAKE),
@@ -72,7 +74,7 @@ final class SignalRouterServiceSignalDefaultsTest extends TestCase
         )));
 
         $this->assertSame([
-            ['type' => 'agent', 'agentType' => 'lifecycle_agent', 'agentIndex' => null],
+            [SignalPayloadConstants::FIELD_TYPE => AgentConstants::DESTINATION_TYPE_AGENT, AgentConstants::FIELD_AGENT_TYPE => 'lifecycle_agent', AgentConstants::FIELD_AGENT_INDEX => null],
         ], $router->getDestinations(new SignalDTO(
             new SignalSource(SignalSource::WEBSOCKET),
             new SignalType(SignalTypeConstants::CONNECTION_CLOSE),
@@ -81,7 +83,7 @@ final class SignalRouterServiceSignalDefaultsTest extends TestCase
         )));
 
         $this->assertSame([
-            ['type' => 'agent', 'agentType' => 'lifecycle_agent', 'agentIndex' => null],
+            [SignalPayloadConstants::FIELD_TYPE => AgentConstants::DESTINATION_TYPE_AGENT, AgentConstants::FIELD_AGENT_TYPE => 'lifecycle_agent', AgentConstants::FIELD_AGENT_INDEX => null],
         ], $router->getDestinations(new SignalDTO(
             new SignalSource(SignalSource::WEBSOCKET),
             new SignalType(SignalTypeConstants::CRON),
