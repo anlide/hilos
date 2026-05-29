@@ -25,6 +25,9 @@ use Hilos\Socket\SocketException;
  */
 class HttpClient extends AbstractClient implements HttpClientInterface
 {
+    /** @var array{status: string} Default JSON body when no router is assigned */
+    private const array DEFAULT_RESPONSE_BODY = ['status' => 'ok'];
+
     /** @var ?HttpRouter Router for handling requests */
     private ?HttpRouter $router = null;
 
@@ -100,7 +103,7 @@ class HttpClient extends AbstractClient implements HttpClientInterface
             $response = [
                 HttpConstants::RESPONSE_KEY_STATUS => HttpConstants::HTTP_OK,
                 HttpConstants::RESPONSE_KEY_HEADERS => [HttpConstants::HEADER_CONTENT_TYPE => HttpConstants::CONTENT_TYPE_JSON],
-                HttpConstants::RESPONSE_KEY_BODY => json_encode(['status' => 'ok']),
+                HttpConstants::RESPONSE_KEY_BODY => json_encode(self::DEFAULT_RESPONSE_BODY),
             ];
         }
 
