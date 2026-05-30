@@ -8,6 +8,7 @@ use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Entity\Collection\Settings as EntitySettings;
 use Hilos\Database\Entity\Item\Setting as EntitySetting;
 use Hilos\Database\Object\Item\Setting as ObjectSetting;
+use Hilos\Core\Exception\LogicException;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Objects;
 
@@ -58,6 +59,7 @@ final class Settings extends Objects
      *
      * @param array<string, array<string, mixed>> $catalog Catalog: key => [type, default_value]
      * @return list<ObjectSetting> Orphan settings
+     * @throws LogicException When the entity collection class is not configured
      * @throws DatabaseException When loading all settings from the database fails
      */
     public function getOrphans(array $catalog): array

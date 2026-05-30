@@ -63,6 +63,18 @@ class ObjectCollection implements ArrayAccess, Countable, Iterator
      */
     public function add(Object_ $object, int|string|null $key = null): self
     {
+        $this->store($object, $key);
+        return $this;
+    }
+
+    /**
+     * Store an object at the given key and keep the iteration-order index in sync.
+     *
+     * @param Object_ $object Object to store
+     * @param int|string|null $key Target key, or null to append
+     */
+    private function store(Object_ $object, int|string|null $key): void
+    {
         if ($key === null) {
             $this->objects[] = $object;
             $this->keys = array_keys($this->objects);
@@ -72,7 +84,6 @@ class ObjectCollection implements ArrayAccess, Countable, Iterator
                 $this->keys[] = $key;
             }
         }
-        return $this;
     }
 
     /**
@@ -236,15 +247,7 @@ class ObjectCollection implements ArrayAccess, Countable, Iterator
             throw new InvalidArgumentException("Value must be instance of Object_");
         }
 
-        if ($offset === null) {
-            $this->objects[] = $value;
-            $this->keys = array_keys($this->objects);
-        } else {
-            $this->objects[$offset] = $value;
-            if (!in_array($offset, $this->keys, true)) {
-                $this->keys[] = $offset;
-            }
-        }
+        $this->store($value, $offset);
     }
 
     /**

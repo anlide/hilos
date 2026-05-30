@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Database\Object\Item;
 
 use Hilos\Database\Context\HilosDbContext;
+use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Item\Setting as EntitySetting;
 use Hilos\Database\Object\Item\Object_;
 
@@ -41,6 +42,7 @@ final class Setting extends Object_
      *
      * @param string $property Property name (id, key, type, value)
      * @return mixed Property value
+     * @throws DatabaseException When the property is not a known Setting field
      */
     public function __get(string $property): mixed
     {
@@ -58,6 +60,7 @@ final class Setting extends Object_
      *
      * @param string $property Property name (key, type, value)
      * @param mixed $value Value to set
+     * @throws DatabaseException When the property cannot be set on a Setting
      */
     public function __set(string $property, mixed $value): void
     {

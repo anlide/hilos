@@ -328,8 +328,7 @@ abstract class Object_
      */
     public function getPrimaryKeyArrayKeys(): array
     {
-        $primaryKeys = is_array($this->entity::_primary) ? $this->entity::_primary : [$this->entity::_primary];
-        return $primaryKeys;
+        return is_array($this->entity::_primary) ? $this->entity::_primary : [$this->entity::_primary];
     }
 
     /**
